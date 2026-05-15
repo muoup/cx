@@ -90,9 +90,14 @@ pub enum MIRExpressionKind {
 
     // Memory Operations
     RegionCreate {
-        name: Option<CXIdent>,
         _type: MIRType,
         initial_value: Option<Box<MIRExpression>>,
+    },
+    BindRegion {
+        name: CXIdent,
+        _type: MIRType,
+        initial_region: Box<MIRExpression>,
+        adopting: bool,
     },
     RegionDuplicate {
         source: Box<MIRExpression>,
@@ -103,10 +108,7 @@ pub enum MIRExpressionKind {
     RegionMove {
         source: Box<MIRExpression>,
     },
-    RegionAdopt {
-        source: Box<MIRExpression>,
-    },
-    MemoryWrite {
+    RegionWrite {
         target: Box<MIRExpression>,
         value: Box<MIRExpression>,
     },
@@ -198,6 +200,7 @@ pub enum MIRExpressionKind {
         condition: Box<MIRExpression>,
         arms: Vec<(Box<MIRExpression>, Box<MIRExpression>)>,
         default: Option<Box<MIRExpression>>,
+        exhaustive: bool,
     },
 
     Return {

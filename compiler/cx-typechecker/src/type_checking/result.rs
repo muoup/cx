@@ -55,6 +55,8 @@ pub struct TypecheckResult {
     pub implicit_parameters: Vec<MIRExpression>,
     /// Binding/place information for expressions that still denote a local place.
     pub binding: Option<TypecheckedBinding>,
+    /// True when this value adopts an existing region instead of initializing a fresh one.
+    pub adopting: bool,
 }
 
 impl From<MIRExpression> for TypecheckResult {
@@ -63,6 +65,7 @@ impl From<MIRExpression> for TypecheckResult {
             expression,
             implicit_parameters: Vec::new(),
             binding: None,
+            adopting: false,
         }
     }
 }
@@ -77,6 +80,7 @@ impl TypecheckResult {
             },
             implicit_parameters: Vec::new(),
             binding: None,
+            adopting: false,
         }
     }
 
@@ -87,6 +91,11 @@ impl TypecheckResult {
 
     pub fn with_binding(mut self, binding: TypecheckedBinding) -> Self {
         self.binding = Some(binding);
+        self
+    }
+
+    pub fn with_adopting(mut self) -> Self {
+        self.adopting = true;
         self
     }
 

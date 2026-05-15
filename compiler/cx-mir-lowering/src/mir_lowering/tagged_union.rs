@@ -42,13 +42,14 @@ pub fn lower_tagged_union_get(
     builder: &mut LMIRBuilder,
     value: &MIRExpression,
     variant_type: &MIRType,
+    result_type: &MIRType,
 ) -> CXResult<LMIRValue> {
     let payload = lower_expression(builder, value)?;
     let payload_type = builder.convert_cx_type(variant_type);
 
     if payload_type.is_void() {
         Ok(LMIRValue::NULL)
-    } else if payload_type.is_memory_resident() {
+    } else if result_type.is_memory_reference() || payload_type.is_memory_resident() {
         Ok(payload)
     } else {
         builder.add_new_instruction(

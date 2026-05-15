@@ -312,6 +312,7 @@ pub fn lower_match(
     condition: &MIRExpression,
     arms: &[(Box<MIRExpression>, Box<MIRExpression>)],
     default: Option<&MIRExpression>,
+    exhaustive: bool,
 ) -> CXResult<LMIRValue> {
     let mut bc_condition = lower_expression(builder, condition)?;
     let inner = builder
@@ -340,6 +341,7 @@ pub fn lower_match(
     };
 
     builder.push_scope(None, Some(exit_block_id.clone()));
+    let mut exit_has_predecessor = default.is_none() && !exhaustive;
 
     let mut targets = Vec::new();
     let mut arm_blocks = Vec::new();
@@ -368,24 +370,57 @@ pub fn lower_match(
     for (i, (_, arm_body)) in arms.iter().enumerate() {
         builder.set_current_block(arm_blocks[i].clone());
 
+        let arm_falls_through = is_fall_through(arm_body);
         builder.push_scope(None, None);
         lower_expression(builder, arm_body)?;
         builder.pop_scope()?;
-        builder.add_new_instruction(
-            LMIRInstructionKind::Jump {
-                target: exit_block_id.clone(),
-            },
-            LMIRType::unit(),
-            false,
-        )?;
+        if arm_falls_through && !builder.current_block_closed() {
+            exit_has_predecessor = true;
+            builder.add_new_instruction(
+                LMIRInstructionKind::Jump {
+                    target: exit_block_id.clone(),
+                },
+                LMIRType::unit(),
+                false,
+            )?;
+        } else if !arm_falls_through && !builder.current_block_closed() {
+            let current = builder.current_block();
+            builder.add_new_instruction(
+                LMIRInstructionKind::Jump { target: current },
+                LMIRType::unit(),
+                false,
+            )?;
+        }
     }
 
     if let Some(default_expr) = default {
         builder.set_current_block(default_block_id);
 
+        let default_falls_through = is_fall_through(default_expr);
         builder.push_scope(None, None);
         lower_expression(builder, default_expr)?;
         builder.pop_scope()?;
+        if default_falls_through && !builder.current_block_closed() {
+            exit_has_predecessor = true;
+            builder.add_new_instruction(
+                LMIRInstructionKind::Jump {
+                    target: exit_block_id.clone(),
+                },
+                LMIRType::unit(),
+                false,
+            )?;
+        } else if !default_falls_through && !builder.current_block_closed() {
+            let current = builder.current_block();
+            builder.add_new_instruction(
+                LMIRInstructionKind::Jump { target: current },
+                LMIRType::unit(),
+                false,
+            )?;
+        }
+    }
+
+    builder.set_current_block(exit_block_id.clone());
+    if !exit_has_predecessor {
         builder.add_new_instruction(
             LMIRInstructionKind::Jump {
                 target: exit_block_id.clone(),
@@ -395,7 +430,6 @@ pub fn lower_match(
         )?;
     }
 
-    builder.set_current_block(exit_block_id);
     builder.pop_scope()?;
 
     Ok(LMIRValue::NULL)
@@ -447,5 +481,25 @@ pub fn lower_return(
             LMIRType::unit(),
             false,
         )
+    }
+}
+
+fn is_fall_through(expr: &MIRExpression) -> bool {
+    match &expr.kind {
+        MIRExpressionKind::Return { .. }
+        | MIRExpressionKind::Break { .. }
+        | MIRExpressionKind::Continue { .. } => false,
+        MIRExpressionKind::Unsafe { expression, .. } => is_fall_through(expression),
+        MIRExpressionKind::Block { statements } => statements
+            .last()
+            .map(is_fall_through)
+            .unwrap_or(true),
+        MIRExpressionKind::CallFunction { function, .. } => {
+            !matches!(
+                &function.kind,
+                MIRExpressionKind::FunctionReference { name } if name.as_str() == "exit"
+            )
+        }
+        _ => true,
     }
 }

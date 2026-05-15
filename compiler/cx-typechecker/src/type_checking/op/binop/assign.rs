@@ -72,7 +72,7 @@ pub fn typecheck_assignment(
 
     Ok(TypecheckResult::new_base(
         lhs_type,
-        MIRExpressionKind::MemoryWrite {
+        MIRExpressionKind::RegionWrite {
             target: Box::new(lhs),
             value: Box::new(rhs),
         },

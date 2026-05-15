@@ -20,16 +20,6 @@ pub(crate) fn monad_unit(operation: CVMOperation) -> FMIRType {
     }
 }
 
-pub(crate) fn pointer_alias(name: &CXIdent, pointer_type: MIRType) -> FMIRNode {
-    FMIRNode {
-        token_range: None,
-        body: FMIRNodeBody::VariableAlias {
-            name: name.as_string(),
-        },
-        _type: FMIRType::pure(pointer_type),
-    }
-}
-
 pub(crate) fn intrinsic_alias(intrinsic: FMIRIntrinsicKind) -> FMIRNode {
     FMIRNode {
         token_range: None,

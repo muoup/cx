@@ -3,6 +3,7 @@ import interpreter;
 import std::optional;
 import std::io;
 import std::file;
+import std::string;
 
 i32 main(i32 argc, char** argv) {
     if (argc == 1) {
@@ -10,9 +11,18 @@ i32 main(i32 argc, char** argv) {
         return 1;
     }
 
-    opt<file> f = file::open(argv[1], "r");
+    opt<file> o = file::open(argv[1], "r");
 
-    run("(fndef add (x y) (+ x y)) (fndef double (x) (add x x)) (print-str \"CX Lisp says hello\") (print-num (+ 1 2)) (print-num (- (double 21) 2))");
+    if (!o.is_some()) {
+        println("Could not find file specified.");
+    }
 
+    file f = o.unwrap();
+    string s = f.read_to_string();
+    
+    run(s.as_str());
+
+    f.close();
+    s.drop();
     return 0;
 }

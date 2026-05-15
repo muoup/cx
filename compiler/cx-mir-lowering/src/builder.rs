@@ -242,7 +242,7 @@ impl LMIRBuilder {
         LMIRValue::Global(global_index)
     }
 
-    fn current_block_closed(&self) -> bool {
+    pub fn current_block_closed(&self) -> bool {
         let Some(last_inst) = self.current_block_last_inst() else {
             return false;
         };

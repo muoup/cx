@@ -49,8 +49,7 @@ pub(crate) fn typecheck_move(
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
-            "Move expressions can currently only be applied to stack variable identifiers, found {:?}",
-            inner_val.kind
+            "Move expressions can currently only be applied to stack variable identifiers",
         );
     }
 
@@ -118,10 +117,11 @@ pub(crate) fn typecheck_adopt(
 
     Ok(TypecheckResult::new_base(
         inner_type,
-        MIRExpressionKind::RegionAdopt {
+        MIRExpressionKind::RegionMove {
             source: Box::new(value),
         },
-    ))
+    )
+    .with_adopting())
 }
 
 pub(crate) fn typecheck_leak(
@@ -349,10 +349,18 @@ pub(crate) fn typecheck_unpack(
         statements.push(MIRExpression {
             token_range: None,
             _type: env.symbols.context.mem_ref_to(field_type.clone()),
-            kind: MIRExpressionKind::RegionCreate {
-                name: Some(binding_name),
+            kind: MIRExpressionKind::BindRegion {
+                name: binding_name,
                 _type: field_type.clone(),
-                initial_value: Some(Box::new(initial_value)),
+                initial_region: Box::new(MIRExpression {
+                    token_range: None,
+                    _type: env.symbols.context.mem_ref_to(field_type.clone()),
+                    kind: MIRExpressionKind::RegionCreate {
+                        _type: field_type.clone(),
+                        initial_value: Some(Box::new(initial_value)),
+                    },
+                }),
+                adopting: false,
             },
         });
     }

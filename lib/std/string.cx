@@ -17,7 +17,7 @@ string string::new() safe {
     opt<string> s = string::try_new_string();
     
     match (move s) {
-        opt<string>::some(val) => return val;
+        opt<string>::some(val) => return move val;
         opt<string>::none(_) => {
             println("Failed to allocate memory for string");
             @unsafe(exit(1));
@@ -56,13 +56,23 @@ opt<string> string::try_new_string() safe {
 
 void string::append(*this, const char* s) {
     u64 str_length = strlen(s);
+    this.length = str_length + this.length;
 
-    if (this.length + str_length + 1 > this.capacity) {
+    if (this.length >= this.capacity) {
         this._realloc();
     }
 
     memcpy(this.data + this.length, s, str_length);
-    this.length = str_length + this.length;
+}
+
+void string::append_char(*this, char c) {
+    this.length++;
+
+    if (this.length >= this.capacity) {
+        this._realloc();
+    }
+
+    this.data[this.length - 1] = c;
 }
 
 void string::drop(this) safe {

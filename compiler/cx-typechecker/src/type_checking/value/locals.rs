@@ -69,26 +69,37 @@ pub(crate) fn typecheck_var_declaration(
     ensure_valid_allocation_type(env, Some(expr.token_range().clone()), "a variable", &ty)?;
 
     let mem_type = env.symbols.context.mem_ref_to(ty.clone());
-    let mir_initial_value = match initial_value {
+    let (initial_region, adopting) = match initial_value {
         Some(init_expr) => {
-            let init_tc = typecheck_expr(env, base_data, init_expr, Some(&ty))
-                .and_then(|v| std_rval_promotion(env, v.into_expression()))
+            let init_tc = typecheck_expr(env, base_data, init_expr, Some(&ty))?;
+            let adopting = init_tc.adopting;
+            let init_expr = std_rval_promotion(env, init_tc.into_expression())
                 .and_then(|v| implicit_cast(env, v, &ty))?;
-            Some(Box::new(init_tc))
+            (Box::new(init_expr), adopting)
         }
-        None => None,
+        None => (
+            Box::new(MIRExpression {
+                token_range: None,
+                kind: MIRExpressionKind::RegionCreate {
+                    _type: ty.clone(),
+                    initial_value: None,
+                },
+                _type: mem_type.clone(),
+            }),
+            false,
+        ),
     };
 
-    let allocation = MIRExpression {
+    let binding = MIRExpression {
         token_range: None,
-        kind: MIRExpressionKind::RegionCreate {
-            name: Some(name.clone()),
+        kind: MIRExpressionKind::BindRegion {
+            name: name.clone(),
             _type: ty.clone(),
-            initial_value: mir_initial_value,
+            initial_region,
+            adopting,
         },
         _type: mem_type.clone(),
     };
-
     env.symbols.insert_value(
         name.clone(),
         MIRExpression {
@@ -104,5 +115,5 @@ pub(crate) fn typecheck_var_declaration(
             .track_binding(name.as_string(), env.symbols.is_nodrop(&ty));
     }
 
-    Ok(TypecheckResult::from(allocation))
+    Ok(TypecheckResult::from(binding))
 }

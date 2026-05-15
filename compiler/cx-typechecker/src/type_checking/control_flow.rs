@@ -31,12 +31,7 @@ pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
                     .map(|branch| expr_may_fall_through(branch))
                     .unwrap_or(true)
         }
-        MIRExpressionKind::CSwitch { cases, default, .. }
-        | MIRExpressionKind::Match {
-            arms: cases,
-            default,
-            ..
-        } => {
+        MIRExpressionKind::CSwitch { cases, default, .. } => {
             cases
                 .iter()
                 .any(|(_, branch)| expr_may_fall_through(branch))
@@ -44,6 +39,24 @@ pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
                     .as_ref()
                     .map(|branch| expr_may_fall_through(branch))
                     .unwrap_or(true)
+        }
+        MIRExpressionKind::Match {
+            arms,
+            default,
+            exhaustive,
+            ..
+        } => {
+            arms.iter().any(|(_, branch)| expr_may_fall_through(branch))
+                || default
+                    .as_ref()
+                    .map(|branch| expr_may_fall_through(branch))
+                    .unwrap_or(!exhaustive)
+        }
+        MIRExpressionKind::CallFunction { function, .. } => {
+            !matches!(
+                &function.kind,
+                MIRExpressionKind::FunctionReference { name } if name.as_str() == "exit"
+            )
         }
         _ => true,
     }

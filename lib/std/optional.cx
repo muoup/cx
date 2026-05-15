@@ -30,12 +30,11 @@ T opt<T>::unwrap_or<T>(*this, T otherwise) {
 }
 
 T opt<T>::unwrap<T>(this) {
-    bool valid = this is opt<T>::some(value);
-
-    if (!valid) {
-        println("Error: called `opt::unwrap()` on a `None` value");
-        exit(1);
+    match (move this) {
+        opt<T>::some(val) => return move val;
+        opt<T>::none() => {
+            println("Attempted to unwrap an optional value, found None");
+            exit(1);
+        }
     }
-    
-    return move value;
 }

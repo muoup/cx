@@ -773,8 +773,8 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            MIRExpressionKind::MemoryWrite { target, value } => {
-                write!(f, "MemoryWrite <'")?;
+            MIRExpressionKind::RegionWrite { target, value } => {
+                write!(f, "RegionWrite <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
@@ -802,12 +802,10 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 .fmt(f)
             }
             MIRExpressionKind::RegionCreate {
-                name,
                 _type,
                 initial_value,
             } => {
-                let name_str = name.as_ref().map(|t| t.as_str()).unwrap_or("(unnamed)");
-                write!(f, "CreateStackVariable {}: ", name_str)?;
+                write!(f, "RegionCreate ")?;
                 self.write_type(f, _type)?;
                 write!(f, " <'")?;
                 self.write_type(f, &self.expr._type)?;
@@ -827,6 +825,24 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
 
                 Ok(())
             }
+            MIRExpressionKind::BindRegion {
+                name,
+                _type,
+                initial_region,
+                adopting,
+            } => {
+                write!(f, "BindRegion {} adopting={}: ", name, adopting)?;
+                self.write_type(f, _type)?;
+                write!(f, " <'")?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, ">")?;
+                MIRExpressionFormatter {
+                    expr: initial_region,
+                    depth: self.depth + 1,
+                    definitions: self.definitions,
+                }
+                .fmt(f)
+            }
             MIRExpressionKind::RegionDuplicate { source } => {
                 write!(f, "RegionDuplicate")?;
                 write!(f, " <'")?;
@@ -841,17 +857,6 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             MIRExpressionKind::ByValueArgument { source } => {
                 write!(f, "ByValueArgument <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")?;
-                MIRExpressionFormatter {
-                    expr: source,
-                    depth: self.depth + 1,
-                    definitions: self.definitions,
-                }
-                .fmt(f)
-            }
-            MIRExpressionKind::RegionAdopt { source } => {
-                write!(f, "RegionAdopt <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
@@ -1152,8 +1157,9 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 condition,
                 arms,
                 default,
+                exhaustive,
             } => {
-                write!(f, "Match <'")?;
+                write!(f, "Match exhaustive={exhaustive} <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {

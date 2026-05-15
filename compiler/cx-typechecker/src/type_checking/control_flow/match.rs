@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::environment::ScopeArrowSink;
 use crate::environment::ScopeExitTarget;
 use crate::environment::TypeEnvironment;
@@ -34,6 +36,7 @@ pub fn typecheck_match(
 
     let join_scope_idx = env.function.current_scope_index();
     let base_snapshot = env.function.current_snapshot();
+    let mut condition_owned = false;
 
     match &expr_type.kind {
         MIRTypeKind::MemoryReference { inner_type, .. }
@@ -49,11 +52,12 @@ pub fn typecheck_match(
                     source: Box::new(expr_value),
                 },
                 _type: expr_type.clone(),
-            }
+            };
         }
-        _ => {}
+        _ => condition_owned = true
     }
 
+    let mut match_is_exhaustive = false;
     let match_arms = match &expr_type.kind {
         MIRTypeKind::Integer { .. } => {
             // Integer matching: each arm has an integer literal pattern
@@ -119,6 +123,7 @@ pub fn typecheck_match(
                 .clone();
             // Tagged union matching: each arm has a type constructor pattern
             let mut result_arms = Vec::new();
+            let mut matched_variants = HashSet::new();
 
             for (pattern, body) in arms.iter() {
                 let TypeConstructor {
@@ -126,6 +131,7 @@ pub fn typecheck_match(
                     variant_name,
                     inner,
                 } = deconstruct_type_constructor(env, base_data, pattern)?;
+                let inner = inner.filter(|inner| !matches!(inner.kind, CXExprKind::Unit));
 
                 if union_type.get_name().unwrap().as_str() != expected_union_name.as_str() {
                     return log_typecheck_error!(
@@ -149,6 +155,7 @@ pub fn typecheck_match(
                         expected_union_name
                     );
                 };
+                matched_variants.insert(variant_id);
 
                 // Create a pattern that matches the tag value
                 let pattern_expr = MIRExpression {
@@ -189,15 +196,65 @@ pub fn typecheck_match(
                         );
                     };
 
-                    // Typecheck the body with the variant value bound.
-                    env.symbols.push_scope();
-                    env.symbols.insert_value(
-                        name.clone(),
-                        variant_value_expr,
-                        Some(SymbolValueOrigin::Local),
-                    );
-                    let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
-                    env.symbols.pop_scope();
+                    let body_expr = if condition_owned {
+                        let variant_ref_type = env.symbols.context.mem_ref_to(variant_type.clone());
+                        let variant_region = MIRExpression {
+                            token_range: None,
+                            _type: variant_ref_type.clone(),
+                            kind: MIRExpressionKind::TaggedUnionGet {
+                                value: Box::new(expr_value.clone()),
+                                variant_type: variant_type.clone(),
+                            },
+                        };
+                        let bind_region = MIRExpression {
+                            token_range: None,
+                            _type: variant_ref_type.clone(),
+                            kind: MIRExpressionKind::BindRegion {
+                                name: name.clone(),
+                                _type: variant_type.clone(),
+                                initial_region: Box::new(variant_region),
+                                adopting: true,
+                            },
+                        };
+
+                        env.push_scope(false, false);
+                        env.function.set_scope_anchor(body);
+                        env.symbols.insert_value(
+                            name.clone(),
+                            MIRExpression {
+                                token_range: None,
+                                kind: MIRExpressionKind::Variable(name.clone()),
+                                _type: variant_ref_type,
+                            },
+                            Some(SymbolValueOrigin::Local),
+                        );
+                        if env.symbols.is_nocopy(variant_type) {
+                            env.function
+                                .track_binding(name.as_string(), env.symbols.is_nodrop(variant_type));
+                        }
+
+                        let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
+                        env.pop_scope()?;
+
+                        MIRExpression {
+                            token_range: None,
+                            _type: MIRType::unit(),
+                            kind: MIRExpressionKind::Block {
+                                statements: vec![bind_region, body_expr],
+                            },
+                        }
+                    } else {
+                        // Typecheck the body with the borrowed variant value bound.
+                        env.symbols.push_scope();
+                        env.symbols.insert_value(
+                            name.clone(),
+                            variant_value_expr,
+                            Some(SymbolValueOrigin::Local),
+                        );
+                        let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
+                        env.symbols.pop_scope();
+                        body_expr
+                    };
                     if expr_may_fall_through(&body_expr) {
                         env.function.enqueue_scope_arrow(
                             &ScopeExitTarget {
@@ -228,6 +285,7 @@ pub fn typecheck_match(
                 result_arms.push((Box::new(pattern_expr), Box::new(body_expr)));
             }
 
+            match_is_exhaustive = matched_variants.len() == variants.len();
             result_arms
         }
 
@@ -261,7 +319,7 @@ pub fn typecheck_match(
         None => None,
     };
 
-    if default.is_none() {
+    if default.is_none() && !match_is_exhaustive {
         env.function.enqueue_scope_arrow(
             &ScopeExitTarget {
                 target_scope: join_scope_idx,
@@ -281,6 +339,7 @@ pub fn typecheck_match(
             condition: Box::new(expr_value),
             arms: match_arms,
             default: default_body,
+            exhaustive: match_is_exhaustive || default.is_some(),
         },
     ))
 }

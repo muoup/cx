@@ -45,7 +45,6 @@ pub(crate) fn typecheck_type_constructor_expr(
     let allocation = TypecheckResult::new_base(
         union_type.clone(),
         MIRExpressionKind::RegionCreate {
-            name: None,
             _type: union_type.clone(),
             initial_value: None,
         },

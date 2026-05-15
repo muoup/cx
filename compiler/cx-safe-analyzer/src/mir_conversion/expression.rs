@@ -56,7 +56,6 @@ pub fn convert_expression(
         }
 
         MIRExpressionKind::RegionCreate {
-            name,
             _type,
             initial_value,
         } => {
@@ -65,32 +64,7 @@ pub fn convert_expression(
                 .map(|expr| convert_expression(env, expr))
                 .transpose()?;
 
-            let mut operation = CVMOperation::Unsafe;
-            if let Some(name) = name {
-                let location = MemoryLocation::Stack {
-                    name: name.as_string(),
-                    depth: env.query_variable(name).map(|v| v.depth + 1).unwrap_or(0),
-                };
-
-                let known_value = initial_node.as_ref().and_then(|node| {
-                    if node._type.get_operation().is_none() {
-                        Some(node.clone())
-                    } else {
-                        None
-                    }
-                });
-
-                env.insert_variable(
-                    name.clone(),
-                    FMIRType::pure(_type.clone()),
-                    location.clone(),
-                    known_value,
-                );
-                operation = CVMOperation::Access {
-                    reads: vec![],
-                    writes: vec![location],
-                };
-            }
+            let operation = CVMOperation::Unsafe;
 
             let allocation = FMIRNode {
                 token_range: None,
@@ -105,22 +79,52 @@ pub fn convert_expression(
                 return Ok(allocation);
             };
 
-            let pointer = if let Some(name) = name {
-                pointer_alias(name, mir_expr._type.clone())
-            } else {
-                allocation.clone()
-            };
-
             let store = FMIRNode {
                 token_range: None,
                 body: FMIRNodeBody::Store {
-                    pointer: FRc::new(pointer),
+                    pointer: FRc::new(allocation.clone()),
                     value: FRc::new(initial_value.clone()),
                 },
                 _type: monad_unit(operation),
             };
 
             Ok(then_node(allocation, store))
+        }
+
+        MIRExpressionKind::BindRegion {
+            name,
+            _type,
+            initial_region,
+            ..
+        } => {
+            let initial_node = convert_expression(env, initial_region)?;
+            let location = MemoryLocation::Stack {
+                name: name.as_string(),
+                depth: env.query_variable(name).map(|v| v.depth + 1).unwrap_or(0),
+            };
+            let known_value = if initial_node._type.get_operation().is_none() {
+                Some(initial_node.clone())
+            } else {
+                None
+            };
+
+            env.insert_variable(
+                name.clone(),
+                FMIRType::pure(_type.clone()),
+                location.clone(),
+                known_value,
+            );
+
+            let bind_effect = FMIRNode {
+                token_range: None,
+                body: FMIRNodeBody::Unit,
+                _type: monad_unit(CVMOperation::Access {
+                    reads: vec![],
+                    writes: vec![location],
+                }),
+            };
+
+            Ok(then_node(initial_node, bind_effect))
         }
 
         MIRExpressionKind::If {
@@ -156,6 +160,7 @@ pub fn convert_expression(
             condition,
             arms,
             default,
+            ..
         } => {
             let condition_node = convert_expression(env, condition)?;
             let default_node = default
@@ -422,7 +427,7 @@ pub fn convert_expression(
             })
         }
 
-        MIRExpressionKind::MemoryWrite { target, value } => {
+        MIRExpressionKind::RegionWrite { target, value } => {
             let target_node = convert_expression(env, target)?;
             let value_node = convert_expression(env, value)?;
             if let Some(name) = source_variable_name(target) {
@@ -457,12 +462,6 @@ pub fn convert_expression(
         }
 
         MIRExpressionKind::RegionMove { source } => convert_expression(env, source),
-
-        MIRExpressionKind::RegionAdopt { .. } => Ok(FMIRNode {
-            token_range: mir_expr.token_range.clone(),
-            _type: FMIRType::unsafe_effect(FMIRType::pure(mir_expr._type.clone())),
-            body: FMIRNodeBody::UnsafeBlock,
-        }),
 
         MIRExpressionKind::Typechange(inner) => {
             if inner._type.is_pointer() {

@@ -511,7 +511,6 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
         MIRExpressionKind::Typechange(inner) => lower_expression(builder, inner),
 
         MIRExpressionKind::RegionCreate {
-            name,
             _type,
             initial_value,
         } => {
@@ -520,14 +519,8 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             let result = if let Some(initial_value) = initial_value {
                 if bc_type.is_memory_resident() {
                     // OPTIMIZATION: The initial value expression returns a pointer to its buffer.
-                    // Alias that buffer as the variable's buffer - no allocation or copy needed.
-                    let bc_iv = lower_expression(builder, initial_value)?;
-
-                    if let Some(name) = name {
-                        builder.insert_symbol(name.clone(), bc_iv.clone());
-                    }
-
-                    return Ok(bc_iv);
+                    // Use that buffer directly as this anonymous region.
+                    lower_expression(builder, initial_value)?
                 } else {
                     // Primitive type - allocate and store the value
                     let alloc = builder.add_new_instruction(
@@ -562,15 +555,47 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                 )?
             };
 
-            // Symbol table insertion (for non-memory-resident with init, or no init cases)
-            if let Some(name) = name {
-                builder.insert_symbol(name.clone(), result.clone());
-            }
-
             Ok(result)
         }
 
-        MIRExpressionKind::MemoryWrite { target, value } => {
+        MIRExpressionKind::BindRegion {
+            name,
+            _type,
+            initial_region,
+            adopting,
+        } => {
+            let initial_value = lower_expression(builder, initial_region)?;
+            let bc_type = builder.convert_cx_type(_type);
+            let region = if *adopting
+                || bc_type.is_memory_resident()
+                || initial_region._type.is_memory_reference()
+            {
+                initial_value
+            } else {
+                let alloc = builder.add_new_instruction(
+                    LMIRInstructionKind::Allocate {
+                        alignment: bc_type.alignment(),
+                        _type: bc_type.clone(),
+                    },
+                    LMIRType::default_pointer(),
+                    true,
+                )?;
+                builder.add_new_instruction(
+                    LMIRInstructionKind::Store {
+                        memory: alloc.clone(),
+                        value: initial_value,
+                        _type: bc_type,
+                    },
+                    LMIRType::unit(),
+                    false,
+                )?;
+                alloc
+            };
+            builder.insert_symbol(name.clone(), region.clone());
+            Ok(region)
+        }
+
+        MIRExpressionKind::RegionWrite { target, value } => {
             if let Some(result) = lower_bitfield_write(builder, target, value)? {
                 return Ok(result);
             }
@@ -608,7 +633,6 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
         }
 
         MIRExpressionKind::RegionMove { source } => lower_expression(builder, source),
-        MIRExpressionKind::RegionAdopt { source } => lower_expression(builder, source),
 
         MIRExpressionKind::RegionDuplicate { source } => {
             lower_region_duplicate(builder, source, &expr._type)
@@ -804,7 +828,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
         MIRExpressionKind::TaggedUnionGet {
             value,
             variant_type,
-        } => lower_tagged_union_get(builder, value, variant_type),
+        } => lower_tagged_union_get(builder, value, variant_type, &expr._type),
 
         MIRExpressionKind::TaggedUnionSet {
             target,
@@ -864,7 +888,8 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             condition,
             arms,
             default,
-        } => lower_match(builder, condition, arms, default.as_deref()),
+            exhaustive,
+        } => lower_match(builder, condition, arms, default.as_deref(), *exhaustive),
     }
 }
 
