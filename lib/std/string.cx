@@ -23,7 +23,8 @@ string string::new() safe {
             @unsafe(exit(1));
         }
     }
-    
+
+    // Dummy return until `!` returns are supported
     return (string) {
         .data = NULL,
         .length = 0,
@@ -33,17 +34,13 @@ string string::new() safe {
 
 opt<string> string::try_new_string() safe {
     @unsafe {
-        string s;
-        
-        void* base_buffer = malloc(sizeof(string) + 16);
+        void* base_buffer = malloc(16);
 
         if (base_buffer == NULL) {
             return opt<string>::none();
         }
         
-        @leak(s);
-        
-        s = (string) {
+        string s = (string) {
             .data = base_buffer,
             .length = 0,
             .capacity = 16
@@ -56,23 +53,22 @@ opt<string> string::try_new_string() safe {
 
 void string::append(*this, const char* s) {
     u64 str_length = strlen(s);
-    this.length = str_length + this.length;
 
-    if (this.length >= this.capacity) {
+    while (this.length + str_length >= this.capacity) {
         this._realloc();
     }
 
     memcpy(this.data + this.length, s, str_length);
+    this.length = str_length + this.length;
 }
 
 void string::append_char(*this, char c) {
-    this.length++;
-
-    if (this.length >= this.capacity) {
+    if (this.length + 1 >= this.capacity) {
         this._realloc();
     }
 
-    this.data[this.length - 1] = c;
+    this.data[this.length++] = c;
+    this.data[this.length] = 0;
 }
 
 void string::drop(this) safe {

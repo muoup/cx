@@ -608,7 +608,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             if bc_type.is_memory_resident() {
                 builder.add_new_instruction(
                     LMIRInstructionKind::Memcpy {
-                        dest: bc_target,
+                        dest: bc_target.clone(),
                         src: bc_value,
                         size: LMIRValue::IntImmediate {
                             val: bc_type.size() as i64,
@@ -618,18 +618,20 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                     },
                     LMIRType::unit(),
                     false,
-                )
+                )?;
             } else {
                 builder.add_new_instruction(
                     LMIRInstructionKind::Store {
-                        memory: bc_target,
+                        memory: bc_target.clone(),
                         value: bc_value,
                         _type: bc_type,
                     },
                     LMIRType::unit(),
                     false,
-                )
+                )?;
             }
+
+            Ok(bc_target)
         }
 
         MIRExpressionKind::RegionMove { source } => lower_expression(builder, source),

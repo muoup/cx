@@ -106,12 +106,24 @@ void parser::expect(*this, char expected) {
     }
 }
 
+void parser::expect_progress(*this, usize previous_pos) {
+    if (this.pos == previous_pos) {
+        printf("Parse error: parser made no progress at '%c'\n", this.peek());
+        exit(1);
+    }
+}
+
 char* parser::parse_token(*this) {
     this.skip_ws();
     usize start = this.pos;
 
     while (!is_delimiter(this.peek())) {
         this.advance();
+    }
+
+    if (this.pos == start) {
+        printf("Parse error: expected token, got '%c'\n", this.peek());
+        exit(1);
     }
 
     return copy_range(this.source, start, this.pos);
@@ -140,7 +152,9 @@ lisp_node parser::parse_program(*this) {
 
     this.skip_ws();
     while (this.peek() != '\0') {
+        usize previous_pos = this.pos;
         lisp_node expr = this.parse_expr();
+        this.expect_progress(previous_pos);
         body.push<lisp_node>(move expr);
         this.skip_ws();
     }
@@ -174,7 +188,9 @@ vector<lisp_node> parser::parse_expr_list_until_close(*this) {
 
     this.skip_ws();
     while (this.peek() != ')' && this.peek() != '\0') {
+        usize previous_pos = this.pos;
         lisp_node expr = this.parse_expr();
+        this.expect_progress(previous_pos);
         exprs.push<lisp_node>(move expr);
         this.skip_ws();
     }
@@ -189,7 +205,9 @@ vector<string> parser::parse_params(*this) {
     this.expect('(');
     this.skip_ws();
     while (this.peek() != ')' && this.peek() != '\0') {
+        usize previous_pos = this.pos;
         string param = this.parse_name();
+        this.expect_progress(previous_pos);
         params.push<string>(move param);
         this.skip_ws();
     }

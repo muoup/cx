@@ -1,0 +1,18 @@
+import std::file;
+import std::io;
+import std::optional;
+import std::string;
+
+#include <stdio.h>
+
+i32 main() {
+    file f = file::open("end-to-end/library/file_read_to_string.txt", "r").unwrap();
+    string s = f.read_to_string();
+
+    printf("%s", @unsafe((const char*)s.as_str()));
+
+    f.close();
+    s.drop();
+
+    return 0;
+}

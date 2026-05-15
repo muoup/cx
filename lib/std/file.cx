@@ -51,12 +51,12 @@ void file::read(*this, char* buffer, u64 buffer_size) {
 }
 
 string file::read_to_string(*this) {
-    char c;
-    string s;
+    int c;
+    string s = string::new();
 
     // TODO: Replace with faster buffering system
     while ((c = fgetc(this.handle)) != EOF) {
-        s->append_char(c);
+        s->append_char((char)c);
     }
 
     return move s;

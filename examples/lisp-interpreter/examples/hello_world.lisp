@@ -4,6 +4,6 @@
 (fndef double (x) 
     (add x x)) 
 
-(print-str \"CX Lisp says hello\") 
+(print-str "CX Lisp says hello") 
 (print-num (+ 1 2)) 
-(print-num (- (double 21) 2))")
+(print-num (- (double 21) 2))
