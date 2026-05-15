@@ -70,7 +70,7 @@ pub(crate) fn codegen_instruction(
             let fn_ref = get_func_ref(context, id, method_sig, params.as_slice())?;
             let inst = context.builder.ins().call(fn_ref, params.as_slice());
 
-            get_method_return(context, inst)
+            get_method_return(context, method_sig, inst)
         }
 
         LMIRInstructionKind::IndirectCall {
@@ -97,7 +97,7 @@ pub(crate) fn codegen_instruction(
                     .ins()
                     .call_indirect(sig_ref, val.as_value(), params.as_slice());
 
-            get_method_return(context, inst)
+            get_method_return(context, method_sig, inst)
         }
 
         LMIRInstructionKind::Return { value } => {

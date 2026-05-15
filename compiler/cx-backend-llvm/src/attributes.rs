@@ -15,10 +15,6 @@ pub(crate) fn attr_dereferenceable(context: &Context, bytes: u64) -> Attribute {
     context.create_enum_attribute(Attribute::get_named_enum_kind_id("dereferenceable"), bytes)
 }
 
-pub(crate) fn attr_byval(context: &Context, pointee: AnyTypeEnum) -> Attribute {
-    context.create_type_attribute(Attribute::get_named_enum_kind_id("byval"), pointee)
-}
-
 pub(crate) fn attr_sret(context: &Context, pointee: AnyTypeEnum) -> Attribute {
     context.create_type_attribute(Attribute::get_named_enum_kind_id("sret"), pointee)
 }

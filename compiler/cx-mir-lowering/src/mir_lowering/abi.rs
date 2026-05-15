@@ -1,22 +1,19 @@
+use super::types::convert_type;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRABISlot, LMIRFunctionSignature, LMIRParameter, LMIRParameterABI, LMIRReturnABI};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LMIRABIMode {
-    Internal,
-    C,
-}
+use cx_mir::mir::data::{MIRParameter, MIRType, MIRTypeContext};
 
 pub(crate) fn classify_signature(
-    return_type: LMIRType,
-    params: Vec<LMIRParameter>,
+    return_type: &MIRType,
+    params: &[MIRParameter],
     var_args: bool,
-    mode: LMIRABIMode,
+    definitions: &MIRTypeContext,
 ) -> LMIRFunctionSignature {
-    let return_abi = classify_return(return_type.clone(), mode);
+    let return_type = convert_type(return_type, definitions);
+    let return_abi = classify_return(return_type.clone());
     let params = params
-        .into_iter()
-        .map(|param| classify_param(param, mode))
+        .iter()
+        .map(|param| classify_param(param, definitions))
         .collect();
 
     LMIRFunctionSignature {
@@ -27,7 +24,7 @@ pub(crate) fn classify_signature(
     }
 }
 
-fn classify_return(return_type: LMIRType, mode: LMIRABIMode) -> LMIRReturnABI {
+fn classify_return(return_type: LMIRType) -> LMIRReturnABI {
     if return_type.is_void() {
         return LMIRReturnABI::Void;
     }
@@ -41,50 +38,37 @@ fn classify_return(return_type: LMIRType, mode: LMIRABIMode) -> LMIRReturnABI {
         };
     }
 
-    if mode == LMIRABIMode::C {
-        if let Some(slots) = direct_aggregate_slots(&return_type) {
-            return LMIRReturnABI::Direct { slots };
-        }
+    if let Some(slots) = direct_aggregate_slots(&return_type) {
+        return LMIRReturnABI::Direct { slots };
     }
 
     LMIRReturnABI::IndirectSret {
         alignment: return_type.alignment(),
-        returns_pointer: mode == LMIRABIMode::Internal,
     }
 }
 
-fn classify_param(mut param: LMIRParameter, mode: LMIRABIMode) -> LMIRParameter {
-    param.abi = if !param._type.is_memory_resident() {
+fn classify_param(param: &MIRParameter, definitions: &MIRTypeContext) -> LMIRParameter {
+    let _type = convert_type(&param._type, definitions);
+    let abi = if !_type.is_memory_resident() {
         LMIRParameterABI::Direct {
             slots: vec![LMIRABISlot {
                 offset: 0,
-                _type: param._type.clone(),
+                _type: _type.clone(),
             }],
         }
-    } else if mode == LMIRABIMode::C {
-        if let Some(slots) = direct_aggregate_slots(&param._type) {
-            LMIRParameterABI::Direct { slots }
-        } else {
-            LMIRParameterABI::Indirect {
-                alignment: param._type.alignment(),
-                byval: true,
-            }
-        }
-    } else if param._type.is_structure() {
-        LMIRParameterABI::Indirect {
-            alignment: param._type.alignment(),
-            byval: false,
-        }
+    } else if let Some(slots) = direct_aggregate_slots(&_type) {
+        LMIRParameterABI::Direct { slots }
     } else {
-        LMIRParameterABI::Direct {
-            slots: vec![LMIRABISlot {
-                offset: 0,
-                _type: param._type.clone(),
-            }],
+        LMIRParameterABI::Indirect {
+            alignment: _type.alignment(),
         }
     };
 
-    param
+    LMIRParameter {
+        name: param.name.clone(),
+        _type,
+        abi,
+    }
 }
 
 fn integer_slot_type(size: usize) -> Option<LMIRType> {

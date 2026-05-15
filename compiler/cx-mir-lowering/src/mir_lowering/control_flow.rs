@@ -436,17 +436,8 @@ pub fn lower_return(
             )?;
         }
 
-        let return_value =
-            if signature.return_type.is_void() || !signature.return_abi.returns_pointer() {
-                None
-            } else {
-                Some(return_buffer)
-            };
-
         builder.add_new_instruction(
-            LMIRInstructionKind::Return {
-                value: return_value,
-            },
+            LMIRInstructionKind::Return { value: None },
             LMIRType::unit(),
             false,
         )

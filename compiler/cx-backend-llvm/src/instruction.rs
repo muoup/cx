@@ -1,11 +1,11 @@
 use crate::arithmetic::{generate_int_binop, generate_ptr_binop};
-use crate::attributes::{attr_byval, attr_noundef, attr_sret};
+use crate::attributes::{attr_noundef, attr_sret};
 use crate::routines::get_function;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_signature, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{
     LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind,
-    LMIRIntUnOp, LMIRParameterABI, LMIRReturnABI,
+    LMIRIntUnOp, LMIRReturnABI,
 };
 use cx_util::log_error;
 use inkwell::AddressSpace;
@@ -37,12 +37,13 @@ pub(crate) fn generate_instruction<'a, 'b>(
         LMIRInstructionKind::Alias { value } => function_state.get_value(value)?,
 
         LMIRInstructionKind::Allocate { _type, alignment } => {
+            let storage_type = global_state
+                .context
+                .i8_type()
+                .array_type(_type.size().max(1) as u32);
             let inst = function_state
                 .builder
-                .build_alloca(
-                    any_to_basic_type(bc_llvm_type(global_state.context, _type)?)?,
-                    inst_num().as_str(),
-                )
+                .build_alloca(storage_type, inst_num().as_str())
                 .unwrap()
                 .as_any_value_enum();
 
@@ -810,31 +811,12 @@ fn apply_call_abi_attributes<'a>(
     call: &inkwell::values::CallSiteValue<'a>,
     method_sig: &cx_lmir::LMIRFunctionSignature,
 ) -> Option<()> {
-    let mut param_index = 0usize;
-    if let LMIRReturnABI::IndirectSret {
-        alignment: _,
-        returns_pointer: false,
-    } = &method_sig.return_abi
-    {
+    if let LMIRReturnABI::IndirectSret { alignment: _ } = &method_sig.return_abi {
         let pointee = bc_llvm_type(global_state.context, &method_sig.return_type)?;
         call.add_attribute(
-            AttributeLoc::Param(param_index as u32),
+            AttributeLoc::Param(0),
             attr_sret(global_state.context, pointee),
         );
-    }
-    if method_sig.return_abi.has_indirect_return_param() {
-        param_index += 1;
-    }
-
-    for param in &method_sig.params {
-        if let LMIRParameterABI::Indirect { byval: true, .. } = &param.abi {
-            let pointee = bc_llvm_type(global_state.context, &param._type)?;
-            call.add_attribute(
-                AttributeLoc::Param(param_index as u32),
-                attr_byval(global_state.context, pointee),
-            );
-        }
-        param_index += param.abi.slot_count();
     }
     Some(())
 }

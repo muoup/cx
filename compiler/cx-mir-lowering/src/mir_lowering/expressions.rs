@@ -17,7 +17,7 @@ use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::builder::LMIRBuilder;
 
-use super::abi::{classify_signature, LMIRABIMode};
+use super::abi::classify_signature;
 use super::binary_ops::{lower_binary_op, lower_unary_op};
 use super::coercion::lower_type_conversion;
 use super::control_flow::{
@@ -950,14 +950,7 @@ fn lower_call(
     let instruction_return_type = match &call_signature.return_abi {
         cx_lmir::LMIRReturnABI::Void => LMIRType::unit(),
         cx_lmir::LMIRReturnABI::Direct { .. } => return_type.clone(),
-        cx_lmir::LMIRReturnABI::IndirectSret {
-            returns_pointer: true,
-            ..
-        } => LMIRType::default_pointer(),
-        cx_lmir::LMIRReturnABI::IndirectSret {
-            returns_pointer: false,
-            ..
-        } => LMIRType::unit(),
+        cx_lmir::LMIRReturnABI::IndirectSret { .. } => LMIRType::unit(),
     };
 
     let value = if let LMIRValue::FunctionRef(func) = &fn_val {
@@ -1046,22 +1039,11 @@ fn lower_call_signature(
         }
     }
 
-    let return_type = builder.convert_cx_type(&semantic_signature.return_type);
-    let params = semantic_signature
-        .params
-        .iter()
-        .map(|param| cx_lmir::LMIRParameter {
-            name: param.name.clone(),
-            _type: builder.convert_cx_type(&param._type),
-            abi: LMIRParameterABI::Direct { slots: vec![] },
-        })
-        .collect();
-
     classify_signature(
-        return_type,
-        params,
+        &semantic_signature.return_type,
+        &semantic_signature.params,
         semantic_signature.var_args,
-        LMIRABIMode::Internal,
+        &builder.type_definitions,
     )
 }
 
@@ -1088,10 +1070,7 @@ fn lower_call_argument(
                 Ok(vec![lower_expression(builder, arg)?])
             }
         }
-        LMIRParameterABI::Indirect {
-            byval: _,
-            alignment,
-        } => {
+        LMIRParameterABI::Indirect { alignment } => {
             if let MIRExpressionKind::ByValueArgument { source } = &arg.kind {
                 return Ok(vec![lower_byval_copy_argument(
                     builder,

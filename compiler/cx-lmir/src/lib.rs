@@ -89,7 +89,7 @@ pub struct LMIRParameter {
 #[derive(Debug, Clone)]
 pub enum LMIRParameterABI {
     Direct { slots: Vec<LMIRABISlot> },
-    Indirect { byval: bool, alignment: u8 },
+    Indirect { alignment: u8 },
 }
 
 #[derive(Debug, Clone)]
@@ -103,13 +103,8 @@ pub struct LMIRFunctionSignature {
 #[derive(Debug, Clone)]
 pub enum LMIRReturnABI {
     Void,
-    Direct {
-        slots: Vec<LMIRABISlot>,
-    },
-    IndirectSret {
-        alignment: u8,
-        returns_pointer: bool,
-    },
+    Direct { slots: Vec<LMIRABISlot> },
+    IndirectSret { alignment: u8 },
 }
 
 #[derive(Debug, Clone)]
@@ -130,15 +125,6 @@ impl LMIRParameterABI {
 impl LMIRReturnABI {
     pub fn has_indirect_return_param(&self) -> bool {
         matches!(self, LMIRReturnABI::IndirectSret { .. })
-    }
-
-    pub fn returns_pointer(&self) -> bool {
-        match self {
-            LMIRReturnABI::IndirectSret {
-                returns_pointer, ..
-            } => *returns_pointer,
-            _ => false,
-        }
     }
 }
 

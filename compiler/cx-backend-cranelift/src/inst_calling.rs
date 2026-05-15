@@ -21,31 +21,14 @@ pub(crate) fn prepare_function_sig(
                 sig.returns.push(get_cranelift_abi_type(&slot._type)?);
             }
         }
-        LMIRReturnABI::IndirectSret {
-            returns_pointer: true,
-            ..
-        } => sig.returns.push(ir::AbiParam::new(
-            object_module.target_config().pointer_type(),
-        )),
-        LMIRReturnABI::IndirectSret {
-            returns_pointer: false,
-            ..
-        } => {}
+        LMIRReturnABI::IndirectSret { .. } => {}
     }
 
-    if let LMIRReturnABI::IndirectSret {
-        returns_pointer, ..
-    } = &signature.return_abi
-    {
-        let param = if *returns_pointer {
-            ir::AbiParam::new(object_module.target_config().pointer_type())
-        } else {
-            ir::AbiParam::special(
-                object_module.target_config().pointer_type(),
-                ArgumentPurpose::StructReturn,
-            )
-        };
-        sig.params.push(param);
+    if let LMIRReturnABI::IndirectSret { .. } = &signature.return_abi {
+        sig.params.push(ir::AbiParam::special(
+            object_module.target_config().pointer_type(),
+            ArgumentPurpose::StructReturn,
+        ));
     }
 
     for param in signature.params.iter() {
@@ -55,13 +38,7 @@ pub(crate) fn prepare_function_sig(
                     sig.params.push(get_cranelift_abi_type(&slot._type)?);
                 }
             }
-            LMIRParameterABI::Indirect { byval: true, .. } => {
-                sig.params.push(ir::AbiParam::special(
-                    object_module.target_config().pointer_type(),
-                    ArgumentPurpose::StructArgument(param._type.size() as u32),
-                ))
-            }
-            LMIRParameterABI::Indirect { byval: false, .. } => sig.params.push(ir::AbiParam::new(
+            LMIRParameterABI::Indirect { .. } => sig.params.push(ir::AbiParam::new(
                 object_module.target_config().pointer_type(),
             )),
         }
@@ -99,12 +76,16 @@ pub(crate) fn prepare_parameters<'a>(
     Ok(params)
 }
 
-pub(crate) fn get_method_return(context: &FunctionState, inst: Inst) -> CodegenValue {
+pub(crate) fn get_method_return(
+    context: &FunctionState,
+    signature: &LMIRFunctionSignature,
+    inst: Inst,
+) -> CodegenValue {
     let results = context.builder.inst_results(inst);
     match results {
         [] => CodegenValue::NULL,
         [value] => CodegenValue::Value(*value),
-        values => match &context.signature.return_abi {
+        values => match &signature.return_abi {
             LMIRReturnABI::Direct { slots } => CodegenValue::AggregateSlots(
                 slots.iter().cloned().zip(values.iter().copied()).collect(),
             ),

@@ -1,8 +1,8 @@
 use crate::builder::LMIRBuilder;
-use crate::mir_lowering::abi::{classify_signature, LMIRABIMode};
+use crate::mir_lowering::abi::classify_signature;
 use cx_ast::data::CXLinkageMode;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
-use cx_lmir::{LMIRFunctionPrototype, LMIRParameter, LMIRParameterABI, LinkageType};
+use cx_lmir::{LMIRFunctionPrototype, LinkageType};
 use cx_mir::mir::data::{
     MIRFloatType, MIRFunctionPrototype, MIRIntegerType, MIRType, MIRTypeContext, MIRTypeKind,
 };
@@ -37,7 +37,7 @@ impl LMIRBuilder {
     }
 }
 
-fn convert_type(cx_type: &MIRType, definitions: &MIRTypeContext) -> LMIRType {
+pub(crate) fn convert_type(cx_type: &MIRType, definitions: &MIRTypeContext) -> LMIRType {
     LMIRType {
         kind: convert_type_kind(cx_type, definitions),
     }
@@ -57,22 +57,12 @@ pub(crate) fn convert_cx_prototype(
     cx_proto: &MIRFunctionPrototype,
     definitions: &MIRTypeContext,
 ) -> LMIRFunctionPrototype {
-    let raw_return_type = convert_type(&cx_proto.return_type, definitions);
-    let raw_params = cx_proto
-        .params
-        .iter()
-        .map(|param| LMIRParameter {
-            name: param.name.clone(),
-            _type: convert_type(&param._type, definitions),
-            abi: LMIRParameterABI::Direct { slots: vec![] },
-        })
-        .collect::<Vec<_>>();
-    let abi_mode = if cx_proto.linkage == CXLinkageMode::Extern {
-        LMIRABIMode::C
-    } else {
-        LMIRABIMode::Internal
-    };
-    let signature = classify_signature(raw_return_type, raw_params, cx_proto.var_args, abi_mode);
+    let signature = classify_signature(
+        &cx_proto.return_type,
+        &cx_proto.params,
+        cx_proto.var_args,
+        definitions,
+    );
 
     LMIRFunctionPrototype {
         name: cx_proto.name.to_string(),

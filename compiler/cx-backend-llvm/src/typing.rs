@@ -80,9 +80,11 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &LMIRType) -> Option
         }
 
         LMIRTypeKind::Struct { name, fields } => {
-            if let Some(_type) = context.get_struct_type(name.as_str()) {
-                return Some(_type.as_any_type_enum());
-            }
+            let struct_name = if name.is_empty() {
+                anonymous_struct_name()
+            } else {
+                name.clone()
+            };
 
             let type_s = fields
                 .iter()
@@ -93,11 +95,9 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &LMIRType) -> Option
                 })
                 .collect::<Option<Vec<_>>>()?;
 
-            let struct_name = if name.is_empty() {
-                anonymous_struct_name()
-            } else {
-                name.clone()
-            };
+            if let Some(_type) = context.get_struct_type(struct_name.as_str()) {
+                return Some(_type.as_any_type_enum());
+            }
 
             let struct_def = context.opaque_struct_type(struct_name.as_str());
             struct_def.set_body(type_s.as_slice(), false);
@@ -158,17 +158,7 @@ pub(crate) fn bc_llvm_signature<'a>(
                 .struct_type(fields.as_slice(), false)
                 .as_any_type_enum()
         }
-        LMIRReturnABI::IndirectSret {
-            returns_pointer: true,
-            ..
-        } => state
-            .context
-            .ptr_type(AddressSpace::from(0))
-            .as_any_type_enum(),
-        LMIRReturnABI::IndirectSret {
-            returns_pointer: false,
-            ..
-        } => state.context.void_type().as_any_type_enum(),
+        LMIRReturnABI::IndirectSret { .. } => state.context.void_type().as_any_type_enum(),
     };
 
     Some(match return_type {

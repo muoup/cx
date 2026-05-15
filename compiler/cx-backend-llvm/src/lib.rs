@@ -3,7 +3,7 @@ use crate::typing::{bc_llvm_prototype, bc_llvm_type, convert_linkage};
 use cx_lmir::types::{LMIRType, LMIRTypeKind};
 use cx_lmir::{
     ElementID, LMIRABISlot, LMIRBasicBlock, LMIRBlockID, LMIRFunction, LMIRFunctionMap,
-    LMIRFunctionPrototype, LMIRParameterABI, LMIRReturnABI, LMIRUnit, LMIRValue,
+    LMIRFunctionPrototype, LMIRReturnABI, LMIRUnit, LMIRValue,
 };
 use cx_util::CXResult;
 use inkwell::attributes::AttributeLoc;
@@ -324,33 +324,13 @@ fn cache_prototype<'a>(
             });
     }
 
-    let mut param_index = 0usize;
-    if let LMIRReturnABI::IndirectSret {
-        alignment: _,
-        returns_pointer: false,
-    } = &signature.return_abi
-    {
+    if let LMIRReturnABI::IndirectSret { alignment: _ } = &signature.return_abi {
         let pointee = bc_llvm_type(global_state.context, &signature.return_type)?;
         func.add_attribute(
-            AttributeLoc::Param(param_index as u32),
+            AttributeLoc::Param(0),
             attr_sret(global_state.context, pointee),
         );
     }
-    if signature.return_abi.has_indirect_return_param() {
-        param_index += 1;
-    }
-
-    for param in &signature.params {
-        if let LMIRParameterABI::Indirect { byval: true, .. } = &param.abi {
-            let pointee = bc_llvm_type(global_state.context, &param._type)?;
-            func.add_attribute(
-                AttributeLoc::Param(param_index as u32),
-                attr_byval(global_state.context, pointee),
-            );
-        }
-        param_index += param.abi.slot_count();
-    }
-
     global_state
         .functions
         .insert(prototype.name.to_string(), func.get_type());
