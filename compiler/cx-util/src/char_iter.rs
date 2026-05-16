@@ -101,4 +101,13 @@ impl CharIter<'_> {
     pub fn has_next(&self) -> bool {
         self.source.len() > self.current_iter
     }
+
+    pub fn next_is<T>(&self, condition: T) -> bool 
+        where T: Fn(&u8) -> bool
+    {
+        self.source
+            .as_bytes()
+            .get(self.current_iter + 1)
+            .is_some_and(|c| condition(c))
+    }
 }

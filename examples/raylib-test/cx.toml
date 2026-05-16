@@ -13,7 +13,6 @@ native_objects = [
   "raylib/lib/raylib.o",
 ]
 include_dirs = [
-  "include",
   "raylib/include",
 ]
 link = [

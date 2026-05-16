@@ -165,7 +165,7 @@ pub enum TokenKind {
     CompilerIdentifier(String),
     StringLiteral(String),
     IntLiteral(i64),
-    FloatLiteral(f64),
+    FloatLiteral(f64, u8),
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]

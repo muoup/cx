@@ -263,7 +263,7 @@ impl LanguageServer for Backend {
                 | TokenKind::Intrinsic(_)
                 | TokenKind::CompilerIdentifier(_) => KEYWORD_IDX,
 
-                TokenKind::IntLiteral(_) | TokenKind::FloatLiteral(_) => NUMBER_IDX,
+                TokenKind::IntLiteral(_) | TokenKind::FloatLiteral(_, _) => NUMBER_IDX,
 
                 TokenKind::StringLiteral(_) => STRING_IDX,
 

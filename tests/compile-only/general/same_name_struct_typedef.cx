@@ -1,0 +1,8 @@
+typedef struct FilePathList {
+    unsigned int capacity;
+    unsigned int count;
+    char **paths;
+} FilePathList;
+
+FilePathList load_files(void);
+void unload_files(FilePathList files);

@@ -21,6 +21,13 @@ pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
         },
     ),
     (
+        "_Bool",
+        MIRTypeKind::Integer {
+            signed: false,
+            _type: MIRIntegerType::I1,
+        },
+    ),
+    (
         "i8",
         MIRTypeKind::Integer {
             signed: true,

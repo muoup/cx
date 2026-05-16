@@ -47,8 +47,11 @@ fn parse_type_attributes(data: &mut ParserData, kind_name: &str) -> CXResult<CXS
     Ok(attributes)
 }
 
-fn parse_aggregate_field(data: &mut ParserData) -> CXResult<CXField> {
-    let (name, _type, _) = parse_initializer(data)?;
+fn aggregate_field_from_decl(
+    data: &mut ParserData,
+    name: Option<CXIdent>,
+    _type: CXType,
+) -> CXResult<CXField> {
 
     if try_next!(data.tokens, punctuator!(Colon)) {
         let width = match next_kind!(data.tokens)? {
@@ -77,6 +80,23 @@ fn parse_aggregate_field(data: &mut ParserData) -> CXResult<CXField> {
     };
 
     Ok(CXField::standard(name.to_string(), _type))
+}
+
+fn parse_aggregate_fields(data: &mut ParserData) -> CXResult<Vec<CXField>> {
+    let prefix_specs = parse_decl_specifiers(&mut data.tokens);
+    let type_base = parse_type_base(data)?.add_specifier(prefix_specs.qualifiers);
+    let mut fields = Vec::new();
+
+    loop {
+        let (name, _type) = parse_base_mods(data, type_base.clone())?;
+        fields.push(aggregate_field_from_decl(data, name, _type)?);
+
+        if !try_next!(data.tokens, operator!(Comma)) {
+            break;
+        }
+    }
+
+    Ok(fields)
 }
 
 fn predeclaration_type(
@@ -139,7 +159,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
     let mut fields = Vec::new();
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-        fields.push(parse_aggregate_field(data)?);
+        fields.extend(parse_aggregate_fields(data)?);
         assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
     }
 
@@ -296,7 +316,7 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXType> {
     let mut fields = Vec::new();
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-        fields.push(parse_aggregate_field(data)?);
+        fields.extend(parse_aggregate_fields(data)?);
         assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
     }
 

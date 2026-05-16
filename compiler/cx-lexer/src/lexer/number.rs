@@ -4,32 +4,23 @@ use cx_util::{CXResult, char_iter::CharIter};
 pub(crate) fn number(iter: &mut CharIter, file_origin: &str) -> CXResult<TokenKind> {
     let start_index = iter.current_iter;
 
+    if iter.peek() == Some('.') {
+        iter.next();
+        while matches!(iter.peek(), Some('0'..='9')) {
+            iter.next();
+        }
+
+        if matches!(iter.peek(), Some('e' | 'E')) && !consume_exponent(iter) {
+            consume_numeric_tail(iter);
+            return invalid_numeric_literal(iter, file_origin, start_index);
+        }
+
+        return parse_float_literal(iter, file_origin, start_index);
+    }
+
     if iter.peek() == Some('0') {
         iter.next();
         match iter.peek() {
-            Some('.') => {
-                iter.next();
-                while matches!(iter.peek(), Some('0'..='9')) {
-                    iter.next();
-                }
-
-                let num = &iter.source[start_index..iter.current_iter];
-                if is_identifier_continue(iter.peek()) {
-                    consume_numeric_tail(iter);
-                    return invalid_numeric_literal(iter, file_origin, start_index);
-                }
-
-                return match num.parse() {
-                    Ok(value) => Ok(TokenKind::FloatLiteral(value)),
-                    Err(_) => log_lexer_error!(
-                        file_origin,
-                        iter.source,
-                        start_index,
-                        iter.current_iter,
-                        "Invalid numeric literal: {num}"
-                    ),
-                };
-            }
             Some('x' | 'X') => {
                 iter.next();
                 return integer_with_radix(iter, file_origin, start_index, 16);
@@ -38,6 +29,7 @@ pub(crate) fn number(iter: &mut CharIter, file_origin: &str) -> CXResult<TokenKi
                 iter.next();
                 return integer_with_radix(iter, file_origin, start_index, 2);
             }
+            Some('.' | 'e' | 'E') => {}
             _ => {
                 iter.back();
                 return integer_with_radix(iter, file_origin, start_index, 8);
@@ -49,27 +41,25 @@ pub(crate) fn number(iter: &mut CharIter, file_origin: &str) -> CXResult<TokenKi
         iter.next();
     }
 
+    let mut is_float = false;
     if iter.peek() == Some('.') {
+        is_float = true;
         iter.next();
         while matches!(iter.peek(), Some('0'..='9')) {
             iter.next();
         }
+    }
 
-        let num = &iter.source[start_index..iter.current_iter];
-        if is_identifier_continue(iter.peek()) {
+    if matches!(iter.peek(), Some('e' | 'E')) {
+        is_float = true;
+        if !consume_exponent(iter) {
             consume_numeric_tail(iter);
             return invalid_numeric_literal(iter, file_origin, start_index);
         }
-        match num.parse() {
-            Ok(value) => Ok(TokenKind::FloatLiteral(value)),
-            Err(_) => log_lexer_error!(
-                file_origin,
-                iter.source,
-                start_index,
-                iter.current_iter,
-                "Invalid numeric literal: {num}"
-            ),
-        }
+    }
+
+    if is_float {
+        parse_float_literal(iter, file_origin, start_index)
     } else {
         let number_end = iter.current_iter;
         consume_integer_suffix(iter);
@@ -108,6 +98,31 @@ fn integer_with_radix(
     parse_integer_literal(iter, file_origin, digit_start, number_end, radix)
 }
 
+fn parse_float_literal(
+    iter: &mut CharIter,
+    file_origin: &str,
+    start_index: usize,
+) -> CXResult<TokenKind> {
+    let number_end = iter.current_iter;
+    let bytes = consume_float_suffix(iter);
+    if is_identifier_continue(iter.peek()) {
+        consume_numeric_tail(iter);
+        return invalid_numeric_literal(iter, file_origin, start_index);
+    }
+
+    let num = &iter.source[start_index..number_end];
+    match num.parse() {
+        Ok(value) => Ok(TokenKind::FloatLiteral(value, bytes)),
+        Err(_) => log_lexer_error!(
+            file_origin,
+            iter.source,
+            start_index,
+            iter.current_iter,
+            "Invalid numeric literal: {num}"
+        ),
+    }
+}
+
 fn parse_integer_literal(
     iter: &CharIter,
     file_origin: &str,
@@ -126,6 +141,34 @@ fn parse_integer_literal(
             "Invalid numeric literal: {}",
             &iter.source[digits_start..iter.current_iter]
         ),
+    }
+}
+
+fn consume_exponent(iter: &mut CharIter) -> bool {
+    iter.next();
+    if matches!(iter.peek(), Some('+' | '-')) {
+        iter.next();
+    }
+
+    let digit_start = iter.current_iter;
+    while matches!(iter.peek(), Some('0'..='9')) {
+        iter.next();
+    }
+
+    digit_start != iter.current_iter
+}
+
+fn consume_float_suffix(iter: &mut CharIter) -> u8 {
+    match iter.peek() {
+        Some('f' | 'F') => {
+            iter.next();
+            4
+        }
+        Some('l' | 'L') => {
+            iter.next();
+            8
+        }
+        _ => 8,
     }
 }
 

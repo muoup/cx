@@ -394,7 +394,13 @@ fn token_paste_text(kind: &TokenKind) -> String {
         TokenKind::Identifier(name) => name.clone(),
         TokenKind::CompilerIdentifier(name) => format!("@{name}"),
         TokenKind::IntLiteral(value) => value.to_string(),
-        TokenKind::FloatLiteral(value) => value.to_string(),
+        TokenKind::FloatLiteral(value, bytes) => {
+            if *bytes == 4 {
+                format!("{value}f")
+            } else {
+                value.to_string()
+            }
+        }
         TokenKind::StringLiteral(value) => format!("\"{value}\""),
         _ => kind.to_string(),
     }

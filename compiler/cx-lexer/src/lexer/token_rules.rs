@@ -12,6 +12,7 @@ pub(crate) fn literal_or_prefixed_token(
 ) -> CXResult<Option<TokenKind>> {
     match iter.peek() {
         Some('0'..='9') => number(iter, file_origin).map(Some),
+        Some('.') if iter.next_is(u8::is_ascii_digit) => number(iter, file_origin).map(Some),
         Some('"') => Ok(string(iter)),
         Some('\'') => char_literal(iter, file_origin).map(Some),
         _ => Ok(None),

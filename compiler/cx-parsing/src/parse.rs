@@ -128,6 +128,28 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
 
     assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
 
+    if let CXTypeKind::Identifier {
+        name: type_name, ..
+    } = &_type.kind
+    {
+        let existing_complete_aggregate = data
+            .ast
+            .type_data
+            .get_standard(&name.as_string())
+            .is_some_and(|existing| {
+                matches!(
+                    existing.resource.kind,
+                    CXTypeKind::Structured { .. }
+                        | CXTypeKind::Union { .. }
+                        | CXTypeKind::TaggedUnion { .. }
+                )
+            });
+
+        if type_name == &name && existing_complete_aggregate {
+            return Ok(());
+        }
+    }
+
     data.add_type(name.as_string(), _type, template_prototype);
     Ok(())
 }
