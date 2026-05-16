@@ -1,176 +1,91 @@
-use crate::unified_lexer::Lexer;
-use cx_pipeline_data::directories::stdlib_directory;
-use cx_util::char_iter::CharIter;
+pub mod builtins;
+pub mod conditionals;
+pub mod define;
+pub mod expr;
+pub mod includes;
 
-pub(crate) fn generate_lexable_slice<'a>(lexer: &mut Lexer<'a>) -> Option<CharIter<'a>> {
-    lexer.char_iter.skip_whitespace();
+use cx_util::CXResult;
 
-    // find whichever comes first: end of line or start of comment
-    let start = lexer.char_iter.current_iter;
+use crate::{
+    context::LexingContext,
+    lexer::scanner::LexTransition,
+    preprocessor::{
+        conditionals::{
+            handle_elif, handle_else, handle_endif, handle_error, handle_if, handle_ifdef,
+        },
+        define::{handle_define, handle_undef},
+        includes::{handle_include, handle_pragma},
+    },
+};
 
-    while let Some(c) = lexer.char_iter.next() {
-        match c {
-            '\n' => break,
-            '/' => {
-                if lexer.char_iter.peek() == Some('/') || lexer.char_iter.peek() == Some('*') {
-                    lexer.char_iter.back();
-                    break;
-                }
-            }
-            _ => (),
-        }
-    }
+pub(crate) struct Preprocessor;
 
-    if start == lexer.char_iter.current_iter {
-        return None;
-    }
+impl Preprocessor {
+    pub(crate) fn handle_directive(&self, context: &mut LexingContext) -> CXResult<LexTransition> {
+        let directive_start = context.current_frame().cursor;
+        let Some(directive) = context.current_frame_mut().next_word() else {
+            let frame = context.current_frame();
 
-    Some(CharIter::sub_iter(
-        &lexer.char_iter,
-        start,
-        &lexer.source[0..lexer.char_iter.current_iter],
-    ))
-}
+            return log_lexer_error!(
+                frame.file_path.as_path(),
+                &frame.source,
+                directive_start,
+                frame.cursor,
+                "Expected preprocessor directive"
+            );
+        };
 
-// returns true if a comment was handled, false otherwise
-pub(crate) fn handle_comment(lexer: &mut Lexer) -> bool {
-    assert_eq!(lexer.char_iter.peek(), Some('/'));
-    lexer.char_iter.next();
+        let mut directive = directive;
+        if directive == "#" {
+            let Some(name) = context.current_frame_mut().next_word() else {
+                let frame = context.current_frame();
 
-    match lexer.char_iter.peek() {
-        Some('/') => {
-            lexer.char_iter.next();
-            lexer.char_iter.skip_line();
-            true
-        }
-
-        Some('*') => {
-            lexer.char_iter.next();
-            while lexer.char_iter.has_next() {
-                if lexer.char_iter.peek() == Some('*') {
-                    lexer.char_iter.next();
-
-                    if lexer.char_iter.peek() == Some('/') {
-                        lexer.char_iter.next();
-                    }
-                } else {
-                    lexer.char_iter.next();
-                }
-            }
-
-            true
-        }
-
-        _ => {
-            lexer.char_iter.back();
-            false
-        }
-    }
-}
-
-pub(crate) fn handle_directive(lexer: &mut Lexer) {
-    match lexer.char_iter.next_word().unwrap() {
-        "#include" => {
-            let file_name = lexer.char_iter.next_word().unwrap();
-
-            let prefix = if file_name.starts_with("\"") && file_name.ends_with("\"") {
-                "".to_string()
-            } else if file_name.starts_with("<") && file_name.ends_with(">") {
-                stdlib_directory("libc/")
-            } else {
-                panic!("Invalid include statement: {file_name}");
+                return log_lexer_error!(
+                    frame.file_path.as_path(),
+                    &frame.source,
+                    directive_start,
+                    frame.cursor,
+                    "Expected preprocessor directive after '#'"
+                );
             };
-
-            let path = format!("{}{}", prefix, &file_name[1..file_name.len() - 1]);
-            let string = std::fs::read_to_string(path.as_str())
-                .unwrap_or_else(|_| panic!("Failed to read file: {path}"));
-
-            let tokens = lexer
-                .independent_lex(&string)
-                .unwrap_or_else(|| panic!("Failed to lex included file: {path}"));
-
-            lexer.tokens.extend(tokens);
+            directive.push_str(&name);
         }
+        let directive_end = context.current_frame().cursor;
 
-        "#define" => {
-            let name = lexer.char_iter.next_word().unwrap().to_string();
+        match directive.as_str() {
+            "#include" => handle_include(context, directive_start, directive_end),
+            "#define" => handle_define(context, directive_start, directive_end),
+            "#undef" => handle_undef(context),
+            "#ifdef" | "#ifndef" => {
+                handle_ifdef(context, &directive, directive_start, directive_end)
+            }
+            "#if" => handle_if(context, directive_start),
+            "#elif" => handle_elif(context, directive_start, directive_end),
+            "#else" => handle_else(context, directive_start, directive_end),
+            "#endif" => handle_endif(context, directive_start, directive_end),
+            "#pragma" => handle_pragma(context),
+            "#line" | "#warning" => {
+                context.skip_tail();
+                Ok(LexTransition::Continue)
+            }
+            "#error" => handle_error(context, directive_start, directive_end),
+            dir => {
+                if !context.current_frame().is_active() {
+                    context.skip_tail();
+                    return Ok(LexTransition::Continue);
+                }
 
-            lexer.char_iter.skip_whitespace();
-            let rest_of_line = lexer.char_iter.rest_of_line().to_string();
+                let frame = context.current_frame();
 
-            let tokens = lexer
-                .independent_lex(&rest_of_line)
-                .unwrap_or_else(|| panic!("Failed to lex macro definition for: {name}"));
-
-            lexer.macros.insert(name, tokens.into_boxed_slice());
+                log_lexer_error!(
+                    frame.file_path.as_path(),
+                    &frame.source,
+                    directive_start,
+                    directive_end,
+                    "Preprocessor directive '{}' is not yet implemented",
+                    dir
+                )
+            }
         }
-
-        dir => todo!("Preprocessor directive not implemented: {dir}"),
     }
 }
-
-// pub(crate) fn preprocess_line(preprocessor: &mut Preprocessor, mut string: &str) -> String {
-//     if string.contains("/*") {
-//         if string.contains("*/") {
-//             let pre = string.split_once("/*").unwrap().0;
-//             let post = string.split_once("*/").unwrap().1;
-//
-//             return format!("{}{}", preprocess_line(preprocessor, pre), preprocess_line(preprocessor, post));
-//         }
-//
-//         string = string.split_once("/*").unwrap().0;
-//         preprocessor.in_ml_comment = true;
-//     }
-//
-//     if preprocessor.in_ml_comment {
-//         if string.contains("*/") {
-//             string = string.rsplit_once("*/")
-//                 .unwrap()
-//                 .1;
-//             preprocessor.in_ml_comment = false;
-//         } else {
-//             return "".to_string();
-//         }
-//     }
-//
-//     if string.contains("//") {
-//         string = string.split("//").next().unwrap();
-//     }
-//
-//     if !string.trim_start().starts_with("#") {
-//         return handle_non_directive(preprocessor, string);
-//     }
-//
-//     let mut split = string.split_whitespace();
-//
-//     match split.next().unwrap() {
-//         "#include" => {
-//             let file_name = split.next().unwrap();
-//
-//             let prefix = if file_name.starts_with("\"") && file_name.ends_with("\"") {
-//                 "".to_string()
-//             } else if file_name.starts_with("<") && file_name.ends_with(">") {
-//                 format!("{}/libc/", libary_path_prefix())
-//             } else {
-//                 panic!("Invalid include statement: {file_name}");
-//             };
-//
-//             let path = format!("{}{}", prefix, &file_name[1.. file_name.len() - 1]);
-//             let string = std::fs::read_to_string(path.as_str())
-//                 .unwrap_or_else(|_| panic!("Failed to read file: {path}"));
-//
-//             string.lines()
-//                 .map(|line| preprocess_line(preprocessor, line))
-//                 .collect::<Vec<_>>()
-//                 .join("\n")
-//         },
-//         "#define" => {
-//             let token = split.next().unwrap();
-//             let value = split.collect::<Vec<_>>().join(" ");
-//
-//             preprocessor.defined_tokens.push((token.to_string(), value.to_string()));
-//             "".to_string()
-//         },
-//         dir => todo!("Preprocessor directive not implemented: {dir}")
-//     }
-// }

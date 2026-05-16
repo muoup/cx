@@ -323,12 +323,14 @@ version = "0.0.0"
 dependencies = [
  "cx-lmir",
  "cx-pipeline-data",
+ "cx-util",
 ]
 
 [[package]]
 name = "cx-lexer"
 version = "0.0.0"
 dependencies = [
+ "cx-log",
  "cx-pipeline-data",
  "cx-tokens",
  "cx-util",
@@ -345,8 +347,6 @@ dependencies = [
 name = "cx-log"
 version = "0.0.0"
 dependencies = [
- "cx-lexer",
- "cx-tokens",
  "cx-util",
 ]
 
@@ -432,6 +432,7 @@ dependencies = [
  "cx-lmir",
  "cx-mir",
  "cx-tokens",
+ "cx-util",
  "serde",
  "speedy",
  "toml",

@@ -22,20 +22,26 @@ pub(crate) fn child_nodes(node: &FMIRNode) -> Vec<&FMIRNode> {
             then_branch,
             else_branch,
         } => vec![condition, then_branch, else_branch],
-        FMIRNodeBody::Match { condition, arms, default } => {
+        FMIRNodeBody::Match {
+            condition,
+            arms,
+            default,
+        } => {
             let mut children = vec![condition.as_ref()];
             for (val, arm) in arms {
-                children.push(&val);
-                children.push(&arm);
+                children.push(val);
+                children.push(arm);
             }
-            children.push(&default);
+            children.push(default);
             children
         }
-        FMIRNodeBody::AggregateInitialization { fields } => fields.iter().map(|(_, value)| value.as_ref()).collect(),
+        FMIRNodeBody::AggregateInitialization { fields } => {
+            fields.iter().map(|(_, value)| value.as_ref()).collect()
+        }
         FMIRNodeBody::CLoop { condition, body } => vec![condition, body],
         FMIRNodeBody::CReturn { value } => vec![value],
         FMIRNodeBody::Transmute { value, .. } => vec![value],
-        
+
         FMIRNodeBody::IntrinsicFunction(_)
         | FMIRNodeBody::DeclareAccess { .. }
         | FMIRNodeBody::Pure

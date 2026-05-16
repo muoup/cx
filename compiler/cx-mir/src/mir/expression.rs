@@ -2,7 +2,8 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 
-use crate::mir::types::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
+use crate::mir::data::MIRFunctionPrototype;
+use crate::mir::r#type::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
 
 #[derive(Clone, Debug, Default, Readable, Writable)]
 pub struct MIRFunctionContract {
@@ -16,6 +17,36 @@ pub struct MIRExpression {
     pub kind: MIRExpressionKind,
     pub _type: MIRType,
     pub token_range: Option<TokenRange>,
+}
+
+#[derive(Clone, Debug, Readable, Writable)]
+pub enum MIRPureExpression {
+    IntegerLiteral(i64, MIRIntegerType, bool),
+    FunctionReference(MIRFunctionPrototype),
+}
+
+impl MIRPureExpression {
+    pub fn as_value(&self) -> MIRExpression {
+        match self {
+            Self::IntegerLiteral(value, integer_type, signed) => MIRExpression {
+                token_range: None,
+                kind: MIRExpressionKind::IntLiteral(*value, *integer_type, *signed),
+                _type: MIRType::from(MIRTypeKind::Integer {
+                    _type: *integer_type,
+                    signed: *signed,
+                }),
+            },
+            Self::FunctionReference(prototype) => MIRExpression {
+                token_range: None,
+                kind: MIRExpressionKind::FunctionReference {
+                    name: prototype.name.clone(),
+                },
+                _type: MIRType::from(MIRTypeKind::Function {
+                    signature: Box::new(prototype.signature()),
+                }),
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Readable, Writable)]
@@ -38,12 +69,12 @@ pub enum MIRExpressionKind {
     Variable(CXIdent),
     ContractVariable {
         name: CXIdent,
-        parent_function: CXIdent,
+        force_param: bool,
     },
 
-    // The prototype is implicitly stored in the expression's type
+    // The callable signature is stored in the expression's type
     FunctionReference {
-        implicit_variables: Vec<MIRExpression>,
+        name: CXIdent,
     },
 
     // Arithmetic & Logic
@@ -58,40 +89,38 @@ pub enum MIRExpressionKind {
     },
 
     // Memory Operations
-    Move {
-        source: Box<MIRExpression>,
-    },
-    MemoryRead {
-        source: Box<MIRExpression>,
-    },
-    MemoryWrite {
-        target: Box<MIRExpression>,
-        value: Box<MIRExpression>,
-    },
-    CreateStackVariable {
-        name: Option<CXIdent>,
+    RegionCreate {
         _type: MIRType,
         initial_value: Option<Box<MIRExpression>>,
     },
-    CopyRegion {
-        source: Box<MIRExpression>,
+    BindRegion {
+        name: CXIdent,
         _type: MIRType,
+        initial_region: Box<MIRExpression>,
+        adopting: bool,
+    },
+    RegionDuplicate {
+        source: Box<MIRExpression>,
+    },
+    ByValueArgument {
+        source: Box<MIRExpression>,
+    },
+    RegionMove {
+        source: Box<MIRExpression>,
+    },
+    RegionWrite {
+        target: Box<MIRExpression>,
+        value: Box<MIRExpression>,
     },
 
     // Represents a no-op used to change the type of an expression with no added semantics
     Typechange(Box<MIRExpression>),
 
     // Aggregate Access
-    StructFieldAccess {
+    MemberAccess {
         base: Box<MIRExpression>,
-        field_index: usize,
-        field_offset: usize,
-        struct_type: MIRType,
-    },
-    UnionAliasAccess {
-        base: Box<MIRExpression>,
-        variant_type: MIRType,
-        union_type: MIRType,
+        member_index: usize,
+        aggregate_type: MIRType,
     },
     ArrayAccess {
         array: Box<MIRExpression>,
@@ -171,9 +200,11 @@ pub enum MIRExpressionKind {
         condition: Box<MIRExpression>,
         arms: Vec<(Box<MIRExpression>, Box<MIRExpression>)>,
         default: Option<Box<MIRExpression>>,
+        exhaustive: bool,
     },
 
     Return {
+        postcondition: Option<(Option<CXIdent>, Box<MIRExpression>)>,
         value: Option<Box<MIRExpression>>,
     },
 
@@ -186,6 +217,7 @@ pub enum MIRExpressionKind {
     CallFunction {
         function: Box<MIRExpression>,
         arguments: Vec<MIRExpression>,
+        contract: MIRFunctionContract,
     },
 
     // Type Conversion
@@ -207,10 +239,6 @@ pub enum MIRExpressionKind {
         expression: Box<MIRExpression>,
     },
 
-    // Defer (TODO: Refactor to proper scoped chains)
-    Defer {
-        expression: Box<MIRExpression>,
-    },
     Unsafe {
         expression: Box<MIRExpression>,
     },
@@ -246,6 +274,9 @@ pub enum MIRIntegerBinOp {
     BAND,
     BOR,
     BXOR,
+    SHL,
+    ASHR,
+    LSHR,
 }
 
 #[derive(Clone, Debug, Readable, Writable)]
@@ -355,23 +386,21 @@ pub enum MIRCoercion {
         sextend: bool,
     },
 
-    // Any integer type to a boolean (i1)
-    IntToBool,
-    
-    // Conversion from a const char* to a _str& -- a no-op but is unsafe
-    CStrToStr,
-
-    // Conversions between equally sized types that do not change the bit representation,
-    // in assembly, this is typically a no-op, but proves useful for type checking and verification
-    ReinterpretBits,
-    
+    // Decay of function designator to a pointer value
     GetFnPtr,
+
+    // Conversions between types that have the same semantic meaning
+    // in assembly, this is typically a no-op, but proves useful for type checking and verification
+    Typechange,
+
+    // A similar no-op operation like Typechange, but represents conversions that *do* change the semantic
+    // meaning of the bits, such as converting from an f32 to an i32
+    ReinterpretBits,
 }
 
 #[derive(Clone, Debug, Readable, Writable)]
 pub struct StructInitialization {
     pub field_index: usize,
-    pub field_offset: usize,
     pub value: MIRExpression,
 }
 
@@ -388,8 +417,8 @@ impl MIRExpression {
                     _type: itype,
                     signed: is_signed,
                 },
-                visibility: Default::default(),
-                specifiers: 0,
+
+                ..Default::default()
             },
             token_range: None,
         }

@@ -4,6 +4,7 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
+cx-log = { path = "../cx-log" }
 cx-tokens = { path = "../cx-tokens" }
 cx-pipeline-data = { path = "../cx-pipeline-data" }
 

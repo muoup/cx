@@ -1,0 +1,25 @@
+[project]
+name = "raylib-test"
+
+[build]
+backend = "cranelift"
+optimization = "O0"
+
+[workspace.targets.default]
+binaries = [
+  { name = "raylib-test", entry = "main.cx" },
+]
+native_objects = [
+  "raylib/lib/raylib.o",
+]
+include_dirs = [
+  "raylib/include",
+]
+link = [
+  { name = "GL", kind = "system" },
+  { name = "m", kind = "system" },
+  { name = "pthread", kind = "system" },
+  { name = "dl", kind = "system" },
+  { name = "rt", kind = "system" },
+  { name = "X11", kind = "system" },
+]

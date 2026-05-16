@@ -1,6 +1,5 @@
 import std::vector;
 import std::io;
-import std::ref;
 import std::optional;
 
 int main() {
@@ -13,11 +12,9 @@ int main() {
     printf("Vector length: %zu\n", vec.length);
     printf("Vector capacity: %zu\n", vec.capacity);
     
-    opt<ref<int>> maybe_value = vec.at<int>(0);
-    ref<int> value_ref = maybe_value.unwrap<ref<int>>();
-    int value = value_ref.deref<int>();
+    opt<int&> maybe_value = vec.at<int>(0);
+    int value = maybe_value.unwrap<int&>();
     
     printf("vec[0]: %d\n", value);
-    
     vec.drop<int>();
 }

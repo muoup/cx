@@ -1,4 +1,5 @@
 use cx_pipeline_data::{CompilerBackend, OptimizationLevel};
+use std::path::Path;
 
 #[derive(Debug)]
 pub enum Command {
@@ -19,6 +20,7 @@ pub struct InitArgs {
 pub struct FileArgs {
     pub input_file: String,
     pub output_file: String,
+    pub compile_only: bool,
     pub backend: CompilerBackend,
     pub optimization_level: OptimizationLevel,
     pub analysis: bool,
@@ -35,13 +37,17 @@ pub struct BuildArgs {
 }
 
 pub fn print_help() {
-    println!("Usage: cx <file> [options]");
-    println!("       cx build [target] [options]");
+    println!("Usage:");
+    println!("  cx <file.cx> [options]");
+    println!("  cx build [target] [options]");
+    println!("  cx init <project-name>");
     println!();
     println!("Commands:");
+    println!("  build [target]       Build from cx.toml (all targets or a specific one)");
     println!("  init <project-name>  Create a new CX project");
-    println!("  build [target]       Build project from cx.toml (all targets or a specific one)");
-    println!("  [target]             Build a single target without using cx.toml");
+    println!();
+    println!("Legacy single-file mode:");
+    println!("  <file.cx>            Compile a single .cx file without using cx.toml");
     println!();
     println!("Options:");
     #[cfg(feature = "backend-llvm")]
@@ -53,6 +59,7 @@ pub fn print_help() {
     {
         println!("  --backend-cranelift  Use the Cranelift backend for code generation (default).");
     }
+    println!("  -c                   Compile only; emit an object file.");
     println!("  -o <output_file>     Specify the output file name.");
     println!("  -O0                  No optimization.");
     println!("  -O1                  Basic optimization.");
@@ -62,10 +69,10 @@ pub fn print_help() {
     println!("  -Ofast               Allow fast, but imprecise floating-point optimizations.");
     println!("  --analysis           Run FMIR analysis for safe functions.");
     println!("  --verbose            Print each compilation step on its own line.");
-    println!("  -help                Display this help message.");
+    println!("  -h, --help, -help    Display this help message.");
 }
 
-fn default_backend() -> CompilerBackend {
+pub(crate) fn default_backend() -> CompilerBackend {
     #[cfg(feature = "backend-llvm")]
     {
         CompilerBackend::LLVM
@@ -76,6 +83,13 @@ fn default_backend() -> CompilerBackend {
     }
 }
 
+pub(crate) fn default_backend_name() -> &'static str {
+    match default_backend() {
+        CompilerBackend::LLVM => "llvm",
+        CompilerBackend::Cranelift => "cranelift",
+    }
+}
+
 fn parse_common_flag(
     arg: &str,
     args_iter: &mut std::iter::Skip<std::slice::Iter<'_, String>>,
@@ -83,10 +97,11 @@ fn parse_common_flag(
     optimization_level: &mut Option<OptimizationLevel>,
     analysis: &mut bool,
     verbose: &mut bool,
-    output_file: Option<&mut String>,
+    output_file: Option<&mut Option<String>>,
+    compile_only: Option<&mut bool>,
 ) -> Result<bool, String> {
     match arg {
-        "-help" => {
+        "-h" | "--help" | "-help" => {
             print_help();
             std::process::exit(0);
         }
@@ -101,10 +116,17 @@ fn parse_common_flag(
         "-Ofast" => *optimization_level = Some(OptimizationLevel::Ofast),
         "--analysis" => *analysis = true,
         "--verbose" => *verbose = true,
+        "-c" => {
+            if let Some(compile_only) = compile_only {
+                *compile_only = true;
+            } else {
+                return Err("-c flag is not supported with `cx build`".to_string());
+            }
+        }
         "-o" => {
             if let Some(out) = output_file {
                 if let Some(path) = args_iter.next() {
-                    *out = path.clone();
+                    *out = Some(path.clone());
                 } else {
                     return Err("-o flag requires an output file path".to_string());
                 }
@@ -137,7 +159,7 @@ pub fn parse_args() -> Result<Command, String> {
     }
 
     // Check for flags that might come before the file
-    if first_arg == "-help" {
+    if matches!(first_arg.as_str(), "-h" | "--help" | "-help") {
         print_help();
         std::process::exit(0);
     }
@@ -163,6 +185,7 @@ fn parse_build_args(
             &mut optimization_level,
             &mut analysis,
             &mut verbose,
+            None,
             None,
         )? {
             continue;
@@ -190,12 +213,12 @@ fn parse_build_args(
 fn parse_file_args(
     args_iter: &mut std::iter::Skip<std::slice::Iter<'_, String>>,
 ) -> Result<Command, String> {
-    let mut output_file = "a.out".to_string();
+    let mut output_file = None;
+    let mut compile_only = false;
     let mut backend = None;
     let mut optimization_level = None;
     let mut analysis = false;
     let mut verbose = false;
-    
     let mut input_file = None;
 
     while let Some(arg) = args_iter.next() {
@@ -207,6 +230,7 @@ fn parse_file_args(
             &mut analysis,
             &mut verbose,
             Some(&mut output_file),
+            Some(&mut compile_only),
         )? {
             continue;
         }
@@ -218,18 +242,31 @@ fn parse_file_args(
         if input_file.is_some() {
             return Err("Multiple input files not currently supported".to_string());
         }
-        input_file = Some(arg.clone());
+        input_file = Some(arg.to_string());
     }
 
-    let input_file = input_file.ok_or_else(|| format!("Usage: cx <file> [options]"))?;
+    let input_file = input_file.ok_or_else(|| "Usage: cx <file.cx> [options]".to_string())?;
 
     if !input_file.ends_with(".cx") {
         return Err("Input file must have a .cx extension".to_string());
     }
 
+    let output_file = output_file.unwrap_or_else(|| {
+        if compile_only {
+            let stem = Path::new(&input_file)
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("a");
+            format!("{stem}.o")
+        } else {
+            "a.out".to_string()
+        }
+    });
+
     Ok(Command::CompileFile(FileArgs {
         input_file,
         output_file,
+        compile_only,
         backend: backend.unwrap_or_else(default_backend),
         optimization_level: optimization_level.unwrap_or_default(),
         analysis,

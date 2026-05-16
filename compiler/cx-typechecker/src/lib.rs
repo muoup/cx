@@ -1,29 +1,62 @@
-use cx_ast::ast::VisibilityMode;
-use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
+use cx_ast::ast::{CXAST, CXFunctionStmt, VisibilityMode};
 use cx_mir::mir::program::MIRBaseMappings;
+use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
 use cx_util::CXResult;
 
 pub mod log;
 
 pub mod environment;
-pub mod type_checking;
-pub mod type_completion;
+mod type_checking;
 
 pub use type_checking::{
-    complete_base_functions, complete_base_globals, realize_fn_implementation, typecheck,
+    complete_base_functions, complete_base_globals, realize_fn_implementation,
 };
 
-pub fn gather_interface(context: &GlobalCompilationContext, unit: &CompilationUnit) -> CXResult<()> {
-    let ast = context
+use crate::{environment::TypeEnvironment, type_checking::functions::typecheck_function};
+
+pub fn typecheck(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    ast: &CXAST,
+) -> CXResult<()> {
+    complete_base_globals(env, base_data)?;
+    complete_base_functions(env, base_data)?;
+
+    for stmt in ast.function_stmts.iter() {
+        if let CXFunctionStmt::FunctionDefinition { prototype, body } = stmt {
+            let prototype = env.complete_prototype(base_data, None, prototype)?;
+            typecheck_function(env, base_data, prototype.clone(), body)?;
+        }
+    }
+
+    Ok(())
+}
+
+pub fn gather_interface(
+    context: &GlobalCompilationContext,
+    unit: &CompilationUnit,
+) -> CXResult<()> {
+    let interface = build_interface(context, unit)?;
+    context
         .module_db
-        .naive_ast
-        .get(unit);
+        .base_mappings
+        .insert(unit.clone(), interface);
+
+    Ok(())
+}
+
+pub fn build_interface(
+    context: &GlobalCompilationContext,
+    unit: &CompilationUnit,
+) -> CXResult<MIRBaseMappings> {
+    let ast = context.module_db.naive_ast.get(unit);
     let mut base_type_map = ast.type_data.clone();
     let mut base_fn_map = ast.function_data.clone();
     let mut base_globals = ast.global_variables.clone();
 
     for import in ast.imports.iter() {
-        let unit = CompilationUnit::from_rooted(import.as_str(), &context.config.working_directory);
+        let unit =
+            CompilationUnit::from_module_path(import.clone(), &context.config.working_directory);
         let ast = context.module_db.naive_ast.get(&unit);
 
         for (type_name, cx_type) in ast.type_data.standard_iter() {
@@ -58,25 +91,20 @@ pub fn gather_interface(context: &GlobalCompilationContext, unit: &CompilationUn
 
             base_fn_map.insert_template(fn_template_name.clone(), fn_template.transfer(import));
         }
-        
+
         for (global_name, global_var) in ast.global_variables.iter() {
             if global_var.visibility != VisibilityMode::Public {
                 continue;
             };
-            
+
             base_globals.insert(global_name.clone(), global_var.transfer(import));
         }
     }
 
-    context
-        .module_db
-        .base_mappings
-        .insert(unit.clone(), MIRBaseMappings {
-            unit: unit.as_str().to_owned(),
-            type_data: base_type_map,
-            fn_data: base_fn_map,
-            global_variables: base_globals,
-        });
-
-    Ok(())
+    Ok(MIRBaseMappings {
+        unit: unit.as_str().to_owned(),
+        type_data: base_type_map,
+        fn_data: base_fn_map,
+        global_variables: base_globals,
+    })
 }

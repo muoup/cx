@@ -1,6 +1,3 @@
-#include <stdlib.h>
-
-import std::ref;
 import std::optional;
 
 public:
@@ -26,6 +23,18 @@ void vector<T>::drop<T>(this) {
     };
 }
 
+void vector<T>::drop_with<T>(this, void (*destructor)(T)) {
+    @unsafe {
+        for (u64 i = 0; i < this.length; i++) {
+            T value = @adopt(this.data[i]);
+            destructor(move value);
+        }
+
+        free(this.data);
+        @leak(this);
+    };
+}
+
 vector<T> vector::with_capacity<T>(usize capacity) {
     return (vector<T>) {
         .data = malloc(capacity * sizeof(T)),
@@ -40,16 +49,30 @@ void vector<T>::push<T>(*this, T object) {
         this.data = realloc(this.data, this.capacity * sizeof(T));
     }
 
-    this.data[this.length] = object;
+    this.data[this.length] = move object;
     this.length++;
 }
 
-opt<ref<T>> vector<T>::at<T>(*this, usize index) {
+opt<T> vector<T>::pop<T>(*this) {
+    if (this.length == 0) return opt<T>::none();
+
+    T buffer;
+    T* data_ptr = &data[this.length - 1];
+    memcpy(&buffer, data_ptr, sizeof(T));
+ 
+    this.length--;
+    return move buffer;
+}
+
+opt<T&> vector<T>::at<T>(*this, usize index) {
     if (index >= this.length) {
-        return opt<ref<T>>::none();
+        return opt<T&>::none();
     }
 
-    return opt<ref<T>>::some(
-        @unsafe(ref<T>::new<T>(&this.data[index]))
-    );
+    return opt<T&>::some(this.data[index]);
 }
+
+private:
+
+#include <stdlib.h>
+#include <string.h>

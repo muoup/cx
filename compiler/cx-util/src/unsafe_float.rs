@@ -2,12 +2,14 @@ use speedy::{Readable, Writable};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, Hash, Readable, Writable)]
 pub struct FloatWrapper {
-    bits: u64
+    bits: u64,
 }
 
 impl From<f64> for FloatWrapper {
     fn from(value: f64) -> Self {
-        FloatWrapper { bits: value.to_bits() }
+        FloatWrapper {
+            bits: value.to_bits(),
+        }
     }
 }
 

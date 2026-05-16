@@ -27,7 +27,14 @@ fn main() {
         let root_path = manifest_dir.join(root);
         println!("cargo:rerun-if-changed={}", root_path.display());
         if root_path.exists() {
-            write_module(&mut output, &sanitize_ident(root), &root_path, &root_path, kind, 0);
+            write_module(
+                &mut output,
+                &sanitize_ident(root),
+                &root_path,
+                &root_path,
+                kind,
+                0,
+            );
         }
     }
 

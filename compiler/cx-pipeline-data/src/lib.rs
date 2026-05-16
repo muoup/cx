@@ -5,7 +5,7 @@ pub mod internal_storage;
 pub mod jobs;
 
 use crate::db::ModuleData;
-use crate::directories::file_path;
+use cx_util::module_path::ModulePath;
 use speedy::{Context, Readable, Writable};
 use std::collections::HashSet;
 use std::fmt::Display;
@@ -35,6 +35,7 @@ pub fn compilation_hash() -> u64 {
 #[derive(Debug)]
 pub struct GlobalCompilationContext {
     pub config: CompilerConfig,
+    pub module_mode: bool,
     pub module_db: ModuleData,
 
     pub linking_files: Mutex<HashSet<PathBuf>>,
@@ -48,7 +49,8 @@ impl Drop for GlobalCompilationContext {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompilationMode {
-    Binary,
+    Executable,
+    Object,
     Library,
 }
 
@@ -62,8 +64,11 @@ pub struct CompilerConfig {
     pub working_directory: PathBuf,
     pub internal_directory: PathBuf,
     pub compilation_mode: CompilationMode,
+    pub module_mode: bool,
     pub project_config: Option<config::CXProjectConfig>,
     pub link_entries: Vec<config::LinkEntry>,
+    pub native_objects: Vec<PathBuf>,
+    pub include_dirs: Vec<PathBuf>,
 }
 
 #[derive(Default, Debug, Copy, Clone, Hash)]
@@ -85,17 +90,17 @@ pub enum CompilerBackend {
 
 #[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub struct CompilationUnit {
-    identifier: Rc<String>,
+    module_path: Rc<ModulePath>,
     path: Rc<Path>,
 }
 
 impl<'a, C: Context> Readable<'a, C> for CompilationUnit {
     fn read_from<R: speedy::Reader<'a, C>>(reader: &mut R) -> Result<Self, C::Error> {
-        let identifier: String = String::read_from(reader)?;
+        let module_path = ModulePath::new(String::read_from(reader)?);
         let path: PathBuf = PathBuf::from(String::read_from(reader)?);
 
         Ok(Self {
-            identifier: identifier.into(),
+            module_path: module_path.into(),
             path: path.into_boxed_path().into(),
         })
     }
@@ -106,7 +111,7 @@ impl<C: Context> Writable<C> for CompilationUnit {
     where
         W: ?Sized + speedy::Writer<C>,
     {
-        self.identifier.as_str().write_to(writer)?;
+        self.module_path.as_str().write_to(writer)?;
         self.path.to_str().unwrap().write_to(writer)?;
         Ok(())
     }
@@ -130,24 +135,34 @@ impl CompilationUnit {
     }
 
     pub fn from_rooted(path: &str, working_directory: &Path) -> Self {
-        let (stripped, ext) = if path.ends_with(".cxl") {
-            (&path[..path.len() - 4], "cxl")
-        } else if path.ends_with(".cx") {
-            (&path[..path.len() - 3], "cx")
-        } else {
-            (path, "cx")
-        };
+        let module_path = ModulePath::from_source_path(path);
+        let extension = if path.ends_with(".cxl") { "cxl" } else { "cx" };
+        Self::from_module_path_with_extension(module_path, working_directory, extension)
+    }
 
-        let path_buf = file_path(stripped, working_directory).with_extension(ext);
+    pub fn from_module_path(module_path: ModulePath, working_directory: &Path) -> Self {
+        Self::from_module_path_with_extension(module_path, working_directory, "cx")
+    }
+
+    pub fn from_module_path_with_extension(
+        module_path: ModulePath,
+        working_directory: &Path,
+        extension: &str,
+    ) -> Self {
+        let path_buf = module_path.with_extension(working_directory, extension);
 
         Self {
-            identifier: Rc::new(stripped.to_string()),
+            module_path: Rc::new(module_path),
             path: path_buf.into_boxed_path().into(),
         }
     }
 
+    pub fn module_path(&self) -> &ModulePath {
+        self.module_path.as_ref()
+    }
+
     pub fn identifier(&self) -> &str {
-        self.identifier.as_str()
+        self.module_path.as_str()
     }
 
     pub fn to_string(&self) -> String {
@@ -167,6 +182,6 @@ impl CompilationUnit {
     }
 
     pub fn is_std_lib(&self) -> bool {
-        self.identifier.starts_with("std/")
+        self.module_path.is_std()
     }
 }

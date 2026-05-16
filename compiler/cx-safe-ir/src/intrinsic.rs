@@ -12,27 +12,12 @@ pub enum FMIRIntrinsicKind {
 
 #[derive(Clone, Debug)]
 pub enum FMIRCastIntrinsic {
-    Integral {
-        sextend: bool,
-        to_bits: usize,
-    },
-    FloatCast {
-        to_bits: usize,
-    },
-    PtrToInt {
-        to_bits: usize,
-    },
-    IntToPtr {
-        sextend: bool,
-    },
-    IntToFloat {
-        to_bits: usize,
-        sextend: bool,
-    },
-    FloatToInt {
-        to_bits: usize,
-        sextend: bool,
-    },
+    Integral { sextend: bool, to_bits: usize },
+    FloatCast { to_bits: usize },
+    PtrToInt { to_bits: usize },
+    IntToPtr { sextend: bool },
+    IntToFloat { to_bits: usize, sextend: bool },
+    FloatToInt { to_bits: usize, sextend: bool },
     IntToBool,
     ReinterpretBits,
 }
@@ -89,6 +74,9 @@ pub enum FMIRIntrinsicIBinOp {
     BAND,
     BOR,
     BXOR,
+    SHL,
+    ASHR,
+    LSHR,
 }
 
 #[derive(Clone, Debug)]

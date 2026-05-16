@@ -5,11 +5,11 @@ use cx_lmir::{
     LMIRFloatBinOp, LMIRInstructionKind, LMIRIntBinOp, LMIRPtrBinOp, LMIRValue,
 };
 use cx_mir::mir::{
+    data::{MIRType, MIRTypeKind},
     expression::{
         MIRBinOp, MIRExpression, MIRFloatBinOp, MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
         MIRUnOp,
     },
-    types::{MIRType, MIRTypeKind},
 };
 use cx_util::CXResult;
 
@@ -61,7 +61,7 @@ pub fn lower_binary_op(
             LMIRInstructionKind::PointerBinOp {
                 op: ptr_op,
                 ptr_type: bc_inner_type.clone(),
-                type_padded_size: ptr_inner.padded_size() as u64,
+                type_padded_size: ptr_inner.padded_size(&builder.type_definitions) as u64,
                 left: bc_lhs,
                 right: bc_rhs,
             }
@@ -265,12 +265,16 @@ pub fn lower_unary_op(
                 }
 
                 MIRTypeKind::PointerTo { inner_type, .. } => {
+                    let inner_type = builder
+                        .type_definitions
+                        .get(*inner_type)
+                        .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
                     let bc_inner_type = builder.convert_cx_type(inner_type);
 
                     LMIRInstructionKind::PointerBinOp {
                         op: LMIRPtrBinOp::ADD,
                         ptr_type: bc_inner_type,
-                        type_padded_size: result_type.padded_size() as u64,
+                        type_padded_size: result_type.padded_size(&builder.type_definitions) as u64,
                         left: pre_loaded_val.clone(),
                         right: LMIRValue::IntImmediate {
                             val: *amt as i64,
@@ -329,6 +333,9 @@ fn convert_int_binop(op: &MIRIntegerBinOp) -> LMIRIntBinOp {
         MIRIntegerBinOp::BAND => LMIRIntBinOp::BAND,
         MIRIntegerBinOp::BOR => LMIRIntBinOp::BOR,
         MIRIntegerBinOp::BXOR => LMIRIntBinOp::BXOR,
+        MIRIntegerBinOp::SHL => LMIRIntBinOp::SHL,
+        MIRIntegerBinOp::ASHR => LMIRIntBinOp::ASHR,
+        MIRIntegerBinOp::LSHR => LMIRIntBinOp::LSHR,
 
         _ => unreachable!("Logical operators (LAND, LOR) should be handled by lower_logical_op"),
     }

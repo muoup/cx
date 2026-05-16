@@ -1,6 +1,6 @@
 use crate::GlobalState;
 use crate::typing::{any_to_basic_type, bc_llvm_type};
-use cx_lmir::{LinkageType, LMIRGlobalType, LMIRGlobalValue};
+use cx_lmir::{LMIRGlobalType, LMIRGlobalValue, LinkageType};
 use inkwell::module::Linkage;
 use std::sync::atomic::AtomicUsize;
 
@@ -56,13 +56,6 @@ pub(crate) fn generate_global_variable(
                 }
             } else {
                 global.set_linkage(Linkage::External);
-            }
-
-            if let Some(initial_value) = initial_value {
-                let init_val = llvm_type
-                    .into_int_type()
-                    .const_int(*initial_value as u64, true);
-                global.set_initializer(&init_val);
             }
 
             state.globals.push(global);

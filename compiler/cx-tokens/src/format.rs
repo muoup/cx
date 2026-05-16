@@ -22,14 +22,6 @@ impl Display for TokenKind {
 
 impl Display for IntrinsicType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            IntrinsicType::Int => write!(f, "int"),
-            IntrinsicType::Float => write!(f, "float"),
-            IntrinsicType::Double => write!(f, "double"),
-            IntrinsicType::Void => write!(f, "void"),
-            IntrinsicType::Bool => write!(f, "bool"),
-
-            _ => write!(f, "{self:?}"),
-        }
+        write!(f, "{}", self.as_str())
     }
 }

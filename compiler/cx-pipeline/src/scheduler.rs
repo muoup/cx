@@ -6,21 +6,24 @@ use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::ParseErrorLog;
 use cx_parsing::parse::parse_ast;
-use cx_parsing::preparse::preparse;
+use cx_parsing::preparse::{PreparseConfig, preparse};
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::directories::internal_directory;
 use cx_pipeline_data::internal_storage::{resource_path, retrieve_data, retrieve_text, store_text};
 use cx_pipeline_data::jobs::{
     CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue,
 };
-use cx_pipeline_data::{CompilationMode, CompilationUnit, CompilerBackend, GlobalCompilationContext};
+use cx_pipeline_data::{
+    CompilationMode, CompilationUnit, CompilerBackend, GlobalCompilationContext,
+};
 use cx_safe_analyzer::FMIRContext;
 use cx_tokens::TokenIter;
 use cx_typechecker::environment::TypeEnvironment;
 use cx_typechecker::gather_interface;
 use cx_typechecker::log::TypeError;
-use cx_typechecker::{complete_base_functions, complete_base_globals, typecheck};
+use cx_typechecker::typecheck;
 use cx_util::format::dump_data;
+use cx_util::module_path::ModulePath;
 use cx_util::{CXError, CXErrorTrait, CXResult};
 use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
@@ -106,12 +109,37 @@ pub(crate) fn scheduling_loop(
         }
 
         reporter.complete_step();
+
         if is_codegen {
             reporter.increment_modules();
         }
     }
 
     Ok(())
+}
+
+fn import_jobs_for_unit(
+    context: &GlobalCompilationContext,
+    imports: &[ModulePath],
+) -> CXResult<Vec<CompilationJob>> {
+    let mut jobs = Vec::new();
+
+    for import in imports {
+        if !context.module_mode && !import.is_library_module() {
+            return CXError::create_result(format!(
+                "Import '{}' is not available in single-file compilation mode. Only compiler library modules under `std::` may be imported here; use `cx build` for project/module imports.",
+                import.as_str().replace('/', "::")
+            ));
+        }
+
+        jobs.push(CompilationJob::new(
+            vec![],
+            CompilationStep::PreParse,
+            CompilationUnit::from_module_path(import.clone(), &context.config.working_directory),
+        ));
+    }
+
+    Ok(jobs)
 }
 
 pub(crate) fn handle_job(
@@ -134,14 +162,12 @@ pub(crate) fn handle_job(
             })
             .collect::<Vec<_>>();
 
-        Ok(
-            [CompilationJob::new(
-                new_requirements,
-                new_step,
-                job.unit.clone(),
-            )]
-            .into(),
-        )
+        Ok([CompilationJob::new(
+            new_requirements,
+            new_step,
+            job.unit.clone(),
+        )]
+        .into())
     };
 
     match perform_job(context, &job, retain_lmir)? {
@@ -153,20 +179,7 @@ pub(crate) fn handle_job(
         CompilationStep::PreParse => {
             let pp_data = context.module_db.preparse_base.get(&job.unit);
 
-            let mut new_jobs = pp_data
-                .imports
-                .iter()
-                .map(|import| {
-                    CompilationJob::new(
-                        vec![],
-                        CompilationStep::PreParse,
-                        CompilationUnit::from_rooted(
-                            import.as_str(),
-                            &context.config.working_directory,
-                        ),
-                    )
-                })
-                .collect::<Vec<_>>();
+            let mut new_jobs = import_jobs_for_unit(context, &pp_data.imports)?;
 
             job.step = CompilationStep::ASTParse;
             new_jobs.push(job);
@@ -238,19 +251,22 @@ pub(crate) fn perform_job(
 
             store_text(context, &job.unit, ".hash", &current_hash);
 
-            let tokens = cx_lexer::lex(file_contents.as_str())
-                .ok_or(CXError::create_boxed(format!(
-                    "Lexing failed for unit: {}",
-                    job.unit
-                )))?;
+            let tokens = cx_lexer::lex_with_context(
+                file_contents.as_str(),
+                &file_path,
+                &context.config.include_dirs,
+            )?;
 
-            let mut output = preparse(TokenIter::new(&tokens, file_path))?;
+            let preparse_config = PreparseConfig::from_compiler_config(&context.config);
+            let mut output = preparse(&preparse_config, TokenIter::new(&tokens, file_path))?;
             output.module = job.unit.to_string();
 
-            if !job.unit.as_str().contains("/std/") {
-                output
-                    .imports
-                    .extend(INTRINSIC_IMPORTS.iter().map(|s| s.to_string()));
+            if !job.unit.is_std_lib() {
+                output.imports.extend(
+                    INTRINSIC_IMPORTS
+                        .iter()
+                        .map(|s| ModulePath::from_source_path(s)),
+                );
             }
 
             context
@@ -282,8 +298,8 @@ pub(crate) fn perform_job(
                     context
                         .module_db
                         .preparse_base
-                        .get(&CompilationUnit::from_rooted(
-                            import.as_str(),
+                        .get(&CompilationUnit::from_module_path(
+                            import.clone(),
                             &context.config.working_directory,
                         ));
                 let required_visiblity = VisibilityMode::Public;
@@ -328,14 +344,12 @@ pub(crate) fn perform_job(
                 &context.module_db,
             );
 
-            complete_base_globals(&mut env, structure_data.as_ref())?;
-            complete_base_functions(&mut env, structure_data.as_ref())?;
             typecheck(&mut env, structure_data.as_ref(), &self_ast)?;
             realize_templates(&job.unit, &mut env)?;
 
             let mir = env.finish_mir_unit()?;
             if !job.unit.is_std_lib() || context.config.verbose {
-                dump_data(&mir);
+                dump_data(&mir.display_pretty());
             }
 
             // There is likely a better way to do this, but for now, we unconditionally generate FMIR no matter if analysis
@@ -347,8 +361,7 @@ pub(crate) fn perform_job(
             }
 
             if context.config.analysis {
-                fmir_context
-                    .apply_standard_analysis_passes(job.unit.as_path())?;
+                fmir_context.apply_standard_analysis_passes(job.unit.as_path())?;
             }
 
             context.module_db.mir.insert(job.unit.clone(), mir);
@@ -382,14 +395,12 @@ pub(crate) fn perform_job(
 
             let buffer = match context.config.backend {
                 CompilerBackend::LLVM => llvm_compile(
-                    &lmir,
+                    lmir,
                     internal_directory_str,
                     context.config.optimization_level,
-                )
-                .ok_or(CXError::create_boxed("LLVM code generation failed"))?,
-                CompilerBackend::Cranelift => cranelift_compile(&lmir, internal_directory_str)
-                    .ok_or(CXError::create_boxed("Cranelift code generation failed"))?,
-            };
+                ),
+                CompilerBackend::Cranelift => cranelift_compile(lmir, internal_directory_str),
+            }?;
 
             let mut file =
                 std::fs::File::create(&internal_directory).expect("Failed to create object file");
@@ -550,10 +561,10 @@ fn handle_job_collect_errors(
                 .previous_token
                 .as_ref()
                 .unwrap_or(&parse_error.token);
-            let start = line_content_start_byte(&file_contents, anchor_token.start_index);
+            let start = line_content_start_byte(&file_contents, anchor_token.byte_start_index);
             let end = anchor_token
-                .end_index
-                .max(anchor_token.start_index.saturating_add(1));
+                .byte_end_index
+                .max(anchor_token.byte_start_index.saturating_add(1));
 
             return Some(LSPErrors::SpannedError {
                 compilation_unit: parse_error.file.clone(),
@@ -602,20 +613,18 @@ fn handle_job_collect_errors(
         CompilationStep::PreParse => {
             let pp_data = context.module_db.preparse_base.get(&job.unit);
 
-            let mut new_jobs: Vec<CompilationJob> = pp_data
-                .imports
-                .iter()
-                .map(|import| {
-                    CompilationJob::new(
-                        vec![],
-                        CompilationStep::PreParse,
-                        CompilationUnit::from_rooted(
-                            import.as_str(),
-                            &context.config.working_directory,
-                        ),
-                    )
-                })
-                .collect();
+            let mut new_jobs = match import_jobs_for_unit(context, &pp_data.imports) {
+                Ok(jobs) => jobs,
+                Err(e) => {
+                    let lsp_error = spanned_error(e.as_ref()).unwrap_or(LSPErrors::FatalError {
+                        compilation_unit: job.unit.as_path().to_path_buf(),
+                        message: e.error_message(),
+                        line: None,
+                    });
+                    error_collector.push(lsp_error);
+                    return Some(HandleJobResult::Continue);
+                }
+            };
 
             // Add the next step for this job
             let mut next_job = job.clone();

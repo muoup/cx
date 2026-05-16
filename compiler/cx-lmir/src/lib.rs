@@ -81,18 +81,107 @@ impl From<LMIRRegister> for CXIdent {
 
 #[derive(Debug, Clone)]
 pub struct LMIRParameter {
-    pub name: Option<String>,
+    pub name: Option<CXIdent>,
     pub _type: LMIRType,
+    pub abi: LMIRParameterABI,
+}
+
+#[derive(Debug, Clone)]
+pub enum LMIRParameterABI {
+    Direct { slots: Vec<LMIRABISlot> },
+    Indirect { alignment: u8 },
+}
+
+#[derive(Debug, Clone)]
+pub struct LMIRFunctionSignature {
+    pub return_type: LMIRType,
+    pub return_abi: LMIRReturnABI,
+    pub params: Vec<LMIRParameter>,
+    pub var_args: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum LMIRReturnABI {
+    Void,
+    Direct { slots: Vec<LMIRABISlot> },
+    IndirectSret { alignment: u8 },
+}
+
+#[derive(Debug, Clone)]
+pub struct LMIRABISlot {
+    pub _type: LMIRType,
+    pub offset: usize,
+}
+
+impl LMIRParameterABI {
+    pub fn slot_count(&self) -> usize {
+        match self {
+            LMIRParameterABI::Direct { slots } => slots.len(),
+            LMIRParameterABI::Indirect { .. } => 1,
+        }
+    }
+}
+
+impl LMIRReturnABI {
+    pub fn has_indirect_return_param(&self) -> bool {
+        matches!(self, LMIRReturnABI::IndirectSret { .. })
+    }
+}
+
+impl LMIRFunctionSignature {
+    pub fn has_indirect_return_param(&self) -> bool {
+        self.return_abi.has_indirect_return_param()
+    }
+
+    pub fn expanded_param_count(&self) -> usize {
+        self.params
+            .iter()
+            .map(|param| param.abi.slot_count())
+            .sum::<usize>()
+            + usize::from(self.has_indirect_return_param())
+    }
+
+    pub fn expanded_param_type(&self, index: usize) -> Option<LMIRType> {
+        let mut index = index;
+        if self.has_indirect_return_param() {
+            if index == 0 {
+                return Some(LMIRType::default_pointer());
+            }
+            index -= 1;
+        }
+
+        for param in &self.params {
+            match &param.abi {
+                LMIRParameterABI::Direct { slots } => {
+                    if index < slots.len() {
+                        return Some(slots[index]._type.clone());
+                    }
+                    index -= slots.len();
+                }
+                LMIRParameterABI::Indirect { .. } => {
+                    if index == 0 {
+                        return Some(LMIRType::default_pointer());
+                    }
+                    index -= 1;
+                }
+            }
+        }
+
+        None
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct LMIRFunctionPrototype {
     pub name: String,
-    pub return_type: LMIRType,
-    pub params: Vec<LMIRParameter>,
-    pub var_args: bool,
     pub linkage: LinkageType,
-    pub temp_buffer: Option<LMIRType>
+    pub signature: LMIRFunctionSignature,
+}
+
+impl LMIRFunctionPrototype {
+    pub fn signature(&self) -> &LMIRFunctionSignature {
+        &self.signature
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -138,7 +227,7 @@ pub enum LMIRInstructionKind {
         value: LMIRValue,
         _type: LMIRType,
     },
-    
+
     Memcpy {
         dest: LMIRValue,
         src: LMIRValue,
@@ -196,14 +285,15 @@ pub enum LMIRInstructionKind {
     },
 
     DirectCall {
+        func: CXIdent,
         args: Vec<LMIRValue>,
-        method_sig: LMIRFunctionPrototype,
+        method_sig: LMIRFunctionSignature,
     },
 
     IndirectCall {
         func_ptr: LMIRValue,
         args: Vec<LMIRValue>,
-        method_sig: LMIRFunctionPrototype,
+        method_sig: LMIRFunctionSignature,
     },
 
     GetFunctionAddr {
@@ -231,7 +321,7 @@ pub enum LMIRInstructionKind {
     },
 
     CompilerAssumption {
-        condition: LMIRValue
+        condition: LMIRValue,
     },
 }
 
@@ -325,10 +415,21 @@ pub enum LMIRCoercionType {
     ZExtend,
     SExtend,
     Trunc,
-    FloatCast { from: LMIRFloatType },
-    IntToPtr { from: LMIRIntegerType, sextend: bool },
-    IntToFloat { from: LMIRIntegerType, sextend: bool },
-    FloatToInt { from: LMIRFloatType, sextend: bool },
+    FloatCast {
+        from: LMIRFloatType,
+    },
+    IntToPtr {
+        from: LMIRIntegerType,
+        sextend: bool,
+    },
+    IntToFloat {
+        from: LMIRIntegerType,
+        sextend: bool,
+    },
+    FloatToInt {
+        from: LMIRFloatType,
+        sextend: bool,
+    },
     PtrToInt,
     BitCast,
 }

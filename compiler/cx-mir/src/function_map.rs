@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use cx_ast::data::{CXFunctionKey, CXFunctionTemplate, ModuleResource};
 use speedy::{Readable, Writable};
 
-use crate::mir::types::MIRFunctionPrototype;
+use crate::mir::data::MIRFunctionPrototype;
 
 pub type CXFnMap = HashMap<String, MIRFunctionPrototype>;
 
@@ -46,7 +46,8 @@ impl CXFnData {
     }
 
     pub fn get_template(
-        &self, name: &CXFunctionKey,
+        &self,
+        name: &CXFunctionKey,
     ) -> Option<&ModuleResource<CXFunctionTemplate>> {
         self.templates.get(name)
     }

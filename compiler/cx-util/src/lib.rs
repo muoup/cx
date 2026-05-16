@@ -4,6 +4,7 @@ pub mod char_iter;
 pub mod format;
 pub mod identifier;
 pub mod macros;
+pub mod module_path;
 pub mod rwlockser;
 pub mod scoped_map;
 pub mod unsafe_float;
@@ -16,9 +17,9 @@ pub trait CXErrorTrait {
     fn as_any(&self) -> &dyn std::any::Any {
         &()
     }
-    
+
     fn error_prefix(&self) -> String;
-    
+
     fn error_content(&self) -> String;
 
     /// Get the error as a string for LSP diagnostics
@@ -55,11 +56,11 @@ impl CXErrorTrait for CXError {
     fn pretty_print(&self) {
         println!("CXError: {}", self.message);
     }
-    
+
     fn error_prefix(&self) -> String {
         "Error".to_string()
     }
-    
+
     fn error_content(&self) -> String {
         self.message.clone()
     }
@@ -69,17 +70,22 @@ pub type CXResult<T> = Result<T, Box<dyn CXErrorTrait>>;
 
 impl CXError {
     pub fn new<T: Into<String>>(msg: T) -> Self {
-        CXError { message: msg.into() }
+        CXError {
+            message: msg.into(),
+        }
     }
-    
+
     pub fn unimplemented<T, U: Into<String>>(msg: U) -> CXResult<T> {
-        Err(Box::new(CXError::new(format!("Unimplemented: {}", msg.into()))))
+        Err(Box::new(CXError::new(format!(
+            "Unimplemented: {}",
+            msg.into()
+        ))))
     }
-    
+
     pub fn create_result<T, U: Into<String>>(msg: U) -> CXResult<T> {
         Err(Box::new(CXError::new(msg)))
     }
-    
+
     pub fn create_boxed<U: Into<String>>(msg: U) -> Box<dyn CXErrorTrait> {
         Box::new(CXError::new(msg))
     }

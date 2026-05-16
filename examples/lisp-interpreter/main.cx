@@ -1,0 +1,28 @@
+import interpreter;
+
+import std::optional;
+import std::io;
+import std::file;
+import std::string;
+
+i32 main(i32 argc, char** argv) {
+    if (argc == 1) {
+        println("Please include a file path as an argument to interpret");
+        return 1;
+    }
+
+    opt<file> o = file::open(argv[1], "r");
+
+    if (!o.is_some()) {
+        println("Could not find file specified.");
+    }
+
+    file f = o.unwrap();
+    string s = f.read_to_string();
+    
+    run(s.as_str());
+
+    f.close();
+    s.drop();
+    return 0;
+}

@@ -1,0 +1,16 @@
+import std::box;
+import std::io;
+
+struct test_type : @nodrop {
+    int num;
+};
+
+void destructor(test_type t) {
+    printf("dropped num: %d\n", t.num);
+    @leak(t);
+}
+
+int main() {
+    box<test_type> t = box<test_type>::new<test_type>((test_type) { .num = 1 });
+    t.drop_with(destructor);
+}

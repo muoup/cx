@@ -14,18 +14,33 @@ box<T> box<T>::new<T>(T value) safe {
     };
 }
 
-const T& box<T>::deref<T>(const *this) safe {
-    return @unsafe(*(this.ptr));
+const T& box<T>::deref<T>(const *this) {
+    return *(this.ptr);
 }
 
-T& box<T>::deref_mut<T>(*this) safe {
-    return @unsafe(*(this.ptr));
+T& box<T>::deref_mut<T>(*this) {
+    return *(this.ptr);
+}
+
+// TODO: Bound this type as not @pinned when that feature is added
+T box<T>::unwrap<T>(this) safe {
+    T inner = move @adopt(*this.ptr);
+    @leak(this);
+    return move inner;
 }
 
 T* box<T>::leak<T>(this) {
     T* ptr = this.ptr;
     @leak(this);
     return ptr;
+}
+
+void box<T>::drop_with<T>(this, void(*drop_value)(T)) {
+    @unsafe {
+        drop_value(@adopt(*this.ptr));
+    };
+
+    this.drop();
 }
 
 void box<T>::drop<T>(this) safe {

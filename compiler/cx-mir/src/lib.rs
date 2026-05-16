@@ -1,18 +1,18 @@
-pub mod intrinsic_types;
 pub mod function_map;
+pub mod intrinsic_types;
 
 pub mod mir;
 
 use cx_ast::data::{CXTypeTemplate, ModuleResource};
 use speedy::{Readable, Writable};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use crate::mir::types::{MIRTemplateInput, MIRType};
+use crate::mir::{data::MIRTemplateInput, r#type::MIRType};
 
 #[derive(Debug, Default, Clone, Readable, Writable)]
 pub struct TemplateCache<Template> {
     pub template: ModuleResource<Template>,
-    pub instantiated: HashSet<MIRTemplateInput>,
+    pub instantiated: Vec<MIRTemplateInput>,
 }
 
 #[derive(Debug, Default, Clone, Readable, Writable)]
@@ -43,7 +43,7 @@ impl<Type, TemplatedType> GenericData<Type, TemplatedType> {
             name,
             TemplateCache {
                 template: item,
-                instantiated: HashSet::new(),
+                instantiated: Vec::new(),
             },
         );
     }

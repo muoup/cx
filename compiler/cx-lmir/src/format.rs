@@ -1,8 +1,8 @@
 use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use crate::{
-    LMIRBasicBlock, LMIRFloatBinOp, LMIRFloatUnOp, LMIRFunction, LMIRFunctionPrototype, LMIRGlobalType,
-    LMIRInstruction, LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRRegister, LMIRUnit,
-    LMIRValue,
+    LMIRBasicBlock, LMIRFloatBinOp, LMIRFloatUnOp, LMIRFunction, LMIRFunctionPrototype,
+    LMIRFunctionSignature, LMIRGlobalType, LMIRInstruction, LMIRInstructionKind, LMIRIntBinOp,
+    LMIRIntUnOp, LMIRPtrBinOp, LMIRRegister, LMIRUnit, LMIRValue,
 };
 use std::fmt::{Display, Formatter};
 
@@ -51,9 +51,9 @@ impl Display for LMIRBasicBlock {
     }
 }
 
-impl Display for LMIRFunctionPrototype {
+impl Display for LMIRFunctionSignature {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "fn {}(", self.name)?;
+        write!(f, "fn(")?;
 
         for (i, arg) in self.params.iter().enumerate() {
             if i > 0 {
@@ -63,6 +63,12 @@ impl Display for LMIRFunctionPrototype {
         }
 
         write!(f, ") -> {}", self.return_type)
+    }
+}
+
+impl Display for LMIRFunctionPrototype {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} :: {}", self.name, self.signature())
     }
 }
 
@@ -199,10 +205,8 @@ impl Display for LMIRInstruction {
                 }
                 write!(f, "] else {default}")
             }
-            LMIRInstructionKind::DirectCall {
-                method_sig, args, ..
-            } => {
-                write!(f, "@{}(", method_sig.name)?;
+            LMIRInstructionKind::DirectCall { func, args, .. } => {
+                write!(f, "@{}(", func)?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
@@ -420,6 +424,9 @@ impl Display for LMIRTypeKind {
             LMIRTypeKind::Array { element, size } => {
                 write!(f, "[{element}; {size}]")
             }
+            LMIRTypeKind::Vector { element, count } => {
+                write!(f, "<{count} x {element}>")
+            }
             LMIRTypeKind::Struct { fields, .. } => {
                 let fields = fields
                     .iter()
@@ -428,15 +435,6 @@ impl Display for LMIRTypeKind {
                     .join(", ");
 
                 write!(f, "struct {{ {fields} }}")
-            }
-            LMIRTypeKind::Union { fields, .. } => {
-                let fields = fields
-                    .iter()
-                    .map(|(_, _type)| format!("{_type}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-
-                write!(f, "union {{ {fields} }}")
             }
 
             LMIRTypeKind::Unit => write!(f, "()"),

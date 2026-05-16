@@ -1,10 +1,15 @@
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRFunctionPrototype, LMIRUnit, LinkageType};
 use cx_pipeline_data::config::LinkEntry;
+use cx_util::identifier::CXIdent;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
-pub fn generate_header(_lib_name: &str, lmir_unit: &LMIRUnit, link_entries: &[LinkEntry]) -> Result<String, std::fmt::Error> {
+pub fn generate_header(
+    _lib_name: &str,
+    lmir_unit: &LMIRUnit,
+    link_entries: &[LinkEntry],
+) -> Result<String, std::fmt::Error> {
     let mut output = String::new();
 
     writeln!(output, "#pragma once")?;
@@ -40,11 +45,12 @@ pub fn generate_header(_lib_name: &str, lmir_unit: &LMIRUnit, link_entries: &[Li
     let mut forward_decls: BTreeSet<String> = BTreeSet::new();
 
     for proto in &exported_protos {
-        collect_types(&proto.return_type, &mut type_defs, &mut forward_decls);
-        if let Some(ref tb) = proto.temp_buffer {
-            collect_types(tb, &mut type_defs, &mut forward_decls);
-        }
-        for param in &proto.params {
+        collect_types(
+            &proto.signature.return_type,
+            &mut type_defs,
+            &mut forward_decls,
+        );
+        for param in &proto.signature.params {
             collect_types(&param._type, &mut type_defs, &mut forward_decls);
         }
     }
@@ -56,7 +62,7 @@ pub fn generate_header(_lib_name: &str, lmir_unit: &LMIRUnit, link_entries: &[Li
         writeln!(output)?;
     }
 
-    for (_, def) in &type_defs {
+    for def in type_defs.values() {
         writeln!(output, "{def}")?;
         writeln!(output)?;
     }
@@ -98,22 +104,6 @@ fn collect_types(
             write!(def, "}}").unwrap();
             type_defs.insert(name.clone(), def);
         }
-        LMIRTypeKind::Union { name, fields } => {
-            if type_defs.contains_key(name) {
-                return;
-            }
-            forward_decls.insert(format!("union {name}"));
-            for (_, field_ty) in fields {
-                collect_types(field_ty, type_defs, forward_decls);
-            }
-            let mut def = format!("union {name} {{\n");
-            for (field_name, field_ty) in fields {
-                let c_type = lmir_type_to_c(field_ty, Some(field_name));
-                writeln!(def, "    {c_type};").unwrap();
-            }
-            write!(def, "}}").unwrap();
-            type_defs.insert(name.clone(), def);
-        }
         LMIRTypeKind::Array { element, .. } => {
             collect_types(element, type_defs, forward_decls);
         }
@@ -134,33 +124,44 @@ fn lmir_type_to_c(ty: &LMIRType, var_name: Option<&str>) -> String {
                 LMIRIntegerType::I64 => "int64_t",
                 LMIRIntegerType::I128 => "__int128",
             };
-            if name.is_empty() { base.to_string() } else { format!("{base} {name}") }
+            if name.is_empty() {
+                base.to_string()
+            } else {
+                format!("{base} {name}")
+            }
         }
         LMIRTypeKind::Float(float_ty) => {
             let base = match float_ty {
                 LMIRFloatType::F32 => "float",
                 LMIRFloatType::F64 => "double",
             };
-            if name.is_empty() { base.to_string() } else { format!("{base} {name}") }
+            if name.is_empty() {
+                base.to_string()
+            } else {
+                format!("{base} {name}")
+            }
         }
         LMIRTypeKind::Pointer { .. } => {
-            if name.is_empty() { "void*".to_string() } else { format!("void* {name}") }
+            if name.is_empty() {
+                "void*".to_string()
+            } else {
+                format!("void* {name}")
+            }
         }
         LMIRTypeKind::Unit => {
-            if name.is_empty() { "void".to_string() } else { format!("void {name}") }
+            if name.is_empty() {
+                "void".to_string()
+            } else {
+                format!("void {name}")
+            }
         }
-        LMIRTypeKind::Struct { name: struct_name, .. } => {
+        LMIRTypeKind::Struct {
+            name: struct_name, ..
+        } => {
             if name.is_empty() {
                 format!("struct {struct_name}")
             } else {
                 format!("struct {struct_name} {name}")
-            }
-        }
-        LMIRTypeKind::Union { name: union_name, .. } => {
-            if name.is_empty() {
-                format!("union {union_name}")
-            } else {
-                format!("union {union_name} {name}")
             }
         }
         LMIRTypeKind::Array { element, size } => {
@@ -170,6 +171,9 @@ fn lmir_type_to_c(ty: &LMIRType, var_name: Option<&str>) -> String {
             } else {
                 format!("{elem_c} {name}[{size}]")
             }
+        }
+        LMIRTypeKind::Vector { .. } => {
+            panic!("ABI-only type cannot be emitted in a C header: {ty:?}")
         }
         LMIRTypeKind::Opaque { bytes } => {
             // Represent opaque types as byte arrays
@@ -183,20 +187,23 @@ fn lmir_type_to_c(ty: &LMIRType, var_name: Option<&str>) -> String {
 }
 
 fn format_function_declaration(proto: &LMIRFunctionPrototype) -> String {
-    let return_type = if let Some(ref tb) = proto.temp_buffer {
-        lmir_type_to_c(tb, None)
+    let return_type = if proto.signature.return_type.is_void() {
+        "void".to_string()
     } else {
-        lmir_type_to_c(&proto.return_type, None)
+        lmir_type_to_c(&proto.signature.return_type, None)
     };
 
-    let params: Vec<String> = proto.params.iter().enumerate()
-        .filter(|(i, _)| {
-            !(proto.temp_buffer.is_some() && *i == 0)
-        })
+    let params: Vec<String> = proto
+        .signature
+        .params
+        .iter()
+        .enumerate()
         .map(|(i, param)| {
-            let name = param.name.as_deref()
-                .unwrap_or(&format!("arg{i}"))
-                .to_string();
+            let name = param
+                .name
+                .as_ref()
+                .map(CXIdent::as_string)
+                .unwrap_or(format!("arg{i}"));
             lmir_type_to_c(&param._type, Some(&name))
         })
         .collect();

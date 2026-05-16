@@ -2,20 +2,23 @@ use cx_util::identifier::CXIdent;
 use std::fmt::{Display, Formatter, Result};
 
 use crate::{
-    ast::{CXAST, CXBinOp, CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex},
+    ast::{
+        CXBinOp, CXExprKind, CXExpression, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXAST,
+    },
     data::{
-        CX_CONST, CXFunctionKey, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXLinkageMode, CXReceiverMode, CXTemplate, CXTemplateInput, CXType, CXTypeKind
+        CXFunctionKey, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXLinkageMode,
+        CXReceiverMode, CXTemplate, CXTemplateInput, CXType, CXTypeKind, CX_CONST,
     },
 };
 
 // Helper struct for indented formatting of CXExpr
 struct CXExprFormatter<'a> {
-    expr: &'a CXExpr,
+    expr: &'a CXExpression,
     depth: usize,
 }
 
 impl<'a> CXExprFormatter<'a> {
-    fn new(expr: &'a CXExpr, depth: usize) -> Self {
+    fn new(expr: &'a CXExpression, depth: usize) -> Self {
         Self { expr, depth }
     }
 
@@ -75,8 +78,13 @@ impl Display for CXLinkageMode {
 impl Display for CXGlobalVariable {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            CXGlobalVariable::EnumConstant(val) => {
-                write!(f, "enum constant {}", val)
+            CXGlobalVariable::EnumDefinition { variants } => {
+                let variants = variants
+                    .iter()
+                    .map(|variant| variant.name.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "enum {{ {} }}", variants)
             }
 
             CXGlobalVariable::Standard {
@@ -118,9 +126,17 @@ impl Display for CXFunctionStmt {
                 writeln!(f, "}}")
             }
 
-            CXFunctionStmt::TemplatedFunction { prototype, template_prototype, body } => {
+            CXFunctionStmt::TemplatedFunction {
+                prototype,
+                template_prototype,
+                body,
+            } => {
                 writeln!(f, "TemplatedFunction {prototype} {{ ")?;
-                writeln!(f, "Template Prototype: {}", template_prototype.types.join(", "))?;
+                writeln!(
+                    f,
+                    "Template Prototype: {}",
+                    template_prototype.types.join(", ")
+                )?;
                 write!(f, "{}", CXExprFormatter::new(body, 1))?;
                 writeln!(f, "}}")
             }
@@ -128,7 +144,7 @@ impl Display for CXFunctionStmt {
     }
 }
 
-impl Display for CXExpr {
+impl Display for CXExpression {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         CXExprFormatter::new(self, 0).fmt(f)
     }
@@ -166,16 +182,16 @@ impl<'a> Display for CXExprFormatter<'a> {
                 initial_value,
             } => {
                 writeln!(f, "VarDeclaration {name}: {_type}")?;
-                
+
                 self.indent_plus_one(f)?;
-                
+
                 if let Some(init) = initial_value {
                     writeln!(f, "InitialValue:")?;
                     CXExprFormatter::new(init, self.depth + 2).fmt(f)?;
                 } else {
                     writeln!(f, "No initial value")?;
                 }
-                
+
                 Ok(())
             }
             CXExprKind::IntLiteral { val, .. } => writeln!(f, "IntLiteral {}", val),
@@ -199,6 +215,15 @@ impl<'a> Display for CXExprFormatter<'a> {
             CXExprKind::Move { expr } => {
                 writeln!(f, "Move")?;
                 CXExprFormatter::new(expr, self.depth + 1).fmt(f)
+            }
+            CXExprKind::Unpack { expr, bindings } => {
+                writeln!(f, "Unpack")?;
+                CXExprFormatter::new(expr, self.depth + 1).fmt(f)?;
+                for binding in bindings {
+                    self.indent_plus_one(f)?;
+                    writeln!(f, "{}: {}", binding.field, binding.binding)?;
+                }
+                Ok(())
             }
             CXExprKind::InitializerList { indices } => {
                 writeln!(f, "InitializerList")?;
@@ -224,6 +249,17 @@ impl<'a> Display for CXExprFormatter<'a> {
                 }
                 Ok(())
             }
+            CXExprKind::Ternary {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                writeln!(f, "Ternary")?;
+                CXExprFormatter::new(condition, self.depth + 1).fmt(f)?;
+                CXExprFormatter::new(then_branch, self.depth + 1).fmt(f)?;
+                CXExprFormatter::new(else_branch, self.depth + 1).fmt(f)?;
+                Ok(())
+            }
             CXExprKind::For {
                 init,
                 condition,
@@ -245,16 +281,17 @@ impl<'a> Display for CXExprFormatter<'a> {
                 CXExprFormatter::new(body, self.depth + 1).fmt(f)?;
                 Ok(())
             }
-            CXExprKind::Defer { expr } => {
-                writeln!(f, "Defer")?;
-                CXExprFormatter::new(expr, self.depth + 1).fmt(f)
-            }
+
             CXExprKind::Unsafe { expr } => {
                 writeln!(f, "Unsafe")?;
                 CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
             CXExprKind::Leak { expr } => {
                 writeln!(f, "Leak")?;
+                CXExprFormatter::new(expr, self.depth + 1).fmt(f)
+            }
+            CXExprKind::Adopt { expr } => {
+                writeln!(f, "Adopt")?;
                 CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
             CXExprKind::SizeOfExpr { expr } => {
@@ -406,8 +443,8 @@ impl Display for CXTypeKind {
             CXTypeKind::ExplicitSizedArray(inner, size) => write!(f, "[{inner}; {size}]"),
             CXTypeKind::ImplicitSizedArray(inner) => write!(f, "[{inner}]"),
             CXTypeKind::MemoryReference { inner_type } => write!(f, "{inner_type}&"),
-            CXTypeKind::PointerTo { inner_type, weak } => {
-                write!(f, "{}{}", if *weak { "weak " } else { "" }, inner_type)
+            CXTypeKind::PointerTo { inner_type } => {
+                write!(f, "{}*", inner_type)
             }
 
             CXTypeKind::Structured {
@@ -417,7 +454,21 @@ impl Display for CXTypeKind {
             } => {
                 let fields_str = fields
                     .iter()
-                    .map(|(_, ty)| format!("{ty}"))
+                    .map(|field| match field {
+                        crate::data::CXField::Standard { _type, .. } => format!("{_type}"),
+                        crate::data::CXField::Bitfield {
+                            name,
+                            integer_type,
+                            width,
+                        } => format!(
+                            "{}{} : {}",
+                            integer_type,
+                            name.as_deref()
+                                .map(|name| format!(" {name}"))
+                                .unwrap_or_default(),
+                            width
+                        ),
+                    })
                     .collect::<Vec<_>>()
                     .join(", ");
                 let mut attrs = Vec::new();
@@ -443,7 +494,21 @@ impl Display for CXTypeKind {
             CXTypeKind::Union { name, fields } => {
                 let fields_str = fields
                     .iter()
-                    .map(|(_, ty)| format!("{ty}"))
+                    .map(|field| match field {
+                        crate::data::CXField::Standard { _type, .. } => format!("{_type}"),
+                        crate::data::CXField::Bitfield {
+                            name,
+                            integer_type,
+                            width,
+                        } => format!(
+                            "{}{} : {}",
+                            integer_type,
+                            name.as_deref()
+                                .map(|name| format!(" {name}"))
+                                .unwrap_or_default(),
+                            width
+                        ),
+                    })
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(
@@ -460,7 +525,14 @@ impl Display for CXTypeKind {
             } => {
                 let variants_str = variants
                     .iter()
-                    .map(|(name, ty)| format!("{name}: {ty}"))
+                    .map(|field| match field {
+                        crate::data::CXField::Standard { name, _type } => {
+                            format!("{name}: {_type}")
+                        }
+                        crate::data::CXField::Bitfield { .. } => {
+                            "<invalid bitfield variant>".to_string()
+                        }
+                    })
                     .collect::<Vec<_>>()
                     .join(", ");
                 let mut attrs = Vec::new();
@@ -491,18 +563,16 @@ impl Display for CXFunctionPrototype {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut params = Vec::new();
 
-        params.extend(self.params
-            .iter()
-            .map(|param| {
-                format!(
-                    "{}: {}",
-                    param.name.as_ref().unwrap_or(&CXIdent::new("_")),
-                    param._type
-                )
-            }));
+        params.extend(self.params.iter().map(|param| {
+            format!(
+                "{}: {}",
+                param.name.as_ref().unwrap_or(&CXIdent::new("_")),
+                param._type
+            )
+        }));
 
         let params_str = params.join(", ");
-        write!(f, "{} {}({})", self.return_type, self.kind, params_str)
+        write!(f, "{} :: {}({})", self.return_type, self.kind, params_str)
     }
 }
 
@@ -542,21 +612,33 @@ impl Display for CXFunctionKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             CXFunctionKind::Standard(name) => write!(f, "{name}"),
-            CXFunctionKind::MemberFunction { member_type, name, receiver } => {
+            CXFunctionKind::MemberFunction {
+                member_type,
+                name,
+                receiver,
+            } => {
                 write!(f, "{member_type}::{name}")?;
-                
+
                 match receiver.mode {
                     CXReceiverMode::ByRef => {
                         let is_const = (receiver.specifiers & CX_CONST) != 0;
-                        
-                        write!(f, " (receiver: {}*this)", if is_const { "const " } else { "" })
+
+                        write!(
+                            f,
+                            " (receiver: {}*this)",
+                            if is_const { "const " } else { "" }
+                        )
                     }
                     CXReceiverMode::ByMove => {
                         let is_const = (receiver.specifiers & CX_CONST) != 0;
-                        
-                        write!(f, " (receiver: {}this)", if is_const { "const " } else { "" })
+
+                        write!(
+                            f,
+                            " (receiver: {}this)",
+                            if is_const { "const " } else { "" }
+                        )
                     }
-                    CXReceiverMode::None => Ok(())
+                    CXReceiverMode::None => Ok(()),
                 }
             }
             CXFunctionKind::StaticMemberFunction { member_type, name } => {
@@ -570,10 +652,16 @@ impl Display for CXFunctionKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             CXFunctionKey::Standard(name) => write!(f, "{name}"),
-            CXFunctionKey::MemberFunction { type_base_name, name } => {
+            CXFunctionKey::MemberFunction {
+                type_base_name,
+                name,
+            } => {
                 write!(f, "(member) {type_base_name}::{name}")
             }
-            CXFunctionKey::StaticMemberFunction { type_base_name, name } => {
+            CXFunctionKey::StaticMemberFunction {
+                type_base_name,
+                name,
+            } => {
                 write!(f, "(static) {type_base_name}::{name}")
             }
         }

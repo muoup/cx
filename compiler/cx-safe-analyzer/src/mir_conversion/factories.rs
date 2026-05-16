@@ -1,12 +1,12 @@
 use cx_mir::mir::{
+    data::{MIRIntegerType, MIRType, MIRTypeKind},
     expression::{
         MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp,
         MIRPtrBinOp, MIRPtrDiffBinOp, MIRUnOp,
     },
-    types::{MIRIntegerType, MIRType, MIRTypeKind},
 };
 use cx_safe_ir::{ast::*, intrinsic::*};
-use cx_util::{identifier::CXIdent, CXError, CXResult};
+use cx_util::{CXError, CXResult, identifier::CXIdent};
 
 use crate::{
     log_analysis_error,
@@ -17,16 +17,6 @@ pub(crate) fn monad_unit(operation: CVMOperation) -> FMIRType {
     FMIRType::CMonad {
         inner: Box::new(FMIRType::pure(MIRType::unit())),
         operation,
-    }
-}
-
-pub(crate) fn pointer_alias(name: &CXIdent, pointer_type: MIRType) -> FMIRNode {
-    FMIRNode {
-        token_range: None,
-        body: FMIRNodeBody::VariableAlias {
-            name: name.as_string(),
-        },
-        _type: FMIRType::pure(pointer_type),
     }
 }
 
@@ -116,6 +106,9 @@ pub fn int_binop_intrinsic(op: &MIRIntegerBinOp) -> FMIRIntrinsicIBinOp {
         MIR::BAND => FMIR::BAND,
         MIR::BOR => FMIR::BOR,
         MIR::BXOR => FMIR::BXOR,
+        MIR::SHL => FMIR::SHL,
+        MIR::ASHR => FMIR::ASHR,
+        MIR::LSHR => FMIR::LSHR,
     }
 }
 
@@ -181,8 +174,8 @@ pub fn binary_op_intrinsic(op: &MIRBinOp) -> FMIRBinaryIntrinsic {
 }
 
 pub fn coercion_intrinsic(
-    env: &FMIREnvironment,
-    expr: &MIRExpression,
+    _env: &FMIREnvironment,
+    _expr: &MIRExpression,
     coercion: &MIRCoercion,
 ) -> CXResult<FMIRCastIntrinsic> {
     Ok(match coercion {
@@ -207,17 +200,10 @@ pub fn coercion_intrinsic(
             to_bits: to_type.bytes() * 8,
             sextend: *sextend,
         },
-        MIRCoercion::IntToBool => FMIRCastIntrinsic::IntToBool,
-        MIRCoercion::ReinterpretBits => FMIRCastIntrinsic::ReinterpretBits,
-        MIRCoercion::GetFnPtr => FMIRCastIntrinsic::ReinterpretBits,
-
-        MIRCoercion::CStrToStr => {
-            return log_analysis_error!(
-                env,
-                expr,
-                "Converting from char* to _str& is an unsafe coercion",
-            )
+        MIRCoercion::Typechange | MIRCoercion::ReinterpretBits => {
+            FMIRCastIntrinsic::ReinterpretBits
         }
+        MIRCoercion::GetFnPtr => todo!(),
     })
 }
 
@@ -260,6 +246,7 @@ pub(crate) fn source_variable_name(expr: &MIRExpression) -> Option<&CXIdent> {
         MIRExpressionKind::Variable(name) | MIRExpressionKind::ContractVariable { name, .. } => {
             Some(name)
         }
+        MIRExpressionKind::MemberAccess { base, .. } => source_variable_name(base),
         _ => None,
     }
 }
@@ -337,11 +324,15 @@ pub(crate) fn store_node(pointer: FMIRNode, value: FMIRNode, operation: CVMOpera
     }
 }
 
-pub(crate) fn increment_amount_node(value: i64, mir_type: &MIRType) -> CXResult<FMIRNode> {
+pub(crate) fn increment_amount_node(
+    env: &FMIREnvironment,
+    value: i64,
+    mir_type: &MIRType,
+) -> CXResult<FMIRNode> {
     let MIRTypeKind::Integer { _type, signed } = &mir_type.kind else {
         return CXError::create_result(format!(
             "FMIR increment desugaring expected integer type, found '{}'",
-            mir_type
+            mir_type.display_with(&env.type_definitions)
         ));
     };
 
@@ -362,10 +353,14 @@ pub(crate) fn convert_increment(
     is_pre: bool,
 ) -> CXResult<FMIRNode> {
     let pointer_node = convert_expression(env, operand_expr)?;
-    let Some(value_type) = operand_expr._type.mem_ref_inner().cloned() else {
+    let Some(value_type) = env
+        .type_definitions
+        .mem_ref_inner(&operand_expr._type)
+        .cloned()
+    else {
         return CXError::create_result(format!(
             "FMIR increment desugaring expected memory reference operand, found '{}'",
-            operand_expr._type
+            operand_expr._type.display_with(&env.type_definitions)
         ));
     };
 
@@ -390,7 +385,7 @@ pub(crate) fn convert_increment(
                 bits: _type.bytes() * 8,
                 op: FMIRIntrinsicIBinOp::ADD,
             }),
-            increment_amount_node(i64::from(amount), &value_type)?,
+            increment_amount_node(env, i64::from(amount), &value_type)?,
         ),
         MIRTypeKind::PointerTo { .. } => {
             let op = if amount < 0 {
@@ -404,13 +399,13 @@ pub(crate) fn convert_increment(
             });
             (
                 FMIRIntrinsicKind::Binary(FMIRBinaryIntrinsic::PointerDiff { op }),
-                increment_amount_node(i64::from(amount).abs(), &delta_type)?,
+                increment_amount_node(env, i64::from(amount).abs(), &delta_type)?,
             )
         }
         _ => {
             return CXError::create_result(format!(
                 "FMIR increment desugaring requires integer or pointer inner type, found '{}'",
-                value_type
+                value_type.display_with(&env.type_definitions)
             ));
         }
     };

@@ -5,8 +5,8 @@ use cx_lmir::{
     LMIRInstructionKind, LMIRValue,
 };
 use cx_mir::mir::{
+    data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
-    types::MIRType,
 };
 use cx_util::CXResult;
 
@@ -47,11 +47,11 @@ pub fn lower_if(
 
     // Then branch
     builder.set_current_block(then_block_id.clone());
-    
+
     builder.push_scope(None, None);
-    lower_expression(builder, then_branch)?;
+    let then_result = lower_expression(builder, then_branch)?;
     builder.pop_scope()?;
-    
+
     builder.add_new_instruction(
         LMIRInstructionKind::Jump {
             target: merge_block_id.clone(),
@@ -62,9 +62,9 @@ pub fn lower_if(
 
     // Else branch
     builder.set_current_block(else_block_id.clone());
-    if let Some(else_expr) = else_branch {
+    let else_result = if let Some(else_expr) = else_branch {
         builder.push_scope(None, None);
-        lower_expression(builder, else_expr)?;
+        let else_result = lower_expression(builder, else_expr)?;
         builder.pop_scope()?;
         builder.add_new_instruction(
             LMIRInstructionKind::Jump {
@@ -73,11 +73,28 @@ pub fn lower_if(
             LMIRType::unit(),
             false,
         )?;
-    }
+        Some(else_result)
+    } else {
+        None
+    };
 
     builder.pop_scope()?;
     builder.move_block_to_end(&merge_block_id);
     builder.set_current_block(merge_block_id);
+
+    if !matches!(_result_type.kind, MIRTypeKind::Unit) {
+        if let Some(else_result) = else_result {
+            let result_type = builder.convert_cx_type(_result_type);
+            return builder.add_new_instruction(
+                LMIRInstructionKind::Phi {
+                    predecessors: vec![(then_result, then_block_id), (else_result, else_block_id)],
+                },
+                result_type,
+                true,
+            );
+        }
+    }
+
     Ok(LMIRValue::NULL)
 }
 
@@ -255,12 +272,14 @@ pub fn lower_cswitch(
 
     for (i, (_, case_body)) in cases.iter().enumerate() {
         builder.set_current_block(case_blocks[i].clone());
-        
+
         builder.push_scope(None, None);
         lower_expression(builder, case_body)?;
         builder.pop_scope()?;
         builder.add_new_instruction(
-            LMIRInstructionKind::Jump { target: exit_block_id.clone() },
+            LMIRInstructionKind::Jump {
+                target: exit_block_id.clone(),
+            },
             LMIRType::unit(),
             false,
         )?;
@@ -268,7 +287,7 @@ pub fn lower_cswitch(
 
     if let Some(default_expr) = default {
         builder.set_current_block(default_block_id);
-        
+
         builder.push_scope(None, None);
         lower_expression(builder, default_expr)?;
         builder.pop_scope()?;
@@ -293,11 +312,12 @@ pub fn lower_match(
     condition: &MIRExpression,
     arms: &[(Box<MIRExpression>, Box<MIRExpression>)],
     default: Option<&MIRExpression>,
+    exhaustive: bool,
 ) -> CXResult<LMIRValue> {
     let mut bc_condition = lower_expression(builder, condition)?;
-    let inner = condition
-        ._type
-        .mem_ref_inner()
+    let inner = builder
+        .type_definitions
+        .mem_ref_inner(&condition._type)
         .cloned()
         .unwrap_or_else(|| condition._type.clone());
 
@@ -321,6 +341,7 @@ pub fn lower_match(
     };
 
     builder.push_scope(None, Some(exit_block_id.clone()));
+    let mut exit_has_predecessor = default.is_none() && !exhaustive;
 
     let mut targets = Vec::new();
     let mut arm_blocks = Vec::new();
@@ -348,25 +369,58 @@ pub fn lower_match(
 
     for (i, (_, arm_body)) in arms.iter().enumerate() {
         builder.set_current_block(arm_blocks[i].clone());
-        
+
+        let arm_falls_through = is_fall_through(arm_body);
         builder.push_scope(None, None);
         lower_expression(builder, arm_body)?;
         builder.pop_scope()?;
-        builder.add_new_instruction(
-            LMIRInstructionKind::Jump {
-                target: exit_block_id.clone(),
-            },
-            LMIRType::unit(),
-            false,
-        )?;
+        if arm_falls_through && !builder.current_block_closed() {
+            exit_has_predecessor = true;
+            builder.add_new_instruction(
+                LMIRInstructionKind::Jump {
+                    target: exit_block_id.clone(),
+                },
+                LMIRType::unit(),
+                false,
+            )?;
+        } else if !arm_falls_through && !builder.current_block_closed() {
+            let current = builder.current_block();
+            builder.add_new_instruction(
+                LMIRInstructionKind::Jump { target: current },
+                LMIRType::unit(),
+                false,
+            )?;
+        }
     }
 
     if let Some(default_expr) = default {
         builder.set_current_block(default_block_id);
-        
+
+        let default_falls_through = is_fall_through(default_expr);
         builder.push_scope(None, None);
         lower_expression(builder, default_expr)?;
         builder.pop_scope()?;
+        if default_falls_through && !builder.current_block_closed() {
+            exit_has_predecessor = true;
+            builder.add_new_instruction(
+                LMIRInstructionKind::Jump {
+                    target: exit_block_id.clone(),
+                },
+                LMIRType::unit(),
+                false,
+            )?;
+        } else if !default_falls_through && !builder.current_block_closed() {
+            let current = builder.current_block();
+            builder.add_new_instruction(
+                LMIRInstructionKind::Jump { target: current },
+                LMIRType::unit(),
+                false,
+            )?;
+        }
+    }
+
+    builder.set_current_block(exit_block_id.clone());
+    if !exit_has_predecessor {
         builder.add_new_instruction(
             LMIRInstructionKind::Jump {
                 target: exit_block_id.clone(),
@@ -376,35 +430,29 @@ pub fn lower_match(
         )?;
     }
 
-    builder.set_current_block(exit_block_id);
     builder.pop_scope()?;
 
     Ok(LMIRValue::NULL)
 }
 
 /// Lower a return statement
-pub fn lower_return(builder: &mut LMIRBuilder, bc_value: Option<LMIRValue>) -> CXResult<LMIRValue> {
-    if let Some(postcondition) = &builder.current_mir_prototype().contract.postcondition.clone() {
+pub fn lower_return(
+    builder: &mut LMIRBuilder,
+    bc_value: Option<LMIRValue>,
+    postcondition: Option<&MIRExpression>,
+) -> CXResult<LMIRValue> {
+    if let Some(postcondition) = postcondition {
         builder.push_scope(None, None);
-
-        if let Some(ret_name) = &postcondition.0 {
-            let name = ret_name.clone();
-            let Some(returned_value) = bc_value.clone() else {
-                unreachable!("Return value is required for postcondition checking");
-            };
-
-            builder.insert_symbol(name, returned_value);
-        }
-
-        lower_contract_assertion(builder, &postcondition.1, "postcondition failed")?;
+        lower_contract_assertion(builder, postcondition, "postcondition failed")?;
         builder.pop_scope()?;
     }
-    
-    let has_return_buffer = builder.current_prototype().temp_buffer.is_some();
+
+    let signature = builder.current_prototype().signature().clone();
+    let has_return_buffer = signature.return_abi.has_indirect_return_param();
 
     if has_return_buffer {
         let return_buffer = LMIRValue::ParameterRef(0);
-        let return_type = builder.current_prototype().temp_buffer.clone().unwrap();
+        let return_type = signature.return_type.clone();
 
         if let Some(src) = bc_value {
             builder.add_new_instruction(
@@ -423,9 +471,7 @@ pub fn lower_return(builder: &mut LMIRBuilder, bc_value: Option<LMIRValue>) -> C
         }
 
         builder.add_new_instruction(
-            LMIRInstructionKind::Return {
-                value: Some(return_buffer),
-            },
+            LMIRInstructionKind::Return { value: None },
             LMIRType::unit(),
             false,
         )
@@ -435,5 +481,25 @@ pub fn lower_return(builder: &mut LMIRBuilder, bc_value: Option<LMIRValue>) -> C
             LMIRType::unit(),
             false,
         )
+    }
+}
+
+fn is_fall_through(expr: &MIRExpression) -> bool {
+    match &expr.kind {
+        MIRExpressionKind::Return { .. }
+        | MIRExpressionKind::Break { .. }
+        | MIRExpressionKind::Continue { .. } => false,
+        MIRExpressionKind::Unsafe { expression, .. } => is_fall_through(expression),
+        MIRExpressionKind::Block { statements } => statements
+            .last()
+            .map(is_fall_through)
+            .unwrap_or(true),
+        MIRExpressionKind::CallFunction { function, .. } => {
+            !matches!(
+                &function.kind,
+                MIRExpressionKind::FunctionReference { name } if name.as_str() == "exit"
+            )
+        }
+        _ => true,
     }
 }

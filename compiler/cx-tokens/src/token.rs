@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 
 use speedy::{Context, Readable, Reader, Writable, Writer};
 
@@ -27,7 +27,7 @@ impl TokenRange {
             file_origin,
         }
     }
-    
+
     pub fn is_empty(&self) -> bool {
         self.start_token == 0 && self.end_token == 0
     }
@@ -60,10 +60,29 @@ impl<C: Context> Writable<C> for TokenRange {
 pub struct Token {
     pub kind: TokenKind,
 
-    pub line: u32,
-    pub start_index: usize,
-    pub end_index: usize,
-    pub file_origin: Arc<str>,
+    pub byte_start_index: usize,
+    pub byte_end_index: usize,
+    pub file_origin: Arc<Path>,
+}
+
+impl Token {
+    pub fn new(kind: TokenKind, byte_range: (usize, usize), file_origin: Arc<Path>) -> Self {
+        Self {
+            kind,
+            byte_start_index: byte_range.0,
+            byte_end_index: byte_range.1,
+            file_origin,
+        }
+    }
+
+    pub fn new_unknown(kind: TokenKind) -> Token {
+        Self {
+            kind,
+            byte_start_index: 0,
+            byte_end_index: 0,
+            file_origin: Arc::from(Path::new("")),
+        }
+    }
 }
 
 #[macro_export]
@@ -146,7 +165,7 @@ pub enum TokenKind {
     CompilerIdentifier(String),
     StringLiteral(String),
     IntLiteral(i64),
-    FloatLiteral(f64),
+    FloatLiteral(f64, u8),
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -194,6 +213,7 @@ pub enum PunctuatorType {
     Colon,
     Period,
     QuestionMark,
+    Hash,
 
     ThickArrow, /* (=>) */
 }
@@ -230,7 +250,6 @@ pub enum KeywordType {
 
     // CX Specific
     Import,
-    Defer,
     Strong,
     Weak,
     Template,
@@ -256,6 +275,26 @@ pub enum IntrinsicType {
     Double,
     Unsigned,
     Signed,
+    Complex,
+}
+
+impl IntrinsicType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            IntrinsicType::Void => "void",
+            IntrinsicType::Bool => "bool",
+            IntrinsicType::Char => "char",
+            IntrinsicType::Short => "short",
+            IntrinsicType::Int => "int",
+            IntrinsicType::Long => "long",
+            IntrinsicType::Auto => "auto",
+            IntrinsicType::Float => "float",
+            IntrinsicType::Double => "double",
+            IntrinsicType::Unsigned => "unsigned",
+            IntrinsicType::Signed => "signed",
+            IntrinsicType::Complex => "_Complex",
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -294,6 +333,11 @@ impl TokenKind {
             "long" => TokenKind::Intrinsic(IntrinsicType::Long),
             "short" => TokenKind::Intrinsic(IntrinsicType::Short),
             "float" => TokenKind::Intrinsic(IntrinsicType::Float),
+            "double" => TokenKind::Intrinsic(IntrinsicType::Double),
+            "_Complex" | "__complex" | "__complex__" => {
+                TokenKind::Intrinsic(IntrinsicType::Complex)
+            }
+
             "char" => TokenKind::Intrinsic(IntrinsicType::Char),
             "void" => TokenKind::Intrinsic(IntrinsicType::Void),
             "auto" => TokenKind::Intrinsic(IntrinsicType::Auto),
@@ -314,7 +358,6 @@ impl TokenKind {
 
             // CX Extensions
             "import" => TokenKind::Keyword(KeywordType::Import),
-            "defer" => TokenKind::Keyword(KeywordType::Defer),
 
             "weak" => TokenKind::Keyword(KeywordType::Weak),
             "move" => TokenKind::Operator(OperatorType::Move),

@@ -1,10 +1,14 @@
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 #[derive(Debug, Clone)]
-pub struct ScopedMap<T> {
-    data: HashMap<String, T>,
-    overwrites: Vec<Vec<(String, Option<T>)>>,
+pub struct ScopedMap<K, V>
+where
+    K: Eq + Hash + Clone,
+{
+    data: HashMap<K, V>,
+    overwrites: Vec<Vec<(K, Option<V>)>>,
 }
 
 #[derive(Debug, Clone)]
@@ -13,7 +17,10 @@ pub struct ScopedSet<T: Eq + Hash + Clone> {
     writes: Vec<Vec<T>>,
 }
 
-impl<T> Default for ScopedMap<T> {
+impl<K, V> Default for ScopedMap<K, V>
+where
+    K: Eq + Hash + Clone,
+{
     fn default() -> Self {
         Self::new()
     }
@@ -25,14 +32,17 @@ impl<T: Eq + Hash + Clone> Default for ScopedSet<T> {
     }
 }
 
-impl<T> ScopedMap<T> {
+impl<K, V> ScopedMap<K, V>
+where
+    K: Eq + Hash + Clone,
+{
     pub fn new() -> Self {
         Self {
             data: HashMap::new(),
-            overwrites: Vec::new()
+            overwrites: Vec::new(),
         }
     }
-    
+
     pub fn new_with_starting_scope() -> Self {
         let mut m = Self::new();
         m.push_scope();
@@ -43,7 +53,7 @@ impl<T> ScopedMap<T> {
         self.overwrites.push(Vec::new());
     }
 
-    pub fn pop_scope(&mut self) -> Box<[(String, T)]> {
+    pub fn pop_scope(&mut self) -> Box<[(K, V)]> {
         if self.overwrites.is_empty() {
             panic!("Scope table has uneven push/pop");
         }
@@ -65,15 +75,15 @@ impl<T> ScopedMap<T> {
         acc.into_boxed_slice()
     }
 
-    pub fn insert(&mut self, name: String, value: T) {
+    pub fn insert(&mut self, name: K, value: V) {
         let replacing = self.data.insert(name.clone(), value);
         self.overwrites
             .last_mut()
             .expect("Uneven push/pop in ScopedMap")
             .push((name, replacing));
     }
-    
-    pub fn insert_at_level(&mut self, level: usize, name: String, value: T) {
+
+    pub fn insert_at_level(&mut self, level: usize, name: K, value: V) {
         let replacing = self.data.insert(name.clone(), value);
         self.overwrites
             .get_mut(level)
@@ -81,22 +91,26 @@ impl<T> ScopedMap<T> {
             .push((name, replacing));
     }
 
-    pub fn get(&self, name: &str) -> Option<&T> {
+    pub fn get<Q>(&self, name: &Q) -> Option<&V>
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         self.data.get(name)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &T)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
         self.data.iter()
     }
-    
-    pub fn get_all_at_level(&self, level: usize) -> impl Iterator<Item = (&String, &T)> {
+
+    pub fn get_all_at_level(&self, level: usize) -> impl Iterator<Item = (&K, &V)> {
         self.overwrites
             .get(level)
             .expect("Invalid level in ScopedMap")
             .iter()
             .filter_map(move |(name, _)| self.data.get_key_value(name))
     }
-    
+
     pub fn scope_depth(&self) -> usize {
         self.overwrites.len() - 1
     }

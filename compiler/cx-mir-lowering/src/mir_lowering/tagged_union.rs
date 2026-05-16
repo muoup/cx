@@ -3,13 +3,13 @@ use cx_lmir::{
     LMIRInstructionKind, LMIRValue,
 };
 use cx_mir::mir::{
+    data::{MIRType, MIRTypeKind},
     expression::MIRExpression,
-    types::{MIRType, MIRTypeKind},
 };
 use cx_util::CXResult;
 
-use crate::builder::LMIRBuilder;
 use super::expressions::lower_expression;
+use crate::builder::LMIRBuilder;
 
 /// Lower getting the tag from a tagged union
 pub fn get_tagged_union_tag(
@@ -41,8 +41,26 @@ pub fn get_tagged_union_tag(
 pub fn lower_tagged_union_get(
     builder: &mut LMIRBuilder,
     value: &MIRExpression,
+    variant_type: &MIRType,
+    result_type: &MIRType,
 ) -> CXResult<LMIRValue> {
-    lower_expression(builder, value)
+    let payload = lower_expression(builder, value)?;
+    let payload_type = builder.convert_cx_type(variant_type);
+
+    if payload_type.is_void() {
+        Ok(LMIRValue::NULL)
+    } else if result_type.is_memory_reference() || payload_type.is_memory_resident() {
+        Ok(payload)
+    } else {
+        builder.add_new_instruction(
+            LMIRInstructionKind::Load {
+                memory: payload,
+                _type: payload_type.clone(),
+            },
+            payload_type,
+            true,
+        )
+    }
 }
 
 /// Lower setting a variant in a tagged union
@@ -73,7 +91,7 @@ pub fn lower_tagged_union_set(
     let mir_inner_type = &inner_value._type;
     let inner_bc_type = builder.convert_cx_type(mir_inner_type);
 
-    if mir_inner_type.is_structure() {
+    if inner_bc_type.is_memory_resident() {
         builder.add_new_instruction(
             LMIRInstructionKind::Memcpy {
                 dest: bc_target.clone(),
@@ -137,7 +155,7 @@ pub fn lower_construct_tagged_union(
     let bc_inner = lower_expression(builder, value)?;
     let inner_type = builder.convert_cx_type(&value._type);
 
-    if inner_type.is_structure() {
+    if inner_type.is_memory_resident() {
         builder.add_new_instruction(
             LMIRInstructionKind::Memcpy {
                 dest: allocation.clone(),

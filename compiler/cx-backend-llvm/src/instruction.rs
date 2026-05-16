@@ -1,14 +1,16 @@
 use crate::arithmetic::{generate_int_binop, generate_ptr_binop};
-use crate::attributes::attr_noundef;
+use crate::attributes::{attr_noundef, attr_sret};
 use crate::routines::get_function;
-use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
+use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_signature, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{
-    LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind, LMIRIntUnOp,
+    LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind,
+    LMIRIntUnOp, LMIRReturnABI,
 };
 use cx_util::log_error;
 use inkwell::AddressSpace;
 use inkwell::attributes::AttributeLoc;
+use inkwell::values::BasicValue;
 use inkwell::values::{AnyValue, AnyValueEnum, ValueKind};
 use std::sync::Mutex;
 
@@ -35,12 +37,13 @@ pub(crate) fn generate_instruction<'a, 'b>(
         LMIRInstructionKind::Alias { value } => function_state.get_value(value)?,
 
         LMIRInstructionKind::Allocate { _type, alignment } => {
+            let storage_type = global_state
+                .context
+                .i8_type()
+                .array_type(_type.size().max(1) as u32);
             let inst = function_state
                 .builder
-                .build_alloca(
-                    any_to_basic_type(bc_llvm_type(global_state.context, _type)?)?,
-                    inst_num().as_str(),
-                )
+                .build_alloca(storage_type, inst_num().as_str())
                 .unwrap()
                 .as_any_value_enum();
 
@@ -54,9 +57,13 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::Value(inst)
         }
 
-        LMIRInstructionKind::DirectCall { args, method_sig } => {
-            let Some(function_val) = get_function(global_state, method_sig) else {
-                log_error!("Function not found in module: {}", method_sig.name);
+        LMIRInstructionKind::DirectCall {
+            func,
+            args,
+            method_sig,
+        } => {
+            let Some(function_val) = get_function(global_state, func.as_str(), method_sig) else {
+                log_error!("Function not found in module: {}", func);
             };
 
             let arg_vals = args
@@ -81,11 +88,9 @@ pub(crate) fn generate_instruction<'a, 'b>(
                     attr_noundef(global_state.context),
                 )
             }
+            apply_call_abi_attributes(global_state, &val, method_sig);
 
-            match val.try_as_basic_value() {
-                ValueKind::Basic(val) => CodegenValue::Value(val.as_any_value_enum()),
-                ValueKind::Instruction(_) => CodegenValue::NULL,
-            }
+            codegen_call_return(function_state, method_sig, &val)?
         }
 
         LMIRInstructionKind::IndirectCall {
@@ -94,7 +99,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             method_sig,
         } => {
             let ptr = function_state.get_value(func_ptr)?.get_value();
-            let fn_type = bc_llvm_prototype(global_state, method_sig).unwrap();
+            let fn_type = bc_llvm_signature(global_state, method_sig).unwrap();
             let args = args
                 .iter()
                 .map(|arg| {
@@ -115,11 +120,9 @@ pub(crate) fn generate_instruction<'a, 'b>(
                     inst_num().as_str(),
                 )
                 .unwrap();
+            apply_call_abi_attributes(global_state, &val, method_sig);
 
-            match val.try_as_basic_value() {
-                ValueKind::Basic(val) => CodegenValue::Value(val.as_any_value_enum()),
-                ValueKind::Instruction(_) => CodegenValue::NULL,
-            }
+            codegen_call_return(function_state, method_sig, &val)?
         }
 
         LMIRInstructionKind::Coercion {
@@ -178,6 +181,24 @@ pub(crate) fn generate_instruction<'a, 'b>(
             };
 
             let value = function_state.get_value(value).unwrap();
+            if function_state.signature.return_type.is_memory_resident()
+                && matches!(
+                    function_state.signature.return_abi,
+                    LMIRReturnABI::Direct { .. }
+                )
+            {
+                let return_value = build_direct_return_from_memory(
+                    global_state,
+                    function_state,
+                    value.get_value(),
+                )?;
+                function_state
+                    .builder
+                    .build_return(Some(&return_value))
+                    .unwrap();
+
+                return Some(CodegenValue::NULL);
+            }
 
             let basic_val = any_to_basic_val(value.get_value())?;
 
@@ -194,21 +215,50 @@ pub(crate) fn generate_instruction<'a, 'b>(
             _type,
             memory,
         } => {
-            let any_value = function_state.get_value(value).unwrap().get_value();
-            let basic_val = any_to_basic_val(any_value)
-                .unwrap_or_else(|| panic!("Failed to convert value {any_value:?} to basic value"));
+            let codegen_value = function_state.get_value(value).unwrap();
 
             let memory_val = function_state
                 .get_value(memory)?
                 .get_value()
                 .into_pointer_value();
 
-            if _type.is_structure() {
-            } else {
-                function_state
-                    .builder
-                    .build_store(memory_val, basic_val)
-                    .unwrap();
+            match codegen_value {
+                CodegenValue::AggregateSlots(values) => {
+                    let usize_type = global_state.context.i64_type();
+                    let base = function_state
+                        .builder
+                        .build_ptr_to_int(memory_val, usize_type, inst_num().as_str())
+                        .unwrap();
+                    for (slot, value) in values {
+                        let offset = usize_type.const_int(slot.offset as u64, false);
+                        let ptr_int = function_state
+                            .builder
+                            .build_int_add(base, offset, inst_num().as_str())
+                            .unwrap();
+                        let field_ptr = function_state
+                            .builder
+                            .build_int_to_ptr(
+                                ptr_int,
+                                global_state.context.ptr_type(AddressSpace::from(0)),
+                                inst_num().as_str(),
+                            )
+                            .unwrap();
+                        function_state
+                            .builder
+                            .build_store(field_ptr, value)
+                            .unwrap();
+                    }
+                }
+                CodegenValue::Value(any_value) => {
+                    let basic_val = any_to_basic_val(any_value).unwrap_or_else(|| {
+                        panic!("Failed to convert value {any_value:?} to basic value")
+                    });
+                    function_state
+                        .builder
+                        .build_store(memory_val, basic_val)
+                        .unwrap();
+                }
+                CodegenValue::NULL => {}
             }
 
             CodegenValue::NULL
@@ -556,8 +606,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
 
         LMIRInstructionKind::StructAccess {
             struct_,
-            struct_type,
-            field_index,
+            field_offset,
             ..
         } => {
             let struct_ptr = function_state
@@ -565,17 +614,27 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .get_value()
                 .into_pointer_value();
 
-            let struct_type = bc_llvm_type(global_state.context, struct_type)?.into_struct_type();
+            let usize_type = global_state.context.i64_type();
+            let ptr_int = function_state
+                .builder
+                .build_ptr_to_int(struct_ptr, usize_type, inst_num().as_str())
+                .unwrap();
+            let offset = usize_type.const_int(*field_offset as u64, false);
+            let field_int = function_state
+                .builder
+                .build_int_add(ptr_int, offset, inst_num().as_str())
+                .unwrap();
 
             let field_ptr = function_state
                 .builder
-                .build_struct_gep(
-                    struct_type,
-                    struct_ptr,
-                    *field_index as u32,
+                .build_int_to_ptr(
+                    field_int,
+                    global_state
+                        .context
+                        .ptr_type(inkwell::AddressSpace::from(0)),
                     inst_num().as_str(),
                 )
-                .expect("Failed to build struct GEP");
+                .unwrap();
 
             CodegenValue::Value(field_ptr.as_any_value_enum())
         }
@@ -718,4 +777,110 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::NULL
         }
     })
+}
+
+fn codegen_call_return<'a, 'b>(
+    function_state: &FunctionState<'a, 'b>,
+    method_sig: &cx_lmir::LMIRFunctionSignature,
+    call: &inkwell::values::CallSiteValue<'a>,
+) -> Option<CodegenValue<'a>> {
+    let basic = match call.try_as_basic_value() {
+        ValueKind::Basic(val) => val,
+        ValueKind::Instruction(_) => return Some(CodegenValue::NULL),
+    };
+
+    match &method_sig.return_abi {
+        LMIRReturnABI::Direct { slots } if slots.len() > 1 => {
+            let aggregate = basic.into_struct_value();
+            let mut values = Vec::new();
+            for (i, slot) in slots.iter().enumerate() {
+                let value = function_state
+                    .builder
+                    .build_extract_value(aggregate, i as u32, inst_num().as_str())
+                    .unwrap();
+                values.push((slot.clone(), value));
+            }
+            Some(CodegenValue::AggregateSlots(values))
+        }
+        _ => Some(CodegenValue::Value(basic.as_any_value_enum())),
+    }
+}
+
+fn apply_call_abi_attributes<'a>(
+    global_state: &GlobalState<'a>,
+    call: &inkwell::values::CallSiteValue<'a>,
+    method_sig: &cx_lmir::LMIRFunctionSignature,
+) -> Option<()> {
+    if let LMIRReturnABI::IndirectSret { alignment: _ } = &method_sig.return_abi {
+        let pointee = bc_llvm_type(global_state.context, &method_sig.return_type)?;
+        call.add_attribute(
+            AttributeLoc::Param(0),
+            attr_sret(global_state.context, pointee),
+        );
+    }
+    Some(())
+}
+
+fn build_direct_return_from_memory<'a, 'b>(
+    global_state: &GlobalState<'a>,
+    function_state: &FunctionState<'a, 'b>,
+    memory: AnyValueEnum<'a>,
+) -> Option<inkwell::values::BasicValueEnum<'a>> {
+    let LMIRReturnABI::Direct { slots } = &function_state.signature.return_abi else {
+        return any_to_basic_val(memory);
+    };
+
+    let memory = memory.into_pointer_value();
+    if slots.len() == 1 {
+        let ty = any_to_basic_type(bc_llvm_type(global_state.context, &slots[0]._type)?)?;
+        return Some(
+            function_state
+                .builder
+                .build_load(ty, memory, inst_num().as_str())
+                .unwrap(),
+        );
+    }
+
+    let fields = slots
+        .iter()
+        .map(|slot| {
+            let field = bc_llvm_type(global_state.context, &slot._type)?;
+            any_to_basic_type(field)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let struct_type = global_state.context.struct_type(fields.as_slice(), false);
+    let mut aggregate = struct_type.const_zero();
+    let usize_type = global_state.context.i64_type();
+    let base = function_state
+        .builder
+        .build_ptr_to_int(memory, usize_type, inst_num().as_str())
+        .unwrap();
+
+    for (i, slot) in slots.iter().enumerate() {
+        let offset = usize_type.const_int(slot.offset as u64, false);
+        let ptr_int = function_state
+            .builder
+            .build_int_add(base, offset, inst_num().as_str())
+            .unwrap();
+        let field_ptr = function_state
+            .builder
+            .build_int_to_ptr(
+                ptr_int,
+                global_state.context.ptr_type(AddressSpace::from(0)),
+                inst_num().as_str(),
+            )
+            .unwrap();
+        let field_ty = any_to_basic_type(bc_llvm_type(global_state.context, &slot._type)?)?;
+        let field = function_state
+            .builder
+            .build_load(field_ty, field_ptr, inst_num().as_str())
+            .unwrap();
+        aggregate = function_state
+            .builder
+            .build_insert_value(aggregate, field, i as u32, inst_num().as_str())
+            .unwrap()
+            .into_struct_value();
+    }
+
+    Some(aggregate.as_basic_value_enum())
 }

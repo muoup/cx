@@ -1,6 +1,7 @@
 use crate::parse::ParserData;
 use cx_ast::ast::{CXBinOp, CXUnOp};
-use cx_ast::{assert_token_matches, next_kind};
+use cx_ast::next_kind;
+use cx_tokens::punctuator;
 use cx_tokens::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_util::CXResult;
 
@@ -73,6 +74,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
             OperatorType::Decrement => Some(CXUnOp::PreIncrement(-1)),
             OperatorType::Minus => Some(CXUnOp::Negative),
             OperatorType::Exclamation => Some(CXUnOp::LNot),
+            OperatorType::Tilda => Some(CXUnOp::BNot),
 
             _ => {
                 data.tokens.back();
@@ -81,7 +83,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
         },
 
         // Maybe a type cast
-        TokenKind::Punctuator(PunctuatorType::OpenParen) => {
+        punctuator!(OpenParen) => {
             let pre_index = data.tokens.index - 1;
 
             if !is_type_decl(data) {
@@ -89,15 +91,18 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
                 return Ok(None);
             }
 
-            let Some((None, _type)) = parse_initializer(data).ok() else {
+            let Some((None, _type, _)) = parse_initializer(data).ok() else {
                 data.tokens.index = pre_index;
                 return Ok(None);
             };
 
-            assert_token_matches!(
-                data.tokens,
-                TokenKind::Punctuator(PunctuatorType::CloseParen)
-            );
+            if !matches!(
+                data.tokens.next().map(|t| &t.kind),
+                Some(punctuator!(CloseParen))
+            ) {
+                data.tokens.index = pre_index;
+                return Ok(None);
+            }
 
             Some(CXUnOp::ExplicitCast(_type))
         }
@@ -166,7 +171,10 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<CXBinOp> {
                 op_to_binop(data, OperatorType::Comma)?
             } else {
                 data.tokens.back();
-                return log_parse_error!(data, "Invalid token: expected binary operator, found comma");
+                return log_parse_error!(
+                    data,
+                    "Invalid token: expected binary operator, found comma"
+                );
             }
         }
         // Handle >> as shift operator (two consecutive Greater tokens)

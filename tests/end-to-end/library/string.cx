@@ -4,7 +4,9 @@ import std::io;
 
 int main() {
     string s = string::new();
-    s.append("Hello, world!");
+    s.append("Hello, worl");
+    s.append_char('d');
+    s.append_char('!');
     printf("%s\n", s.data);
     s.drop();
 }

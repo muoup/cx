@@ -1,0 +1,34 @@
+struct Resource : @nodrop {
+    int data;
+};
+
+struct Container : @nodrop {
+    Resource resource;
+    int count;
+};
+
+void Resource::drop(this) safe {
+    @unsafe {
+        @leak(this);
+    };
+}
+
+void Container::drop(this) safe {
+    @unpack(this) {
+        resource: resource,
+    };
+
+    resource.drop();
+}
+
+int main() {
+    Container container = (Container) {
+        .resource = (Resource) {
+            .data = 1
+        },
+        .count = 2
+    };
+
+    container.drop();
+    return 0;
+}

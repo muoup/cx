@@ -252,10 +252,7 @@ impl LanguageServer for Backend {
         let Some(text) = self.document_map.get(&uri) else {
             return Ok(None);
         };
-        let Some(tokens) = lex(&text) else {
-            return Ok(None);
-        };
-
+        let tokens = lex(&text).map_err(|_| tower_lsp::jsonrpc::Error::internal_error())?;
         let mut semantic_tokens = Vec::new();
         let mut last_line = 0;
         let mut last_start = 0;
@@ -266,20 +263,22 @@ impl LanguageServer for Backend {
                 | TokenKind::Intrinsic(_)
                 | TokenKind::CompilerIdentifier(_) => KEYWORD_IDX,
 
-                TokenKind::IntLiteral(_) | TokenKind::FloatLiteral(_) => NUMBER_IDX,
+                TokenKind::IntLiteral(_) | TokenKind::FloatLiteral(_, _) => NUMBER_IDX,
 
                 TokenKind::StringLiteral(_) => STRING_IDX,
 
                 _ => continue,
             };
 
-            let start = byte_index_to_lsp_position(&text, token.start_index);
-            let end = byte_index_to_lsp_position(&text, token.end_index);
+            let start = byte_index_to_lsp_position(&text, token.byte_start_index);
+            let end = byte_index_to_lsp_position(&text, token.byte_end_index);
             let line = start.line;
             let length = if end.line == start.line {
                 end.character.saturating_sub(start.character)
             } else {
-                text[token.start_index..token.end_index].chars().count() as u32
+                text[token.byte_start_index..token.byte_end_index]
+                    .chars()
+                    .count() as u32
             };
 
             let delta_line = line - last_line;
@@ -333,10 +332,14 @@ impl Backend {
                 verbose: false,
                 working_directory: project_root.to_path_buf(),
                 internal_directory,
-                compilation_mode: cx_pipeline_data::CompilationMode::Binary,
+                compilation_mode: cx_pipeline_data::CompilationMode::Executable,
+                module_mode: true,
                 project_config: None,
                 link_entries: vec![],
+                native_objects: vec![],
+                include_dirs: vec![],
             },
+            module_mode: true,
             module_db: cx_pipeline_data::db::ModuleData::new(),
             linking_files: Mutex::new(HashSet::new()),
         };

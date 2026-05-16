@@ -1,3 +1,5 @@
+#pragma once
+
 typedef void FILE;
 
 FILE *fopen(char *filename, char *mode);

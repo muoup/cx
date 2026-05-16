@@ -1,8 +1,8 @@
-use cx_util::identifier::CXIdent;
 use cx_tokens::TokenRange;
+use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
-use crate::ast::{CXExpr, VisibilityMode};
+use crate::ast::{CXExpression, VisibilityMode};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub enum CXFunctionTypeIdent {
@@ -53,10 +53,10 @@ pub enum CXReceiverMode {
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXReceiverData {
     pub mode: CXReceiverMode,
-    pub specifiers: CXTypeSpecifier,
+    pub specifiers: CXTypeQualifiers,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Readable, Writable)]
+#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Readable, Writable)]
 pub enum CXLinkageMode {
     #[default]
     Standard,
@@ -93,8 +93,8 @@ pub struct CXStructAttributes {
 pub struct CXFunctionContract {
     pub safe: bool,
 
-    pub precondition: Option<CXExpr>,
-    pub postcondition: Option<(Option<CXIdent>, CXExpr)>,
+    pub precondition: Option<CXExpression>,
+    pub postcondition: Option<(Option<CXIdent>, CXExpression)>,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
@@ -104,6 +104,7 @@ pub struct CXFunctionPrototype {
     pub return_type: CXType,
     pub var_args: bool,
     pub contract: CXFunctionContract,
+    pub linkage: CXLinkageMode,
     pub range: TokenRange,
 }
 
@@ -126,13 +127,13 @@ pub struct CXTemplate<Shell> {
 
 pub type CXTypeTemplate = CXTemplate<CXType>;
 pub type CXFunctionTemplate = CXTemplate<CXFunctionPrototype>;
-pub type CXTypeSpecifier = u8;
+pub type CXTypeQualifiers = u8;
 
-pub const CX_CONST: CXTypeSpecifier = 1 << 0;
-pub const CX_VOLATILE: CXTypeSpecifier = 1 << 1;
-pub const CX_RESTRICT: CXTypeSpecifier = 1 << 2;
-pub const CX_THREAD_LOCAL: CXTypeSpecifier = 1 << 3;
-pub const CX_UNION: CXTypeSpecifier = 1 << 4;
+pub const CX_CONST: CXTypeQualifiers = 1 << 0;
+pub const CX_VOLATILE: CXTypeQualifiers = 1 << 1;
+pub const CX_RESTRICT: CXTypeQualifiers = 1 << 2;
+pub const CX_THREAD_LOCAL: CXTypeQualifiers = 1 << 3;
+pub const CX_UNION: CXTypeQualifiers = 1 << 4;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXTemplateInput {
@@ -142,7 +143,40 @@ pub struct CXTemplateInput {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXType {
     pub kind: CXTypeKind,
-    pub specifiers: CXTypeSpecifier,
+    pub specifiers: CXTypeQualifiers,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
+pub enum CXField {
+    Standard {
+        name: String,
+        _type: CXType,
+    },
+    Bitfield {
+        name: Option<String>,
+        integer_type: CXType,
+        width: usize,
+    },
+}
+
+impl CXField {
+    pub fn standard(name: String, _type: CXType) -> Self {
+        Self::Standard { name, _type }
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            CXField::Standard { name, .. } => Some(name.as_str()),
+            CXField::Bitfield { name, .. } => name.as_deref(),
+        }
+    }
+
+    pub fn standard_parts(&self) -> Option<(&String, &CXType)> {
+        match self {
+            CXField::Standard { name, _type } => Some((name, _type)),
+            CXField::Bitfield { .. } => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
@@ -156,7 +190,7 @@ pub enum CXTypeKind {
         input: CXTemplateInput,
     },
 
-    ExplicitSizedArray(Box<CXType>, usize),
+    ExplicitSizedArray(Box<CXType>, Box<CXExpression>),
     ImplicitSizedArray(Box<CXType>),
 
     MemoryReference {
@@ -164,22 +198,21 @@ pub enum CXTypeKind {
     },
     PointerTo {
         inner_type: Box<CXType>,
-        weak: bool,
     },
 
     Structured {
         name: Option<CXIdent>,
         attributes: CXStructAttributes,
-        fields: Vec<(String, CXType)>,
+        fields: Vec<CXField>,
     },
     Union {
         name: Option<CXIdent>,
-        fields: Vec<(String, CXType)>,
+        fields: Vec<CXField>,
     },
     TaggedUnion {
         name: CXIdent,
         attributes: CXStructAttributes,
-        variants: Vec<(String, CXType)>,
+        variants: Vec<CXField>,
     },
 
     FunctionPointer {
@@ -188,21 +221,20 @@ pub enum CXTypeKind {
 }
 
 impl CXType {
-    pub fn new(specifiers: CXTypeSpecifier, kind: CXTypeKind) -> Self {
+    pub fn new(specifiers: CXTypeQualifiers, kind: CXTypeKind) -> Self {
         Self { kind, specifiers }
     }
 
-    pub fn pointer_to(self, weak: bool, specifier: CXTypeSpecifier) -> Self {
+    pub fn pointer_to(self, specifier: CXTypeQualifiers) -> Self {
         Self::new(
             specifier,
             CXTypeKind::PointerTo {
                 inner_type: Box::new(self),
-                weak,
             },
         )
     }
 
-    pub fn add_specifier(mut self, specifier: CXTypeSpecifier) -> Self {
+    pub fn add_specifier(mut self, specifier: CXTypeQualifiers) -> Self {
         self.specifiers |= specifier;
         self
     }
@@ -242,7 +274,7 @@ impl CXTypeKind {
 }
 
 impl<T: Clone> ModuleResource<T> {
-    pub fn transfer(&self, from_module: &str) -> ModuleResource<T> {
+    pub fn transfer(&self, from_module: impl AsRef<str>) -> ModuleResource<T> {
         if self.linkage == CXLinkageMode::Static {
             panic!("Static linkage resources must be declared private");
         }
@@ -250,7 +282,7 @@ impl<T: Clone> ModuleResource<T> {
         ModuleResource {
             visibility: VisibilityMode::Private,
             linkage: CXLinkageMode::Extern,
-            external_module: Some(from_module.to_string()),
+            external_module: Some(from_module.as_ref().to_string()),
             resource: self.resource.clone(),
         }
     }

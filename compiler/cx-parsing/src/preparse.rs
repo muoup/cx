@@ -1,24 +1,41 @@
-use cx_tokens::{identifier, keyword, operator, punctuator, specifier, TokenIter};
 use cx_ast::{
     assert_token_matches,
     ast::VisibilityMode,
     data::{CXLinkageMode, ModuleResource},
     next_kind, try_next, PreparseContents,
 };
-use cx_util::{identifier::CXIdent, log_error, CXResult};
+use cx_pipeline_data::CompilerConfig;
+use cx_tokens::{identifier, keyword, operator, punctuator, specifier, TokenIter};
+use cx_util::{identifier::CXIdent, log_error, module_path::ModulePath, CXResult};
 
-use crate::parse::parse_std_ident;
+use crate::parse::try_parse_ident;
+
+#[derive(Debug, Clone, Copy)]
+pub struct PreparseConfig {
+    pub module_mode: bool,
+}
+
+impl PreparseConfig {
+    pub fn from_compiler_config(config: &CompilerConfig) -> Self {
+        Self {
+            module_mode: config.module_mode,
+        }
+    }
+}
 
 pub(crate) struct PreparseData<'a> {
+    #[allow(dead_code)]
+    pub(crate) config: &'a PreparseConfig,
     pub(crate) contents: &'a mut PreparseContents,
     pub(crate) tokens: TokenIter<'a>,
     pub(crate) visibility_mode: VisibilityMode,
 }
 
-pub fn preparse(tokens: TokenIter) -> CXResult<PreparseContents> {
+pub fn preparse(config: &PreparseConfig, tokens: TokenIter) -> CXResult<PreparseContents> {
     let mut contents = PreparseContents::default();
 
     let mut data = PreparseData {
+        config,
         contents: &mut contents,
         tokens,
         visibility_mode: VisibilityMode::Private,
@@ -63,12 +80,12 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
                 data.tokens.next();
             }
 
-            let Some(ident) = parse_std_ident(&mut data.tokens).ok() else {
+            let Some(ident) = try_parse_ident(&mut data.tokens) else {
                 return Ok(());
             };
 
             data.contents.type_idents.push(ModuleResource::new(
-                CXIdent::new(ident.as_str()),
+                ident.clone(),
                 data.visibility_mode,
                 CXLinkageMode::Standard,
             ));
@@ -82,12 +99,12 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
 
         specifier!(Public) => {
             data.visibility_mode = VisibilityMode::Public;
-            assert_token_matches!(data.tokens, punctuator!(Colon));
+            assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
         }
 
         specifier!(Private) => {
             data.visibility_mode = VisibilityMode::Private;
-            assert_token_matches!(data.tokens, punctuator!(Colon));
+            assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
         }
 
         _ => (),
@@ -96,8 +113,8 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
     Ok(())
 }
 
-fn parse_import(tokens: &mut TokenIter) -> CXResult<String> {
-    assert_token_matches!(tokens, keyword!(Import));
+fn parse_import(tokens: &mut TokenIter) -> CXResult<ModulePath> {
+    assert_token_matches!(tokens, keyword!(Import), "'import'");
 
     let mut import_path = String::new();
 
@@ -115,5 +132,5 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<String> {
         }
     }
 
-    Ok(import_path)
+    Ok(ModulePath::new(import_path))
 }

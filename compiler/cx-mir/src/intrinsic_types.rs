@@ -1,5 +1,4 @@
-use crate::mir::types::{MIRFloatType, MIRIntegerType, MIRTypeKind};
-
+use crate::mir::data::{MIRFloatType, MIRIntegerType, MIRTypeKind};
 
 pub fn is_intrinsic_type(name: &str) -> bool {
     for (intrinsic_name, _) in INTRINSIC_TYPES.iter() {
@@ -10,13 +9,24 @@ pub fn is_intrinsic_type(name: &str) -> bool {
     false
 }
 
-pub const INTRINSIC_IMPORTS: &[&str] = &[
-    "std/intrinsic/assertion.cx",
-];
+pub const INTRINSIC_IMPORTS: &[&str] = &["std/intrinsic/assertion.cx"];
 
 pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
     ("void", MIRTypeKind::Unit),
-    ("bool", MIRTypeKind::Integer { signed: false, _type: MIRIntegerType::I1 }),
+    (
+        "bool",
+        MIRTypeKind::Integer {
+            signed: false,
+            _type: MIRIntegerType::I1,
+        },
+    ),
+    (
+        "_Bool",
+        MIRTypeKind::Integer {
+            signed: false,
+            _type: MIRIntegerType::I1,
+        },
+    ),
     (
         "i8",
         MIRTypeKind::Integer {
@@ -121,6 +131,20 @@ pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
         },
     ),
     (
+        "unsigned short",
+        MIRTypeKind::Integer {
+            signed: false,
+            _type: MIRIntegerType::I32,
+        },
+    ),
+    (
+        "unsigned short int",
+        MIRTypeKind::Integer {
+            signed: false,
+            _type: MIRIntegerType::I32,
+        },
+    ),
+    (
         "signed",
         MIRTypeKind::Integer {
             signed: true,
@@ -149,6 +173,20 @@ pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
         },
     ),
     (
+        "long unsigned int",
+        MIRTypeKind::Integer {
+            signed: false,
+            _type: MIRIntegerType::I64,
+        },
+    ),
+    (
+        "unsigned long int",
+        MIRTypeKind::Integer {
+            signed: false,
+            _type: MIRIntegerType::I64,
+        },
+    ),
+    (
         "unsigned long",
         MIRTypeKind::Integer {
             signed: false,
@@ -166,6 +204,20 @@ pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
         "long long int",
         MIRTypeKind::Integer {
             signed: true,
+            _type: MIRIntegerType::I64,
+        },
+    ),
+    (
+        "signed long long int",
+        MIRTypeKind::Integer {
+            signed: true,
+            _type: MIRIntegerType::I64,
+        },
+    ),
+    (
+        "unsigned long long int",
+        MIRTypeKind::Integer {
+            signed: false,
             _type: MIRIntegerType::I64,
         },
     ),
@@ -205,6 +257,33 @@ pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
     ),
     (
         "double",
+        MIRTypeKind::Float {
+            _type: MIRFloatType::F64,
+        },
+    ),
+    // C header compatibility shims until MIR has long-double, complex, and
+    // target ABI va_list types.
+    ("__builtin_va_list", MIRTypeKind::Opaque { size: 24 }),
+    (
+        "long double",
+        MIRTypeKind::Float {
+            _type: MIRFloatType::F64,
+        },
+    ),
+    (
+        "_Complex float",
+        MIRTypeKind::Float {
+            _type: MIRFloatType::F64,
+        },
+    ),
+    (
+        "_Complex double",
+        MIRTypeKind::Float {
+            _type: MIRFloatType::F64,
+        },
+    ),
+    (
+        "_Complex long double",
         MIRTypeKind::Float {
             _type: MIRFloatType::F64,
         },

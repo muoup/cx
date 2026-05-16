@@ -1,14 +1,12 @@
-use cx_tokens::{identifier, operator, TokenIter};
-use cx_ast::data::{
-    CXTemplateInput, CXType, CXTypeKind, CXTemplatePrototype, PredeclarationType,
-};
 use crate::parse::ParserData;
+use cx_ast::data::{CXTemplateInput, CXTemplatePrototype, CXType, CXTypeKind, PredeclarationType};
 use cx_ast::{assert_token_matches, peek_kind, try_next};
-use cx_util::{CXResult, identifier::CXIdent};
+use cx_tokens::{identifier, operator, TokenIter};
+use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::parse::types::parse_initializer;
 
-pub(crate) fn note_templatedtype_s(
+pub(crate) fn note_templated_types(
     data: &mut ParserData,
     template_prototype: &CXTemplatePrototype,
 ) {
@@ -27,7 +25,7 @@ pub(crate) fn note_templatedtype_s(
     }
 }
 
-pub(crate) fn unnote_templatedtype_s(
+pub(crate) fn unnote_templated_types(
     data: &mut ParserData,
     template_prototype: &CXTemplatePrototype,
 ) {
@@ -57,7 +55,7 @@ pub(crate) fn try_parse_template(tokens: &mut TokenIter) -> CXResult<Option<CXTe
 }
 
 pub(crate) fn parse_template_prototype(tokens: &mut TokenIter) -> CXResult<CXTemplatePrototype> {
-    assert_token_matches!(tokens, operator!(Less));
+    assert_token_matches!(tokens, operator!(Less), "'<'");
 
     let mut type_decls = Vec::new();
 
@@ -71,14 +69,12 @@ pub(crate) fn parse_template_prototype(tokens: &mut TokenIter) -> CXResult<CXTem
         }
     }
 
-    assert_token_matches!(tokens, operator!(Greater));
+    assert_token_matches!(tokens, operator!(Greater), "'>'");
 
     Ok(CXTemplatePrototype { types: type_decls })
 }
 
-pub(crate) fn convert_template_proto_to_args(
-    prototype: CXTemplatePrototype,
-) -> CXTemplateInput {
+pub(crate) fn convert_template_proto_to_args(prototype: CXTemplatePrototype) -> CXTemplateInput {
     let params = prototype
         .types
         .into_iter()
@@ -95,12 +91,12 @@ pub(crate) fn convert_template_proto_to_args(
 }
 
 pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<CXTemplateInput> {
-    assert_token_matches!(data.tokens, operator!(Less));
+    assert_token_matches!(data.tokens, operator!(Less), "'<'");
 
     let mut inputtype_s = Vec::new();
 
     loop {
-        let (None, _type) = parse_initializer(data)? else {
+        let (None, _type, _) = parse_initializer(data)? else {
             return log_parse_error!(data, "Expected type declaration in template arguments!");
         };
 
@@ -111,7 +107,7 @@ pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<CXTemplateI
         }
     }
 
-    assert_token_matches!(data.tokens, operator!(Greater));
+    assert_token_matches!(data.tokens, operator!(Greater), "'>'");
 
     Ok(CXTemplateInput {
         params: inputtype_s,

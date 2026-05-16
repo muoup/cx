@@ -13,13 +13,18 @@ pub struct ParseErrorLog {
 
 impl CXErrorTrait for ParseErrorLog {
     fn pretty_print(&self) {
-        cx_log::pretty_point_error(&self.message, &self.file, &self.token);
+        let file = if self.token.file_origin.as_os_str().is_empty() {
+            self.file.clone()
+        } else {
+            PathBuf::from(self.token.file_origin.as_ref())
+        };
+        cx_log::pretty_point_error(&self.message, &file, self.token.byte_start_index);
     }
-    
+
     fn error_prefix(&self) -> String {
         "PARSER ERROR".to_string()
     }
-    
+
     fn error_content(&self) -> String {
         self.message.clone()
     }
@@ -29,11 +34,11 @@ impl CXErrorTrait for ParseErrorLog {
     }
 
     fn token_start(&self) -> Option<usize> {
-        Some(self.token.start_index)
+        Some(self.token.byte_start_index)
     }
 
     fn token_end(&self) -> Option<usize> {
-        Some(self.token.end_index)
+        Some(self.token.byte_end_index)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -46,7 +51,7 @@ macro_rules! log_parse_error {
     ($data:expr, $($arg:tt)*) => {
         {
             let message = format!("{}", format!($($arg)*));
-            
+
             // if cfg!(debug_assertions) {
             //     panic!();
             // }
@@ -66,13 +71,13 @@ macro_rules! log_preparse_error {
     ($toks:expr, $($arg:tt)*) => {
         {
             let message = format!("{}", format!($($arg)*));
-            
+
             Err(Box::new($crate::log::ParseErrorLog {
                 message,
                 file: $toks.file.clone(),
                 token: $toks.peek().unwrap().clone(),
                 previous_token: $toks.prev().cloned(),
             }) as Box<dyn cx_util::CXErrorTrait>)
-        } 
+        }
     };
 }

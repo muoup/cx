@@ -11,8 +11,8 @@ pub type LMIRResult<T> = Option<T>;
 
 pub fn generate_lmir(mir: &MIRUnit) -> CXResult<LMIRUnit> {
     let mut builder = LMIRBuilder::new(mir);
-    
+
     lower_mir(&mut builder, mir)?;
-    
+
     Ok(builder.finish())
 }

@@ -2,9 +2,10 @@ use crate::attributes::*;
 use crate::typing::{bc_llvm_prototype, bc_llvm_type, convert_linkage};
 use cx_lmir::types::{LMIRType, LMIRTypeKind};
 use cx_lmir::{
-    LMIRBasicBlock, LMIRBlockID, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype, LMIRUnit, LMIRValue,
-    ElementID,
+    ElementID, LMIRABISlot, LMIRBasicBlock, LMIRBlockID, LMIRFunction, LMIRFunctionMap,
+    LMIRFunctionPrototype, LMIRReturnABI, LMIRUnit, LMIRValue,
 };
+use cx_util::CXResult;
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -12,7 +13,7 @@ use inkwell::module::Module;
 use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
 use inkwell::types::FunctionType;
-use inkwell::values::{AnyValue, AnyValueEnum, FunctionValue, GlobalValue};
+use inkwell::values::{AnyValue, AnyValueEnum, BasicValueEnum, FunctionValue, GlobalValue};
 
 use crate::globals::generate_global_variable;
 use crate::instruction::reset_num;
@@ -43,6 +44,7 @@ pub(crate) struct FunctionState<'a, 'b> {
     function_value: &'b FunctionValue<'a>,
 
     current_function: String,
+    signature: cx_lmir::LMIRFunctionSignature,
 
     builder: Builder<'a>,
     value_map: HashMap<LMIRValue, CodegenValue<'a>>,
@@ -112,6 +114,7 @@ impl<'a> FunctionState<'a, '_> {
 #[derive(Debug, Clone)]
 pub(crate) enum CodegenValue<'a> {
     Value(AnyValueEnum<'a>),
+    AggregateSlots(Vec<(LMIRABISlot, BasicValueEnum<'a>)>),
     NULL,
 }
 
@@ -129,7 +132,7 @@ pub fn lmir_aot_codegen(
     bytecode: &LMIRUnit,
     output_path: &str,
     optimization_level: OptimizationLevel,
-) -> Option<Vec<u8>> {
+) -> CXResult<Vec<u8>> {
     let context = Context::create();
     Target::initialize_native(&InitializationConfig::default())
         .expect("Failed to initialize native");
@@ -213,7 +216,7 @@ pub fn lmir_aot_codegen(
         .write_to_memory_buffer(&global_state.module, inkwell::targets::FileType::Object)
         .expect("Failed to export module to file");
 
-    Some(buff.as_slice().to_vec())
+    Ok(buff.as_slice().to_vec())
 }
 
 fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> Option<()> {
@@ -235,6 +238,7 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> Option
         function_value: &func_val,
 
         current_function: bytecode.prototype.name.clone(),
+        signature: bytecode.prototype.signature.clone(),
 
         builder,
         value_map: HashMap::new(),
@@ -310,14 +314,23 @@ fn cache_prototype<'a>(
     // Put each function in its own ELF section for --gc-sections DCE
     func.set_section(Some(&format!(".text.{}", prototype.name)));
 
-    for (i, _type) in prototype.params.iter().enumerate() {
-        get_type_attributes(global_state.context, &_type._type)
+    let signature = prototype.signature();
+    for i in 0..signature.expanded_param_count() {
+        let param_type = signature.expanded_param_type(i).unwrap();
+        get_type_attributes(global_state.context, &param_type)
             .into_iter()
             .for_each(|attr| {
                 func.add_attribute(AttributeLoc::Param(i as u32), attr);
             });
     }
 
+    if let LMIRReturnABI::IndirectSret { alignment: _ } = &signature.return_abi {
+        let pointee = bc_llvm_type(global_state.context, &signature.return_type)?;
+        func.add_attribute(
+            AttributeLoc::Param(0),
+            attr_sret(global_state.context, pointee),
+        );
+    }
     global_state
         .functions
         .insert(prototype.name.to_string(), func.get_type());

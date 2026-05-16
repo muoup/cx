@@ -1,0 +1,78 @@
+import std::box;
+import std::vector;
+import std::string;
+
+#include <stdlib.h>
+
+public:
+
+enum union lisp_node : @nodrop {
+    Program     :: vector<lisp_node>,
+    Number      :: f64,
+    Symbol      :: string,
+
+    // (fndef <name> (<params>...) <body>...)
+    FnDef       :: struct : @nodrop {
+        string name;
+        vector<string> params;
+        vector<lisp_node> body;
+    },
+    FnCall      :: struct : @nodrop {
+        string name;
+        vector<lisp_node> args;
+    },
+    Plus        :: struct : @nodrop {
+        box<lisp_node> left;
+        box<lisp_node> right;
+    },
+    Minus       :: struct : @nodrop {
+        box<lisp_node> left;
+        box<lisp_node> right;
+    },
+    PrintNum    :: box<lisp_node>,
+    PrintStr    :: char*
+};
+
+void lisp_node::drop(lisp_node node) {
+    lisp_node* node_ref = &node;
+
+    match (node_ref) {
+        lisp_node::Program(body) => body.drop_with<lisp_node>(lisp_node::drop);
+        lisp_node::Number(_) => {}
+        lisp_node::Symbol(name) => name.drop();
+        lisp_node::FnDef(fn_def) => {
+            string name = @adopt(fn_def.name);
+            vector<string> params = @adopt(fn_def.params);
+            vector<lisp_node> body = @adopt(fn_def.body);
+
+            name.drop();
+            params.drop_with<string>(string::drop);
+            body.drop_with<lisp_node>(lisp_node::drop);
+        }
+        lisp_node::FnCall(fn_call) => {
+            string name = @adopt(fn_call.name);
+            vector<lisp_node> args = @adopt(fn_call.args);
+
+            name.drop();
+            args.drop_with<lisp_node>(lisp_node::drop);
+        }
+        lisp_node::Plus(plus) => {
+            box<lisp_node> left = @adopt(plus.left);
+            box<lisp_node> right = @adopt(plus.right);
+
+            left.drop_with<lisp_node>(lisp_node::drop);
+            right.drop_with<lisp_node>(lisp_node::drop);
+        }
+        lisp_node::Minus(minus) => {
+            box<lisp_node> left = @adopt(minus.left);
+            box<lisp_node> right = @adopt(minus.right);
+
+            left.drop_with<lisp_node>(lisp_node::drop);
+            right.drop_with<lisp_node>(lisp_node::drop);
+        }
+        lisp_node::PrintNum(value) => value.drop_with<lisp_node>(lisp_node::drop);
+        lisp_node::PrintStr(value) => free(value);
+    }
+
+    @leak(node);
+}

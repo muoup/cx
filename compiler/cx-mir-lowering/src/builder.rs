@@ -1,9 +1,9 @@
 use crate::mir_lowering::types::convert_cx_prototype;
-use crate::{LMIRUnit, LMIRResult};
+use crate::{LMIRResult, LMIRUnit};
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::*;
+use cx_mir::mir::data::{MIRFunctionPrototype, MIRTypeContext};
 use cx_mir::mir::program::MIRUnit;
-use cx_mir::mir::types::MIRFunctionPrototype;
 use cx_util::format::dump_all;
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
@@ -14,10 +14,11 @@ use cx_util::CXResult;
 pub struct LMIRBuilder {
     functions: Vec<LMIRFunction>,
     global_variables: Vec<LMIRGlobalValue>,
+    pub type_definitions: MIRTypeContext,
 
     pub fn_map: LMIRFunctionMap,
 
-    symbol_table: ScopedMap<LMIRValue>,
+    symbol_table: ScopedMap<String, LMIRValue>,
     goto_stack: Vec<LMIRGotoContext>,
     function_context: Option<LMIRFunctionContext>,
 }
@@ -35,7 +36,6 @@ pub struct LMIRFunctionContext {
 
     current_block: usize,
     register_counter: u32,
-    return_buffer_size: Option<usize>,
 
     blocks: Vec<LMIRBasicBlock>,
 }
@@ -45,11 +45,17 @@ impl LMIRBuilder {
         LMIRBuilder {
             functions: Vec::new(),
             global_variables: Vec::new(),
+            type_definitions: mir.type_definitions.clone(),
 
             fn_map: mir
                 .prototypes
                 .iter()
-                .map(|proto| (proto.name.to_string(), convert_cx_prototype(proto)))
+                .map(|proto| {
+                    (
+                        proto.name.to_string(),
+                        convert_cx_prototype(proto, &mir.type_definitions),
+                    )
+                })
                 .collect(),
             symbol_table: ScopedMap::new_with_starting_scope(),
             goto_stack: Vec::new(),
@@ -66,17 +72,13 @@ impl LMIRBuilder {
         LMIRRegister::new(format!("{}", reg_id))
     }
 
-    pub fn new_function(
-        &mut self,
-        fn_prototype: MIRFunctionPrototype,
-        return_buffer_size: Option<usize>,
-    ) {
+    pub fn new_function(&mut self, fn_prototype: MIRFunctionPrototype) {
         assert!(
             self.function_context.is_none(),
             "Attempted to start a new function while another function context is active"
         );
 
-        let bc_prototype = convert_cx_prototype(&fn_prototype);
+        let bc_prototype = convert_cx_prototype(&fn_prototype, &self.type_definitions);
 
         if !self.fn_map.contains_key(bc_prototype.name.as_str()) {
             self.insert_fn_prototype(bc_prototype.clone());
@@ -87,7 +89,6 @@ impl LMIRBuilder {
             mir_prototype: fn_prototype,
             current_block: 0,
             register_counter: 0,
-            return_buffer_size,
 
             blocks: Vec::new(),
         });
@@ -176,7 +177,7 @@ impl LMIRBuilder {
             .rev()
             .find_map(|ctx| ctx.break_block.as_ref())
     }
-    
+
     pub fn move_block_to_end(&mut self, block_id: &CXIdent) {
         let context = self.fun_mut();
 
@@ -212,10 +213,6 @@ impl LMIRBuilder {
         self.fn_map.get(name)
     }
 
-    pub fn return_buffer_size(&self) -> Option<usize> {
-        self.fun().return_buffer_size
-    }
-
     pub fn get_symbol(&self, name: &CXIdent) -> Option<LMIRValue> {
         self.symbol_table.get(name.as_str()).cloned()
     }
@@ -245,7 +242,7 @@ impl LMIRBuilder {
         LMIRValue::Global(global_index)
     }
 
-    fn current_block_closed(&self) -> bool {
+    pub fn current_block_closed(&self) -> bool {
         let Some(last_inst) = self.current_block_last_inst() else {
             return false;
         };
@@ -344,13 +341,10 @@ impl LMIRBuilder {
 
             LMIRValue::ParameterRef(param_index) => {
                 let context = self.fun();
-                let param = context
-                    .prototype
-                    .params
-                    .get(*param_index as usize)
-                    .expect("Parameter index out of bounds in function prototype");
-
-                param._type.clone()
+                let signature = context.prototype.signature();
+                signature
+                    .expanded_param_type(*param_index as usize)
+                    .expect("Parameter index out of bounds in function prototype")
             }
             LMIRValue::Global(global_index) => {
                 let global = self

@@ -15,6 +15,10 @@ pub fn token_string(toks: &TokenIter, start_index: usize, end_index: usize) -> S
 #[macro_export]
 macro_rules! assert_token_matches {
     ($data:expr, $pattern:pat) => {
+        assert_token_matches!($data, $pattern, stringify!($pattern));
+    };
+
+    ($data:expr, $pattern:pat, $expected:expr) => {
         let Some($pattern) = &$data.next().map(|t| &t.kind) else {
             use cx_util::log_error;
 
@@ -22,8 +26,8 @@ macro_rules! assert_token_matches {
 
             return log_preparse_error!(
                 $data,
-                "Expected token to match pattern: {:#?}\n Found: {}",
-                stringify!($pattern),
+                "Expected {}\n Found: {}",
+                $expected,
                 $data.peek().unwrap()
             );
         };

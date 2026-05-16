@@ -9,7 +9,7 @@ impl LMIRType {
             kind: LMIRTypeKind::Unit,
         }
     }
-    
+
     pub fn bool() -> Self {
         LMIRType {
             kind: LMIRTypeKind::Integer(LMIRIntegerType::I1),
@@ -47,13 +47,18 @@ pub enum LMIRTypeKind {
     Opaque {
         bytes: usize,
     },
-    
+
     Integer(LMIRIntegerType),
     Float(LMIRFloatType),
-    
+
     Pointer {
         nullable: bool,
         dereferenceable: u32,
+    },
+
+    Vector {
+        element: LMIRFloatType,
+        count: usize,
     },
 
     Array {
@@ -64,11 +69,7 @@ pub enum LMIRTypeKind {
         name: String,
         fields: Vec<(String, LMIRType)>,
     },
-    Union {
-        name: String,
-        fields: Vec<(String, LMIRType)>,
-    },
-    
+
     Unit,
 }
 
@@ -85,6 +86,7 @@ impl LMIRType {
             LMIRTypeKind::Integer(_type) => _type.bytes() as usize,
             LMIRTypeKind::Float(_type) => _type.bytes() as usize,
             LMIRTypeKind::Pointer { .. } => 8, // TODO: make this configurable
+            LMIRTypeKind::Vector { element, count } => element.bytes() as usize * count,
             LMIRTypeKind::Array { element, size } => element.size() * size,
             LMIRTypeKind::Struct { fields, .. } => {
                 let mut current_size = 0;
@@ -102,13 +104,13 @@ impl LMIRType {
                     current_size += field_size;
                 }
 
+                let alignment = self.alignment() as usize;
+                if current_size % alignment != 0 {
+                    current_size += alignment - (current_size % alignment);
+                }
+
                 current_size
             }
-            LMIRTypeKind::Union { fields, .. } => fields
-                .iter()
-                .map(|(_, field)| field.size())
-                .max()
-                .unwrap(),
 
             LMIRTypeKind::Unit => 0,
         }
@@ -120,13 +122,9 @@ impl LMIRType {
             LMIRTypeKind::Integer(_type) => _type.bytes().min(8),
             LMIRTypeKind::Float(_type) => _type.bytes().min(8),
             LMIRTypeKind::Pointer { .. } => 8, // TODO: make this configurable
+            LMIRTypeKind::Vector { element, .. } => element.bytes().min(16),
             LMIRTypeKind::Array { element, .. } => element.alignment(),
             LMIRTypeKind::Struct { fields, .. } => fields
-                .iter()
-                .map(|(_, field)| field.alignment())
-                .max()
-                .unwrap_or(8),
-            LMIRTypeKind::Union { fields, .. } => fields
                 .iter()
                 .map(|(_, field)| field.alignment())
                 .max()
@@ -143,6 +141,19 @@ impl LMIRType {
     #[inline]
     pub fn is_structure(&self) -> bool {
         matches!(self.kind, LMIRTypeKind::Struct { .. })
+    }
+
+    pub fn is_memory_resident(&self) -> bool {
+        match self.kind {
+            LMIRTypeKind::Opaque { .. } => true,
+            LMIRTypeKind::Integer(_) => false,
+            LMIRTypeKind::Float(_) => false,
+            LMIRTypeKind::Pointer { .. } => false,
+            LMIRTypeKind::Vector { .. } => false,
+            LMIRTypeKind::Array { .. } => true,
+            LMIRTypeKind::Struct { .. } => true,
+            LMIRTypeKind::Unit => false,
+        }
     }
 }
 

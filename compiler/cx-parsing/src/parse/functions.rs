@@ -1,12 +1,16 @@
-use cx_tokens::{identifier, keyword, operator, punctuator, TokenRange};
 use cx_ast::{
     assert_token_matches,
     data::{
-        CXFunctionContract, CXFunctionKind, CXFunctionTypeIdent, CXParameter, CXFunctionPrototype,
-        CXReceiverData, CXReceiverMode, CXTemplatePrototype, CXType, CXTypeKind,
-        PredeclarationType,
+        CXFunctionContract, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent,
+        CXLinkageMode, CXParameter, CXReceiverData, CXReceiverMode, CXTemplatePrototype, CXType,
+        CXTypeKind, PredeclarationType,
     },
-    peek_next_kind, try_next,
+    next_kind, peek_next_kind, try_next,
+};
+use cx_tokens::{
+    identifier, keyword, operator, punctuator,
+    token::{PunctuatorType, TokenKind},
+    TokenRange,
 };
 use cx_util::{identifier::CXIdent, CXResult};
 
@@ -26,6 +30,7 @@ pub fn try_function_parse(
     data: &mut ParserData,
     return_type: CXType,
     name: CXIdent,
+    linkage: CXLinkageMode,
 ) -> CXResult<Option<FunctionDeclaration>> {
     let range_start = data.tokens.index;
     let template_prototype = try_parse_template(&mut data.tokens)?;
@@ -44,7 +49,12 @@ pub fn try_function_parse(
                 params: args.params,
                 var_args: args.var_args,
                 contract: args.contract,
-                range: TokenRange::new(range_start, data.tokens.index, data.file_origin.clone()),
+                linkage,
+                range: TokenRange::new(
+                    range_start,
+                    data.tokens.index,
+                    data.file_origin_for_range(range_start, data.tokens.index),
+                ),
             };
 
             if args.receiver.is_some() {
@@ -89,7 +99,7 @@ pub fn try_function_parse(
             let method_name = name.clone();
             let template_prototype = try_parse_template(&mut data.tokens)?;
             let params = parse_params(data)?;
-            
+
             let kind = if let Some(receiver) = params.receiver {
                 CXFunctionKind::MemberFunction {
                     member_type: CXFunctionTypeIdent::from_type(&_type).unwrap(),
@@ -109,7 +119,12 @@ pub fn try_function_parse(
                 params: params.params,
                 var_args: params.var_args,
                 contract: params.contract,
-                range: TokenRange::new(range_start, data.tokens.index, data.file_origin.clone()),
+                linkage,
+                range: TokenRange::new(
+                    range_start,
+                    data.tokens.index,
+                    data.file_origin_for_range(range_start, data.tokens.index),
+                ),
             };
 
             data.add_function(prototype.clone(), template_prototype.clone());
@@ -125,6 +140,8 @@ pub fn try_function_parse(
 }
 
 pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunctionContract> {
+    skip_c_declaration_suffixes(data)?;
+
     let safe = try_next!(data.tokens, keyword!(Safe));
 
     let mut contract = CXFunctionContract {
@@ -132,7 +149,7 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
         precondition: None,
         postcondition: None,
     };
-    
+
     if !try_next!(data.tokens, keyword!(Where)) {
         return Ok(contract);
     }
@@ -148,10 +165,10 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
                 }
 
                 data.tokens.next();
-                assert_token_matches!(data.tokens, punctuator!(Colon));
-                assert_token_matches!(data.tokens, punctuator!(OpenParen));
+                assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
+                assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
                 let expr = parse_expr(data)?;
-                assert_token_matches!(data.tokens, punctuator!(CloseParen));
+                assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
 
                 contract.precondition = Some(expr);
             }
@@ -169,16 +186,16 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
                     assert_token_matches!(data.tokens, identifier!(ret));
                     let name = CXIdent::new(ret.as_str());
 
-                    assert_token_matches!(data.tokens, punctuator!(CloseParen));
+                    assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
                     Some(name)
                 } else {
                     None
                 };
 
-                assert_token_matches!(data.tokens, punctuator!(Colon));
-                assert_token_matches!(data.tokens, punctuator!(OpenParen));
+                assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
+                assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
                 let expr = parse_expr(data)?;
-                assert_token_matches!(data.tokens, punctuator!(CloseParen));
+                assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
 
                 contract.postcondition = Some((return_val_name, expr));
             }
@@ -190,7 +207,65 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
         }
     }
 
+    skip_c_declaration_suffixes(data)?;
     Ok(contract)
+}
+
+// FIXME: Remove this hack and support declaration suffixes
+fn skip_c_declaration_suffixes(data: &mut ParserData) -> CXResult<()> {
+    loop {
+        let Some(token) = data.tokens.peek() else {
+            return Ok(());
+        };
+
+        let TokenKind::Identifier(name) = &token.kind else {
+            return Ok(());
+        };
+
+        if matches!(name.as_str(), "__asm__" | "__asm" | "asm") {
+            data.tokens.next();
+            skip_optional_parenthesized_tokens(data)?;
+            continue;
+        }
+
+        if name.starts_with("__attribute")
+            || matches!(
+                name.as_str(),
+                "__declspec" | "__nonnull" | "__nonnull__" | "__wur"
+            )
+        {
+            data.tokens.next();
+            skip_optional_parenthesized_tokens(data)?;
+            continue;
+        }
+
+        return Ok(());
+    }
+}
+
+fn skip_optional_parenthesized_tokens(data: &mut ParserData) -> CXResult<()> {
+    if !matches!(
+        data.tokens.peek().map(|token| &token.kind),
+        Some(TokenKind::Punctuator(PunctuatorType::OpenParen))
+    ) {
+        return Ok(());
+    }
+
+    let mut depth = 0usize;
+    while data.tokens.has_next() {
+        match next_kind!(data.tokens)? {
+            punctuator!(OpenParen) => depth += 1,
+            punctuator!(CloseParen) => {
+                depth -= 1;
+                if depth == 0 {
+                    return Ok(());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    log_parse_error!(data, "Unclosed parenthesized declaration suffix")
 }
 
 pub(crate) struct ParseParamsResult {
@@ -201,7 +276,7 @@ pub(crate) struct ParseParamsResult {
 }
 
 pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult> {
-    assert_token_matches!(data.tokens, punctuator!(OpenParen));
+    assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
 
     let mut params = Vec::new();
     let mut receiver = None;
@@ -228,23 +303,21 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
         data.tokens.index = receiver_start;
     }
 
-    if receiver.is_some()
+    if receiver.is_some() && !try_next!(data.tokens, operator!(Comma)) {
+        assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+        let contract = parse_function_contract(data)?;
 
-        && !try_next!(data.tokens, operator!(Comma)) {
-            assert_token_matches!(data.tokens, punctuator!(CloseParen));
-            let contract = parse_function_contract(data)?;
-
-            return Ok(ParseParamsResult {
-                params,
-                var_args: false,
-                receiver,
-                contract,
-            });
-        }
+        return Ok(ParseParamsResult {
+            params,
+            var_args: false,
+            receiver,
+            contract,
+        });
+    }
 
     while !try_next!(data.tokens, punctuator!(CloseParen)) {
         if try_next!(data.tokens, punctuator!(Ellipsis)) {
-            assert_token_matches!(data.tokens, punctuator!(CloseParen));
+            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
             let contract = parse_function_contract(data)?;
 
             return Ok(ParseParamsResult {
@@ -255,16 +328,13 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
             });
         }
 
-        if let Ok((name, _type)) = parse_initializer(data) {
-            let name = name;
+        let (name, _type, _) = parse_initializer(data)?;
+        let name = name;
 
-            params.push(CXParameter { name, _type });
-        } else {
-            return log_parse_error!(data, "Failed to parse parameter in function call");
-        }
+        params.push(CXParameter { name, _type });
 
         if !try_next!(data.tokens, operator!(Comma)) {
-            assert_token_matches!(data.tokens, punctuator!(CloseParen));
+            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
             break;
         }
     }

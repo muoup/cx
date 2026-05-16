@@ -31,7 +31,12 @@ pub(crate) fn link_relocatable(
         cmd.arg(file.to_str().expect("File path invalid"));
     }
 
-    let output = cmd.output()
+    for file in &context.config.native_objects {
+        cmd.arg(file);
+    }
+
+    let output = cmd
+        .output()
         .map_err(|e| CXError::create_boxed(format!("Failed to execute linker: {}", e)))?;
 
     if output.status.success() {
@@ -49,7 +54,10 @@ pub(crate) fn link_relocatable(
     }
 }
 
-pub(crate) fn link(context: &GlobalCompilationContext, reporter: &mut ProgressReporter) -> CXResult<()> {
+pub(crate) fn link(
+    context: &GlobalCompilationContext,
+    reporter: &mut ProgressReporter,
+) -> CXResult<()> {
     reporter.link_status("[Linking]");
 
     let mut cmd = Command::new("gcc");
@@ -61,6 +69,10 @@ pub(crate) fn link(context: &GlobalCompilationContext, reporter: &mut ProgressRe
 
     for file in linking_files.iter() {
         cmd.arg(file.to_str().expect("File path invalid"));
+    }
+
+    for file in &context.config.native_objects {
+        cmd.arg(file);
     }
 
     // Add link entries from config
@@ -86,7 +98,8 @@ pub(crate) fn link(context: &GlobalCompilationContext, reporter: &mut ProgressRe
         }
     }
 
-    let output = cmd.output()
+    let output = cmd
+        .output()
         .map_err(|e| CXError::create_boxed(format!("Failed to execute linker: {}", e)))?;
 
     if output.status.success() {
