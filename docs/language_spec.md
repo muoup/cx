@@ -330,7 +330,7 @@ All declarations following a `public:` header are visible to importers. A `priva
 
 ### 7.3 `.cxl` Library Entry Files
 
-Files with the `.cxl` extension serve as library entry points. They use the same syntax as `.cx` files. When a `.cxl` file is compiled as a library target, its non-static, non-external functions become the library's exported symbols. See [docs/build_system.md](build_system.md) for details on library compilation.
+Files with the `.cxl` extension serve as library entry points. They use the same syntax as `.cx` files. When a `.cxl` file is compiled as a library target, its non-static, non-external functions become the library's exported symbols. See [build_system.md](build_system.md) for details on library compilation.
 
 ## 8. Contracts
 

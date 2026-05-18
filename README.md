@@ -42,7 +42,7 @@ See the [official LLVM build documentation](https://llvm.org/docs/GettingStarted
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/cx.git
+   git clone https://github.com/muoup/cx.git
    ```
 2. Build the compiler:
    ```bash
@@ -51,7 +51,8 @@ See the [official LLVM build documentation](https://llvm.org/docs/GettingStarted
 
 ## Usage
 
-For an overview and documentation on language features, please see [the project page](docs/index.md).
+For an overview and documentation on language features, see the
+[public project site](https://muoup.github.io/cx/).
 
 Basic usage:
 
@@ -92,11 +93,13 @@ cd my_project
 cx build
 ```
 
-See [docs/build_system.md](docs/build_system.md) for `cx.toml` configuration, library compilation, and C interop.
+See the [build system guide](https://muoup.github.io/cx/docs/build-system) for
+`cx.toml` configuration, library compilation, and C interop.
 
 ## Compiler Pipeline
 
-See [docs/pipeline_design.md](docs/pipeline_design.md) for the full pipeline description.
+See [design/pipeline_design.md](design/pipeline_design.md) for the full pipeline
+description.
 
 ### Project Structure
 
