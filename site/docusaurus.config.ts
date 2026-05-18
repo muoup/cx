@@ -6,7 +6,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
   title: 'CX Programming Language',
-  tagline: 'A C-shaped systems language with explicit ownership and opt-in verification',
+  tagline: 'A C-shaped systems language experiment in linear resources',
   favicon: 'img/cx-logo.svg',
 
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future

@@ -5,127 +5,113 @@ import Heading from '@theme/Heading';
 
 import styles from './index.module.css';
 
-const featureCards = [
+const features = [
   {
-    title: 'C-shaped by design',
-    text: 'CX keeps explicit control flow, predictable layout, and familiar syntax while removing some declaration-order friction.',
+    title: 'No Hidden Control Flow',
+    description: 'CX eliminates RAII and hidden destructors. Resource cleanup is never a side effect of scope exit; it is always an explicit call. This ensures that resource lifetimes are visible and predictable in the source text.',
   },
   {
-    title: 'Ownership when it matters',
-    text: '@nocopy, @nodrop, move, @leak, @unpack, and @adopt make resource behavior visible instead of ambient.',
+    title: 'Linear Resource Tracking',
+    description: 'Types marked with @nodrop are treated as linear resources. The compiler tracks their initialization and disposal, raising a type error for any path that reaches a scope exit without discharging the resource.',
   },
   {
-    title: 'Verification opt-in',
-    text: 'safe functions and contracts can be analyzed with --analysis without turning the whole language into a restricted subset.',
+    title: 'Verified Safe Subset',
+    description: 'The \'safe\' keyword introduces a restricted sublanguage that forbids raw pointers and unchecked memory access. Safe functions are subject to formal verification via FMIR analysis, allowing you to prove properties like memory safety and contract adherence.',
+  },
+  {
+    title: 'C Interoperability',
+    description: 'CX is designed to live within the C ecosystem. It shares the same data layout and calling conventions, making it trivial to call C functions or expose CX functions to existing C codebases.',
   },
 ];
 
 function Hero() {
   return (
-    <header className={styles.hero}>
+    <div className={styles.hero}>
       <div className={styles.heroInner}>
-        <div className={styles.heroCopy}>
-          <p className={styles.kicker}>Experimental systems language</p>
-          <Heading as="h1" className={styles.title}>
-            CX Programming Language
-          </Heading>
-          <p className={styles.subtitle}>
-            A C-shaped language with explicit ownership, tagged unions,
-            contracts, and opt-in verification for code that still wants to feel
-            close to the machine.
+        <div className={styles.heroLeft}>
+          <Heading as="h1" className={styles.heroTitle}>CX</Heading>
+          <p className={styles.heroPhilosophy}>
+            A systems programming language focused on <strong>explicit resource management</strong>, 
+            <strong>linear safety</strong>, and <strong>formal verification</strong>.
           </p>
-          <div className={styles.actions}>
-            <Link className="button button--primary button--lg" to="/docs/getting-started">
-              Get Started
-            </Link>
-            <Link className="button button--secondary button--lg" to="/docs/manual/">
-              Language Manual
-            </Link>
+        </div>
+        <div className={styles.heroRight}>
+          <div className={styles.getStartedBox}>
+            <div className={styles.getStartedHeader}>LATEST RELEASE: 0.1.0</div>
+            <div className={styles.getStartedBody}>
+              <Link className="button button--secondary button--block" to="/docs/getting-started">
+                GET STARTED
+              </Link>
+              <div className={styles.getStartedLinks}>
+                <Link to="/docs/manual/">Documentation</Link>
+                <Link to="https://github.com/muoup/cx">Source</Link>
+              </div>
+            </div>
           </div>
         </div>
-        <div className={styles.codePanel} aria-label="CX code example">
-          <div className={styles.codeChrome}>
-            <span />
-            <span />
-            <span />
-          </div>
+      </div>
+    </div>
+  );
+}
+
+function MainContent() {
+  return (
+    <div className={styles.mainGrid}>
+      <div className={styles.featuresColumn}>
+        {features.map((f) => (
+          <section className={styles.featureItem} key={f.title}>
+            <Heading as="h3">{f.title}</Heading>
+            <p>{f.description}</p>
+          </section>
+        ))}
+      </div>
+      <div className={styles.sidebarColumn}>
+        <div className={styles.codeSnippet}>
+          <div className={styles.codeSnippetHeader}>explicit_file.cx</div>
           <pre>
-            <code>{`struct Resource : @nodrop {
-    i32 handle;
+{`struct File : @nodrop {
+    int fd;
 };
 
-void Resource::drop(this) safe {
-    @unsafe {
-        @leak(this);
-    };
+void File::close(this) {
+    @unsafe { close(this.fd); }
+    @leak(this);
 }
 
-int main() safe {
-    Resource r = { .handle = 7 };
-    r.drop();
-    return 0;
-}`}</code>
+void process(File f) {
+    if (f.fd < 0) {
+        // Must handle here
+        f.close();
+        return;
+    }
+
+    // Explicit move
+    worker(move f);
+}`}
           </pre>
         </div>
-      </div>
-    </header>
-  );
-}
-
-function FeatureGrid() {
-  return (
-    <section className={styles.section}>
-      <div className={styles.sectionInner}>
-        <Heading as="h2" className={styles.sectionTitle}>
-          Public docs for the implemented language surface
-        </Heading>
-        <div className={styles.grid}>
-          {featureCards.map((feature) => (
-            <article className={styles.feature} key={feature.title}>
-              <h3>{feature.title}</h3>
-              <p>{feature.text}</p>
-            </article>
-          ))}
+        
+        <div className={styles.quickLinksBox}>
+          <Heading as="h4">QUICK LINKS</Heading>
+          <ul>
+            <li><Link to="/docs/manual/aggregate-types">Ownership Rules</Link></li>
+            <li><Link to="/docs/manual/safe-functions">Safe Subset & Analysis</Link></li>
+            <li><Link to="/docs/build-system">Build System (cx.toml)</Link></li>
+          </ul>
         </div>
       </div>
-    </section>
-  );
-}
-
-function QuickLinks() {
-  return (
-    <section className={styles.quickLinks}>
-      <div className={styles.sectionInner}>
-        <Heading as="h2" className={styles.sectionTitle}>
-          Start with the essentials
-        </Heading>
-        <div className={styles.linkList}>
-          <Link
-            className={styles.linkItem}
-            to="/docs/getting-started">
-            Build the compiler and compile your first CX project
-          </Link>
-          <Link className={styles.linkItem} to="/docs/manual/aggregate-types">
-            Learn structs, tagged unions, and ownership attributes
-          </Link>
-          <Link className={styles.linkItem} to="/docs/build-system">
-            Use cx.toml for project and library builds
-          </Link>
-        </div>
-      </div>
-    </section>
+    </div>
   );
 }
 
 export default function Home(): ReactNode {
   return (
     <Layout
-      title="CX Programming Language"
-      description="CX is an experimental C-like systems language with explicit ownership and opt-in verification.">
-      <Hero />
-      <main>
-        <FeatureGrid />
-        <QuickLinks />
+      title="The CX Programming Language"
+      description="A systems language for explicit resource management and formal verification.">
+      <main className={styles.container}>
+        <Hero />
+        <MainContent />
       </main>
     </Layout>
   );

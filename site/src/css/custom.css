@@ -4,30 +4,61 @@
  * work well for content-centric websites.
  */
 
-/* You can override the default Infima variables here. */
+/* Technical/Academic Boring Palette */
 :root {
-  --ifm-color-primary: #1f6f5d;
-  --ifm-color-primary-dark: #1c6454;
-  --ifm-color-primary-darker: #1a5e4f;
-  --ifm-color-primary-darkest: #154e41;
-  --ifm-color-primary-light: #227a66;
-  --ifm-color-primary-lighter: #24806b;
-  --ifm-color-primary-lightest: #299179;
+  --ifm-color-primary: #006064; /* Muted Deep Teal */
+  --ifm-color-primary-dark: #004d40;
+  --ifm-color-primary-darker: #00332e;
+  --ifm-color-primary-darkest: #001a18;
+  --ifm-color-primary-light: #00838f;
+  --ifm-color-primary-lighter: #0097a7;
+  --ifm-color-primary-lightest: #26c6da;
+  
   --ifm-code-font-size: 95%;
-  --ifm-font-family-base:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+  --ifm-font-family-base: "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --ifm-font-family-monospace: "JetBrains Mono", "Fira Code", "Source Code Pro", Menlo, Monaco, Consolas, "Courier New", monospace;
+  
+  --ifm-background-color: #ffffff;
+  --ifm-color-emphasis-100: #f6f8fa;
+  --ifm-color-emphasis-200: #e1e4e8;
+  --ifm-color-emphasis-300: #d1d5da;
+  
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
 }
 
-/* For readability concerns, you should choose a lighter palette in dark mode. */
 [data-theme='dark'] {
-  --ifm-color-primary: #5fd0b5;
-  --ifm-color-primary-dark: #42c6a8;
-  --ifm-color-primary-darker: #34c0a0;
-  --ifm-color-primary-darkest: #2b9e84;
-  --ifm-color-primary-light: #7cdac3;
-  --ifm-color-primary-lighter: #8adfca;
-  --ifm-color-primary-lightest: #b5ebde;
+  --ifm-color-primary: #4dd0e1;
+  --ifm-color-primary-dark: #26c6da;
+  --ifm-color-primary-darker: #00acc1;
+  --ifm-color-primary-darkest: #00838f;
+  --ifm-color-primary-light: #80deea;
+  --ifm-color-primary-lighter: #b2ebf2;
+  --ifm-color-primary-lightest: #e0f7fa;
+  
+  --ifm-background-color: #0d1117;
+  --ifm-color-emphasis-100: #161b22;
+  --ifm-color-emphasis-200: #30363d;
+  --ifm-color-emphasis-300: #484f58;
+  
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
+
+/* Global Overrides */
+.navbar {
+  box-shadow: none;
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.footer {
+  border-top: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.button--secondary {
+  --ifm-button-background-color: var(--ifm-color-emphasis-200);
+  --ifm-button-border-color: var(--ifm-color-emphasis-300);
+  color: var(--ifm-color-content);
+}
+
+.button--secondary:hover {
+  --ifm-button-background-color: var(--ifm-color-emphasis-300);
 }
