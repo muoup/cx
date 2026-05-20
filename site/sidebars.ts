@@ -34,23 +34,23 @@ const sidebars: SidebarsConfig = {
         },
         {
             type: "doc",
+            id: "manual/member-functions",
+            label: "2. Member Functions",
+        },
+        {
+            type: "doc",
             id: "manual/tagged-unions",
-            label: "2. Tagged Unions"
+            label: "3. Tagged Unions"
         },
         {
             type: "doc",
             id: "manual/move-semantics",
-            label: "3. Move Semantics"
+            label: "4. Move Semantics"
         },
         {
             type: "doc",
             id: "manual/modules",
-            label: "4. Modules",
-        },
-        {
-            type: "doc",
-            id: "manual/member-functions",
-            label: "5. Member Functions",
+            label: "5. Modules",
         },
         {
             type: "doc",

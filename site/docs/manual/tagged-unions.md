@@ -46,7 +46,7 @@ that a value is of that given variant. This may be done in a few ways:
 The simplest method to determine if a tagged union is of a given variant is via the 'is' operator. Given some value `val` of type `T`, the expression
 `val is T::variant(inner)` returns a boolean value and binds name `inner` to a variable pointing to the payload region of the tagged union with the
 type according to `T::variant`. Note that this is unconditional, meaning the returned boolean can be discarded and the binding `inner` can be used
-regardless of whether the `is` statement is true, however using the binding `inner` after the `is` statement evaluates to true is undefined behavior.
+regardless of whether the comparison succeeds, however use of the binding `inner` after the `is` statement evaluates to false is undefined behavior.
 The most idiomatic way to prevent this from happening is to use the `is` operator in an if statement like so:
 
 ```cpp
@@ -61,9 +61,8 @@ float get_rectangle_area(shape& s) {
 
 # 'match' Expressions
 
-Match expressions are closely related to C's `switch` statements. The only thing that separates them is a `match` statement's inability to fallthrough.
-Each case of a match statement must correlated to a single scope that breaks from the match statement on completion. With a match statement, we are able
-to compare a tagged union against multiple different variants at once, for instance:
+Match expressions can be used when comparing a tagged union value to multiple variants at once. Patterns for tagged unions currently 
+only support matching at the top-level, with an optional binding variable for any internal data.
 
 ```cpp
 float get_area(shape& s) {

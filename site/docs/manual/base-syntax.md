@@ -14,6 +14,8 @@ Recommended Resources:
 - [CPPReference](https://cppreference.com/c/language) for an approachable technical overview of C's semantics
 - [The GNU C Reference Manual](https://www.gnu.org/software/gnu-c-manual/gnu-c-manual.html) as a precise and verbose authoritative source
 
+While C-style syntax is always valid, CX also provides more modern idiomatic alternatives common to other C successors like:
+
 ## Primitive Types
 
 On top of C's base intrinsic types like `int` and `float`, CX provides a set of fixed-size types for predictable
@@ -32,6 +34,25 @@ T& is non-null and thus does not require explicit dereferencing and may be used 
 ```c
 void increment(int& x) {
     x = x + 1;
+}
+```
+
+## Match Statements
+
+Match statements are an alternative to C's `switch` statements that forbids fall-throughs. All cases correspond to a single scoped block which
+breaks after completion. Cases are denoted with a pattern on the left and a block to the right. Complex patterns are not currently supported,
+so in its current form, patterns must be direct matches to an int or float, or a tagged union variant with an optional binding variable.
+
+```cpp
+void foo(int i) {
+    match (i) {
+        1 => printf("i = 1\n");
+        5 => printf("i = 5\n");
+        _ => {
+            printf("Other\n");
+            bar(i);
+        }
+    }
 }
 ```
 
