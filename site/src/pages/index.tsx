@@ -5,15 +5,23 @@ import Heading from "@theme/Heading";
 
 import styles from "./index.module.css";
 
-const featureList = [
-    "What You See is What Happens",
-    "C compatible memory management made safe with linear types",
-    "Verified memory safety in the 'safe' subset",
-    "First-class contracts and post-condition checking",
-    "Predictable C-style data layout and FFI",
-    "Opt-in formal verification via FMIR analysis",
-    "Tagged unions and pattern matching",
-    "Template-based generic programming",
+const featurePanels = [
+    {
+        title: "Linear Resources",
+        body: "No RAII, no GC, all resources are linear and must be destroyed and destroyed explicitly."
+    },
+    {
+        title: "Modern Features",
+        body: "Algebraic data types and templates supported out of the box and kept traceable via a one-symbol one-definition philosophy"
+    },
+    {
+        title: "Safe Subset",
+        body: "Mark critical parts of code as safe to prevent undefined behavior and enable enforcement of safety properties."
+    },
+    {
+        title: "C Interop",
+        body: "CX is designed as a strict superset of C, all valid C code will be valid CX code."
+    },
 ];
 
 const socketSnippet = [
@@ -131,16 +139,22 @@ function MainLayout() {
         <div className={styles.mainGrid}>
             <div className={styles.contentColumn}>
                 <p className={styles.introParagraph}>
-                    CX is an experimental systems language for writing direct,
-                    C-shaped code with ownership checks that follow every
-                    control-flow path.
+                    CX is a work-in-progress experimental systems language for writing low-level code with modern convenience and
+                    compiler-ensured correctness. The language is verbose by design: no implicit destructors, no
+                    implicit control-flow, the code you write is the code that runs. 
                 </p>
 
-                <ul className={styles.featureBullets}>
-                    {featureList.map((f) => (
-                        <li key={f}>{f}</li>
+                <div className={styles.featureGrid}>
+                    {featurePanels.map((feature) => (
+                        <section
+                            className={styles.featurePanel}
+                            key={feature.title}
+                        >
+                            <h2>{feature.title}</h2>
+                            <p>{feature.body}</p>
+                        </section>
                     ))}
-                </ul>
+                </div>
             </div>
 
             <div className={styles.codeColumn}>
@@ -167,12 +181,7 @@ function MainLayout() {
                     </pre>
                     <div className={styles.diagnostic}>
                         <div className={styles.diagnosticTitle}>
-                            error: `listener` would be leaked on this return
-                            path
-                        </div>
-                        <div>
-                            `socket` is linear. Close it, move it, or discharge
-                            ownership before leaving `serve`.
+                            error: `listener` is marked @nodrop but is leaked without cleanup
                         </div>
                     </div>
                 </div>
@@ -186,6 +195,8 @@ export default function Home(): ReactNode {
         <Layout
             title="The CX Programming Language"
             description="Explicit resource management and formal verification."
+            noFooter
+            wrapperClassName="landing-page"
         >
             <main className={styles.container}>
                 <Hero />

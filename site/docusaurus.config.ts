@@ -86,34 +86,6 @@ const config: Config = {
     },
     footer: {
       style: 'dark',
-      links: [
-        {
-          title: 'Docs',
-          items: [
-            {
-              label: 'Getting Started',
-              to: '/docs/getting-started',
-            },
-            {
-              label: 'Language Manual',
-              to: '/docs/manual/',
-            },
-          ],
-        },
-        {
-          title: 'More',
-          items: [
-            {
-              label: 'Repository',
-              href: 'https://github.com/muoup/cx',
-            },
-            {
-              label: 'Issues',
-              href: 'https://github.com/muoup/cx/issues',
-            },
-          ],
-        },
-      ],
       copyright: `Copyright © ${new Date().getFullYear()}. Built with Docusaurus.`,
     },
     prism: {
