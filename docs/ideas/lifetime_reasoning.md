@@ -1,4 +1,4 @@
-```c++
+```cpp
 
 struct affine<T> : @copy_traits(T) {
     T value;

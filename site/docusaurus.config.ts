@@ -72,11 +72,16 @@ const config: Config = {
       items: [
         {
           type: 'docSidebar',
-          sidebarId: 'docsSidebar',
+          sidebarId: 'gettingStartedSidebar',
           position: 'left',
-          label: 'Docs',
+          label: 'Getting Started',
         },
-        {to: '/docs/getting-started', label: 'Getting Started', position: 'left'},
+        {
+          type: 'docSidebar',
+          sidebarId: 'manualSidebar',
+          position: 'left',
+          label: 'Manual',
+        },
         {
           href: 'https://github.com/muoup/cx',
           label: 'GitHub',

@@ -4,23 +4,30 @@ title: Base Syntax
 
 # Base Syntax
 
-CX remains intentionally close to C syntax. It is not order-dependent within a
-module: types and functions may be declared in any order, so forward
-declarations are generally unnecessary.
+CX is a partially-stable superset of C99. That is, most C99 code will compile as valid CX code
+with identical semantics, with more supported as the compiler develops. This page will not provide detailed
+explanations for C syntax unless necessary, so it is highly recommended to learn the syntax of the C programming
+language if you haven't already.
 
-## Primitive Aliases
+Recommended Resources:
+- [W3Schools' C Programming Tutorial](https://www.w3schools.com/c/) for the basics of the language
+- [CPPReference](https://cppreference.com/c/language) for an approachable technical overview of C's semantics
+- [The GNU C Reference Manual](https://www.gnu.org/software/gnu-c-manual/gnu-c-manual.html) as a precise and verbose authoritative source
 
-CX provides sized integer and floating-point aliases by default:
+## Primitive Types
 
-- `i8`, `i16`, `i32`, `i64`, `i128`: signed integers
-- `u8`, `u16`, `u32`, `u64`, `u128`: unsigned integers
-- `f32`, `f64`: floating-point values
-- `usize`, `isize`: size integer variants
+On top of C's base intrinsic types like `int` and `float`, CX provides a set of fixed-size types for predictable
+behavior across different architectures and operating systems:
+
+- `i8`, `i16`, `i32`, `i64`, `i128`: n-bit signed integers
+- `u8`, `u16`, `u32`, `u64`, `u128`: n-bit unsigned integers
+- `f32`, `f64`: n-bit floating-point values
+- `usize`, `isize`: pointer-sized signed/unsigned integer types
 
 ## Reference Types
 
-Reference types use `&`. A reference is pointer-like, must be non-null, and
-points to a single value.
+Reference are declared with a `&` type suffix and represents an alternative to C's pointer type with a stronger invariant. A reference type 
+T& is non-null and thus does not require explicit dereferencing and may be used as a standard value. 
 
 ```c
 void increment(int& x) {
@@ -28,32 +35,10 @@ void increment(int& x) {
 }
 ```
 
-## Global Variables
-
-Variables may be declared at module scope:
-
-```c
-int counter = 0;
-```
-
-## C-Style Enumerations
-
-Plain `enum` declarations define named integer constants:
-
-```c
-enum Color {
-    Red,
-    Green,
-    Blue
-};
-```
-
-Plain enums are distinct from tagged unions declared with `enum union`.
-
 ## Member Access
 
-The `.` and `->` operators are interchangeable when the compiler can determine
-that the receiver is a pointer.
+The `.` and `->` operators from C are interchangeable. If the left-hand side of a `.` operator is a pointer, it will be implicitly dereferenced
+before the access is evaluated.
 
 ```c
 struct Data {
@@ -65,29 +50,3 @@ void print_data(Data* data) {
     printf("%d\n", data.x);
 }
 ```
-
-## Lexical Conventions
-
-Names beginning with `_` are reserved for the implementation.
-
-In addition to C keywords, CX reserves:
-
-- `import`
-- `template`
-- `type`
-- `match`
-- `is`
-- `class`
-- `safe`
-- `where`
-- `move`
-
-CX also uses `@`-prefixed compiler identifiers. These are not ordinary user
-identifiers:
-
-- `@nocopy`
-- `@nodrop`
-- `@unsafe`
-- `@leak`
-- `@adopt`
-- `@unpack`

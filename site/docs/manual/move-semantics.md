@@ -1,11 +1,12 @@
 ---
-title: Aggregate Types
+title: Move Semantics
 ---
 
-# Aggregate Types
+# Move Semantics
 
-CX supports C-style structs and first-class tagged unions. Aggregate layout stays
-close to C: structs follow C padding and alignment rules.
+CX semantics are handled without the notion of memory. A variable defined via `T var = ...` declares symbol binding 'var' to
+an abstract region the size of `T`. While regions are often stored in memory, they may also be stored in one or multiple registers
+where possible.
 
 ## Structs
 

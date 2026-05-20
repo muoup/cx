@@ -1,4 +1,4 @@
-import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
+import type { SidebarsConfig } from "@docusaurus/plugin-content-docs";
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
@@ -13,28 +13,81 @@ import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
  Create as many sidebars as you want.
  */
 const sidebars: SidebarsConfig = {
-  docsSidebar: [
-    'getting-started',
-    {
-      type: 'category',
-      label: 'Language Manual',
-      link: {type: 'doc', id: 'manual/index'},
-      items: [
-        'manual/base-syntax',
-        'manual/aggregate-types',
-        'manual/member-functions',
-        'manual/templates',
-        'manual/control-flow',
-        'manual/modules',
-        'manual/contracts',
-        'manual/ownership',
-        'manual/safe-functions',
-        'manual/c-compatibility',
-        'manual/current-limitations',
-      ],
-    },
-    'build-system',
-  ],
+    gettingStartedSidebar: [
+        {
+            type: "category",
+            label: "Getting Started",
+            link: { type: "doc", id: "getting-started/getting-started" },
+            items: ["getting-started/getting-started"],
+        },
+    ],
+    manualSidebar: [
+        {
+            type: "doc",
+            id: "manual/index",
+            label: "Language Manual",
+        },
+        {
+            type: "doc",
+            id: "manual/base-syntax",
+            label: "1. Base Syntax",
+        },
+        {
+            type: "doc",
+            id: "manual/tagged-unions",
+            label: "2. Tagged Unions"
+        },
+        {
+            type: "doc",
+            id: "manual/move-semantics",
+            label: "3. Move Semantics"
+        },
+        {
+            type: "doc",
+            id: "manual/modules",
+            label: "4. Modules",
+        },
+        {
+            type: "doc",
+            id: "manual/member-functions",
+            label: "5. Member Functions",
+        },
+        {
+            type: "doc",
+            id: "manual/templates",
+            label: "6. Templates",
+        },
+        {
+            type: "doc",
+            id: "manual/control-flow",
+            label: "7. Control Flow",
+        },
+        {
+            type: "doc",
+            id: "manual/contracts",
+            label: "8. Contracts",
+        },
+        {
+            type: "doc",
+            id: "manual/ownership",
+            label: "9. Ownership",
+        },
+        {
+            type: "doc",
+            id: "manual/safe-functions",
+            label: "10. Safe Functions",
+        },
+        {
+            type: "doc",
+            id: "manual/build-system",
+            label: "11. Build System",
+        },
+        {
+            type: "doc",
+            id: "manual/current-limitations",
+            label: "12. Current Limitations",
+        },
+    ],
 };
 
 export default sidebars;

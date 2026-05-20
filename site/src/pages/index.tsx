@@ -118,12 +118,12 @@ function Hero() {
                                 INSTALL COMPILER
                             </Link>
                             <div className={styles.getStartedLinks}>
-                                <Link to="/docs/manual/">Manual</Link>
                                 <Link to="https://github.com/muoup/cx">
                                     GitHub
                                 </Link>
-                                <Link to="/docs/build-system">
-                                    Build System
+                                <Link to="/docs/manual/">Manual</Link>
+                                <Link to="/docs/getting-started">
+                                    Getting Started
                                 </Link>
                             </div>
                         </div>

@@ -1,4 +1,4 @@
-```c++
+```cpp
 
 // In 'safe' contexts, we restrict language features such that we can safely reason about the capacity of its semantics
 // trusted contexts handle FFI with potentially unsafe code and define explicit permissions required to invoke different
@@ -26,7 +26,7 @@ While this plan seems promising, there are some unknowns here that need better f
     - Function pointers: is it the action of creating a function pointer which requires privilege, or invoking it?
     - Implicit Permissions: if passing permissions are implicit -- i.e. when foo with permissions f_p calls bar with permissions g_p, the expression `bar()` automatically infers the permission to be passed, we seemingly open ourselves up to attack, see below:
 
-```c++
+```cpp
 
 ulong complete_request(request* request) safe<std::clock> { ... };
 

@@ -54,5 +54,5 @@ Files with the `.cxl` extension serve as library entry points. They use the same
 syntax as `.cx` files. When a `.cxl` file is compiled as a library target, its
 non-static, non-external functions become the library's exported symbols.
 
-See the [build system](../build-system.md) guide for library configuration and
+See the [build system](./build-system.md) guide for library configuration and
 C header generation.
