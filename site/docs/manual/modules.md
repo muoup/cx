@@ -48,10 +48,10 @@ i32 helper(i32 x) {
 All declarations following a `public:` header are visible to importers. A
 `private:` header switches back to module-internal visibility.
 
-## `.cxl` Library Entry Files
+## `.cxh` Library Entry Files
 
-Files with the `.cxl` extension serve as library entry points. They use the same
-syntax as `.cx` files. When a `.cxl` file is compiled as a library target, its
+Files with the `.cxh` extension serve as library entry points. They use the same
+syntax as `.cx` files. When a `.cxh` file is compiled as a library target, its
 non-static, non-external functions become the library's exported symbols.
 
 See the [build system](./build-system.md) guide for library configuration and

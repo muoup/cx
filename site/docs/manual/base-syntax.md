@@ -4,17 +4,7 @@ title: Base Syntax
 
 # Base Syntax
 
-CX is a partially-stable superset of C99. That is, most C99 code will compile as valid CX code
-with identical semantics, with more supported as the compiler develops. This page will not provide detailed
-explanations for C syntax unless necessary, so it is highly recommended to learn the syntax of the C programming
-language if you haven't already.
 
-Recommended Resources:
-- [W3Schools' C Programming Tutorial](https://www.w3schools.com/c/) for the basics of the language
-- [CPPReference](https://cppreference.com/c/language) for an approachable technical overview of C's semantics
-- [The GNU C Reference Manual](https://www.gnu.org/software/gnu-c-manual/gnu-c-manual.html) as a precise and verbose authoritative source
-
-While C-style syntax is always valid, CX also provides more modern idiomatic alternatives common to other C successors like:
 
 ## Primitive Types
 

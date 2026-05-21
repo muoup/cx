@@ -10,5 +10,5 @@ binaries = [
   { name = "self-hosted", entry = "main.cx" },
 ]
 libraries = [
-  { name = "test-lib", entry = "test-lib.cxl" },
+  { name = "test-lib", entry = "test-lib.cxh" },
 ]

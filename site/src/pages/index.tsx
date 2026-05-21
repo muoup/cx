@@ -8,7 +8,7 @@ import styles from "./index.module.css";
 const featurePanels = [
     {
         title: "Linear Resources",
-        body: "No RAII, no GC, all resources are linear and must be destroyed and destroyed explicitly."
+        body: "No RAII, no garbage collection, all resources are linear and must be destroyed, and destroyed explicitly."
     },
     {
         title: "Modern Features",

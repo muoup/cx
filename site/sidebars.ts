@@ -24,48 +24,48 @@ const sidebars: SidebarsConfig = {
     manualSidebar: [
         {
             type: "doc",
-            id: "manual/index",
-            label: "Language Manual",
-        },
-        {
-            type: "doc",
-            id: "manual/base-syntax",
-            label: "1. Base Syntax",
-        },
-        {
-            type: "doc",
-            id: "manual/member-functions",
-            label: "2. Member Functions",
-        },
-        {
-            type: "doc",
-            id: "manual/tagged-unions",
-            label: "3. Tagged Unions"
-        },
-        {
-            type: "doc",
-            id: "manual/move-semantics",
-            label: "4. Move Semantics"
-        },
-        {
-            type: "doc",
-            id: "manual/modules",
-            label: "5. Modules",
-        },
-        {
-            type: "doc",
-            id: "manual/templates",
-            label: "6. Templates",
-        },
-        {
-            type: "doc",
-            id: "manual/contracts",
-            label: "7. Contracts",
+            id: "manual/overview",
+            label: "Language Overview",
         },
         {
             type: "doc",
             id: "manual/build-system",
-            label: "8. Build System",
+            label: "1. Build System",
+        },
+        {
+            type: "doc",
+            id: "manual/base-syntax",
+            label: "2. Base Syntax",
+        },
+        {
+            type: "doc",
+            id: "manual/member-functions",
+            label: "3. Member Functions",
+        },
+        {
+            type: "doc",
+            id: "manual/tagged-unions",
+            label: "4. Tagged Unions",
+        },
+        {
+            type: "doc",
+            id: "manual/move-semantics",
+            label: "5. Move Semantics",
+        },
+        {
+            type: "doc",
+            id: "manual/modules",
+            label: "6. Modules",
+        },
+        {
+            type: "doc",
+            id: "manual/templates",
+            label: "7. Templates",
+        },
+        {
+            type: "doc",
+            id: "manual/contracts",
+            label: "8. Contracts",
         },
     ],
 };

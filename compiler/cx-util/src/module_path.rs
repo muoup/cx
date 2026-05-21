@@ -21,7 +21,7 @@ impl ModulePath {
 
     pub fn from_source_path(path: &str) -> Self {
         let stripped = path
-            .strip_suffix(".cxl")
+            .strip_suffix(".cxh")
             .or_else(|| path.strip_suffix(".cx"))
             .unwrap_or(path);
         Self(stripped.replace('\\', "/"))
