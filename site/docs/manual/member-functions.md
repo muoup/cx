@@ -4,67 +4,72 @@ title: Member Functions
 
 # Member Functions
 
-CX supports namespaced member syntax without dynamic dispatch.
-
-## Borrowed Receiver
-
-An instance method declares `*this` as its borrowed receiver.
+Member functions, that is functions declared on a type called via `object.method(param)` syntax, is designed to be used liberally as a form of syntactic sugar. Member functions are declared separate from the type declaration itself and may be defined anyway, including in external modules as long as the type is available. They are equivalent semantically to a function taking in the object as its first parameter and provide no unique functionality, they should be used primary for their alternative calling syntax for cleaner APIs.
 
 ```c
-struct Counter {
+struct counter {
     int value;
 };
 
-void Counter::print(*this) {
-    printf("%d\n", this->value);
+void counter::print(*this) {
+    printf("%d\n", this.value);
+}
+
+int main() {
+    counter c = (counter) { .value = 25 };
+
+    c.print();
 }
 ```
 
-Call syntax:
+In the example above, the member functions is declared with a `*this` self-parameter. This is called a borrowed receiver, the asterisk indicating that the value is passed in as a reference and the function does not own the calling value. If the asterisk is removed, the member function becomes a borrowed receiver in which the receiver object is implicitly moved (see [Move Semantics](move-semantics.md)). This allows for the idiomatic structure of "drop" functions, the alternative to RAII in which a resource-owning object type is cleaned up explicitly.
 
-```c
-Counter c;
-c.print();
-```
+```cpp
+struct file : @nodrop {
+    FILE* fd;
+};
 
-## Consuming Receiver
+void write_to_file(file& file) { ... }
 
-A method may consume its receiver with `this`.
-
-```c
-void Counter::drop(this) {
-    @unsafe {
-        @leak(this);
-    };
+void file::drop(this) {
+    fclose(this.fd);
+    @leak(this);
 }
+
+void foo(file file) {
+    write_to_file(file);
+    file.drop();
+
+    // The variable 'file' is no longer accessible and its resources have been cleaned up.
+}
+
 ```
-
-A consuming receiver moves the instance it is called on. The method body must
-discharge ownership by transferring it to another binding or by marking it as
-discharged with `@leak`.
-
-Current behavior:
-
-- `x.drop()` consumes `x` when `x` is a whole binding.
-- Owned aggregate rvalues may call consuming receivers.
-- Non-binding places such as `obj.field.drop()` are currently rejected.
 
 ## Static Member Functions
 
-A member declaration with no receiver is a static member function.
+There is a third case for member functions. If the 'this' parameter is elided entirely, the member function has no implicit parameter behavior and is defined as a static member function. A static member function is a standard free function existing in the type's namespace, and proves useful for patterns such as factory functions.
 
 ```c
-struct MyStruct {
-    int value;
+struct int_vector {
+    int* data;
+    usize length, capacity;
 };
 
-MyStruct MyStruct::create() {
-    return { .value = 42 };
+int_vector int_vector::create_empty() {
+    return (int_vector) { .data = NULL, .length = 0, .capacity = 0 };
 }
-```
 
-Call syntax:
+int_vector int_vector::with_capacity(usize capacity) {
+    return (int_vector) { .data = calloc(sizeof(int), capacity), .length = 0, .capacity = capacity };
+}
 
-```c
-MyStruct s = MyStruct::create();
+// ...
+
+int main() {
+    int_vector v1 = int_vector::create_empty();
+    int_vector v2 = int_vector::with_capacity(16);
+
+    // ...
+}
+
 ```

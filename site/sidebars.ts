@@ -59,33 +59,13 @@ const sidebars: SidebarsConfig = {
         },
         {
             type: "doc",
-            id: "manual/control-flow",
-            label: "7. Control Flow",
-        },
-        {
-            type: "doc",
             id: "manual/contracts",
-            label: "8. Contracts",
-        },
-        {
-            type: "doc",
-            id: "manual/ownership",
-            label: "9. Ownership",
-        },
-        {
-            type: "doc",
-            id: "manual/safe-functions",
-            label: "10. Safe Functions",
+            label: "7. Contracts",
         },
         {
             type: "doc",
             id: "manual/build-system",
-            label: "11. Build System",
-        },
-        {
-            type: "doc",
-            id: "manual/current-limitations",
-            label: "12. Current Limitations",
+            label: "8. Build System",
         },
     ],
 };

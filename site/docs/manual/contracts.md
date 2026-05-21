@@ -18,12 +18,5 @@ where
 
 Semantics:
 
-- `pre: (expr)` constrains callers.
-- `post(name): (expr)` constrains the returned value.
-- Multiple clauses are comma-separated.
-
-Current runtime behavior:
-
-- In non-analysis builds, contracts remain runtime-relevant.
-- In `safe` functions, contract expressions are also checked as part of the safe
-  subset.
+- `pre: (expr)` is the precondition of the function, the caller asserts to the callee that the condition over the parameters provided is true.
+- `post(name): (expr)` is the postcondition, the callee asserts that such value is true of the returned value in regards to the state of the variables provided at call-time. If the contracted function mutates its passed parameters, the condition will refer to their state prior to any mutation.
