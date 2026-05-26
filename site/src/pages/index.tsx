@@ -121,7 +121,7 @@ function Hero() {
                                 <Link to="https://github.com/muoup/cx">
                                     GitHub
                                 </Link>
-                                <Link to="/docs/manual/">Manual</Link>
+                                <Link to="/docs/manual/overview">Manual</Link>
                                 <Link to="/docs/getting-started">
                                     Getting Started
                                 </Link>
