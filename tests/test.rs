@@ -129,7 +129,7 @@ fn expect_compile_success(input: &Path, analysis: bool) {
 
     standard_compilation(config, base_file_name(input)).unwrap_or_else(|err| {
         err.pretty_print();
-        std::process::exit(1);
+        panic!("Expected compilation success but got failure");
     });
 }
 
