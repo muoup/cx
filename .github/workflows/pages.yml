@@ -7,7 +7,7 @@ on:
       - .github/workflows/pages.yml
   push:
     branches:
-      - docs
+      - main
     paths:
       - site/**
       - .github/workflows/pages.yml
