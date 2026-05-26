@@ -74,7 +74,7 @@ pub struct ModuleMap<Data> {
     loaded_data: RwLock<HashMap<CompilationUnit, Arc<Data>>>,
 }
 
-impl<'a, Data> ModuleMap<Data> {
+impl<Data> ModuleMap<Data> {
     pub fn new(data_suffix: &str) -> Self {
         ModuleMap {
             storage_extension: data_suffix.to_string(),

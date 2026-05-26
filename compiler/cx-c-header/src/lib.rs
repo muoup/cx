@@ -176,12 +176,7 @@ fn lmir_type_to_c(ty: &LMIRType, var_name: Option<&str>) -> String {
             panic!("ABI-only type cannot be emitted in a C header: {ty:?}")
         }
         LMIRTypeKind::Opaque { bytes } => {
-            // Represent opaque types as byte arrays
-            if name.is_empty() {
-                format!("uint8_t[{bytes}]")
-            } else {
-                format!("uint8_t {name}[{bytes}]")
-            }
+            format!("struct {{ uint8_t data[{bytes}] }}")
         }
     }
 }

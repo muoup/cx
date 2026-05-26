@@ -108,6 +108,6 @@ impl CharIter<'_> {
         self.source
             .as_bytes()
             .get(self.current_iter + 1)
-            .is_some_and(|c| condition(c))
+            .is_some_and(condition)
     }
 }

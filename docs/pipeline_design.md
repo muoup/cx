@@ -91,7 +91,7 @@ Library targets use `ld -r --gc-sections` to produce a single merged relocatable
 
 ### C Header Generation
 
-After library linking, a C header is generated from the entry file's LMIR unit. The header contains type definitions and function declarations for all exported symbols, wrapped in `extern "C"` guards. See [docs/build_system.md](build_system.md) for the full type mapping and header structure.
+After library linking, a C header is generated from the entry file's LMIR unit. The header contains type definitions and function declarations for all exported symbols, wrapped in `extern "C"` guards. See [build_system.md](build_system.md) for the full type mapping and header structure.
 
 ## IR Roles
 

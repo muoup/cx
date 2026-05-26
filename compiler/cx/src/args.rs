@@ -1,5 +1,4 @@
 use cx_pipeline_data::{CompilerBackend, OptimizationLevel};
-use std::path::Path;
 
 #[derive(Debug)]
 pub enum Command {
@@ -18,8 +17,8 @@ pub struct InitArgs {
 
 #[derive(Debug)]
 pub struct FileArgs {
-    pub input_file: String,
-    pub output_file: String,
+    pub input_files: Vec<String>,
+    pub output_file: Option<String>,
     pub compile_only: bool,
     pub backend: CompilerBackend,
     pub optimization_level: OptimizationLevel,
@@ -38,7 +37,7 @@ pub struct BuildArgs {
 
 pub fn print_help() {
     println!("Usage:");
-    println!("  cx <file.cx> [options]");
+    println!("  cx <file.cx>... [options]");
     println!("  cx build [target] [options]");
     println!("  cx init <project-name>");
     println!();
@@ -47,7 +46,7 @@ pub fn print_help() {
     println!("  init <project-name>  Create a new CX project");
     println!();
     println!("Legacy single-file mode:");
-    println!("  <file.cx>            Compile a single .cx file without using cx.toml");
+    println!("  <file.cx>...         Compile one or more .cx files without using cx.toml");
     println!();
     println!("Options:");
     #[cfg(feature = "backend-llvm")]
@@ -219,7 +218,7 @@ fn parse_file_args(
     let mut optimization_level = None;
     let mut analysis = false;
     let mut verbose = false;
-    let mut input_file = None;
+    let mut input_files = Vec::new();
 
     while let Some(arg) = args_iter.next() {
         if parse_common_flag(
@@ -239,32 +238,25 @@ fn parse_file_args(
             return Err(format!("Unknown flag: {arg}"));
         }
 
-        if input_file.is_some() {
-            return Err("Multiple input files not currently supported".to_string());
-        }
-        input_file = Some(arg.to_string());
+        input_files.push(arg.to_string());
     }
 
-    let input_file = input_file.ok_or_else(|| "Usage: cx <file.cx> [options]".to_string())?;
-
-    if !input_file.ends_with(".cx") {
-        return Err("Input file must have a .cx extension".to_string());
+    if input_files.is_empty() {
+        return Err("Usage: cx <file.cx>... [options]".to_string());
     }
 
-    let output_file = output_file.unwrap_or_else(|| {
-        if compile_only {
-            let stem = Path::new(&input_file)
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .unwrap_or("a");
-            format!("{stem}.o")
-        } else {
-            "a.out".to_string()
+    for input_file in &input_files {
+        if !input_file.ends_with(".cx") {
+            return Err("Input files must have a .cx extension".to_string());
         }
-    });
+    }
+
+    if compile_only && input_files.len() > 1 && output_file.is_some() {
+        return Err("-o flag is not supported with -c and multiple input files".to_string());
+    }
 
     Ok(Command::CompileFile(FileArgs {
-        input_file,
+        input_files,
         output_file,
         compile_only,
         backend: backend.unwrap_or_else(default_backend),

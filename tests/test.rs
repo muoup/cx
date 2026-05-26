@@ -129,7 +129,7 @@ fn expect_compile_success(input: &Path, analysis: bool) {
 
     standard_compilation(config, base_file_name(input)).unwrap_or_else(|err| {
         err.pretty_print();
-        std::process::exit(1);
+        panic!("Expected compilation success but got failure");
     });
 }
 
@@ -219,7 +219,7 @@ fn run_end_to_end_test(input: &Path) {
 
     standard_compilation(cranelift_config, base_file_name(input)).unwrap_or_else(|err| {
         err.pretty_print();
-        std::process::exit(1);
+        panic!("Cranelift compilation failed");
     });
     assert_eq!(
         expected_output,
@@ -244,7 +244,7 @@ fn run_end_to_end_test(input: &Path) {
 
         standard_compilation(llvm_config, base_file_name(input)).unwrap_or_else(|err| {
             err.pretty_print();
-            std::process::exit(1);
+            panic!("LLVM compilation failed");
         });
         assert_eq!(
             expected_output,

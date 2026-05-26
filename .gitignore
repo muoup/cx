@@ -8,3 +8,4 @@ tmp
 *.wasm
 
 !.gitignore
+!.github

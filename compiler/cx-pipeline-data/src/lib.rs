@@ -136,7 +136,7 @@ impl CompilationUnit {
 
     pub fn from_rooted(path: &str, working_directory: &Path) -> Self {
         let module_path = ModulePath::from_source_path(path);
-        let extension = if path.ends_with(".cxl") { "cxl" } else { "cx" };
+        let extension = if path.ends_with(".cxh") { "cxl" } else { "cx" };
         Self::from_module_path_with_extension(module_path, working_directory, extension)
     }
 

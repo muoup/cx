@@ -174,7 +174,7 @@ fn homogeneous_float_fields(ty: &LMIRType) -> Option<(usize, LMIRFloatType)> {
         return None;
     };
 
-    let LMIRTypeKind::Float(_fty) = &fields.get(0)?.1.kind else {
+    let LMIRTypeKind::Float(_fty) = &fields.first()?.1.kind else {
         return None;
     };
 

@@ -167,7 +167,7 @@ pub(crate) fn typecheck_scoped_call(
 
         let tc_args = comma_separated(env, base_data, args_expr)?;
         let function = TypecheckResult::from(build_function_reference(&prototype));
-        return finish_function_call(env, base_data, expr, function, tc_args);
+        finish_function_call(env, base_data, expr, function, tc_args)
     } else {
         let exact_prototype = if let Some(prototype) =
             query_static_member_function(env, base_data, expr, &mir_type, method_name, None)?
