@@ -91,15 +91,11 @@ pub(crate) fn operator(iter: &mut CharIter) -> Option<TokenKind> {
         }
         '~' => Some(TokenKind::Operator(OperatorType::Tilda)),
 
-        ':' => {
-            if Some(':') == iter.peek() {
+        ':'
+            if Some(':') == iter.peek() => {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::ScopeRes))
-            } else {
-                iter.back();
-                None
             }
-        }
 
         '>' => match iter.peek() {
             Some('=') => {

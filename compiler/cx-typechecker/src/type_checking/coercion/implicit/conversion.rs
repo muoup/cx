@@ -64,11 +64,11 @@ pub fn try_implicit_coercion(
         (MIRTypeKind::Float { _type: from_float }, MIRTypeKind::Float { _type: to_float })
             if from_float != to_float =>
         {
-            return implicit::coercion_expr(
+            implicit::coercion_expr(
                 expr,
                 target_type.clone(),
                 MIRCoercion::FloatCast { to_type: *to_float },
-            );
+            )
         }
 
         (
