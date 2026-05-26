@@ -140,6 +140,7 @@ fn system_include_dirs() -> Vec<PathBuf> {
     #[cfg(unix)]
     {
         let mut dirs = vec![PathBuf::from("/usr/include")];
+        dirs.extend(multiarch_include_dirs());
         dirs.extend(gcc_include_dirs());
         dirs
     }
@@ -148,6 +149,25 @@ fn system_include_dirs() -> Vec<PathBuf> {
     {
         vec![]
     }
+}
+
+#[cfg(unix)]
+fn multiarch_include_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    if let Ok(output) = std::process::Command::new("gcc")
+        .arg("-print-multiarch")
+        .output()
+        && output.status.success()
+        && let Ok(tuple) = String::from_utf8(output.stdout)
+    {
+        let include_dir = PathBuf::from("/usr/include").join(tuple.trim());
+        if include_dir.is_dir() {
+            dirs.push(include_dir);
+        }
+    }
+
+    dirs
 }
 
 #[cfg(unix)]
