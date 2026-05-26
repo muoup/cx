@@ -27,7 +27,7 @@ pub fn store_text(
     std::fs::write(path, text).expect("Failed to write text to file");
 }
 
-pub fn store_data<'a, Data>(
+pub fn store_data<Data>(
     context: &GlobalCompilationContext,
     unit: &CompilationUnit,
     data_suffix: &str,

@@ -22,7 +22,7 @@ pub struct MIRExpression {
 #[derive(Clone, Debug, Readable, Writable)]
 pub enum MIRPureExpression {
     IntegerLiteral(i64, MIRIntegerType, bool),
-    FunctionReference(MIRFunctionPrototype),
+    FunctionReference(Box<MIRFunctionPrototype>),
 }
 
 impl MIRPureExpression {

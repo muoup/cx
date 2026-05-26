@@ -1,6 +1,6 @@
 use speedy::{Readable, Writable};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, Hash, Readable, Writable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]
 pub struct FloatWrapper {
     bits: u64,
 }
@@ -38,5 +38,11 @@ impl PartialOrd for FloatWrapper {
         let left: f64 = self.into();
         let right: f64 = other.into();
         left.partial_cmp(&right)
+    }
+}
+
+impl Ord for FloatWrapper {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
     }
 }
