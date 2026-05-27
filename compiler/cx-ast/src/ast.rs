@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, module_path::ModulePath, unsafe_float::FloatWrapper};
+use cx_util::{identifier::CXIdent, module_path::ModulePath, namespace::QualifiedName, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 use uuid::Uuid;
 
@@ -183,10 +183,10 @@ pub enum CXExprKind {
     Unit,
 
     TemplatedIdentifier {
-        name: CXIdent,
+        name: QualifiedName,
         template_input: CXTemplateInput,
     },
-    Identifier(CXIdent),
+    Identifier(QualifiedName),
 
     IntLiteral {
         val: i64,

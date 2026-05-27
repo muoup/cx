@@ -84,23 +84,26 @@ impl Display for NamespacePath {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct QualifiedName {
-    pub namespace: NamespacePath,
+    pub namespace: Option<NamespacePath>,
     pub name: CXIdent,
 }
 
 impl QualifiedName {
-    pub fn new(namespace: NamespacePath, name: CXIdent) -> Self {
+    pub fn new(namespace: Option<NamespacePath>, name: CXIdent) -> Self {
         Self { namespace, name }
     }
 
     pub fn root(name: CXIdent) -> Self {
         Self {
-            namespace: NamespacePath::root(),
+            namespace: Some(NamespacePath::root()),
             name,
         }
     }
 
     pub fn as_flat_name(&self) -> String {
-        self.namespace.as_flat_name_with(&self.name)
+        self.namespace
+            .as_ref()
+            .map(|n| n.as_flat_name_with(&self.name))
+            .unwrap_or_else(|| self.name.as_string())
     }
 }

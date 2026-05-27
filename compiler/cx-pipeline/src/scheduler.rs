@@ -388,34 +388,9 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::ASTParse => {
-            let mut pp_data = context.module_db.preparse_base.get_cloned(&job.unit);
+            let pp_data = context.module_db.preparse_base.get(&job.unit);
             let lexemes = context.module_db.lex_tokens.get(&job.unit);
-
-            for import in pp_data.imports.iter() {
-                let other_pp_data =
-                    context
-                        .module_db
-                        .preparse_base
-                        .get(&CompilationUnit::from_module_path(
-                            import.clone(),
-                            &context.config.working_directory,
-                        ));
-                let required_visiblity = cx_preparse_data::VisibilityMode::Public;
-
-                for resource in other_pp_data.module_symbols.symbols.iter() {
-                    if resource.visibility < required_visiblity {
-                        continue;
-                    };
-
-                    pp_data.type_idents.push(resource.transfer(import));
-                }
-                
-                add_qualified_preparse_type_idents(
-                    &mut pp_data.type_idents,
-                    &NamespacePath::from_module_path(import),
-                );
-            }
-
+ 
             let parsed_ast = parse_ast(
                 TokenIter::new(&lexemes, job.unit.as_path().to_path_buf()),
                 &pp_data,

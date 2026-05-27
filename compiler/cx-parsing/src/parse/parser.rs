@@ -9,7 +9,10 @@ use cx_ast::{
     },
 };
 use cx_preparse_data::PreparseContents;
+use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_tokens::TokenIter;
+use cx_util::CXResult;
+use cx_util::namespace::QualifiedName;
 
 #[derive(Debug)]
 pub struct ParserData<'a> {
@@ -19,11 +22,12 @@ pub struct ParserData<'a> {
     pub pp_contents: &'a PreparseContents,
     pub file_origin: Arc<str>,
 
+    pub registry: &'a GlobalPreparseRegistry,
     pub ast: CXAST,
 }
 
 impl<'a> ParserData<'a> {
-    pub fn new(tokens: TokenIter<'a>, pp_contents: &'a PreparseContents) -> Self {
+    pub fn new(tokens: TokenIter<'a>, pp_contents: &'a PreparseContents, registry: &'a GlobalPreparseRegistry) -> Self {
         let file_origin: Arc<str> = Arc::from(tokens.file.to_string_lossy().as_ref());
         Self {
             tokens,
@@ -31,6 +35,7 @@ impl<'a> ParserData<'a> {
             expr_commas: vec![true],
             pp_contents,
             file_origin,
+            registry,
             ast: CXAST {
                 imports: pp_contents.imports.clone(),
                 ..Default::default()
@@ -154,5 +159,9 @@ impl<'a> ParserData<'a> {
 
     pub fn take_ast(self) -> CXAST {
         self.ast
+    }
+
+    pub fn is_type_ident(&self, name: &QualifiedName) -> CXResult<bool> {
+        todo!()
     }
 }

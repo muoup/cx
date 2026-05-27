@@ -17,6 +17,7 @@ use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 #[derive(Debug)]
 pub struct ModuleData {
     pub do_not_reexport: RwLock<HashSet<CompilationUnit>>,
+    
     pub preparse_registry: GlobalPreparseRegistry,
     pub symbol_registry: GlobalSymbolRegistry,
     pub mir_symbol_resolver: GlobalMIRSymbolResolver,

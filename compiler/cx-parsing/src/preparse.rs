@@ -6,7 +6,7 @@ use cx_util::{
     identifier::CXIdent, log_error, module_path::ModulePath, namespace::NamespacePath, CXResult,
 };
 
-use crate::parse::try_parse_ident;
+use crate::parse::try_parse_identifier;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PreparseConfig {
@@ -81,7 +81,7 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
                 data.tokens.next();
             }
 
-            let Some(ident) = try_parse_ident(&mut data.tokens) else {
+            let Some(ident) = try_parse_identifier(&mut data.tokens) else {
                 return Ok(());
             };
 

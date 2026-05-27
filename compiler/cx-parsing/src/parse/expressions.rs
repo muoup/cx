@@ -14,7 +14,7 @@ use crate::parse::templates::parse_template_args;
 use crate::parse::types::{
     parse_base_mods, parse_initializer, parse_specifier, parse_type_base, peek_qualified_ident,
 };
-use crate::parse::{parse_body, parse_intrinsic, try_parse_ident};
+use crate::parse::{parse_body, parse_intrinsic, try_parse_identifier};
 
 fn parse_at_intrinsic_expr(
     data: &mut ParserData,
@@ -83,11 +83,11 @@ fn parse_at_intrinsic_expr(
 
             let mut bindings = Vec::new();
             while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-                let Some(field) = try_parse_ident(&mut data.tokens) else {
+                let Some(field) = try_parse_identifier(&mut data.tokens) else {
                     return log_parse_error!(data, "Expected field name in @unpack binding");
                 };
                 assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
-                let Some(binding) = try_parse_ident(&mut data.tokens) else {
+                let Some(binding) = try_parse_identifier(&mut data.tokens) else {
                     return log_parse_error!(data, "Expected binding name in @unpack binding");
                 };
 
@@ -594,7 +594,7 @@ pub(crate) fn parse_expr_val(
 
 pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CXResult<CXExpression> {
     let start_index = data.tokens.index;
-    let Some(ident) = try_parse_ident(&mut data.tokens) else {
+    let Some(ident) = try_parse_identifier(&mut data.tokens) else {
         return log_parse_error!(data, "Expected identifier");
     };
 

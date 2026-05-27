@@ -7,13 +7,13 @@ use cx_ast::{
     },
     next_kind, peek_next_kind, try_next,
 };
-use cx_preparse_data::PreparseContents;
+use cx_preparse_data::{registry::GlobalPreparseRegistry, PreparseContents};
 use cx_tokens::{
     keyword, operator, punctuator, specifier,
     token::{SpecifierType, TokenKind},
     TokenIter,
 };
-use cx_util::{identifier::CXIdent, CXResult};
+use cx_util::{identifier::CXIdent, namespace::QualifiedName, CXResult};
 
 use crate::parse::{
     expressions::{expression_requires_semicolon, parse_expr},
@@ -64,8 +64,12 @@ mod parser;
 mod templates;
 mod types;
 
-pub fn parse_ast(iter: TokenIter, pp_contents: &PreparseContents) -> CXResult<CXAST> {
-    let mut data = ParserData::new(iter, pp_contents);
+pub fn parse_ast(
+    iter: TokenIter,
+    pp_contents: &PreparseContents,
+    registry: &GlobalPreparseRegistry,
+) -> CXResult<CXAST> {
+    let mut data = ParserData::new(iter, pp_contents, registry);
 
     while data.tokens.has_next() {
         parse_global_stmt(&mut data)?;
@@ -317,14 +321,31 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     Ok(CXIdent::new(ss))
 }
 
-pub fn try_parse_ident(tokens: &mut TokenIter) -> Option<CXIdent> {
+pub fn try_parse_identifier(tokens: &mut TokenIter) -> CXResult<Option<QualifiedName>> {
     let TokenKind::Identifier(ident) = peek_next_kind!(tokens).ok()? else {
-        return None;
+        return Ok(None);
     };
+
+    if !matches!(peek_next_kind!(tokens)?, operator!(DoubleColon)) {
+        return Ok(Some(QualifiedName::new(None, CXIdent::new(ident.clone()))));
+    }
+
+    let mut segments = vec![CXIdent::new(ident.clone())];
+
+    while try_next!(tokens, operator!(DoubleColon)) {
+        let TokenKind::Identifier(ident) = peek_next_kind!(tokens).ok()? else {
+            return log_preparse_error!(tokens, "Expected identifier after '::' in qualified name");
+        };
+
+        segments.push(CXIdent::new(ident.clone()));
+    }
 
     let ident = ident.clone();
 
     tokens.next();
 
-    Some(CXIdent::new(ident))
+    Ok(Some(QualifiedName::new(
+        Some(NamespacePath::new(segments)),
+        CXIdent::new(ident),
+    )))
 }
