@@ -7,6 +7,12 @@ use crate::{identifier::CXIdent, module_path::ModulePath};
 #[derive(Debug, Default, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct NamespacePath(Vec<CXIdent>);
 
+impl From<ModulePath> for NamespacePath {
+    fn from(path: ModulePath) -> Self {
+        Self::from_slash_path(path.as_str())
+    }
+}
+
 impl NamespacePath {
     pub fn root() -> Self {
         Self::default()
@@ -14,10 +20,6 @@ impl NamespacePath {
 
     pub fn new(segments: Vec<CXIdent>) -> Self {
         Self(segments)
-    }
-
-    pub fn from_module_path(path: &ModulePath) -> Self {
-        Self::from_slash_path(path.as_str())
     }
 
     pub fn from_slash_path(path: &str) -> Self {

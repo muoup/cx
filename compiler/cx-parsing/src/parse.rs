@@ -5,8 +5,9 @@ use cx_ast::{
     data::{
         CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXTemplatePrototype, CXTypeKind,
     },
-    next_kind, peek_next_kind, try_next, PreparseContents,
+    next_kind, peek_next_kind, try_next,
 };
+use cx_preparse_data::PreparseContents;
 use cx_tokens::{
     keyword, operator, punctuator, specifier,
     token::{SpecifierType, TokenKind},

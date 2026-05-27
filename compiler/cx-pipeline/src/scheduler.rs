@@ -27,6 +27,7 @@ use cx_typechecker::gather_interface;
 use cx_typechecker::log::TypeError;
 use cx_typechecker::typecheck;
 use cx_util::format::dump_data;
+use cx_util::identifier::CXIdent;
 use cx_util::module_path::ModulePath;
 use cx_util::namespace::NamespacePath;
 use cx_util::{CXError, CXErrorTrait, CXResult};
@@ -226,8 +227,7 @@ fn load_precompiled_data(
 }
 
 fn decompose_ast_symbols(unit: &CompilationUnit, ast: &CXAST) -> DecomposedModuleSymbols {
-    let mut output =
-        DecomposedModuleSymbols::new(NamespacePath::from_module_path(unit.module_path()));
+    let mut output = DecomposedModuleSymbols::new(NamespacePath::from(unit.module_path().clone()));
 
     for (name, ty) in ast.type_data.standard_iter() {
         output.symbols.push((
@@ -276,7 +276,7 @@ fn decompose_ast_symbols(unit: &CompilationUnit, ast: &CXAST) -> DecomposedModul
 }
 
 fn add_qualified_preparse_type_idents(
-    type_idents: &mut Vec<ModuleResource<cx_util::identifier::CXIdent>>,
+    type_idents: &mut Vec<ModuleResource<CXIdent>>,
     namespace: &NamespacePath,
 ) {
     if namespace.is_root() {
@@ -344,14 +344,16 @@ pub(crate) fn perform_job(
             )?;
 
             let preparse_config = PreparseConfig::from_compiler_config(&context.config);
-            let mut output = preparse(&preparse_config, TokenIter::new(&tokens, file_path))?;
-            output.module = job.unit.to_string();
-            output.module_symbols.namespace =
-                NamespacePath::from_module_path(job.unit.module_path());
-            add_qualified_preparse_type_idents(
-                &mut output.type_idents,
-                &output.module_symbols.namespace,
-            );
+            let mut output = preparse(
+                &preparse_config,
+                TokenIter::new(&tokens, file_path),
+                job.unit.to_string(),
+                NamespacePath::from(job.unit.module_path().clone()),
+            )?;
+            // add_qualified_preparse_type_idents(
+            //     &mut output.type_idents,
+            //     &output.module_symbols.namespace,
+            // );
 
             if !job.unit.is_std_lib() {
                 output.imports.extend(
@@ -398,15 +400,16 @@ pub(crate) fn perform_job(
                             import.clone(),
                             &context.config.working_directory,
                         ));
-                let required_visiblity = VisibilityMode::Public;
+                let required_visiblity = cx_preparse_data::VisibilityMode::Public;
 
-                for resource in other_pp_data.type_idents.iter() {
+                for resource in other_pp_data.module_symbols.symbols.iter() {
                     if resource.visibility < required_visiblity {
                         continue;
                     };
 
                     pp_data.type_idents.push(resource.transfer(import));
                 }
+                
                 add_qualified_preparse_type_idents(
                     &mut pp_data.type_idents,
                     &NamespacePath::from_module_path(import),

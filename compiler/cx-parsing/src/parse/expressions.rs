@@ -5,10 +5,10 @@ use cx_ast::{assert_token_matches, next_kind, try_next};
 use cx_mir::intrinsic_types::is_intrinsic_type;
 use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, specifier};
-use cx_util::{log_error, CXResult};
+use cx_util::{CXResult, log_error};
 
 use crate::parse::operators::{
-    binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
+    PrecOperator, binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec,
 };
 use crate::parse::templates::parse_template_args;
 use crate::parse::types::{
@@ -133,9 +133,10 @@ pub fn is_type_decl(data: &mut ParserData) -> bool {
         identifier!(name)
             if data
                 .pp_contents
-                .type_idents
+                .module_symbols
+                .symbols
                 .iter()
-                .any(|t| t.resource.as_str() == name) =>
+                .any(|t| t.name.as_str() == name) =>
         {
             true
         }
@@ -155,9 +156,10 @@ fn is_qualified_type_ident(data: &mut ParserData) -> bool {
     }
 
     data.pp_contents
-        .type_idents
+        .module_symbols
+        .symbols
         .iter()
-        .any(|t| t.resource.as_str() == name.as_str())
+        .any(|t| t.name.as_str() == name.as_str())
         || data.ast.type_data.is_key_any(&name.as_string())
 }
 

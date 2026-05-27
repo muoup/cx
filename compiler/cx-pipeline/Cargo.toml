@@ -22,6 +22,7 @@ cx-backend-cranelift = { path = "../cx-backend-cranelift" }
 cx-c-header = { path = "../cx-c-header" }
 cx-pipeline-data = { path = "../cx-pipeline-data" }
 cx-tokens = { path = "../cx-tokens" }
+cx-preparse-data = { path = "../cx-preparse-data" }
 cx-ast = { path = "../cx-ast" }
 cx-mir = { path = "../cx-mir" }
 cx-lmir = { path = "../cx-lmir" }

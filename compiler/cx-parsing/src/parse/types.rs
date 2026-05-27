@@ -47,9 +47,10 @@ pub(crate) fn peek_qualified_ident(data: &mut ParserData) -> Option<CXIdent> {
 
 fn is_known_type_ident(data: &ParserData, name: &CXIdent) -> bool {
     data.pp_contents
-        .type_idents
+        .module_symbols
+        .symbols
         .iter()
-        .any(|t| t.resource.as_str() == name.as_str())
+        .any(|t| t.name.as_str() == name.as_str())
         || data.ast.type_data.is_key_any(&name.as_string())
 }
 

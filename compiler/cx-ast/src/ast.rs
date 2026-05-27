@@ -54,6 +54,16 @@ pub enum VisibilityMode {
     Public,
 }
 
+impl From<cx_preparse_data::VisibilityMode> for VisibilityMode {
+    fn from(value: cx_preparse_data::VisibilityMode) -> Self {
+        match value {
+            cx_preparse_data::VisibilityMode::Private => Self::Private,
+            cx_preparse_data::VisibilityMode::Package => Self::Package,
+            cx_preparse_data::VisibilityMode::Public => Self::Public,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
 pub enum CXUnOp {
     Dereference,

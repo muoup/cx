@@ -182,5 +182,5 @@ fn register_namespace_path(
 }
 
 pub fn namespace_from_module(module: impl AsRef<str>) -> NamespacePath {
-    NamespacePath::from_module_path(&ModulePath::new(module.as_ref().replace("::", "/")))
+    NamespacePath::from(ModulePath::new(module.as_ref().replace("::", "/")))
 }

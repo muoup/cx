@@ -7,8 +7,8 @@ use cx_ast::{
         CXFunctionPrototype, CXFunctionTemplate, CXLinkageMode, CXTemplatePrototype, CXType,
         CXTypeTemplate, ModuleResource,
     },
-    PreparseContents,
 };
+use cx_preparse_data::PreparseContents;
 use cx_tokens::TokenIter;
 
 #[derive(Debug)]

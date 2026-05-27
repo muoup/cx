@@ -66,7 +66,7 @@ pub fn build_interface(
             };
 
             base_type_map.insert_standard(type_name.clone(), cx_type.transfer(import));
-            let qualified_name = qualified_name(import, type_name);
+            let qualified_name = qualified_name(import.clone(), type_name);
             base_type_map.insert_standard(qualified_name, cx_type.transfer(import));
         }
 
@@ -77,7 +77,7 @@ pub fn build_interface(
 
             base_fn_map.insert_standard(fn_name.clone(), cx_fn.transfer(import));
             base_fn_map.insert_standard(
-                qualify_function_key(import, fn_name),
+                qualify_function_key(import.clone(), fn_name),
                 cx_fn.transfer(import),
             );
         }
@@ -89,7 +89,7 @@ pub fn build_interface(
 
             base_type_map
                 .insert_template(type_template_name.clone(), type_template.transfer(import));
-            let qualified_name = qualified_name(import, type_template_name);
+            let qualified_name = qualified_name(import.clone(), type_template_name);
             base_type_map.insert_template(qualified_name, type_template.transfer(import));
         }
 
@@ -100,7 +100,7 @@ pub fn build_interface(
 
             base_fn_map.insert_template(fn_template_name.clone(), fn_template.transfer(import));
             base_fn_map.insert_template(
-                qualify_function_key(import, fn_template_name),
+                qualify_function_key(import.clone(), fn_template_name),
                 fn_template.transfer(import),
             );
         }
@@ -112,7 +112,7 @@ pub fn build_interface(
 
             base_globals.insert(global_name.clone(), global_var.transfer(import));
             base_globals.insert(
-                qualified_name(import, global_name),
+                qualified_name(import.clone(), global_name),
                 global_var.transfer(import),
             );
         }
@@ -126,11 +126,12 @@ pub fn build_interface(
     })
 }
 
-fn qualified_name(module: &ModulePath, name: &str) -> String {
-    NamespacePath::from_module_path(module).as_flat_name_with(&CXIdent::new(name))
+fn qualified_name(module: ModulePath, name: &str) -> String {
+    NamespacePath::from(module)
+        .as_flat_name_with(&CXIdent::new(name))
 }
 
-fn qualify_function_key(module: &ModulePath, key: &CXFunctionKey) -> CXFunctionKey {
+fn qualify_function_key(module: ModulePath, key: &CXFunctionKey) -> CXFunctionKey {
     match key {
         CXFunctionKey::Standard(name) => {
             CXFunctionKey::Standard(CXIdent::new(qualified_name(module, name.as_str())))

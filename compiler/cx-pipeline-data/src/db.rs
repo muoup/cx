@@ -1,11 +1,12 @@
 use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
 use cx_ast::ast::CXAST;
-use cx_ast::{PreparseContents, symbols::GlobalSymbolRegistry};
+use cx_ast::symbols::GlobalSymbolRegistry;
 use cx_lmir::LMIRUnit;
 use cx_mir::mir::program::{MIRBaseMappings, MIRUnit};
 use cx_mir::symbols::GlobalMIRSymbolResolver;
-use cx_preparse_data::GlobalPreparseRegistry;
+use cx_preparse_data::PreparseContents;
+use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_tokens::token::Token;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::{HashMap, HashSet};

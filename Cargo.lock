@@ -398,6 +398,7 @@ dependencies = [
  "cx-log",
  "cx-mir",
  "cx-pipeline-data",
+ "cx-preparse-data",
  "cx-tokens",
  "cx-util",
 ]
@@ -416,6 +417,7 @@ dependencies = [
  "cx-mir-lowering",
  "cx-parsing",
  "cx-pipeline-data",
+ "cx-preparse-data",
  "cx-safe-analyzer",
  "cx-safe-ir",
  "cx-tokens",
