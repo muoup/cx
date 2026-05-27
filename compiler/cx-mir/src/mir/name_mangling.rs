@@ -2,7 +2,11 @@ use crate::mir::data::{MIRType, MIRTypeContext, MIRTypeKind};
 use crate::mir::r#type::MIRField;
 
 pub fn base_mangle_standard(name: &str) -> String {
-    name.to_string()
+    if !name.contains("::") {
+        return name.to_string();
+    }
+
+    format!("_N{}", name.replace("::", "_"))
 }
 
 pub fn base_mangle_member(

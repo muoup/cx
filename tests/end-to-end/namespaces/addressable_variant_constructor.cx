@@ -1,0 +1,11 @@
+import std::optional;
+import std::io;
+
+int main() {
+    std::optional::opt<int> (*make_some)(int) = std::optional::opt<int>::some;
+    std::optional::opt<int> value = make_some(11);
+    if (value is std::optional::opt<int>::some(inner)) {
+        std::io::printf("%d\n", inner);
+    }
+    return 0;
+}

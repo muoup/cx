@@ -11,6 +11,12 @@ pub enum MIRFunctionGenRequest {
         kind: CXFunctionKind,
         input: MIRTemplateInput,
     },
+    TaggedUnionVariantConstructor {
+        name: String,
+        union_type: cx_mir::mir::data::MIRType,
+        variant_type: cx_mir::mir::data::MIRType,
+        variant_index: usize,
+    },
 }
 
 pub struct ItemRegistry {

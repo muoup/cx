@@ -73,6 +73,9 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
                 data.visibility_mode,
                 CXLinkageMode::Standard,
             ));
+            data.contents
+                .module_symbols
+                .add_type(CXIdent::new(ident.as_str()));
         }
 
         keyword!(Typedef) => {
@@ -89,6 +92,7 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
                 data.visibility_mode,
                 CXLinkageMode::Standard,
             ));
+            data.contents.module_symbols.add_type(ident.clone());
         }
 
         keyword!(Import) => {

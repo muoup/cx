@@ -1,0 +1,9 @@
+[package]
+name = "cx-preparse-data"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+speedy = { version = "0.8.7" }
+
+cx-util = { path = "../cx-util" }

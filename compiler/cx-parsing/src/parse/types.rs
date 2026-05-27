@@ -18,6 +18,53 @@ use crate::parse::templates::{
 };
 use crate::parse::{parse_intrinsic, try_parse_ident};
 
+pub(crate) fn parse_qualified_ident(data: &mut ParserData) -> Option<CXIdent> {
+    let start_index = data.tokens.index;
+    let first = try_parse_ident(&mut data.tokens)?;
+    let mut segments = vec![first.as_string()];
+
+    loop {
+        if !try_next!(data.tokens, operator!(ScopeRes)) {
+            break;
+        }
+
+        let Some(segment) = try_parse_ident(&mut data.tokens) else {
+            data.tokens.index = start_index;
+            return None;
+        };
+        segments.push(segment.as_string());
+    }
+
+    Some(CXIdent::new(segments.join("::")))
+}
+
+pub(crate) fn peek_qualified_ident(data: &mut ParserData) -> Option<CXIdent> {
+    let start_index = data.tokens.index;
+    let ident = parse_qualified_ident(data);
+    data.tokens.index = start_index;
+    ident
+}
+
+fn is_known_type_ident(data: &ParserData, name: &CXIdent) -> bool {
+    data.pp_contents
+        .type_idents
+        .iter()
+        .any(|t| t.resource.as_str() == name.as_str())
+        || data.ast.type_data.is_key_any(&name.as_string())
+}
+
+fn parse_type_ident(data: &mut ParserData) -> Option<CXIdent> {
+    let start_index = data.tokens.index;
+    if let Some(qualified) = parse_qualified_ident(data) {
+        if qualified.as_str().contains("::") && is_known_type_ident(data, &qualified) {
+            return Some(qualified);
+        }
+    }
+
+    data.tokens.index = start_index;
+    try_parse_ident(&mut data.tokens)
+}
+
 fn parse_type_attributes(data: &mut ParserData, kind_name: &str) -> CXResult<CXStructAttributes> {
     let mut attributes = CXStructAttributes::default();
 
@@ -52,7 +99,6 @@ fn aggregate_field_from_decl(
     name: Option<CXIdent>,
     _type: CXType,
 ) -> CXResult<CXField> {
-
     if try_next!(data.tokens, punctuator!(Colon)) {
         let width = match next_kind!(data.tokens)? {
             TokenKind::IntLiteral(width) if *width >= 0 => *width as usize,
@@ -60,7 +106,7 @@ fn aggregate_field_from_decl(
                 return log_preparse_error!(
                     data.tokens,
                     "Expected non-negative integer literal bitfield width"
-                )
+                );
             }
         };
 
@@ -272,14 +318,14 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
                 return log_preparse_error!(
                     data.tokens,
                     "Tagged union variant may not have a named type"
-                )
+                );
             }
 
             _ => {
                 return log_preparse_error!(
                     data.tokens,
                     "Failed to parse tagged union variant type"
-                )
+                );
             }
         }
 
@@ -515,7 +561,7 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<CXType> {
 
     let _type = match &next_token.kind {
         identifier!() => {
-            let Some(ident) = try_parse_ident(&mut data.tokens) else {
+            let Some(ident) = parse_type_ident(data) else {
                 unreachable!();
             };
 
@@ -550,7 +596,7 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<CXType> {
             return log_parse_error!(
                 data,
                 "Expected type base (identifier, struct, enum, union, or intrinsic), found: {tok}"
-            )
+            );
         }
     };
 

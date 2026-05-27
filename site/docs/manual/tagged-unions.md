@@ -39,6 +39,14 @@ shape r = shape::rectangle({ .width = 5f, .height = 10f });
 shape p = shape::point();
 ```
 
+Variant constructors are addressable functions. This allows them to be passed
+where a matching function pointer is expected:
+
+```cpp
+shape (*make_circle)(f64) = shape::circle;
+shape c = make_circle(2.5f);
+```
+
 Given a value of type 'shape', one may not directly access any of the declared fields above. Accessing an inner variant requires determination
 that a value is of that given variant. This may be done in a few ways:
 

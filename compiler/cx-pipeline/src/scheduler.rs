@@ -1,7 +1,11 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::progress::ProgressReporter;
 use crate::template_realizing::realize_templates;
-use cx_ast::ast::VisibilityMode;
+use cx_ast::{
+    ast::{CXAST, CXFunctionStmt, VisibilityMode},
+    data::ModuleResource,
+    symbols::{DecomposedModuleSymbols, SymbolKey, UntypedSymbol},
+};
 use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::ParseErrorLog;
@@ -24,6 +28,7 @@ use cx_typechecker::log::TypeError;
 use cx_typechecker::typecheck;
 use cx_util::format::dump_data;
 use cx_util::module_path::ModulePath;
+use cx_util::namespace::NamespacePath;
 use cx_util::{CXError, CXErrorTrait, CXResult};
 use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
@@ -220,6 +225,87 @@ fn load_precompiled_data(
     Some(())
 }
 
+fn decompose_ast_symbols(unit: &CompilationUnit, ast: &CXAST) -> DecomposedModuleSymbols {
+    let mut output =
+        DecomposedModuleSymbols::new(NamespacePath::from_module_path(unit.module_path()));
+
+    for (name, ty) in ast.type_data.standard_iter() {
+        output.symbols.push((
+            SymbolKey::Type(name.clone()),
+            UntypedSymbol::Type(ty.clone()),
+        ));
+    }
+
+    for (name, ty) in ast.type_data.template_iter() {
+        output.symbols.push((
+            SymbolKey::Type(name.clone()),
+            UntypedSymbol::TypeTemplate(ty.clone()),
+        ));
+    }
+
+    for (key, function) in ast.function_data.standard_iter() {
+        output.symbols.push((
+            SymbolKey::Function(key.clone()),
+            UntypedSymbol::Function(function.clone()),
+        ));
+    }
+
+    for (key, function) in ast.function_data.template_iter() {
+        let body = ast.function_stmts.iter().find_map(|stmt| match stmt {
+            CXFunctionStmt::TemplatedFunction { prototype, .. }
+                if prototype.kind.clone().into_key() == *key =>
+            {
+                Some(Box::new(stmt.clone()))
+            }
+            _ => None,
+        });
+        output.symbols.push((
+            SymbolKey::Function(key.clone()),
+            UntypedSymbol::FunctionTemplate(function.clone(), body),
+        ));
+    }
+
+    for (name, global) in ast.global_variables.iter() {
+        output.symbols.push((
+            SymbolKey::Global(name.clone()),
+            UntypedSymbol::Global(global.clone()),
+        ));
+    }
+
+    output
+}
+
+fn add_qualified_preparse_type_idents(
+    type_idents: &mut Vec<ModuleResource<cx_util::identifier::CXIdent>>,
+    namespace: &NamespacePath,
+) {
+    if namespace.is_root() {
+        return;
+    }
+
+    let existing = type_idents.clone();
+    for resource in existing {
+        if resource.resource.as_str().contains("::") {
+            continue;
+        }
+
+        let qualified = namespace.as_flat_name_with(&resource.resource);
+        if type_idents
+            .iter()
+            .any(|existing| existing.resource.as_str() == qualified)
+        {
+            continue;
+        }
+
+        type_idents.push(ModuleResource {
+            visibility: resource.visibility,
+            linkage: resource.linkage,
+            external_module: resource.external_module.clone(),
+            resource: cx_util::identifier::CXIdent::new(qualified),
+        });
+    }
+}
+
 pub(crate) enum JobResult {
     StandardSuccess,
 
@@ -260,6 +346,12 @@ pub(crate) fn perform_job(
             let preparse_config = PreparseConfig::from_compiler_config(&context.config);
             let mut output = preparse(&preparse_config, TokenIter::new(&tokens, file_path))?;
             output.module = job.unit.to_string();
+            output.module_symbols.namespace =
+                NamespacePath::from_module_path(job.unit.module_path());
+            add_qualified_preparse_type_idents(
+                &mut output.type_idents,
+                &output.module_symbols.namespace,
+            );
 
             if !job.unit.is_std_lib() {
                 output.imports.extend(
@@ -268,6 +360,10 @@ pub(crate) fn perform_job(
                         .map(|s| ModulePath::from_source_path(s)),
                 );
             }
+            context
+                .module_db
+                .preparse_registry
+                .insert_module(output.module_symbols.clone());
 
             context
                 .module_db
@@ -311,12 +407,20 @@ pub(crate) fn perform_job(
 
                     pp_data.type_idents.push(resource.transfer(import));
                 }
+                add_qualified_preparse_type_idents(
+                    &mut pp_data.type_idents,
+                    &NamespacePath::from_module_path(import),
+                );
             }
 
             let parsed_ast = parse_ast(
                 TokenIter::new(&lexemes, job.unit.as_path().to_path_buf()),
                 &pp_data,
             )?;
+            context
+                .module_db
+                .symbol_registry
+                .insert_module(decompose_ast_symbols(&job.unit, &parsed_ast));
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&parsed_ast);

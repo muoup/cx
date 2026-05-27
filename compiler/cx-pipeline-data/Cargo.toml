@@ -13,6 +13,7 @@ toml = { version = "0.8" }
 serde = { version = "1", features = ["derive"] }
 
 cx-tokens = { path = "../cx-tokens" }
+cx-preparse-data = { path = "../cx-preparse-data" }
 cx-ast  = { path = "../cx-ast" }
 cx-mir = { path = "../cx-mir" }
 cx-lmir = { path = "../cx-lmir" }

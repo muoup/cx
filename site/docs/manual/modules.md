@@ -8,18 +8,26 @@ CX uses explicit imports and visibility sections.
 
 ## Imports
 
-`import` brings public declarations from another module into scope. Imported
-declarations are not implicitly re-exported.
+`import` makes public declarations from another module available to the current
+module. Imported declarations can be referenced through their module namespace.
 
 ```c
 import std::io;
 import math::vec;
+
+int main() {
+    std::io::println("hello");
+    return 0;
+}
 ```
 
 Module paths map to file paths. For example, `std::io` resolves to `lib/std/io.cx`
-or the equivalent path relative to the project root. Imports are resolved during
-preparse, and public declarations are merged into the importing module's symbol
-environment.
+or the equivalent path relative to the project root.
+
+During the namespace migration, imported public symbols are still also available
+by their legacy unqualified names for compatibility with older code. New code
+should prefer qualified names because imports are intended to become reachability
+declarations rather than symbol copies.
 
 ## Visibility
 

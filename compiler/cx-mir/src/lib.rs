@@ -1,5 +1,6 @@
 pub mod function_map;
 pub mod intrinsic_types;
+pub mod symbols;
 
 pub mod mir;
 

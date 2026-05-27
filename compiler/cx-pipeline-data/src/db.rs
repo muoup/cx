@@ -1,9 +1,11 @@
 use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
-use cx_ast::PreparseContents;
 use cx_ast::ast::CXAST;
+use cx_ast::{PreparseContents, symbols::GlobalSymbolRegistry};
 use cx_lmir::LMIRUnit;
 use cx_mir::mir::program::{MIRBaseMappings, MIRUnit};
+use cx_mir::symbols::GlobalMIRSymbolResolver;
+use cx_preparse_data::GlobalPreparseRegistry;
 use cx_tokens::token::Token;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::{HashMap, HashSet};
@@ -14,6 +16,9 @@ use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 #[derive(Debug)]
 pub struct ModuleData {
     pub do_not_reexport: RwLock<HashSet<CompilationUnit>>,
+    pub preparse_registry: GlobalPreparseRegistry,
+    pub symbol_registry: GlobalSymbolRegistry,
+    pub mir_symbol_resolver: GlobalMIRSymbolResolver,
 
     pub lex_tokens: ModuleMap<Vec<Token>>,
     pub preparse_base: ModuleMap<PreparseContents>,
@@ -35,6 +40,9 @@ impl ModuleData {
     pub fn new() -> Self {
         ModuleData {
             do_not_reexport: RwLock::new(HashSet::new()),
+            preparse_registry: GlobalPreparseRegistry::default(),
+            symbol_registry: GlobalSymbolRegistry::default(),
+            mir_symbol_resolver: GlobalMIRSymbolResolver::default(),
 
             lex_tokens: ModuleMap::new(".cx-tokens"),
 

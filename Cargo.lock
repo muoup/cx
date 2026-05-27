@@ -288,6 +288,7 @@ dependencies = [
 name = "cx-ast"
 version = "0.0.0"
 dependencies = [
+ "cx-preparse-data",
  "cx-tokens",
  "cx-util",
  "speedy",
@@ -431,11 +432,20 @@ dependencies = [
  "cx-ast",
  "cx-lmir",
  "cx-mir",
+ "cx-preparse-data",
  "cx-tokens",
  "cx-util",
  "serde",
  "speedy",
  "toml",
+]
+
+[[package]]
+name = "cx-preparse-data"
+version = "0.0.0"
+dependencies = [
+ "cx-util",
+ "speedy",
 ]
 
 [[package]]

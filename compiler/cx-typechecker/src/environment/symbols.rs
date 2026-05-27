@@ -203,7 +203,7 @@ impl SymbolRegistry {
             SymbolDefinition::Type(ty),
             SymbolMetadata::default(),
         );
-        self.scope.insert(name, symbol_id);
+        self.scope.insert(name.clone(), symbol_id);
         old
     }
 
@@ -414,7 +414,10 @@ impl SymbolRegistry {
     }
 
     pub fn insert_function_symbol(&mut self, name: CXIdent, prototype: MIRFunctionPrototype) {
-        self.insert_pure_value(name, MIRPureExpression::FunctionReference(Box::new(prototype)));
+        self.insert_pure_value(
+            name,
+            MIRPureExpression::FunctionReference(Box::new(prototype)),
+        );
     }
 
     pub fn resolve_value_symbol(&self, name: &str) -> Option<ResolvedValueSymbol> {

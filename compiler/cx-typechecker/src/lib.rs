@@ -1,7 +1,8 @@
 use cx_ast::ast::{CXAST, CXFunctionStmt, VisibilityMode};
+use cx_ast::data::CXFunctionKey;
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
-use cx_util::CXResult;
+use cx_util::{CXResult, identifier::CXIdent, module_path::ModulePath, namespace::NamespacePath};
 
 pub mod log;
 
@@ -65,6 +66,8 @@ pub fn build_interface(
             };
 
             base_type_map.insert_standard(type_name.clone(), cx_type.transfer(import));
+            let qualified_name = qualified_name(import, type_name);
+            base_type_map.insert_standard(qualified_name, cx_type.transfer(import));
         }
 
         for (fn_name, cx_fn) in ast.function_data.standard_iter() {
@@ -73,6 +76,10 @@ pub fn build_interface(
             };
 
             base_fn_map.insert_standard(fn_name.clone(), cx_fn.transfer(import));
+            base_fn_map.insert_standard(
+                qualify_function_key(import, fn_name),
+                cx_fn.transfer(import),
+            );
         }
 
         for (type_template_name, type_template) in ast.type_data.template_iter() {
@@ -82,6 +89,8 @@ pub fn build_interface(
 
             base_type_map
                 .insert_template(type_template_name.clone(), type_template.transfer(import));
+            let qualified_name = qualified_name(import, type_template_name);
+            base_type_map.insert_template(qualified_name, type_template.transfer(import));
         }
 
         for (fn_template_name, fn_template) in ast.function_data.template_iter() {
@@ -90,6 +99,10 @@ pub fn build_interface(
             };
 
             base_fn_map.insert_template(fn_template_name.clone(), fn_template.transfer(import));
+            base_fn_map.insert_template(
+                qualify_function_key(import, fn_template_name),
+                fn_template.transfer(import),
+            );
         }
 
         for (global_name, global_var) in ast.global_variables.iter() {
@@ -98,6 +111,10 @@ pub fn build_interface(
             };
 
             base_globals.insert(global_name.clone(), global_var.transfer(import));
+            base_globals.insert(
+                qualified_name(import, global_name),
+                global_var.transfer(import),
+            );
         }
     }
 
@@ -107,4 +124,30 @@ pub fn build_interface(
         fn_data: base_fn_map,
         global_variables: base_globals,
     })
+}
+
+fn qualified_name(module: &ModulePath, name: &str) -> String {
+    NamespacePath::from_module_path(module).as_flat_name_with(&CXIdent::new(name))
+}
+
+fn qualify_function_key(module: &ModulePath, key: &CXFunctionKey) -> CXFunctionKey {
+    match key {
+        CXFunctionKey::Standard(name) => {
+            CXFunctionKey::Standard(CXIdent::new(qualified_name(module, name.as_str())))
+        }
+        CXFunctionKey::MemberFunction {
+            type_base_name,
+            name,
+        } => CXFunctionKey::MemberFunction {
+            type_base_name: CXIdent::new(qualified_name(module, type_base_name.as_str())),
+            name: name.clone(),
+        },
+        CXFunctionKey::StaticMemberFunction {
+            type_base_name,
+            name,
+        } => CXFunctionKey::StaticMemberFunction {
+            type_base_name: CXIdent::new(qualified_name(module, type_base_name.as_str())),
+            name: name.clone(),
+        },
+    }
 }

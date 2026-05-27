@@ -11,7 +11,9 @@ use crate::parse::operators::{
     binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
 };
 use crate::parse::templates::parse_template_args;
-use crate::parse::types::{parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
+use crate::parse::types::{
+    parse_base_mods, parse_initializer, parse_specifier, parse_type_base, peek_qualified_ident,
+};
 use crate::parse::{parse_body, parse_intrinsic, try_parse_ident};
 
 fn parse_at_intrinsic_expr(
@@ -117,16 +119,17 @@ fn parse_at_intrinsic_expr(
 }
 
 pub fn is_type_decl(data: &mut ParserData) -> bool {
-    let tok = data.tokens.peek();
+    let tok = data.tokens.peek().map(|tok| tok.kind.clone());
 
     if tok.is_none() {
         return false;
     }
 
-    match &tok.unwrap().kind {
+    match &tok.unwrap() {
         intrinsic!() | specifier!() | keyword!(Struct, Union, Enum) => true,
 
         identifier!(name) if is_intrinsic_type(name) => true,
+        identifier!() if is_qualified_type_ident(data) => true,
         identifier!(name)
             if data
                 .pp_contents
@@ -140,6 +143,22 @@ pub fn is_type_decl(data: &mut ParserData) -> bool {
 
         _ => false,
     }
+}
+
+fn is_qualified_type_ident(data: &mut ParserData) -> bool {
+    let Some(name) = peek_qualified_ident(data) else {
+        return false;
+    };
+
+    if !name.as_str().contains("::") {
+        return false;
+    }
+
+    data.pp_contents
+        .type_idents
+        .iter()
+        .any(|t| t.resource.as_str() == name.as_str())
+        || data.ast.type_data.is_key_any(&name.as_string())
 }
 
 pub(crate) fn expression_requires_semicolon(expr: &CXExpression) -> bool {
@@ -278,7 +297,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpression>
                     return log_parse_error!(
                         data,
                         "Expected identifier or templated identifier before scope resolution"
-                    )
+                    );
                 }
             };
 

@@ -5,6 +5,7 @@ pub mod format;
 pub mod identifier;
 pub mod macros;
 pub mod module_path;
+pub mod namespace;
 pub mod rwlockser;
 pub mod scoped_map;
 pub mod unsafe_float;
