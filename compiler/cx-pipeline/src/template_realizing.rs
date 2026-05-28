@@ -13,7 +13,7 @@ struct TemplateRequestReceipt {
     input: MIRTemplateInput,
 }
 
-pub(crate) fn realize_templates(job: &CompilationUnit, env: &mut TypeEnvironment) -> CXResult<()> {
+pub(crate) fn fulfill_requests(job: &CompilationUnit, env: &mut TypeEnvironment) -> CXResult<()> {
     let mut requests_fulfilled = Vec::new();
 
     while let Some(request) = env.pop_function_generation_request() {

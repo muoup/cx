@@ -32,19 +32,19 @@ pub(crate) fn typecheck_identifier(
         return Ok(result);
     }
 
-    let function_type =
-        if name.namespace.is_root()
-            && let Some(function_type) = env.get_realized_func(&base_mangle_standard(name.name.as_str()))
-        {
-            Some(function_type)
+    let function_type = if name.namespace.is_root()
+        && let Some(function_type) =
+            env.get_realized_func(&base_mangle_standard(name.name.as_str()))
+    {
+        Some(function_type)
+    } else {
+        let key = name.clone();
+        if base_data.fn_data.is_key_any(&key) {
+            env.get_standard_function(base_data, expr, name, None)?
         } else {
-            let key = cx_ast::data::CXFunctionKey::Standard(name.clone());
-            if base_data.fn_data.is_key_any(&key) {
-                env.get_standard_function(base_data, expr, name, None)?
-            } else {
-                None
-            }
-        };
+            None
+        }
+    };
 
     if let Some(function_type) = function_type {
         env.symbols

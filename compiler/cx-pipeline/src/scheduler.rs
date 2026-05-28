@@ -1,6 +1,6 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::progress::ProgressReporter;
-use crate::template_realizing::realize_templates;
+use crate::template_realizing::fulfill_requests;
 use cx_ast::{
     ast::{CXAST, CXFunctionStmt},
     symbols::{DecomposedModuleSymbols, SymbolKey, UntypedSymbol},
@@ -355,7 +355,7 @@ pub(crate) fn perform_job(
         CompilationStep::ASTParse => {
             let pp_data = context.module_db.preparse_base.take(&job.unit);
             let lexemes = context.module_db.lex_tokens.get(&job.unit);
- 
+
             let parsed_ast = parse_ast(
                 TokenIter::new(&lexemes, job.unit.as_path().to_path_buf()),
                 &pp_data,
@@ -393,7 +393,7 @@ pub(crate) fn perform_job(
             );
 
             typecheck(&mut env, structure_data.as_ref(), &self_ast)?;
-            realize_templates(&job.unit, &mut env)?;
+            fulfill_requests(&job.unit, &mut env)?;
 
             let mir = env.finish_mir_unit()?;
             if !job.unit.is_std_lib() || context.config.verbose {

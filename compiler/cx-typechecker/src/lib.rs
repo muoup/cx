@@ -132,30 +132,11 @@ pub fn build_interface(
 }
 
 fn qualified_name(module: ModulePath, name: &str) -> String {
-    NamespacePath::from(module)
-        .as_flat_name_with(&CXIdent::new(name))
+    NamespacePath::from(module).as_flat_name_with(&CXIdent::new(name))
 }
 
 fn qualify_function_key(module: ModulePath, key: &CXFunctionKey) -> CXFunctionKey {
-    let namespace = NamespacePath::from(module);
-    match key {
-        CXFunctionKey::Standard(name) => CXFunctionKey::Standard(QualifiedName::new(
-            namespace.clone(),
-            name.name.clone(),
-        )),
-        CXFunctionKey::MemberFunction {
-            type_base_name,
-            name,
-        } => CXFunctionKey::MemberFunction {
-            type_base_name: QualifiedName::new(namespace.clone(), type_base_name.name.clone()),
-            name: name.clone(),
-        },
-        CXFunctionKey::StaticMemberFunction {
-            type_base_name,
-            name,
-        } => CXFunctionKey::StaticMemberFunction {
-            type_base_name: QualifiedName::new(namespace, type_base_name.name.clone()),
-            name: name.clone(),
-        },
-    }
+    let mut segments = NamespacePath::from(module).segments().to_vec();
+    segments.extend(key.namespace.segments().iter().cloned());
+    QualifiedName::new(NamespacePath::new(segments), key.name.clone())
 }

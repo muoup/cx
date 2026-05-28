@@ -4,6 +4,7 @@ use cx_ast::data::CXFunctionKind;
 use cx_mir::function_map::CXFnMap;
 use cx_mir::mir::data::{MIRFunctionPrototype, MIRTemplateInput};
 use cx_mir::mir::program::{MIRFunction, MIRGlobalVariable};
+use cx_mir::mir::r#type::MIRType;
 
 pub enum MIRFunctionGenRequest {
     Template {
@@ -13,8 +14,8 @@ pub enum MIRFunctionGenRequest {
     },
     TypeConstructor {
         name: String,
-        union_type: cx_mir::mir::data::MIRType,
-        variant_type: cx_mir::mir::data::MIRType,
+        union_type: MIRType,
+        variant_type: MIRType,
         variant_index: usize,
     },
 }

@@ -1,6 +1,6 @@
 use cx_ast::{
     ast::CXExpression,
-    data::{CXFunctionKey, CXTemplateInput},
+    data::{CXFunctionKey, CXTemplateInput, member_function_key},
 };
 use cx_mir::mir::{
     data::{MIRFunctionPrototype, MIRType},
@@ -90,10 +90,7 @@ pub fn query_member_function(
         }
     }
 
-    let key = CXFunctionKey::MemberFunction {
-        type_base_name: QualifiedName::new_raw(base_name.clone()),
-        name: name.clone(),
-    };
+    let key = member_function_key(&QualifiedName::new_raw(base_name.clone()), name);
 
     query_function_by_key(
         env,
@@ -116,10 +113,7 @@ pub fn query_deduced_member_function(
         return Ok(None);
     };
 
-    let key = CXFunctionKey::MemberFunction {
-        type_base_name: QualifiedName::new_raw(base_name.clone()),
-        name: name.clone(),
-    };
+    let key = member_function_key(&QualifiedName::new_raw(base_name.clone()), name);
 
     query_function_by_key(
         env,
@@ -154,10 +148,7 @@ pub fn query_static_member_function(
         return Ok(None);
     };
 
-    let key = CXFunctionKey::StaticMemberFunction {
-        type_base_name: QualifiedName::new_raw(base_name.clone()),
-        name: name.clone(),
-    };
+    let key = member_function_key(&QualifiedName::new_raw(base_name.clone()), name);
 
     query_function_by_key(
         env,
@@ -180,10 +171,7 @@ pub fn query_deduced_static_member_function(
         return Ok(None);
     };
 
-    let key = CXFunctionKey::StaticMemberFunction {
-        type_base_name: QualifiedName::new_raw(base_name.clone()),
-        name: name.clone(),
-    };
+    let key = member_function_key(&QualifiedName::new_raw(base_name.clone()), name);
 
     query_function_by_key(
         env,
@@ -212,7 +200,7 @@ pub fn query_standard_function(
         }
     }
 
-    let key = CXFunctionKey::Standard(name.clone());
+    let key = name.clone();
 
     query_function_by_key(
         env,
@@ -230,7 +218,7 @@ pub fn query_deduced_standard_function(
     name: &QualifiedName,
     arg_types: &[MIRType],
 ) -> CXResult<Option<MIRFunctionPrototype>> {
-    let key = CXFunctionKey::Standard(name.clone());
+    let key = name.clone();
 
     query_function_by_key(
         env,

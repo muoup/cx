@@ -17,7 +17,6 @@ pub(crate) mod templates;
 struct SymbolId(u64);
 
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 enum SymbolDefinition {
     Type(MIRType),
     Value(MIRExpression),

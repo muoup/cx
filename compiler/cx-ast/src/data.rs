@@ -12,21 +12,7 @@ pub enum CXFunctionTypeIdent {
 
 pub type CXTypeKey = String;
 
-/**
- *  Represents the skeleton of the function, useful for looking up functions in a map
- */
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
-pub enum CXFunctionKey {
-    Standard(QualifiedName),
-    MemberFunction {
-        type_base_name: QualifiedName,
-        name: CXIdent,
-    },
-    StaticMemberFunction {
-        type_base_name: QualifiedName,
-        name: CXIdent,
-    },
-}
+pub type CXFunctionKey = QualifiedName;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub enum CXFunctionKind {
@@ -344,27 +330,22 @@ impl CXFunctionKind {
 
     pub fn into_key(&self) -> CXFunctionKey {
         match self {
-            CXFunctionKind::Standard(name) => CXFunctionKey::Standard(QualifiedName::new_raw(name.clone())),
+            CXFunctionKind::Standard(name) => QualifiedName::new_raw(name.clone()),
             CXFunctionKind::MemberFunction {
                 member_type, name, ..
-            } => {
-                let type_base_name = member_type.base_name().clone();
-
-                CXFunctionKey::MemberFunction {
-                    type_base_name,
-                    name: name.clone(),
-                }
-            }
+            } => member_function_key(member_type.base_name(), name),
             CXFunctionKind::StaticMemberFunction { member_type, name } => {
-                let type_base_name = member_type.base_name().clone();
-
-                CXFunctionKey::StaticMemberFunction {
-                    type_base_name,
-                    name: name.clone(),
-                }
+                member_function_key(member_type.base_name(), name)
             }
         }
     }
+}
+
+pub fn member_function_key(type_base_name: &QualifiedName, name: &CXIdent) -> CXFunctionKey {
+    QualifiedName::new(
+        type_base_name.namespace.child(type_base_name.name.clone()),
+        name.clone(),
+    )
 }
 
 impl CXFunctionTypeIdent {

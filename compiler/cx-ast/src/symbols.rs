@@ -156,11 +156,7 @@ impl GlobalSymbolRegistry {
 fn key_name(key: &SymbolKey) -> String {
     match key {
         SymbolKey::Type(name) | SymbolKey::Global(name) => name.clone(),
-        SymbolKey::Function(key) => match key {
-            CXFunctionKey::Standard(name) => name.as_flat_name(),
-            CXFunctionKey::MemberFunction { name, .. }
-            | CXFunctionKey::StaticMemberFunction { name, .. } => name.as_string(),
-        },
+        SymbolKey::Function(name) => name.as_flat_name(),
     }
 }
 
