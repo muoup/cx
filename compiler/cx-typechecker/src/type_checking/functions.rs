@@ -55,7 +55,7 @@ pub fn typecheck_function(
         }
     }
 
-    let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
+    let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression()?;
     let with_implicit_return = add_implicit_return(env, base_data, body_expr)?;
 
     env.pop_scope()?;

@@ -18,9 +18,9 @@ pub(crate) fn typecheck_unsafe(
 
     let adopting = inner_result.adopting;
     let result = TypecheckResult::new_base(
-        inner_result.get_type(),
+        inner_result.get_type()?,
         MIRExpressionKind::Unsafe {
-            expression: Box::new(inner_result.into_expression()),
+            expression: Box::new(inner_result.into_expression()?),
         },
     );
 

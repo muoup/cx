@@ -41,7 +41,7 @@ pub(crate) fn typecheck_contract(
         .as_ref()
         .map(|pre_expr| {
             let tc_pre = typecheck_expr(env, base_data, pre_expr, Some(&MIRType::bool()))
-                .and_then(|v| std_rval_promotion(env, v.into_expression()))
+                .and_then(|v| std_rval_promotion(env, v.into_expression()?))
                 .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
             Ok(Box::new(tc_pre))
         })
@@ -64,7 +64,7 @@ pub(crate) fn typecheck_contract(
         }
 
         let tc_post = typecheck_expr(env, base_data, post_expr, Some(&MIRType::bool()))
-            .and_then(|v| std_rval_promotion(env, v.into_expression()))
+            .and_then(|v| std_rval_promotion(env, v.into_expression()?))
             .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
         Some((ret_name.clone(), Box::new(tc_post)))
     } else {

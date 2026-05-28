@@ -26,7 +26,7 @@ pub fn typecheck_match(
     default: Option<&Box<CXExpression>>,
 ) -> CXResult<TypecheckResult> {
     let mut expr_value = typecheck_expr(env, base_data, condition, None)
-        .and_then(|val| std_rval_promotion(env, val.into_expression()))?;
+        .and_then(|val| std_rval_promotion(env, val.into_expression()?))?;
     let mut expr_type = expr_value.get_type();
 
     env.push_scope(false, false);
@@ -96,7 +96,7 @@ pub fn typecheck_match(
                     }),
                 };
 
-                let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
+                let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression()?;
                 if expr_may_fall_through(&body_expr) {
                     env.function.enqueue_scope_arrow(
                         &ScopeExitTarget {
@@ -185,7 +185,7 @@ pub fn typecheck_match(
                         variant_type: variant_type.clone(),
                     },
                 )
-                .into_expression();
+                .into_expression()?;
 
                 let body_expr = if let Some(inner) = inner {
                     let CXExprKind::Identifier(name) = &inner.kind else {
@@ -233,7 +233,7 @@ pub fn typecheck_match(
                                 .track_binding(name.name.as_string(), env.symbols.is_nodrop(variant_type));
                         }
 
-                        let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
+                        let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression()?;
                         env.pop_scope()?;
 
                         MIRExpression {
@@ -251,7 +251,7 @@ pub fn typecheck_match(
                             variant_value_expr,
                             Some(SymbolValueOrigin::Local),
                         );
-                        let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
+                        let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression()?;
                         env.symbols.pop_scope();
                         body_expr
                     };
@@ -268,7 +268,7 @@ pub fn typecheck_match(
                     env.function.restore_snapshot(&base_snapshot);
                     body_expr
                 } else {
-                    let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
+                    let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression()?;
                     if expr_may_fall_through(&body_expr) {
                         env.function.enqueue_scope_arrow(
                             &ScopeExitTarget {
@@ -302,7 +302,7 @@ pub fn typecheck_match(
     // Handle default case
     let default_body = match default {
         Some(default_expr) => {
-            let body = typecheck_expr(env, base_data, default_expr, None)?.into_expression();
+            let body = typecheck_expr(env, base_data, default_expr, None)?.into_expression()?;
             if expr_may_fall_through(&body) {
                 env.function.enqueue_scope_arrow(
                     &ScopeExitTarget {

@@ -1,9 +1,9 @@
+use crate::environment::functions::query::{member_function_qualified_name, query_function};
 use crate::environment::{MIRFunctionGenRequest, TypeEnvironment};
-use crate::environment::functions::query::{query_function, type_member_function_name};
 use crate::log_typecheck_error;
 use crate::type_checking::coercion::implicit::conversion::try_argument_conversion;
 use crate::type_checking::op::binop::calls::{
-    build_function_reference, comma_separated, finish_function_call,
+    build_function_reference, comma_separated, finish_function_call, ready_arg_types,
 };
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
@@ -17,9 +17,13 @@ use cx_mir::mir::expression::MIRExpressionKind;
 use cx_mir::mir::name_mangling::base_mangle_static_member;
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_tokens::TokenRange;
-use cx_util::{CXResult, identifier::CXIdent, namespace::{NamespacePath, QualifiedName}};
+use cx_util::{
+    CXResult,
+    identifier::CXIdent,
+    namespace::{NamespacePath, QualifiedName},
+};
 
-fn qualified_type_and_member(name: &QualifiedName) -> Option<(String, CXIdent)> {
+fn qualified_type_namespace_and_member(name: &QualifiedName) -> Option<(String, CXIdent)> {
     (!name.namespace.is_root()).then(|| (name.namespace.as_scope_string(), name.name.clone()))
 }
 
@@ -30,7 +34,7 @@ pub(crate) fn query_qualified_scoped_callee(
     name: &QualifiedName,
     arg_types: &[MIRType],
 ) -> CXResult<Option<MIRFunctionPrototype>> {
-    let Some((type_name, method_name)) = qualified_type_and_member(name) else {
+    let Some((type_name, method_name)) = qualified_type_namespace_and_member(name) else {
         return Ok(None);
     };
     let Ok(mir_type) = env.get_type(base_data, expr, &type_name) else {
@@ -61,7 +65,7 @@ pub(crate) fn typecheck_qualified_type_constructor_call(
     name: &QualifiedName,
     args_expr: &CXExpression,
 ) -> CXResult<Option<TypecheckResult>> {
-    let Some((type_name, method_name)) = qualified_type_and_member(name) else {
+    let Some((type_name, method_name)) = qualified_type_namespace_and_member(name) else {
         return Ok(None);
     };
     let Ok(mir_type) = env.get_type(base_data, expr, &type_name) else {
@@ -69,8 +73,15 @@ pub(crate) fn typecheck_qualified_type_constructor_call(
     };
 
     if mir_type.is_tagged_union() && tagged_union_has_variant(env, &mir_type, &method_name) {
-        return typecheck_type_constructor(env, base_data, expr, &mir_type, &method_name, args_expr)
-            .map(Some);
+        return typecheck_type_constructor(
+            env,
+            base_data,
+            expr,
+            &mir_type,
+            &method_name,
+            args_expr,
+        )
+        .map(Some);
     }
 
     Ok(None)
@@ -83,15 +94,36 @@ pub(crate) fn typecheck_qualified_scoped_reference(
     name: &QualifiedName,
     template_input: Option<&cx_ast::data::CXTemplateInput>,
 ) -> CXResult<Option<TypecheckResult>> {
-    let Some((type_name, method_name)) = qualified_type_and_member(name) else {
+    let Some((type_name, method_name)) = qualified_type_namespace_and_member(name) else {
         return Ok(None);
     };
     let Ok(mir_type) = env.get_type(base_data, expr, &type_name) else {
         return Ok(None);
     };
 
-    if let Some(prototype) = query_function(env, base_data, expr, name, template_input, &[])? {
-        return Ok(Some(TypecheckResult::from(build_function_reference(&prototype))));
+    if base_data.fn_data.get_standard(name).is_some()
+        && let Some(prototype) = query_function(env, base_data, expr, name, template_input, &[])?
+    {
+        return Ok(Some(TypecheckResult::from(build_function_reference(
+            &prototype,
+        ))));
+    }
+
+    if base_data.fn_data.get_template(name).is_some() {
+        if let Some(template_input) = template_input {
+            if let Some(prototype) =
+                query_function(env, base_data, expr, name, Some(template_input), &[])?
+            {
+                return Ok(Some(TypecheckResult::from(build_function_reference(
+                    &prototype,
+                ))));
+            }
+        } else {
+            return Ok(Some(TypecheckResult::incomplete_templated_callee(
+                name.clone(),
+                None,
+            )));
+        }
     }
 
     if mir_type.is_tagged_union()
@@ -106,7 +138,9 @@ pub(crate) fn typecheck_qualified_scoped_reference(
             variant_index,
             variant_type,
         );
-        return Ok(Some(TypecheckResult::from(build_function_reference(&prototype))));
+        return Ok(Some(TypecheckResult::from(build_function_reference(
+            &prototype,
+        ))));
     }
 
     Ok(None)
@@ -132,7 +166,9 @@ fn resolve_scoped_type_and_method<'a>(
         mir_type
     } else {
         match &type_expr.kind {
-            CXExprKind::Identifier(name) => env.get_type(base_data, type_expr, &name.as_flat_name())?,
+            CXExprKind::Identifier(name) => {
+                env.get_type(base_data, type_expr, &name.as_flat_name())?
+            }
 
             CXExprKind::TemplatedIdentifier {
                 name,
@@ -183,7 +219,7 @@ fn resolve_flat_scoped_type_and_method(
     type_expr: &CXExpression,
     method_expr: &CXExpression,
 ) -> Option<(MIRType, CXIdent)> {
-    let full_name = scoped_standard_name(type_expr, method_expr)?;
+    let full_name = scoped_qualified_name(type_expr, method_expr)?;
     let segments = full_name
         .as_flat_name()
         .as_str()
@@ -223,12 +259,34 @@ fn scope_expr_flat_name(expr: &CXExpression) -> Option<String> {
     }
 }
 
-fn scoped_standard_name(type_expr: &CXExpression, method_expr: &CXExpression) -> Option<QualifiedName> {
+fn scoped_qualified_name(
+    type_expr: &CXExpression,
+    method_expr: &CXExpression,
+) -> Option<QualifiedName> {
     let lhs = scope_expr_flat_name(type_expr)?;
     let rhs = scope_expr_flat_name(method_expr)?;
     let path = NamespacePath::from_scoped_path(&format!("{lhs}::{rhs}"));
     let (namespace, name) = path.parent_and_name()?;
     Some(QualifiedName::new(namespace, name))
+}
+
+fn scoped_method_template_input(
+    method_expr: &CXExpression,
+) -> Option<&cx_ast::data::CXTemplateInput> {
+    match &method_expr.kind {
+        CXExprKind::TemplatedIdentifier { template_input, .. } => Some(template_input),
+        _ => None,
+    }
+}
+
+fn scoped_function_qualified_name(
+    type_expr: &CXExpression,
+    method_expr: &CXExpression,
+    mir_type: &MIRType,
+    method_name: &CXIdent,
+) -> Option<QualifiedName> {
+    scoped_qualified_name(type_expr, method_expr)
+        .or_else(|| member_function_qualified_name(mir_type, method_name))
 }
 
 fn tagged_union_has_variant(env: &TypeEnvironment, union_type: &MIRType, name: &CXIdent) -> bool {
@@ -267,12 +325,14 @@ fn tagged_union_constructor_prototype(
         name: CXIdent::new(mangled_name.clone()),
         source_prototype: CXFunctionPrototype {
             kind: CXFunctionKind::StaticMemberFunction {
-                member_type: cx_ast::data::CXFunctionTypeIdent::Standard(QualifiedName::new_raw(CXIdent::new(
-                    union_type
-                        .get_name()
-                        .map(CXIdent::as_str)
-                        .unwrap_or("__anonymous_tagged_union"),
-                ))),
+                member_type: cx_ast::data::CXFunctionTypeIdent::Standard(QualifiedName::new_raw(
+                    CXIdent::new(
+                        union_type
+                            .get_name()
+                            .map(CXIdent::as_str)
+                            .unwrap_or("__anonymous_tagged_union"),
+                    ),
+                )),
                 name: name.clone(),
             },
             params: vec![CXParameter {
@@ -307,14 +367,12 @@ fn tagged_union_constructor_prototype(
         env.items
             .realized_fns
             .insert(mangled_name.clone(), prototype.clone());
-        env.request_function_generation(
-            MIRFunctionGenRequest::TypeConstructor {
-                name: mangled_name,
-                union_type: union_type.clone(),
-                variant_type,
-                variant_index,
-            },
-        );
+        env.request_function_generation(MIRFunctionGenRequest::TypeConstructor {
+            name: mangled_name,
+            union_type: union_type.clone(),
+            variant_type,
+            variant_index,
+        });
     }
 
     prototype
@@ -350,7 +408,7 @@ pub(crate) fn typecheck_type_constructor(
     };
 
     let inner = typecheck_expr(env, base_data, inner, Some(&variant_type))
-        .and_then(|v| try_argument_conversion(env, v.into_expression(), &variant_type))?;
+        .and_then(|v| try_argument_conversion(env, v.into_expression()?, &variant_type))?;
 
     Ok(TypecheckResult::new_base(
         union_type.clone(),
@@ -374,17 +432,20 @@ pub(crate) fn typecheck_scoped_call(
     let (mir_type, method_name, template_input) = match resolved {
         Ok(resolved) => resolved,
         Err(type_error) => {
-            let Some(standard_name) = scoped_standard_name(type_expr, method_expr) else {
+            let Some(function_name) = scoped_qualified_name(type_expr, method_expr) else {
                 return Err(type_error);
             };
             let tc_args = comma_separated(env, base_data, args_expr)?;
-            let arg_types = tc_args
-                .iter()
-                .map(|(_, val)| val.get_type())
-                .collect::<Vec<_>>();
+            let arg_types = ready_arg_types(&tc_args)?.unwrap_or_default();
 
-            let Some(prototype) =
-                query_function(env, base_data, expr, &standard_name, None, &arg_types)?
+            let Some(prototype) = query_function(
+                env,
+                base_data,
+                expr,
+                &function_name,
+                scoped_method_template_input(method_expr),
+                &arg_types,
+            )?
             else {
                 return Err(type_error);
             };
@@ -393,80 +454,47 @@ pub(crate) fn typecheck_scoped_call(
             return finish_function_call(env, base_data, expr, function, tc_args);
         }
     };
-    let function_name = scoped_standard_name(type_expr, method_expr)
-        .or_else(|| type_member_function_name(&mir_type, &method_name));
 
-    if let Some(template_input) = template_input {
-        let Some(function_name) = function_name.as_ref() else {
-            return log_typecheck_error!(
-                env,
-                expr.token_range(),
-                "Scoped function '{}::{}<...>' not found",
-                mir_type.display_with(&env.symbols.context),
-                method_name
-            );
-        };
-        let tc_args = comma_separated(env, base_data, args_expr)?;
-        let arg_types = tc_args
-            .iter()
-            .map(|(_, val)| val.get_type())
-            .collect::<Vec<_>>();
+    let Some(function_name) =
+        scoped_function_qualified_name(type_expr, method_expr, &mir_type, &method_name)
+    else {
+        return log_typecheck_error!(
+            env,
+            expr.token_range(),
+            "Scoped function '{}::{}' not found",
+            mir_type.display_with(&env.symbols.context),
+            method_name
+        );
+    };
 
-        let Some(prototype) =
-            query_function(env, base_data, expr, function_name, Some(template_input), &arg_types)?
-        else {
-            return log_typecheck_error!(
-                env,
-                expr.token_range(),
-                "Scoped function '{}::{}<...>' not found",
-                mir_type.display_with(&env.symbols.context),
-                method_name
-            );
-        };
+    let tc_args = comma_separated(env, base_data, args_expr)?;
+    let arg_types = ready_arg_types(&tc_args)?.unwrap_or_default();
 
+    if let Some(prototype) = query_function(
+        env,
+        base_data,
+        expr,
+        &function_name,
+        template_input,
+        &arg_types,
+    )? {
         let function = TypecheckResult::from(build_function_reference(&prototype));
-        finish_function_call(env, base_data, expr, function, tc_args)
+        return finish_function_call(env, base_data, expr, function, tc_args);
+    }
+
+    if template_input.is_none()
+        && mir_type.is_tagged_union()
+        && tagged_union_has_variant(env, &mir_type, &method_name)
+    {
+        typecheck_type_constructor(env, base_data, expr, &mir_type, &method_name, args_expr)
     } else {
-        let tc_args = comma_separated(env, base_data, args_expr)?;
-        let arg_types = tc_args
-            .iter()
-            .map(|(_, val)| val.get_type())
-            .collect::<Vec<_>>();
-
-        let prototype = if let Some(function_name) = function_name.as_ref() {
-            query_function(env, base_data, expr, function_name, None, &arg_types)?
-        } else {
-            None
-        };
-
-        if prototype.is_none()
-            && mir_type.is_tagged_union()
-            && tagged_union_has_variant(env, &mir_type, &method_name)
-        {
-            return typecheck_type_constructor(
-                env,
-                base_data,
-                expr,
-                &mir_type,
-                &method_name,
-                args_expr,
-            );
-        }
-
-        let prototype = if let Some(prototype) = prototype {
-            prototype
-        } else {
-            return log_typecheck_error!(
-                env,
-                expr.token_range(),
-                "Scoped function '{}::{}' not found",
-                mir_type.display_with(&env.symbols.context),
-                method_name
-            );
-        };
-
-        let function = TypecheckResult::from(build_function_reference(&prototype));
-        finish_function_call(env, base_data, expr, function, tc_args)
+        log_typecheck_error!(
+            env,
+            expr.token_range(),
+            "Scoped function '{}::{}' not found",
+            mir_type.display_with(&env.symbols.context),
+            method_name
+        )
     }
 }
 
@@ -481,23 +509,42 @@ pub(crate) fn typecheck_scoped_reference(
     let (mir_type, method_name, template_input) = match resolved {
         Ok(resolved) => resolved,
         Err(type_error) => {
-            let Some(standard_name) = scoped_standard_name(type_expr, method_expr) else {
+            let Some(function_name) = scoped_qualified_name(type_expr, method_expr) else {
                 return Err(type_error);
             };
-            if let Some(prototype) = query_function(env, base_data, expr, &standard_name, None, &[])?
+            let template_input = scoped_method_template_input(method_expr);
+            if (base_data.fn_data.get_standard(&function_name).is_some()
+                || template_input.is_some())
+                && let Some(prototype) =
+                    query_function(env, base_data, expr, &function_name, template_input, &[])?
             {
                 return Ok(TypecheckResult::from(build_function_reference(&prototype)));
+            }
+            if base_data.fn_data.get_template(&function_name).is_some() {
+                return Ok(TypecheckResult::incomplete_templated_callee(
+                    function_name,
+                    None,
+                ));
             }
             return Err(type_error);
         }
     };
-    let function_name = scoped_standard_name(type_expr, method_expr)
-        .or_else(|| type_member_function_name(&mir_type, &method_name));
 
-    if let Some(function_name) = function_name.as_ref()
-        && let Some(prototype) = query_function(env, base_data, expr, function_name, template_input, &[])?
+    if let Some(function_name) =
+        scoped_function_qualified_name(type_expr, method_expr, &mir_type, &method_name)
     {
-        return Ok(TypecheckResult::from(build_function_reference(&prototype)));
+        if (base_data.fn_data.get_standard(&function_name).is_some() || template_input.is_some())
+            && let Some(prototype) =
+                query_function(env, base_data, expr, &function_name, template_input, &[])?
+        {
+            return Ok(TypecheckResult::from(build_function_reference(&prototype)));
+        }
+        if base_data.fn_data.get_template(&function_name).is_some() {
+            return Ok(TypecheckResult::incomplete_templated_callee(
+                function_name,
+                None,
+            ));
+        }
     }
 
     if mir_type.is_tagged_union() {

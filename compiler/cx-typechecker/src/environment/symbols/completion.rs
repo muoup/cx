@@ -477,7 +477,7 @@ pub(crate) fn int_complete_type(
                 .clone();
 
             let Some(size) = typecheck_expr(env, base_data, size.as_ref(), None)
-                .and_then(|v| constexpr_evaluate(env, v.into_expression()))?
+                .and_then(|v| constexpr_evaluate(env, v.into_expression()?))?
                 .get_integer()
             else {
                 return log_typecheck_error!(

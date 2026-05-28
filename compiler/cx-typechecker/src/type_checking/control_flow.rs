@@ -88,7 +88,7 @@ pub(crate) fn typecheck_fallthrough_scope(
         sink,
         label: label.to_string(),
     });
-    let result = typecheck_expr(env, base_data, expr, None)?.into_expression();
+    let result = typecheck_expr(env, base_data, expr, None)?.into_expression()?;
     env.pop_scope()?;
     Ok(result)
 }

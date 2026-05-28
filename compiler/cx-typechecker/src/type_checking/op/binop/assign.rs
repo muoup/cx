@@ -20,7 +20,7 @@ pub fn typecheck_assignment(
     op: Option<&CXBinOp>,
 ) -> CXResult<TypecheckResult> {
     let binding = lhs.binding.clone();
-    let lhs = lhs.into_expression();
+    let lhs = lhs.into_expression()?;
     let lhs_type = lhs.get_type();
 
     let Some(inner) = env.symbols.context.mem_ref_inner(&lhs_type).cloned() else {
@@ -41,7 +41,7 @@ pub fn typecheck_assignment(
 
         let loaded_lhs = std_rval_promotion(env, lhs.clone())?;
 
-        rhs = typecheck_binop(env, op, loaded_lhs, rhs)?.into_expression();
+        rhs = typecheck_binop(env, op, loaded_lhs, rhs)?.into_expression()?;
     } else if let Some(binding) = binding.as_ref()
         && binding.kind == BindingPlaceKind::Projection
         && env

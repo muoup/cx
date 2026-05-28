@@ -1,5 +1,5 @@
 use crate::environment::{BindingMoveState, TypeEnvironment};
-use crate::environment::functions::query::type_member_function_name;
+use crate::environment::functions::query::{member_function_qualified_name, query_function};
 use crate::log_typecheck_error;
 use crate::type_checking::aggregate::fields::struct_field;
 use crate::type_checking::op::binop::calls::build_function_reference;
@@ -87,7 +87,7 @@ pub(crate) fn typecheck_access(
     expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     let lhs_binding = lhs.binding.clone();
-    let lhs = lhs.into_expression();
+    let lhs = lhs.into_expression()?;
     let (lhs_source, lhs, lhs_inner, lhs_ref_const) = resolve_access_base(env, expr, lhs)?;
 
     match &rhs.kind {
@@ -117,9 +117,9 @@ pub(crate) fn typecheck_access(
             }
 
             let member_arg_types = vec![lhs_inner.clone()];
-            let prototype = type_member_function_name(&lhs_inner, &name.name)
+            let prototype = member_function_qualified_name(&lhs_inner, &name.name)
                 .map(|function_name| {
-                    env.get_function(base_data, expr, &function_name, None, &member_arg_types)
+                    query_function(env, base_data, expr, &function_name, None, &member_arg_types)
                 })
                 .transpose()?
                 .flatten();
@@ -152,9 +152,10 @@ pub(crate) fn typecheck_access(
             template_input,
         } => {
             let member_arg_types = vec![lhs_inner.clone()];
-            let prototype = type_member_function_name(&lhs_inner, &name.name)
+            let prototype = member_function_qualified_name(&lhs_inner, &name.name)
                 .map(|function_name| {
-                    env.get_function(
+                    query_function(
+                        env,
                         base_data,
                         expr,
                         &function_name,

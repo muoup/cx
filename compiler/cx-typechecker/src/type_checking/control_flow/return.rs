@@ -133,7 +133,7 @@ pub fn typecheck_return(
         }
 
         let postcondition = typecheck_expr(env, base_data, &ret_contract, None)
-            .and_then(|v| implicit_cast(env, v.into_expression(), &MIRType::bool()))?;
+            .and_then(|v| implicit_cast(env, v.into_expression()?, &MIRType::bool()))?;
 
         env.pop_scope()?;
 

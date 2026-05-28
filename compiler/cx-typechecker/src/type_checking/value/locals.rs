@@ -73,7 +73,7 @@ pub(crate) fn typecheck_var_declaration(
         Some(init_expr) => {
             let init_tc = typecheck_expr(env, base_data, init_expr, Some(&ty))?;
             let adopting = init_tc.adopting;
-            let init_expr = std_rval_promotion(env, init_tc.into_expression())
+            let init_expr = std_rval_promotion(env, init_tc.into_expression()?)
                 .and_then(|v| implicit_cast(env, v, &ty))?;
             (Box::new(init_expr), adopting)
         }

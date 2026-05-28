@@ -43,7 +43,7 @@ pub(crate) fn typecheck_move(
         );
     };
 
-    let mut inner_val = inner.into_expression();
+    let mut inner_val = inner.into_expression()?;
 
     if !matches!(inner_val.kind, MIRExpressionKind::Variable(_)) {
         return log_typecheck_error!(
@@ -88,7 +88,7 @@ pub(crate) fn typecheck_adopt(
 
     let value = typecheck_expr(env, base_data, inner, None)?;
     let binding = value.binding.clone();
-    let value = value.into_expression();
+    let value = value.into_expression()?;
     let Some(inner_type) = env.symbols.context.mem_ref_inner(&value._type).cloned() else {
         return log_typecheck_error!(
             env,
@@ -156,7 +156,7 @@ pub(crate) fn typecheck_leak(
         );
     };
 
-    let value = value.into_expression();
+    let value = value.into_expression()?;
 
     let Some(inner_type) = env.symbols.context.mem_ref_inner(&value._type).cloned() else {
         return log_typecheck_error!(
@@ -206,7 +206,7 @@ pub(crate) fn typecheck_unpack(
         );
     };
 
-    let value = value.into_expression();
+    let value = value.into_expression()?;
 
     let Some(inner_type) = env.symbols.context.mem_ref_inner(&value._type).cloned() else {
         return log_typecheck_error!(

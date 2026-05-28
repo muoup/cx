@@ -51,7 +51,7 @@ fn complete_global(
 
             for variant in variants {
                 let value = if let Some(expr) = variant.value.as_ref() {
-                    let value = typecheck_expr(env, base_data, expr, None)?.into_expression();
+                    let value = typecheck_expr(env, base_data, expr, None)?.into_expression()?;
                     let Some(value) = constexpr_evaluate(env, value)?.get_integer() else {
                         return log_typecheck_error!(
                             env,

@@ -27,7 +27,7 @@ pub fn dispatch(
 ) -> CXResult<TypecheckResult> {
     Ok(match op {
         CXUnOp::PreIncrement(increment_amount) | CXUnOp::PostIncrement(increment_amount) => {
-            let operand = typecheck_expr(env, base_data, operand, None)?.into_expression();
+            let operand = typecheck_expr(env, base_data, operand, None)?.into_expression()?;
 
             let Some(inner) = env.symbols.context.mem_ref_inner(&operand._type).cloned() else {
                 return log_typecheck_error!(
@@ -70,7 +70,7 @@ pub fn dispatch(
 
         CXUnOp::LNot => {
             let operand = typecheck_expr(env, base_data, operand, None)
-                .and_then(|v| std_rval_promotion(env, v.into_expression()))
+                .and_then(|v| std_rval_promotion(env, v.into_expression()?))
                 .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
 
             TypecheckResult::new_base(
@@ -88,7 +88,7 @@ pub fn dispatch(
 
         CXUnOp::BNot => {
             let operand = typecheck_expr(env, base_data, operand, None)
-                .and_then(|v| std_rval_promotion(env, v.into_expression()))?;
+                .and_then(|v| std_rval_promotion(env, v.into_expression()?))?;
 
             if !operand._type.is_integer() {
                 return log_typecheck_error!(
@@ -110,7 +110,7 @@ pub fn dispatch(
 
         CXUnOp::Negative => {
             let operand = typecheck_expr(env, base_data, operand, None)
-                .and_then(|v| std_rval_promotion(env, v.into_expression()))?;
+                .and_then(|v| std_rval_promotion(env, v.into_expression()?))?;
 
             let operator = match &operand._type.kind {
                 MIRTypeKind::Integer { .. } => MIRUnOp::NEG,
@@ -136,7 +136,7 @@ pub fn dispatch(
         }
 
         CXUnOp::AddressOf => {
-            let operand = typecheck_expr(env, base_data, operand, None)?.into_expression();
+            let operand = typecheck_expr(env, base_data, operand, None)?.into_expression()?;
 
             let Some(inner) = env.symbols.context.mem_ref_inner(&operand._type).cloned() else {
                 return log_typecheck_error!(
@@ -159,7 +159,7 @@ pub fn dispatch(
 
         CXUnOp::Dereference => {
             let operand = typecheck_expr(env, base_data, operand, None)
-                .and_then(|v| std_rval_promotion(env, v.into_expression()))?;
+                .and_then(|v| std_rval_promotion(env, v.into_expression()?))?;
 
             let Some(inner) = env.symbols.context.ptr_inner(&operand._type).cloned() else {
                 return log_typecheck_error!(
@@ -182,7 +182,7 @@ pub fn dispatch(
             let to_type = env.complete_type(base_data, &CXExpression::default(), to_type)?;
 
             let operand = typecheck_expr(env, base_data, operand, Some(&to_type))
-                .and_then(|v| std_rval_promotion(env, v.into_expression()))?;
+                .and_then(|v| std_rval_promotion(env, v.into_expression()?))?;
 
             TypecheckResult::from(explicit_cast(env, operand, &to_type)?)
         }

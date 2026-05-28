@@ -1,4 +1,5 @@
 use crate::{
+    environment::functions::query::query_function,
     environment::{
         TypeEnvironment,
         symbols::{ResolvedValueSymbol, SymbolValueOrigin},
@@ -32,18 +33,23 @@ pub(crate) fn typecheck_identifier(
         return Ok(result);
     }
 
-    let function_type = if name.namespace.is_root()
-        && let Some(function_type) =
-            env.get_realized_func(&base_mangle_standard(name.name.as_str()))
-    {
-        Some(function_type)
+    let function_type = if name.namespace.is_root() {
+        env.get_realized_func(&base_mangle_standard(name.name.as_str()))
     } else {
-        let key = name.clone();
-        if base_data.fn_data.is_key_any(&key) {
-            env.get_function(base_data, expr, name, None, &[])?
-        } else {
-            None
-        }
+        None
+    };
+
+    let function_type = if let Some(function_type) = function_type {
+        Some(function_type)
+    } else if base_data.fn_data.get_standard(name).is_some() {
+        query_function(env, base_data, expr, name, None, &[])?
+    } else if base_data.fn_data.get_template(name).is_some() {
+        return Ok(TypecheckResult::incomplete_templated_callee(
+            name.clone(),
+            None,
+        ));
+    } else {
+        None
     };
 
     if let Some(function_type) = function_type {
@@ -111,7 +117,8 @@ pub(crate) fn typecheck_templated_identifier(
         return Ok(result);
     }
 
-    let Some(function) = env.get_function(base_data, expr, name, Some(template_input), &[])? else {
+    let Some(function) = query_function(env, base_data, expr, name, Some(template_input), &[])?
+    else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),

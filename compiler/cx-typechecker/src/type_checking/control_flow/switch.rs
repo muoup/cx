@@ -27,7 +27,7 @@ pub fn typecheck_switch(
 
     let join_scope_idx = env.function.current_scope_index();
     let condition_value = typecheck_expr(env, base_data, condition, None)
-        .and_then(|val| std_rval_promotion(env, val.into_expression()))?;
+        .and_then(|val| std_rval_promotion(env, val.into_expression()?))?;
     let base_snapshot = env.function.current_snapshot();
 
     // Build match arms from the cases
@@ -46,7 +46,7 @@ pub fn typecheck_switch(
             );
         };
 
-        let case_body_expr = typecheck_expr(env, base_data, case_expr, None)?.into_expression();
+        let case_body_expr = typecheck_expr(env, base_data, case_expr, None)?.into_expression()?;
         if expr_may_fall_through(&case_body_expr) {
             env.function.enqueue_scope_arrow(
                 &ScopeExitTarget {
@@ -96,7 +96,7 @@ pub fn typecheck_switch(
                     block.len()
                 );
             };
-            let body_expr = typecheck_expr(env, base_data, expr, None)?.into_expression();
+            let body_expr = typecheck_expr(env, base_data, expr, None)?.into_expression()?;
             if expr_may_fall_through(&body_expr) {
                 env.function.enqueue_scope_arrow(
                     &ScopeExitTarget {

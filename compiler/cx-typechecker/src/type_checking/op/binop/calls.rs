@@ -1,5 +1,5 @@
 use crate::environment::TypeEnvironment;
-use crate::environment::functions::query::{query_function, type_member_function_name};
+use crate::environment::functions::query::{member_function_qualified_name, query_function};
 use crate::environment::symbols::{ResolvedValueSymbol, SymbolValueOrigin};
 use crate::log_typecheck_error;
 use crate::type_checking::aggregate::fields::struct_field;
@@ -14,7 +14,7 @@ use crate::type_checking::op::binop::access::{
 use crate::type_checking::op::binop::scoped_calls::{
     query_qualified_scoped_callee, typecheck_qualified_type_constructor_call, typecheck_scoped_call,
 };
-use crate::type_checking::result::TypecheckResult;
+use crate::type_checking::result::{TypecheckResult, TypecheckedExpression};
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::{CXBinOp, CXExprKind, CXExpression};
 use cx_mir::mir::data::{MIRFloatType, MIRFunctionPrototype, MIRType, MIRTypeKind};
@@ -40,12 +40,12 @@ pub(crate) fn finish_function_call<'a>(
     base_data: &MIRBaseMappings,
     expr: &'a CXExpression,
     function: TypecheckResult,
-    mut tc_args: Vec<(&'a CXExpression, MIRExpression)>,
+    mut tc_args: Vec<(&'a CXExpression, TypecheckResult)>,
 ) -> CXResult<TypecheckResult> {
-    let (function, implicit_parameters) = function.decompose_function_expr();
+    let (function, implicit_parameters) = function.decompose_function_expr()?;
     tc_args = implicit_parameters
         .iter()
-        .map(|val| (expr, val.clone()))
+        .map(|val| (expr, TypecheckResult::from(val.clone())))
         .chain(tc_args)
         .collect();
 
@@ -89,14 +89,22 @@ pub(crate) fn finish_function_call<'a>(
         );
     }
 
-    let canon_params = signature.params.len();
+    let mut args = Vec::with_capacity(tc_args.len());
 
-    for ((_arg_expr, val), param) in tc_args.iter_mut().zip(signature.params.iter()) {
-        *val = try_argument_conversion(env, std::mem::take(val), &param._type)?;
-    }
+    for (i, (_arg_expr, val)) in tc_args.into_iter().enumerate() {
+        let mut val = if let Some(param) = signature.params.get(i) {
+            let val = val.into_expression_with_expected(env, base_data, &param._type)?;
+            try_argument_conversion(env, val, &param._type)?
+        } else {
+            val.into_expression()?
+        };
 
-    for (_arg_expr, val) in tc_args.iter_mut().skip(canon_params) {
-        *val = std_rval_promotion(env, std::mem::take(val))?;
+        if i < signature.params.len() {
+            args.push(val);
+            continue;
+        }
+
+        val = std_rval_promotion(env, val)?;
         let arg_type = val._type.clone();
 
         match &arg_type.kind {
@@ -105,9 +113,9 @@ pub(crate) fn finish_function_call<'a>(
             MIRTypeKind::Float {
                 _type: MIRFloatType::F32,
             } => {
-                *val = implicit_cast(
+                val = implicit_cast(
                     env,
-                    std::mem::take(val),
+                    val,
                     &MIRTypeKind::Float {
                         _type: MIRFloatType::F64,
                     }
@@ -126,9 +134,10 @@ pub(crate) fn finish_function_call<'a>(
                 );
             }
         }
+
+        args.push(val);
     }
 
-    let args = tc_args.into_iter().map(|(_, val)| val).collect::<Vec<_>>();
     let contract = typecheck_contract(env, base_data, signature)?;
 
     Ok(TypecheckResult::new_base(
@@ -141,11 +150,66 @@ pub(crate) fn finish_function_call<'a>(
     ))
 }
 
+fn complete_templated_callee(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    expr: &CXExpression,
+    function: TypecheckResult,
+    arg_types: &[MIRType],
+) -> CXResult<TypecheckResult> {
+    let TypecheckResult {
+        expression,
+        implicit_parameters,
+        binding,
+        adopting,
+    } = function;
+
+    match expression {
+        TypecheckedExpression::Ready(expression) => Ok(TypecheckResult {
+            expression: TypecheckedExpression::Ready(expression),
+            implicit_parameters,
+            binding,
+            adopting,
+        }),
+        TypecheckedExpression::IncompleteTemplatedCallee {
+            name,
+            template_input,
+        } => {
+            let Some(prototype) = query_function(
+                env,
+                base_data,
+                expr,
+                &name,
+                template_input.as_ref(),
+                arg_types,
+            )?
+            else {
+                return log_typecheck_error!(
+                    env,
+                    Some(expr.token_range()),
+                    "Function '{}' not found",
+                    name
+                );
+            };
+
+            Ok(TypecheckResult::from(build_function_reference(&prototype))
+                .with_implicit_parameters(implicit_parameters))
+        }
+        TypecheckedExpression::NeedsExpectedType(_) => {
+            log_typecheck_error!(
+                env,
+                Some(expr.token_range()),
+                "Expected a callable expression"
+            )
+        }
+    }
+}
+
 pub(crate) fn comma_separated<'a>(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     expr: &'a CXExpression,
-) -> CXResult<Vec<(&'a CXExpression, MIRExpression)>> {
+) -> CXResult<Vec<(&'a CXExpression, TypecheckResult)>> {
     let mut expr_iter = expr;
     let mut exprs = Vec::new();
 
@@ -160,15 +224,30 @@ pub(crate) fn comma_separated<'a>(
     } = &expr_iter.kind
     {
         let tc_result = typecheck_expr(env, base_data, rhs, None)?;
-        exprs.push((rhs, tc_result.into_expression()));
+        exprs.push((rhs, tc_result));
         expr_iter = lhs;
     }
 
     let tc_result = typecheck_expr(env, base_data, expr_iter, None)?;
-    exprs.push((expr_iter, tc_result.into_expression()));
+    exprs.push((expr_iter, tc_result));
     exprs.reverse();
 
     Ok(exprs)
+}
+
+pub(crate) fn ready_arg_types(
+    args: &[(&CXExpression, TypecheckResult)],
+) -> CXResult<Option<Vec<MIRType>>> {
+    let mut arg_types = Vec::with_capacity(args.len());
+
+    for (_, arg) in args {
+        let Some(arg_type) = arg.get_type_if_ready()? else {
+            return Ok(None);
+        };
+        arg_types.push(arg_type);
+    }
+
+    Ok(Some(arg_types))
 }
 
 pub(crate) fn deduced_callee(
@@ -189,7 +268,8 @@ pub(crate) fn deduced_callee(
             }
 
             if matches!(
-                name.namespace.is_root()
+                name.namespace
+                    .is_root()
                     .then(|| env.symbols.resolve_value_symbol(name.name.as_str()))
                     .flatten(),
                 Some(ResolvedValueSymbol::Value {
@@ -221,7 +301,7 @@ pub(crate) fn deduced_callee(
 
             let receiver_result = typecheck_expr(env, base_data, receiver_expr, None)?;
             let receiver_binding = receiver_result.binding.clone();
-            let receiver_source = receiver_result.into_expression();
+            let receiver_source = receiver_result.into_expression()?;
             let (receiver_root, receiver_value, receiver_type, _) =
                 resolve_access_base(env, expr, receiver_source)?;
 
@@ -242,15 +322,22 @@ pub(crate) fn deduced_callee(
                 return Ok(None);
             }
 
-            let Some(function_name) = type_member_function_name(&receiver_type, &name.name) else {
+            let Some(function_name) = member_function_qualified_name(&receiver_type, &name.name)
+            else {
                 return Ok(None);
             };
             let mut member_arg_types = Vec::with_capacity(arg_types.len() + 1);
             member_arg_types.push(receiver_type.clone());
             member_arg_types.extend_from_slice(arg_types);
 
-            let Some(prototype) =
-                query_function(env, base_data, expr, &function_name, None, &member_arg_types)?
+            let Some(prototype) = query_function(
+                env,
+                base_data,
+                expr,
+                &function_name,
+                None,
+                &member_arg_types,
+            )?
             else {
                 return Ok(None);
             };
@@ -299,15 +386,13 @@ pub(crate) fn typecheck_method_call(
     }
 
     let tc_args = comma_separated(env, base_data, rhs)?;
-    let arg_types = &tc_args
-        .iter()
-        .map(|(_, val)| val.get_type())
-        .collect::<Vec<_>>();
+    let arg_types = ready_arg_types(&tc_args)?.unwrap_or_default();
 
-    let function = match deduced_callee(env, base_data, lhs, expr, arg_types)? {
+    let function = match deduced_callee(env, base_data, lhs, expr, &arg_types)? {
         Some(function) => function,
         None => typecheck_expr(env, base_data, lhs, None)?,
     };
+    let function = complete_templated_callee(env, base_data, expr, function, &arg_types)?;
 
     finish_function_call(env, base_data, expr, function, tc_args)
 }

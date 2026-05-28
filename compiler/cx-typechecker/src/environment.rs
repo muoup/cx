@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use cx_ast::ast::CXExpression;
-use cx_ast::data::{CXFunctionPrototype, CXTemplateInput, CXType, CXTypeKind, PredeclarationType};
+use cx_ast::data::{CXFunctionPrototype, CXType, CXTypeKind, PredeclarationType};
 use cx_mir::mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId};
 use cx_mir::mir::program::{MIRBaseMappings, MIRFunction, MIRGlobalVariable, MIRUnit};
 use cx_pipeline_data::CompilationUnit;
@@ -18,7 +18,6 @@ pub use crate::environment::functions::control_flow::{
     BindingMoveState, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
     ScopeExitTarget, ScopeId, TrackedBindingState,
 };
-use crate::environment::functions::query::query_function;
 use crate::environment::items::ItemRegistry;
 use crate::environment::source::SourceContext;
 use crate::environment::symbols::{SymbolRegistry, TemplateBindingFrame};
@@ -194,17 +193,6 @@ impl TypeEnvironment<'_> {
                     .insert_function_symbol(prototype.name.clone(), prototype.clone());
             },
         )
-    }
-
-    pub fn get_function(
-        &mut self,
-        base_data: &MIRBaseMappings,
-        expr: &CXExpression,
-        key: &QualifiedName,
-        template_input: Option<&CXTemplateInput>,
-        arg_types: &[MIRType],
-    ) -> CXResult<Option<MIRFunctionPrototype>> {
-        query_function(self, base_data, expr, key, template_input, arg_types)
     }
 
     pub fn in_defer<F, T>(&mut self, _: F) -> CXResult<T>

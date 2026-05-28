@@ -26,11 +26,28 @@ pub fn typecheck_initializer_list(
     to_type: Option<&MIRType>,
 ) -> CXResult<TypecheckResult> {
     let Some(to_type) = to_type else {
-        return log_typecheck_error!(
-            env,
-            Some(expr.token_range()),
-            "Initializer lists must have an explicit type"
-        );
+        let expr = expr.clone();
+        let indices = indices.to_vec();
+        let token_range = expr.token_range().clone();
+
+        return Ok(TypecheckResult::needs_expected_type(
+            move |env, base_data, expected_type| {
+                let mut expression = typecheck_initializer_list(
+                    env,
+                    base_data,
+                    &expr,
+                    &indices,
+                    Some(expected_type),
+                )?
+                .into_expression()?;
+
+                if expression.token_range.is_none() {
+                    expression.token_range = Some(token_range.clone());
+                }
+
+                Ok(expression)
+            },
+        ));
     };
 
     let owned_inner;
@@ -120,7 +137,7 @@ fn typecheck_array_initializer(
         .iter()
         .map(|index| {
             typecheck_expr(env, base_data, &index.value, Some(inner_type))
-                .map(|v| v.into_expression())
+                .and_then(TypecheckResult::into_expression)
         })
         .collect::<CXResult<_>>()?;
 
@@ -189,7 +206,7 @@ fn typecheck_structured_initializer(
 
         let (field_name, field_type) = &fields[counter];
         let value = typecheck_expr(env, base_data, &index.value, Some(field_type))
-            .and_then(|expr| std_rval_promotion(env, expr.into_expression()))
+            .and_then(|expr| std_rval_promotion(env, expr.into_expression()?))
             .and_then(|expr| implicit_cast(env, expr, field_type))?;
 
         let Some(struct_field_info) =

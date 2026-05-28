@@ -15,7 +15,10 @@ use crate::{
     log_typecheck_error,
 };
 
-pub fn type_member_function_name(member_type: &MIRType, name: &CXIdent) -> Option<QualifiedName> {
+pub fn member_function_qualified_name(
+    member_type: &MIRType,
+    name: &CXIdent,
+) -> Option<QualifiedName> {
     member_type
         .get_base_identifier()
         .map(|base_name| member_function_key(&QualifiedName::new_raw(base_name.clone()), name))
