@@ -1,8 +1,8 @@
-
 use crate::ast::CXAST;
 
 pub mod ast;
 pub mod data;
+pub mod pattern;
 
 pub mod macros;
 pub mod symbols;

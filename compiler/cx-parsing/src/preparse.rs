@@ -85,7 +85,9 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
                 return Ok(());
             };
 
-            data.contents.module_symbols.add_type(ident, data.visibility_mode);
+            data.contents
+                .module_symbols
+                .add_type(ident, data.visibility_mode);
         }
 
         keyword!(Import) => {

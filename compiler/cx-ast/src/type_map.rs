@@ -3,8 +3,7 @@ use std::collections::HashMap;
 use speedy::{Readable, Writable};
 
 use crate::data::{
-    CXFunctionPrototype, CXFunctionTemplate, CXType, CXTypeKey, CXTypeTemplate,
-    ModuleResource,
+    CXFunctionPrototype, CXFunctionTemplate, CXType, CXTypeKey, CXTypeTemplate, ModuleResource,
 };
 use cx_util::namespace::QualifiedName;
 

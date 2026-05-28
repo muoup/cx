@@ -1,20 +1,23 @@
 use crate::environment::{TypeEnvironment, symbols::SymbolValueOrigin};
 use crate::log_typecheck_error;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
-use crate::type_checking::pattern::tagged_union::{TypeConstructor, deconstruct_type_constructor};
+use crate::type_checking::pattern::tagged_union::{
+    TypeConstructor, resolve_type_constructor_pattern,
+};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::{CXExprKind, CXExpression};
+use cx_ast::{ast::CXExpression, pattern::CXPattern};
 use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
+use cx_mir::mir::pattern::MIRPattern;
 use cx_mir::mir::program::MIRBaseMappings;
-use cx_util::{CXResult, identifier::CXIdent};
+use cx_util::CXResult;
 
 pub(crate) fn typecheck_is(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     lhs: &CXExpression,
-    rhs: &CXExpression,
+    pattern: &CXPattern,
     expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     let tc_lhs: MIRExpression = typecheck_expr(env, base_data, lhs, None)
@@ -37,31 +40,24 @@ pub(crate) fn typecheck_is(
         );
     };
     let variants = variants.clone();
-    let expected_union_name = union_type.get_name().unwrap();
+    let expected_union_name = union_type.get_base_identifier().unwrap();
 
     let TypeConstructor {
-        union_type,
+        union_name,
         variant_name,
-        inner,
-    } = deconstruct_type_constructor(env, base_data, rhs)?;
-    let union_name = union_type.get_name().unwrap().as_str();
+        inner_name,
+    } = resolve_type_constructor_pattern(env, base_data, expr, pattern)?;
+    let union_name = union_name.as_flat_name();
+    let expected_union_name = expected_union_name.as_str();
 
-    if expected_union_name.as_str() != union_name {
+    if expected_union_name != union_name
+        && union_name.rsplit("::").next() != Some(expected_union_name)
+    {
         return log_typecheck_error!(
             env,
             expr.token_range(),
             "'is' operator left-hand side tagged union type {} does not match right-hand side tagged union type {}",
             expected_union_name,
-            union_name
-        );
-    }
-
-    if union_type.get_name().map(|x| x.as_str()) != Some(union_name) {
-        return log_typecheck_error!(
-            env,
-            expr.token_range(),
-            "'is' operator left-hand side type {} does not match right-hand side tagged union type {}",
-            union_type.display_with(&env.symbols.context),
             union_name
         );
     }
@@ -80,42 +76,28 @@ pub(crate) fn typecheck_is(
             union_name
         );
     };
-    let inner_name = match inner {
-        None => CXIdent::from(""),
-        Some(inner) if matches!(inner.kind, CXExprKind::Unit) => CXIdent::from(""),
-
-        Some(inner) => {
-            let CXExprKind::Identifier(name) = &inner.kind else {
-                return log_typecheck_error!(
-                    env,
-                    expr.token_range(),
-                    "'is' operator inner expression must be an identifier or unit, found {:?}",
-                    inner
-                );
-            };
-
-            let variant_ref_type = env.symbols.context.mem_ref_to(variant_type.clone());
-            env.symbols.insert_value(
-                name.name.clone(),
-                MIRExpression {
-                    token_range: None,
-                    kind: MIRExpressionKind::Variable(name.name.clone()),
-                    _type: variant_ref_type,
-                },
-                Some(SymbolValueOrigin::Local),
-            );
-
-            name.name.clone()
-        }
-    };
+    if let Some(inner_name) = &inner_name {
+        let variant_ref_type = env.symbols.context.mem_ref_to(variant_type.clone());
+        env.symbols.insert_value(
+            inner_name.clone(),
+            MIRExpression {
+                token_range: None,
+                kind: MIRExpressionKind::Variable(inner_name.clone()),
+                _type: variant_ref_type,
+            },
+            Some(SymbolValueOrigin::Local),
+        );
+    }
 
     Ok(TypecheckResult::new_base(
         MIRType::bool(),
         MIRExpressionKind::PatternIs {
             lhs: Box::new(tc_lhs),
-            sum_type: union_type.clone(),
-            variant_index: expected_tag,
-            inner_name,
+            pattern: MIRPattern::TaggedUnionVariant {
+                sum_type: union_type.clone(),
+                variant_index: expected_tag,
+                inner_name,
+            },
         },
     ))
 }

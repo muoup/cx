@@ -44,7 +44,7 @@ pub(crate) fn typecheck_identifier(
             None,
         ));
     } else {
-        None
+        query_function(env, base_data, expr, name, None, &[])?
     };
 
     if let Some(function_type) = function_type {

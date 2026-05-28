@@ -115,7 +115,7 @@ impl QualifiedName {
         if !self.namespace.is_root() {
             return None;
         }
-        
+
         Some(self.name)
     }
 }

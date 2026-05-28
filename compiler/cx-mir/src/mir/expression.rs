@@ -3,6 +3,7 @@ use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 
 use crate::mir::data::MIRFunctionPrototype;
+use crate::mir::pattern::MIRPattern;
 use crate::mir::r#type::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
 
 #[derive(Clone, Debug, Default, Readable, Writable)]
@@ -130,9 +131,7 @@ pub enum MIRExpressionKind {
 
     PatternIs {
         lhs: Box<MIRExpression>,
-        sum_type: MIRType,
-        variant_index: usize,
-        inner_name: CXIdent,
+        pattern: MIRPattern,
     },
 
     // Tagged Unions
@@ -199,7 +198,7 @@ pub enum MIRExpressionKind {
 
     Match {
         condition: Box<MIRExpression>,
-        arms: Vec<(Box<MIRExpression>, Box<MIRExpression>)>,
+        arms: Vec<(MIRPattern, Box<MIRExpression>)>,
         default: Option<Box<MIRExpression>>,
         exhaustive: bool,
     },

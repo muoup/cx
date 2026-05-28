@@ -14,6 +14,7 @@ use crate::{
             explicit::explicit_cast,
             implicit::{implicit_cast, promotion::std_rval_promotion},
         },
+        op::binop::is::typecheck_is,
         result::TypecheckResult,
         typechecker::typecheck_expr,
     },
@@ -185,6 +186,10 @@ pub fn dispatch(
                 .and_then(|v| std_rval_promotion(env, v.into_expression()?))?;
 
             TypecheckResult::from(explicit_cast(env, operand, &to_type)?)
+        }
+
+        CXUnOp::Is(pattern) => {
+            typecheck_is(env, base_data, operand, pattern, operand)?.ensure_available(env)?
         }
     })
 }

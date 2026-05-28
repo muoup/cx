@@ -12,7 +12,6 @@ use crate::type_checking::control_flow::{
 use crate::type_checking::op::binop::access::typecheck_access;
 use crate::type_checking::op::binop::assign::typecheck_assignment;
 use crate::type_checking::op::binop::calls::typecheck_method_call;
-use crate::type_checking::op::binop::is::typecheck_is;
 use crate::type_checking::op::{self, typecheck_binop};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::{
@@ -354,12 +353,6 @@ fn typecheck_expr_inner(
         }
 
         CXExprKind::BinOp {
-            op: CXBinOp::Is,
-            lhs,
-            rhs,
-        } => typecheck_is(env, base_data, lhs, rhs, expr)?.ensure_available(env)?,
-
-        CXExprKind::BinOp {
             op: CXBinOp::Access,
             lhs,
             rhs,
@@ -374,12 +367,6 @@ fn typecheck_expr_inner(
             lhs,
             rhs,
         } => typecheck_method_call(env, base_data, lhs, rhs, expr)?,
-
-        CXExprKind::BinOp {
-            op: CXBinOp::ScopeRes,
-            lhs,
-            rhs,
-        } => unreachable!(),
 
         CXExprKind::BinOp { op, lhs, rhs } => {
             let lhs = typecheck_expr(env, base_data, lhs, None)?.into_expression()?;

@@ -172,11 +172,10 @@ pub fn convert_expression(
             let mut effect = condition_node._type.union(&default_node._type);
             let mut arm_nodes = Vec::new();
 
-            for (value, arm_expr) in arms {
-                let value = convert_expression(env, value)?;
+            for (_, arm_expr) in arms {
                 let arm_node = convert_expression(env, arm_expr)?;
                 effect = effect.union(&arm_node._type);
-                arm_nodes.push((FRc::new(value), FRc::new(arm_node)));
+                arm_nodes.push((FRc::new(FMIRNode::unit()), FRc::new(arm_node)));
             }
 
             Ok(FMIRNode {

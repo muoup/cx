@@ -52,12 +52,10 @@ pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
                     .map(|branch| expr_may_fall_through(branch))
                     .unwrap_or(!exhaustive)
         }
-        MIRExpressionKind::CallFunction { function, .. } => {
-            !matches!(
-                &function.kind,
-                MIRExpressionKind::FunctionReference { name } if name.as_str() == "exit"
-            )
-        }
+        MIRExpressionKind::CallFunction { function, .. } => !matches!(
+            &function.kind,
+            MIRExpressionKind::FunctionReference { name } if name.as_str() == "exit"
+        ),
         _ => true,
     }
 }

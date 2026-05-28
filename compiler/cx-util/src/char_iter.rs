@@ -102,8 +102,9 @@ impl CharIter<'_> {
         self.source.len() > self.current_iter
     }
 
-    pub fn next_is<T>(&self, condition: T) -> bool 
-        where T: Fn(&u8) -> bool
+    pub fn next_is<T>(&self, condition: T) -> bool
+    where
+        T: Fn(&u8) -> bool,
     {
         self.source
             .as_bytes()

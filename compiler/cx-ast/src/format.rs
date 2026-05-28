@@ -3,12 +3,11 @@ use std::fmt::{Display, Formatter, Result};
 
 use crate::{
     ast::{
-        CXBinOp, CXExprKind, CXExpression, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXAST,
+        CXAST, CXBinOp, CXExprKind, CXExpression, CXFunctionStmt, CXGlobalVariable, CXInitIndex
     },
     data::{
-        CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXLinkageMode, CXReceiverMode,
-        CXTemplate, CXTemplateInput, CXType, CXTypeKind, CX_CONST,
-    },
+        CX_CONST, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXLinkageMode, CXReceiverMode, CXTemplate, CXTemplateInput, CXType, CXTypeKind
+    }, pattern::CXPattern,
 };
 
 // Helper struct for indented formatting of CXExpr
@@ -366,7 +365,6 @@ impl Display for CXBinOp {
             CXBinOp::Greater => write!(f, ">"),
             CXBinOp::GreaterEqual => write!(f, ">="),
             CXBinOp::Access => write!(f, "."),
-            CXBinOp::ScopeRes => write!(f, "::"),
             CXBinOp::MethodCall => write!(f, "()"),
             CXBinOp::ArrayIndex => write!(f, "[]"),
             CXBinOp::Comma => write!(f, ","),
@@ -377,7 +375,6 @@ impl Display for CXBinOp {
                     write!(f, "=")
                 }
             }
-            CXBinOp::Is => write!(f, "is"),
 
             CXBinOp::LAnd => write!(f, "&&"),
             CXBinOp::LOr => write!(f, "||"),
@@ -635,6 +632,27 @@ impl Display for CXFunctionKind {
             }
             CXFunctionKind::StaticMemberFunction { member_type, name } => {
                 write!(f, "{member_type}::{name}")
+            }
+        }
+    }
+}
+
+impl Display for CXPattern {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            CXPattern::Binding(name) => write!(f, "{name}"),
+            CXPattern::Integer(value) => write!(f, "{value}"),
+            CXPattern::Float(value) => write!(f, "{value}"),
+            CXPattern::Variant {
+                union_name,
+                variant_name,
+                inner,
+            } => {
+                write!(f, "{union_name}::{variant_name}")?;
+                if let Some(inner) = inner {
+                    write!(f, "({inner})")?;
+                }
+                Ok(())
             }
         }
     }

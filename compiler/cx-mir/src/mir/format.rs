@@ -901,15 +901,8 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            MIRExpressionKind::PatternIs {
-                lhs,
-                sum_type,
-                variant_index,
-                inner_name,
-            } => {
-                write!(f, "PatternIs variant {} of ", variant_index)?;
-                self.write_type(f, sum_type)?;
-                write!(f, " (create {}) <'", inner_name)?;
+            MIRExpressionKind::PatternIs { lhs, pattern } => {
+                write!(f, "PatternIs {pattern} <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
@@ -1170,13 +1163,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 .fmt(f)?;
                 for (pattern, arm_body) in arms {
                     self.indent(f)?;
-                    writeln!(f, "Arm:")?;
-                    MIRExpressionFormatter {
-                        expr: pattern,
-                        depth: self.depth + 2,
-                        definitions: self.definitions,
-                    }
-                    .fmt(f)?;
+                    writeln!(f, "Arm {pattern}:")?;
                     MIRExpressionFormatter {
                         expr: arm_body,
                         depth: self.depth + 2,

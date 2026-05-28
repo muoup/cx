@@ -13,7 +13,11 @@ use cx_tokens::{
     token::{SpecifierType, TokenKind},
     TokenIter,
 };
-use cx_util::{CXResult, identifier::CXIdent, namespace::{NamespacePath, QualifiedName}};
+use cx_util::{
+    identifier::CXIdent,
+    namespace::{NamespacePath, QualifiedName},
+    CXResult,
+};
 
 use crate::parse::{
     expressions::{expression_requires_semicolon, parse_expr},
@@ -331,7 +335,10 @@ pub fn try_parse_simple_identifier(tokens: &mut TokenIter) -> Option<CXIdent> {
 }
 
 pub fn try_parse_identifier(tokens: &mut TokenIter) -> CXResult<Option<QualifiedName>> {
-    if !matches!(tokens.peek().map(|token| &token.kind), Some(TokenKind::Identifier(_))) {
+    if !matches!(
+        tokens.peek().map(|token| &token.kind),
+        Some(TokenKind::Identifier(_))
+    ) {
         return Ok(None);
     };
 
@@ -349,7 +356,9 @@ pub fn try_parse_identifier(tokens: &mut TokenIter) -> CXResult<Option<Qualified
         }
     }
 
-    let ident = segments.pop().expect("identifier parser should have at least one segment");
+    let ident = segments
+        .pop()
+        .expect("identifier parser should have at least one segment");
     Ok(Some(QualifiedName::new(
         NamespacePath::new(segments),
         ident,

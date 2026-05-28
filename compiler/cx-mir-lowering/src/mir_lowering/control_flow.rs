@@ -7,6 +7,7 @@ use cx_lmir::{
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
+    pattern::MIRPattern,
 };
 use cx_util::CXResult;
 
@@ -310,7 +311,7 @@ pub fn lower_cswitch(
 pub fn lower_match(
     builder: &mut LMIRBuilder,
     condition: &MIRExpression,
-    arms: &[(Box<MIRExpression>, Box<MIRExpression>)],
+    arms: &[(MIRPattern, Box<MIRExpression>)],
     default: Option<&MIRExpression>,
     exhaustive: bool,
 ) -> CXResult<LMIRValue> {
@@ -350,11 +351,12 @@ pub fn lower_match(
         let arm_block_id = builder.create_block(Some("match_arm"));
         arm_blocks.push(arm_block_id.clone());
 
-        if let MIRExpressionKind::IntLiteral(value, _, _) = &pattern.kind {
-            targets.push((*value as u64, arm_block_id));
-        } else {
-            panic!("Match pattern must be an integer literal");
-        }
+        let value = match pattern {
+            MIRPattern::Integer(value) => *value as u64,
+            MIRPattern::TaggedUnionVariant { variant_index, .. } => *variant_index as u64,
+            MIRPattern::Float(..) => unreachable!("Float match patterns are not supported"),
+        };
+        targets.push((value, arm_block_id));
     }
 
     builder.add_new_instruction(
@@ -369,7 +371,6 @@ pub fn lower_match(
 
     for (i, (_, arm_body)) in arms.iter().enumerate() {
         builder.set_current_block(arm_blocks[i].clone());
-
         let arm_falls_through = is_fall_through(arm_body);
         builder.push_scope(None, None);
         lower_expression(builder, arm_body)?;
@@ -490,16 +491,13 @@ fn is_fall_through(expr: &MIRExpression) -> bool {
         | MIRExpressionKind::Break { .. }
         | MIRExpressionKind::Continue { .. } => false,
         MIRExpressionKind::Unsafe { expression, .. } => is_fall_through(expression),
-        MIRExpressionKind::Block { statements } => statements
-            .last()
-            .map(is_fall_through)
-            .unwrap_or(true),
-        MIRExpressionKind::CallFunction { function, .. } => {
-            !matches!(
-                &function.kind,
-                MIRExpressionKind::FunctionReference { name } if name.as_str() == "exit"
-            )
+        MIRExpressionKind::Block { statements } => {
+            statements.last().map(is_fall_through).unwrap_or(true)
         }
+        MIRExpressionKind::CallFunction { function, .. } => !matches!(
+            &function.kind,
+            MIRExpressionKind::FunctionReference { name } if name.as_str() == "exit"
+        ),
         _ => true,
     }
 }

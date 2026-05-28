@@ -77,11 +77,10 @@ impl<'a> Lexer<'a> {
             while let Some(c) = iter.next() {
                 match c {
                     '\n' => break,
-                    '/'
-                        if (iter.peek() == Some('/') || iter.peek() == Some('*')) => {
-                            iter.back();
-                            break;
-                        }
+                    '/' if (iter.peek() == Some('/') || iter.peek() == Some('*')) => {
+                        iter.back();
+                        break;
+                    }
                     _ => {}
                 }
             }

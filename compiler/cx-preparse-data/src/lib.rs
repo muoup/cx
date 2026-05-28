@@ -3,8 +3,8 @@ use speedy::{Readable, Writable};
 
 use crate::symbol_data::PreparseModuleSymbols;
 
-pub mod symbol_data;
 pub mod registry;
+pub mod symbol_data;
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct PreparseContents {
@@ -15,7 +15,7 @@ pub struct PreparseContents {
 
 #[derive(Debug, Clone, Copy, Hash, PartialOrd, Ord, PartialEq, Eq, Readable, Writable)]
 pub enum VisibilityMode {
-    Private,    
+    Private,
     Package,
     Public,
 }
@@ -25,7 +25,7 @@ impl PreparseContents {
         Self {
             module,
             imports: Vec::new(),
-            module_symbols: PreparseModuleSymbols::new(namespace)
+            module_symbols: PreparseModuleSymbols::new(namespace),
         }
     }
 }

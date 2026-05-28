@@ -1,11 +1,11 @@
 use crate::parse::ParserData;
 use cx_ast::ast::{CXBinOp, CXUnOp};
 use cx_ast::next_kind;
-use cx_tokens::punctuator;
 use cx_tokens::token::{OperatorType, PunctuatorType, TokenKind};
+use cx_tokens::{operator, punctuator};
 use cx_util::CXResult;
 
-use crate::parse::expressions::is_type_decl;
+use crate::parse::expressions::{is_type_decl, parse_pattern};
 use crate::parse::types::parse_initializer;
 
 #[derive(Debug, Clone)]
@@ -25,11 +25,7 @@ impl PrecOperator {
 
 pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
     match op {
-        CXBinOp::Access
-        | CXBinOp::ScopeRes
-        | CXBinOp::MethodCall
-        | CXBinOp::ArrayIndex
-        | CXBinOp::Is => 1,
+        CXBinOp::Access | CXBinOp::MethodCall | CXBinOp::ArrayIndex => 1,
         CXBinOp::Multiply | CXBinOp::Divide | CXBinOp::Modulus => 4,
         CXBinOp::Add | CXBinOp::Subtract => 5,
 
@@ -61,6 +57,7 @@ pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
         CXUnOp::Dereference => 2,
         CXUnOp::AddressOf => 2,
 
+        CXUnOp::Is(_) => 3,
         CXUnOp::ExplicitCast(_) => 3,
     }
 }
@@ -114,21 +111,31 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
     })
 }
 
-pub(crate) fn parse_postfix_unop(data: &mut ParserData) -> Option<CXUnOp> {
-    Some(match &data.tokens.next()?.kind {
+pub(crate) fn parse_postfix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp>> {
+    let Some(token) = data.tokens.next() else {
+        return Ok(None);
+    };
+
+    Ok(match &token.kind {
+        operator!(Is) => {
+            let pattern = parse_pattern(data)?;
+
+            Some(CXUnOp::Is(Box::new(pattern)))
+        }
+
         TokenKind::Operator(op) => match op {
-            OperatorType::Increment => CXUnOp::PostIncrement(1),
-            OperatorType::Decrement => CXUnOp::PostIncrement(-1),
+            OperatorType::Increment => Some(CXUnOp::PostIncrement(1)),
+            OperatorType::Decrement => Some(CXUnOp::PostIncrement(-1)),
 
             _ => {
                 data.tokens.back();
-                return None;
+                None
             }
         },
 
         _ => {
             data.tokens.back();
-            return None;
+            None
         }
     })
 }
@@ -142,7 +149,6 @@ fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<CXBinOp> {
         OperatorType::Percent => CXBinOp::Modulus,
 
         OperatorType::Access => CXBinOp::Access,
-        OperatorType::ScopeRes => CXBinOp::ScopeRes,
         OperatorType::Comma => CXBinOp::Comma,
 
         OperatorType::Equal => CXBinOp::Equal,
@@ -157,8 +163,6 @@ fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<CXBinOp> {
         OperatorType::Caret => CXBinOp::BitXor,
         OperatorType::DoubleBar => CXBinOp::LOr,
         OperatorType::DoubleAmpersand => CXBinOp::LAnd,
-
-        OperatorType::Is => CXBinOp::Is,
 
         _ => return log_parse_error!(data, "Invalid binary operator: {:?}", op),
     })

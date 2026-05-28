@@ -5,7 +5,6 @@ use speedy::{Readable, Writable};
 
 use crate::VisibilityMode;
 
-
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Readable, Writable)]
 pub enum PreparseSymbolKind {
     Type,
@@ -67,6 +66,7 @@ impl PreparseModuleSymbols {
     }
 
     pub fn add_type(&mut self, name: CXIdent, visibility: VisibilityMode) {
-        self.symbols.push(PreparseSymbol::type_name(name, visibility));
+        self.symbols
+            .push(PreparseSymbol::type_name(name, visibility));
     }
 }

@@ -8,12 +8,12 @@ use cx_ast::{
         CXTypeTemplate, ModuleResource,
     },
 };
-use cx_preparse_data::PreparseContents;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_preparse_data::symbol_data::PreparseSymbolKind;
+use cx_preparse_data::PreparseContents;
 use cx_tokens::TokenIter;
-use cx_util::CXResult;
 use cx_util::namespace::QualifiedName;
+use cx_util::CXResult;
 
 #[derive(Debug)]
 pub struct ParserData<'a> {
@@ -28,7 +28,11 @@ pub struct ParserData<'a> {
 }
 
 impl<'a> ParserData<'a> {
-    pub fn new(tokens: TokenIter<'a>, pp_contents: &'a PreparseContents, registry: &'a GlobalPreparseRegistry) -> Self {
+    pub fn new(
+        tokens: TokenIter<'a>,
+        pp_contents: &'a PreparseContents,
+        registry: &'a GlobalPreparseRegistry,
+    ) -> Self {
         let file_origin: Arc<str> = Arc::from(tokens.file.to_string_lossy().as_ref());
         Self {
             tokens,

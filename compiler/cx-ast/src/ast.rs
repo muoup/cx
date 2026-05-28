@@ -2,12 +2,16 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, module_path::ModulePath, namespace::QualifiedName, unsafe_float::FloatWrapper};
+use cx_util::{
+    identifier::CXIdent, module_path::ModulePath, namespace::QualifiedName,
+    unsafe_float::FloatWrapper,
+};
 use speedy::{Readable, Writable};
 use uuid::Uuid;
 
 use crate::{
     data::{CXFunctionPrototype, CXTemplateInput, CXTemplatePrototype, CXType, ModuleResource},
+    pattern::CXPattern,
     type_map::{CXFnMap, CXTypeMap},
 };
 
@@ -73,6 +77,7 @@ pub enum CXUnOp {
     LNot,
 
     ExplicitCast(CXType),
+    Is(Box<CXPattern>),
 
     PreIncrement(i8),
     PostIncrement(i8),
@@ -105,11 +110,8 @@ pub enum CXBinOp {
     Assign(Option<Box<CXBinOp>>),
 
     Access,
-    ScopeRes,
     MethodCall,
     ArrayIndex,
-
-    Is,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
@@ -224,7 +226,7 @@ pub enum CXExprKind {
 
     Match {
         condition: Box<CXExpression>,
-        arms: Vec<(CXExpression, CXExpression)>, // (value, block)
+        arms: Vec<(CXPattern, CXExpression)>, // (value, block)
         default: Option<Box<CXExpression>>,
     },
 

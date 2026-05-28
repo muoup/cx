@@ -442,11 +442,7 @@ pub(crate) fn int_complete_type(
                 return Ok(completed.with_specifier(ty.specifiers));
             }
 
-            if base_data
-                .type_data
-                .get_template(&flat_name)
-                .is_some()
-            {
+            if base_data.type_data.get_template(&flat_name).is_some() {
                 return log_typecheck_error!(
                     env,
                     Some(expr.token_range()),
@@ -456,7 +452,12 @@ pub(crate) fn int_complete_type(
             }
 
             if *predeclaration != PredeclarationType::None {
-                return Ok(named_predeclaration_type(env, ty, &name.name, *predeclaration));
+                return Ok(named_predeclaration_type(
+                    env,
+                    ty,
+                    &name.name,
+                    *predeclaration,
+                ));
             }
 
             log_typecheck_error!(env, Some(expr.token_range()), "Type not found: {name}")

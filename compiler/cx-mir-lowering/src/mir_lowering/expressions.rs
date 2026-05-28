@@ -10,6 +10,7 @@ use cx_lmir::{
 use cx_mir::mir::{
     data::{MIRFunctionSignature, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind, MIRFunctionContract, StructInitialization},
+    pattern::MIRPattern,
     program::MIRFunction,
     r#type::{MIRField, MIRType},
 };
@@ -779,23 +780,29 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             )
         }
 
-        MIRExpressionKind::PatternIs {
-            lhs,
-            sum_type,
-            variant_index,
-            inner_name,
-        } => {
+        MIRExpressionKind::PatternIs { lhs, pattern } => {
             let bc_lhs = lower_expression(builder, lhs)?;
 
-            let alias = builder.add_new_instruction(
-                LMIRInstructionKind::Alias {
-                    value: bc_lhs.clone(),
-                },
-                LMIRType::default_pointer(),
-                true,
-            )?;
+            let MIRPattern::TaggedUnionVariant {
+                sum_type,
+                variant_index,
+                inner_name,
+            } = pattern
+            else {
+                unreachable!("'is' patterns are only emitted for tagged union variants");
+            };
 
-            builder.insert_symbol(inner_name.clone(), alias);
+            if let Some(inner_name) = inner_name {
+                let alias = builder.add_new_instruction(
+                    LMIRInstructionKind::Alias {
+                        value: bc_lhs.clone(),
+                    },
+                    LMIRType::default_pointer(),
+                    true,
+                )?;
+
+                builder.insert_symbol(inner_name.clone(), alias);
+            }
             let tag_ptr = get_tagged_union_tag(builder, bc_lhs, sum_type)?;
             let tag_value = builder.add_new_instruction(
                 LMIRInstructionKind::Load {

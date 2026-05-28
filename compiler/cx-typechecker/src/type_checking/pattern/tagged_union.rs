@@ -1,106 +1,49 @@
-use cx_ast::{
-    ast::{CXBinOp, CXExprKind, CXExpression},
-    data::{CXTypeKind, PredeclarationType},
-};
-use cx_mir::mir::{data::MIRType, program::MIRBaseMappings};
-use cx_util::{CXResult, identifier::CXIdent};
+use cx_ast::{ast::CXExpression, pattern::CXPattern};
+use cx_mir::mir::program::MIRBaseMappings;
+use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 use crate::{environment::TypeEnvironment, log_typecheck_error};
 
-pub struct TypeConstructor<'a> {
-    pub union_type: MIRType,
+pub struct TypeConstructor {
+    pub union_name: QualifiedName,
     pub variant_name: CXIdent,
-    pub inner: Option<&'a CXExpression>,
+    pub inner_name: Option<CXIdent>,
 }
 
-pub fn deconstruct_type_constructor<'a>(
+pub fn resolve_type_constructor_pattern(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    pattern: &'a CXExpression,
-) -> CXResult<TypeConstructor<'a>> {
-    let (constructor, inner) = match &pattern.kind {
-        CXExprKind::BinOp {
-            op: CXBinOp::MethodCall,
-            lhs,
-            rhs: inner,
-        } => (lhs.as_ref(), Some(inner.as_ref())),
-
-        _ => (pattern, None),
-    };
-
-    if let CXExprKind::Identifier(constructor_name) = &constructor.kind
-        && !constructor_name.namespace.is_root()
-    {
-        let union_type = env.get_type(
-            base_data,
-            constructor,
-            &constructor_name.namespace.as_scope_string(),
-        )?;
-
-        return Ok(TypeConstructor {
-            union_type,
-            variant_name: constructor_name.name.clone(),
-            inner,
-        });
-    }
-
-    let CXExprKind::BinOp {
-        op: CXBinOp::ScopeRes,
-        lhs: union,
-        rhs: variant,
-    } = &constructor.kind
+    _base_data: &MIRBaseMappings,
+    expr: &CXExpression,
+    pattern: &CXPattern,
+) -> CXResult<TypeConstructor> {
+    let CXPattern::Variant {
+        union_name,
+        variant_name,
+        inner,
+    } = pattern
     else {
         return log_typecheck_error!(
             env,
-            Some(pattern.token_range()),
-            "Expected type constructor"
+            Some(expr.token_range()),
+            "Expected qualified tagged union variant pattern"
         );
     };
 
-    let union_name = match &union.kind {
-        CXExprKind::Identifier(union_name) => {
-            let as_type = CXTypeKind::Identifier {
-                predeclaration: PredeclarationType::None,
-                name: union_name.clone(),
-            }
-            .to_type();
-
-            env.complete_type(base_data, union, &as_type)?
-        }
-
-        CXExprKind::TemplatedIdentifier {
-            name,
-            template_input,
-        } => {
-            let as_type = CXTypeKind::TemplatedIdentifier {
-                name: name.clone(),
-                input: template_input.clone(),
-            }
-            .to_type();
-
-            env.complete_type(base_data, union, &as_type)?
-        }
-
-        _ => {
+    let inner_name = match inner.as_deref() {
+        None => None,
+        Some(CXPattern::Binding(name)) => Some(name.clone()),
+        Some(_) => {
             return log_typecheck_error!(
                 env,
-                Some(union.token_range()),
-                "Expected union name in type constructor pattern"
+                Some(expr.token_range()),
+                "Tagged union variant payload pattern must be a binding"
             );
         }
     };
 
-    let CXExprKind::Identifier(variant_name) = &variant.kind else {
-        return log_typecheck_error!(
-            env,
-            Some(variant.token_range()),
-            "Expected variant name in type constructor pattern"
-        );
-    };
-
     Ok(TypeConstructor {
-        union_type: union_name,
-        variant_name: variant_name.name.clone(),
-        inner,
+        union_name: union_name.clone(),
+        variant_name: variant_name.clone(),
+        inner_name,
     })
 }
