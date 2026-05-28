@@ -6,8 +6,8 @@ use crate::ast::{CXExpression, VisibilityMode};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub enum CXFunctionTypeIdent {
-    Standard(CXIdent),
-    Templated(CXIdent, CXTemplateInput),
+    Standard(QualifiedName),
+    Templated(QualifiedName, CXTemplateInput),
 }
 
 pub type CXTypeKey = String;
@@ -17,13 +17,13 @@ pub type CXTypeKey = String;
  */
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub enum CXFunctionKey {
-    Standard(CXIdent),
+    Standard(QualifiedName),
     MemberFunction {
-        type_base_name: CXIdent,
+        type_base_name: QualifiedName,
         name: CXIdent,
     },
     StaticMemberFunction {
-        type_base_name: CXIdent,
+        type_base_name: QualifiedName,
         name: CXIdent,
     },
 }
@@ -344,7 +344,7 @@ impl CXFunctionKind {
 
     pub fn into_key(&self) -> CXFunctionKey {
         match self {
-            CXFunctionKind::Standard(name) => CXFunctionKey::Standard(name.clone()),
+            CXFunctionKind::Standard(name) => CXFunctionKey::Standard(QualifiedName::new_raw(name.clone())),
             CXFunctionKind::MemberFunction {
                 member_type, name, ..
             } => {
@@ -380,7 +380,7 @@ impl CXFunctionTypeIdent {
         }
     }
 
-    pub fn base_name(&self) -> &CXIdent {
+    pub fn base_name(&self) -> &QualifiedName {
         match self {
             CXFunctionTypeIdent::Standard(name) => name,
             CXFunctionTypeIdent::Templated(name, _) => name,

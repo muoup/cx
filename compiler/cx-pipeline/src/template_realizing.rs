@@ -73,7 +73,7 @@ fn realize_tagged_union_constructor(
         program::MIRFunction,
     };
     use cx_tokens::TokenRange;
-    use cx_util::identifier::CXIdent;
+    use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
     let param_name = CXIdent::new("value");
     let prototype = MIRFunctionPrototype {
@@ -82,7 +82,7 @@ fn realize_tagged_union_constructor(
             kind: CXFunctionKind::Standard(CXIdent::new("__tagged_union_variant_ctor")),
             params: Vec::new(),
             return_type: cx_ast::data::CXTypeKind::Identifier {
-                name: CXIdent::new("__tagged_union"),
+                name: QualifiedName::new_raw(CXIdent::new("__tagged_union")),
                 predeclaration: cx_ast::data::PredeclarationType::None,
             }
             .to_type(),

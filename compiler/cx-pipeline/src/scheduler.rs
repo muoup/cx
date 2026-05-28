@@ -2,8 +2,7 @@ use crate::backends::{cranelift_compile, llvm_compile};
 use crate::progress::ProgressReporter;
 use crate::template_realizing::realize_templates;
 use cx_ast::{
-    ast::{CXAST, CXFunctionStmt, VisibilityMode},
-    data::ModuleResource,
+    ast::{CXAST, CXFunctionStmt},
     symbols::{DecomposedModuleSymbols, SymbolKey, UntypedSymbol},
 };
 use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
@@ -13,7 +12,7 @@ use cx_parsing::parse::parse_ast;
 use cx_parsing::preparse::{PreparseConfig, preparse};
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::directories::internal_directory;
-use cx_pipeline_data::internal_storage::{resource_path, retrieve_data, retrieve_text, store_text};
+use cx_pipeline_data::internal_storage::{resource_path, retrieve_data};
 use cx_pipeline_data::jobs::{
     CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue,
 };
@@ -27,14 +26,12 @@ use cx_typechecker::gather_interface;
 use cx_typechecker::log::TypeError;
 use cx_typechecker::typecheck;
 use cx_util::format::dump_data;
-use cx_util::identifier::CXIdent;
 use cx_util::module_path::ModulePath;
 use cx_util::namespace::NamespacePath;
 use cx_util::{CXError, CXErrorTrait, CXResult};
 use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::HashMap;
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::Write;
 
 pub(crate) fn scheduling_loop(
@@ -275,37 +272,6 @@ fn decompose_ast_symbols(unit: &CompilationUnit, ast: &CXAST) -> DecomposedModul
     output
 }
 
-fn add_qualified_preparse_type_idents(
-    type_idents: &mut Vec<ModuleResource<CXIdent>>,
-    namespace: &NamespacePath,
-) {
-    if namespace.is_root() {
-        return;
-    }
-
-    let existing = type_idents.clone();
-    for resource in existing {
-        if resource.resource.as_str().contains("::") {
-            continue;
-        }
-
-        let qualified = namespace.as_flat_name_with(&resource.resource);
-        if type_idents
-            .iter()
-            .any(|existing| existing.resource.as_str() == qualified)
-        {
-            continue;
-        }
-
-        type_idents.push(ModuleResource {
-            visibility: resource.visibility,
-            linkage: resource.linkage,
-            external_module: resource.external_module.clone(),
-            resource: cx_util::identifier::CXIdent::new(qualified),
-        });
-    }
-}
-
 pub(crate) enum JobResult {
     StandardSuccess,
 
@@ -387,14 +353,13 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::ASTParse => {
-            let registry = context.module_db.preparse_registry.get(&job.unit);
             let pp_data = context.module_db.preparse_base.take(&job.unit);
             let lexemes = context.module_db.lex_tokens.get(&job.unit);
  
             let parsed_ast = parse_ast(
                 TokenIter::new(&lexemes, job.unit.as_path().to_path_buf()),
                 &pp_data,
-                registry,
+                &context.module_db.preparse_registry,
             )?;
             context
                 .module_db

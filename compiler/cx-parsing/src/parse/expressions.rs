@@ -1,4 +1,4 @@
-use crate::parse::{try_parse_raw_identifier, ParserData};
+use crate::parse::{try_parse_simple_identifier, ParserData};
 use cx_ast::ast::{CXBinOp, CXExprKind, CXExpression, CXInitIndex, CXUnpackBinding};
 use cx_ast::data::CXTypeKind;
 use cx_ast::{assert_token_matches, next_kind, try_next};
@@ -82,11 +82,11 @@ fn parse_at_intrinsic_expr(
 
             let mut bindings = Vec::new();
             while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-                let Some(field) = try_parse_raw_identifier(&mut data.tokens)? else {
+                let Some(field) = try_parse_simple_identifier(&mut data.tokens) else {
                     return log_parse_error!(data, "Expected field name in @unpack binding");
                 };
                 assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
-                let Some(binding) = try_parse_raw_identifier(&mut data.tokens)? else {
+                let Some(binding) = try_parse_simple_identifier(&mut data.tokens) else {
                     return log_parse_error!(data, "Expected binding name in @unpack binding");
                 };
 
@@ -127,7 +127,9 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
     match &tok.unwrap() {
         intrinsic!() | specifier!() | keyword!(Struct, Union, Enum) => Ok(true),
 
-        identifier!(name) => {
+        identifier!(name) if is_intrinsic_type(name) => Ok(true),
+
+        TokenKind::Identifier(_) => {
             let pre_idx = data.tokens.index;
             let Some(ident) = try_parse_identifier(&mut data.tokens)? else { unreachable!() };
             data.tokens.index = pre_idx;
@@ -574,7 +576,7 @@ pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CXResult<CXExpress
         return log_parse_error!(data, "Expected identifier");
     };
 
-    let lhs = if !matches!(next_kind!(data.tokens)?, operator!(Less)) || !is_type_decl(data) {
+    let lhs = if !matches!(next_kind!(data.tokens)?, operator!(Less)) || !is_type_decl(data)? {
         data.tokens.back();
         CXExprKind::Identifier(ident).into_expr_with_origin(
             start_index,

@@ -9,10 +9,11 @@ use cx_mir::mir::program::MIRBaseMappings;
 use cx_mir::mir::r#type::MIRField;
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
+use cx_util::namespace::QualifiedName;
 
 use crate::environment::functions::completion::{complete_type, int_complete_fn_prototype};
 use crate::environment::symbols::templates::instantiate_type_template;
-use crate::log_typecheck_error;
+use crate::{log, log_typecheck_error};
 use crate::type_checking::constexpr::constexpr_evaluate;
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::{environment::TypeEnvironment, log::TypeError};
@@ -332,9 +333,9 @@ fn ensure_named_identifier_completed(
     base_data: &MIRBaseMappings,
     expr: &CXExpression,
     ty: &CXType,
-    name: &CXIdent,
+    name: &QualifiedName,
 ) -> CXResult<Option<MIRType>> {
-    let Some(inner) = base_data.type_data.get_standard(&name.as_string()) else {
+    let Some(inner) = base_data.type_data.get_standard(&name.as_flat_name()) else {
         return Ok(None);
     };
 
@@ -396,7 +397,7 @@ fn ensure_named_identifier_completed(
             name: identifier_name,
             predeclaration,
         } if identifier_name == name && *predeclaration != PredeclarationType::None => {
-            named_predeclaration_type(env, ty, identifier_name, *predeclaration)
+            named_predeclaration_type(env, ty, &identifier_name.name, *predeclaration)
         }
         _ => complete_type(
             env,
@@ -422,8 +423,9 @@ pub(crate) fn int_complete_type(
             name,
             predeclaration,
         } => {
-            if let Some(existing) = env.get_realized_type(&name.as_string()) {
-                if let Some(id) = env.get_named_type_id(name.as_str())
+            let flat_name = name.as_flat_name();
+            if let Some(existing) = env.get_realized_type(&flat_name) {
+                if let Some(id) = env.get_named_type_id(name.name.as_str())
                     && !env.has_complete_named_type_definition(id)
                     && let Some(completed) =
                         ensure_named_identifier_completed(env, base_data, expr, ty, name)?
@@ -442,7 +444,7 @@ pub(crate) fn int_complete_type(
 
             if base_data
                 .type_data
-                .get_template(&name.as_string())
+                .get_template(&flat_name)
                 .is_some()
             {
                 return log_typecheck_error!(
@@ -454,19 +456,14 @@ pub(crate) fn int_complete_type(
             }
 
             if *predeclaration != PredeclarationType::None {
-                return Ok(named_predeclaration_type(env, ty, name, *predeclaration));
+                return Ok(named_predeclaration_type(env, ty, &name.name, *predeclaration));
             }
 
-            let range = crate::log::identifier_range_for_name(
-                env.source.tokens,
-                expr.token_range(),
-                name.as_str(),
-            );
-            log_typecheck_error!(env, Some(range), "Type not found: {name}")
+            log_typecheck_error!(env, Some(expr.token_range()), "Type not found: {name}")
         }
 
         CXTypeKind::TemplatedIdentifier { name, input, .. } => {
-            instantiate_type_template(env, base_data, input, name.as_str())
+            instantiate_type_template(env, base_data, input, &name.as_flat_name())
                 .map(|completed| completed.with_specifier(ty.specifiers))
         }
 

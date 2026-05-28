@@ -2,7 +2,12 @@ use cx_ast::ast::{CXAST, CXFunctionStmt, VisibilityMode};
 use cx_ast::data::CXFunctionKey;
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
-use cx_util::{CXResult, identifier::CXIdent, module_path::ModulePath, namespace::NamespacePath};
+use cx_util::{
+    CXResult,
+    identifier::CXIdent,
+    module_path::ModulePath,
+    namespace::{NamespacePath, QualifiedName},
+};
 
 pub mod log;
 
@@ -132,22 +137,24 @@ fn qualified_name(module: ModulePath, name: &str) -> String {
 }
 
 fn qualify_function_key(module: ModulePath, key: &CXFunctionKey) -> CXFunctionKey {
+    let namespace = NamespacePath::from(module);
     match key {
-        CXFunctionKey::Standard(name) => {
-            CXFunctionKey::Standard(CXIdent::new(qualified_name(module, name.as_str())))
-        }
+        CXFunctionKey::Standard(name) => CXFunctionKey::Standard(QualifiedName::new(
+            namespace.clone(),
+            name.name.clone(),
+        )),
         CXFunctionKey::MemberFunction {
             type_base_name,
             name,
         } => CXFunctionKey::MemberFunction {
-            type_base_name: CXIdent::new(qualified_name(module, type_base_name.as_str())),
+            type_base_name: QualifiedName::new(namespace.clone(), type_base_name.name.clone()),
             name: name.clone(),
         },
         CXFunctionKey::StaticMemberFunction {
             type_base_name,
             name,
         } => CXFunctionKey::StaticMemberFunction {
-            type_base_name: CXIdent::new(qualified_name(module, type_base_name.as_str())),
+            type_base_name: QualifiedName::new(namespace, type_base_name.name.clone()),
             name: name.clone(),
         },
     }

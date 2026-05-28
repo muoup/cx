@@ -13,7 +13,9 @@ use crate::type_checking::contracts::typecheck_contract;
 use crate::type_checking::op::binop::access::{
     build_member_receiver_argument, resolve_access_base,
 };
-use crate::type_checking::op::binop::scoped_calls::typecheck_scoped_call;
+use crate::type_checking::op::binop::scoped_calls::{
+    query_qualified_scoped_callee, typecheck_qualified_type_constructor_call, typecheck_scoped_call,
+};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::{CXBinOp, CXExprKind, CXExpression};
@@ -180,8 +182,18 @@ pub(crate) fn deduced_callee(
 ) -> CXResult<Option<TypecheckResult>> {
     match &lhs.kind {
         CXExprKind::Identifier(name) => {
+            if let Some(prototype) =
+                query_qualified_scoped_callee(env, base_data, expr, name, arg_types)?
+            {
+                return Ok(Some(TypecheckResult::from(build_function_reference(
+                    &prototype,
+                ))));
+            }
+
             if matches!(
-                env.symbols.resolve_value_symbol(name.as_str()),
+                name.namespace.is_root()
+                    .then(|| env.symbols.resolve_value_symbol(name.name.as_str()))
+                    .flatten(),
                 Some(ResolvedValueSymbol::Value {
                     origin: Some(SymbolValueOrigin::Local | SymbolValueOrigin::Contract),
                     ..
@@ -216,7 +228,7 @@ pub(crate) fn deduced_callee(
             let (receiver_root, receiver_value, receiver_type, _) =
                 resolve_access_base(env, expr, receiver_source)?;
 
-            if struct_field(&receiver_type, &env.symbols.context, name.as_str()).is_some() {
+            if struct_field(&receiver_type, &env.symbols.context, name.name.as_str()).is_some() {
                 return Ok(None);
             }
 
@@ -226,7 +238,7 @@ pub(crate) fn deduced_callee(
                     .map(|fields| {
                         fields
                             .iter()
-                            .any(|(field_name, _)| field_name == name.as_str())
+                            .any(|(field_name, _)| field_name == name.name.as_str())
                     })
                     .unwrap_or(false)
             {
@@ -238,7 +250,7 @@ pub(crate) fn deduced_callee(
                 base_data,
                 expr,
                 &receiver_type,
-                name,
+                &name.name,
                 arg_types,
             )?
             else {
@@ -279,6 +291,13 @@ pub(crate) fn typecheck_method_call(
     } = &lhs.kind
     {
         return typecheck_scoped_call(env, base_data, type_expr, method_expr, rhs, expr);
+    }
+
+    if let CXExprKind::Identifier(name) = &lhs.kind
+        && let Some(result) =
+            typecheck_qualified_type_constructor_call(env, base_data, expr, name, rhs)?
+    {
+        return Ok(result);
     }
 
     let tc_args = comma_separated(env, base_data, rhs)?;

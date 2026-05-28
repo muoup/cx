@@ -21,7 +21,129 @@ use cx_mir::mir::expression::MIRExpressionKind;
 use cx_mir::mir::name_mangling::base_mangle_static_member;
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_tokens::TokenRange;
-use cx_util::{CXResult, identifier::CXIdent};
+use cx_util::{CXResult, identifier::CXIdent, namespace::{NamespacePath, QualifiedName}};
+
+fn qualified_type_and_member(name: &QualifiedName) -> Option<(String, CXIdent)> {
+    (!name.namespace.is_root()).then(|| (name.namespace.as_scope_string(), name.name.clone()))
+}
+
+pub(crate) fn query_qualified_scoped_callee(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    expr: &CXExpression,
+    name: &QualifiedName,
+    arg_types: &[MIRType],
+) -> CXResult<Option<MIRFunctionPrototype>> {
+    let Some((type_name, method_name)) = qualified_type_and_member(name) else {
+        return Ok(None);
+    };
+    let Ok(mir_type) = env.get_type(base_data, expr, &type_name) else {
+        return Ok(None);
+    };
+
+    if mir_type.is_tagged_union()
+        && tagged_union_has_variant(env, &mir_type, &method_name)
+        && let Some((variant_index, variant_type)) =
+            tagged_union_variant_data(env, &mir_type, &method_name)
+    {
+        return Ok(Some(tagged_union_constructor_prototype(
+            env,
+            &mir_type,
+            &method_name,
+            variant_index,
+            variant_type,
+        )));
+    }
+
+    if let Some(prototype) = query_deduced_static_member_function(
+        env,
+        base_data,
+        expr,
+        &mir_type,
+        &method_name,
+        arg_types,
+    )? {
+        return Ok(Some(prototype));
+    }
+
+    query_deduced_member_function(env, base_data, expr, &mir_type, &method_name, arg_types)
+}
+
+pub(crate) fn typecheck_qualified_type_constructor_call(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    expr: &CXExpression,
+    name: &QualifiedName,
+    args_expr: &CXExpression,
+) -> CXResult<Option<TypecheckResult>> {
+    let Some((type_name, method_name)) = qualified_type_and_member(name) else {
+        return Ok(None);
+    };
+    let Ok(mir_type) = env.get_type(base_data, expr, &type_name) else {
+        return Ok(None);
+    };
+
+    if mir_type.is_tagged_union() && tagged_union_has_variant(env, &mir_type, &method_name) {
+        return typecheck_type_constructor(env, base_data, expr, &mir_type, &method_name, args_expr)
+            .map(Some);
+    }
+
+    Ok(None)
+}
+
+pub(crate) fn typecheck_qualified_scoped_reference(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    expr: &CXExpression,
+    name: &QualifiedName,
+    template_input: Option<&cx_ast::data::CXTemplateInput>,
+) -> CXResult<Option<TypecheckResult>> {
+    let Some((type_name, method_name)) = qualified_type_and_member(name) else {
+        return Ok(None);
+    };
+    let Ok(mir_type) = env.get_type(base_data, expr, &type_name) else {
+        return Ok(None);
+    };
+
+    if let Some(prototype) = query_static_member_function(
+        env,
+        base_data,
+        expr,
+        &mir_type,
+        &method_name,
+        template_input,
+    )? {
+        return Ok(Some(TypecheckResult::from(build_function_reference(&prototype))));
+    }
+
+    if let Some(prototype) = query_member_function(
+        env,
+        base_data,
+        expr,
+        &mir_type,
+        &method_name,
+        template_input,
+    )? {
+        return Ok(Some(TypecheckResult::from(build_function_reference(&prototype))));
+    }
+
+    if mir_type.is_tagged_union()
+        && template_input.is_none()
+        && let Some((variant_index, variant_type)) =
+            tagged_union_variant_data(env, &mir_type, &method_name)
+    {
+        let prototype = tagged_union_constructor_prototype(
+            env,
+            &mir_type,
+            &method_name,
+            variant_index,
+            variant_type,
+        );
+        return Ok(Some(TypecheckResult::from(build_function_reference(&prototype))));
+    }
+
+    Ok(None)
+}
 
 fn resolve_scoped_type_and_method<'a>(
     env: &mut TypeEnvironment,
@@ -43,7 +165,7 @@ fn resolve_scoped_type_and_method<'a>(
         mir_type
     } else {
         match &type_expr.kind {
-            CXExprKind::Identifier(name) => env.get_type(base_data, type_expr, name.as_str())?,
+            CXExprKind::Identifier(name) => env.get_type(base_data, type_expr, &name.as_flat_name())?,
 
             CXExprKind::TemplatedIdentifier {
                 name,
@@ -70,11 +192,11 @@ fn resolve_scoped_type_and_method<'a>(
     };
 
     let (method_name, template_input) = match &method_expr.kind {
-        CXExprKind::Identifier(method_name) => (method_name.clone(), None),
+        CXExprKind::Identifier(method_name) => (method_name.name.clone(), None),
         CXExprKind::TemplatedIdentifier {
             name,
             template_input,
-        } => (name.clone(), Some(template_input)),
+        } => (name.name.clone(), Some(template_input)),
         _ => {
             return log_typecheck_error!(
                 env,
@@ -96,6 +218,7 @@ fn resolve_flat_scoped_type_and_method(
 ) -> Option<(MIRType, CXIdent)> {
     let full_name = scoped_standard_name(type_expr, method_expr)?;
     let segments = full_name
+        .as_flat_name()
         .as_str()
         .split("::")
         .map(str::to_owned)
@@ -118,8 +241,8 @@ fn resolve_flat_scoped_type_and_method(
 
 fn scope_expr_flat_name(expr: &CXExpression) -> Option<String> {
     match &expr.kind {
-        CXExprKind::Identifier(name) => Some(name.as_string()),
-        CXExprKind::TemplatedIdentifier { name, .. } => Some(name.as_string()),
+        CXExprKind::Identifier(name) => Some(name.as_flat_name()),
+        CXExprKind::TemplatedIdentifier { name, .. } => Some(name.as_flat_name()),
         CXExprKind::BinOp {
             op: cx_ast::ast::CXBinOp::ScopeRes,
             lhs,
@@ -133,10 +256,12 @@ fn scope_expr_flat_name(expr: &CXExpression) -> Option<String> {
     }
 }
 
-fn scoped_standard_name(type_expr: &CXExpression, method_expr: &CXExpression) -> Option<CXIdent> {
+fn scoped_standard_name(type_expr: &CXExpression, method_expr: &CXExpression) -> Option<QualifiedName> {
     let lhs = scope_expr_flat_name(type_expr)?;
     let rhs = scope_expr_flat_name(method_expr)?;
-    Some(CXIdent::new(format!("{lhs}::{rhs}")))
+    let path = NamespacePath::from_scoped_path(&format!("{lhs}::{rhs}"));
+    let (namespace, name) = path.parent_and_name()?;
+    Some(QualifiedName::new(namespace, name))
 }
 
 fn tagged_union_has_variant(env: &TypeEnvironment, union_type: &MIRType, name: &CXIdent) -> bool {
@@ -175,24 +300,24 @@ fn tagged_union_constructor_prototype(
         name: CXIdent::new(mangled_name.clone()),
         source_prototype: CXFunctionPrototype {
             kind: CXFunctionKind::StaticMemberFunction {
-                member_type: cx_ast::data::CXFunctionTypeIdent::Standard(CXIdent::new(
+                member_type: cx_ast::data::CXFunctionTypeIdent::Standard(QualifiedName::new_raw(CXIdent::new(
                     union_type
                         .get_name()
                         .map(CXIdent::as_str)
                         .unwrap_or("__anonymous_tagged_union"),
-                )),
+                ))),
                 name: name.clone(),
             },
             params: vec![CXParameter {
                 name: Some(CXIdent::new("value")),
                 _type: CXTypeKind::Identifier {
-                    name: CXIdent::new("__variant_payload"),
+                    name: QualifiedName::new_raw(CXIdent::new("__variant_payload")),
                     predeclaration: PredeclarationType::None,
                 }
                 .to_type(),
             }],
             return_type: CXTypeKind::Identifier {
-                name: CXIdent::new("__tagged_union"),
+                name: QualifiedName::new_raw(CXIdent::new("__tagged_union")),
                 predeclaration: PredeclarationType::None,
             }
             .to_type(),

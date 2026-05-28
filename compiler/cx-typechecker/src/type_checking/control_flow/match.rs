@@ -210,7 +210,7 @@ pub fn typecheck_match(
                             token_range: None,
                             _type: variant_ref_type.clone(),
                             kind: MIRExpressionKind::BindRegion {
-                                name: name.clone(),
+                                name: name.name.clone(),
                                 _type: variant_type.clone(),
                                 initial_region: Box::new(variant_region),
                                 adopting: true,
@@ -220,17 +220,17 @@ pub fn typecheck_match(
                         env.push_scope(false, false);
                         env.function.set_scope_anchor(body);
                         env.symbols.insert_value(
-                            name.clone(),
+                            name.name.clone(),
                             MIRExpression {
                                 token_range: None,
-                                kind: MIRExpressionKind::Variable(name.clone()),
+                                kind: MIRExpressionKind::Variable(name.name.clone()),
                                 _type: variant_ref_type,
                             },
                             Some(SymbolValueOrigin::Local),
                         );
                         if env.symbols.is_nocopy(variant_type) {
                             env.function
-                                .track_binding(name.as_string(), env.symbols.is_nodrop(variant_type));
+                                .track_binding(name.name.as_string(), env.symbols.is_nodrop(variant_type));
                         }
 
                         let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
@@ -247,7 +247,7 @@ pub fn typecheck_match(
                         // Typecheck the body with the borrowed variant value bound.
                         env.symbols.push_scope();
                         env.symbols.insert_value(
-                            name.clone(),
+                            name.name.clone(),
                             variant_value_expr,
                             Some(SymbolValueOrigin::Local),
                         );

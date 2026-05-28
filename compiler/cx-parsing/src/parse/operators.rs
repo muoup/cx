@@ -86,7 +86,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
         punctuator!(OpenParen) => {
             let pre_index = data.tokens.index - 1;
 
-            if !is_type_decl(data) {
+            if !is_type_decl(data)? {
                 data.tokens.index = pre_index;
                 return Ok(None);
             }

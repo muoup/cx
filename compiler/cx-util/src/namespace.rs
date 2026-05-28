@@ -31,7 +31,7 @@ impl NamespacePath {
         )
     }
 
-    pub fn from_scope_path(path: &str) -> Self {
+    pub fn from_scoped_path(path: &str) -> Self {
         Self(
             path.split("::")
                 .filter(|segment| !segment.is_empty())

@@ -2,7 +2,7 @@ use crate::parse::ParserData;
 use cx_ast::data::{CXTemplateInput, CXTemplatePrototype, CXType, CXTypeKind, PredeclarationType};
 use cx_ast::{assert_token_matches, peek_kind, try_next};
 use cx_tokens::{identifier, operator, TokenIter};
-use cx_util::{identifier::CXIdent, CXResult};
+use cx_util::{identifier::CXIdent, namespace::QualifiedName, CXResult};
 
 use crate::parse::types::parse_initializer;
 
@@ -16,7 +16,7 @@ pub(crate) fn note_templated_types(
         }
 
         let _nil_type: CXType = CXTypeKind::Identifier {
-            name: CXIdent::new("__undefined_template_type"),
+            name: QualifiedName::new_raw(CXIdent::new("__undefined_template_type")),
             predeclaration: PredeclarationType::None,
         }
         .to_type();
@@ -37,7 +37,7 @@ pub(crate) fn unnote_templated_types(
             predeclaration: PredeclarationType::None,
         } = &_type.resource.kind
         {
-            if name.as_str() == "__undefined_template_type" {
+            if name.namespace.is_root() && name.name.as_str() == "__undefined_template_type" {
                 continue;
             }
         }
@@ -80,7 +80,7 @@ pub(crate) fn convert_template_proto_to_args(prototype: CXTemplatePrototype) -> 
         .into_iter()
         .map(|name| {
             CXTypeKind::Identifier {
-                name: CXIdent::new(name),
+                name: QualifiedName::new_raw(CXIdent::new(name)),
                 predeclaration: PredeclarationType::None,
             }
             .to_type()

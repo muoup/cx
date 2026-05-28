@@ -10,6 +10,7 @@ use cx_ast::{
 };
 use cx_preparse_data::PreparseContents;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
+use cx_preparse_data::symbol_data::PreparseSymbolKind;
 use cx_tokens::TokenIter;
 use cx_util::CXResult;
 use cx_util::namespace::QualifiedName;
@@ -162,6 +163,19 @@ impl<'a> ParserData<'a> {
     }
 
     pub fn is_type_ident(&self, name: &QualifiedName) -> CXResult<bool> {
-        todo!()
+        if name.namespace.is_root() && self.ast.type_data.is_key_any(&name.name.as_string()) {
+            return Ok(true);
+        }
+
+        let namespace = if name.namespace.is_root() {
+            &self.pp_contents.module_symbols.namespace
+        } else {
+            &name.namespace
+        };
+
+        Ok(matches!(
+            self.registry.get_symbol(namespace, &name.name),
+            Some(PreparseSymbolKind::Type)
+        ))
     }
 }

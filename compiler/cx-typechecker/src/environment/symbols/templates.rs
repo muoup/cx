@@ -333,9 +333,9 @@ fn deduce_from_cx_type(
             if template_prototype
                 .types
                 .iter()
-                .any(|param| param == name.as_str()) =>
+                .any(|param| param == name.name.as_str()) =>
         {
-            bind_template_argument(env, bindings, name.as_str(), actual)
+            bind_template_argument(env, bindings, name.name.as_str(), actual)
         }
 
         CXTypeKind::TemplatedIdentifier { name, input } => {
@@ -347,7 +347,7 @@ fn deduce_from_cx_type(
                 ));
             };
 
-            if template_info.base_name != *name {
+            if template_info.base_name != name.name {
                 return CXError::create_result(format!(
                     "Expected template type '{}', found '{}'",
                     name, template_info.base_name

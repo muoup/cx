@@ -96,16 +96,16 @@ pub(crate) fn typecheck_is(
 
             let variant_ref_type = env.symbols.context.mem_ref_to(variant_type.clone());
             env.symbols.insert_value(
-                name.clone(),
+                name.name.clone(),
                 MIRExpression {
                     token_range: None,
-                    kind: MIRExpressionKind::Variable(name.clone()),
+                    kind: MIRExpressionKind::Variable(name.name.clone()),
                     _type: variant_ref_type,
                 },
                 Some(SymbolValueOrigin::Local),
             );
 
-            name.clone()
+            name.name.clone()
         }
     };
 

@@ -92,7 +92,7 @@ pub(crate) fn typecheck_access(
     match &rhs.kind {
         CXExprKind::Identifier(name) => {
             if let Some(struct_field) =
-                struct_field(&lhs_inner, &env.symbols.context, name.as_str())
+                struct_field(&lhs_inner, &env.symbols.context, name.name.as_str())
             {
                 let mut result = TypecheckResult::new_base(
                     env.symbols.context.mem_ref_to(
@@ -116,7 +116,7 @@ pub(crate) fn typecheck_access(
             }
 
             let Some(prototype) =
-                env.get_member_function(base_data, expr, &lhs_inner, name, None)?
+                env.get_member_function(base_data, expr, &lhs_inner, &name.name, None)?
             else {
                 return log_typecheck_error!(
                     env,
@@ -145,7 +145,7 @@ pub(crate) fn typecheck_access(
             template_input,
         } => {
             let Some(prototype) =
-                env.get_member_function(base_data, expr, &lhs_inner, name, Some(template_input))?
+                env.get_member_function(base_data, expr, &lhs_inner, &name.name, Some(template_input))?
             else {
                 return log_typecheck_error!(
                     env,

@@ -12,7 +12,7 @@ use cx_tokens::{
     token::{PunctuatorType, TokenKind},
     TokenRange,
 };
-use cx_util::{identifier::CXIdent, CXResult};
+use cx_util::{identifier::CXIdent, namespace::QualifiedName, CXResult};
 
 use crate::parse::{
     expressions::parse_expr,
@@ -84,12 +84,12 @@ pub fn try_function_parse(
                 // We have parsed the `<int>` part as a template prototype rather than
                 // a template argument list, so we need to convert it here.
                 Some(prototype) => CXTypeKind::TemplatedIdentifier {
-                    name,
+                    name: QualifiedName::new_raw(name),
                     input: convert_template_proto_to_args(prototype),
                 },
 
                 None => CXTypeKind::Identifier {
-                    name,
+                    name: QualifiedName::new_raw(name),
                     predeclaration: PredeclarationType::None,
                 },
             }

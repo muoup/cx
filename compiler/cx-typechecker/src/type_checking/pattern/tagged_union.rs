@@ -28,6 +28,22 @@ pub fn deconstruct_type_constructor<'a>(
         _ => (pattern, None),
     };
 
+    if let CXExprKind::Identifier(constructor_name) = &constructor.kind
+        && !constructor_name.namespace.is_root()
+    {
+        let union_type = env.get_type(
+            base_data,
+            constructor,
+            &constructor_name.namespace.as_scope_string(),
+        )?;
+
+        return Ok(TypeConstructor {
+            union_type,
+            variant_name: constructor_name.name.clone(),
+            inner,
+        });
+    }
+
     let CXExprKind::BinOp {
         op: CXBinOp::ScopeRes,
         lhs: union,
@@ -84,7 +100,7 @@ pub fn deconstruct_type_constructor<'a>(
 
     Ok(TypeConstructor {
         union_type: union_name,
-        variant_name: variant_name.clone(),
+        variant_name: variant_name.name.clone(),
         inner,
     })
 }

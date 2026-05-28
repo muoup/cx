@@ -6,7 +6,7 @@ use cx_util::{
     identifier::CXIdent, log_error, module_path::ModulePath, namespace::NamespacePath, CXResult,
 };
 
-use crate::parse::try_parse_identifier;
+use crate::parse::try_parse_simple_identifier;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PreparseConfig {
@@ -81,11 +81,11 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
                 data.tokens.next();
             }
 
-            let Some(ident) = try_parse_identifier(&mut data.tokens) else {
+            let Some(ident) = try_parse_simple_identifier(&mut data.tokens) else {
                 return Ok(());
             };
 
-            data.contents.module_symbols.add_type(ident.clone(), data.visibility_mode);
+            data.contents.module_symbols.add_type(ident, data.visibility_mode);
         }
 
         keyword!(Import) => {

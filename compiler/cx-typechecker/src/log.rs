@@ -110,31 +110,6 @@ pub fn file_origin_for_tokens(
         })
 }
 
-pub fn identifier_range_for_name(
-    tokens: &[Token],
-    fallback: &TokenRange,
-    name: &str,
-) -> TokenRange {
-    tokens
-        .get(fallback.start_token..fallback.end_token)
-        .and_then(|range_tokens| {
-            range_tokens
-                .iter()
-                .position(|token| matches!(&token.kind, TokenKind::Identifier(identifier) if identifier == name))
-                .map(|offset| fallback.start_token + offset)
-        })
-        .and_then(|index| {
-            tokens.get(index).map(|token| {
-                TokenRange::new(
-                    index,
-                    index + 1,
-                    std::sync::Arc::from(token.file_origin.to_string_lossy().as_ref()),
-                )
-            })
-        })
-        .unwrap_or_else(|| fallback.clone())
-}
-
 #[macro_export]
 macro_rules! log_typecheck_error {
     ($env:expr, $range:expr, $($arg:tt)*) => {

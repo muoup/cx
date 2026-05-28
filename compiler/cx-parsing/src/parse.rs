@@ -38,7 +38,7 @@ fn active_body_template_prototype(
     if let Some(CXFunctionTypeIdent::Templated(_, input)) = member_type {
         for param in &input.params {
             if let CXTypeKind::Identifier { name, .. } = &param.kind {
-                let name = name.as_string();
+                let name = name.name.as_string();
                 if !types.contains(&name) {
                     types.push(name);
                 }
@@ -150,7 +150,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
                 )
             });
 
-        if type_name == &name && existing_complete_aggregate {
+        if type_name.namespace.is_root() && type_name.name == name && existing_complete_aggregate {
             return Ok(());
         }
     }
@@ -321,35 +321,37 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     Ok(CXIdent::new(ss))
 }
 
-pub fn try_parse_raw_identifier(tokens: &mut TokenIter) -> CXResult<Option<CXIdent>> {
-    Ok(try_parse_identifier(tokens)?.map(QualifiedName::raw_name).flatten())
+pub fn try_parse_simple_identifier(tokens: &mut TokenIter) -> Option<CXIdent> {
+    let TokenKind::Identifier(ident) = tokens.peek().map(|token| &token.kind)? else {
+        return None;
+    };
+    let ident = CXIdent::new(ident.clone());
+    tokens.next();
+    Some(ident)
 }
 
 pub fn try_parse_identifier(tokens: &mut TokenIter) -> CXResult<Option<QualifiedName>> {
-    let TokenKind::Identifier(ident) = peek_next_kind!(tokens).ok()? else {
+    if !matches!(tokens.peek().map(|token| &token.kind), Some(TokenKind::Identifier(_))) {
         return Ok(None);
     };
 
-    if !matches!(peek_next_kind!(tokens)?, operator!(ScopeRes)) {
-        return Ok(Some(QualifiedName::new(NamespacePath::root(), CXIdent::new(ident.clone()))));
-    }
+    let mut segments = Vec::new();
 
-    let mut segments = vec![CXIdent::new(ident.clone())];
-
-    while try_next!(tokens, operator!(ScopeRes)) {
+    loop {
         let TokenKind::Identifier(ident) = next_kind!(tokens)? else {
-            return log_parse_error!(tokens, "Expected identifier after '::' in qualified name");
+            return log_preparse_error!(tokens, "Expected identifier after '::' in qualified name");
         };
 
         segments.push(CXIdent::new(ident.clone()));
+
+        if !try_next!(tokens, operator!(ScopeRes)) {
+            break;
+        }
     }
 
-    let ident = ident.clone();
-
-    tokens.next();
-
+    let ident = segments.pop().expect("identifier parser should have at least one segment");
     Ok(Some(QualifiedName::new(
         NamespacePath::new(segments),
-        CXIdent::new(ident),
+        ident,
     )))
 }

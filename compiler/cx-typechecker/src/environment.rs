@@ -10,6 +10,7 @@ use cx_tokens::TokenRange;
 use cx_tokens::token::Token;
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
+use cx_util::namespace::{NamespacePath, QualifiedName};
 
 use crate::environment::functions::completion::{complete_prototype_no_insert, complete_type};
 use crate::environment::functions::context::FunctionContext;
@@ -134,9 +135,14 @@ impl TypeEnvironment<'_> {
         expr: &CXExpression,
         name: &str,
     ) -> CXResult<MIRType> {
+        let path = NamespacePath::from_scoped_path(name);
+        let name = path
+            .parent_and_name()
+            .map(|(namespace, name)| QualifiedName::new(namespace, name))
+            .unwrap_or_else(|| QualifiedName::new_raw(CXIdent::new(name)));
         let as_cx_type = CXTypeKind::Identifier {
             predeclaration: PredeclarationType::None,
-            name: CXIdent::new(name),
+            name,
         }
         .to_type();
 
@@ -194,7 +200,7 @@ impl TypeEnvironment<'_> {
         &mut self,
         base_data: &MIRBaseMappings,
         expr: &CXExpression,
-        key: &CXIdent,
+        key: &QualifiedName,
         template_input: Option<&CXTemplateInput>,
     ) -> CXResult<Option<MIRFunctionPrototype>> {
         query_standard_function(self, base_data, expr, key, template_input)

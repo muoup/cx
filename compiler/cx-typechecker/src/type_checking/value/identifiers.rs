@@ -4,6 +4,7 @@ use crate::{
         symbols::{ResolvedValueSymbol, SymbolValueOrigin},
     },
     log_typecheck_error,
+    type_checking::op::binop::scoped_calls::typecheck_qualified_scoped_reference,
     type_checking::result::{TypecheckResult, TypecheckedBinding},
 };
 use cx_ast::{ast::CXExpression, data::CXTemplateInput};
@@ -13,20 +14,28 @@ use cx_mir::mir::{
     name_mangling::base_mangle_standard,
     program::MIRBaseMappings,
 };
-use cx_util::{CXResult, identifier::CXIdent};
+use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 pub(crate) fn typecheck_identifier(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     expr: &CXExpression,
-    name: &CXIdent,
+    name: &QualifiedName,
 ) -> CXResult<TypecheckResult> {
-    if let Some(symbol) = env.symbols.resolve_value_symbol(name.as_str()) {
-        return resolved_symbol_to_typecheck_result(env, expr, name, symbol);
+    if name.namespace.is_root()
+        && let Some(symbol) = env.symbols.resolve_value_symbol(name.name.as_str())
+    {
+        return resolved_symbol_to_typecheck_result(env, expr, &name.name, symbol);
+    }
+
+    if let Some(result) = typecheck_qualified_scoped_reference(env, base_data, expr, name, None)? {
+        return Ok(result);
     }
 
     let function_type =
-        if let Some(function_type) = env.get_realized_func(&base_mangle_standard(name.as_str())) {
+        if name.namespace.is_root()
+            && let Some(function_type) = env.get_realized_func(&base_mangle_standard(name.name.as_str()))
+        {
             Some(function_type)
         } else {
             let key = cx_ast::data::CXFunctionKey::Standard(name.clone());
@@ -39,7 +48,7 @@ pub(crate) fn typecheck_identifier(
 
     if let Some(function_type) = function_type {
         env.symbols
-            .insert_function_symbol(name.clone(), function_type.clone());
+            .insert_function_symbol(name.name.clone(), function_type.clone());
         Ok(TypecheckResult::from(MIRExpression {
             token_range: None,
             kind: MIRExpressionKind::FunctionReference {
@@ -93,9 +102,15 @@ pub(crate) fn typecheck_templated_identifier(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     expr: &CXExpression,
-    name: &CXIdent,
+    name: &QualifiedName,
     template_input: &CXTemplateInput,
 ) -> CXResult<TypecheckResult> {
+    if let Some(result) =
+        typecheck_qualified_scoped_reference(env, base_data, expr, name, Some(template_input))?
+    {
+        return Ok(result);
+    }
+
     let Some(function) = env.get_standard_function(base_data, expr, name, Some(template_input))?
     else {
         return log_typecheck_error!(

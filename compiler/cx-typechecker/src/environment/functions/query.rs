@@ -7,7 +7,7 @@ use cx_mir::mir::{
     name_mangling::{base_mangle_member, base_mangle_standard, base_mangle_static_member},
     program::MIRBaseMappings,
 };
-use cx_util::{CXResult, identifier::CXIdent};
+use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 use crate::{
     environment::TypeEnvironment,
@@ -91,7 +91,7 @@ pub fn query_member_function(
     }
 
     let key = CXFunctionKey::MemberFunction {
-        type_base_name: base_name.clone(),
+        type_base_name: QualifiedName::new_raw(base_name.clone()),
         name: name.clone(),
     };
 
@@ -117,7 +117,7 @@ pub fn query_deduced_member_function(
     };
 
     let key = CXFunctionKey::MemberFunction {
-        type_base_name: base_name.clone(),
+        type_base_name: QualifiedName::new_raw(base_name.clone()),
         name: name.clone(),
     };
 
@@ -155,7 +155,7 @@ pub fn query_static_member_function(
     };
 
     let key = CXFunctionKey::StaticMemberFunction {
-        type_base_name: base_name.clone(),
+        type_base_name: QualifiedName::new_raw(base_name.clone()),
         name: name.clone(),
     };
 
@@ -181,7 +181,7 @@ pub fn query_deduced_static_member_function(
     };
 
     let key = CXFunctionKey::StaticMemberFunction {
-        type_base_name: base_name.clone(),
+        type_base_name: QualifiedName::new_raw(base_name.clone()),
         name: name.clone(),
     };
 
@@ -201,11 +201,11 @@ pub fn query_standard_function(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     expr: &CXExpression,
-    name: &CXIdent,
+    name: &QualifiedName,
     template_input: Option<&CXTemplateInput>,
 ) -> CXResult<Option<MIRFunctionPrototype>> {
-    if template_input.is_none() {
-        let mangled_name = base_mangle_standard(name.as_str());
+    if template_input.is_none() && name.namespace.is_root() {
+        let mangled_name = base_mangle_standard(name.name.as_str());
 
         if let Some(func_proto) = env.get_realized_func(&mangled_name) {
             return Ok(Some(func_proto));
@@ -227,7 +227,7 @@ pub fn query_deduced_standard_function(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     expr: &CXExpression,
-    name: &CXIdent,
+    name: &QualifiedName,
     arg_types: &[MIRType],
 ) -> CXResult<Option<MIRFunctionPrototype>> {
     let key = CXFunctionKey::Standard(name.clone());
