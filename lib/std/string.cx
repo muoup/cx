@@ -14,12 +14,12 @@ struct string : @nodrop {
 };
 
 string string::new() safe {
-    opt<string> s = string::try_new_string();
+    std::optional::opt<string> s = string::try_new_string();
     
     match (move s) {
-        opt<string>::some(val) => return move val;
-        opt<string>::none(_) => {
-            println("Failed to allocate memory for string");
+        std::optional::opt<string>::some(val) => return move val;
+        std::optional::opt<string>::none(_) => {
+            std::io::println("Failed to allocate memory for string");
             @unsafe(exit(1));
         }
     }
@@ -32,12 +32,12 @@ string string::new() safe {
     };
 }
 
-opt<string> string::try_new_string() safe {
+std::optional::opt<string> string::try_new_string() safe {
     @unsafe {
         void* base_buffer = malloc(16);
 
         if (base_buffer == NULL) {
-            return opt<string>::none();
+            return std::optional::opt<string>::none();
         }
         
         string s = (string) {
@@ -47,7 +47,7 @@ opt<string> string::try_new_string() safe {
         };
         *s.data = '\0';
     
-        return opt<string>::some(move s);
+        return std::optional::opt<string>::some(move s);
     };
 }
 

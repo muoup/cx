@@ -3,18 +3,18 @@ import std::io;
 import std::optional;
 
 int main() {
-    vector<int> vec = vector<int>::new<int>();
+    std::vector::vector<int> vec = std::vector::vector<int>::new<int>();
     
     vec.push<int>(1);
     vec.push<int>(2);
     vec.push<int>(3);
 
-    printf("Vector length: %zu\n", vec.length);
-    printf("Vector capacity: %zu\n", vec.capacity);
+    std::io::printf("Vector length: %zu\n", vec.length);
+    std::io::printf("Vector capacity: %zu\n", vec.capacity);
     
-    opt<int&> maybe_value = vec.at<int>(0);
+    std::optional::opt<int&> maybe_value = vec.at<int>(0);
     int value = maybe_value.unwrap<int&>();
     
-    printf("vec[0]: %d\n", value);
+    std::io::printf("vec[0]: %d\n", value);
     vec.drop<int>();
 }

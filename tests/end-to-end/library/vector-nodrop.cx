@@ -6,12 +6,12 @@ struct test_type : @nodrop {
 };
 
 void destructor(test_type t) {
-    printf("dropped num: %d\n", t.num);
+    std::io::printf("dropped num: %d\n", t.num);
     @leak(t);
 }
 
 int main() {
-    vector<test_type> t = vector<test_type>::new<test_type>();
+    std::vector::vector<test_type> t = std::vector::vector<test_type>::new<test_type>();
 
     for (int i = 0; i < 10; i++) {
         t.push((test_type) { .num = i });

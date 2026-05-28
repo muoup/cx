@@ -3,10 +3,10 @@ import std::optional;
 import std::io;
 
 int main() {
-    string s = string::new();
+    std::string::string s = std::string::string::new();
     s.append("Hello, worl");
     s.append_char('d');
     s.append_char('!');
-    printf("%s\n", s.data);
+    std::io::printf("%s\n", s.data);
     s.drop();
 }

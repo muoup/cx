@@ -3,7 +3,7 @@ import std::io;
 #include <stdlib.h>
 
 int main() {
-  box<int> i = box<int>::new<int>(2);
-  printf("i = %d\n", i.deref_mut<int>());
+  std::box::box<int> i = std::box::box<int>::new<int>(2);
+  std::io::printf("i = %d\n", i.deref_mut<int>());
   i.drop<int>();
 }

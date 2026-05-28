@@ -33,7 +33,7 @@ T opt<T>::unwrap<T>(this) {
     match (move this) {
         opt<T>::some(val) => return move val;
         opt<T>::none() => {
-            println("Error: called `opt::unwrap()` on a `None` value");
+            std::io::println("Error: called `opt::unwrap()` on a `None` value");
             exit(1);
         }
     }

@@ -4,7 +4,7 @@ import std::optional;
 #include <stdlib.h>
 
 int main() {
-    file f = file::open("test.txt", "w").unwrap<file>();
+    std::file::file f = std::file::file::open("test.txt", "w").unwrap<std::file::file>();
     
     // Some extra work
     if (f.handle != NULL) {

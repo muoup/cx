@@ -9,14 +9,14 @@ struct file : @nodrop {
     FILE* handle;
 };
 
-opt<file> file::open(const char* path, const char* mode) {
+std::optional::opt<file> file::open(const char* path, const char* mode) {
     FILE* handle = fopen(path, mode);
     
     if (handle == NULL) {
-        return opt<file>::none();
+        return std::optional::opt<file>::none();
     }
     
-    return opt<file>::some((file) { .handle = handle });
+    return std::optional::opt<file>::some((file) { .handle = handle });
 }
 
 void file::write(*this, const char* data) {
@@ -50,9 +50,9 @@ void file::read(*this, char* buffer, u64 buffer_size) {
     }
 }
 
-string file::read_to_string(*this) {
+std::string::string file::read_to_string(*this) {
     int c;
-    string s = string::new();
+    std::string::string s = std::string::string::new();
 
     // TODO: Replace with faster buffering system
     while ((c = fgetc(this.handle)) != EOF) {
