@@ -12,8 +12,6 @@ pub enum CXFunctionTypeIdent {
 
 pub type CXTypeKey = String;
 
-pub type CXFunctionKey = QualifiedName;
-
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub enum CXFunctionKind {
     Standard(CXIdent),
@@ -328,7 +326,7 @@ impl CXFunctionKind {
         }
     }
 
-    pub fn into_key(&self) -> CXFunctionKey {
+    pub fn into_key(&self) -> QualifiedName {
         match self {
             CXFunctionKind::Standard(name) => QualifiedName::new_raw(name.clone()),
             CXFunctionKind::MemberFunction {
@@ -341,7 +339,7 @@ impl CXFunctionKind {
     }
 }
 
-pub fn member_function_key(type_base_name: &QualifiedName, name: &CXIdent) -> CXFunctionKey {
+pub fn member_function_key(type_base_name: &QualifiedName, name: &CXIdent) -> QualifiedName {
     QualifiedName::new(
         type_base_name.namespace.child(type_base_name.name.clone()),
         name.clone(),

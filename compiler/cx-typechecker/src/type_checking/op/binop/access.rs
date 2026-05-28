@@ -1,4 +1,5 @@
 use crate::environment::{BindingMoveState, TypeEnvironment};
+use crate::environment::functions::query::type_member_function_name;
 use crate::log_typecheck_error;
 use crate::type_checking::aggregate::fields::struct_field;
 use crate::type_checking::op::binop::calls::build_function_reference;
@@ -115,9 +116,12 @@ pub(crate) fn typecheck_access(
                 return Ok(result);
             }
 
-            let Some(prototype) =
-                env.get_member_function(base_data, expr, &lhs_inner, &name.name, None)?
-            else {
+            let prototype = type_member_function_name(&lhs_inner, &name.name)
+                .map(|function_name| env.get_function(base_data, expr, &function_name, None))
+                .transpose()?
+                .flatten();
+
+            let Some(prototype) = prototype else {
                 return log_typecheck_error!(
                     env,
                     Some(expr.token_range()),
@@ -144,9 +148,14 @@ pub(crate) fn typecheck_access(
             name,
             template_input,
         } => {
-            let Some(prototype) =
-                env.get_member_function(base_data, expr, &lhs_inner, &name.name, Some(template_input))?
-            else {
+            let prototype = type_member_function_name(&lhs_inner, &name.name)
+                .map(|function_name| {
+                    env.get_function(base_data, expr, &function_name, Some(template_input))
+                })
+                .transpose()?
+                .flatten();
+
+            let Some(prototype) = prototype else {
                 return log_typecheck_error!(
                     env,
                     Some(expr.token_range()),

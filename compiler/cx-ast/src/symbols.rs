@@ -10,10 +10,7 @@ use speedy::{Readable, Writable};
 
 use crate::{
     ast::{CXFunctionStmt, CXGlobalVariable},
-    data::{
-        CXFunctionKey, CXFunctionPrototype, CXFunctionTemplate, CXType, CXTypeTemplate,
-        ModuleResource,
-    },
+    data::{CXFunctionPrototype, CXFunctionTemplate, CXType, CXTypeTemplate, ModuleResource},
 };
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Readable, Writable)]
@@ -22,7 +19,7 @@ pub struct SymbolId(pub u64);
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub enum SymbolKey {
     Type(String),
-    Function(CXFunctionKey),
+    Function(QualifiedName),
     Global(String),
 }
 

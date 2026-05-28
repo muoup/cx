@@ -1,5 +1,4 @@
 use cx_ast::ast::{CXAST, CXFunctionStmt, VisibilityMode};
-use cx_ast::data::CXFunctionKey;
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
 use cx_util::{
@@ -135,7 +134,7 @@ fn qualified_name(module: ModulePath, name: &str) -> String {
     NamespacePath::from(module).as_flat_name_with(&CXIdent::new(name))
 }
 
-fn qualify_function_key(module: ModulePath, key: &CXFunctionKey) -> CXFunctionKey {
+fn qualify_function_key(module: ModulePath, key: &QualifiedName) -> QualifiedName {
     let mut segments = NamespacePath::from(module).segments().to_vec();
     segments.extend(key.namespace.segments().iter().cloned());
     QualifiedName::new(NamespacePath::new(segments), key.name.clone())

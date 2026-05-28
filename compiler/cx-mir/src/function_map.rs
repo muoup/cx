@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use cx_ast::data::{CXFunctionKey, CXFunctionTemplate, ModuleResource};
+use cx_ast::data::{CXFunctionTemplate, ModuleResource};
+use cx_util::namespace::QualifiedName;
 use speedy::{Readable, Writable};
 
 use crate::mir::data::MIRFunctionPrototype;
@@ -10,7 +11,7 @@ pub type CXFnMap = HashMap<String, MIRFunctionPrototype>;
 #[derive(Debug, Default, Clone, Readable, Writable)]
 pub struct CXFnData {
     map: CXFnMap,
-    templates: HashMap<CXFunctionKey, ModuleResource<CXFunctionTemplate>>,
+    templates: HashMap<QualifiedName, ModuleResource<CXFunctionTemplate>>,
 }
 
 impl CXFnData {
@@ -27,7 +28,7 @@ impl CXFnData {
 
     pub fn insert_template(
         &mut self,
-        name: CXFunctionKey,
+        name: QualifiedName,
         template: ModuleResource<CXFunctionTemplate>,
     ) {
         self.templates.insert(name, template);
@@ -47,7 +48,7 @@ impl CXFnData {
 
     pub fn get_template(
         &self,
-        name: &CXFunctionKey,
+        name: &QualifiedName,
     ) -> Option<&ModuleResource<CXFunctionTemplate>> {
         self.templates.get(name)
     }

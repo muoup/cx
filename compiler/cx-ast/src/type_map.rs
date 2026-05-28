@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use speedy::{Readable, Writable};
 
 use crate::data::{
-    CXFunctionKey, CXFunctionPrototype, CXFunctionTemplate, CXType, CXTypeKey, CXTypeTemplate,
+    CXFunctionPrototype, CXFunctionTemplate, CXType, CXTypeKey, CXTypeTemplate,
     ModuleResource,
 };
+use cx_util::namespace::QualifiedName;
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct CXMap<Identifier: Eq + std::hash::Hash, Standard, Template> {
@@ -14,7 +15,7 @@ pub struct CXMap<Identifier: Eq + std::hash::Hash, Standard, Template> {
 }
 
 pub type CXTypeMap = CXMap<CXTypeKey, CXType, CXTypeTemplate>;
-pub type CXFnMap = CXMap<CXFunctionKey, CXFunctionPrototype, CXFunctionTemplate>;
+pub type CXFnMap = CXMap<QualifiedName, CXFunctionPrototype, CXFunctionTemplate>;
 
 impl<Identifier, Standard, Template> Default for CXMap<Identifier, Standard, Template>
 where

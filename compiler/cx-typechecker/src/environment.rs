@@ -18,7 +18,7 @@ pub use crate::environment::functions::control_flow::{
     BindingMoveState, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
     ScopeExitTarget, ScopeId, TrackedBindingState,
 };
-use crate::environment::functions::query::{query_member_function, query_standard_function};
+use crate::environment::functions::query::query_function;
 use crate::environment::items::ItemRegistry;
 use crate::environment::source::SourceContext;
 use crate::environment::symbols::{SymbolRegistry, TemplateBindingFrame};
@@ -196,25 +196,14 @@ impl TypeEnvironment<'_> {
         )
     }
 
-    pub fn get_standard_function(
+    pub fn get_function(
         &mut self,
         base_data: &MIRBaseMappings,
         expr: &CXExpression,
         key: &QualifiedName,
         template_input: Option<&CXTemplateInput>,
     ) -> CXResult<Option<MIRFunctionPrototype>> {
-        query_standard_function(self, base_data, expr, key, template_input)
-    }
-
-    pub fn get_member_function(
-        &mut self,
-        base_data: &MIRBaseMappings,
-        expr: &CXExpression,
-        member_type: &MIRType,
-        name: &CXIdent,
-        template_input: Option<&CXTemplateInput>,
-    ) -> CXResult<Option<MIRFunctionPrototype>> {
-        query_member_function(self, base_data, expr, member_type, name, template_input)
+        query_function(self, base_data, expr, key, template_input)
     }
 
     pub fn in_defer<F, T>(&mut self, _: F) -> CXResult<T>

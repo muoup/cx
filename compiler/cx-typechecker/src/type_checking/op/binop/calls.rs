@@ -1,7 +1,5 @@
 use crate::environment::TypeEnvironment;
-use crate::environment::functions::query::{
-    query_deduced_member_function, query_deduced_standard_function,
-};
+use crate::environment::functions::query::{query_deduced_function, type_member_function_name};
 use crate::environment::symbols::{ResolvedValueSymbol, SymbolValueOrigin};
 use crate::log_typecheck_error;
 use crate::type_checking::aggregate::fields::struct_field;
@@ -203,7 +201,7 @@ pub(crate) fn deduced_callee(
             }
 
             let Some(prototype) =
-                query_deduced_standard_function(env, base_data, expr, name, arg_types)?
+                query_deduced_function(env, base_data, expr, name, None, arg_types)?
             else {
                 return Ok(None);
             };
@@ -245,15 +243,17 @@ pub(crate) fn deduced_callee(
                 return Ok(None);
             }
 
-            let Some(prototype) = query_deduced_member_function(
+            let Some(function_name) = type_member_function_name(&receiver_type, &name.name) else {
+                return Ok(None);
+            };
+            let Some(prototype) = query_deduced_function(
                 env,
                 base_data,
                 expr,
-                &receiver_type,
-                &name.name,
+                &function_name,
+                Some(&receiver_type),
                 arg_types,
-            )?
-            else {
+            )? else {
                 return Ok(None);
             };
 

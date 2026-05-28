@@ -1,10 +1,10 @@
 use cx_ast::{
     ast::CXExpression,
-    data::{CXFunctionKey, CXTemplateInput, member_function_key},
+    data::{member_function_key, CXTemplateInput},
 };
 use cx_mir::mir::{
     data::{MIRFunctionPrototype, MIRType},
-    name_mangling::{base_mangle_member, base_mangle_standard, base_mangle_static_member},
+    name_mangling::base_mangle_standard,
     program::MIRBaseMappings,
 };
 use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
@@ -23,14 +23,14 @@ enum FunctionResolution<'a> {
     },
 }
 
-fn query_function_by_key(
+fn query_function_with_resolution(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     expr: &CXExpression,
-    key: &CXFunctionKey,
+    name: &QualifiedName,
     resolution: FunctionResolution<'_>,
 ) -> CXResult<Option<MIRFunctionPrototype>> {
-    if let Some(standard) = base_data.fn_data.get_standard(key) {
+    if let Some(standard) = base_data.fn_data.get_standard(name) {
         return env
             .complete_prototype(
                 base_data,
@@ -40,7 +40,7 @@ fn query_function_by_key(
             .map(Some);
     }
 
-    if let Some(template) = base_data.fn_data.get_template(key) {
+    if let Some(template) = base_data.fn_data.get_template(name) {
         let prototype = match resolution {
             FunctionResolution::Explicit(Some(template_input)) => {
                 instantiate_function_template(env, base_data, template, template_input)
@@ -50,7 +50,7 @@ fn query_function_by_key(
                     env,
                     expr.token_range(),
                     "Templated function '{}' requires explicit template arguments in this context",
-                    key,
+                    name,
                 );
             }
             FunctionResolution::Deduced {
@@ -70,122 +70,13 @@ fn query_function_by_key(
     Ok(None)
 }
 
-pub fn query_member_function(
-    env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    expr: &CXExpression,
-    member_type: &MIRType,
-    name: &CXIdent,
-    template_input: Option<&CXTemplateInput>,
-) -> CXResult<Option<MIRFunctionPrototype>> {
-    let Some(base_name) = member_type.get_base_identifier() else {
-        return Ok(None);
-    };
-
-    if template_input.is_none() {
-        let mangled_name = base_mangle_member(&env.symbols.context, name.as_str(), member_type);
-
-        if let Some(func_proto) = env.get_realized_func(&mangled_name) {
-            return Ok(Some(func_proto));
-        }
-    }
-
-    let key = member_function_key(&QualifiedName::new_raw(base_name.clone()), name);
-
-    query_function_by_key(
-        env,
-        base_data,
-        expr,
-        &key,
-        FunctionResolution::Explicit(template_input),
-    )
+pub fn type_member_function_name(member_type: &MIRType, name: &CXIdent) -> Option<QualifiedName> {
+    member_type
+        .get_base_identifier()
+        .map(|base_name| member_function_key(&QualifiedName::new_raw(base_name.clone()), name))
 }
 
-pub fn query_deduced_member_function(
-    env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    expr: &CXExpression,
-    member_type: &MIRType,
-    name: &CXIdent,
-    arg_types: &[MIRType],
-) -> CXResult<Option<MIRFunctionPrototype>> {
-    let Some(base_name) = member_type.get_base_identifier() else {
-        return Ok(None);
-    };
-
-    let key = member_function_key(&QualifiedName::new_raw(base_name.clone()), name);
-
-    query_function_by_key(
-        env,
-        base_data,
-        expr,
-        &key,
-        FunctionResolution::Deduced {
-            owner_type: Some(member_type),
-            arg_types,
-        },
-    )
-}
-
-pub fn query_static_member_function(
-    env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    expr: &CXExpression,
-    member_type: &MIRType,
-    name: &CXIdent,
-    template_input: Option<&CXTemplateInput>,
-) -> CXResult<Option<MIRFunctionPrototype>> {
-    if template_input.is_none() {
-        let mangled_name =
-            base_mangle_static_member(&env.symbols.context, name.as_str(), member_type);
-
-        if let Some(func_proto) = env.get_realized_func(&mangled_name) {
-            return Ok(Some(func_proto));
-        }
-    }
-
-    let Some(base_name) = member_type.get_base_identifier() else {
-        return Ok(None);
-    };
-
-    let key = member_function_key(&QualifiedName::new_raw(base_name.clone()), name);
-
-    query_function_by_key(
-        env,
-        base_data,
-        expr,
-        &key,
-        FunctionResolution::Explicit(template_input),
-    )
-}
-
-pub fn query_deduced_static_member_function(
-    env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    expr: &CXExpression,
-    member_type: &MIRType,
-    name: &CXIdent,
-    arg_types: &[MIRType],
-) -> CXResult<Option<MIRFunctionPrototype>> {
-    let Some(base_name) = member_type.get_base_identifier() else {
-        return Ok(None);
-    };
-
-    let key = member_function_key(&QualifiedName::new_raw(base_name.clone()), name);
-
-    query_function_by_key(
-        env,
-        base_data,
-        expr,
-        &key,
-        FunctionResolution::Deduced {
-            owner_type: Some(member_type),
-            arg_types,
-        },
-    )
-}
-
-pub fn query_standard_function(
+pub fn query_function(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     expr: &CXExpression,
@@ -200,33 +91,30 @@ pub fn query_standard_function(
         }
     }
 
-    let key = name.clone();
-
-    query_function_by_key(
+    query_function_with_resolution(
         env,
         base_data,
         expr,
-        &key,
+        name,
         FunctionResolution::Explicit(template_input),
     )
 }
 
-pub fn query_deduced_standard_function(
+pub fn query_deduced_function(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     expr: &CXExpression,
     name: &QualifiedName,
+    owner_type: Option<&MIRType>,
     arg_types: &[MIRType],
 ) -> CXResult<Option<MIRFunctionPrototype>> {
-    let key = name.clone();
-
-    query_function_by_key(
+    query_function_with_resolution(
         env,
         base_data,
         expr,
-        &key,
+        name,
         FunctionResolution::Deduced {
-            owner_type: None,
+            owner_type,
             arg_types,
         },
     )
