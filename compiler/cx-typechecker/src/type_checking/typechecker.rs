@@ -13,7 +13,6 @@ use crate::type_checking::op::binop::access::typecheck_access;
 use crate::type_checking::op::binop::assign::typecheck_assignment;
 use crate::type_checking::op::binop::calls::typecheck_method_call;
 use crate::type_checking::op::binop::is::typecheck_is;
-use crate::type_checking::op::binop::scoped_calls::typecheck_scoped_reference;
 use crate::type_checking::op::{self, typecheck_binop};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::{
@@ -380,7 +379,7 @@ fn typecheck_expr_inner(
             op: CXBinOp::ScopeRes,
             lhs,
             rhs,
-        } => typecheck_scoped_reference(env, base_data, lhs, rhs, expr)?,
+        } => unreachable!(),
 
         CXExprKind::BinOp { op, lhs, rhs } => {
             let lhs = typecheck_expr(env, base_data, lhs, None)?.into_expression()?;

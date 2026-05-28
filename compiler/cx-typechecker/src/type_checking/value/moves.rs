@@ -27,7 +27,7 @@ pub(crate) fn typecheck_move(
 ) -> CXResult<TypecheckResult> {
     let inner = typecheck_expr(env, base_data, inner_expr, None)?;
 
-    let Some(binding) = inner.binding.clone() else {
+    let Some(binding) = inner.binding().cloned() else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
@@ -87,7 +87,7 @@ pub(crate) fn typecheck_adopt(
     }
 
     let value = typecheck_expr(env, base_data, inner, None)?;
-    let binding = value.binding.clone();
+    let binding = value.binding().cloned();
     let value = value.into_expression()?;
     let Some(inner_type) = env.symbols.context.mem_ref_inner(&value._type).cloned() else {
         return log_typecheck_error!(
@@ -140,7 +140,7 @@ pub(crate) fn typecheck_leak(
 
     let value = typecheck_expr(env, base_data, inner, None)?;
 
-    let Some(binding) = value.binding.clone() else {
+    let Some(binding) = value.binding().cloned() else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
@@ -190,7 +190,7 @@ pub(crate) fn typecheck_unpack(
 ) -> CXResult<TypecheckResult> {
     let value = typecheck_expr(env, base_data, inner, None)?;
 
-    let Some(source_binding) = value.binding.clone() else {
+    let Some(source_binding) = value.binding().cloned() else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),

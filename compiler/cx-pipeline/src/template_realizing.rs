@@ -1,5 +1,5 @@
 use cx_ast::data::CXFunctionKind;
-use cx_mir::mir::data::MIRTemplateInput;
+use cx_mir::mir::{data::MIRTemplateInput, r#type::MIRType};
 use cx_pipeline_data::CompilationUnit;
 use cx_typechecker::{
     environment::{MIRFunctionGenRequest, TypeEnvironment},
@@ -62,8 +62,8 @@ pub(crate) fn fulfill_requests(job: &CompilationUnit, env: &mut TypeEnvironment)
 fn realize_tagged_union_constructor(
     env: &mut TypeEnvironment,
     name: String,
-    union_type: cx_mir::mir::data::MIRType,
-    variant_type: cx_mir::mir::data::MIRType,
+    union_type: MIRType,
+    variant_type: MIRType,
     variant_index: usize,
 ) {
     use cx_ast::data::{CXFunctionContract, CXFunctionKind, CXLinkageMode};
@@ -92,20 +92,19 @@ fn realize_tagged_union_constructor(
             range: TokenRange::default(),
         },
         return_type: union_type.clone(),
-        params: vec![MIRParameter {
-            name: Some(param_name.clone()),
-            _type: variant_type.clone(),
-        }],
+        params: if variant_type.is_unit() {
+            Vec::new()
+        } else {
+            vec![MIRParameter {
+                name: Some(param_name.clone()),
+                _type: variant_type.clone(),
+            }]
+        },
         var_args: false,
         contract: CXFunctionContract::default(),
         linkage: CXLinkageMode::Static,
     };
 
-    let param_ref = MIRExpression {
-        token_range: None,
-        _type: env.symbols.context.mem_ref_to(variant_type.clone()),
-        kind: MIRExpressionKind::Variable(param_name),
-    };
     let value = if variant_type.is_unit() {
         MIRExpression {
             token_range: None,
@@ -113,6 +112,12 @@ fn realize_tagged_union_constructor(
             kind: MIRExpressionKind::Unit,
         }
     } else {
+        let param_ref = MIRExpression {
+            token_range: None,
+            _type: env.symbols.context.mem_ref_to(variant_type.clone()),
+            kind: MIRExpressionKind::Variable(param_name),
+        };
+
         MIRExpression {
             token_range: None,
             _type: variant_type.clone(),

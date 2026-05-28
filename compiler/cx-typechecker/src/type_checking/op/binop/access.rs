@@ -1,5 +1,5 @@
-use crate::environment::{BindingMoveState, TypeEnvironment};
 use crate::environment::functions::query::{member_function_qualified_name, query_function};
+use crate::environment::{BindingMoveState, TypeEnvironment};
 use crate::log_typecheck_error;
 use crate::type_checking::aggregate::fields::struct_field;
 use crate::type_checking::op::binop::calls::build_function_reference;
@@ -86,7 +86,7 @@ pub(crate) fn typecheck_access(
     rhs: &CXExpression,
     expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
-    let lhs_binding = lhs.binding.clone();
+    let lhs_binding = lhs.binding().cloned();
     let lhs = lhs.into_expression()?;
     let (lhs_source, lhs, lhs_inner, lhs_ref_const) = resolve_access_base(env, expr, lhs)?;
 
@@ -117,14 +117,7 @@ pub(crate) fn typecheck_access(
             }
 
             let member_arg_types = vec![lhs_inner.clone()];
-            let prototype = member_function_qualified_name(&lhs_inner, &name.name)
-                .map(|function_name| {
-                    query_function(env, base_data, expr, &function_name, None, &member_arg_types)
-                })
-                .transpose()?
-                .flatten();
-
-            let Some(prototype) = prototype else {
+            let Some(function_name) = member_function_qualified_name(&lhs_inner, &name.name) else {
                 return log_typecheck_error!(
                     env,
                     Some(expr.token_range()),
@@ -133,18 +126,77 @@ pub(crate) fn typecheck_access(
                     lhs_inner.display_with(&env.symbols.context)
                 );
             };
-            let receiver = build_member_receiver_argument(
-                env,
-                expr,
-                &lhs_source,
-                lhs_binding.as_ref(),
-                lhs,
-                &lhs_inner,
-                &prototype,
-            )?;
 
-            Ok(TypecheckResult::from(build_function_reference(&prototype))
-                .with_implicit_parameters(vec![receiver]))
+            if base_data.fn_data.get_standard(&function_name).is_some()
+                && let Some(prototype) = query_function(
+                    env,
+                    base_data,
+                    expr,
+                    &function_name,
+                    None,
+                    &member_arg_types,
+                )?
+            {
+                let Some(receiver_mode) =
+                    prototype.source_prototype.kind.receiver().map(|v| v.mode)
+                else {
+                    return log_typecheck_error!(
+                        env,
+                        Some(expr.token_range()),
+                        "Member '{}' not found on type '{}'",
+                        name,
+                        lhs_inner.display_with(&env.symbols.context)
+                    );
+                };
+                let receiver = build_member_receiver_argument(
+                    env,
+                    expr,
+                    &lhs_source,
+                    lhs_binding.as_ref(),
+                    lhs,
+                    &lhs_inner,
+                    receiver_mode,
+                )?;
+
+                return Ok(TypecheckResult::from(build_function_reference(&prototype))
+                    .with_implicit_parameters(vec![receiver]));
+            }
+
+            if let Some(template) = base_data.fn_data.get_template(&function_name) {
+                let Some(receiver_mode) = template.resource.shell.kind.receiver().map(|v| v.mode)
+                else {
+                    return log_typecheck_error!(
+                        env,
+                        Some(expr.token_range()),
+                        "Member '{}' not found on type '{}'",
+                        name,
+                        lhs_inner.display_with(&env.symbols.context)
+                    );
+                };
+                let receiver = build_member_receiver_argument(
+                    env,
+                    expr,
+                    &lhs_source,
+                    lhs_binding.as_ref(),
+                    lhs,
+                    &lhs_inner,
+                    receiver_mode,
+                )?;
+
+                return Ok(
+                    TypecheckResult::incomplete_templated_callee(function_name, None)
+                        .with_implicit_parameters(vec![receiver])
+                        .with_deduction_arg_prefix(member_arg_types),
+                );
+            }
+
+            log_typecheck_error!(
+                env,
+                Some(expr.token_range()),
+                "Member '{}' not found on type '{}'",
+                name,
+                lhs_inner.display_with(&env.symbols.context)
+            )
         }
 
         CXExprKind::TemplatedIdentifier {
@@ -182,7 +234,12 @@ pub(crate) fn typecheck_access(
                 lhs_binding.as_ref(),
                 lhs,
                 &lhs_inner,
-                &prototype,
+                prototype
+                    .source_prototype
+                    .kind
+                    .receiver()
+                    .map(|v| v.mode)
+                    .unwrap_or(CXReceiverMode::None),
             )?;
 
             Ok(TypecheckResult::from(build_function_reference(&prototype))
@@ -205,18 +262,13 @@ pub(crate) fn build_member_receiver_argument(
     lhs_binding: Option<&TypecheckedBinding>,
     lhs: MIRExpression,
     lhs_inner: &MIRType,
-    prototype: &cx_mir::mir::data::MIRFunctionPrototype,
+    receiver_mode: CXReceiverMode,
 ) -> CXResult<MIRExpression> {
-    match prototype
-        .source_prototype
-        .kind
-        .receiver()
-        .map(|receiver| receiver.mode)
-    {
-        None | Some(CXReceiverMode::None) => {
+    match receiver_mode {
+        CXReceiverMode::None => {
             unreachable!("member function reference missing receiver mode")
         }
-        Some(CXReceiverMode::ByRef) => {
+        CXReceiverMode::ByRef => {
             if let Some(binding) = lhs_binding {
                 ensure_binding_available(env, Some(expr.token_range().clone()), &binding.root)?;
             }
@@ -230,7 +282,7 @@ pub(crate) fn build_member_receiver_argument(
                 _type: env.symbols.context.mem_ref_to(lhs_inner.clone()),
             })
         }
-        Some(CXReceiverMode::ByMove) => {
+        CXReceiverMode::ByMove => {
             if let Some(inner_type) = env
                 .symbols
                 .context

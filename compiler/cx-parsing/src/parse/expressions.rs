@@ -1,4 +1,4 @@
-use crate::parse::{try_parse_simple_identifier, ParserData};
+use crate::parse::{ParserData, try_parse_simple_identifier};
 use cx_ast::ast::{CXBinOp, CXExprKind, CXExpression, CXInitIndex, CXUnpackBinding};
 use cx_ast::data::CXTypeKind;
 use cx_ast::{assert_token_matches, next_kind, try_next};
@@ -6,10 +6,10 @@ use cx_mir::intrinsic_types::is_intrinsic_type;
 use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, specifier};
 use cx_util::namespace::QualifiedName;
-use cx_util::{log_error, CXResult};
+use cx_util::{CXResult, log_error};
 
 use crate::parse::operators::{
-    binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
+    PrecOperator, binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec,
 };
 use crate::parse::templates::parse_template_args;
 use crate::parse::types::{parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
@@ -131,11 +131,13 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
 
         TokenKind::Identifier(_) => {
             let pre_idx = data.tokens.index;
-            let Some(ident) = try_parse_identifier(&mut data.tokens)? else { unreachable!() };
+            let Some(ident) = try_parse_identifier(&mut data.tokens)? else {
+                unreachable!()
+            };
             data.tokens.index = pre_idx;
-            
+
             data.is_type_ident(&ident)
-        },
+        }
 
         _ => Ok(false),
     }
@@ -358,9 +360,83 @@ pub(crate) fn parse_expr_op_concat(
 
     op_stack.push(PrecOperator::BinOp(op));
 
-    parse_expr_val(data, expr_stack, op_stack)?;
+    if matches!(op_stack.last(), Some(PrecOperator::BinOp(CXBinOp::Is))) {
+        expr_stack.push(parse_pattern(data)?);
+    } else {
+        parse_expr_val(data, expr_stack, op_stack)?;
+    }
 
     Ok(Some(()))
+}
+
+pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<CXExpression> {
+    let start_index = data.tokens.index;
+
+    if let Some(TokenKind::IntLiteral(value)) = data.tokens.peek().map(|token| &token.kind) {
+        let value = *value;
+        data.tokens.next();
+        return Ok(CXExprKind::IntLiteral {
+            bytes: 4,
+            val: value,
+        }
+        .into_expr_with_origin(
+            start_index,
+            data.tokens.index,
+            data.file_origin_for_range(start_index, data.tokens.index),
+        ));
+    }
+
+    let constructor = parse_expr_identifier(data)?;
+    if !is_qualified_pattern_constructor(&constructor) {
+        return log_parse_error!(
+            data,
+            "Tagged union patterns must use a qualified variant name"
+        );
+    }
+
+    if !try_next!(data.tokens, punctuator!(OpenParen)) {
+        return Ok(constructor);
+    }
+
+    let inner = if try_next!(data.tokens, punctuator!(CloseParen)) {
+        CXExprKind::Unit.into_expr_with_origin(
+            start_index,
+            data.tokens.index,
+            data.file_origin_for_range(start_index, data.tokens.index),
+        )
+    } else {
+        let Some(binding) = try_parse_simple_identifier(&mut data.tokens) else {
+            return log_parse_error!(data, "Expected binding name in tagged union pattern");
+        };
+        assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+        CXExprKind::Identifier(QualifiedName::new_raw(binding)).into_expr_with_origin(
+            start_index,
+            data.tokens.index,
+            data.file_origin_for_range(start_index, data.tokens.index),
+        )
+    };
+
+    Ok(CXExprKind::BinOp {
+        lhs: Box::new(constructor),
+        rhs: Box::new(inner),
+        op: CXBinOp::MethodCall,
+    }
+    .into_expr_with_origin(
+        start_index,
+        data.tokens.index,
+        data.file_origin_for_range(start_index, data.tokens.index),
+    ))
+}
+
+fn is_qualified_pattern_constructor(expr: &CXExpression) -> bool {
+    match &expr.kind {
+        CXExprKind::Identifier(name) => !name.namespace.is_root(),
+        CXExprKind::BinOp {
+            op: CXBinOp::ScopeRes,
+            ..
+        } => true,
+        _ => false,
+    }
 }
 
 fn compress_one_expr(
@@ -463,9 +539,9 @@ pub(crate) fn parse_expr_val(
         },
         TokenKind::StringLiteral(value) => CXExprKind::StringLiteral { val: value.clone() },
 
-        TokenKind::Intrinsic(_) => {
-            CXExprKind::Identifier(QualifiedName::new_raw(parse_intrinsic(&mut data.back().tokens)?))
-        }
+        TokenKind::Intrinsic(_) => CXExprKind::Identifier(QualifiedName::new_raw(parse_intrinsic(
+            &mut data.back().tokens,
+        )?)),
         TokenKind::CompilerIdentifier(ident) => {
             let ident = ident.clone();
             data.back();
@@ -738,7 +814,7 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> CXResult<CXExpression
                     continue;
                 }
 
-                let value = parse_expr(data)?;
+                let value = parse_pattern(data)?;
                 assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
                 let body = parse_body(data)?;
 

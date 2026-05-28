@@ -5,7 +5,6 @@ use crate::{
         symbols::{ResolvedValueSymbol, SymbolValueOrigin},
     },
     log_typecheck_error,
-    type_checking::op::binop::scoped_calls::typecheck_qualified_scoped_reference,
     type_checking::result::{TypecheckResult, TypecheckedBinding},
 };
 use cx_ast::{ast::CXExpression, data::CXTemplateInput};
@@ -27,10 +26,6 @@ pub(crate) fn typecheck_identifier(
         && let Some(symbol) = env.symbols.resolve_value_symbol(name.name.as_str())
     {
         return resolved_symbol_to_typecheck_result(env, expr, &name.name, symbol);
-    }
-
-    if let Some(result) = typecheck_qualified_scoped_reference(env, base_data, expr, name, None)? {
-        return Ok(result);
     }
 
     let function_type = if name.namespace.is_root() {
@@ -111,12 +106,6 @@ pub(crate) fn typecheck_templated_identifier(
     name: &QualifiedName,
     template_input: &CXTemplateInput,
 ) -> CXResult<TypecheckResult> {
-    if let Some(result) =
-        typecheck_qualified_scoped_reference(env, base_data, expr, name, Some(template_input))?
-    {
-        return Ok(result);
-    }
-
     let Some(function) = query_function(env, base_data, expr, name, Some(template_input), &[])?
     else {
         return log_typecheck_error!(

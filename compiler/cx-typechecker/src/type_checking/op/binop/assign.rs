@@ -19,7 +19,7 @@ pub fn typecheck_assignment(
     rhs: MIRExpression,
     op: Option<&CXBinOp>,
 ) -> CXResult<TypecheckResult> {
-    let binding = lhs.binding.clone();
+    let binding = lhs.binding().cloned();
     let lhs = lhs.into_expression()?;
     let lhs_type = lhs.get_type();
 

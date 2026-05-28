@@ -21,7 +21,6 @@ pub(crate) mod access;
 pub(crate) mod assign;
 pub(crate) mod calls;
 pub(crate) mod is;
-pub(crate) mod scoped_calls;
 
 pub(crate) fn dispatch(
     env: &mut TypeEnvironment,

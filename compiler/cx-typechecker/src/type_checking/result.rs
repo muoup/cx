@@ -121,20 +121,41 @@ impl TypecheckedExpression {
             }
         }
     }
+}
 
-    fn into_ready_with_expected(
-        self,
-        env: &mut TypeEnvironment,
-        base_data: &MIRBaseMappings,
-        expected_type: &MIRType,
-    ) -> CXResult<MIRExpression> {
+pub enum TypecheckExtract<T> {
+    Fail(TypecheckResult),
+    Succ(T),
+}
+
+impl<T> TypecheckExtract<T> {
+    pub fn into_result(self) -> CXResult<T> {
         match self {
-            Self::Ready(expression) => Ok(expression),
-            Self::IncompleteTemplatedCallee { name, .. } => CXError::create_result(format!(
-                "Templated function '{}' requires an argument list for template deduction",
-                name
-            )),
-            Self::NeedsExpectedType(expr) => expr.resolve(env, base_data, expected_type),
+            Self::Succ(value) => Ok(value),
+            Self::Fail(result) => result
+                .expression
+                .into_ready()
+                .and_then(|_| CXError::create_result("Typecheck result could not be extracted")),
+        }
+    }
+}
+
+pub struct CalleeExtraction {
+    pub function: MIRExpression,
+    pub implicit_args: Vec<MIRExpression>,
+    pub deduction_arg_prefix: Vec<MIRType>,
+}
+
+impl CalleeExtraction {
+    pub fn new(
+        function: MIRExpression,
+        implicit_args: Vec<MIRExpression>,
+        deduction_arg_prefix: Vec<MIRType>,
+    ) -> Self {
+        Self {
+            function,
+            implicit_args,
+            deduction_arg_prefix,
         }
     }
 }
@@ -142,13 +163,15 @@ impl TypecheckedExpression {
 #[derive(Debug)]
 pub struct TypecheckResult {
     /// The accumulated expression
-    pub expression: TypecheckedExpression,
+    expression: TypecheckedExpression,
     /// Implicit parameters carried upward for call sites (e.g. member receivers)
-    pub implicit_parameters: Vec<MIRExpression>,
+    implicit_parameters: Vec<MIRExpression>,
+    /// Types that participate in function template deduction but are not ordinary explicit arguments.
+    deduction_arg_prefix: Vec<MIRType>,
     /// Binding/place information for expressions that still denote a local place.
-    pub binding: Option<TypecheckedBinding>,
+    binding: Option<TypecheckedBinding>,
     /// True when this value adopts an existing region instead of initializing a fresh one.
-    pub adopting: bool,
+    adopting: bool,
 }
 
 impl From<MIRExpression> for TypecheckResult {
@@ -156,6 +179,7 @@ impl From<MIRExpression> for TypecheckResult {
         Self {
             expression: TypecheckedExpression::Ready(expression),
             implicit_parameters: Vec::new(),
+            deduction_arg_prefix: Vec::new(),
             binding: None,
             adopting: false,
         }
@@ -171,6 +195,7 @@ impl TypecheckResult {
                 _type,
             }),
             implicit_parameters: Vec::new(),
+            deduction_arg_prefix: Vec::new(),
             binding: None,
             adopting: false,
         }
@@ -186,6 +211,7 @@ impl TypecheckResult {
                 template_input,
             },
             implicit_parameters: Vec::new(),
+            deduction_arg_prefix: Vec::new(),
             binding: None,
             adopting: false,
         }
@@ -201,6 +227,7 @@ impl TypecheckResult {
                 resolver,
             )),
             implicit_parameters: Vec::new(),
+            deduction_arg_prefix: Vec::new(),
             binding: None,
             adopting: false,
         }
@@ -208,6 +235,11 @@ impl TypecheckResult {
 
     pub fn with_implicit_parameters(mut self, implicit_parameters: Vec<MIRExpression>) -> Self {
         self.implicit_parameters = implicit_parameters;
+        self
+    }
+
+    pub fn with_deduction_arg_prefix(mut self, deduction_arg_prefix: Vec<MIRType>) -> Self {
+        self.deduction_arg_prefix = deduction_arg_prefix;
         self
     }
 
@@ -221,8 +253,52 @@ impl TypecheckResult {
         self
     }
 
-    pub fn decompose_function_expr(self) -> CXResult<(MIRExpression, Vec<MIRExpression>)> {
-        Ok((self.expression.into_ready()?, self.implicit_parameters))
+    pub fn binding(&self) -> Option<&TypecheckedBinding> {
+        self.binding.as_ref()
+    }
+
+    pub fn is_adopting(&self) -> bool {
+        self.adopting
+    }
+
+    pub fn try_into_expression(self) -> TypecheckExtract<MIRExpression> {
+        match self.expression {
+            TypecheckedExpression::Ready(expression) => TypecheckExtract::Succ(expression),
+            expression => TypecheckExtract::Fail(Self { expression, ..self }),
+        }
+    }
+
+    pub fn try_into_callee(self) -> TypecheckExtract<CalleeExtraction> {
+        match self.expression {
+            TypecheckedExpression::Ready(function) => TypecheckExtract::Succ(CalleeExtraction {
+                function,
+                implicit_args: self.implicit_parameters,
+                deduction_arg_prefix: self.deduction_arg_prefix,
+            }),
+            expression => TypecheckExtract::Fail(Self { expression, ..self }),
+        }
+    }
+
+    pub fn into_incomplete_callee_parts(
+        self,
+    ) -> Option<(
+        QualifiedName,
+        Option<CXTemplateInput>,
+        Vec<MIRType>,
+        Vec<MIRExpression>,
+    )> {
+        match self.expression {
+            TypecheckedExpression::IncompleteTemplatedCallee {
+                name,
+                template_input,
+            } => Some((
+                name,
+                template_input,
+                self.deduction_arg_prefix,
+                self.implicit_parameters,
+            )),
+            _ => None,
+        }
     }
 
     pub fn ensure_available(self, env: &mut TypeEnvironment) -> CXResult<Self> {
@@ -271,7 +347,29 @@ impl TypecheckResult {
 
     /// Extract the inner MIRExpression
     pub fn into_expression(self) -> CXResult<MIRExpression> {
-        self.expression.into_ready()
+        self.try_into_expression().into_result()
+    }
+
+    pub fn apply_expected_type(
+        self,
+        env: &mut TypeEnvironment,
+        base_data: &MIRBaseMappings,
+        expected_type: &MIRType,
+    ) -> CXResult<Self> {
+        match self.expression {
+            TypecheckedExpression::NeedsExpectedType(expr) => Ok(Self {
+                expression: TypecheckedExpression::Ready(expr.resolve(
+                    env,
+                    base_data,
+                    expected_type,
+                )?),
+                implicit_parameters: self.implicit_parameters,
+                deduction_arg_prefix: self.deduction_arg_prefix,
+                binding: self.binding,
+                adopting: self.adopting,
+            }),
+            _ => Ok(self),
+        }
     }
 
     pub fn into_expression_with_expected(
@@ -280,7 +378,7 @@ impl TypecheckResult {
         base_data: &MIRBaseMappings,
         expected_type: &MIRType,
     ) -> CXResult<MIRExpression> {
-        self.expression
-            .into_ready_with_expected(env, base_data, expected_type)
+        self.apply_expected_type(env, base_data, expected_type)?
+            .into_expression()
     }
 }
