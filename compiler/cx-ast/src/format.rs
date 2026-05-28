@@ -345,14 +345,6 @@ impl<'a> Display for CXExprFormatter<'a> {
                 }
                 Ok(())
             }
-            CXExprKind::TypeConstructor {
-                union_name,
-                variant_name,
-                inner,
-            } => {
-                writeln!(f, "TypeConstructor {}::{}", union_name, variant_name)?;
-                CXExprFormatter::new(inner, self.depth + 1).fmt(f)
-            }
             CXExprKind::Break => writeln!(f, "Break"),
             CXExprKind::Continue => writeln!(f, "Continue"),
         }

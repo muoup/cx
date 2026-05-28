@@ -151,6 +151,7 @@ pub enum MIRExpressionKind {
         sum_type: MIRType,
     },
 
+    // Internal node used by generated type-constructor functions.
     ConstructTaggedUnion {
         variant_index: usize,
         value: Box<MIRExpression>,

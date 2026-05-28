@@ -2,7 +2,6 @@ use std::ops::Deref;
 
 use crate::environment::{LoopScopeKind, ScopeArrowSink, ScopeExitTarget, TypeEnvironment};
 use crate::log_typecheck_error;
-use crate::type_checking::aggregate::constructors::typecheck_type_constructor_expr;
 use crate::type_checking::aggregate::initialization::typecheck_initializer_list;
 use crate::type_checking::coercion::implicit::{implicit_cast, promotion::std_rval_promotion};
 use crate::type_checking::control_flow::r#return::typecheck_return;
@@ -397,12 +396,6 @@ fn typecheck_expr_inner(
         CXExprKind::InitializerList { indices } => {
             typecheck_initializer_list(env, base_data, expr, indices, expected_type)?
         }
-
-        CXExprKind::TypeConstructor {
-            union_name: type_name,
-            variant_name: name,
-            inner,
-        } => typecheck_type_constructor_expr(env, base_data, expr, type_name, name, inner)?,
 
         CXExprKind::Unit => typecheck_unit(),
 

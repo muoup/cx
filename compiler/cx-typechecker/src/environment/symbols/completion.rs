@@ -13,7 +13,7 @@ use cx_util::namespace::QualifiedName;
 
 use crate::environment::functions::completion::{complete_type, int_complete_fn_prototype};
 use crate::environment::symbols::templates::instantiate_type_template;
-use crate::{log, log_typecheck_error};
+use crate::log_typecheck_error;
 use crate::type_checking::constexpr::constexpr_evaluate;
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::{environment::TypeEnvironment, log::TypeError};

@@ -247,11 +247,6 @@ pub enum CXExprKind {
         name: CXIdent,
         initial_value: Option<Box<CXExpression>>,
     },
-    TypeConstructor {
-        union_name: CXIdent,
-        variant_name: CXIdent,
-        inner: Box<CXExpression>,
-    },
     BinOp {
         lhs: Box<CXExpression>,
         rhs: Box<CXExpression>,

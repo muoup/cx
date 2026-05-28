@@ -2,7 +2,7 @@ use cx_util::CXErrorTrait;
 use std::path::PathBuf;
 
 use cx_tokens::TokenRange;
-use cx_tokens::token::{Token, TokenKind};
+use cx_tokens::token::Token;
 
 #[derive(Clone, Debug)]
 pub struct TypeError {

@@ -39,7 +39,7 @@ pub(crate) fn realize_templates(job: &CompilationUnit, env: &mut TypeEnvironment
                 });
                 realize_fn_implementation(env, &origin, &kind, &input)?;
             }
-            MIRFunctionGenRequest::TaggedUnionVariantConstructor {
+            MIRFunctionGenRequest::TypeConstructor {
                 name,
                 union_type,
                 variant_type,

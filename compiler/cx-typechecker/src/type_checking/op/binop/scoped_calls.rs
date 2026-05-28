@@ -1,4 +1,4 @@
-use crate::environment::TypeEnvironment;
+use crate::environment::{MIRFunctionGenRequest, TypeEnvironment};
 use crate::environment::functions::query::{
     query_deduced_member_function, query_deduced_standard_function,
     query_deduced_static_member_function, query_member_function, query_standard_function,
@@ -341,7 +341,7 @@ fn tagged_union_constructor_prototype(
             .realized_fns
             .insert(mangled_name.clone(), prototype.clone());
         env.request_function_generation(
-            crate::environment::MIRFunctionGenRequest::TaggedUnionVariantConstructor {
+            MIRFunctionGenRequest::TypeConstructor {
                 name: mangled_name,
                 union_type: union_type.clone(),
                 variant_type,
