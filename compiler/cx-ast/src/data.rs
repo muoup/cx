@@ -1,5 +1,5 @@
 use cx_tokens::TokenRange;
-use cx_util::identifier::CXIdent;
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 use speedy::{Readable, Writable};
 
 use crate::ast::{CXExpression, VisibilityMode};
@@ -182,11 +182,11 @@ impl CXField {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub enum CXTypeKind {
     Identifier {
-        name: CXIdent,
+        name: QualifiedName,
         predeclaration: PredeclarationType,
     },
     TemplatedIdentifier {
-        name: CXIdent,
+        name: QualifiedName,
         input: CXTemplateInput,
     },
 
@@ -241,8 +241,8 @@ impl CXType {
 
     pub fn get_name(&self) -> Option<&CXIdent> {
         match &self.kind {
-            CXTypeKind::Identifier { name, .. } => Some(name),
-            CXTypeKind::TemplatedIdentifier { name, .. } => Some(name),
+            CXTypeKind::Identifier { name, .. } => Some(&name.name),
+            CXTypeKind::TemplatedIdentifier { name, .. } => Some(&name.name),
             CXTypeKind::TaggedUnion { name, .. } => Some(name),
 
             CXTypeKind::Structured { name, .. } => name.as_ref(),

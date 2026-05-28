@@ -1,19 +1,18 @@
-use crate::parse::ParserData;
+use crate::parse::{try_parse_raw_identifier, ParserData};
 use cx_ast::ast::{CXBinOp, CXExprKind, CXExpression, CXInitIndex, CXUnpackBinding};
 use cx_ast::data::CXTypeKind;
 use cx_ast::{assert_token_matches, next_kind, try_next};
 use cx_mir::intrinsic_types::is_intrinsic_type;
 use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, specifier};
-use cx_util::{CXResult, log_error};
+use cx_util::namespace::QualifiedName;
+use cx_util::{log_error, CXResult};
 
 use crate::parse::operators::{
-    PrecOperator, binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec,
+    binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
 };
 use crate::parse::templates::parse_template_args;
-use crate::parse::types::{
-    parse_base_mods, parse_initializer, parse_specifier, parse_type_base, peek_qualified_ident,
-};
+use crate::parse::types::{parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
 use crate::parse::{parse_body, parse_intrinsic, try_parse_identifier};
 
 fn parse_at_intrinsic_expr(
@@ -83,11 +82,11 @@ fn parse_at_intrinsic_expr(
 
             let mut bindings = Vec::new();
             while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-                let Some(field) = try_parse_identifier(&mut data.tokens) else {
+                let Some(field) = try_parse_raw_identifier(&mut data.tokens)? else {
                     return log_parse_error!(data, "Expected field name in @unpack binding");
                 };
                 assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
-                let Some(binding) = try_parse_identifier(&mut data.tokens) else {
+                let Some(binding) = try_parse_raw_identifier(&mut data.tokens)? else {
                     return log_parse_error!(data, "Expected binding name in @unpack binding");
                 };
 
@@ -118,49 +117,26 @@ fn parse_at_intrinsic_expr(
     }
 }
 
-pub fn is_type_decl(data: &mut ParserData) -> bool {
+pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
     let tok = data.tokens.peek().map(|tok| tok.kind.clone());
 
     if tok.is_none() {
-        return false;
+        return Ok(false);
     }
 
     match &tok.unwrap() {
-        intrinsic!() | specifier!() | keyword!(Struct, Union, Enum) => true,
+        intrinsic!() | specifier!() | keyword!(Struct, Union, Enum) => Ok(true),
 
-        identifier!(name) if is_intrinsic_type(name) => true,
-        identifier!() if is_qualified_type_ident(data) => true,
-        identifier!(name)
-            if data
-                .pp_contents
-                .module_symbols
-                .symbols
-                .iter()
-                .any(|t| t.name.as_str() == name) =>
-        {
-            true
-        }
-        identifier!(name) if data.ast.type_data.is_key_any(name) => true,
+        identifier!(name) => {
+            let pre_idx = data.tokens.index;
+            let Some(ident) = try_parse_identifier(&mut data.tokens)? else { unreachable!() };
+            data.tokens.index = pre_idx;
+            
+            data.is_type_ident(&ident)
+        },
 
-        _ => false,
+        _ => Ok(false),
     }
-}
-
-fn is_qualified_type_ident(data: &mut ParserData) -> bool {
-    let Some(name) = peek_qualified_ident(data) else {
-        return false;
-    };
-
-    if !name.as_str().contains("::") {
-        return false;
-    }
-
-    data.pp_contents
-        .module_symbols
-        .symbols
-        .iter()
-        .any(|t| t.name.as_str() == name.as_str())
-        || data.ast.type_data.is_key_any(&name.as_string())
 }
 
 pub(crate) fn expression_requires_semicolon(expr: &CXExpression) -> bool {
@@ -465,7 +441,7 @@ pub(crate) fn parse_expr_val(
     op_stack: &mut Vec<PrecOperator>,
 ) -> CXResult<()> {
     let start_index = data.tokens.index;
-    if is_type_decl(data) {
+    if is_type_decl(data)? {
         expr_stack.push(parse_declaration(data)?);
         return Ok(());
     }
@@ -486,7 +462,7 @@ pub(crate) fn parse_expr_val(
         TokenKind::StringLiteral(value) => CXExprKind::StringLiteral { val: value.clone() },
 
         TokenKind::Intrinsic(_) => {
-            CXExprKind::Identifier(parse_intrinsic(&mut data.back().tokens)?)
+            CXExprKind::Identifier(QualifiedName::new_raw(parse_intrinsic(&mut data.back().tokens)?))
         }
         TokenKind::CompilerIdentifier(ident) => {
             let ident = ident.clone();
@@ -594,7 +570,7 @@ pub(crate) fn parse_expr_val(
 
 pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CXResult<CXExpression> {
     let start_index = data.tokens.index;
-    let Some(ident) = try_parse_identifier(&mut data.tokens) else {
+    let Some(ident) = try_parse_identifier(&mut data.tokens)? else {
         return log_parse_error!(data, "Expected identifier");
     };
 
@@ -810,7 +786,7 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> CXResult<CXExpression
                 "'('"
             );
 
-            let return_type = if is_type_decl(data) {
+            let return_type = if is_type_decl(data)? {
                 let (None, _type, _) = parse_initializer(data)? else {
                     return log_parse_error!(data, "Failed to parse type declaration for sizeof");
                 };

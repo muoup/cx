@@ -13,7 +13,7 @@ use cx_tokens::{
     token::{SpecifierType, TokenKind},
     TokenIter,
 };
-use cx_util::{identifier::CXIdent, namespace::QualifiedName, CXResult};
+use cx_util::{CXResult, identifier::CXIdent, namespace::{NamespacePath, QualifiedName}};
 
 use crate::parse::{
     expressions::{expression_requires_semicolon, parse_expr},
@@ -321,20 +321,24 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     Ok(CXIdent::new(ss))
 }
 
+pub fn try_parse_raw_identifier(tokens: &mut TokenIter) -> CXResult<Option<CXIdent>> {
+    Ok(try_parse_identifier(tokens)?.map(QualifiedName::raw_name).flatten())
+}
+
 pub fn try_parse_identifier(tokens: &mut TokenIter) -> CXResult<Option<QualifiedName>> {
     let TokenKind::Identifier(ident) = peek_next_kind!(tokens).ok()? else {
         return Ok(None);
     };
 
-    if !matches!(peek_next_kind!(tokens)?, operator!(DoubleColon)) {
-        return Ok(Some(QualifiedName::new(None, CXIdent::new(ident.clone()))));
+    if !matches!(peek_next_kind!(tokens)?, operator!(ScopeRes)) {
+        return Ok(Some(QualifiedName::new(NamespacePath::root(), CXIdent::new(ident.clone()))));
     }
 
     let mut segments = vec![CXIdent::new(ident.clone())];
 
-    while try_next!(tokens, operator!(DoubleColon)) {
-        let TokenKind::Identifier(ident) = peek_next_kind!(tokens).ok()? else {
-            return log_preparse_error!(tokens, "Expected identifier after '::' in qualified name");
+    while try_next!(tokens, operator!(ScopeRes)) {
+        let TokenKind::Identifier(ident) = next_kind!(tokens)? else {
+            return log_parse_error!(tokens, "Expected identifier after '::' in qualified name");
         };
 
         segments.push(CXIdent::new(ident.clone()));
@@ -345,7 +349,7 @@ pub fn try_parse_identifier(tokens: &mut TokenIter) -> CXResult<Option<Qualified
     tokens.next();
 
     Ok(Some(QualifiedName::new(
-        Some(NamespacePath::new(segments)),
+        NamespacePath::new(segments),
         CXIdent::new(ident),
     )))
 }

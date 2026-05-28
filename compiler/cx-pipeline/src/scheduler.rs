@@ -324,18 +324,18 @@ pub(crate) fn perform_job(
             let file_contents = std::fs::read_to_string(&file_path)
                 .unwrap_or_else(|_| panic!("File not found: {}", job.unit));
 
-            let mut hasher = DefaultHasher::new();
-            file_contents.hash(&mut hasher);
+            // let mut hasher = DefaultHasher::new();
+            // file_contents.hash(&mut hasher);
 
-            let current_hash = hasher.finish().to_string();
-            let previous_hash = retrieve_text(context, &job.unit, ".hash").unwrap_or_default();
+            // let current_hash = hasher.finish().to_string();
+            // let previous_hash = retrieve_text(context, &job.unit, ".hash").unwrap_or_default();
 
-            let _identical_hash = previous_hash == current_hash;
-            let _object_exists =
-                std::fs::metadata(internal_directory(context, &job.unit).with_extension("o"))
-                    .is_ok();
+            // let identical_hash = previous_hash == current_hash;
+            // let object_exists =
+            //     std::fs::metadata(internal_directory(context, &job.unit).with_extension("o"))
+            //         .is_ok();
 
-            store_text(context, &job.unit, ".hash", &current_hash);
+            // store_text(context, &job.unit, ".hash", &current_hash);
 
             let tokens = cx_lexer::lex_with_context(
                 file_contents.as_str(),
@@ -366,7 +366,6 @@ pub(crate) fn perform_job(
                 .module_db
                 .preparse_registry
                 .insert_module(output.module_symbols.clone());
-
             context
                 .module_db
                 .lex_tokens
@@ -388,12 +387,14 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::ASTParse => {
-            let pp_data = context.module_db.preparse_base.get(&job.unit);
+            let registry = context.module_db.preparse_registry.get(&job.unit);
+            let pp_data = context.module_db.preparse_base.take(&job.unit);
             let lexemes = context.module_db.lex_tokens.get(&job.unit);
  
             let parsed_ast = parse_ast(
                 TokenIter::new(&lexemes, job.unit.as_path().to_path_buf()),
                 &pp_data,
+                registry,
             )?;
             context
                 .module_db

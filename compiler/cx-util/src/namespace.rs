@@ -84,26 +84,44 @@ impl Display for NamespacePath {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct QualifiedName {
-    pub namespace: Option<NamespacePath>,
+    pub namespace: NamespacePath,
     pub name: CXIdent,
 }
 
 impl QualifiedName {
-    pub fn new(namespace: Option<NamespacePath>, name: CXIdent) -> Self {
+    pub fn new(namespace: NamespacePath, name: CXIdent) -> Self {
         Self { namespace, name }
+    }
+
+    pub fn new_raw(name: CXIdent) -> Self {
+        Self {
+            namespace: NamespacePath::root(),
+            name,
+        }
     }
 
     pub fn root(name: CXIdent) -> Self {
         Self {
-            namespace: Some(NamespacePath::root()),
+            namespace: NamespacePath::root(),
             name,
         }
     }
 
     pub fn as_flat_name(&self) -> String {
-        self.namespace
-            .as_ref()
-            .map(|n| n.as_flat_name_with(&self.name))
-            .unwrap_or_else(|| self.name.as_string())
+        self.namespace.as_flat_name_with(&self.name)
+    }
+
+    pub fn raw_name(self) -> Option<CXIdent> {
+        if !self.namespace.is_root() {
+            return None;
+        }
+        
+        Some(self.name)
+    }
+}
+
+impl Display for QualifiedName {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_flat_name())
     }
 }
