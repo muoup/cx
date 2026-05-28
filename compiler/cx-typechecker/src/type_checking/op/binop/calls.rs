@@ -1,5 +1,5 @@
 use crate::environment::TypeEnvironment;
-use crate::environment::functions::query::{query_deduced_function, type_member_function_name};
+use crate::environment::functions::query::{query_function, type_member_function_name};
 use crate::environment::symbols::{ResolvedValueSymbol, SymbolValueOrigin};
 use crate::log_typecheck_error;
 use crate::type_checking::aggregate::fields::struct_field;
@@ -200,8 +200,7 @@ pub(crate) fn deduced_callee(
                 return Ok(None);
             }
 
-            let Some(prototype) =
-                query_deduced_function(env, base_data, expr, name, None, arg_types)?
+            let Some(prototype) = query_function(env, base_data, expr, name, None, arg_types)?
             else {
                 return Ok(None);
             };
@@ -246,14 +245,13 @@ pub(crate) fn deduced_callee(
             let Some(function_name) = type_member_function_name(&receiver_type, &name.name) else {
                 return Ok(None);
             };
-            let Some(prototype) = query_deduced_function(
-                env,
-                base_data,
-                expr,
-                &function_name,
-                Some(&receiver_type),
-                arg_types,
-            )? else {
+            let mut member_arg_types = Vec::with_capacity(arg_types.len() + 1);
+            member_arg_types.push(receiver_type.clone());
+            member_arg_types.extend_from_slice(arg_types);
+
+            let Some(prototype) =
+                query_function(env, base_data, expr, &function_name, None, &member_arg_types)?
+            else {
                 return Ok(None);
             };
 

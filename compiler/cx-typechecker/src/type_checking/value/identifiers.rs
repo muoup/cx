@@ -40,7 +40,7 @@ pub(crate) fn typecheck_identifier(
     } else {
         let key = name.clone();
         if base_data.fn_data.is_key_any(&key) {
-            env.get_function(base_data, expr, name, None)?
+            env.get_function(base_data, expr, name, None, &[])?
         } else {
             None
         }
@@ -111,7 +111,7 @@ pub(crate) fn typecheck_templated_identifier(
         return Ok(result);
     }
 
-    let Some(function) = env.get_function(base_data, expr, name, Some(template_input))? else {
+    let Some(function) = env.get_function(base_data, expr, name, Some(template_input), &[])? else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),

@@ -211,11 +211,9 @@ pub(crate) fn deduce_function_template(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     template: &ModuleResource<CXFunctionTemplate>,
-    owner_type: Option<&MIRType>,
     arg_types: &[MIRType],
 ) -> CXResult<MIRFunctionPrototype> {
-    let completed_input =
-        deduce_function_template_input(env, base_data, template, owner_type, arg_types)?;
+    let completed_input = deduce_function_template_input(env, base_data, template, arg_types)?;
     instantiate_function_template_with_input(env, base_data, template, &completed_input)
 }
 
@@ -223,7 +221,6 @@ pub(crate) fn deduce_function_template_input(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     template: &ModuleResource<CXFunctionTemplate>,
-    owner_type: Option<&MIRType>,
     arg_types: &[MIRType],
 ) -> CXResult<MIRTemplateInput> {
     let resource = &template.resource;
@@ -232,12 +229,13 @@ pub(crate) fn deduce_function_template_input(
     let external_module = template.external_module.as_ref();
     let mut bindings = TemplateBindings::new();
 
-    match &shell.kind {
-        CXFunctionKind::Standard(_) => {}
-        CXFunctionKind::MemberFunction { member_type, .. }
-        | CXFunctionKind::StaticMemberFunction { member_type, .. } => {
-            let Some(owner_type) = owner_type else {
-                return CXError::create_result("Template deduction requires a concrete owner type");
+    let param_arg_types = match &shell.kind {
+        CXFunctionKind::Standard(_) | CXFunctionKind::StaticMemberFunction { .. } => arg_types,
+        CXFunctionKind::MemberFunction { member_type, .. } => {
+            let Some((receiver_type, param_arg_types)) = arg_types.split_first() else {
+                return CXError::create_result(
+                    "Member function template deduction requires a receiver argument",
+                );
             };
 
             deduce_from_cx_type(
@@ -247,28 +245,30 @@ pub(crate) fn deduce_function_template_input(
                 template_prototype,
                 &mut bindings,
                 &member_type.as_type(),
-                owner_type,
+                receiver_type,
             )?;
-        }
-    }
 
-    if arg_types.len() != shell.params.len() && !shell.var_args {
+            param_arg_types
+        }
+    };
+
+    if param_arg_types.len() != shell.params.len() && !shell.var_args {
         return CXError::create_result(format!(
             "Function template expects {} arguments, found {}",
             shell.params.len(),
-            arg_types.len()
+            param_arg_types.len()
         ));
     }
 
-    if arg_types.len() < shell.params.len() {
+    if param_arg_types.len() < shell.params.len() {
         return CXError::create_result(format!(
             "Function template expects at least {} arguments, found {}",
             shell.params.len(),
-            arg_types.len()
+            param_arg_types.len()
         ));
     }
 
-    for (param, actual_type) in shell.params.iter().zip(arg_types.iter()) {
+    for (param, actual_type) in shell.params.iter().zip(param_arg_types.iter()) {
         deduce_from_cx_type(
             env,
             base_data,

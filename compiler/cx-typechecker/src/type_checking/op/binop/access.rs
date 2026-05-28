@@ -116,8 +116,11 @@ pub(crate) fn typecheck_access(
                 return Ok(result);
             }
 
+            let member_arg_types = vec![lhs_inner.clone()];
             let prototype = type_member_function_name(&lhs_inner, &name.name)
-                .map(|function_name| env.get_function(base_data, expr, &function_name, None))
+                .map(|function_name| {
+                    env.get_function(base_data, expr, &function_name, None, &member_arg_types)
+                })
                 .transpose()?
                 .flatten();
 
@@ -148,9 +151,16 @@ pub(crate) fn typecheck_access(
             name,
             template_input,
         } => {
+            let member_arg_types = vec![lhs_inner.clone()];
             let prototype = type_member_function_name(&lhs_inner, &name.name)
                 .map(|function_name| {
-                    env.get_function(base_data, expr, &function_name, Some(template_input))
+                    env.get_function(
+                        base_data,
+                        expr,
+                        &function_name,
+                        Some(template_input),
+                        &member_arg_types,
+                    )
                 })
                 .transpose()?
                 .flatten();

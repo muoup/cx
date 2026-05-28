@@ -1,7 +1,5 @@
 use crate::environment::{MIRFunctionGenRequest, TypeEnvironment};
-use crate::environment::functions::query::{
-    query_deduced_function, query_function, type_member_function_name,
-};
+use crate::environment::functions::query::{query_function, type_member_function_name};
 use crate::log_typecheck_error;
 use crate::type_checking::coercion::implicit::conversion::try_argument_conversion;
 use crate::type_checking::op::binop::calls::{
@@ -53,7 +51,7 @@ pub(crate) fn query_qualified_scoped_callee(
         )));
     }
 
-    query_deduced_function(env, base_data, expr, name, Some(&mir_type), arg_types)
+    query_function(env, base_data, expr, name, None, arg_types)
 }
 
 pub(crate) fn typecheck_qualified_type_constructor_call(
@@ -92,7 +90,7 @@ pub(crate) fn typecheck_qualified_scoped_reference(
         return Ok(None);
     };
 
-    if let Some(prototype) = query_function(env, base_data, expr, name, template_input)? {
+    if let Some(prototype) = query_function(env, base_data, expr, name, template_input, &[])? {
         return Ok(Some(TypecheckResult::from(build_function_reference(&prototype))));
     }
 
@@ -385,15 +383,9 @@ pub(crate) fn typecheck_scoped_call(
                 .map(|(_, val)| val.get_type())
                 .collect::<Vec<_>>();
 
-            let prototype = if let Some(prototype) =
-                query_deduced_function(env, base_data, expr, &standard_name, None, &arg_types)?
-            {
-                prototype
-            } else if let Some(prototype) =
-                query_function(env, base_data, expr, &standard_name, None)?
-            {
-                prototype
-            } else {
+            let Some(prototype) =
+                query_function(env, base_data, expr, &standard_name, None, &arg_types)?
+            else {
                 return Err(type_error);
             };
 
@@ -414,13 +406,15 @@ pub(crate) fn typecheck_scoped_call(
                 method_name
             );
         };
-        let Some(prototype) = query_function(
-            env,
-            base_data,
-            expr,
-            function_name,
-            Some(template_input),
-        )? else {
+        let tc_args = comma_separated(env, base_data, args_expr)?;
+        let arg_types = tc_args
+            .iter()
+            .map(|(_, val)| val.get_type())
+            .collect::<Vec<_>>();
+
+        let Some(prototype) =
+            query_function(env, base_data, expr, function_name, Some(template_input), &arg_types)?
+        else {
             return log_typecheck_error!(
                 env,
                 expr.token_range(),
@@ -430,17 +424,22 @@ pub(crate) fn typecheck_scoped_call(
             );
         };
 
-        let tc_args = comma_separated(env, base_data, args_expr)?;
         let function = TypecheckResult::from(build_function_reference(&prototype));
         finish_function_call(env, base_data, expr, function, tc_args)
     } else {
-        let exact_prototype = if let Some(function_name) = function_name.as_ref() {
-            query_function(env, base_data, expr, function_name, None)?
+        let tc_args = comma_separated(env, base_data, args_expr)?;
+        let arg_types = tc_args
+            .iter()
+            .map(|(_, val)| val.get_type())
+            .collect::<Vec<_>>();
+
+        let prototype = if let Some(function_name) = function_name.as_ref() {
+            query_function(env, base_data, expr, function_name, None, &arg_types)?
         } else {
             None
         };
 
-        if exact_prototype.is_none()
+        if prototype.is_none()
             && mir_type.is_tagged_union()
             && tagged_union_has_variant(env, &mir_type, &method_name)
         {
@@ -454,24 +453,7 @@ pub(crate) fn typecheck_scoped_call(
             );
         }
 
-        let tc_args = comma_separated(env, base_data, args_expr)?;
-        let arg_types = &tc_args
-            .iter()
-            .map(|(_, val)| val.get_type())
-            .collect::<Vec<_>>();
-
-        let prototype = if let Some(function_name) = function_name.as_ref()
-            && let Some(prototype) = query_deduced_function(
-                env,
-                base_data,
-                expr,
-                function_name,
-                Some(&mir_type),
-                arg_types,
-            )?
-        {
-            prototype
-        } else if let Some(prototype) = exact_prototype {
+        let prototype = if let Some(prototype) = prototype {
             prototype
         } else {
             return log_typecheck_error!(
@@ -502,8 +484,7 @@ pub(crate) fn typecheck_scoped_reference(
             let Some(standard_name) = scoped_standard_name(type_expr, method_expr) else {
                 return Err(type_error);
             };
-            if let Some(prototype) =
-                query_function(env, base_data, expr, &standard_name, None)?
+            if let Some(prototype) = query_function(env, base_data, expr, &standard_name, None, &[])?
             {
                 return Ok(TypecheckResult::from(build_function_reference(&prototype)));
             }
@@ -514,7 +495,7 @@ pub(crate) fn typecheck_scoped_reference(
         .or_else(|| type_member_function_name(&mir_type, &method_name));
 
     if let Some(function_name) = function_name.as_ref()
-        && let Some(prototype) = query_function(env, base_data, expr, function_name, template_input)?
+        && let Some(prototype) = query_function(env, base_data, expr, function_name, template_input, &[])?
     {
         return Ok(TypecheckResult::from(build_function_reference(&prototype)));
     }

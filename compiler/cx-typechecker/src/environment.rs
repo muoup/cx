@@ -202,8 +202,9 @@ impl TypeEnvironment<'_> {
         expr: &CXExpression,
         key: &QualifiedName,
         template_input: Option<&CXTemplateInput>,
+        arg_types: &[MIRType],
     ) -> CXResult<Option<MIRFunctionPrototype>> {
-        query_function(self, base_data, expr, key, template_input)
+        query_function(self, base_data, expr, key, template_input, arg_types)
     }
 
     pub fn in_defer<F, T>(&mut self, _: F) -> CXResult<T>
