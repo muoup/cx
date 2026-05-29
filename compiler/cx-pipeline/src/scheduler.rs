@@ -2,7 +2,7 @@ use crate::backends::{cranelift_compile, llvm_compile};
 use crate::progress::ProgressReporter;
 use crate::template_realizing::fulfill_requests;
 use cx_ast::{
-    ast::{CXAST, CXFunctionStmt},
+    ast::{CXAST, CXASTStmt},
     symbols::{DecomposedModuleSymbols, SymbolKey, UntypedSymbol},
 };
 use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
@@ -246,8 +246,8 @@ fn decompose_ast_symbols(unit: &CompilationUnit, ast: &CXAST) -> DecomposedModul
     }
 
     for (key, function) in ast.function_data.template_iter() {
-        let body = ast.function_stmts.iter().find_map(|stmt| match stmt {
-            CXFunctionStmt::TemplatedFunction { prototype, .. }
+        let body = ast.definition_stmts.iter().find_map(|stmt| match stmt {
+            CXASTStmt::TemplatedFunction { prototype, .. }
                 if prototype.kind.clone().into_key() == *key =>
             {
                 Some(Box::new(stmt.clone()))
@@ -373,8 +373,6 @@ pub(crate) fn perform_job(
                 .naive_ast
                 .insert(job.unit.clone(), parsed_ast);
         }
-
-
 
         CompilationStep::Typechecking => {
             let structure_data = context.module_db.base_mappings.get(&job.unit);
@@ -678,7 +676,7 @@ fn handle_job_collect_errors(
 
             Some(HandleJobResult::Success(new_jobs.into()))
         }
-        
+
         CompilationStep::ASTParse => Some(HandleJobResult::Success(map_reqs_new_stage(
             CompilationStep::Typechecking,
         ))),

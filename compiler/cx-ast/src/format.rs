@@ -1,13 +1,8 @@
 use cx_util::identifier::CXIdent;
 use std::fmt::{Display, Formatter, Result};
 
-use crate::{
-    ast::{
-        CXAST, CXBinOp, CXExprKind, CXExpression, CXFunctionStmt, CXGlobalVariable, CXInitIndex
-    },
-    data::{
-        CX_CONST, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXLinkageMode, CXReceiverMode, CXTemplate, CXTemplateInput, CXType, CXTypeKind
-    }, pattern::CXPattern,
+use crate::ast::{
+    CXAST, CXASTStmt, expression::{CXBinOp, CXExprKind, CXExpression, CXInitIndex}, function::{CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXReceiverMode}, global_var::CXGlobalVariable, modifiers::{CX_CONST, CXLinkageMode}, pattern::CXPattern, template::CXTemplateInput, types::{CXField, CXType, CXTypeKind}
 };
 
 // Helper struct for indented formatting of CXExpr
@@ -38,28 +33,12 @@ impl<'a> CXExprFormatter<'a> {
 
 impl Display for CXAST {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        writeln!(f, "CXAST for file: {}", self.file_path)?;
-        if !self.global_variables.is_empty() {
-            writeln!(f, "\n-- Global Variables --")?;
-            for global in &self.global_variables {
-                writeln!(f, "{}: {}", global.0, global.1.resource)?;
-            }
+        writeln!(f, "CXAST for file: {}", self.module_path)?;
+
+        for def in self.definition_stmts.iter() {
+            writeln!(f, "{}", def)?;
         }
-        if !self.function_stmts.is_empty() {
-            writeln!(f, "\n-- Function Definitions --")?;
-            for func in &self.function_stmts {
-                writeln!(f, "{func}")?;
-            }
-        }
-        if !self.type_data.is_empty() {
-            writeln!(f, "\n-- Type Definitions --")?;
-            for ty in self.type_data.standard_iter() {
-                writeln!(f, "{}: {}", ty.0, ty.1.resource)?;
-            }
-            for ty in self.type_data.template_iter() {
-                writeln!(f, "{}: {}", ty.0, ty.1.resource)?;
-            }
-        }
+
         Ok(())
     }
 }
@@ -108,38 +87,9 @@ impl Display for CXGlobalVariable {
     }
 }
 
-impl Display for CXFunctionStmt {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        match self {
-            CXFunctionStmt::TypeDecl { name, _type } => {
-                if let Some(name) = name {
-                    writeln!(f, "type {} = {}", name, _type)
-                } else {
-                    writeln!(f, "type {}", _type)
-                }
-            }
-
-            CXFunctionStmt::FunctionDefinition { prototype, body } => {
-                writeln!(f, "FunctionDef {} {{ ", prototype)?;
-                write!(f, "{}", CXExprFormatter::new(body, 1))?;
-                writeln!(f, "}}")
-            }
-
-            CXFunctionStmt::TemplatedFunction {
-                prototype,
-                template_prototype,
-                body,
-            } => {
-                writeln!(f, "TemplatedFunction {prototype} {{ ")?;
-                writeln!(
-                    f,
-                    "Template Prototype: {}",
-                    template_prototype.types.join(", ")
-                )?;
-                write!(f, "{}", CXExprFormatter::new(body, 1))?;
-                writeln!(f, "}}")
-            }
-        }
+impl Display for CXASTStmt {
+    fn fmt(&self, _f: &mut Formatter<'_>) -> Result {
+        todo!()
     }
 }
 
@@ -153,6 +103,7 @@ impl<'a> Display for CXExprFormatter<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         self.indent(f)?;
         match &self.expr.kind {
+            CXExprKind::Taken => writeln!(f, "Taken"),
             CXExprKind::Block { exprs, .. } => {
                 writeln!(f, "Block {{ ")?;
                 for stmt in exprs {
@@ -169,7 +120,7 @@ impl<'a> Display for CXExprFormatter<'a> {
                 let arg_string = template_input
                     .params
                     .iter()
-                    .map(|arg| arg.to_string())
+                    .map(|arg| format!("{}", arg))
                     .collect::<Vec<_>>()
                     .join(", ");
 
@@ -300,7 +251,6 @@ impl<'a> Display for CXExprFormatter<'a> {
             CXExprKind::SizeOfType { _type } => {
                 writeln!(f, "SizeOfType ({_type})")
             }
-            CXExprKind::Taken => writeln!(f, "Taken"),
             CXExprKind::Unit => writeln!(f, "Unit"),
             CXExprKind::Match {
                 condition,
@@ -444,8 +394,8 @@ impl Display for CXTypeKind {
                 let fields_str = fields
                     .iter()
                     .map(|field| match field {
-                        crate::data::CXField::Standard { _type, .. } => format!("{_type}"),
-                        crate::data::CXField::Bitfield {
+                        CXField::Standard { _type, .. } => format!("{_type}"),
+                        CXField::Bitfield {
                             name,
                             integer_type,
                             width,
@@ -484,8 +434,8 @@ impl Display for CXTypeKind {
                 let fields_str = fields
                     .iter()
                     .map(|field| match field {
-                        crate::data::CXField::Standard { _type, .. } => format!("{_type}"),
-                        crate::data::CXField::Bitfield {
+                        CXField::Standard { _type, .. } => format!("{_type}"),
+                        CXField::Bitfield {
                             name,
                             integer_type,
                             width,
@@ -515,10 +465,10 @@ impl Display for CXTypeKind {
                 let variants_str = variants
                     .iter()
                     .map(|field| match field {
-                        crate::data::CXField::Standard { name, _type } => {
+                        CXField::Standard { name, _type } => {
                             format!("{name}: {_type}")
                         }
-                        crate::data::CXField::Bitfield { .. } => {
+                        CXField::Bitfield { .. } => {
                             "<invalid bitfield variant>".to_string()
                         }
                     })
@@ -573,15 +523,6 @@ impl Display for CXTemplateInput {
             .map(|param| param.to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        write!(f, "<{params_str}>")
-    }
-}
-
-impl<Shell: Display> Display for CXTemplate<Shell> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.shell.fmt(f)?;
-
-        let params_str = self.prototype.types.join(", ");
         write!(f, "<{params_str}>")
     }
 }

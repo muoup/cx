@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use cx_ast::ast::VisibilityMode;
 use cx_ast::{
-    ast::{CXFunctionStmt, CXGlobalVariable, CXAST},
+    ast::{CXASTStmt, CXGlobalVariable, CXAST},
     data::{
         CXFunctionPrototype, CXFunctionTemplate, CXLinkageMode, CXTemplatePrototype, CXType,
         CXTypeTemplate, ModuleResource,
@@ -88,78 +88,8 @@ impl<'a> ParserData<'a> {
             .expect("CRITICAL: No comma mode to get!")
     }
 
-    pub fn add_type(
-        &mut self,
-        name: String,
-        _type: CXType,
-        prototype: Option<CXTemplatePrototype>,
-    ) {
-        match prototype {
-            Some(proto) => {
-                self.ast.type_data.insert_template(
-                    name,
-                    ModuleResource::new(
-                        CXTypeTemplate {
-                            prototype: proto.clone(),
-                            shell: _type,
-                        },
-                        self.visibility,
-                        CXLinkageMode::Standard,
-                    ),
-                );
-            }
-            None => {
-                self.ast.type_data.insert_standard(
-                    name,
-                    ModuleResource::new(_type, self.visibility, CXLinkageMode::Standard),
-                );
-            }
-        }
-    }
-
-    pub fn add_function(
-        &mut self,
-        function: CXFunctionPrototype,
-        prototype: Option<CXTemplatePrototype>,
-    ) {
-        match prototype {
-            Some(proto) => {
-                let linkage = function.linkage;
-                self.ast.function_data.insert_template(
-                    function.kind.into_key(),
-                    ModuleResource::new(
-                        CXFunctionTemplate {
-                            prototype: proto.clone(),
-                            shell: function,
-                        },
-                        self.visibility,
-                        linkage,
-                    ),
-                );
-            }
-            None => {
-                let linkage = function.linkage;
-                self.ast.function_data.insert_standard(
-                    function.kind.into_key(),
-                    ModuleResource::new(function, self.visibility, linkage),
-                );
-            }
-        }
-    }
-
-    pub fn add_global_variable(
-        &mut self,
-        name: String,
-        var: CXGlobalVariable,
-        linkage: CXLinkageMode,
-    ) {
-        self.ast
-            .global_variables
-            .insert(name, ModuleResource::new(var, self.visibility, linkage));
-    }
-
-    pub fn add_function_stmt(&mut self, stmt: CXFunctionStmt) {
-        self.ast.function_stmts.push(stmt)
+    pub fn add_stmt(&mut self, stmt: CXASTStmt) {
+        self.ast.definition_stmts.push(stmt)
     }
 
     pub fn take_ast(self) -> CXAST {

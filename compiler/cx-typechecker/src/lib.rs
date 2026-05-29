@@ -1,4 +1,4 @@
-use cx_ast::ast::{CXAST, CXFunctionStmt, VisibilityMode};
+use cx_ast::ast::{CXAST, CXASTStmt, VisibilityMode};
 use cx_mir::mir::program::EnvironmentNamespace;
 use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
 use cx_util::{
@@ -27,8 +27,8 @@ pub fn typecheck(
     complete_base_globals(env, namespace, ast)?;
     complete_base_functions(env, namespace)?;
 
-    for stmt in ast.function_stmts.iter() {
-        if let CXFunctionStmt::FunctionDefinition { prototype, body } = stmt {
+    for stmt in ast.definition_stmts.iter() {
+        if let CXASTStmt::FunctionDefinition { prototype, body } = stmt {
             let prototype = env.complete_prototype(namespace, None, prototype)?;
             typecheck_function(env, namespace, prototype.clone(), body)?;
         }

@@ -10,7 +10,7 @@ use crate::{
     },
 };
 use cx_ast::{
-    ast::{CXExpression, CXFunctionStmt},
+    ast::{CXASTStmt, CXExpression},
     data::CXFunctionKind,
     symbols::UntypedSymbol,
 };
@@ -85,10 +85,10 @@ pub fn realize_fn_implementation(
         panic!("Template not found");
     };
     let body = base_ast
-        .function_stmts
+        .definition_stmts
         .iter()
         .find_map(|stmt| match stmt {
-            CXFunctionStmt::TemplatedFunction {
+            CXASTStmt::TemplatedFunction {
                 prototype, body, ..
             } if prototype.kind == template.resource.shell.kind => Some(body),
             _ => None,

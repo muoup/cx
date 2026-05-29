@@ -1,7 +1,7 @@
 use cx_ast::{
     assert_token_matches,
     ast::VisibilityMode,
-    ast::{CXExprKind, CXExpression, CXFunctionStmt, CXGlobalVariable, CXAST},
+    ast::{CXASTStmt, CXExprKind, CXExpression, CXGlobalVariable, CXAST},
     data::{
         CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXTemplatePrototype, CXTypeKind,
     },
@@ -27,48 +27,14 @@ use crate::parse::{
     types::{parse_initializer, parse_typedef_initializer},
 };
 
-fn active_body_template_prototype(
-    prototype: &CXFunctionPrototype,
-    function_template: Option<&CXTemplatePrototype>,
-) -> Option<CXTemplatePrototype> {
-    let mut types = Vec::new();
-
-    let member_type = match &prototype.kind {
-        CXFunctionKind::MemberFunction { member_type, .. }
-        | CXFunctionKind::StaticMemberFunction { member_type, .. } => Some(member_type),
-        CXFunctionKind::Standard(_) => None,
-    };
-
-    if let Some(CXFunctionTypeIdent::Templated(_, input)) = member_type {
-        for param in &input.params {
-            if let CXTypeKind::Identifier { name, .. } = &param.kind {
-                let name = name.name.as_string();
-                if !types.contains(&name) {
-                    types.push(name);
-                }
-            }
-        }
-    }
-
-    if let Some(function_template) = function_template {
-        for name in &function_template.types {
-            if !types.contains(name) {
-                types.push(name.clone());
-            }
-        }
-    }
-
-    (!types.is_empty()).then_some(CXTemplatePrototype { types })
-}
-
 mod expressions;
 mod functions;
+mod macros;
 mod operators;
 mod parser;
 mod templates;
 mod types;
-
-pub fn parse_ast(
+ fn parse_ast(
     iter: TokenIter,
     pp_contents: &PreparseContents,
     registry: &GlobalPreparseRegistry,
@@ -175,42 +141,21 @@ fn parse_fn_merge(
 
         data.add_function(prototype, None);
     } else {
-        let body_template = active_body_template_prototype(&prototype, template_prototype.as_ref());
+        let body = if let Some(template_prototype) = template_prototype {
+            note_templated_types(data, template_prototype);
+            let body = parse_body(data)?;
+            unnote_templated_types(data, template_prototype);
+            body
+        } else {
+            parse_body(data)
+        };
 
-        match template_prototype {
-            Some(template_prototype) => {
-                if let Some(body_template) = &body_template {
-                    note_templated_types(data, body_template);
-                }
-                let body = parse_body(data)?;
-                if let Some(body_template) = &body_template {
-                    unnote_templated_types(data, body_template);
-                }
-
-                data.add_function(prototype.clone(), Some(template_prototype.clone()));
-                data.add_function_stmt(CXFunctionStmt::TemplatedFunction {
-                    prototype,
-                    template_prototype,
-                    body: Box::new(body),
-                });
-            }
-
-            None => {
-                if let Some(body_template) = &body_template {
-                    note_templated_types(data, body_template);
-                }
-                let body = parse_body(data)?;
-                if let Some(body_template) = &body_template {
-                    unnote_templated_types(data, body_template);
-                }
-
-                data.add_function(prototype.clone(), None);
-                data.add_function_stmt(CXFunctionStmt::FunctionDefinition {
-                    prototype,
-                    body: Box::new(body),
-                });
-            }
-        }
+        data.add_stmt(CXASTStmt::FunctionDefinition {
+            prototype,
+            visibility: data.visibility,
+            body: Some(body),
+            template_prototype,
+        });
     }
 
     Ok(())
