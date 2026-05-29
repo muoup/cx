@@ -56,7 +56,7 @@ pub enum CompilationStep {
      *
      *  Outputs:  A naively parsed AST.
      */
-    ASTParse = 1 << 1,
+    Parse = 1 << 1,
  
     /**
      *  Typechecks all indirectly implemented functions and types to a type-checked

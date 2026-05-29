@@ -150,7 +150,7 @@ impl FMIRContext {
         };
 
         for function in mir.functions.iter() {
-            if !function.prototype.contract.safe {
+            if !function.prototype.signature.contract.safe {
                 continue;
             }
 

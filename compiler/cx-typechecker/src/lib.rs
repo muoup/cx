@@ -1,11 +1,7 @@
 use cx_ast::ast::{CXAST, CXASTStmt, VisibilityMode};
 use cx_mir::mir::program::EnvironmentNamespace;
-use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
 use cx_util::{
     CXResult,
-    identifier::CXIdent,
-    module_path::ModulePath,
-    namespace::{NamespacePath, QualifiedName},
 };
 
 pub mod log;

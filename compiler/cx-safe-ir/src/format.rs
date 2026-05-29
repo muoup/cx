@@ -553,10 +553,11 @@ impl Display for FMIRFunctionDisplay<'_> {
             "{}",
             self.function
                 .prototype
+                .signature
                 .return_type
                 .display_with(self.definitions)
         )?;
-        for param in &self.function.prototype.params {
+        for param in &self.function.prototype.signature.params {
             write!(f, " -> {}", param._type.display_with(self.definitions))?;
         }
 

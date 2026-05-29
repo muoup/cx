@@ -7,7 +7,7 @@ use cx_ast::{
 };
 use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
-use cx_parsing::ParseErrorLog;
+use cx_parsing::{ParseErrorLog, decompose_ast};
 use cx_parsing::parse::parse_ast;
 use cx_parsing::preparse::{PreparseConfig, preparse};
 use cx_pipeline_data::db::ModuleMap;
@@ -95,7 +95,7 @@ pub(crate) fn scheduling_loop(
 
         let step_name = match job.step {
             CompilationStep::PreParse => "Lexing",
-            CompilationStep::ASTParse => "Parsing",
+            CompilationStep::Parse => "Parsing",
             CompilationStep::Typechecking => "Typechecking",
             CompilationStep::LMIRGen => "Lowering",
             CompilationStep::Codegen => "Compiling",
@@ -179,16 +179,14 @@ pub(crate) fn handle_job(
 
     match job.step {
         CompilationStep::PreParse => {
-            let pp_data = context.module_db.preparse_base.get(&job.unit);
-
             let mut new_jobs = import_jobs_for_unit(context, &pp_data.imports)?;
 
-            job.step = CompilationStep::ASTParse;
+            job.step = CompilationStep::Parse;
             new_jobs.push(job);
 
             Ok(new_jobs.into())
         }
-        CompilationStep::ASTParse => map_reqs_new_stage(job, CompilationStep::Typechecking),
+        CompilationStep::Parse => map_reqs_new_stage(job, CompilationStep::Typechecking),
         CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::LMIRGen),
         CompilationStep::LMIRGen => map_reqs_new_stage(job, CompilationStep::Codegen),
         CompilationStep::Codegen => Ok([].into()),
@@ -219,55 +217,6 @@ fn load_precompiled_data(
     // retrieve_map_data(context, &context.module_db.preparse_full, unit)?;
 
     Some(())
-}
-
-fn decompose_ast_symbols(unit: &CompilationUnit, ast: &CXAST) -> DecomposedModuleSymbols {
-    let mut output = DecomposedModuleSymbols::new(NamespacePath::from(unit.module_path().clone()));
-
-    for (name, ty) in ast.type_data.standard_iter() {
-        output.symbols.push((
-            SymbolKey::Type(name.clone()),
-            UntypedSymbol::Type(ty.clone()),
-        ));
-    }
-
-    for (name, ty) in ast.type_data.template_iter() {
-        output.symbols.push((
-            SymbolKey::Type(name.clone()),
-            UntypedSymbol::TypeTemplate(ty.clone()),
-        ));
-    }
-
-    for (key, function) in ast.function_data.standard_iter() {
-        output.symbols.push((
-            SymbolKey::Function(key.clone()),
-            UntypedSymbol::Function(function.clone()),
-        ));
-    }
-
-    for (key, function) in ast.function_data.template_iter() {
-        let body = ast.definition_stmts.iter().find_map(|stmt| match stmt {
-            CXASTStmt::TemplatedFunction { prototype, .. }
-                if prototype.kind.clone().into_key() == *key =>
-            {
-                Some(Box::new(stmt.clone()))
-            }
-            _ => None,
-        });
-        output.symbols.push((
-            SymbolKey::Function(key.clone()),
-            UntypedSymbol::FunctionTemplate(function.clone(), body),
-        ));
-    }
-
-    for (name, global) in ast.global_variables.iter() {
-        output.symbols.push((
-            SymbolKey::Global(name.clone()),
-            UntypedSymbol::Global(global.clone()),
-        ));
-    }
-
-    output
 }
 
 pub(crate) enum JobResult {
@@ -314,10 +263,6 @@ pub(crate) fn perform_job(
                 job.unit.to_string(),
                 NamespacePath::from(job.unit.module_path().clone()),
             )?;
-            // add_qualified_preparse_type_idents(
-            //     &mut output.type_idents,
-            //     &output.module_symbols.namespace,
-            // );
 
             if !job.unit.is_std_lib() {
                 output.imports.extend(
@@ -350,7 +295,7 @@ pub(crate) fn perform_job(
             // };
         }
 
-        CompilationStep::ASTParse => {
+        CompilationStep::Parse => {
             let pp_data = context.module_db.preparse_base.take(&job.unit);
             let lexemes = context.module_db.lex_tokens.get(&job.unit);
 
@@ -359,25 +304,26 @@ pub(crate) fn perform_job(
                 &pp_data,
                 &context.module_db.preparse_registry,
             )?;
-            context
-                .module_db
-                .symbol_registry
-                .insert_module(decompose_ast_symbols(&job.unit, &parsed_ast));
-
+            
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&parsed_ast);
             }
 
+            let namespace = NamespacePath::from(job.unit.module_path().clone());
+            let decomposed = decompose_ast(todo!(), parsed_ast.clone());
+
+            context.module_db.symbol_registry
+                .insert_module(namespace, data);
             context
                 .module_db
-                .naive_ast
+                .generation_ast
                 .insert(job.unit.clone(), parsed_ast);
         }
 
         CompilationStep::Typechecking => {
-            let structure_data = context.module_db.base_mappings.get(&job.unit);
             let self_ast = context.module_db.naive_ast.get(&job.unit);
             let lexemes = context.module_db.lex_tokens.get(&job.unit);
+            let namespace = NamespacePath::from(job.unit.module_path().clone());
 
             let mut env = TypeEnvironment::new(
                 lexemes.as_ref(),
@@ -386,7 +332,7 @@ pub(crate) fn perform_job(
                 &context.module_db,
             );
 
-            typecheck(&mut env, structure_data.as_ref(), &self_ast)?;
+            typecheck(&mut env, &namespace, &self_ast)?;
             fulfill_requests(&job.unit, &mut env)?;
 
             let mir = env.finish_mir_unit()?;
@@ -670,14 +616,14 @@ fn handle_job_collect_errors(
 
             // Add the next step for this job
             let mut next_job = job.clone();
-            next_job.step = CompilationStep::ASTParse;
+            next_job.step = CompilationStep::Parse;
             next_job.requirements = Vec::new();
             new_jobs.push(next_job);
 
             Some(HandleJobResult::Success(new_jobs.into()))
         }
 
-        CompilationStep::ASTParse => Some(HandleJobResult::Success(map_reqs_new_stage(
+        CompilationStep::Parse => Some(HandleJobResult::Success(map_reqs_new_stage(
             CompilationStep::Typechecking,
         ))),
 

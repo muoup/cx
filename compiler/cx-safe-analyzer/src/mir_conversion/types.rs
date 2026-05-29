@@ -8,11 +8,11 @@ pub(crate) fn validate_safe_function_signature(
     prototype: &MIRFunctionPrototype,
     body: &MIRExpression,
 ) -> CXResult<()> {
-    if !prototype.contract.safe {
+    if !prototype.signature.contract.safe {
         return Ok(());
     }
 
-    if prototype.var_args {
+    if prototype.signature.var_args {
         return log_analysis_error!(
             env,
             body,

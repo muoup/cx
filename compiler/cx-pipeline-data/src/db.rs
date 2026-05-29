@@ -1,6 +1,6 @@
 use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
-use cx_ast::ast::CXAST;
+use cx_ast::decomposition::CXGenerationAST;
 use cx_ast::registry::GlobalSymbolRegistry;
 use cx_lmir::LMIRUnit;
 use cx_mir::mir::program::{EnvironmentNamespace, MIRUnit};
@@ -23,7 +23,7 @@ pub struct ModuleData {
     pub lex_tokens: ModuleMap<Vec<Token>>,
     pub preparse_base: ModuleMap<PreparseContents>,
 
-    pub naive_ast: ModuleMap<CXAST>,
+    pub generation_ast: ModuleMap<CXGenerationAST>,
     pub base_mappings: ModuleMap<EnvironmentNamespace>,
 
     pub mir: ModuleMap<MIRUnit>,
@@ -44,10 +44,8 @@ impl ModuleData {
             symbol_registry: GlobalSymbolRegistry::default(),
 
             lex_tokens: ModuleMap::new(".cx-tokens"),
-
             preparse_base: ModuleMap::new(".cx-preparse"),
-
-            naive_ast: ModuleMap::new(".cx-naive-ast"),
+            generation_ast: ModuleMap::new(".cx-naive-ast"),
 
             base_mappings: ModuleMap::new(".cx-structure-data"),
             mir: ModuleMap::new(".cx-typechecked-ast"),

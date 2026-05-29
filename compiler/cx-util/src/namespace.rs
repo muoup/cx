@@ -54,6 +54,12 @@ impl NamespacePath {
         Self(segments)
     }
 
+    pub fn join(&self, other: &Self) -> Self {
+        let mut segments = self.0.clone();
+        segments.extend_from_slice(&other.0);
+        Self(segments)
+    }
+
     pub fn parent_and_name(&self) -> Option<(Self, CXIdent)> {
         let (name, parent) = self.0.split_last()?;
         Some((Self(parent.to_vec()), name.clone()))
