@@ -35,6 +35,26 @@ pub fn compatible_types(
         }
 
         (
+            MIRTypeKind::MemoryReference {
+                inner_type: inner1,
+                bitfield: bitfield1,
+            },
+            MIRTypeKind::MemoryReference {
+                inner_type: inner2,
+                bitfield: bitfield2,
+            },
+        ) => {
+            if bitfield1 != bitfield2 {
+                return Ok(false);
+            }
+
+            let inner1 = env.symbols.context.get(*inner1).cloned().unwrap();
+            let inner2 = env.symbols.context.get(*inner2).cloned().unwrap();
+
+            compatible_types(env, &inner1, &inner2)
+        }
+
+        (
             MIRTypeKind::PointerTo {
                 inner_type: inner1, ..
             },

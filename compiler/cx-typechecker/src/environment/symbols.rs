@@ -7,7 +7,7 @@ use cx_mir::mir::data::{
     MIRFunctionPrototype, MIRType, MIRTypeContext, MIRTypeId, MIRTypeKind, TemplateInfo,
 };
 use cx_mir::mir::expression::{MIRExpression, MIRPureExpression};
-use cx_util::identifier::CXIdent;
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 use cx_util::scoped_map::ScopedMap;
 
 pub(crate) mod completion;
@@ -266,7 +266,7 @@ impl SymbolRegistry {
         self.context.insert(
             id,
             MIRType {
-                strong_identifier: Some(CXIdent::new(name)),
+                strong_identifier: Some(QualifiedName::new_raw(CXIdent::new(name))),
                 kind: MIRTypeKind::Undefined,
                 ..Default::default()
             },
@@ -350,7 +350,7 @@ impl SymbolRegistry {
     pub fn update_named_type_metadata(
         &mut self,
         id: MIRTypeId,
-        new_name: CXIdent,
+        new_name: QualifiedName,
         template_info: Option<Box<TemplateInfo>>,
     ) {
         let Some(existing) = self.context.get_mut(id) else {
@@ -358,9 +358,10 @@ impl SymbolRegistry {
         };
 
         existing.strong_identifier = Some(new_name.clone());
-        existing.debug_name.get_or_insert_with(|| new_name.clone());
+        existing.debug_name.get_or_insert_with(|| new_name.name.clone());
         existing.template_info = template_info.clone();
-        self.context.register_identifier(new_name, id);
+        self.context
+            .register_identifier(CXIdent::new(new_name.as_flat_name()), id);
     }
 
     pub fn get_realized_type(&self, name: &str) -> Option<MIRType> {

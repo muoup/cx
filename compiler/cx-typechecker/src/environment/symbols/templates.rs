@@ -15,8 +15,12 @@ use cx_mir::mir::data::{
     MIRFunctionPrototype, MIRFunctionSignature, MIRMoveAttributes, MIRTemplateInput, MIRType,
     MIRTypeKind,
 };
+use cx_mir::mir::name_mangling::mangle_namespace_symbol;
 use cx_mir::mir::program::MIRBaseMappings;
-use cx_util::identifier::CXIdent;
+use cx_util::{
+    identifier::CXIdent,
+    namespace::{NamespacePath, QualifiedName},
+};
 use cx_util::{CXError, CXResult};
 
 pub(crate) type Overwrites = crate::environment::symbols::TemplateBindingFrame;
@@ -43,9 +47,16 @@ pub fn mangle_template_name(env: &TypeEnvironment, name: &str, input: &MIRTempla
     }
 
     mangled_name.push('_');
-    mangled_name.push_str(name);
+    mangled_name.push_str(&mangle_namespace_symbol(&qualified_name_from_str(name)));
 
     mangled_name
+}
+
+fn qualified_name_from_str(name: &str) -> QualifiedName {
+    let path = NamespacePath::from_scoped_path(name);
+    path.parent_and_name()
+        .map(|(namespace, name)| QualifiedName::new(namespace, name))
+        .unwrap_or_else(|| QualifiedName::new_raw(CXIdent::new(name)))
 }
 
 pub(crate) fn instantiate_type_template(
@@ -54,28 +65,32 @@ pub(crate) fn instantiate_type_template(
     input: &CXTemplateInput,
     name: &str,
 ) -> CXResult<MIRType> {
-    let base_data_ref = base_data_from_module(env, base_data, None);
-    let base_data = base_data_ref.as_ref();
+    let Some(template) = base_data.type_data.get_template(&name.to_owned()) else {
+        return CXError::create_result(format!("Unknown template type: {}", name));
+    };
     let completed_input =
         internal_complete_template_input(env, base_data, None, &CXExpression::default(), input)?;
-    let template_name = mangle_template_name(env, name, &completed_input);
+    let base_data_ref = base_data_from_module(env, base_data, template.external_module.as_ref());
+    let base_data = base_data_ref.as_ref();
+    let shell = &template.resource.shell;
+    let aggregate_base_name =
+        templated_aggregate_base_name(shell).unwrap_or_else(|| terminal_name(name).as_string());
+    let strong_name = QualifiedName::new(
+        base_data.namespace.clone(),
+        CXIdent::new(aggregate_base_name.clone()),
+    );
+    let template_name = mangle_template_name(env, &strong_name.as_flat_name(), &completed_input);
 
     if let Some(template) = env.get_realized_type(template_name.as_str()) {
         return Ok(template.clone());
     }
 
-    let Some(template) = base_data.type_data.get_template(&name.to_owned()) else {
-        return CXError::create_result(format!("Unknown template type: {}", name));
-    };
-
-    let shell = &template.resource.shell;
-
     let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input)?;
-    let aggregate_base_name = templated_aggregate_base_name(shell);
     let mut previous_named_type = None;
     let mut previous_named_id = None;
 
-    if let Some(base_name) = aggregate_base_name.as_ref() {
+    if templated_aggregate_base_name(shell).is_some() {
+        let base_name = &aggregate_base_name;
         let template_type_id = env.get_or_create_named_type_id(template_name.as_str());
         previous_named_id = env
             .symbols
@@ -94,7 +109,8 @@ pub(crate) fn instantiate_type_template(
 
     let cx_type = int_complete_type(env, base_data, &CXExpression::default(), shell);
 
-    if let Some(base_name) = aggregate_base_name.as_ref() {
+    if templated_aggregate_base_name(shell).is_some() {
+        let base_name = &aggregate_base_name;
         match previous_named_type {
             Some(previous) => {
                 env.symbols
@@ -122,22 +138,29 @@ pub(crate) fn instantiate_type_template(
 
     let mut cx_type = cx_type?;
 
-    if let Some(base_name) = aggregate_base_name {
+    if templated_aggregate_base_name(shell).is_some() {
         let template_info = Some(Box::new(cx_mir::mir::data::TemplateInfo {
-            base_name: CXIdent::new(base_name.clone()),
+            base_name: CXIdent::new(aggregate_base_name.clone()),
             template_input: completed_input.clone(),
         }));
         let type_id = env.get_or_create_named_type_id(template_name.as_str());
-        cx_type.strong_identifier = Some(CXIdent::new(template_name.clone()));
-        cx_type.debug_name = Some(CXIdent::new(base_name));
+        cx_type.strong_identifier = Some(strong_name.clone());
+        cx_type.debug_name = Some(CXIdent::new(aggregate_base_name));
         cx_type.template_info = template_info.clone();
         env.finish_type_definition(type_id, cx_type.clone());
-        env.update_named_type_metadata(type_id, CXIdent::new(template_name.clone()), template_info);
+        env.update_named_type_metadata(type_id, strong_name, template_info);
     }
 
     env.add_type(template_name, cx_type.clone());
 
     Ok(cx_type)
+}
+
+fn terminal_name(name: &str) -> CXIdent {
+    NamespacePath::from_scoped_path(name)
+        .parent_and_name()
+        .map(|(_, name)| name)
+        .unwrap_or_else(|| CXIdent::new(name))
 }
 
 fn templated_aggregate_base_name(shell: &CXType) -> Option<String> {
@@ -162,7 +185,7 @@ fn templated_aggregate_provisional(
             visibility: cx_ast::ast::VisibilityMode::Private,
             specifiers: shell.specifiers,
             move_attributes: resolve_template_attributes(env, attributes),
-            strong_identifier: Some(name.clone()),
+            strong_identifier: Some(QualifiedName::new_raw(name.clone())),
             debug_name: Some(name),
             template_info: None,
             kind: MIRTypeKind::Structured { fields: vec![] },
@@ -171,7 +194,7 @@ fn templated_aggregate_provisional(
             visibility: cx_ast::ast::VisibilityMode::Private,
             specifiers: shell.specifiers,
             move_attributes: MIRMoveAttributes::default(),
-            strong_identifier: Some(name.clone()),
+            strong_identifier: Some(QualifiedName::new_raw(name.clone())),
             debug_name: Some(name),
             template_info: None,
             kind: MIRTypeKind::Union { variants: vec![] },
@@ -180,7 +203,7 @@ fn templated_aggregate_provisional(
             visibility: cx_ast::ast::VisibilityMode::Private,
             specifiers: shell.specifiers,
             move_attributes: resolve_template_attributes(env, attributes),
-            strong_identifier: Some(name.clone()),
+            strong_identifier: Some(QualifiedName::new_raw(name.clone())),
             debug_name: Some(name),
             template_info: None,
             kind: MIRTypeKind::TaggedUnion { variants: vec![] },

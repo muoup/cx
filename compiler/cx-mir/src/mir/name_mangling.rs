@@ -1,5 +1,6 @@
 use crate::mir::data::{MIRType, MIRTypeContext, MIRTypeKind};
 use crate::mir::r#type::MIRField;
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 pub fn base_mangle_standard(name: &str) -> String {
     if !name.contains("::") {
@@ -7,6 +8,18 @@ pub fn base_mangle_standard(name: &str) -> String {
     }
 
     format!("_N{}", name.replace("::", "_"))
+}
+
+pub fn mangle_namespace_symbol(name: &QualifiedName) -> String {
+    let mut mangled = String::from("_N");
+
+    for segment in name.namespace.segments() {
+        push_symbol_segment(&mut mangled, segment);
+    }
+
+    mangled.push('_');
+    push_symbol_segment(&mut mangled, &name.name);
+    mangled
 }
 
 pub fn base_mangle_member(
@@ -79,7 +92,7 @@ pub(crate) fn type_mangle(definitions: &MIRTypeContext, ty: &MIRType) -> String 
         }
         MIRTypeKind::Structured { fields } => {
             mangled.push('S');
-            push_identifier(&mut mangled, ty);
+            push_identifier(&mut mangled, definitions, ty);
             push_move_attributes(&mut mangled, ty);
             if ty.get_name().is_none() {
                 push_aggregate_fields(&mut mangled, definitions, fields);
@@ -87,14 +100,14 @@ pub(crate) fn type_mangle(definitions: &MIRTypeContext, ty: &MIRType) -> String 
         }
         MIRTypeKind::Union { variants } => {
             mangled.push('U');
-            push_identifier(&mut mangled, ty);
+            push_identifier(&mut mangled, definitions, ty);
             if ty.get_name().is_none() {
                 push_aggregate_fields(&mut mangled, definitions, variants);
             }
         }
         MIRTypeKind::TaggedUnion { variants } => {
             mangled.push('T');
-            push_identifier(&mut mangled, ty);
+            push_identifier(&mut mangled, definitions, ty);
             push_move_attributes(&mut mangled, ty);
             if ty.get_name().is_none() {
                 push_aggregate_fields(&mut mangled, definitions, variants);
@@ -113,9 +126,7 @@ pub(crate) fn type_mangle(definitions: &MIRTypeContext, ty: &MIRType) -> String 
         MIRTypeKind::Undefined => {
             mangled.push('X');
             if let Some(name) = ty.get_name() {
-                mangled.push_str(name.as_str().len().to_string().as_str());
-                mangled.push('_');
-                mangled.push_str(name.as_str());
+                push_symbol_segment(&mut mangled, name);
             }
         }
         MIRTypeKind::Unit => {
@@ -126,13 +137,29 @@ pub(crate) fn type_mangle(definitions: &MIRTypeContext, ty: &MIRType) -> String 
     mangled
 }
 
-fn push_identifier(mangled: &mut String, ty: &MIRType) {
+fn push_identifier(mangled: &mut String, definitions: &MIRTypeContext, ty: &MIRType) {
     if let Some(name) = ty.get_name() {
         mangled.push('n');
-        mangled.push_str(name.as_str().len().to_string().as_str());
-        mangled.push('_');
-        mangled.push_str(name.as_str());
+        if let Some(strong_name) = ty.strong_identifier() {
+            mangled.push_str(&mangle_namespace_symbol(strong_name));
+        } else {
+            push_symbol_segment(mangled, name);
+        }
+
+        if let Some(template_info) = ty.get_template_data() {
+            mangled.push('T');
+            for arg in &template_info.template_input.args {
+                mangled.push_str(&type_mangle(definitions, arg));
+            }
+            mangled.push('E');
+        }
     }
+}
+
+fn push_symbol_segment(mangled: &mut String, name: &CXIdent) {
+    mangled.push_str(name.as_str().len().to_string().as_str());
+    mangled.push('_');
+    mangled.push_str(name.as_str());
 }
 
 fn push_move_attributes(mangled: &mut String, ty: &MIRType) {

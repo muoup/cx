@@ -117,7 +117,7 @@ impl TypeEnvironment<'_> {
     pub fn update_named_type_metadata(
         &mut self,
         id: MIRTypeId,
-        new_name: CXIdent,
+        new_name: QualifiedName,
         template_info: Option<Box<cx_mir::mir::data::TemplateInfo>>,
     ) {
         self.symbols

@@ -5,7 +5,7 @@ use cx_ast::{
     data::{CXLinkageMode, ModuleResource},
     type_map::{CXFnMap, CXTypeMap},
 };
-use cx_util::identifier::CXIdent;
+use cx_util::{identifier::CXIdent, namespace::NamespacePath};
 
 use crate::mir::{
     data::{MIRFunctionPrototype, MIRType, MIRTypeContext},
@@ -24,6 +24,7 @@ pub struct MIRUnit {
 #[derive(Debug, Clone)]
 pub struct MIRBaseMappings {
     pub unit: String,
+    pub namespace: NamespacePath,
     pub type_data: CXTypeMap,
     pub fn_data: CXFnMap,
     pub global_variables: HashMap<String, ModuleResource<CXGlobalVariable>>,

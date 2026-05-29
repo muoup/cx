@@ -9,7 +9,7 @@ use cx_mir::mir::program::MIRBaseMappings;
 use cx_mir::mir::r#type::MIRField;
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
-use cx_util::namespace::QualifiedName;
+use cx_util::namespace::{NamespacePath, QualifiedName};
 
 use crate::environment::functions::completion::{complete_type, int_complete_fn_prototype};
 use crate::environment::symbols::templates::instantiate_type_template;
@@ -91,17 +91,18 @@ fn complete_type_id(
 
 fn make_named_type(
     ty: &CXType,
-    name: CXIdent,
+    name: QualifiedName,
     template_info: Option<Box<cx_mir::mir::data::TemplateInfo>>,
     attributes: MIRMoveAttributes,
     kind: MIRTypeKind,
 ) -> MIRType {
+    let debug_name = name.name.clone();
     MIRType {
         visibility: VisibilityMode::Private,
         specifiers: ty.specifiers,
         move_attributes: attributes,
         strong_identifier: Some(name),
-        debug_name: None,
+        debug_name: Some(debug_name),
         template_info,
         kind,
     }
@@ -120,7 +121,7 @@ fn named_predeclaration_type(
         visibility: VisibilityMode::Private,
         specifiers: ty.specifiers,
         move_attributes: MIRMoveAttributes::default(),
-        strong_identifier: Some(name.clone()),
+        strong_identifier: Some(QualifiedName::new_raw(name.clone())),
         debug_name: None,
         template_info: None,
         kind: MIRTypeKind::Undefined,
@@ -261,6 +262,7 @@ fn complete_named_aggregate<F>(
     expr: &CXExpression,
     ty: &CXType,
     name: CXIdent,
+    strong_name: QualifiedName,
     template_info: Option<Box<cx_mir::mir::data::TemplateInfo>>,
     attributes: MIRMoveAttributes,
     raw_fields: &[CXField],
@@ -273,11 +275,11 @@ where
     let type_id = env.get_or_create_named_type_id(name.as_str());
     env.symbols
         .context
-        .register_identifier(name.clone(), type_id);
+        .register_identifier(CXIdent::new(strong_name.as_flat_name()), type_id);
 
     let provisional = make_named_type(
         ty,
-        name.clone(),
+        strong_name.clone(),
         template_info.clone(),
         attributes,
         kind_ctor(Vec::new()),
@@ -312,7 +314,7 @@ where
         Ok(fields) => {
             let completed = make_named_type(
                 ty,
-                name.clone(),
+                strong_name,
                 template_info,
                 attributes,
                 kind_ctor(fields),
@@ -335,7 +337,15 @@ fn ensure_named_identifier_completed(
     ty: &CXType,
     name: &QualifiedName,
 ) -> CXResult<Option<MIRType>> {
-    let Some(inner) = base_data.type_data.get_standard(&name.as_flat_name()) else {
+    let inner = base_data
+        .type_data
+        .get_standard(&name.as_flat_name())
+        .or_else(|| {
+            (name.namespace == base_data.namespace)
+                .then(|| base_data.type_data.get_standard(&name.name.as_string()))
+                .flatten()
+        });
+    let Some(inner) = inner else {
         return Ok(None);
     };
 
@@ -352,6 +362,7 @@ fn ensure_named_identifier_completed(
                 expr,
                 ty,
                 struct_name.clone(),
+                declared_type_name(base_data, inner.external_module.as_ref(), struct_name.clone()),
                 None,
                 MIRMoveAttributes { nocopy, nodrop },
                 fields.as_slice(),
@@ -368,6 +379,7 @@ fn ensure_named_identifier_completed(
             expr,
             ty,
             union_name.clone(),
+            declared_type_name(base_data, inner.external_module.as_ref(), union_name.clone()),
             None,
             MIRMoveAttributes::default(),
             fields.as_slice(),
@@ -386,6 +398,7 @@ fn ensure_named_identifier_completed(
                 expr,
                 ty,
                 union_name.clone(),
+                declared_type_name(base_data, inner.external_module.as_ref(), union_name.clone()),
                 None,
                 MIRMoveAttributes { nocopy, nodrop },
                 variants.as_slice(),
@@ -410,6 +423,17 @@ fn ensure_named_identifier_completed(
     };
 
     Ok(Some(completed))
+}
+
+fn declared_type_name(
+    base_data: &MIRBaseMappings,
+    external_module: Option<&String>,
+    name: CXIdent,
+) -> QualifiedName {
+    let namespace = external_module
+        .map(|module| NamespacePath::from_slash_path(&module.replace("::", "/")))
+        .unwrap_or_else(|| base_data.namespace.clone());
+    QualifiedName::new(namespace, name)
 }
 
 pub(crate) fn int_complete_type(
@@ -552,6 +576,7 @@ pub(crate) fn int_complete_type(
                 expr,
                 ty,
                 name.clone(),
+                declared_type_name(base_data, None, name.clone()),
                 None,
                 MIRMoveAttributes { nocopy, nodrop },
                 fields.as_slice(),
@@ -600,6 +625,7 @@ pub(crate) fn int_complete_type(
             expr,
             ty,
             name.clone(),
+            declared_type_name(base_data, None, name.clone()),
             None,
             MIRMoveAttributes::default(),
             fields.as_slice(),
@@ -638,6 +664,7 @@ pub(crate) fn int_complete_type(
                 expr,
                 ty,
                 name.clone(),
+                declared_type_name(base_data, None, name.clone()),
                 None,
                 MIRMoveAttributes { nocopy, nodrop },
                 variants.as_slice(),

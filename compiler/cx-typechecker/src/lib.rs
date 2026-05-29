@@ -124,6 +124,7 @@ pub fn build_interface(
 
     Ok(MIRBaseMappings {
         unit: unit.as_str().to_owned(),
+        namespace: NamespacePath::from_slash_path(&unit.module_path().as_str().replace("::", "/")),
         type_data: base_type_map,
         fn_data: base_fn_map,
         global_variables: base_globals,

@@ -238,7 +238,13 @@ fn write_type_root(
     mode: TypeRenderMode,
 ) -> std::fmt::Result {
     let mut state = TypeDisplayState::default();
-    write_type_value(f, definitions, ty, mode, &mut state)
+    write_type_value(f, definitions, ty, mode, &mut state)?;
+
+    if let Some(ident) = ty.strong_identifier() {
+        write!(f, " /* {ident} */")?;
+    }
+
+    Ok(())
 }
 
 fn write_type_value(

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use cx_ast::{ast::VisibilityMode, data::CXTypeQualifiers};
-use cx_util::identifier::CXIdent;
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 use speedy::{Readable, Writable};
 
 use crate::mir::{
@@ -23,7 +23,7 @@ pub struct MIRType {
     pub visibility: VisibilityMode,
     pub specifiers: CXTypeQualifiers,
     pub move_attributes: MIRMoveAttributes,
-    pub strong_identifier: Option<CXIdent>,
+    pub strong_identifier: Option<QualifiedName>,
     pub debug_name: Option<CXIdent>,
 
     pub template_info: Option<Box<TemplateInfo>>,
@@ -672,7 +672,17 @@ impl MIRType {
         }
 
         match (&self.strong_identifier, &other.strong_identifier) {
-            (Some(left), Some(right)) => return left == right,
+            (Some(left), Some(right)) => {
+                return left == right
+                    && match (&self.template_info, &other.template_info) {
+                        (Some(left), Some(right)) => {
+                            left.template_input
+                                .contextual_eq_with_state(&right.template_input, definitions, state)
+                        }
+                        (None, None) => true,
+                        (Some(_), None) | (None, Some(_)) => false,
+                    };
+            }
             (Some(_), None) | (None, Some(_)) => return false,
             (None, None) => {}
         }
@@ -704,6 +714,11 @@ impl MIRType {
     }
 
     pub fn with_name(mut self, name: CXIdent) -> MIRType {
+        self.strong_identifier = Some(QualifiedName::new_raw(name));
+        self
+    }
+
+    pub fn with_qualified_name(mut self, name: QualifiedName) -> MIRType {
         self.strong_identifier = Some(name);
         self
     }
@@ -809,10 +824,10 @@ impl MIRType {
     }
 
     pub fn get_name(&self) -> Option<&CXIdent> {
-        self.strong_identifier.as_ref()
+        self.strong_identifier.as_ref().map(|name| &name.name)
     }
 
-    pub fn strong_identifier(&self) -> Option<&CXIdent> {
+    pub fn strong_identifier(&self) -> Option<&QualifiedName> {
         self.strong_identifier.as_ref()
     }
 
@@ -824,7 +839,7 @@ impl MIRType {
         self.template_info
             .as_ref()
             .map(|info| &info.base_name)
-            .or(self.strong_identifier.as_ref())
+            .or_else(|| self.get_name())
     }
 
     pub fn get_template_data(&self) -> Option<&TemplateInfo> {
@@ -843,6 +858,10 @@ impl MIRType {
     }
 
     pub fn set_name(&mut self, new_name: CXIdent) {
+        self.strong_identifier = Some(QualifiedName::new_raw(new_name));
+    }
+
+    pub fn set_qualified_name(&mut self, new_name: QualifiedName) {
         self.strong_identifier = Some(new_name);
     }
 
@@ -857,7 +876,7 @@ impl MIRType {
         attributes: MIRMoveAttributes,
     ) -> Self {
         MIRType {
-            strong_identifier: Some(name),
+            strong_identifier: Some(QualifiedName::new_raw(name)),
             debug_name: None,
             template_info,
             move_attributes: attributes,
@@ -868,7 +887,7 @@ impl MIRType {
 
     pub fn named_union(name: CXIdent, _type_id: MIRTypeId) -> Self {
         MIRType {
-            strong_identifier: Some(name),
+            strong_identifier: Some(QualifiedName::new_raw(name)),
             debug_name: None,
             kind: MIRTypeKind::Union { variants: vec![] },
             ..Default::default()
@@ -882,7 +901,7 @@ impl MIRType {
         attributes: MIRMoveAttributes,
     ) -> Self {
         MIRType {
-            strong_identifier: Some(name),
+            strong_identifier: Some(QualifiedName::new_raw(name)),
             debug_name: None,
             template_info,
             move_attributes: attributes,
@@ -892,8 +911,13 @@ impl MIRType {
     }
 
     pub fn named_type_id(&self, definitions: &MIRTypeContext) -> Option<MIRTypeId> {
-        self.get_name()
-            .and_then(|name| definitions.identifier_id(name.as_str()))
+        self.strong_identifier
+            .as_ref()
+            .and_then(|name| definitions.identifier_id(&name.as_flat_name()))
+            .or_else(|| {
+                self.get_name()
+                    .and_then(|name| definitions.identifier_id(name.as_str()))
+            })
     }
 
     pub fn aggregate_fields(&self, definitions: &MIRTypeContext) -> Option<Vec<(String, MIRType)>> {
@@ -948,7 +972,7 @@ impl MIRType {
         new_name: &CXIdent,
         template_info: &Option<Box<TemplateInfo>>,
     ) {
-        self.strong_identifier = Some(new_name.clone());
+        self.strong_identifier = Some(QualifiedName::new_raw(new_name.clone()));
         self.debug_name.get_or_insert_with(|| new_name.clone());
         self.template_info = template_info.clone();
     }
