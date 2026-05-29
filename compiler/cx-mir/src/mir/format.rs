@@ -1,4 +1,4 @@
-use cx_ast::data::{CX_CONST, CX_RESTRICT, CX_VOLATILE, CXTypeQualifiers};
+use cx_ast::ast::modifiers::{CX_CONST, CX_RESTRICT, CX_VOLATILE, CXTypeQualifiers};
 use cx_util::identifier::CXIdent;
 
 use crate::mir::data::{MIRFunctionPrototype, MIRFunctionSignature, MIRParameter};
@@ -528,7 +528,7 @@ impl Display for MIRFunctionPrototypeDisplay<'_> {
         write!(
             f,
             "{} :: {}",
-            self.prototype.name,
+            self.prototype.name(),
             self.prototype.signature().display_with(self.definitions)
         )
     }

@@ -4,8 +4,8 @@ use crate::ast::{function::CXFunctionPrototype, global_var::CXGlobalVariable, mo
 
 #[derive(Debug, Clone)]
 pub struct UntypedSymbol {
-    visibility: VisibilityMode,
-    kind: UntypedSymbolKind
+    pub visibility: VisibilityMode,
+    pub kind: UntypedSymbolKind
 }
 
 #[derive(Debug, Clone)]

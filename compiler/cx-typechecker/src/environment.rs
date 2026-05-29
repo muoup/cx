@@ -283,7 +283,7 @@ impl TypeEnvironment<'_> {
         self.items.requests.push(request);
     }
 
-    pub fn pop_function_generation_request(&mut self) -> Option<MIRFunctionGenRequest> {
+    pub fn pop_request(&mut self) -> Option<MIRFunctionGenRequest> {
         self.items.requests.pop()
     }
 

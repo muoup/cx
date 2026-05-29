@@ -1,11 +1,10 @@
 use std::fmt::{Display, Formatter, Result};
 
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
-use speedy::{Readable, Writable};
 
 use crate::mir::data::{MIRFloatType, MIRType};
 
-#[derive(Clone, Debug, Readable, Writable)]
+#[derive(Clone, Debug)]
 pub enum MIRPattern {
     Integer(i64),
     Float(FloatWrapper, MIRFloatType),

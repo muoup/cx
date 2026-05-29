@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use cx_ast::data::CXLinkageMode;
+use cx_ast::ast::modifiers::CXLinkageMode;
 use cx_util::{identifier::CXIdent, namespace::NamespacePath};
 
 use crate::mir::{

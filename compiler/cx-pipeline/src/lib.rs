@@ -2,7 +2,7 @@ mod backends;
 mod linker;
 pub mod progress;
 mod scheduler;
-mod template_realizing;
+mod requests;
 
 use crate::linker::{link, link_relocatable};
 use crate::progress::ProgressReporter;

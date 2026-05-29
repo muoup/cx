@@ -1,6 +1,6 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::progress::ProgressReporter;
-use crate::template_realizing::fulfill_requests;
+use crate::requests::fulfill_requests;
 use cx_ast::{
     ast::{CXAST, CXASTStmt},
     symbols::{DecomposedModuleSymbols, SymbolKey, UntypedSymbol},

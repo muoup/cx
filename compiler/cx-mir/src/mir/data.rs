@@ -1,6 +1,5 @@
-use cx_ast::data::{CXFunctionContract, CXFunctionPrototype, CXLinkageMode};
+use cx_ast::ast::function::CXFunctionContract;
 use cx_util::identifier::CXIdent;
-use speedy::{Readable, Writable};
 
 use crate::mir::r#type::TypeComparisonState;
 pub use crate::mir::r#type::{
@@ -8,7 +7,7 @@ pub use crate::mir::r#type::{
     MIRTypeKind,
 };
 
-#[derive(Debug, Clone, Readable, Writable)]
+#[derive(Debug, Clone)]
 pub struct MIRParameter {
     pub name: Option<CXIdent>,
     pub _type: MIRType,
@@ -33,7 +32,7 @@ impl MIRParameter {
     }
 }
 
-#[derive(Debug, Clone, Readable, Writable)]
+#[derive(Debug, Clone)]
 pub struct MIRFunctionSignature {
     pub return_type: MIRType,
     pub params: Vec<MIRParameter>,
@@ -77,25 +76,19 @@ impl MIRFunctionSignature {
     }
 }
 
-#[derive(Debug, Clone, Readable, Writable)]
+#[derive(Debug, Clone)]
 pub struct MIRFunctionPrototype {
-    pub name: CXIdent,
-    pub source_prototype: CXFunctionPrototype,
-    pub return_type: MIRType,
-    pub params: Vec<MIRParameter>,
-    pub var_args: bool,
-    pub contract: CXFunctionContract,
-    pub linkage: CXLinkageMode,
+    name: CXIdent,
+    signature: MIRFunctionSignature,
 }
 
 impl MIRFunctionPrototype {
-    pub fn signature(&self) -> MIRFunctionSignature {
-        MIRFunctionSignature {
-            return_type: self.return_type.clone(),
-            params: self.params.clone(),
-            var_args: self.var_args,
-            contract: self.contract.clone(),
-        }
+    pub fn name(&self) -> &CXIdent {
+        &self.name
+    }
+
+    pub fn signature(&self) -> &MIRFunctionSignature {
+        &self.signature
     }
 
     pub fn contextual_eq(&self, other: &Self, definitions: &MIRTypeContext) -> bool {
@@ -110,20 +103,13 @@ impl MIRFunctionPrototype {
         state: &mut TypeComparisonState,
     ) -> bool {
         self.name == other.name
-            && self.var_args == other.var_args
             && self
-                .return_type
-                .contextual_eq_with_state(&other.return_type, definitions, state)
-            && self.params.len() == other.params.len()
-            && self
-                .params
-                .iter()
-                .zip(other.params.iter())
-                .all(|(left, right)| left.contextual_eq_with_state(right, definitions, state))
+                .signature
+                .contextual_eq_with_state(&other.signature, definitions, state)
     }
 }
 
-#[derive(Debug, Clone, Readable, Writable)]
+#[derive(Debug, Clone)]
 pub struct MIRTemplateInput {
     pub args: Vec<MIRType>,
 }
@@ -149,7 +135,7 @@ impl MIRTemplateInput {
     }
 }
 
-#[derive(Debug, Clone, Readable, Writable)]
+#[derive(Debug, Clone)]
 pub struct TemplateInfo {
     pub base_name: CXIdent,
     pub template_input: MIRTemplateInput,

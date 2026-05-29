@@ -29,28 +29,6 @@ pub(crate) struct PreparseData<'a> {
     pub(crate) visibility_mode: cx_preparse_data::VisibilityMode,
 }
 
-pub fn preparse(
-    config: &PreparseConfig,
-    tokens: TokenIter,
-    module: String,
-    path: NamespacePath,
-) -> CXResult<PreparseContents> {
-    let mut contents = PreparseContents::new(module, path);
-
-    let mut data = PreparseData {
-        contents: &mut contents,
-        config,
-        tokens,
-        visibility_mode: cx_preparse_data::VisibilityMode::Private,
-    };
-
-    while data.tokens.has_next() {
-        iterate_tokens(&mut data)?;
-    }
-
-    Ok(contents)
-}
-
 fn iterate_tokens(data: &mut PreparseData) -> CXResult<()> {
     while data.tokens.has_next() {
         consume_token(data)?;

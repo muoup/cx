@@ -6,21 +6,21 @@ use crate::mir::data::MIRFunctionPrototype;
 use crate::mir::pattern::MIRPattern;
 use crate::mir::r#type::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
 
-#[derive(Clone, Debug, Default, Readable, Writable)]
+#[derive(Clone, Debug, Default)]
 pub struct MIRFunctionContract {
     pub safe: bool,
     pub precondition: Option<Box<MIRExpression>>,
     pub postcondition: Option<(Option<CXIdent>, Box<MIRExpression>)>,
 }
 
-#[derive(Clone, Debug, Default, Readable, Writable)]
+#[derive(Clone, Debug, Default)]
 pub struct MIRExpression {
     pub kind: MIRExpressionKind,
     pub _type: MIRType,
     pub token_range: Option<TokenRange>,
 }
 
-#[derive(Clone, Debug, Readable, Writable)]
+#[derive(Clone, Debug)]
 pub enum MIRPureExpression {
     IntegerLiteral(i64, MIRIntegerType, bool),
     FunctionReference(Box<MIRFunctionPrototype>),
@@ -40,10 +40,10 @@ impl MIRPureExpression {
             Self::FunctionReference(prototype) => MIRExpression {
                 token_range: None,
                 kind: MIRExpressionKind::FunctionReference {
-                    name: prototype.name.clone(),
+                    name: prototype.name().clone(),
                 },
                 _type: MIRType::from(MIRTypeKind::Function {
-                    signature: Box::new(prototype.signature()),
+                    signature: Box::new(prototype.signature().clone()),
                 }),
             },
         }
@@ -56,7 +56,7 @@ pub struct MIRSourceRange {
     pub end_token: usize,
 }
 
-#[derive(Clone, Debug, Default, Readable, Writable)]
+#[derive(Clone, Debug, Default)]
 pub enum MIRExpressionKind {
     // Literals
     BoolLiteral(bool),
@@ -311,7 +311,7 @@ pub enum MIRFloatBinOp {
     FGE,
 }
 
-#[derive(Clone, Debug, Readable, Writable)]
+#[derive(Clone, Debug)]
 pub enum MIRBinOp {
     Integer {
         itype: MIRIntegerType,
@@ -398,7 +398,7 @@ pub enum MIRCoercion {
     ReinterpretBits,
 }
 
-#[derive(Clone, Debug, Readable, Writable)]
+#[derive(Clone, Debug)]
 pub struct StructInitialization {
     pub field_index: usize,
     pub value: MIRExpression,

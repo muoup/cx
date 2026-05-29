@@ -442,7 +442,7 @@ pub fn add_implicit_return(
             env,
             expr.token_range.as_ref(),
             "Function '{}' with non-void return type must have an explicit return statement",
-            func.name
+            func.name()
         );
     };
 

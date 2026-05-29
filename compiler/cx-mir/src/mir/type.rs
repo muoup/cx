@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use cx_ast::{ast::VisibilityMode, data::CXTypeQualifiers};
+use cx_ast::ast::modifiers::{CXTypeQualifiers, VisibilityMode};
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 use speedy::{Readable, Writable};
 
@@ -9,7 +9,7 @@ use crate::mir::{
     name_mangling::type_mangle,
 };
 
-#[derive(Debug, Default, Clone, Readable, Writable)]
+#[derive(Debug, Default, Clone)]
 pub struct MIRTypeContext {
     pub type_identifiers: Vec<(CXIdent, MIRTypeId)>,
     pub types: Vec<MIRType>,
@@ -18,7 +18,7 @@ pub struct MIRTypeContext {
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Readable, Writable)]
 pub struct MIRTypeId(pub u64);
 
-#[derive(Debug, Clone, Readable, Writable)]
+#[derive(Debug, Clone)]
 pub struct MIRType {
     pub visibility: VisibilityMode,
     pub specifiers: CXTypeQualifiers,
@@ -86,7 +86,7 @@ pub struct MIRBitfieldAccess {
     pub signed: bool,
 }
 
-#[derive(Debug, Clone, Readable, Writable)]
+#[derive(Debug, Clone)]
 pub enum MIRTypeKind {
     Unit,
     Integer {

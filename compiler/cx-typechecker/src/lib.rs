@@ -17,7 +17,7 @@ pub use type_checking::{
     complete_base_functions, complete_base_globals, realize_fn_implementation,
 };
 
-use crate::{environment::TypeEnvironment, type_checking::functions::typecheck_function};
+use crate::{environment::{MIRFunctionGenRequest, TypeEnvironment}, type_checking::functions::typecheck_function};
 
 pub fn typecheck(
     env: &mut TypeEnvironment,
@@ -37,102 +37,85 @@ pub fn typecheck(
     Ok(())
 }
 
-pub fn gather_interface(
-    context: &GlobalCompilationContext,
-    unit: &CompilationUnit,
-) -> CXResult<()> {
-    let interface = build_interface(context, unit)?;
-    context
-        .module_db
-        .base_mappings
-        .insert(unit.clone(), interface);
-
-    Ok(())
+pub fn fulfill_request(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    request: &MIRFunctionGenRequest,
+) {
+    todo!("Fulfill request routine -- ensure that we are double checking the request hasn't already been fulfilled");
 }
 
-pub fn build_interface(
-    context: &GlobalCompilationContext,
-    unit: &CompilationUnit,
-) -> CXResult<EnvironmentNamespace> {
-    let ast = context.module_db.naive_ast.get(unit);
-    let mut base_type_map = ast.type_data.clone();
-    let mut base_fn_map = ast.function_data.clone();
-    let mut base_globals = ast.global_variables.clone();
+fn realize_tagged_union_constructor(
+    env: &mut TypeEnvironment,
+    name: String,
+    union_type: MIRType,
+    variant_type: MIRType,
+    variant_index: usize,
+) {
+    use cx_ast::data::{CXFunctionContract, CXFunctionKind, CXLinkageMode};
+    use cx_mir::mir::{
+        data::{MIRFunctionPrototype, MIRParameter},
+        expression::{MIRExpression, MIRExpressionKind},
+        program::MIRFunction,
+    };
+    use cx_tokens::TokenRange;
+    use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
-    for import in ast.imports.iter() {
-        let unit =
-            CompilationUnit::from_module_path(import.clone(), &context.config.working_directory);
-        let ast = context.module_db.naive_ast.get(&unit);
+    let param_name = CXIdent::new("value");
+    let prototype = MIRFunctionPrototype {
+        name: CXIdent::new(name),
+        return_type: union_type.clone(),
+        params: if variant_type.is_unit() {
+            Vec::new()
+        } else {
+            vec![MIRParameter {
+                name: Some(param_name.clone()),
+                _type: variant_type.clone(),
+            }]
+        },
+        var_args: false,
+        contract: CXFunctionContract::default(),
+        linkage: CXLinkageMode::Static,
+    };
 
-        for (type_name, cx_type) in ast.type_data.standard_iter() {
-            if cx_type.visibility != VisibilityMode::Public {
-                continue;
-            };
-
-            base_type_map.insert_standard(type_name.clone(), cx_type.transfer(import));
-            let qualified_name = qualified_name(import.clone(), type_name);
-            base_type_map.insert_standard(qualified_name, cx_type.transfer(import));
+    let value = if variant_type.is_unit() {
+        MIRExpression {
+            token_range: None,
+            _type: variant_type.clone(),
+            kind: MIRExpressionKind::Unit,
         }
+    } else {
+        let param_ref = MIRExpression {
+            token_range: None,
+            _type: env.symbols.context.mem_ref_to(variant_type.clone()),
+            kind: MIRExpressionKind::Variable(param_name),
+        };
 
-        for (fn_name, cx_fn) in ast.function_data.standard_iter() {
-            if cx_fn.visibility != VisibilityMode::Public {
-                continue;
-            };
-
-            base_fn_map.insert_standard(fn_name.clone(), cx_fn.transfer(import));
-            base_fn_map.insert_standard(
-                qualify_function_key(import.clone(), fn_name),
-                cx_fn.transfer(import),
-            );
+        MIRExpression {
+            token_range: None,
+            _type: variant_type.clone(),
+            kind: MIRExpressionKind::RegionDuplicate {
+                source: Box::new(param_ref),
+            },
         }
+    };
+    let constructed = MIRExpression {
+        token_range: None,
+        _type: union_type.clone(),
+        kind: MIRExpressionKind::ConstructTaggedUnion {
+            variant_index,
+            value: Box::new(value),
+            sum_type: union_type,
+        },
+    };
+    let body = MIRExpression {
+        token_range: None,
+        _type: prototype.return_type.clone(),
+        kind: MIRExpressionKind::Return {
+            value: Some(Box::new(constructed)),
+            postcondition: None,
+        },
+    };
 
-        for (type_template_name, type_template) in ast.type_data.template_iter() {
-            if type_template.visibility != VisibilityMode::Public {
-                continue;
-            };
-
-            base_type_map
-                .insert_template(type_template_name.clone(), type_template.transfer(import));
-            let qualified_name = qualified_name(import.clone(), type_template_name);
-            base_type_map.insert_template(qualified_name, type_template.transfer(import));
-        }
-
-        for (fn_template_name, fn_template) in ast.function_data.template_iter() {
-            if fn_template.visibility != VisibilityMode::Public {
-                continue;
-            };
-
-            base_fn_map.insert_template(fn_template_name.clone(), fn_template.transfer(import));
-            base_fn_map.insert_template(
-                qualify_function_key(import.clone(), fn_template_name),
-                fn_template.transfer(import),
-            );
-        }
-
-        for (global_name, global_var) in ast.global_variables.iter() {
-            if global_var.visibility != VisibilityMode::Public {
-                continue;
-            };
-
-            base_globals.insert(global_name.clone(), global_var.transfer(import));
-            base_globals.insert(
-                qualified_name(import.clone(), global_name),
-                global_var.transfer(import),
-            );
-        }
-    }
-
-    Ok(NamespacePath::from_slash_path(
-        &unit.module_path().as_str().replace("::", "/"),
-    ))
-}
-
-fn qualified_name(module: ModulePath, name: &str) -> String {
-    NamespacePath::from(module).as_flat_name_with(&CXIdent::new(name))
-}
-
-fn qualify_function_key(module: ModulePath, key: &QualifiedName) -> QualifiedName {
-    let mut segments = NamespacePath::from(module).segments().to_vec();
-    segments.extend(key.namespace.segments().iter().cloned());
-    QualifiedName::new(NamespacePath::new(segments), key.name.clone())
+    env.push_generated_function(MIRFunction { prototype, body });
 }

@@ -34,19 +34,6 @@ mod operators;
 mod parser;
 mod templates;
 mod types;
- fn parse_ast(
-    iter: TokenIter,
-    pp_contents: &PreparseContents,
-    registry: &GlobalPreparseRegistry,
-) -> CXResult<CXAST> {
-    let mut data = ParserData::new(iter, pp_contents, registry);
-
-    while data.tokens.has_next() {
-        parse_global_stmt(&mut data)?;
-    }
-
-    Ok(data.take_ast())
-}
 
 fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
     match data
