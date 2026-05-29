@@ -1,12 +1,14 @@
 use crate::parse::expressions::parse_expr;
 use crate::parse::{try_parse_simple_identifier, ParserData};
-use cx_ast::ast::{CXEnumVariant, CXGlobalVariable};
-use cx_ast::data::{
-    CXField, CXFunctionKind, CXFunctionPrototype, CXLinkageMode, CXStructAttributes,
-    CXTemplatePrototype, CXType, CXTypeKind, CXTypeQualifiers, PredeclarationType, CX_CONST,
-    CX_RESTRICT, CX_VOLATILE,
+use crate::{assert_token_matches, next_kind, peek_kind, try_next};
+use cx_ast::ast::CXASTStmt;
+use cx_ast::ast::{
+    function::{CXFunctionKind, CXFunctionPrototype},
+    global_var::{CXEnumVariant, CXGlobalVariable},
+    modifiers::{CXLinkageMode, CXTypeQualifiers, CX_CONST, CX_RESTRICT, CX_VOLATILE},
+    template::CXTemplatePrototype,
+    types::{CXField, CXStructAttributes, CXType, CXTypeKind, PredeclarationType},
 };
-use cx_ast::{assert_token_matches, next_kind, peek_kind, try_next};
 use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
 use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, TokenIter, TokenRange};
 use cx_util::identifier::CXIdent;
@@ -126,7 +128,12 @@ fn defined_type(
         // If structure definition has a name, add it to the type map and return
         // the identifier pointer to that type
 
-        data.add_type(name.as_string(), _type, template_prototype);
+        data.add_stmt(CXASTStmt::TypeDefinition {
+            name: Some(name.clone()),
+            visibility: data.visibility,
+            template_prototype,
+            _type,
+        });
 
         Ok(CXTypeKind::Identifier {
             name: QualifiedName::new_raw(name),
@@ -153,7 +160,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
     }
 
     if let Some(template_prototype) = &template_prototype {
-        note_templated_types(data, template_prototype);
+        note_templated_types(data, template_prototype)?;
     }
 
     let mut fields = Vec::new();
@@ -231,10 +238,12 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
         }
     }
 
-    data.add_global_variable(
-        format!("__cx_enum_definition_{enum_start_index}"),
-        CXGlobalVariable::EnumDefinition { variants },
-        CXLinkageMode::Standard,
+    data.add_stmt(
+        CXASTStmt::GlobalVariableDefinition {
+            name: CXIdent::new(format!("__cx_enum_definition_{enum_start_index}")),
+            visibility: data.visibility,
+            variable: CXGlobalVariable::EnumDefinition { variants: variants.clone() },
+        }
     );
 
     let name = match name {

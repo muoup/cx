@@ -426,7 +426,7 @@ pub fn add_implicit_return(
 
     let func = env.current_function().clone();
 
-    let implicit_value = if func.name.as_str() == "main" {
+    let implicit_value = if func.name().as_str() == "main" {
         Some(Box::new(MIRExpression {
             token_range: None,
             kind: MIRExpressionKind::IntLiteral(0, MIRIntegerType::I32, true),

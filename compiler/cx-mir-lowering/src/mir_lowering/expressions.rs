@@ -1393,7 +1393,7 @@ pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResu
     let has_return_buffer = bc_proto.signature.return_abi.has_indirect_return_param();
     let mut lowered_param_index = if has_return_buffer { 1 } else { 0 };
 
-    for (i, param) in mir_fn.prototype.params.iter().enumerate() {
+    for (i, param) in mir_fn.prototype.signature.params.iter().enumerate() {
         let abi_param = bc_proto
             .signature
             .params

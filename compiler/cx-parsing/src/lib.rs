@@ -1,10 +1,18 @@
+use cx_ast::ast::CXAST;
+use cx_preparse_data::{PreparseContents, registry::GlobalPreparseRegistry};
+use cx_tokens::TokenIter;
+use cx_util::{CXResult, namespace::NamespacePath};
+pub use log::ParseErrorLog;
+
+use crate::{parse::{parse_global_stmt, parser::ParserData}, preparse::{PreparseConfig, PreparseData, iterate_tokens}};
+
 #[macro_use]
 mod log;
 
+pub(crate) mod macros;
+
 pub mod parse;
 pub mod preparse;
-
-pub use log::ParseErrorLog;
 
 pub fn preparse(
     config: &PreparseConfig,
@@ -42,6 +50,6 @@ pub fn parse_ast(
     Ok(data.take_ast())
 }
 
-pub fn decompose_ast(ast: CXAST) -> ! {
+pub fn decompose_ast(_: CXAST) -> ! {
     todo!()
 }

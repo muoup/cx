@@ -1,7 +1,7 @@
 use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
 use cx_ast::ast::CXAST;
-use cx_ast::symbols::GlobalSymbolRegistry;
+use cx_ast::registry::GlobalSymbolRegistry;
 use cx_lmir::LMIRUnit;
 use cx_mir::mir::program::{EnvironmentNamespace, MIRUnit};
 use cx_preparse_data::PreparseContents;

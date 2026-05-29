@@ -1,7 +1,9 @@
 use crate::parse::ParserData;
-use cx_ast::data::{CXTemplateInput, CXTemplatePrototype, CXType, CXTypeKind, PredeclarationType};
-use cx_ast::{assert_token_matches, peek_kind, try_next};
+use crate::{assert_token_matches, peek_kind, try_next};
+use cx_ast::ast::template::{CXTemplateInput, CXTemplatePrototype};
+use cx_ast::ast::types::{CXType, CXTypeKind, PredeclarationType};
 use cx_tokens::{identifier, operator, TokenIter};
+use cx_util::namespace::NamespacePath;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName, CXResult};
 
 use crate::parse::types::parse_initializer;
@@ -9,9 +11,12 @@ use crate::parse::types::parse_initializer;
 pub(crate) fn note_templated_types(
     data: &mut ParserData,
     template_prototype: &CXTemplatePrototype,
-) {
+) -> CXResult<()> {
     for template_name in &template_prototype.types {
-        if data.ast.type_data.is_key_std(template_name) {
+        if data.is_type_ident(&QualifiedName {
+            namespace: NamespacePath::root(),
+            name: template_name.clone(),
+        }) {
             continue;
         }
 
@@ -21,8 +26,13 @@ pub(crate) fn note_templated_types(
         }
         .to_type();
 
-        data.add_type(template_name.clone(), _nil_type.clone(), None);
+        *data
+            .temporary_type_names
+            .entry(template_name.clone())
+            .or_insert(0) += 1;
     }
+
+    Ok(())
 }
 
 pub(crate) fn unnote_templated_types(
@@ -30,19 +40,14 @@ pub(crate) fn unnote_templated_types(
     template_prototype: &CXTemplatePrototype,
 ) {
     for template_name in &template_prototype.types {
-        let (name, _type) = data.ast.type_data.remove_standard(template_name).unwrap();
+        let entry = data.temporary_type_names.get_mut(template_name)
+            .expect("CRITICAL: unnote_templated_types() should only be called with template prototypes that were previously noted with note_templated_types()!");
 
-        if let CXTypeKind::Identifier {
-            name,
-            predeclaration: PredeclarationType::None,
-        } = &_type.resource.kind
-        {
-            if name.namespace.is_root() && name.name.as_str() == "__undefined_template_type" {
-                continue;
-            }
+        *entry -= 1;
+
+        if *entry == 0 {
+            data.temporary_type_names.remove(template_name);
         }
-
-        data.ast.type_data.insert_standard(name, _type);
     }
 }
 
@@ -61,7 +66,7 @@ pub(crate) fn parse_template_prototype(tokens: &mut TokenIter) -> CXResult<CXTem
 
     loop {
         assert_token_matches!(tokens, identifier!(template_name));
-        let template_name = template_name.clone();
+        let template_name = CXIdent::new(template_name.clone());
         type_decls.push(template_name);
 
         if !try_next!(tokens, operator!(Comma)) {
@@ -80,7 +85,7 @@ pub(crate) fn convert_template_proto_to_args(prototype: CXTemplatePrototype) -> 
         .into_iter()
         .map(|name| {
             CXTypeKind::Identifier {
-                name: QualifiedName::new_raw(CXIdent::new(name)),
+                name: QualifiedName::new_raw(name),
                 predeclaration: PredeclarationType::None,
             }
             .to_type()

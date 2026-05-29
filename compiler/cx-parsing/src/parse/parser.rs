@@ -1,19 +1,13 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
-use cx_ast::ast::VisibilityMode;
-use cx_ast::{
-    ast::{CXASTStmt, CXGlobalVariable, CXAST},
-    data::{
-        CXFunctionPrototype, CXFunctionTemplate, CXLinkageMode, CXTemplatePrototype, CXType,
-        CXTypeTemplate, ModuleResource,
-    },
-};
+use cx_ast::ast::{CXASTStmt, CXAST};
 use cx_preparse_data::registry::GlobalPreparseRegistry;
-use cx_preparse_data::symbol_data::PreparseSymbolKind;
-use cx_preparse_data::PreparseContents;
+use cx_preparse_data::{PreparseContents, VisibilityMode};
 use cx_tokens::TokenIter;
+use cx_util::identifier::CXIdent;
+use cx_util::module_path::ModulePath;
 use cx_util::namespace::QualifiedName;
-use cx_util::CXResult;
 
 #[derive(Debug)]
 pub struct ParserData<'a> {
@@ -22,6 +16,8 @@ pub struct ParserData<'a> {
     pub expr_commas: Vec<bool>,
     pub pp_contents: &'a PreparseContents,
     pub file_origin: Arc<str>,
+    // uses u8 mapping instead of a set to prevent problems with shadowing
+    pub temporary_type_names: HashMap<CXIdent, u8>,
 
     pub registry: &'a GlobalPreparseRegistry,
     pub ast: CXAST,
@@ -41,10 +37,11 @@ impl<'a> ParserData<'a> {
             pp_contents,
             file_origin,
             registry,
-            ast: CXAST {
-                imports: pp_contents.imports.clone(),
-                ..Default::default()
-            },
+            temporary_type_names: HashMap::new(),
+            ast: CXAST::new(
+                ModulePath::from_source_path(pp_contents.module.as_str()),
+                pp_contents.imports.clone(),
+            ),
         }
     }
 
@@ -96,20 +93,10 @@ impl<'a> ParserData<'a> {
         self.ast
     }
 
-    pub fn is_type_ident(&self, name: &QualifiedName) -> CXResult<bool> {
-        if name.namespace.is_root() && self.ast.type_data.is_key_any(&name.name.as_string()) {
-            return Ok(true);
-        }
-
-        let namespace = if name.namespace.is_root() {
-            &self.pp_contents.module_symbols.namespace
-        } else {
-            &name.namespace
-        };
-
-        Ok(matches!(
-            self.registry.get_symbol(namespace, &name.name),
-            Some(PreparseSymbolKind::Type)
-        ))
+    pub fn is_type_ident(&self, name: &QualifiedName) -> bool {
+        self.registry
+            .get_symbol(&name.namespace, &name.name)
+            .is_some() ||
+        (name.namespace.is_root() && self.temporary_type_names.contains_key(&name.name))
     }
 }

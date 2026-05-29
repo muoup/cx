@@ -2,9 +2,10 @@ use crate::environment::TypeEnvironment;
 use crate::environment::functions::mangling::base_mangle_fn_name;
 use crate::environment::symbols::completion::{int_complete_type, namespace_from_module};
 use crate::log_typecheck_error;
-use cx_ast::ast::CXExpression;
-use cx_ast::data::{CXFunctionPrototype, CXParameter, CXReceiverMode, CXType, CXTypeKind};
-use cx_mir::mir::data::{MIRFunctionPrototype, MIRParameter, MIRType, MIRTypeKind};
+use cx_ast::ast::expression::CXExpression;
+use cx_ast::ast::function::{CXFunctionPrototype, CXParameter, CXReceiverMode};
+use cx_ast::ast::types::{CXType, CXTypeKind};
+use cx_mir::mir::data::{MIRFunctionPrototype, MIRFunctionSignature, MIRParameter, MIRType, MIRTypeKind};
 use cx_mir::mir::program::EnvironmentNamespace;
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
@@ -140,12 +141,12 @@ pub fn int_complete_fn_prototype(
 
     let prototype = MIRFunctionPrototype {
         name,
-        source_prototype,
-        return_type,
-        params,
-        var_args: normalized_prototype.var_args,
-        contract: prototype.contract.clone(),
-        linkage: prototype.linkage,
+        signature: MIRFunctionSignature {
+            return_type,
+            params,
+            var_args: normalized_prototype.var_args,
+            contract: prototype.contract.clone()
+        },
     };
 
     Ok(prototype)

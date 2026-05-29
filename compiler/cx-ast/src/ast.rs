@@ -1,4 +1,4 @@
-use cx_util::module_path::ModulePath;
+use cx_util::{identifier::CXIdent, module_path::ModulePath};
 
 use crate::ast::{
     expression::CXExpression, function::CXFunctionPrototype, global_var::CXGlobalVariable,
@@ -16,7 +16,6 @@ pub mod types;
 #[derive(Debug)]
 pub struct CXAST {
     pub module_path: ModulePath,
-    pub internal_path: String,
     pub imports: Vec<ModulePath>,
     pub definition_stmts: Vec<CXASTStmt>,
 }
@@ -24,7 +23,7 @@ pub struct CXAST {
 #[derive(Debug)]
 pub enum CXASTStmt {
     TypeDefinition {
-        name: Option<String>,
+        name: Option<CXIdent>,
         visibility: VisibilityMode,
         template_prototype: Option<CXTemplatePrototype>,
         _type: CXType,
@@ -38,8 +37,18 @@ pub enum CXASTStmt {
     },
 
     GlobalVariableDefinition {
-        name: String,
+        name: CXIdent,
         visibility: VisibilityMode,
         variable: CXGlobalVariable,
     },
+}
+
+impl CXAST {
+    pub fn new(module_path: ModulePath, imports: Vec<ModulePath>) -> Self {
+        Self {
+            module_path,
+            imports,
+            definition_stmts: Vec::new(),
+        }
+    }
 }

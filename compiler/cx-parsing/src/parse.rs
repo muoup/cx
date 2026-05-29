@@ -1,13 +1,11 @@
-use cx_ast::{
-    assert_token_matches,
-    ast::VisibilityMode,
-    ast::{CXASTStmt, CXExprKind, CXExpression, CXGlobalVariable, CXAST},
-    data::{
-        CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXTemplatePrototype, CXTypeKind,
-    },
-    next_kind, peek_next_kind, try_next,
+use cx_ast::ast::{
+    expression::{CXExprKind, CXExpression},
+    function::CXFunctionPrototype,
+    global_var::CXGlobalVariable,
+    template::CXTemplatePrototype,
+    CXASTStmt,
 };
-use cx_preparse_data::{registry::GlobalPreparseRegistry, PreparseContents};
+use cx_preparse_data::VisibilityMode;
 use cx_tokens::{
     keyword, operator, punctuator, specifier,
     token::{SpecifierType, TokenKind},
@@ -19,23 +17,27 @@ use cx_util::{
     CXResult,
 };
 
-use crate::parse::{
-    expressions::{expression_requires_semicolon, parse_expr},
-    functions::try_function_parse,
-    parser::ParserData,
-    templates::{note_templated_types, parse_template_prototype, unnote_templated_types},
-    types::{parse_initializer, parse_typedef_initializer},
+use crate::{
+    assert_token_matches, next_kind,
+    parse::{
+        expressions::{expression_requires_semicolon, parse_expr},
+        functions::try_function_parse,
+        parser::ParserData,
+        templates::{note_templated_types, parse_template_prototype, unnote_templated_types},
+        types::{parse_initializer, parse_typedef_initializer},
+    },
+    peek_next_kind, try_next,
 };
+
+pub(crate) mod parser;
 
 mod expressions;
 mod functions;
-mod macros;
 mod operators;
-mod parser;
 mod templates;
 mod types;
 
-fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
+pub fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
     match data
         .tokens
         .peek()
@@ -90,29 +92,13 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
 
     assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
 
-    if let CXTypeKind::Identifier {
-        name: type_name, ..
-    } = &_type.kind
-    {
-        let existing_complete_aggregate = data
-            .ast
-            .type_data
-            .get_standard(&name.as_string())
-            .is_some_and(|existing| {
-                matches!(
-                    existing.resource.kind,
-                    CXTypeKind::Structured { .. }
-                        | CXTypeKind::Union { .. }
-                        | CXTypeKind::TaggedUnion { .. }
-                )
-            });
+    data.add_stmt(CXASTStmt::TypeDefinition {
+        name: Some(name),
+        visibility: data.visibility,
+        _type: _type.clone(),
+        template_prototype: template_prototype.clone(),
+    });
 
-        if type_name.namespace.is_root() && type_name.name == name && existing_complete_aggregate {
-            return Ok(());
-        }
-    }
-
-    data.add_type(name.as_string(), _type, template_prototype);
     Ok(())
 }
 
@@ -126,21 +112,26 @@ fn parse_fn_merge(
             return log_parse_error!(data, "Templated functions must be defined in place.");
         }
 
-        data.add_function(prototype, None);
+        data.add_stmt(CXASTStmt::FunctionDefinition {
+            prototype,
+            visibility: data.visibility,
+            template_prototype: None,
+            body: None,
+        });
     } else {
-        let body = if let Some(template_prototype) = template_prototype {
-            note_templated_types(data, template_prototype);
-            let body = parse_body(data)?;
-            unnote_templated_types(data, template_prototype);
+        let body = if let Some(template_prototype) = template_prototype.as_ref() {
+            note_templated_types(data, &template_prototype)?;
+            let body = parse_body(data);
+            unnote_templated_types(data, &template_prototype);
             body
         } else {
             parse_body(data)
-        };
+        }?;
 
         data.add_stmt(CXASTStmt::FunctionDefinition {
             prototype,
             visibility: data.visibility,
-            body: Some(body),
+            body: Some(Box::new(body)),
             template_prototype,
         });
     }
@@ -173,27 +164,27 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
         TokenKind::Assignment(_) => {
             let initial_value = parse_expr(data)?;
             assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
-            data.add_global_variable(
-                name.as_string(),
-                CXGlobalVariable::Standard {
-                    _type: return_type,
+            data.add_stmt(CXASTStmt::GlobalVariableDefinition {
+                name: name.clone(),
+                visibility: data.visibility,
+                variable: CXGlobalVariable::Standard {
+                    _type: return_type.clone(),
                     is_mutable: true,
-                    initializer: Some(initial_value),
+                    initializer: Some(initial_value.clone()),
                 },
-                linkage,
-            );
+            });
         }
 
         punctuator!(Semicolon) => {
-            data.add_global_variable(
-                name.as_string(),
-                CXGlobalVariable::Standard {
-                    _type: return_type,
+            data.add_stmt(CXASTStmt::GlobalVariableDefinition {
+                name: name.clone(),
+                visibility: data.visibility,
+                variable: CXGlobalVariable::Standard {
+                    _type: return_type.clone(),
                     is_mutable: true,
                     initializer: None,
                 },
-                linkage,
-            );
+            });
         }
 
         _ => {

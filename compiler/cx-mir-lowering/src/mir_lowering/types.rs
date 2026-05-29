@@ -1,6 +1,6 @@
 use crate::builder::LMIRBuilder;
 use crate::mir_lowering::abi::classify_signature;
-use cx_ast::data::CXLinkageMode;
+use cx_ast::ast::modifiers::CXLinkageMode;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRFunctionPrototype, LinkageType};
 use cx_mir::mir::data::{
@@ -58,9 +58,9 @@ pub(crate) fn convert_cx_prototype(
     definitions: &MIRTypeContext,
 ) -> LMIRFunctionPrototype {
     let signature = classify_signature(
-        &cx_proto.return_type,
-        &cx_proto.params,
-        cx_proto.var_args,
+        &cx_proto.signature.return_type,
+        &cx_proto.signature.params,
+        cx_proto.signature.var_args,
         definitions,
     );
 

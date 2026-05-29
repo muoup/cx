@@ -8,13 +8,7 @@ pub const CX_RESTRICT: CXTypeQualifiers = 1 << 2;
 pub const CX_THREAD_LOCAL: CXTypeQualifiers = 1 << 3;
 pub const CX_UNION: CXTypeQualifiers = 1 << 4;
 
-#[derive(Debug, Default, Hash, Clone, PartialOrd, PartialEq, Eq, Copy, Readable, Writable)]
-pub enum VisibilityMode {
-    #[default]
-    Private,
-    Package,
-    Public,
-}
+pub use cx_preparse_data::VisibilityMode;
 
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Readable, Writable)]
 pub enum CXLinkageMode {
@@ -22,14 +16,4 @@ pub enum CXLinkageMode {
     Standard,
     Static,
     Extern,
-}
-
-impl From<cx_preparse_data::VisibilityMode> for VisibilityMode {
-    fn from(value: cx_preparse_data::VisibilityMode) -> Self {
-        match value {
-            cx_preparse_data::VisibilityMode::Private => Self::Private,
-            cx_preparse_data::VisibilityMode::Package => Self::Package,
-            cx_preparse_data::VisibilityMode::Public => Self::Public,
-        }
-    }
 }

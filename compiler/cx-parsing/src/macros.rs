@@ -20,8 +20,6 @@ macro_rules! assert_token_matches {
 
     ($data:expr, $pattern:pat, $expected:expr) => {
         let Some($pattern) = &$data.next().map(|t| &t.kind) else {
-            use cx_util::log_error;
-
             $data.back();
 
             return log_preparse_error!(

@@ -1,3 +1,5 @@
+use cx_util::identifier::CXIdent;
+
 use crate::ast::types::CXType;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -7,6 +9,6 @@ pub struct CXTemplateInput {
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct CXTemplatePrototype {
-    pub types: Vec<String>,
+    pub types: Vec<CXIdent>,
 }
 

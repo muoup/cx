@@ -1,9 +1,9 @@
-use cx_ast::{assert_token_matches, next_kind, try_next};
+use crate::{assert_token_matches, next_kind, try_next};
 use cx_pipeline_data::CompilerConfig;
 use cx_preparse_data::PreparseContents;
 use cx_tokens::{identifier, keyword, operator, punctuator, specifier, TokenIter};
 use cx_util::{
-    identifier::CXIdent, log_error, module_path::ModulePath, namespace::NamespacePath, CXResult,
+    identifier::CXIdent, log_error, module_path::ModulePath, CXResult,
 };
 
 use crate::parse::try_parse_simple_identifier;
@@ -29,7 +29,7 @@ pub(crate) struct PreparseData<'a> {
     pub(crate) visibility_mode: cx_preparse_data::VisibilityMode,
 }
 
-fn iterate_tokens(data: &mut PreparseData) -> CXResult<()> {
+pub(crate) fn iterate_tokens(data: &mut PreparseData) -> CXResult<()> {
     while data.tokens.has_next() {
         consume_token(data)?;
     }

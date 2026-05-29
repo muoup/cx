@@ -1,4 +1,4 @@
-use cx_ast::ast::function::CXFunctionContract;
+use cx_ast::ast::{function::CXFunctionContract, modifiers::CXLinkageMode};
 use cx_util::identifier::CXIdent;
 
 use crate::mir::r#type::TypeComparisonState;
@@ -78,8 +78,9 @@ impl MIRFunctionSignature {
 
 #[derive(Debug, Clone)]
 pub struct MIRFunctionPrototype {
-    name: CXIdent,
-    signature: MIRFunctionSignature,
+    pub name: CXIdent,
+    pub linkage: CXLinkageMode,
+    pub signature: MIRFunctionSignature,
 }
 
 impl MIRFunctionPrototype {

@@ -1,6 +1,6 @@
+use crate::next_kind;
 use crate::parse::ParserData;
-use cx_ast::ast::{CXBinOp, CXUnOp};
-use cx_ast::next_kind;
+use cx_ast::ast::expression::{CXBinOp, CXUnOp};
 use cx_tokens::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_tokens::{operator, punctuator};
 use cx_util::CXResult;

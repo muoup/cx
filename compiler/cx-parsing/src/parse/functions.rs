@@ -1,11 +1,11 @@
-use cx_ast::{
-    assert_token_matches,
-    data::{
-        CXFunctionContract, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent,
-        CXLinkageMode, CXParameter, CXReceiverData, CXReceiverMode, CXTemplatePrototype, CXType,
-        CXTypeKind, PredeclarationType,
+use crate::{assert_token_matches, next_kind, peek_next_kind, try_next};
+use cx_ast::ast::{
+    function::{
+        CXFunctionContract, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXParameter, CXReceiverData, CXReceiverMode
     },
-    next_kind, peek_next_kind, try_next,
+    modifiers::CXLinkageMode,
+    template::CXTemplatePrototype,
+    types::{CXType, CXTypeKind, PredeclarationType},
 };
 use cx_tokens::{
     identifier, keyword, operator, punctuator,
@@ -64,7 +64,6 @@ pub fn try_function_parse(
                 );
             }
 
-            data.add_function(prototype.clone(), template_prototype.clone());
             Ok(Some(FunctionDeclaration {
                 prototype,
                 template_prototype,
@@ -126,8 +125,6 @@ pub fn try_function_parse(
                     data.file_origin_for_range(range_start, data.tokens.index),
                 ),
             };
-
-            data.add_function(prototype.clone(), template_prototype.clone());
 
             Ok(Some(FunctionDeclaration {
                 prototype,

@@ -1,8 +1,9 @@
 use crate::parse::{try_parse_simple_identifier, ParserData};
-use cx_ast::ast::{CXBinOp, CXExprKind, CXExpression, CXInitIndex, CXUnpackBinding};
-use cx_ast::data::{CXTemplateInput, CXTypeKind};
-use cx_ast::pattern::CXPattern;
-use cx_ast::{assert_token_matches, next_kind, peek_next_kind, try_next};
+use crate::{assert_token_matches, next_kind, peek_next_kind, try_next};
+use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression, CXInitIndex, CXUnpackBinding};
+use cx_ast::ast::pattern::CXPattern;
+use cx_ast::ast::template::CXTemplateInput;
+use cx_ast::ast::types::CXTypeKind;
 use cx_mir::intrinsic_types::is_intrinsic_type;
 use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, specifier};
@@ -126,10 +127,10 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
         return Ok(false);
     }
 
-    match &tok.unwrap() {
-        intrinsic!() | specifier!() | keyword!(Struct, Union, Enum) => Ok(true),
+    Ok(match &tok.unwrap() {
+        intrinsic!() | specifier!() | keyword!(Struct, Union, Enum) => true,
 
-        identifier!(name) if is_intrinsic_type(name) => Ok(true),
+        identifier!(name) if is_intrinsic_type(name) => true,
 
         TokenKind::Identifier(_) => {
             let pre_idx = data.tokens.index;
@@ -141,8 +142,8 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
             data.is_type_ident(&ident)
         }
 
-        _ => Ok(false),
-    }
+        _ => false,
+    })
 }
 
 pub(crate) fn expression_requires_semicolon(expr: &CXExpression) -> bool {
@@ -251,7 +252,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpression>
             );
         } else {
             // FIXME: This logic is a mess, we can probably heavily simplify this.
-            
+
             // If our expression starts with a type but has no name, we have a few options:
             //  1. We could be in a sizeof expression (e.g. sizeof(T)), in which we should just return the type as a dummy expression
             //  2. We could be in a scope resolution expression for either a static member function or a variant of a tagged enum
