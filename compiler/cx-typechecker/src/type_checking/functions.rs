@@ -12,18 +12,19 @@ use crate::{
 use cx_ast::{
     ast::{CXExpression, CXFunctionStmt},
     data::CXFunctionKind,
+    symbols::UntypedSymbol,
 };
 use cx_mir::mir::{
     data::{MIRFunctionPrototype, MIRParameter, MIRTemplateInput},
     expression::{MIRExpression, MIRExpressionKind},
-    program::{MIRBaseMappings, MIRFunction},
+    program::{EnvironmentNamespace, MIRFunction},
 };
 use cx_pipeline_data::CompilationUnit;
-use cx_util::CXResult;
+use cx_util::{CXResult, namespace::NamespacePath};
 
 pub fn typecheck_function(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     prototype: MIRFunctionPrototype,
     body: &CXExpression,
 ) -> CXResult<()> {
@@ -55,8 +56,8 @@ pub fn typecheck_function(
         }
     }
 
-    let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression()?;
-    let with_implicit_return = add_implicit_return(env, base_data, body_expr)?;
+    let body_expr = typecheck_expr(env, namespace, body, None)?.into_expression()?;
+    let with_implicit_return = add_implicit_return(env, namespace, body_expr)?;
 
     env.pop_scope()?;
     env.function.end_function();
@@ -76,12 +77,13 @@ pub fn realize_fn_implementation(
     input: &MIRTemplateInput,
 ) -> CXResult<()> {
     let base_ast = env.source.module_data.naive_ast.get(origin);
-    let base_data = env.source.module_data.base_mappings.get(origin);
-
-    let template = &base_data
-        .fn_data
-        .get_template(&template_kind.into_key())
-        .expect("Template not found");
+    let namespace = NamespacePath::from_slash_path(origin.identifier());
+    let template_key = template_kind.into_key();
+    let Some(UntypedSymbol::FunctionTemplate(template, _)) =
+        env.symbols.global_symbols.resolve(&template_key)
+    else {
+        panic!("Template not found");
+    };
     let body = base_ast
         .function_stmts
         .iter()
@@ -94,7 +96,7 @@ pub fn realize_fn_implementation(
         .expect("Function template body not found");
 
     let overwrites = add_templated_types(env, &template.resource.prototype, input)?;
-    let prototype = complete_function_template(env, base_data.as_ref(), template)?;
+    let prototype = complete_function_template(env, &namespace, &template)?;
 
     let old_external_template = env.items.in_external_templated_function;
     let old_external_origin = env.items.external_template_origin.clone();
@@ -104,12 +106,10 @@ pub fn realize_fn_implementation(
         Some(origin.identifier().to_string())
     };
 
+    // FIXME: This looks like a mess
     env.set_external_templated_function(external_origin.is_some());
-    if external_origin.is_some() {
-        complete_base_globals(env, base_data.as_ref())?;
-    }
     env.set_external_template_origin(external_origin);
-    let typecheck_result = typecheck_function(env, base_data.as_ref(), prototype.clone(), body);
+    let typecheck_result = typecheck_function(env, &namespace, prototype.clone(), body);
     env.set_external_templated_function(old_external_template);
     env.set_external_template_origin(old_external_origin);
     typecheck_result?;
@@ -120,11 +120,8 @@ pub fn realize_fn_implementation(
 
 pub fn complete_base_functions(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
 ) -> CXResult<()> {
-    for (_, cx_fn) in base_data.fn_data.standard_iter() {
-        env.complete_prototype(base_data, cx_fn.external_module.as_ref(), &cx_fn.resource)?;
-    }
-
+    let _ = (env, namespace);
     Ok(())
 }

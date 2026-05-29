@@ -1,7 +1,7 @@
 use cx_ast::data::CXTemplateInput;
 use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
-use cx_mir::mir::program::MIRBaseMappings;
+use cx_mir::mir::program::EnvironmentNamespace;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
 use cx_util::{CXError, CXResult};
@@ -52,7 +52,7 @@ impl TypecheckedBinding {
 /// expression (expensive), or having the rules around 'implicit parameters' be handled every time we reason about a
 /// method call (leaky).
 type ExpectedTypeResolver =
-    dyn FnOnce(&mut TypeEnvironment, &MIRBaseMappings, &MIRType) -> CXResult<MIRExpression>;
+    dyn FnOnce(&mut TypeEnvironment, &EnvironmentNamespace, &MIRType) -> CXResult<MIRExpression>;
 
 pub struct ExpectedTypeDeferredExpr {
     resolver: Box<ExpectedTypeResolver>,
@@ -61,7 +61,7 @@ pub struct ExpectedTypeDeferredExpr {
 impl ExpectedTypeDeferredExpr {
     pub fn new<F>(resolver: F) -> Self
     where
-        F: FnOnce(&mut TypeEnvironment, &MIRBaseMappings, &MIRType) -> CXResult<MIRExpression>
+        F: FnOnce(&mut TypeEnvironment, &EnvironmentNamespace, &MIRType) -> CXResult<MIRExpression>
             + 'static,
     {
         Self {
@@ -72,10 +72,10 @@ impl ExpectedTypeDeferredExpr {
     fn resolve(
         self,
         env: &mut TypeEnvironment,
-        base_data: &MIRBaseMappings,
+        namespace: &EnvironmentNamespace,
         expected_type: &MIRType,
     ) -> CXResult<MIRExpression> {
-        (self.resolver)(env, base_data, expected_type)
+        (self.resolver)(env, namespace, expected_type)
     }
 }
 
@@ -219,7 +219,7 @@ impl TypecheckResult {
 
     pub fn needs_expected_type<F>(resolver: F) -> Self
     where
-        F: FnOnce(&mut TypeEnvironment, &MIRBaseMappings, &MIRType) -> CXResult<MIRExpression>
+        F: FnOnce(&mut TypeEnvironment, &EnvironmentNamespace, &MIRType) -> CXResult<MIRExpression>
             + 'static,
     {
         Self {
@@ -353,14 +353,14 @@ impl TypecheckResult {
     pub fn apply_expected_type(
         self,
         env: &mut TypeEnvironment,
-        base_data: &MIRBaseMappings,
+        namespace: &EnvironmentNamespace,
         expected_type: &MIRType,
     ) -> CXResult<Self> {
         match self.expression {
             TypecheckedExpression::NeedsExpectedType(expr) => Ok(Self {
                 expression: TypecheckedExpression::Ready(expr.resolve(
                     env,
-                    base_data,
+                    namespace,
                     expected_type,
                 )?),
                 implicit_parameters: self.implicit_parameters,
@@ -375,10 +375,10 @@ impl TypecheckResult {
     pub fn into_expression_with_expected(
         self,
         env: &mut TypeEnvironment,
-        base_data: &MIRBaseMappings,
+        namespace: &EnvironmentNamespace,
         expected_type: &MIRType,
     ) -> CXResult<MIRExpression> {
-        self.apply_expected_type(env, base_data, expected_type)?
+        self.apply_expected_type(env, namespace, expected_type)?
             .into_expression()
     }
 }

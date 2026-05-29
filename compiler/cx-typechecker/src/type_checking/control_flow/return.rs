@@ -1,6 +1,6 @@
 use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind},
-    program::MIRBaseMappings,
+    program::EnvironmentNamespace,
     r#type::MIRType,
 };
 use cx_tokens::TokenRange;
@@ -28,7 +28,7 @@ fn typechange_can_forward_region(return_type: &MIRType) -> bool {
 
 pub fn typecheck_return(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     value: Option<MIRExpression>,
 ) -> CXResult<TypecheckResult> {
     let return_type = env.current_function().return_type.clone();
@@ -132,7 +132,7 @@ pub fn typecheck_return(
             );
         }
 
-        let postcondition = typecheck_expr(env, base_data, &ret_contract, None)
+        let postcondition = typecheck_expr(env, namespace, &ret_contract, None)
             .and_then(|v| implicit_cast(env, v.into_expression()?, &MIRType::bool()))?;
 
         env.pop_scope()?;

@@ -11,7 +11,7 @@ use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::{CXBinOp, CXExprKind, CXExpression};
 use cx_mir::mir::data::{MIRFloatType, MIRFunctionPrototype, MIRType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
-use cx_mir::mir::program::MIRBaseMappings;
+use cx_mir::mir::program::EnvironmentNamespace;
 use cx_util::CXResult;
 
 pub(crate) fn build_function_reference(prototype: &MIRFunctionPrototype) -> MIRExpression {
@@ -29,7 +29,7 @@ pub(crate) fn build_function_reference(prototype: &MIRFunctionPrototype) -> MIRE
 
 pub(crate) fn finish_function_call<'a>(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &'a CXExpression,
     callee: CalleeExtraction,
     mut tc_args: Vec<(&'a CXExpression, TypecheckResult)>,
@@ -85,7 +85,7 @@ pub(crate) fn finish_function_call<'a>(
 
     for (i, (_arg_expr, val)) in tc_args.into_iter().enumerate() {
         let mut val = if let Some(param) = signature.params.get(i) {
-            let val = val.into_expression_with_expected(env, base_data, &param._type)?;
+            let val = val.into_expression_with_expected(env, namespace, &param._type)?;
             try_argument_conversion(env, val, &param._type)?
         } else {
             val.into_expression()?
@@ -130,7 +130,7 @@ pub(crate) fn finish_function_call<'a>(
         args.push(val);
     }
 
-    let contract = typecheck_contract(env, base_data, signature)?;
+    let contract = typecheck_contract(env, namespace, signature)?;
 
     Ok(TypecheckResult::new_base(
         signature.return_type.clone(),
@@ -144,7 +144,7 @@ pub(crate) fn finish_function_call<'a>(
 
 fn complete_callee(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     function: TypecheckResult,
     arg_types: &[MIRType],
@@ -170,7 +170,7 @@ fn complete_callee(
 
             let Some(prototype) = query_function(
                 env,
-                base_data,
+                namespace,
                 expr,
                 &name,
                 template_input.as_ref(),
@@ -196,7 +196,7 @@ fn complete_callee(
 
 pub(crate) fn comma_separated<'a>(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &'a CXExpression,
 ) -> CXResult<Vec<(&'a CXExpression, TypecheckResult)>> {
     let mut expr_iter = expr;
@@ -212,12 +212,12 @@ pub(crate) fn comma_separated<'a>(
         op: CXBinOp::Comma,
     } = &expr_iter.kind
     {
-        let tc_result = typecheck_expr(env, base_data, rhs, None)?;
+        let tc_result = typecheck_expr(env, namespace, rhs, None)?;
         exprs.push((rhs, tc_result));
         expr_iter = lhs;
     }
 
-    let tc_result = typecheck_expr(env, base_data, expr_iter, None)?;
+    let tc_result = typecheck_expr(env, namespace, expr_iter, None)?;
     exprs.push((expr_iter, tc_result));
     exprs.reverse();
 
@@ -241,16 +241,16 @@ pub(crate) fn ready_arg_types(
 
 pub(crate) fn typecheck_method_call(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     lhs: &CXExpression,
     rhs: &CXExpression,
     expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
-    let tc_args = comma_separated(env, base_data, rhs)?;
+    let tc_args = comma_separated(env, namespace, rhs)?;
     let arg_types = ready_arg_types(&tc_args)?.unwrap_or_default();
 
-    let function = typecheck_expr(env, base_data, lhs, None)?;
-    let function = complete_callee(env, base_data, expr, function, &arg_types)?;
+    let function = typecheck_expr(env, namespace, lhs, None)?;
+    let function = complete_callee(env, namespace, expr, function, &arg_types)?;
 
-    finish_function_call(env, base_data, expr, function, tc_args)
+    finish_function_call(env, namespace, expr, function, tc_args)
 }

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use cx_ast::ast::CXExpression;
 use cx_ast::data::{CXFunctionPrototype, CXType, CXTypeKind, PredeclarationType};
 use cx_mir::mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId};
-use cx_mir::mir::program::{MIRBaseMappings, MIRFunction, MIRGlobalVariable, MIRUnit};
+use cx_mir::mir::program::{EnvironmentNamespace, MIRFunction, MIRGlobalVariable, MIRUnit};
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
 use cx_tokens::TokenRange;
@@ -34,7 +34,7 @@ pub const DEFER_ACCUMULATION_REGISTER: &str = "__defer_accumulation_register";
 
 pub struct TypeEnvironment<'a> {
     pub source: SourceContext<'a>,
-    pub symbols: SymbolRegistry,
+    pub symbols: SymbolRegistry<'a>,
     pub items: ItemRegistry,
     pub function: FunctionContext,
 }
@@ -48,7 +48,7 @@ impl TypeEnvironment<'_> {
     ) -> TypeEnvironment<'a> {
         TypeEnvironment {
             source: SourceContext::new(tokens, compilation_unit, working_directory, module_data),
-            symbols: SymbolRegistry::with_intrinsics(),
+            symbols: SymbolRegistry::new(&module_data.symbol_registry),
             items: ItemRegistry::new(),
             function: FunctionContext::default(),
         }
@@ -130,7 +130,7 @@ impl TypeEnvironment<'_> {
 
     pub fn get_type(
         &mut self,
-        base_data: &MIRBaseMappings,
+        namespace: &EnvironmentNamespace,
         expr: &CXExpression,
         name: &str,
     ) -> CXResult<MIRType> {
@@ -145,7 +145,7 @@ impl TypeEnvironment<'_> {
         }
         .to_type();
 
-        self.complete_type(base_data, expr, &as_cx_type)
+        self.complete_type(namespace, expr, &as_cx_type)
     }
 
     pub fn get_realized_type(&self, name: &str) -> Option<MIRType> {
@@ -171,20 +171,20 @@ impl TypeEnvironment<'_> {
 
     pub fn complete_type(
         &mut self,
-        base_data: &MIRBaseMappings,
+        namespace: &EnvironmentNamespace,
         expr: &CXExpression,
         _type: &CXType,
     ) -> CXResult<MIRType> {
-        complete_type(self, base_data, None, expr, _type)
+        complete_type(self, namespace, None, expr, _type)
     }
 
     pub fn complete_prototype(
         &mut self,
-        base_data: &MIRBaseMappings,
+        namespace: &EnvironmentNamespace,
         external_module: Option<&String>,
         prototype: &CXFunctionPrototype,
     ) -> CXResult<MIRFunctionPrototype> {
-        complete_prototype_no_insert(self, base_data, external_module, prototype).inspect(
+        complete_prototype_no_insert(self, namespace, external_module, prototype).inspect(
             |prototype| {
                 self.items
                     .realized_fns

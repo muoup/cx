@@ -17,18 +17,18 @@ use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
     pattern::MIRPattern,
-    program::MIRBaseMappings,
+    program::EnvironmentNamespace,
 };
 use cx_util::CXResult;
 
 pub fn typecheck_match(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     condition: &CXExpression,
     arms: &[(CXPattern, CXExpression)],
     default: Option<&Box<CXExpression>>,
 ) -> CXResult<TypecheckResult> {
-    let mut expr_value = typecheck_expr(env, base_data, condition, None)
+    let mut expr_value = typecheck_expr(env, namespace, condition, None)
         .and_then(|val| std_rval_promotion(env, val.into_expression()?))?;
     let mut expr_type = expr_value.get_type();
 
@@ -75,7 +75,7 @@ pub fn typecheck_match(
                     );
                 };
 
-                let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression()?;
+                let body_expr = typecheck_expr(env, namespace, body, None)?.into_expression()?;
                 if expr_may_fall_through(&body_expr) {
                     env.function.enqueue_scope_arrow(
                         &ScopeExitTarget {
@@ -109,7 +109,7 @@ pub fn typecheck_match(
                     union_name,
                     variant_name,
                     inner_name,
-                } = resolve_type_constructor_pattern(env, base_data, condition, pattern)?;
+                } = resolve_type_constructor_pattern(env, namespace, condition, pattern)?;
 
                 let union_name = union_name.as_flat_name();
                 let expected_union_name = expected_union_name.as_str();
@@ -196,7 +196,7 @@ pub fn typecheck_match(
                         }
 
                         let body_expr =
-                            typecheck_expr(env, base_data, body, None)?.into_expression()?;
+                            typecheck_expr(env, namespace, body, None)?.into_expression()?;
                         env.pop_scope()?;
 
                         MIRExpression {
@@ -215,7 +215,7 @@ pub fn typecheck_match(
                             Some(SymbolValueOrigin::Local),
                         );
                         let body_expr =
-                            typecheck_expr(env, base_data, body, None)?.into_expression()?;
+                            typecheck_expr(env, namespace, body, None)?.into_expression()?;
                         env.symbols.pop_scope();
                         body_expr
                     };
@@ -233,7 +233,7 @@ pub fn typecheck_match(
                     body_expr
                 } else {
                     let body_expr =
-                        typecheck_expr(env, base_data, body, None)?.into_expression()?;
+                        typecheck_expr(env, namespace, body, None)?.into_expression()?;
                     if expr_may_fall_through(&body_expr) {
                         env.function.enqueue_scope_arrow(
                             &ScopeExitTarget {
@@ -274,7 +274,7 @@ pub fn typecheck_match(
     // Handle default case
     let default_body = match default {
         Some(default_expr) => {
-            let body = typecheck_expr(env, base_data, default_expr, None)?.into_expression()?;
+            let body = typecheck_expr(env, namespace, default_expr, None)?.into_expression()?;
             if expr_may_fall_through(&body) {
                 env.function.enqueue_scope_arrow(
                     &ScopeExitTarget {

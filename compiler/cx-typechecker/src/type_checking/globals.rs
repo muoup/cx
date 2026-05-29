@@ -7,30 +7,23 @@ use crate::{
     },
 };
 use cx_ast::{
-    ast::{CXExprKind, CXExpression, CXGlobalVariable},
+    ast::{CXAST, CXExprKind, CXExpression, CXGlobalVariable},
     data::{CXLinkageMode, ModuleResource},
 };
 use cx_mir::mir::{
     data::{MIRIntegerType, MIRTypeContext},
     expression::{MIRExpression, MIRExpressionKind, MIRPureExpression},
-    program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable},
+    program::{EnvironmentNamespace, MIRGlobalVarKind, MIRGlobalVariable},
 };
 use cx_util::{CXResult, identifier::CXIdent};
 
 pub fn complete_base_globals(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
+    ast: &CXAST,
 ) -> CXResult<()> {
-    for (name, module_res) in base_data.global_variables.iter() {
-        if matches!(module_res.resource, CXGlobalVariable::EnumDefinition { .. }) {
-            complete_global(env, base_data, name, module_res)?;
-        }
-    }
-
-    for (name, module_res) in base_data.global_variables.iter() {
-        if matches!(module_res.resource, CXGlobalVariable::Standard { .. }) {
-            complete_global(env, base_data, name, module_res)?;
-        }
+    for (ident, module_res) in ast.global_variables.iter() {
+        complete_global(env, namespace, ident, module_res)?;
     }
 
     Ok(())
@@ -38,12 +31,11 @@ pub fn complete_base_globals(
 
 fn complete_global(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     ident: &str,
     module_res: &ModuleResource<CXGlobalVariable>,
 ) -> CXResult<()> {
-    let owns_base_data = base_data.unit == env.source.compilation_unit.as_str();
-    let owns_resource = owns_base_data && module_res.external_module.is_none();
+    let owns_resource = module_res.external_module.is_none();
 
     match &module_res.resource {
         CXGlobalVariable::EnumDefinition { variants } => {
@@ -51,7 +43,7 @@ fn complete_global(
 
             for variant in variants {
                 let value = if let Some(expr) = variant.value.as_ref() {
-                    let value = typecheck_expr(env, base_data, expr, None)?.into_expression()?;
+                    let value = typecheck_expr(env, namespace, expr, None)?.into_expression()?;
                     let Some(value) = constexpr_evaluate(env, value)?.get_integer() else {
                         return log_typecheck_error!(
                             env,
@@ -77,7 +69,7 @@ fn complete_global(
             initializer,
             is_mutable,
         } => {
-            let _type = env.complete_type(base_data, &CXExpression::default(), _type)?;
+            let _type = env.complete_type(namespace, &CXExpression::default(), _type)?;
             ensure_valid_allocation_type(env, None, "a global variable", &_type)?;
             let _initializer = if owns_resource {
                 match initializer.as_ref() {

@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use cx_ast::data::{CX_CONST, CXTypeQualifiers};
+use cx_ast::{
+    data::{CX_CONST, CXTypeQualifiers},
+    symbols::GlobalSymbolRegistry,
+};
 use cx_mir::CXTypeMap;
 use cx_mir::intrinsic_types::INTRINSIC_TYPES;
 use cx_mir::mir::data::{
@@ -124,7 +127,8 @@ impl SymbolScope {
     }
 }
 
-pub struct SymbolRegistry {
+pub struct SymbolRegistry<'a> {
+    pub global_symbols: &'a GlobalSymbolRegistry,
     pub context: MIRTypeContext,
     pub realized_types: CXTypeMap,
     pub named_type_ids: HashMap<String, MIRTypeId>,
@@ -148,8 +152,8 @@ pub enum ResolvedValueSymbol {
     PureValue(MIRPureExpression),
 }
 
-impl SymbolRegistry {
-    pub fn with_intrinsics() -> Self {
+impl<'a> SymbolRegistry<'a> {
+    pub fn new(global_symbols: &'a GlobalSymbolRegistry) -> Self {
         let mut realized_types = HashMap::new();
         let mut context = MIRTypeContext::default();
         let mut named_type_ids = HashMap::new();
@@ -175,6 +179,7 @@ impl SymbolRegistry {
         }
 
         Self {
+            global_symbols,
             context,
             realized_types,
             named_type_ids,

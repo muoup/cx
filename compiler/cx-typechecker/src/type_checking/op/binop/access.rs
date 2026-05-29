@@ -7,9 +7,10 @@ use crate::type_checking::result::{BindingPlaceKind, TypecheckResult, Typechecke
 use crate::type_checking::value::locals::{ensure_binding_available, mark_binding};
 use cx_ast::ast::{CXExprKind, CXExpression};
 use cx_ast::data::{CX_CONST, CXReceiverMode};
+use cx_ast::symbols::UntypedSymbol;
 use cx_mir::mir::data::{MIRType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRCoercion, MIRExpression, MIRExpressionKind};
-use cx_mir::mir::program::MIRBaseMappings;
+use cx_mir::mir::program::EnvironmentNamespace;
 use cx_util::CXResult;
 
 pub(crate) fn resolve_access_base(
@@ -81,7 +82,7 @@ pub(crate) fn resolve_access_base(
 
 pub(crate) fn typecheck_access(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     lhs: TypecheckResult,
     rhs: &CXExpression,
     expr: &CXExpression,
@@ -127,16 +128,14 @@ pub(crate) fn typecheck_access(
                 );
             };
 
-            if base_data.fn_data.get_standard(&function_name).is_some()
-                && let Some(prototype) = query_function(
-                    env,
-                    base_data,
-                    expr,
-                    &function_name,
-                    None,
-                    &member_arg_types,
-                )?
-            {
+            if let Some(prototype) = query_function(
+                env,
+                namespace,
+                expr,
+                &function_name,
+                None,
+                &member_arg_types,
+            )? {
                 let Some(receiver_mode) =
                     prototype.source_prototype.kind.receiver().map(|v| v.mode)
                 else {
@@ -162,7 +161,9 @@ pub(crate) fn typecheck_access(
                     .with_implicit_parameters(vec![receiver]));
             }
 
-            if let Some(template) = base_data.fn_data.get_template(&function_name) {
+            if let Some(UntypedSymbol::FunctionTemplate(template, _)) =
+                env.symbols.global_symbols.resolve(&function_name)
+            {
                 let Some(receiver_mode) = template.resource.shell.kind.receiver().map(|v| v.mode)
                 else {
                     return log_typecheck_error!(
@@ -208,7 +209,7 @@ pub(crate) fn typecheck_access(
                 .map(|function_name| {
                     query_function(
                         env,
-                        base_data,
+                        namespace,
                         expr,
                         &function_name,
                         Some(template_input),

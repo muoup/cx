@@ -15,17 +15,17 @@ use cx_ast::data::CX_CONST;
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
-    program::MIRBaseMappings,
+    program::EnvironmentNamespace,
 };
 use cx_util::{CXResult, identifier::CXIdent};
 
 pub(crate) fn typecheck_move(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     inner_expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
-    let inner = typecheck_expr(env, base_data, inner_expr, None)?;
+    let inner = typecheck_expr(env, namespace, inner_expr, None)?;
 
     let Some(binding) = inner.binding().cloned() else {
         return log_typecheck_error!(
@@ -74,7 +74,7 @@ pub(crate) fn typecheck_move(
 
 pub(crate) fn typecheck_adopt(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     inner: &CXExpression,
 ) -> CXResult<TypecheckResult> {
@@ -86,7 +86,7 @@ pub(crate) fn typecheck_adopt(
         );
     }
 
-    let value = typecheck_expr(env, base_data, inner, None)?;
+    let value = typecheck_expr(env, namespace, inner, None)?;
     let binding = value.binding().cloned();
     let value = value.into_expression()?;
     let Some(inner_type) = env.symbols.context.mem_ref_inner(&value._type).cloned() else {
@@ -126,7 +126,7 @@ pub(crate) fn typecheck_adopt(
 
 pub(crate) fn typecheck_leak(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     inner: &CXExpression,
 ) -> CXResult<TypecheckResult> {
@@ -138,7 +138,7 @@ pub(crate) fn typecheck_leak(
         );
     }
 
-    let value = typecheck_expr(env, base_data, inner, None)?;
+    let value = typecheck_expr(env, namespace, inner, None)?;
 
     let Some(binding) = value.binding().cloned() else {
         return log_typecheck_error!(
@@ -183,12 +183,12 @@ pub(crate) fn typecheck_leak(
 
 pub(crate) fn typecheck_unpack(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     inner: &CXExpression,
     bindings: &[CXUnpackBinding],
 ) -> CXResult<TypecheckResult> {
-    let value = typecheck_expr(env, base_data, inner, None)?;
+    let value = typecheck_expr(env, namespace, inner, None)?;
 
     let Some(source_binding) = value.binding().cloned() else {
         return log_typecheck_error!(

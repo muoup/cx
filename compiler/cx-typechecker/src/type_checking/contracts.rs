@@ -4,12 +4,12 @@ use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_mir::mir::data::{MIRFunctionSignature, MIRType};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRFunctionContract};
-use cx_mir::mir::program::MIRBaseMappings;
+use cx_mir::mir::program::EnvironmentNamespace;
 use cx_util::CXResult;
 
 pub(crate) fn typecheck_contract(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     prototype: &MIRFunctionSignature,
 ) -> CXResult<MIRFunctionContract> {
     let naive_contract = &prototype.contract;
@@ -40,7 +40,7 @@ pub(crate) fn typecheck_contract(
         .precondition
         .as_ref()
         .map(|pre_expr| {
-            let tc_pre = typecheck_expr(env, base_data, pre_expr, Some(&MIRType::bool()))
+            let tc_pre = typecheck_expr(env, namespace, pre_expr, Some(&MIRType::bool()))
                 .and_then(|v| std_rval_promotion(env, v.into_expression()?))
                 .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
             Ok(Box::new(tc_pre))
@@ -63,7 +63,7 @@ pub(crate) fn typecheck_contract(
             );
         }
 
-        let tc_post = typecheck_expr(env, base_data, post_expr, Some(&MIRType::bool()))
+        let tc_post = typecheck_expr(env, namespace, post_expr, Some(&MIRType::bool()))
             .and_then(|v| std_rval_promotion(env, v.into_expression()?))
             .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
         Some((ret_name.clone(), Box::new(tc_post)))

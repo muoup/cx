@@ -1,5 +1,5 @@
 use cx_ast::{ast::CXExpression, pattern::CXPattern};
-use cx_mir::mir::program::MIRBaseMappings;
+use cx_mir::mir::program::EnvironmentNamespace;
 use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 use crate::{environment::TypeEnvironment, log_typecheck_error};
@@ -12,7 +12,7 @@ pub struct TypeConstructor {
 
 pub fn resolve_type_constructor_pattern(
     env: &mut TypeEnvironment,
-    _base_data: &MIRBaseMappings,
+    _namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     pattern: &CXPattern,
 ) -> CXResult<TypeConstructor> {

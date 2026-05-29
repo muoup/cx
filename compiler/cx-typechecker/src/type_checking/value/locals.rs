@@ -12,7 +12,7 @@ use cx_ast::ast::CXExpression;
 use cx_ast::data::CXType;
 use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind},
-    program::MIRBaseMappings,
+    program::EnvironmentNamespace,
 };
 use cx_tokens::TokenRange;
 use cx_util::{CXResult, identifier::CXIdent};
@@ -58,20 +58,20 @@ pub(crate) fn mark_binding(
 
 pub(crate) fn typecheck_var_declaration(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     ty: &CXType,
     name: &CXIdent,
     initial_value: Option<&Box<CXExpression>>,
 ) -> CXResult<TypecheckResult> {
-    let ty = env.complete_type(base_data, expr, ty)?;
+    let ty = env.complete_type(namespace, expr, ty)?;
 
     ensure_valid_allocation_type(env, Some(expr.token_range().clone()), "a variable", &ty)?;
 
     let mem_type = env.symbols.context.mem_ref_to(ty.clone());
     let (initial_region, adopting) = match initial_value {
         Some(init_expr) => {
-            let init_tc = typecheck_expr(env, base_data, init_expr, Some(&ty))?;
+            let init_tc = typecheck_expr(env, namespace, init_expr, Some(&ty))?;
             let adopting = init_tc.is_adopting();
             let init_expr = std_rval_promotion(env, init_tc.into_expression()?)
                 .and_then(|v| implicit_cast(env, v, &ty))?;

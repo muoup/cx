@@ -3,8 +3,7 @@ use crate::{CompilationUnit, GlobalCompilationContext};
 use cx_ast::ast::CXAST;
 use cx_ast::symbols::GlobalSymbolRegistry;
 use cx_lmir::LMIRUnit;
-use cx_mir::mir::program::{MIRBaseMappings, MIRUnit};
-use cx_mir::symbols::GlobalMIRSymbolResolver;
+use cx_mir::mir::program::{EnvironmentNamespace, MIRUnit};
 use cx_preparse_data::PreparseContents;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_tokens::token::Token;
@@ -20,13 +19,12 @@ pub struct ModuleData {
 
     pub preparse_registry: GlobalPreparseRegistry,
     pub symbol_registry: GlobalSymbolRegistry,
-    pub mir_symbol_resolver: GlobalMIRSymbolResolver,
 
     pub lex_tokens: ModuleMap<Vec<Token>>,
     pub preparse_base: ModuleMap<PreparseContents>,
 
     pub naive_ast: ModuleMap<CXAST>,
-    pub base_mappings: ModuleMap<MIRBaseMappings>,
+    pub base_mappings: ModuleMap<EnvironmentNamespace>,
 
     pub mir: ModuleMap<MIRUnit>,
     pub lmir: ModuleMap<LMIRUnit>,
@@ -44,7 +42,6 @@ impl ModuleData {
             do_not_reexport: RwLock::new(HashSet::new()),
             preparse_registry: GlobalPreparseRegistry::default(),
             symbol_registry: GlobalSymbolRegistry::default(),
-            mir_symbol_resolver: GlobalMIRSymbolResolver::default(),
 
             lex_tokens: ModuleMap::new(".cx-tokens"),
 

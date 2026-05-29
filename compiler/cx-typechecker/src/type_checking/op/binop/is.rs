@@ -10,17 +10,17 @@ use cx_ast::{ast::CXExpression, pattern::CXPattern};
 use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_mir::mir::pattern::MIRPattern;
-use cx_mir::mir::program::MIRBaseMappings;
+use cx_mir::mir::program::EnvironmentNamespace;
 use cx_util::CXResult;
 
 pub(crate) fn typecheck_is(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     lhs: &CXExpression,
     pattern: &CXPattern,
     expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
-    let tc_lhs: MIRExpression = typecheck_expr(env, base_data, lhs, None)
+    let tc_lhs: MIRExpression = typecheck_expr(env, namespace, lhs, None)
         .and_then(|v| std_rval_promotion(env, v.into_expression()?))?;
     let tc_type = tc_lhs.get_type();
     let owned_union_type;
@@ -46,7 +46,7 @@ pub(crate) fn typecheck_is(
         union_name,
         variant_name,
         inner_name,
-    } = resolve_type_constructor_pattern(env, base_data, expr, pattern)?;
+    } = resolve_type_constructor_pattern(env, namespace, expr, pattern)?;
     let union_name = union_name.as_flat_name();
     let expected_union_name = expected_union_name.as_str();
 

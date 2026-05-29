@@ -4,11 +4,12 @@ use cx_ast::{
         CXFunctionContract, CXFunctionKind, CXLinkageMode, CXTemplateInput, CXTypeKind,
         PredeclarationType, member_function_key,
     },
+    symbols::UntypedSymbol,
 };
 use cx_mir::mir::{
     data::{MIRFunctionPrototype, MIRParameter, MIRType},
     name_mangling::base_mangle_standard,
-    program::MIRBaseMappings,
+    program::EnvironmentNamespace,
 };
 use cx_tokens::TokenRange;
 use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
@@ -30,7 +31,7 @@ pub fn member_function_qualified_name(
 
 pub fn query_function(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     name: &QualifiedName,
     template_input: Option<&CXTemplateInput>,
@@ -44,21 +45,26 @@ pub fn query_function(
         }
     }
 
-    if let Some(standard) = base_data.fn_data.get_standard(name) {
+    let lookup_name = contextual_name(namespace, name);
+    if let Some(UntypedSymbol::Function(standard)) =
+        env.symbols.global_symbols.resolve(&lookup_name)
+    {
         return env
             .complete_prototype(
-                base_data,
+                namespace,
                 standard.external_module.as_ref(),
                 &standard.resource,
             )
             .map(Some);
     }
 
-    if let Some(template) = base_data.fn_data.get_template(name) {
+    if let Some(UntypedSymbol::FunctionTemplate(template, _)) =
+        env.symbols.global_symbols.resolve(&lookup_name)
+    {
         let prototype = if let Some(template_input) = template_input {
-            instantiate_function_template(env, base_data, template, template_input)
+            instantiate_function_template(env, namespace, &template, template_input)
         } else {
-            match deduce_function_template(env, base_data, template, arg_types) {
+            match deduce_function_template(env, namespace, &template, arg_types) {
                 Ok(prototype) => Ok(prototype),
                 Err(err) => {
                     log_typecheck_error!(env, expr.token_range(), "{}", err.error_content())
@@ -69,7 +75,7 @@ pub fn query_function(
         return Ok(Some(prototype));
     }
 
-    if let Some(prototype) = query_type_constructor(env, base_data, name, template_input)? {
+    if let Some(prototype) = query_type_constructor(env, namespace, name, template_input)? {
         return Ok(Some(prototype));
     }
 
@@ -78,7 +84,7 @@ pub fn query_function(
 
 fn query_type_constructor(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     name: &QualifiedName,
     template_input: Option<&CXTemplateInput>,
 ) -> CXResult<Option<MIRFunctionPrototype>> {
@@ -88,12 +94,19 @@ fn query_type_constructor(
     let union_name = QualifiedName::new(union_namespace, union_name);
     let union_flat_name = union_name.as_flat_name();
 
-    let type_exists = if template_input.is_some() {
-        base_data.type_data.get_template(&union_flat_name).is_some()
-    } else {
-        base_data.type_data.get_standard(&union_flat_name).is_some()
-            || env.get_realized_type(&union_flat_name).is_some()
-    };
+    let type_lookup_name = contextual_name(namespace, &union_name);
+    let type_exists = env
+        .symbols
+        .global_symbols
+        .resolve(&type_lookup_name)
+        .map(|symbol| {
+            matches!(
+                (template_input.is_some(), symbol),
+                (true, UntypedSymbol::TypeTemplate(_)) | (false, UntypedSymbol::Type(_))
+            )
+        })
+        .unwrap_or(false)
+        || env.get_realized_type(&union_flat_name).is_some();
     if !type_exists {
         return Ok(None);
     }
@@ -111,7 +124,7 @@ fn query_type_constructor(
     }
     .to_type();
 
-    let union_type = env.complete_type(base_data, &CXExpression::default(), &as_type)?;
+    let union_type = env.complete_type(namespace, &CXExpression::default(), &as_type)?;
     let Some(variants) = union_type.aggregate_fields(&env.symbols.context) else {
         return Ok(None);
     };
@@ -171,4 +184,12 @@ fn query_type_constructor(
     }
 
     Ok(Some(prototype))
+}
+
+fn contextual_name(namespace: &EnvironmentNamespace, name: &QualifiedName) -> QualifiedName {
+    if name.namespace.is_root() {
+        QualifiedName::new(namespace.clone(), name.name.clone())
+    } else {
+        name.clone()
+    }
 }

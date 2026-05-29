@@ -1,11 +1,10 @@
-use std::sync::Arc;
-
 use cx_ast::ast::{CXExpression, VisibilityMode};
 use cx_ast::data::{
     CXField, CXStructAttributes, CXTemplateInput, CXType, CXTypeKind, PredeclarationType,
 };
+use cx_ast::symbols::UntypedSymbol;
 use cx_mir::mir::data::{MIRMoveAttributes, MIRTemplateInput, MIRType, MIRTypeId, MIRTypeKind};
-use cx_mir::mir::program::MIRBaseMappings;
+use cx_mir::mir::program::EnvironmentNamespace;
 use cx_mir::mir::r#type::MIRField;
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
@@ -18,42 +17,20 @@ use crate::type_checking::constexpr::constexpr_evaluate;
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::{environment::TypeEnvironment, log::TypeError};
 
-pub(crate) enum ResolvedBaseData<'a> {
-    Local(&'a MIRBaseMappings),
-    External(Arc<MIRBaseMappings>),
-}
-
-impl<'a> ResolvedBaseData<'a> {
-    pub fn as_ref(&self) -> &MIRBaseMappings {
-        match self {
-            ResolvedBaseData::Local(base_data) => base_data,
-            ResolvedBaseData::External(base_data) => base_data.as_ref(),
-        }
-    }
-}
-
-pub(crate) fn base_data_from_module<'a>(
-    env: &mut TypeEnvironment,
-    base_data: &'a MIRBaseMappings,
+pub(crate) fn namespace_from_module<'a>(
+    _env: &mut TypeEnvironment,
+    namespace: &'a EnvironmentNamespace,
     external_module: Option<&String>,
-) -> ResolvedBaseData<'a> {
+) -> EnvironmentNamespace {
     match external_module {
-        Some(module) => {
-            let arc = env
-                .source
-                .module_data
-                .base_mappings
-                .get(&env.resolve_compilation_unit(module));
-
-            ResolvedBaseData::External(arc.clone())
-        }
-        None => ResolvedBaseData::Local(base_data),
+        Some(module) => NamespacePath::from_slash_path(&module.replace("::", "/")),
+        None => namespace.clone(),
     }
 }
 
 pub(crate) fn internal_complete_template_input(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     external_module: Option<&String>,
     expr: &CXExpression,
     input: &CXTemplateInput,
@@ -61,7 +38,7 @@ pub(crate) fn internal_complete_template_input(
     let _ty = input
         .params
         .iter()
-        .map(|param| complete_type(env, base_data, external_module, expr, param))
+        .map(|param| complete_type(env, namespace, external_module, expr, param))
         .collect::<CXResult<Vec<_>>>()?;
 
     Ok(MIRTemplateInput { args: _ty })
@@ -81,11 +58,11 @@ fn construct_type(ty: &CXType, kind: MIRTypeKind) -> MIRType {
 
 fn complete_type_id(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     ty: &CXType,
 ) -> CXResult<MIRTypeId> {
-    let completed = int_complete_type(env, base_data, expr, ty)?;
+    let completed = int_complete_type(env, namespace, expr, ty)?;
     Ok(env.intern_type(completed))
 }
 
@@ -190,13 +167,13 @@ fn ensure_complete_value_type(
 
 fn complete_field(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     field: &CXField,
 ) -> CXResult<MIRField> {
     match field {
         CXField::Standard { name, _type } => {
-            let field_type_id = complete_type_id(env, base_data, expr, _type)?;
+            let field_type_id = complete_type_id(env, namespace, expr, _type)?;
             let resolved_field_type = env
                 .symbols
                 .context
@@ -219,7 +196,7 @@ fn complete_field(
                 );
             }
 
-            let integer_type_id = complete_type_id(env, base_data, expr, integer_type)?;
+            let integer_type_id = complete_type_id(env, namespace, expr, integer_type)?;
             let resolved_integer_type = env
                 .symbols
                 .context
@@ -258,7 +235,7 @@ fn complete_field(
 
 fn complete_named_aggregate<F>(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     ty: &CXType,
     name: CXIdent,
@@ -302,7 +279,7 @@ where
     let result = (|| {
         let fields = raw_fields
             .iter()
-            .map(|field| complete_field(env, base_data, expr, field))
+            .map(|field| complete_field(env, namespace, expr, field))
             .collect::<CXResult<Vec<_>>>()?;
 
         validate_linear_hierarchy(env, aggregate_kind, &fields, &attributes)?;
@@ -332,20 +309,17 @@ where
 
 fn ensure_named_identifier_completed(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     ty: &CXType,
     name: &QualifiedName,
 ) -> CXResult<Option<MIRType>> {
-    let inner = base_data
-        .type_data
-        .get_standard(&name.as_flat_name())
-        .or_else(|| {
-            (name.namespace == base_data.namespace)
-                .then(|| base_data.type_data.get_standard(&name.name.as_string()))
-                .flatten()
-        });
-    let Some(inner) = inner else {
+    let lookup_name = if name.namespace.is_root() {
+        QualifiedName::new(namespace.clone(), name.name.clone())
+    } else {
+        name.clone()
+    };
+    let Some(UntypedSymbol::Type(inner)) = env.symbols.global_symbols.resolve(&lookup_name) else {
         return Ok(None);
     };
 
@@ -358,11 +332,15 @@ fn ensure_named_identifier_completed(
             let (nocopy, nodrop) = resolve_copy_traits(env, attributes);
             complete_named_aggregate(
                 env,
-                base_data,
+                namespace,
                 expr,
                 ty,
                 struct_name.clone(),
-                declared_type_name(base_data, inner.external_module.as_ref(), struct_name.clone()),
+                declared_type_name(
+                    namespace,
+                    inner.external_module.as_ref(),
+                    struct_name.clone(),
+                ),
                 None,
                 MIRMoveAttributes { nocopy, nodrop },
                 fields.as_slice(),
@@ -375,11 +353,15 @@ fn ensure_named_identifier_completed(
             fields,
         } => complete_named_aggregate(
             env,
-            base_data,
+            namespace,
             expr,
             ty,
             union_name.clone(),
-            declared_type_name(base_data, inner.external_module.as_ref(), union_name.clone()),
+            declared_type_name(
+                namespace,
+                inner.external_module.as_ref(),
+                union_name.clone(),
+            ),
             None,
             MIRMoveAttributes::default(),
             fields.as_slice(),
@@ -394,11 +376,15 @@ fn ensure_named_identifier_completed(
             let (nocopy, nodrop) = resolve_copy_traits(env, attributes);
             complete_named_aggregate(
                 env,
-                base_data,
+                namespace,
                 expr,
                 ty,
                 union_name.clone(),
-                declared_type_name(base_data, inner.external_module.as_ref(), union_name.clone()),
+                declared_type_name(
+                    namespace,
+                    inner.external_module.as_ref(),
+                    union_name.clone(),
+                ),
                 None,
                 MIRMoveAttributes { nocopy, nodrop },
                 variants.as_slice(),
@@ -414,7 +400,7 @@ fn ensure_named_identifier_completed(
         }
         _ => complete_type(
             env,
-            base_data,
+            namespace,
             inner.external_module.as_ref(),
             expr,
             &inner.resource,
@@ -426,19 +412,19 @@ fn ensure_named_identifier_completed(
 }
 
 fn declared_type_name(
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     external_module: Option<&String>,
     name: CXIdent,
 ) -> QualifiedName {
     let namespace = external_module
         .map(|module| NamespacePath::from_slash_path(&module.replace("::", "/")))
-        .unwrap_or_else(|| base_data.namespace.clone());
+        .unwrap_or_else(|| namespace.clone());
     QualifiedName::new(namespace, name)
 }
 
 pub(crate) fn int_complete_type(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     ty: &CXType,
 ) -> CXResult<MIRType> {
@@ -452,7 +438,7 @@ pub(crate) fn int_complete_type(
                 if let Some(id) = env.get_named_type_id(name.name.as_str())
                     && !env.has_complete_named_type_definition(id)
                     && let Some(completed) =
-                        ensure_named_identifier_completed(env, base_data, expr, ty, name)?
+                        ensure_named_identifier_completed(env, namespace, expr, ty, name)?
                 {
                     return Ok(completed.with_specifier(ty.specifiers));
                 }
@@ -461,12 +447,20 @@ pub(crate) fn int_complete_type(
             }
 
             if let Some(completed) =
-                ensure_named_identifier_completed(env, base_data, expr, ty, name)?
+                ensure_named_identifier_completed(env, namespace, expr, ty, name)?
             {
                 return Ok(completed.with_specifier(ty.specifiers));
             }
 
-            if base_data.type_data.get_template(&flat_name).is_some() {
+            let template_lookup = if name.namespace.is_root() {
+                QualifiedName::new(namespace.clone(), name.name.clone())
+            } else {
+                name.clone()
+            };
+            if matches!(
+                env.symbols.global_symbols.resolve(&template_lookup),
+                Some(UntypedSymbol::TypeTemplate(_))
+            ) {
                 return log_typecheck_error!(
                     env,
                     Some(expr.token_range()),
@@ -488,12 +482,12 @@ pub(crate) fn int_complete_type(
         }
 
         CXTypeKind::TemplatedIdentifier { name, input, .. } => {
-            instantiate_type_template(env, base_data, input, &name.as_flat_name())
+            instantiate_type_template(env, namespace, input, &name.as_flat_name())
                 .map(|completed| completed.with_specifier(ty.specifiers))
         }
 
         CXTypeKind::ExplicitSizedArray(inner, size) => {
-            let inner_type_id = complete_type_id(env, base_data, expr, inner)?;
+            let inner_type_id = complete_type_id(env, namespace, expr, inner)?;
             let inner_type = env
                 .symbols
                 .context
@@ -501,7 +495,7 @@ pub(crate) fn int_complete_type(
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type_id.0))
                 .clone();
 
-            let Some(size) = typecheck_expr(env, base_data, size.as_ref(), None)
+            let Some(size) = typecheck_expr(env, namespace, size.as_ref(), None)
                 .and_then(|v| constexpr_evaluate(env, v.into_expression()?))?
                 .get_integer()
             else {
@@ -524,7 +518,7 @@ pub(crate) fn int_complete_type(
         }
 
         CXTypeKind::ImplicitSizedArray(inner) => {
-            let inner_type_id = complete_type_id(env, base_data, expr, inner)?;
+            let inner_type_id = complete_type_id(env, namespace, expr, inner)?;
             Ok(construct_type(
                 ty,
                 MIRTypeKind::PointerTo {
@@ -534,7 +528,7 @@ pub(crate) fn int_complete_type(
         }
 
         CXTypeKind::MemoryReference { inner_type } => {
-            let inner_type_id = complete_type_id(env, base_data, expr, inner_type)?;
+            let inner_type_id = complete_type_id(env, namespace, expr, inner_type)?;
             Ok(construct_type(
                 ty,
                 MIRTypeKind::MemoryReference {
@@ -545,7 +539,7 @@ pub(crate) fn int_complete_type(
         }
 
         CXTypeKind::PointerTo { inner_type, .. } => {
-            let inner_type_id = complete_type_id(env, base_data, expr, inner_type)?;
+            let inner_type_id = complete_type_id(env, namespace, expr, inner_type)?;
             Ok(construct_type(
                 ty,
                 MIRTypeKind::PointerTo {
@@ -555,7 +549,7 @@ pub(crate) fn int_complete_type(
         }
 
         CXTypeKind::FunctionPointer { prototype } => {
-            let prototype = int_complete_fn_prototype(env, base_data, prototype)?;
+            let prototype = int_complete_fn_prototype(env, namespace, prototype)?;
             Ok(construct_type(
                 ty,
                 MIRTypeKind::Function {
@@ -572,11 +566,11 @@ pub(crate) fn int_complete_type(
             let (nocopy, nodrop) = resolve_copy_traits(env, attributes);
             complete_named_aggregate(
                 env,
-                base_data,
+                namespace,
                 expr,
                 ty,
                 name.clone(),
-                declared_type_name(base_data, None, name.clone()),
+                declared_type_name(namespace, None, name.clone()),
                 None,
                 MIRMoveAttributes { nocopy, nodrop },
                 fields.as_slice(),
@@ -592,7 +586,7 @@ pub(crate) fn int_complete_type(
         } => {
             let completed_fields = fields
                 .iter()
-                .map(|field| complete_field(env, base_data, expr, field))
+                .map(|field| complete_field(env, namespace, expr, field))
                 .collect::<CXResult<Vec<_>>>()?;
 
             let (nocopy, nodrop) = resolve_copy_traits(env, attributes);
@@ -621,11 +615,11 @@ pub(crate) fn int_complete_type(
             fields,
         } => complete_named_aggregate(
             env,
-            base_data,
+            namespace,
             expr,
             ty,
             name.clone(),
-            declared_type_name(base_data, None, name.clone()),
+            declared_type_name(namespace, None, name.clone()),
             None,
             MIRMoveAttributes::default(),
             fields.as_slice(),
@@ -636,7 +630,7 @@ pub(crate) fn int_complete_type(
         CXTypeKind::Union { name: None, fields } => {
             let completed_fields = fields
                 .iter()
-                .map(|field| complete_field(env, base_data, expr, field))
+                .map(|field| complete_field(env, namespace, expr, field))
                 .collect::<CXResult<Vec<_>>>()?;
 
             Ok(MIRType {
@@ -660,11 +654,11 @@ pub(crate) fn int_complete_type(
             let (nocopy, nodrop) = resolve_copy_traits(env, attributes);
             complete_named_aggregate(
                 env,
-                base_data,
+                namespace,
                 expr,
                 ty,
                 name.clone(),
-                declared_type_name(base_data, None, name.clone()),
+                declared_type_name(namespace, None, name.clone()),
                 None,
                 MIRMoveAttributes { nocopy, nodrop },
                 variants.as_slice(),

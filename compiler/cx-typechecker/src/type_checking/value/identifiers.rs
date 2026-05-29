@@ -7,18 +7,18 @@ use crate::{
     log_typecheck_error,
     type_checking::result::{TypecheckResult, TypecheckedBinding},
 };
-use cx_ast::{ast::CXExpression, data::CXTemplateInput};
+use cx_ast::{ast::CXExpression, data::CXTemplateInput, symbols::UntypedSymbol};
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
     name_mangling::base_mangle_standard,
-    program::MIRBaseMappings,
+    program::EnvironmentNamespace,
 };
 use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 pub(crate) fn typecheck_identifier(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     name: &QualifiedName,
 ) -> CXResult<TypecheckResult> {
@@ -34,17 +34,23 @@ pub(crate) fn typecheck_identifier(
         None
     };
 
+    let lookup_name = if name.namespace.is_root() {
+        QualifiedName::new(namespace.clone(), name.name.clone())
+    } else {
+        name.clone()
+    };
     let function_type = if let Some(function_type) = function_type {
         Some(function_type)
-    } else if base_data.fn_data.get_standard(name).is_some() {
-        query_function(env, base_data, expr, name, None, &[])?
-    } else if base_data.fn_data.get_template(name).is_some() {
+    } else if matches!(
+        env.symbols.global_symbols.resolve(&lookup_name),
+        Some(UntypedSymbol::FunctionTemplate(_, _))
+    ) {
         return Ok(TypecheckResult::incomplete_templated_callee(
             name.clone(),
             None,
         ));
     } else {
-        query_function(env, base_data, expr, name, None, &[])?
+        query_function(env, namespace, expr, name, None, &[])?
     };
 
     if let Some(function_type) = function_type {
@@ -101,12 +107,12 @@ fn resolved_symbol_to_typecheck_result(
 
 pub(crate) fn typecheck_templated_identifier(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     name: &QualifiedName,
     template_input: &CXTemplateInput,
 ) -> CXResult<TypecheckResult> {
-    let Some(function) = query_function(env, base_data, expr, name, Some(template_input), &[])?
+    let Some(function) = query_function(env, namespace, expr, name, Some(template_input), &[])?
     else {
         return log_typecheck_error!(
             env,

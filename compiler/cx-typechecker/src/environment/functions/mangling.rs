@@ -2,7 +2,7 @@ use cx_ast::{ast::CXExpression, data::CXFunctionKind};
 use cx_mir::mir::{
     data::MIRType,
     name_mangling::{base_mangle_member, base_mangle_standard, base_mangle_static_member},
-    program::MIRBaseMappings,
+    program::EnvironmentNamespace,
 };
 use cx_util::CXResult;
 
@@ -10,7 +10,7 @@ use crate::environment::TypeEnvironment;
 
 pub fn base_mangle_fn_name(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     kind: &CXFunctionKind,
 ) -> CXResult<String> {
     Ok(match &kind {
@@ -20,13 +20,13 @@ pub fn base_mangle_fn_name(
             name, member_type, ..
         } => {
             let member_type =
-                env.complete_type(base_data, &CXExpression::default(), &member_type.as_type())?;
+                env.complete_type(namespace, &CXExpression::default(), &member_type.as_type())?;
             base_mangle_member(&env.symbols.context, name.as_str(), &member_type)
         }
 
         CXFunctionKind::StaticMemberFunction { name, member_type } => {
             let member_type =
-                env.complete_type(base_data, &CXExpression::default(), &member_type.as_type())?;
+                env.complete_type(namespace, &CXExpression::default(), &member_type.as_type())?;
             base_mangle_static_member(&env.symbols.context, name.as_str(), &member_type)
         }
     })
@@ -34,12 +34,12 @@ pub fn base_mangle_fn_name(
 
 pub fn mangle_templated_fn_name(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     kind: &CXFunctionKind,
     return_type: &MIRType,
     parameter_types: &[MIRType],
 ) -> CXResult<String> {
-    let base_mangle = base_mangle_fn_name(env, base_data, kind)?;
+    let base_mangle = base_mangle_fn_name(env, namespace, kind)?;
     let mut prototype_mangling = String::new();
     prototype_mangling.push_str(&env.symbols.context.mangle(return_type));
     for param_type in parameter_types {

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::environment::functions::completion::{complete_prototype_no_insert, complete_type};
 use crate::environment::functions::mangling::mangle_templated_fn_name;
 use crate::environment::symbols::completion::{
-    base_data_from_module, int_complete_type, internal_complete_template_input,
+    int_complete_type, internal_complete_template_input, namespace_from_module,
 };
 use crate::environment::{MIRFunctionGenRequest, TypeEnvironment};
 use cx_ast::ast::CXExpression;
@@ -11,12 +11,13 @@ use cx_ast::data::{
     CXFunctionKind, CXFunctionPrototype, CXFunctionTemplate, CXStructAttributes, CXTemplateInput,
     CXTemplatePrototype, CXType, CXTypeKind, ModuleResource,
 };
+use cx_ast::symbols::UntypedSymbol;
 use cx_mir::mir::data::{
     MIRFunctionPrototype, MIRFunctionSignature, MIRMoveAttributes, MIRTemplateInput, MIRType,
     MIRTypeKind,
 };
 use cx_mir::mir::name_mangling::mangle_namespace_symbol;
-use cx_mir::mir::program::MIRBaseMappings;
+use cx_mir::mir::program::EnvironmentNamespace;
 use cx_util::{
     identifier::CXIdent,
     namespace::{NamespacePath, QualifiedName},
@@ -61,22 +62,29 @@ fn qualified_name_from_str(name: &str) -> QualifiedName {
 
 pub(crate) fn instantiate_type_template(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     input: &CXTemplateInput,
     name: &str,
 ) -> CXResult<MIRType> {
-    let Some(template) = base_data.type_data.get_template(&name.to_owned()) else {
+    let lookup_name = qualified_name_from_str(name);
+    let lookup_name = if lookup_name.namespace.is_root() {
+        QualifiedName::new(namespace.clone(), lookup_name.name)
+    } else {
+        lookup_name
+    };
+    let Some(UntypedSymbol::TypeTemplate(template)) =
+        env.symbols.global_symbols.resolve(&lookup_name)
+    else {
         return CXError::create_result(format!("Unknown template type: {}", name));
     };
     let completed_input =
-        internal_complete_template_input(env, base_data, None, &CXExpression::default(), input)?;
-    let base_data_ref = base_data_from_module(env, base_data, template.external_module.as_ref());
-    let base_data = base_data_ref.as_ref();
+        internal_complete_template_input(env, namespace, None, &CXExpression::default(), input)?;
+    let namespace = namespace_from_module(env, namespace, template.external_module.as_ref());
     let shell = &template.resource.shell;
     let aggregate_base_name =
         templated_aggregate_base_name(shell).unwrap_or_else(|| terminal_name(name).as_string());
     let strong_name = QualifiedName::new(
-        base_data.namespace.clone(),
+        namespace.clone(),
         CXIdent::new(aggregate_base_name.clone()),
     );
     let template_name = mangle_template_name(env, &strong_name.as_flat_name(), &completed_input);
@@ -107,7 +115,7 @@ pub(crate) fn instantiate_type_template(
             .insert(base_name.clone(), provisional);
     }
 
-    let cx_type = int_complete_type(env, base_data, &CXExpression::default(), shell);
+    let cx_type = int_complete_type(env, &namespace, &CXExpression::default(), shell);
 
     if templated_aggregate_base_name(shell).is_some() {
         let base_name = &aggregate_base_name;
@@ -232,17 +240,17 @@ fn resolve_template_attributes(
 
 pub(crate) fn deduce_function_template(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     template: &ModuleResource<CXFunctionTemplate>,
     arg_types: &[MIRType],
 ) -> CXResult<MIRFunctionPrototype> {
-    let completed_input = deduce_function_template_input(env, base_data, template, arg_types)?;
-    instantiate_function_template_with_input(env, base_data, template, &completed_input)
+    let completed_input = deduce_function_template_input(env, namespace, template, arg_types)?;
+    instantiate_function_template_with_input(env, namespace, template, &completed_input)
 }
 
 pub(crate) fn deduce_function_template_input(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     template: &ModuleResource<CXFunctionTemplate>,
     arg_types: &[MIRType],
 ) -> CXResult<MIRTemplateInput> {
@@ -263,7 +271,7 @@ pub(crate) fn deduce_function_template_input(
 
             deduce_from_cx_type(
                 env,
-                base_data,
+                namespace,
                 external_module,
                 template_prototype,
                 &mut bindings,
@@ -294,7 +302,7 @@ pub(crate) fn deduce_function_template_input(
     for (param, actual_type) in shell.params.iter().zip(param_arg_types.iter()) {
         deduce_from_cx_type(
             env,
-            base_data,
+            namespace,
             external_module,
             template_prototype,
             &mut bindings,
@@ -321,7 +329,7 @@ pub(crate) fn deduce_function_template_input(
 
 fn deduce_from_cx_type(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     external_module: Option<&String>,
     template_prototype: &CXTemplatePrototype,
     bindings: &mut TemplateBindings,
@@ -341,7 +349,7 @@ fn deduce_from_cx_type(
         if env.symbols.is_copyable(&inner_type) {
             return deduce_from_cx_type(
                 env,
-                base_data,
+                namespace,
                 external_module,
                 template_prototype,
                 bindings,
@@ -393,7 +401,7 @@ fn deduce_from_cx_type(
             {
                 deduce_from_cx_type(
                     env,
-                    base_data,
+                    namespace,
                     external_module,
                     template_prototype,
                     bindings,
@@ -422,7 +430,7 @@ fn deduce_from_cx_type(
                 .clone();
             deduce_from_cx_type(
                 env,
-                base_data,
+                namespace,
                 external_module,
                 template_prototype,
                 bindings,
@@ -449,7 +457,7 @@ fn deduce_from_cx_type(
                     .clone();
                 deduce_from_cx_type(
                     env,
-                    base_data,
+                    namespace,
                     external_module,
                     template_prototype,
                     bindings,
@@ -469,7 +477,7 @@ fn deduce_from_cx_type(
                     .clone();
                 deduce_from_cx_type(
                     env,
-                    base_data,
+                    namespace,
                     external_module,
                     template_prototype,
                     bindings,
@@ -482,7 +490,7 @@ fn deduce_from_cx_type(
             {
                 deduce_from_cx_type(
                     env,
-                    base_data,
+                    namespace,
                     external_module,
                     template_prototype,
                     bindings,
@@ -503,7 +511,7 @@ fn deduce_from_cx_type(
 
             deduce_from_function_signature(
                 env,
-                base_data,
+                namespace,
                 external_module,
                 template_prototype,
                 bindings,
@@ -515,7 +523,7 @@ fn deduce_from_cx_type(
         _ => {
             let completed_formal = complete_type(
                 env,
-                base_data,
+                namespace,
                 external_module,
                 &CXExpression::default(),
                 formal,
@@ -531,7 +539,7 @@ fn deduce_from_cx_type(
 
 fn deduce_from_function_signature(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     external_module: Option<&String>,
     template_prototype: &CXTemplatePrototype,
     bindings: &mut TemplateBindings,
@@ -555,7 +563,7 @@ fn deduce_from_function_signature(
 
     deduce_from_cx_type(
         env,
-        base_data,
+        namespace,
         external_module,
         template_prototype,
         bindings,
@@ -566,7 +574,7 @@ fn deduce_from_function_signature(
     for (formal_param, actual_param) in formal.params.iter().zip(actual.params.iter()) {
         deduce_from_cx_type(
             env,
-            base_data,
+            namespace,
             external_module,
             template_prototype,
             bindings,
@@ -615,24 +623,24 @@ fn concrete_type_mismatch(
 
 pub(crate) fn instantiate_function_template(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     template: &ModuleResource<CXFunctionTemplate>,
     input: &CXTemplateInput,
 ) -> CXResult<MIRFunctionPrototype> {
     let completed_input = internal_complete_template_input(
         env,
-        base_data,
+        namespace,
         template.external_module.as_ref(),
         &CXExpression::default(),
         input,
     )?;
 
-    instantiate_function_template_with_input(env, base_data, template, &completed_input)
+    instantiate_function_template_with_input(env, namespace, template, &completed_input)
 }
 
 fn instantiate_function_template_with_input(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     template: &ModuleResource<CXFunctionTemplate>,
     completed_input: &MIRTemplateInput,
 ) -> CXResult<MIRFunctionPrototype> {
@@ -644,7 +652,7 @@ fn instantiate_function_template_with_input(
     let template_prototype = &resource.prototype;
     let overwrites = add_templated_types(env, template_prototype, completed_input)?;
 
-    let instantiated = complete_function_template(env, base_data, template);
+    let instantiated = complete_function_template(env, namespace, template);
     let instantiated = match instantiated {
         Ok(instantiated) => instantiated,
         Err(err) => {
@@ -673,16 +681,16 @@ fn instantiate_function_template_with_input(
 
 pub(crate) fn complete_function_template(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     template: &ModuleResource<CXFunctionTemplate>,
 ) -> CXResult<MIRFunctionPrototype> {
     let resource = &template.resource;
     let shell = &resource.shell;
 
-    let mut completed = complete_prototype_no_insert(env, base_data, None, shell)?;
+    let mut completed = complete_prototype_no_insert(env, namespace, None, shell)?;
     completed.name = mangle_templated_fn_name(
         env,
-        base_data,
+        namespace,
         &template.resource.shell.kind,
         &completed.return_type,
         &completed

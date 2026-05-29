@@ -3,7 +3,7 @@ use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::CXExpression;
 use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind},
-    program::MIRBaseMappings,
+    program::EnvironmentNamespace,
 };
 use cx_util::CXResult;
 
@@ -73,7 +73,7 @@ pub(crate) fn enqueue_jump_arrow(env: &mut TypeEnvironment, target: &ScopeExitTa
 
 pub(crate) fn typecheck_fallthrough_scope(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     target_scope: ScopeId,
     sink: ScopeArrowSink,
@@ -86,14 +86,14 @@ pub(crate) fn typecheck_fallthrough_scope(
         sink,
         label: label.to_string(),
     });
-    let result = typecheck_expr(env, base_data, expr, None)?.into_expression()?;
+    let result = typecheck_expr(env, namespace, expr, None)?.into_expression()?;
     env.pop_scope()?;
     Ok(result)
 }
 
 pub(crate) fn process_for_increment_arrows(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     loop_scope_idx: ScopeId,
     increment: &CXExpression,
 ) -> CXResult<()> {
@@ -108,7 +108,7 @@ pub(crate) fn process_for_increment_arrows(
         env.function.restore_snapshot(&arrow.snapshot);
         env.function.set_scope_reachable(loop_scope_idx, true);
 
-        let _ = typecheck_expr(env, base_data, increment, None)?;
+        let _ = typecheck_expr(env, namespace, increment, None)?;
 
         if env.function.is_scope_reachable(loop_scope_idx) {
             env.function.enqueue_scope_arrow(

@@ -6,26 +6,26 @@ use cx_ast::{ast::CXExpression, data::CXType};
 use cx_mir::mir::{
     data::{MIRIntegerType, MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
-    program::MIRBaseMappings,
+    program::EnvironmentNamespace,
 };
 use cx_util::CXResult;
 
 pub(crate) fn typecheck_sizeof_type(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     ty: &CXType,
 ) -> CXResult<TypecheckResult> {
-    let tc_type = env.complete_type(base_data, expr, ty)?;
+    let tc_type = env.complete_type(namespace, expr, ty)?;
     Ok(sizeof_result(tc_type.padded_size(&env.symbols.context)))
 }
 
 pub(crate) fn typecheck_sizeof_expr(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
-    let tc_expr = typecheck_expr(env, base_data, expr, None)?;
+    let tc_expr = typecheck_expr(env, namespace, expr, None)?;
     Ok(sizeof_result(
         tc_expr.get_type()?.padded_size(&env.symbols.context),
     ))

@@ -2,7 +2,7 @@ use cx_ast::ast::{CXExpression, CXInitIndex};
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpressionKind, StructInitialization},
-    program::MIRBaseMappings,
+    program::EnvironmentNamespace,
 };
 use cx_tokens::TokenRange;
 use cx_util::CXResult;
@@ -20,7 +20,7 @@ use crate::{
 
 pub fn typecheck_initializer_list(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     indices: &[CXInitIndex],
     to_type: Option<&MIRType>,
@@ -31,10 +31,10 @@ pub fn typecheck_initializer_list(
         let token_range = expr.token_range().clone();
 
         return Ok(TypecheckResult::needs_expected_type(
-            move |env, base_data, expected_type| {
+            move |env, namespace, expected_type| {
                 let mut expression = typecheck_initializer_list(
                     env,
-                    base_data,
+                    namespace,
                     &expr,
                     &indices,
                     Some(expected_type),
@@ -69,7 +69,7 @@ pub fn typecheck_initializer_list(
                 .get(*_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", _type.0))
                 .clone();
-            typecheck_array_initializer(env, base_data, indices, &inner_type, Some(*size), to_type)
+            typecheck_array_initializer(env, namespace, indices, &inner_type, Some(*size), to_type)
         }
 
         MIRTypeKind::PointerTo {
@@ -81,11 +81,11 @@ pub fn typecheck_initializer_list(
                 .get(*inner)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner.0))
                 .clone();
-            typecheck_array_initializer(env, base_data, indices, &inner_type, None, to_type)
+            typecheck_array_initializer(env, namespace, indices, &inner_type, None, to_type)
         }
 
         MIRTypeKind::Structured { .. } => {
-            typecheck_structured_initializer(env, base_data, expr, indices, to_type)
+            typecheck_structured_initializer(env, namespace, expr, indices, to_type)
         }
 
         _ => log_typecheck_error!(
@@ -99,7 +99,7 @@ pub fn typecheck_initializer_list(
 
 fn typecheck_array_initializer(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     indices: &[CXInitIndex],
     inner_type: &MIRType,
     size: Option<usize>,
@@ -136,7 +136,7 @@ fn typecheck_array_initializer(
     let elements = indices
         .iter()
         .map(|index| {
-            typecheck_expr(env, base_data, &index.value, Some(inner_type))
+            typecheck_expr(env, namespace, &index.value, Some(inner_type))
                 .and_then(TypecheckResult::into_expression)
         })
         .collect::<CXResult<_>>()?;
@@ -152,7 +152,7 @@ fn typecheck_array_initializer(
 
 fn typecheck_structured_initializer(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     indices: &[CXInitIndex],
     to_type: &MIRType,
@@ -205,7 +205,7 @@ fn typecheck_structured_initializer(
         }
 
         let (field_name, field_type) = &fields[counter];
-        let value = typecheck_expr(env, base_data, &index.value, Some(field_type))
+        let value = typecheck_expr(env, namespace, &index.value, Some(field_type))
             .and_then(|expr| std_rval_promotion(env, expr.into_expression()?))
             .and_then(|expr| implicit_cast(env, expr, field_type))?;
 

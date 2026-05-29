@@ -96,7 +96,6 @@ pub(crate) fn scheduling_loop(
         let step_name = match job.step {
             CompilationStep::PreParse => "Lexing",
             CompilationStep::ASTParse => "Parsing",
-            CompilationStep::InterfaceCombine => "Resolving",
             CompilationStep::Typechecking => "Typechecking",
             CompilationStep::LMIRGen => "Lowering",
             CompilationStep::Codegen => "Compiling",
@@ -189,8 +188,7 @@ pub(crate) fn handle_job(
 
             Ok(new_jobs.into())
         }
-        CompilationStep::ASTParse => map_reqs_new_stage(job, CompilationStep::InterfaceCombine),
-        CompilationStep::InterfaceCombine => map_reqs_new_stage(job, CompilationStep::Typechecking),
+        CompilationStep::ASTParse => map_reqs_new_stage(job, CompilationStep::Typechecking),
         CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::LMIRGen),
         CompilationStep::LMIRGen => map_reqs_new_stage(job, CompilationStep::Codegen),
         CompilationStep::Codegen => Ok([].into()),
@@ -376,9 +374,7 @@ pub(crate) fn perform_job(
                 .insert(job.unit.clone(), parsed_ast);
         }
 
-        CompilationStep::InterfaceCombine => {
-            gather_interface(context, &job.unit)?;
-        }
+
 
         CompilationStep::Typechecking => {
             let structure_data = context.module_db.base_mappings.get(&job.unit);
@@ -682,12 +678,11 @@ fn handle_job_collect_errors(
 
             Some(HandleJobResult::Success(new_jobs.into()))
         }
+        
         CompilationStep::ASTParse => Some(HandleJobResult::Success(map_reqs_new_stage(
-            CompilationStep::InterfaceCombine,
-        ))),
-        CompilationStep::InterfaceCombine => Some(HandleJobResult::Success(map_reqs_new_stage(
             CompilationStep::Typechecking,
         ))),
+
         CompilationStep::Typechecking => {
             // Stop here for LSP - no need for bytecode/codegen
             Some(HandleJobResult::Success([].into()))

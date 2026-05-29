@@ -127,7 +127,7 @@ impl GlobalSymbolRegistry {
         }
     }
 
-    pub fn resolve(&self, name: &QualifiedName) -> Option<(SymbolId, UntypedSymbol)> {
+    pub fn resolve(&self, name: &QualifiedName) -> Option<UntypedSymbol> {
         let inner = self
             .inner
             .read()
@@ -137,7 +137,7 @@ impl GlobalSymbolRegistry {
             .get(&name.namespace)
             .and_then(|namespace| namespace.get_symbol(name.name.as_str()))?;
         let symbol = inner.symbols.get(&id)?.clone();
-        Some((id, symbol))
+        Some(symbol)
     }
 
     pub fn symbol(&self, id: SymbolId) -> Option<UntypedSymbol> {

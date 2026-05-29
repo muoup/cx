@@ -1,5 +1,5 @@
 use cx_ast::ast::{CXAST, CXFunctionStmt, VisibilityMode};
-use cx_mir::mir::program::MIRBaseMappings;
+use cx_mir::mir::program::EnvironmentNamespace;
 use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
 use cx_util::{
     CXResult,
@@ -21,16 +21,16 @@ use crate::{environment::TypeEnvironment, type_checking::functions::typecheck_fu
 
 pub fn typecheck(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     ast: &CXAST,
 ) -> CXResult<()> {
-    complete_base_globals(env, base_data)?;
-    complete_base_functions(env, base_data)?;
+    complete_base_globals(env, namespace, ast)?;
+    complete_base_functions(env, namespace)?;
 
     for stmt in ast.function_stmts.iter() {
         if let CXFunctionStmt::FunctionDefinition { prototype, body } = stmt {
-            let prototype = env.complete_prototype(base_data, None, prototype)?;
-            typecheck_function(env, base_data, prototype.clone(), body)?;
+            let prototype = env.complete_prototype(namespace, None, prototype)?;
+            typecheck_function(env, namespace, prototype.clone(), body)?;
         }
     }
 
@@ -53,7 +53,7 @@ pub fn gather_interface(
 pub fn build_interface(
     context: &GlobalCompilationContext,
     unit: &CompilationUnit,
-) -> CXResult<MIRBaseMappings> {
+) -> CXResult<EnvironmentNamespace> {
     let ast = context.module_db.naive_ast.get(unit);
     let mut base_type_map = ast.type_data.clone();
     let mut base_fn_map = ast.function_data.clone();
@@ -122,13 +122,9 @@ pub fn build_interface(
         }
     }
 
-    Ok(MIRBaseMappings {
-        unit: unit.as_str().to_owned(),
-        namespace: NamespacePath::from_slash_path(&unit.module_path().as_str().replace("::", "/")),
-        type_data: base_type_map,
-        fn_data: base_fn_map,
-        global_variables: base_globals,
-    })
+    Ok(NamespacePath::from_slash_path(
+        &unit.module_path().as_str().replace("::", "/"),
+    ))
 }
 
 fn qualified_name(module: ModulePath, name: &str) -> String {

@@ -57,23 +57,7 @@ pub enum CompilationStep {
      *  Outputs:  A naively parsed AST.
      */
     ASTParse = 1 << 1,
-
-    /**
-     *  Prior to typechecking, the compiler must combine all publically accessible types and functions
-     *  from imports into the current compilation unit's AST. This is similar to ImportCombine, however
-     *  instead of combining preparse data, or the names of types needed for clearing ambiguities during
-     *  parsing, this step combines actual type and function data so that if the current compilation unit
-     *  references a type or function. Note that this does not generate completed type or function definitons,
-     *  but rather a list of incomplete type's and their module origins, so that during typechecking, if a type
-     *  or function is needed, the typechecker can complete the type knowing where relevant information about
-     *  internal types that not be publicly accessible is stored.
-     *
-     *  Requires: A naively parsed AST, along with the type and function definitions of imports.
-     *  Outputs:  A base data structure, containing the publically accessible types and functions of imports
-     *  along with their module origins, along with the same data from the current compilation unit.
-     */
-    InterfaceCombine = 1 << 2,
-
+ 
     /**
      *  Typechecks all indirectly implemented functions and types to a type-checked
      *  AST. This for the most part consists of realizing templated functions, however in the future other
@@ -86,7 +70,7 @@ pub enum CompilationStep {
      *
      *  Outputs:  A fully type-checked AST.
      */
-    Typechecking = 1 << 3,
+    Typechecking = 1 << 2,
 
     /**
      *  Generates a custom bytecode / Flat IR representation from the type-checked AST. This, unlike
@@ -99,7 +83,7 @@ pub enum CompilationStep {
      *            implementations of templated functions, types, and potentially in the future small
      *            always-inlined functions.
      */
-    LMIRGen = 1 << 4,
+    LMIRGen = 1 << 3,
 
     /**
      *  Compiles the full compilation units from the flat IR bytecode representation. In effect, this
@@ -111,7 +95,7 @@ pub enum CompilationStep {
      *
      *  Outputs:  One object file per compilation unit, containing the compiled code for the unit.
      */
-    Codegen = 1 << 5, // For now, linking is a single step that is done after all compilation above is done. This
+    Codegen = 1 << 4, // For now, linking is a single step that is done after all compilation above is done. This
                       // could be abstracted into a CompilationStep, but seeing as it is not a job that occurs
                       // per-compilation unit, it handled as its own mechanism.
 }

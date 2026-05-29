@@ -250,7 +250,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpression>
                 ),
             );
         } else {
-            // REVISIT: This logic is a mess, we can probably heavily simplify this.
+            // FIXME: This logic is a mess, we can probably heavily simplify this.
             
             // If our expression starts with a type but has no name, we have a few options:
             //  1. We could be in a sizeof expression (e.g. sizeof(T)), in which we should just return the type as a dummy expression

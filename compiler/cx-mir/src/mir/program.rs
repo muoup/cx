@@ -1,10 +1,6 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 
-use cx_ast::{
-    ast::CXGlobalVariable,
-    data::{CXLinkageMode, ModuleResource},
-    type_map::{CXFnMap, CXTypeMap},
-};
+use cx_ast::data::CXLinkageMode;
 use cx_util::{identifier::CXIdent, namespace::NamespacePath};
 
 use crate::mir::{
@@ -21,14 +17,16 @@ pub struct MIRUnit {
     pub source_path: PathBuf,
 }
 
-#[derive(Debug, Clone)]
-pub struct MIRBaseMappings {
-    pub unit: String,
-    pub namespace: NamespacePath,
-    pub type_data: CXTypeMap,
-    pub fn_data: CXFnMap,
-    pub global_variables: HashMap<String, ModuleResource<CXGlobalVariable>>,
-}
+// #[derive(Debug, Clone)]
+// pub struct EnvironmentNamespace {
+//     pub unit: String,
+//     pub namespace: NamespacePath,
+//     pub type_data: CXTypeMap,
+//     pub fn_data: CXFnMap,
+//     pub global_variables: HashMap<String, ModuleResource<CXGlobalVariable>>,
+// }
+
+pub type EnvironmentNamespace = NamespacePath;
 
 #[derive(Debug, Clone)]
 pub struct MIRFunction {
