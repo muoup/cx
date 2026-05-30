@@ -43,7 +43,7 @@ pub(crate) fn typecheck_identifier(
     let function_type = if let Some(function_type) = function_type {
         Some(function_type)
     } else if matches!(
-        env.symbols.global_symbols.resolve(&lookup_name),
+        env.symbols.global_registry.resolve(&lookup_name),
         Some(UntypedSymbol::FunctionTemplate(_, _))
     ) {
         return Ok(TypecheckResult::incomplete_templated_callee(

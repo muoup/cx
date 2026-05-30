@@ -43,7 +43,7 @@ enum AggregateMemberLayout {
 
 fn aggregate_member_layout(
     aggregate_type: &MIRType,
-    definitions: &cx_mir::mir::data::MIRTypeContext,
+    definitions: &cx_mir::mir::data::MIRSymbolRegistry,
     member_index: usize,
 ) -> AggregateMemberLayout {
     let aggregate_type = definitions.memory_resident_type(aggregate_type);

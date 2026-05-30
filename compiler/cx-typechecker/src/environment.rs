@@ -15,7 +15,6 @@ use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::{NamespacePath, QualifiedName};
 
-use crate::environment::{functions::completion::{complete_prototype_no_insert, complete_type}, symbols::ResolvedValueSymbol};
 use crate::environment::functions::context::FunctionContext;
 pub use crate::environment::functions::control_flow::{
     BindingMoveState, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
@@ -24,9 +23,14 @@ pub use crate::environment::functions::control_flow::{
 use crate::environment::items::ItemRegistry;
 use crate::environment::source::SourceContext;
 use crate::environment::symbols::{SymbolRegistry, TemplateBindingFrame};
+use crate::environment::{
+    functions::completion::{complete_prototype_no_insert, complete_type},
+    symbols::ResolvedValueSymbol,
+};
 use crate::log::TypeError;
 
 pub(crate) mod functions;
+pub(crate) mod resolution;
 pub(crate) mod items;
 pub(crate) mod source;
 pub(crate) mod symbols;
@@ -57,10 +61,21 @@ impl TypeEnvironment<'_> {
         }
     }
 
-    pub fn resolve_compilation_unit(&self, module: &str) -> CompilationUnit {
-        self.source.resolve_compilation_unit(module)
+    pub fn add_local_type(&mut self, name: String, _type: MIRType) -> CXResult<MIRTypeId> {
+        todo!()
     }
 
+    pub fn remove_local_type(&mut self, id: MIRTypeId) -> CXResult<()> {
+        todo!()
+    }
+
+    pub fn get_symbol(&mut self, name: &QualifiedName) -> CXResult<Option<MIRSymbol>> {
+        self.symbols.get(name)
+    }
+}
+
+// Under consideration -- functions that may be removed in the refactor
+impl TypeEnvironment<'_> {
     pub fn add_type(&mut self, name: String, _type: MIRType) -> Option<MIRType> {
         self.symbols.add_type(name, _type)
     }

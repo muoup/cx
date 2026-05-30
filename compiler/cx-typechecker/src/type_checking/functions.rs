@@ -79,7 +79,7 @@ pub fn realize_fn_implementation(
     let namespace = NamespacePath::from_slash_path(origin.identifier());
     let template_key = template_kind.into_key();
     let Some(UntypedSymbol::FunctionTemplate(template, _)) =
-        env.symbols.global_symbols.resolve(&template_key)
+        env.symbols.global_registry.resolve(&template_key)
     else {
         panic!("Template not found");
     };

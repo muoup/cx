@@ -75,7 +75,7 @@ pub(crate) fn instantiate_type_template(
         lookup_name
     };
     let Some(UntypedSymbol::TypeTemplate(template)) =
-        env.symbols.global_symbols.resolve(&lookup_name)
+        env.symbols.global_registry.resolve(&lookup_name)
     else {
         return CXError::create_result(format!("Unknown template type: {}", name));
     };

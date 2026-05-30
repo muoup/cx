@@ -1,13 +1,13 @@
 use super::types::convert_type;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRABISlot, LMIRFunctionSignature, LMIRParameter, LMIRParameterABI, LMIRReturnABI};
-use cx_mir::mir::data::{MIRParameter, MIRType, MIRTypeContext};
+use cx_mir::mir::data::{MIRParameter, MIRType, MIRSymbolRegistry};
 
 pub(crate) fn classify_signature(
     return_type: &MIRType,
     params: &[MIRParameter],
     var_args: bool,
-    definitions: &MIRTypeContext,
+    definitions: &MIRSymbolRegistry,
 ) -> LMIRFunctionSignature {
     let return_type = convert_type(return_type, definitions);
     let return_abi = classify_return(return_type.clone());
@@ -47,7 +47,7 @@ fn classify_return(return_type: LMIRType) -> LMIRReturnABI {
     }
 }
 
-fn classify_param(param: &MIRParameter, definitions: &MIRTypeContext) -> LMIRParameter {
+fn classify_param(param: &MIRParameter, definitions: &MIRSymbolRegistry) -> LMIRParameter {
     let _type = convert_type(&param._type, definitions);
     let abi = if !_type.is_memory_resident() {
         LMIRParameterABI::Direct {

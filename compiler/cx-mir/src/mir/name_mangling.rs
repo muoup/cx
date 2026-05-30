@@ -1,5 +1,6 @@
-use crate::mir::data::{MIRType, MIRTypeContext, MIRTypeKind};
+use crate::mir::data::{MIRType, MIRTypeKind};
 use crate::mir::r#type::MIRField;
+use crate::symbol::registry::MIRSymbolRegistry;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 pub fn base_mangle_standard(name: &str) -> String {
@@ -23,31 +24,31 @@ pub fn mangle_namespace_symbol(name: &QualifiedName) -> String {
 }
 
 pub fn base_mangle_member(
-    definitions: &MIRTypeContext,
+    definitions: &MIRSymbolRegistry,
     name: &str,
     member_type: &MIRType,
 ) -> String {
-    format!("_M{}_{}", definitions.mangle(member_type), name)
+    format!("_M{}_{}", type_mangle(definitions, member_type), name)
 }
 
 pub fn base_mangle_static_member(
-    definitions: &MIRTypeContext,
+    definitions: &MIRSymbolRegistry,
     name: &str,
     member_type: &MIRType,
 ) -> String {
-    format!("_S{}_{}", definitions.mangle(member_type), name)
+    format!("_S{}_{}", type_mangle(definitions, member_type), name)
 }
 
-pub(crate) fn type_mangle(definitions: &MIRTypeContext, ty: &MIRType) -> String {
+pub(crate) fn type_mangle(registry: &MIRSymbolRegistry, ty: &MIRType) -> String {
     let mut mangled = String::new();
 
     match &ty.kind {
         MIRTypeKind::PointerTo { inner_type } => {
             mangled.push('P');
-            let inner_type = definitions
-                .get(*inner_type)
+            let inner_type = registry
+                .resolve_type_id(inner_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
-            mangled.push_str(&type_mangle(definitions, inner_type));
+            mangled.push_str(&type_mangle(registry, inner_type));
         }
         MIRTypeKind::MemoryReference {
             inner_type,
@@ -61,10 +62,10 @@ pub(crate) fn type_mangle(definitions: &MIRTypeContext, ty: &MIRType) -> String 
                 mangled.push_str(&bitfield.bit_width.to_string());
                 mangled.push('_');
             }
-            let inner_type = definitions
-                .get(*inner_type)
+            let inner_type = registry
+                .resolve_type_id(inner_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
-            mangled.push_str(&type_mangle(definitions, inner_type));
+            mangled.push_str(&type_mangle(registry, inner_type));
         }
         MIRTypeKind::Opaque { size } => {
             mangled.push('O');
@@ -77,40 +78,40 @@ pub(crate) fn type_mangle(definitions: &MIRTypeContext, ty: &MIRType) -> String 
             mangled.push('A');
             mangled.push_str(&size.to_string());
             mangled.push('_');
-            let inner_type = definitions
-                .get(*inner_type)
+            let inner_type = registry
+                .resolve_type_id(inner_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
-            mangled.push_str(&type_mangle(definitions, inner_type));
+            mangled.push_str(&type_mangle(registry, inner_type));
         }
         MIRTypeKind::Function { signature } => {
             mangled.push('F');
-            mangled.push_str(&type_mangle(definitions, &signature.return_type));
+            mangled.push_str(&type_mangle(registry, &signature.return_type));
             for param in &signature.params {
-                mangled.push_str(&type_mangle(definitions, &param._type));
+                mangled.push_str(&type_mangle(registry, &param._type));
             }
             mangled.push(if signature.var_args { 'V' } else { 'v' });
         }
         MIRTypeKind::Structured { fields } => {
             mangled.push('S');
-            push_identifier(&mut mangled, definitions, ty);
+            push_identifier(&mut mangled, registry, ty);
             push_move_attributes(&mut mangled, ty);
             if ty.get_name().is_none() {
-                push_aggregate_fields(&mut mangled, definitions, fields);
+                push_aggregate_fields(&mut mangled, registry, fields);
             }
         }
         MIRTypeKind::Union { variants } => {
             mangled.push('U');
-            push_identifier(&mut mangled, definitions, ty);
+            push_identifier(&mut mangled, registry, ty);
             if ty.get_name().is_none() {
-                push_aggregate_fields(&mut mangled, definitions, variants);
+                push_aggregate_fields(&mut mangled, registry, variants);
             }
         }
         MIRTypeKind::TaggedUnion { variants } => {
             mangled.push('T');
-            push_identifier(&mut mangled, definitions, ty);
+            push_identifier(&mut mangled, registry, ty);
             push_move_attributes(&mut mangled, ty);
             if ty.get_name().is_none() {
-                push_aggregate_fields(&mut mangled, definitions, variants);
+                push_aggregate_fields(&mut mangled, registry, variants);
             }
         }
         MIRTypeKind::Integer { _type, signed } => {
@@ -137,7 +138,7 @@ pub(crate) fn type_mangle(definitions: &MIRTypeContext, ty: &MIRType) -> String 
     mangled
 }
 
-fn push_identifier(mangled: &mut String, definitions: &MIRTypeContext, ty: &MIRType) {
+fn push_identifier(mangled: &mut String, definitions: &MIRSymbolRegistry, ty: &MIRType) {
     if let Some(name) = ty.get_name() {
         mangled.push('n');
         if let Some(strong_name) = ty.strong_identifier() {
@@ -167,7 +168,7 @@ fn push_move_attributes(mangled: &mut String, ty: &MIRType) {
     mangled.push(if ty.move_attributes.nodrop { 'D' } else { 'd' });
 }
 
-fn push_aggregate_fields(mangled: &mut String, definitions: &MIRTypeContext, fields: &[MIRField]) {
+fn push_aggregate_fields(mangled: &mut String, definitions: &MIRSymbolRegistry, fields: &[MIRField]) {
     mangled.push('f');
     mangled.push_str(&fields.len().to_string());
     mangled.push('_');
@@ -177,7 +178,7 @@ fn push_aggregate_fields(mangled: &mut String, definitions: &MIRTypeContext, fie
             mangled.push('b');
         }
         let field_type = definitions
-            .get(field_id)
+            .resolve_type_id(&field_id)
             .unwrap_or_else(|| panic!("Unknown type id {}", field_id.0));
         mangled.push_str(&type_mangle(definitions, field_type));
     }

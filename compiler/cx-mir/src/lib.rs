@@ -4,6 +4,10 @@ use crate::mir::data::MIRTemplateInput;
 
 pub mod intrinsic_types;
 pub mod mir;
+pub mod symbol;
+pub mod program;
+
+mod format;
 
 pub struct MIRGenerationRequest {
     pub module_origin: Option<String>,

@@ -2,7 +2,7 @@ use crate::mir_lowering::types::convert_cx_prototype;
 use crate::{LMIRResult, LMIRUnit};
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::*;
-use cx_mir::mir::data::{MIRFunctionPrototype, MIRTypeContext};
+use cx_mir::mir::data::{MIRFunctionPrototype, MIRSymbolRegistry};
 use cx_mir::mir::program::MIRUnit;
 use cx_util::format::dump_all;
 use cx_util::identifier::CXIdent;
@@ -14,7 +14,7 @@ use cx_util::CXResult;
 pub struct LMIRBuilder {
     functions: Vec<LMIRFunction>,
     global_variables: Vec<LMIRGlobalValue>,
-    pub type_definitions: MIRTypeContext,
+    pub type_definitions: MIRSymbolRegistry,
 
     pub fn_map: LMIRFunctionMap,
 

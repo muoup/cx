@@ -321,7 +321,7 @@ fn ensure_named_identifier_completed(
     } else {
         name.clone()
     };
-    let Some(UntypedSymbol::new(inner)) = env.symbols.global_symbols.resolve(&lookup_name) else {
+    let Some(UntypedSymbol::new(inner)) = env.symbols.global_registry.resolve(&lookup_name) else {
         return Ok(None);
     };
 
@@ -460,7 +460,7 @@ pub(crate) fn int_complete_type(
                 name.clone()
             };
             if matches!(
-                env.symbols.global_symbols.resolve(&template_lookup),
+                env.symbols.global_registry.resolve(&template_lookup),
                 Some(UntypedSymbol::TypeTemplate(_))
             ) {
                 return log_typecheck_error!(

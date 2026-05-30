@@ -50,7 +50,7 @@ pub fn query_function(
     let lookup_name = contextual_name(namespace, name);
     if let Some(UntypedSymbolKind::Function(standard)) = env
         .symbols
-        .global_symbols
+        .global_registry
         .resolve(&lookup_name)
         .map(|s| &s.kind)
     {
@@ -64,7 +64,7 @@ pub fn query_function(
     }
 
     if let Some(UntypedSymbol::FunctionTemplate(template, _)) =
-        env.symbols.global_symbols.resolve(&lookup_name)
+        env.symbols.global_registry.resolve(&lookup_name)
     {
         let prototype = if let Some(template_input) = template_input {
             instantiate_function_template(env, namespace, &template, template_input)
@@ -102,7 +102,7 @@ fn query_type_constructor(
     let type_lookup_name = contextual_name(namespace, &union_name);
     let type_exists = env
         .symbols
-        .global_symbols
+        .global_registry
         .resolve(&type_lookup_name)
         .map(|symbol| {
             matches!(

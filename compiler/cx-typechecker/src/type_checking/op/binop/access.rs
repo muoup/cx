@@ -163,7 +163,7 @@ pub(crate) fn typecheck_access(
             }
 
             if let Some(UntypedSymbol::FunctionTemplate(template, _)) =
-                env.symbols.global_symbols.resolve(&function_name)
+                env.symbols.global_registry.resolve(&function_name)
             {
                 let Some(receiver_mode) = template.resource.shell.kind.receiver().map(|v| v.mode)
                 else {

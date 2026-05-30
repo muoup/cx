@@ -3,10 +3,9 @@ use cx_util::identifier::CXIdent;
 
 use crate::mir::data::{MIRFunctionPrototype, MIRFunctionSignature, MIRParameter};
 use crate::mir::expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp};
-use crate::mir::program::{MIRFunction, MIRGlobalVarKind, MIRGlobalVariable, MIRUnit};
-use crate::mir::r#type::{
-    MIRField, MIRFloatType, MIRIntegerType, MIRType, MIRTypeContext, MIRTypeId, MIRTypeKind,
-};
+use crate::mir::r#type::{MIRField, MIRFloatType, MIRIntegerType, MIRType, MIRTypeId, MIRTypeKind};
+use crate::program::{MIRFunction, MIRUnit};
+use crate::symbol::registry::MIRSymbolRegistry;
 use std::fmt::{Display, Formatter};
 
 #[derive(Clone, Copy)]
@@ -35,52 +34,13 @@ impl TypeDisplayState {
     }
 }
 
-pub struct MIRTypeDisplay<'a> {
-    ty: &'a MIRType,
-    definitions: &'a MIRTypeContext,
-}
-
-pub struct MIRExpressionDisplay<'a> {
-    expr: &'a MIRExpression,
-    definitions: &'a MIRTypeContext,
-}
-
-pub struct MIRFunctionDisplay<'a> {
-    function: &'a MIRFunction,
-    definitions: &'a MIRTypeContext,
-}
-
-pub struct MIRFunctionSignatureDisplay<'a> {
-    signature: &'a MIRFunctionSignature,
-    definitions: &'a MIRTypeContext,
-}
-
-pub struct MIRFunctionPrototypeDisplay<'a> {
-    prototype: &'a MIRFunctionPrototype,
-    definitions: &'a MIRTypeContext,
-}
-
-pub struct MIRParameterDisplay<'a> {
-    parameter: &'a MIRParameter,
-    definitions: &'a MIRTypeContext,
-}
-
-pub struct MIRGlobalVariableDisplay<'a> {
-    global: &'a MIRGlobalVariable,
-    definitions: &'a MIRTypeContext,
-}
-
-pub struct MIRGlobalVarKindDisplay<'a> {
-    kind: &'a MIRGlobalVarKind,
-    definitions: &'a MIRTypeContext,
-}
-
-pub struct MIRUnitDisplay<'a> {
-    unit: &'a MIRUnit,
+pub struct MIRDisplay<'a, T> {
+    content: &'a T,
+    definitions: &'a MIRSymbolRegistry<'a>
 }
 
 impl MIRType {
-    pub fn display_with<'a>(&'a self, definitions: &'a MIRTypeContext) -> MIRTypeDisplay<'a> {
+    pub fn display_with<'a>(&'a self, definitions: &'a MIRSymbolRegistry) -> MIRTypeDisplay<'a> {
         MIRTypeDisplay {
             ty: self,
             definitions,
@@ -89,7 +49,7 @@ impl MIRType {
 }
 
 impl MIRExpression {
-    pub fn display_with<'a>(&'a self, definitions: &'a MIRTypeContext) -> MIRExpressionDisplay<'a> {
+    pub fn display_with<'a>(&'a self, definitions: &'a MIRSymbolRegistry) -> MIRExpressionDisplay<'a> {
         MIRExpressionDisplay {
             expr: self,
             definitions,
@@ -98,7 +58,7 @@ impl MIRExpression {
 }
 
 impl MIRFunction {
-    pub fn display_with<'a>(&'a self, definitions: &'a MIRTypeContext) -> MIRFunctionDisplay<'a> {
+    pub fn display_with<'a>(&'a self, definitions: &'a MIRSymbolRegistry) -> MIRFunctionDisplay<'a> {
         MIRFunctionDisplay {
             function: self,
             definitions,
@@ -109,7 +69,7 @@ impl MIRFunction {
 impl MIRFunctionSignature {
     pub fn display_with<'a>(
         &'a self,
-        definitions: &'a MIRTypeContext,
+        definitions: &'a MIRSymbolRegistry,
     ) -> MIRFunctionSignatureDisplay<'a> {
         MIRFunctionSignatureDisplay {
             signature: self,
@@ -121,7 +81,7 @@ impl MIRFunctionSignature {
 impl MIRFunctionPrototype {
     pub fn display_with<'a>(
         &'a self,
-        definitions: &'a MIRTypeContext,
+        definitions: &'a MIRSymbolRegistry,
     ) -> MIRFunctionPrototypeDisplay<'a> {
         MIRFunctionPrototypeDisplay {
             prototype: self,
@@ -131,7 +91,7 @@ impl MIRFunctionPrototype {
 }
 
 impl MIRParameter {
-    pub fn display_with<'a>(&'a self, definitions: &'a MIRTypeContext) -> MIRParameterDisplay<'a> {
+    pub fn display_with<'a>(&'a self, definitions: &'a MIRSymbolRegistry) -> MIRParameterDisplay<'a> {
         MIRParameterDisplay {
             parameter: self,
             definitions,
@@ -142,7 +102,7 @@ impl MIRParameter {
 impl MIRGlobalVariable {
     pub fn display_with<'a>(
         &'a self,
-        definitions: &'a MIRTypeContext,
+        definitions: &'a MIRSymbolRegistry,
     ) -> MIRGlobalVariableDisplay<'a> {
         MIRGlobalVariableDisplay {
             global: self,
@@ -154,7 +114,7 @@ impl MIRGlobalVariable {
 impl MIRGlobalVarKind {
     pub fn display_with<'a>(
         &'a self,
-        definitions: &'a MIRTypeContext,
+        definitions: &'a MIRSymbolRegistry,
     ) -> MIRGlobalVarKindDisplay<'a> {
         MIRGlobalVarKindDisplay {
             kind: self,
@@ -173,7 +133,7 @@ fn indentation(depth: usize) -> String {
     "  ".repeat(depth)
 }
 
-fn type_id_of(definitions: &MIRTypeContext, ty: &MIRType) -> Option<MIRTypeId> {
+fn type_id_of(definitions: &MIRSymbolRegistry, ty: &MIRType) -> Option<MIRTypeId> {
     ty.named_type_id(definitions)
         .or_else(|| definitions.type_id(ty))
 }
@@ -233,7 +193,7 @@ fn write_recursive_reference(
 
 fn write_type_root(
     f: &mut Formatter<'_>,
-    definitions: &MIRTypeContext,
+    definitions: &MIRSymbolRegistry,
     ty: &MIRType,
     mode: TypeRenderMode,
 ) -> std::fmt::Result {
@@ -249,7 +209,7 @@ fn write_type_root(
 
 fn write_type_value(
     f: &mut Formatter<'_>,
-    definitions: &MIRTypeContext,
+    definitions: &MIRSymbolRegistry,
     ty: &MIRType,
     mode: TypeRenderMode,
     state: &mut TypeDisplayState,
@@ -270,7 +230,7 @@ fn write_type_value(
 
 fn write_type_id(
     f: &mut Formatter<'_>,
-    definitions: &MIRTypeContext,
+    definitions: &MIRSymbolRegistry,
     id: MIRTypeId,
     mode: TypeRenderMode,
     state: &mut TypeDisplayState,
@@ -328,7 +288,7 @@ fn write_aggregate(
     keyword: &str,
     ty: &MIRType,
     fields: &[MIRField],
-    definitions: &MIRTypeContext,
+    definitions: &MIRSymbolRegistry,
     state: &mut TypeDisplayState,
 ) -> std::fmt::Result {
     write!(f, "{keyword}")?;
@@ -373,7 +333,7 @@ fn write_aggregate(
 
 fn write_type_body(
     f: &mut Formatter<'_>,
-    definitions: &MIRTypeContext,
+    definitions: &MIRSymbolRegistry,
     ty: &MIRType,
     id: MIRTypeId,
     mode: TypeRenderMode,
@@ -452,7 +412,7 @@ fn write_type_body(
     }
 }
 
-fn write_type_definitions(f: &mut Formatter<'_>, definitions: &MIRTypeContext) -> std::fmt::Result {
+fn write_type_definitions(f: &mut Formatter<'_>, definitions: &MIRSymbolRegistry) -> std::fmt::Result {
     writeln!(f, "\nType Definitions:")?;
 
     let mut any = false;
@@ -480,7 +440,7 @@ fn write_type_definitions(f: &mut Formatter<'_>, definitions: &MIRTypeContext) -
 
 struct MIRTypeDefinitionDisplay<'a> {
     ty: &'a MIRType,
-    definitions: &'a MIRTypeContext,
+    definitions: &'a MIRSymbolRegistry,
 }
 
 impl Display for MIRTypeDefinitionDisplay<'_> {
@@ -626,7 +586,7 @@ impl Display for MIRUnitDisplay<'_> {
 fn write_signature_with_context(
     f: &mut Formatter<'_>,
     signature: &MIRFunctionSignature,
-    definitions: &MIRTypeContext,
+    definitions: &MIRSymbolRegistry,
     state: &mut TypeDisplayState,
 ) -> std::fmt::Result {
     write!(f, "fn(")?;
@@ -662,14 +622,14 @@ fn write_signature_with_context(
 struct MIRExpressionFormatter<'a> {
     expr: &'a MIRExpression,
     depth: usize,
-    definitions: &'a MIRTypeContext,
+    definitions: &'a MIRSymbolRegistry,
 }
 
 impl<'a> MIRExpressionFormatter<'a> {
     fn with_definitions(
         expr: &'a MIRExpression,
         depth: usize,
-        definitions: &'a MIRTypeContext,
+        definitions: &'a MIRSymbolRegistry,
     ) -> Self {
         Self {
             expr,

@@ -1,4 +1,4 @@
-use cx_mir::mir::data::{MIRType, MIRTypeContext, MIRTypeKind};
+use cx_mir::mir::data::{MIRType, MIRSymbolRegistry, MIRTypeKind};
 
 pub struct StructField {
     pub index: usize,
@@ -7,7 +7,7 @@ pub struct StructField {
 
 pub fn struct_field(
     struct_type: &MIRType,
-    definitions: &MIRTypeContext,
+    definitions: &MIRSymbolRegistry,
     field_name: &str,
 ) -> Option<StructField> {
     let struct_type = definitions.memory_resident_type(struct_type);

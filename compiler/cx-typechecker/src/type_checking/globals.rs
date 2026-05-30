@@ -10,7 +10,7 @@ use cx_ast::{
     ast::{CXAST, expression::{CXExprKind, CXExpression}, global_var::CXGlobalVariable, modifiers::CXLinkageMode},
 };
 use cx_mir::mir::{
-    data::{MIRIntegerType, MIRTypeContext},
+    data::{MIRIntegerType, MIRSymbolRegistry},
     expression::{MIRExpression, MIRExpressionKind, MIRPureExpression},
     program::{EnvironmentNamespace, MIRGlobalVarKind, MIRGlobalVariable},
 };
@@ -125,7 +125,7 @@ fn enum_literal(value: i64) -> MIRPureExpression {
 
 fn tcglobal_expr(
     global: &MIRGlobalVariable,
-    definitions: &mut MIRTypeContext,
+    definitions: &mut MIRSymbolRegistry,
 ) -> CXResult<MIRExpression> {
     match &global.kind {
         MIRGlobalVarKind::Variable { name, _type, .. } => Ok(MIRExpression {

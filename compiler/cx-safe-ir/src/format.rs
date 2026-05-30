@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter, Result};
 
-use cx_mir::mir::r#type::MIRTypeContext;
+use cx_mir::mir::r#type::MIRSymbolRegistry;
 
 use crate::ast::*;
 use crate::intrinsic::*;
@@ -78,21 +78,21 @@ impl Display for Indent {
 
 pub struct FMIRTypeDisplay<'a> {
     ty: &'a FMIRType,
-    definitions: &'a MIRTypeContext,
+    definitions: &'a MIRSymbolRegistry,
 }
 
 pub struct FMIRNodeDisplay<'a> {
     node: &'a FMIRNode,
-    definitions: &'a MIRTypeContext,
+    definitions: &'a MIRSymbolRegistry,
 }
 
 pub struct FMIRFunctionDisplay<'a> {
     function: &'a FMIRFunction,
-    definitions: &'a MIRTypeContext,
+    definitions: &'a MIRSymbolRegistry,
 }
 
 impl FMIRType {
-    pub fn display_with<'a>(&'a self, definitions: &'a MIRTypeContext) -> FMIRTypeDisplay<'a> {
+    pub fn display_with<'a>(&'a self, definitions: &'a MIRSymbolRegistry) -> FMIRTypeDisplay<'a> {
         FMIRTypeDisplay {
             ty: self,
             definitions,
@@ -101,7 +101,7 @@ impl FMIRType {
 }
 
 impl FMIRNode {
-    pub fn display_with<'a>(&'a self, definitions: &'a MIRTypeContext) -> FMIRNodeDisplay<'a> {
+    pub fn display_with<'a>(&'a self, definitions: &'a MIRSymbolRegistry) -> FMIRNodeDisplay<'a> {
         FMIRNodeDisplay {
             node: self,
             definitions,
@@ -110,7 +110,7 @@ impl FMIRNode {
 }
 
 impl FMIRFunction {
-    pub fn display_with<'a>(&'a self, definitions: &'a MIRTypeContext) -> FMIRFunctionDisplay<'a> {
+    pub fn display_with<'a>(&'a self, definitions: &'a MIRSymbolRegistry) -> FMIRFunctionDisplay<'a> {
         FMIRFunctionDisplay {
             function: self,
             definitions,
@@ -190,7 +190,7 @@ impl FMIRNode {
         &self,
         f: &mut Formatter<'_>,
         indent: &Indent,
-        definitions: &MIRTypeContext,
+        definitions: &MIRSymbolRegistry,
     ) -> Result {
         self.body.fmt_with_indent(f, indent, definitions)
     }
@@ -339,7 +339,7 @@ impl FMIRNodeBody {
         &self,
         f: &mut Formatter<'_>,
         indent: &Indent,
-        definitions: &MIRTypeContext,
+        definitions: &MIRSymbolRegistry,
     ) -> Result {
         match self {
             FMIRNodeBody::Application { function, argument } => match &function.body {

@@ -4,7 +4,7 @@ use cx_ast::ast::modifiers::CXLinkageMode;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRFunctionPrototype, LinkageType};
 use cx_mir::mir::data::{
-    MIRFloatType, MIRFunctionPrototype, MIRIntegerType, MIRType, MIRTypeContext, MIRTypeKind,
+    MIRFloatType, MIRFunctionPrototype, MIRIntegerType, MIRType, MIRSymbolRegistry, MIRTypeKind,
 };
 
 impl LMIRBuilder {
@@ -37,13 +37,13 @@ impl LMIRBuilder {
     }
 }
 
-pub(crate) fn convert_type(cx_type: &MIRType, definitions: &MIRTypeContext) -> LMIRType {
+pub(crate) fn convert_type(cx_type: &MIRType, definitions: &MIRSymbolRegistry) -> LMIRType {
     LMIRType {
         kind: convert_type_kind(cx_type, definitions),
     }
 }
 
-fn convert_parameter_type(param_type: &MIRType, definitions: &MIRTypeContext) -> LMIRType {
+fn convert_parameter_type(param_type: &MIRType, definitions: &MIRSymbolRegistry) -> LMIRType {
     let bc_type = convert_type(param_type, definitions);
 
     if bc_type.is_structure() {
@@ -55,7 +55,7 @@ fn convert_parameter_type(param_type: &MIRType, definitions: &MIRTypeContext) ->
 
 pub(crate) fn convert_cx_prototype(
     cx_proto: &MIRFunctionPrototype,
-    definitions: &MIRTypeContext,
+    definitions: &MIRSymbolRegistry,
 ) -> LMIRFunctionPrototype {
     let signature = classify_signature(
         &cx_proto.signature.return_type,
@@ -97,7 +97,7 @@ fn convert_linkage(linkage: CXLinkageMode) -> LinkageType {
     }
 }
 
-pub(crate) fn convert_type_kind(cx_type: &MIRType, definitions: &MIRTypeContext) -> LMIRTypeKind {
+pub(crate) fn convert_type_kind(cx_type: &MIRType, definitions: &MIRSymbolRegistry) -> LMIRTypeKind {
     match &cx_type.kind {
         MIRTypeKind::Opaque { size, .. } => LMIRTypeKind::Opaque { bytes: *size },
 
