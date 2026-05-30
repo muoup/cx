@@ -109,9 +109,9 @@ pub(crate) fn typecheck_var_declaration(
         Some(SymbolValueOrigin::Local),
     );
 
-    if env.symbols.is_nocopy(&ty) {
+    if ty.is_nocopy() {
         env.function
-            .track_binding(name.as_string(), env.symbols.is_nodrop(&ty));
+            .track_binding(name.as_string(), ty.is_nodrop());
     }
 
     Ok(TypecheckResult::from(binding))

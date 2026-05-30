@@ -191,7 +191,7 @@ pub fn typecheck_match(
                         if env.symbols.is_nocopy(variant_type) {
                             env.function.track_binding(
                                 inner_name.as_string(),
-                                env.symbols.is_nodrop(variant_type),
+                                variant_type.is_nodrop(),
                             );
                         }
 

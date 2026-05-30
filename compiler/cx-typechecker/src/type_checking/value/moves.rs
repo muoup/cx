@@ -165,7 +165,7 @@ pub(crate) fn typecheck_leak(
         );
     };
 
-    if !env.symbols.is_nodrop(&inner_type) {
+    if !inner_type.is_nodrop() {
         return Ok(TypecheckResult::from(value));
     }
 
@@ -281,7 +281,7 @@ pub(crate) fn typecheck_unpack(
     }
 
     for (field_name, (_, field_type)) in field_map.iter() {
-        if env.symbols.is_nodrop(field_type) && !seen_fields.contains(field_name) {
+        if field_type.is_nodrop() && !seen_fields.contains(field_name) {
             return log_typecheck_error!(
                 env,
                 Some(expr.token_range()),
@@ -340,9 +340,9 @@ pub(crate) fn typecheck_unpack(
             },
             Some(SymbolValueOrigin::Local),
         );
-        if env.symbols.is_nocopy(field_type) {
+        if field_type.is_nocopy() {
             env.function
-                .track_binding(binding_name.as_string(), env.symbols.is_nodrop(field_type));
+                .track_binding(binding_name.as_string(), field_type.is_nodrop());
         }
 
         statements.push(MIRExpression {

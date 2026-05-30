@@ -457,18 +457,6 @@ impl<'a> SymbolRegistry<'a> {
         !self.is_nocopy(ty)
     }
 
-    pub fn is_nocopy(&self, ty: &MIRType) -> bool {
-        ty.struct_attributes()
-            .map(|attributes| attributes.nocopy || attributes.nodrop)
-            .unwrap_or(false)
-    }
-
-    pub fn is_nodrop(&self, ty: &MIRType) -> bool {
-        ty.struct_attributes()
-            .map(|attributes| attributes.nodrop)
-            .unwrap_or(false)
-    }
-
     pub fn type_eq(&self, type1: &MIRType, type2: &MIRType) -> bool {
         self.context.type_eq(type1, type2)
     }

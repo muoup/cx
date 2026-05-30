@@ -810,6 +810,18 @@ impl MIRType {
         matches!(self.kind, MIRTypeKind::Structured { .. })
     }
 
+    pub fn is_nodrop(&self) -> bool {
+        self.struct_attributes()
+            .map(|a| a.nodrop)
+            .unwrap_or(false)
+    }
+
+    pub fn is_nocopy(&self) -> bool {
+        self.struct_attributes()
+            .map(|a| a.nocopy)
+            .unwrap_or(false)
+    }
+
     pub fn struct_attributes(&self) -> Option<MIRMoveAttributes> {
         match self.kind {
             MIRTypeKind::Structured { .. }

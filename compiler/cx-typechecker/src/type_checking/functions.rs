@@ -49,9 +49,9 @@ pub fn typecheck_function(
             },
             Some(SymbolValueOrigin::Local),
         );
-        if env.symbols.is_nocopy(_type) {
+        if _type.is_nocopy() {
             env.function
-                .track_binding(name.as_string(), env.symbols.is_nodrop(_type));
+                .track_binding(name.as_string(), _type.is_nodrop());
         }
     }
 

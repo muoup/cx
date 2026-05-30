@@ -127,8 +127,6 @@ impl TypeEnvironment<'_> {
             .update_named_type_metadata(id, new_name, template_info);
     }
 
-    pub fn query_symbol(&self, name: &QualifiedName) -> Option<ResolvedValueSymbol
-
     pub fn get_realized_func(&self, name: &str) -> Option<MIRFunctionPrototype> {
         self.items.get_realized_func(name)
     }
