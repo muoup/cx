@@ -1,5 +1,5 @@
 use crate::{environment::TypeEnvironment, type_checking::result::TypecheckResult};
-use cx_ast::ast::{CXBinOp, CXExpression, CXUnOp};
+use cx_ast::ast::expression::{CXBinOp, CXExpression, CXUnOp};
 use cx_mir::mir::{expression::MIRExpression, program::EnvironmentNamespace};
 use cx_util::CXResult;
 

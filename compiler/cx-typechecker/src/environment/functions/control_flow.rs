@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use cx_ast::ast::CXExpression;
+use cx_ast::ast::expression::CXExpression;
 use cx_tokens::TokenRange;
 use cx_tokens::token::Token;
 use cx_util::CXResult;

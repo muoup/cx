@@ -2,7 +2,7 @@ use crate::{
     environment::TypeEnvironment, type_checking::result::TypecheckResult,
     type_checking::typechecker::typecheck_expr,
 };
-use cx_ast::ast::CXExpression;
+use cx_ast::ast::expression::CXExpression;
 use cx_mir::mir::{data::MIRType, expression::MIRExpressionKind, program::EnvironmentNamespace};
 use cx_util::CXResult;
 

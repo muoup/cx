@@ -24,7 +24,7 @@ use crate::type_checking::value::{
     sizeof::{typecheck_sizeof_expr, typecheck_sizeof_type},
     unsafe_ops::typecheck_unsafe,
 };
-use cx_ast::ast::{CXBinOp, CXExprKind, CXExpression};
+use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
 use cx_mir::mir::data::{MIRIntegerType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_mir::mir::program::EnvironmentNamespace;

@@ -1,10 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use cx_ast::{
-    data::{CX_CONST, CXTypeQualifiers},
-    symbols::GlobalSymbolRegistry,
+    ast::modifiers::{CX_CONST, CXTypeQualifiers},
+    registry::GlobalSymbolRegistry,
 };
-use cx_mir::CXTypeMap;
 use cx_mir::intrinsic_types::INTRINSIC_TYPES;
 use cx_mir::mir::data::{
     MIRFunctionPrototype, MIRType, MIRTypeContext, MIRTypeId, MIRTypeKind, TemplateInfo,
@@ -130,7 +129,7 @@ impl SymbolScope {
 pub struct SymbolRegistry<'a> {
     pub global_symbols: &'a GlobalSymbolRegistry,
     pub context: MIRTypeContext,
-    pub realized_types: CXTypeMap,
+    pub realized_types: HashMap<String, MIRType>,
     pub named_type_ids: HashMap<String, MIRTypeId>,
     currently_defining_types: HashSet<MIRTypeId>,
     definition_stack: Vec<MIRTypeId>,

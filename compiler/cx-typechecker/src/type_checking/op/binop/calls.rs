@@ -8,7 +8,7 @@ use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::contracts::typecheck_contract;
 use crate::type_checking::result::{CalleeExtraction, TypecheckExtract, TypecheckResult};
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::{CXBinOp, CXExprKind, CXExpression};
+use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
 use cx_mir::mir::data::{MIRFloatType, MIRFunctionPrototype, MIRType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_mir::mir::program::EnvironmentNamespace;
@@ -18,7 +18,7 @@ pub(crate) fn build_function_reference(prototype: &MIRFunctionPrototype) -> MIRE
     MIRExpression {
         token_range: None,
         _type: MIRTypeKind::Function {
-            signature: Box::new(prototype.signature()),
+            signature: Box::new(prototype.signature().clone()),
         }
         .into(),
         kind: MIRExpressionKind::FunctionReference {

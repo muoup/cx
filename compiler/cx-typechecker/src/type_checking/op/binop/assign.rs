@@ -1,4 +1,4 @@
-use cx_ast::{ast::CXBinOp, data::CX_CONST};
+use cx_ast::ast::{expression::CXBinOp, modifiers::CX_CONST};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_util::CXResult;
 

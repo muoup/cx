@@ -1,4 +1,4 @@
-use cx_ast::ast::CXBinOp;
+use cx_ast::ast::expression::CXBinOp;
 use cx_mir::mir::{
     expression::{
         MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp,

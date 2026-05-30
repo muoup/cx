@@ -7,7 +7,8 @@ use crate::{
     log_typecheck_error,
     type_checking::result::{TypecheckResult, TypecheckedBinding},
 };
-use cx_ast::{ast::CXExpression, data::CXTemplateInput, symbols::UntypedSymbol};
+use cx_ast::ast::{expression::CXExpression, template::CXTemplateInput};
+use cx_ast::symbols::UntypedSymbol;
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
@@ -62,7 +63,7 @@ pub(crate) fn typecheck_identifier(
                 name: function_type.name.clone(),
             },
             _type: MIRType::from(MIRTypeKind::Function {
-                signature: Box::new(function_type.signature()),
+                signature: Box::new(function_type.signature().clone()),
             }),
         }))
     } else {
@@ -128,7 +129,7 @@ pub(crate) fn typecheck_templated_identifier(
             name: function.name.clone(),
         },
         _type: MIRType::from(MIRTypeKind::Function {
-            signature: Box::new(function.signature()),
+            signature: Box::new(function.signature().clone()),
         }),
     }))
 }

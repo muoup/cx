@@ -8,8 +8,7 @@ use crate::{
         value::ensure_valid_allocation_type,
     },
 };
-use cx_ast::ast::CXExpression;
-use cx_ast::data::CXType;
+use cx_ast::ast::{expression::CXExpression, types::CXType};
 use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind},
     program::EnvironmentNamespace,

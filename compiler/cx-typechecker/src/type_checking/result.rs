@@ -1,4 +1,4 @@
-use cx_ast::data::CXTemplateInput;
+use cx_ast::ast::template::CXTemplateInput;
 use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_mir::mir::program::EnvironmentNamespace;

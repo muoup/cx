@@ -1,10 +1,12 @@
+use cx_ast::ast::modifiers::CXLinkageMode;
 use cx_ast::{
-    ast::CXExpression,
-    data::{
-        CXFunctionContract, CXFunctionKind, CXLinkageMode, CXTemplateInput, CXTypeKind,
-        PredeclarationType, member_function_key,
+    ast::{
+        expression::CXExpression,
+        function::{CXFunctionContract, CXFunctionKind},
+        template::CXTemplateInput,
+        types::{CXTypeKind, PredeclarationType},
     },
-    symbols::UntypedSymbol,
+    symbols::{UntypedSymbol, UntypedSymbolKind},
 };
 use cx_mir::mir::{
     data::{MIRFunctionPrototype, MIRParameter, MIRType},
@@ -46,8 +48,11 @@ pub fn query_function(
     }
 
     let lookup_name = contextual_name(namespace, name);
-    if let Some(UntypedSymbol::Function(standard)) =
-        env.symbols.global_symbols.resolve(&lookup_name)
+    if let Some(UntypedSymbolKind::Function(standard)) = env
+        .symbols
+        .global_symbols
+        .resolve(&lookup_name)
+        .map(|s| &s.kind)
     {
         return env
             .complete_prototype(

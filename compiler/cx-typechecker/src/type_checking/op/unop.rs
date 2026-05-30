@@ -1,4 +1,4 @@
-use cx_ast::ast::{CXExpression, CXUnOp};
+use cx_ast::ast::expression::{CXExpression, CXUnOp};
 use cx_mir::mir::{
     expression::{MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp},
     program::EnvironmentNamespace,

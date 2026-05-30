@@ -6,10 +6,12 @@ use crate::environment::symbols::completion::{
     int_complete_type, internal_complete_template_input, namespace_from_module,
 };
 use crate::environment::{MIRFunctionGenRequest, TypeEnvironment};
-use cx_ast::ast::CXExpression;
-use cx_ast::data::{
-    CXFunctionKind, CXFunctionPrototype, CXFunctionTemplate, CXStructAttributes, CXTemplateInput,
-    CXTemplatePrototype, CXType, CXTypeKind, ModuleResource,
+use cx_ast::ast::expression::CXExpression;
+use cx_ast::ast::modifiers::VisibilityMode;
+use cx_ast::ast::{
+    function::{CXFunctionKind, CXFunctionPrototype},
+    template::{CXTemplateInput, CXTemplatePrototype},
+    types::{CXStructAttributes, CXType, CXTypeKind},
 };
 use cx_ast::symbols::UntypedSymbol;
 use cx_mir::mir::data::{
@@ -190,7 +192,7 @@ fn templated_aggregate_provisional(
 
     match &shell.kind {
         CXTypeKind::Structured { attributes, .. } => MIRType {
-            visibility: cx_ast::ast::VisibilityMode::Private,
+            visibility: VisibilityMode::Private,
             specifiers: shell.specifiers,
             move_attributes: resolve_template_attributes(env, attributes),
             strong_identifier: Some(QualifiedName::new_raw(name.clone())),
@@ -199,7 +201,7 @@ fn templated_aggregate_provisional(
             kind: MIRTypeKind::Structured { fields: vec![] },
         },
         CXTypeKind::Union { .. } => MIRType {
-            visibility: cx_ast::ast::VisibilityMode::Private,
+            visibility: cx_ast::ast::modifiers::VisibilityMode::Private,
             specifiers: shell.specifiers,
             move_attributes: MIRMoveAttributes::default(),
             strong_identifier: Some(QualifiedName::new_raw(name.clone())),
@@ -208,7 +210,7 @@ fn templated_aggregate_provisional(
             kind: MIRTypeKind::Union { variants: vec![] },
         },
         CXTypeKind::TaggedUnion { attributes, .. } => MIRType {
-            visibility: cx_ast::ast::VisibilityMode::Private,
+            visibility: cx_ast::ast::modifiers::VisibilityMode::Private,
             specifiers: shell.specifiers,
             move_attributes: resolve_template_attributes(env, attributes),
             strong_identifier: Some(QualifiedName::new_raw(name.clone())),

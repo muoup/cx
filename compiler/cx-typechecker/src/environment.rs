@@ -1,7 +1,10 @@
 use std::path::PathBuf;
 
-use cx_ast::ast::CXExpression;
-use cx_ast::data::{CXFunctionPrototype, CXType, CXTypeKind, PredeclarationType};
+use cx_ast::ast::{
+    expression::CXExpression,
+    function::CXFunctionPrototype,
+    types::{CXType, CXTypeKind, PredeclarationType},
+};
 use cx_mir::mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId};
 use cx_mir::mir::program::{EnvironmentNamespace, MIRFunction, MIRGlobalVariable, MIRUnit};
 use cx_pipeline_data::CompilationUnit;
@@ -12,7 +15,7 @@ use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::{NamespacePath, QualifiedName};
 
-use crate::environment::functions::completion::{complete_prototype_no_insert, complete_type};
+use crate::environment::{functions::completion::{complete_prototype_no_insert, complete_type}, symbols::ResolvedValueSymbol};
 use crate::environment::functions::context::FunctionContext;
 pub use crate::environment::functions::control_flow::{
     BindingMoveState, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
@@ -123,6 +126,8 @@ impl TypeEnvironment<'_> {
         self.symbols
             .update_named_type_metadata(id, new_name, template_info);
     }
+
+    pub fn query_symbol(&self, name: &QualifiedName) -> Option<ResolvedValueSymbol
 
     pub fn get_realized_func(&self, name: &str) -> Option<MIRFunctionPrototype> {
         self.items.get_realized_func(name)

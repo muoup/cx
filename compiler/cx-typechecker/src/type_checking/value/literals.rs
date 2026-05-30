@@ -1,5 +1,5 @@
 use crate::{environment::TypeEnvironment, type_checking::result::TypecheckResult};
-use cx_ast::data::{CX_CONST, CXLinkageMode};
+use cx_ast::ast::modifiers::{CX_CONST, CXLinkageMode};
 use cx_mir::mir::{
     data::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},

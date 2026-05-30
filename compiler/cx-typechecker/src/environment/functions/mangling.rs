@@ -1,4 +1,4 @@
-use cx_ast::{ast::CXExpression, data::CXFunctionKind};
+use cx_ast::ast::{expression::CXExpression, function::CXFunctionKind};
 use cx_mir::mir::{
     data::MIRType,
     name_mangling::{base_mangle_member, base_mangle_standard, base_mangle_static_member},

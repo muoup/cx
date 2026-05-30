@@ -12,7 +12,7 @@ use crate::type_checking::pattern::tagged_union::{
 };
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::{ast::CXExpression, pattern::CXPattern};
+use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},

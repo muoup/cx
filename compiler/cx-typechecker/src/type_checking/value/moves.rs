@@ -10,8 +10,7 @@ use crate::{
         value::locals::{ensure_binding_available, mark_binding},
     },
 };
-use cx_ast::ast::{CXExpression, CXUnpackBinding};
-use cx_ast::data::CX_CONST;
+use cx_ast::ast::{expression::{CXExpression, CXUnpackBinding}, modifiers::CX_CONST};
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},

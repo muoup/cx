@@ -7,8 +7,7 @@ use crate::{
     },
 };
 use cx_ast::{
-    ast::{CXAST, CXExprKind, CXExpression, CXGlobalVariable},
-    data::{CXLinkageMode, ModuleResource},
+    ast::{CXAST, expression::{CXExprKind, CXExpression}, global_var::CXGlobalVariable, modifiers::CXLinkageMode},
 };
 use cx_mir::mir::{
     data::{MIRIntegerType, MIRTypeContext},

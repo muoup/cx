@@ -1,5 +1,6 @@
-use cx_ast::ast::{CXAST, CXASTStmt, VisibilityMode};
+use cx_ast::ast::{CXAST, CXASTStmt, modifiers::VisibilityMode};
 use cx_mir::mir::program::EnvironmentNamespace;
+use cx_mir::mir::r#type::MIRType;
 use cx_util::{
     CXResult,
 };
@@ -24,7 +25,7 @@ pub fn typecheck(
     complete_base_functions(env, namespace)?;
 
     for stmt in ast.definition_stmts.iter() {
-        if let CXASTStmt::FunctionDefinition { prototype, body } = stmt {
+        if let CXASTStmt::FunctionDefinition { prototype, body, .. } = stmt {
             let prototype = env.complete_prototype(namespace, None, prototype)?;
             typecheck_function(env, namespace, prototype.clone(), body)?;
         }
@@ -48,7 +49,10 @@ fn realize_tagged_union_constructor(
     variant_type: MIRType,
     variant_index: usize,
 ) {
-    use cx_ast::data::{CXFunctionContract, CXFunctionKind, CXLinkageMode};
+    use cx_ast::ast::{
+        function::{CXFunctionContract, CXFunctionKind},
+        modifiers::CXLinkageMode,
+    };
     use cx_mir::mir::{
         data::{MIRFunctionPrototype, MIRParameter},
         expression::{MIRExpression, MIRExpressionKind},

@@ -1,6 +1,8 @@
-use cx_ast::ast::{CXExpression, VisibilityMode};
-use cx_ast::data::{
-    CXField, CXStructAttributes, CXTemplateInput, CXType, CXTypeKind, PredeclarationType,
+use cx_ast::ast::types::CXField;
+use cx_ast::ast::{expression::CXExpression, modifiers::VisibilityMode};
+use cx_ast::ast::{
+    template::CXTemplateInput,
+    types::{CXStructAttributes, CXType, CXTypeKind, PredeclarationType},
 };
 use cx_ast::symbols::UntypedSymbol;
 use cx_mir::mir::data::{MIRMoveAttributes, MIRTemplateInput, MIRType, MIRTypeId, MIRTypeKind};
@@ -319,7 +321,7 @@ fn ensure_named_identifier_completed(
     } else {
         name.clone()
     };
-    let Some(UntypedSymbol::Type(inner)) = env.symbols.global_symbols.resolve(&lookup_name) else {
+    let Some(UntypedSymbol::new(inner)) = env.symbols.global_symbols.resolve(&lookup_name) else {
         return Ok(None);
     };
 
@@ -553,7 +555,7 @@ pub(crate) fn int_complete_type(
             Ok(construct_type(
                 ty,
                 MIRTypeKind::Function {
-                    signature: Box::new(prototype.signature()),
+                    signature: Box::new(prototype.signature().clone()),
                 },
             ))
         }

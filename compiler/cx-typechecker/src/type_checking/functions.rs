@@ -10,8 +10,7 @@ use crate::{
     },
 };
 use cx_ast::{
-    ast::{CXASTStmt, CXExpression},
-    data::CXFunctionKind,
+    ast::{CXASTStmt, expression::CXExpression, function::CXFunctionKind},
     symbols::UntypedSymbol,
 };
 use cx_mir::mir::{
@@ -76,7 +75,7 @@ pub fn realize_fn_implementation(
     template_kind: &CXFunctionKind,
     input: &MIRTemplateInput,
 ) -> CXResult<()> {
-    let base_ast = env.source.module_data.naive_ast.get(origin);
+    let base_ast = env.source.module_data.generation_ast.get(origin);
     let namespace = NamespacePath::from_slash_path(origin.identifier());
     let template_key = template_kind.into_key();
     let Some(UntypedSymbol::FunctionTemplate(template, _)) =

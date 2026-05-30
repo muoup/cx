@@ -1,4 +1,4 @@
-use cx_ast::{ast::CXExpression, pattern::CXPattern};
+use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
 use cx_mir::mir::program::EnvironmentNamespace;
 use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 

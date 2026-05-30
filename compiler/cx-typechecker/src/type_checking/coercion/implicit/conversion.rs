@@ -1,4 +1,4 @@
-use cx_ast::data::CX_CONST;
+use cx_ast::ast::modifiers::CX_CONST;
 use cx_mir::mir::{
     expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
     r#type::{MIRType, MIRTypeKind},

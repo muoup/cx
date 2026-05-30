@@ -1,4 +1,4 @@
-use cx_ast::ast::{CXExpression, CXInitIndex};
+use cx_ast::ast::expression::{CXExpression, CXInitIndex};
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpressionKind, StructInitialization},
