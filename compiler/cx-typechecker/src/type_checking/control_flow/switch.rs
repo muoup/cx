@@ -68,7 +68,7 @@ pub fn typecheck_switch(
                 "Switch condition must be an integer type, found {}",
                 condition_value
                     .get_type()
-                    .display_with(&env.symbols.context)
+                    .display_with(&env.symbols)
             );
         };
 

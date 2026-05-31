@@ -67,7 +67,11 @@ pub enum MIRExpressionKind {
     Unit,
 
     // Variables
-    Variable(CXIdent),
+    Variable {
+        name: CXIdent,
+        location: SymbolValueOrigin,
+    },
+
     ContractVariable {
         name: CXIdent,
         force_param: bool,

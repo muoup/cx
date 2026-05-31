@@ -67,7 +67,7 @@ pub(crate) fn typecheck_var_declaration(
 
     ensure_valid_allocation_type(env, Some(expr.token_range().clone()), "a variable", &ty)?;
 
-    let mem_type = env.symbols.context.mem_ref_to(ty.clone());
+    let mem_type = env.symbols.mem_ref_to(ty.clone());
     let (initial_region, adopting) = match initial_value {
         Some(init_expr) => {
             let init_tc = typecheck_expr(env, namespace, init_expr, Some(&ty))?;

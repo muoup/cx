@@ -1,8 +1,8 @@
 use cx_ast::ast::modifiers::CX_CONST;
-use cx_mir::mir::{
+use cx_mir::{mir::{
     expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
     r#type::{MIRType, MIRTypeKind},
-};
+}, type_context::MIRTypeContext};
 use cx_util::CXResult;
 
 use crate::{
@@ -113,7 +113,7 @@ pub fn try_argument_conversion(
 
     let expr = if argument_type.is_memory_reference() {
         let expr_type = expr.get_type();
-        if let Some(inner) = env.symbols.context.mem_ref_inner(&expr_type)
+        if let Some(inner) = env.symbols.mem_ref_inner(&expr_type)
             && env.type_eq(inner, argument_type)
         {
             lvalue::try_conversion(env, expr)?.expr()
@@ -137,11 +137,11 @@ fn try_deferred_by_value_argument(
     }
 
     let expr_type = expr.get_type();
-    let inner = env.symbols.context.mem_ref_inner(&expr_type)?;
+    let inner = env.symbols.mem_ref_inner(&expr_type)?;
     let unqualified_inner = inner.without_specifier(CX_CONST);
 
     if !is_deferred_by_value_candidate(&unqualified_inner)
-        || !env.symbols.is_copyable(&unqualified_inner)
+        || unqualified_inner.is_nocopy()
         || !env.type_eq(&unqualified_inner, argument_type)
     {
         return None;

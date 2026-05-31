@@ -6,7 +6,7 @@ use speedy::{Readable, Writable};
 
 use crate::{
     mir::data::{MIRFunctionSignature, TemplateInfo},
-    registry::MIRSymbolRegistry,
+    registry::MIRSymbolRegistry, type_context::MIRTypeContext,
 };
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Readable, Writable)]
@@ -181,12 +181,8 @@ impl MIRTypeId {
             return true;
         }
 
-        let Some(left) = definitions.resolve_type_id(self) else {
-            return false;
-        };
-        let Some(right) = definitions.resolve_type_id(other) else {
-            return false;
-        };
+        let left = definitions.resolve_type_id(*self);
+        let right = definitions.resolve_type_id(*other);
 
         state.compared_ids.insert(pair);
         left.contextual_eq_with_state(right, definitions, state)
@@ -553,6 +549,30 @@ impl MIRType {
             .and_then(|sym| sym.into_type_id())
     }
 
+    pub fn ptr_inner(&self) -> Option<MIRTypeId> {
+        match &self.kind {
+            MIRTypeKind::PointerTo { inner_type, .. } => Some(*inner_type),
+
+            _ => None,
+        }
+    }
+
+    pub fn mem_ref_inner(&self) -> Option<MIRTypeId> {
+        match &self.kind {
+            MIRTypeKind::MemoryReference { inner_type, .. } => Some(*inner_type),
+
+            _ => None,
+        }
+    }
+
+    pub fn array_inner(&self) -> Option<MIRTypeId> {
+        match &self.kind {
+            MIRTypeKind::Array { inner_type, .. } => Some(*inner_type),
+
+            _ => None,
+        }
+    }
+
     pub fn aggregate_fields(
         &self,
         definitions: &MIRSymbolRegistry,
@@ -572,10 +592,7 @@ impl MIRType {
                 .map(|f| {
                     Some((
                         f.name()?.to_string(),
-                        definitions
-                            .resolve_type_id(&f.type_id())
-                            .unwrap_or_else(|| panic!("Unknown type id: {} in resolved type", f.type_id()))
-                            .clone(),
+                        definitions.resolve_type_id(f.type_id()).clone(),
                     ))
                 })
                 .collect::<Option<_>>()?,

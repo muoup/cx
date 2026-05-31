@@ -28,10 +28,10 @@ pub(crate) fn resolve_access_base(
     let lhs_inner = loop {
         let lhs_type = lhs._type.clone();
 
-        if let Some(inner_type) = env.symbols.context.mem_ref_inner(&lhs_type).cloned() {
+        if let Some(inner_type) = env.symbols.mem_ref_inner(&lhs_type).cloned() {
             lhs_ref_const |= inner_type.get_specifier(CX_CONST);
 
-            if let Some(ptr_inner) = env.symbols.context.ptr_inner(&inner_type).cloned() {
+            if let Some(ptr_inner) = env.symbols.ptr_inner(&inner_type).cloned() {
                 lhs_ref_const |= ptr_inner.get_specifier(CX_CONST);
 
                 lhs = MIRExpression {
@@ -39,13 +39,13 @@ pub(crate) fn resolve_access_base(
                     kind: MIRExpressionKind::RegionDuplicate {
                         source: Box::new(lhs),
                     },
-                    _type: env.symbols.context.pointer_to(ptr_inner.clone()),
+                    _type: env.symbols.pointer_to(ptr_inner.clone()),
                 };
 
                 break ptr_inner;
             }
 
-            if env.symbols.context.mem_ref_inner(&inner_type).is_some() {
+            if env.symbols.mem_ref_inner(&inner_type).is_some() {
                 lhs = MIRExpression {
                     token_range: None,
                     kind: MIRExpressionKind::RegionDuplicate {
@@ -56,7 +56,7 @@ pub(crate) fn resolve_access_base(
             } else {
                 break inner_type;
             }
-        } else if let Some(inner_type) = env.symbols.context.ptr_inner(&lhs_type).cloned() {
+        } else if let Some(inner_type) = env.symbols.ptr_inner(&lhs_type).cloned() {
             lhs_ref_const |= inner_type.get_specifier(CX_CONST);
             break inner_type;
         } else {
@@ -74,7 +74,7 @@ pub(crate) fn resolve_access_base(
             env,
             expr.token_range(),
             "Expected a struct or union type on the left-hand side of an access expression, found {}",
-            lhs_inner.display_with(&env.symbols.context)
+            lhs_inner.display_with(&env.symbols)
         );
     }
 
@@ -95,10 +95,10 @@ pub(crate) fn typecheck_access(
     match &rhs.kind {
         CXExprKind::Identifier(name) => {
             if let Some(struct_field) =
-                struct_field(&lhs_inner, &env.symbols.context, name.name.as_str())
+                struct_field(&lhs_inner, &env.symbols, name.name.as_str())
             {
                 let mut result = TypecheckResult::new_base(
-                    env.symbols.context.mem_ref_to(
+                    env.symbols.mem_ref_to(
                         struct_field
                             .field_type
                             .clone()
@@ -125,7 +125,7 @@ pub(crate) fn typecheck_access(
                     Some(expr.token_range()),
                     "Member '{}' not found on type '{}'",
                     name,
-                    lhs_inner.display_with(&env.symbols.context)
+                    lhs_inner.display_with(&env.symbols)
                 );
             };
 
@@ -145,7 +145,7 @@ pub(crate) fn typecheck_access(
                         Some(expr.token_range()),
                         "Member '{}' not found on type '{}'",
                         name,
-                        lhs_inner.display_with(&env.symbols.context)
+                        lhs_inner.display_with(&env.symbols)
                     );
                 };
                 let receiver = build_member_receiver_argument(
@@ -172,7 +172,7 @@ pub(crate) fn typecheck_access(
                         Some(expr.token_range()),
                         "Member '{}' not found on type '{}'",
                         name,
-                        lhs_inner.display_with(&env.symbols.context)
+                        lhs_inner.display_with(&env.symbols)
                     );
                 };
                 let receiver = build_member_receiver_argument(
@@ -197,7 +197,7 @@ pub(crate) fn typecheck_access(
                 Some(expr.token_range()),
                 "Member '{}' not found on type '{}'",
                 name,
-                lhs_inner.display_with(&env.symbols.context)
+                lhs_inner.display_with(&env.symbols)
             )
         }
 
@@ -226,7 +226,7 @@ pub(crate) fn typecheck_access(
                     Some(expr.token_range()),
                     "Member function '{}<...>' not found on type '{}'",
                     name,
-                    lhs_inner.display_with(&env.symbols.context)
+                    lhs_inner.display_with(&env.symbols)
                 );
             };
             let receiver = build_member_receiver_argument(
@@ -281,7 +281,7 @@ pub(crate) fn build_member_receiver_argument(
                     operand: Box::new(lhs),
                     conversion: MIRCoercion::ReinterpretBits,
                 },
-                _type: env.symbols.context.mem_ref_to(lhs_inner.clone()),
+                _type: env.symbols.mem_ref_to(lhs_inner.clone()),
             })
         }
         CXReceiverMode::ByMove => {

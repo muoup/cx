@@ -94,7 +94,7 @@ fn named_predeclaration_type(
     _predeclaration: PredeclarationType,
 ) -> MIRType {
     let id = env.get_or_create_named_type_id(name.as_str());
-    env.symbols.context.register_identifier(name.clone(), id);
+    env.symbols.register_identifier(name.clone(), id);
 
     let mir_type = MIRType {
         visibility: VisibilityMode::Private,
@@ -128,14 +128,14 @@ fn ensure_complete_value_type(
             Some(expr.token_range()),
             "Field '{}' uses non-allocatable type {} by value",
             field_name,
-            field_type.display_with(&env.symbols.context)
+            field_type.display_with(&env.symbols)
         ),
         MIRTypeKind::Undefined => log_typecheck_error!(
             env,
             Some(expr.token_range()),
             "Field '{}' uses incomplete type {} by value",
             field_name,
-            field_type.display_with(&env.symbols.context)
+            field_type.display_with(&env.symbols)
         ),
         MIRTypeKind::Array { inner_type, .. } => {
             let inner_type = env
@@ -158,7 +158,7 @@ fn ensure_complete_value_type(
                     Some(expr.token_range()),
                     "Field '{}' uses incomplete type {} by value",
                     field_name,
-                    field_type.display_with(&env.symbols.context)
+                    field_type.display_with(&env.symbols)
                 );
             }
 
@@ -211,7 +211,7 @@ fn complete_field(
                     Some(expr.token_range()),
                     "Bitfield '{}' must have an integer type, found {}",
                     name.as_deref().unwrap_or("<anonymous>"),
-                    resolved_integer_type.display_with(&env.symbols.context)
+                    resolved_integer_type.display_with(&env.symbols)
                 );
             };
             let max_width = _type.bytes() * 8;

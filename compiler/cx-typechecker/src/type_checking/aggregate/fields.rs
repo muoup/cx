@@ -1,4 +1,7 @@
-use cx_mir::mir::data::{MIRType, MIRSymbolRegistry, MIRTypeKind};
+use cx_mir::{
+    mir::data::{MIRType, MIRTypeKind},
+    registry::MIRSymbolRegistry, type_context::MIRTypeContext,
+};
 
 pub struct StructField {
     pub index: usize,
@@ -10,22 +13,25 @@ pub fn struct_field(
     definitions: &MIRSymbolRegistry,
     field_name: &str,
 ) -> Option<StructField> {
-    let struct_type = definitions.memory_resident_type(struct_type);
-    if !matches!(
-        struct_type.kind,
-        MIRTypeKind::Structured { .. } | MIRTypeKind::Union { .. }
-    ) {
-        return None;
-    }
-    let Some(fields) = definitions.aggregate_fields(struct_type) else {
-        return None;
+    let struct_type = struct_type
+        .mem_ref_inner()
+        .map(|id| definitions.resolve_type_id(id))
+        .unwrap_or(struct_type);
+
+    let fields = match &struct_type.kind {
+        MIRTypeKind::Structured { fields } => fields,
+        MIRTypeKind::Union { variants } => variants,
+
+        _ => return None,
     };
 
     fields
         .iter()
         .position(|field| field.name() == Some(field_name))
         .and_then(|index| {
-            let field_type = definitions.get(fields[index].type_id())?.clone();
+            let field_type = definitions
+                .resolve_type_id(fields[index].type_id())
+                .clone();
             Some(StructField { index, field_type })
         })
 }

@@ -29,7 +29,7 @@ pub struct FunctionModeSnapshot {
 
 impl FunctionContext {
     pub fn begin_function(&mut self, prototype: MIRFunctionPrototype) {
-        self.require_safe = prototype.contract.safe;
+        self.require_safe = prototype.signature.contract.safe;
         self.require_pure = false;
         self.unsafe_depth = 0;
         self.flow = Some(ControlFlow::new());

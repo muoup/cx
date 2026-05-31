@@ -1,7 +1,8 @@
 use super::types::convert_type;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRABISlot, LMIRFunctionSignature, LMIRParameter, LMIRParameterABI, LMIRReturnABI};
-use cx_mir::mir::data::{MIRParameter, MIRType, MIRSymbolRegistry};
+use cx_mir::mir::data::{MIRParameter, MIRType};
+use cx_mir::registry::MIRSymbolRegistry;
 
 pub(crate) fn classify_signature(
     return_type: &MIRType,
@@ -133,7 +134,7 @@ fn direct_integer_aggregate_slots(ty: &LMIRType) -> Option<Vec<LMIRABISlot>> {
         return None;
     }
 
-    match ty.size() {
+    match usize::from(ty.size()) {
         0 => None,
         size @ 1..=8 => Some(vec![LMIRABISlot {
             _type: integer_slot_type(size)?,

@@ -50,11 +50,11 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &LMIRGlobalValu
                 // 4444 3333 2222 1111
                 //     i16 = ~~~~~~~~~
                 let relevant_data = if cfg!(target_endian = "little") {
-                    bytes.iter().take(type_size).cloned().collect::<Vec<_>>()
+                    bytes.iter().take(usize::from(type_size)).cloned().collect::<Vec<_>>()
                 } else {
                     bytes
                         .iter()
-                        .skip(8 - type_size)
+                        .skip(8 - usize::from(type_size))
                         .cloned()
                         .collect::<Vec<_>>()
                 };
@@ -63,7 +63,7 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &LMIRGlobalValu
                 state.object_module.define_data(id, &data).expect("");
             } else {
                 let size = _type.size();
-                data.define_zeroinit(size);
+                data.define_zeroinit(usize::from(size));
                 state.object_module.define_data(id, &data).expect("");
             }
         }

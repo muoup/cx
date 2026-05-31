@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use crate::environment::ScopeArrowSink;
 use crate::environment::ScopeExitTarget;
 use crate::environment::TypeEnvironment;
-use crate::environment::symbols::SymbolValueOrigin;
 use crate::log_typecheck_error;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::control_flow::expr_may_fall_through;
@@ -17,8 +16,9 @@ use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
     pattern::MIRPattern,
-    program::EnvironmentNamespace,
 };
+use cx_mir::program::EnvironmentNamespace;
+use cx_mir::type_context::MIRTypeContext;
 use cx_util::CXResult;
 
 pub fn typecheck_match(
@@ -94,12 +94,9 @@ pub fn typecheck_match(
             result_arms
         }
 
-        MIRTypeKind::TaggedUnion { .. } => {
+        MIRTypeKind::TaggedUnion { variants, .. } => {
             let expected_union_name = expr_type.get_base_identifier().unwrap();
-            let variants = expr_type
-                .aggregate_fields(&env.symbols.context)
-                .expect("Tagged union match requires completed variants")
-                .clone();
+
             // Tagged union matching: each arm has a type constructor pattern
             let mut result_arms = Vec::new();
             let mut matched_variants = HashSet::new();
@@ -123,12 +120,15 @@ pub fn typecheck_match(
                     );
                 }
 
-                let Some((variant_id, variant_type)) = variants
-                    .iter()
-                    .enumerate()
-                    .find(|(_, (name, _))| name.as_str() == variant_name.as_str())
-                    .map(|(id, (_, _type))| (id, _type))
-                else {
+                let variant_idx = variants.iter().position(|field| {
+                    let Some(name) = field.name() else {
+                        return false;
+                    };
+
+                    name == variant_name.as_str()
+                });
+
+                let Some(variant_id) = variant_idx else {
                     return log_typecheck_error!(
                         env,
                         Some(condition.token_range()),
@@ -137,12 +137,15 @@ pub fn typecheck_match(
                         expected_union_name
                     );
                 };
+
+                let variant_type = env.symbols.resolve_type_id(variants[variant_id].type_id());
+
                 matched_variants.insert(variant_id);
 
                 let variant_get_type = if !expr_type.is_memory_reference() {
                     variant_type.clone()
                 } else {
-                    env.symbols.context.mem_ref_to(variant_type.clone())
+                    env.symbols.mem_ref_to(variant_type.clone())
                 };
 
                 // Extract the variant value and bind it
@@ -157,7 +160,7 @@ pub fn typecheck_match(
 
                 let body_expr = if let Some(inner_name) = &inner_name {
                     let body_expr = if condition_owned {
-                        let variant_ref_type = env.symbols.context.mem_ref_to(variant_type.clone());
+                        let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
                         let variant_region = MIRExpression {
                             token_range: None,
                             _type: variant_ref_type.clone(),
@@ -180,19 +183,19 @@ pub fn typecheck_match(
                         env.push_scope(false, false);
                         env.function.set_scope_anchor(body);
                         env.symbols.insert_value(
-                            inner_name.clone(),
+                            QualifiedName::root(inner_name.clone()),
                             MIRExpression {
                                 token_range: None,
-                                kind: MIRExpressionKind::Variable(inner_name.clone()),
+                                kind: MIRExpressionKind::Variable {
+                                    name: inner_name.clone(),
+                                    location: SymbolVaFlueOrigin::Local,
+                                },
                                 _type: variant_ref_type,
                             },
-                            Some(SymbolValueOrigin::Local),
                         );
                         if env.symbols.is_nocopy(variant_type) {
-                            env.function.track_binding(
-                                inner_name.as_string(),
-                                variant_type.is_nodrop(),
-                            );
+                            env.function
+                                .track_binding(inner_name.as_string(), variant_type.is_nodrop());
                         }
 
                         let body_expr =
@@ -266,7 +269,7 @@ pub fn typecheck_match(
                 env,
                 Some(condition.token_range()),
                 "Match condition must be an integer or tagged union type, found {}",
-                expr_type.display_with(&env.symbols.context)
+                expr_type.display_with(&env.symbols)
             );
         }
     };

@@ -73,6 +73,36 @@ pub enum LMIRTypeKind {
     Unit,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TypePaddedSize(usize);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TypeSize(usize);
+
+impl From<TypePaddedSize> for usize {
+    fn from(s: TypePaddedSize) -> usize {
+        s.0
+    }
+}
+
+impl From<usize> for TypePaddedSize {
+    fn from(s: usize) -> TypePaddedSize {
+        TypePaddedSize(s)
+    }
+}
+
+impl From<TypeSize> for usize {
+    fn from(s: TypeSize) -> usize {
+        s.0
+    }
+}
+
+impl From<usize> for TypeSize {
+    fn from(s: usize) -> TypeSize {
+        TypeSize(s)
+    }
+}
+
 impl From<LMIRTypeKind> for LMIRType {
     fn from(kind: LMIRTypeKind) -> Self {
         LMIRType { kind }
@@ -80,14 +110,14 @@ impl From<LMIRTypeKind> for LMIRType {
 }
 
 impl LMIRType {
-    pub fn size(&self) -> usize {
-        match &self.kind {
+    pub fn size(&self) -> TypeSize {
+        TypeSize(match &self.kind {
             LMIRTypeKind::Opaque { bytes } => *bytes,
             LMIRTypeKind::Integer(_type) => _type.bytes() as usize,
             LMIRTypeKind::Float(_type) => _type.bytes() as usize,
             LMIRTypeKind::Pointer { .. } => 8, // TODO: make this configurable
             LMIRTypeKind::Vector { element, count } => element.bytes() as usize * count,
-            LMIRTypeKind::Array { element, size } => element.size() * size,
+            LMIRTypeKind::Array { element, size } => usize::from(element.size()) * size,
             LMIRTypeKind::Struct { fields, .. } => {
                 let mut current_size = 0;
 
@@ -101,7 +131,7 @@ impl LMIRType {
                             field_alignment as usize - (current_size % field_alignment as usize);
                     }
 
-                    current_size += field_size;
+                    current_size += usize::from(field_size);
                 }
 
                 let alignment = self.alignment() as usize;
@@ -113,7 +143,7 @@ impl LMIRType {
             }
 
             LMIRTypeKind::Unit => 0,
-        }
+        })
     }
 
     pub fn alignment(&self) -> u8 {
@@ -131,6 +161,13 @@ impl LMIRType {
                 .unwrap_or(8),
             LMIRTypeKind::Unit => 1,
         }
+    }
+
+    pub fn padded_size(&self) -> TypePaddedSize {
+        let size : usize = self.size().into();
+        let align : usize = self.alignment().into();
+
+        TypePaddedSize(size + (size % align))
     }
 
     #[inline]

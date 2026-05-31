@@ -54,8 +54,8 @@ pub(crate) fn resolve_logical(
             lhs.token_range.as_ref(),
             "Invalid operands to logical operation {:?}, {} and {}",
             op,
-            lhs._type.display_with(&env.symbols.context),
-            rhs._type.display_with(&env.symbols.context)
+            lhs._type.display_with(&env.symbols),
+            rhs._type.display_with(&env.symbols)
         );
     }
 
@@ -164,8 +164,8 @@ pub(crate) fn resolve_std_arithmetic(
             env,
             lhs.token_range.as_ref(),
             "Invalid binary operation {op} for types {} and {}",
-            lhs.get_type().display_with(&env.symbols.context),
-            rhs.get_type().display_with(&env.symbols.context)
+            lhs.get_type().display_with(&env.symbols),
+            rhs.get_type().display_with(&env.symbols)
         )
     }
 }
@@ -213,8 +213,8 @@ fn coerce_float_binop(
                 env,
                 lhs.token_range.as_ref(),
                 "Invalid float binary operation {op} for types {} and {}",
-                lhs.get_type().display_with(&env.symbols.context),
-                rhs.get_type().display_with(&env.symbols.context)
+                lhs.get_type().display_with(&env.symbols),
+                rhs.get_type().display_with(&env.symbols)
             );
         }
     };
@@ -283,7 +283,7 @@ fn coerce_pointer_binop(
     *non_pointer = implicit_cast(env, std::mem::take(non_pointer), &intptr.into())?;
 
     let ptr_type = pointer._type.clone();
-    let ptr_inner = Box::new(env.symbols.context.ptr_inner(&ptr_type).cloned().unwrap());
+    let ptr_inner = Box::new(env.symbols.ptr_inner(&ptr_type).cloned().unwrap());
 
     let (return_type, op) = match op {
         CXBinOp::Add => (
@@ -295,7 +295,7 @@ fn coerce_pointer_binop(
         ),
 
         CXBinOp::ArrayIndex => (
-            env.symbols.context.mem_ref_to(ptr_inner.as_ref().clone()),
+            env.symbols.mem_ref_to(ptr_inner.as_ref().clone()),
             MIRBinOp::PtrDiff {
                 op: MIRPtrDiffBinOp::ADD,
                 ptr_inner,
@@ -392,8 +392,8 @@ fn coerce_integral_binop(
                 env,
                 lhs.token_range.as_ref(),
                 "Invalid integer binary operation {op} for types {} and {}",
-                lhs.get_type().display_with(&env.symbols.context),
-                rhs.get_type().display_with(&env.symbols.context)
+                lhs.get_type().display_with(&env.symbols),
+                rhs.get_type().display_with(&env.symbols)
             );
         }
     };
@@ -403,8 +403,8 @@ fn coerce_integral_binop(
             env,
             lhs.token_range.as_ref(),
             "Invalid integer binary operation {op} for types {} and {}",
-            lhs.get_type().display_with(&env.symbols.context),
-            rhs.get_type().display_with(&env.symbols.context)
+            lhs.get_type().display_with(&env.symbols),
+            rhs.get_type().display_with(&env.symbols)
         );
     };
 

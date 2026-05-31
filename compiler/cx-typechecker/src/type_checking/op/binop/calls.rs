@@ -55,7 +55,7 @@ pub(crate) fn finish_function_call<'a>(
             env,
             expr.token_range(),
             "Attempted to call value of non-function type {}",
-            loaded_function_type.display_with(&env.symbols.context)
+            loaded_function_type.display_with(&env.symbols)
         );
     };
 
@@ -64,7 +64,7 @@ pub(crate) fn finish_function_call<'a>(
             env,
             expr.token_range(),
             "Call to {} expects {} arguments, found {}",
-            signature.display_with(&env.symbols.context),
+            signature.display_with(&env.symbols),
             signature.params.len(),
             tc_args.len()
         );
@@ -75,7 +75,7 @@ pub(crate) fn finish_function_call<'a>(
             env,
             expr.token_range(),
             "Call to {} expects at least {} arguments, found {}",
-            signature.display_with(&env.symbols.context),
+            signature.display_with(&env.symbols),
             signature.params.len(),
             tc_args.len()
         );
@@ -122,7 +122,7 @@ pub(crate) fn finish_function_call<'a>(
                     env,
                     Some(expr.token_range()),
                     "Cannot pass {} to varargs: expected an intrinsic type or pointer",
-                    arg_type.display_with(&env.symbols.context)
+                    arg_type.display_with(&env.symbols)
                 );
             }
         }

@@ -6,7 +6,7 @@ use cx_ast::ast::expression::CXExpression;
 use cx_ast::ast::function::{CXFunctionPrototype, CXParameter, CXReceiverMode};
 use cx_ast::ast::types::{CXType, CXTypeKind};
 use cx_mir::mir::data::{MIRFunctionPrototype, MIRFunctionSignature, MIRParameter, MIRType, MIRTypeKind};
-use cx_mir::mir::program::EnvironmentNamespace;
+use cx_mir::program::EnvironmentNamespace;
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
 
@@ -70,12 +70,12 @@ fn require_complete_prototype_type(
 ) -> CXResult<()> {
     if let Some(name) = ty.get_name()
         && let Some(id) = env.get_named_type_id(name.as_str())
-        && !env.symbols.context.contains(id)
+        && !env.symbols.contains(id)
     {
         return CXError::create_result(format!(
             "Invalid {} type '{}' in function prototype: incomplete aggregate used by value",
             context,
-            ty.display_with(&env.symbols.context)
+            ty.display_with(&env.symbols)
         ));
     }
 
@@ -100,7 +100,7 @@ pub fn int_complete_fn_prototype(
             env,
             Some(prototype.range.clone()),
             "Invalid return type '{}' in function prototype",
-            return_type.display_with(&env.symbols.context)
+            return_type.display_with(&env.symbols)
         );
     }
 
@@ -116,7 +116,7 @@ pub fn int_complete_fn_prototype(
                     env,
                     Some(prototype.range.clone()),
                     "Invalid parameter type '{}' in function prototype",
-                    param_type.display_with(&env.symbols.context)
+                    param_type.display_with(&env.symbols)
                 );
             }
 
@@ -141,6 +141,7 @@ pub fn int_complete_fn_prototype(
 
     let prototype = MIRFunctionPrototype {
         name,
+        linkage: todo!(),
         signature: MIRFunctionSignature {
             return_type,
             params,

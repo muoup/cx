@@ -110,7 +110,7 @@ fn complete_global(
 
             let expr = tcglobal_expr(
                 env.items.realized_globals.get(ident).unwrap(),
-                &mut env.symbols.context,
+                &mut env.symbols,
             )?;
             env.symbols
                 .insert_value(CXIdent::new(ident), expr, Some(SymbolValueOrigin::Global));

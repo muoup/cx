@@ -1,7 +1,9 @@
 use cx_ast::ast::expression::{CXExpression, CXInitIndex};
-use cx_mir::mir::{
-    data::{MIRType, MIRTypeKind},
-    expression::{MIRExpressionKind, StructInitialization},
+use cx_mir::{
+    mir::{
+        data::{MIRType, MIRTypeKind},
+        expression::{MIRExpressionKind, StructInitialization},
+    },
     program::EnvironmentNamespace,
 };
 use cx_tokens::TokenRange;
@@ -50,37 +52,21 @@ pub fn typecheck_initializer_list(
         ));
     };
 
-    let owned_inner;
-    let to_type = if let Some(inner_type) = env.symbols.context.mem_ref_inner(to_type) {
-        owned_inner = inner_type.clone();
-        &owned_inner
-    } else {
-        to_type
-    };
+    let to_type = env.mem_ref_inner(to_type).unwrap_or(to_type);
 
     match &to_type.kind {
         MIRTypeKind::Array {
             inner_type: _type,
             length: size,
         } => {
-            let inner_type = env
-                .symbols
-                .context
-                .get(*_type)
-                .unwrap_or_else(|| panic!("Unknown type id {}", _type.0))
-                .clone();
+            let inner_type = env.resolve_type_id(_type).clone();
             typecheck_array_initializer(env, namespace, indices, &inner_type, Some(*size), to_type)
         }
 
         MIRTypeKind::PointerTo {
             inner_type: inner, ..
         } => {
-            let inner_type = env
-                .symbols
-                .context
-                .get(*inner)
-                .unwrap_or_else(|| panic!("Unknown type id {}", inner.0))
-                .clone();
+            let inner_type = env.resolve_type_id(inner).clone();
             typecheck_array_initializer(env, namespace, indices, &inner_type, None, to_type)
         }
 
@@ -92,7 +78,7 @@ pub fn typecheck_initializer_list(
             env,
             Some(expr.token_range()),
             "Cannot coerce initializer to type {}",
-            to_type.display_with(&env.symbols.context)
+            to_type.display_with(&env.symbols)
         ),
     }
 }
@@ -157,12 +143,12 @@ fn typecheck_structured_initializer(
     indices: &[CXInitIndex],
     to_type: &MIRType,
 ) -> CXResult<TypecheckResult> {
-    let Some(fields) = to_type.aggregate_fields(&env.symbols.context) else {
+    let Some(fields) = to_type.aggregate_fields(&env.symbols) else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
             "Expected a structured type for initializer, found {}",
-            to_type.display_with(&env.symbols.context)
+            to_type.display_with(&env.symbols)
         );
     };
     let fields = fields.clone();
@@ -210,14 +196,14 @@ fn typecheck_structured_initializer(
             .and_then(|expr| implicit_cast(env, expr, field_type))?;
 
         let Some(struct_field_info) =
-            struct_field(to_type, &env.symbols.context, field_name.as_str())
+            struct_field(to_type, &env.symbols, field_name.as_str())
         else {
             return log_typecheck_error!(
                 env,
                 value.token_range.as_ref(),
                 "Could not find field '{}' in type {}",
                 field_name,
-                to_type.display_with(&env.symbols.context)
+                to_type.display_with(&env.symbols)
             );
         };
 

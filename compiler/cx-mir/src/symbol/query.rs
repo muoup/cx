@@ -129,7 +129,7 @@ fn query_type_constructor(
     .to_type();
 
     let union_type = env.complete_type(namespace, &CXExpression::default(), &as_type)?;
-    let Some(variants) = union_type.aggregate_fields(&env.symbols.context) else {
+    let Some(variants) = union_type.aggregate_fields(&env.symbols) else {
         return Ok(None);
     };
     let Some((variant_index, variant_type)) = variants

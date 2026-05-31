@@ -270,7 +270,7 @@ fn lower_bitfield_read(
         bit_offset,
         bit_width,
         storage_type,
-    } = aggregate_member_layout(aggregate_type, &builder.type_definitions, member_index)
+    } = aggregate_member_layout(aggregate_type, &builder.registry, member_index)
     else {
         return Ok(None);
     };
@@ -338,7 +338,7 @@ fn lower_bitfield_write(
         bit_offset,
         bit_width,
         storage_type,
-    } = aggregate_member_layout(aggregate_type, &builder.type_definitions, *member_index)
+    } = aggregate_member_layout(aggregate_type, &builder.registry, *member_index)
     else {
         return Ok(None);
     };
@@ -740,7 +740,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             let bc_struct_type = builder.convert_cx_type(aggregate_type);
             let AggregateMemberLayout::Standard {
                 byte_offset: field_offset,
-            } = aggregate_member_layout(aggregate_type, &builder.type_definitions, *member_index)
+            } = aggregate_member_layout(aggregate_type, &builder.registry, *member_index)
             else {
                 panic!("bitfield member access must be loaded or stored directly");
             };
@@ -916,7 +916,7 @@ fn lower_call(
         MIRTypeKind::Function { signature } => signature.as_ref().clone(),
         MIRTypeKind::PointerTo { inner_type, .. } => {
             let inner_type = builder
-                .type_definitions
+                .registry
                 .get(*inner_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
             if let MIRTypeKind::Function { signature } = &inner_type.kind {
@@ -1077,7 +1077,7 @@ fn lower_call_signature(
         &semantic_signature.return_type,
         &semantic_signature.params,
         semantic_signature.var_args,
-        &builder.type_definitions,
+        &builder.registry,
     )
 }
 
@@ -1301,7 +1301,7 @@ fn lower_struct_initializer(
     for initialization in initializations {
         let layout = aggregate_member_layout(
             struct_type,
-            &builder.type_definitions,
+            &builder.registry,
             initialization.field_index,
         );
 

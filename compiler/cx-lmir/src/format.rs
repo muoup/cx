@@ -1,4 +1,4 @@
-use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
+use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind, TypeSize, TypePaddedSize};
 use crate::{
     LMIRBasicBlock, LMIRFloatBinOp, LMIRFloatUnOp, LMIRFunction, LMIRFunctionPrototype,
     LMIRFunctionSignature, LMIRGlobalType, LMIRInstruction, LMIRInstructionKind, LMIRIntBinOp,
@@ -253,6 +253,18 @@ impl Display for LMIRInstruction {
                 write!(f, "compiler_assumption {condition}")
             }
         }
+    }
+}
+
+impl Display for TypeSize {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}b", usize::from(*self))
+    }
+}
+
+impl Display for TypePaddedSize {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}pb", usize::from(*self))
     }
 }
 

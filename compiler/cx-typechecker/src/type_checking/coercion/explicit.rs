@@ -20,8 +20,8 @@ pub(crate) fn explicit_cast(
             env,
             expr.token_range.as_ref(),
             "No explicit cast from {} to {}",
-            from_type.display_with(&env.symbols.context),
-            to_type.display_with(&env.symbols.context)
+            from_type.display_with(&env.symbols),
+            to_type.display_with(&env.symbols)
         ),
     }
 }

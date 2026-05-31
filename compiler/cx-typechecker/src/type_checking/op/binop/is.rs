@@ -24,19 +24,19 @@ pub(crate) fn typecheck_is(
         .and_then(|v| std_rval_promotion(env, v.into_expression()?))?;
     let tc_type = tc_lhs.get_type();
     let owned_union_type;
-    let union_type = if let Some(inner) = env.symbols.context.mem_ref_inner(&tc_type) {
+    let union_type = if let Some(inner) = env.symbols.mem_ref_inner(&tc_type) {
         owned_union_type = inner.clone();
         &owned_union_type
     } else {
         &tc_type
     };
 
-    let Some(variants) = union_type.aggregate_fields(&env.symbols.context) else {
+    let Some(variants) = union_type.aggregate_fields(&env.symbols) else {
         return log_typecheck_error!(
             env,
             expr.token_range(),
             "'is' operator requires a tagged union on the left-hand side, found {}",
-            union_type.display_with(&env.symbols.context)
+            union_type.display_with(&env.symbols)
         );
     };
     let variants = variants.clone();
@@ -77,7 +77,7 @@ pub(crate) fn typecheck_is(
         );
     };
     if let Some(inner_name) = &inner_name {
-        let variant_ref_type = env.symbols.context.mem_ref_to(variant_type.clone());
+        let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
         env.symbols.insert_value(
             inner_name.clone(),
             MIRExpression {

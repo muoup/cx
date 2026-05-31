@@ -30,12 +30,12 @@ pub fn dispatch(
         CXUnOp::PreIncrement(increment_amount) | CXUnOp::PostIncrement(increment_amount) => {
             let operand = typecheck_expr(env, namespace, operand, None)?.into_expression()?;
 
-            let Some(inner) = env.symbols.context.mem_ref_inner(&operand._type).cloned() else {
+            let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
                 return log_typecheck_error!(
                     env,
                     operand.token_range.as_ref(),
                     "Cannot apply pre-increment to non-reference type {}",
-                    operand._type.display_with(&env.symbols.context)
+                    operand._type.display_with(&env.symbols)
                 );
             };
 
@@ -63,7 +63,7 @@ pub fn dispatch(
                         env,
                         operand.token_range.as_ref(),
                         "Pre-increment operator requires an integer or pointer type, found {}",
-                        inner.display_with(&env.symbols.context)
+                        inner.display_with(&env.symbols)
                     );
                 }
             }
@@ -96,7 +96,7 @@ pub fn dispatch(
                     env,
                     operand.token_range.as_ref(),
                     "Bitwise NOT operator requires an integer type, found {}",
-                    operand._type.display_with(&env.symbols.context)
+                    operand._type.display_with(&env.symbols)
                 );
             }
 
@@ -122,7 +122,7 @@ pub fn dispatch(
                         env,
                         operand.token_range.as_ref(),
                         "Negation operator requires an integer or float type, found {}",
-                        operand.display_with(&env.symbols.context)
+                        operand.display_with(&env.symbols)
                     );
                 }
             };
@@ -139,7 +139,7 @@ pub fn dispatch(
         CXUnOp::AddressOf => {
             let operand = typecheck_expr(env, namespace, operand, None)?.into_expression()?;
 
-            let Some(inner) = env.symbols.context.mem_ref_inner(&operand._type).cloned() else {
+            let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
                 return log_typecheck_error!(
                     env,
                     operand.token_range.as_ref(),
@@ -150,7 +150,7 @@ pub fn dispatch(
             // AddressOf just returns the operand (which is a reference) as a pointer
             TypecheckResult::from(MIRExpression {
                 token_range: operand.token_range.clone(),
-                _type: env.symbols.context.pointer_to(inner.clone()),
+                _type: env.symbols.pointer_to(inner.clone()),
                 kind: MIRExpressionKind::TypeConversion {
                     operand: Box::new(operand),
                     conversion: MIRCoercion::ReinterpretBits,
@@ -162,12 +162,12 @@ pub fn dispatch(
             let operand = typecheck_expr(env, namespace, operand, None)
                 .and_then(|v| std_rval_promotion(env, v.into_expression()?))?;
 
-            let Some(inner) = env.symbols.context.ptr_inner(&operand._type).cloned() else {
+            let Some(inner) = env.symbols.ptr_inner(&operand._type).cloned() else {
                 return log_typecheck_error!(
                     env,
                     operand.token_range.as_ref(),
                     "Cannot dereference non-pointer type {}",
-                    operand._type.display_with(&env.symbols.context)
+                    operand._type.display_with(&env.symbols)
                 );
             };
 
@@ -175,7 +175,7 @@ pub fn dispatch(
             TypecheckResult::from(MIRExpression {
                 token_range: None,
                 kind: MIRExpressionKind::Typechange(Box::new(operand)),
-                _type: env.symbols.context.mem_ref_to(inner),
+                _type: env.symbols.mem_ref_to(inner),
             })
         }
 

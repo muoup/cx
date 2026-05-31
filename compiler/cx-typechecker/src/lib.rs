@@ -87,7 +87,7 @@ fn realize_tagged_union_constructor(
     } else {
         let param_ref = MIRExpression {
             token_range: None,
-            _type: env.symbols.context.mem_ref_to(variant_type.clone()),
+            _type: env.symbols.mem_ref_to(variant_type.clone()),
             kind: MIRExpressionKind::Variable(param_name),
         };
 

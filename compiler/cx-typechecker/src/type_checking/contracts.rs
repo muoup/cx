@@ -19,7 +19,7 @@ pub(crate) fn typecheck_contract(
 
     for param in prototype.params.iter() {
         if let Some(name) = &param.name {
-            let _ty = env.symbols.context.mem_ref_to(param._type.clone());
+            let _ty = env.symbols.mem_ref_to(param._type.clone());
 
             env.symbols.insert_value(
                 name.clone(),

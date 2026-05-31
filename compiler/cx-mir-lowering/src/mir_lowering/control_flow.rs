@@ -316,11 +316,11 @@ pub fn lower_match(
     exhaustive: bool,
 ) -> CXResult<LMIRValue> {
     let mut bc_condition = lower_expression(builder, condition)?;
-    let inner = builder
-        .type_definitions
-        .mem_ref_inner(&condition._type)
-        .cloned()
-        .unwrap_or_else(|| condition._type.clone());
+    let inner = condition._type
+        .mem_ref_inner()
+        .and_then(|id| builder.registry.resolve_type_id(&id))
+        .unwrap_or_else(|| &condition._type)
+        .clone();
 
     if inner.is_tagged_union() {
         let tag_ptr = get_tagged_union_tag(builder, bc_condition.clone(), &inner)?;
@@ -461,7 +461,7 @@ pub fn lower_return(
                     dest: return_buffer.clone(),
                     src,
                     size: LMIRValue::IntImmediate {
-                        val: return_type.size() as i64,
+                        val: usize::from(return_type.size()) as i64,
                         _type: LMIRIntegerType::I64,
                     },
                     alignment: return_type.alignment(),

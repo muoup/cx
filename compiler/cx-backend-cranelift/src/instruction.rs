@@ -48,7 +48,7 @@ pub(crate) fn codegen_instruction(
         LMIRInstructionKind::Allocate { _type, alignment } => {
             let slot = context.builder.create_sized_stack_slot(StackSlotData::new(
                 StackSlotKind::ExplicitSlot,
-                StackSize::from(_type.size() as u16),
+                StackSize::from(usize::from(_type.size()) as u16),
                 *alignment,
             ));
 
@@ -165,7 +165,7 @@ pub(crate) fn codegen_instruction(
             value,
             coercion_type: LMIRCoercionType::PtrToInt,
         } => {
-            let bytes = instruction.value_type.size();
+            let bytes = usize::from(instruction.value_type.size());
             let val = context.get_value(value)?;
 
             if bytes < 8 {
@@ -221,7 +221,7 @@ pub(crate) fn codegen_instruction(
                         let right_scaled = context
                             .builder
                             .ins()
-                            .imul_imm(right, *type_padded_size as i64); // assuming type_padded_size is 1 for simplicity
+                            .imul_imm(right, usize::from(*type_padded_size) as i64); // assuming type_padded_size is 1 for simplicity
 
                         context.builder.ins().iadd(left, right_scaled)
                     }
@@ -230,7 +230,7 @@ pub(crate) fn codegen_instruction(
                         let right_scaled = context
                             .builder
                             .ins()
-                            .imul_imm(right, *type_padded_size as i64);
+                            .imul_imm(right, usize::from(*type_padded_size) as i64);
 
                         context.builder.ins().isub(left, right_scaled)
                     }
@@ -555,7 +555,7 @@ pub(crate) fn codegen_instruction(
             let size_literal = context
                 .builder
                 .ins()
-                .iconst(ir::Type::int(64).unwrap(), _type.size() as i64);
+                .iconst(ir::Type::int(64).unwrap(), usize::from(_type.size()) as i64);
 
             let zero = context.builder.ins().iconst(ir::Type::int(8).unwrap(), 0);
 

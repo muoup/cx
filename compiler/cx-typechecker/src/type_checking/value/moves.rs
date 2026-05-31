@@ -52,7 +52,7 @@ pub(crate) fn typecheck_move(
         );
     }
 
-    let Some(inner_type) = env.symbols.context.mem_ref_inner(&inner_val._type).cloned() else {
+    let Some(inner_type) = env.symbols.mem_ref_inner(&inner_val._type).cloned() else {
         unreachable!()
     };
 
@@ -88,7 +88,7 @@ pub(crate) fn typecheck_adopt(
     let value = typecheck_expr(env, namespace, inner, None)?;
     let binding = value.binding().cloned();
     let value = value.into_expression()?;
-    let Some(inner_type) = env.symbols.context.mem_ref_inner(&value._type).cloned() else {
+    let Some(inner_type) = env.symbols.mem_ref_inner(&value._type).cloned() else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
@@ -157,7 +157,7 @@ pub(crate) fn typecheck_leak(
 
     let value = value.into_expression()?;
 
-    let Some(inner_type) = env.symbols.context.mem_ref_inner(&value._type).cloned() else {
+    let Some(inner_type) = env.symbols.mem_ref_inner(&value._type).cloned() else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
@@ -207,7 +207,7 @@ pub(crate) fn typecheck_unpack(
 
     let value = value.into_expression()?;
 
-    let Some(inner_type) = env.symbols.context.mem_ref_inner(&value._type).cloned() else {
+    let Some(inner_type) = env.symbols.mem_ref_inner(&value._type).cloned() else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
@@ -220,11 +220,11 @@ pub(crate) fn typecheck_unpack(
             env,
             Some(expr.token_range()),
             "@unpack requires a struct type, found {}",
-            inner_type.display_with(&env.symbols.context)
+            inner_type.display_with(&env.symbols)
         );
     }
 
-    let Some(fields) = env.symbols.context.aggregate_fields(&inner_type).cloned() else {
+    let Some(fields) = env.symbols.aggregate_fields(&inner_type).cloned() else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
@@ -237,7 +237,7 @@ pub(crate) fn typecheck_unpack(
         let Some(name) = field.name() else {
             continue;
         };
-        let Some(field_type) = env.symbols.context.get(field.type_id()).cloned() else {
+        let Some(field_type) = env.symbols.get(field.type_id()).cloned() else {
             return log_typecheck_error!(
                 env,
                 Some(expr.token_range()),
@@ -257,7 +257,7 @@ pub(crate) fn typecheck_unpack(
                 Some(expr.token_range()),
                 "@unpack field '{}' does not exist on {}",
                 unpack_binding.field,
-                inner_type.display_with(&env.symbols.context)
+                inner_type.display_with(&env.symbols)
             );
         }
 
@@ -286,7 +286,7 @@ pub(crate) fn typecheck_unpack(
                 env,
                 Some(expr.token_range()),
                 "@unpack of {} must bind @nodrop field '{}'",
-                inner_type.display_with(&env.symbols.context),
+                inner_type.display_with(&env.symbols),
                 field_name
             );
         }
@@ -303,7 +303,7 @@ pub(crate) fn typecheck_unpack(
 
         let field_place = MIRExpression {
             token_range: None,
-            _type: env.symbols.context.mem_ref_to(field_type.clone()),
+            _type: env.symbols.mem_ref_to(field_type.clone()),
             kind: MIRExpressionKind::MemberAccess {
                 base: Box::new(value.clone()),
                 member_index: *member_index,
@@ -330,7 +330,7 @@ pub(crate) fn typecheck_unpack(
         };
 
         let binding_name = CXIdent::new(unpack_binding.binding.as_str());
-        let binding_ref_type = env.symbols.context.mem_ref_to(field_type.clone());
+        let binding_ref_type = env.symbols.mem_ref_to(field_type.clone());
         env.symbols.insert_value(
             binding_name.clone(),
             MIRExpression {
@@ -347,13 +347,13 @@ pub(crate) fn typecheck_unpack(
 
         statements.push(MIRExpression {
             token_range: None,
-            _type: env.symbols.context.mem_ref_to(field_type.clone()),
+            _type: env.symbols.mem_ref_to(field_type.clone()),
             kind: MIRExpressionKind::BindRegion {
                 name: binding_name,
                 _type: field_type.clone(),
                 initial_region: Box::new(MIRExpression {
                     token_range: None,
-                    _type: env.symbols.context.mem_ref_to(field_type.clone()),
+                    _type: env.symbols.mem_ref_to(field_type.clone()),
                     kind: MIRExpressionKind::RegionCreate {
                         _type: field_type.clone(),
                         initial_value: Some(Box::new(initial_value)),

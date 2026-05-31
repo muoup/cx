@@ -1,14 +1,14 @@
 use std::collections::{HashMap, HashSet};
 
 use cx_ast::registry::GlobalSymbolRegistry;
-use cx_util::{namespace::QualifiedName, CXResult};
+use cx_util::{CXResult, namespace::QualifiedName, scoped_map::ScopedMap};
 
 use crate::{
     mir::{
-        data::{MIRFunctionPrototype, MIRType, MIRTypeId},
-        expression::{MIRExpression, MIRPureExpression},
+        data::{MIRFunctionPrototype, MIRType, MIRTypeId, MIRTypeKind},
+        expression::{MIRExpression, MIRPureExpression}, r#type::MIRBitfieldAccess,
     },
-    symbol::{resolution::resolve_symbol, MIRSymbol},
+    symbol::{MIRSymbol, resolution::resolve_symbol}, type_context::MIRTypeContext,
 };
 
 //
@@ -16,23 +16,34 @@ use crate::{
 //
 pub struct MIRSymbolRegistry<'a> {
     global_registry: &'a GlobalSymbolRegistry,
-    cache: HashMap<QualifiedName, MIRSymbol>,
+    global_cache: HashMap<QualifiedName, MIRSymbol>,
+    local_symbols: ScopedMap<QualifiedName, MIRSymbol>,
 
     // These two fields differ in one import way: when a recursive type is being defined,
     // it is in a state of "valid typeid but not validly mapped to a type yet", so it will
     // be visible in valid_typeid but not in typeid_defs
     valid_typeid: HashSet<MIRTypeId>,
     typeid_defs: HashMap<MIRTypeId, MIRType>,
+    next_typeid: u64,
+}
+
+impl MIRTypeContext for MIRSymbolRegistry<'_> {
+    fn resolve_type_id(&self, id: MIRTypeId) -> &MIRType {
+        self.typeid_defs.get(&id)
+            .unwrap_or_else(|| panic!("Invalid MIRTypeId {} in AST!", id))
+    }
 }
 
 impl<'a> MIRSymbolRegistry<'a> {
     pub fn new(global_registry: &'a GlobalSymbolRegistry) -> Self {
         Self {
             global_registry,
+            global_cache: HashMap::new(),
+            local_symbols: ScopedMap::new(),
 
-            cache: HashMap::new(),
             valid_typeid: HashSet::new(),
             typeid_defs: HashMap::new(),
+            next_typeid: 0
         }
     }
 
@@ -41,6 +52,10 @@ impl<'a> MIRSymbolRegistry<'a> {
             return Ok(Some(preresolved_symbol.clone()));
         }
 
+        if let Some(local_symbol) = self.local_symbols.get(name) {
+            return Ok(Some(local_symbol.clone()));
+        }
+        
         let Some(untyped_symbol) = self.global_registry.resolve(name) else {
             return Ok(None);
         };
@@ -51,15 +66,18 @@ impl<'a> MIRSymbolRegistry<'a> {
     }
 
     pub fn get_preresolved_symbol(&self, name: &QualifiedName) -> Option<&MIRSymbol> {
-        self.cache.get(name)
+        self.global_cache.get(name)
     }
 
-    pub fn resolve_type_id(&self, id: &MIRTypeId) -> Option<&MIRType> {
-        self.typeid_defs.get(id)
+    pub fn generate_type_id(&mut self, ty: MIRType) -> MIRTypeId {
+        self.typeid_defs.insert(MIRTypeId(self.next_typeid), ty);
+
+        self.next_typeid += 1;
+        MIRTypeId(self.next_typeid - 1)
     }
 
     pub fn insert_symbol(&mut self, name: QualifiedName, symbol: MIRSymbol) {
-        self.cache.insert(name, symbol);
+        self.global_cache.insert(name, symbol);
     }
 
     pub fn insert_type_symbol(&mut self, name: QualifiedName, id: MIRTypeId) {
@@ -80,6 +98,24 @@ impl<'a> MIRSymbolRegistry<'a> {
             MIRSymbol::PureValue(MIRPureExpression::FunctionReference(Box::new(prototype))),
         );
     }
+
+    pub fn pointer_to(&mut self, ty: MIRType) -> MIRType {
+        let id = self.generate_type_id(ty);
+
+        MIRTypeKind::PointerTo { inner_type: id }.into()
+    }
+
+    pub fn mem_ref_to(&mut self, ty: MIRType) -> MIRType {
+        let id = self.generate_type_id(ty);
+
+        MIRTypeKind::MemoryReference { inner_type: id, bitfield: None }.into()
+    }
+
+    pub fn bitfield_mem_ref_to(&mut self, ty: MIRType, bitfield: MIRBitfieldAccess) -> MIRType {
+        let id = self.generate_type_id(ty);
+        
+        MIRTypeKind::MemoryReference { inner_type: id, bitfield: Some(bitfield) }.into()
+    }
 }
 
 //
@@ -93,14 +129,17 @@ pub struct MIRDecomposedRegistry {
     pub typeid_map: HashMap<MIRTypeId, MIRType>,
 }
 
+impl MIRTypeContext for MIRDecomposedRegistry {
+    fn resolve_type_id(&self, id: MIRTypeId) -> &MIRType {
+        self.typeid_map.get(&id)
+            .unwrap_or_else(|| panic!("Invalid id {id} in MIRDecomposedRegistry!"))
+    }
+}
+
 impl MIRDecomposedRegistry {
     pub fn decompose_registry(registry: MIRSymbolRegistry) -> Self {
         Self {
             typeid_map: registry.typeid_defs,
         }
-    }
-
-    pub fn resolve_type_id(&self, id: &MIRTypeId) -> Option<&MIRType> {
-        self.typeid_map.get(id)
     }
 }

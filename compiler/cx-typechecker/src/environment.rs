@@ -5,7 +5,7 @@ use cx_ast::ast::{
     function::CXFunctionPrototype,
     types::{CXType, CXTypeKind, PredeclarationType},
 };
-use cx_mir::mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId};
+use cx_mir::{mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId}, registry::MIRSymbolRegistry, symbol::MIRSymbol};
 use cx_mir::mir::program::{EnvironmentNamespace, MIRFunction, MIRGlobalVariable, MIRUnit};
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
@@ -24,16 +24,13 @@ use crate::environment::items::ItemRegistry;
 use crate::environment::source::SourceContext;
 use crate::environment::symbols::{SymbolRegistry, TemplateBindingFrame};
 use crate::environment::{
-    functions::completion::{complete_prototype_no_insert, complete_type},
     symbols::ResolvedValueSymbol,
 };
 use crate::log::TypeError;
 
 pub(crate) mod functions;
-pub(crate) mod resolution;
 pub(crate) mod items;
 pub(crate) mod source;
-pub(crate) mod symbols;
 
 pub use items::MIRFunctionGenRequest;
 
@@ -41,7 +38,7 @@ pub const DEFER_ACCUMULATION_REGISTER: &str = "__defer_accumulation_register";
 
 pub struct TypeEnvironment<'a> {
     pub source: SourceContext<'a>,
-    pub symbols: SymbolRegistry<'a>,
+    pub symbols: MIRSymbolRegistry<'a>,
     pub items: ItemRegistry,
     pub function: FunctionContext,
 }
@@ -70,7 +67,21 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn get_symbol(&mut self, name: &QualifiedName) -> CXResult<Option<MIRSymbol>> {
-        self.symbols.get(name)
+        self.symbols.get_symbol(name)
+    }
+
+    pub fn resolve_type_id(&self, id: &MIRTypeId) -> &MIRType {
+        self.symbols.resolve_type_id(id)
+    }
+
+    pub fn ptr_inner(&self, ty: &MIRType) -> Option<&MIRType> {
+        ty.ptr_inner()
+            .and_then(|id| self.symbols.resolve_type_id(&id))
+    }
+    
+    pub fn mem_ref_inner(&self, ty: &MIRType) -> Option<&MIRType> {
+        ty.mem_ref_inner()
+            .and_then(|id| self.symbols.resolve_type_id(&id))
     }
 }
 

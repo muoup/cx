@@ -1,8 +1,7 @@
 //! Binary and unary operation lowering
 
 use cx_lmir::{
-    types::{LMIRIntegerType, LMIRType},
-    LMIRFloatBinOp, LMIRInstructionKind, LMIRIntBinOp, LMIRPtrBinOp, LMIRValue,
+    LMIRFloatBinOp, LMIRInstructionKind, LMIRIntBinOp, LMIRPtrBinOp, LMIRValue, types::{LMIRIntegerType, LMIRType, TypePaddedSize}
 };
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
@@ -58,10 +57,11 @@ pub fn lower_binary_op(
                 MIRPtrDiffBinOp::ADD => LMIRPtrBinOp::ADD,
                 MIRPtrDiffBinOp::SUB => LMIRPtrBinOp::SUB,
             };
+            
             LMIRInstructionKind::PointerBinOp {
                 op: ptr_op,
                 ptr_type: bc_inner_type.clone(),
-                type_padded_size: ptr_inner.padded_size(&builder.type_definitions) as u64,
+                type_padded_size: bc_inner_type.padded_size(),
                 left: bc_lhs,
                 right: bc_rhs,
             }
@@ -78,7 +78,7 @@ pub fn lower_binary_op(
             LMIRInstructionKind::PointerBinOp {
                 op: ptr_op,
                 ptr_type: LMIRType::default_pointer(),
-                type_padded_size: 1,
+                type_padded_size: TypePaddedSize::from(1),
                 left: bc_lhs,
                 right: bc_rhs,
             }
@@ -266,15 +266,16 @@ pub fn lower_unary_op(
 
                 MIRTypeKind::PointerTo { inner_type, .. } => {
                     let inner_type = builder
-                        .type_definitions
-                        .get(*inner_type)
+                        .registry
+                        .resolve_type_id(inner_type)
                         .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
                     let bc_inner_type = builder.convert_cx_type(inner_type);
-
+                    let padded_size = bc_inner_type.padded_size();
+                    
                     LMIRInstructionKind::PointerBinOp {
                         op: LMIRPtrBinOp::ADD,
                         ptr_type: bc_inner_type,
-                        type_padded_size: result_type.padded_size(&builder.type_definitions) as u64,
+                        type_padded_size: padded_size,
                         left: pre_loaded_val.clone(),
                         right: LMIRValue::IntImmediate {
                             val: *amt as i64,

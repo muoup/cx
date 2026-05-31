@@ -23,12 +23,12 @@ pub fn typecheck_assignment(
     let lhs = lhs.into_expression()?;
     let lhs_type = lhs.get_type();
 
-    let Some(inner) = env.symbols.context.mem_ref_inner(&lhs_type).cloned() else {
+    let Some(inner) = env.symbols.mem_ref_inner(&lhs_type).cloned() else {
         return log_typecheck_error!(
             env,
             lhs.token_range.as_ref(),
             "Cannot assign to non-reference type {}",
-            lhs_type.display_with(&env.symbols.context)
+            lhs_type.display_with(&env.symbols)
         );
     };
 

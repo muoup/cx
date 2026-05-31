@@ -15,7 +15,7 @@ use cx_util::CXResult;
 pub struct LMIRBuilder {
     functions: Vec<LMIRFunction>,
     global_variables: Vec<LMIRGlobalValue>,
-    pub type_definitions: MIRDecomposedRegistry,
+    pub registry: MIRDecomposedRegistry,
 
     pub fn_map: LMIRFunctionMap,
 
@@ -46,7 +46,7 @@ impl LMIRBuilder {
         LMIRBuilder {
             functions: Vec::new(),
             global_variables: Vec::new(),
-            type_definitions: mir.registry,
+            registry: mir.registry,
 
             fn_map: mir
                 .prototypes
@@ -79,7 +79,7 @@ impl LMIRBuilder {
             "Attempted to start a new function while another function context is active"
         );
 
-        let bc_prototype = convert_cx_prototype(&fn_prototype, &self.type_definitions);
+        let bc_prototype = convert_cx_prototype(&fn_prototype, &self.registry);
 
         if !self.fn_map.contains_key(bc_prototype.name.as_str()) {
             self.insert_fn_prototype(bc_prototype.clone());

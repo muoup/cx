@@ -46,7 +46,7 @@ pub fn mangle_template_name(env: &TypeEnvironment, name: &str, input: &MIRTempla
     let mut mangled_name = String::from("_t");
 
     for arg in &input.args {
-        mangled_name.push_str(&env.symbols.context.mangle(arg));
+        mangled_name.push_str(&env.symbols.mangle(arg));
     }
 
     mangled_name.push('_');
@@ -376,7 +376,7 @@ fn deduce_from_cx_type(
                 return CXError::create_result(format!(
                     "Expected realized template type '{}' while deducing, found {}",
                     name,
-                    actual.display_with(&env.symbols.context)
+                    actual.display_with(&env.symbols)
                 ));
             };
 
@@ -602,8 +602,8 @@ fn bind_template_argument(
         return CXError::create_result(format!(
             "Conflicting deductions for template argument '{}': {} vs {}",
             name,
-            existing.display_with(&env.symbols.context),
-            actual.display_with(&env.symbols.context)
+            existing.display_with(&env.symbols),
+            actual.display_with(&env.symbols)
         ));
     }
 
@@ -619,7 +619,7 @@ fn concrete_type_mismatch(
     CXError::create_result(format!(
         "Template deduction mismatch: expected {}, found {}",
         formal,
-        actual.display_with(&env.symbols.context)
+        actual.display_with(&env.symbols)
     ))
 }
 

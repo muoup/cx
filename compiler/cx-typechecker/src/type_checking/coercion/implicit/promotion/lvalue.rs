@@ -1,5 +1,5 @@
 use cx_ast::ast::modifiers::CX_CONST;
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
+use cx_mir::{mir::expression::{MIRExpression, MIRExpressionKind}, type_context::MIRTypeContext};
 use cx_util::CXResult;
 
 use crate::{
@@ -25,7 +25,7 @@ use crate::{
 ///
 
 pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResult<CoercionResult> {
-    let Some(mem_inner) = env.symbols.context.mem_ref_inner(&expr._type).cloned() else {
+    let Some(mem_inner) = env.symbols.mem_ref_inner(&expr._type).cloned() else {
         return CoercionResult::unapplied(expr);
     };
 
@@ -33,7 +33,7 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResul
         return CoercionResult::unapplied(expr);
     }
 
-    if !env.symbols.is_copyable(&mem_inner) {
+    if mem_inner.is_nocopy() {
         return CoercionResult::unapplied_with_obstacle(expr, CoercionObstacle::Uncopyable);
     }
 

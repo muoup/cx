@@ -41,7 +41,7 @@ pub fn typecheck_return(
             // of the implicit cast behavior here so instead of creating a temporary buffer to copy
             // into, and then memcpy from that buffer, we can just "unsafely" coerce the &T to a T
             // so we will induce in effect just a direct memcpy from the source T to the return buffer.
-            if let Some(inner) = env.symbols.context.mem_ref_inner(&_ty).cloned()
+            if let Some(inner) = env.symbols.mem_ref_inner(&_ty).cloned()
                 && env.symbols.is_copyable(&inner)
                 && typechange_can_forward_region(&inner)
             {
@@ -50,7 +50,7 @@ pub fn typecheck_return(
                     token_range: some_value.token_range.clone(),
                     kind: MIRExpressionKind::Typechange(Box::new(some_value)),
                 };
-            } else if env.symbols.context.mem_ref_inner(return_type).is_none() {
+            } else if env.symbols.mem_ref_inner(return_type).is_none() {
                 some_value = std_rval_promotion(env, some_value)?;
             }
 
@@ -64,7 +64,7 @@ pub fn typecheck_return(
                 env,
                 value.token_range.as_ref(),
                 "Cannot return from function {} with a void return type",
-                env.current_function().display_with(&env.symbols.context)
+                env.current_function().display_with(&env.symbols)
             );
         }
 
@@ -73,7 +73,7 @@ pub fn typecheck_return(
                 env,
                 Option::<TokenRange>::None,
                 "Function {} expects a return value, but none was provided",
-                env.current_function().display_with(&env.symbols.context)
+                env.current_function().display_with(&env.symbols)
             );
         }
     };

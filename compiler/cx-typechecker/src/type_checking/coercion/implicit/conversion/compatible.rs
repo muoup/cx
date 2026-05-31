@@ -1,10 +1,10 @@
-use cx_mir::mir::r#type::{MIRType, MIRTypeKind};
+use cx_mir::{mir::r#type::{MIRType, MIRTypeKind}, type_context::MIRTypeContext};
 use cx_util::CXResult;
 
 use crate::environment::TypeEnvironment;
 
 pub fn compatible_types(
-    env: &mut TypeEnvironment,
+    env: &TypeEnvironment,
     type1: &MIRType,
     type2: &MIRType,
 ) -> CXResult<bool> {
@@ -30,7 +30,7 @@ pub fn compatible_types(
                 inner_type: ptr_inner,
                 ..
             },
-        ) if env.symbols.context.is_cx_str(type1) && env.symbols.context.is_c_str(type2) => {
+        ) if env.symbols.is_cx_str(type1) && env.symbols.is_c_str(type2) => {
             Ok(true)
         }
 
@@ -48,8 +48,8 @@ pub fn compatible_types(
                 return Ok(false);
             }
 
-            let inner1 = env.symbols.context.get(*inner1).cloned().unwrap();
-            let inner2 = env.symbols.context.get(*inner2).cloned().unwrap();
+            let inner1 = env.symbols.resolve_type_id(*inner1);
+            let inner2 = env.symbols.resolve_type_id(*inner2);
 
             compatible_types(env, &inner1, &inner2)
         }
@@ -62,8 +62,8 @@ pub fn compatible_types(
                 inner_type: inner2, ..
             },
         ) => {
-            let inner1 = env.symbols.context.get(*inner1).cloned().unwrap();
-            let inner2 = env.symbols.context.get(*inner2).cloned().unwrap();
+            let inner1 = env.symbols.resolve_type_id(*inner1);
+            let inner2 = env.symbols.resolve_type_id(*inner2);
 
             if inner1.is_unit() || inner2.is_unit() {
                 return Ok(true);
@@ -86,8 +86,8 @@ pub fn compatible_types(
                 return Ok(false);
             }
 
-            let inner1 = env.symbols.context.get(*inner1).cloned().unwrap();
-            let inner2 = env.symbols.context.get(*inner2).cloned().unwrap();
+            let inner1 = env.symbols.resolve_type_id(*inner1);
+            let inner2 = env.symbols.resolve_type_id(*inner2);
 
             compatible_types(env, &inner1, &inner2)
         }
@@ -135,8 +135,8 @@ pub fn compatible_types(
                 if field1.name() != field2.name() {
                     return false;
                 }
-                let field_type1 = env.symbols.context.get(field1.type_id()).cloned().unwrap();
-                let field_type2 = env.symbols.context.get(field2.type_id()).cloned().unwrap();
+                let field_type1 = env.symbols.resolve_type_id(field1.type_id());
+                let field_type2 = env.symbols.resolve_type_id(field2.type_id());
 
                 compatible_types(env, &field_type1, &field_type2).unwrap_or(false)
             }))

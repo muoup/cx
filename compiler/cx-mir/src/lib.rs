@@ -7,6 +7,7 @@ pub mod mir;
 pub mod symbol;
 pub mod program;
 pub mod registry;
+pub mod type_context;
 
 mod format;
 

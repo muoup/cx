@@ -22,7 +22,7 @@ pub(crate) fn ensure_valid_allocation_type(
             range,
             "Cannot create {} of function type '{}'; use a pointer to the function type instead",
             context,
-            ty.display_with(&env.symbols.context)
+            ty.display_with(&env.symbols)
         ),
         MIRTypeKind::Str => log_typecheck_error!(
             env,

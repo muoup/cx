@@ -38,7 +38,7 @@ pub fn typecheck_function(
             continue;
         };
         ensure_valid_allocation_type(env, Some(body.token_range().clone()), "a parameter", _type)?;
-        let ref_type = env.symbols.context.mem_ref_to(_type.clone());
+        let ref_type = env.symbols.mem_ref_to(_type.clone());
 
         env.symbols.insert_value(
             name.clone(),
