@@ -145,31 +145,20 @@ fn query_type_constructor(
     let mangled_name = base_mangle_standard(&name.as_flat_name());
     let prototype = MIRFunctionPrototype {
         name: CXIdent::new(mangled_name.clone()),
-        source_prototype: cx_ast::data::CXFunctionPrototype {
-            kind: CXFunctionKind::Standard(CXIdent::new("__tagged_union_variant_ctor")),
-            params: Vec::new(),
-            return_type: CXTypeKind::Identifier {
-                name: QualifiedName::new_raw(CXIdent::new("__tagged_union")),
-                predeclaration: PredeclarationType::None,
-            }
-            .to_type(),
+        linkage: CXLinkageMode::Static,
+        signature: MIRFunctionSignature {
+            return_type: union_type.clone(),
+            params: if variant_type.is_unit() {
+                Vec::new()
+            } else {
+                vec![MIRParameter {
+                    name: Some(CXIdent::new("value")),
+                    _type: variant_type.clone(),
+                }]
+            },
             var_args: false,
             contract: CXFunctionContract::default(),
-            linkage: CXLinkageMode::Static,
-            range: TokenRange::default(),
-        },
-        return_type: union_type.clone(),
-        params: if variant_type.is_unit() {
-            Vec::new()
-        } else {
-            vec![MIRParameter {
-                name: Some(CXIdent::new("value")),
-                _type: variant_type.clone(),
-            }]
-        },
-        var_args: false,
-        contract: CXFunctionContract::default(),
-        linkage: CXLinkageMode::Static,
+        }
     };
 
     if env.get_realized_func(&mangled_name).is_none()

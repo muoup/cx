@@ -3,7 +3,7 @@ use crate::{CompilationUnit, GlobalCompilationContext};
 use cx_ast::decomposition::CXGenerationAST;
 use cx_ast::registry::GlobalSymbolRegistry;
 use cx_lmir::LMIRUnit;
-use cx_mir::mir::program::{EnvironmentNamespace, MIRUnit};
+use cx_mir::program::{EnvironmentNamespace, MIRUnit};
 use cx_preparse_data::PreparseContents;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_tokens::token::Token;

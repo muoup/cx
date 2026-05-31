@@ -6,14 +6,11 @@ use cx_ast::{
 };
 use cx_mir::intrinsic_types::INTRINSIC_TYPES;
 use cx_mir::mir::data::{
-    MIRFunctionPrototype, MIRType, MIRSymbolRegistry, MIRTypeId, MIRTypeKind, TemplateInfo,
+    MIRFunctionPrototype, MIRSymbolRegistry, MIRType, MIRTypeId, MIRTypeKind, TemplateInfo,
 };
 use cx_mir::mir::expression::{MIRExpression, MIRPureExpression};
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 use cx_util::scoped_map::ScopedMap;
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 pub(crate) mod completion;
 pub(crate) mod templates;
-pub(crate) mod registry;
-
-

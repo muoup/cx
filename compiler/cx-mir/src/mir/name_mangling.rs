@@ -1,6 +1,6 @@
 use crate::mir::data::{MIRType, MIRTypeKind};
 use crate::mir::r#type::MIRField;
-use crate::symbol::registry::MIRSymbolRegistry;
+use crate::registry::MIRSymbolRegistry;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 pub fn base_mangle_standard(name: &str) -> String {

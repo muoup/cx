@@ -117,7 +117,7 @@ impl QualifiedName {
         self.namespace.as_flat_name_with(&self.name)
     }
 
-    pub fn raw_name(self) -> Option<CXIdent> {
+    pub fn root_name(self) -> Option<CXIdent> {
         if !self.namespace.is_root() {
             return None;
         }

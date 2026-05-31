@@ -1,7 +1,7 @@
 use cx_ast::ast::{function::CXFunctionContract, modifiers::CXLinkageMode};
 use cx_util::identifier::CXIdent;
 
-use crate::{mir::r#type::TypeComparisonState, symbol::registry::MIRSymbolRegistry};
+use crate::{mir::r#type::TypeComparisonState, registry::MIRSymbolRegistry};
 pub use crate::mir::r#type::{
     MIRFloatType, MIRIntegerType, MIRMoveAttributes, MIRType, MIRTypeId,
     MIRTypeKind,

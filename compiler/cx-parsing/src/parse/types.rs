@@ -172,7 +172,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
 
     let name = match name {
         None => None,
-        Some(name) => match name.raw_name() {
+        Some(name) => match name.root_name() {
             Some(name) => Some(name),
             None => return log_parse_error!(data, "Struct name must be a simple identifier"),
         },
@@ -248,7 +248,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
 
     let name = match name {
         None => None,
-        Some(name) => match name.raw_name() {
+        Some(name) => match name.root_name() {
             Some(name) => Some(name),
             None => return log_parse_error!(data, "Expected name found qualified identifier"),
         },
@@ -347,7 +347,7 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXType> {
 
     let name = match name {
         None => None,
-        Some(name) => match name.raw_name() {
+        Some(name) => match name.root_name() {
             Some(name) => Some(name),
             None => return log_parse_error!(data, "Union name must be a simple identifier"),
         },

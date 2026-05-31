@@ -5,10 +5,8 @@ use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 use speedy::{Readable, Writable};
 
 use crate::{
-    mir::{
-        data::{MIRFunctionSignature, TemplateInfo},
-    },
-    symbol::registry::MIRSymbolRegistry,
+    mir::data::{MIRFunctionSignature, TemplateInfo},
+    registry::MIRSymbolRegistry,
 };
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Readable, Writable)]
@@ -246,7 +244,7 @@ impl MIRFloatType {
         }
     }
 }
- 
+
 // pub fn bitfield_ref_to(
 //         &mut self,
 //         inner_type: MIRType,
@@ -550,62 +548,38 @@ impl MIRType {
     }
 
     pub fn named_type_id(&self, definitions: &MIRSymbolRegistry) -> Option<MIRTypeId> {
-        self.strong_identifier
-            .as_ref()
-            .and_then(|name| definitions.identifier_id(&name.as_flat_name()))
-            .or_else(|| {
-                self.get_name()
-                    .and_then(|name| definitions.identifier_id(name.as_str()))
-            })
+        self.strong_identifier()
+            .and_then(|ident| definitions.get_preresolved_symbol(ident))
+            .and_then(|sym| sym.as_type())
     }
 
     pub fn aggregate_fields(
         &self,
         definitions: &MIRSymbolRegistry,
     ) -> Option<Vec<(String, MIRType)>> {
-        definitions.aggregate_fields(self).map(|fields| {
+        let fields = match &self.kind {
+            MIRTypeKind::Structured { fields, .. } => fields,
+            MIRTypeKind::TaggedUnion { variants, .. } | MIRTypeKind::Union { variants, .. } => {
+                variants
+            }
+
+            _ => return None,
+        };
+
+        Some(
             fields
                 .iter()
-                .filter_map(|field| {
-                    let name = field.name()?.to_string();
-                    let id = field.type_id();
+                .map(|f| {
                     Some((
-                        name,
+                        f.name()?.to_string(),
                         definitions
-                            .get(id)
-                            .unwrap_or_else(|| panic!("Unknown type id {}", id.0))
+                            .resolve_type_id(&f.type_id())
+                            .unwrap_or_else(|| panic!("Unknown type id: {} in resolved type", f.type_id()))
                             .clone(),
                     ))
                 })
-                .collect()
-        })
-    }
-
-    pub fn standard_aggregate_fields(
-        &self,
-        definitions: &MIRSymbolRegistry,
-    ) -> Option<Vec<(String, MIRType)>> {
-        definitions.aggregate_fields(self).map(|fields| {
-            fields
-                .iter()
-                .filter_map(|field| {
-                    let (name, id) = field.standard_parts()?;
-                    Some((
-                        name.clone(),
-                        definitions
-                            .get(id)
-                            .unwrap_or_else(|| panic!("Unknown type id {}", id.0))
-                            .clone(),
-                    ))
-                })
-                .collect()
-        })
-    }
-
-    pub fn is_named_aggregate_complete(&self, definitions: &MIRSymbolRegistry) -> bool {
-        self.named_type_id(definitions)
-            .map(|id| definitions.contains(id))
-            .unwrap_or(true)
+                .collect::<Option<_>>()?,
+        )
     }
 
     pub fn rewrite_named_type_metadata(
@@ -617,26 +591,6 @@ impl MIRType {
         self.strong_identifier = Some(QualifiedName::new_raw(new_name.clone()));
         self.debug_name.get_or_insert_with(|| new_name.clone());
         self.template_info = template_info.clone();
-    }
-
-    // TODO: Remove size awareness from MIR, shift all size calculations to LMIR
-    pub fn type_size(&self, definitions: &MIRSymbolRegistry) -> usize {
-        definitions.type_size(self)
-    }
-
-    pub fn padded_size(&self, definitions: &MIRSymbolRegistry) -> usize {
-        definitions.padded_size(self)
-    }
-
-    pub fn type_alignment(&self, definitions: &MIRSymbolRegistry) -> usize {
-        definitions.type_alignment(self)
-    }
-
-    pub fn internal_function() -> Self {
-        MIRType::from(MIRTypeKind::Function {
-            signature: Box::new(MIRFunctionSignature::default()),
-        })
-        .with_name(CXIdent::from("__internal_function"))
     }
 }
 

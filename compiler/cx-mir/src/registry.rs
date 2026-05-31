@@ -37,15 +37,19 @@ impl<'a> MIRSymbolRegistry<'a> {
     }
 
     pub fn get_symbol(&mut self, name: &QualifiedName) -> CXResult<Option<MIRSymbol>> {
-        if let Some(symbol) = self.cache.get(name) {
-            return Ok(Some(symbol.clone()));
+        if let Some(preresolved_symbol) = self.get_preresolved_symbol(name) {
+            return Ok(Some(preresolved_symbol.clone()));
         }
-
+        
         let Some(untyped_symbol) = self.global_registry.resolve(name) else {
             return Ok(None);
         };
 
         resolve_symbol(self, &untyped_symbol).map(Option::Some)
+    }
+
+    pub fn get_preresolved_symbol(&self, name: &QualifiedName) -> Option<&MIRSymbol> {
+        self.cache.get(name)
     }
 
     pub fn resolve_type_id(&self, id: &MIRTypeId) -> Option<&MIRType> {
@@ -65,5 +69,28 @@ impl<'a> MIRSymbolRegistry<'a> {
             name,
             MIRSymbol::PureValue(MIRPureExpression::FunctionReference(Box::new(prototype))),
         );
+    }
+}
+
+//
+// After the evaluation and completion of the MIRUnit, this struct contains all necessary context to interpret
+// the complete meaning of its contents. For instance, prototypes are not necessary to provide here as a map as
+// they are either tacked onto the function definition nodes or in the types applied to the AST nodes, however
+// mapping type ids is required as later steps need to be able to interpret type definitions.
+// 
+#[derive(Debug, Clone)]
+pub struct MIRDecomposedRegistry {
+    pub typeid_map: HashMap<MIRTypeId, MIRType>
+}
+
+impl MIRDecomposedRegistry {
+    pub fn decompose_registry(registry: MIRSymbolRegistry) -> Self {
+        Self {
+            typeid_map: registry.typeid_defs
+        }
+    }
+    
+    pub fn resolve_type_id(&self, id: &MIRTypeId) -> Option<&MIRType> {
+        self.typeid_map.get(id)
     }
 }

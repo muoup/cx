@@ -1,17 +1,17 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 use cx_util::namespace::NamespacePath;
 
-use crate::mir::{
-    data::{MIRFunctionPrototype, MIRType, MIRTypeId},
+use crate::{mir::{
+    data::MIRFunctionPrototype,
     expression::MIRExpression, global::MIRGlobalVariable,
-};
+}, registry::MIRDecomposedRegistry};
 
 #[derive(Debug, Clone)]
 pub struct MIRUnit {
     pub prototypes: Vec<MIRFunctionPrototype>,
     pub functions: Vec<MIRFunction>,
     pub global_variables: Vec<MIRGlobalVariable>,
-    pub type_definitions: HashMap<MIRTypeId, MIRType>,
+    pub registry: MIRDecomposedRegistry,
     pub source_path: PathBuf,
 }
 

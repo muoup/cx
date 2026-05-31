@@ -6,6 +6,7 @@ pub mod intrinsic_types;
 pub mod mir;
 pub mod symbol;
 pub mod program;
+pub mod registry;
 
 mod format;
 

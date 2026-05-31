@@ -384,7 +384,7 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<CXPattern> {
             }
 
             if ident.namespace.is_root() {
-                Ok(CXPattern::Binding(ident.raw_name().unwrap()))
+                Ok(CXPattern::Binding(ident.root_name().unwrap()))
             } else {
                 let binding = if try_next!(data.tokens, punctuator!(OpenParen)) {
                     if try_next!(data.tokens, punctuator!(CloseParen)) {
