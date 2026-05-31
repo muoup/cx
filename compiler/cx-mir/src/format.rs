@@ -6,15 +6,8 @@ use crate::mir::expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpression
 use crate::mir::global::{MIRGlobalVarKind, MIRGlobalVariable};
 use crate::mir::r#type::{MIRField, MIRFloatType, MIRIntegerType, MIRType, MIRTypeId, MIRTypeKind};
 use crate::program::{MIRFunction, MIRUnit};
-use crate::registry::MIRSymbolRegistry;
-use std::collections::HashMap;
+use crate::registry::{MIRDecomposedRegistry, MIRSymbolRegistry};
 use std::fmt::{Display, Formatter};
-
-#[derive(Clone, Copy)]
-enum TypeRenderMode {
-    Inline,
-    Definition,
-}
 
 #[derive(Default)]
 struct TypeDisplayState {
@@ -67,34 +60,17 @@ impl MIRDisplayable for MIRGlobalVarKind {}
 
 trait MIRTypeDefinitions {
     fn resolve_type_id(&self, id: MIRTypeId) -> Option<&MIRType>;
-
-    fn type_id(&self, ty: &MIRType) -> Option<MIRTypeId> {
-        self.iter_types()
-            .find_map(|(id, candidate)| std::ptr::eq(candidate, ty).then_some(id))
-    }
-
-    fn iter_types<'a>(&'a self) -> Box<dyn Iterator<Item = (MIRTypeId, &'a MIRType)> + 'a>;
 }
 
 impl MIRTypeDefinitions for MIRSymbolRegistry<'_> {
     fn resolve_type_id(&self, id: MIRTypeId) -> Option<&MIRType> {
         self.resolve_type_id(&id)
     }
-
-    fn iter_types<'a>(&'a self) -> Box<dyn Iterator<Item = (MIRTypeId, &'a MIRType)> + 'a> {
-        Box::new(std::iter::empty())
-    }
 }
 
-impl MIRTypeDefinitions for HashMap<MIRTypeId, MIRType> {
+impl MIRTypeDefinitions for MIRDecomposedRegistry {
     fn resolve_type_id(&self, id: MIRTypeId) -> Option<&MIRType> {
-        self.get(&id)
-    }
-
-    fn iter_types<'a>(&'a self) -> Box<dyn Iterator<Item = (MIRTypeId, &'a MIRType)> + 'a> {
-        let mut types = self.iter().map(|(id, ty)| (*id, ty)).collect::<Vec<_>>();
-        types.sort_by_key(|(id, _)| *id);
-        Box::new(types.into_iter())
+        self.resolve_type_id(&id)
     }
 }
 
@@ -159,31 +135,6 @@ fn indentation(depth: usize) -> String {
     "  ".repeat(depth)
 }
 
-fn type_id_of(definitions: &dyn MIRTypeDefinitions, ty: &MIRType) -> Option<MIRTypeId> {
-    definitions.type_id(ty)
-}
-
-fn should_inline_as_reference(ty: &MIRType, id: Option<MIRTypeId>) -> bool {
-    matches!(
-        ty.kind,
-        MIRTypeKind::Structured { .. }
-            | MIRTypeKind::Union { .. }
-            | MIRTypeKind::TaggedUnion { .. }
-            | MIRTypeKind::Undefined
-    ) && (ty.get_name().is_some() || id.is_some())
-}
-
-fn should_emit_type_definition(ty: &MIRType) -> bool {
-    ty.get_name().is_some()
-        || matches!(
-            ty.kind,
-            MIRTypeKind::Structured { .. }
-                | MIRTypeKind::Union { .. }
-                | MIRTypeKind::TaggedUnion { .. }
-                | MIRTypeKind::Undefined
-        )
-}
-
 fn write_type_reference(
     f: &mut Formatter<'_>,
     ty: &MIRType,
@@ -220,10 +171,9 @@ fn write_type_root(
     f: &mut Formatter<'_>,
     definitions: &dyn MIRTypeDefinitions,
     ty: &MIRType,
-    mode: TypeRenderMode,
 ) -> std::fmt::Result {
     let mut state = TypeDisplayState::default();
-    write_type_value(f, definitions, ty, mode, &mut state)?;
+    write_type_value(f, definitions, ty, &mut state)?;
 
     if let Some(ident) = ty.strong_identifier() {
         write!(f, " /* {ident} */")?;
@@ -236,28 +186,15 @@ fn write_type_value(
     f: &mut Formatter<'_>,
     definitions: &dyn MIRTypeDefinitions,
     ty: &MIRType,
-    mode: TypeRenderMode,
     state: &mut TypeDisplayState,
 ) -> std::fmt::Result {
-    let id = type_id_of(definitions, ty);
-    if let Some(id) = id {
-        if state.contains(id) {
-            return write_recursive_reference(f, ty, id);
-        }
-        state.enter(id);
-        let result = write_type_body(f, definitions, ty, id, mode, state);
-        state.exit(id);
-        result
-    } else {
-        write_type_body(f, definitions, ty, MIRTypeId(0), mode, state)
-    }
+    write_type_body(f, definitions, ty, None, state)
 }
 
 fn write_type_id(
     f: &mut Formatter<'_>,
     definitions: &dyn MIRTypeDefinitions,
     id: MIRTypeId,
-    mode: TypeRenderMode,
     state: &mut TypeDisplayState,
 ) -> std::fmt::Result {
     let Some(ty) = definitions.resolve_type_id(id) else {
@@ -269,7 +206,7 @@ fn write_type_id(
     }
 
     state.enter(id);
-    let result = write_type_body(f, definitions, ty, id, mode, state);
+    let result = write_type_body(f, definitions, ty, Some(id), state);
     state.exit(id);
     result
 }
@@ -330,7 +267,7 @@ fn write_aggregate(
             match field {
                 MIRField::Standard { name, type_id } => {
                     write!(f, "{name}: ")?;
-                    write_type_id(f, definitions, *type_id, TypeRenderMode::Inline, state)?;
+                    write_type_id(f, definitions, *type_id, state)?;
                 }
                 MIRField::Bitfield {
                     name,
@@ -340,13 +277,7 @@ fn write_aggregate(
                     if let Some(name) = name {
                         write!(f, "{name}: ")?;
                     }
-                    write_type_id(
-                        f,
-                        definitions,
-                        *integer_type_id,
-                        TypeRenderMode::Inline,
-                        state,
-                    )?;
+                    write_type_id(f, definitions, *integer_type_id, state)?;
                     write!(f, " : {width}")?;
                 }
             }
@@ -360,15 +291,20 @@ fn write_type_body(
     f: &mut Formatter<'_>,
     definitions: &dyn MIRTypeDefinitions,
     ty: &MIRType,
-    id: MIRTypeId,
-    mode: TypeRenderMode,
+    id: Option<MIRTypeId>,
     state: &mut TypeDisplayState,
 ) -> std::fmt::Result {
-    let display_id = (id.0 != 0).then_some(id);
-
-    if matches!(mode, TypeRenderMode::Inline) && should_inline_as_reference(ty, display_id) {
+    if id.is_some()
+        && matches!(
+            ty.kind,
+            MIRTypeKind::Structured { .. }
+                | MIRTypeKind::Union { .. }
+                | MIRTypeKind::TaggedUnion { .. }
+                | MIRTypeKind::Undefined
+        )
+    {
         write_type_qualifiers_prefix(f, ty.specifiers)?;
-        return write_type_reference(f, ty, display_id);
+        return write_type_reference(f, ty, id);
     }
 
     if !matches!(ty.kind, MIRTypeKind::PointerTo { .. }) {
@@ -391,7 +327,7 @@ fn write_type_body(
         }
         MIRTypeKind::Unit => write!(f, "()"),
         MIRTypeKind::PointerTo { inner_type } => {
-            write_type_id(f, definitions, *inner_type, TypeRenderMode::Inline, state)?;
+            write_type_id(f, definitions, *inner_type, state)?;
             write!(f, "*")?;
             write_type_qualifiers_suffix(f, ty.specifiers)
         }
@@ -399,7 +335,7 @@ fn write_type_body(
             inner_type,
             bitfield,
         } => {
-            write_type_id(f, definitions, *inner_type, TypeRenderMode::Inline, state)?;
+            write_type_id(f, definitions, *inner_type, state)?;
             if let Some(bitfield) = bitfield {
                 write!(
                     f,
@@ -415,21 +351,11 @@ fn write_type_body(
             inner_type,
         } => {
             write!(f, "[")?;
-            write_type_id(f, definitions, *inner_type, TypeRenderMode::Inline, state)?;
+            write_type_id(f, definitions, *inner_type, state)?;
             write!(f, "; {size}]")
         }
         MIRTypeKind::Opaque { size } => write!(f, "opaque({size})"),
-        MIRTypeKind::Undefined => {
-            if matches!(mode, TypeRenderMode::Definition) {
-                write!(f, "undefined")?;
-                if let Some(name) = ty.debug_name().or_else(|| ty.get_name()) {
-                    write!(f, " {name}")?;
-                }
-                Ok(())
-            } else {
-                write_type_reference(f, ty, display_id)
-            }
-        }
+        MIRTypeKind::Undefined => write_type_reference(f, ty, id),
         MIRTypeKind::Str => write!(f, "_str"),
         MIRTypeKind::Function { signature } => {
             write_signature_with_context(f, signature, definitions, state)
@@ -437,48 +363,9 @@ fn write_type_body(
     }
 }
 
-fn write_type_definitions(
-    f: &mut Formatter<'_>,
-    definitions: &dyn MIRTypeDefinitions,
-) -> std::fmt::Result {
-    writeln!(f, "\nType Definitions:")?;
-
-    let mut any = false;
-    for (id, ty) in definitions.iter_types() {
-        if !should_emit_type_definition(ty) {
-            continue;
-        }
-
-        any = true;
-        writeln!(
-            f,
-            "{} = {}",
-            id,
-            MIRTypeDefinitionDisplay { ty, definitions }
-        )?;
-    }
-
-    if !any {
-        writeln!(f, "(none)")?;
-    }
-
-    Ok(())
-}
-
-struct MIRTypeDefinitionDisplay<'a> {
-    ty: &'a MIRType,
-    definitions: &'a dyn MIRTypeDefinitions,
-}
-
-impl Display for MIRTypeDefinitionDisplay<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write_type_root(f, self.definitions, self.ty, TypeRenderMode::Definition)
-    }
-}
-
 impl Display for MIRDisplay<'_, MIRType> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write_type_root(f, self.definitions, self.content, TypeRenderMode::Inline)
+        write_type_root(f, self.definitions, self.content)
     }
 }
 
@@ -619,8 +506,6 @@ impl Display for MIRDisplay<'_, MIRUnit> {
             )?;
         }
 
-        write_type_definitions(f, self.definitions)?;
-
         writeln!(f, "\nFunctions:")?;
         for function in &self.content.functions {
             writeln!(f, "{}", function.display_with_definitions(self.definitions))?;
@@ -651,7 +536,7 @@ fn write_signature_with_context(
             "{}: ",
             param.name.as_ref().map(CXIdent::as_str).unwrap_or("_")
         )?;
-        write_type_value(f, definitions, &param._type, TypeRenderMode::Inline, state)?;
+        write_type_value(f, definitions, &param._type, state)?;
     }
     if signature.var_args {
         if !signature.params.is_empty() {
@@ -660,13 +545,7 @@ fn write_signature_with_context(
         write!(f, "...")?;
     }
     write!(f, ") -> ")?;
-    write_type_value(
-        f,
-        definitions,
-        &signature.return_type,
-        TypeRenderMode::Inline,
-        state,
-    )?;
+    write_type_value(f, definitions, &signature.return_type, state)?;
 
     Ok(())
 }

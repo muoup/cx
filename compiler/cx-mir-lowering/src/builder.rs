@@ -54,7 +54,7 @@ impl LMIRBuilder {
                 .map(|proto| {
                     (
                         proto.name.to_string(),
-                        convert_cx_prototype(proto, &mir.type_definitions),
+                        convert_cx_prototype(proto, &mir.registry),
                     )
                 })
                 .collect(),

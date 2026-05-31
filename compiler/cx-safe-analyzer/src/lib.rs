@@ -145,7 +145,7 @@ impl FMIRContext {
 
     pub fn new_from(mir: &MIRUnit) -> CXResult<Self> {
         let mut context = FMIRContext {
-            env: FMIREnvironment::new(mir.source_path.to_owned(), mir.type_definitions.clone()),
+            env: FMIREnvironment::new(mir.source_path.to_owned(), mir.registry.clone()),
             functions: HashMap::new(),
         };
 

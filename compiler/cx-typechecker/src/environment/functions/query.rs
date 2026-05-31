@@ -2,7 +2,7 @@ use cx_ast::ast::modifiers::CXLinkageMode;
 use cx_ast::{
     ast::{
         expression::CXExpression,
-        function::{CXFunctionContract, CXFunctionKind},
+        function::CXFunctionContract,
         template::CXTemplateInput,
         types::{CXTypeKind, PredeclarationType},
     },
@@ -11,9 +11,8 @@ use cx_ast::{
 use cx_mir::mir::{
     data::{MIRFunctionPrototype, MIRParameter, MIRType},
     name_mangling::base_mangle_standard,
-    program::EnvironmentNamespace,
 };
-use cx_tokens::TokenRange;
+use cx_mir::program::EnvironmentNamespace;
 use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 use crate::{
@@ -158,7 +157,7 @@ fn query_type_constructor(
             },
             var_args: false,
             contract: CXFunctionContract::default(),
-        }
+        },
     };
 
     if env.get_realized_func(&mangled_name).is_none()
