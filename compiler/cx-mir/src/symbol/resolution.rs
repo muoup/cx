@@ -1,11 +1,7 @@
 use cx_ast::symbols::UntypedSymbol;
 use cx_util::CXResult;
 
-use crate::{
-    mir::data::MIRTemplateInput,
-    symbol::MIRSymbol,
-    registry::MIRSymbolRegistry
-};
+use crate::{mir::data::MIRTemplateInput, registry::MIRSymbolRegistry, symbol::MIRSymbol};
 
 pub fn resolve_symbol(
     _env: &mut MIRSymbolRegistry,

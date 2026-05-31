@@ -550,7 +550,7 @@ impl MIRType {
     pub fn named_type_id(&self, definitions: &MIRSymbolRegistry) -> Option<MIRTypeId> {
         self.strong_identifier()
             .and_then(|ident| definitions.get_preresolved_symbol(ident))
-            .and_then(|sym| sym.as_type())
+            .and_then(|sym| sym.into_type_id())
     }
 
     pub fn aggregate_fields(

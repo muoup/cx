@@ -1,14 +1,14 @@
 use std::collections::{HashMap, HashSet};
 
 use cx_ast::registry::GlobalSymbolRegistry;
-use cx_util::{CXResult, namespace::QualifiedName};
+use cx_util::{namespace::QualifiedName, CXResult};
 
 use crate::{
     mir::{
         data::{MIRFunctionPrototype, MIRType, MIRTypeId},
         expression::{MIRExpression, MIRPureExpression},
     },
-    symbol::{MIRSymbol, resolution::resolve_symbol},
+    symbol::{resolution::resolve_symbol, MIRSymbol},
 };
 
 //
@@ -40,12 +40,14 @@ impl<'a> MIRSymbolRegistry<'a> {
         if let Some(preresolved_symbol) = self.get_preresolved_symbol(name) {
             return Ok(Some(preresolved_symbol.clone()));
         }
-        
+
         let Some(untyped_symbol) = self.global_registry.resolve(name) else {
             return Ok(None);
         };
 
-        resolve_symbol(self, &untyped_symbol).map(Option::Some)
+        let symbol = resolve_symbol(self, &untyped_symbol)?;
+        self.insert_symbol(name.clone(), symbol.clone());
+        Ok(Some(symbol))
     }
 
     pub fn get_preresolved_symbol(&self, name: &QualifiedName) -> Option<&MIRSymbol> {
@@ -56,16 +58,24 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.typeid_defs.get(id)
     }
 
+    pub fn insert_symbol(&mut self, name: QualifiedName, symbol: MIRSymbol) {
+        self.cache.insert(name, symbol);
+    }
+
+    pub fn insert_type_symbol(&mut self, name: QualifiedName, id: MIRTypeId) {
+        self.insert_symbol(name, MIRSymbol::Type(id));
+    }
+
     pub fn insert_value(&mut self, name: QualifiedName, expr: MIRExpression) {
-        self.cache.insert(name, MIRSymbol::Value(expr));
+        self.insert_symbol(name, MIRSymbol::Value(expr));
     }
 
     pub fn insert_pure_value(&mut self, name: QualifiedName, expr: MIRPureExpression) {
-        self.cache.insert(name, MIRSymbol::PureValue(expr));
+        self.insert_symbol(name, MIRSymbol::PureValue(expr));
     }
 
     pub fn insert_function_symbol(&mut self, name: QualifiedName, prototype: MIRFunctionPrototype) {
-        self.cache.insert(
+        self.insert_symbol(
             name,
             MIRSymbol::PureValue(MIRPureExpression::FunctionReference(Box::new(prototype))),
         );
@@ -77,19 +87,19 @@ impl<'a> MIRSymbolRegistry<'a> {
 // the complete meaning of its contents. For instance, prototypes are not necessary to provide here as a map as
 // they are either tacked onto the function definition nodes or in the types applied to the AST nodes, however
 // mapping type ids is required as later steps need to be able to interpret type definitions.
-// 
+//
 #[derive(Debug, Clone)]
 pub struct MIRDecomposedRegistry {
-    pub typeid_map: HashMap<MIRTypeId, MIRType>
+    pub typeid_map: HashMap<MIRTypeId, MIRType>,
 }
 
 impl MIRDecomposedRegistry {
     pub fn decompose_registry(registry: MIRSymbolRegistry) -> Self {
         Self {
-            typeid_map: registry.typeid_defs
+            typeid_map: registry.typeid_defs,
         }
     }
-    
+
     pub fn resolve_type_id(&self, id: &MIRTypeId) -> Option<&MIRType> {
         self.typeid_map.get(id)
     }
