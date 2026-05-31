@@ -1,4 +1,4 @@
-use crate::environment::{TypeEnvironment, symbols::SymbolValueOrigin};
+use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::pattern::tagged_union::{
@@ -8,10 +8,10 @@ use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
 use cx_mir::mir::data::MIRType;
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
+use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin};
 use cx_mir::mir::pattern::MIRPattern;
-use cx_mir::mir::program::EnvironmentNamespace;
-use cx_util::CXResult;
+use cx_mir::program::EnvironmentNamespace;
+use cx_util::{CXResult, namespace::QualifiedName};
 
 pub(crate) fn typecheck_is(
     env: &mut TypeEnvironment,
@@ -79,13 +79,15 @@ pub(crate) fn typecheck_is(
     if let Some(inner_name) = &inner_name {
         let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
         env.symbols.insert_value(
-            inner_name.clone(),
+            QualifiedName::new_raw(inner_name.clone()),
             MIRExpression {
                 token_range: None,
-                kind: MIRExpressionKind::Variable(inner_name.clone()),
+                kind: MIRExpressionKind::Variable {
+                    name: inner_name.clone(),
+                    location: SymbolValueOrigin::Local,
+                },
                 _type: variant_ref_type,
             },
-            Some(SymbolValueOrigin::Local),
         );
     }
 

@@ -14,12 +14,11 @@ use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
-    expression::{MIRExpression, MIRExpressionKind},
+    expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
     pattern::MIRPattern,
 };
 use cx_mir::program::EnvironmentNamespace;
-use cx_mir::type_context::MIRTypeContext;
-use cx_util::CXResult;
+use cx_util::{CXResult, namespace::QualifiedName};
 
 pub fn typecheck_match(
     env: &mut TypeEnvironment,
@@ -138,7 +137,7 @@ pub fn typecheck_match(
                     );
                 };
 
-                let variant_type = env.symbols.resolve_type_id(variants[variant_id].type_id());
+                let variant_type = env.symbols.resolve_type_id(variants[variant_id].ty());
 
                 matched_variants.insert(variant_id);
 
@@ -188,7 +187,7 @@ pub fn typecheck_match(
                                 token_range: None,
                                 kind: MIRExpressionKind::Variable {
                                     name: inner_name.clone(),
-                                    location: SymbolVaFlueOrigin::Local,
+                                    location: SymbolValueOrigin::Local,
                                 },
                                 _type: variant_ref_type,
                             },
@@ -213,9 +212,8 @@ pub fn typecheck_match(
                         // Typecheck the body with the borrowed variant value bound.
                         env.symbols.push_scope();
                         env.symbols.insert_value(
-                            inner_name.clone(),
+                            QualifiedName::new_raw(inner_name.clone()),
                             variant_value_expr,
-                            Some(SymbolValueOrigin::Local),
                         );
                         let body_expr =
                             typecheck_expr(env, namespace, body, None)?.into_expression()?;

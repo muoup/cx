@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    environment::{BindingMoveState, TypeEnvironment, symbols::SymbolValueOrigin},
+    environment::{BindingMoveState, TypeEnvironment},
     log_typecheck_error,
     type_checking::{
         coercion::implicit::conversion::try_argument_conversion,
@@ -10,13 +10,16 @@ use crate::{
         value::locals::{ensure_binding_available, mark_binding},
     },
 };
-use cx_ast::ast::{expression::{CXExpression, CXUnpackBinding}, modifiers::CX_CONST};
+use cx_ast::ast::{
+    expression::{CXExpression, CXUnpackBinding},
+    modifiers::CX_CONST,
+};
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
-    expression::{MIRExpression, MIRExpressionKind},
+    expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
     program::EnvironmentNamespace,
 };
-use cx_util::{CXResult, identifier::CXIdent};
+use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 pub(crate) fn typecheck_move(
     env: &mut TypeEnvironment,
@@ -44,7 +47,7 @@ pub(crate) fn typecheck_move(
 
     let mut inner_val = inner.into_expression()?;
 
-    if !matches!(inner_val.kind, MIRExpressionKind::Variable(_)) {
+    if !matches!(inner_val.kind, MIRExpressionKind::Variable { .. }) {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
@@ -224,7 +227,7 @@ pub(crate) fn typecheck_unpack(
         );
     }
 
-    let Some(fields) = env.symbols.aggregate_fields(&inner_type).cloned() else {
+    let Some(fields) = env.symbols.aggregate_fields(&inner_type) else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
@@ -332,13 +335,15 @@ pub(crate) fn typecheck_unpack(
         let binding_name = CXIdent::new(unpack_binding.binding.as_str());
         let binding_ref_type = env.symbols.mem_ref_to(field_type.clone());
         env.symbols.insert_value(
-            binding_name.clone(),
+            QualifiedName::new_raw(binding_name.clone()),
             MIRExpression {
                 token_range: None,
-                kind: MIRExpressionKind::Variable(binding_name.clone()),
+                kind: MIRExpressionKind::Variable {
+                    name: binding_name.clone(),
+                    location: SymbolValueOrigin::Local,
+                },
                 _type: binding_ref_type,
             },
-            Some(SymbolValueOrigin::Local),
         );
         if field_type.is_nocopy() {
             env.function

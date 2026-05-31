@@ -4,11 +4,11 @@ use cx_lmir::{
     types::{LMIRIntegerType, LMIRType, LMIRTypeKind},
     LMIRInstructionKind, LMIRValue,
 };
-use cx_mir::mir::{
+use cx_mir::{mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
     pattern::MIRPattern,
-};
+}, type_context::MIRTypeContext};
 use cx_util::CXResult;
 
 use super::expressions::lower_expression;
@@ -318,7 +318,7 @@ pub fn lower_match(
     let mut bc_condition = lower_expression(builder, condition)?;
     let inner = condition._type
         .mem_ref_inner()
-        .and_then(|id| builder.registry.resolve_type_id(&id))
+        .map(|id| builder.registry.resolve_type_id(id))
         .unwrap_or_else(|| &condition._type)
         .clone();
 

@@ -293,7 +293,8 @@ pub fn convert_expression(
             Ok(then_node(assert_node, return_node))
         }
 
-        MIRExpressionKind::Variable(name) | MIRExpressionKind::ContractVariable { name, .. } => {
+        MIRExpressionKind::Variable { name, .. }
+        | MIRExpressionKind::ContractVariable { name, .. } => {
             // TODO: Force param
 
             if !mir_expr._type.is_memory_reference()

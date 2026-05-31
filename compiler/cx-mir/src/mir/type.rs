@@ -55,7 +55,7 @@ impl MIRField {
         }
     }
 
-    pub fn type_id(&self) -> MIRTypeId {
+    pub fn ty(&self) -> MIRTypeId {
         match self {
             MIRField::Standard { type_id, .. } => *type_id,
             MIRField::Bitfield {
@@ -338,6 +338,25 @@ impl MIRType {
         }
     }
 
+    pub fn internal_function() -> Self {
+        MIRType::from(MIRTypeKind::Function {
+            signature: Box::new(MIRFunctionSignature::default()),
+        })
+        .with_name(CXIdent::from("__internal_function"))
+    }
+
+    pub fn padded_size(&self, _definitions: &MIRSymbolRegistry) -> usize {
+        match &self.kind {
+            MIRTypeKind::Integer { _type, .. } => _type.bytes() as usize,
+            MIRTypeKind::Float { _type } => _type.bytes() as usize,
+            MIRTypeKind::PointerTo { .. } | MIRTypeKind::MemoryReference { .. } => 8,
+            MIRTypeKind::Unit => 0,
+            MIRTypeKind::Array { length, .. } => *length,
+            MIRTypeKind::Opaque { size } => *size,
+            _ => 0,
+        }
+    }
+
     pub fn with_name(mut self, name: CXIdent) -> MIRType {
         self.strong_identifier = Some(QualifiedName::new_raw(name));
         self
@@ -575,7 +594,7 @@ impl MIRType {
 
     pub fn aggregate_fields(
         &self,
-        definitions: &MIRSymbolRegistry,
+        definitions: &impl MIRTypeContext,
     ) -> Option<Vec<(String, MIRType)>> {
         let fields = match &self.kind {
             MIRTypeKind::Structured { fields, .. } => fields,
@@ -592,7 +611,7 @@ impl MIRType {
                 .map(|f| {
                     Some((
                         f.name()?.to_string(),
-                        definitions.resolve_type_id(f.type_id()).clone(),
+                        definitions.resolve_type_id(f.ty()).clone(),
                     ))
                 })
                 .collect::<Option<_>>()?,

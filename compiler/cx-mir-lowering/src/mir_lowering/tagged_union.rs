@@ -30,7 +30,7 @@ pub fn get_tagged_union_tag(
             struct_: value,
             struct_type: bc_sum_type,
             field_index: 1,
-            field_offset: tag_offset,
+            field_offset: usize::from(tag_offset),
         },
         LMIRType::default_pointer(),
         true,
@@ -97,7 +97,7 @@ pub fn lower_tagged_union_set(
                 dest: bc_target.clone(),
                 src: bc_inner,
                 size: LMIRValue::IntImmediate {
-                    val: inner_bc_type.size() as i64,
+                    val: usize::from(inner_bc_type.size()) as i64,
                     _type: LMIRIntegerType::I64,
                 },
                 alignment: inner_bc_type.alignment(),
@@ -161,7 +161,7 @@ pub fn lower_construct_tagged_union(
                 dest: allocation.clone(),
                 src: bc_inner,
                 size: LMIRValue::IntImmediate {
-                    val: inner_type.size() as i64,
+                    val: usize::from(inner_type.size()) as i64,
                     _type: LMIRIntegerType::I64,
                 },
                 alignment: inner_type.alignment(),

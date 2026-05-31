@@ -30,7 +30,7 @@ pub fn struct_field(
         .position(|field| field.name() == Some(field_name))
         .and_then(|index| {
             let field_type = definitions
-                .resolve_type_id(fields[index].type_id())
+                .resolve_type_id(fields[index].ty())
                 .clone();
             Some(StructField { index, field_type })
         })

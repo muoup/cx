@@ -1,10 +1,11 @@
-use std::path::PathBuf;
 use cx_util::namespace::NamespacePath;
+use std::path::PathBuf;
 
-use crate::{mir::{
-    data::MIRFunctionPrototype,
-    expression::MIRExpression, global::MIRGlobalVariable,
-}, registry::MIRDecomposedRegistry};
+pub use crate::mir::global::{MIRGlobalVarKind, MIRGlobalVariable};
+use crate::{
+    mir::{data::MIRFunctionPrototype, expression::MIRExpression},
+    registry::MIRDecomposedRegistry,
+};
 
 #[derive(Debug, Clone)]
 pub struct MIRUnit {

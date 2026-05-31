@@ -135,8 +135,8 @@ pub fn compatible_types(
                 if field1.name() != field2.name() {
                     return false;
                 }
-                let field_type1 = env.symbols.resolve_type_id(field1.type_id());
-                let field_type2 = env.symbols.resolve_type_id(field2.type_id());
+                let field_type1 = env.symbols.resolve_type_id(field1.ty());
+                let field_type2 = env.symbols.resolve_type_id(field2.ty());
 
                 compatible_types(env, &field_type1, &field_type2).unwrap_or(false)
             }))

@@ -55,8 +55,10 @@ pub(crate) fn typecheck_identifier(
     };
 
     if let Some(function_type) = function_type {
-        env.symbols
-            .insert_function_symbol(name.name.clone(), function_type.clone());
+        env.symbols.insert_function_symbol(
+            QualifiedName::new_raw(name.name.clone()),
+            function_type.clone(),
+        );
         Ok(TypecheckResult::from(MIRExpression {
             token_range: None,
             kind: MIRExpressionKind::FunctionReference {

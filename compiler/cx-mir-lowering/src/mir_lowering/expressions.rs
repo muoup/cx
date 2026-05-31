@@ -7,16 +7,20 @@ use cx_lmir::{
     LMIRABISlot, LMIRFunctionSignature, LMIRInstructionKind, LMIRIntBinOp, LMIRParameterABI,
     LMIRPtrBinOp, LMIRValue,
 };
-use cx_mir::mir::{
-    data::{MIRFunctionSignature, MIRTypeKind},
-    expression::{MIRExpression, MIRExpressionKind, MIRFunctionContract, StructInitialization},
-    pattern::MIRPattern,
-    program::MIRFunction,
-    r#type::{MIRField, MIRType},
+use cx_mir::{
+    mir::{
+        data::{MIRFunctionSignature, MIRTypeKind},
+        expression::{MIRExpression, MIRExpressionKind, MIRFunctionContract, StructInitialization},
+        pattern::MIRPattern,
+        program::MIRFunction,
+        r#type::{MIRField, MIRType},
+    },
+    registry::MIRDecomposedRegistry,
+    type_context::MIRTypeContext,
 };
 use cx_util::{identifier::CXIdent, CXResult};
 
-use crate::builder::LMIRBuilder;
+use crate::{builder::LMIRBuilder, mir_lowering::types::convert_type};
 
 use super::abi::classify_signature;
 use super::binary_ops::{lower_binary_op, lower_unary_op};
@@ -43,16 +47,14 @@ enum AggregateMemberLayout {
 
 fn aggregate_member_layout(
     aggregate_type: &MIRType,
-    definitions: &cx_mir::mir::data::MIRSymbolRegistry,
+    definitions: &MIRDecomposedRegistry,
     member_index: usize,
 ) -> AggregateMemberLayout {
     let aggregate_type = definitions.memory_resident_type(aggregate_type);
+
     match &aggregate_type.kind {
-        MIRTypeKind::Union { .. } => {
-            let fields = definitions
-                .aggregate_fields(aggregate_type)
-                .expect("union type must have fields");
-            let field = fields
+        MIRTypeKind::Union { variants } => {
+            let field = variants
                 .get(member_index)
                 .unwrap_or_else(|| panic!("member index {member_index} out of bounds"));
             match field {
@@ -62,10 +64,7 @@ fn aggregate_member_layout(
                     width,
                     ..
                 } => {
-                    let storage_type = definitions
-                        .get(*integer_type_id)
-                        .unwrap_or_else(|| panic!("Unknown type id {}", integer_type_id.0))
-                        .clone();
+                    let storage_type = definitions.resolve_type_id(*integer_type_id).clone();
                     AggregateMemberLayout::Bitfield {
                         storage_byte_offset: 0,
                         bit_offset: 0,
@@ -75,10 +74,7 @@ fn aggregate_member_layout(
                 }
             }
         }
-        MIRTypeKind::Structured { .. } => {
-            let fields = definitions
-                .aggregate_fields(aggregate_type)
-                .expect("structured tycx_mir::mir::r#type::pe must have fields");
+        MIRTypeKind::Structured { fields } => {
             let mut offset = 0usize;
             let mut active_storage: Option<(MIRType, usize, usize)> = None;
 
@@ -88,16 +84,18 @@ fn aggregate_member_layout(
                         if let Some((storage_type, storage_offset, used_bits)) =
                             active_storage.take()
                         {
+                            let bc_storage_type = convert_type(&storage_type, definitions);
+
                             offset = storage_offset
-                                + (used_bits.div_ceil(storage_type.type_size(definitions) * 8))
-                                    * storage_type.type_size(definitions);
+                                + (used_bits.div_ceil(usize::from(bc_storage_type.size()) * 8))
+                                    * usize::from(bc_storage_type.size());
                         }
 
                         let field_type = definitions
-                            .get(*type_id)
-                            .unwrap_or_else(|| panic!("Unknown type id {}", type_id.0));
-                        let alignment = field_type.type_alignment(definitions);
-                        offset = offset.div_ceil(alignment) * alignment;
+                            .resolve_type_id(*type_id);
+                        let bc_field_type = convert_type(&field_type, definitions);
+                        let alignment = bc_field_type.alignment();
+                        offset = offset.div_ceil(alignment as usize) * alignment as usize;
 
                         if index == member_index {
                             return AggregateMemberLayout::Standard {
@@ -105,7 +103,7 @@ fn aggregate_member_layout(
                             };
                         }
 
-                        offset += field_type.type_size(definitions);
+                        offset += usize::from(bc_field_type.size());
                     }
                     MIRField::Bitfield {
                         integer_type_id,
@@ -463,7 +461,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
 
         MIRExpressionKind::Unit => Ok(LMIRValue::NULL),
 
-        MIRExpressionKind::Variable(name) => {
+        MIRExpressionKind::Variable { name, .. } => {
             if let Some(local_value) = builder.get_symbol(name) {
                 return Ok(local_value);
             }
@@ -1299,11 +1297,8 @@ fn lower_struct_initializer(
     )?;
 
     for initialization in initializations {
-        let layout = aggregate_member_layout(
-            struct_type,
-            &builder.registry,
-            initialization.field_index,
-        );
+        let layout =
+            aggregate_member_layout(struct_type, &builder.registry, initialization.field_index);
 
         let field_offset = match layout {
             AggregateMemberLayout::Standard { byte_offset } => byte_offset,

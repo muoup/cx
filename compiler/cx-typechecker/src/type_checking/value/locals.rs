@@ -1,5 +1,5 @@
 use crate::{
-    environment::{BindingMoveState, TypeEnvironment, symbols::SymbolValueOrigin},
+    environment::{BindingMoveState, TypeEnvironment},
     log_typecheck_error,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
@@ -10,11 +10,11 @@ use crate::{
 };
 use cx_ast::ast::{expression::CXExpression, types::CXType};
 use cx_mir::mir::{
-    expression::{MIRExpression, MIRExpressionKind},
+    expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
     program::EnvironmentNamespace,
 };
 use cx_tokens::TokenRange;
-use cx_util::{CXResult, identifier::CXIdent};
+use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 pub(crate) fn ensure_binding_available(
     env: &mut TypeEnvironment,
@@ -100,18 +100,19 @@ pub(crate) fn typecheck_var_declaration(
         _type: mem_type.clone(),
     };
     env.symbols.insert_value(
-        name.clone(),
+        QualifiedName::new_raw(name.clone()),
         MIRExpression {
             token_range: None,
-            kind: MIRExpressionKind::Variable(name.clone()),
+            kind: MIRExpressionKind::Variable {
+                name: name.clone(),
+                location: SymbolValueOrigin::Local,
+            },
             _type: mem_type,
         },
-        Some(SymbolValueOrigin::Local),
     );
 
     if ty.is_nocopy() {
-        env.function
-            .track_binding(name.as_string(), ty.is_nodrop());
+        env.function.track_binding(name.as_string(), ty.is_nodrop());
     }
 
     Ok(TypecheckResult::from(binding))

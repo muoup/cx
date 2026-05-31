@@ -56,6 +56,13 @@ pub struct MIRSourceRange {
     pub end_token: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SymbolValueOrigin {
+    Local,
+    Global,
+    Contract,
+}
+
 #[derive(Clone, Debug, Default)]
 pub enum MIRExpressionKind {
     // Literals

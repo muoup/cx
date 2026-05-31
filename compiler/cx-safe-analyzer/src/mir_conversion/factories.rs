@@ -243,9 +243,8 @@ pub(crate) fn app2(
 
 pub(crate) fn source_variable_name(expr: &MIRExpression) -> Option<&CXIdent> {
     match &expr.kind {
-        MIRExpressionKind::Variable(name) | MIRExpressionKind::ContractVariable { name, .. } => {
-            Some(name)
-        }
+        MIRExpressionKind::Variable { name, .. }
+        | MIRExpressionKind::ContractVariable { name, .. } => Some(name),
         MIRExpressionKind::MemberAccess { base, .. } => source_variable_name(base),
         _ => None,
     }

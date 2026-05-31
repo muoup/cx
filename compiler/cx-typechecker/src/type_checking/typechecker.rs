@@ -27,7 +27,7 @@ use crate::type_checking::value::{
 use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
 use cx_mir::mir::data::{MIRIntegerType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
-use cx_mir::mir::program::EnvironmentNamespace;
+use cx_mir::program::EnvironmentNamespace;
 use cx_util::CXResult;
 
 use crate::type_checking::control_flow::r#match::typecheck_match;
@@ -312,7 +312,7 @@ fn typecheck_expr_inner(
         }
 
         CXExprKind::Return { value } => {
-            let return_type = env.current_function().return_type.clone();
+            let return_type = env.current_function().signature.return_type.clone();
             let value = value
                 .as_ref()
                 .map(|v| {
@@ -435,7 +435,7 @@ pub fn add_implicit_return(
                 signed: true,
             }),
         }))
-    } else if func.return_type.is_unit() {
+    } else if func.signature.return_type.is_unit() {
         None
     } else {
         return log_typecheck_error!(

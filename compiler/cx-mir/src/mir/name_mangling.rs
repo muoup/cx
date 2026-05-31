@@ -172,7 +172,7 @@ fn push_aggregate_fields(
     mangled.push_str(&fields.len().to_string());
     mangled.push('_');
     for field in fields {
-        let field_id = field.type_id();
+        let field_id = field.ty();
         if matches!(field, MIRField::Bitfield { .. }) {
             mangled.push('b');
         }

@@ -46,7 +46,7 @@ impl LMIRBuilder {
         LMIRBuilder {
             functions: Vec::new(),
             global_variables: Vec::new(),
-            registry: mir.registry,
+            registry: mir.registry.clone(),
 
             fn_map: mir
                 .prototypes

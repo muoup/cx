@@ -2,7 +2,7 @@ use crate::{environment::TypeEnvironment, type_checking::result::TypecheckResult
 use cx_ast::ast::modifiers::{CX_CONST, CXLinkageMode};
 use cx_mir::mir::{
     data::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind},
-    expression::{MIRExpression, MIRExpressionKind},
+    expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
     program::{MIRGlobalVarKind, MIRGlobalVariable},
 };
 use cx_util::identifier::CXIdent;
@@ -55,12 +55,14 @@ pub(crate) fn typecheck_string_literal(env: &mut TypeEnvironment, val: &str) -> 
 
     let str_ref_type = env
         .symbols
-        .context
         .mem_ref_to(MIRType::from(MIRTypeKind::Str).add_specifier(CX_CONST));
 
     TypecheckResult::from(MIRExpression {
         token_range: None,
-        kind: MIRExpressionKind::Variable(name_ident),
+        kind: MIRExpressionKind::Variable {
+            name: name_ident,
+            location: SymbolValueOrigin::Global,
+        },
         _type: str_ref_type,
     })
 }

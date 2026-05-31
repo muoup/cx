@@ -1,4 +1,4 @@
-use cx_ast::ast::modifiers::{CXTypeQualifiers, CX_CONST, CX_RESTRICT, CX_VOLATILE};
+use cx_ast::ast::modifiers::{CX_CONST, CX_RESTRICT, CX_VOLATILE, CXTypeQualifiers};
 use cx_util::identifier::CXIdent;
 
 use crate::mir::data::{MIRFunctionPrototype, MIRFunctionSignature, MIRParameter};
@@ -182,7 +182,7 @@ fn write_type_id(
     state: &mut TypeDisplayState,
 ) -> std::fmt::Result {
     let ty = definitions.resolve_type_id(id);
-    
+
     if state.contains(id) {
         return write_recursive_reference(f, ty, id);
     }
@@ -527,12 +527,7 @@ fn write_signature_with_context(
         write!(f, "...")?;
     }
     write!(f, ") -> ")?;
-    write_type_value(
-        f,
-        definitions,
-        &signature.return_type,
-        state,
-    )?;
+    write_type_value(f, definitions, &signature.return_type, state)?;
 
     Ok(())
 }
@@ -612,7 +607,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }
-            MIRExpressionKind::Variable { name, location } => {
+            MIRExpressionKind::Variable { name, location: _ } => {
                 write!(f, "LocalVariable {} <'", name)?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")

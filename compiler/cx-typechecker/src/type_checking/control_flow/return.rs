@@ -4,12 +4,10 @@ use cx_mir::mir::{
     r#type::MIRType,
 };
 use cx_tokens::TokenRange;
-use cx_util::CXResult;
+use cx_util::{CXResult, namespace::QualifiedName};
 
 use crate::{
-    environment::{
-        ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment, symbols::SymbolValueOrigin,
-    },
+    environment::{ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment},
     log_typecheck_error,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
@@ -31,7 +29,7 @@ pub fn typecheck_return(
     namespace: &EnvironmentNamespace,
     value: Option<MIRExpression>,
 ) -> CXResult<TypecheckResult> {
-    let return_type = env.current_function().return_type.clone();
+    let return_type = env.current_function().signature.return_type.clone();
 
     let return_value = match (value, &return_type) {
         (Some(mut some_value), return_type) if !return_type.is_unit() => {
@@ -87,7 +85,13 @@ pub fn typecheck_return(
         },
     );
 
-    if let Some((ret_name, ret_contract)) = env.current_function().contract.postcondition.clone() {
+    if let Some((ret_name, ret_contract)) = env
+        .current_function()
+        .signature
+        .contract
+        .postcondition
+        .clone()
+    {
         if ret_name.is_some() && return_type.is_unit() {
             return log_typecheck_error!(
                 env,
@@ -98,13 +102,13 @@ pub fn typecheck_return(
 
         env.push_scope(false, false);
 
-        for param in env.current_function().params.clone() {
+        for param in env.current_function().signature.params.clone() {
             let Some(name) = param.name else {
                 continue;
             };
 
             env.symbols.insert_value(
-                name.clone(),
+                QualifiedName::new_raw(name.clone()),
                 MIRExpression {
                     kind: MIRExpressionKind::ContractVariable {
                         name: name.clone(),
@@ -113,13 +117,12 @@ pub fn typecheck_return(
                     token_range: None,
                     _type: param._type.clone(),
                 },
-                Some(SymbolValueOrigin::Contract),
             );
         }
 
         if let Some(ret_name) = ret_name.as_ref() {
             env.symbols.insert_value(
-                ret_name.clone(),
+                QualifiedName::new_raw(ret_name.clone()),
                 MIRExpression {
                     kind: MIRExpressionKind::ContractVariable {
                         name: ret_name.clone(),
@@ -128,7 +131,6 @@ pub fn typecheck_return(
                     token_range: None,
                     _type: return_type.clone(),
                 },
-                Some(SymbolValueOrigin::Contract),
             );
         }
 

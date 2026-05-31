@@ -5,8 +5,12 @@ use cx_ast::ast::{
     function::CXFunctionPrototype,
     types::{CXType, CXTypeKind, PredeclarationType},
 };
-use cx_mir::{mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId}, registry::MIRSymbolRegistry, symbol::MIRSymbol};
-use cx_mir::mir::program::{EnvironmentNamespace, MIRFunction, MIRGlobalVariable, MIRUnit};
+use cx_mir::program::{EnvironmentNamespace, MIRFunction, MIRGlobalVariable, MIRUnit};
+use cx_mir::{
+    mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId},
+    registry::MIRSymbolRegistry,
+    symbol::MIRSymbol,
+};
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
 use cx_tokens::TokenRange;
@@ -15,6 +19,7 @@ use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::{NamespacePath, QualifiedName};
 
+use crate::environment::functions::completion::{complete_prototype_no_insert, complete_type};
 use crate::environment::functions::context::FunctionContext;
 pub use crate::environment::functions::control_flow::{
     BindingMoveState, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
@@ -23,14 +28,12 @@ pub use crate::environment::functions::control_flow::{
 use crate::environment::items::ItemRegistry;
 use crate::environment::source::SourceContext;
 use crate::environment::symbols::{SymbolRegistry, TemplateBindingFrame};
-use crate::environment::{
-    symbols::ResolvedValueSymbol,
-};
 use crate::log::TypeError;
 
 pub(crate) mod functions;
 pub(crate) mod items;
 pub(crate) mod source;
+pub(crate) mod symbols;
 
 pub use items::MIRFunctionGenRequest;
 
@@ -71,17 +74,15 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn resolve_type_id(&self, id: &MIRTypeId) -> &MIRType {
-        self.symbols.resolve_type_id(id)
+        self.symbols.resolve_type_id(*id)
     }
 
     pub fn ptr_inner(&self, ty: &MIRType) -> Option<&MIRType> {
-        ty.ptr_inner()
-            .and_then(|id| self.symbols.resolve_type_id(&id))
+        self.symbols.ptr_inner(ty)
     }
-    
+
     pub fn mem_ref_inner(&self, ty: &MIRType) -> Option<&MIRType> {
-        ty.mem_ref_inner()
-            .and_then(|id| self.symbols.resolve_type_id(&id))
+        self.symbols.mem_ref_inner(ty)
     }
 }
 
@@ -93,7 +94,7 @@ impl TypeEnvironment<'_> {
 
     pub fn bind_template_types(
         &mut self,
-        names: &[String],
+        names: &[CXIdent],
         args: &[MIRType],
     ) -> Result<TemplateBindingFrame, String> {
         self.symbols.bind_template_types(names, args)
@@ -218,8 +219,10 @@ impl TypeEnvironment<'_> {
                 self.items
                     .realized_fns
                     .insert(prototype.name.to_string(), prototype.clone());
-                self.symbols
-                    .insert_function_symbol(prototype.name.clone(), prototype.clone());
+                self.symbols.insert_function_symbol(
+                    QualifiedName::new_raw(prototype.name.clone()),
+                    prototype.clone(),
+                );
             },
         )
     }
@@ -236,7 +239,7 @@ impl TypeEnvironment<'_> {
             functions: self.items.generated_functions,
             prototypes: self.items.realized_fns.into_values().collect(),
             global_variables: self.items.realized_globals.into_values().collect(),
-            type_definitions: self.symbols.context,
+            registry: cx_mir::registry::MIRDecomposedRegistry::decompose_registry(self.symbols),
 
             source_path: self.source.compilation_unit.as_path().to_owned(),
         })

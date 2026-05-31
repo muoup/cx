@@ -1,20 +1,24 @@
 use crate::{
-    environment::{TypeEnvironment, symbols::SymbolValueOrigin},
+    environment::TypeEnvironment,
     log_typecheck_error,
     type_checking::{
         constexpr::constexpr_evaluate, typechecker::typecheck_expr,
         value::ensure_valid_allocation_type,
     },
 };
-use cx_ast::{
-    ast::{CXAST, expression::{CXExprKind, CXExpression}, global_var::CXGlobalVariable, modifiers::CXLinkageMode},
+use cx_ast::ast::{
+    CXAST,
+    expression::{CXExprKind, CXExpression},
+    global_var::CXGlobalVariable,
+    modifiers::CXLinkageMode,
 };
 use cx_mir::mir::{
-    data::{MIRIntegerType, MIRSymbolRegistry},
-    expression::{MIRExpression, MIRExpressionKind, MIRPureExpression},
+    data::MIRIntegerType,
+    expression::{MIRExpression, MIRExpressionKind, MIRPureExpression, SymbolValueOrigin},
     program::{EnvironmentNamespace, MIRGlobalVarKind, MIRGlobalVariable},
 };
-use cx_util::{CXResult, identifier::CXIdent};
+use cx_mir::registry::MIRSymbolRegistry;
+use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 pub fn complete_base_globals(
     env: &mut TypeEnvironment,
@@ -56,8 +60,10 @@ fn complete_global(
                 };
 
                 previous = Some(value);
-                env.symbols
-                    .insert_pure_value(variant.name.clone(), enum_literal(value));
+                env.symbols.insert_pure_value(
+                    QualifiedName::new_raw(variant.name.clone()),
+                    enum_literal(value),
+                );
             }
 
             Ok(())
@@ -113,7 +119,7 @@ fn complete_global(
                 &mut env.symbols,
             )?;
             env.symbols
-                .insert_value(CXIdent::new(ident), expr, Some(SymbolValueOrigin::Global));
+                .insert_value(QualifiedName::new_raw(CXIdent::new(ident)), expr);
             Ok(())
         }
     }
@@ -130,7 +136,10 @@ fn tcglobal_expr(
     match &global.kind {
         MIRGlobalVarKind::Variable { name, _type, .. } => Ok(MIRExpression {
             token_range: None,
-            kind: MIRExpressionKind::Variable(name.clone()),
+            kind: MIRExpressionKind::Variable {
+                name: name.clone(),
+                location: SymbolValueOrigin::Global,
+            },
             _type: definitions.mem_ref_to(_type.clone()),
         }),
 

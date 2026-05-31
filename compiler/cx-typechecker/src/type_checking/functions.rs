@@ -1,8 +1,8 @@
 use crate::{
+    environment::TypeEnvironment,
     environment::symbols::templates::{
         add_templated_types, complete_function_template, restore_template_overwrites,
     },
-    environment::{TypeEnvironment, symbols::SymbolValueOrigin},
     type_checking::{
         globals::complete_base_globals,
         typechecker::{add_implicit_return, typecheck_expr},
@@ -15,11 +15,14 @@ use cx_ast::{
 };
 use cx_mir::mir::{
     data::{MIRFunctionPrototype, MIRParameter, MIRTemplateInput},
-    expression::{MIRExpression, MIRExpressionKind},
+    expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
     program::{EnvironmentNamespace, MIRFunction},
 };
 use cx_pipeline_data::CompilationUnit;
-use cx_util::{CXResult, namespace::NamespacePath};
+use cx_util::{
+    CXResult,
+    namespace::{NamespacePath, QualifiedName},
+};
 
 pub fn typecheck_function(
     env: &mut TypeEnvironment,
@@ -33,7 +36,7 @@ pub fn typecheck_function(
     env.function
         .configure_merge_scope(body, "function exit", Some("fallthrough"), true);
 
-    for MIRParameter { name, _type } in prototype.params.iter() {
+    for MIRParameter { name, _type } in prototype.signature.params.iter() {
         let Some(name) = name else {
             continue;
         };
@@ -41,13 +44,15 @@ pub fn typecheck_function(
         let ref_type = env.symbols.mem_ref_to(_type.clone());
 
         env.symbols.insert_value(
-            name.clone(),
+            QualifiedName::new_raw(name.clone()),
             MIRExpression {
                 token_range: None,
-                kind: MIRExpressionKind::Variable(name.clone()),
+                kind: MIRExpressionKind::Variable {
+                    name: name.clone(),
+                    location: SymbolValueOrigin::Local,
+                },
                 _type: ref_type,
             },
-            Some(SymbolValueOrigin::Local),
         );
         if _type.is_nocopy() {
             env.function

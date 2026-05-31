@@ -1,9 +1,7 @@
 use cx_ast::ast::{CXAST, CXASTStmt, modifiers::VisibilityMode};
-use cx_mir::mir::program::EnvironmentNamespace;
 use cx_mir::mir::r#type::MIRType;
-use cx_util::{
-    CXResult,
-};
+use cx_mir::program::EnvironmentNamespace;
+use cx_util::CXResult;
 
 pub mod log;
 
@@ -14,7 +12,10 @@ pub use type_checking::{
     complete_base_functions, complete_base_globals, realize_fn_implementation,
 };
 
-use crate::{environment::{MIRFunctionGenRequest, TypeEnvironment}, type_checking::functions::typecheck_function};
+use crate::{
+    environment::{MIRFunctionGenRequest, TypeEnvironment},
+    type_checking::functions::typecheck_function,
+};
 
 pub fn typecheck(
     env: &mut TypeEnvironment,
@@ -25,9 +26,14 @@ pub fn typecheck(
     complete_base_functions(env, namespace)?;
 
     for stmt in ast.definition_stmts.iter() {
-        if let CXASTStmt::FunctionDefinition { prototype, body, .. } = stmt {
+        if let CXASTStmt::FunctionDefinition {
+            prototype, body, ..
+        } = stmt
+        {
             let prototype = env.complete_prototype(namespace, None, prototype)?;
-            typecheck_function(env, namespace, prototype.clone(), body)?;
+            if let Some(body) = body.as_deref() {
+                typecheck_function(env, namespace, prototype.clone(), body)?;
+            }
         }
     }
 
@@ -39,7 +45,9 @@ pub fn fulfill_request(
     namespace: &EnvironmentNamespace,
     request: &MIRFunctionGenRequest,
 ) {
-    todo!("Fulfill request routine -- ensure that we are double checking the request hasn't already been fulfilled");
+    todo!(
+        "Fulfill request routine -- ensure that we are double checking the request hasn't already been fulfilled"
+    );
 }
 
 fn realize_tagged_union_constructor(
@@ -54,8 +62,8 @@ fn realize_tagged_union_constructor(
         modifiers::CXLinkageMode,
     };
     use cx_mir::mir::{
-        data::{MIRFunctionPrototype, MIRParameter},
-        expression::{MIRExpression, MIRExpressionKind},
+        data::{MIRFunctionPrototype, MIRFunctionSignature, MIRParameter},
+        expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
         program::MIRFunction,
     };
     use cx_tokens::TokenRange;
@@ -64,18 +72,20 @@ fn realize_tagged_union_constructor(
     let param_name = CXIdent::new("value");
     let prototype = MIRFunctionPrototype {
         name: CXIdent::new(name),
-        return_type: union_type.clone(),
-        params: if variant_type.is_unit() {
-            Vec::new()
-        } else {
-            vec![MIRParameter {
-                name: Some(param_name.clone()),
-                _type: variant_type.clone(),
-            }]
-        },
-        var_args: false,
-        contract: CXFunctionContract::default(),
         linkage: CXLinkageMode::Static,
+        signature: MIRFunctionSignature {
+            return_type: union_type.clone(),
+            params: if variant_type.is_unit() {
+                Vec::new()
+            } else {
+                vec![MIRParameter {
+                    name: Some(param_name.clone()),
+                    _type: variant_type.clone(),
+                }]
+            },
+            var_args: false,
+            contract: CXFunctionContract::default(),
+        },
     };
 
     let value = if variant_type.is_unit() {
@@ -88,7 +98,10 @@ fn realize_tagged_union_constructor(
         let param_ref = MIRExpression {
             token_range: None,
             _type: env.symbols.mem_ref_to(variant_type.clone()),
-            kind: MIRExpressionKind::Variable(param_name),
+            kind: MIRExpressionKind::Variable {
+                name: param_name,
+                location: SymbolValueOrigin::Local,
+            },
         };
 
         MIRExpression {
@@ -110,7 +123,7 @@ fn realize_tagged_union_constructor(
     };
     let body = MIRExpression {
         token_range: None,
-        _type: prototype.return_type.clone(),
+        _type: prototype.signature.return_type.clone(),
         kind: MIRExpressionKind::Return {
             value: Some(Box::new(constructed)),
             postcondition: None,

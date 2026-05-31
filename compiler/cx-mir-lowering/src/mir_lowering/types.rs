@@ -3,10 +3,9 @@ use crate::mir_lowering::abi::classify_signature;
 use cx_ast::ast::modifiers::CXLinkageMode;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRFunctionPrototype, LinkageType};
-use cx_mir::mir::data::{
-    MIRFloatType, MIRFunctionPrototype, MIRIntegerType, MIRType, MIRTypeKind,
-};
+use cx_mir::mir::data::{MIRFloatType, MIRFunctionPrototype, MIRIntegerType, MIRType, MIRTypeKind};
 use cx_mir::registry::MIRDecomposedRegistry;
+use cx_mir::type_context::MIRTypeContext;
 
 impl LMIRBuilder {
     pub(crate) fn convert_cx_type(&self, cx_type: &MIRType) -> LMIRType {
@@ -98,7 +97,10 @@ fn convert_linkage(linkage: CXLinkageMode) -> LinkageType {
     }
 }
 
-pub(crate) fn convert_type_kind(cx_type: &MIRType, definitions: &MIRDecomposedRegistry) -> LMIRTypeKind {
+pub(crate) fn convert_type_kind(
+    cx_type: &MIRType,
+    definitions: &MIRDecomposedRegistry,
+) -> LMIRTypeKind {
     match &cx_type.kind {
         MIRTypeKind::Opaque { size, .. } => LMIRTypeKind::Opaque { bytes: *size },
 
@@ -119,7 +121,7 @@ pub(crate) fn convert_type_kind(cx_type: &MIRType, definitions: &MIRDecomposedRe
             dereferenceable: 0,
         },
 
-        MIRTypeKind::TaggedUnion { .. } => LMIRTypeKind::Struct {
+        MIRTypeKind::TaggedUnion { variants } => LMIRTypeKind::Struct {
             name: cx_type
                 .get_name()
                 .map(|name| name.as_string())
@@ -127,16 +129,12 @@ pub(crate) fn convert_type_kind(cx_type: &MIRType, definitions: &MIRDecomposedRe
             fields: vec![
                 (
                     "data".to_string(),
-                    LMIRTypeKind::Opaque {
-                        bytes: cx_type
-                            .aggregate_fields(definitions)
-                            .unwrap()
+                    lower_union(
+                        variants
                             .iter()
-                            .map(|(_, _type)| convert_type(_type, definitions).size())
-                            .max()
-                            .unwrap_or(0),
-                    }
-                    .into(),
+                            .map(|f| definitions.resolve_type_id(f.ty())),
+                        definitions
+                    ).into()
                 ),
                 (
                     "tag".to_string(),
@@ -151,8 +149,7 @@ pub(crate) fn convert_type_kind(cx_type: &MIRType, definitions: &MIRDecomposedRe
         } => LMIRTypeKind::Array {
             element: Box::new(convert_type(
                 definitions
-                    .get(*_type)
-                    .unwrap_or_else(|| panic!("Unknown type id {}", _type.0)),
+                    .resolve_type_id(*_type),
                 definitions,
             )),
             size: *size,
@@ -175,9 +172,13 @@ pub(crate) fn convert_type_kind(cx_type: &MIRType, definitions: &MIRDecomposedRe
                 .map(|(_name, _type)| (_name.clone(), convert_type(_type, definitions)))
                 .collect::<Vec<_>>(),
         },
-        MIRTypeKind::Union { .. } => LMIRTypeKind::Opaque {
-            bytes: cx_type.type_size(definitions),
-        },
+        
+        MIRTypeKind::Union { variants } => lower_union(
+            variants
+                .iter()
+                .map(|f| definitions.resolve_type_id(f.ty())),
+            definitions
+        ),
 
         MIRTypeKind::Unit => LMIRTypeKind::Unit,
 
@@ -190,4 +191,19 @@ pub(crate) fn convert_type_kind(cx_type: &MIRType, definitions: &MIRDecomposedRe
         }
         MIRTypeKind::Str => LMIRTypeKind::Integer(LMIRIntegerType::I8),
     }
+}
+
+fn lower_union<'a>(variants: impl Iterator<Item = &'a MIRType>, definitions: &MIRDecomposedRegistry) -> LMIRTypeKind {
+    let size = variants
+        .map(|f| {
+            usize::from(
+                convert_type(f, definitions).size(),
+            )
+        })
+        .max()
+        .unwrap_or(0)
+        .min(0)
+        .into();
+
+    LMIRTypeKind::Opaque { bytes: size }
 }

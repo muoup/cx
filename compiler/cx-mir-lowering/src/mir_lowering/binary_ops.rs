@@ -1,15 +1,16 @@
 //! Binary and unary operation lowering
 
 use cx_lmir::{
-    LMIRFloatBinOp, LMIRInstructionKind, LMIRIntBinOp, LMIRPtrBinOp, LMIRValue, types::{LMIRIntegerType, LMIRType, TypePaddedSize}
+    types::{LMIRIntegerType, LMIRType, TypePaddedSize},
+    LMIRFloatBinOp, LMIRInstructionKind, LMIRIntBinOp, LMIRPtrBinOp, LMIRValue,
 };
-use cx_mir::mir::{
+use cx_mir::{mir::{
     data::{MIRType, MIRTypeKind},
     expression::{
         MIRBinOp, MIRExpression, MIRFloatBinOp, MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
         MIRUnOp,
     },
-};
+}, type_context::MIRTypeContext};
 use cx_util::CXResult;
 
 use super::expressions::lower_expression;
@@ -57,7 +58,7 @@ pub fn lower_binary_op(
                 MIRPtrDiffBinOp::ADD => LMIRPtrBinOp::ADD,
                 MIRPtrDiffBinOp::SUB => LMIRPtrBinOp::SUB,
             };
-            
+
             LMIRInstructionKind::PointerBinOp {
                 op: ptr_op,
                 ptr_type: bc_inner_type.clone(),
@@ -265,13 +266,10 @@ pub fn lower_unary_op(
                 }
 
                 MIRTypeKind::PointerTo { inner_type, .. } => {
-                    let inner_type = builder
-                        .registry
-                        .resolve_type_id(inner_type)
-                        .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
+                    let inner_type = builder.registry.resolve_type_id(*inner_type);
                     let bc_inner_type = builder.convert_cx_type(inner_type);
                     let padded_size = bc_inner_type.padded_size();
-                    
+
                     LMIRInstructionKind::PointerBinOp {
                         op: LMIRPtrBinOp::ADD,
                         ptr_type: bc_inner_type,

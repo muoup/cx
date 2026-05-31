@@ -1,11 +1,12 @@
-use crate::environment::{TypeEnvironment, symbols::SymbolValueOrigin};
+use crate::environment::TypeEnvironment;
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_mir::mir::data::{MIRFunctionSignature, MIRType};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRFunctionContract};
-use cx_mir::mir::program::EnvironmentNamespace;
+use cx_mir::program::EnvironmentNamespace;
 use cx_util::CXResult;
+use cx_util::namespace::QualifiedName;
 
 pub(crate) fn typecheck_contract(
     env: &mut TypeEnvironment,
@@ -22,7 +23,7 @@ pub(crate) fn typecheck_contract(
             let _ty = env.symbols.mem_ref_to(param._type.clone());
 
             env.symbols.insert_value(
-                name.clone(),
+                QualifiedName::new_raw(name.clone()),
                 MIRExpression {
                     token_range: None,
                     kind: MIRExpressionKind::ContractVariable {
@@ -31,7 +32,6 @@ pub(crate) fn typecheck_contract(
                     },
                     _type: param._type.clone(),
                 },
-                Some(SymbolValueOrigin::Contract),
             );
         }
     }
@@ -50,7 +50,7 @@ pub(crate) fn typecheck_contract(
     let postcondition = if let Some((ret_name, post_expr)) = &naive_contract.postcondition {
         if let Some(ret_name) = ret_name {
             env.symbols.insert_value(
-                ret_name.clone(),
+                QualifiedName::new_raw(ret_name.clone()),
                 MIRExpression {
                     token_range: None,
                     kind: MIRExpressionKind::ContractVariable {
@@ -59,7 +59,6 @@ pub(crate) fn typecheck_contract(
                     },
                     _type: prototype.return_type.clone(),
                 },
-                Some(SymbolValueOrigin::Contract),
             );
         }
 

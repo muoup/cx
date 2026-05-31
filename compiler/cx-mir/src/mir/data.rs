@@ -1,11 +1,11 @@
 use cx_ast::ast::{function::CXFunctionContract, modifiers::CXLinkageMode};
 use cx_util::identifier::CXIdent;
 
-use crate::{mir::r#type::TypeComparisonState, registry::MIRSymbolRegistry};
+use crate::mir::r#type::TypeComparisonState;
 pub use crate::mir::r#type::{
-    MIRFloatType, MIRIntegerType, MIRMoveAttributes, MIRType, MIRTypeId,
-    MIRTypeKind,
+    MIRFloatType, MIRIntegerType, MIRMoveAttributes, MIRType, MIRTypeId, MIRTypeKind,
 };
+pub use crate::registry::MIRSymbolRegistry;
 
 #[derive(Debug, Clone)]
 pub struct MIRParameter {
