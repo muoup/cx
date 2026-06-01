@@ -45,7 +45,6 @@ pub(crate) fn finish_function_call<'a>(
     let loaded_function_type = loaded_function.get_type();
     let loaded_function_type = env
         .symbols
-        .context
         .ptr_inner(&loaded_function_type)
         .cloned()
         .unwrap_or(loaded_function_type);

@@ -6,6 +6,7 @@ pub use crate::mir::r#type::{
     MIRFloatType, MIRIntegerType, MIRMoveAttributes, MIRType, MIRTypeId, MIRTypeKind,
 };
 pub use crate::registry::MIRSymbolRegistry;
+use crate::type_context::MIRTypeContext;
 
 #[derive(Debug, Clone)]
 pub struct MIRParameter {
@@ -60,7 +61,7 @@ impl MIRFunctionSignature {
     pub(crate) fn contextual_eq_with_state(
         &self,
         other: &Self,
-        definitions: &MIRSymbolRegistry,
+        definitions: &impl MIRTypeContext,
         state: &mut TypeComparisonState,
     ) -> bool {
         self.var_args == other.var_args
@@ -124,7 +125,7 @@ impl MIRTemplateInput {
     pub(crate) fn contextual_eq_with_state(
         &self,
         other: &Self,
-        definitions: &MIRSymbolRegistry,
+        definitions: &impl MIRTypeContext,
         state: &mut TypeComparisonState,
     ) -> bool {
         self.args.len() == other.args.len()

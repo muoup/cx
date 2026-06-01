@@ -136,9 +136,9 @@ impl AnalysisDiagnosticContext {
 }
 
 impl FMIRContext {
-    pub fn new(compilation_unit: PathBuf) -> Self {
+    pub fn new(env: FMIREnvironment) -> Self {
         FMIRContext {
-            env: FMIREnvironment::new(compilation_unit, Default::default()),
+            env,
             functions: HashMap::new(),
         }
     }

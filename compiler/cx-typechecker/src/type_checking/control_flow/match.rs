@@ -137,7 +137,10 @@ pub fn typecheck_match(
                     );
                 };
 
-                let variant_type = env.symbols.resolve_type_id(variants[variant_id].ty());
+                let variant_type = env
+                    .symbols
+                    .resolve_type_id(variants[variant_id].ty())
+                    .clone();
 
                 matched_variants.insert(variant_id);
 
@@ -192,7 +195,8 @@ pub fn typecheck_match(
                                 _type: variant_ref_type,
                             },
                         );
-                        if env.symbols.is_nocopy(variant_type) {
+                        
+                        if env.symbols.is_nocopy(&variant_type) {
                             env.function
                                 .track_binding(inner_name.as_string(), variant_type.is_nodrop());
                         }

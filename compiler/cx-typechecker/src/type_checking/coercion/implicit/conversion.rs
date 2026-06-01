@@ -1,8 +1,8 @@
 use cx_ast::ast::modifiers::CX_CONST;
-use cx_mir::{mir::{
+use cx_mir::mir::{
     expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
     r#type::{MIRType, MIRTypeKind},
-}, type_context::MIRTypeContext};
+};
 use cx_util::CXResult;
 
 use crate::{

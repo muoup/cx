@@ -1,7 +1,11 @@
-use cx_ast::ast::{CXAST, CXASTStmt, modifiers::VisibilityMode};
-use cx_mir::mir::r#type::MIRType;
-use cx_mir::program::EnvironmentNamespace;
-use cx_util::CXResult;
+use cx_ast::ast::function::CXFunctionContract;
+use cx_ast::ast::modifiers::CXLinkageMode;
+use cx_ast::ast::{CXAST, CXASTStmt};
+use cx_mir::mir::data::{MIRFunctionSignature, MIRParameter};
+use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin};
+use cx_mir::mir::{data::MIRFunctionPrototype, r#type::MIRType};
+use cx_mir::program::{EnvironmentNamespace, MIRFunction};
+use cx_util::{CXResult, identifier::CXIdent};
 
 pub mod log;
 
@@ -57,18 +61,6 @@ fn realize_tagged_union_constructor(
     variant_type: MIRType,
     variant_index: usize,
 ) {
-    use cx_ast::ast::{
-        function::{CXFunctionContract, CXFunctionKind},
-        modifiers::CXLinkageMode,
-    };
-    use cx_mir::mir::{
-        data::{MIRFunctionPrototype, MIRFunctionSignature, MIRParameter},
-        expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
-        program::MIRFunction,
-    };
-    use cx_tokens::TokenRange;
-    use cx_util::{identifier::CXIdent, namespace::QualifiedName};
-
     let param_name = CXIdent::new("value");
     let prototype = MIRFunctionPrototype {
         name: CXIdent::new(name),

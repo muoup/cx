@@ -140,9 +140,7 @@ fn ensure_complete_value_type(
         MIRTypeKind::Array { inner_type, .. } => {
             let inner_type = env
                 .symbols
-                .context
-                .get(*inner_type)
-                .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
+                .resolve_type_id(*inner_type)
                 .clone();
             ensure_complete_value_type(env, expr, field_name, &inner_type)
         }
@@ -178,9 +176,7 @@ fn complete_field(
             let field_type_id = complete_type_id(env, namespace, expr, _type)?;
             let resolved_field_type = env
                 .symbols
-                .context
-                .get(field_type_id)
-                .unwrap_or_else(|| panic!("Unknown type id {}", field_type_id.0))
+                .resolve_type_id(field_type_id)
                 .clone();
             ensure_complete_value_type(env, expr, name, &resolved_field_type)?;
             Ok(MIRField::standard(name.clone(), field_type_id))
@@ -201,9 +197,7 @@ fn complete_field(
             let integer_type_id = complete_type_id(env, namespace, expr, integer_type)?;
             let resolved_integer_type = env
                 .symbols
-                .context
-                .get(integer_type_id)
-                .unwrap_or_else(|| panic!("Unknown type id {}", integer_type_id.0))
+                .resolve_type_id(integer_type_id)
                 .clone();
             let MIRTypeKind::Integer { _type, .. } = resolved_integer_type.kind else {
                 return log_typecheck_error!(

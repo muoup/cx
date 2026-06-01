@@ -1,6 +1,6 @@
 use cx_mir::{
     mir::data::{MIRType, MIRTypeKind},
-    registry::MIRSymbolRegistry, type_context::MIRTypeContext,
+    registry::MIRSymbolRegistry,
 };
 
 pub struct StructField {
@@ -29,9 +29,7 @@ pub fn struct_field(
         .iter()
         .position(|field| field.name() == Some(field_name))
         .and_then(|index| {
-            let field_type = definitions
-                .resolve_type_id(fields[index].ty())
-                .clone();
+            let field_type = definitions.resolve_type_id(fields[index].ty()).clone();
             Some(StructField { index, field_type })
         })
 }

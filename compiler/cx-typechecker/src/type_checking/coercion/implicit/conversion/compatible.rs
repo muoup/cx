@@ -1,4 +1,4 @@
-use cx_mir::{mir::r#type::{MIRType, MIRTypeKind}, type_context::MIRTypeContext};
+use cx_mir::{mir::r#type::{MIRType, MIRTypeKind}};
 use cx_util::CXResult;
 
 use crate::environment::TypeEnvironment;

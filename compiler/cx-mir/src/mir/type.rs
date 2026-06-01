@@ -169,7 +169,7 @@ impl MIRTypeId {
     pub(crate) fn contextual_eq_with_state(
         &self,
         other: &Self,
-        definitions: &MIRSymbolRegistry,
+        definitions: &impl MIRTypeContext,
         state: &mut TypeComparisonState,
     ) -> bool {
         if self == other {
@@ -280,7 +280,7 @@ impl Default for MIRType {
 }
 
 impl MIRType {
-    pub fn contextual_eq(&self, other: &Self, definitions: &MIRSymbolRegistry) -> bool {
+    pub fn contextual_eq(&self, other: &Self, definitions: &impl MIRTypeContext) -> bool {
         let mut state = TypeComparisonState::default();
         self.contextual_eq_with_state(other, definitions, &mut state)
     }
@@ -288,7 +288,7 @@ impl MIRType {
     pub(crate) fn contextual_eq_with_state(
         &self,
         other: &Self,
-        definitions: &MIRSymbolRegistry,
+        definitions: &impl MIRTypeContext,
         state: &mut TypeComparisonState,
     ) -> bool {
         if self.specifiers != other.specifiers || self.move_attributes != other.move_attributes {
@@ -310,14 +310,6 @@ impl MIRType {
             }
             (Some(_), None) | (None, Some(_)) => return false,
             (None, None) => {}
-        }
-
-        if let (Some(left_id), Some(right_id)) = (
-            self.named_type_id(definitions),
-            other.named_type_id(definitions),
-        ) && left_id == right_id
-        {
-            return true;
         }
 
         self.kind
@@ -562,12 +554,6 @@ impl MIRType {
         }
     }
 
-    pub fn named_type_id(&self, definitions: &MIRSymbolRegistry) -> Option<MIRTypeId> {
-        self.strong_identifier()
-            .and_then(|ident| definitions.get_preresolved_symbol(ident))
-            .and_then(|sym| sym.into_type_id())
-    }
-
     pub fn ptr_inner(&self) -> Option<MIRTypeId> {
         match &self.kind {
             MIRTypeKind::PointerTo { inner_type, .. } => Some(*inner_type),
@@ -648,7 +634,7 @@ impl MIRTypeKind {
     pub(crate) fn contextual_eq_with_state(
         &self,
         other: &Self,
-        definitions: &MIRSymbolRegistry,
+        definitions: &impl MIRTypeContext,
         state: &mut TypeComparisonState,
     ) -> bool {
         match (self, other) {
@@ -722,7 +708,7 @@ impl MIRTypeKind {
 fn named_type_fields_contextual_eq(
     left: &[MIRField],
     right: &[MIRField],
-    definitions: &MIRSymbolRegistry,
+    definitions: &impl MIRTypeContext,
     state: &mut TypeComparisonState,
 ) -> bool {
     left.len() == right.len()

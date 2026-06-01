@@ -396,7 +396,7 @@ pub fn convert_expression(
             // assuming that accesses are valid here.
 
             let value_node = convert_expression(env, value)?;
-            let variant_ref_type = env.type_definitions.mem_ref_to(variant_type.clone());
+            let variant_ref_type = mir_expr._type.clone();
 
             Ok(FMIRNode {
                 _type: FMIRType::pure(variant_ref_type),

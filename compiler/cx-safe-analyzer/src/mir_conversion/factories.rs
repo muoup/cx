@@ -1,10 +1,10 @@
-use cx_mir::mir::{
+use cx_mir::{mir::{
     data::{MIRIntegerType, MIRType, MIRTypeKind},
     expression::{
         MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp,
         MIRPtrBinOp, MIRPtrDiffBinOp, MIRUnOp,
     },
-};
+}, type_context::MIRTypeContext};
 use cx_safe_ir::{ast::*, intrinsic::*};
 use cx_util::{CXError, CXResult, identifier::CXIdent};
 

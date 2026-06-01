@@ -1,5 +1,5 @@
 use cx_ast::ast::modifiers::CX_CONST;
-use cx_mir::{mir::expression::{MIRExpression, MIRExpressionKind}, type_context::MIRTypeContext};
+use cx_mir::{mir::expression::{MIRExpression, MIRExpressionKind}};
 use cx_util::CXResult;
 
 use crate::{
