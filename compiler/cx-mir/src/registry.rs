@@ -125,6 +125,14 @@ impl<'a> MIRSymbolRegistry<'a> {
             .get(&id)
             .unwrap_or_else(|| panic!("Invalid MIRTypeId {} in AST!", id))
     }
+    
+    pub fn insert_local_type(&mut self, name: String, _type: MIRType) -> CXResult<MIRTypeId> {
+        todo!()
+    }
+
+    pub fn remove_local_type(&mut self, id: MIRTypeId) -> CXResult<()> {
+        todo!()
+    }
 
     pub fn insert_symbol(&mut self, name: QualifiedName, symbol: MIRSymbol) {
         self.global_cache.insert(name, symbol);

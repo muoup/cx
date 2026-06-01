@@ -235,21 +235,9 @@ pub(crate) fn typecheck_unpack(
         );
     };
 
-    let mut field_map = HashMap::new();
-    for (index, field) in fields.iter().enumerate() {
-        let Some(name) = field.name() else {
-            continue;
-        };
-        let Some(field_type) = env.symbols.get(field.type_id()).cloned() else {
-            return log_typecheck_error!(
-                env,
-                Some(expr.token_range()),
-                "Internal error: @unpack field '{}' has an unknown type",
-                name
-            );
-        };
-        field_map.insert(name.to_string(), (index, field_type));
-    }
+    let field_map = fields.iter().enumerate()
+        .map(|(index, (name, _ty))| (name.to_string(), (index, _ty.clone())))
+        .collect::<HashMap<_, _>>();
 
     let mut seen_fields = HashSet::new();
     let mut seen_bindings = HashSet::new();

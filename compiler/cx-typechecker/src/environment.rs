@@ -60,30 +60,6 @@ impl TypeEnvironment<'_> {
             function: FunctionContext::default(),
         }
     }
-
-    pub fn add_local_type(&mut self, name: String, _type: MIRType) -> CXResult<MIRTypeId> {
-        todo!()
-    }
-
-    pub fn remove_local_type(&mut self, id: MIRTypeId) -> CXResult<()> {
-        todo!()
-    }
-
-    pub fn get_symbol(&mut self, name: &QualifiedName) -> CXResult<Option<MIRSymbol>> {
-        self.symbols.get_symbol(name)
-    }
-
-    pub fn resolve_type_id(&self, id: &MIRTypeId) -> &MIRType {
-        self.symbols.resolve_type_id(*id)
-    }
-
-    pub fn ptr_inner(&self, ty: &MIRType) -> Option<&MIRType> {
-        self.symbols.ptr_inner(ty)
-    }
-
-    pub fn mem_ref_inner(&self, ty: &MIRType) -> Option<&MIRType> {
-        self.symbols.mem_ref_inner(ty)
-    }
 }
 
 // Under consideration -- functions that may be removed in the refactor
