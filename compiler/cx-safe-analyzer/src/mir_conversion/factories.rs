@@ -331,7 +331,7 @@ pub(crate) fn increment_amount_node(
     let MIRTypeKind::Integer { _type, signed } = &mir_type.kind else {
         return CXError::create_result(format!(
             "FMIR increment desugaring expected integer type, found '{}'",
-            mir_type.display_with(&env.type_definitions)
+            mir_type.display_with(env.type_definitions)
         ));
     };
 
@@ -359,7 +359,7 @@ pub(crate) fn convert_increment(
     else {
         return CXError::create_result(format!(
             "FMIR increment desugaring expected memory reference operand, found '{}'",
-            operand_expr._type.display_with(&env.type_definitions)
+            operand_expr._type.display_with(env.type_definitions)
         ));
     };
 
@@ -404,7 +404,7 @@ pub(crate) fn convert_increment(
         _ => {
             return CXError::create_result(format!(
                 "FMIR increment desugaring requires integer or pointer inner type, found '{}'",
-                value_type.display_with(&env.type_definitions)
+                value_type.display_with(env.type_definitions)
             ));
         }
     };

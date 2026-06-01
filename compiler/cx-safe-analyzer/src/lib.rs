@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use cx_mir::mir::data::MIRFunctionPrototype;
 use cx_mir::mir::program::{MIRFunction, MIRUnit};
+use cx_mir::registry::MIRDecomposedRegistry;
 use cx_safe_ir::ast::{FMIRFunction, FMIRNode};
 use cx_tokens::TokenRange;
 use cx_util::{CXError, CXResult};
@@ -19,8 +20,8 @@ pub(crate) mod traversal;
 
 pub type FMIRAnalysisPass<'a> = &'a dyn Fn(&FMIRContext, FMIRFunction) -> CXResult<FMIRFunction>;
 
-pub struct FMIRContext {
-    env: FMIREnvironment,
+pub struct FMIRContext<'a> {
+    env: FMIREnvironment<'a>,
     functions: HashMap<String, FMIRFunction>,
 }
 
@@ -135,19 +136,16 @@ impl AnalysisDiagnosticContext {
     }
 }
 
-impl FMIRContext {
-    pub fn new(env: FMIREnvironment) -> Self {
+impl<'a> FMIRContext<'a> {
+    pub fn new(unit: PathBuf, registry: &'a MIRDecomposedRegistry) -> Self {
         FMIRContext {
-            env,
+            env: FMIREnvironment::new(unit, registry),
             functions: HashMap::new(),
         }
     }
 
-    pub fn new_from(mir: &MIRUnit) -> CXResult<Self> {
-        let mut context = FMIRContext {
-            env: FMIREnvironment::new(mir.source_path.to_owned(), mir.registry.clone()),
-            functions: HashMap::new(),
-        };
+    pub fn new_from(mir: &'a MIRUnit) -> CXResult<Self> {
+        let mut context = FMIRContext::new(mir.source_path.to_owned(), &mir.registry);
 
         for function in mir.functions.iter() {
             if !function.prototype.signature.contract.safe {
@@ -191,7 +189,7 @@ impl FMIRContext {
     }
 }
 
-impl Display for FMIRContext {
+impl Display for FMIRContext<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut names = self.functions.keys().cloned().collect::<Vec<_>>();
         names.sort();

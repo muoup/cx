@@ -25,6 +25,7 @@ pub struct MIRSymbolRegistry<'a> {
     pub global_registry: &'a GlobalSymbolRegistry,
     global_cache: HashMap<QualifiedName, MIRSymbol>,
     local_symbols: ScopedMap<QualifiedName, MIRSymbol>,
+    
     pub realized_types: HashMap<String, MIRType>,
     pub named_type_ids: HashMap<String, MIRTypeId>,
     currently_defining_types: HashSet<MIRTypeId>,
@@ -35,6 +36,7 @@ pub struct MIRSymbolRegistry<'a> {
     // be visible in valid_typeid but not in typeid_defs
     valid_typeid: HashSet<MIRTypeId>,
     typeid_defs: HashMap<MIRTypeId, MIRType>,
+    
     next_typeid: u64,
 }
 

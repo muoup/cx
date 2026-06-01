@@ -1,8 +1,6 @@
 use std::fmt::{Display, Formatter, Result};
 
 use cx_mir::registry::MIRDecomposedRegistry;
-use cx_mir::registry::MIRDecomposedRegistry;
-use cx_mir::type_context::MIRTypeContext;
 
 use crate::ast::*;
 use crate::intrinsic::*;

@@ -19,15 +19,15 @@ pub struct VariableIdentifier {
     pub known_value: Option<FMIRNode>,
 }
 
-pub(crate) struct FMIREnvironment {
+pub(crate) struct FMIREnvironment<'a> {
     current_mir_prototype: Option<MIRFunctionPrototype>,
     region_table: ScopedMap<String, VariableIdentifier>,
     pub compilation_unit: PathBuf,
-    pub type_definitions: MIRDecomposedRegistry,
+    pub type_definitions: &'a MIRDecomposedRegistry,
 }
 
-impl FMIREnvironment {
-    pub fn new(compilation_unit: PathBuf, type_definitions: MIRDecomposedRegistry) -> Self {
+impl<'a> FMIREnvironment<'a> {
+    pub fn new(compilation_unit: PathBuf, type_definitions: &'a MIRDecomposedRegistry) -> Self {
         Self {
             current_mir_prototype: None,
             region_table: ScopedMap::new_with_starting_scope(),
