@@ -1,9 +1,5 @@
 use cx_ast::ast::{
-    expression::{CXExprKind, CXExpression},
-    function::CXFunctionPrototype,
-    global_var::CXGlobalVariable,
-    template::CXTemplatePrototype,
-    CXASTStmt,
+    CXASTStmt, expression::{CXExprKind, CXExpression}, function::CXFunctionPrototype, global_var::CXGlobalVariable, modifiers::CXLinkageMode, template::CXTemplatePrototype
 };
 use cx_preparse_data::VisibilityMode;
 use cx_tokens::{
@@ -11,11 +7,7 @@ use cx_tokens::{
     token::{SpecifierType, TokenKind},
     TokenIter,
 };
-use cx_util::{
-    identifier::CXIdent,
-    namespace::{NamespacePath, QualifiedName},
-    CXResult,
-};
+use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::{
     assert_token_matches, next_kind,
@@ -33,9 +25,12 @@ pub(crate) mod parser;
 
 mod expressions;
 mod functions;
+mod identifier;
 mod operators;
 mod templates;
 mod types;
+
+pub(crate) use identifier::{try_parse_identifier, try_parse_qualified_name};
 
 pub fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
     match data
@@ -170,6 +165,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
                 variable: CXGlobalVariable::Standard {
                     _type: return_type.clone(),
                     is_mutable: true,
+                    linkage: CXLinkageMode::Standard,
                     initializer: Some(initial_value.clone()),
                 },
             });
@@ -182,6 +178,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
                 variable: CXGlobalVariable::Standard {
                     _type: return_type.clone(),
                     is_mutable: true,
+                    linkage: CXLinkageMode::Standard,
                     initializer: None,
                 },
             });
@@ -192,7 +189,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
                 data,
                 "Unexpected token in global expression: {:#?}",
                 data.tokens.peek()
-            )
+            );
         }
     }
 
@@ -255,35 +252,4 @@ pub fn try_parse_simple_identifier(tokens: &mut TokenIter) -> Option<CXIdent> {
     let ident = CXIdent::new(ident.clone());
     tokens.next();
     Some(ident)
-}
-
-pub fn try_parse_identifier(tokens: &mut TokenIter) -> CXResult<Option<QualifiedName>> {
-    if !matches!(
-        tokens.peek().map(|token| &token.kind),
-        Some(TokenKind::Identifier(_))
-    ) {
-        return Ok(None);
-    };
-
-    let mut segments = Vec::new();
-
-    loop {
-        let TokenKind::Identifier(ident) = next_kind!(tokens)? else {
-            return log_preparse_error!(tokens, "Expected identifier after '::' in qualified name");
-        };
-
-        segments.push(CXIdent::new(ident.clone()));
-
-        if !try_next!(tokens, operator!(ScopeRes)) {
-            break;
-        }
-    }
-
-    let ident = segments
-        .pop()
-        .expect("identifier parser should have at least one segment");
-    Ok(Some(QualifiedName::new(
-        NamespacePath::new(segments),
-        ident,
-    )))
 }

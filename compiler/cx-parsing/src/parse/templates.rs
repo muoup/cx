@@ -23,6 +23,7 @@ pub(crate) fn note_templated_types(
         let _nil_type: CXType = CXTypeKind::Identifier {
             name: QualifiedName::new_raw(CXIdent::new("__undefined_template_type")),
             predeclaration: PredeclarationType::None,
+            template_input: None,
         }
         .to_type();
 
@@ -87,6 +88,7 @@ pub(crate) fn convert_template_proto_to_args(prototype: CXTemplatePrototype) -> 
             CXTypeKind::Identifier {
                 name: QualifiedName::new_raw(name),
                 predeclaration: PredeclarationType::None,
+                template_input: None,
             }
             .to_type()
         })

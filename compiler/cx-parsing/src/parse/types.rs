@@ -16,10 +16,8 @@ use cx_util::namespace::QualifiedName;
 use cx_util::CXResult;
 
 use crate::parse::functions::{parse_params, ParseParamsResult};
-use crate::parse::templates::{
-    note_templated_types, parse_template_args, try_parse_template, unnote_templated_types,
-};
-use crate::parse::{parse_intrinsic, try_parse_identifier};
+use crate::parse::templates::{note_templated_types, try_parse_template, unnote_templated_types};
+use crate::parse::{parse_intrinsic, try_parse_identifier, try_parse_qualified_name};
 
 fn parse_type_attributes(data: &mut ParserData, kind_name: &str) -> CXResult<CXStructAttributes> {
     let mut attributes = CXStructAttributes::default();
@@ -113,6 +111,7 @@ fn predeclaration_type(
     Ok(CXTypeKind::Identifier {
         name,
         predeclaration,
+        template_input: None,
     }
     .to_type())
 }
@@ -138,6 +137,7 @@ fn defined_type(
         Ok(CXTypeKind::Identifier {
             name: QualifiedName::new_raw(name),
             predeclaration,
+            template_input: None,
         }
         .to_type())
     } else {
@@ -151,7 +151,7 @@ fn defined_type(
 pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
     assert_token_matches!(data.tokens, keyword!(Struct), "'struct'");
 
-    let name = try_parse_identifier(&mut data.tokens)?;
+    let name = try_parse_qualified_name(&mut data.tokens)?;
     let template_prototype = try_parse_template(&mut data.tokens)?;
     let attributes = parse_type_attributes(data, "struct")?;
 
@@ -205,7 +205,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
         return parse_tagged_union_def(data);
     }
 
-    let name = try_parse_identifier(&mut data.tokens)?;
+    let name = try_parse_qualified_name(&mut data.tokens)?;
 
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
         return predeclaration_type(data, name, PredeclarationType::Enum);
@@ -238,13 +238,13 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
         }
     }
 
-    data.add_stmt(
-        CXASTStmt::GlobalVariableDefinition {
-            name: CXIdent::new(format!("__cx_enum_definition_{enum_start_index}")),
-            visibility: data.visibility,
-            variable: CXGlobalVariable::EnumDefinition { variants: variants.clone() },
-        }
-    );
+    data.add_stmt(CXASTStmt::GlobalVariableDefinition {
+        name: CXIdent::new(format!("__cx_enum_definition_{enum_start_index}")),
+        visibility: data.visibility,
+        variable: CXGlobalVariable::EnumDefinition {
+            variants: variants.clone(),
+        },
+    });
 
     let name = match name {
         None => None,
@@ -260,6 +260,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
         CXTypeKind::Identifier {
             name: QualifiedName::new_raw(CXIdent::new("int")),
             predeclaration: PredeclarationType::None,
+            template_input: None,
         }
         .to_type(),
         None,
@@ -331,7 +332,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
 pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXType> {
     assert_token_matches!(data.tokens, keyword!(Union), "'union'");
 
-    let name = try_parse_identifier(&mut data.tokens)?;
+    let name = try_parse_qualified_name(&mut data.tokens)?;
     let template_prototype = try_parse_template(&mut data.tokens)?;
 
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
@@ -548,30 +549,17 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<CXType> {
 
     let _type = match &next_token.kind {
         identifier!() => {
-            let Some(ident) = try_parse_identifier(&mut data.tokens)? else {
+            let Some(ident) = try_parse_identifier(data)? else {
                 unreachable!();
             };
 
-            if peek_kind!(data.tokens, operator!(Less)) {
-                let params = parse_template_args(data)?;
-
-                Ok(CXTypeKind::TemplatedIdentifier {
-                    name: ident,
-                    input: params,
-                }
-                .to_type())
-            } else {
-                Ok(CXTypeKind::Identifier {
-                    name: ident,
-                    predeclaration: PredeclarationType::None,
-                }
-                .to_type())
-            }
+            Ok(ident.into_type(PredeclarationType::None))
         }
 
         intrinsic!() => Ok(CXTypeKind::Identifier {
             name: QualifiedName::new_raw(parse_intrinsic(&mut data.tokens)?),
             predeclaration: PredeclarationType::None,
+            template_input: None,
         }
         .to_type()),
 

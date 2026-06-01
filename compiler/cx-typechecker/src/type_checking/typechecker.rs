@@ -80,12 +80,16 @@ fn typecheck_expr_inner(
             initial_value,
         } => typecheck_var_declaration(env, namespace, expr, _type, name, initial_value.as_ref())?,
 
-        CXExprKind::Identifier(name) => typecheck_identifier(env, namespace, expr, name)?,
-
-        CXExprKind::TemplatedIdentifier {
+        CXExprKind::Identifier {
             name,
             template_input,
-        } => typecheck_templated_identifier(env, namespace, expr, name, template_input)?,
+        } => {
+            if let Some(template_input) = template_input {
+                typecheck_templated_identifier(env, namespace, expr, name, template_input)?
+            } else {
+                typecheck_identifier(env, namespace, expr, name)?
+            }
+        }
 
         CXExprKind::If {
             condition,

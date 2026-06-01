@@ -9,7 +9,7 @@ pub fn decompose_stmt(
     namespace: &NamespacePath,
     stmt: CXASTStmt,
     stmts: &mut Vec<CXGenerationStmt>,
-    global_data: &mut SymbolNamespaceData,
+    _global_data: &mut SymbolNamespaceData,
 ) {
     match stmt {
         CXASTStmt::FunctionDefinition {
@@ -25,10 +25,14 @@ pub fn decompose_stmt(
                 stmts.push(CXGenerationStmt::Function { prototype: prototype.clone(), body })
             }
 
-            let QualifiedName { name, namespace } = prototype.kind.into_key();
-            let full_namespace = namespace.join(&namespace);
+            let QualifiedName { name, namespace: q_namespace } = prototype.kind.into_key();
+            let full_namespace = namespace.join(&q_namespace);
 
-            
+            let _ = full_namespace;
+            let _ = symbol;
+            let _ = name;
+
+            todo!("We need to support foreign-namespace definitions for things like member functions")
         }
 
         _ => {}

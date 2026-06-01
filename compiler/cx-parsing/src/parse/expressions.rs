@@ -1,8 +1,7 @@
-use crate::parse::{try_parse_simple_identifier, ParserData};
+use crate::parse::{try_parse_qualified_name, try_parse_simple_identifier, ParserData};
 use crate::{assert_token_matches, next_kind, peek_next_kind, try_next};
 use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression, CXInitIndex, CXUnpackBinding};
 use cx_ast::ast::pattern::CXPattern;
-use cx_ast::ast::template::CXTemplateInput;
 use cx_ast::ast::types::CXTypeKind;
 use cx_mir::intrinsic_types::is_intrinsic_type;
 use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
@@ -14,7 +13,7 @@ use cx_util::{log_error, CXResult};
 use crate::parse::operators::{
     binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
 };
-use crate::parse::templates::parse_template_args;
+use crate::parse::templates::{parse_template_args, try_parse_template};
 use crate::parse::types::{parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
 use crate::parse::{parse_body, parse_intrinsic, try_parse_identifier};
 
@@ -134,9 +133,10 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
 
         TokenKind::Identifier(_) => {
             let pre_idx = data.tokens.index;
-            let Some(ident) = try_parse_identifier(&mut data.tokens)? else {
+            let Some(ident) = try_parse_qualified_name(&mut data.tokens)? else {
                 unreachable!()
             };
+            let _ = try_parse_template(&mut data.tokens)?;
             data.tokens.index = pre_idx;
 
             data.is_type_ident(&ident)
@@ -260,26 +260,17 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpression>
             assert_token_matches!(data.tokens, operator!(ScopeRes), "'::'");
             let variant_expr = parse_expr_identifier(data)?;
 
-            let (type_name, type_template_input) = match _type.kind {
+            let type_name = match _type.kind {
                 CXTypeKind::Identifier {
                     name: type_name, ..
-                } => (type_name, None),
-                CXTypeKind::TemplatedIdentifier { name, input } => (name, Some(input)),
+                } => type_name,
                 _ => {
-                    return log_parse_error!(
-                        data,
-                        "Expected identifier or templated identifier before scope resolution"
-                    );
+                    return log_parse_error!(data, "Expected identifier before scope resolution");
                 }
             };
 
-            let scoped_name_expr = qualify_identifier_under_type(
-                data,
-                type_name,
-                type_template_input,
-                variant_expr,
-                start_index,
-            )?;
+            let scoped_name_expr =
+                qualify_identifier_under_type(data, type_name, variant_expr, start_index)?;
 
             if !try_next!(data.tokens, punctuator!(OpenParen)) {
                 decls.push(scoped_name_expr);
@@ -366,7 +357,7 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<CXPattern> {
         }
 
         TokenKind::Identifier(_) => {
-            let Some(mut ident) = try_parse_identifier(&mut data.tokens)? else {
+            let Some(mut ident) = try_parse_qualified_name(&mut data.tokens)? else {
                 unreachable!()
             };
 
@@ -374,7 +365,7 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<CXPattern> {
                 data.tokens.back();
                 let _template_input = parse_template_args(data)?;
                 assert_token_matches!(data.tokens, operator!(ScopeRes), "'::'");
-                let Some(variant_name) = try_parse_identifier(&mut data.tokens)? else {
+                let Some(variant_name) = try_parse_qualified_name(&mut data.tokens)? else {
                     return log_parse_error!(
                         data,
                         "Expected variant name after tagged union pattern type"
@@ -519,9 +510,10 @@ pub(crate) fn parse_expr_val(
         },
         TokenKind::StringLiteral(value) => CXExprKind::StringLiteral { val: value.clone() },
 
-        TokenKind::Intrinsic(_) => CXExprKind::Identifier(QualifiedName::new_raw(parse_intrinsic(
-            &mut data.back().tokens,
-        )?)),
+        TokenKind::Intrinsic(_) => CXExprKind::Identifier {
+            name: QualifiedName::new_raw(parse_intrinsic(&mut data.back().tokens)?),
+            template_input: None,
+        },
         TokenKind::CompilerIdentifier(ident) => {
             let ident = ident.clone();
             data.back();
@@ -628,40 +620,20 @@ pub(crate) fn parse_expr_val(
 
 pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CXResult<CXExpression> {
     let start_index = data.tokens.index;
-    let Some(ident) = try_parse_identifier(&mut data.tokens)? else {
+    let Some(ident) = try_parse_identifier(data)? else {
         return log_parse_error!(data, "Expected identifier");
     };
 
-    let lhs = if !matches!(next_kind!(data.tokens)?, operator!(Less)) || !is_type_decl(data)? {
-        data.tokens.back();
-        CXExprKind::Identifier(ident).into_expr_with_origin(
-            start_index,
-            data.tokens.index,
-            data.file_origin_for_range(start_index, data.tokens.index),
-        )
-    } else {
-        data.tokens.back();
-
-        let args = parse_template_args(data)?;
-
-        CXExprKind::TemplatedIdentifier {
-            name: ident,
-            template_input: args,
-        }
-        .into_expr_with_origin(
-            start_index,
-            data.tokens.index,
-            data.file_origin_for_range(start_index, data.tokens.index),
-        )
-    };
-
-    Ok(lhs)
+    Ok(ident.into_expr(
+        start_index,
+        data.tokens.index,
+        data.file_origin_for_range(start_index, data.tokens.index),
+    ))
 }
 
 fn qualify_identifier_under_type(
     data: &mut ParserData,
     type_name: QualifiedName,
-    type_template_input: Option<CXTemplateInput>,
     rhs: CXExpression,
     start_index: usize,
 ) -> CXResult<CXExpression> {
@@ -674,21 +646,10 @@ fn qualify_identifier_under_type(
     };
 
     let kind = match rhs.kind {
-        CXExprKind::Identifier(name) => {
-            let name = qualify(name);
-            if let Some(template_input) = type_template_input {
-                CXExprKind::TemplatedIdentifier {
-                    name,
-                    template_input,
-                }
-            } else {
-                CXExprKind::Identifier(name)
-            }
-        }
-        CXExprKind::TemplatedIdentifier {
+        CXExprKind::Identifier {
             name,
             template_input,
-        } => CXExprKind::TemplatedIdentifier {
+        } => CXExprKind::Identifier {
             name: qualify(name),
             template_input,
         },

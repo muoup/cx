@@ -138,10 +138,7 @@ fn ensure_complete_value_type(
             field_type.display_with(&env.symbols)
         ),
         MIRTypeKind::Array { inner_type, .. } => {
-            let inner_type = env
-                .symbols
-                .resolve_type_id(*inner_type)
-                .clone();
+            let inner_type = env.symbols.resolve_type_id(*inner_type).clone();
             ensure_complete_value_type(env, expr, field_name, &inner_type)
         }
         MIRTypeKind::Structured { .. }
@@ -174,10 +171,7 @@ fn complete_field(
     match field {
         CXField::Standard { name, _type } => {
             let field_type_id = complete_type_id(env, namespace, expr, _type)?;
-            let resolved_field_type = env
-                .symbols
-                .resolve_type_id(field_type_id)
-                .clone();
+            let resolved_field_type = env.symbols.resolve_type_id(field_type_id).clone();
             ensure_complete_value_type(env, expr, name, &resolved_field_type)?;
             Ok(MIRField::standard(name.clone(), field_type_id))
         }
@@ -195,10 +189,7 @@ fn complete_field(
             }
 
             let integer_type_id = complete_type_id(env, namespace, expr, integer_type)?;
-            let resolved_integer_type = env
-                .symbols
-                .resolve_type_id(integer_type_id)
-                .clone();
+            let resolved_integer_type = env.symbols.resolve_type_id(integer_type_id).clone();
             let MIRTypeKind::Integer { _type, .. } = resolved_integer_type.kind else {
                 return log_typecheck_error!(
                     env,
@@ -391,6 +382,7 @@ fn ensure_named_identifier_completed(
         CXTypeKind::Identifier {
             name: identifier_name,
             predeclaration,
+            ..
         } if identifier_name == name && *predeclaration != PredeclarationType::None => {
             named_predeclaration_type(env, ty, &identifier_name.name, *predeclaration)
         }
@@ -427,7 +419,15 @@ pub(crate) fn int_complete_type(
     match &ty.kind {
         CXTypeKind::Identifier {
             name,
+            template_input: Some(input),
+            ..
+        } => instantiate_type_template(env, namespace, input, &name.as_flat_name())
+            .map(|completed| completed.with_specifier(ty.specifiers)),
+
+        CXTypeKind::Identifier {
+            name,
             predeclaration,
+            template_input: None,
         } => {
             let flat_name = name.as_flat_name();
             if let Some(existing) = env.get_realized_type(&flat_name) {
@@ -475,11 +475,6 @@ pub(crate) fn int_complete_type(
             }
 
             log_typecheck_error!(env, Some(expr.token_range()), "Type not found: {name}")
-        }
-
-        CXTypeKind::TemplatedIdentifier { name, input, .. } => {
-            instantiate_type_template(env, namespace, input, &name.as_flat_name())
-                .map(|completed| completed.with_specifier(ty.specifiers))
         }
 
         CXTypeKind::ExplicitSizedArray(inner, size) => {

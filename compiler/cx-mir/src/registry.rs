@@ -127,11 +127,20 @@ impl<'a> MIRSymbolRegistry<'a> {
     }
     
     pub fn insert_local_type(&mut self, name: String, _type: MIRType) -> CXResult<MIRTypeId> {
-        todo!()
+        let type_id = self.generate_type_id(_type);
+
+        self.valid_typeid.insert(type_id);
+        self.local_symbols.insert(QualifiedName::new_raw(CXIdent::new(name)), MIRSymbol::Type(type_id));
+
+        Ok(type_id)
     }
 
-    pub fn remove_local_type(&mut self, id: MIRTypeId) -> CXResult<()> {
-        todo!()
+    pub fn push_local_scope(&mut self) {
+        self.local_symbols.push_scope();
+    }
+
+    pub fn pop_local_scope(&mut self) {
+        self.local_symbols.pop_scope();
     }
 
     pub fn insert_symbol(&mut self, name: QualifiedName, symbol: MIRSymbol) {

@@ -3,7 +3,10 @@ use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 use speedy::{Readable, Writable};
 
 use crate::ast::{
-    expression::CXExpression, modifiers::{CXLinkageMode, CXTypeQualifiers}, template::CXTemplateInput, types::{CXType, CXTypeKind, PredeclarationType}
+    expression::CXExpression,
+    modifiers::{CXLinkageMode, CXTypeQualifiers},
+    template::CXTemplateInput,
+    types::{CXType, CXTypeKind, PredeclarationType},
 };
 
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq)]
@@ -96,11 +99,13 @@ impl CXFunctionKind {
 impl CXFunctionTypeIdent {
     pub fn from_type(ty: &CXType) -> Option<CXFunctionTypeIdent> {
         match &ty.kind {
+            CXTypeKind::Identifier {
+                name,
+                template_input: Some(input),
+                ..
+            } => Some(CXFunctionTypeIdent::Templated(name.clone(), input.clone())),
             CXTypeKind::Identifier { name, .. } => {
                 Some(CXFunctionTypeIdent::Standard(name.clone()))
-            }
-            CXTypeKind::TemplatedIdentifier { name, input } => {
-                Some(CXFunctionTypeIdent::Templated(name.clone(), input.clone()))
             }
             _ => None,
         }
@@ -118,11 +123,13 @@ impl CXFunctionTypeIdent {
             CXFunctionTypeIdent::Standard(name) => CXTypeKind::Identifier {
                 name: name.clone(),
                 predeclaration: PredeclarationType::None,
+                template_input: None,
             }
             .to_type(),
-            CXFunctionTypeIdent::Templated(name, input) => CXTypeKind::TemplatedIdentifier {
+            CXFunctionTypeIdent::Templated(name, input) => CXTypeKind::Identifier {
                 name: name.clone(),
-                input: input.clone(),
+                predeclaration: PredeclarationType::None,
+                template_input: Some(input.clone()),
             }
             .to_type(),
         }

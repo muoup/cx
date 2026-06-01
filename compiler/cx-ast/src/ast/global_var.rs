@@ -1,6 +1,6 @@
 use cx_util::identifier::CXIdent;
 
-use crate::ast::{expression::CXExpression, types::CXType};
+use crate::ast::{expression::CXExpression, modifiers::CXLinkageMode, types::CXType};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CXGlobalVariable {
@@ -11,6 +11,7 @@ pub enum CXGlobalVariable {
     Standard {
         _type: CXType,
         is_mutable: bool,
+        linkage: CXLinkageMode,
         initializer: Option<CXExpression>,
     },
 }

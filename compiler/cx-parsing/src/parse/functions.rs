@@ -1,7 +1,8 @@
 use crate::{assert_token_matches, next_kind, peek_next_kind, try_next};
 use cx_ast::ast::{
     function::{
-        CXFunctionContract, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXParameter, CXReceiverData, CXReceiverMode
+        CXFunctionContract, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXParameter,
+        CXReceiverData, CXReceiverMode,
     },
     modifiers::CXLinkageMode,
     template::CXTemplatePrototype,
@@ -82,14 +83,16 @@ pub fn try_function_parse(
                 //                 ^
                 // We have parsed the `<int>` part as a template prototype rather than
                 // a template argument list, so we need to convert it here.
-                Some(prototype) => CXTypeKind::TemplatedIdentifier {
+                Some(prototype) => CXTypeKind::Identifier {
                     name: QualifiedName::new_raw(name),
-                    input: convert_template_proto_to_args(prototype),
+                    predeclaration: PredeclarationType::None,
+                    template_input: Some(convert_template_proto_to_args(prototype)),
                 },
 
                 None => CXTypeKind::Identifier {
                     name: QualifiedName::new_raw(name),
                     predeclaration: PredeclarationType::None,
+                    template_input: None,
                 },
             }
             .to_type();

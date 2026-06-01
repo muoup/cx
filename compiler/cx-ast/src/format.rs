@@ -2,7 +2,14 @@ use cx_util::identifier::CXIdent;
 use std::fmt::{Display, Formatter, Result};
 
 use crate::ast::{
-    CXAST, CXASTStmt, expression::{CXBinOp, CXExprKind, CXExpression, CXInitIndex}, function::{CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXReceiverMode}, global_var::CXGlobalVariable, modifiers::{CX_CONST, CXLinkageMode}, pattern::CXPattern, template::CXTemplateInput, types::{CXField, CXType, CXTypeKind}
+    expression::{CXBinOp, CXExprKind, CXExpression, CXInitIndex},
+    function::{CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXReceiverMode},
+    global_var::CXGlobalVariable,
+    modifiers::{CXLinkageMode, CX_CONST},
+    pattern::CXPattern,
+    template::CXTemplateInput,
+    types::{CXField, CXType, CXTypeKind},
+    CXASTStmt, CXAST,
 };
 
 // Helper struct for indented formatting of CXExpr
@@ -69,6 +76,7 @@ impl Display for CXGlobalVariable {
                 _type,
                 is_mutable,
                 initializer,
+                ..
             } => {
                 write!(
                     f,
@@ -112,19 +120,22 @@ impl<'a> Display for CXExprFormatter<'a> {
                 self.indent(f)?;
                 writeln!(f, "}}")
             }
-            CXExprKind::Identifier(ident) => writeln!(f, "Identifier {}", ident),
-            CXExprKind::TemplatedIdentifier {
-                name: fn_name,
+            CXExprKind::Identifier {
+                name,
                 template_input,
             } => {
-                let arg_string = template_input
-                    .params
-                    .iter()
-                    .map(|arg| format!("{}", arg))
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                if let Some(template_input) = template_input {
+                    let arg_string = template_input
+                        .params
+                        .iter()
+                        .map(|arg| format!("{}", arg))
+                        .collect::<Vec<_>>()
+                        .join(", ");
 
-                writeln!(f, "TemplatedIdentifier {}<{}>", fn_name, arg_string)
+                    writeln!(f, "Identifier {}<{}>", name, arg_string)
+                } else {
+                    writeln!(f, "Identifier {}", name)
+                }
             }
             CXExprKind::VarDeclaration {
                 name,
@@ -377,8 +388,17 @@ impl Display for CXType {
 impl Display for CXTypeKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CXTypeKind::Identifier { name, .. } => write!(f, "{name}"),
-            CXTypeKind::TemplatedIdentifier { name, input } => write!(f, "{name}{input}"),
+            CXTypeKind::Identifier {
+                name,
+                template_input,
+                ..
+            } => {
+                if let Some(input) = template_input {
+                    write!(f, "{name}{input}")
+                } else {
+                    write!(f, "{name}")
+                }
+            }
             CXTypeKind::ExplicitSizedArray(inner, size) => write!(f, "[{inner}; {size}]"),
             CXTypeKind::ImplicitSizedArray(inner) => write!(f, "[{inner}]"),
             CXTypeKind::MemoryReference { inner_type } => write!(f, "{inner_type}&"),
@@ -468,9 +488,7 @@ impl Display for CXTypeKind {
                         CXField::Standard { name, _type } => {
                             format!("{name}: {_type}")
                         }
-                        CXField::Bitfield { .. } => {
-                            "<invalid bitfield variant>".to_string()
-                        }
+                        CXField::Bitfield { .. } => "<invalid bitfield variant>".to_string(),
                     })
                     .collect::<Vec<_>>()
                     .join(", ");

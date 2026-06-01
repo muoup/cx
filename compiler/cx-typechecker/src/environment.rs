@@ -5,11 +5,10 @@ use cx_ast::ast::{
     function::CXFunctionPrototype,
     types::{CXType, CXTypeKind, PredeclarationType},
 };
-use cx_mir::program::{EnvironmentNamespace, MIRFunction, MIRGlobalVariable, MIRUnit};
+use cx_mir::{program::{EnvironmentNamespace, MIRFunction, MIRGlobalVariable, MIRUnit}, registry::TemplateBindingFrame};
 use cx_mir::{
     mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId},
     registry::MIRSymbolRegistry,
-    symbol::MIRSymbol,
 };
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
@@ -27,13 +26,11 @@ pub use crate::environment::functions::control_flow::{
 };
 use crate::environment::items::ItemRegistry;
 use crate::environment::source::SourceContext;
-use crate::environment::symbols::{SymbolRegistry, TemplateBindingFrame};
 use crate::log::TypeError;
 
 pub(crate) mod functions;
 pub(crate) mod items;
 pub(crate) mod source;
-pub(crate) mod symbols;
 
 pub use items::MIRFunctionGenRequest;
 
@@ -55,7 +52,7 @@ impl TypeEnvironment<'_> {
     ) -> TypeEnvironment<'a> {
         TypeEnvironment {
             source: SourceContext::new(tokens, compilation_unit, working_directory, module_data),
-            symbols: SymbolRegistry::new(&module_data.symbol_registry),
+            symbols: MIRSymbolRegistry::new(&module_data.symbol_registry),
             items: ItemRegistry::new(),
             function: FunctionContext::default(),
         }
@@ -148,6 +145,7 @@ impl TypeEnvironment<'_> {
         let as_cx_type = CXTypeKind::Identifier {
             predeclaration: PredeclarationType::None,
             name,
+            template_input: None,
         }
         .to_type();
 

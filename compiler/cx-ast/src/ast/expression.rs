@@ -45,11 +45,10 @@ pub enum CXExprKind {
     Taken,
     Unit,
 
-    TemplatedIdentifier {
+    Identifier {
         name: QualifiedName,
-        template_input: CXTemplateInput,
+        template_input: Option<CXTemplateInput>,
     },
-    Identifier(QualifiedName),
 
     IntLiteral {
         val: i64,

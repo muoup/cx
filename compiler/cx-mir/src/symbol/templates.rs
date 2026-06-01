@@ -20,11 +20,11 @@ use cx_mir::mir::data::{
 };
 use cx_mir::mir::name_mangling::mangle_namespace_symbol;
 use cx_mir::mir::program::EnvironmentNamespace;
+use cx_util::{CXError, CXResult};
 use cx_util::{
     identifier::CXIdent,
     namespace::{NamespacePath, QualifiedName},
 };
-use cx_util::{CXError, CXResult};
 
 pub(crate) type Overwrites = crate::environment::symbols::TemplateBindingFrame;
 type TemplateBindings = HashMap<String, MIRType>;
@@ -85,10 +85,8 @@ pub(crate) fn instantiate_type_template(
     let shell = &template.resource.shell;
     let aggregate_base_name =
         templated_aggregate_base_name(shell).unwrap_or_else(|| terminal_name(name).as_string());
-    let strong_name = QualifiedName::new(
-        namespace.clone(),
-        CXIdent::new(aggregate_base_name.clone()),
-    );
+    let strong_name =
+        QualifiedName::new(namespace.clone(), CXIdent::new(aggregate_base_name.clone()));
     let template_name = mangle_template_name(env, &strong_name.as_flat_name(), &completed_input);
 
     if let Some(template) = env.get_realized_type(template_name.as_str()) {
@@ -362,16 +360,23 @@ fn deduce_from_cx_type(
     }
 
     match &formal.kind {
-        CXTypeKind::Identifier { name, .. }
-            if template_prototype
-                .types
-                .iter()
-                .any(|param| param == name.name.as_str()) =>
+        CXTypeKind::Identifier {
+            name,
+            template_input: None,
+            ..
+        } if template_prototype
+            .types
+            .iter()
+            .any(|param| param == name.name.as_str()) =>
         {
             bind_template_argument(env, bindings, name.name.as_str(), actual)
         }
 
-        CXTypeKind::TemplatedIdentifier { name, input } => {
+        CXTypeKind::Identifier {
+            name,
+            template_input: Some(input),
+            ..
+        } => {
             let Some(template_info) = actual.get_template_data() else {
                 return CXError::create_result(format!(
                     "Expected realized template type '{}' while deducing, found {}",

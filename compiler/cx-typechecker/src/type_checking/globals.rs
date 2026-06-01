@@ -7,10 +7,8 @@ use crate::{
     },
 };
 use cx_ast::ast::{
-    CXAST,
     expression::{CXExprKind, CXExpression},
     global_var::CXGlobalVariable,
-    modifiers::CXLinkageMode,
 };
 use cx_mir::mir::{
     data::MIRIntegerType,
@@ -20,27 +18,13 @@ use cx_mir::mir::{
 use cx_mir::registry::MIRSymbolRegistry;
 use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
-pub fn complete_base_globals(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    ast: &CXAST,
-) -> CXResult<()> {
-    for (ident, module_res) in ast.global_variables.iter() {
-        complete_global(env, namespace, ident, module_res)?;
-    }
-
-    Ok(())
-}
-
 fn complete_global(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     ident: &str,
-    module_res: &ModuleResource<CXGlobalVariable>,
+    global: &CXGlobalVariable,
 ) -> CXResult<()> {
-    let owns_resource = module_res.external_module.is_none();
-
-    match &module_res.resource {
+    match &global {
         CXGlobalVariable::EnumDefinition { variants } => {
             let mut previous = None;
 
@@ -76,29 +60,20 @@ fn complete_global(
         } => {
             let _type = env.complete_type(namespace, &CXExpression::default(), _type)?;
             ensure_valid_allocation_type(env, None, "a global variable", &_type)?;
-            let _initializer = if owns_resource {
-                match initializer.as_ref() {
-                    Some(init_expr) => {
-                        let CXExprKind::IntLiteral { val, .. } = &init_expr.kind else {
-                            return log_typecheck_error!(
-                                env,
-                                Some(init_expr.token_range()),
-                                "CX currently only supports integer initializers for global variables"
-                            );
-                        };
+            let _initializer = match initializer.as_ref() {
+                Some(init_expr) => {
+                    let CXExprKind::IntLiteral { val, .. } = &init_expr.kind else {
+                        return log_typecheck_error!(
+                            env,
+                            Some(init_expr.token_range()),
+                            "CX currently only supports integer initializers for global variables"
+                        );
+                    };
 
-                        Some(*val)
-                    }
-
-                    None => None,
+                    Some(*val)
                 }
-            } else {
-                None
-            };
-            let linkage = if owns_resource {
-                module_res.linkage
-            } else {
-                CXLinkageMode::Extern
+
+                None => None,
             };
 
             env.items.realized_globals.insert(
@@ -110,7 +85,7 @@ fn complete_global(
                         _type,
                     },
                     is_mutable: *is_mutable,
-                    linkage,
+                    linkage: global.linkage,
                 },
             );
 

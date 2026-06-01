@@ -1,17 +1,3 @@
-use cx_tokens::TokenIter;
-
-pub fn token_string(toks: &TokenIter, start_index: usize, end_index: usize) -> String {
-    let mut tokens = String::new();
-
-    for tok in &toks.slice[start_index..end_index] {
-        tokens.push_str(&format!("{tok} "));
-    }
-
-    tokens.push('\n');
-
-    tokens
-}
-
 #[macro_export]
 macro_rules! assert_token_matches {
     ($data:expr, $pattern:pat) => {

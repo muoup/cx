@@ -115,16 +115,10 @@ fn query_type_constructor(
         return Ok(None);
     }
 
-    let as_type = if let Some(template_input) = template_input {
-        CXTypeKind::TemplatedIdentifier {
-            name: union_name.clone(),
-            input: template_input.clone(),
-        }
-    } else {
-        CXTypeKind::Identifier {
-            name: union_name.clone(),
-            predeclaration: PredeclarationType::None,
-        }
+    let as_type = CXTypeKind::Identifier {
+        name: union_name.clone(),
+        predeclaration: PredeclarationType::None,
+        template_input: template_input.cloned(),
     }
     .to_type();
 

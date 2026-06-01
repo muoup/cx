@@ -93,10 +93,11 @@ pub(crate) fn typecheck_access(
     let (lhs_source, lhs, lhs_inner, lhs_ref_const) = resolve_access_base(env, expr, lhs)?;
 
     match &rhs.kind {
-        CXExprKind::Identifier(name) => {
-            if let Some(struct_field) =
-                struct_field(&lhs_inner, &env.symbols, name.name.as_str())
-            {
+        CXExprKind::Identifier {
+            name,
+            template_input: None,
+        } => {
+            if let Some(struct_field) = struct_field(&lhs_inner, &env.symbols, name.name.as_str()) {
                 let mut result = TypecheckResult::new_base(
                     env.symbols.mem_ref_to(
                         struct_field
@@ -201,9 +202,9 @@ pub(crate) fn typecheck_access(
             )
         }
 
-        CXExprKind::TemplatedIdentifier {
+        CXExprKind::Identifier {
             name,
-            template_input,
+            template_input: Some(template_input),
         } => {
             let member_arg_types = vec![lhs_inner.clone()];
             let prototype = member_function_qualified_name(&lhs_inner, &name.name)

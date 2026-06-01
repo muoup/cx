@@ -1,7 +1,8 @@
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::ast::{
-    expression::CXExpression, function::CXFunctionPrototype, modifiers::CXTypeQualifiers, template::CXTemplateInput,
+    expression::CXExpression, function::CXFunctionPrototype, modifiers::CXTypeQualifiers,
+    template::CXTemplateInput,
 };
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -44,10 +45,7 @@ pub enum CXTypeKind {
     Identifier {
         name: QualifiedName,
         predeclaration: PredeclarationType,
-    },
-    TemplatedIdentifier {
-        name: QualifiedName,
-        input: CXTemplateInput,
+        template_input: Option<CXTemplateInput>,
     },
 
     ExplicitSizedArray(Box<CXType>, Box<CXExpression>),
@@ -102,7 +100,6 @@ impl CXType {
     pub fn get_name(&self) -> Option<&CXIdent> {
         match &self.kind {
             CXTypeKind::Identifier { name, .. } => Some(&name.name),
-            CXTypeKind::TemplatedIdentifier { name, .. } => Some(&name.name),
             CXTypeKind::TaggedUnion { name, .. } => Some(name),
 
             CXTypeKind::Structured { name, .. } => name.as_ref(),
