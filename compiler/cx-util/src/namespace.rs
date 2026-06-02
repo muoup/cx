@@ -124,6 +124,13 @@ impl QualifiedName {
 
         Some(self.name)
     }
+
+    pub fn child(self, name: CXIdent) -> Self {
+        Self {
+            namespace: self.namespace.child(self.name),
+            name,
+        }
+    }
 }
 
 impl Display for QualifiedName {

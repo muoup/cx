@@ -23,16 +23,14 @@ use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 pub(crate) fn typecheck_move(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
+    _: &EnvironmentNamespace,
+    inner: TypecheckResult,
     inner_expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
-    let inner = typecheck_expr(env, namespace, inner_expr, None)?;
-
     let Some(binding) = inner.binding().cloned() else {
         return log_typecheck_error!(
             env,
-            Some(expr.token_range()),
+            Some(inner_expr.token_range()),
             "Move expressions can currently only be applied to stack variable identifiers"
         );
     };
@@ -40,17 +38,17 @@ pub(crate) fn typecheck_move(
     if binding.kind != BindingPlaceKind::Local {
         return log_typecheck_error!(
             env,
-            Some(expr.token_range()),
+            Some(inner_expr.token_range()),
             "Moving out of aggregate fields or projections is not implemented"
         );
     };
 
-    let mut inner_val = inner.standard_ready_coerce(env, expr.token_range())?;
+    let mut inner_val = inner.standard_ready_coerce(env, inner_expr.token_range())?;
 
     if !matches!(inner_val.kind, MIRExpressionKind::Variable { .. }) {
         return log_typecheck_error!(
             env,
-            Some(expr.token_range()),
+            Some(inner_expr.token_range()),
             "Move expressions can currently only be applied to stack variable identifiers",
         );
     }

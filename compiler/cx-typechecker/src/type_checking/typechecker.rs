@@ -392,8 +392,9 @@ fn typecheck_expr_inner(
         }
 
         CXExprKind::Move {
-            expr: inner_expr, ..
-        } => typecheck_move(env, namespace, expr, inner_expr)?,
+            expr, ..
+        } => typecheck_expr(env, namespace, expr, None)
+            .and_then(|v| typecheck_move(env, namespace, v, expr))?,
 
         CXExprKind::InitializerList { indices } => {
             typecheck_initializer_list(env, namespace, expr, indices, expected_type)?

@@ -1,6 +1,7 @@
 use crate::environment::functions::query::{member_function_qualified_name, query_function};
 use crate::environment::{BindingMoveState, TypeEnvironment};
-use crate::log_typecheck_error;
+use crate::type_checking::value::moves::typecheck_move;
+use crate::{log_typecheck_error, typecheck_error};
 use crate::type_checking::aggregate::fields::struct_field;
 use crate::type_checking::op::binop::calls::build_function_reference;
 use crate::type_checking::result::{BindingPlaceKind, TypecheckResult, TypecheckedBinding};
@@ -108,6 +109,15 @@ fn typecheck_access_new(
 
     match &rhs.kind {
         CXExprKind::Identifier { name, template_input } => {
+            let Some(name) = name.root_name() else {
+                return log_typecheck_error!(
+                    env,
+                    Some(expr.token_range()),
+                    "Expected an identifier without a namespace on the right-hand side of an access expression, found '{}'",
+                    name
+                );
+            };
+            
             if template_input.is_none() && let Some(struct_field) = struct_field(&base.source_type, &env.symbols, name.name.as_str()) {
                 // First, we check if we are trying to access a struct member
                 return Ok(
@@ -126,8 +136,50 @@ fn typecheck_access_new(
                     )
                 )
             }
-            
-            todo!()
+
+            let Some(strong_name) = base.source_type.strong_identifier() else {
+                return log_typecheck_error!(
+                    env,
+                    Some(expr.token_range()),
+                    "Cannot access member '{}' on type '{}', which does not have a strong identifier",
+                    name,
+                    base.source_type.display_with(&env.symbols)
+                );
+            };
+
+            let query = strong_name.child(name.clone());
+            let function = env.symbols.get_symbol(&query)?
+                .ok_or_else(|| typecheck_error!(
+                    env,
+                    Some(expr.token_range()),
+                    "Member '{}' not found on type '{}'",
+                    name,
+                    base.source_type.display_with(&env.symbols)
+                ))
+                .map(|symbol| symbol.as_function_prototype())?
+                .ok_or_else(|| {
+                    typecheck_error!(
+                        env,
+                        Some(expr.token_range()),
+                        "Member '{}' not found on type '{}'",
+                        name,
+                        base.source_type.display_with(&env.symbols)
+                    )
+                })?
+                .clone();
+          
+            let needs_move = function.signature.params
+                .get(0)
+                .map(|param| !param._type.is_memory_reference())
+                .unwrap_or(false);
+
+            let receiver = if needs_move {
+                typecheck_move(env, namespace, TypecheckResult::from(base.source), expr)
+                    .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?
+            } else { base.source };
+
+            Ok(TypecheckResult::from(build_function_reference(&function))
+                .with_implicit_parameters(vec![receiver]))
         },
 
         _ => log_typecheck_error!(
@@ -151,7 +203,7 @@ pub(crate) fn typecheck_access(
     let (lhs_source, lhs, lhs_inner, lhs_ref_const) = resolve_access_base(env, expr, lhs)?;
 
     match &rhs.kind {
-        CXExprKind::Identifier {
+        CXExprKind::Identifier {r,
             name,
             template_input: None,
         } => {

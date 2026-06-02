@@ -70,7 +70,7 @@ pub fn convert_expression(
                 token_range: None,
                 body: FMIRNodeBody::Alloca,
                 _type: FMIRType::CMonad {
-                    inner: Box::new(FMIRType::pure(mir_expr._type.clone())),
+                    inner: Box::new(FMIRType::pure(mir_expr.get_type())),
                     operation: operation.clone(),
                 },
             };
@@ -308,7 +308,7 @@ pub fn convert_expression(
                 body: FMIRNodeBody::VariableAlias {
                     name: name.as_string(),
                 },
-                _type: FMIRType::pure(mir_expr._type.clone()),
+                _type: FMIRType::pure(mir_expr.get_type()),
             })
         }
 
@@ -333,7 +333,7 @@ pub fn convert_expression(
                 body: FMIRNodeBody::VariableAlias {
                     name: name.as_string(),
                 },
-                _type: FMIRType::pure(mir_expr._type.clone()),
+                _type: FMIRType::pure(mir_expr.get_type()),
             })
         }
 
@@ -350,7 +350,7 @@ pub fn convert_expression(
 
             Ok(FMIRNode {
                 token_range: None,
-                _type: effect.apply(FMIRType::pure(mir_expr._type.clone())),
+                _type: effect.apply(FMIRType::pure(mir_expr.get_type())),
                 body: result.body,
             })
         }
@@ -383,7 +383,7 @@ pub fn convert_expression(
 
             Ok(FMIRNode {
                 token_range: None,
-                _type: effect.apply(FMIRType::pure(mir_expr._type.clone())),
+                _type: effect.apply(FMIRType::pure(mir_expr.get_type())),
                 body: result.body,
             })
         }
@@ -396,7 +396,7 @@ pub fn convert_expression(
             // assuming that accesses are valid here.
 
             let value_node = convert_expression(env, value)?;
-            let variant_ref_type = mir_expr._type.clone();
+            let variant_ref_type = mir_expr.get_type();
 
             Ok(FMIRNode {
                 _type: FMIRType::pure(variant_ref_type),
@@ -453,10 +453,10 @@ pub fn convert_expression(
                 _type: base_node
                     ._type
                     .identity()
-                    .apply(FMIRType::pure(mir_expr._type.clone())),
+                    .apply(FMIRType::pure(mir_expr.get_type())),
                 body: FMIRNodeBody::Transmute {
                     value: FRc::new(base_node),
-                    target_type: FMIRType::pure(mir_expr._type.clone()),
+                    target_type: FMIRType::pure(mir_expr.get_type()),
                 },
             })
         }
@@ -502,14 +502,14 @@ pub fn convert_expression(
             }
 
             effect = effect.union(&FMIRType::unsafe_effect(FMIRType::pure(
-                mir_expr._type.clone(),
+                mir_expr.get_type(),
             )));
 
             // TODO: Contract enforcement
 
             Ok(FMIRNode {
                 token_range: None,
-                _type: effect.apply(FMIRType::pure(mir_expr._type.clone())),
+                _type: effect.apply(FMIRType::pure(mir_expr.get_type())),
                 body: application.body,
             })
         }
@@ -528,7 +528,7 @@ pub fn convert_expression(
 
             Ok(FMIRNode {
                 token_range: None,
-                _type: effect.apply(FMIRType::pure(mir_expr._type.clone())),
+                _type: effect.apply(FMIRType::pure(mir_expr.get_type())),
                 body: converted.body,
             })
         }
@@ -545,7 +545,7 @@ pub fn convert_expression(
 
         MIRExpressionKind::Unsafe { .. } => Ok(FMIRNode {
             token_range: mir_expr.token_range.clone(),
-            _type: FMIRType::unsafe_effect(FMIRType::pure(mir_expr._type.clone())),
+            _type: FMIRType::unsafe_effect(FMIRType::pure(mir_expr.get_type())),
             body: FMIRNodeBody::UnsafeBlock,
         }),
 
