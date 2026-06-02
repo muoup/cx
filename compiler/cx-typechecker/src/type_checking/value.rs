@@ -33,8 +33,7 @@ pub(crate) fn ensure_valid_allocation_type(
         MIRTypeKind::Array { inner_type, .. } => {
             let inner_type = env
                 .symbols
-                .get(*inner_type)
-                .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
+                .resolve_type_id(*inner_type)
                 .clone();
             ensure_valid_allocation_type(env, range, "an array element", &inner_type)
         }

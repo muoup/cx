@@ -52,21 +52,21 @@ pub fn typecheck_initializer_list(
         ));
     };
 
-    let to_type = env.mem_ref_inner(to_type).unwrap_or(to_type).clone();
+    let to_type = env.symbols.mem_ref_inner(to_type).unwrap_or(to_type).clone();
 
     match &to_type.kind {
         MIRTypeKind::Array {
             inner_type,
             length,
         } => {
-            let inner_type = env.resolve_type_id(inner_type).clone();
+            let inner_type = env.symbols.resolve_type_id(*inner_type).clone();
             typecheck_array_initializer(env, namespace, indices, &inner_type, Some(*length), &to_type)
         }
 
         MIRTypeKind::PointerTo {
             inner_type: inner, ..
         } => {
-            let inner_type = env.resolve_type_id(inner).clone();
+            let inner_type = env.symbols.resolve_type_id(*inner).clone();
             typecheck_array_initializer(env, namespace, indices, &inner_type, None, &to_type)
         }
 

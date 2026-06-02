@@ -56,6 +56,7 @@ fn complete_global(
         CXGlobalVariable::Standard {
             _type,
             initializer,
+            linkage,
             is_mutable,
         } => {
             let _type = env.complete_type(namespace, &CXExpression::default(), _type)?;
@@ -85,7 +86,7 @@ fn complete_global(
                         _type,
                     },
                     is_mutable: *is_mutable,
-                    linkage: global.linkage,
+                    linkage: *linkage,
                 },
             );
 

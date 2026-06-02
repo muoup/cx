@@ -1,17 +1,13 @@
 use crate::{
     environment::TypeEnvironment,
-    environment::symbols::templates::{
-        add_templated_types, complete_function_template, restore_template_overwrites,
-    },
     type_checking::{
-        globals::complete_base_globals,
         typechecker::{add_implicit_return, typecheck_expr},
         value::ensure_valid_allocation_type,
     },
 };
 use cx_ast::{
-    ast::{CXASTStmt, expression::CXExpression, function::CXFunctionKind},
-    symbols::UntypedSymbol,
+    ast::{expression::CXExpression, function::CXFunctionKind},
+    symbols::UntypedSymbolKind,
 };
 use cx_mir::mir::{
     data::{MIRFunctionPrototype, MIRParameter, MIRTemplateInput},
@@ -83,24 +79,17 @@ pub fn realize_fn_implementation(
     let base_ast = env.source.module_data.generation_ast.get(origin);
     let namespace = NamespacePath::from_slash_path(origin.identifier());
     let template_key = template_kind.into_key();
-    let Some(UntypedSymbol::FunctionTemplate(template, _)) =
-        env.symbols.global_registry.resolve(&template_key)
+    
+    let Some(UntypedSymbolKind::FunctionTemplate { input, definition, body }) =
+        env.symbols.global_registry.resolve(&template_key).map(|sym| &sym.kind)
     else {
-        panic!("Template not found");
+        unreachable!("Template not found");
     };
-    let body = base_ast
-        .definition_stmts
-        .iter()
-        .find_map(|stmt| match stmt {
-            CXASTStmt::TemplatedFunction {
-                prototype, body, ..
-            } if prototype.kind == template.resource.shell.kind => Some(body),
-            _ => None,
-        })
-        .expect("Function template body not found");
 
-    let overwrites = add_templated_types(env, &template.resource.prototype, input)?;
-    let prototype = complete_function_template(env, &namespace, &template)?;
+    env.push_scope(false, false);
+
+    // let overwrites = add_templated_types(env, &template.resource.prototype, input)?;
+    // let prototype = complete_function_template(env, &namespace, &template)?;
 
     let old_external_template = env.items.in_external_templated_function;
     let old_external_origin = env.items.external_template_origin.clone();
@@ -111,14 +100,16 @@ pub fn realize_fn_implementation(
     };
 
     // FIXME: This looks like a mess
-    env.set_external_templated_function(external_origin.is_some());
-    env.set_external_template_origin(external_origin);
+    // env.set_external_templated_function(external_origin.is_some());
+    // env.set_external_template_origin(external_origin);
     let typecheck_result = typecheck_function(env, &namespace, prototype.clone(), body);
-    env.set_external_templated_function(old_external_template);
-    env.set_external_template_origin(old_external_origin);
+    // env.set_external_templated_function(old_external_template);
+    // env.set_external_template_origin(old_external_origin);
     typecheck_result?;
 
-    restore_template_overwrites(env, overwrites);
+    env.pop_scope();
+
+    // restore_template_overwrites(env, overwrites);
     Ok(())
 }
 

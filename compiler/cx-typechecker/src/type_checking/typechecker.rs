@@ -412,6 +412,8 @@ fn typecheck_expr_inner(
             arms,
             default,
         } => typecheck_match(env, namespace, condition, arms, default.as_ref())?,
+
+        CXExprKind::Taken => unreachable!("Taken expressions should not be typechecked")
     };
 
     result.set_token_range_if_missing(expr.range.clone())?;
