@@ -5,6 +5,7 @@ use crate::{
         constexpr::constexpr_evaluate, typechecker::typecheck_expr,
         value::ensure_valid_allocation_type,
     },
+    typecheck_error,
 };
 use cx_ast::ast::{
     expression::{CXExprKind, CXExpression},
@@ -30,15 +31,18 @@ fn complete_global(
 
             for variant in variants {
                 let value = if let Some(expr) = variant.value.as_ref() {
-                    let value = typecheck_expr(env, namespace, expr, None)?.into_expression()?;
-                    let Some(value) = constexpr_evaluate(env, value)?.get_integer() else {
-                        return log_typecheck_error!(
-                            env,
-                            Some(expr.token_range()),
-                            "Invalid enum variant value, expected integer result"
-                        );
-                    };
-                    value
+                    typecheck_expr(env, namespace, expr, None)
+                        .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
+                        .and_then(|v| constexpr_evaluate(env, v))
+                        .and_then(|v| {
+                            v.get_integer().ok_or_else(|| {
+                                typecheck_error!(
+                                    env,
+                                    Some(expr.token_range()),
+                                    "Enum variant initializers must be integer literals"
+                                )
+                            })
+                        })?
                 } else {
                     previous.map(|value| value + 1).unwrap_or(0)
                 };

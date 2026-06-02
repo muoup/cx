@@ -27,7 +27,8 @@ pub fn typecheck_switch(
 
     let join_scope_idx = env.function.current_scope_index();
     let condition_value = typecheck_expr(env, namespace, condition, None)
-        .and_then(|val| std_rval_promotion(env, val.into_expression()?))?;
+        .and_then(|v| v.standard_ready_coerce(env, condition.token_range()))
+        .and_then(|v| std_rval_promotion(env, v))?;
     let base_snapshot = env.function.current_snapshot();
 
     // Build match arms from the cases
@@ -46,7 +47,8 @@ pub fn typecheck_switch(
             );
         };
 
-        let case_body_expr = typecheck_expr(env, namespace, case_expr, None)?.into_expression()?;
+        let case_body_expr = typecheck_expr(env, namespace, case_expr, None)
+            .and_then(|v| v.standard_ready_coerce(env, case_expr.token_range()))?;
         if expr_may_fall_through(&case_body_expr) {
             env.function.enqueue_scope_arrow(
                 &ScopeExitTarget {
@@ -96,7 +98,8 @@ pub fn typecheck_switch(
                     block.len()
                 );
             };
-            let body_expr = typecheck_expr(env, namespace, expr, None)?.into_expression()?;
+            let body_expr = typecheck_expr(env, namespace, expr, None)
+                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
             if expr_may_fall_through(&body_expr) {
                 env.function.enqueue_scope_arrow(
                     &ScopeExitTarget {
@@ -127,7 +130,7 @@ pub fn typecheck_switch(
     env.pop_scope()?;
 
     // Build the match expression
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         MIRType::unit(),
         MIRExpressionKind::CSwitch {
             condition: Box::new(condition_value),

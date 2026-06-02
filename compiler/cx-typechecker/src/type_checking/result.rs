@@ -7,7 +7,7 @@ use cx_util::namespace::QualifiedName;
 use cx_util::{CXError, CXResult};
 
 use crate::environment::TypeEnvironment;
-use crate::type_checking::value::locals::ensure_binding_available;
+use crate::log_typecheck_error;
 use cx_tokens::TokenRange;
 
 #[derive(Debug, Clone)]
@@ -51,6 +51,16 @@ impl TypecheckedBinding {
 /// require either moving out of said type when constructing the parameter list (breaks mutability rule), cloning the
 /// expression (expensive), or having the rules around 'implicit parameters' be handled every time we reason about a
 /// method call (leaky).
+#[derive(Debug)]
+pub enum TypecheckState {
+    Ready(MIRExpression),
+    IncompleteTemplatedCallee {
+        name: QualifiedName,
+        template_input: Option<CXTemplateInput>,
+    },
+    NeedsExpectedType(ExpectedTypeDeferredExpr),
+}
+
 type ExpectedTypeResolver =
     dyn FnOnce(&mut TypeEnvironment, &EnvironmentNamespace, &MIRType) -> CXResult<MIRExpression>;
 
@@ -85,57 +95,18 @@ impl std::fmt::Debug for ExpectedTypeDeferredExpr {
     }
 }
 
-#[derive(Debug)]
-pub enum TypecheckedExpression {
-    Ready(MIRExpression),
-    IncompleteTemplatedCallee {
-        name: QualifiedName,
-        template_input: Option<CXTemplateInput>,
-    },
-    NeedsExpectedType(ExpectedTypeDeferredExpr),
-}
-
-impl TypecheckedExpression {
-    fn as_ready(&self) -> CXResult<&MIRExpression> {
-        match self {
-            Self::Ready(expression) => Ok(expression),
-            Self::IncompleteTemplatedCallee { name, .. } => CXError::create_result(format!(
-                "Templated function '{}' requires an argument list for template deduction",
-                name
-            )),
-            Self::NeedsExpectedType(_) => {
-                CXError::create_result("Expression requires an expected type")
-            }
-        }
-    }
-
-    fn into_ready(self) -> CXResult<MIRExpression> {
-        match self {
-            Self::Ready(expression) => Ok(expression),
-            Self::IncompleteTemplatedCallee { name, .. } => CXError::create_result(format!(
-                "Templated function '{}' requires an argument list for template deduction",
-                name
-            )),
-            Self::NeedsExpectedType(_) => {
-                CXError::create_result("Expression requires an expected type")
-            }
-        }
-    }
-}
-
 pub enum TypecheckExtract<T> {
     Fail(TypecheckResult),
     Succ(T),
 }
 
 impl<T> TypecheckExtract<T> {
-    pub fn into_result(self) -> CXResult<T> {
+    pub fn into_result<F>(self, f: F) -> CXResult<T> 
+        where F: FnOnce(TypecheckResult) -> CXResult<T>
+    {
         match self {
             Self::Succ(value) => Ok(value),
-            Self::Fail(result) => result
-                .expression
-                .into_ready()
-                .and_then(|_| CXError::create_result("Typecheck result could not be extracted")),
+            Self::Fail(result) => f(result),
         }
     }
 }
@@ -163,7 +134,7 @@ impl CalleeExtraction {
 #[derive(Debug)]
 pub struct TypecheckResult {
     /// The accumulated expression
-    expression: TypecheckedExpression,
+    expression: TypecheckState,
     /// Implicit parameters carried upward for call sites (e.g. member receivers)
     implicit_parameters: Vec<MIRExpression>,
     /// Types that participate in function template deduction but are not ordinary explicit arguments.
@@ -177,7 +148,7 @@ pub struct TypecheckResult {
 impl From<MIRExpression> for TypecheckResult {
     fn from(expression: MIRExpression) -> Self {
         Self {
-            expression: TypecheckedExpression::Ready(expression),
+            expression: TypecheckState::Ready(expression),
             implicit_parameters: Vec::new(),
             deduction_arg_prefix: Vec::new(),
             binding: None,
@@ -187,9 +158,9 @@ impl From<MIRExpression> for TypecheckResult {
 }
 
 impl TypecheckResult {
-    pub fn new_base(_type: MIRType, kind: MIRExpressionKind) -> Self {
+    pub fn new(_type: MIRType, kind: MIRExpressionKind) -> Self {
         Self {
-            expression: TypecheckedExpression::Ready(MIRExpression {
+            expression: TypecheckState::Ready(MIRExpression {
                 token_range: None,
                 kind,
                 _type,
@@ -201,12 +172,37 @@ impl TypecheckResult {
         }
     }
 
+    pub fn standard_ready_coerce(self, env: &TypeEnvironment, token_range: &TokenRange) -> CXResult<MIRExpression> {
+        match self.expression {
+            TypecheckState::Ready(expr) => Ok(expr),
+            TypecheckState::IncompleteTemplatedCallee { .. }
+                => log_typecheck_error!(
+                    env,
+                    token_range,
+                    "Could not deduce templated function parameters",
+                ),
+            TypecheckState::NeedsExpectedType(_) => log_typecheck_error!(
+                env,
+                token_range,
+                "Could not resolve expression, expected type required but not provided",
+            ),
+        }
+    }
+
+    pub fn internal_ready_assertion(self) -> MIRExpression {
+        match self.expression {
+            TypecheckState::Ready(expr) => expr,
+            
+            _ => unreachable!("Expected TypecheckResult to be ready, but was not: {:?}", self.expression),
+        }
+    }
+
     pub fn incomplete_templated_callee(
         name: QualifiedName,
         template_input: Option<CXTemplateInput>,
     ) -> Self {
         Self {
-            expression: TypecheckedExpression::IncompleteTemplatedCallee {
+            expression: TypecheckState::IncompleteTemplatedCallee {
                 name,
                 template_input,
             },
@@ -223,7 +219,7 @@ impl TypecheckResult {
             + 'static,
     {
         Self {
-            expression: TypecheckedExpression::NeedsExpectedType(ExpectedTypeDeferredExpr::new(
+            expression: TypecheckState::NeedsExpectedType(ExpectedTypeDeferredExpr::new(
                 resolver,
             )),
             implicit_parameters: Vec::new(),
@@ -263,14 +259,14 @@ impl TypecheckResult {
 
     pub fn try_into_expression(self) -> TypecheckExtract<MIRExpression> {
         match self.expression {
-            TypecheckedExpression::Ready(expression) => TypecheckExtract::Succ(expression),
+            TypecheckState::Ready(expression) => TypecheckExtract::Succ(expression),
             expression => TypecheckExtract::Fail(Self { expression, ..self }),
         }
     }
 
     pub fn try_into_callee(self) -> TypecheckExtract<CalleeExtraction> {
         match self.expression {
-            TypecheckedExpression::Ready(function) => TypecheckExtract::Succ(CalleeExtraction::new(
+            TypecheckState::Ready(function) => TypecheckExtract::Succ(CalleeExtraction::new(
                 function,
                 self.implicit_parameters,
                 self.deduction_arg_prefix,
@@ -288,7 +284,7 @@ impl TypecheckResult {
         Vec<MIRExpression>,
     )> {
         match self.expression {
-            TypecheckedExpression::IncompleteTemplatedCallee {
+            TypecheckState::IncompleteTemplatedCallee {
                 name,
                 template_input,
             } => Some((
@@ -301,28 +297,12 @@ impl TypecheckResult {
         }
     }
 
-    pub fn ensure_available(self, env: &mut TypeEnvironment) -> CXResult<Self> {
-        if let Some(binding) = &self.binding {
-            ensure_binding_available(
-                env,
-                self.expression.as_ready()?.token_range.clone(),
-                &binding.root,
-            )?
-        }
-
-        Ok(self)
-    }
-
     /// Get the type of this typecheck result's expression
-    pub fn get_type(&self) -> CXResult<MIRType> {
-        Ok(self.expression.as_ready()?._type.clone())
-    }
-
     pub fn get_type_if_ready(&self) -> CXResult<Option<MIRType>> {
         match &self.expression {
-            TypecheckedExpression::Ready(expression) => Ok(Some(expression._type.clone())),
-            TypecheckedExpression::NeedsExpectedType(_) => Ok(None),
-            TypecheckedExpression::IncompleteTemplatedCallee { name, .. } => {
+            TypecheckState::Ready(expression) => Ok(Some(expression._type.clone())),
+            TypecheckState::NeedsExpectedType(_) => Ok(None),
+            TypecheckState::IncompleteTemplatedCallee { name, .. } => {
                 CXError::create_result(format!(
                     "Templated function '{}' requires an argument list for template deduction",
                     name
@@ -333,9 +313,9 @@ impl TypecheckResult {
 
     pub fn set_token_range_if_missing(&mut self, token_range: TokenRange) -> CXResult<()> {
         let expression = match &mut self.expression {
-            TypecheckedExpression::Ready(expression) => expression,
-            TypecheckedExpression::IncompleteTemplatedCallee { .. }
-            | TypecheckedExpression::NeedsExpectedType(_) => return Ok(()),
+            TypecheckState::Ready(expression) => expression,
+            TypecheckState::IncompleteTemplatedCallee { .. }
+            | TypecheckState::NeedsExpectedType(_) => return Ok(()),
         };
 
         if expression.token_range.is_none() {
@@ -345,11 +325,6 @@ impl TypecheckResult {
         Ok(())
     }
 
-    /// Extract the inner MIRExpression
-    pub fn into_expression(self) -> CXResult<MIRExpression> {
-        self.try_into_expression().into_result()
-    }
-
     pub fn apply_expected_type(
         self,
         env: &mut TypeEnvironment,
@@ -357,8 +332,8 @@ impl TypecheckResult {
         expected_type: &MIRType,
     ) -> CXResult<Self> {
         match self.expression {
-            TypecheckedExpression::NeedsExpectedType(expr) => Ok(Self {
-                expression: TypecheckedExpression::Ready(expr.resolve(
+            TypecheckState::NeedsExpectedType(expr) => Ok(Self {
+                expression: TypecheckState::Ready(expr.resolve(
                     env,
                     namespace,
                     expected_type,
@@ -368,17 +343,8 @@ impl TypecheckResult {
                 binding: self.binding,
                 adopting: self.adopting,
             }),
+            
             _ => Ok(self),
         }
-    }
-
-    pub fn into_expression_with_expected(
-        self,
-        env: &mut TypeEnvironment,
-        namespace: &EnvironmentNamespace,
-        expected_type: &MIRType,
-    ) -> CXResult<MIRExpression> {
-        self.apply_expected_type(env, namespace, expected_type)?
-            .into_expression()
     }
 }

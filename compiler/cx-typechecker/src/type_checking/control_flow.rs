@@ -86,7 +86,8 @@ pub(crate) fn typecheck_fallthrough_scope(
         sink,
         label: label.to_string(),
     });
-    let result = typecheck_expr(env, namespace, expr, None)?.into_expression()?;
+    let result = typecheck_expr(env, namespace, expr, None)
+        .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
     env.pop_scope()?;
     Ok(result)
 }

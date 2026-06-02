@@ -84,10 +84,11 @@ pub(crate) fn finish_function_call<'a>(
 
     for (i, (_arg_expr, val)) in tc_args.into_iter().enumerate() {
         let mut val = if let Some(param) = signature.params.get(i) {
-            let val = val.into_expression_with_expected(env, namespace, &param._type)?;
-            try_argument_conversion(env, val, &param._type)?
+            val.apply_expected_type(env, namespace, &param._type)
+                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
+                .and_then(|v| try_argument_conversion(env, v, &param._type))?
         } else {
-            val.into_expression()?
+            val.standard_ready_coerce(env, expr.token_range())?
         };
 
         if i < signature.params.len() {
@@ -131,7 +132,7 @@ pub(crate) fn finish_function_call<'a>(
 
     let contract = typecheck_contract(env, namespace, signature)?;
 
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         signature.return_type.clone(),
         MIRExpressionKind::CallFunction {
             function: Box::new(loaded_function),

@@ -1,6 +1,5 @@
 use crate::environment::TypeEnvironment;
 use crate::environment::functions::mangling::base_mangle_fn_name;
-use crate::environment::symbols::completion::{int_complete_type, namespace_from_module};
 use crate::log_typecheck_error;
 use cx_ast::ast::expression::CXExpression;
 use cx_ast::ast::function::{CXFunctionPrototype, CXParameter, CXReceiverMode};

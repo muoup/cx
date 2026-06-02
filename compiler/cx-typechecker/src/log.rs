@@ -111,7 +111,7 @@ pub fn file_origin_for_tokens(
 }
 
 #[macro_export]
-macro_rules! log_typecheck_error {
+macro_rules! typecheck_error {
     ($env:expr, $range:expr, $($arg:tt)*) => {
         {
             let message = format!($($arg)*);
@@ -135,7 +135,7 @@ macro_rules! log_typecheck_error {
             let (byte_start, byte_end) =
                 $crate::log::byte_range_for_tokens($env.source.tokens, start_token, end_token);
 
-            Err(Box::new($crate::log::TypeError {
+            Box::new($crate::log::TypeError {
                 message,
                 token_start: start_token,
                 token_end: end_token,
@@ -143,7 +143,18 @@ macro_rules! log_typecheck_error {
                 byte_end,
                 compilation_unit,
                 notes: Vec::new(),
-            }) as Box<dyn cx_util::CXErrorTrait>)
+            }) as Box<dyn cx_util::CXErrorTrait>
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! log_typecheck_error {
+    ($env:expr, $range:expr, $($arg:tt)*) => {
+        {
+            use $crate::typecheck_error;
+            
+            Err(typecheck_error!($env, $range, $($arg)*))
         }
     };
 }

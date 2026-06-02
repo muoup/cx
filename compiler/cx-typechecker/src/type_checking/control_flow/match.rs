@@ -28,7 +28,8 @@ pub fn typecheck_match(
     default: Option<&Box<CXExpression>>,
 ) -> CXResult<TypecheckResult> {
     let mut expr_value = typecheck_expr(env, namespace, condition, None)
-        .and_then(|val| std_rval_promotion(env, val.into_expression()?))?;
+        .and_then(|v| v.standard_ready_coerce(env, condition.token_range()))
+        .and_then(|v| std_rval_promotion(env, v))?;
     let mut expr_type = expr_value.get_type();
 
     env.push_scope(false, false);
@@ -74,7 +75,8 @@ pub fn typecheck_match(
                     );
                 };
 
-                let body_expr = typecheck_expr(env, namespace, body, None)?.into_expression()?;
+                let body_expr = typecheck_expr(env, namespace, body, None)
+                    .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
                 if expr_may_fall_through(&body_expr) {
                     env.function.enqueue_scope_arrow(
                         &ScopeExitTarget {
@@ -151,14 +153,14 @@ pub fn typecheck_match(
                 };
 
                 // Extract the variant value and bind it
-                let variant_value_expr = TypecheckResult::new_base(
-                    variant_get_type,
-                    MIRExpressionKind::TaggedUnionGet {
+                let variant_value_expr = MIRExpression {
+                    _type: variant_get_type,
+                    token_range: None,
+                    kind: MIRExpressionKind::TaggedUnionGet {
                         value: Box::new(expr_value.clone()),
                         variant_type: variant_type.clone(),
                     },
-                )
-                .into_expression()?;
+                };
 
                 let body_expr = if let Some(inner_name) = &inner_name {
                     let body_expr = if condition_owned {
@@ -195,14 +197,14 @@ pub fn typecheck_match(
                                 _type: variant_ref_type,
                             },
                         );
-                        
+
                         if env.symbols.is_nocopy(&variant_type) {
                             env.function
                                 .track_binding(inner_name.as_string(), variant_type.is_nodrop());
                         }
 
-                        let body_expr =
-                            typecheck_expr(env, namespace, body, None)?.into_expression()?;
+                        let body_expr = typecheck_expr(env, namespace, body, None)
+                            .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
                         env.pop_scope()?;
 
                         MIRExpression {
@@ -219,8 +221,8 @@ pub fn typecheck_match(
                             QualifiedName::new_raw(inner_name.clone()),
                             variant_value_expr,
                         );
-                        let body_expr =
-                            typecheck_expr(env, namespace, body, None)?.into_expression()?;
+                        let body_expr = typecheck_expr(env, namespace, body, None)
+                            .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
                         env.symbols.pop_scope();
                         body_expr
                     };
@@ -237,8 +239,8 @@ pub fn typecheck_match(
                     env.function.restore_snapshot(&base_snapshot);
                     body_expr
                 } else {
-                    let body_expr =
-                        typecheck_expr(env, namespace, body, None)?.into_expression()?;
+                    let body_expr = typecheck_expr(env, namespace, body, None)
+                        .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
                     if expr_may_fall_through(&body_expr) {
                         env.function.enqueue_scope_arrow(
                             &ScopeExitTarget {
@@ -279,7 +281,8 @@ pub fn typecheck_match(
     // Handle default case
     let default_body = match default {
         Some(default_expr) => {
-            let body = typecheck_expr(env, namespace, default_expr, None)?.into_expression()?;
+            let body = typecheck_expr(env, namespace, default_expr, None)
+                .and_then(|v| v.standard_ready_coerce(env, default_expr.token_range()))?;
             if expr_may_fall_through(&body) {
                 env.function.enqueue_scope_arrow(
                     &ScopeExitTarget {
@@ -310,7 +313,7 @@ pub fn typecheck_match(
     env.pop_scope()?;
 
     // Build the match expression
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         MIRType::unit(),
         MIRExpressionKind::Match {
             condition: Box::new(expr_value),

@@ -135,11 +135,12 @@ pub fn typecheck_return(
         }
 
         let postcondition = typecheck_expr(env, namespace, &ret_contract, None)
-            .and_then(|v| implicit_cast(env, v.into_expression()?, &MIRType::bool()))?;
+            .and_then(|res| res.standard_ready_coerce(env, ret_contract.token_range()))
+            .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
 
         env.pop_scope()?;
 
-        Ok(TypecheckResult::new_base(
+        Ok(TypecheckResult::new(
             MIRType::unit(),
             MIRExpressionKind::Return {
                 value: return_value,
@@ -147,7 +148,7 @@ pub fn typecheck_return(
             },
         ))
     } else {
-        Ok(TypecheckResult::new_base(
+        Ok(TypecheckResult::new(
             MIRType::unit(),
             MIRExpressionKind::Return {
                 value: return_value,

@@ -2,7 +2,7 @@ use crate::{
     environment::{BindingMoveState, TypeEnvironment},
     log_typecheck_error,
     type_checking::{
-        coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
+        coercion::implicit::implicit_cast,
         result::{BindingPlaceKind, TypecheckResult, TypecheckedBinding},
         typechecker::typecheck_expr,
         value::ensure_valid_allocation_type,
@@ -18,7 +18,7 @@ use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 pub(crate) fn ensure_binding_available(
     env: &mut TypeEnvironment,
-    range: Option<TokenRange>,
+    range: Option<&TokenRange>,
     name: &CXIdent,
 ) -> CXResult<()> {
     let Some(binding) = env.function.tracked_binding(name.as_str()) else {
@@ -72,7 +72,7 @@ pub(crate) fn typecheck_var_declaration(
         Some(init_expr) => {
             let init_tc = typecheck_expr(env, namespace, init_expr, Some(&ty))?;
             let adopting = init_tc.is_adopting();
-            let init_expr = std_rval_promotion(env, init_tc.into_expression()?)
+            let init_expr = init_tc.standard_ready_coerce(env, expr.token_range())
                 .and_then(|v| implicit_cast(env, v, &ty))?;
             (Box::new(init_expr), adopting)
         }

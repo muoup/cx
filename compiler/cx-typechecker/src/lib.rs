@@ -13,7 +13,7 @@ pub mod environment;
 mod type_checking;
 
 pub use type_checking::{
-    complete_base_functions, complete_base_globals, realize_fn_implementation,
+    complete_base_functions, realize_fn_implementation,
 };
 
 use crate::{
@@ -26,8 +26,8 @@ pub fn typecheck(
     namespace: &EnvironmentNamespace,
     ast: &CXAST,
 ) -> CXResult<()> {
-    complete_base_globals(env, namespace, ast)?;
-    complete_base_functions(env, namespace)?;
+    // complete_base_globals(env, namespace, ast)?;
+    // complete_base_functions(env, namespace)?;
 
     for stmt in ast.definition_stmts.iter() {
         if let CXASTStmt::FunctionDefinition {

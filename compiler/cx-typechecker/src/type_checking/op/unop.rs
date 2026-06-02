@@ -16,11 +16,11 @@ use crate::{
         },
         op::binop::is::typecheck_is,
         result::TypecheckResult,
-        typechecker::typecheck_expr,
+        typechecker::typecheck_expr
     },
 };
 
-pub fn dispatch(
+pub fn typecheck_unop(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     op: &CXUnOp,
@@ -28,7 +28,8 @@ pub fn dispatch(
 ) -> CXResult<TypecheckResult> {
     Ok(match op {
         CXUnOp::PreIncrement(increment_amount) | CXUnOp::PostIncrement(increment_amount) => {
-            let operand = typecheck_expr(env, namespace, operand, None)?.into_expression()?;
+            let operand = typecheck_expr(env, namespace, operand, None)
+                .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))?;
 
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
                 return log_typecheck_error!(
@@ -41,14 +42,14 @@ pub fn dispatch(
 
             match &inner.kind {
                 MIRTypeKind::PointerTo { .. } | MIRTypeKind::Integer { .. } => match op {
-                    CXUnOp::PreIncrement(_) => TypecheckResult::new_base(
+                    CXUnOp::PreIncrement(_) => TypecheckResult::new(
                         operand._type.clone(),
                         MIRExpressionKind::UnaryOperation {
                             op: MIRUnOp::PreIncrement(*increment_amount),
                             operand: Box::new(operand),
                         },
                     ),
-                    CXUnOp::PostIncrement(_) => TypecheckResult::new_base(
+                    CXUnOp::PostIncrement(_) => TypecheckResult::new(
                         inner.clone(),
                         MIRExpressionKind::UnaryOperation {
                             op: MIRUnOp::PostIncrement(*increment_amount),
@@ -71,10 +72,11 @@ pub fn dispatch(
 
         CXUnOp::LNot => {
             let operand = typecheck_expr(env, namespace, operand, None)
-                .and_then(|v| std_rval_promotion(env, v.into_expression()?))
+                .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))
+                .and_then(|v| std_rval_promotion(env, v))
                 .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
 
-            TypecheckResult::new_base(
+            TypecheckResult::new(
                 MIRTypeKind::Integer {
                     _type: MIRIntegerType::I1,
                     signed: false,
@@ -89,7 +91,8 @@ pub fn dispatch(
 
         CXUnOp::BNot => {
             let operand = typecheck_expr(env, namespace, operand, None)
-                .and_then(|v| std_rval_promotion(env, v.into_expression()?))?;
+                .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))
+                .and_then(|v| std_rval_promotion(env, v))?;
 
             if !operand._type.is_integer() {
                 return log_typecheck_error!(
@@ -100,7 +103,7 @@ pub fn dispatch(
                 );
             }
 
-            TypecheckResult::new_base(
+            TypecheckResult::new(
                 operand._type.clone(),
                 MIRExpressionKind::UnaryOperation {
                     operand: Box::new(operand),
@@ -111,7 +114,8 @@ pub fn dispatch(
 
         CXUnOp::Negative => {
             let operand = typecheck_expr(env, namespace, operand, None)
-                .and_then(|v| std_rval_promotion(env, v.into_expression()?))?;
+                .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))
+                .and_then(|v| std_rval_promotion(env, v))?;
 
             let operator = match &operand._type.kind {
                 MIRTypeKind::Integer { .. } => MIRUnOp::NEG,
@@ -127,7 +131,7 @@ pub fn dispatch(
                 }
             };
 
-            TypecheckResult::new_base(
+            TypecheckResult::new(
                 operand._type.clone(),
                 MIRExpressionKind::UnaryOperation {
                     operand: Box::new(operand),
@@ -137,7 +141,8 @@ pub fn dispatch(
         }
 
         CXUnOp::AddressOf => {
-            let operand = typecheck_expr(env, namespace, operand, None)?.into_expression()?;
+            let operand = typecheck_expr(env, namespace, operand, None)
+                .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))?;
 
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
                 return log_typecheck_error!(
@@ -160,7 +165,8 @@ pub fn dispatch(
 
         CXUnOp::Dereference => {
             let operand = typecheck_expr(env, namespace, operand, None)
-                .and_then(|v| std_rval_promotion(env, v.into_expression()?))?;
+                .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))
+                .and_then(|v| std_rval_promotion(env, v))?;
 
             let Some(inner) = env.symbols.ptr_inner(&operand._type).cloned() else {
                 return log_typecheck_error!(
@@ -183,13 +189,48 @@ pub fn dispatch(
             let to_type = env.complete_type(namespace, &CXExpression::default(), to_type)?;
 
             let operand = typecheck_expr(env, namespace, operand, Some(&to_type))
-                .and_then(|v| std_rval_promotion(env, v.into_expression()?))?;
+                .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))
+                .and_then(|v| std_rval_promotion(env, v))?;
 
             TypecheckResult::from(explicit_cast(env, operand, &to_type)?)
         }
 
-        CXUnOp::Is(pattern) => {
-            typecheck_is(env, namespace, operand, pattern, operand)?.ensure_available(env)?
-        }
+        CXUnOp::Is(pattern) => typecheck_is(env, namespace, operand, pattern, operand)?,
+    })
+}
+
+pub(crate) fn typecheck_sizeof_type(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    expr: &CXExpression,
+    ty: &CXType,
+) -> CXResult<TypecheckResult> {
+    let tc_type = env.complete_type(namespace, expr, ty)?;
+    Ok(sizeof_result(tc_type.padded_size(&env.symbols)))
+}
+
+pub(crate) fn typecheck_sizeof_expr(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    expr: &CXExpression,
+) -> CXResult<TypecheckResult> {
+    let tc_expr = typecheck_expr(env, namespace, expr, None)
+        .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
+
+    
+    
+    Ok(sizeof_result(
+        tc_expr.get_type()?.padded_size(&env.symbols),
+    ))
+}
+
+fn sizeof_result(size: usize) -> TypecheckResult {
+    TypecheckResult::from(MIRExpression {
+        token_range: None,
+        kind: MIRExpressionKind::IntLiteral(size as i64, MIRIntegerType::I64, false),
+        _type: MIRType::from(MIRTypeKind::Integer {
+            _type: MIRIntegerType::I64,
+            signed: false,
+        }),
     })
 }

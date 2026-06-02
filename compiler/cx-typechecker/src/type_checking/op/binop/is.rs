@@ -21,7 +21,8 @@ pub(crate) fn typecheck_is(
     expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     let tc_lhs: MIRExpression = typecheck_expr(env, namespace, lhs, None)
-        .and_then(|v| std_rval_promotion(env, v.into_expression()?))?;
+        .and_then(|v| v.standard_ready_coerce(env, lhs.token_range()))
+        .and_then(|v| std_rval_promotion(env, v))?;
     let tc_type = tc_lhs.get_type();
     let owned_union_type;
     let union_type = if let Some(inner) = env.symbols.mem_ref_inner(&tc_type) {
@@ -91,7 +92,7 @@ pub(crate) fn typecheck_is(
         );
     }
 
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         MIRType::bool(),
         MIRExpressionKind::PatternIs {
             lhs: Box::new(tc_lhs),

@@ -45,7 +45,7 @@ pub(crate) fn typecheck_move(
         );
     };
 
-    let mut inner_val = inner.into_expression()?;
+    let mut inner_val = inner.standard_ready_coerce(env, expr.token_range())?;
 
     if !matches!(inner_val.kind, MIRExpressionKind::Variable { .. }) {
         return log_typecheck_error!(
@@ -60,13 +60,13 @@ pub(crate) fn typecheck_move(
     };
 
     if env.symbols.is_nocopy(&inner_type) {
-        ensure_binding_available(env, Some(inner_expr.token_range().clone()), &binding.root)?;
+        ensure_binding_available(env, Some(inner_expr.token_range()), &binding.root)?;
         mark_binding(env, &binding, BindingMoveState::Moved);
     } else {
         inner_val = try_argument_conversion(env, inner_val, &inner_type)?;
     }
 
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         inner_type,
         MIRExpressionKind::RegionMove {
             source: Box::new(inner_val),
@@ -90,7 +90,7 @@ pub(crate) fn typecheck_adopt(
 
     let value = typecheck_expr(env, namespace, inner, None)?;
     let binding = value.binding().cloned();
-    let value = value.into_expression()?;
+    let value = value.standard_ready_coerce(env, inner.token_range())?;
     let Some(inner_type) = env.symbols.mem_ref_inner(&value._type).cloned() else {
         return log_typecheck_error!(
             env,
@@ -117,7 +117,7 @@ pub(crate) fn typecheck_adopt(
         );
     }
 
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         inner_type,
         MIRExpressionKind::RegionMove {
             source: Box::new(value),
@@ -158,7 +158,7 @@ pub(crate) fn typecheck_leak(
         );
     };
 
-    let value = value.into_expression()?;
+    let value = value.standard_ready_coerce(env, inner.token_range())?;
 
     let Some(inner_type) = env.symbols.mem_ref_inner(&value._type).cloned() else {
         return log_typecheck_error!(
@@ -172,10 +172,10 @@ pub(crate) fn typecheck_leak(
         return Ok(TypecheckResult::from(value));
     }
 
-    ensure_binding_available(env, Some(inner.token_range().clone()), &binding.root)?;
+    ensure_binding_available(env, Some(inner.token_range()), &binding.root)?;
     mark_binding(env, &binding, BindingMoveState::Moved);
 
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         MIRType::unit(),
         MIRExpressionKind::LeakLifetime {
             expression: Box::new(value),
@@ -208,7 +208,7 @@ pub(crate) fn typecheck_unpack(
         );
     };
 
-    let value = value.into_expression()?;
+    let value = value.standard_ready_coerce(env, inner.token_range())?;
 
     let Some(inner_type) = env.symbols.mem_ref_inner(&value._type).cloned() else {
         return log_typecheck_error!(
@@ -283,7 +283,7 @@ pub(crate) fn typecheck_unpack(
         }
     }
 
-    ensure_binding_available(env, Some(inner.token_range().clone()), &source_binding.root)?;
+    ensure_binding_available(env, Some(inner.token_range()), &source_binding.root)?;
     mark_binding(env, &source_binding, BindingMoveState::Moved);
 
     let mut statements = Vec::new();
@@ -357,7 +357,7 @@ pub(crate) fn typecheck_unpack(
         });
     }
 
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         MIRType::unit(),
         MIRExpressionKind::Block { statements },
     ))

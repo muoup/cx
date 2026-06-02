@@ -56,7 +56,8 @@ pub fn typecheck_function(
         }
     }
 
-    let body_expr = typecheck_expr(env, namespace, body, None)?.into_expression()?;
+    let body_expr = typecheck_expr(env, namespace, body, None)
+        .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
     let with_implicit_return = add_implicit_return(env, namespace, body_expr)?;
 
     env.pop_scope()?;

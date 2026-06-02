@@ -40,8 +40,8 @@ pub fn typecheck_initializer_list(
                     &expr,
                     &indices,
                     Some(expected_type),
-                )?
-                .into_expression()?;
+                )
+                .and_then(|v| v.standard_ready_coerce(env, &token_range))?;
 
                 if expression.token_range.is_none() {
                     expression.token_range = Some(token_range.clone());
@@ -52,15 +52,23 @@ pub fn typecheck_initializer_list(
         ));
     };
 
-    let to_type = env.symbols.mem_ref_inner(to_type).unwrap_or(to_type).clone();
+    let to_type = env
+        .symbols
+        .mem_ref_inner(to_type)
+        .unwrap_or(to_type)
+        .clone();
 
     match &to_type.kind {
-        MIRTypeKind::Array {
-            inner_type,
-            length,
-        } => {
+        MIRTypeKind::Array { inner_type, length } => {
             let inner_type = env.symbols.resolve_type_id(*inner_type).clone();
-            typecheck_array_initializer(env, namespace, indices, &inner_type, Some(*length), &to_type)
+            typecheck_array_initializer(
+                env,
+                namespace,
+                indices,
+                &inner_type,
+                Some(*length),
+                &to_type,
+            )
         }
 
         MIRTypeKind::PointerTo {
@@ -123,11 +131,11 @@ fn typecheck_array_initializer(
         .iter()
         .map(|index| {
             typecheck_expr(env, namespace, &index.value, Some(inner_type))
-                .and_then(TypecheckResult::into_expression)
+                .and_then(|v| v.standard_ready_coerce(env, index.value.token_range()))
         })
         .collect::<CXResult<_>>()?;
 
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         array_type,
         MIRExpressionKind::ArrayInitializer {
             elements,
@@ -192,11 +200,11 @@ fn typecheck_structured_initializer(
 
         let (field_name, field_type) = &fields[counter];
         let value = typecheck_expr(env, namespace, &index.value, Some(field_type))
-            .and_then(|expr| std_rval_promotion(env, expr.into_expression()?))
-            .and_then(|expr| implicit_cast(env, expr, field_type))?;
+            .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
+            .and_then(|v| std_rval_promotion(env, v))
+            .and_then(|v| implicit_cast(env, v, field_type))?;
 
-        let Some(struct_field_info) =
-            struct_field(to_type, &env.symbols, field_name.as_str())
+        let Some(struct_field_info) = struct_field(to_type, &env.symbols, field_name.as_str())
         else {
             return log_typecheck_error!(
                 env,
@@ -218,7 +226,7 @@ fn typecheck_structured_initializer(
         }
     }
 
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         to_type.clone(),
         MIRExpressionKind::StructInitializer {
             struct_type: to_type.clone(),

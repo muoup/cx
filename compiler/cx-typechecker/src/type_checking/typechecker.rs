@@ -12,6 +12,7 @@ use crate::type_checking::control_flow::{
 use crate::type_checking::op::binop::access::typecheck_access;
 use crate::type_checking::op::binop::assign::typecheck_assignment;
 use crate::type_checking::op::binop::calls::typecheck_method_call;
+use crate::type_checking::op::unop::{typecheck_sizeof_expr, typecheck_sizeof_type};
 use crate::type_checking::op::{self, typecheck_binop};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::{
@@ -21,7 +22,6 @@ use crate::type_checking::value::{
     },
     locals::typecheck_var_declaration,
     moves::{typecheck_adopt, typecheck_leak, typecheck_move, typecheck_unpack},
-    sizeof::{typecheck_sizeof_expr, typecheck_sizeof_type},
     unsafe_ops::typecheck_unsafe,
 };
 use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
@@ -54,7 +54,10 @@ fn typecheck_expr_inner(
             let mut block = Vec::new();
 
             for statement in exprs {
-                block.push(typecheck_expr(env, namespace, statement, None)?.into_expression()?);
+                let expr = typecheck_expr(env, namespace, statement, None)?
+                    .standard_ready_coerce(env, expr.token_range())?;
+
+                block.push(expr);
 
                 if !env.function.is_current_scope_reachable() {
                     break;
@@ -97,7 +100,8 @@ fn typecheck_expr_inner(
             else_branch,
         } => {
             let condition_result = typecheck_expr(env, namespace, condition, None)
-                .and_then(|v| std_rval_promotion(env, v.into_expression()?))?;
+                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
+                .and_then(|v| std_rval_promotion(env, v))?;
             env.push_scope(false, false);
             env.function
                 .configure_merge_scope(expr, "if join", None, false);
@@ -152,12 +156,15 @@ fn typecheck_expr_inner(
             else_branch,
         } => {
             let condition_result = typecheck_expr(env, namespace, condition, None)
-                .and_then(|v| std_rval_promotion(env, v.into_expression()?))
+                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
+                .and_then(|v| std_rval_promotion(env, v))
                 .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
             let then_result = typecheck_expr(env, namespace, then_branch, expected_type)
-                .and_then(|v| std_rval_promotion(env, v.into_expression()?))?;
+                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
+                .and_then(|v| std_rval_promotion(env, v))?;
             let else_result = typecheck_expr(env, namespace, else_branch, Some(&then_result._type))
-                .and_then(|v| std_rval_promotion(env, v.into_expression()?))
+                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
+                .and_then(|v| std_rval_promotion(env, v))
                 .and_then(|v| implicit_cast(env, v, &then_result._type))?;
 
             TypecheckResult::from(MIRExpression {
@@ -191,7 +198,8 @@ fn typecheck_expr_inner(
             );
 
             let condition_result = typecheck_expr(env, namespace, condition, None)
-                .and_then(|v| std_rval_promotion(env, v.into_expression()?))?;
+                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
+                .and_then(|v| std_rval_promotion(env, v))?;
             let body_result = typecheck_fallthrough_scope(
                 env,
                 namespace,
@@ -221,7 +229,8 @@ fn typecheck_expr_inner(
         } => {
             env.push_scope(true, true);
             env.function.set_scope_anchor(expr);
-            let init_result = typecheck_expr(env, namespace, init, None)?.into_expression()?;
+            let init_result = typecheck_expr(env, namespace, init, None)
+                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
             env.function.configure_loop_scope(expr, LoopScopeKind::For);
             let loop_scope_idx = env.function.current_scope_index();
             env.function.enqueue_scope_arrow(
@@ -234,7 +243,8 @@ fn typecheck_expr_inner(
             );
 
             let condition_result = typecheck_expr(env, namespace, condition, None)
-                .and_then(|v| std_rval_promotion(env, v.into_expression()?))?;
+                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
+                .and_then(|v| std_rval_promotion(env, v))?;
             let body_result = typecheck_fallthrough_scope(
                 env,
                 namespace,
@@ -244,8 +254,8 @@ fn typecheck_expr_inner(
                 "loop fallthrough",
             )?;
             process_for_increment_arrows(env, namespace, loop_scope_idx, increment)?;
-            let increment_result =
-                typecheck_expr(env, namespace, increment, None)?.into_expression()?;
+            let increment_result = typecheck_expr(env, namespace, increment, None)?
+                .standard_ready_coerce(env, expr.token_range())?;
             env.function
                 .restore_snapshot(&env.function.loop_entry_snapshot(loop_scope_idx));
             env.function.set_scope_reachable(loop_scope_idx, true);
@@ -320,7 +330,8 @@ fn typecheck_expr_inner(
             let value = value
                 .as_ref()
                 .map(|v| {
-                    Ok(typecheck_expr(env, namespace, v, Some(&return_type))?.into_expression()?)
+                    Ok(typecheck_expr(env, namespace, v, Some(&return_type))?
+                        .standard_ready_coerce(env, expr.token_range())?)
                 })
                 .transpose()?;
             typecheck_return(env, namespace, value)?
@@ -349,11 +360,10 @@ fn typecheck_expr_inner(
             rhs,
         } => {
             let lhs = typecheck_expr(env, namespace, lhs, None)?;
-            let rhs = typecheck_expr(env, namespace, rhs, None)?
-                .ensure_available(env)?
-                .into_expression()?;
+            let rhs = typecheck_expr(env, namespace, rhs, None)
+                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
 
-            typecheck_assignment(env, lhs, rhs, op.as_ref().map(Box::deref))?
+            typecheck_assignment(env, lhs, rhs, op.as_ref().map(Box::deref), expr)?
         }
 
         CXExprKind::BinOp {
@@ -373,8 +383,10 @@ fn typecheck_expr_inner(
         } => typecheck_method_call(env, namespace, lhs, rhs, expr)?,
 
         CXExprKind::BinOp { op, lhs, rhs } => {
-            let lhs = typecheck_expr(env, namespace, lhs, None)?.into_expression()?;
-            let rhs = typecheck_expr(env, namespace, rhs, None)?.into_expression()?;
+            let lhs = typecheck_expr(env, namespace, lhs, None)
+                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
+            let rhs = typecheck_expr(env, namespace, rhs, None)
+                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
 
             typecheck_binop(env, op, lhs, rhs)?
         }
@@ -413,7 +425,7 @@ fn typecheck_expr_inner(
             default,
         } => typecheck_match(env, namespace, condition, arms, default.as_ref())?,
 
-        CXExprKind::Taken => unreachable!("Taken expressions should not be typechecked")
+        CXExprKind::Taken => unreachable!("Taken expressions should not be typechecked"),
     };
 
     result.set_token_range_if_missing(expr.range.clone())?;
@@ -452,7 +464,8 @@ pub fn add_implicit_return(
         );
     };
 
-    let ret = typecheck_return(env, namespace, implicit_value.map(|v| *v))?.into_expression()?;
+    let ret = typecheck_return(env, namespace, implicit_value.map(|v| *v))?
+        .internal_ready_assertion();
 
     Ok(MIRExpression {
         token_range: None,

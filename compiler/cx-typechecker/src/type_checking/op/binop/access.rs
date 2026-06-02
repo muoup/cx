@@ -81,6 +81,32 @@ pub(crate) fn resolve_access_base(
     Ok((lhs_source, lhs, lhs_inner, lhs_ref_const))
 }
 
+struct AccessBase {
+    source: MIRExpression,
+    source_type: MIRType,
+}
+
+fn resolve_access_base_new(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    lhs: TypecheckResult,
+    expr: &CXExpression
+) -> CXResult<AccessBase> {
+    todo!()
+}
+
+fn typecheck_access_new(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    lhs: TypecheckResult,
+    rhs: &CXExpression,
+    expr: &CXExpression
+) -> CXResult<TypecheckResult> {
+    let base = resolve_access_base_new(env, expr, lhs);
+
+    todo!()
+}
+
 pub(crate) fn typecheck_access(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
@@ -98,7 +124,7 @@ pub(crate) fn typecheck_access(
             template_input: None,
         } => {
             if let Some(struct_field) = struct_field(&lhs_inner, &env.symbols, name.name.as_str()) {
-                let mut result = TypecheckResult::new_base(
+                let mut result = TypecheckResult::new(
                     env.symbols.mem_ref_to(
                         struct_field
                             .field_type
@@ -273,7 +299,7 @@ pub(crate) fn build_member_receiver_argument(
         }
         CXReceiverMode::ByRef => {
             if let Some(binding) = lhs_binding {
-                ensure_binding_available(env, Some(expr.token_range().clone()), &binding.root)?;
+                ensure_binding_available(env, Some(expr.token_range()), &binding.root)?;
             }
 
             Ok(MIRExpression {

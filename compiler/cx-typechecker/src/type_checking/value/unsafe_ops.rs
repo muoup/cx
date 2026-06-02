@@ -3,7 +3,7 @@ use crate::{
     type_checking::typechecker::typecheck_expr,
 };
 use cx_ast::ast::expression::CXExpression;
-use cx_mir::mir::{data::MIRType, expression::MIRExpressionKind, program::EnvironmentNamespace};
+use cx_mir::mir::{data::MIRType, program::EnvironmentNamespace};
 use cx_util::CXResult;
 
 pub(crate) fn typecheck_unsafe(
@@ -17,12 +17,9 @@ pub(crate) fn typecheck_unsafe(
     env.pop_unsafe();
 
     let adopting = inner_result.is_adopting();
-    let result = TypecheckResult::new_base(
-        inner_result.get_type()?,
-        MIRExpressionKind::Unsafe {
-            expression: Box::new(inner_result.into_expression()?),
-        },
-    );
+    let inner_expr = inner_result.standard_ready_coerce(env, inner.token_range())?;
+
+    let result = TypecheckResult::from(inner_expr);
 
     Ok(if adopting {
         result.with_adopting()

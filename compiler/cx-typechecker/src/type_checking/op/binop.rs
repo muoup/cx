@@ -71,7 +71,7 @@ pub(crate) fn resolve_logical(
         },
     };
 
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         MIRType::bool(),
         MIRExpressionKind::BinaryOperation {
             op: operator,
@@ -219,7 +219,7 @@ fn coerce_float_binop(
         }
     };
 
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         return_type,
         MIRExpressionKind::BinaryOperation {
             op: MIRBinOp::Float {
@@ -259,7 +259,7 @@ fn coerce_pointer_binop(
             }
         };
 
-        return Ok(TypecheckResult::new_base(
+        return Ok(TypecheckResult::new(
             return_type,
             MIRExpressionKind::BinaryOperation {
                 op: MIRBinOp::Pointer { op },
@@ -339,7 +339,7 @@ fn coerce_pointer_binop(
         }
     };
 
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         return_type,
         MIRExpressionKind::BinaryOperation {
             op,
@@ -408,7 +408,7 @@ fn coerce_integral_binop(
         );
     };
 
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         return_type,
         MIRExpressionKind::BinaryOperation {
             op: MIRBinOp::Integer {
