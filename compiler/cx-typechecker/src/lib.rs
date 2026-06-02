@@ -45,9 +45,9 @@ pub fn typecheck(
 }
 
 pub fn fulfill_request(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    request: &MIRFunctionGenRequest,
+    _env: &mut TypeEnvironment,
+    _namespace: &EnvironmentNamespace,
+    _request: &MIRFunctionGenRequest,
 ) {
     todo!(
         "Fulfill request routine -- ensure that we are double checking the request hasn't already been fulfilled"

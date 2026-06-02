@@ -19,8 +19,12 @@ use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 pub(crate) fn ensure_binding_available(
     env: &mut TypeEnvironment,
     range: Option<&TokenRange>,
-    name: &CXIdent,
+    expr: Option<&TypecheckedBinding>,
 ) -> CXResult<()> {
+    let Some(name) = expr.map(|b| &b.root) else {
+        return Ok(());
+    };
+    
     let Some(binding) = env.function.tracked_binding(name.as_str()) else {
         return Ok(());
     };

@@ -172,9 +172,9 @@ impl TypecheckResult {
         }
     }
 
-    pub fn standard_ready_coerce(self, env: &TypeEnvironment, token_range: &TokenRange) -> CXResult<MIRExpression> {
+    pub fn standard_ready_assure(self, env: &TypeEnvironment, token_range: &TokenRange) -> CXResult<TypecheckResult> {
         match self.expression {
-            TypecheckState::Ready(expr) => Ok(expr),
+            TypecheckState::Ready(_) => Ok(self),
             TypecheckState::IncompleteTemplatedCallee { .. }
                 => log_typecheck_error!(
                     env,
@@ -187,6 +187,11 @@ impl TypecheckResult {
                 "Could not resolve expression, expected type required but not provided",
             ),
         }
+    }
+
+    pub fn standard_ready_coerce(self, env: &TypeEnvironment, token_range: &TokenRange) -> CXResult<MIRExpression> {
+        self.standard_ready_assure(env, token_range)
+            .map(|t| t.internal_ready_assertion())
     }
 
     pub fn internal_ready_assertion(self) -> MIRExpression {

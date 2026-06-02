@@ -1,4 +1,7 @@
-use cx_ast::ast::expression::{CXExpression, CXUnOp};
+use cx_ast::ast::{
+    expression::{CXExpression, CXUnOp},
+    types::CXType,
+};
 use cx_mir::mir::{
     expression::{MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp},
     program::EnvironmentNamespace,
@@ -16,7 +19,7 @@ use crate::{
         },
         op::binop::is::typecheck_is,
         result::TypecheckResult,
-        typechecker::typecheck_expr
+        typechecker::typecheck_expr,
     },
 };
 
@@ -217,11 +220,7 @@ pub(crate) fn typecheck_sizeof_expr(
     let tc_expr = typecheck_expr(env, namespace, expr, None)
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
 
-    
-    
-    Ok(sizeof_result(
-        tc_expr.get_type()?.padded_size(&env.symbols),
-    ))
+    Ok(sizeof_result(tc_expr._type.padded_size(&env.symbols)))
 }
 
 fn sizeof_result(size: usize) -> TypecheckResult {

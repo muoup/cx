@@ -37,7 +37,7 @@ pub fn typecheck_assignment(
 
     if let Some(op) = op {
         if let Some(binding) = binding.as_ref() {
-            ensure_binding_available(env, lhs_expr.token_range.as_ref(), &binding.root)?;
+            ensure_binding_available(env, lhs_expr.token_range.as_ref(), Some(&binding))?;
         }
 
         let loaded_lhs = std_rval_promotion(env, lhs_expr.clone())?;

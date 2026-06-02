@@ -60,7 +60,7 @@ pub(crate) fn typecheck_move(
     };
 
     if env.symbols.is_nocopy(&inner_type) {
-        ensure_binding_available(env, Some(inner_expr.token_range()), &binding.root)?;
+        ensure_binding_available(env, Some(inner_expr.token_range()), Some(&binding))?;
         mark_binding(env, &binding, BindingMoveState::Moved);
     } else {
         inner_val = try_argument_conversion(env, inner_val, &inner_type)?;
@@ -172,7 +172,7 @@ pub(crate) fn typecheck_leak(
         return Ok(TypecheckResult::from(value));
     }
 
-    ensure_binding_available(env, Some(inner.token_range()), &binding.root)?;
+    ensure_binding_available(env, Some(inner.token_range()), Some(&binding))?;
     mark_binding(env, &binding, BindingMoveState::Moved);
 
     Ok(TypecheckResult::new(
@@ -283,7 +283,7 @@ pub(crate) fn typecheck_unpack(
         }
     }
 
-    ensure_binding_available(env, Some(inner.token_range()), &source_binding.root)?;
+    ensure_binding_available(env, Some(inner.token_range()), Some(&source_binding))?;
     mark_binding(env, &source_binding, BindingMoveState::Moved);
 
     let mut statements = Vec::new();

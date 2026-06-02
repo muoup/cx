@@ -102,9 +102,41 @@ fn typecheck_access_new(
     rhs: &CXExpression,
     expr: &CXExpression
 ) -> CXResult<TypecheckResult> {
-    let base = resolve_access_base_new(env, expr, lhs);
+    ensure_binding_available(env, Some(expr.token_range()), lhs.binding());
 
-    todo!()
+    let base = resolve_access_base_new(env, namespace, lhs, expr)?;
+
+    match &rhs.kind {
+        CXExprKind::Identifier { name, template_input } => {
+            if template_input.is_none() && let Some(struct_field) = struct_field(&base.source_type, &env.symbols, name.name.as_str()) {
+                // First, we check if we are trying to access a struct member
+                return Ok(
+                    TypecheckResult::new(
+                        env.symbols.mem_ref_to(
+                            struct_field
+                                .field_type
+                                .clone()
+                                .with_specifier(if base.source_type.get_specifier(CX_CONST) { CX_CONST } else { 0 }),
+                        ),
+                        MIRExpressionKind::MemberAccess {
+                            base: Box::new(base.source),
+                            member_index: struct_field.index,
+                            aggregate_type: base.source_type.clone(),
+                        },
+                    )
+                )
+            }
+            
+            todo!()
+        },
+
+        _ => log_typecheck_error!(
+            env,
+            Some(expr.token_range()),
+            "Invalid right-hand side for access expression, found {:?}",
+            rhs
+        ),
+    }
 }
 
 pub(crate) fn typecheck_access(
@@ -115,7 +147,7 @@ pub(crate) fn typecheck_access(
     expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     let lhs_binding = lhs.binding().cloned();
-    let lhs = lhs.into_expression()?;
+    let lhs = lhs.standard_ready_coerce(env, expr.token_range())?;
     let (lhs_source, lhs, lhs_inner, lhs_ref_const) = resolve_access_base(env, expr, lhs)?;
 
     match &rhs.kind {
@@ -298,10 +330,6 @@ pub(crate) fn build_member_receiver_argument(
             unreachable!("member function reference missing receiver mode")
         }
         CXReceiverMode::ByRef => {
-            if let Some(binding) = lhs_binding {
-                ensure_binding_available(env, Some(expr.token_range()), &binding.root)?;
-            }
-
             Ok(MIRExpression {
                 token_range: None,
                 kind: MIRExpressionKind::TypeConversion {
@@ -314,7 +342,6 @@ pub(crate) fn build_member_receiver_argument(
         CXReceiverMode::ByMove => {
             if let Some(inner_type) = env
                 .symbols
-                .context
                 .mem_ref_inner(&lhs_source._type)
                 .cloned()
             {
@@ -334,7 +361,7 @@ pub(crate) fn build_member_receiver_argument(
                     );
                 }
 
-                ensure_binding_available(env, Some(expr.token_range().clone()), &binding.root)?;
+                ensure_binding_available(env, Some(expr.token_range()), &binding.root)?;
                 if env.symbols.is_nocopy(&inner_type) {
                     mark_binding(env, binding, BindingMoveState::Moved);
                 }
