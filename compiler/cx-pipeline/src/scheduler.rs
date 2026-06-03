@@ -1,15 +1,10 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::progress::ProgressReporter;
 use crate::requests::fulfill_requests;
-use cx_ast::{
-    ast::{CXAST, CXASTStmt},
-    symbols::{DecomposedModuleSymbols, SymbolKey, UntypedSymbol},
-};
 use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
-use cx_parsing::parse::parse_ast;
-use cx_parsing::preparse::{PreparseConfig, preparse};
-use cx_parsing::{ParseErrorLog, decompose_ast};
+use cx_parsing::preparse::PreparseConfig;
+use cx_parsing::{ParseErrorLog, decompose_ast, parse_ast, preparse};
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::directories::internal_directory;
 use cx_pipeline_data::internal_storage::{resource_path, retrieve_data};
@@ -22,7 +17,6 @@ use cx_pipeline_data::{
 use cx_safe_analyzer::FMIRContext;
 use cx_tokens::TokenIter;
 use cx_typechecker::environment::TypeEnvironment;
-use cx_typechecker::gather_interface;
 use cx_typechecker::log::TypeError;
 use cx_typechecker::typecheck;
 use cx_util::format::dump_data;
@@ -179,6 +173,7 @@ pub(crate) fn handle_job(
 
     match job.step {
         CompilationStep::PreParse => {
+            let pp_data = context.module_db.preparse_base.get(&job.unit);
             let mut new_jobs = import_jobs_for_unit(context, &pp_data.imports)?;
 
             job.step = CompilationStep::Parse;
@@ -313,15 +308,18 @@ pub(crate) fn perform_job(
             let (symbol_buckets, generation_ast) = decompose_ast(&namespace, parsed_ast);
 
             for (namespace, bucket) in symbol_buckets {
-                context
+                if let Some((namespace, _)) = context
                     .module_db
                     .symbol_registry
                     .insert_module(namespace, bucket)
-                    .map(
-                        |(namespace, _)| panic!("Duplicate module namespace found during decomposition: {}", namespace.as_str().replace('/', "::"))
+                {
+                    panic!(
+                        "Duplicate module namespace found during decomposition: {}",
+                        namespace
                     );
+                }
             }
-            
+
             context
                 .module_db
                 .generation_ast

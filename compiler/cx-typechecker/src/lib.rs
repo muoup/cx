@@ -7,6 +7,7 @@ use cx_mir::mir::data::{MIRFunctionSignature, MIRParameter};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin};
 use cx_mir::mir::{data::MIRFunctionPrototype, r#type::MIRType};
 use cx_mir::program::{EnvironmentNamespace, MIRFunction};
+use cx_mir::symbol::completion::complete_prototype;
 use cx_util::{CXResult, identifier::CXIdent};
 
 pub mod log;
@@ -32,7 +33,7 @@ pub fn typecheck(
     for stmt in ast.generation_stmts.iter() {
         match stmt {
             CXGenerationStmt::Function { prototype, body } => {
-                let prototype = env.complete_prototype(namespace, None, prototype)?;
+                let prototype = complete_prototype(&mut env.symbols, namespace, None, prototype)?;
                 typecheck_function(env, namespace, prototype.clone(), body)?;
             }
             CXGenerationStmt::AddressableGlobal { .. } => {}

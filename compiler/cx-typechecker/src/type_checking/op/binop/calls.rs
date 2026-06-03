@@ -1,5 +1,4 @@
 use crate::environment::TypeEnvironment;
-use crate::environment::functions::query::query_function;
 use crate::log_typecheck_error;
 use crate::type_checking::coercion::implicit::conversion::try_argument_conversion;
 use crate::type_checking::coercion::implicit::implicit_cast;
@@ -12,6 +11,9 @@ use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
 use cx_mir::mir::data::{MIRFloatType, MIRFunctionPrototype, MIRType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_mir::mir::program::EnvironmentNamespace;
+use cx_mir::symbol::MIRSymbol;
+use cx_mir::symbol::completion::complete_template_input;
+use cx_mir::symbol::resolution::apply_template;
 use cx_mir::type_context::MIRTypeContext;
 use cx_util::CXResult;
 
@@ -163,27 +165,50 @@ fn complete_callee(
                 );
             };
 
-            let all_arg_types = deduction_arg_prefix
-                .iter()
-                .cloned()
-                .chain(arg_types.iter().cloned())
-                .collect::<Vec<_>>();
+            let _ = (deduction_arg_prefix, arg_types);
 
-            let Some(prototype) = query_function(
-                env,
-                namespace,
-                expr,
-                &name,
-                template_input.as_ref(),
-                &all_arg_types,
-            )?
-            else {
+            let Some(mut symbol) = env.symbols.get_symbol(&name)? else {
                 return log_typecheck_error!(
                     env,
                     Some(expr.token_range()),
                     "Function '{}' not found",
                     name
                 );
+            };
+
+            if let Some(template_input) = template_input.as_ref() {
+                let input = complete_template_input(&mut env.symbols, namespace, template_input)?;
+                let Some(applied) = apply_template(&mut env.symbols, &symbol, input)? else {
+                    return log_typecheck_error!(
+                        env,
+                        Some(expr.token_range()),
+                        "Function '{}' does not accept template arguments",
+                        name
+                    );
+                };
+                symbol = applied;
+            }
+
+            let prototype = match &symbol {
+                MIRSymbol::PureValue(
+                    cx_mir::mir::expression::MIRPureExpression::FunctionReference(prototype),
+                ) => prototype.as_ref().clone(),
+                MIRSymbol::Template { .. } => {
+                    return log_typecheck_error!(
+                        env,
+                        Some(expr.token_range()),
+                        "Function template '{}' requires explicit template arguments",
+                        name
+                    );
+                }
+                _ => {
+                    return log_typecheck_error!(
+                        env,
+                        Some(expr.token_range()),
+                        "Symbol '{}' is not callable",
+                        name
+                    );
+                }
             };
 
             Ok(CalleeExtraction::new(

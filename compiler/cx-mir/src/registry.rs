@@ -22,7 +22,7 @@ pub struct MIRSymbolRegistry<'a> {
     local_symbols: ScopedMap<QualifiedName, MIRSymbol>,
 
     typeid_defs: HashMap<MIRTypeId, MIRType>,
-    next_typeid: u64
+    next_typeid: u64,
 }
 
 impl MIRTypeContext for MIRSymbolRegistry<'_> {
@@ -47,7 +47,7 @@ impl<'a> MIRSymbolRegistry<'a> {
         for (name, ty_kind) in INTRINSIC_TYPES {
             let ty: MIRType = ty_kind.clone().into();
             let id = registry.generate_type_id(ty);
-            
+
             registry.insert_type_symbol(QualifiedName::new_raw(CXIdent::new(*name)), id);
         }
 
@@ -67,7 +67,7 @@ impl<'a> MIRSymbolRegistry<'a> {
             return Ok(None);
         };
 
-        let symbol = resolve_symbol(self, &untyped_symbol)?;
+        let symbol = resolve_symbol(self, name, &untyped_symbol)?;
         self.insert_symbol(name.clone(), symbol.clone());
         Ok(Some(symbol))
     }
@@ -79,7 +79,7 @@ impl<'a> MIRSymbolRegistry<'a> {
     pub fn generate_type_id(&mut self, ty: MIRType) -> MIRTypeId {
         let id = self.reserve_type_id();
         self.overwrite_type_id(id, ty);
- 
+
         id
     }
 

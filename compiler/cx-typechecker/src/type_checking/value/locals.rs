@@ -13,6 +13,7 @@ use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
     program::EnvironmentNamespace,
 };
+use cx_mir::symbol::completion::complete_type;
 use cx_tokens::TokenRange;
 use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
@@ -67,7 +68,7 @@ pub(crate) fn typecheck_var_declaration(
     name: &CXIdent,
     initial_value: Option<&Box<CXExpression>>,
 ) -> CXResult<TypecheckResult> {
-    let ty = env.complete_type(namespace, expr, ty)?;
+    let ty = complete_type(&mut env.symbols, namespace, ty)?;
 
     ensure_valid_allocation_type(env, Some(expr.token_range().clone()), "a variable", &ty)?;
 

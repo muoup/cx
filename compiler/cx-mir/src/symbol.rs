@@ -1,10 +1,14 @@
-use cx_ast::ast::template::CXTemplatePrototype;
+use cx_ast::{ast::template::CXTemplatePrototype, symbols::UntypedSymbol};
 
-use crate::mir::{
-    data::{MIRFunctionPrototype, MIRTypeId},
-    expression::{MIRExpression, MIRPureExpression},
+use crate::{
+    mir::{
+        data::{MIRFunctionPrototype, MIRTypeId},
+        expression::{MIRExpression, MIRPureExpression},
+    },
+    program::EnvironmentNamespace,
 };
 
+pub mod completion;
 pub mod resolution;
 
 #[derive(Clone, Debug)]
@@ -12,7 +16,12 @@ pub enum MIRSymbol {
     Type(MIRTypeId),
     Value(MIRExpression),
     PureValue(MIRPureExpression),
-    Template(CXTemplatePrototype, Box<MIRSymbol>),
+    Template {
+        input: CXTemplatePrototype,
+        name: cx_util::namespace::QualifiedName,
+        source: Box<UntypedSymbol>,
+        namespace: EnvironmentNamespace,
+    },
 }
 
 impl MIRSymbol {

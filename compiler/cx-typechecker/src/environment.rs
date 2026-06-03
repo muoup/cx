@@ -1,17 +1,10 @@
 use std::path::PathBuf;
 
-use cx_ast::ast::{
-    expression::CXExpression,
-    function::CXFunctionPrototype,
-    types::{CXType, CXTypeKind, PredeclarationType},
-};
+use cx_mir::program::{MIRFunction, MIRGlobalVariable, MIRUnit};
 use cx_mir::{
     mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId},
-    registry::MIRSymbolRegistry, type_context::MIRTypeContext,
-};
-use cx_mir::{
-    program::{EnvironmentNamespace, MIRFunction, MIRGlobalVariable, MIRUnit},
-    registry::TemplateBindingFrame,
+    registry::MIRSymbolRegistry,
+    type_context::MIRTypeContext,
 };
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
@@ -19,10 +12,10 @@ use cx_tokens::TokenRange;
 use cx_tokens::token::Token;
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
-use cx_util::namespace::{NamespacePath, QualifiedName};
+use cx_util::namespace::QualifiedName;
 
-use crate::environment::functions::completion::{complete_prototype_no_insert, complete_type};
 use crate::environment::functions::context::FunctionContext;
+use crate::environment::functions::context::FunctionModeSnapshot;
 pub use crate::environment::functions::control_flow::{
     BindingMoveState, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
     ScopeExitTarget, ScopeId, TrackedBindingState,
@@ -69,22 +62,6 @@ impl TypeEnvironment<'_> {
             .map(|id| self.symbols.resolve_type_id(id).clone())
             .unwrap()
     }
-}
-
-// Under consideration -- functions that may be removed in the refactor
-impl TypeEnvironment<'_> {
-    pub fn push_scope(&mut self, has_break_merge: bool, has_continue_merge: bool) {
-        self.symbols.push_scope();
-        self.function
-            .push_scope(has_break_merge, has_continue_merge);
-    }
-
-    pub fn pop_scope(&mut self) -> CXResult<()> {
-        self.function
-            .pop_scope(self.source.compilation_unit.as_path(), self.source.tokens)?;
-        self.symbols.pop_scope();
-        Ok(())
-    }
 
     pub fn current_function(&self) -> &MIRFunctionPrototype {
         self.function.current_function()
@@ -108,6 +85,56 @@ impl TypeEnvironment<'_> {
         })
     }
 
+    pub fn push_scope(&mut self, has_break_merge: bool, has_continue_merge: bool) {
+        self.symbols.push_scope();
+        self.function
+            .push_scope(has_break_merge, has_continue_merge);
+    }
+
+    pub fn pop_scope(&mut self) -> CXResult<()> {
+        self.function
+            .pop_scope(self.source.compilation_unit.as_path(), self.source.tokens)?;
+        self.symbols.pop_scope();
+        Ok(())
+    }
+
+    pub fn push_unsafe(&mut self) {
+        self.function.enter_unsafe();
+    }
+
+    pub fn pop_unsafe(&mut self) {
+        self.function.exit_unsafe();
+    }
+
+    pub fn push_contract_mode(&mut self, safe: bool) -> FunctionModeSnapshot {
+        let snapshot = self.function.snapshot_mode();
+        self.function.set_contract_mode(safe);
+        snapshot
+    }
+
+    pub fn restore_function_mode(&mut self, snapshot: FunctionModeSnapshot) {
+        self.function.restore_mode(snapshot);
+    }
+
+    pub fn request_function_generation(&mut self, request: MIRFunctionGenRequest) {
+        self.items.requests.push(request);
+    }
+
+    pub fn pop_request(&mut self) -> Option<MIRFunctionGenRequest> {
+        self.items.requests.pop()
+    }
+
+    pub fn push_generated_function(&mut self, function: MIRFunction) {
+        self.items.generated_functions.push(function);
+    }
+
+    pub fn push_generated_global(&mut self, name: String, global: MIRGlobalVariable) {
+        self.items.realized_globals.insert(name, global);
+    }
+}
+
+// Under consideration -- functions that may be removed in the refactor
+impl TypeEnvironment<'_> {
     pub fn type_error_at_range<T>(
         &self,
         range: &TokenRange,
@@ -141,25 +168,13 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn type_eq(&self, type1: &MIRType, type2: &MIRType) -> bool {
-        self.symbols.type_eq(type1, type2)
+        type1.contextual_eq(type2, &self.symbols)
     }
 
-    pub fn push_unsafe(&mut self) {
-        self.function.enter_unsafe();
-    }
-
-    pub fn pop_unsafe(&mut self) {
-        self.function.exit_unsafe();
-    }
-
-    pub fn push_contract_mode(&mut self, safe: bool) -> functions::context::FunctionModeSnapshot {
-        let snapshot = self.function.snapshot_mode();
-        self.function.set_contract_mode(safe);
-        snapshot
-    }
-
-    pub fn restore_function_mode(&mut self, snapshot: functions::context::FunctionModeSnapshot) {
-        self.function.restore_mode(snapshot);
+    pub fn get_named_type_definition(&self, id: MIRTypeId) -> Option<&MIRType> {
+        self.symbols
+            .contains(id)
+            .then(|| self.symbols.resolve_type_id(id))
     }
 
     pub fn set_external_templated_function(&mut self, value: bool) {
@@ -172,21 +187,5 @@ impl TypeEnvironment<'_> {
 
     pub fn external_template_origin(&self) -> Option<&String> {
         self.items.external_template_origin.as_ref()
-    }
-
-    pub fn request_function_generation(&mut self, request: MIRFunctionGenRequest) {
-        self.items.requests.push(request);
-    }
-
-    pub fn pop_request(&mut self) -> Option<MIRFunctionGenRequest> {
-        self.items.requests.pop()
-    }
-
-    pub fn push_generated_function(&mut self, function: MIRFunction) {
-        self.items.generated_functions.push(function);
-    }
-
-    pub fn realize_global(&mut self, name: String, global: MIRGlobalVariable) {
-        self.items.realized_globals.insert(name, global);
     }
 }

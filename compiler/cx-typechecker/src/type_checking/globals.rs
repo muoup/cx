@@ -7,16 +7,14 @@ use crate::{
     },
     typecheck_error,
 };
-use cx_ast::ast::{
-    expression::{CXExprKind, CXExpression},
-    global_var::CXGlobalVariable,
-};
+use cx_ast::ast::{expression::CXExprKind, global_var::CXGlobalVariable};
 use cx_mir::mir::{
     data::MIRIntegerType,
     expression::{MIRExpression, MIRExpressionKind, MIRPureExpression, SymbolValueOrigin},
     program::{EnvironmentNamespace, MIRGlobalVarKind, MIRGlobalVariable},
 };
 use cx_mir::registry::MIRSymbolRegistry;
+use cx_mir::symbol::completion::complete_type;
 use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 fn complete_global(
@@ -63,7 +61,7 @@ fn complete_global(
             linkage,
             is_mutable,
         } => {
-            let _type = env.complete_type(namespace, &CXExpression::default(), _type)?;
+            let _type = complete_type(&mut env.symbols, namespace, _type)?;
             ensure_valid_allocation_type(env, None, "a global variable", &_type)?;
             let _initializer = match initializer.as_ref() {
                 Some(init_expr) => {

@@ -2,11 +2,15 @@ use cx_ast::ast::{
     expression::{CXExpression, CXUnOp},
     types::CXType,
 };
-use cx_mir::{mir::{
-    expression::{MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp},
-    program::EnvironmentNamespace,
-    r#type::{MIRIntegerType, MIRType, MIRTypeKind},
-}, type_context::MIRTypeContext};
+use cx_mir::{
+    mir::{
+        expression::{MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp},
+        program::EnvironmentNamespace,
+        r#type::{MIRIntegerType, MIRType, MIRTypeKind},
+    },
+    symbol::completion::complete_type,
+    type_context::MIRTypeContext,
+};
 use cx_util::CXResult;
 
 use crate::{
@@ -189,7 +193,7 @@ pub fn typecheck_unop(
         }
 
         CXUnOp::ExplicitCast(to_type) => {
-            let to_type = env.complete_type(namespace, &CXExpression::default(), to_type)?;
+            let to_type = complete_type(&mut env.symbols, namespace, to_type)?;
 
             let operand = typecheck_expr(env, namespace, operand, Some(&to_type))
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))
@@ -205,10 +209,10 @@ pub fn typecheck_unop(
 pub(crate) fn typecheck_sizeof_type(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
+    _expr: &CXExpression,
     ty: &CXType,
 ) -> CXResult<TypecheckResult> {
-    let tc_type = env.complete_type(namespace, expr, ty)?;
+    let tc_type = complete_type(&mut env.symbols, namespace, ty)?;
     Ok(sizeof_result(tc_type.padded_size(&env.symbols)))
 }
 

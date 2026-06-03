@@ -6,10 +6,10 @@ use crate::{
 use cx_ast::ast::{expression::CXExpression, template::CXTemplateInput};
 use cx_mir::{
     mir::{
-        data::MIRTemplateInput,
         expression::{MIRExpressionKind, SymbolValueOrigin},
         program::EnvironmentNamespace,
     },
+    symbol::completion::complete_template_input as complete_mir_template_input,
     symbol::{MIRSymbol, resolution::apply_template},
 };
 use cx_util::{CXResult, namespace::QualifiedName};
@@ -38,7 +38,7 @@ pub(crate) fn typecheck_templated_identifier(
         return identifier_not_found(env, expr, name);
     };
 
-    let completed_input = complete_template_input(env, namespace, expr, template_input)?;
+    let completed_input = complete_mir_template_input(&mut env.symbols, namespace, template_input)?;
     let Some(symbol) = apply_template(&mut env.symbols, &symbol, completed_input)? else {
         return log_typecheck_error!(
             env,
@@ -49,21 +49,6 @@ pub(crate) fn typecheck_templated_identifier(
     };
 
     symbol_to_typecheck_result(env, expr, name, symbol)
-}
-
-fn complete_template_input(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
-    input: &CXTemplateInput,
-) -> CXResult<MIRTemplateInput> {
-    let args = input
-        .params
-        .iter()
-        .map(|param| env.complete_type(namespace, expr, param))
-        .collect::<CXResult<Vec<_>>>()?;
-
-    Ok(MIRTemplateInput { args })
 }
 
 fn symbol_to_typecheck_result(
@@ -98,7 +83,7 @@ fn symbol_to_typecheck_result(
             }
         }
         MIRSymbol::PureValue(value) => Ok(TypecheckResult::from(value.as_value())),
-        MIRSymbol::Template(_, _) => Ok(TypecheckResult::incomplete_templated_callee(
+        MIRSymbol::Template { .. } => Ok(TypecheckResult::incomplete_templated_callee(
             name.clone(),
             None,
         )),

@@ -4,7 +4,8 @@ use cx_mir::{
         data::{MIRType, MIRTypeKind},
         expression::{MIRExpressionKind, StructInitialization},
     },
-    program::EnvironmentNamespace, type_context::MIRTypeContext,
+    program::EnvironmentNamespace,
+    type_context::MIRTypeContext,
 };
 use cx_tokens::TokenRange;
 use cx_util::CXResult;
@@ -123,7 +124,7 @@ fn typecheck_array_initializer(
 
     let array_size = size.unwrap_or(indices.len());
     let array_type = MIRType::from(MIRTypeKind::Array {
-        inner_type: env.intern_type(inner_type.clone()),
+        inner_type: env.symbols.generate_type_id(inner_type.clone()),
         length: array_size,
     });
 
