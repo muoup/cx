@@ -1,17 +1,14 @@
-use crate::environment::functions::query::{member_function_qualified_name, query_function};
-use crate::environment::{BindingMoveState, TypeEnvironment};
-use crate::type_checking::value::moves::typecheck_move;
-use crate::{log_typecheck_error, typecheck_error};
+use crate::environment::TypeEnvironment;
 use crate::type_checking::aggregate::fields::struct_field;
 use crate::type_checking::op::binop::calls::build_function_reference;
-use crate::type_checking::result::{BindingPlaceKind, TypecheckResult, TypecheckedBinding};
-use crate::type_checking::value::locals::{ensure_binding_available, mark_binding};
+use crate::type_checking::result::TypecheckResult;
+use crate::type_checking::value::locals::ensure_binding_available;
+use crate::type_checking::value::moves::typecheck_move;
+use crate::{log_typecheck_error, typecheck_error};
 use cx_ast::ast::expression::{CXExprKind, CXExpression};
-use cx_ast::ast::function::CXReceiverMode;
 use cx_ast::ast::modifiers::CX_CONST;
-use cx_ast::symbols::UntypedSymbol;
 use cx_mir::mir::data::{MIRType, MIRTypeKind};
-use cx_mir::mir::expression::{MIRCoercion, MIRExpression, MIRExpressionKind};
+use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_mir::mir::program::EnvironmentNamespace;
 use cx_util::CXResult;
 
@@ -88,15 +85,23 @@ pub fn typecheck_access(
     namespace: &EnvironmentNamespace,
     lhs: TypecheckResult,
     rhs: &CXExpression,
-    expr: &CXExpression
+    expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     ensure_binding_available(env, Some(expr.token_range()), lhs.binding());
 
-    let base = resolve_access_base(env, namespace, expr, lhs.standard_ready_coerce(env, expr.token_range())?)?;
+    let base = resolve_access_base(
+        env,
+        namespace,
+        expr,
+        lhs.standard_ready_coerce(env, expr.token_range())?,
+    )?;
 
     match &rhs.kind {
-        CXExprKind::Identifier { name, template_input } => {
-            let Some(name) = name.root_name() else {
+        CXExprKind::Identifier {
+            name,
+            template_input,
+        } => {
+            let Some(name) = name.clone().root_name() else {
                 return log_typecheck_error!(
                     env,
                     Some(expr.token_range()),
@@ -104,27 +109,30 @@ pub fn typecheck_access(
                     name
                 );
             };
-            
-            if template_input.is_none() && let Some(struct_field) = struct_field(&base.source_type, &env.symbols, name.name.as_str()) {
+
+            if template_input.is_none()
+                && let Some(struct_field) =
+                    struct_field(&base.source_type, &env.symbols, name.as_str())
+            {
                 // First, we check if we are trying to access a struct member
-                return Ok(
-                    TypecheckResult::new(
-                        env.symbols.mem_ref_to(
-                            struct_field
-                                .field_type
-                                .clone()
-                                .with_specifier(if base.source_type.get_specifier(CX_CONST) { CX_CONST } else { 0 }),
-                        ),
-                        MIRExpressionKind::MemberAccess {
-                            base: Box::new(base.source),
-                            member_index: struct_field.index,
-                            aggregate_type: base.source_type.clone(),
-                        },
-                    )
-                )
+                return Ok(TypecheckResult::new(
+                    env.symbols
+                        .mem_ref_to(struct_field.field_type.clone().with_specifier(
+                            if base.source_type.get_specifier(CX_CONST) {
+                                CX_CONST
+                            } else {
+                                0
+                            },
+                        )),
+                    MIRExpressionKind::MemberAccess {
+                        base: Box::new(base.source),
+                        member_index: struct_field.index,
+                        aggregate_type: base.source_type.clone(),
+                    },
+                ));
             }
 
-            let Some(strong_name) = base.source_type.strong_identifier() else {
+            let Some(strong_name) = base.source_type.strong_identifier().cloned() else {
                 return log_typecheck_error!(
                     env,
                     Some(expr.token_range()),
@@ -135,15 +143,19 @@ pub fn typecheck_access(
             };
 
             let query = strong_name.child(name.clone());
-            let function = env.symbols.get_symbol(&query)?
-                .ok_or_else(|| typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "Member '{}' not found on type '{}'",
-                    name,
-                    base.source_type.display_with(&env.symbols)
-                ))
-                .map(|symbol| symbol.as_function_prototype())?
+            let function = env
+                .symbols
+                .get_symbol(&query)?
+                .ok_or_else(|| {
+                    typecheck_error!(
+                        env,
+                        Some(expr.token_range()),
+                        "Member '{}' not found on type '{}'",
+                        name,
+                        base.source_type.display_with(&env.symbols)
+                    )
+                })
+                .map(|symbol| symbol.into_function_prototype())?
                 .ok_or_else(|| {
                     typecheck_error!(
                         env,
@@ -154,8 +166,10 @@ pub fn typecheck_access(
                     )
                 })?
                 .clone();
-          
-            let needs_move = function.signature.params
+
+            let needs_move = function
+                .signature
+                .params
                 .get(0)
                 .map(|param| !param._type.is_memory_reference())
                 .unwrap_or(false);
@@ -163,11 +177,13 @@ pub fn typecheck_access(
             let receiver = if needs_move {
                 typecheck_move(env, namespace, TypecheckResult::from(base.source), expr)
                     .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?
-            } else { base.source };
+            } else {
+                base.source
+            };
 
             Ok(TypecheckResult::from(build_function_reference(&function))
                 .with_implicit_parameters(vec![receiver]))
-        },
+        }
 
         _ => log_typecheck_error!(
             env,
