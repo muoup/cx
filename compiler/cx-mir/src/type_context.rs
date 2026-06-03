@@ -25,7 +25,7 @@ pub trait MIRTypeContext {
     }
 
     fn is_cx_str(&self, ty: &MIRType) -> bool {
-        self.ptr_inner(ty)
+        self.mem_ref_inner(ty)
             .map(|ty| ty.is_str())
             .unwrap_or(false)
     }

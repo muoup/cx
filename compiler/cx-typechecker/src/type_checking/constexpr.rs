@@ -9,6 +9,14 @@ pub enum ConstexprResult {
     Integer(i64),
 }
 
+impl ConstexprResult {
+    pub fn get_integer(self) -> Option<i64> {
+        match self {
+            ConstexprResult::Integer(i) => Some(i),
+        }
+    }
+}
+
 // FIXME: We currently use a very oversimplified evaluation engine where all integers are handled as i64,
 // this could cause some very subtle parity problems, however the edge cases this creates seem pretty unlikely for common use.
 // Regardless, this should be addressed in the future.
@@ -119,12 +127,4 @@ pub fn constexpr_evaluate(
             );
         }
     })
-}
-
-impl ConstexprResult {
-    pub fn get_integer(self) -> Option<i64> {
-        match self {
-            ConstexprResult::Integer(i) => Some(i),
-        }
-    }
 }

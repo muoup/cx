@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 use cx_ast::registry::GlobalSymbolRegistry;
-use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName, scoped_map::ScopedMap};
+use cx_util::{CXResult, identifier::CXIdent, namespace::{NamespacePath, QualifiedName}, scoped_map::ScopedMap};
 
 use crate::{
     intrinsic_types::INTRINSIC_TYPES,
@@ -21,6 +21,8 @@ pub struct MIRSymbolRegistry<'a> {
     global_cache: HashMap<QualifiedName, MIRSymbol>,
     local_symbols: ScopedMap<QualifiedName, MIRSymbol>,
 
+    namespace_aliases: HashMap<NamespacePath, NamespacePath>,
+
     typeid_defs: HashMap<MIRTypeId, MIRType>,
     next_typeid: u64,
 }
@@ -34,15 +36,19 @@ impl MIRTypeContext for MIRSymbolRegistry<'_> {
 }
 
 impl<'a> MIRSymbolRegistry<'a> {
-    pub fn new(global_registry: &'a GlobalSymbolRegistry) -> Self {
+    pub fn new(global_registry: &'a GlobalSymbolRegistry, namespace: NamespacePath) -> Self {
         let mut registry = Self {
             global_registry,
             global_cache: HashMap::new(),
             local_symbols: ScopedMap::new_with_starting_scope(),
 
+            namespace_aliases: HashMap::new(),
+
             typeid_defs: HashMap::new(),
             next_typeid: 0,
         };
+
+        registry.map_namespace_alias(NamespacePath::root(), namespace);
 
         for (name, ty_kind) in INTRINSIC_TYPES {
             let ty: MIRType = ty_kind.clone().into();
@@ -59,21 +65,34 @@ impl<'a> MIRSymbolRegistry<'a> {
             return Ok(Some(preresolved_symbol.clone()));
         }
 
-        if let Some(local_symbol) = self.local_symbols.get(name) {
+        if name.namespace.is_root() && let Some(local_symbol) = self.local_symbols.get(name) {
             return Ok(Some(local_symbol.clone()));
         }
 
-        let Some(untyped_symbol) = self.global_registry.resolve(name) else {
+        let mut name = Cow::Borrowed(name);
+
+        if let Some(alias) = self.namespace_aliases.get(&name.namespace) {
+            name = Cow::Owned(QualifiedName {
+                namespace: alias.clone(),
+                name: name.name.clone(),
+            });
+        }
+
+        let Some(untyped_symbol) = self.global_registry.resolve(name.as_ref()) else {
             return Ok(None);
         };
 
-        let symbol = resolve_symbol(self, name, &untyped_symbol)?;
-        self.insert_symbol(name.clone(), symbol.clone());
+        let symbol = resolve_symbol(self, name.as_ref(), &untyped_symbol)?;
+        self.insert_symbol(name.into_owned(), symbol.clone());
         Ok(Some(symbol))
     }
 
     pub fn get_preresolved_symbol(&self, name: &QualifiedName) -> Option<&MIRSymbol> {
         self.global_cache.get(name)
+    }
+
+    pub fn map_namespace_alias(&mut self, alias: NamespacePath, target: NamespacePath) {
+        self.namespace_aliases.insert(alias, target);
     }
 
     pub fn generate_type_id(&mut self, ty: MIRType) -> MIRTypeId {
@@ -149,14 +168,6 @@ impl<'a> MIRSymbolRegistry<'a> {
             bitfield: None,
         }
         .into()
-    }
-
-    pub fn is_c_str(&self, ty: &MIRType) -> bool {
-        <Self as MIRTypeContext>::is_c_str(self, ty)
-    }
-
-    pub fn is_cx_str(&self, ty: &MIRType) -> bool {
-        <Self as MIRTypeContext>::is_cx_str(self, ty)
     }
 
     pub fn contains(&self, id: MIRTypeId) -> bool {

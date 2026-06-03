@@ -18,7 +18,7 @@ struct AccessBase {
     source_type: MIRType,
 }
 
-pub(crate) fn resolve_access_base(
+fn resolve_access_base(
     env: &mut TypeEnvironment,
     _: &EnvironmentNamespace,
     expr: &CXExpression,
@@ -88,7 +88,7 @@ pub fn typecheck_access(
     rhs: &CXExpression,
     expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
-    ensure_binding_available(env, Some(expr.token_range()), lhs.binding());
+    ensure_binding_available(env, Some(expr.token_range()), lhs.binding())?;
 
     let base = resolve_access_base(
         env,

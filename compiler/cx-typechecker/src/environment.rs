@@ -47,8 +47,11 @@ impl TypeEnvironment<'_> {
         module_data: &'a ModuleData,
     ) -> TypeEnvironment<'a> {
         TypeEnvironment {
+            symbols: MIRSymbolRegistry::new(
+                &module_data.symbol_registry,
+                compilation_unit.to_namespace_path(),
+            ),
             source: SourceContext::new(tokens, compilation_unit, working_directory, module_data),
-            symbols: MIRSymbolRegistry::new(&module_data.symbol_registry),
             items: ItemRegistry::new(),
             function: FunctionContext::default(),
         }

@@ -39,6 +39,7 @@ pub(crate) fn typecheck_templated_identifier(
     };
 
     let completed_input = complete_mir_template_input(&mut env.symbols, namespace, template_input)?;
+    
     let Some(symbol) = apply_template(&mut env.symbols, &symbol, completed_input)? else {
         return log_typecheck_error!(
             env,

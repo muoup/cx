@@ -20,16 +20,11 @@ pub fn compatible_types(env: &TypeEnvironment, type1: &MIRType, type2: &MIRType)
     }
 
     match (&type1.kind, &type2.kind) {
-        (
-            MIRTypeKind::MemoryReference {
-                inner_type: ref_inner,
-                ..
-            },
-            MIRTypeKind::PointerTo {
-                inner_type: ptr_inner,
-                ..
-            },
-        ) if env.symbols.is_cx_str(type1) && env.symbols.is_c_str(type2) => Ok(true),
+        (MIRTypeKind::MemoryReference { .. }, MIRTypeKind::PointerTo { .. })
+            if env.symbols.is_cx_str(type1) && env.symbols.is_c_str(type2) =>
+        {
+            Ok(true)
+        }
 
         (
             MIRTypeKind::MemoryReference {

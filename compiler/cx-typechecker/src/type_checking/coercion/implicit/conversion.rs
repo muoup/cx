@@ -112,6 +112,7 @@ pub fn try_implicit_coercion(
     }
 }
 
+// FIXME: Do we need this?
 pub fn try_argument_conversion(
     env: &mut TypeEnvironment,
     expr: MIRExpression,
