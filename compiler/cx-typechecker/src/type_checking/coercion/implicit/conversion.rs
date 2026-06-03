@@ -1,8 +1,8 @@
 use cx_ast::ast::modifiers::CX_CONST;
-use cx_mir::mir::{
+use cx_mir::{mir::{
     expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
     r#type::{MIRType, MIRTypeKind},
-};
+}, type_context::MIRTypeContext};
 use cx_util::CXResult;
 
 use crate::{
@@ -77,8 +77,8 @@ pub fn try_implicit_coercion(
             },
             MIRTypeKind::PointerTo { inner_type: to_ptr },
         ) => {
-            let from_inner = env.get_named_type_definition(*from_ptr).unwrap().clone();
-            let to_inner = env.get_named_type_definition(*to_ptr).unwrap().clone();
+            let from_inner = env.symbols.resolve_type_id(*from_ptr);
+            let to_inner = env.symbols.resolve_type_id(*to_ptr);
 
             // If we are coercing T1* -> T2* and they are compatible as unqualified types, and we only
             // add cvr-specifiers to coerce, than this is a valid implicit cast

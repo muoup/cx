@@ -12,6 +12,7 @@ use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
 use cx_mir::mir::data::{MIRFloatType, MIRFunctionPrototype, MIRType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_mir::mir::program::EnvironmentNamespace;
+use cx_mir::type_context::MIRTypeContext;
 use cx_util::CXResult;
 
 pub(crate) fn build_function_reference(prototype: &MIRFunctionPrototype) -> MIRExpression {
@@ -130,7 +131,7 @@ pub(crate) fn finish_function_call<'a>(
         args.push(val);
     }
 
-    let contract = typecheck_contract(env, namespace, signature)?;
+    let contract = typecheck_contract(env, namespace, signature.as_ref())?;
 
     Ok(TypecheckResult::new(
         signature.return_type.clone(),

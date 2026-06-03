@@ -11,6 +11,7 @@ use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin};
 use cx_mir::mir::pattern::MIRPattern;
 use cx_mir::program::EnvironmentNamespace;
+use cx_mir::type_context::MIRTypeContext;
 use cx_util::{CXResult, namespace::QualifiedName};
 
 pub(crate) fn typecheck_is(

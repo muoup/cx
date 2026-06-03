@@ -1,8 +1,8 @@
-use cx_mir::mir::{
+use cx_mir::{mir::{
     expression::{MIRExpression, MIRExpressionKind},
     program::EnvironmentNamespace,
     r#type::MIRType,
-};
+}, type_context::MIRTypeContext};
 use cx_tokens::TokenRange;
 use cx_util::{CXResult, namespace::QualifiedName};
 
@@ -40,7 +40,7 @@ pub fn typecheck_return(
             // into, and then memcpy from that buffer, we can just "unsafely" coerce the &T to a T
             // so we will induce in effect just a direct memcpy from the source T to the return buffer.
             if let Some(inner) = env.symbols.mem_ref_inner(&_ty).cloned()
-                && env.symbols.is_copyable(&inner)
+                && !inner.is_nocopy()
                 && typechange_can_forward_region(&inner)
             {
                 some_value = MIRExpression {

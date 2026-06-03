@@ -4,7 +4,7 @@ use cx_mir::{
         data::{MIRType, MIRTypeKind},
         expression::{MIRExpressionKind, StructInitialization},
     },
-    program::EnvironmentNamespace,
+    program::EnvironmentNamespace, type_context::MIRTypeContext,
 };
 use cx_tokens::TokenRange;
 use cx_util::CXResult;

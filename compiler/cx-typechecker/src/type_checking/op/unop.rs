@@ -2,11 +2,11 @@ use cx_ast::ast::{
     expression::{CXExpression, CXUnOp},
     types::CXType,
 };
-use cx_mir::mir::{
+use cx_mir::{mir::{
     expression::{MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp},
     program::EnvironmentNamespace,
     r#type::{MIRIntegerType, MIRType, MIRTypeKind},
-};
+}, type_context::MIRTypeContext};
 use cx_util::CXResult;
 
 use crate::{

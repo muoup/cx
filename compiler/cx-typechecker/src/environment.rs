@@ -7,7 +7,7 @@ use cx_ast::ast::{
 };
 use cx_mir::{
     mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId},
-    registry::MIRSymbolRegistry,
+    registry::MIRSymbolRegistry, type_context::MIRTypeContext,
 };
 use cx_mir::{
     program::{EnvironmentNamespace, MIRFunction, MIRGlobalVariable, MIRUnit},
@@ -60,68 +60,19 @@ impl TypeEnvironment<'_> {
             function: FunctionContext::default(),
         }
     }
+
+    pub fn get_intrinsic_type(&self, name: &str) -> MIRType {
+        self.symbols
+            .get_preresolved_symbol(&QualifiedName::new_raw(CXIdent::from(name)))
+            .unwrap_or_else(|| panic!("intrinsic type {} not found", name))
+            .as_type_id()
+            .map(|id| self.symbols.resolve_type_id(id).clone())
+            .unwrap()
+    }
 }
 
 // Under consideration -- functions that may be removed in the refactor
 impl TypeEnvironment<'_> {
-    pub fn get_or_create_named_type_id(&mut self, name: &str) -> MIRTypeId {
-        self.symbols.get_or_create_named_type_id(name)
-    }
-
-    pub fn get_named_type_id(&self, name: &str) -> Option<MIRTypeId> {
-        self.symbols.get_named_type_id(name)
-    }
-
-    pub fn mark_type_defining(&mut self, id: MIRTypeId) {
-        self.symbols.mark_type_defining(id);
-    }
-
-    pub fn finish_type_definition(
-        &mut self,
-        id: MIRTypeId,
-        definition: MIRType,
-    ) -> Option<MIRType> {
-        self.symbols.finish_type_definition(id, definition)
-    }
-
-    pub fn is_type_defining(&self, id: MIRTypeId) -> bool {
-        self.symbols.is_type_defining(id)
-    }
-
-    pub fn abort_type_definition(&mut self, id: MIRTypeId) {
-        self.symbols.abort_type_definition(id);
-    }
-
-    pub fn has_complete_named_type_definition(&self, id: MIRTypeId) -> bool {
-        self.symbols.has_complete_named_type_definition(id)
-    }
-
-    pub fn get_named_type_definition(&self, id: MIRTypeId) -> Option<&MIRType> {
-        self.symbols.get_named_type_definition(id)
-    }
-
-    pub fn intern_type(&mut self, ty: MIRType) -> MIRTypeId {
-        self.symbols.intern_type(ty)
-    }
-
-    pub fn update_named_type_metadata(
-        &mut self,
-        id: MIRTypeId,
-        new_name: QualifiedName,
-        template_info: Option<Box<cx_mir::mir::data::TemplateInfo>>,
-    ) {
-        self.symbols
-            .update_named_type_metadata(id, new_name, template_info);
-    }
-
-    pub fn get_realized_func(&self, name: &str) -> Option<MIRFunctionPrototype> {
-        self.items.get_realized_func(name)
-    }
-
-    pub fn get_realized_type(&self, name: &str) -> Option<MIRType> {
-        self.symbols.get_realized_type(name)
-    }
-
     pub fn push_scope(&mut self, has_break_merge: bool, has_continue_merge: bool) {
         self.symbols.push_scope();
         self.function
@@ -137,34 +88,6 @@ impl TypeEnvironment<'_> {
 
     pub fn current_function(&self) -> &MIRFunctionPrototype {
         self.function.current_function()
-    }
-
-    pub fn complete_type(
-        &mut self,
-        namespace: &EnvironmentNamespace,
-        expr: &CXExpression,
-        _type: &CXType,
-    ) -> CXResult<MIRType> {
-        complete_type(self, namespace, None, expr, _type)
-    }
-
-    pub fn complete_prototype(
-        &mut self,
-        namespace: &EnvironmentNamespace,
-        external_module: Option<&String>,
-        prototype: &CXFunctionPrototype,
-    ) -> CXResult<MIRFunctionPrototype> {
-        complete_prototype_no_insert(self, namespace, external_module, prototype).inspect(
-            |prototype| {
-                self.items
-                    .realized_fns
-                    .insert(prototype.name.to_string(), prototype.clone());
-                self.symbols.insert_function_symbol(
-                    QualifiedName::new_raw(prototype.name.clone()),
-                    prototype.clone(),
-                );
-            },
-        )
     }
 
     pub fn in_defer<F, T>(&mut self, _: F) -> CXResult<T>

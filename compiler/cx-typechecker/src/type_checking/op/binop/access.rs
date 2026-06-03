@@ -10,6 +10,7 @@ use cx_ast::ast::modifiers::CX_CONST;
 use cx_mir::mir::data::{MIRType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_mir::mir::program::EnvironmentNamespace;
+use cx_mir::type_context::MIRTypeContext;
 use cx_util::CXResult;
 
 struct AccessBase {

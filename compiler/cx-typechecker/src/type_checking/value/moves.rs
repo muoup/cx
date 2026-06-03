@@ -14,11 +14,11 @@ use cx_ast::ast::{
     expression::{CXExpression, CXUnpackBinding},
     modifiers::CX_CONST,
 };
-use cx_mir::mir::{
+use cx_mir::{mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
     program::EnvironmentNamespace,
-};
+}, type_context::MIRTypeContext};
 use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 pub(crate) fn typecheck_move(
@@ -57,7 +57,7 @@ pub(crate) fn typecheck_move(
         unreachable!()
     };
 
-    if env.symbols.is_nocopy(&inner_type) {
+    if inner_type.is_nocopy() {
         ensure_binding_available(env, Some(inner_expr.token_range()), Some(&binding))?;
         mark_binding(env, &binding, BindingMoveState::Moved);
     } else {
@@ -225,18 +225,18 @@ pub(crate) fn typecheck_unpack(
         );
     }
 
-    let Some(fields) = env.symbols.aggregate_fields(&inner_type) else {
+    let MIRTypeKind::Structured { fields } = &inner_type.kind else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
-            "@unpack requires a complete struct type"
+            "@unpack expects a struct type"
         );
     };
 
     let field_map = fields
         .iter()
         .enumerate()
-        .map(|(index, (name, _ty))| (name.to_string(), (index, _ty.clone())))
+        .filter_map(|(index, field)| Some((field.name()?.to_string(), (index, field.ty().clone()))))
         .collect::<HashMap<_, _>>();
 
     let mut seen_fields = HashSet::new();
@@ -271,8 +271,10 @@ pub(crate) fn typecheck_unpack(
         }
     }
 
-    for (field_name, (_, field_type)) in field_map.iter() {
-        if field_type.is_nodrop() && !seen_fields.contains(field_name) {
+    for (field_name, (_, field_ty_id)) in field_map.iter() {
+        let _ty = env.symbols.resolve_type_id(*field_ty_id);
+        
+        if _ty.is_nodrop() && !seen_fields.contains(field_name) {
             return log_typecheck_error!(
                 env,
                 Some(expr.token_range()),
@@ -288,10 +290,12 @@ pub(crate) fn typecheck_unpack(
 
     let mut statements = Vec::new();
     for unpack_binding in bindings {
-        let (member_index, field_type) = field_map
+        let (member_index, field_ty_id) = field_map
             .get(unpack_binding.field.as_str())
             .expect("@unpack field existence checked above");
 
+        let field_type = env.symbols.resolve_type_id(*field_ty_id).clone();
+        
         let field_place = MIRExpression {
             token_range: None,
             _type: env.symbols.mem_ref_to(field_type.clone()),
@@ -302,7 +306,7 @@ pub(crate) fn typecheck_unpack(
             },
         };
 
-        let initial_value = if env.symbols.is_nocopy(field_type) {
+        let initial_value = if field_type.is_nocopy() {
             MIRExpression {
                 token_range: None,
                 _type: field_type.clone(),

@@ -1,11 +1,11 @@
 use cx_ast::ast::expression::CXBinOp;
-use cx_mir::mir::{
+use cx_mir::{mir::{
     expression::{
         MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp,
         MIRPtrBinOp, MIRPtrDiffBinOp,
     },
     r#type::{MIRIntegerType, MIRType, MIRTypeKind},
-};
+}, type_context::MIRTypeContext};
 use cx_util::CXResult;
 
 use crate::{

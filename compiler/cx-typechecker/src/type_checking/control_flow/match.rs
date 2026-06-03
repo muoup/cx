@@ -18,6 +18,7 @@ use cx_mir::mir::{
     pattern::MIRPattern,
 };
 use cx_mir::program::EnvironmentNamespace;
+use cx_mir::type_context::MIRTypeContext;
 use cx_util::{CXResult, namespace::QualifiedName};
 
 pub fn typecheck_match(
@@ -198,7 +199,7 @@ pub fn typecheck_match(
                             },
                         );
 
-                        if env.symbols.is_nocopy(&variant_type) {
+                        if variant_type.is_nocopy() {
                             env.function
                                 .track_binding(inner_name.as_string(), variant_type.is_nodrop());
                         }
