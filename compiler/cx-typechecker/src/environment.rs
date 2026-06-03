@@ -5,10 +5,13 @@ use cx_ast::ast::{
     function::CXFunctionPrototype,
     types::{CXType, CXTypeKind, PredeclarationType},
 };
-use cx_mir::{program::{EnvironmentNamespace, MIRFunction, MIRGlobalVariable, MIRUnit}, registry::TemplateBindingFrame};
 use cx_mir::{
     mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId},
     registry::MIRSymbolRegistry,
+};
+use cx_mir::{
+    program::{EnvironmentNamespace, MIRFunction, MIRGlobalVariable, MIRUnit},
+    registry::TemplateBindingFrame,
 };
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
@@ -61,22 +64,6 @@ impl TypeEnvironment<'_> {
 
 // Under consideration -- functions that may be removed in the refactor
 impl TypeEnvironment<'_> {
-    pub fn add_type(&mut self, name: String, _type: MIRType) -> Option<MIRType> {
-        self.symbols.add_type(name, _type)
-    }
-
-    pub fn bind_template_types(
-        &mut self,
-        names: &[CXIdent],
-        args: &[MIRType],
-    ) -> Result<TemplateBindingFrame, String> {
-        self.symbols.bind_template_types(names, args)
-    }
-
-    pub fn restore_template_types(&mut self, frame: TemplateBindingFrame) {
-        self.symbols.restore_template_types(frame);
-    }
-
     pub fn get_or_create_named_type_id(&mut self, name: &str) -> MIRTypeId {
         self.symbols.get_or_create_named_type_id(name)
     }
@@ -129,27 +116,6 @@ impl TypeEnvironment<'_> {
 
     pub fn get_realized_func(&self, name: &str) -> Option<MIRFunctionPrototype> {
         self.items.get_realized_func(name)
-    }
-
-    pub fn get_type(
-        &mut self,
-        namespace: &EnvironmentNamespace,
-        expr: &CXExpression,
-        name: &str,
-    ) -> CXResult<MIRType> {
-        let path = NamespacePath::from_scoped_path(name);
-        let name = path
-            .parent_and_name()
-            .map(|(namespace, name)| QualifiedName::new(namespace, name))
-            .unwrap_or_else(|| QualifiedName::new_raw(CXIdent::new(name)));
-        let as_cx_type = CXTypeKind::Identifier {
-            predeclaration: PredeclarationType::None,
-            name,
-            template_input: None,
-        }
-        .to_type();
-
-        self.complete_type(namespace, expr, &as_cx_type)
     }
 
     pub fn get_realized_type(&self, name: &str) -> Option<MIRType> {

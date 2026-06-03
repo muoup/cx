@@ -1,4 +1,7 @@
-use cx_mir::{mir::expression::{MIRCoercion, MIRExpression, MIRExpressionKind}, type_context::MIRTypeContext};
+use cx_mir::{
+    mir::expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
+    type_context::MIRTypeContext,
+};
 use cx_util::CXResult;
 
 use crate::{environment::TypeEnvironment, type_checking::coercion::CoercionResult};

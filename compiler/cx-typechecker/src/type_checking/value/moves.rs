@@ -233,7 +233,9 @@ pub(crate) fn typecheck_unpack(
         );
     };
 
-    let field_map = fields.iter().enumerate()
+    let field_map = fields
+        .iter()
+        .enumerate()
         .map(|(index, (name, _ty))| (name.to_string(), (index, _ty.clone())))
         .collect::<HashMap<_, _>>();
 

@@ -1,6 +1,8 @@
-use cx_ast::ast::function::CXFunctionContract;
 use cx_ast::ast::modifiers::CXLinkageMode;
-use cx_ast::ast::{CXAST, CXASTStmt};
+use cx_ast::{
+    ast::function::CXFunctionContract,
+    decomposition::{CXGenerationAST, CXGenerationStmt},
+};
 use cx_mir::mir::data::{MIRFunctionSignature, MIRParameter};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin};
 use cx_mir::mir::{data::MIRFunctionPrototype, r#type::MIRType};
@@ -12,9 +14,7 @@ pub mod log;
 pub mod environment;
 mod type_checking;
 
-pub use type_checking::{
-    complete_base_functions, realize_fn_implementation,
-};
+pub use type_checking::{complete_base_functions, realize_fn_implementation};
 
 use crate::{
     environment::{MIRFunctionGenRequest, TypeEnvironment},
@@ -24,20 +24,18 @@ use crate::{
 pub fn typecheck(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    ast: &CXAST,
+    ast: &CXGenerationAST,
 ) -> CXResult<()> {
     // complete_base_globals(env, namespace, ast)?;
     // complete_base_functions(env, namespace)?;
 
-    for stmt in ast.definition_stmts.iter() {
-        if let CXASTStmt::FunctionDefinition {
-            prototype, body, ..
-        } = stmt
-        {
-            let prototype = env.complete_prototype(namespace, None, prototype)?;
-            if let Some(body) = body.as_deref() {
+    for stmt in ast.generation_stmts.iter() {
+        match stmt {
+            CXGenerationStmt::Function { prototype, body } => {
+                let prototype = env.complete_prototype(namespace, None, prototype)?;
                 typecheck_function(env, namespace, prototype.clone(), body)?;
             }
+            CXGenerationStmt::AddressableGlobal { .. } => {}
         }
     }
 

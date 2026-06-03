@@ -7,9 +7,9 @@ use cx_ast::{
 };
 use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
-use cx_parsing::{ParseErrorLog, decompose_ast};
 use cx_parsing::parse::parse_ast;
 use cx_parsing::preparse::{PreparseConfig, preparse};
+use cx_parsing::{ParseErrorLog, decompose_ast};
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::directories::internal_directory;
 use cx_pipeline_data::internal_storage::{resource_path, retrieve_data};
@@ -304,24 +304,32 @@ pub(crate) fn perform_job(
                 &pp_data,
                 &context.module_db.preparse_registry,
             )?;
-            
+
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&parsed_ast);
             }
 
             let namespace = NamespacePath::from(job.unit.module_path().clone());
-            let decomposed = decompose_ast(todo!(), parsed_ast.clone());
+            let (symbol_buckets, generation_ast) = decompose_ast(&namespace, parsed_ast);
 
-            context.module_db.symbol_registry
-                .insert_module(namespace, data);
+            for (namespace, bucket) in symbol_buckets {
+                context
+                    .module_db
+                    .symbol_registry
+                    .insert_module(namespace, bucket)
+                    .map(
+                        |(namespace, _)| panic!("Duplicate module namespace found during decomposition: {}", namespace.as_str().replace('/', "::"))
+                    );
+            }
+            
             context
                 .module_db
                 .generation_ast
-                .insert(job.unit.clone(), parsed_ast);
+                .insert(job.unit.clone(), generation_ast);
         }
 
         CompilationStep::Typechecking => {
-            let self_ast = context.module_db.naive_ast.get(&job.unit);
+            let self_ast = context.module_db.generation_ast.get(&job.unit);
             let lexemes = context.module_db.lex_tokens.get(&job.unit);
             let namespace = NamespacePath::from(job.unit.module_path().clone());
 

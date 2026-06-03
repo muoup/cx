@@ -1,10 +1,8 @@
 use crate::{assert_token_matches, next_kind, try_next};
 use cx_pipeline_data::CompilerConfig;
 use cx_preparse_data::PreparseContents;
-use cx_tokens::{identifier, keyword, operator, punctuator, specifier, TokenIter};
-use cx_util::{
-    identifier::CXIdent, log_error, module_path::ModulePath, CXResult,
-};
+use cx_tokens::{TokenIter, identifier, keyword, operator, punctuator, specifier};
+use cx_util::{CXResult, identifier::CXIdent, log_error, module_path::ModulePath};
 
 use crate::parse::try_parse_simple_identifier;
 

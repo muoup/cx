@@ -153,7 +153,7 @@ macro_rules! log_typecheck_error {
     ($env:expr, $range:expr, $($arg:tt)*) => {
         {
             use $crate::typecheck_error;
-            
+
             Err(typecheck_error!($env, $range, $($arg)*))
         }
     };

@@ -15,12 +15,20 @@ struct GlobalSymbolRegistryData {
 }
 
 impl GlobalSymbolRegistry {
-    pub fn insert_module(&self, namespace: NamespacePath, data: SymbolNamespaceData) {
+    /// Returns back provided arguments if failed to insert (i.e. namespace already exists)
+    pub fn insert_module(&self, namespace: NamespacePath, data: SymbolNamespaceData) -> Option<(NamespacePath, SymbolNamespaceData)> {
         let mut inner = self
             .inner
             .write()
             .expect("GlobalSymbolRegistry write lock poisoned");
+
+        if inner.namespaces.contains_key(&namespace) {
+            return Some((namespace, data));
+        }
+        
         inner.namespaces.insert(namespace, data);
+
+        None
     }
 
     pub fn resolve(&self, name: &QualifiedName) -> Option<UntypedSymbol> {

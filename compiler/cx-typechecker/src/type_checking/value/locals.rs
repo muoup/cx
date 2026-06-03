@@ -24,7 +24,7 @@ pub(crate) fn ensure_binding_available(
     let Some(name) = expr.map(|b| &b.root) else {
         return Ok(());
     };
-    
+
     let Some(binding) = env.function.tracked_binding(name.as_str()) else {
         return Ok(());
     };
@@ -76,7 +76,8 @@ pub(crate) fn typecheck_var_declaration(
         Some(init_expr) => {
             let init_tc = typecheck_expr(env, namespace, init_expr, Some(&ty))?;
             let adopting = init_tc.is_adopting();
-            let init_expr = init_tc.standard_ready_coerce(env, expr.token_range())
+            let init_expr = init_tc
+                .standard_ready_coerce(env, expr.token_range())
                 .and_then(|v| implicit_cast(env, v, &ty))?;
             (Box::new(init_expr), adopting)
         }

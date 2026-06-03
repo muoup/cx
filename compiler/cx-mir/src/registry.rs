@@ -26,10 +26,10 @@ pub struct MIRSymbolRegistry<'a> {
     global_cache: HashMap<QualifiedName, MIRSymbol>,
     local_symbols: ScopedMap<QualifiedName, MIRSymbol>,
     
-    pub realized_types: HashMap<String, MIRType>,
-    pub named_type_ids: HashMap<String, MIRTypeId>,
-    currently_defining_types: HashSet<MIRTypeId>,
-    definition_stack: Vec<MIRTypeId>,
+    // pub realized_types: HashMap<String, MIRType>,
+    // pub named_type_ids: HashMap<String, MIRTypeId>,
+    // currently_defining_types: HashSet<MIRTypeId>,
+    // definition_stack: Vec<MIRTypeId>,
 
     // These two fields differ in one import way: when a recursive type is being defined,
     // it is in a state of "valid typeid but not validly mapped to a type yet", so it will
@@ -67,10 +67,6 @@ impl<'a> MIRSymbolRegistry<'a> {
             global_registry,
             global_cache: HashMap::new(),
             local_symbols: ScopedMap::new_with_starting_scope(),
-            realized_types: HashMap::new(),
-            named_type_ids: HashMap::new(),
-            currently_defining_types: HashSet::new(),
-            definition_stack: Vec::new(),
 
             valid_typeid: HashSet::new(),
             typeid_defs: HashMap::new(),
@@ -80,11 +76,8 @@ impl<'a> MIRSymbolRegistry<'a> {
         for (name, ty_kind) in INTRINSIC_TYPES {
             let ty: MIRType = ty_kind.clone().into();
             let id = registry.generate_type_id(ty.clone());
+            
             registry.valid_typeid.insert(id);
-            registry.named_type_ids.insert((*name).to_string(), id);
-            registry
-                .realized_types
-                .insert((*name).to_string(), ty.clone());
             registry.insert_type_symbol(QualifiedName::new_raw(CXIdent::new(*name)), id);
         }
 

@@ -4,7 +4,9 @@ use crate::log_typecheck_error;
 use cx_ast::ast::expression::CXExpression;
 use cx_ast::ast::function::{CXFunctionPrototype, CXParameter, CXReceiverMode};
 use cx_ast::ast::types::{CXType, CXTypeKind};
-use cx_mir::mir::data::{MIRFunctionPrototype, MIRFunctionSignature, MIRParameter, MIRType, MIRTypeKind};
+use cx_mir::mir::data::{
+    MIRFunctionPrototype, MIRFunctionSignature, MIRParameter, MIRType, MIRTypeKind,
+};
 use cx_mir::program::EnvironmentNamespace;
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
@@ -145,7 +147,7 @@ pub fn int_complete_fn_prototype(
             return_type,
             params,
             var_args: normalized_prototype.var_args,
-            contract: prototype.contract.clone()
+            contract: prototype.contract.clone(),
         },
     };
 

@@ -391,9 +391,7 @@ fn typecheck_expr_inner(
             typecheck_binop(env, op, lhs, rhs)?
         }
 
-        CXExprKind::Move {
-            expr, ..
-        } => typecheck_expr(env, namespace, expr, None)
+        CXExprKind::Move { expr, .. } => typecheck_expr(env, namespace, expr, None)
             .and_then(|v| typecheck_move(env, namespace, v, expr))?,
 
         CXExprKind::InitializerList { indices } => {
@@ -465,8 +463,8 @@ pub fn add_implicit_return(
         );
     };
 
-    let ret = typecheck_return(env, namespace, implicit_value.map(|v| *v))?
-        .internal_ready_assertion();
+    let ret =
+        typecheck_return(env, namespace, implicit_value.map(|v| *v))?.internal_ready_assertion();
 
     Ok(MIRExpression {
         token_range: None,

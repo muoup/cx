@@ -10,9 +10,9 @@ use cx_mir::{
         expression::{MIRExpressionKind, SymbolValueOrigin},
         program::EnvironmentNamespace,
     },
-    symbol::{resolution::apply_template, MIRSymbol},
+    symbol::{MIRSymbol, resolution::apply_template},
 };
-use cx_util::{namespace::QualifiedName, CXResult};
+use cx_util::{CXResult, namespace::QualifiedName};
 
 pub(crate) fn typecheck_identifier(
     env: &mut TypeEnvironment,

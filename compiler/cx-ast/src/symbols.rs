@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 
-use crate::ast::{expression::CXExpression, function::CXFunctionPrototype, global_var::CXGlobalVariable, modifiers::VisibilityMode, template::CXTemplateInput, types::CXType};
+use crate::ast::{
+    expression::CXExpression, function::CXFunctionPrototype, global_var::CXGlobalVariable,
+    modifiers::VisibilityMode, template::CXTemplatePrototype, types::CXType,
+};
 
 #[derive(Debug, Clone)]
 pub struct UntypedSymbol {
     pub visibility: VisibilityMode,
-    pub kind: UntypedSymbolKind
+    pub kind: UntypedSymbolKind,
 }
 
 impl UntypedSymbol {
@@ -20,11 +23,11 @@ pub enum UntypedSymbolKind {
     Function(CXFunctionPrototype),
     Global(CXGlobalVariable),
     TypeTemplate {
-        input: CXTemplateInput,
+        input: CXTemplatePrototype,
         definition: CXType,
     },
     FunctionTemplate {
-        input: CXTemplateInput,
+        input: CXTemplatePrototype,
         definition: CXFunctionPrototype,
         body: Box<CXExpression>,
     },
@@ -42,7 +45,7 @@ impl SymbolNamespaceData {
             symbols: HashMap::new(),
         }
     }
-    
+
     pub fn insert_symbol(&mut self, name: impl Into<String>, symbol: UntypedSymbol) {
         self.symbols.insert(name.into(), symbol);
     }

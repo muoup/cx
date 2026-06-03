@@ -80,9 +80,16 @@ pub fn realize_fn_implementation(
     let base_ast = env.source.module_data.generation_ast.get(origin);
     let namespace = NamespacePath::from_slash_path(origin.identifier());
     let template_key = template_kind.into_key();
-    
-    let Some(UntypedSymbolKind::FunctionTemplate { input, definition, body }) =
-        env.symbols.global_registry.resolve(&template_key).map(|sym| &sym.kind)
+
+    let Some(UntypedSymbolKind::FunctionTemplate {
+        input,
+        definition,
+        body,
+    }) = env
+        .symbols
+        .global_registry
+        .resolve(&template_key)
+        .map(|sym| &sym.kind)
     else {
         unreachable!("Template not found");
     };

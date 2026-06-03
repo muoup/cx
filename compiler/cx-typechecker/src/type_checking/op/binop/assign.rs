@@ -1,4 +1,7 @@
-use cx_ast::ast::{expression::{CXBinOp, CXExpression}, modifiers::CX_CONST};
+use cx_ast::ast::{
+    expression::{CXBinOp, CXExpression},
+    modifiers::CX_CONST,
+};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_util::CXResult;
 
@@ -59,11 +62,7 @@ pub fn typecheck_assignment(
     }
 
     if inner.get_specifier(CX_CONST) {
-        return log_typecheck_error!(
-            env,
-            expr.token_range(),
-            "Cannot assign to a const type"
-        );
+        return log_typecheck_error!(env, expr.token_range(), "Cannot assign to a const type");
     }
 
     rhs = implicit_cast(env, rhs, &inner)?;

@@ -101,8 +101,9 @@ pub enum TypecheckExtract<T> {
 }
 
 impl<T> TypecheckExtract<T> {
-    pub fn into_result<F>(self, f: F) -> CXResult<T> 
-        where F: FnOnce(TypecheckResult) -> CXResult<T>
+    pub fn into_result<F>(self, f: F) -> CXResult<T>
+    where
+        F: FnOnce(TypecheckResult) -> CXResult<T>,
     {
         match self {
             Self::Succ(value) => Ok(value),
@@ -172,15 +173,18 @@ impl TypecheckResult {
         }
     }
 
-    pub fn standard_ready_assure(self, env: &TypeEnvironment, token_range: &TokenRange) -> CXResult<TypecheckResult> {
+    pub fn standard_ready_assure(
+        self,
+        env: &TypeEnvironment,
+        token_range: &TokenRange,
+    ) -> CXResult<TypecheckResult> {
         match self.expression {
             TypecheckState::Ready(_) => Ok(self),
-            TypecheckState::IncompleteTemplatedCallee { .. }
-                => log_typecheck_error!(
-                    env,
-                    token_range,
-                    "Could not deduce templated function parameters",
-                ),
+            TypecheckState::IncompleteTemplatedCallee { .. } => log_typecheck_error!(
+                env,
+                token_range,
+                "Could not deduce templated function parameters",
+            ),
             TypecheckState::NeedsExpectedType(_) => log_typecheck_error!(
                 env,
                 token_range,
@@ -189,7 +193,11 @@ impl TypecheckResult {
         }
     }
 
-    pub fn standard_ready_coerce(self, env: &TypeEnvironment, token_range: &TokenRange) -> CXResult<MIRExpression> {
+    pub fn standard_ready_coerce(
+        self,
+        env: &TypeEnvironment,
+        token_range: &TokenRange,
+    ) -> CXResult<MIRExpression> {
         self.standard_ready_assure(env, token_range)
             .map(|t| t.internal_ready_assertion())
     }
@@ -197,8 +205,11 @@ impl TypecheckResult {
     pub fn internal_ready_assertion(self) -> MIRExpression {
         match self.expression {
             TypecheckState::Ready(expr) => expr,
-            
-            _ => unreachable!("Expected TypecheckResult to be ready, but was not: {:?}", self.expression),
+
+            _ => unreachable!(
+                "Expected TypecheckResult to be ready, but was not: {:?}",
+                self.expression
+            ),
         }
     }
 
@@ -224,9 +235,7 @@ impl TypecheckResult {
             + 'static,
     {
         Self {
-            expression: TypecheckState::NeedsExpectedType(ExpectedTypeDeferredExpr::new(
-                resolver,
-            )),
+            expression: TypecheckState::NeedsExpectedType(ExpectedTypeDeferredExpr::new(resolver)),
             implicit_parameters: Vec::new(),
             deduction_arg_prefix: Vec::new(),
             binding: None,
@@ -338,17 +347,13 @@ impl TypecheckResult {
     ) -> CXResult<Self> {
         match self.expression {
             TypecheckState::NeedsExpectedType(expr) => Ok(Self {
-                expression: TypecheckState::Ready(expr.resolve(
-                    env,
-                    namespace,
-                    expected_type,
-                )?),
+                expression: TypecheckState::Ready(expr.resolve(env, namespace, expected_type)?),
                 implicit_parameters: self.implicit_parameters,
                 deduction_arg_prefix: self.deduction_arg_prefix,
                 binding: self.binding,
                 adopting: self.adopting,
             }),
-            
+
             _ => Ok(self),
         }
     }

@@ -1,13 +1,17 @@
 use cx_ast::ast::{
-    CXASTStmt, expression::{CXExprKind, CXExpression}, function::CXFunctionPrototype, global_var::CXGlobalVariable, modifiers::CXLinkageMode, template::CXTemplatePrototype
+    CXASTStmt,
+    expression::{CXExprKind, CXExpression},
+    function::CXFunctionPrototype,
+    global_var::CXGlobalVariable,
+    modifiers::CXLinkageMode,
+    template::CXTemplatePrototype,
 };
 use cx_preparse_data::VisibilityMode;
 use cx_tokens::{
-    keyword, operator, punctuator, specifier,
+    TokenIter, keyword, operator, punctuator, specifier,
     token::{SpecifierType, TokenKind},
-    TokenIter,
 };
-use cx_util::{identifier::CXIdent, CXResult};
+use cx_util::{CXResult, identifier::CXIdent};
 
 use crate::{
     assert_token_matches, next_kind,

@@ -1,13 +1,9 @@
-use cx_mir::{mir::r#type::{MIRType, MIRTypeKind}};
+use cx_mir::mir::r#type::{MIRType, MIRTypeKind};
 use cx_util::CXResult;
 
 use crate::environment::TypeEnvironment;
 
-pub fn compatible_types(
-    env: &TypeEnvironment,
-    type1: &MIRType,
-    type2: &MIRType,
-) -> CXResult<bool> {
+pub fn compatible_types(env: &TypeEnvironment, type1: &MIRType, type2: &MIRType) -> CXResult<bool> {
     if env.type_eq(type1, type2) {
         return Ok(true);
     }
@@ -30,9 +26,7 @@ pub fn compatible_types(
                 inner_type: ptr_inner,
                 ..
             },
-        ) if env.symbols.is_cx_str(type1) && env.symbols.is_c_str(type2) => {
-            Ok(true)
-        }
+        ) if env.symbols.is_cx_str(type1) && env.symbols.is_c_str(type2) => Ok(true),
 
         (
             MIRTypeKind::MemoryReference {

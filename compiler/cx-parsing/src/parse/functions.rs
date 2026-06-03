@@ -9,11 +9,10 @@ use cx_ast::ast::{
     types::{CXType, CXTypeKind, PredeclarationType},
 };
 use cx_tokens::{
-    identifier, keyword, operator, punctuator,
+    TokenRange, identifier, keyword, operator, punctuator,
     token::{PunctuatorType, TokenKind},
-    TokenRange,
 };
-use cx_util::{identifier::CXIdent, namespace::QualifiedName, CXResult};
+use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 use crate::parse::{
     expressions::parse_expr,

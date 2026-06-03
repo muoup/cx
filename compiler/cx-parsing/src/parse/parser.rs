@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use cx_ast::ast::{CXASTStmt, CXAST};
+use cx_ast::ast::{CXAST, CXASTStmt};
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_preparse_data::{PreparseContents, VisibilityMode};
 use cx_tokens::TokenIter;
@@ -96,7 +96,7 @@ impl<'a> ParserData<'a> {
     pub fn is_type_ident(&self, name: &QualifiedName) -> bool {
         self.registry
             .get_symbol(&name.namespace, &name.name)
-            .is_some() ||
-        (name.namespace.is_root() && self.temporary_type_names.contains_key(&name.name))
+            .is_some()
+            || (name.namespace.is_root() && self.temporary_type_names.contains_key(&name.name))
     }
 }
