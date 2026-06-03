@@ -96,8 +96,61 @@ impl Display for CXGlobalVariable {
 }
 
 impl Display for CXASTStmt {
-    fn fmt(&self, _f: &mut Formatter<'_>) -> Result {
-        todo!()
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            CXASTStmt::TypeDefinition {
+                name,
+                visibility,
+                template_prototype,
+                _type,
+            } => {
+                write!(f, "{visibility:?} ")?;
+                if let Some(template) = template_prototype {
+                    let params = template
+                        .types
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    write!(f, "template <{params}> ")?;
+                }
+
+                match name {
+                    Some(name) => write!(f, "type {name} = {_type};"),
+                    None => write!(f, "type {_type};"),
+                }
+            }
+
+            CXASTStmt::FunctionDefinition {
+                prototype,
+                visibility,
+                template_prototype,
+                body,
+            } => {
+                write!(f, "{visibility:?} ")?;
+                if let Some(template) = template_prototype {
+                    let params = template
+                        .types
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    write!(f, "template <{params}> ")?;
+                }
+                write!(f, "fn {prototype}")?;
+                if let Some(body) = body {
+                    write!(f, " {body}")
+                } else {
+                    write!(f, ";")
+                }
+            }
+
+            CXASTStmt::GlobalVariableDefinition {
+                name,
+                visibility,
+                variable,
+            } => write!(f, "{visibility:?} global {name}: {variable};"),
+        }
     }
 }
 

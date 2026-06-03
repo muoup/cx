@@ -1,6 +1,7 @@
 use cx_mir::{
     mir::data::{MIRType, MIRTypeKind},
-    registry::MIRSymbolRegistry, type_context::MIRTypeContext,
+    registry::MIRSymbolRegistry,
+    type_context::MIRTypeContext,
 };
 
 pub struct StructField {

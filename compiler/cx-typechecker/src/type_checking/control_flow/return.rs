@@ -1,8 +1,11 @@
-use cx_mir::{mir::{
-    expression::{MIRExpression, MIRExpressionKind},
-    program::EnvironmentNamespace,
-    r#type::MIRType,
-}, type_context::MIRTypeContext};
+use cx_mir::{
+    mir::{
+        expression::{MIRExpression, MIRExpressionKind},
+        program::EnvironmentNamespace,
+        r#type::MIRType,
+    },
+    type_context::MIRTypeContext,
+};
 use cx_tokens::TokenRange;
 use cx_util::{CXResult, namespace::QualifiedName};
 

@@ -162,7 +162,11 @@ impl LMIRBuilder {
 
     #[allow(dead_code)]
     pub fn dump_symbols(&self) {
-        todo!()
+        dump_all(
+            self.symbol_table
+                .iter()
+                .map(|(name, value)| format!("{name}: {value}")),
+        );
     }
 
     pub fn get_continue_block(&self) -> Option<&CXIdent> {

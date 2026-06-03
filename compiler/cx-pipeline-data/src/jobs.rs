@@ -57,7 +57,7 @@ pub enum CompilationStep {
      *  Outputs:  A naively parsed AST.
      */
     Parse = 1 << 1,
- 
+
     /**
      *  Typechecks all indirectly implemented functions and types to a type-checked
      *  AST. This for the most part consists of realizing templated functions, however in the future other
@@ -169,8 +169,17 @@ impl JobQueue {
             .insert((job.unit.clone(), job.step), JobState::Completed);
     }
 
-    pub fn complete_all_unit_jobs(&mut self, _unita: &CompilationUnit) {
-        todo!()
+    pub fn complete_all_unit_jobs(&mut self, unit: &CompilationUnit) {
+        for step in [
+            CompilationStep::PreParse,
+            CompilationStep::Parse,
+            CompilationStep::Typechecking,
+            CompilationStep::LMIRGen,
+            CompilationStep::Codegen,
+        ] {
+            self.progress_map
+                .insert((unit.clone(), step), JobState::Completed);
+        }
     }
 
     pub fn job_complete(&self, job: &CompilationJob) -> bool {

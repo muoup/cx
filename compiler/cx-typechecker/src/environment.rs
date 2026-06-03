@@ -67,11 +67,11 @@ impl TypeEnvironment<'_> {
         self.function.current_function()
     }
 
-    pub fn in_defer<F, T>(&mut self, _: F) -> CXResult<T>
+    pub fn in_defer<F, T>(&mut self, f: F) -> CXResult<T>
     where
         F: FnOnce(&mut Self) -> CXResult<T>,
     {
-        todo!()
+        f(self)
     }
 
     pub fn finish_mir_unit(self) -> CXResult<MIRUnit> {

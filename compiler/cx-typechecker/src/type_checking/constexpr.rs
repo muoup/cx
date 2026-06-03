@@ -80,8 +80,13 @@ pub fn constexpr_evaluate(
             conversion,
         } => match conversion {
             MIRCoercion::Integral { .. } => constexpr_evaluate(env, *operand)?,
-
-            _ => todo!(),
+            _ => {
+                return log_typecheck_error!(
+                    env,
+                    operand.token_range.as_ref(),
+                    "Invalid conversion in constexpr context"
+                );
+            }
         },
 
         MIRExpressionKind::If {

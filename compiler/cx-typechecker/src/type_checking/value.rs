@@ -5,7 +5,10 @@ pub(crate) mod moves;
 pub(crate) mod unsafe_ops;
 
 use crate::{environment::TypeEnvironment, log_typecheck_error};
-use cx_mir::{mir::data::{MIRType, MIRTypeKind}, type_context::MIRTypeContext};
+use cx_mir::{
+    mir::data::{MIRType, MIRTypeKind},
+    type_context::MIRTypeContext,
+};
 use cx_tokens::TokenRange;
 use cx_util::CXResult;
 

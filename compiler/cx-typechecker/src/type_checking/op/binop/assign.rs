@@ -2,7 +2,10 @@ use cx_ast::ast::{
     expression::{CXBinOp, CXExpression},
     modifiers::CX_CONST,
 };
-use cx_mir::{mir::expression::{MIRExpression, MIRExpressionKind}, type_context::MIRTypeContext};
+use cx_mir::{
+    mir::expression::{MIRExpression, MIRExpressionKind},
+    type_context::MIRTypeContext,
+};
 use cx_util::CXResult;
 
 use crate::{

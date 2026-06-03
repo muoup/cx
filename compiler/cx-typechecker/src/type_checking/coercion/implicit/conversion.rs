@@ -1,8 +1,11 @@
 use cx_ast::ast::modifiers::CX_CONST;
-use cx_mir::{mir::{
-    expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
-    r#type::{MIRType, MIRTypeKind},
-}, type_context::MIRTypeContext};
+use cx_mir::{
+    mir::{
+        expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
+        r#type::{MIRType, MIRTypeKind},
+    },
+    type_context::MIRTypeContext,
+};
 use cx_util::CXResult;
 
 use crate::{
@@ -69,6 +72,13 @@ pub fn try_implicit_coercion(
                 target_type.clone(),
                 MIRCoercion::FloatCast { to_type: *to_float },
             )
+        }
+
+        (
+            MIRTypeKind::MemoryReference { inner_type, .. },
+            _
+        ) if target_type.contextual_eq(env.symbols.resolve_type_id(*inner_type), &env.symbols) => {
+            lvalue::try_conversion(env, expr)
         }
 
         (

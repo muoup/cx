@@ -1,10 +1,13 @@
-use cx_mir::{mir::{
-    data::{MIRIntegerType, MIRType, MIRTypeKind},
-    expression::{
-        MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp,
-        MIRPtrBinOp, MIRPtrDiffBinOp, MIRUnOp,
+use cx_mir::{
+    mir::{
+        data::{MIRIntegerType, MIRType, MIRTypeKind},
+        expression::{
+            MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp,
+            MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp, MIRUnOp,
+        },
     },
-}, type_context::MIRTypeContext};
+    type_context::MIRTypeContext,
+};
 use cx_safe_ir::{ast::*, intrinsic::*};
 use cx_util::{CXError, CXResult, identifier::CXIdent};
 
@@ -203,7 +206,13 @@ pub fn coercion_intrinsic(
         MIRCoercion::Typechange | MIRCoercion::ReinterpretBits => {
             FMIRCastIntrinsic::ReinterpretBits
         }
-        MIRCoercion::GetFnPtr => todo!(),
+        MIRCoercion::GetFnPtr => {
+            return log_analysis_error!(
+                _env,
+                _expr,
+                "Function pointer decay is not supported in safe analysis yet"
+            );
+        }
     })
 }
 

@@ -14,11 +14,14 @@ use cx_ast::ast::{
     expression::{CXExpression, CXUnpackBinding},
     modifiers::CX_CONST,
 };
-use cx_mir::{mir::{
-    data::{MIRType, MIRTypeKind},
-    expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
-    program::EnvironmentNamespace,
-}, type_context::MIRTypeContext};
+use cx_mir::{
+    mir::{
+        data::{MIRType, MIRTypeKind},
+        expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
+        program::EnvironmentNamespace,
+    },
+    type_context::MIRTypeContext,
+};
 use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 pub(crate) fn typecheck_move(
@@ -273,7 +276,7 @@ pub(crate) fn typecheck_unpack(
 
     for (field_name, (_, field_ty_id)) in field_map.iter() {
         let _ty = env.symbols.resolve_type_id(*field_ty_id);
-        
+
         if _ty.is_nodrop() && !seen_fields.contains(field_name) {
             return log_typecheck_error!(
                 env,
@@ -295,7 +298,7 @@ pub(crate) fn typecheck_unpack(
             .expect("@unpack field existence checked above");
 
         let field_type = env.symbols.resolve_type_id(*field_ty_id).clone();
-        
+
         let field_place = MIRExpression {
             token_range: None,
             _type: env.symbols.mem_ref_to(field_type.clone()),

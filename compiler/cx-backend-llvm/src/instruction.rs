@@ -37,10 +37,8 @@ pub(crate) fn generate_instruction<'a, 'b>(
         LMIRInstructionKind::Alias { value } => function_state.get_value(value)?,
 
         LMIRInstructionKind::Allocate { _type, alignment } => {
-            let storage_type = global_state
-                .context
-                .i8_type()
-                .array_type(_type.size().max(1) as u32);
+            let size = usize::from(_type.size()).max(1);
+            let storage_type = global_state.context.i8_type().array_type(size as u32);
             let inst = function_state
                 .builder
                 .build_alloca(storage_type, inst_num().as_str())
@@ -315,7 +313,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
 
             let zero = global_state.context.i8_type().const_zero();
 
-            let size = _type.size();
+            let size = usize::from(_type.size());
             let size_value = global_state
                 .context
                 .i32_type()
@@ -342,7 +340,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             generate_ptr_binop(
                 global_state,
                 function_state,
-                *type_padded_size,
+                usize::from(*type_padded_size) as u64,
                 left_value,
                 right_value,
                 *op,
