@@ -164,9 +164,9 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
             let initial_value = parse_expr(data)?;
             assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
             data.add_stmt(CXASTStmt::GlobalVariableDefinition {
-                name: name.clone(),
                 visibility: data.visibility,
                 variable: CXGlobalVariable::Standard {
+                    name: name.clone(),
                     _type: return_type.clone(),
                     is_mutable: true,
                     linkage: CXLinkageMode::Standard,
@@ -177,9 +177,9 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
 
         punctuator!(Semicolon) => {
             data.add_stmt(CXASTStmt::GlobalVariableDefinition {
-                name: name.clone(),
                 visibility: data.visibility,
                 variable: CXGlobalVariable::Standard {
+                    name: name.clone(),
                     _type: return_type.clone(),
                     is_mutable: true,
                     linkage: CXLinkageMode::Standard,

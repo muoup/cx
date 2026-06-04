@@ -1,19 +1,13 @@
 use crate::{
-    environment::{BindingMoveState, TypeEnvironment},
-    log_typecheck_error,
-    type_checking::{
+    environment::{BindingMoveState, TypeEnvironment}, log_typecheck_error, symbol::completion::complete_type, type_checking::{
         coercion::implicit::implicit_cast,
         result::{BindingPlaceKind, TypecheckResult, TypecheckedBinding},
         typechecker::typecheck_expr,
         value::ensure_valid_allocation_type,
-    },
+    }
 };
 use cx_ast::ast::{expression::CXExpression, types::CXType};
-use cx_mir::mir::{
-    expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
-    program::EnvironmentNamespace,
-};
-use cx_mir::symbol::completion::complete_type;
+use cx_mir::{EnvironmentNamespace, mir::expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin}};
 use cx_tokens::TokenRange;
 use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 

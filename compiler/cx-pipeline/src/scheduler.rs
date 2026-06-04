@@ -4,7 +4,7 @@ use crate::requests::fulfill_requests;
 use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::preparse::PreparseConfig;
-use cx_parsing::{decompose_ast, parse_ast, preparse, ParseErrorLog};
+use cx_parsing::{ParseErrorLog, decompose_ast, parse_ast, preparse};
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::directories::internal_directory;
 use cx_pipeline_data::internal_storage::{resource_path, retrieve_data};
@@ -305,7 +305,8 @@ pub(crate) fn perform_job(
             }
 
             let namespace = NamespacePath::from(job.unit.module_path().clone());
-            let (symbol_buckets, generation_ast) = decompose_ast(&namespace, parsed_ast);
+            let (symbol_buckets, generation_ast) =
+                decompose_ast(&namespace, parsed_ast).destructure();
 
             for (namespace, bucket) in symbol_buckets {
                 if let Some((namespace, _)) = context
@@ -339,7 +340,6 @@ pub(crate) fn perform_job(
             );
 
             typecheck(&mut env, &namespace, &self_ast)?;
-            fulfill_requests(&job.unit, &mut env)?;
 
             let mir = env.finish_mir_unit()?;
             if !job.unit.is_std_lib() || context.config.verbose {

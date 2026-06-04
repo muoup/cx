@@ -1,15 +1,27 @@
 use crate::mir::data::{MIRType, MIRTypeKind};
 use crate::mir::r#type::MIRField;
-use crate::registry::MIRSymbolRegistry;
 use crate::type_context::MIRTypeContext;
+use cx_ast::registry::{ExportNameMode, GlobalSymbolRegistry};
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
-pub fn base_mangle_standard(name: &str) -> String {
-    if !name.contains("::") {
-        return name.to_string();
+pub fn base_mangle_standard(global_registry: &GlobalSymbolRegistry, name: &QualifiedName) -> String {
+    mangle_qualified_symbol(global_registry, name)
+}
+
+pub fn mangle_qualified_symbol(
+    global_registry: &GlobalSymbolRegistry,
+    name: &QualifiedName,
+) -> String {
+    if global_registry.export_name_mode(&name.namespace) == ExportNameMode::Root {
+        return name.name.as_string();
     }
 
-    format!("_N{}", name.replace("::", "_"))
+    let flat_name = name.as_flat_name();
+    if !flat_name.contains("::") {
+        return flat_name;
+    }
+
+    format!("_N{}", flat_name.replace("::", "_"))
 }
 
 pub fn mangle_namespace_symbol(name: &QualifiedName) -> String {
@@ -25,7 +37,7 @@ pub fn mangle_namespace_symbol(name: &QualifiedName) -> String {
 }
 
 pub fn base_mangle_member(
-    definitions: &MIRSymbolRegistry,
+    definitions: &impl MIRTypeContext,
     name: &str,
     member_type: &MIRType,
 ) -> String {
@@ -33,7 +45,7 @@ pub fn base_mangle_member(
 }
 
 pub fn base_mangle_static_member(
-    definitions: &MIRSymbolRegistry,
+    definitions: &impl MIRTypeContext,
     name: &str,
     member_type: &MIRType,
 ) -> String {

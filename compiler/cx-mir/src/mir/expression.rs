@@ -2,7 +2,6 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 
-use crate::mir::data::MIRFunctionPrototype;
 use crate::mir::pattern::MIRPattern;
 use crate::mir::r#type::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
 
@@ -22,8 +21,7 @@ pub struct MIRExpression {
 
 #[derive(Clone, Debug)]
 pub enum MIRPureExpression {
-    IntegerLiteral(i64, MIRIntegerType, bool),
-    FunctionReference(Box<MIRFunctionPrototype>),
+    IntegerLiteral(i64, MIRIntegerType, bool)
 }
 
 impl MIRPureExpression {
@@ -35,15 +33,6 @@ impl MIRPureExpression {
                 _type: MIRType::from(MIRTypeKind::Integer {
                     _type: *integer_type,
                     signed: *signed,
-                }),
-            },
-            Self::FunctionReference(prototype) => MIRExpression {
-                token_range: None,
-                kind: MIRExpressionKind::FunctionReference {
-                    name: prototype.name().clone(),
-                },
-                _type: MIRType::from(MIRTypeKind::Function {
-                    signature: Box::new(prototype.signature().clone()),
                 }),
             },
         }

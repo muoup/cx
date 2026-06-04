@@ -1,12 +1,13 @@
-use cx_ast::{ast::CXAST, decomposition::CXGenerationAST, symbols::SymbolNamespaceData};
-use cx_preparse_data::{PreparseContents, registry::GlobalPreparseRegistry};
+use cx_ast::ast::CXAST;
+use cx_preparse_data::{registry::GlobalPreparseRegistry, PreparseContents};
 use cx_tokens::TokenIter;
-use cx_util::{CXResult, namespace::NamespacePath};
+use cx_util::{namespace::NamespacePath, CXResult};
 pub use log::ParseErrorLog;
 
 use crate::{
+    decomposition::DecompositionEnv,
     parse::{parse_global_stmt, parser::ParserData},
-    preparse::{PreparseConfig, PreparseData, iterate_tokens},
+    preparse::{iterate_tokens, PreparseConfig, PreparseData},
 };
 
 #[macro_use]
@@ -54,16 +55,12 @@ pub fn parse_ast(
     Ok(data.take_ast())
 }
 
-pub fn decompose_ast(
-    namespace: &NamespacePath,
-    ast: CXAST,
-) -> (Vec<(NamespacePath, SymbolNamespaceData)>, CXGenerationAST) {
-    let mut generation_stmts = Vec::new();
-    let mut symbol_buckets = Vec::new();
+pub fn decompose_ast<'a>(namespace: &'a NamespacePath, ast: CXAST) -> DecompositionEnv<'a> {
+    let mut env = DecompositionEnv::new(namespace);
 
-    for stmt in ast.definition_stmts {
-        decomposition::decompose_stmt(namespace, stmt, &mut generation_stmts, &mut symbol_buckets);
-    }
+    ast.definition_stmts
+        .into_iter()
+        .for_each(|stmt| env.decompose_stmt(stmt));
 
-    (symbol_buckets, CXGenerationAST { generation_stmts })
+    env
 }

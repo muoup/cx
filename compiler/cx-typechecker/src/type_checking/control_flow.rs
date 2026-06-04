@@ -1,10 +1,8 @@
 use crate::environment::{ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment};
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::expression::CXExpression;
-use cx_mir::mir::{
-    expression::{MIRExpression, MIRExpressionKind},
-    program::EnvironmentNamespace,
-};
+use cx_mir::EnvironmentNamespace;
+use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_util::CXResult;
 
 pub(crate) mod r#match;

@@ -1,19 +1,53 @@
 use cx_ast::{
     ast::{CXASTStmt, global_var::CXGlobalVariable},
-    decomposition::CXGenerationStmt,
-    symbols::{SymbolNamespaceData, CXSymbol, CXSymbolKind},
+    decomposition::{CXGenerationAST, CXGenerationStmt},
+    symbols::{CXSymbol, CXSymbolKind, SymbolNamespaceData},
 };
-use cx_util::{
-    identifier::CXIdent,
-    namespace::{NamespacePath, QualifiedName},
-};
+use cx_util::namespace::{NamespacePath, QualifiedName};
 
-pub fn decompose_stmt(
-    namespace: &NamespacePath,
-    stmt: CXASTStmt,
-    stmts: &mut Vec<CXGenerationStmt>,
-    symbol_buckets: &mut Vec<(NamespacePath, SymbolNamespaceData)>,
-) {
+pub struct DecompositionEnv<'a> {
+    namespace: &'a NamespacePath,
+    symbol_buckets: Vec<(NamespacePath, SymbolNamespaceData)>,
+    stmts: Vec<CXGenerationStmt>,
+}
+
+impl<'a> DecompositionEnv<'a> {
+    pub fn new(namespace: &'a NamespacePath) -> Self {
+        Self {
+            namespace,
+            symbol_buckets: Vec::new(),
+            stmts: Vec::new(),
+        }
+    }
+
+    pub fn destructure(self) -> (Vec<(NamespacePath, SymbolNamespaceData)>, CXGenerationAST) {
+        let ast = CXGenerationAST {
+            generation_stmts: self.stmts,
+        };
+
+        (self.symbol_buckets, ast)
+    }
+    
+    pub fn get_bucket_mut(&mut self, namespace: &NamespacePath) -> &mut SymbolNamespaceData {
+        if let Some(idx) = self
+            .symbol_buckets
+            .iter_mut()
+            .position(|(bucket_namespace, _)| bucket_namespace == namespace)
+        {
+            return &mut self.symbol_buckets[idx].1;
+        };
+
+        let data = SymbolNamespaceData::new();
+        self.symbol_buckets.push((namespace.clone(), data));
+        &mut self.symbol_buckets.last_mut().unwrap().1
+    }
+
+    pub fn decompose_stmt(&mut self, stmt: CXASTStmt) {
+        decompose_stmt(self, stmt);
+    }
+}
+
+fn decompose_stmt(env: &mut DecompositionEnv, stmt: CXASTStmt) {
     match stmt {
         CXASTStmt::TypeDefinition {
             name,
@@ -36,7 +70,8 @@ pub fn decompose_stmt(
                 None => CXSymbol::new(visibility, CXSymbolKind::Type(_type)),
             };
 
-            insert_symbol(symbol_buckets, namespace.clone(), name, symbol);
+            env.get_bucket_mut(env.namespace)
+                .insert_symbol(name.to_string(), symbol);
         }
 
         CXASTStmt::FunctionDefinition {
@@ -49,7 +84,7 @@ pub fn decompose_stmt(
                 name,
                 namespace: q_namespace,
             } = prototype.kind.into_key();
-            let full_namespace = namespace.join(&q_namespace);
+            let namespace = env.namespace.join(&q_namespace);
             let symbol = match template_prototype {
                 Some(input) => {
                     let Some(body) = body else {
@@ -67,58 +102,42 @@ pub fn decompose_stmt(
                 }
                 None => {
                     if let Some(body) = body {
-                        stmts.push(CXGenerationStmt::Function {
+                        env.stmts.push(CXGenerationStmt::Function {
                             prototype: prototype.clone(),
                             body,
                         })
                     }
 
-                    CXSymbol::new(visibility, CXSymbolKind::Function(prototype))
+                    CXSymbol::new(visibility, CXSymbolKind::FunctionReference(prototype))
                 }
             };
 
-            insert_symbol(symbol_buckets, full_namespace, name, symbol);
+            env.get_bucket_mut(&namespace)
+                .insert_symbol(name.to_string(), symbol);
         }
 
         CXASTStmt::GlobalVariableDefinition {
-            name,
             visibility,
             variable,
-        } => match variable {
-            CXGlobalVariable::EnumDefinition { variants } => {
-                let mut i = 0;
-                
-                for variant in variants.into_iter() {
+        } => match &variable {
+            CXGlobalVariable::EnumDefinition(def) => {
+                let bucket = env.get_bucket_mut(env.namespace);
+                let e_idx = bucket.insert_enum_block(def.clone());
+
+                for (v_idx, variant) in def.variants.iter().enumerate() {
                     let symbol = CXSymbol::new(
                         visibility,
-                        CXSymbolKind::Expression {
-                            expr: variant.value,
-                            is_constexpr: true,
+                        CXSymbolKind::EnumIdent {
+                            enum_block_idx: e_idx,
+                            variant_index: v_idx,
                         },
                     );
 
-                    insert_symbol(symbol_buckets, namespace.clone(), variant.name.clone(), symbol);
+                    bucket.insert_symbol(variant.name.as_string(), symbol);
                 }
-            },
+            }
+
+            _ => todo!(),
         },
     }
-}
-
-fn insert_symbol(
-    symbol_buckets: &mut Vec<(NamespacePath, SymbolNamespaceData)>,
-    namespace: NamespacePath,
-    name: CXIdent,
-    symbol: CXSymbol,
-) {
-    if let Some((_, data)) = symbol_buckets
-        .iter_mut()
-        .find(|(bucket_namespace, _)| bucket_namespace == &namespace)
-    {
-        data.insert_symbol(name.as_string(), symbol);
-        return;
-    }
-
-    let mut data = SymbolNamespaceData::new();
-    data.insert_symbol(name.as_string(), symbol);
-    symbol_buckets.push((namespace, data));
 }

@@ -1,4 +1,4 @@
-use cx_mir::mir::program::MIRFunction;
+use cx_mir::mir::data::MIRFunction;
 use cx_safe_ir::ast::FMIRFunction;
 use cx_util::CXResult;
 

@@ -15,12 +15,10 @@ use cx_ast::ast::{
     modifiers::CX_CONST,
 };
 use cx_mir::{
-    mir::{
+    EnvironmentNamespace, mir::{
         data::{MIRType, MIRTypeKind},
         expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
-        program::EnvironmentNamespace,
-    },
-    type_context::MIRTypeContext,
+    }, type_context::MIRTypeContext
 };
 use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 

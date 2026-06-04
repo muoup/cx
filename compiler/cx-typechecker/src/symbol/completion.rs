@@ -11,22 +11,22 @@ use cx_util::{
     namespace::{NamespacePath, QualifiedName},
 };
 
-use crate::{
+use cx_mir::{
     mir::{
         data::{
             MIRFunctionPrototype, MIRFunctionSignature, MIRMoveAttributes, MIRParameter,
             MIRTemplateInput,
         },
-        r#type::{MIRField, MIRType, MIRTypeId, MIRTypeKind},
+        name_mangling::{base_mangle_member, base_mangle_standard, base_mangle_static_member},
+        r#type::{MIRField, MIRType, MIRTypeKind},
     },
-    program::EnvironmentNamespace,
-    registry::MIRSymbolRegistry,
-    symbol::{
-        MIRSymbol,
-        mangling::{base_mangle_member, base_mangle_standard, base_mangle_static_member},
-        resolution::apply_template,
-    },
+    symbol::MIRSymbol,
     type_context::MIRTypeContext,
+};
+
+use crate::{
+    EnvironmentNamespace,
+    symbol::{registry::MIRSymbolRegistry, resolution::apply_template},
 };
 
 pub fn complete_template_input(
@@ -43,15 +43,6 @@ pub fn complete_template_input(
     Ok(MIRTemplateInput { args })
 }
 
-pub fn complete_type_id(
-    symbols: &mut MIRSymbolRegistry,
-    namespace: &EnvironmentNamespace,
-    ty: &CXType,
-) -> CXResult<MIRTypeId> {
-    let ty = complete_type(symbols, namespace, ty)?;
-    Ok(symbols.generate_type_id(ty))
-}
-
 pub fn complete_type(
     symbols: &mut MIRSymbolRegistry,
     namespace: &EnvironmentNamespace,
@@ -65,31 +56,39 @@ pub fn complete_type(
         } => complete_identifier_type(symbols, namespace, name, *predeclaration, template_input)?,
 
         CXTypeKind::ExplicitSizedArray(inner, size) => {
-            let inner_type = complete_type_id(symbols, namespace, inner)?;
+            let inner_type = complete_type(symbols, namespace, inner)?;
+            let id = symbols.generate_type_id(inner_type);
+
             MIRTypeKind::Array {
-                inner_type,
+                inner_type: id,
                 length: literal_array_size(size)?,
             }
             .into()
         }
 
         CXTypeKind::ImplicitSizedArray(inner) => {
-            let inner_type = complete_type_id(symbols, namespace, inner)?;
-            MIRTypeKind::PointerTo { inner_type }.into()
+            let inner_type = complete_type(symbols, namespace, inner)?;
+            let id = symbols.generate_type_id(inner_type);
+
+            MIRTypeKind::PointerTo { inner_type: id }.into()
         }
 
         CXTypeKind::MemoryReference { inner_type } => {
-            let inner_type = complete_type_id(symbols, namespace, inner_type)?;
+            let inner_type = complete_type(symbols, namespace, inner_type)?;
+            let id = symbols.generate_type_id(inner_type);
+
             MIRTypeKind::MemoryReference {
-                inner_type,
+                inner_type: id,
                 bitfield: None,
             }
             .into()
         }
 
         CXTypeKind::PointerTo { inner_type } => {
-            let inner_type = complete_type_id(symbols, namespace, inner_type)?;
-            MIRTypeKind::PointerTo { inner_type }.into()
+            let inner_type = complete_type(symbols, namespace, inner_type)?;
+            let id = symbols.generate_type_id(inner_type);
+
+            MIRTypeKind::PointerTo { inner_type: id }.into()
         }
 
         CXTypeKind::Structured {
@@ -131,7 +130,7 @@ pub fn complete_type(
         )?,
 
         CXTypeKind::FunctionPointer { prototype } => {
-            let prototype = complete_prototype(symbols, namespace, None, prototype)?;
+            let prototype = complete_prototype(symbols, namespace, prototype)?;
             MIRTypeKind::Function {
                 signature: Box::new(prototype.signature),
             }
@@ -146,22 +145,20 @@ pub fn complete_type(
 pub fn complete_prototype(
     symbols: &mut MIRSymbolRegistry,
     namespace: &EnvironmentNamespace,
-    external_module: Option<&String>,
     prototype: &CXFunctionPrototype,
 ) -> CXResult<MIRFunctionPrototype> {
-    let completion_namespace = namespace_from_module(namespace, external_module);
-    let return_type = complete_type(symbols, &completion_namespace, &prototype.return_type)?;
+    let return_type = complete_type(symbols, &namespace, &prototype.return_type)?;
     let params = prototype
         .params
         .iter()
         .map(|param| {
             Ok(MIRParameter {
                 name: param.name.clone(),
-                _type: complete_type(symbols, &completion_namespace, &param._type)?,
+                _type: complete_type(symbols, &namespace, &param._type)?,
             })
         })
         .collect::<CXResult<Vec<_>>>()?;
-    let name = completed_function_name(symbols, &completion_namespace, &prototype.kind)?;
+    let name = completed_function_name(symbols, &namespace, &prototype.kind)?;
 
     Ok(MIRFunctionPrototype {
         name,
@@ -250,19 +247,27 @@ fn complete_field(
     field: &CXField,
 ) -> CXResult<MIRField> {
     match field {
-        CXField::Standard { name, _type } => Ok(MIRField::standard(
-            name.clone(),
-            complete_type_id(symbols, namespace, _type)?,
-        )),
+        CXField::Standard { name, _type } => {
+            let ty = complete_type(symbols, namespace, _type)?;
+            let id = symbols.generate_type_id(ty);
+
+            Ok(MIRField::standard(name.clone(), id))
+        }
+
         CXField::Bitfield {
             name,
             integer_type,
             width,
-        } => Ok(MIRField::Bitfield {
-            name: name.clone(),
-            integer_type_id: complete_type_id(symbols, namespace, integer_type)?,
-            width: *width,
-        }),
+        } => {
+            let ty = complete_type(symbols, namespace, integer_type)?;
+            let id = symbols.generate_type_id(ty);
+
+            Ok(MIRField::Bitfield {
+                name: name.clone(),
+                integer_type_id: id,
+                width: *width,
+            })
+        }
     }
 }
 
@@ -273,7 +278,7 @@ fn completed_function_name(
 ) -> CXResult<CXIdent> {
     let name = match kind {
         CXFunctionKind::Standard(name) => base_mangle_standard(
-            symbols,
+            symbols.get_global_registry(),
             &QualifiedName::new(namespace.clone(), name.clone()),
         ),
         CXFunctionKind::MemberFunction {

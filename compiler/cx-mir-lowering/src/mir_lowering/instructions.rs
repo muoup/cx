@@ -1,7 +1,7 @@
 //! Global variable lowering
 
 use cx_lmir::{LMIRGlobalType, LMIRGlobalValue};
-use cx_mir::mir::program::{MIRGlobalVarKind, MIRGlobalVariable};
+use cx_mir::mir::global::{MIRGlobalVarKind, MIRGlobalVariable};
 use cx_util::CXResult;
 
 use crate::builder::LMIRBuilder;

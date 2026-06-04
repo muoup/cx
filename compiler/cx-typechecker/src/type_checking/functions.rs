@@ -1,20 +1,17 @@
 use crate::{
-    environment::TypeEnvironment,
-    type_checking::{
+    environment::TypeEnvironment, symbol::completion::complete_prototype, type_checking::{
         typechecker::{add_implicit_return, typecheck_expr},
         value::ensure_valid_allocation_type,
-    },
+    }
 };
 use cx_ast::{
     ast::{expression::CXExpression, function::CXFunctionKind},
     symbols::CXSymbolKind,
 };
-use cx_mir::mir::{
-    data::{MIRFunctionPrototype, MIRParameter, MIRTemplateInput},
+use cx_mir::{EnvironmentNamespace, mir::{
+    data::{MIRFunction, MIRFunctionPrototype, MIRParameter, MIRTemplateInput},
     expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
-    program::{EnvironmentNamespace, MIRFunction},
-};
-use cx_mir::symbol::completion::complete_prototype;
+}};
 use cx_pipeline_data::CompilationUnit;
 use cx_util::{
     CXResult,
@@ -64,7 +61,7 @@ pub fn typecheck_function(
     env.pop_scope()?;
     env.function.end_function();
 
-    env.push_generated_function(MIRFunction {
+    env.items.push_generated_function(MIRFunction {
         prototype,
         body: with_implicit_return,
     });
@@ -88,7 +85,7 @@ pub fn realize_fn_implementation(
         body,
     }) = env
         .symbols
-        .global_registry
+        .get_global_registry()
         .resolve(&template_key)
         .map(|sym| sym.kind)
     else {
@@ -97,29 +94,12 @@ pub fn realize_fn_implementation(
 
     env.push_scope(false, false);
 
-    // let overwrites = add_templated_types(env, &template.resource.prototype, input)?;
-    // let prototype = complete_function_template(env, &namespace, &template)?;
-
-    let _old_external_template = env.items.in_external_templated_function;
-    let _old_external_origin = env.items.external_template_origin.clone();
-    let _external_origin = if origin.as_str() == env.source.compilation_unit.as_str() {
-        None
-    } else {
-        Some(origin.identifier().to_string())
-    };
-
     // FIXME: This looks like a mess
-    // env.set_external_templated_function(external_origin.is_some());
-    // env.set_external_template_origin(external_origin);
-    let prototype = complete_prototype(&mut env.symbols, &namespace, None, &definition)?;
+    let prototype = complete_prototype(&mut env.symbols, &namespace, &definition)?;
     let typecheck_result = typecheck_function(env, &namespace, prototype, &body);
-    // env.set_external_templated_function(old_external_template);
-    // env.set_external_template_origin(old_external_origin);
     typecheck_result?;
 
     env.pop_scope()?;
-
-    // restore_template_overwrites(env, overwrites);
     Ok(())
 }
 

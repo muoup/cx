@@ -10,5 +10,3 @@ pub mod pattern;
 pub mod result;
 pub mod typechecker;
 pub mod value;
-
-pub use functions::{complete_base_functions, realize_fn_implementation};

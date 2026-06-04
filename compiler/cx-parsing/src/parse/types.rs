@@ -1,21 +1,22 @@
 use crate::parse::expressions::parse_expr;
-use crate::parse::{ParserData, try_parse_simple_identifier};
+use crate::parse::{try_parse_simple_identifier, ParserData};
 use crate::{assert_token_matches, next_kind, peek_kind, try_next};
+use cx_ast::ast::global_var::CXEnumDefinition;
 use cx_ast::ast::CXASTStmt;
 use cx_ast::ast::{
     function::{CXFunctionKind, CXFunctionPrototype},
     global_var::{CXEnumVariant, CXGlobalVariable},
-    modifiers::{CX_CONST, CX_RESTRICT, CX_VOLATILE, CXLinkageMode, CXTypeQualifiers},
+    modifiers::{CXLinkageMode, CXTypeQualifiers, CX_CONST, CX_RESTRICT, CX_VOLATILE},
     template::CXTemplatePrototype,
     types::{CXField, CXStructAttributes, CXType, CXTypeKind, PredeclarationType},
 };
 use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
-use cx_tokens::{TokenIter, TokenRange, identifier, intrinsic, keyword, operator, punctuator};
-use cx_util::CXResult;
+use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, TokenIter, TokenRange};
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
+use cx_util::CXResult;
 
-use crate::parse::functions::{ParseParamsResult, parse_params};
+use crate::parse::functions::{parse_params, ParseParamsResult};
 use crate::parse::templates::{note_templated_types, try_parse_template, unnote_templated_types};
 use crate::parse::{parse_intrinsic, try_parse_identifier, try_parse_qualified_name};
 
@@ -198,7 +199,6 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
 
 pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
     assert_token_matches!(data.tokens, keyword!(Enum), "'enum'");
-    let enum_start_index = data.tokens.index - 1;
 
     if peek_kind!(data.tokens, keyword!(Union)) {
         data.tokens.back();
@@ -238,14 +238,6 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
         }
     }
 
-    data.add_stmt(CXASTStmt::GlobalVariableDefinition {
-        name: CXIdent::new(format!("__cx_enum_definition_{enum_start_index}")),
-        visibility: data.visibility,
-        variable: CXGlobalVariable::EnumDefinition {
-            variants: variants.clone(),
-        },
-    });
-
     let name = match name {
         None => None,
         Some(name) => match name.root_name() {
@@ -253,6 +245,14 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
             None => return log_parse_error!(data, "Expected name found qualified identifier"),
         },
     };
+
+    data.add_stmt(CXASTStmt::GlobalVariableDefinition {
+        visibility: data.visibility,
+        variable: CXGlobalVariable::EnumDefinition(CXEnumDefinition {
+            name: name.clone(),
+            variants: variants.clone(),
+        }),
+    });
 
     defined_type(
         data,

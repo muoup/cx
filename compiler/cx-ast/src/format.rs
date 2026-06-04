@@ -1,15 +1,8 @@
 use cx_util::identifier::CXIdent;
-use std::fmt::{Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter, Result};
 
 use crate::ast::{
-    expression::{CXBinOp, CXExprKind, CXExpression, CXInitIndex},
-    function::{CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXReceiverMode},
-    global_var::CXGlobalVariable,
-    modifiers::{CXLinkageMode, CX_CONST},
-    pattern::CXPattern,
-    template::CXTemplateInput,
-    types::{CXField, CXType, CXTypeKind},
-    CXASTStmt, CXAST,
+    CXAST, CXASTStmt, expression::{CXBinOp, CXExprKind, CXExpression, CXInitIndex}, function::{CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXReceiverMode}, global_var::{CXEnumVariant, CXGlobalVariable}, modifiers::{CX_CONST, CXLinkageMode}, pattern::CXPattern, template::CXTemplateInput, types::{CXField, CXType, CXTypeKind}
 };
 
 // Helper struct for indented formatting of CXExpr
@@ -60,17 +53,21 @@ impl Display for CXLinkageMode {
     }
 }
 
+impl Display for CXEnumVariant {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        if let Some(value) = &self.value {
+            write!(f, "{} = {}", self.name, value)
+        } else {
+            write!(f, "{}", self.name)
+        }
+    }    
+}
+
 impl Display for CXGlobalVariable {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            CXGlobalVariable::EnumDefinition { variants } => {
-                let variants = variants
-                    .iter()
-                    .map(|variant| variant.name.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                write!(f, "enum {{ {} }}", variants)
-            }
+            CXGlobalVariable::EnumDefinition(variant) =>
+                variant.fmt(f),
 
             CXGlobalVariable::Standard {
                 _type,
@@ -146,10 +143,9 @@ impl Display for CXASTStmt {
             }
 
             CXASTStmt::GlobalVariableDefinition {
-                name,
                 visibility,
                 variable,
-            } => write!(f, "{visibility:?} global {name}: {variable};"),
+            } => write!(f, "{visibility:?} {variable};"),
         }
     }
 }

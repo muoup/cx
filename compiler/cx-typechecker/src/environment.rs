@@ -1,9 +1,8 @@
 use std::path::PathBuf;
 
-use cx_mir::program::{MIRFunction, MIRGlobalVariable, MIRUnit};
 use cx_mir::{
+    MIRUnit,
     mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId},
-    registry::MIRSymbolRegistry,
     type_context::MIRTypeContext,
 };
 use cx_pipeline_data::CompilationUnit;
@@ -14,7 +13,6 @@ use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
 
-use crate::environment::functions::context::FunctionContext;
 use crate::environment::functions::context::FunctionModeSnapshot;
 pub use crate::environment::functions::control_flow::{
     BindingMoveState, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
@@ -23,7 +21,9 @@ pub use crate::environment::functions::control_flow::{
 use crate::environment::items::ItemRegistry;
 use crate::environment::source::SourceContext;
 use crate::log::TypeError;
-
+use crate::{
+    environment::functions::context::FunctionContext, symbol::registry::MIRSymbolRegistry,
+};
 pub(crate) mod functions;
 pub(crate) mod items;
 pub(crate) mod source;
@@ -78,12 +78,12 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn finish_mir_unit(self) -> CXResult<MIRUnit> {
-        Ok(MIRUnit {
-            functions: self.items.generated_functions,
-            prototypes: self.items.realized_fns.into_values().collect(),
-            global_variables: self.items.realized_globals.into_values().collect(),
-            registry: cx_mir::registry::MIRDecomposedRegistry::decompose_registry(self.symbols),
+        let (functions, globals) = self.items.drain_generated_items();
 
+        Ok(MIRUnit {
+            functions: functions,
+            global_variables: globals,
+            registry: self.symbols.decompose(),
             source_path: self.source.compilation_unit.as_path().to_owned(),
         })
     }
@@ -117,22 +117,6 @@ impl TypeEnvironment<'_> {
 
     pub fn restore_function_mode(&mut self, snapshot: FunctionModeSnapshot) {
         self.function.restore_mode(snapshot);
-    }
-
-    pub fn request_function_generation(&mut self, request: MIRFunctionGenRequest) {
-        self.items.requests.push(request);
-    }
-
-    pub fn pop_request(&mut self) -> Option<MIRFunctionGenRequest> {
-        self.items.requests.pop()
-    }
-
-    pub fn push_generated_function(&mut self, function: MIRFunction) {
-        self.items.generated_functions.push(function);
-    }
-
-    pub fn push_generated_global(&mut self, name: String, global: MIRGlobalVariable) {
-        self.items.realized_globals.insert(name, global);
     }
 }
 
@@ -178,17 +162,5 @@ impl TypeEnvironment<'_> {
         self.symbols
             .contains(id)
             .then(|| self.symbols.resolve_type_id(id))
-    }
-
-    pub fn set_external_templated_function(&mut self, value: bool) {
-        self.items.in_external_templated_function = value;
-    }
-
-    pub fn set_external_template_origin(&mut self, origin: Option<String>) {
-        self.items.external_template_origin = origin;
-    }
-
-    pub fn external_template_origin(&self) -> Option<&String> {
-        self.items.external_template_origin.as_ref()
     }
 }

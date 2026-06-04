@@ -1,60 +1,80 @@
-use cx_ast::{
-    ast::global_var::CXGlobalVariable,
-    symbols::{CXSymbol, CXSymbolKind},
-};
-use cx_util::{CXError, CXResult, namespace::QualifiedName};
+use cx_ast::symbols::{CXSymbol, CXSymbolKind};
+use cx_util::{CXError, CXResult, identifier::CXIdent};
 
-use crate::{
+use cx_mir::{
+    EnvironmentNamespace,
     mir::{
-        data::MIRTemplateInput,
-        expression::{MIRExpression, MIRExpressionKind, MIRPureExpression, SymbolValueOrigin},
+        data::{MIRTemplateInput, TemplateInfo},
+        expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
         r#type::MIRTypeKind,
     },
-    registry::MIRSymbolRegistry,
-    symbol::{
-        MIRSymbol,
-        completion::{complete_prototype, complete_type},
-    },
+    symbol::MIRSymbol,
     type_context::MIRTypeContext,
+};
+
+use crate::symbol::{
+    completion::{complete_prototype, complete_type},
+    r#enum::resolve_enum_block,
+    registry::MIRSymbolRegistry,
 };
 
 pub fn resolve_symbol(
     env: &mut MIRSymbolRegistry,
-    name: &QualifiedName,
+    namespace: &EnvironmentNamespace,
+    name: &CXIdent,
     symbol: &CXSymbol,
 ) -> CXResult<MIRSymbol> {
     match &symbol.kind {
         CXSymbolKind::Type(ty) => {
-            let mut completed = complete_type(env, &name.namespace, ty)?;
-            if completed.strong_identifier.is_none() {
-                completed.strong_identifier = Some(name.clone());
-            }
+            let mut completed = complete_type(env, namespace, ty)?;
             if completed.debug_name.is_none() {
-                completed.debug_name = Some(name.name.clone());
+                completed.debug_name = Some(name.clone());
             }
             let id = env.generate_type_id(completed);
             Ok(MIRSymbol::Type(id))
         }
 
-        CXSymbolKind::Expression { expr, is_constexpr } => {
-            Ok(
-                MIRSymbol::Value {
-                    expr: expr.clone(),
-                    is_constexpr: *is_constexpr,
+        CXSymbolKind::AddressableGlobal(name, ty) => {
+            let ty = complete_type(env, &namespace, ty)?;
+            let mem_ty = env.mem_ref_to(ty);
+            Ok(MIRSymbol::Expression(MIRExpression {
+                token_range: None,
+                kind: MIRExpressionKind::Variable {
+                    name: name.clone(),
+                    location: SymbolValueOrigin::Global,
+                },
+                _type: mem_ty,
+            }))
+        }
+
+        CXSymbolKind::FunctionReference(prototype) => {
+            let prototype = complete_prototype(env, namespace, prototype)?;
+
+            Ok(MIRSymbol::Expression(MIRExpression {
+                token_range: None,
+                _type: MIRTypeKind::Function {
+                    signature: Box::new(prototype.signature),
                 }
-            )
-        },
+                .into(),
+                kind: MIRExpressionKind::FunctionReference {
+                    name: prototype.name,
+                },
+            }))
+        }
+
+        CXSymbolKind::EnumIdent {
+            enum_block_idx,
+            variant_index,
+        } => resolve_enum_block(env, namespace, *enum_block_idx, *variant_index),
 
         CXSymbolKind::TypeTemplate { input, definition } => {
-            let source = CXSymbol::new(
-                symbol.visibility,
-                CXSymbolKind::Type(definition.clone()),
-            );
+            let source = CXSymbol::new(symbol.visibility, CXSymbolKind::Type(definition.clone()));
+
             Ok(MIRSymbol::Template {
                 input: input.clone(),
                 name: name.clone(),
                 source: Box::new(source),
-                namespace: name.namespace.clone(),
+                namespace: namespace.clone(),
             })
         }
 
@@ -63,13 +83,14 @@ pub fn resolve_symbol(
         } => {
             let source = CXSymbol::new(
                 symbol.visibility,
-                CXSymbolKind::Function(definition.clone()),
+                CXSymbolKind::FunctionReference(definition.clone()),
             );
+
             Ok(MIRSymbol::Template {
                 input: input.clone(),
                 name: name.clone(),
                 source: Box::new(source),
-                namespace: name.namespace.clone(),
+                namespace: namespace.clone(),
             })
         }
     }
@@ -104,7 +125,7 @@ pub fn apply_template(
         env.insert_local_type(param.as_string(), arg.clone())?;
     }
 
-    let result = resolve_symbol(env, name, source);
+    let result = resolve_symbol(env, namespace, name, source);
     env.pop_scope();
 
     let mut symbol = result?;
@@ -112,37 +133,11 @@ pub fn apply_template(
     Ok(Some(symbol))
 }
 
-fn resolve_global_symbol(
-    env: &mut MIRSymbolRegistry,
-    name: &QualifiedName,
-    global: &CXGlobalVariable,
-) -> CXResult<MIRSymbol> {
-    match global {
-        CXGlobalVariable::Standard { _type, .. } => {
-            let ty = complete_type(env, &name.namespace, _type)?;
-            let mem_ty = env.mem_ref_to(ty);
-            Ok(MIRSymbol::Value(MIRExpression {
-                token_range: None,
-                kind: MIRExpressionKind::Variable {
-                    name: name.name.clone(),
-                    location: SymbolValueOrigin::Global,
-                },
-                _type: mem_ty,
-            }))
-        }
-        CXGlobalVariable::EnumDefinition { .. } => Ok(MIRSymbol::Value(MIRExpression {
-            token_range: None,
-            kind: MIRExpressionKind::Unit,
-            _type: MIRTypeKind::Unit.into(),
-        })),
-    }
-}
-
 fn attach_template_metadata(
     env: &mut MIRSymbolRegistry,
     symbol: &mut MIRSymbol,
-    name: &QualifiedName,
-    _namespace: &crate::program::EnvironmentNamespace,
+    name: &CXIdent,
+    _namespace: &EnvironmentNamespace,
     input: MIRTemplateInput,
 ) {
     let MIRSymbol::Type(id) = symbol else {
@@ -150,8 +145,8 @@ fn attach_template_metadata(
     };
 
     let mut ty = env.resolve_type_id(*id).clone();
-    ty.template_info = Some(Box::new(crate::mir::data::TemplateInfo {
-        base_name: name.name.clone(),
+    ty.template_info = Some(Box::new(TemplateInfo {
+        base_name: name.clone(),
         template_input: input,
     }));
     ty.strong_identifier = Some(name.clone());

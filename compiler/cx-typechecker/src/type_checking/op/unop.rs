@@ -3,12 +3,11 @@ use cx_ast::ast::{
     types::CXType,
 };
 use cx_mir::{
+    EnvironmentNamespace,
     mir::{
         expression::{MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp},
-        program::EnvironmentNamespace,
         r#type::{MIRIntegerType, MIRType, MIRTypeKind},
     },
-    symbol::completion::complete_type,
     type_context::MIRTypeContext,
 };
 use cx_util::CXResult;
@@ -16,6 +15,7 @@ use cx_util::CXResult;
 use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
+    symbol::completion::complete_type,
     type_checking::{
         coercion::{
             explicit::explicit_cast,

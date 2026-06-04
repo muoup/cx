@@ -37,7 +37,6 @@ pub enum CXASTStmt {
     },
 
     GlobalVariableDefinition {
-        name: CXIdent,
         visibility: VisibilityMode,
         variable: CXGlobalVariable,
     },

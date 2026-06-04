@@ -6,7 +6,7 @@ use speedy::{Readable, Writable};
 
 use crate::{
     mir::data::{MIRFunctionSignature, TemplateInfo},
-    registry::MIRSymbolRegistry, type_context::MIRTypeContext,
+    type_context::MIRTypeContext,
 };
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Readable, Writable)]
@@ -161,7 +161,7 @@ impl TypeIdPair {
 }
 
 impl MIRTypeId {
-    pub fn contextual_eq(&self, other: &Self, definitions: &MIRSymbolRegistry) -> bool {
+    pub fn contextual_eq(&self, other: &Self, definitions: &impl MIRTypeContext) -> bool {
         let mut state = TypeComparisonState::default();
         self.contextual_eq_with_state(other, definitions, &mut state)
     }
@@ -337,7 +337,7 @@ impl MIRType {
         .with_name(CXIdent::from("__internal_function"))
     }
 
-    pub fn padded_size(&self, _definitions: &MIRSymbolRegistry) -> usize {
+    pub fn padded_size(&self, _definitions: &impl MIRTypeContext) -> usize {
         match &self.kind {
             MIRTypeKind::Integer { _type, .. } => _type.bytes() as usize,
             MIRTypeKind::Float { _type } => _type.bytes() as usize,
@@ -626,7 +626,7 @@ impl From<MIRTypeKind> for MIRType {
 }
 
 impl MIRTypeKind {
-    pub fn contextual_eq(&self, other: &Self, definitions: &MIRSymbolRegistry) -> bool {
+    pub fn contextual_eq(&self, other: &Self, definitions: &impl MIRTypeContext) -> bool {
         let mut state = TypeComparisonState::default();
         self.contextual_eq_with_state(other, definitions, &mut state)
     }

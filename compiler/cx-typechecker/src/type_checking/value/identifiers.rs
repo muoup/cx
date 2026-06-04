@@ -1,16 +1,9 @@
 use crate::{
-    environment::TypeEnvironment,
-    log_typecheck_error,
-    type_checking::result::{TypecheckResult, TypecheckedBinding},
+    environment::TypeEnvironment, log_typecheck_error, symbol::{completion::complete_template_input, resolution::apply_template}, type_checking::result::{TypecheckResult, TypecheckedBinding}
 };
 use cx_ast::ast::{expression::CXExpression, template::CXTemplateInput};
 use cx_mir::{
-    mir::{
-        expression::{MIRExpressionKind, SymbolValueOrigin},
-        program::EnvironmentNamespace,
-    },
-    symbol::completion::complete_template_input as complete_mir_template_input,
-    symbol::{MIRSymbol, resolution::apply_template},
+    EnvironmentNamespace, mir::expression::{MIRExpressionKind, SymbolValueOrigin}, symbol::MIRSymbol
 };
 use cx_util::{CXResult, namespace::QualifiedName};
 
@@ -38,8 +31,8 @@ pub(crate) fn typecheck_templated_identifier(
         return identifier_not_found(env, expr, name);
     };
 
-    let completed_input = complete_mir_template_input(&mut env.symbols, namespace, template_input)?;
-    
+    let completed_input = complete_template_input(&mut env.symbols, namespace, template_input)?;
+
     let Some(symbol) = apply_template(&mut env.symbols, &symbol, completed_input)? else {
         return log_typecheck_error!(
             env,
@@ -59,7 +52,7 @@ fn symbol_to_typecheck_result(
     symbol: MIRSymbol,
 ) -> CXResult<TypecheckResult> {
     match symbol {
-        MIRSymbol::Value(value) => {
+        MIRSymbol::Expression(value) => {
             let origin = match &value.kind {
                 MIRExpressionKind::Variable { location, .. } => Some(*location),
                 _ => None,
@@ -83,7 +76,6 @@ fn symbol_to_typecheck_result(
                 Ok(result)
             }
         }
-        MIRSymbol::PureValue(value) => Ok(TypecheckResult::from(value.as_value())),
         MIRSymbol::Template { .. } => Ok(TypecheckResult::incomplete_templated_callee(
             name.clone(),
             None,

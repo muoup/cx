@@ -2,8 +2,7 @@ use crate::{environment::TypeEnvironment, type_checking::result::TypecheckResult
 use cx_ast::ast::modifiers::{CX_CONST, CXLinkageMode};
 use cx_mir::mir::{
     data::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind},
-    expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
-    program::{MIRGlobalVarKind, MIRGlobalVariable},
+    expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin}, global::{MIRGlobalVarKind, MIRGlobalVariable},
 };
 use cx_util::identifier::CXIdent;
 use cx_util::unsafe_float::FloatWrapper;
@@ -41,8 +40,7 @@ pub(crate) fn typecheck_string_literal(env: &mut TypeEnvironment, val: &str) -> 
     let anonymous_name = anonymous_name_gen();
     let name_ident = CXIdent::new(anonymous_name.clone());
 
-    env.items.realized_globals.insert(
-        anonymous_name,
+    env.items.push_generated_global(
         MIRGlobalVariable {
             kind: MIRGlobalVarKind::StringLiteral {
                 name: name_ident.clone(),

@@ -9,10 +9,9 @@ use cx_lmir::{
 };
 use cx_mir::{
     mir::{
-        data::{MIRFunctionSignature, MIRTypeKind},
+        data::{MIRFunction, MIRFunctionSignature, MIRTypeKind},
         expression::{MIRExpression, MIRExpressionKind, MIRFunctionContract, StructInitialization},
         pattern::MIRPattern,
-        program::MIRFunction,
         r#type::{MIRField, MIRType},
     },
     registry::MIRDecomposedRegistry,

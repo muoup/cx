@@ -3,7 +3,7 @@ use crate::{
     type_checking::typechecker::typecheck_expr,
 };
 use cx_ast::ast::expression::CXExpression;
-use cx_mir::mir::{data::MIRType, program::EnvironmentNamespace};
+use cx_mir::{EnvironmentNamespace, mir::data::MIRType};
 use cx_util::CXResult;
 
 pub(crate) fn typecheck_unsafe(

@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+
 use crate::mir_lowering::types::convert_cx_prototype;
 use crate::{LMIRResult, LMIRUnit};
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::*;
 use cx_mir::mir::data::MIRFunctionPrototype;
-use cx_mir::program::MIRUnit;
 use cx_mir::registry::MIRDecomposedRegistry;
+use cx_mir::MIRUnit;
 use cx_util::format::dump_all;
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
@@ -48,16 +50,7 @@ impl LMIRBuilder {
             global_variables: Vec::new(),
             registry: mir.registry.clone(),
 
-            fn_map: mir
-                .prototypes
-                .iter()
-                .map(|proto| {
-                    (
-                        proto.name.to_string(),
-                        convert_cx_prototype(proto, &mir.registry),
-                    )
-                })
-                .collect(),
+            fn_map: HashMap::new(),
             symbol_table: ScopedMap::new_with_starting_scope(),
             goto_stack: Vec::new(),
             function_context: None,
@@ -81,10 +74,7 @@ impl LMIRBuilder {
 
         let bc_prototype = convert_cx_prototype(&fn_prototype, &self.registry);
 
-        if !self.fn_map.contains_key(bc_prototype.name.as_str()) {
-            self.insert_fn_prototype(bc_prototype.clone());
-        }
-
+        self.insert_fn_prototype(bc_prototype.clone());
         self.function_context = Some(LMIRFunctionContext {
             prototype: bc_prototype,
             mir_prototype: fn_prototype,

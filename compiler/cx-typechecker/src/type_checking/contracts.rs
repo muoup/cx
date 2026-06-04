@@ -2,9 +2,9 @@ use crate::environment::TypeEnvironment;
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::typechecker::typecheck_expr;
+use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::data::{MIRFunctionSignature, MIRType};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRFunctionContract};
-use cx_mir::program::EnvironmentNamespace;
 use cx_util::CXResult;
 use cx_util::namespace::QualifiedName;
 

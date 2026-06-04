@@ -1,8 +1,9 @@
 use cx_mir::{
     mir::data::{MIRType, MIRTypeKind},
-    registry::MIRSymbolRegistry,
     type_context::MIRTypeContext,
 };
+
+use crate::symbol::registry::MIRSymbolRegistry;
 
 pub struct StructField {
     pub index: usize,

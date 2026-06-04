@@ -1,15 +1,14 @@
 use crate::environment::TypeEnvironment;
 use crate::type_checking::aggregate::fields::struct_field;
-use crate::type_checking::op::binop::calls::build_function_reference;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::locals::ensure_binding_available;
 use crate::type_checking::value::moves::typecheck_move;
 use crate::{log_typecheck_error, typecheck_error};
 use cx_ast::ast::expression::{CXExprKind, CXExpression};
 use cx_ast::ast::modifiers::CX_CONST;
+use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::data::{MIRType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
-use cx_mir::mir::program::EnvironmentNamespace;
 use cx_mir::type_context::MIRTypeContext;
 use cx_util::CXResult;
 
@@ -156,7 +155,7 @@ pub fn typecheck_access(
                         base.source_type.display_with(&env.symbols)
                     )
                 })
-                .map(|symbol| symbol.into_function_prototype())?
+                .map(|symbol| symbol.as_expression())?
                 .ok_or_else(|| {
                     typecheck_error!(
                         env,
@@ -168,8 +167,11 @@ pub fn typecheck_access(
                 })?
                 .clone();
 
-            let needs_move = function
-                .signature
+            let MIRTypeKind::Function { signature } = &function._type.kind else {
+                unreachable!("function references must have function type")
+            };
+
+            let needs_move = signature
                 .params
                 .get(0)
                 .map(|param| !param._type.is_memory_reference())
@@ -182,8 +184,7 @@ pub fn typecheck_access(
                 base.source
             };
 
-            Ok(TypecheckResult::from(build_function_reference(&function))
-                .with_implicit_parameters(vec![receiver]))
+            Ok(TypecheckResult::from(function).with_implicit_parameters(vec![receiver]))
         }
 
         _ => log_typecheck_error!(

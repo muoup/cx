@@ -12,12 +12,12 @@ use crate::type_checking::pattern::tagged_union::{
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
+use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
     pattern::MIRPattern,
 };
-use cx_mir::program::EnvironmentNamespace;
 use cx_mir::type_context::MIRTypeContext;
 use cx_util::{CXResult, namespace::QualifiedName};
 

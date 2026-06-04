@@ -78,6 +78,19 @@ pub enum CXTypeKind {
     },
 }
 
+impl From<&str> for CXType {
+    fn from(value: &str) -> Self {
+        CXType::new(
+            0,
+            CXTypeKind::Identifier {
+                name: QualifiedName::new_raw(CXIdent::from(value)),
+                predeclaration: PredeclarationType::None,
+                template_input: None,
+            },
+        )
+    }
+}
+
 impl CXType {
     pub fn new(specifiers: CXTypeQualifiers, kind: CXTypeKind) -> Self {
         Self { kind, specifiers }

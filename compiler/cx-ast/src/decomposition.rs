@@ -4,7 +4,10 @@
 
 use cx_util::identifier::CXIdent;
 
-use crate::ast::{expression::CXExpression, function::CXFunctionPrototype, modifiers::CXLinkageMode, types::CXType};
+use crate::ast::{
+    expression::CXExpression, function::CXFunctionPrototype, modifiers::CXLinkageMode,
+    types::CXType,
+};
 
 #[derive(Debug)]
 pub struct CXGenerationAST {
@@ -15,7 +18,7 @@ pub struct CXGenerationAST {
 pub enum CXGenerationStmt {
     Function {
         prototype: CXFunctionPrototype,
-        body: Box<CXExpression>
+        body: Box<CXExpression>,
     },
 
     AddressableGlobal {

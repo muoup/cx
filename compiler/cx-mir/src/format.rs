@@ -5,8 +5,8 @@ use crate::mir::data::{MIRFunctionPrototype, MIRFunctionSignature, MIRParameter}
 use crate::mir::expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp};
 use crate::mir::global::{MIRGlobalVarKind, MIRGlobalVariable};
 use crate::mir::r#type::{MIRField, MIRFloatType, MIRIntegerType, MIRType, MIRTypeId, MIRTypeKind};
-use crate::program::{MIRFunction, MIRUnit};
 use crate::type_context::MIRTypeContext;
+use crate::{MIRFunction, MIRUnit};
 use std::fmt::{Display, Formatter};
 
 #[derive(Default)]
@@ -478,15 +478,6 @@ impl Display for MIRDisplay<'_, MIRGlobalVarKind> {
 impl Display for MIRDisplay<'_, MIRUnit> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "MIR Unit:")?;
-
-        writeln!(f, "\nFunction Prototypes:")?;
-        for prototype in &self.content.prototypes {
-            writeln!(
-                f,
-                "{}",
-                prototype.display_with_definitions(self.definitions)
-            )?;
-        }
 
         writeln!(f, "\nFunctions:")?;
         for function in &self.content.functions {
