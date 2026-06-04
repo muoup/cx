@@ -1,4 +1,4 @@
-use cx_ast::{ast::template::CXTemplatePrototype, symbols::UntypedSymbol};
+use cx_ast::{ast::{expression::CXExpression, template::CXTemplatePrototype}, symbols::CXSymbol};
 
 use crate::{
     mir::{
@@ -9,17 +9,20 @@ use crate::{
 };
 
 pub mod completion;
+pub mod mangling;
 pub mod resolution;
 
 #[derive(Clone, Debug)]
 pub enum MIRSymbol {
     Type(MIRTypeId),
-    Value(MIRExpression),
-    PureValue(MIRPureExpression),
+    Value { 
+        expr: CXExpression,
+        is_constexpr: bool,
+    },
     Template {
         input: CXTemplatePrototype,
         name: cx_util::namespace::QualifiedName,
-        source: Box<UntypedSymbol>,
+        source: Box<CXSymbol>,
         namespace: EnvironmentNamespace,
     },
 }

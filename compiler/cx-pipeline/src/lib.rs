@@ -1,13 +1,14 @@
 mod backends;
 mod linker;
 pub mod progress;
-mod scheduler;
 mod requests;
+mod scheduler;
 
 use crate::linker::{link, link_relocatable};
 use crate::progress::ProgressReporter;
 use crate::scheduler::scheduling_loop;
 use crate::scheduler::scheduling_loop_collect_errors;
+use cx_ast::registry::ExportNameMode;
 use cx_pipeline_data::config::{CXProjectConfig, TargetConfig};
 use cx_pipeline_data::db::ModuleData;
 use cx_pipeline_data::internal_storage::resource_path;
@@ -15,9 +16,9 @@ use cx_pipeline_data::jobs::{CompilationJob, CompilationStep};
 use cx_pipeline_data::{
     CompilationMode, CompilationUnit, CompilerConfig, GlobalCompilationContext,
 };
+use cx_util::format::with_dump_directory;
 use cx_util::CXError;
 use cx_util::CXResult;
-use cx_util::format::with_dump_directory;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Mutex;
@@ -39,6 +40,10 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
         .ok_or(CXError::create_boxed("Base file path is not valid UTF-8"))?;
     let entry_unit =
         CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory);
+    compiler_context
+        .module_db
+        .symbol_registry
+        .set_export_name_mode(entry_unit.to_namespace_path(), ExportNameMode::Root);
 
     let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, entry_unit.clone());
 
@@ -103,6 +108,10 @@ pub fn library_compilation(
 
     let entry_unit =
         CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory);
+    compiler_context
+        .module_db
+        .symbol_registry
+        .set_export_name_mode(entry_unit.to_namespace_path(), ExportNameMode::Root);
 
     let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, entry_unit.clone());
 

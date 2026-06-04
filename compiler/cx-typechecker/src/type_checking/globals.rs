@@ -17,7 +17,7 @@ use cx_mir::registry::MIRSymbolRegistry;
 use cx_mir::symbol::completion::complete_type;
 use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
-fn complete_global(
+pub(crate) fn typecheck_global(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     ident: &str,

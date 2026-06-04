@@ -1,52 +1,28 @@
-use cx_ast::ast::{expression::CXExpression, function::CXFunctionKind};
-use cx_mir::{
-    mir::{
-        data::MIRType,
-        name_mangling::{base_mangle_member, base_mangle_standard, base_mangle_static_member},
-    },
-    program::EnvironmentNamespace,
+use cx_ast::registry::{ExportNameMode, GlobalSymbolRegistry};
+use cx_util::namespace::QualifiedName;
+
+pub use crate::mir::name_mangling::{
+    base_mangle_member, base_mangle_static_member, mangle_namespace_symbol,
 };
-use cx_util::CXResult;
 
-use crate::environment::TypeEnvironment;
+use crate::registry::MIRSymbolRegistry;
 
-pub fn base_mangle_fn_name(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    kind: &CXFunctionKind,
-) -> CXResult<String> {
-    Ok(match &kind {
-        CXFunctionKind::Standard(name) => base_mangle_standard(name.as_str()),
-
-        CXFunctionKind::MemberFunction {
-            name, member_type, ..
-        } => {
-            let member_type =
-                env.complete_type(namespace, &CXExpression::default(), &member_type.as_type())?;
-            base_mangle_member(&env.symbols, name.as_str(), &member_type)
-        }
-
-        CXFunctionKind::StaticMemberFunction { name, member_type } => {
-            let member_type =
-                env.complete_type(namespace, &CXExpression::default(), &member_type.as_type())?;
-            base_mangle_static_member(&env.symbols, name.as_str(), &member_type)
-        }
-    })
+pub fn base_mangle_standard(symbols: &MIRSymbolRegistry, name: &QualifiedName) -> String {
+    mangle_qualified_symbol(symbols.global_registry, name)
 }
 
-pub fn mangle_templated_fn_name(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    kind: &CXFunctionKind,
-    return_type: &MIRType,
-    parameter_types: &[MIRType],
-) -> CXResult<String> {
-    let base_mangle = base_mangle_fn_name(env, namespace, kind)?;
-    let mut prototype_mangling = String::new();
-    prototype_mangling.push_str(&env.symbols.mangle(return_type));
-    for param_type in parameter_types {
-        prototype_mangling.push_str(&env.symbols.mangle(param_type));
+pub fn mangle_qualified_symbol(
+    global_registry: &GlobalSymbolRegistry,
+    name: &QualifiedName,
+) -> String {
+    if global_registry.export_name_mode(&name.namespace) == ExportNameMode::Root {
+        return name.name.as_string();
     }
 
-    Ok(format!("{}_{}", base_mangle, prototype_mangling))
+    let flat_name = name.as_flat_name();
+    if !flat_name.contains("::") {
+        return flat_name;
+    }
+
+    format!("_N{}", flat_name.replace("::", "_"))
 }

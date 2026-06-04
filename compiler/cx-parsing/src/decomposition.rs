@@ -1,7 +1,7 @@
 use cx_ast::{
     ast::{CXASTStmt, global_var::CXGlobalVariable},
     decomposition::CXGenerationStmt,
-    symbols::{SymbolNamespaceData, UntypedSymbol, UntypedSymbolKind},
+    symbols::{SymbolNamespaceData, CXSymbol, CXSymbolKind},
 };
 use cx_util::{
     identifier::CXIdent,
@@ -26,14 +26,14 @@ pub fn decompose_stmt(
             };
 
             let symbol = match template_prototype {
-                Some(input) => UntypedSymbol::new(
+                Some(input) => CXSymbol::new(
                     visibility,
-                    UntypedSymbolKind::TypeTemplate {
+                    CXSymbolKind::TypeTemplate {
                         input,
                         definition: _type,
                     },
                 ),
-                None => UntypedSymbol::new(visibility, UntypedSymbolKind::Type(_type)),
+                None => CXSymbol::new(visibility, CXSymbolKind::Type(_type)),
             };
 
             insert_symbol(symbol_buckets, namespace.clone(), name, symbol);
@@ -56,9 +56,9 @@ pub fn decompose_stmt(
                         return;
                     };
 
-                    UntypedSymbol::new(
+                    CXSymbol::new(
                         visibility,
-                        UntypedSymbolKind::FunctionTemplate {
+                        CXSymbolKind::FunctionTemplate {
                             input,
                             definition: prototype,
                             body,
@@ -73,7 +73,7 @@ pub fn decompose_stmt(
                         })
                     }
 
-                    UntypedSymbol::new(visibility, UntypedSymbolKind::Function(prototype))
+                    CXSymbol::new(visibility, CXSymbolKind::Function(prototype))
                 }
             };
 
@@ -84,27 +84,23 @@ pub fn decompose_stmt(
             name,
             visibility,
             variable,
-        } => {
-            if let CXGlobalVariable::Standard {
-                initializer,
-                linkage,
-                ..
-            } = &variable
-            {
-                stmts.push(CXGenerationStmt::AddressableGlobal {
-                    name: namespace.as_flat_name_with(&name),
-                    initializer: initializer.clone(),
-                    linkage: *linkage,
-                });
-            }
+        } => match variable {
+            CXGlobalVariable::EnumDefinition { variants } => {
+                let mut i = 0;
+                
+                for variant in variants.into_iter() {
+                    let symbol = CXSymbol::new(
+                        visibility,
+                        CXSymbolKind::Expression {
+                            expr: variant.value,
+                            is_constexpr: true,
+                        },
+                    );
 
-            insert_symbol(
-                symbol_buckets,
-                namespace.clone(),
-                name,
-                UntypedSymbol::new(visibility, UntypedSymbolKind::Global(variable)),
-            );
-        }
+                    insert_symbol(symbol_buckets, namespace.clone(), variant.name.clone(), symbol);
+                }
+            },
+        },
     }
 }
 
@@ -112,7 +108,7 @@ fn insert_symbol(
     symbol_buckets: &mut Vec<(NamespacePath, SymbolNamespaceData)>,
     namespace: NamespacePath,
     name: CXIdent,
-    symbol: UntypedSymbol,
+    symbol: CXSymbol,
 ) {
     if let Some((_, data)) = symbol_buckets
         .iter_mut()

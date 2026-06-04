@@ -1,13 +1,13 @@
 use cx_ast::{
     ast::global_var::CXGlobalVariable,
-    symbols::{UntypedSymbol, UntypedSymbolKind},
+    symbols::{CXSymbol, CXSymbolKind},
 };
 use cx_util::{CXError, CXResult, namespace::QualifiedName};
 
 use crate::{
     mir::{
         data::MIRTemplateInput,
-        expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
+        expression::{MIRExpression, MIRExpressionKind, MIRPureExpression, SymbolValueOrigin},
         r#type::MIRTypeKind,
     },
     registry::MIRSymbolRegistry,
@@ -21,10 +21,10 @@ use crate::{
 pub fn resolve_symbol(
     env: &mut MIRSymbolRegistry,
     name: &QualifiedName,
-    symbol: &UntypedSymbol,
+    symbol: &CXSymbol,
 ) -> CXResult<MIRSymbol> {
     match &symbol.kind {
-        UntypedSymbolKind::Type(ty) => {
+        CXSymbolKind::Type(ty) => {
             let mut completed = complete_type(env, &name.namespace, ty)?;
             if completed.strong_identifier.is_none() {
                 completed.strong_identifier = Some(name.clone());
@@ -36,19 +36,19 @@ pub fn resolve_symbol(
             Ok(MIRSymbol::Type(id))
         }
 
-        UntypedSymbolKind::Function(prototype) => {
-            let prototype = complete_prototype(env, &name.namespace, None, prototype)?;
-            Ok(MIRSymbol::PureValue(
-                crate::mir::expression::MIRPureExpression::FunctionReference(Box::new(prototype)),
-            ))
-        }
+        CXSymbolKind::Expression { expr, is_constexpr } => {
+            Ok(
+                MIRSymbol::Value {
+                    expr: expr.clone(),
+                    is_constexpr: *is_constexpr,
+                }
+            )
+        },
 
-        UntypedSymbolKind::Global(global) => resolve_global_symbol(env, name, global),
-
-        UntypedSymbolKind::TypeTemplate { input, definition } => {
-            let source = UntypedSymbol::new(
+        CXSymbolKind::TypeTemplate { input, definition } => {
+            let source = CXSymbol::new(
                 symbol.visibility,
-                UntypedSymbolKind::Type(definition.clone()),
+                CXSymbolKind::Type(definition.clone()),
             );
             Ok(MIRSymbol::Template {
                 input: input.clone(),
@@ -58,12 +58,12 @@ pub fn resolve_symbol(
             })
         }
 
-        UntypedSymbolKind::FunctionTemplate {
+        CXSymbolKind::FunctionTemplate {
             input, definition, ..
         } => {
-            let source = UntypedSymbol::new(
+            let source = CXSymbol::new(
                 symbol.visibility,
-                UntypedSymbolKind::Function(definition.clone()),
+                CXSymbolKind::Function(definition.clone()),
             );
             Ok(MIRSymbol::Template {
                 input: input.clone(),

@@ -4,7 +4,7 @@ use crate::requests::fulfill_requests;
 use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::preparse::PreparseConfig;
-use cx_parsing::{ParseErrorLog, decompose_ast, parse_ast, preparse};
+use cx_parsing::{decompose_ast, parse_ast, preparse, ParseErrorLog};
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::directories::internal_directory;
 use cx_pipeline_data::internal_storage::{resource_path, retrieve_data};

@@ -2,7 +2,9 @@
 //  - Information (External symbols + Types)
 //  - Defined Symbols
 
-use crate::ast::{expression::CXExpression, function::CXFunctionPrototype, modifiers::CXLinkageMode};
+use cx_util::identifier::CXIdent;
+
+use crate::ast::{expression::CXExpression, function::CXFunctionPrototype, modifiers::CXLinkageMode, types::CXType};
 
 #[derive(Debug)]
 pub struct CXGenerationAST {
@@ -17,8 +19,14 @@ pub enum CXGenerationStmt {
     },
 
     AddressableGlobal {
-        name: String,
+        name: CXIdent,
+        _type: CXType,
         initializer: Option<CXExpression>,
         linkage: CXLinkageMode,
-    }
+    },
+
+    StringLiteral {
+        name: CXIdent,
+        value: String,
+    },
 }

@@ -1,7 +1,12 @@
 use std::{borrow::Cow, collections::HashMap};
 
 use cx_ast::registry::GlobalSymbolRegistry;
-use cx_util::{CXResult, identifier::CXIdent, namespace::{NamespacePath, QualifiedName}, scoped_map::ScopedMap};
+use cx_util::{
+    CXResult,
+    identifier::CXIdent,
+    namespace::{NamespacePath, QualifiedName},
+    scoped_map::ScopedMap,
+};
 
 use crate::{
     intrinsic_types::INTRINSIC_TYPES,
@@ -65,7 +70,9 @@ impl<'a> MIRSymbolRegistry<'a> {
             return Ok(Some(preresolved_symbol.clone()));
         }
 
-        if name.namespace.is_root() && let Some(local_symbol) = self.local_symbols.get(name) {
+        if name.namespace.is_root()
+            && let Some(local_symbol) = self.local_symbols.get(name)
+        {
             return Ok(Some(local_symbol.clone()));
         }
 
@@ -93,6 +100,14 @@ impl<'a> MIRSymbolRegistry<'a> {
 
     pub fn map_namespace_alias(&mut self, alias: NamespacePath, target: NamespacePath) {
         self.namespace_aliases.insert(alias, target);
+    }
+
+    pub fn mangle_symbol(&self, name: &QualifiedName) -> String {
+        crate::symbol::mangling::base_mangle_standard(self, name)
+    }
+
+    pub fn mangle_type(&self, ty: &MIRType) -> String {
+        crate::mir::name_mangling::type_mangle(self, ty)
     }
 
     pub fn generate_type_id(&mut self, ty: MIRType) -> MIRTypeId {

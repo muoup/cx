@@ -17,12 +17,15 @@ use crate::{
             MIRFunctionPrototype, MIRFunctionSignature, MIRMoveAttributes, MIRParameter,
             MIRTemplateInput,
         },
-        name_mangling::{base_mangle_member, base_mangle_standard, base_mangle_static_member},
         r#type::{MIRField, MIRType, MIRTypeId, MIRTypeKind},
     },
     program::EnvironmentNamespace,
     registry::MIRSymbolRegistry,
-    symbol::{MIRSymbol, resolution::apply_template},
+    symbol::{
+        MIRSymbol,
+        mangling::{base_mangle_member, base_mangle_standard, base_mangle_static_member},
+        resolution::apply_template,
+    },
     type_context::MIRTypeContext,
 };
 
@@ -181,7 +184,7 @@ fn complete_identifier_type(
 ) -> CXResult<MIRType> {
     let Some(symbol) = lookup_symbol(symbols, namespace, name)? else {
         if predeclaration != PredeclarationType::None {
-            return Ok(undefined_named_type(contextual_name(namespace, name)));
+            return Ok(MIRTypeKind::Undefined.into());
         }
 
         return CXError::create_result(format!("Type not found: {name}"));
@@ -269,7 +272,10 @@ fn completed_function_name(
     kind: &CXFunctionKind,
 ) -> CXResult<CXIdent> {
     let name = match kind {
-        CXFunctionKind::Standard(name) => base_mangle_standard(&namespace.as_flat_name_with(name)),
+        CXFunctionKind::Standard(name) => base_mangle_standard(
+            symbols,
+            &QualifiedName::new(namespace.clone(), name.clone()),
+        ),
         CXFunctionKind::MemberFunction {
             member_type, name, ..
         } => {
@@ -302,14 +308,6 @@ fn lookup_symbol(
     symbols.get_symbol(name)
 }
 
-fn contextual_name(namespace: &EnvironmentNamespace, name: &QualifiedName) -> QualifiedName {
-    if name.namespace.is_root() {
-        QualifiedName::new(namespace.clone(), name.name.clone())
-    } else {
-        name.clone()
-    }
-}
-
 fn namespace_from_module(
     namespace: &EnvironmentNamespace,
     external_module: Option<&String>,
@@ -317,15 +315,6 @@ fn namespace_from_module(
     external_module
         .map(|module| NamespacePath::from_slash_path(&module.replace("::", "/")))
         .unwrap_or_else(|| namespace.clone())
-}
-
-fn undefined_named_type(name: QualifiedName) -> MIRType {
-    MIRType {
-        strong_identifier: Some(name.clone()),
-        debug_name: Some(name.name),
-        kind: MIRTypeKind::Undefined,
-        ..Default::default()
-    }
 }
 
 fn literal_array_size(expr: &CXExpression) -> CXResult<usize> {

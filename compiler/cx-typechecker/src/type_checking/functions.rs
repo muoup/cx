@@ -7,7 +7,7 @@ use crate::{
 };
 use cx_ast::{
     ast::{expression::CXExpression, function::CXFunctionKind},
-    symbols::UntypedSymbolKind,
+    symbols::CXSymbolKind,
 };
 use cx_mir::mir::{
     data::{MIRFunctionPrototype, MIRParameter, MIRTemplateInput},
@@ -82,7 +82,7 @@ pub fn realize_fn_implementation(
     let namespace = NamespacePath::from_slash_path(origin.identifier());
     let template_key = template_kind.into_key();
 
-    let Some(UntypedSymbolKind::FunctionTemplate {
+    let Some(CXSymbolKind::FunctionTemplate {
         input: _template_input,
         definition,
         body,

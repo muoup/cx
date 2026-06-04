@@ -6,22 +6,24 @@ use crate::ast::{
 };
 
 #[derive(Debug, Clone)]
-pub struct UntypedSymbol {
+pub struct CXSymbol {
     pub visibility: VisibilityMode,
-    pub kind: UntypedSymbolKind,
+    pub kind: CXSymbolKind,
 }
 
-impl UntypedSymbol {
-    pub fn new(visibility: VisibilityMode, kind: UntypedSymbolKind) -> Self {
+impl CXSymbol {
+    pub fn new(visibility: VisibilityMode, kind: CXSymbolKind) -> Self {
         Self { visibility, kind }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum UntypedSymbolKind {
+pub enum CXSymbolKind {
     Type(CXType),
-    Function(CXFunctionPrototype),
-    Global(CXGlobalVariable),
+    Expression {
+        expr: CXExpression,
+        is_constexpr: bool,
+    },
     TypeTemplate {
         input: CXTemplatePrototype,
         definition: CXType,
@@ -36,7 +38,7 @@ pub enum UntypedSymbolKind {
 
 #[derive(Debug, Default, Clone)]
 pub struct SymbolNamespaceData {
-    symbols: HashMap<String, UntypedSymbol>,
+    symbols: HashMap<String, CXSymbol>,
 }
 
 impl SymbolNamespaceData {
@@ -46,11 +48,11 @@ impl SymbolNamespaceData {
         }
     }
 
-    pub fn insert_symbol(&mut self, name: impl Into<String>, symbol: UntypedSymbol) {
+    pub fn insert_symbol(&mut self, name: impl Into<String>, symbol: CXSymbol) {
         self.symbols.insert(name.into(), symbol);
     }
 
-    pub fn get_symbol(&self, name: &str) -> Option<&UntypedSymbol> {
+    pub fn get_symbol(&self, name: &str) -> Option<&CXSymbol> {
         self.symbols.get(name)
     }
 }

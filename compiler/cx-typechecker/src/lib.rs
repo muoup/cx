@@ -1,4 +1,4 @@
-use cx_ast::ast::modifiers::CXLinkageMode;
+use cx_ast::ast::modifiers::{CX_CONST, CXLinkageMode};
 use cx_ast::{
     ast::function::CXFunctionContract,
     decomposition::{CXGenerationAST, CXGenerationStmt},
@@ -6,8 +6,8 @@ use cx_ast::{
 use cx_mir::mir::data::{MIRFunctionSignature, MIRParameter};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin};
 use cx_mir::mir::{data::MIRFunctionPrototype, r#type::MIRType};
-use cx_mir::program::{EnvironmentNamespace, MIRFunction};
-use cx_mir::symbol::completion::complete_prototype;
+use cx_mir::program::{EnvironmentNamespace, MIRFunction, MIRGlobalVarKind, MIRGlobalVariable};
+use cx_mir::symbol::completion::{complete_prototype, complete_type};
 use cx_util::{CXResult, identifier::CXIdent};
 
 pub mod log;
@@ -17,6 +17,8 @@ mod type_checking;
 
 pub use type_checking::{complete_base_functions, realize_fn_implementation};
 
+use crate::type_checking::constexpr::constexpr_evaluate;
+use crate::type_checking::typechecker::typecheck_expr;
 use crate::{
     environment::{MIRFunctionGenRequest, TypeEnvironment},
     type_checking::functions::typecheck_function,
@@ -36,7 +38,40 @@ pub fn typecheck(
                 let prototype = complete_prototype(&mut env.symbols, namespace, None, prototype)?;
                 typecheck_function(env, namespace, prototype.clone(), body)?;
             }
-            CXGenerationStmt::AddressableGlobal { .. } => {}
+
+            CXGenerationStmt::StringLiteral { name, value } => {
+                let global = MIRGlobalVariable {
+                    is_mutable: false,
+                    linkage: CXLinkageMode::Static,
+                    kind: MIRGlobalVarKind::StringLiteral { name: name.clone(), value: value.clone() },
+                };
+
+                env.push_generated_global(name.to_string(), global);
+            },
+
+            CXGenerationStmt::AddressableGlobal { name, _type, linkage, initializer } => {
+                let _type = complete_type(&mut env.symbols, namespace, _type)?;
+                let constexpr_init = initializer
+                    .as_ref()
+                    .map(|init|
+                        typecheck_expr(env, namespace, &init, Some(&_type))
+                            .and_then(|tc| tc.standard_ready_coerce(env, init.token_range()))
+                            .and_then(|tc| constexpr_evaluate(env, tc))
+                    )
+                    .transpose()?
+                    .map(|ce| ce.get_integer().ok_or_else(|| {
+                        unreachable!("Global variable initializer must be a constant integer expression")
+                    }))
+                    .transpose()?;
+
+                let global = MIRGlobalVariable {
+                    is_mutable:_type.get_specifier(CX_CONST),
+                    linkage: *linkage,
+                    kind: MIRGlobalVarKind::Variable { name: name.clone(), _type: _type, initializer: constexpr_init }
+                };
+
+                env.push_generated_global(name.to_string(), global);
+            }
         }
     }
 
