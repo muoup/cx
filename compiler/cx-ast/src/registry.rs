@@ -80,4 +80,25 @@ impl GlobalSymbolRegistry {
             .get_symbol(name.name.as_str())
             .cloned()
     }
+
+    pub fn get_bucket<'b, 'c>(&'b self, namespace: &NamespacePath) -> Option<(impl Sized + use<'b>, &'c SymbolNamespaceData)> {
+        let inner = self
+            .inner
+            .read()
+            .expect("GlobalSymbolRegistry read lock poisoned");
+
+        let data = inner.namespaces
+            .get(namespace)?;
+
+        // This is incredibly unnecessary but I thought it was funny. This is my 11:40 PM attempt at 
+        // recreating RwLockReadGuard::map that is not current stable.
+        // 
+        // Also not sure how to do a true opaque type for locks which we don't want the user to touch,
+        // but impl Sized kinda rocks
+        unsafe {
+            let data = std::mem::transmute(data);
+            
+            Some((inner, data))
+        }
+    }
 }

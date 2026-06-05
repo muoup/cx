@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use cx_ast::registry::GlobalSymbolRegistry;
+use cx_ast::{registry::GlobalSymbolRegistry, symbols::SymbolNamespaceData};
 use cx_mir::{
     intrinsic_types::INTRINSIC_TYPES,
     mir::{
@@ -75,6 +75,36 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.global_registry
     }
 
+    pub fn resolve_namespace_alias<'b>(&'b self, namespace: &'b NamespacePath) -> Cow<'b, NamespacePath> {
+        if let Some(alias) = self.namespace_aliases.get(namespace) {
+            Cow::Borrowed(alias)
+        } else {
+            Cow::Borrowed(namespace)
+        }
+    }
+
+    pub fn resolve_qualified_alias<'b>(&self, name: &'b QualifiedName) -> Cow<'b, QualifiedName> {
+        let mut name = Cow::Borrowed(name);
+
+        if let Some(alias) = self.namespace_aliases.get(&name.namespace) {
+            name = Cow::Owned(QualifiedName {
+                namespace: alias.clone(),
+                name: name.name.clone(),
+            });
+        }
+
+        name
+    }
+
+    pub fn get_namespace_data(
+        &mut self,
+        name: &NamespacePath,
+    ) -> Option<(impl Sized, &SymbolNamespaceData)> {
+        let resolved_namespace = self.resolve_namespace_alias(name);
+        
+        self.global_registry.get_bucket(&resolved_namespace)
+    }
+
     pub fn get_symbol(&mut self, name: &QualifiedName) -> CXResult<Option<MIRSymbol>> {
         if let Some(preresolved_symbol) = self.get_preresolved_symbol(name) {
             return Ok(Some(preresolved_symbol.clone()));
@@ -86,20 +116,19 @@ impl<'a> MIRSymbolRegistry<'a> {
             return Ok(Some(local_symbol.clone()));
         }
 
-        let mut name = Cow::Borrowed(name);
-
-        if let Some(alias) = self.namespace_aliases.get(&name.namespace) {
-            name = Cow::Owned(QualifiedName {
-                namespace: alias.clone(),
-                name: name.name.clone(),
-            });
-        }
-
+        let name = self.resolve_qualified_alias(name);
+        
         let Some(untyped_symbol) = self.global_registry.resolve(name.as_ref()) else {
             return Ok(None);
         };
 
-        let symbol = resolve_symbol(self, &name.as_ref().namespace, &name.as_ref().name, &untyped_symbol)?;
+        let symbol = resolve_symbol(
+            self,
+            &name.as_ref().namespace,
+            &name.as_ref().name,
+            &untyped_symbol,
+        )?;
+        
         self.insert_symbol(name.into_owned(), symbol.clone());
         Ok(Some(symbol))
     }

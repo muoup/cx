@@ -18,8 +18,8 @@ use crate::symbol::{
     registry::MIRSymbolRegistry,
 };
 
-pub fn resolve_symbol(
-    env: &mut MIRSymbolRegistry,
+pub fn resolve_symbol<'a, 'b>(
+    env: &'a mut MIRSymbolRegistry<'b>,
     namespace: &EnvironmentNamespace,
     name: &CXIdent,
     symbol: &CXSymbol,
@@ -65,7 +65,11 @@ pub fn resolve_symbol(
         CXSymbolKind::EnumIdent {
             enum_block_idx,
             variant_index,
-        } => resolve_enum_block(env, namespace, *enum_block_idx, *variant_index),
+        } => resolve_enum_block(env, namespace, *enum_block_idx).map(|b| {
+            b.variant_expr(*variant_index)
+                .expect("Expected enum variant to be in the global registry")
+                .clone()
+        }),
 
         CXSymbolKind::TypeTemplate { input, definition } => {
             let source = CXSymbol::new(symbol.visibility, CXSymbolKind::Type(definition.clone()));
@@ -96,8 +100,8 @@ pub fn resolve_symbol(
     }
 }
 
-pub fn apply_template(
-    env: &mut MIRSymbolRegistry,
+pub fn apply_template<'a, 'b>(
+    env: &'a mut MIRSymbolRegistry<'b>,
     symbol: &MIRSymbol,
     template_input: MIRTemplateInput,
 ) -> CXResult<Option<MIRSymbol>> {
@@ -125,12 +129,11 @@ pub fn apply_template(
         env.insert_local_type(param.as_string(), arg.clone())?;
     }
 
-    let result = resolve_symbol(env, namespace, name, source);
+    let mut result = resolve_symbol(env, namespace, name, source)?;
     env.pop_scope();
 
-    let mut symbol = result?;
-    attach_template_metadata(env, &mut symbol, name, namespace, template_input);
-    Ok(Some(symbol))
+    attach_template_metadata(env, &mut result, name, namespace, template_input);
+    Ok(Some(result))
 }
 
 fn attach_template_metadata(
