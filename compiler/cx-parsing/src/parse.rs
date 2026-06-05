@@ -3,7 +3,6 @@ use cx_ast::ast::{
     expression::{CXExprKind, CXExpression},
     function::CXFunctionPrototype,
     global_var::CXGlobalVariable,
-    modifiers::CXLinkageMode,
     template::CXTemplatePrototype,
 };
 use cx_preparse_data::VisibilityMode;

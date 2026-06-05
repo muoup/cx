@@ -3,18 +3,25 @@ use cx_ast::{
     decomposition::{CXGenerationAST, CXGenerationStmt},
     symbols::{CXSymbol, CXSymbolKind, SymbolNamespaceData},
 };
+use std::collections::HashMap;
+
 use cx_util::namespace::{NamespacePath, QualifiedName};
 
 pub struct DecompositionEnv<'a> {
     namespace: &'a NamespacePath,
+    namespace_aliases: HashMap<NamespacePath, NamespacePath>,
     symbol_buckets: Vec<(NamespacePath, SymbolNamespaceData)>,
     stmts: Vec<CXGenerationStmt>,
 }
 
 impl<'a> DecompositionEnv<'a> {
-    pub fn new(namespace: &'a NamespacePath) -> Self {
+    pub fn new(
+        namespace: &'a NamespacePath,
+        namespace_aliases: HashMap<NamespacePath, NamespacePath>,
+    ) -> Self {
         Self {
             namespace,
+            namespace_aliases,
             symbol_buckets: Vec::new(),
             stmts: Vec::new(),
         }
@@ -22,6 +29,7 @@ impl<'a> DecompositionEnv<'a> {
 
     pub fn destructure(self) -> (Vec<(NamespacePath, SymbolNamespaceData)>, CXGenerationAST) {
         let ast = CXGenerationAST {
+            namespace_aliases: self.namespace_aliases,
             generation_stmts: self.stmts,
         };
 

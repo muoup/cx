@@ -2,7 +2,9 @@
 //  - Information (External symbols + Types)
 //  - Defined Symbols
 
-use cx_util::identifier::CXIdent;
+use std::collections::HashMap;
+
+use cx_util::{identifier::CXIdent, namespace::NamespacePath};
 
 use crate::ast::{
     expression::CXExpression, function::CXFunctionPrototype, modifiers::CXLinkageMode,
@@ -11,6 +13,7 @@ use crate::ast::{
 
 #[derive(Debug)]
 pub struct CXGenerationAST {
+    pub namespace_aliases: HashMap<NamespacePath, NamespacePath>,
     pub generation_stmts: Vec<CXGenerationStmt>,
 }
 

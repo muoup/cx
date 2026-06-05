@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use cx_mir::{
     MIRUnit, mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId}, symbol::MIRSymbol, type_context::MIRTypeContext
@@ -9,7 +9,7 @@ use cx_tokens::TokenRange;
 use cx_tokens::token::Token;
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
-use cx_util::namespace::QualifiedName;
+use cx_util::namespace::{NamespacePath, QualifiedName};
 
 use crate::{environment::functions::context::FunctionModeSnapshot, symbol::resolution::resolve_symbol};
 pub use crate::environment::functions::control_flow::{
@@ -43,12 +43,10 @@ impl TypeEnvironment<'_> {
         compilation_unit: CompilationUnit,
         working_directory: PathBuf,
         module_data: &'a ModuleData,
+        namespace_aliases: HashMap<NamespacePath, NamespacePath>,
     ) -> TypeEnvironment<'a> {
         TypeEnvironment {
-            symbols: MIRSymbolRegistry::new(
-                &module_data.symbol_registry,
-                compilation_unit.to_namespace_path(),
-            ),
+            symbols: MIRSymbolRegistry::new(&module_data.symbol_registry, namespace_aliases),
             source: SourceContext::new(tokens, compilation_unit, working_directory, module_data),
             items: ItemRegistry::new(),
             function: FunctionContext::default(),

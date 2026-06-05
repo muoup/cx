@@ -28,8 +28,6 @@ pub fn lower_global_value(
             let bc_type = builder.convert_cx_type(_type);
             let bc_initializer = *initializer;
 
-            println!("var {} :: linkage {:?}", name, bc_linkage);
-
             Ok(LMIRGlobalValue {
                 name: name.clone(),
                 _type: LMIRGlobalType::Variable {

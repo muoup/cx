@@ -56,7 +56,8 @@ pub fn parse_ast(
 }
 
 pub fn decompose_ast<'a>(namespace: &'a NamespacePath, ast: CXAST) -> DecompositionEnv<'a> {
-    let mut env = DecompositionEnv::new(namespace);
+    let namespace_aliases = ast.namespace_aliases;
+    let mut env = DecompositionEnv::new(namespace, namespace_aliases);
 
     ast.definition_stmts
         .into_iter()

@@ -336,6 +336,7 @@ pub(crate) fn perform_job(
                 job.unit.clone(),
                 context.config.working_directory.clone(),
                 &context.module_db,
+                self_ast.namespace_aliases.clone(),
             );
 
             typecheck(&mut env, &namespace, &self_ast)?;

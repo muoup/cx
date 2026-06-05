@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -7,7 +8,7 @@ use cx_preparse_data::{PreparseContents, VisibilityMode};
 use cx_tokens::TokenIter;
 use cx_util::identifier::CXIdent;
 use cx_util::module_path::ModulePath;
-use cx_util::namespace::QualifiedName;
+use cx_util::namespace::{NamespacePath, QualifiedName};
 
 #[derive(Debug)]
 pub struct ParserData<'a> {
@@ -18,6 +19,7 @@ pub struct ParserData<'a> {
     pub file_origin: Arc<str>,
     // uses u8 mapping instead of a set to prevent problems with shadowing
     pub temporary_type_names: HashMap<CXIdent, u8>,
+    namespace_aliases: HashMap<NamespacePath, NamespacePath>,
 
     pub registry: &'a GlobalPreparseRegistry,
     pub ast: CXAST,
@@ -30,6 +32,7 @@ impl<'a> ParserData<'a> {
         registry: &'a GlobalPreparseRegistry,
     ) -> Self {
         let file_origin: Arc<str> = Arc::from(tokens.file.to_string_lossy().as_ref());
+
         Self {
             tokens,
             visibility: VisibilityMode::Package,
@@ -38,6 +41,7 @@ impl<'a> ParserData<'a> {
             file_origin,
             registry,
             temporary_type_names: HashMap::new(),
+            namespace_aliases: pp_contents.namespace_aliases.clone(),
             ast: CXAST::new(
                 ModulePath::from_source_path(pp_contents.module.as_str()),
                 pp_contents.imports.clone(),
@@ -89,13 +93,27 @@ impl<'a> ParserData<'a> {
         self.ast.definition_stmts.push(stmt)
     }
 
-    pub fn take_ast(self) -> CXAST {
+    pub fn take_ast(mut self) -> CXAST {
+        self.ast.namespace_aliases = self.namespace_aliases;
         self.ast
     }
 
+    pub fn resolve_qualified_alias<'b>(&self, name: &'b QualifiedName) -> Cow<'b, QualifiedName> {
+        if let Some(alias) = self.namespace_aliases.get(&name.namespace) {
+            Cow::Owned(QualifiedName {
+                namespace: alias.clone(),
+                name: name.name.clone(),
+            })
+        } else {
+            Cow::Borrowed(name)
+        }
+    }
+
     pub fn is_type_ident(&self, name: &QualifiedName) -> bool {
+        let resolved_name = self.resolve_qualified_alias(name);
+
         self.registry
-            .get_symbol(&name.namespace, &name.name)
+            .get_symbol(&resolved_name.namespace, &resolved_name.name)
             .is_some()
             || (name.namespace.is_root() && self.temporary_type_names.contains_key(&name.name))
     }

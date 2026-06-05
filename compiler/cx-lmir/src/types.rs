@@ -148,11 +148,11 @@ impl LMIRType {
 
     pub fn alignment(&self) -> u8 {
         match &self.kind {
-            LMIRTypeKind::Opaque { bytes } => (*bytes).min(8) as u8,
-            LMIRTypeKind::Integer(_type) => _type.bytes().min(8),
-            LMIRTypeKind::Float(_type) => _type.bytes().min(8),
+            LMIRTypeKind::Opaque { bytes } => (*bytes).clamp(1, 8) as u8,
+            LMIRTypeKind::Integer(_type) => _type.bytes().clamp(1, 8),
+            LMIRTypeKind::Float(_type) => _type.bytes().clamp(1, 8),
             LMIRTypeKind::Pointer { .. } => 8, // TODO: make this configurable
-            LMIRTypeKind::Vector { element, .. } => element.bytes().min(16),
+            LMIRTypeKind::Vector { element, .. } => element.bytes().clamp(1, 16),
             LMIRTypeKind::Array { element, .. } => element.alignment(),
             LMIRTypeKind::Struct { fields, .. } => fields
                 .iter()

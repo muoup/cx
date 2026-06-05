@@ -40,19 +40,20 @@ impl MIRTypeContext for MIRSymbolRegistry<'_> {
 }
 
 impl<'a> MIRSymbolRegistry<'a> {
-    pub fn new(global_registry: &'a GlobalSymbolRegistry, namespace: NamespacePath) -> Self {
+    pub fn new(
+        global_registry: &'a GlobalSymbolRegistry,
+        namespace_aliases: HashMap<NamespacePath, NamespacePath>,
+    ) -> Self {
         let mut registry = Self {
             global_registry,
             global_cache: HashMap::new(),
             local_symbols: ScopedMap::new_with_starting_scope(),
 
-            namespace_aliases: HashMap::new(),
+            namespace_aliases,
 
             typeid_defs: HashMap::new(),
             next_typeid: 0,
         };
-
-        registry.map_namespace_alias(NamespacePath::root(), namespace);
 
         for (name, ty_kind) in INTRINSIC_TYPES {
             let ty: MIRType = ty_kind.clone().into();
