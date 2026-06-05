@@ -5,11 +5,7 @@ use cx_ast::ast::{
     template::CXTemplateInput,
     types::{CXField, CXType, CXTypeKind, PredeclarationType},
 };
-use cx_util::{
-    CXError, CXResult,
-    identifier::CXIdent,
-    namespace::{NamespacePath, QualifiedName},
-};
+use cx_util::{CXError, CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 use cx_mir::{
     mir::{
@@ -26,7 +22,7 @@ use cx_mir::{
 
 use crate::{
     EnvironmentNamespace,
-    symbol::{registry::MIRSymbolRegistry, resolution::apply_template},
+    symbol::{registry::MIRSymbolRegistry, resolution::{apply_template, resolve_symbol}},
 };
 
 pub fn complete_template_input(
@@ -179,21 +175,35 @@ fn complete_identifier_type(
     predeclaration: PredeclarationType,
     template_input: &Option<CXTemplateInput>,
 ) -> CXResult<MIRType> {
-    let Some(symbol) = lookup_symbol(symbols, namespace, name)? else {
+    if let Some(_ty) = symbols.get_preresolved_symbol(name) {
+        return Ok(_ty
+            .as_type_id()
+            .map(|id| symbols.resolve_type_id(id).clone())
+            .unwrap()); // unfailable
+    }
+
+    let id = symbols.reserve_type_id();
+    symbols.insert_type_symbol(name.clone(), id);
+
+    let alias_name = symbols.resolve_qualified_alias(name);
+
+    let Some(symbol) = symbols.get_global_registry().resolve(alias_name.as_ref()) else {
         if predeclaration != PredeclarationType::None {
             return Ok(MIRTypeKind::Undefined.into());
         }
 
         return CXError::create_result(format!("Type not found: {name}"));
     };
+    
+    let mir_symbol = resolve_symbol(symbols, &name.namespace, &name.name, &symbol)?;
 
     let symbol = if let Some(input) = template_input {
         let input = complete_template_input(symbols, namespace, input)?;
-        apply_template(symbols, &symbol, input)?.ok_or_else(|| {
+        apply_template(symbols, &mir_symbol, input)?.ok_or_else(|| {
             CXError::create_boxed(format!("Type '{name}' does not accept template arguments"))
         })?
     } else {
-        symbol
+        mir_symbol
     };
 
     match symbol {
@@ -294,32 +304,6 @@ fn completed_function_name(
     };
 
     Ok(CXIdent::new(name))
-}
-
-fn lookup_symbol(
-    symbols: &mut MIRSymbolRegistry,
-    namespace: &EnvironmentNamespace,
-    name: &QualifiedName,
-) -> CXResult<Option<MIRSymbol>> {
-    if !name.namespace.is_root() {
-        return symbols.get_symbol(name);
-    }
-
-    let local_name = QualifiedName::new(namespace.clone(), name.name.clone());
-    if let Some(symbol) = symbols.get_symbol(&local_name)? {
-        return Ok(Some(symbol));
-    }
-
-    symbols.get_symbol(name)
-}
-
-fn namespace_from_module(
-    namespace: &EnvironmentNamespace,
-    external_module: Option<&String>,
-) -> EnvironmentNamespace {
-    external_module
-        .map(|module| NamespacePath::from_slash_path(&module.replace("::", "/")))
-        .unwrap_or_else(|| namespace.clone())
 }
 
 fn literal_array_size(expr: &CXExpression) -> CXResult<usize> {

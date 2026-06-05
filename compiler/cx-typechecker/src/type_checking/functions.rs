@@ -1,22 +1,19 @@
 use crate::{
-    environment::TypeEnvironment, symbol::completion::complete_prototype, type_checking::{
+    environment::TypeEnvironment,
+    type_checking::{
         typechecker::{add_implicit_return, typecheck_expr},
         value::ensure_valid_allocation_type,
-    }
+    },
 };
-use cx_ast::{
-    ast::{expression::CXExpression, function::CXFunctionKind},
-    symbols::CXSymbolKind,
+use cx_ast::ast::expression::CXExpression;
+use cx_mir::{
+    EnvironmentNamespace,
+    mir::{
+        data::{MIRFunction, MIRFunctionPrototype, MIRParameter},
+        expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
+    },
 };
-use cx_mir::{EnvironmentNamespace, mir::{
-    data::{MIRFunction, MIRFunctionPrototype, MIRParameter, MIRTemplateInput},
-    expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
-}};
-use cx_pipeline_data::CompilationUnit;
-use cx_util::{
-    CXResult,
-    namespace::{NamespacePath, QualifiedName},
-};
+use cx_util::{CXResult, namespace::QualifiedName};
 
 pub fn typecheck_function(
     env: &mut TypeEnvironment,
@@ -66,47 +63,5 @@ pub fn typecheck_function(
         body: with_implicit_return,
     });
 
-    Ok(())
-}
-
-pub fn realize_fn_implementation(
-    env: &mut TypeEnvironment,
-    origin: &CompilationUnit,
-    template_kind: &CXFunctionKind,
-    _input: &MIRTemplateInput,
-) -> CXResult<()> {
-    let _base_ast = env.source.module_data.generation_ast.get(origin);
-    let namespace = NamespacePath::from_slash_path(origin.identifier());
-    let template_key = template_kind.into_key();
-
-    let Some(CXSymbolKind::FunctionTemplate {
-        input: _template_input,
-        definition,
-        body,
-    }) = env
-        .symbols
-        .get_global_registry()
-        .resolve(&template_key)
-        .map(|sym| sym.kind)
-    else {
-        unreachable!("Template not found");
-    };
-
-    env.push_scope(false, false);
-
-    // FIXME: This looks like a mess
-    let prototype = complete_prototype(&mut env.symbols, &namespace, &definition)?;
-    let typecheck_result = typecheck_function(env, &namespace, prototype, &body);
-    typecheck_result?;
-
-    env.pop_scope()?;
-    Ok(())
-}
-
-pub fn complete_base_functions(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-) -> CXResult<()> {
-    let _ = (env, namespace);
     Ok(())
 }

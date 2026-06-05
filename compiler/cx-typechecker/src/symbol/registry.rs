@@ -228,12 +228,4 @@ impl<'a> MIRSymbolRegistry<'a> {
     pub fn contains(&self, id: MIRTypeId) -> bool {
         self.typeid_defs.contains_key(&id)
     }
-
-    pub fn push_scope(&mut self) {
-        self.local_symbols.push_scope();
-    }
-
-    pub fn pop_scope(&mut self) {
-        self.local_symbols.pop_scope();
-    }
 }

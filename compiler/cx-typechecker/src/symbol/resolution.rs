@@ -1,4 +1,4 @@
-use cx_ast::symbols::{CXSymbol, CXSymbolKind};
+use cx_ast::{ast::template::CXTemplatePrototype, symbols::{CXSymbol, CXSymbolKind}};
 use cx_util::{CXError, CXResult, identifier::CXIdent};
 
 use cx_mir::{
@@ -6,6 +6,7 @@ use cx_mir::{
     mir::{
         data::{MIRTemplateInput, TemplateInfo},
         expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
+        name_mangling::base_mangle_templated_name,
         r#type::MIRTypeKind,
     },
     symbol::MIRSymbol,
@@ -71,7 +72,7 @@ pub fn resolve_symbol<'a, 'b>(
                 .clone()
         }),
 
-        CXSymbolKind::TypeTemplate { input, definition } => {
+        CXSymbolKind::TypeTemplate { template: input, definition } => {
             let source = CXSymbol::new(symbol.visibility, CXSymbolKind::Type(definition.clone()));
 
             Ok(MIRSymbol::Template {
@@ -83,7 +84,7 @@ pub fn resolve_symbol<'a, 'b>(
         }
 
         CXSymbolKind::FunctionTemplate {
-            input, definition, ..
+            template: input, definition, ..
         } => {
             let source = CXSymbol::new(
                 symbol.visibility,
@@ -124,16 +125,26 @@ pub fn apply_template<'a, 'b>(
         ));
     }
 
-    env.push_scope();
-    for (param, arg) in input.types.iter().zip(template_input.args.iter()) {
-        env.insert_local_type(param.as_string(), arg.clone())?;
-    }
+    env.push_local_scope();
+    apply_template_input(env, input, &template_input)?;
 
     let mut result = resolve_symbol(env, namespace, name, source)?;
-    env.pop_scope();
+    env.pop_local_scope();
 
     attach_template_metadata(env, &mut result, name, namespace, template_input);
     Ok(Some(result))
+}
+
+pub fn apply_template_input(
+    env: &mut MIRSymbolRegistry,
+    prototype: &CXTemplatePrototype,
+    input: &MIRTemplateInput,
+) -> CXResult<()> {
+    for (param, arg) in prototype.types.iter().zip(input.args.iter()) {
+        env.insert_local_type(param.as_string(), arg.clone())?;
+    }
+
+    Ok(())
 }
 
 fn attach_template_metadata(
@@ -148,11 +159,15 @@ fn attach_template_metadata(
     };
 
     let mut ty = env.resolve_type_id(*id).clone();
+    ty.strong_identifier.as_mut().map(|base| {
+        base.name =
+            base_mangle_templated_name(env, base.name.as_str(), input.args.as_slice()).into()
+    });
     ty.template_info = Some(Box::new(TemplateInfo {
         base_name: name.clone(),
         template_input: input,
     }));
-    ty.strong_identifier = Some(name.clone());
-    ty.debug_name.get_or_insert_with(|| name.name.clone());
+
+    Some(name.clone());
     env.overwrite_type_id(*id, ty);
 }

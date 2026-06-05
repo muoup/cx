@@ -1,6 +1,7 @@
 use cx_pipeline::standard_compilation;
 use cx_pipeline_data::{CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel};
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -219,6 +220,7 @@ fn run_end_to_end_test(input: &Path) {
 
     standard_compilation(cranelift_config, base_file_name(input)).unwrap_or_else(|err| {
         err.pretty_print();
+        let _ = std::io::stdout().flush();
         panic!("Cranelift compilation failed");
     });
     assert_eq!(

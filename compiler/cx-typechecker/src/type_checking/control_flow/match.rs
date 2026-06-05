@@ -217,14 +217,14 @@ pub fn typecheck_match(
                         }
                     } else {
                         // Typecheck the body with the borrowed variant value bound.
-                        env.symbols.push_scope();
+                        env.push_scope(false, false);
                         env.symbols.insert_value(
                             QualifiedName::new_raw(inner_name.clone()),
                             variant_value_expr,
                         );
                         let body_expr = typecheck_expr(env, namespace, body, None)
                             .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
-                        env.symbols.pop_scope();
+                        env.pop_scope()?;
                         body_expr
                     };
                     if expr_may_fall_through(&body_expr) {

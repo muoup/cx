@@ -1,5 +1,5 @@
 use cx_ast::{
-    ast::{CXASTStmt, global_var::CXGlobalVariable},
+    ast::{global_var::CXGlobalVariable, CXASTStmt},
     decomposition::{CXGenerationAST, CXGenerationStmt},
     symbols::{CXSymbol, CXSymbolKind, SymbolNamespaceData},
 };
@@ -27,7 +27,7 @@ impl<'a> DecompositionEnv<'a> {
 
         (self.symbol_buckets, ast)
     }
-    
+
     pub fn get_bucket_mut(&mut self, namespace: &NamespacePath) -> &mut SymbolNamespaceData {
         if let Some(idx) = self
             .symbol_buckets
@@ -63,7 +63,7 @@ fn decompose_stmt(env: &mut DecompositionEnv, stmt: CXASTStmt) {
                 Some(input) => CXSymbol::new(
                     visibility,
                     CXSymbolKind::TypeTemplate {
-                        input,
+                        template: input,
                         definition: _type,
                     },
                 ),
@@ -94,7 +94,7 @@ fn decompose_stmt(env: &mut DecompositionEnv, stmt: CXASTStmt) {
                     CXSymbol::new(
                         visibility,
                         CXSymbolKind::FunctionTemplate {
-                            input,
+                            template: input,
                             definition: prototype,
                             body,
                         },
@@ -137,7 +137,22 @@ fn decompose_stmt(env: &mut DecompositionEnv, stmt: CXASTStmt) {
                 }
             }
 
-            _ => todo!(),
+            CXGlobalVariable::Standard { name, _type, is_mutable: _, linkage, initializer } => {
+                let symbol = CXSymbol::new(
+                    visibility,
+                    CXSymbolKind::AddressableGlobal(name.clone(), _type.clone()),
+                );
+
+                env.get_bucket_mut(env.namespace)
+                    .insert_symbol(name.to_string(), symbol);
+
+                env.stmts.push(CXGenerationStmt::AddressableGlobal {
+                    name: name.clone(),
+                    _type: _type.clone(),
+                    linkage: *linkage,
+                    initializer: initializer.clone(),
+                });
+            }
         },
     }
 }

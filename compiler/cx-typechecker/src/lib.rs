@@ -1,28 +1,20 @@
 use cx_ast::ast::modifiers::{CX_CONST, CXLinkageMode};
-use cx_ast::{
-    ast::function::CXFunctionContract,
-    decomposition::{CXGenerationAST, CXGenerationStmt},
-};
+use cx_ast::decomposition::{CXGenerationAST, CXGenerationStmt};
 use cx_mir::EnvironmentNamespace;
-use cx_mir::mir::data::{MIRFunction, MIRFunctionSignature, MIRParameter};
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin};
 use cx_mir::mir::global::{MIRGlobalVarKind, MIRGlobalVariable};
-use cx_mir::mir::{data::MIRFunctionPrototype, r#type::MIRType};
-use cx_util::{CXResult, identifier::CXIdent};
-
-pub mod log;
+use cx_util::CXResult;
 
 pub mod environment;
+pub mod log;
+pub(crate) mod requests;
 pub mod symbol;
 mod type_checking;
 
+use crate::requests::fulfill_requests;
 use crate::symbol::completion::{complete_prototype, complete_type};
 use crate::type_checking::constexpr::constexpr_evaluate;
 use crate::type_checking::typechecker::typecheck_expr;
-use crate::{
-    environment::{MIRFunctionGenRequest, TypeEnvironment},
-    type_checking::functions::typecheck_function,
-};
+use crate::{environment::TypeEnvironment, type_checking::functions::typecheck_function};
 
 pub fn typecheck(
     env: &mut TypeEnvironment,
@@ -88,88 +80,7 @@ pub fn typecheck(
         }
     }
 
-    while let Some(request) = env.items.pop_request() {
-        fulfill_request(env, namespace, &request);
-    }
+    fulfill_requests(env, namespace)?;
 
     Ok(())
-}
-
-pub fn fulfill_request(
-    _env: &mut TypeEnvironment,
-    _namespace: &EnvironmentNamespace,
-    _request: &MIRFunctionGenRequest,
-) {
-    // Request fulfillment is currently drained by the pipeline while symbol realization is rebuilt.
-}
-
-fn realize_tagged_union_constructor(
-    env: &mut TypeEnvironment,
-    name: String,
-    union_type: MIRType,
-    variant_type: MIRType,
-    variant_index: usize,
-) {
-    let param_name = CXIdent::new("value");
-    let prototype = MIRFunctionPrototype {
-        name: CXIdent::new(name),
-        linkage: CXLinkageMode::Static,
-        signature: MIRFunctionSignature {
-            return_type: union_type.clone(),
-            params: if variant_type.is_unit() {
-                Vec::new()
-            } else {
-                vec![MIRParameter {
-                    name: Some(param_name.clone()),
-                    _type: variant_type.clone(),
-                }]
-            },
-            var_args: false,
-            contract: CXFunctionContract::default(),
-        },
-    };
-
-    let value = if variant_type.is_unit() {
-        MIRExpression {
-            token_range: None,
-            _type: variant_type.clone(),
-            kind: MIRExpressionKind::Unit,
-        }
-    } else {
-        let param_ref = MIRExpression {
-            token_range: None,
-            _type: env.symbols.mem_ref_to(variant_type.clone()),
-            kind: MIRExpressionKind::Variable {
-                name: param_name,
-                location: SymbolValueOrigin::Local,
-            },
-        };
-
-        MIRExpression {
-            token_range: None,
-            _type: variant_type.clone(),
-            kind: MIRExpressionKind::RegionDuplicate {
-                source: Box::new(param_ref),
-            },
-        }
-    };
-    let constructed = MIRExpression {
-        token_range: None,
-        _type: union_type.clone(),
-        kind: MIRExpressionKind::ConstructTaggedUnion {
-            variant_index,
-            value: Box::new(value),
-            sum_type: union_type,
-        },
-    };
-    let body = MIRExpression {
-        token_range: None,
-        _type: prototype.signature.return_type.clone(),
-        kind: MIRExpressionKind::Return {
-            value: Some(Box::new(constructed)),
-            postcondition: None,
-        },
-    };
-
-    env.items.push_generated_function(MIRFunction { prototype, body });
 }

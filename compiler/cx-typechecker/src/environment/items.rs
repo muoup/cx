@@ -1,13 +1,12 @@
-use cx_ast::ast::function::CXFunctionKind;
 use cx_mir::mir::data::MIRFunction;
 use cx_mir::mir::data::MIRTemplateInput;
 use cx_mir::mir::global::MIRGlobalVariable;
 use cx_mir::mir::r#type::MIRType;
+use cx_util::namespace::QualifiedName;
 
 pub enum MIRFunctionGenRequest {
     Template {
-        module_origin: Option<String>,
-        kind: CXFunctionKind,
+        name: QualifiedName,
         input: MIRTemplateInput,
     },
     TypeConstructor {

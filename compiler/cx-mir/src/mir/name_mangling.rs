@@ -36,6 +36,18 @@ pub fn mangle_namespace_symbol(name: &QualifiedName) -> String {
     mangled
 }
 
+pub fn base_mangle_templated_name(
+    definitions: &impl MIRTypeContext,
+    name: &str,
+    template_args: &[MIRType],
+) -> String {
+    let mut mangled = format!("_T{}{}", template_args.len(), name);
+    for arg in template_args {
+        mangled.push_str(&type_mangle(definitions, arg));
+    }
+    mangled
+}
+
 pub fn base_mangle_member(
     definitions: &impl MIRTypeContext,
     name: &str,

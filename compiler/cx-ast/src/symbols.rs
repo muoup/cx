@@ -31,11 +31,11 @@ pub enum CXSymbolKind {
         variant_index: usize,
     },
     TypeTemplate {
-        input: CXTemplatePrototype,
+        template: CXTemplatePrototype,
         definition: CXType,
     },
     FunctionTemplate {
-        input: CXTemplatePrototype,
+        template: CXTemplatePrototype,
         definition: CXFunctionPrototype,
         body: Box<CXExpression>,
     },

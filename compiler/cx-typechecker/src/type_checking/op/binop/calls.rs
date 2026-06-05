@@ -9,23 +9,10 @@ use crate::type_checking::result::{CalleeExtraction, TypecheckExtract, Typecheck
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
 use cx_mir::EnvironmentNamespace;
-use cx_mir::mir::data::{MIRFloatType, MIRFunctionPrototype, MIRType, MIRTypeKind};
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
+use cx_mir::mir::data::{MIRFloatType, MIRType, MIRTypeKind};
+use cx_mir::mir::expression::MIRExpressionKind;
 use cx_mir::type_context::MIRTypeContext;
 use cx_util::CXResult;
-
-pub(crate) fn build_function_reference(prototype: &MIRFunctionPrototype) -> MIRExpression {
-    MIRExpression {
-        token_range: None,
-        _type: MIRTypeKind::Function {
-            signature: Box::new(prototype.signature().clone()),
-        }
-        .into(),
-        kind: MIRExpressionKind::FunctionReference {
-            name: prototype.name.clone(),
-        },
-    }
-}
 
 pub(crate) fn finish_function_call<'a>(
     env: &mut TypeEnvironment,

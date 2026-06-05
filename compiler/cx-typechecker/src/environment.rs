@@ -89,7 +89,7 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn push_scope(&mut self, has_break_merge: bool, has_continue_merge: bool) {
-        self.symbols.push_scope();
+        self.symbols.push_local_scope();
         self.function
             .push_scope(has_break_merge, has_continue_merge);
     }
@@ -97,7 +97,7 @@ impl TypeEnvironment<'_> {
     pub fn pop_scope(&mut self) -> CXResult<()> {
         self.function
             .pop_scope(self.source.compilation_unit.as_path(), self.source.tokens)?;
-        self.symbols.pop_scope();
+        self.symbols.pop_local_scope();
         Ok(())
     }
 

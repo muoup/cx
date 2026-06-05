@@ -1,6 +1,5 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::progress::ProgressReporter;
-use crate::requests::fulfill_requests;
 use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::preparse::PreparseConfig;

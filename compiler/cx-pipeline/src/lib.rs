@@ -1,7 +1,6 @@
 mod backends;
 mod linker;
 pub mod progress;
-mod requests;
 mod scheduler;
 
 use crate::linker::{link, link_relocatable};
