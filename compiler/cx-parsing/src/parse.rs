@@ -169,7 +169,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
                     name: name.clone(),
                     _type: return_type.clone(),
                     is_mutable: true,
-                    linkage: CXLinkageMode::Standard,
+                    linkage,
                     initializer: Some(initial_value.clone()),
                 },
             });
@@ -182,7 +182,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
                     name: name.clone(),
                     _type: return_type.clone(),
                     is_mutable: true,
-                    linkage: CXLinkageMode::Standard,
+                    linkage,
                     initializer: None,
                 },
             });
