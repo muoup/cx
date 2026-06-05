@@ -51,10 +51,8 @@ pub(crate) fn typecheck_identifier(
             }
 
             let result = TypecheckResult::from(value);
-            if matches!(
-                origin,
-                Some(SymbolValueOrigin::Local | SymbolValueOrigin::Contract)
-            ) {
+            
+            if matches!(origin, Some(SymbolValueOrigin::Local)) {
                 Ok(result.with_binding(TypecheckedBinding::local(name.name.clone())))
             } else {
                 Ok(result)

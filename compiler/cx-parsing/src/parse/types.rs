@@ -1,24 +1,24 @@
 use crate::parse::expressions::parse_expr;
-use crate::parse::{try_parse_simple_identifier, ParserData};
+use crate::parse::{ParserData, try_parse_simple_identifier};
 use crate::{assert_token_matches, next_kind, peek_kind, try_next};
-use cx_ast::ast::global_var::CXEnumDefinition;
 use cx_ast::ast::CXASTStmt;
+use cx_ast::ast::global_var::CXEnumDefinition;
 use cx_ast::ast::{
     function::{CXFunctionKind, CXFunctionPrototype},
     global_var::{CXEnumVariant, CXGlobalVariable},
-    modifiers::{CXLinkageMode, CXTypeQualifiers, CX_CONST, CX_RESTRICT, CX_VOLATILE},
+    modifiers::{CX_CONST, CX_RESTRICT, CX_VOLATILE, CXLinkageMode, CXTypeQualifiers},
     template::CXTemplatePrototype,
     types::{CXField, CXStructAttributes, CXType, CXTypeKind, PredeclarationType},
 };
 use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
-use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, TokenIter, TokenRange};
+use cx_tokens::{TokenIter, TokenRange, identifier, intrinsic, keyword, operator, punctuator};
+use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
-use cx_util::CXResult;
 
-use crate::parse::functions::{parse_params, ParseParamsResult};
+use crate::parse::functions::{ParseParamsResult, parse_params};
 use crate::parse::templates::{note_templated_types, try_parse_template, unnote_templated_types};
-use crate::parse::{parse_intrinsic, try_parse_identifier, try_parse_qualified_name};
+use crate::parse::{parse_intrinsic, try_parse_qualified_name, try_parse_type_identifier};
 
 fn parse_type_attributes(data: &mut ParserData, kind_name: &str) -> CXResult<CXStructAttributes> {
     let mut attributes = CXStructAttributes::default();
@@ -549,7 +549,7 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<CXType> {
 
     let _type = match &next_token.kind {
         identifier!() => {
-            let Some(ident) = try_parse_identifier(data)? else {
+            let Some(ident) = try_parse_type_identifier(data)? else {
                 unreachable!();
             };
 

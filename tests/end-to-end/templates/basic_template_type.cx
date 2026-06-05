@@ -17,5 +17,5 @@ int main() {
     };
 
     access(&data);
-    printf("data: %d\n", *data.ptr); //Output: data: 42
+    std::io::printf("data: %d\n", *data.ptr); //Output: data: 42
 }

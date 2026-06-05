@@ -124,7 +124,7 @@ fn write_type_reference(
     ty: &MIRType,
     id: Option<MIRTypeId>,
 ) -> std::fmt::Result {
-    if let Some(name) = ty.debug_name().or_else(|| ty.get_name()) {
+    if let Some(name) = ty.debug_name() {
         write!(f, "{name}")
     } else if let Some(id) = id {
         write!(f, "{id}")
@@ -144,7 +144,7 @@ fn write_recursive_reference(
     ty: &MIRType,
     id: MIRTypeId,
 ) -> std::fmt::Result {
-    if let Some(name) = ty.debug_name().or_else(|| ty.get_name()) {
+    if let Some(name) = ty.debug_name() {
         write!(f, "{name}")
     } else {
         write!(f, "{id}<recursive>")
@@ -236,7 +236,7 @@ fn write_aggregate(
     state: &mut TypeDisplayState,
 ) -> std::fmt::Result {
     write!(f, "{keyword}")?;
-    if let Some(name) = ty.debug_name().or_else(|| ty.get_name()) {
+    if let Some(name) = ty.debug_name() {
         write!(f, " {name}")?;
     }
     write!(f, " {{")?;

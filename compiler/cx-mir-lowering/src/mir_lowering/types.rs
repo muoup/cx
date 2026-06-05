@@ -4,6 +4,7 @@ use cx_ast::ast::modifiers::CXLinkageMode;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRFunctionPrototype, LinkageType};
 use cx_mir::mir::data::{MIRFloatType, MIRFunctionPrototype, MIRIntegerType, MIRType, MIRTypeKind};
+use cx_mir::mir::name_mangling::mangle_namespace_symbol;
 use cx_mir::registry::MIRDecomposedRegistry;
 use cx_mir::type_context::MIRTypeContext;
 
@@ -122,10 +123,7 @@ pub(crate) fn convert_type_kind(
         },
 
         MIRTypeKind::TaggedUnion { variants } => LMIRTypeKind::Struct {
-            name: cx_type
-                .get_name()
-                .map(|name| name.as_string())
-                .unwrap_or_default(),
+            name: mangle_namespace_symbol(cx_type.strong_identifier().unwrap()),
             fields: vec![
                 (
                     "data".to_string(),
@@ -162,8 +160,8 @@ pub(crate) fn convert_type_kind(
 
         MIRTypeKind::Structured { .. } => LMIRTypeKind::Struct {
             name: cx_type
-                .get_name()
-                .map(|name| name.as_string())
+                .strong_identifier()
+                .map(mangle_namespace_symbol)
                 .unwrap_or_default(),
             fields: cx_type
                 .aggregate_fields(definitions)

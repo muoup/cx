@@ -49,12 +49,8 @@ pub(crate) fn typecheck_is(
         variant_name,
         inner_name,
     } = resolve_type_constructor_pattern(env, namespace, expr, pattern)?;
-    let union_name = union_name.as_flat_name();
-    let expected_union_name = expected_union_name.as_str();
 
-    if expected_union_name != union_name
-        && union_name.rsplit("::").next() != Some(expected_union_name)
-    {
+    if expected_union_name != &union_name {
         return log_typecheck_error!(
             env,
             expr.token_range(),
@@ -80,7 +76,7 @@ pub(crate) fn typecheck_is(
     };
     if let Some(inner_name) = &inner_name {
         let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
-        env.symbols.insert_value(
+        env.symbols.insert_local_value(
             QualifiedName::new_raw(inner_name.clone()),
             MIRExpression {
                 token_range: None,

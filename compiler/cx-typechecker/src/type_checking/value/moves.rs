@@ -15,10 +15,12 @@ use cx_ast::ast::{
     modifiers::CX_CONST,
 };
 use cx_mir::{
-    EnvironmentNamespace, mir::{
+    EnvironmentNamespace,
+    mir::{
         data::{MIRType, MIRTypeKind},
         expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
-    }, type_context::MIRTypeContext
+    },
+    type_context::MIRTypeContext,
 };
 use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
@@ -327,7 +329,7 @@ pub(crate) fn typecheck_unpack(
 
         let binding_name = CXIdent::new(unpack_binding.binding.as_str());
         let binding_ref_type = env.symbols.mem_ref_to(field_type.clone());
-        env.symbols.insert_value(
+        env.symbols.insert_local_value(
             QualifiedName::new_raw(binding_name.clone()),
             MIRExpression {
                 token_range: None,

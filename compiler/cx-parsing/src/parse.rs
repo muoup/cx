@@ -33,7 +33,9 @@ mod operators;
 mod templates;
 mod types;
 
-pub(crate) use identifier::{try_parse_identifier, try_parse_qualified_name};
+pub(crate) use identifier::{
+    try_parse_identifier, try_parse_qualified_name, try_parse_type_identifier,
+};
 
 pub fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
     match data

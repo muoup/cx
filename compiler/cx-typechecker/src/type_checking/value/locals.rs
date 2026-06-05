@@ -1,13 +1,19 @@
 use crate::{
-    environment::{BindingMoveState, TypeEnvironment}, log_typecheck_error, symbol::completion::complete_type, type_checking::{
+    environment::{BindingMoveState, TypeEnvironment},
+    log_typecheck_error,
+    symbol::completion::complete_type,
+    type_checking::{
         coercion::implicit::implicit_cast,
         result::{BindingPlaceKind, TypecheckResult, TypecheckedBinding},
         typechecker::typecheck_expr,
         value::ensure_valid_allocation_type,
-    }
+    },
 };
 use cx_ast::ast::{expression::CXExpression, types::CXType};
-use cx_mir::{EnvironmentNamespace, mir::expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin}};
+use cx_mir::{
+    EnvironmentNamespace,
+    mir::expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
+};
 use cx_tokens::TokenRange;
 use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
@@ -99,7 +105,8 @@ pub(crate) fn typecheck_var_declaration(
         },
         _type: mem_type.clone(),
     };
-    env.symbols.insert_value(
+
+    env.symbols.insert_local_value(
         QualifiedName::new_raw(name.clone()),
         MIRExpression {
             token_range: None,

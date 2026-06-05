@@ -93,6 +93,25 @@ pub(crate) fn try_parse_identifier(data: &mut ParserData) -> CXResult<Option<Par
     Ok(Some(ParsedIdentifier::new(name, template_input)))
 }
 
+pub(crate) fn try_parse_type_identifier(
+    data: &mut ParserData,
+) -> CXResult<Option<ParsedIdentifier>> {
+    let Some(name) = try_parse_qualified_name(&mut data.tokens)? else {
+        return Ok(None);
+    };
+
+    let template_input = if matches!(
+        data.tokens.peek().map(|token| &token.kind),
+        Some(TokenKind::Operator(OperatorType::Less))
+    ) {
+        Some(parse_template_args(data)?)
+    } else {
+        None
+    };
+
+    Ok(Some(ParsedIdentifier::new(name, template_input)))
+}
+
 pub(crate) fn try_parse_qualified_name(tokens: &mut TokenIter) -> CXResult<Option<QualifiedName>> {
     if !matches!(
         tokens.peek().map(|token| &token.kind),

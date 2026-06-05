@@ -1,5 +1,5 @@
 use cx_ast::ast::{function::CXFunctionContract, modifiers::CXLinkageMode};
-use cx_util::identifier::CXIdent;
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::mir::expression::MIRExpression;
 use crate::mir::r#type::TypeComparisonState;
@@ -145,7 +145,7 @@ impl MIRTemplateInput {
 
 #[derive(Debug, Clone)]
 pub struct TemplateInfo {
-    pub base_name: CXIdent,
+    pub base_name: Option<QualifiedName>,
     pub template_input: MIRTemplateInput,
 }
 

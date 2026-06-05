@@ -110,11 +110,7 @@ pub fn typecheck_match(
                     inner_name,
                 } = resolve_type_constructor_pattern(env, namespace, condition, pattern)?;
 
-                let union_name = union_name.as_flat_name();
-                let expected_union_name = expected_union_name.as_str();
-                if expected_union_name != union_name
-                    && union_name.rsplit("::").next() != Some(expected_union_name)
-                {
+                if expected_union_name != &union_name {
                     return log_typecheck_error!(
                         env,
                         Some(condition.token_range()),
@@ -187,7 +183,7 @@ pub fn typecheck_match(
 
                         env.push_scope(false, false);
                         env.function.set_scope_anchor(body);
-                        env.symbols.insert_value(
+                        env.symbols.insert_local_value(
                             QualifiedName::root(inner_name.clone()),
                             MIRExpression {
                                 token_range: None,
@@ -218,7 +214,7 @@ pub fn typecheck_match(
                     } else {
                         // Typecheck the body with the borrowed variant value bound.
                         env.push_scope(false, false);
-                        env.symbols.insert_value(
+                        env.symbols.insert_local_value(
                             QualifiedName::new_raw(inner_name.clone()),
                             variant_value_expr,
                         );

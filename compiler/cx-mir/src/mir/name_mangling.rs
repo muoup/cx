@@ -114,14 +114,14 @@ pub(crate) fn type_mangle(registry: &impl MIRTypeContext, ty: &MIRType) -> Strin
             mangled.push('S');
             push_identifier(&mut mangled, registry, ty);
             push_move_attributes(&mut mangled, ty);
-            if ty.get_name().is_none() {
+            if ty.strong_identifier().is_none() {
                 push_aggregate_fields(&mut mangled, registry, fields);
             }
         }
         MIRTypeKind::Union { variants } => {
             mangled.push('U');
             push_identifier(&mut mangled, registry, ty);
-            if ty.get_name().is_none() {
+            if ty.strong_identifier().is_none() {
                 push_aggregate_fields(&mut mangled, registry, variants);
             }
         }
@@ -129,7 +129,7 @@ pub(crate) fn type_mangle(registry: &impl MIRTypeContext, ty: &MIRType) -> Strin
             mangled.push('T');
             push_identifier(&mut mangled, registry, ty);
             push_move_attributes(&mut mangled, ty);
-            if ty.get_name().is_none() {
+            if ty.strong_identifier().is_none() {
                 push_aggregate_fields(&mut mangled, registry, variants);
             }
         }
@@ -145,9 +145,6 @@ pub(crate) fn type_mangle(registry: &impl MIRTypeContext, ty: &MIRType) -> Strin
         }
         MIRTypeKind::Undefined => {
             mangled.push('X');
-            if let Some(name) = ty.get_name() {
-                push_symbol_segment(&mut mangled, name);
-            }
         }
         MIRTypeKind::Unit => {
             mangled.push('v');
@@ -158,12 +155,12 @@ pub(crate) fn type_mangle(registry: &impl MIRTypeContext, ty: &MIRType) -> Strin
 }
 
 fn push_identifier(mangled: &mut String, definitions: &impl MIRTypeContext, ty: &MIRType) {
-    if let Some(name) = ty.get_name() {
+    if let Some(name) = ty.strong_identifier() {
         mangled.push('n');
         if let Some(strong_name) = ty.strong_identifier() {
             mangled.push_str(&mangle_namespace_symbol(strong_name));
         } else {
-            push_symbol_segment(mangled, name);
+            push_symbol_segment(mangled, &name.name);
         }
 
         if let Some(template_info) = ty.get_template_data() {

@@ -467,23 +467,20 @@ impl MIRType {
         matches!(self.kind, MIRTypeKind::MemoryReference { .. })
     }
 
-    pub fn get_name(&self) -> Option<&CXIdent> {
-        self.strong_identifier.as_ref().map(|name| &name.name)
-    }
-
     pub fn strong_identifier(&self) -> Option<&QualifiedName> {
         self.strong_identifier.as_ref()
     }
 
     pub fn debug_name(&self) -> Option<&CXIdent> {
         self.debug_name.as_ref()
+            .or_else(|| self.strong_identifier.as_ref().map(|id| &id.name))
     }
 
-    pub fn get_base_identifier(&self) -> Option<&CXIdent> {
+    pub fn get_base_identifier(&self) -> Option<&QualifiedName> {
         self.template_info
             .as_ref()
-            .map(|info| &info.base_name)
-            .or_else(|| self.get_name())
+            .and_then(|info| info.base_name.as_ref())
+            .or_else(|| self.strong_identifier())
     }
 
     pub fn get_template_data(&self) -> Option<&TemplateInfo> {

@@ -34,7 +34,7 @@ pub fn typecheck_function(
         ensure_valid_allocation_type(env, Some(body.token_range().clone()), "a parameter", _type)?;
         let ref_type = env.symbols.mem_ref_to(_type.clone());
 
-        env.symbols.insert_value(
+        env.symbols.insert_local_value(
             QualifiedName::new_raw(name.clone()),
             MIRExpression {
                 token_range: None,

@@ -1,8 +1,10 @@
 use cx_mir::{
-    EnvironmentNamespace, mir::{
+    EnvironmentNamespace,
+    mir::{
         expression::{MIRExpression, MIRExpressionKind},
         r#type::MIRType,
-    }, type_context::MIRTypeContext
+    },
+    type_context::MIRTypeContext,
 };
 use cx_tokens::TokenRange;
 use cx_util::{CXResult, namespace::QualifiedName};
@@ -108,7 +110,7 @@ pub fn typecheck_return(
                 continue;
             };
 
-            env.symbols.insert_value(
+            env.symbols.insert_local_value(
                 QualifiedName::new_raw(name.clone()),
                 MIRExpression {
                     kind: MIRExpressionKind::ContractVariable {
@@ -122,7 +124,7 @@ pub fn typecheck_return(
         }
 
         if let Some(ret_name) = ret_name.as_ref() {
-            env.symbols.insert_value(
+            env.symbols.insert_local_value(
                 QualifiedName::new_raw(ret_name.clone()),
                 MIRExpression {
                     kind: MIRExpressionKind::ContractVariable {

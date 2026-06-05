@@ -175,6 +175,10 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.insert_symbol(name, MIRSymbol::Expression(expr));
     }
 
+    pub fn insert_local_value(&mut self, name: QualifiedName, expr: MIRExpression) {
+        self.local_symbols.insert(name, MIRSymbol::Expression(expr));
+    }
+
     pub fn insert_pure_value(&mut self, name: QualifiedName, expr: MIRPureExpression) {
         self.insert_symbol(name, MIRSymbol::Expression(expr.as_value()));
     }

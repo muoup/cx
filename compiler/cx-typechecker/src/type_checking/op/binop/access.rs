@@ -132,7 +132,7 @@ pub fn typecheck_access(
                 ));
             }
 
-            let Some(strong_name) = base.source_type.strong_identifier().cloned() else {
+            let Some(strong_name) = base.source_type.get_base_identifier().cloned() else {
                 return log_typecheck_error!(
                     env,
                     Some(expr.token_range()),

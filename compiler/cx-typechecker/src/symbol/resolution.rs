@@ -153,7 +153,7 @@ pub fn apply_template(
         });
     }
 
-    attach_template_metadata(env, &mut result, name, namespace, template_input);
+    attach_template_metadata(env, &mut result, namespace, template_input);
     Ok(Some(result))
 }
 
@@ -173,7 +173,6 @@ pub fn apply_template_input(
 fn attach_template_metadata(
     env: &mut TypeEnvironment,
     symbol: &mut MIRSymbol,
-    name: &CXIdent,
     _namespace: &EnvironmentNamespace,
     input: MIRTemplateInput,
 ) {
@@ -182,17 +181,15 @@ fn attach_template_metadata(
     };
 
     let mut ty = env.symbols.resolve_type_id(*id).clone();
+    ty.template_info = Some(Box::new(TemplateInfo {
+        base_name: ty.strong_identifier.clone(),
+        template_input: input.clone(),
+    }));
     ty.strong_identifier.as_mut().map(|base| {
         base.name =
             base_mangle_templated_name(&env.symbols, base.name.as_str(), input.args.as_slice())
                 .into()
     });
-    ty.template_info = Some(Box::new(TemplateInfo {
-        base_name: name.clone(),
-        template_input: input,
-    }));
-
-    Some(name.clone());
 
     env.symbols.overwrite_type_id(*id, ty);
 }

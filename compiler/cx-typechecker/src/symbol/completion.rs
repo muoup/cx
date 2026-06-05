@@ -234,25 +234,33 @@ fn complete_identifier_type(
     predeclaration: PredeclarationType,
     template_input: &Option<CXTemplateInput>,
 ) -> CXResult<MIRTypeId> {
+    if name.namespace.is_root()
+        && let Some(_ty) = env.symbols.get_local_symbol(name)
+        && let Some(id) = _ty.as_type_id()
+    {
+        return Ok(id);
+    }
+
     if let Some(_ty) = env.symbols.get_preresolved_symbol(name) {
         return Ok(_ty.as_type_id().unwrap()); // unfailable
     }
 
-    if name.namespace.is_root()
-        && let Some(_ty) = env.symbols.get_local_symbol(name)
+    let alias_name = if name.namespace.is_root() {
+        QualifiedName::new(namespace.clone(), name.name.clone())
+    } else {
+        env.symbols.resolve_qualified_alias(name).into_owned()
+    };
+
+    if &alias_name != name
+        && let Some(_ty) = env.symbols.get_preresolved_symbol(&alias_name)
     {
         return Ok(_ty.as_type_id().unwrap()); // unfailable
     }
 
-    let alias_name = env.symbols.resolve_qualified_alias(name).into_owned();
-
     let Some(symbol) = env.symbols.get_global_registry().resolve(&alias_name) else {
         if predeclaration != PredeclarationType::None {
             let id = env.symbols.reserve_type_id();
-            env.symbols.insert_type_symbol(name.clone(), id);
-            if &alias_name != name {
-                env.symbols.insert_type_symbol(alias_name, id);
-            }
+            env.symbols.insert_type_symbol(alias_name, id);
 
             return Ok(id);
         }
@@ -269,11 +277,8 @@ fn complete_identifier_type(
             }
 
             let prereserved_id = env.symbols.reserve_type_id();
-            env.symbols.insert_type_symbol(name.clone(), prereserved_id);
-            if &alias_name != name {
-                env.symbols
-                    .insert_type_symbol(alias_name.clone(), prereserved_id);
-            }
+            env.symbols
+                .insert_type_symbol(alias_name.clone(), prereserved_id);
 
             let mut completed = complete_type_value(env, &alias_name.namespace, definition)?;
             if completed.debug_name.is_none() {

@@ -1,7 +1,10 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use cx_mir::{
-    MIRUnit, mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId}, symbol::MIRSymbol, type_context::MIRTypeContext
+    MIRUnit,
+    mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId},
+    symbol::MIRSymbol,
+    type_context::MIRTypeContext,
 };
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
@@ -11,7 +14,6 @@ use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::{NamespacePath, QualifiedName};
 
-use crate::{environment::functions::context::FunctionModeSnapshot, symbol::resolution::resolve_symbol};
 pub use crate::environment::functions::control_flow::{
     BindingMoveState, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
     ScopeExitTarget, ScopeId, TrackedBindingState,
@@ -21,6 +23,9 @@ use crate::environment::source::SourceContext;
 use crate::log::TypeError;
 use crate::{
     environment::functions::context::FunctionContext, symbol::registry::MIRSymbolRegistry,
+};
+use crate::{
+    environment::functions::context::FunctionModeSnapshot, symbol::resolution::resolve_symbol,
 };
 pub(crate) mod functions;
 pub(crate) mod items;
@@ -116,14 +121,14 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn get_symbol(&mut self, name: &QualifiedName) -> CXResult<Option<MIRSymbol>> {
-        if let Some(preresolved_symbol) = self.symbols.get_preresolved_symbol(name) {
-            return Ok(Some(preresolved_symbol.clone()));
-        }
-
         if name.namespace.is_root()
             && let Some(local_symbol) = self.symbols.get_local_symbol(name)
         {
             return Ok(Some(local_symbol.clone()));
+        }
+
+        if let Some(preresolved_symbol) = self.symbols.get_preresolved_symbol(name) {
+            return Ok(Some(preresolved_symbol.clone()));
         }
 
         let name = self.symbols.resolve_qualified_alias(name);
@@ -139,7 +144,8 @@ impl TypeEnvironment<'_> {
             &untyped_symbol,
         )?;
 
-        self.symbols.insert_symbol(name.into_owned(), symbol.clone());
+        self.symbols
+            .insert_symbol(name.into_owned(), symbol.clone());
         Ok(Some(symbol))
     }
 }

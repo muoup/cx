@@ -22,7 +22,7 @@ pub(crate) fn typecheck_contract(
         if let Some(name) = &param.name {
             let _ty = env.symbols.mem_ref_to(param._type.clone());
 
-            env.symbols.insert_value(
+            env.symbols.insert_local_value(
                 QualifiedName::new_raw(name.clone()),
                 MIRExpression {
                     token_range: None,
@@ -50,7 +50,7 @@ pub(crate) fn typecheck_contract(
 
     let postcondition = if let Some((ret_name, post_expr)) = &naive_contract.postcondition {
         if let Some(ret_name) = ret_name {
-            env.symbols.insert_value(
+            env.symbols.insert_local_value(
                 QualifiedName::new_raw(ret_name.clone()),
                 MIRExpression {
                     token_range: None,
