@@ -121,22 +121,29 @@ fn realize_fn_template(
     name: &QualifiedName,
     input: &MIRTemplateInput,
 ) -> CXResult<()> {
-    let stmt = env.symbols
+    let stmt = env
+        .symbols
         .get_global_registry()
         .resolve(name)
         .expect("Expected template to be in the global registry");
 
-    let CXSymbolKind::FunctionTemplate { template, definition, body } = &stmt.kind else {
+    let CXSymbolKind::FunctionTemplate {
+        template,
+        definition,
+        body,
+    } = &stmt.kind
+    else {
         unreachable!("Expected template to be a function template");
     };
 
     let namespace = name.namespace.clone();
-    env.push_scope(false, false);
+    env.symbols.push_local_scope();
+    let result = (|| {
+        apply_template_input(env, &template, input)?;
+        let prototype = complete_prototype(env, &namespace, &definition)?;
+        typecheck_function(env, &namespace, prototype, &body)
+    })();
+    env.symbols.pop_local_scope();
 
-    apply_template_input(env, &template, input)?;
-    let prototype = complete_prototype(env, &namespace, &definition)?;
-    typecheck_function(env, &namespace, prototype, &body)?;
-
-    env.pop_scope()?;
-    Ok(())
+    result
 }

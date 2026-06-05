@@ -16,7 +16,7 @@ use crate::type_checking::op::unop::{typecheck_sizeof_expr, typecheck_sizeof_typ
 use crate::type_checking::op::{self, typecheck_binop};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::{
-    identifiers::{typecheck_identifier, typecheck_templated_identifier},
+    identifiers::{typecheck_identifier},
     literals::{
         typecheck_float_literal, typecheck_int_literal, typecheck_string_literal, typecheck_unit,
     },
@@ -86,13 +86,7 @@ fn typecheck_expr_inner(
         CXExprKind::Identifier {
             name,
             template_input,
-        } => {
-            if let Some(template_input) = template_input {
-                typecheck_templated_identifier(env, namespace, expr, name, template_input)?
-            } else {
-                typecheck_identifier(env, namespace, expr, name)?
-            }
-        }
+        } => typecheck_identifier(env, namespace, expr, name, template_input.as_ref())?,
 
         CXExprKind::If {
             condition,

@@ -2,6 +2,6 @@ import includes::template_include_internal;
 
 public:
 
-TemplateType<int> template_return() {
+includes::template_include_internal::TemplateType<int> template_return() {
     return 10;
 }

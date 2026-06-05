@@ -2,7 +2,7 @@ use cx_ast::{
     ast::template::CXTemplatePrototype,
     symbols::{CXSymbol, CXSymbolKind},
 };
-use cx_util::{CXError, CXResult, identifier::CXIdent};
+use cx_util::{CXError, CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 use cx_mir::{
     EnvironmentNamespace,
@@ -17,7 +17,7 @@ use cx_mir::{
 };
 
 use crate::{
-    environment::TypeEnvironment,
+    environment::{MIRFunctionGenRequest, TypeEnvironment},
     symbol::{
         completion::{complete_prototype, complete_type},
         r#enum::resolve_enum_block,
@@ -126,6 +126,8 @@ pub fn apply_template(
         return Ok(None);
     };
 
+    let is_function = matches!(&source.kind, CXSymbolKind::FunctionReference(_));
+
     if input.types.len() != template_input.args.len() {
         return CXError::create_result(format!(
             "Template '{}' expects {} arguments, found {}",
@@ -135,11 +137,21 @@ pub fn apply_template(
         ));
     }
 
-    env.push_scope(false, false);
-    apply_template_input(env, input, &template_input)?;
+    env.symbols.push_local_scope();
+    let result = (|| {
+        apply_template_input(env, input, &template_input)?;
+        resolve_symbol(env, namespace, name, source)
+    })();
+    env.symbols.pop_local_scope();
 
-    let mut result = resolve_symbol(env, namespace, name, source)?;
-    env.pop_scope()?;
+    let mut result = result?;
+
+    if is_function {
+        env.items.push_request(MIRFunctionGenRequest::Template {
+            name: QualifiedName::new(namespace.clone(), name.clone()),
+            input: template_input.clone(),
+        });
+    }
 
     attach_template_metadata(env, &mut result, name, namespace, template_input);
     Ok(Some(result))
@@ -151,7 +163,8 @@ pub fn apply_template_input(
     input: &MIRTemplateInput,
 ) -> CXResult<()> {
     for (param, arg) in prototype.types.iter().zip(input.args.iter()) {
-        env.symbols.insert_local_type(param.as_string(), arg.clone())?;
+        env.symbols
+            .insert_local_type(param.as_string(), arg.clone())?;
     }
 
     Ok(())
@@ -171,7 +184,8 @@ fn attach_template_metadata(
     let mut ty = env.symbols.resolve_type_id(*id).clone();
     ty.strong_identifier.as_mut().map(|base| {
         base.name =
-            base_mangle_templated_name(&env.symbols, base.name.as_str(), input.args.as_slice()).into()
+            base_mangle_templated_name(&env.symbols, base.name.as_str(), input.args.as_slice())
+                .into()
     });
     ty.template_info = Some(Box::new(TemplateInfo {
         base_name: name.clone(),
@@ -179,6 +193,6 @@ fn attach_template_metadata(
     }));
 
     Some(name.clone());
-    
+
     env.symbols.overwrite_type_id(*id, ty);
 }

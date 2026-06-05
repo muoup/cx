@@ -13,7 +13,7 @@ use cx_util::{CXResult, log_error};
 use crate::parse::operators::{
     PrecOperator, binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec,
 };
-use crate::parse::templates::{parse_template_args, try_parse_template};
+use crate::parse::templates::parse_template_args;
 use crate::parse::types::{parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
 use crate::parse::{parse_body, parse_intrinsic, try_parse_identifier};
 
@@ -136,7 +136,6 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
             let Some(ident) = try_parse_qualified_name(&mut data.tokens)? else {
                 unreachable!()
             };
-            let _ = try_parse_template(&mut data.tokens)?;
             data.tokens.index = pre_idx;
 
             data.is_type_ident(&ident)
