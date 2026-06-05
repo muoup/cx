@@ -13,7 +13,7 @@ pub(crate) fn typecheck_identifier(
     expr: &CXExpression,
     name: &QualifiedName,
 ) -> CXResult<TypecheckResult> {
-    let Some(symbol) = env.symbols.get_symbol(name)? else {
+    let Some(symbol) = env.get_symbol(name)? else {
         return identifier_not_found(env, expr, name);
     };
 
@@ -27,13 +27,13 @@ pub(crate) fn typecheck_templated_identifier(
     name: &QualifiedName,
     template_input: &CXTemplateInput,
 ) -> CXResult<TypecheckResult> {
-    let Some(symbol) = env.symbols.get_symbol(name)? else {
+    let Some(symbol) = env.get_symbol(name)? else {
         return identifier_not_found(env, expr, name);
     };
 
-    let completed_input = complete_template_input(&mut env.symbols, namespace, template_input)?;
+    let completed_input = complete_template_input(env, namespace, template_input)?;
 
-    let Some(symbol) = apply_template(&mut env.symbols, &symbol, completed_input)? else {
+    let Some(symbol) = apply_template(env, &symbol, completed_input)? else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),

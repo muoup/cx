@@ -19,7 +19,6 @@ use cx_util::{
     scoped_map::ScopedMap,
 };
 
-use crate::symbol::resolution::resolve_symbol;
 
 /// Module-local symbol definitions
 pub struct MIRSymbolRegistry<'a> {
@@ -105,34 +104,6 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.global_registry.get_bucket(&resolved_namespace)
     }
 
-    pub fn get_symbol(&mut self, name: &QualifiedName) -> CXResult<Option<MIRSymbol>> {
-        if let Some(preresolved_symbol) = self.get_preresolved_symbol(name) {
-            return Ok(Some(preresolved_symbol.clone()));
-        }
-
-        if name.namespace.is_root()
-            && let Some(local_symbol) = self.local_symbols.get(name)
-        {
-            return Ok(Some(local_symbol.clone()));
-        }
-
-        let name = self.resolve_qualified_alias(name);
-        
-        let Some(untyped_symbol) = self.global_registry.resolve(name.as_ref()) else {
-            return Ok(None);
-        };
-
-        let symbol = resolve_symbol(
-            self,
-            &name.as_ref().namespace,
-            &name.as_ref().name,
-            &untyped_symbol,
-        )?;
-        
-        self.insert_symbol(name.into_owned(), symbol.clone());
-        Ok(Some(symbol))
-    }
-
     pub fn get_preresolved_symbol(&self, name: &QualifiedName) -> Option<&MIRSymbol> {
         self.global_cache.get(name)
     }
@@ -146,6 +117,10 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.overwrite_type_id(id, ty);
 
         id
+    }
+
+    pub fn undo_type_id(&mut self, id: MIRTypeId) -> Option<MIRType> {
+        self.typeid_defs.remove(&id)
     }
 
     pub fn reserve_type_id(&mut self) -> MIRTypeId {
@@ -175,6 +150,10 @@ impl<'a> MIRSymbolRegistry<'a> {
 
     pub fn pop_local_scope(&mut self) {
         self.local_symbols.pop_scope();
+    }
+
+    pub fn get_local_symbol(&self, name: &QualifiedName) -> Option<&MIRSymbol> {
+        self.local_symbols.get(name)
     }
 
     pub fn insert_symbol(&mut self, name: QualifiedName, symbol: MIRSymbol) {

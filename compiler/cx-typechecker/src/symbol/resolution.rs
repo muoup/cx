@@ -1,4 +1,7 @@
-use cx_ast::{ast::template::CXTemplatePrototype, symbols::{CXSymbol, CXSymbolKind}};
+use cx_ast::{
+    ast::template::CXTemplatePrototype,
+    symbols::{CXSymbol, CXSymbolKind},
+};
 use cx_util::{CXError, CXResult, identifier::CXIdent};
 
 use cx_mir::{
@@ -13,14 +16,16 @@ use cx_mir::{
     type_context::MIRTypeContext,
 };
 
-use crate::symbol::{
-    completion::{complete_prototype, complete_type},
-    r#enum::resolve_enum_block,
-    registry::MIRSymbolRegistry,
+use crate::{
+    environment::TypeEnvironment,
+    symbol::{
+        completion::{complete_prototype, complete_type},
+        r#enum::resolve_enum_block,
+    },
 };
 
-pub fn resolve_symbol<'a, 'b>(
-    env: &'a mut MIRSymbolRegistry<'b>,
+pub fn resolve_symbol(
+    env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     name: &CXIdent,
     symbol: &CXSymbol,
@@ -31,13 +36,13 @@ pub fn resolve_symbol<'a, 'b>(
             if completed.debug_name.is_none() {
                 completed.debug_name = Some(name.clone());
             }
-            let id = env.generate_type_id(completed);
+            let id = env.symbols.generate_type_id(completed);
             Ok(MIRSymbol::Type(id))
         }
 
         CXSymbolKind::AddressableGlobal(name, ty) => {
             let ty = complete_type(env, &namespace, ty)?;
-            let mem_ty = env.mem_ref_to(ty);
+            let mem_ty = env.symbols.mem_ref_to(ty);
             Ok(MIRSymbol::Expression(MIRExpression {
                 token_range: None,
                 kind: MIRExpressionKind::Variable {
@@ -72,7 +77,10 @@ pub fn resolve_symbol<'a, 'b>(
                 .clone()
         }),
 
-        CXSymbolKind::TypeTemplate { template: input, definition } => {
+        CXSymbolKind::TypeTemplate {
+            template: input,
+            definition,
+        } => {
             let source = CXSymbol::new(symbol.visibility, CXSymbolKind::Type(definition.clone()));
 
             Ok(MIRSymbol::Template {
@@ -84,7 +92,9 @@ pub fn resolve_symbol<'a, 'b>(
         }
 
         CXSymbolKind::FunctionTemplate {
-            template: input, definition, ..
+            template: input,
+            definition,
+            ..
         } => {
             let source = CXSymbol::new(
                 symbol.visibility,
@@ -101,8 +111,8 @@ pub fn resolve_symbol<'a, 'b>(
     }
 }
 
-pub fn apply_template<'a, 'b>(
-    env: &'a mut MIRSymbolRegistry<'b>,
+pub fn apply_template(
+    env: &mut TypeEnvironment,
     symbol: &MIRSymbol,
     template_input: MIRTemplateInput,
 ) -> CXResult<Option<MIRSymbol>> {
@@ -125,30 +135,30 @@ pub fn apply_template<'a, 'b>(
         ));
     }
 
-    env.push_local_scope();
+    env.push_scope(false, false);
     apply_template_input(env, input, &template_input)?;
 
     let mut result = resolve_symbol(env, namespace, name, source)?;
-    env.pop_local_scope();
+    env.pop_scope()?;
 
     attach_template_metadata(env, &mut result, name, namespace, template_input);
     Ok(Some(result))
 }
 
 pub fn apply_template_input(
-    env: &mut MIRSymbolRegistry,
+    env: &mut TypeEnvironment,
     prototype: &CXTemplatePrototype,
     input: &MIRTemplateInput,
 ) -> CXResult<()> {
     for (param, arg) in prototype.types.iter().zip(input.args.iter()) {
-        env.insert_local_type(param.as_string(), arg.clone())?;
+        env.symbols.insert_local_type(param.as_string(), arg.clone())?;
     }
 
     Ok(())
 }
 
 fn attach_template_metadata(
-    env: &mut MIRSymbolRegistry,
+    env: &mut TypeEnvironment,
     symbol: &mut MIRSymbol,
     name: &CXIdent,
     _namespace: &EnvironmentNamespace,
@@ -158,10 +168,10 @@ fn attach_template_metadata(
         return;
     };
 
-    let mut ty = env.resolve_type_id(*id).clone();
+    let mut ty = env.symbols.resolve_type_id(*id).clone();
     ty.strong_identifier.as_mut().map(|base| {
         base.name =
-            base_mangle_templated_name(env, base.name.as_str(), input.args.as_slice()).into()
+            base_mangle_templated_name(&env.symbols, base.name.as_str(), input.args.as_slice()).into()
     });
     ty.template_info = Some(Box::new(TemplateInfo {
         base_name: name.clone(),
@@ -169,5 +179,6 @@ fn attach_template_metadata(
     }));
 
     Some(name.clone());
-    env.overwrite_type_id(*id, ty);
+    
+    env.symbols.overwrite_type_id(*id, ty);
 }

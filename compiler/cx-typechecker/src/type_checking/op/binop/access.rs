@@ -112,7 +112,7 @@ pub fn typecheck_access(
 
             if template_input.is_none()
                 && let Some(struct_field) =
-                    struct_field(&base.source_type, &env.symbols, name.as_str())
+                    struct_field(&env.symbols, &base.source_type, name.as_str())
             {
                 // First, we check if we are trying to access a struct member
                 return Ok(TypecheckResult::new(
@@ -144,7 +144,6 @@ pub fn typecheck_access(
 
             let query = strong_name.child(name.clone());
             let function = env
-                .symbols
                 .get_symbol(&query)?
                 .ok_or_else(|| {
                     typecheck_error!(

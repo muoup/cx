@@ -62,7 +62,7 @@ pub(crate) fn typecheck_var_declaration(
     name: &CXIdent,
     initial_value: Option<&Box<CXExpression>>,
 ) -> CXResult<TypecheckResult> {
-    let ty = complete_type(&mut env.symbols, namespace, ty)?;
+    let ty = complete_type(env, namespace, ty)?;
 
     ensure_valid_allocation_type(env, Some(expr.token_range().clone()), "a variable", &ty)?;
 

@@ -133,8 +133,8 @@ fn realize_fn_template(
     let namespace = name.namespace.clone();
     env.push_scope(false, false);
 
-    apply_template_input(&mut env.symbols, template, input)?;
-    let prototype = complete_prototype(&mut env.symbols, &namespace, &definition)?;
+    apply_template_input(env, &template, input)?;
+    let prototype = complete_prototype(env, &namespace, &definition)?;
     typecheck_function(env, &namespace, prototype, &body)?;
 
     env.pop_scope()?;

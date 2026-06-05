@@ -24,7 +24,7 @@ pub fn typecheck(
     for stmt in ast.generation_stmts.iter() {
         match stmt {
             CXGenerationStmt::Function { prototype, body } => {
-                let prototype = complete_prototype(&mut env.symbols, namespace, prototype)?;
+                let prototype = complete_prototype(env, namespace, prototype)?;
                 typecheck_function(env, namespace, prototype.clone(), body)?;
             }
 
@@ -47,7 +47,7 @@ pub fn typecheck(
                 linkage,
                 initializer,
             } => {
-                let _type = complete_type(&mut env.symbols, namespace, _type)?;
+                let _type = complete_type(env, namespace, _type)?;
                 let constexpr_init = initializer
                     .as_ref()
                     .map(|init| {

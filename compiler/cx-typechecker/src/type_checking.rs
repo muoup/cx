@@ -4,7 +4,6 @@ pub mod constexpr;
 pub mod contracts;
 pub mod control_flow;
 pub mod functions;
-pub mod globals;
 pub mod op;
 pub mod pattern;
 pub mod result;

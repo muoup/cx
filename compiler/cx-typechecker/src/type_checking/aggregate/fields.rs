@@ -11,8 +11,8 @@ pub struct StructField {
 }
 
 pub fn struct_field(
-    struct_type: &MIRType,
     definitions: &MIRSymbolRegistry,
+    struct_type: &MIRType,
     field_name: &str,
 ) -> Option<StructField> {
     let struct_type = struct_type

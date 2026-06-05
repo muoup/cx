@@ -1,9 +1,7 @@
 use std::path::PathBuf;
 
 use cx_mir::{
-    MIRUnit,
-    mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId},
-    type_context::MIRTypeContext,
+    MIRUnit, mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId}, symbol::MIRSymbol, type_context::MIRTypeContext
 };
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
@@ -13,7 +11,7 @@ use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
 
-use crate::environment::functions::context::FunctionModeSnapshot;
+use crate::{environment::functions::context::FunctionModeSnapshot, symbol::resolution::resolve_symbol};
 pub use crate::environment::functions::control_flow::{
     BindingMoveState, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
     ScopeExitTarget, ScopeId, TrackedBindingState,
@@ -117,6 +115,34 @@ impl TypeEnvironment<'_> {
 
     pub fn restore_function_mode(&mut self, snapshot: FunctionModeSnapshot) {
         self.function.restore_mode(snapshot);
+    }
+
+    pub fn get_symbol(&mut self, name: &QualifiedName) -> CXResult<Option<MIRSymbol>> {
+        if let Some(preresolved_symbol) = self.symbols.get_preresolved_symbol(name) {
+            return Ok(Some(preresolved_symbol.clone()));
+        }
+
+        if name.namespace.is_root()
+            && let Some(local_symbol) = self.symbols.get_local_symbol(name)
+        {
+            return Ok(Some(local_symbol.clone()));
+        }
+
+        let name = self.symbols.resolve_qualified_alias(name);
+
+        let Some(untyped_symbol) = self.symbols.get_global_registry().resolve(name.as_ref()) else {
+            return Ok(None);
+        };
+
+        let symbol = resolve_symbol(
+            self,
+            &name.as_ref().namespace,
+            &name.as_ref().name,
+            &untyped_symbol,
+        )?;
+
+        self.symbols.insert_symbol(name.into_owned(), symbol.clone());
+        Ok(Some(symbol))
     }
 }
 

@@ -193,7 +193,7 @@ pub fn typecheck_unop(
         }
 
         CXUnOp::ExplicitCast(to_type) => {
-            let to_type = complete_type(&mut env.symbols, namespace, to_type)?;
+            let to_type = complete_type(env, namespace, to_type)?;
 
             let operand = typecheck_expr(env, namespace, operand, Some(&to_type))
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))
@@ -212,7 +212,7 @@ pub(crate) fn typecheck_sizeof_type(
     _expr: &CXExpression,
     ty: &CXType,
 ) -> CXResult<TypecheckResult> {
-    let tc_type = complete_type(&mut env.symbols, namespace, ty)?;
+    let tc_type = complete_type(env, namespace, ty)?;
     Ok(sizeof_result(tc_type.padded_size(&env.symbols)))
 }
 

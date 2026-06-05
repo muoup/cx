@@ -203,7 +203,7 @@ fn typecheck_structured_initializer(
             .and_then(|v| std_rval_promotion(env, v))
             .and_then(|v| implicit_cast(env, v, field_type))?;
 
-        let Some(struct_field_info) = struct_field(to_type, &env.symbols, field_name.as_str())
+        let Some(struct_field_info) = struct_field(&env.symbols, to_type, field_name.as_str())
         else {
             return log_typecheck_error!(
                 env,
