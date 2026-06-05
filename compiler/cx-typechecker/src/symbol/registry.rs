@@ -19,7 +19,6 @@ use cx_util::{
     scoped_map::ScopedMap,
 };
 
-
 /// Module-local symbol definitions
 pub struct MIRSymbolRegistry<'a> {
     global_registry: &'a GlobalSymbolRegistry,
@@ -75,7 +74,10 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.global_registry
     }
 
-    pub fn resolve_namespace_alias<'b>(&'b self, namespace: &'b NamespacePath) -> Cow<'b, NamespacePath> {
+    pub fn resolve_namespace_alias<'b>(
+        &'b self,
+        namespace: &'b NamespacePath,
+    ) -> Cow<'b, NamespacePath> {
         if let Some(alias) = self.namespace_aliases.get(namespace) {
             Cow::Borrowed(alias)
         } else {
@@ -101,7 +103,7 @@ impl<'a> MIRSymbolRegistry<'a> {
         name: &NamespacePath,
     ) -> Option<(impl Sized, &SymbolNamespaceData)> {
         let resolved_namespace = self.resolve_namespace_alias(name);
-        
+
         self.global_registry.get_bucket(&resolved_namespace)
     }
 
@@ -132,6 +134,10 @@ impl<'a> MIRSymbolRegistry<'a> {
 
     pub fn overwrite_type_id(&mut self, id: MIRTypeId, ty: MIRType) {
         self.typeid_defs.insert(id, ty);
+    }
+
+    pub fn try_resolve_type_id(&self, id: MIRTypeId) -> Option<&MIRType> {
+        self.typeid_defs.get(&id)
     }
 
     pub fn insert_local_type(&mut self, name: String, _type: MIRType) -> CXResult<MIRTypeId> {

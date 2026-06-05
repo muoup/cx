@@ -1,9 +1,10 @@
 use cx_ast::ast::{
     function::{CXFunctionKind, CXFunctionPrototype},
-    modifiers::VisibilityMode,
+    modifiers::{CXTypeQualifiers, VisibilityMode},
     template::CXTemplateInput,
     types::{CXField, CXType, CXTypeKind, PredeclarationType},
 };
+use cx_ast::symbols::CXSymbolKind;
 use cx_util::{CXError, CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 use cx_mir::{
@@ -13,16 +14,16 @@ use cx_mir::{
             MIRTemplateInput,
         },
         name_mangling::{base_mangle_member, base_mangle_standard, base_mangle_static_member},
-        r#type::{MIRField, MIRType, MIRTypeKind},
+        r#type::{MIRField, MIRType, MIRTypeId, MIRTypeKind},
     },
     symbol::MIRSymbol,
-    type_context::MIRTypeContext,
 };
 
 use crate::{
     EnvironmentNamespace,
     environment::TypeEnvironment,
-    symbol::resolution::{apply_template, resolve_symbol}, type_checking::{constexpr::constexpr_evaluate, typechecker::typecheck_expr},
+    symbol::resolution::{apply_template, resolve_symbol},
+    type_checking::{constexpr::constexpr_evaluate, typechecker::typecheck_expr},
 };
 
 pub fn complete_template_input(
@@ -44,15 +45,57 @@ pub fn complete_type(
     namespace: &EnvironmentNamespace,
     ty: &CXType,
 ) -> CXResult<MIRType> {
+    let id = complete_type_id(env, namespace, ty)?;
+    env.symbols
+        .try_resolve_type_id(id)
+        .cloned()
+        .ok_or_else(|| CXError::create_boxed(format!("Type '{}' is incomplete", ty)))
+}
+
+pub fn complete_type_id(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    ty: &CXType,
+) -> CXResult<MIRTypeId> {
+    match &ty.kind {
+        CXTypeKind::Identifier {
+            name,
+            predeclaration,
+            template_input,
+        } => {
+            let id =
+                complete_identifier_type(env, namespace, name, *predeclaration, template_input)?;
+            apply_type_specifiers(env, id, ty.specifiers)
+        }
+
+        _ => {
+            let completed = complete_type_value(env, namespace, ty)?;
+            Ok(env.symbols.generate_type_id(completed))
+        }
+    }
+}
+
+fn complete_type_value(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    ty: &CXType,
+) -> CXResult<MIRType> {
     let mut completed = match &ty.kind {
         CXTypeKind::Identifier {
             name,
             predeclaration,
             template_input,
-        } => complete_identifier_type(env, namespace, name, *predeclaration, template_input)?,
+        } => {
+            let id =
+                complete_identifier_type(env, namespace, name, *predeclaration, template_input)?;
+            env.symbols
+                .try_resolve_type_id(id)
+                .cloned()
+                .ok_or_else(|| CXError::create_boxed(format!("Type '{}' is incomplete", ty)))?
+        }
 
         CXTypeKind::ExplicitSizedArray(inner, size) => {
-            let inner_type = complete_type(env, namespace, inner)?;
+            let inner_type = complete_type_id(env, namespace, inner)?;
             let size = typecheck_expr(env, namespace, size, None)
                 .and_then(|v| v.standard_ready_coerce(env, size.token_range()))
                 .and_then(|v| constexpr_evaluate(env, v))
@@ -61,38 +104,33 @@ pub fn complete_type(
                         CXError::create_boxed("Array size must be an integer literal")
                     })
                 })?;
-            let id = env.symbols.generate_type_id(inner_type);
-
             MIRTypeKind::Array {
-                inner_type: id,
+                inner_type,
                 length: size as usize,
             }
             .into()
         }
 
         CXTypeKind::ImplicitSizedArray(inner) => {
-            let inner_type = complete_type(env, namespace, inner)?;
-            let id = env.symbols.generate_type_id(inner_type);
+            let inner_type = complete_type_id(env, namespace, inner)?;
 
-            MIRTypeKind::PointerTo { inner_type: id }.into()
+            MIRTypeKind::PointerTo { inner_type }.into()
         }
 
         CXTypeKind::MemoryReference { inner_type } => {
-            let inner_type = complete_type(env, namespace, inner_type)?;
-            let id = env.symbols.generate_type_id(inner_type);
+            let inner_type = complete_type_id(env, namespace, inner_type)?;
 
             MIRTypeKind::MemoryReference {
-                inner_type: id,
+                inner_type,
                 bitfield: None,
             }
             .into()
         }
 
         CXTypeKind::PointerTo { inner_type } => {
-            let inner_type = complete_type(env, namespace, inner_type)?;
-            let id = env.symbols.generate_type_id(inner_type);
+            let inner_type = complete_type_id(env, namespace, inner_type)?;
 
-            MIRTypeKind::PointerTo { inner_type: id }.into()
+            MIRTypeKind::PointerTo { inner_type }.into()
         }
 
         CXTypeKind::Structured {
@@ -142,6 +180,23 @@ pub fn complete_type(
     Ok(completed)
 }
 
+fn apply_type_specifiers(
+    env: &mut TypeEnvironment,
+    id: MIRTypeId,
+    specifiers: CXTypeQualifiers,
+) -> CXResult<MIRTypeId> {
+    if specifiers == 0 {
+        return Ok(id);
+    }
+
+    let Some(mut ty) = env.symbols.try_resolve_type_id(id).cloned() else {
+        return Ok(id);
+    };
+    ty.specifiers |= specifiers;
+
+    Ok(env.symbols.generate_type_id(ty))
+}
+
 pub fn complete_prototype(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
@@ -178,56 +233,78 @@ fn complete_identifier_type(
     name: &QualifiedName,
     predeclaration: PredeclarationType,
     template_input: &Option<CXTemplateInput>,
-) -> CXResult<MIRType> {
+) -> CXResult<MIRTypeId> {
     if let Some(_ty) = env.symbols.get_preresolved_symbol(name) {
-        return Ok(_ty
-            .as_type_id()
-            .map(|id| env.symbols.resolve_type_id(id).clone())
-            .unwrap()); // unfailable
+        return Ok(_ty.as_type_id().unwrap()); // unfailable
     }
 
-    let alias_name = env.symbols.resolve_qualified_alias(name);
+    if name.namespace.is_root()
+        && let Some(_ty) = env.symbols.get_local_symbol(name)
+    {
+        return Ok(_ty.as_type_id().unwrap()); // unfailable
+    }
 
-    let Some(symbol) = env
-        .symbols
-        .get_global_registry()
-        .resolve(alias_name.as_ref())
-    else {
+    let alias_name = env.symbols.resolve_qualified_alias(name).into_owned();
+
+    let Some(symbol) = env.symbols.get_global_registry().resolve(&alias_name) else {
         if predeclaration != PredeclarationType::None {
-            return Ok(MIRTypeKind::Undefined.into());
+            let id = env.symbols.reserve_type_id();
+            env.symbols.insert_type_symbol(name.clone(), id);
+            if &alias_name != name {
+                env.symbols.insert_type_symbol(alias_name, id);
+            }
+
+            return Ok(id);
         }
 
         return CXError::create_result(format!("Type not found: {name}"));
     };
 
-    let prereserved_id = env.symbols.reserve_type_id();
-    env.symbols.insert_type_symbol(name.clone(), prereserved_id);
-    env.symbols
-        .overwrite_type_id(prereserved_id, MIRTypeKind::Undefined.into());
+    match &symbol.kind {
+        CXSymbolKind::Type(definition) => {
+            if template_input.is_some() {
+                return CXError::create_result(format!(
+                    "Type '{name}' does not accept template arguments"
+                ));
+            }
 
-    let mir_symbol = resolve_symbol(env, &name.namespace, &name.name, &symbol)?;
+            let prereserved_id = env.symbols.reserve_type_id();
+            env.symbols.insert_type_symbol(name.clone(), prereserved_id);
+            if &alias_name != name {
+                env.symbols
+                    .insert_type_symbol(alias_name.clone(), prereserved_id);
+            }
 
-    let symbol = if let Some(input) = template_input {
-        let input = complete_template_input(env, namespace, input)?;
-        apply_template(env, &mir_symbol, input)?.ok_or_else(|| {
-            CXError::create_boxed(format!("Type '{name}' does not accept template arguments"))
-        })?
-    } else {
-        mir_symbol
-    };
+            let mut completed = complete_type_value(env, &alias_name.namespace, definition)?;
+            if completed.debug_name.is_none() {
+                completed.debug_name = Some(alias_name.name.clone());
+            }
 
-    match symbol {
-        MIRSymbol::Type(id) => env
-            .symbols
-            .undo_type_id(id)
-            .map(|ty| {
-                env.symbols.overwrite_type_id(prereserved_id, ty.clone());
-                ty
-            })
-            .ok_or_else(|| unreachable!("Type ID {id:?} was not found in the registry")),
-        MIRSymbol::Template { .. } => CXError::create_result(format!(
-            "Template type '{name}' requires explicit template arguments"
-        )),
+            env.symbols.overwrite_type_id(prereserved_id, completed);
+            Ok(prereserved_id)
+        }
+
+        CXSymbolKind::TypeTemplate { .. } => {
+            let mir_symbol = resolve_symbol(env, &alias_name.namespace, &alias_name.name, &symbol)?;
+            let Some(input) = template_input else {
+                return CXError::create_result(format!(
+                    "Template type '{name}' requires explicit template arguments"
+                ));
+            };
+            let input = complete_template_input(env, namespace, input)?;
+            let symbol = apply_template(env, &mir_symbol, input)?.ok_or_else(|| {
+                CXError::create_boxed(format!("Type '{name}' does not accept template arguments"))
+            })?;
+
+            match symbol {
+                MIRSymbol::Type(id) => Ok(id),
+                MIRSymbol::Template { .. } => CXError::create_result(format!(
+                    "Template type '{name}' requires explicit template arguments"
+                )),
+                _ => CXError::create_result(format!("Symbol '{name}' is not a type")),
+            }
+        }
+
         _ => CXError::create_result(format!("Symbol '{name}' is not a type")),
     }
 }
@@ -248,6 +325,7 @@ where
         .iter()
         .map(|field| complete_field(env, namespace, field))
         .collect::<CXResult<Vec<_>>>()?;
+    ensure_aggregate_fields_complete(env, &fields)?;
     let move_attributes = attributes
         .map(|attributes| MIRMoveAttributes {
             nocopy: attributes.nocopy || attributes.nodrop,
@@ -275,8 +353,7 @@ fn complete_field(
 ) -> CXResult<MIRField> {
     match field {
         CXField::Standard { name, _type } => {
-            let ty = complete_type(env, namespace, _type)?;
-            let id = env.symbols.generate_type_id(ty);
+            let id = complete_type_id(env, namespace, _type)?;
 
             Ok(MIRField::standard(name.clone(), id))
         }
@@ -286,8 +363,7 @@ fn complete_field(
             integer_type,
             width,
         } => {
-            let ty = complete_type(env, namespace, integer_type)?;
-            let id = env.symbols.generate_type_id(ty);
+            let id = complete_type_id(env, namespace, integer_type)?;
 
             Ok(MIRField::Bitfield {
                 name: name.clone(),
@@ -296,6 +372,21 @@ fn complete_field(
             })
         }
     }
+}
+
+fn ensure_aggregate_fields_complete(env: &TypeEnvironment, fields: &[MIRField]) -> CXResult<()> {
+    for field in fields {
+        let id = field.ty();
+        if !env.symbols.contains(id) {
+            let name = field.name().unwrap_or("<anonymous>");
+            return CXError::create_result(format!(
+                "Aggregate field '{}' has incomplete type",
+                name
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn completed_function_name(
