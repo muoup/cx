@@ -2,7 +2,7 @@ use cx_ast::{
     ast::{
         function::{CXFunctionContract, CXFunctionKind},
         modifiers::CXLinkageMode,
-        template::CXTemplatePrototype,
+        template::CXTemplatePrototype, types::CXType,
     },
     symbols::{CXSymbol, CXSymbolKind},
 };
@@ -151,7 +151,7 @@ fn resolve_type_constructor(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     name: &CXIdent,
-    union_type: &cx_ast::ast::types::CXType,
+    union_type: &CXType,
     variant_index: usize,
 ) -> CXResult<MIRSymbol> {
     let union_type = complete_type(env, namespace, union_type)?;
@@ -165,9 +165,10 @@ fn resolve_type_constructor(
         ));
     };
 
-    let mangled_name = base_mangle_static_member(&env.symbols, name.as_str(), &union_type);
+    let name = base_mangle_static_member(&env.symbols, name.as_str(), &union_type);
+    
     let prototype = MIRFunctionPrototype {
-        name: CXIdent::new(mangled_name.clone()),
+        name: CXIdent::new(name.clone()),
         linkage: CXLinkageMode::Static,
         signature: MIRFunctionSignature {
             return_type: union_type.clone(),
@@ -184,15 +185,13 @@ fn resolve_type_constructor(
         },
     };
 
-    if !env.items.has_type_constructor_request(&mangled_name) {
-        env.items
-            .push_request(MIRFunctionGenRequest::TypeConstructor {
-                name: mangled_name,
-                union_type,
-                variant_type,
-                variant_index,
-            });
-    }
+    env.items
+        .push_request(MIRFunctionGenRequest::TypeConstructor {
+            name,
+            union_type,
+            variant_type,
+            variant_index,
+        });
 
     Ok(MIRSymbol::Expression(MIRExpression {
         token_range: None,

@@ -1,9 +1,12 @@
+use std::collections::HashSet;
+
 use cx_mir::mir::data::MIRFunction;
 use cx_mir::mir::data::MIRTemplateInput;
 use cx_mir::mir::global::MIRGlobalVariable;
 use cx_mir::mir::r#type::MIRType;
 use cx_util::namespace::QualifiedName;
 
+#[derive(Debug)]
 pub enum MIRFunctionGenRequest {
     Template {
         name: QualifiedName,
@@ -21,6 +24,7 @@ pub struct ItemRegistry {
     generated_functions: Vec<MIRFunction>,
     generated_globals: Vec<MIRGlobalVariable>,
     requests: Vec<MIRFunctionGenRequest>,
+    requests_fulfilled: HashSet<String>
 }
 
 impl ItemRegistry {
@@ -30,6 +34,7 @@ impl ItemRegistry {
             generated_globals: Vec::new(),
 
             requests: Vec::new(),
+            requests_fulfilled: HashSet::new(),
         }
     }
 
@@ -47,17 +52,16 @@ impl ItemRegistry {
         self.requests.push(request);
     }
 
-    pub fn has_type_constructor_request(&self, function_name: &str) -> bool {
-        self.requests.iter().any(|request| {
-            matches!(
-                request,
-                MIRFunctionGenRequest::TypeConstructor { name, .. } if name == function_name
-            )
-        })
-    }
-
     pub fn pop_request(&mut self) -> Option<MIRFunctionGenRequest> {
         self.requests.pop()
+    }
+
+    pub fn request_fulfilled(&mut self, request_name: &str) -> bool {
+        self.requests_fulfilled.contains(request_name)
+    }
+
+    pub fn mark_request_fulfilled(&mut self, request_name: String) {
+        self.requests_fulfilled.insert(request_name);
     }
 
     pub fn push_generated_function(&mut self, function: MIRFunction) {

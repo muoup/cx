@@ -1,9 +1,9 @@
+
 use cx_ast::{
     ast::{function::CXFunctionContract, modifiers::CXLinkageMode},
     symbols::CXSymbolKind,
 };
 use cx_mir::{
-    EnvironmentNamespace,
     mir::{
         data::{
             MIRFunction, MIRFunctionPrototype, MIRFunctionSignature, MIRParameter, MIRTemplateInput,
@@ -25,7 +25,6 @@ use crate::{
 
 pub fn fulfill_requests(
     env: &mut TypeEnvironment,
-    _namespace: &EnvironmentNamespace,
 ) -> CXResult<()> {
     while let Some(request) = env.items.pop_request() {
         match request {
@@ -54,6 +53,11 @@ fn realize_tagged_union_constructor(
     variant_type: MIRType,
     variant_index: usize,
 ) {
+    if env.items.request_fulfilled(name.as_str()) {
+        return;
+    }
+    env.items.mark_request_fulfilled(name.clone());
+    
     let param_name = CXIdent::new("value");
     let prototype = MIRFunctionPrototype {
         name: CXIdent::new(name),
@@ -144,7 +148,15 @@ fn realize_fn_template(
     let result = (|| {
         apply_template_input(env, &template, input)?;
         let prototype = complete_prototype(env, &namespace, &definition)?;
-        typecheck_function(env, &namespace, prototype, &body)
+
+        if env.items.request_fulfilled(prototype.name.as_str()) {
+            return Ok(());
+        }
+        env.items.mark_request_fulfilled(prototype.name.as_str().into());
+
+        typecheck_function(env, &namespace, prototype, &body)?;
+
+        Ok(())
     })();
     env.symbols.pop_local_scope();
 

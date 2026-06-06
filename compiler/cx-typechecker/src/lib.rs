@@ -80,7 +80,7 @@ pub fn typecheck(
         }
     }
 
-    fulfill_requests(env, namespace)?;
+    fulfill_requests(env)?;
 
     Ok(())
 }
