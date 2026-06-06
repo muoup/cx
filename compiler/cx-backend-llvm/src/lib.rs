@@ -2,10 +2,10 @@ use crate::attributes::*;
 use crate::typing::{bc_llvm_prototype, bc_llvm_type, convert_linkage};
 use cx_lmir::types::{LMIRType, LMIRTypeKind};
 use cx_lmir::{
-    ElementID, LMIRABISlot, LMIRBasicBlock, LMIRBlockID, LMIRFunction, LMIRFunctionMap,
-    LMIRFunctionPrototype, LMIRReturnABI, LMIRUnit, LMIRValue,
+    ElementID, LMIRABISlot, LMIRBasicBlock, LMIRBlockID, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype, LMIRFunctionSignature, LMIRReturnABI, LMIRUnit, LMIRValue
 };
 use cx_util::CXResult;
+use cx_util::identifier::CXIdent;
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -43,8 +43,8 @@ pub(crate) struct FunctionState<'a, 'b> {
     context: &'a Context,
     function_value: &'b FunctionValue<'a>,
 
-    current_function: String,
-    signature: cx_lmir::LMIRFunctionSignature,
+    current_function: CXIdent,
+    signature: LMIRFunctionSignature,
 
     builder: Builder<'a>,
     value_map: HashMap<LMIRValue, CodegenValue<'a>>,
