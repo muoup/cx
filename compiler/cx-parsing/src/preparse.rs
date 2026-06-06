@@ -77,7 +77,9 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
                     | punctuator!(CloseParen)
                     | punctuator!(CloseBracket) => depth = depth.saturating_sub(1),
                     punctuator!(Semicolon) if depth == 0 => break,
-                    identifier!(ident) => last_ident = Some(CXIdent::new(ident.as_str())),
+                    identifier!(ident) if depth == 0 => {
+                        last_ident = Some(CXIdent::new(ident.as_str()))
+                    }
                     _ => {}
                 }
             }
