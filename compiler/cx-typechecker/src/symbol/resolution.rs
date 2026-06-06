@@ -2,25 +2,27 @@ use cx_ast::{
     ast::{
         function::{CXFunctionContract, CXFunctionKind},
         modifiers::CXLinkageMode,
-        template::CXTemplatePrototype, types::CXType,
+        template::CXTemplatePrototype,
+        types::CXType,
     },
     symbols::{CXSymbol, CXSymbolKind},
 };
-use cx_util::{identifier::CXIdent, namespace::QualifiedName, CXError, CXResult};
+use cx_util::{CXError, CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 use cx_mir::{
+    EnvironmentNamespace,
     mir::{
         data::{
             MIRFunctionPrototype, MIRFunctionSignature, MIRParameter, MIRTemplateInput,
             TemplateInfo,
         },
         expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
+        global::{MIRGlobalVarKind, MIRGlobalVariable},
         name_mangling::{base_mangle_static_member, base_mangle_templated_name},
         r#type::MIRTypeKind,
     },
     symbol::MIRSymbol,
     type_context::MIRTypeContext,
-    EnvironmentNamespace,
 };
 
 use crate::{
@@ -49,14 +51,24 @@ pub fn resolve_symbol(
 
         CXSymbolKind::AddressableGlobal(name, ty) => {
             let ty = complete_type(env, &namespace, ty)?;
-            let mem_ty = env.symbols.mem_ref_to(ty);
+
+            env.items.push_generated_global(MIRGlobalVariable {
+                is_mutable: false,
+                linkage: CXLinkageMode::Extern,
+                kind: MIRGlobalVarKind::Variable { 
+                    name: name.clone(),
+                    _type: ty.clone(),
+                    initializer: None,
+                }
+            });
+
             Ok(MIRSymbol::Expression(MIRExpression {
                 token_range: None,
                 kind: MIRExpressionKind::Variable {
                     name: name.clone(),
                     location: SymbolValueOrigin::Global,
                 },
-                _type: mem_ty,
+                _type: env.symbols.mem_ref_to(ty)
             }))
         }
 
@@ -166,7 +178,7 @@ fn resolve_type_constructor(
     };
 
     let name = base_mangle_static_member(&env.symbols, name.as_str(), &union_type);
-    
+
     let prototype = MIRFunctionPrototype {
         name: CXIdent::new(name.clone()),
         linkage: CXLinkageMode::Static,

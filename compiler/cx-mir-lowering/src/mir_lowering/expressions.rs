@@ -10,7 +10,10 @@ use cx_lmir::{
 use cx_mir::{
     mir::{
         data::{MIRFunction, MIRFunctionSignature, MIRTypeKind},
-        expression::{MIRExpression, MIRExpressionKind, MIRFunctionContract, StructInitialization},
+        expression::{
+            MIRExpression, MIRExpressionKind, MIRFunctionContract, StructInitialization,
+            SymbolValueOrigin,
+        },
         pattern::MIRPattern,
         r#type::{MIRField, MIRType},
     },
@@ -134,11 +137,13 @@ fn aggregate_member_layout(
                                 offset = storage_offset
                                     + (used_bits.div_ceil(active_size_bytes * 8))
                                         * active_size_bytes;
-                                offset = offset.div_ceil(storage_align as usize) * storage_align as usize;
+                                offset = offset.div_ceil(storage_align as usize)
+                                    * storage_align as usize;
                                 (offset, 0)
                             }
                             None => {
-                                offset = offset.div_ceil(storage_align as usize) * storage_align as usize;
+                                offset = offset.div_ceil(storage_align as usize)
+                                    * storage_align as usize;
                                 (offset, 0)
                             }
                         };
@@ -461,7 +466,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             let LMIRTypeKind::Float(f_type) = bc_type.kind else {
                 unreachable!("Float literal with non-float type");
             };
-            
+
             Ok(LMIRValue::FloatImmediate {
                 val: *val,
                 _type: f_type,
@@ -470,13 +475,19 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
 
         MIRExpressionKind::Unit => Ok(LMIRValue::NULL),
 
-        MIRExpressionKind::Variable { name, .. } => {
-            if let Some(local_value) = builder.get_symbol(name) {
-                return Ok(local_value);
-            }
+        MIRExpressionKind::Variable { name, location } => {
+            match location {
+                SymbolValueOrigin::Contract | SymbolValueOrigin::Local => {
+                    if let Some(local_value) = builder.get_symbol(name) {
+                        return Ok(local_value);
+                    }
+                }
 
-            if let Some(global_value) = builder.get_global_symbol(name.as_str()) {
-                return Ok(global_value);
+                SymbolValueOrigin::Global => {
+                    if let Some(global_value) = builder.get_global_symbol(name.as_str()) {
+                        return Ok(global_value);
+                    }
+                }
             }
 
             unreachable!("Variable '{}' not found in symbol table", name);

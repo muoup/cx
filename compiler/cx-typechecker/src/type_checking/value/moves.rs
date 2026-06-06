@@ -30,7 +30,14 @@ pub(crate) fn typecheck_move(
     inner: TypecheckResult,
     inner_expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
-    let Some(binding) = inner.binding().cloned() else {
+    let binding = inner.binding().cloned();
+    let mut inner_val = inner.standard_ready_coerce(env, inner_expr.token_range())?;
+
+    if !inner_val._type.is_memory_reference() {
+        return Ok(TypecheckResult::from(inner_val));
+    }
+    
+    let Some(binding) = binding else {
         return log_typecheck_error!(
             env,
             Some(inner_expr.token_range()),
@@ -45,8 +52,6 @@ pub(crate) fn typecheck_move(
             "Moving out of aggregate fields or projections is not implemented"
         );
     };
-
-    let mut inner_val = inner.standard_ready_coerce(env, inner_expr.token_range())?;
 
     if !matches!(inner_val.kind, MIRExpressionKind::Variable { .. }) {
         return log_typecheck_error!(
