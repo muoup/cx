@@ -135,17 +135,17 @@ pub fn typecheck_access(
                 ));
             }
 
-            let Some(strong_name) = base.source_type.get_base_identifier().cloned() else {
+            let Some(lookup_name) = base.source_type.member_lookup_identifier().cloned() else {
                 return log_typecheck_error!(
                     env,
                     Some(expr.token_range()),
-                    "Cannot access member '{}' on type '{}', which does not have a strong identifier",
+                    "Cannot access member '{}' on type '{}', which does not have a lookup identifier",
                     name,
                     base.source_type.display_with(&env.symbols)
                 );
             };
 
-            let query = strong_name.child(name.clone());
+            let query = lookup_name.child(name.clone());
             let mut symbol = env.get_symbol(namespace, &query)?.ok_or_else(|| {
                 typecheck_error!(
                     env,
@@ -182,13 +182,12 @@ pub fn typecheck_access(
 
             let function = symbol
                 .as_expression()
-                .ok_or_else(|| {
+                .map_err(|err| {
                     typecheck_error!(
                         env,
                         Some(expr.token_range()),
-                        "Member '{}' not found on type '{}'",
-                        name,
-                        base.source_type.display_with(&env.symbols)
+                        "{}",
+                        err.error_content()
                     )
                 })?
                 .clone();

@@ -43,7 +43,7 @@ pub(crate) fn typecheck_is(
         );
     };
     let variants = variants.clone();
-    let expected_union_name = union_type.get_base_identifier().unwrap();
+    let expected_union_name = union_type.member_lookup_identifier().unwrap();
 
     let TypeConstructor {
         union_name,

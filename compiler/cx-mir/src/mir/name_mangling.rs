@@ -5,7 +5,9 @@ use cx_ast::registry::{ExportNameMode, GlobalSymbolRegistry};
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 pub fn base_mangle_standard(global_registry: &GlobalSymbolRegistry, name: &QualifiedName) -> String {
-    if global_registry.export_name_mode(&name.namespace) == ExportNameMode::Root {
+    if name.namespace.is_root()
+        || global_registry.export_name_mode(&name.namespace) == ExportNameMode::Root
+    {
         return name.name.as_str().to_string();
     }
   
@@ -137,11 +139,7 @@ pub(crate) fn type_mangle(registry: &impl MIRTypeContext, ty: &MIRType) -> Strin
 fn push_identifier(mangled: &mut String, definitions: &impl MIRTypeContext, ty: &MIRType) {
     if let Some(name) = ty.strong_identifier() {
         mangled.push('n');
-        if let Some(strong_name) = ty.strong_identifier() {
-            mangled.push_str(&mangle_namespace_symbol(strong_name));
-        } else {
-            push_symbol_segment(mangled, &name.name);
-        }
+        push_string_segment(mangled, name);
 
         if let Some(template_info) = ty.get_template_data() {
             mangled.push('T');
@@ -154,9 +152,13 @@ fn push_identifier(mangled: &mut String, definitions: &impl MIRTypeContext, ty: 
 }
 
 fn push_symbol_segment(mangled: &mut String, name: &CXIdent) {
-    mangled.push_str(name.as_str().len().to_string().as_str());
+    push_string_segment(mangled, name.as_str());
+}
+
+fn push_string_segment(mangled: &mut String, name: &str) {
+    mangled.push_str(name.len().to_string().as_str());
     mangled.push('_');
-    mangled.push_str(name.as_str());
+    mangled.push_str(name);
 }
 
 fn push_move_attributes(mangled: &mut String, ty: &MIRType) {

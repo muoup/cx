@@ -99,7 +99,7 @@ pub fn typecheck_match(
         }
 
         MIRTypeKind::TaggedUnion { variants, .. } => {
-            let expected_union_name = expr_type.get_base_identifier().unwrap();
+            let expected_union_name = expr_type.member_lookup_identifier().unwrap();
 
             // Tagged union matching: each arm has a type constructor pattern
             let mut result_arms = Vec::new();

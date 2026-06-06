@@ -123,8 +123,8 @@ pub(crate) fn convert_type_kind(
         },
 
         MIRTypeKind::TaggedUnion { variants } => LMIRTypeKind::Struct {
-            name: mangle_namespace_symbol(cx_type.strong_identifier().unwrap()),
-            
+            name: cx_type.strong_identifier().unwrap().to_owned(),
+
             fields: vec![
                 (
                     "data".to_string(),
@@ -160,7 +160,8 @@ pub(crate) fn convert_type_kind(
         MIRTypeKind::Structured { .. } => LMIRTypeKind::Struct {
             name: cx_type
                 .strong_identifier()
-                .map(mangle_namespace_symbol)
+                .map(str::to_owned)
+                .unwrap_or("".to_owned()),
             fields: cx_type
                 .aggregate_fields(definitions)
                 .unwrap()

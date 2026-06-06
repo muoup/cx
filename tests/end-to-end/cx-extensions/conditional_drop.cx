@@ -21,6 +21,6 @@ int main() {
         value.drop();
     }
 
-    println("done");
+    std::io::println("done");
     return 0;
 }

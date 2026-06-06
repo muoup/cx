@@ -7,7 +7,7 @@ use cx_ast::{
     },
     symbols::{CXSymbol, CXSymbolKind},
 };
-use cx_util::{CXError, CXResult, identifier::CXIdent, namespace::QualifiedName};
+use cx_util::{CXError, CXResult, identifier::CXIdent};
 
 use cx_mir::{
     EnvironmentNamespace,
@@ -167,10 +167,8 @@ fn resolve_type_constructor(
         ));
     };
 
-    // let name = base_mangle_member(&env.symbols, name.as_str(), &union_type);
-
     let prototype = MIRFunctionPrototype::new(
-        name.clone(),
+        base_mangle_member(&env.symbols, name.as_str(), &union_type),
         CXLinkageMode::Static,
         MIRFunctionSignature {
             return_type: union_type.clone(),
@@ -186,7 +184,7 @@ fn resolve_type_constructor(
             contract: CXFunctionContract::default(),
         },
     )
-    .with_mangled_name(|n| base_mangle_member(&env.symbols, n, &union_type));
+    .with_debug_name(name.clone());
 
     env.items
         .push_request(MIRFunctionGenRequest::TypeConstructor {
@@ -233,9 +231,11 @@ pub fn apply_template(
     let mut symbol = result?;
     attach_template_metadata(env, &mut symbol, namespace, template_input.clone());
 
-    if let MIRSymbol::FunctionReference(prototype) = &symbol {
+    if let MIRSymbol::FunctionReference(prototype) = &symbol
+        && let Some(name) = prototype.lookup_identifier().cloned()
+    {
         env.items.push_request(MIRFunctionGenRequest::Template {
-            name: QualifiedName::new(namespace.clone(), prototype.base_name().clone()),
+            name,
             prototype: prototype.clone(),
             input: template_input,
         });
@@ -296,24 +296,25 @@ fn attach_template_metadata(
         MIRSymbol::Type(id) => {
             let mut ty = env.symbols.resolve_type_id(*id).clone();
             ty.template_info = Some(Box::new(TemplateInfo {
-                base_name: ty.strong_identifier.clone(),
+                base_name: ty.lookup_identifier.clone(),
                 template_input: input.clone(),
             }));
-            ty.strong_identifier.as_mut().map(|base| {
-                base.name = base_mangle_templated_name(
+            ty.strong_identifier = ty.strong_identifier.as_ref().map(|base| {
+                base_mangle_templated_name(
                     &env.symbols,
-                    base.name.as_str(),
+                    base.as_str(),
                     input.args.as_slice(),
                 )
-                .into()
             });
             env.symbols.overwrite_type_id(*id, ty);
         }
 
         MIRSymbol::FunctionReference(prototype) => {
-            prototype.mangle_name(|name| {
-                base_mangle_templated_name(&env.symbols, name, input.args.as_slice())
-            });
+            if prototype.lookup_identifier().is_some() {
+                prototype.map_symbol_name(|name| {
+                    base_mangle_templated_name(&env.symbols, name, input.args.as_slice())
+                });
+            }
         }
 
         _ => (),

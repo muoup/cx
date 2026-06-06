@@ -54,7 +54,7 @@ fn realize_tagged_union_constructor(
 
     let param_name = CXIdent::new("value");
     let prototype = MIRFunctionPrototype::new(
-        CXIdent::new(name),
+        name,
         CXLinkageMode::Static,
         MIRFunctionSignature {
             return_type: union_type.clone(),
@@ -123,8 +123,6 @@ fn realize_fn_template(
     prototype: MIRFunctionPrototype,
     input: &MIRTemplateInput,
 ) -> CXResult<()> {
-    println!("NAME: {}", name);
-    
     let stmt = env
         .symbols
         .get_global_registry()

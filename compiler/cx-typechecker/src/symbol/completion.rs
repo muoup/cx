@@ -219,10 +219,12 @@ pub fn complete_prototype(
         }
     }
 
-    let name = completed_function_name(env, &namespace, &prototype.kind)?;
+    let lookup_identifier = function_lookup_identifier(namespace, &prototype.kind);
+    let debug_name = lookup_identifier.name.clone();
+    let symbol_name = completed_function_name(env, &namespace, &prototype.kind)?;
 
     Ok(MIRFunctionPrototype::new(
-        name,
+        symbol_name,
         prototype.linkage,
         MIRFunctionSignature {
             return_type,
@@ -231,6 +233,23 @@ pub fn complete_prototype(
             contract: prototype.contract.clone(),
         },
     ))
+    .map(|prototype| {
+        prototype
+            .with_lookup_identifier(lookup_identifier)
+            .with_debug_name(debug_name)
+    })
+}
+
+fn function_lookup_identifier(
+    namespace: &EnvironmentNamespace,
+    kind: &CXFunctionKind,
+) -> QualifiedName {
+    let QualifiedName {
+        namespace: relative_namespace,
+        name,
+    } = kind.into_key();
+
+    QualifiedName::new(namespace.join(&relative_namespace), name)
 }
 
 fn complete_receiver_parameter(
@@ -402,13 +421,22 @@ where
     let move_attributes = resolve_aggregate_move_attributes(env, namespace, attributes)?;
     ensure_aggregate_move_restrictions(env, move_attributes, &fields)?;
 
+    let (strong_identifier, lookup_identifier) = name
+        .as_ref()
+        .map(|name| {
+            let lookup_identifier = QualifiedName::new(namespace.clone(), name.clone());
+            let strong_identifier =
+                base_mangle_standard(env.symbols.get_global_registry(), &lookup_identifier);
+            (Some(strong_identifier), Some(lookup_identifier))
+        })
+        .unwrap_or((None, None));
+
     Ok(MIRType {
         visibility: VisibilityMode::Private,
         specifiers: ty.specifiers,
         move_attributes,
-        strong_identifier: name
-            .as_ref()
-            .map(|name| QualifiedName::new(namespace.clone(), name.clone())),
+        strong_identifier,
+        lookup_identifier,
         debug_name: name,
         template_info: None,
         kind: kind_ctor(fields),
@@ -546,7 +574,7 @@ fn completed_function_name(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     kind: &CXFunctionKind,
-) -> CXResult<CXIdent> {
+) -> CXResult<String> {
     let name = match kind {
         CXFunctionKind::Standard(name) => base_mangle_standard(
             env.symbols.get_global_registry(),
@@ -561,5 +589,5 @@ fn completed_function_name(
         }
     };
 
-    Ok(CXIdent::new(name))
+    Ok(name)
 }

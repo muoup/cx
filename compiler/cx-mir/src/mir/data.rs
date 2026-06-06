@@ -85,30 +85,42 @@ impl MIRFunctionSignature {
 
 #[derive(Debug, Clone)]
 pub struct MIRFunctionPrototype {
-    name: CXIdent,
-    mangled_name: Option<String>,
+    symbol_name: String,
+    lookup_identifier: Option<QualifiedName>,
+    debug_name: Option<CXIdent>,
     linkage: CXLinkageMode,
     signature: MIRFunctionSignature,
 }
 
 impl MIRFunctionPrototype {
-    pub fn new(name: CXIdent, linkage: CXLinkageMode, signature: MIRFunctionSignature) -> Self {
+    pub fn new(
+        symbol_name: impl Into<String>,
+        linkage: CXLinkageMode,
+        signature: MIRFunctionSignature,
+    ) -> Self {
         Self {
-            name,
-            mangled_name: None,
+            symbol_name: symbol_name.into(),
+            lookup_identifier: None,
+            debug_name: None,
             linkage,
             signature,
         }
     }
 
     pub fn name(&self) -> &str {
-        self.mangled_name.as_ref()
-            .map(String::as_str)
-            .unwrap_or(self.name.as_str())
+        self.symbol_name()
     }
 
-    pub fn base_name(&self) -> &CXIdent {
-        &self.name
+    pub fn symbol_name(&self) -> &str {
+        self.symbol_name.as_str()
+    }
+
+    pub fn lookup_identifier(&self) -> Option<&QualifiedName> {
+        self.lookup_identifier.as_ref()
+    }
+
+    pub fn debug_name(&self) -> Option<&CXIdent> {
+        self.debug_name.as_ref()
     }
 
     pub fn signature(&self) -> &MIRFunctionSignature {
@@ -119,20 +131,21 @@ impl MIRFunctionPrototype {
         self.linkage
     }
 
-    pub fn with_mangled_name<F>(mut self, f: F) -> Self
-        where F: FnOnce(&str) -> String {
-        self.mangle_name(f);
+    pub fn with_lookup_identifier(mut self, lookup_identifier: QualifiedName) -> Self {
+        self.lookup_identifier = Some(lookup_identifier);
         self
     }
 
-    pub fn mangle_name<F>(&mut self, f: F)
-        where F: FnOnce(&str) -> String {
+    pub fn with_debug_name(mut self, debug_name: CXIdent) -> Self {
+        self.debug_name = Some(debug_name);
+        self
+    }
 
-        if let Some(mangled) = &self.mangled_name {
-            self.mangled_name = Some(f(mangled));
-        } else {
-            self.mangled_name = Some(f(self.name.as_str()));
-        }
+    pub fn map_symbol_name<F>(&mut self, f: F)
+    where
+        F: FnOnce(&str) -> String,
+    {
+        self.symbol_name = f(self.symbol_name.as_str());
     }
 
     pub fn contextual_eq(&self, other: &Self, definitions: &impl MIRTypeContext) -> bool {
@@ -146,7 +159,7 @@ impl MIRFunctionPrototype {
         definitions: &impl MIRTypeContext,
         state: &mut TypeComparisonState,
     ) -> bool {
-        self.name == other.name
+        self.symbol_name == other.symbol_name
             && self
                 .signature
                 .contextual_eq_with_state(&other.signature, definitions, state)
