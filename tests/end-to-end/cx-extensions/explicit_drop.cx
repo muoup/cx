@@ -5,7 +5,7 @@ struct Resource : @nodrop {
 };
 
 Resource pass_through(Resource resource) {
-    println("pass_through");
+    std::io::println("pass_through");
     return move resource;
 }
 

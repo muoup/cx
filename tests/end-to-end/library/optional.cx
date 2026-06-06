@@ -7,8 +7,8 @@ int add_one(i8 x) {
 }
 
 int main() {
-    std::optional::opt<i8> a = std::optional::opt<i8>::some(42);
-    std::optional::opt<i8> b = std::optional::opt<i8>::none();
+    std::optional::opt<i8> a = std::optional::opt::some<i8>(42);
+    std::optional::opt<i8> b = std::optional::opt::none<i8>();
 
     printf("a is some: %b\n", a.is_some<i8>());
     printf("b is some: %b\n", b.is_some<i8>());
@@ -16,8 +16,8 @@ int main() {
     printf("a unwrap_or 100: %d\n", a.unwrap_or<i8>(100));
     printf("b unwrap_or 100: %d\n", b.unwrap_or<i8>(100));
 
-    a = std::optional::opt<i8>::some(42);
-    b = std::optional::opt<i8>::none();
+    a = std::optional::opt::some<i8>(42);
+    b = std::optional::opt::none<i8>();
 
     std::optional::opt<int> c = a.map<i8, int>(add_one);
     std::optional::opt<int> d = b.map<i8, int>(add_one);
