@@ -4,22 +4,24 @@ use crate::environment::ScopeArrowSink;
 use crate::environment::ScopeExitTarget;
 use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
+use crate::symbol::completion::complete_template_input;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::pattern::tagged_union::{
-    TypeConstructor, resolve_type_constructor_pattern,
+    resolve_type_constructor_pattern, TypeConstructor,
 };
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
+use cx_ast::ast::template::CXTemplateInput;
 use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
-use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
     pattern::MIRPattern,
 };
 use cx_mir::type_context::MIRTypeContext;
-use cx_util::{CXResult, namespace::QualifiedName};
+use cx_mir::EnvironmentNamespace;
+use cx_util::{namespace::QualifiedName, CXResult};
 
 pub fn typecheck_match(
     env: &mut TypeEnvironment,
@@ -107,6 +109,7 @@ pub fn typecheck_match(
                 let TypeConstructor {
                     union_name,
                     variant_name,
+                    template_input,
                     inner_name,
                 } = resolve_type_constructor_pattern(env, namespace, condition, pattern)?;
 
@@ -117,6 +120,13 @@ pub fn typecheck_match(
                         "Tagged union variant does not match the type being matched"
                     );
                 }
+                validate_variant_template_input(
+                    env,
+                    namespace,
+                    &expr_type,
+                    template_input.as_ref(),
+                    condition,
+                )?;
 
                 let variant_idx = variants.iter().position(|field| {
                     let Some(name) = field.name() else {
@@ -319,4 +329,34 @@ pub fn typecheck_match(
             exhaustive: match_is_exhaustive || default.is_some(),
         },
     ))
+}
+
+fn validate_variant_template_input(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    union_type: &MIRType,
+    template_input: Option<&CXTemplateInput>,
+    condition: &CXExpression,
+) -> CXResult<()> {
+    let Some(template_input) = template_input else {
+        return Ok(());
+    };
+    let completed_input = complete_template_input(env, namespace, template_input)?;
+    let Some(template_data) = union_type.get_template_data() else {
+        return log_typecheck_error!(
+            env,
+            Some(condition.token_range()),
+            "Non-templated tagged union pattern may not have template arguments"
+        );
+    };
+
+    if !completed_input.contextual_eq(&template_data.template_input, &env.symbols) {
+        return log_typecheck_error!(
+            env,
+            Some(condition.token_range()),
+            "Tagged union pattern template arguments do not match the matched type"
+        );
+    }
+
+    Ok(())
 }

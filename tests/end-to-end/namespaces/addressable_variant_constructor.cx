@@ -5,7 +5,7 @@ import std::optional;
 int main() {
     std::optional::opt<int> (*make_some)(int) = std::optional::opt::some<int>;
     std::optional::opt<int> value = make_some(11);
-    if (value is std::optional::opt<int>::some(inner)) {
+    if (value is std::optional::opt::some<int>(inner)) {
         printf("%d\n", inner);
     }
     return 0;

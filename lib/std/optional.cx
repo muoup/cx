@@ -10,19 +10,19 @@ enum union opt<T> : @copy_traits(T) {
 };
 
 bool opt<T>::is_some<T>(*this) {
-    return this is opt<T>::some(_);
+    return this is opt::some<T>(_);
 }
 
 opt<U> opt<T>::map<T, U>(*this, U (*func)(T)) {
-    if (this is opt<T>::some(value)) {
-        return opt<U>::some(func(value));
+    if (this is opt::some<T>(value)) {
+        return opt::some<U>(func(value));
     }
 
-    return opt<U>::none();
+    return opt::none<U>();
 }
 
 T opt<T>::unwrap_or<T>(*this, T otherwise) {
-    if (this is opt<T>::some(value)) {
+    if (this is opt::some<T>(value)) {
         return value;
     }
 
@@ -31,8 +31,8 @@ T opt<T>::unwrap_or<T>(*this, T otherwise) {
 
 T opt<T>::unwrap<T>(this) {
     match (move this) {
-        opt<T>::some(val) => return move val;
-        opt<T>::none() => {
+        opt::some<T>(val) => return move val;
+        opt::none<T>() => {
             std::io::println("Error: called `opt::unwrap()` on a `None` value");
             exit(1);
         }

@@ -33,10 +33,10 @@ opt<c_socket> c_socket::open(i32 domain, i32 kind, i32 protocol) {
     i32 fd = socket(domain, kind, protocol);
 
     if (fd < 0) {
-        return opt<c_socket>::none();
+        return opt::none<c_socket>();
     }
 
-    return opt<c_socket>::some((c_socket) { .fd = fd });
+    return opt::some<c_socket>((c_socket) { .fd = fd });
 }
 
 i32 c_socket::bind(*this, socket_addr* addr) {
@@ -53,10 +53,10 @@ opt<c_socket> c_socket::accept(*this) {
     i32 fd = accept(this.fd, &address, &length);
 
     if (fd < 0) {
-        return opt<c_socket>::none();
+        return opt::none<c_socket>();
     }
 
-    return opt<c_socket>::some((c_socket) { .fd = fd });
+    return opt::some<c_socket>((c_socket) { .fd = fd });
 }
 
 i64 c_socket::read(*this, void* buffer, u64 length) {

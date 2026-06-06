@@ -1,4 +1,4 @@
-use crate::parse::{ParserData, try_parse_qualified_name, try_parse_simple_identifier};
+use crate::parse::{try_parse_qualified_name, try_parse_simple_identifier, ParserData};
 use crate::{assert_token_matches, next_kind, peek_next_kind, try_next};
 use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression, CXInitIndex, CXUnpackBinding};
 use cx_ast::ast::pattern::CXPattern;
@@ -8,12 +8,11 @@ use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, specifier};
 use cx_util::namespace::{NamespacePath, QualifiedName};
 use cx_util::unsafe_float::FloatWrapper;
-use cx_util::{CXResult, log_error};
+use cx_util::{log_error, CXResult};
 
 use crate::parse::operators::{
-    PrecOperator, binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec,
+    binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
 };
-use crate::parse::templates::parse_template_args;
 use crate::parse::types::{parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
 use crate::parse::{parse_body, parse_intrinsic, try_parse_identifier};
 
@@ -356,25 +355,16 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<CXPattern> {
         }
 
         TokenKind::Identifier(_) => {
-            let Some(mut ident) = try_parse_qualified_name(&mut data.tokens)? else {
+            let Some(ident) = try_parse_identifier(data)? else {
                 unreachable!()
             };
 
-            if try_next!(data.tokens, operator!(Less)) {
-                data.tokens.back();
-                let _template_input = parse_template_args(data)?;
-                assert_token_matches!(data.tokens, operator!(ScopeRes), "'::'");
-                let Some(variant_name) = try_parse_qualified_name(&mut data.tokens)? else {
-                    return log_parse_error!(
-                        data,
-                        "Expected variant name after tagged union pattern type"
-                    );
-                };
-                ident = append_qualified_name(ident, variant_name);
-            }
+            if ident.name.namespace.is_root() {
+                if ident.template_input.is_some() {
+                    return log_parse_error!(data, "Binding patterns may not have template input");
+                }
 
-            if ident.namespace.is_root() {
-                Ok(CXPattern::Binding(ident.root_name().unwrap()))
+                Ok(CXPattern::Binding(ident.name.root_name().unwrap()))
             } else {
                 let binding = if try_next!(data.tokens, punctuator!(OpenParen)) {
                     if try_next!(data.tokens, punctuator!(CloseParen)) {
@@ -390,16 +380,9 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<CXPattern> {
                     None
                 };
 
-                let Some((namespace, union_name)) = ident.namespace.parent_and_name() else {
-                    return log_parse_error!(
-                        data,
-                        "Expected pattern variant to be in the form 'Union::Variant' or 'Namespace::Union::Variant'"
-                    );
-                };
-
                 Ok(CXPattern::Variant {
-                    union_name: QualifiedName::new(namespace, union_name),
-                    variant_name: ident.name,
+                    constructor: ident.name,
+                    template_input: ident.template_input,
                     inner: binding,
                 })
             }
@@ -662,14 +645,6 @@ fn qualify_identifier_under_type(
         data.tokens.index,
         data.file_origin_for_range(start_index, data.tokens.index),
     ))
-}
-
-fn append_qualified_name(prefix: QualifiedName, suffix: QualifiedName) -> QualifiedName {
-    let scoped_path = format!("{}::{}", prefix.as_flat_name(), suffix.as_flat_name());
-    let (namespace, name) = NamespacePath::from_scoped_path(&scoped_path)
-        .parent_and_name()
-        .expect("qualified name append should not be empty");
-    QualifiedName::new(namespace, name)
 }
 
 pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> CXResult<CXExpression> {

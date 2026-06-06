@@ -9,7 +9,7 @@ void destroy(Resource value) {
 }
 
 int main() {
-    std::vector::vector<Resource> values = std::vector::vector<Resource>::new<Resource>();
+    std::vector::vector<Resource> values = std::vector::vector::new<Resource>();
     Resource value = (Resource) {
         .data = 11
     };

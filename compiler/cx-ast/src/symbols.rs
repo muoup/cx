@@ -25,6 +25,11 @@ pub type EnumBlockIdx = usize;
 pub enum CXSymbolKind {
     Type(CXType),
     FunctionReference(CXFunctionPrototype),
+    TypeConstructor {
+        template: Option<CXTemplatePrototype>,
+        union_type: CXType,
+        variant_index: usize,
+    },
     AddressableGlobal(CXIdent, CXType),
     EnumIdent {
         enum_block_idx: EnumBlockIdx,

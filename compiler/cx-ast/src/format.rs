@@ -2,14 +2,14 @@ use cx_util::identifier::CXIdent;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 use crate::ast::{
-    CXAST, CXASTDefinition, CXASTStmt,
     expression::{CXBinOp, CXExprKind, CXExpression, CXInitIndex},
     function::{CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXReceiverMode},
     global_var::{CXEnumVariant, CXGlobalVariable},
-    modifiers::{CX_CONST, CXLinkageMode},
+    modifiers::{CXLinkageMode, CX_CONST},
     pattern::CXPattern,
     template::CXTemplateInput,
     types::{CXField, CXType, CXTypeKind},
+    CXASTDefinition, CXASTStmt, CXAST,
 };
 
 // Helper struct for indented formatting of CXExpr
@@ -670,11 +670,23 @@ impl Display for CXPattern {
             CXPattern::Integer(value) => write!(f, "{value}"),
             CXPattern::Float(value) => write!(f, "{value}"),
             CXPattern::Variant {
-                union_name,
-                variant_name,
+                constructor,
+                template_input,
                 inner,
             } => {
-                write!(f, "{union_name}::{variant_name}")?;
+                write!(f, "{constructor}")?;
+                if let Some(input) = template_input {
+                    write!(
+                        f,
+                        "<{}>",
+                        input
+                            .params
+                            .iter()
+                            .map(|param| param.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )?;
+                }
                 if let Some(inner) = inner {
                     write!(f, "({inner})")?;
                 }

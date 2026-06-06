@@ -12,6 +12,6 @@ void destructor(test_type t) {
 }
 
 int main() {
-    std::box::box<test_type> t = std::box::box<test_type>::new<test_type>((test_type) { .num = 1 });
+    std::box::box<test_type> t = std::box::box::new<test_type>((test_type) { .num = 1 });
     t.drop_with(destructor);
 }

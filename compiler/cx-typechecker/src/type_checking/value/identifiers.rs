@@ -1,19 +1,16 @@
 use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
-    symbol::{
-        completion::complete_template_input, resolution::apply_template,
-        type_constructor::query_type_constructor,
-    },
+    symbol::{completion::complete_template_input, resolution::apply_template},
     type_checking::result::{TypecheckResult, TypecheckedBinding},
 };
 use cx_ast::ast::{expression::CXExpression, template::CXTemplateInput};
 use cx_mir::{
-    EnvironmentNamespace,
     mir::expression::{MIRExpressionKind, SymbolValueOrigin},
     symbol::MIRSymbol,
+    EnvironmentNamespace,
 };
-use cx_util::{CXResult, namespace::QualifiedName};
+use cx_util::{namespace::QualifiedName, CXResult};
 
 pub(crate) fn typecheck_identifier(
     env: &mut TypeEnvironment,
@@ -22,27 +19,18 @@ pub(crate) fn typecheck_identifier(
     name: &QualifiedName,
     template_input: Option<&CXTemplateInput>,
 ) -> CXResult<TypecheckResult> {
-    let (mut symbol, template_input_consumed) = match env.get_symbol(name)? {
-        Some(symbol) => (symbol, false),
-        None => {
-            let Some(constructor) = query_type_constructor(env, namespace, name, template_input)?
-            else {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "Identifier '{}' not found",
-                    name
-                );
-            };
-
-            (constructor, true)
-        }
+    let Some(mut symbol) = env.get_symbol(name)? else {
+        return log_typecheck_error!(
+            env,
+            Some(expr.token_range()),
+            "Identifier '{}' not found",
+            name
+        );
     };
 
-    if !template_input_consumed
-        && let Some(completed_input) = template_input
-            .map(|input| complete_template_input(env, namespace, input))
-            .transpose()?
+    if let Some(completed_input) = template_input
+        .map(|input| complete_template_input(env, namespace, input))
+        .transpose()?
     {
         symbol = apply_template(env, &symbol, completed_input)?.unwrap();
     }

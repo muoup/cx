@@ -54,7 +54,7 @@ void vector<T>::push<T>(*this, T object) {
 }
 
 std::optional::opt<T> vector<T>::pop<T>(*this) {
-    if (this.length == 0) return std::optional::opt<T>::none();
+    if (this.length == 0) return std::optional::opt::none<T>();
 
     T buffer;
     T* data_ptr = &data[this.length - 1];
@@ -66,10 +66,10 @@ std::optional::opt<T> vector<T>::pop<T>(*this) {
 
 std::optional::opt<T&> vector<T>::at<T>(*this, usize index) {
     if (index >= this.length) {
-        return std::optional::opt<T&>::none();
+        return std::optional::opt::none<T&>();
     }
 
-    return std::optional::opt<T&>::some(this.data[index]);
+    return std::optional::opt::some<T&>(this.data[index]);
 }
 
 private:

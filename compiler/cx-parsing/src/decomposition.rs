@@ -1,10 +1,15 @@
 use cx_ast::{
-    ast::{CXASTDefinition, CXASTStmt, global_var::CXGlobalVariable},
+    ast::{
+        global_var::CXGlobalVariable,
+        template::{CXTemplateInput, CXTemplatePrototype},
+        CXASTDefinition, CXASTStmt,
+    },
     decomposition::{CXGenerationAST, CXGenerationStmt},
     symbols::{CXSymbol, CXSymbolKind, SymbolNamespaceData},
 };
 use std::collections::HashMap;
 
+use cx_ast::ast::types::{CXType, CXTypeKind, PredeclarationType};
 use cx_util::namespace::{NamespacePath, QualifiedName};
 
 pub struct DecompositionEnv<'a> {
@@ -47,7 +52,10 @@ impl<'a> DecompositionEnv<'a> {
 
         if !namespace.is_root() {
             let Some(strip) = namespace.strip(self.namespace) else {
-                panic!("Namespace {} is not a child of current namespace {}", namespace, self.namespace);
+                panic!(
+                    "Namespace {} is not a child of current namespace {}",
+                    namespace, self.namespace
+                );
             };
 
             self.namespace_aliases.insert(strip, namespace.clone());
@@ -83,19 +91,50 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) {
                 return;
             };
 
-            let symbol = match template_prototype {
+            let symbol = match template_prototype.clone() {
                 Some(input) => CXSymbol::new(
                     visibility,
                     CXSymbolKind::TypeTemplate {
                         template: input,
-                        definition: _type,
+                        definition: _type.clone(),
                     },
                 ),
-                None => CXSymbol::new(visibility, CXSymbolKind::Type(_type)),
+                None => CXSymbol::new(visibility, CXSymbolKind::Type(_type.clone())),
             };
 
             env.get_bucket_mut(base_namespace)
                 .insert_symbol(name.to_string(), symbol);
+
+            if let CXTypeKind::TaggedUnion { variants, .. } = &_type.kind {
+                let union_name = QualifiedName::new(base_namespace.clone(), name.clone());
+                let union_type = CXTypeKind::Identifier {
+                    name: union_name,
+                    predeclaration: PredeclarationType::None,
+                    template_input: template_prototype
+                        .clone()
+                        .map(convert_template_proto_to_args),
+                }
+                .to_type();
+                let variant_namespace = base_namespace.child(name);
+                let bucket = env.get_bucket_mut(&variant_namespace);
+
+                for (variant_index, variant) in variants.iter().enumerate() {
+                    let Some((variant_name, _)) = variant.standard_parts() else {
+                        continue;
+                    };
+
+                    let symbol = CXSymbol::new(
+                        visibility,
+                        CXSymbolKind::TypeConstructor {
+                            template: template_prototype.clone(),
+                            union_type: union_type.clone(),
+                            variant_index,
+                        },
+                    );
+
+                    bucket.insert_symbol(variant_name.clone(), symbol);
+                }
+            }
         }
 
         CXASTStmt::FunctionDefinition {
@@ -185,4 +224,21 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) {
             }
         },
     }
+}
+
+fn convert_template_proto_to_args(prototype: CXTemplatePrototype) -> CXTemplateInput {
+    let params = prototype
+        .types
+        .into_iter()
+        .map(|name| {
+            CXTypeKind::Identifier {
+                name: QualifiedName::new_raw(name),
+                predeclaration: PredeclarationType::None,
+                template_input: None,
+            }
+            .to_type()
+        })
+        .collect::<Vec<CXType>>();
+
+    CXTemplateInput { params }
 }
