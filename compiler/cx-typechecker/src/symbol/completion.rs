@@ -1,5 +1,5 @@
 use cx_ast::ast::{
-    function::{CXFunctionKind, CXFunctionPrototype},
+    function::{CXFunctionKind, CXFunctionPrototype, CXReceiverMode},
     modifiers::{CXTypeQualifiers, VisibilityMode},
     template::CXTemplateInput,
     types::{CXField, CXStructAttributes, CXType, CXTypeKind, PredeclarationType},
@@ -204,16 +204,21 @@ pub fn complete_prototype(
     prototype: &CXFunctionPrototype,
 ) -> CXResult<MIRFunctionPrototype> {
     let return_type = complete_type(env, &namespace, &prototype.return_type)?;
-    let params = prototype
-        .params
-        .iter()
-        .map(|param| {
-            Ok(MIRParameter {
-                name: param.name.clone(),
-                _type: complete_type(env, &namespace, &param._type)?,
-            })
-        })
-        .collect::<CXResult<Vec<_>>>()?;
+    let mut params = complete_explicit_parameters(env, namespace, prototype)?; 
+
+    if let Some(receiver) = complete_receiver_parameter(env, namespace, &prototype.kind)? {
+        params.insert(0, receiver);
+    }
+
+    // If we have legacy int main(void)-like syntax, we treat it as main with no parameters
+    if params.len() == 1 {
+        let first_param = &params[0];
+
+        if first_param._type.is_unit() && first_param.name.is_none() {
+            params.clear();
+        }
+    }
+
     let name = completed_function_name(env, &namespace, &prototype.kind)?;
 
     Ok(MIRFunctionPrototype {
@@ -226,6 +231,51 @@ pub fn complete_prototype(
             contract: prototype.contract.clone(),
         },
     })
+}
+
+fn complete_receiver_parameter(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    kind: &CXFunctionKind,
+) -> CXResult<Option<MIRParameter>> {
+    let CXFunctionKind::MemberFunction {
+        member_type,
+        receiver,
+        ..
+    } = kind
+    else {
+        return Ok(None);
+    };
+
+    let receiver_base = member_type.as_type().add_specifier(receiver.specifiers);
+    let receiver_type = complete_type(env, namespace, &receiver_base)?;
+    let receiver_type = match receiver.mode {
+        CXReceiverMode::ByMove => receiver_type,
+        CXReceiverMode::ByRef => env.symbols.mem_ref_to(receiver_type),
+        CXReceiverMode::None => return Ok(None),
+    };
+
+    Ok(Some(MIRParameter {
+        name: Some(CXIdent::new("this")),
+        _type: receiver_type,
+    }))
+}
+
+fn complete_explicit_parameters(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    prototype: &CXFunctionPrototype,
+) -> CXResult<Vec<MIRParameter>> {
+    prototype
+        .params
+        .iter()
+        .map(|param| {
+            Ok(MIRParameter {
+                name: param.name.clone(),
+                _type: complete_type(env, &namespace, &param._type)?,
+            })
+        })
+        .collect::<CXResult<Vec<_>>>()
 }
 
 fn complete_identifier_type(
@@ -381,10 +431,7 @@ fn resolve_aggregate_move_attributes(
         let Some(symbol) = env.get_symbol(&name)? else {
             return type_completion_error(
                 env,
-                format!(
-                    "copy_traits target '{}' is not a valid type",
-                    param_name
-                ),
+                format!("copy_traits target '{}' is not a valid type", param_name),
             );
         };
         let Some(id) = symbol.as_type_id() else {

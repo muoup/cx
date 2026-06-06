@@ -88,6 +88,7 @@ pub fn typecheck_access(
     expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     ensure_binding_available(env, Some(expr.token_range()), lhs.binding())?;
+    let lhs_binding = lhs.binding().cloned();
 
     let base = resolve_access_base(
         env,
@@ -177,7 +178,12 @@ pub fn typecheck_access(
                 .unwrap_or(false);
 
             let receiver = if needs_move {
-                typecheck_move(env, namespace, TypecheckResult::from(base.source), expr)
+                let mut receiver = TypecheckResult::from(base.source);
+                if let Some(binding) = lhs_binding {
+                    receiver = receiver.with_binding(binding);
+                }
+
+                typecheck_move(env, namespace, receiver, expr)
                     .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?
             } else {
                 base.source
