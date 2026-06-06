@@ -3,7 +3,7 @@ import std::optional;
 #include <stdio.h>
 
 int main() {
-    std::optional::opt<int> value = std::optional::opt<int>::some(7);
+    std::optional::opt<int> value = std::optional::opt::some<int>(7);
     if (value is std::optional::opt<int>::some(inner)) {
         printf("%d\n", inner);
     }
