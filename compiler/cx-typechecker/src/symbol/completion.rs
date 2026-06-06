@@ -204,7 +204,7 @@ pub fn complete_prototype(
     prototype: &CXFunctionPrototype,
 ) -> CXResult<MIRFunctionPrototype> {
     let return_type = complete_type(env, &namespace, &prototype.return_type)?;
-    let mut params = complete_explicit_parameters(env, namespace, prototype)?; 
+    let mut params = complete_explicit_parameters(env, namespace, prototype)?;
 
     if let Some(receiver) = complete_receiver_parameter(env, namespace, &prototype.kind)? {
         params.insert(0, receiver);

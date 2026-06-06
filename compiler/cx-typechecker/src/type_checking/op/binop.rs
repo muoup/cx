@@ -96,7 +96,7 @@ fn coerce_scalar_to_bool(
         MIRTypeKind::Float { _type } => {
             let zero = MIRExpression {
                 token_range: expr.token_range.clone(),
-                kind: MIRExpressionKind::FloatLiteral(0.0.into(), *_type),
+                kind: MIRExpressionKind::FloatLiteral(0.0.into()),
                 _type: expr._type.clone(),
             };
 
@@ -120,7 +120,7 @@ fn coerce_scalar_to_bool(
                     conversion: MIRCoercion::IntToPtr { sextend: false },
                     operand: Box::new(MIRExpression {
                         token_range: expr.token_range.clone(),
-                        kind: MIRExpressionKind::IntLiteral(0, MIRIntegerType::I64, false),
+                        kind: MIRExpressionKind::IntLiteral(0),
                         _type: MIRTypeKind::Integer {
                             _type: MIRIntegerType::I64,
                             signed: false,

@@ -16,7 +16,7 @@ use crate::type_checking::op::unop::{typecheck_sizeof_expr, typecheck_sizeof_typ
 use crate::type_checking::op::{self, typecheck_binop};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::{
-    identifiers::{typecheck_identifier},
+    identifiers::typecheck_identifier,
     literals::{
         typecheck_float_literal, typecheck_int_literal, typecheck_string_literal, typecheck_unit,
     },
@@ -440,7 +440,7 @@ pub fn add_implicit_return(
     let implicit_value = if func.name().as_str() == "main" {
         Some(Box::new(MIRExpression {
             token_range: None,
-            kind: MIRExpressionKind::IntLiteral(0, MIRIntegerType::I32, true),
+            kind: MIRExpressionKind::IntLiteral(0),
             _type: MIRType::from(MIRTypeKind::Integer {
                 _type: MIRIntegerType::I32,
                 signed: true,

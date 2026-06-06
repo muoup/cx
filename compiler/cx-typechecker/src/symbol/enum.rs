@@ -1,29 +1,45 @@
 use cx_ast::ast::global_var::CXEnumDefinition;
-use cx_mir::{EnvironmentNamespace, symbol::MIRSymbol};
+use cx_mir::{
+    EnvironmentNamespace,
+    mir::expression::{MIRExpression, MIRExpressionKind},
+    symbol::MIRSymbol,
+};
 use cx_util::{CXResult, namespace::QualifiedName};
 
-use crate::environment::TypeEnvironment;
+use crate::{
+    environment::TypeEnvironment,
+    type_checking::{constexpr::constexpr_evaluate, typechecker::typecheck_expr},
+    typecheck_error,
+};
 
 pub struct EnumBlockResolution<'a> {
     env: &'a TypeEnvironment<'a>,
     block: &'a CXEnumDefinition,
+    namespace: &'a EnvironmentNamespace,
 }
 
 impl<'a> EnumBlockResolution<'a> {
     pub fn variant_expr(&self, idx: usize) -> Option<&MIRSymbol> {
         self.block.variants.get(idx).and_then(|variant| {
-            self.env.symbols
-                .get_preresolved_symbol(&QualifiedName::root(variant.name.clone()))
+            let symbol = QualifiedName::new(self.namespace.clone(), variant.name.clone());
+
+            self.env
+                .symbols
+                .get_preresolved_symbol(&symbol)
+                .or_else(|| {
+                    unreachable!("Expected enum variant {symbol} to be in the global registry")
+                })
         })
     }
 }
 
 pub(crate) fn resolve_enum_block<'a, 'b>(
     env: &'a mut TypeEnvironment<'b>,
-    namespace: &EnvironmentNamespace,
-    block_idx: usize
+    namespace: &'a EnvironmentNamespace,
+    block_idx: usize,
 ) -> CXResult<EnumBlockResolution<'a>> {
-    let (_, data) = env.symbols
+    let (_, data) = env
+        .symbols
         .get_global_registry()
         .get_bucket(namespace)
         .expect("Expected enum block to be in the global registry");
@@ -32,7 +48,49 @@ pub(crate) fn resolve_enum_block<'a, 'b>(
         .get_enum_block(block_idx)
         .expect("Expected enum block to be in the global registry");
 
-    // TODO: Insert symbol data
+    let mut idx = 0;
 
-    Ok(EnumBlockResolution { env, block })
+    for variant in &block.variants {
+        let symbol = QualifiedName::new(namespace.clone(), variant.name.clone());
+        let value = variant
+            .value
+            .as_ref()
+            .map(|expr| {
+                typecheck_expr(env, namespace, &expr, None)
+                    .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
+                    .and_then(|v| constexpr_evaluate(env, v))
+                    .and_then(|v| {
+                        v.get_integer().ok_or_else(|| {
+                            typecheck_error!(
+                                env,
+                                expr.token_range(),
+                                "Expected enum variant value to be an integer"
+                            )
+                        })
+                    })
+            })
+            .transpose()?
+            .map(|v| {
+                idx = v;
+                v
+            })
+            .unwrap_or(idx);
+
+        idx += 1;
+
+        env.symbols.insert_value(
+            symbol,
+            MIRExpression {
+                token_range: None,
+                _type: env.get_intrinsic_type("int"),
+                kind: MIRExpressionKind::IntLiteral(value),
+            },
+        );
+    }
+
+    Ok(EnumBlockResolution {
+        env,
+        block,
+        namespace,
+    })
 }

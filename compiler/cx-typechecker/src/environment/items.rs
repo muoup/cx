@@ -47,6 +47,15 @@ impl ItemRegistry {
         self.requests.push(request);
     }
 
+    pub fn has_type_constructor_request(&self, function_name: &str) -> bool {
+        self.requests.iter().any(|request| {
+            matches!(
+                request,
+                MIRFunctionGenRequest::TypeConstructor { name, .. } if name == function_name
+            )
+        })
+    }
+
     pub fn pop_request(&mut self) -> Option<MIRFunctionGenRequest> {
         self.requests.pop()
     }

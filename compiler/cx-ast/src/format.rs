@@ -468,9 +468,9 @@ impl Display for CXTypeKind {
             }
             CXTypeKind::ExplicitSizedArray(inner, size) => write!(f, "[{inner}; {size}]"),
             CXTypeKind::ImplicitSizedArray(inner) => write!(f, "[{inner}]"),
-            CXTypeKind::MemoryReference { inner_type } => write!(f, "{inner_type}&"),
+            CXTypeKind::MemoryReference { inner_type } => write!(f, "&{inner_type}"),
             CXTypeKind::PointerTo { inner_type } => {
-                write!(f, "{}*", inner_type)
+                write!(f, "*{}", inner_type)
             }
 
             CXTypeKind::Structured {

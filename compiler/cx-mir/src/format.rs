@@ -309,24 +309,25 @@ fn write_type_body(
         }
         MIRTypeKind::Unit => write!(f, "()"),
         MIRTypeKind::PointerTo { inner_type } => {
-            write_type_id(f, definitions, *inner_type, state)?;
             write!(f, "*")?;
+            write_type_id(f, definitions, *inner_type, state)?;
             write_type_qualifiers_suffix(f, ty.specifiers)
         }
         MIRTypeKind::MemoryReference {
             inner_type,
             bitfield,
         } => {
-            write_type_id(f, definitions, *inner_type, state)?;
             if let Some(bitfield) = bitfield {
                 write!(
                     f,
                     "&<bitfield @{}:{}>",
                     bitfield.bit_offset, bitfield.bit_width
-                )
+                )?;
             } else {
-                write!(f, "&")
+                write!(f, "&")?;
             }
+            
+            write_type_id(f, definitions, *inner_type, state)
         }
         MIRTypeKind::Array {
             length: size,
@@ -576,20 +577,17 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }
-            MIRExpressionKind::IntLiteral(value, int_type, signed) => {
-                let prefix = if *signed { "i" } else { "u" };
+            MIRExpressionKind::IntLiteral(value) => {
                 write!(
                     f,
-                    "IntLiteral {}{}:{} <'",
-                    prefix,
-                    int_type.bytes() * 8,
+                    "IntLiteral {} <'",
                     value
                 )?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }
-            MIRExpressionKind::FloatLiteral(value, float_type) => {
-                write!(f, "FloatLiteral f{}:{} <'", float_type.bytes() * 8, value)?;
+            MIRExpressionKind::FloatLiteral(value) => {
+                write!(f, "FloatLiteral f{} <'", value)?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }

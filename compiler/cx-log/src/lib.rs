@@ -100,7 +100,10 @@ pub fn pretty_underline_source_error_with_notes(
 
     let link = format!(
         "{}:{}:{}",
-        file_path.to_string_lossy(),
+        file_path
+            .canonicalize()
+            .map(|s| s.to_string_lossy().as_ref().to_owned())
+            .unwrap_or("path parse failure".into()),
         error_line,
         error_padding + 1
     );
@@ -152,7 +155,10 @@ pub fn pretty_point_source_error(message: &str, file_path: &Path, source: &str, 
 
     let link = format!(
         "{}:{}:{}",
-        file_path.to_string_lossy(),
+        file_path
+            .canonicalize()
+            .map(|s| s.to_string_lossy().as_ref().to_owned())
+            .unwrap_or("path parse failure".into()),
         error_line,
         error_padding + 1
     );

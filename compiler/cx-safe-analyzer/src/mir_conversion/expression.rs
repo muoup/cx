@@ -24,24 +24,40 @@ pub fn convert_expression(
             },
         }),
 
-        MIRExpressionKind::IntLiteral(value, itype, signed) => Ok(FMIRNode {
-            token_range: None,
-            body: FMIRNodeBody::IntegerLiteral(*value),
-            _type: FMIRType::Pure {
-                mir_type: MIRType::from(MIRTypeKind::Integer {
-                    _type: *itype,
-                    signed: *signed,
-                }),
-            },
-        }),
+        MIRExpressionKind::IntLiteral(value) => {
+            let MIRTypeKind::Integer {
+                _type: itype,
+                signed,
+            } = &mir_expr._type.kind
+            else {
+                unreachable!("FMIR conversion expected integer type in integer literal expression")
+            };
 
-        MIRExpressionKind::FloatLiteral(value, ftype) => Ok(FMIRNode {
-            token_range: None,
-            body: FMIRNodeBody::FloatLiteral(value.into()),
-            _type: FMIRType::Pure {
-                mir_type: MIRTypeKind::Float { _type: *ftype }.into(),
-            },
-        }),
+            Ok(FMIRNode {
+                token_range: None,
+                body: FMIRNodeBody::IntegerLiteral(*value),
+                _type: FMIRType::Pure {
+                    mir_type: MIRType::from(MIRTypeKind::Integer {
+                        _type: *itype,
+                        signed: *signed,
+                    }),
+                },
+            })
+        }
+
+        MIRExpressionKind::FloatLiteral(value) => {
+            let MIRTypeKind::Float { _type: ftype } = &mir_expr._type.kind else {
+                unreachable!("FMIR conversion expected float type in float literal expression")
+            };
+
+            Ok(FMIRNode {
+                token_range: None,
+                body: FMIRNodeBody::FloatLiteral(value.into()),
+                _type: FMIRType::Pure {
+                    mir_type: MIRTypeKind::Float { _type: *ftype }.into(),
+                },
+            })
+        }
         MIRExpressionKind::Unit => Ok(FMIRNode::unit()),
 
         MIRExpressionKind::Block { statements } => {

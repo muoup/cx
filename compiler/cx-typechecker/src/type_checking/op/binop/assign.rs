@@ -39,7 +39,7 @@ pub fn typecheck_assignment(
         );
     };
 
-    let mut rhs = std_rval_promotion(env, rhs)?;
+    let mut rhs = implicit_cast(env, rhs, &inner)?;
 
     if let Some(op) = op {
         if let Some(binding) = binding.as_ref() {
@@ -48,7 +48,8 @@ pub fn typecheck_assignment(
 
         let loaded_lhs = std_rval_promotion(env, lhs_expr.clone())?;
 
-        rhs = typecheck_binop(env, op, loaded_lhs, rhs)
+        rhs = std_rval_promotion(env, rhs)
+            .and_then(|v| typecheck_binop(env, op, loaded_lhs, v))
             .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
     } else if let Some(binding) = binding.as_ref()
         && binding.kind == BindingPlaceKind::Projection

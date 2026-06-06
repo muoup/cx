@@ -254,7 +254,7 @@ pub fn lower_cswitch(
         let case_block_id = builder.create_block(Some("switch_case"));
         case_blocks.push(case_block_id.clone());
 
-        if let MIRExpressionKind::IntLiteral(value, _, _) = &case_value.kind {
+        if let MIRExpressionKind::IntLiteral(value) = &case_value.kind {
             targets.push((*value as u64, case_block_id));
         } else {
             panic!("CSwitch case must be an integer literal");

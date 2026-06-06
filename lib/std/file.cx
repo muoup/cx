@@ -13,10 +13,10 @@ std::optional::opt<file> file::open(const char* path, const char* mode) {
     FILE* handle = fopen(path, mode);
     
     if (handle == NULL) {
-        return std::optional::opt<file>::none();
+        return std::optional::opt::none<file>();
     }
     
-    return std::optional::opt<file>::some((file) { .handle = handle });
+    return std::optional::opt::some<file>((file) { .handle = handle });
 }
 
 void file::write(*this, const char* data) {

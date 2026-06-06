@@ -1,8 +1,10 @@
 #pragma once
 
+#define NULL ((void*)0)
+
 typedef void FILE;
 
-FILE *fopen(const char *filename, char *mode);
+FILE *fopen(const char *filename, const char *mode);
 int fclose(FILE *stream);
 void clearerr(FILE *stream);
 

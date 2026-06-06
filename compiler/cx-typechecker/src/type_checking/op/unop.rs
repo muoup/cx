@@ -230,7 +230,7 @@ pub(crate) fn typecheck_sizeof_expr(
 fn sizeof_result(size: usize) -> TypecheckResult {
     TypecheckResult::from(MIRExpression {
         token_range: None,
-        kind: MIRExpressionKind::IntLiteral(size as i64, MIRIntegerType::I64, false),
+        kind: MIRExpressionKind::IntLiteral(size as i64),
         _type: MIRType::from(MIRTypeKind::Integer {
             _type: MIRIntegerType::I64,
             signed: false,

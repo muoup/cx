@@ -26,7 +26,7 @@ pub fn constexpr_evaluate(
     expr: MIRExpression,
 ) -> CXResult<ConstexprResult> {
     Ok(match expr.kind {
-        MIRExpressionKind::IntLiteral(val, _type, _) => ConstexprResult::Integer(val),
+        MIRExpressionKind::IntLiteral(val) => ConstexprResult::Integer(val),
 
         MIRExpressionKind::BinaryOperation {
             lhs,

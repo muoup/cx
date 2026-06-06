@@ -74,7 +74,7 @@ pub fn typecheck_switch(
 
         let pattern_expr = MIRExpression {
             token_range: None,
-            kind: MIRExpressionKind::IntLiteral(*case_value as i64, *_type, *signed),
+            kind: MIRExpressionKind::IntLiteral(*case_value as i64),
             _type: MIRType::from(MIRTypeKind::Integer {
                 signed: *signed,
                 _type: *_type,

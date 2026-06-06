@@ -444,19 +444,27 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             _type: LMIRIntegerType::I1,
         }),
 
-        MIRExpressionKind::IntLiteral(val, _type, _signed) => {
-            let bc_type = builder.convert_integer_type(_type);
+        MIRExpressionKind::IntLiteral(val) => {
+            let bc_type = builder.convert_cx_type(&expr._type);
+            let LMIRTypeKind::Integer(i_type) = bc_type.kind else {
+                unreachable!("Integer literal with non-integer type");
+            };
+
             Ok(LMIRValue::IntImmediate {
                 val: *val,
-                _type: bc_type,
+                _type: i_type,
             })
         }
 
-        MIRExpressionKind::FloatLiteral(val, _type) => {
-            let bc_type = builder.convert_float_type(_type);
+        MIRExpressionKind::FloatLiteral(val) => {
+            let bc_type = builder.convert_cx_type(&expr._type);
+            let LMIRTypeKind::Float(f_type) = bc_type.kind else {
+                unreachable!("Float literal with non-float type");
+            };
+            
             Ok(LMIRValue::FloatImmediate {
                 val: *val,
-                _type: bc_type,
+                _type: f_type,
             })
         }
 

@@ -29,7 +29,7 @@ impl MIRPureExpression {
         match self {
             Self::IntegerLiteral(value, integer_type, signed) => MIRExpression {
                 token_range: None,
-                kind: MIRExpressionKind::IntLiteral(*value, *integer_type, *signed),
+                kind: MIRExpressionKind::IntLiteral(*value),
                 _type: MIRType::from(MIRTypeKind::Integer {
                     _type: *integer_type,
                     signed: *signed,
@@ -56,8 +56,8 @@ pub enum SymbolValueOrigin {
 pub enum MIRExpressionKind {
     // Literals
     BoolLiteral(bool),
-    IntLiteral(i64, MIRIntegerType, bool),
-    FloatLiteral(FloatWrapper, MIRFloatType),
+    IntLiteral(i64),
+    FloatLiteral(FloatWrapper),
 
     #[default]
     Unit,
@@ -411,7 +411,7 @@ impl MIRExpression {
 
     pub fn int_literal(value: i64, itype: MIRIntegerType, is_signed: bool) -> Self {
         Self {
-            kind: MIRExpressionKind::IntLiteral(value, itype, is_signed),
+            kind: MIRExpressionKind::IntLiteral(value),
             _type: MIRType {
                 kind: MIRTypeKind::Integer {
                     _type: itype,

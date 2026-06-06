@@ -14,7 +14,7 @@ use crate::{
         CoercionResult,
         implicit::{
             self, implicit_cast,
-            promotion::{integer, lvalue, std_rval_promotion},
+            promotion::{integer, lvalue, std_rval_promotion, std_rval_promotion_coercion},
         },
     },
 };
@@ -62,7 +62,7 @@ pub fn try_implicit_coercion(
 
         return integer::try_conversion(env, expr, target_type);
     }
-
+    
     match (&expr._type.kind, &target_type.kind) {
         (MIRTypeKind::Float { _type: from_float }, MIRTypeKind::Float { _type: to_float })
             if from_float != to_float =>
@@ -74,11 +74,17 @@ pub fn try_implicit_coercion(
             )
         }
 
-        (
-            MIRTypeKind::MemoryReference { inner_type, .. },
-            _
-        ) if target_type.contextual_eq(env.symbols.resolve_type_id(*inner_type), &env.symbols) => {
+        (MIRTypeKind::MemoryReference { inner_type, .. }, _)
+            if target_type
+                .contextual_eq(env.symbols.resolve_type_id(*inner_type), &env.symbols) =>
+        {
             lvalue::try_conversion(env, expr)
+        }
+
+        (_, MIRTypeKind::PointerTo { inner_type })
+            if env.type_eq(&from_type, env.symbols.resolve_type_id(*inner_type)) =>
+        {
+            std_rval_promotion_coercion(env, expr)
         }
 
         (

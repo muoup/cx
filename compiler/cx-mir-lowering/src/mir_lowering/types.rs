@@ -128,11 +128,10 @@ pub(crate) fn convert_type_kind(
                 (
                     "data".to_string(),
                     lower_union(
-                        variants
-                            .iter()
-                            .map(|f| definitions.resolve_type_id(f.ty())),
-                        definitions
-                    ).into()
+                        variants.iter().map(|f| definitions.resolve_type_id(f.ty())),
+                        definitions,
+                    )
+                    .into(),
                 ),
                 (
                     "tag".to_string(),
@@ -146,8 +145,7 @@ pub(crate) fn convert_type_kind(
             length: size,
         } => LMIRTypeKind::Array {
             element: Box::new(convert_type(
-                definitions
-                    .resolve_type_id(*_type),
+                definitions.resolve_type_id(*_type),
                 definitions,
             )),
             size: *size,
@@ -170,12 +168,10 @@ pub(crate) fn convert_type_kind(
                 .map(|(_name, _type)| (_name.clone(), convert_type(_type, definitions)))
                 .collect::<Vec<_>>(),
         },
-        
+
         MIRTypeKind::Union { variants } => lower_union(
-            variants
-                .iter()
-                .map(|f| definitions.resolve_type_id(f.ty())),
-            definitions
+            variants.iter().map(|f| definitions.resolve_type_id(f.ty())),
+            definitions,
         ),
 
         MIRTypeKind::Unit => LMIRTypeKind::Unit,
@@ -191,13 +187,12 @@ pub(crate) fn convert_type_kind(
     }
 }
 
-fn lower_union<'a>(variants: impl Iterator<Item = &'a MIRType>, definitions: &MIRDecomposedRegistry) -> LMIRTypeKind {
+fn lower_union<'a>(
+    variants: impl Iterator<Item = &'a MIRType>,
+    definitions: &MIRDecomposedRegistry,
+) -> LMIRTypeKind {
     let size = variants
-        .map(|f| {
-            usize::from(
-                convert_type(f, definitions).size(),
-            )
-        })
+        .map(|f| usize::from(convert_type(f, definitions).size()))
         .max()
         .unwrap_or(0)
         .min(0)
