@@ -299,7 +299,9 @@ fn complete_identifier_type(
     let alias_name = if name.namespace.is_root() {
         QualifiedName::new(namespace.clone(), name.name.clone())
     } else {
-        env.symbols.resolve_qualified_alias(name).into_owned()
+        env.symbols
+            .get_global_registry()
+            .resolve_qualified_alias(namespace, name)
     };
 
     if &alias_name != name
@@ -397,7 +399,7 @@ where
         .map(|field| complete_field(env, namespace, field))
         .collect::<CXResult<Vec<_>>>()?;
     ensure_aggregate_fields_complete(env, &fields)?;
-    let move_attributes = resolve_aggregate_move_attributes(env, attributes)?;
+    let move_attributes = resolve_aggregate_move_attributes(env, namespace, attributes)?;
     ensure_aggregate_move_restrictions(env, move_attributes, &fields)?;
 
     Ok(MIRType {
@@ -415,6 +417,7 @@ where
 
 fn resolve_aggregate_move_attributes(
     env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
     attributes: Option<&CXStructAttributes>,
 ) -> CXResult<MIRMoveAttributes> {
     let Some(attributes) = attributes else {
@@ -428,7 +431,7 @@ fn resolve_aggregate_move_attributes(
 
     if let Some(param_name) = &attributes.copy_traits {
         let name = QualifiedName::new_raw(CXIdent::new(param_name.as_str()));
-        let Some(symbol) = env.get_symbol(&name)? else {
+        let Some(symbol) = env.get_symbol(namespace, &name)? else {
             return type_completion_error(
                 env,
                 format!("copy_traits target '{}' is not a valid type", param_name),

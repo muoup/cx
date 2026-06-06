@@ -1,5 +1,4 @@
-use crate::routines::convert_linkage;
-use crate::GlobalState;
+use crate::{GlobalState, routines::convert_linkage};
 use cranelift_module::{DataDescription, Linkage, Module};
 use cx_lmir::{LMIRGlobalType, LMIRGlobalValue};
 use cx_util::CXResult;
@@ -50,7 +49,11 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &LMIRGlobalValu
                 // 4444 3333 2222 1111
                 //     i16 = ~~~~~~~~~
                 let relevant_data = if cfg!(target_endian = "little") {
-                    bytes.iter().take(usize::from(type_size)).cloned().collect::<Vec<_>>()
+                    bytes
+                        .iter()
+                        .take(usize::from(type_size))
+                        .cloned()
+                        .collect::<Vec<_>>()
                 } else {
                     bytes
                         .iter()

@@ -14,7 +14,6 @@ use cx_util::namespace::{NamespacePath, QualifiedName};
 
 pub struct DecompositionEnv<'a> {
     namespace: &'a NamespacePath,
-    namespace_aliases: HashMap<NamespacePath, NamespacePath>,
     symbol_buckets: Vec<(NamespacePath, SymbolNamespaceData)>,
     stmts: Vec<CXGenerationStmt>,
 }
@@ -26,15 +25,16 @@ impl<'a> DecompositionEnv<'a> {
     ) -> Self {
         Self {
             namespace,
-            namespace_aliases,
-            symbol_buckets: Vec::new(),
+            symbol_buckets: vec![(
+                namespace.clone(),
+                SymbolNamespaceData::new_with_namespace_aliases(namespace_aliases),
+            )],
             stmts: Vec::new(),
         }
     }
 
     pub fn destructure(self) -> (Vec<(NamespacePath, SymbolNamespaceData)>, CXGenerationAST) {
         let ast = CXGenerationAST {
-            namespace_aliases: self.namespace_aliases,
             generation_stmts: self.stmts,
         };
 
@@ -51,14 +51,12 @@ impl<'a> DecompositionEnv<'a> {
         };
 
         if !namespace.is_root() {
-            let Some(strip) = namespace.strip(self.namespace) else {
+            if namespace.strip(self.namespace).is_none() {
                 panic!(
                     "Namespace {} is not a child of current namespace {}",
                     namespace, self.namespace
                 );
             };
-
-            self.namespace_aliases.insert(strip, namespace.clone());
         }
 
         let data = SymbolNamespaceData::new();

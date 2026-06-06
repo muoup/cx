@@ -147,7 +147,7 @@ impl LMIRBuilder {
     }
 
     pub fn insert_fn_prototype(&mut self, prototype: LMIRFunctionPrototype) {
-        self.fn_map.insert(prototype.name.clone(), prototype);
+        self.fn_map.insert(prototype.name.to_string(), prototype);
     }
 
     #[allow(dead_code)]

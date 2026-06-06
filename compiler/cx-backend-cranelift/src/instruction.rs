@@ -13,7 +13,7 @@ use cranelift_module::Module;
 use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
 use cx_lmir::{
     LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind,
-    LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp,
+    LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRReturnABI,
 };
 use cx_util::CXResult;
 use std::ops::IndexMut;
@@ -22,7 +22,7 @@ fn load_return_slots(
     context: &mut FunctionState,
     target: cranelift::prelude::Value,
 ) -> CXResult<Vec<cranelift::prelude::Value>> {
-    let cx_lmir::LMIRReturnABI::Direct { slots } = &context.signature.return_abi else {
+    let LMIRReturnABI::Direct { slots } = &context.signature.return_abi else {
         return Ok(vec![target]);
     };
 
@@ -79,7 +79,6 @@ pub(crate) fn codegen_instruction(
             method_sig,
         } => {
             let (val, params) = prepare_method_call(context, func_ptr, args)?;
-
             let mut sig = prepare_function_sig(context.object_module, method_sig)?;
 
             for i in method_sig.expanded_param_count()..params.len() {

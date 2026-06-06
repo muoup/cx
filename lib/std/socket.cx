@@ -36,7 +36,7 @@ opt<c_socket> c_socket::open(i32 domain, i32 kind, i32 protocol) {
         return opt::none<c_socket>();
     }
 
-    return opt::some<c_socket>((c_socket) { .fd = fd });
+    return std::optional::opt::some<c_socket>((c_socket) { .fd = fd });
 }
 
 i32 c_socket::bind(*this, socket_addr* addr) {

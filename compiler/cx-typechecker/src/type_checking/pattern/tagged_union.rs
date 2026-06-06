@@ -55,8 +55,8 @@ pub fn resolve_type_constructor_pattern(
         QualifiedName::new(namespace.clone(), union_name.name)
     } else {
         env.symbols
-            .resolve_qualified_alias(&union_name)
-            .into_owned()
+            .get_global_registry()
+            .resolve_qualified_alias(namespace, &union_name)
     };
 
     Ok(TypeConstructor {

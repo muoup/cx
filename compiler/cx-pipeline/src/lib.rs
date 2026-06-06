@@ -128,7 +128,7 @@ pub fn library_compilation(
                 f.prototype.linkage != cx_lmir::LinkageType::Static
                     && f.prototype.linkage != cx_lmir::LinkageType::External
             })
-            .map(|f| f.prototype.name.clone())
+            .map(|f| f.prototype.name.to_string())
             .collect();
 
         link_relocatable(&compiler_context, &exported_symbols, &mut reporter)

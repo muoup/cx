@@ -20,7 +20,7 @@ int main() {
     };
     Resource forwarded = pass_through(move resource);
 
-    println("after pass_through");
+    std::io::println("after pass_through");
     forwarded.drop();
     return 0;
 }

@@ -86,6 +86,23 @@ impl GlobalSymbolRegistry {
             .cloned()
     }
 
+    pub fn resolve_qualified_alias(
+        &self,
+        lexical_namespace: &NamespacePath,
+        name: &QualifiedName,
+    ) -> QualifiedName {
+        let inner = self
+            .inner
+            .read()
+            .expect("GlobalSymbolRegistry read lock poisoned");
+
+        inner
+            .namespaces
+            .get(lexical_namespace)
+            .and_then(|data| data.resolve_qualified_alias(name))
+            .unwrap_or_else(|| name.clone())
+    }
+
     pub fn get_bucket<'b, 'c>(
         &'b self,
         namespace: &NamespacePath,

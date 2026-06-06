@@ -146,7 +146,7 @@ pub fn typecheck_access(
             };
 
             let query = strong_name.child(name.clone());
-            let mut symbol = env.get_symbol(&query)?.ok_or_else(|| {
+            let mut symbol = env.get_symbol(namespace, &query)?.ok_or_else(|| {
                 typecheck_error!(
                     env,
                     Some(expr.token_range()),

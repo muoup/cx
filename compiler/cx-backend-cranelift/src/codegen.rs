@@ -15,7 +15,7 @@ use cx_util::{CXError, CXResult};
 pub(crate) fn codegen_fn_prototype(
     global_state: &mut GlobalState,
     prototype: &LMIRFunctionPrototype,
-) -> CXResult<()> {
+) -> CXResult<FuncId> {
     let sig = prepare_function_sig(&mut global_state.object_module, prototype.signature())?;
     let linkage = convert_linkage(prototype.linkage);
 
@@ -26,12 +26,12 @@ pub(crate) fn codegen_fn_prototype(
 
     global_state
         .function_ids
-        .insert(prototype.name.to_owned(), id);
+        .insert(prototype.name.to_string(), id);
     global_state
         .function_sigs
-        .insert(prototype.name.to_owned(), sig);
+        .insert(id, sig);
 
-    Ok(())
+    Ok(id)
 }
 
 pub(crate) fn codegen_block(

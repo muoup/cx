@@ -74,11 +74,11 @@ pub fn try_implicit_coercion(
             )
         }
 
-        (MIRTypeKind::MemoryReference { inner_type, .. }, _)
-            if target_type
-                .contextual_eq(env.symbols.resolve_type_id(*inner_type), &env.symbols) =>
-        {
-            lvalue::try_conversion(env, expr)
+        (MIRTypeKind::MemoryReference { inner_type, .. }, _) 
+            if !target_type.is_memory_reference()
+        => {
+            lvalue::try_conversion(env, expr)?
+                .or_else(|expr| try_implicit_coercion(env, expr, target_type))
         }
 
         (_, MIRTypeKind::PointerTo { inner_type })

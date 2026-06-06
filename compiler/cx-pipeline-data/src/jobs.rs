@@ -1,6 +1,6 @@
 use crate::CompilationUnit;
 use std::cmp::PartialEq;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -10,7 +10,8 @@ enum JobState {
 }
 
 pub struct JobQueue {
-    progress_map: HashMap<(CompilationUnit, CompilationStep), JobState>,
+    shallow_progress_map: HashMap<(CompilationUnit, CompilationStep), JobState>,
+    deep_progress_map: HashSet<(CompilationUnit, CompilationStep)>,
     data: VecDeque<CompilationJob>,
 }
 
@@ -27,6 +28,7 @@ pub struct CompilationJob {
 pub struct CompilationJobRequirement {
     pub step: CompilationStep,
     pub unit: CompilationUnit,
+    pub shallow: bool,
 }
 
 pub type CompilationStepRepr = u16;
@@ -119,6 +121,7 @@ impl CompilationJob {
         CompilationJobRequirement {
             step: self.step,
             unit: self.unit.clone(),
+            shallow: true,
         }
     }
 }
@@ -139,7 +142,8 @@ impl Default for JobQueue {
 impl JobQueue {
     pub fn new() -> Self {
         JobQueue {
-            progress_map: HashMap::new(),
+            shallow_progress_map: HashMap::new(),
+            deep_progress_map: HashSet::new(),
             data: VecDeque::new(),
         }
     }
@@ -147,9 +151,9 @@ impl JobQueue {
     pub fn push_new_job(&mut self, job: CompilationJob) {
         let pair = (job.unit.clone(), job.step);
 
-        if !self.progress_map.contains_key(&pair) {
+        if !self.shallow_progress_map.contains_key(&pair) {
             self.data.push_back(job);
-            self.progress_map.insert(pair, JobState::InQueue);
+            self.shallow_progress_map.insert(pair, JobState::InQueue);
         }
     }
 
@@ -157,7 +161,7 @@ impl JobQueue {
         let pair = (job.unit.clone(), job.step);
 
         self.data.push_back(job);
-        self.progress_map.insert(pair, JobState::InQueue);
+        self.shallow_progress_map.insert(pair, JobState::InQueue);
     }
 
     pub fn pop_job(&mut self) -> Option<CompilationJob> {
@@ -165,7 +169,7 @@ impl JobQueue {
     }
 
     pub fn complete_job(&mut self, job: &CompilationJob) {
-        self.progress_map
+        self.shallow_progress_map
             .insert((job.unit.clone(), job.step), JobState::Completed);
     }
 
@@ -177,23 +181,90 @@ impl JobQueue {
             CompilationStep::LMIRGen,
             CompilationStep::Codegen,
         ] {
-            self.progress_map
+            self.shallow_progress_map
                 .insert((unit.clone(), step), JobState::Completed);
         }
     }
 
     pub fn job_complete(&self, job: &CompilationJob) -> bool {
-        self.progress_map.get(&(job.unit.clone(), job.step)) == Some(&JobState::Completed)
+        self.shallow_progress_map.get(&(job.unit.clone(), job.step)) == Some(&JobState::Completed)
     }
 
-    pub fn requirements_complete(&self, job: &CompilationJob) -> bool {
-        job.requirements.iter().all(|req| {
-            self.progress_map.get(&(req.unit.clone(), req.step)) == Some(&JobState::Completed)
-        })
+    pub fn requirements_complete<F>(&mut self, job: &CompilationJob, imports_for_unit: F) -> bool
+    where
+        F: Fn(&CompilationUnit) -> Option<Vec<CompilationUnit>>,
+    {
+        let mut visiting = HashSet::new();
+
+        job.requirements
+            .iter()
+            .all(|req| self.requirement_complete(req, &imports_for_unit, &mut visiting))
+    }
+
+    fn requirement_complete<F>(
+        &mut self,
+        req: &CompilationJobRequirement,
+        imports_for_unit: &F,
+        visiting: &mut HashSet<(CompilationUnit, CompilationStep)>,
+    ) -> bool
+    where
+        F: Fn(&CompilationUnit) -> Option<Vec<CompilationUnit>>,
+    {
+        if req.shallow {
+            return self.shallow_requirement_complete(&req.unit, req.step);
+        }
+
+        self.deep_requirement_complete(&req.unit, req.step, imports_for_unit, visiting)
+    }
+
+    fn shallow_requirement_complete(&self, unit: &CompilationUnit, step: CompilationStep) -> bool {
+        self.shallow_progress_map.get(&(unit.clone(), step)) == Some(&JobState::Completed)
+    }
+
+    fn deep_requirement_complete<F>(
+        &mut self,
+        unit: &CompilationUnit,
+        step: CompilationStep,
+        imports_for_unit: &F,
+        visiting: &mut HashSet<(CompilationUnit, CompilationStep)>,
+    ) -> bool
+    where
+        F: Fn(&CompilationUnit) -> Option<Vec<CompilationUnit>>,
+    {
+        let key = (unit.clone(), step);
+
+        if self.deep_progress_map.contains(&key) {
+            return true;
+        }
+
+        if !self.shallow_requirement_complete(unit, step) {
+            return false;
+        }
+
+        if !visiting.insert(key.clone()) {
+            return true;
+        }
+
+        let Some(imports) = imports_for_unit(unit) else {
+            visiting.remove(&key);
+            return false;
+        };
+
+        let complete = imports
+            .iter()
+            .all(|import| self.deep_requirement_complete(import, step, imports_for_unit, visiting));
+
+        visiting.remove(&key);
+
+        if complete {
+            self.deep_progress_map.insert(key);
+        }
+
+        complete
     }
 
     pub fn finish_job(&mut self, job: &CompilationJob) {
-        self.progress_map
+        self.shallow_progress_map
             .insert((job.unit.clone(), job.step), JobState::Completed);
     }
 

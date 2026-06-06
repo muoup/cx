@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use cx_ast::ast::{CXAST, CXASTDefinition, CXASTStmt};
+use cx_ast::ast::{CXAST, CXASTDefinition, CXASTStmt, function::CXFunctionKind};
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_preparse_data::{PreparseContents, VisibilityMode};
 use cx_tokens::TokenIter;
@@ -91,6 +91,7 @@ impl<'a> ParserData<'a> {
 
     pub fn add_stmt(&mut self, stmt: CXASTStmt) {
         let namespace = self.namespace_for_current_stmt();
+        self.register_stmt_namespace_aliases(&namespace, &stmt);
         self.ast
             .definition_stmts
             .push(CXASTDefinition { namespace, stmt })
@@ -139,6 +140,40 @@ impl<'a> ParserData<'a> {
     }
 
     fn current_module_namespace(&self) -> NamespacePath {
-        NamespacePath::from(self.ast.module_path.clone())
+        self.pp_contents.module_symbols.namespace.clone()
+    }
+
+    fn register_stmt_namespace_aliases(&mut self, namespace: &NamespacePath, stmt: &CXASTStmt) {
+        if namespace.is_root() {
+            return;
+        }
+
+        match stmt {
+            CXASTStmt::TypeDefinition {
+                name: Some(name), ..
+            } => {
+                self.namespace_aliases.insert(
+                    NamespacePath::root().child(name.clone()),
+                    namespace.child(name.clone()),
+                );
+            }
+
+            CXASTStmt::FunctionDefinition { prototype, .. } => {
+                let q_namespace = prototype.kind.into_key().namespace;
+
+                if !q_namespace.is_root()
+                    && matches!(
+                        &prototype.kind,
+                        CXFunctionKind::MemberFunction { .. }
+                            | CXFunctionKind::StaticMemberFunction { .. }
+                    )
+                {
+                    self.namespace_aliases
+                        .insert(q_namespace.clone(), namespace.join(&q_namespace));
+                }
+            }
+
+            _ => {}
+        }
     }
 }

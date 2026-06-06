@@ -1,6 +1,7 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 
 use cx_mir::{
+    EnvironmentNamespace,
     MIRUnit,
     mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId},
     symbol::MIRSymbol,
@@ -12,7 +13,7 @@ use cx_tokens::TokenRange;
 use cx_tokens::token::Token;
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
-use cx_util::namespace::{NamespacePath, QualifiedName};
+use cx_util::namespace::QualifiedName;
 
 pub use crate::environment::functions::control_flow::{
     BindingMoveState, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
@@ -48,10 +49,9 @@ impl TypeEnvironment<'_> {
         compilation_unit: CompilationUnit,
         working_directory: PathBuf,
         module_data: &'a ModuleData,
-        namespace_aliases: HashMap<NamespacePath, NamespacePath>,
     ) -> TypeEnvironment<'a> {
         TypeEnvironment {
-            symbols: MIRSymbolRegistry::new(&module_data.symbol_registry, namespace_aliases),
+            symbols: MIRSymbolRegistry::new(&module_data.symbol_registry),
             source: SourceContext::new(tokens, compilation_unit, working_directory, module_data),
             items: ItemRegistry::new(),
             function: FunctionContext::default(),
@@ -120,7 +120,11 @@ impl TypeEnvironment<'_> {
         self.function.restore_mode(snapshot);
     }
 
-    pub fn get_symbol(&mut self, name: &QualifiedName) -> CXResult<Option<MIRSymbol>> {
+    pub fn get_symbol(
+        &mut self,
+        namespace: &EnvironmentNamespace,
+        name: &QualifiedName,
+    ) -> CXResult<Option<MIRSymbol>> {
         if name.namespace.is_root()
             && let Some(local_symbol) = self.symbols.get_local_symbol(name)
         {
@@ -131,7 +135,16 @@ impl TypeEnvironment<'_> {
             return Ok(Some(preresolved_symbol.clone()));
         }
 
-        let aliased_name = self.symbols.resolve_qualified_alias(name).into_owned();
+        let aliased_name = self
+            .symbols
+            .get_global_registry()
+            .resolve_qualified_alias(namespace, name);
+
+        if &aliased_name != name
+            && let Some(preresolved_symbol) = self.symbols.get_preresolved_symbol(&aliased_name)
+        {
+            return Ok(Some(preresolved_symbol.clone()));
+        }
 
         let (resolved_name, untyped_symbol) = match self
             .symbols

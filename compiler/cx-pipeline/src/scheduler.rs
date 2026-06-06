@@ -3,7 +3,7 @@ use crate::progress::ProgressReporter;
 use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::preparse::PreparseConfig;
-use cx_parsing::{ParseErrorLog, decompose_ast, parse_ast, preparse};
+use cx_parsing::{decompose_ast, parse_ast, preparse, ParseErrorLog};
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::directories::internal_directory;
 use cx_pipeline_data::internal_storage::{resource_path, retrieve_data};
@@ -79,7 +79,7 @@ pub(crate) fn scheduling_loop(
             continue;
         }
 
-        if !queue.requirements_complete(&job) {
+        if !queue.requirements_complete(&job, |unit| import_units_for_unit(context, unit)) {
             queue.push_job(job);
             continue;
         }
@@ -137,12 +137,54 @@ fn import_jobs_for_unit(
     Ok(jobs)
 }
 
+fn import_requirements_for_unit(
+    context: &GlobalCompilationContext,
+    imports: &[ModulePath],
+    step: CompilationStep,
+    shallow: bool,
+) -> Vec<CompilationJobRequirement> {
+    imports
+        .iter()
+        .map(|import| CompilationJobRequirement {
+            unit: CompilationUnit::from_module_path(
+                import.clone(),
+                &context.config.working_directory,
+            ),
+            step,
+            shallow,
+        })
+        .collect()
+}
+
+fn import_units_for_unit(
+    context: &GlobalCompilationContext,
+    unit: &CompilationUnit,
+) -> Option<Vec<CompilationUnit>> {
+    context
+        .module_db
+        .preparse_base
+        .lock()
+        .get(unit)
+        .map(|preparse| {
+            preparse
+                .imports
+                .iter()
+                .map(|import| {
+                    CompilationUnit::from_module_path(
+                        import.clone(),
+                        &context.config.working_directory,
+                    )
+                })
+                .collect()
+        })
+}
+
 pub(crate) fn handle_job(
     context: &GlobalCompilationContext,
     mut job: CompilationJob,
     retain_lmir: bool,
 ) -> CXResult<Box<[CompilationJob]>> {
-    let map_reqs_new_stage = |job: CompilationJob, new_step: CompilationStep| {
+    let map_reqs_new_stage = |job: CompilationJob, new_step: CompilationStep, shallow: bool| {
         let new_requirements = job
             .requirements
             .into_iter()
@@ -153,6 +195,7 @@ pub(crate) fn handle_job(
                     // requirement for the next step of a standard job is that all imports
                     // have completed the step it has just completed
                     step: job.step,
+                    shallow,
                 }
             })
             .collect::<Vec<_>>();
@@ -176,13 +219,19 @@ pub(crate) fn handle_job(
             let mut new_jobs = import_jobs_for_unit(context, &pp_data.imports)?;
 
             job.step = CompilationStep::Parse;
+            job.requirements = import_requirements_for_unit(
+                context,
+                &pp_data.imports,
+                CompilationStep::PreParse,
+                true,
+            );
             new_jobs.push(job);
 
             Ok(new_jobs.into())
         }
-        CompilationStep::Parse => map_reqs_new_stage(job, CompilationStep::Typechecking),
-        CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::LMIRGen),
-        CompilationStep::LMIRGen => map_reqs_new_stage(job, CompilationStep::Codegen),
+        CompilationStep::Parse => map_reqs_new_stage(job, CompilationStep::Typechecking, false),
+        CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::LMIRGen, true),
+        CompilationStep::LMIRGen => map_reqs_new_stage(job, CompilationStep::Codegen, true),
         CompilationStep::Codegen => Ok([].into()),
     }
 }
@@ -294,12 +343,12 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::Parse => {
-            let pp_data = context.module_db.preparse_base.take(&job.unit);
+            let pp_data = context.module_db.preparse_base.get(&job.unit);
             let lexemes = context.module_db.lex_tokens.get(&job.unit);
 
             let parsed_ast = parse_ast(
                 TokenIter::new(&lexemes, job.unit.as_path().to_path_buf()),
-                &pp_data,
+                pp_data.as_ref(),
                 &context.module_db.preparse_registry,
             )?;
 
@@ -340,7 +389,6 @@ pub(crate) fn perform_job(
                 job.unit.clone(),
                 context.config.working_directory.clone(),
                 &context.module_db,
-                self_ast.namespace_aliases.clone(),
             );
 
             typecheck(&mut env, &namespace, &self_ast)?;
@@ -465,7 +513,7 @@ pub(crate) fn scheduling_loop_collect_errors(
         compilation_exists.insert(job.unit.clone(), job.compilation_exists);
 
         // Skip incremental compilation logic for LSP - always recompile
-        if !queue.requirements_complete(&job) {
+        if !queue.requirements_complete(&job, |unit| import_units_for_unit(context, unit)) {
             queue.push_job(job);
             continue;
         }
@@ -510,13 +558,14 @@ fn handle_job_collect_errors(
     job: &CompilationJob,
     error_collector: &mut Vec<LSPErrors>,
 ) -> Option<HandleJobResult> {
-    let map_reqs_new_stage = |new_step: CompilationStep| -> Box<[CompilationJob]> {
+    let map_reqs_new_stage = |new_step: CompilationStep, shallow: bool| -> Box<[CompilationJob]> {
         let new_requirements = job
             .requirements
             .iter()
             .map(|req| CompilationJobRequirement {
                 unit: req.unit.clone(),
                 step: job.step,
+                shallow,
             })
             .collect::<Vec<_>>();
 
@@ -627,7 +676,12 @@ fn handle_job_collect_errors(
             // Add the next step for this job
             let mut next_job = job.clone();
             next_job.step = CompilationStep::Parse;
-            next_job.requirements = Vec::new();
+            next_job.requirements = import_requirements_for_unit(
+                context,
+                &pp_data.imports,
+                CompilationStep::PreParse,
+                true,
+            );
             new_jobs.push(next_job);
 
             Some(HandleJobResult::Success(new_jobs.into()))
@@ -635,6 +689,7 @@ fn handle_job_collect_errors(
 
         CompilationStep::Parse => Some(HandleJobResult::Success(map_reqs_new_stage(
             CompilationStep::Typechecking,
+            false,
         ))),
 
         CompilationStep::Typechecking => {

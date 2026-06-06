@@ -66,7 +66,7 @@ pub(crate) fn convert_cx_prototype(
     );
 
     LMIRFunctionPrototype {
-        name: cx_proto.name.to_string(),
+        name: cx_proto.name.clone(),
         linkage: convert_linkage(cx_proto.linkage),
         signature,
     }

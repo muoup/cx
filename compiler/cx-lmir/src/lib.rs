@@ -173,7 +173,7 @@ impl LMIRFunctionSignature {
 
 #[derive(Debug, Clone)]
 pub struct LMIRFunctionPrototype {
-    pub name: String,
+    pub name: CXIdent,
     pub linkage: LinkageType,
     pub signature: LMIRFunctionSignature,
 }

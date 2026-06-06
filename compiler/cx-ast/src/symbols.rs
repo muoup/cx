@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use cx_util::identifier::CXIdent;
+use cx_util::namespace::{NamespacePath, QualifiedName};
 
 use crate::ast::{
     expression::CXExpression, function::CXFunctionPrototype, global_var::CXEnumDefinition,
@@ -51,6 +52,7 @@ pub enum CXSymbolKind {
 pub struct SymbolNamespaceData {
     enum_blocks: Vec<CXEnumDefinition>,
     symbols: HashMap<String, CXSymbol>,
+    namespace_aliases: HashMap<NamespacePath, NamespacePath>,
 }
 
 impl SymbolNamespaceData {
@@ -58,6 +60,17 @@ impl SymbolNamespaceData {
         Self {
             enum_blocks: Vec::new(),
             symbols: HashMap::new(),
+            namespace_aliases: HashMap::new(),
+        }
+    }
+
+    pub fn new_with_namespace_aliases(
+        namespace_aliases: HashMap<NamespacePath, NamespacePath>,
+    ) -> Self {
+        Self {
+            enum_blocks: Vec::new(),
+            symbols: HashMap::new(),
+            namespace_aliases,
         }
     }
 
@@ -68,6 +81,7 @@ impl SymbolNamespaceData {
     pub fn merge_from(&mut self, other: SymbolNamespaceData) {
         let enum_offset = self.enum_blocks.len();
         self.enum_blocks.extend(other.enum_blocks);
+        self.namespace_aliases.extend(other.namespace_aliases);
         self.symbols
             .extend(other.symbols.into_iter().map(|(name, mut symbol)| {
                 if let CXSymbolKind::EnumIdent { enum_block_idx, .. } = &mut symbol.kind {
@@ -85,6 +99,15 @@ impl SymbolNamespaceData {
 
     pub fn get_symbol(&self, name: &str) -> Option<&CXSymbol> {
         self.symbols.get(name)
+    }
+
+    pub fn resolve_qualified_alias(&self, name: &QualifiedName) -> Option<QualifiedName> {
+        self.namespace_aliases
+            .get(&name.namespace)
+            .map(|alias| QualifiedName {
+                namespace: alias.clone(),
+                name: name.name.clone(),
+            })
     }
 
     pub fn get_enum_block(&self, idx: usize) -> Option<&CXEnumDefinition> {

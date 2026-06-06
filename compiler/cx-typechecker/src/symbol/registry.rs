@@ -1,6 +1,6 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::collections::HashMap;
 
-use cx_ast::{registry::GlobalSymbolRegistry, symbols::SymbolNamespaceData};
+use cx_ast::registry::GlobalSymbolRegistry;
 use cx_mir::{
     intrinsic_types::INTRINSIC_TYPES,
     mir::{
@@ -12,19 +12,13 @@ use cx_mir::{
     symbol::MIRSymbol,
     type_context::MIRTypeContext,
 };
-use cx_util::{
-    CXResult,
-    identifier::CXIdent,
-    namespace::{NamespacePath, QualifiedName},
-    scoped_map::ScopedMap,
-};
+use cx_util::{identifier::CXIdent, namespace::QualifiedName, scoped_map::ScopedMap, CXResult};
 
 /// Module-local symbol definitions
 pub struct MIRSymbolRegistry<'a> {
     global_registry: &'a GlobalSymbolRegistry,
     global_cache: HashMap<QualifiedName, MIRSymbol>,
     local_symbols: ScopedMap<QualifiedName, MIRSymbol>,
-    namespace_aliases: HashMap<NamespacePath, NamespacePath>,
 
     typeid_defs: HashMap<MIRTypeId, MIRType>,
     next_typeid: u64,
@@ -39,16 +33,11 @@ impl MIRTypeContext for MIRSymbolRegistry<'_> {
 }
 
 impl<'a> MIRSymbolRegistry<'a> {
-    pub fn new(
-        global_registry: &'a GlobalSymbolRegistry,
-        namespace_aliases: HashMap<NamespacePath, NamespacePath>,
-    ) -> Self {
+    pub fn new(global_registry: &'a GlobalSymbolRegistry) -> Self {
         let mut registry = Self {
             global_registry,
             global_cache: HashMap::new(),
             local_symbols: ScopedMap::new_with_starting_scope(),
-
-            namespace_aliases,
 
             typeid_defs: HashMap::new(),
             next_typeid: 0,
@@ -74,45 +63,8 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.global_registry
     }
 
-    pub fn resolve_namespace_alias<'b>(
-        &'b self,
-        namespace: &'b NamespacePath,
-    ) -> Cow<'b, NamespacePath> {
-        if let Some(alias) = self.namespace_aliases.get(namespace) {
-            Cow::Borrowed(alias)
-        } else {
-            Cow::Borrowed(namespace)
-        }
-    }
-
-    pub fn resolve_qualified_alias<'b>(&self, name: &'b QualifiedName) -> Cow<'b, QualifiedName> {
-        let mut name = Cow::Borrowed(name);
-
-        if let Some(alias) = self.namespace_aliases.get(&name.namespace) {
-            name = Cow::Owned(QualifiedName {
-                namespace: alias.clone(),
-                name: name.name.clone(),
-            });
-        }
-
-        name
-    }
-
-    pub fn get_namespace_data(
-        &mut self,
-        name: &NamespacePath,
-    ) -> Option<(impl Sized, &SymbolNamespaceData)> {
-        let resolved_namespace = self.resolve_namespace_alias(name);
-
-        self.global_registry.get_bucket(&resolved_namespace)
-    }
-
     pub fn get_preresolved_symbol(&self, name: &QualifiedName) -> Option<&MIRSymbol> {
         self.global_cache.get(name)
-    }
-
-    pub fn map_namespace_alias(&mut self, alias: NamespacePath, target: NamespacePath) {
-        self.namespace_aliases.insert(alias, target);
     }
 
     pub fn generate_type_id(&mut self, ty: MIRType) -> MIRTypeId {
