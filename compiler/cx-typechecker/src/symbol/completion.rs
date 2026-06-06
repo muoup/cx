@@ -2,7 +2,7 @@ use cx_ast::ast::{
     function::{CXFunctionKind, CXFunctionPrototype},
     modifiers::{CXTypeQualifiers, VisibilityMode},
     template::CXTemplateInput,
-    types::{CXField, CXType, CXTypeKind, PredeclarationType},
+    types::{CXField, CXStructAttributes, CXType, CXTypeKind, PredeclarationType},
 };
 use cx_ast::symbols::CXSymbolKind;
 use cx_util::{CXError, CXResult, identifier::CXIdent, namespace::QualifiedName};
@@ -17,6 +17,7 @@ use cx_mir::{
         r#type::{MIRField, MIRType, MIRTypeId, MIRTypeKind},
     },
     symbol::MIRSymbol,
+    type_context::MIRTypeContext,
 };
 
 use crate::{
@@ -334,7 +335,7 @@ fn make_aggregate_type<F>(
     namespace: &EnvironmentNamespace,
     ty: &CXType,
     name: Option<CXIdent>,
-    attributes: Option<&cx_ast::ast::types::CXStructAttributes>,
+    attributes: Option<&CXStructAttributes>,
     fields: &[CXField],
     kind_ctor: F,
 ) -> CXResult<MIRType>
@@ -346,12 +347,8 @@ where
         .map(|field| complete_field(env, namespace, field))
         .collect::<CXResult<Vec<_>>>()?;
     ensure_aggregate_fields_complete(env, &fields)?;
-    let move_attributes = attributes
-        .map(|attributes| MIRMoveAttributes {
-            nocopy: attributes.nocopy || attributes.nodrop,
-            nodrop: attributes.nodrop,
-        })
-        .unwrap_or_default();
+    let move_attributes = resolve_aggregate_move_attributes(env, attributes)?;
+    ensure_aggregate_move_restrictions(env, move_attributes, &fields)?;
 
     Ok(MIRType {
         visibility: VisibilityMode::Private,
@@ -364,6 +361,45 @@ where
         template_info: None,
         kind: kind_ctor(fields),
     })
+}
+
+fn resolve_aggregate_move_attributes(
+    env: &mut TypeEnvironment,
+    attributes: Option<&CXStructAttributes>,
+) -> CXResult<MIRMoveAttributes> {
+    let Some(attributes) = attributes else {
+        return Ok(MIRMoveAttributes::default());
+    };
+
+    let mut move_attributes = MIRMoveAttributes {
+        nocopy: attributes.nocopy || attributes.nodrop,
+        nodrop: attributes.nodrop,
+    };
+
+    if let Some(param_name) = &attributes.copy_traits {
+        let name = QualifiedName::new_raw(CXIdent::new(param_name.as_str()));
+        let Some(symbol) = env.get_symbol(&name)? else {
+            return type_completion_error(
+                env,
+                format!(
+                    "copy_traits target '{}' is not a valid type",
+                    param_name
+                ),
+            );
+        };
+        let Some(id) = symbol.as_type_id() else {
+            return type_completion_error(
+                env,
+                format!("copy_traits target '{}' is not a type", param_name),
+            );
+        };
+        let source_attributes = owned_move_attributes(env, env.symbols.resolve_type_id(id));
+
+        move_attributes.nocopy |= source_attributes.nocopy;
+        move_attributes.nodrop |= source_attributes.nodrop;
+    }
+
+    Ok(move_attributes)
 }
 
 fn complete_field(
@@ -399,14 +435,61 @@ fn ensure_aggregate_fields_complete(env: &TypeEnvironment, fields: &[MIRField]) 
         let id = field.ty();
         if !env.symbols.contains(id) {
             let name = field.name().unwrap_or("<anonymous>");
-            return CXError::create_result(format!(
-                "Aggregate field '{}' has incomplete type",
-                name
-            ));
+            return type_completion_error(
+                env,
+                format!("Aggregate field '{}' has incomplete type", name),
+            );
         }
     }
 
     Ok(())
+}
+
+fn ensure_aggregate_move_restrictions(
+    env: &TypeEnvironment,
+    aggregate_attributes: MIRMoveAttributes,
+    fields: &[MIRField],
+) -> CXResult<()> {
+    for field in fields {
+        let field_type = env.symbols.resolve_type_id(field.ty());
+        let field_attributes = owned_move_attributes(env, field_type);
+        let name = field.name().unwrap_or("<anonymous>");
+
+        if field_attributes.nocopy && !aggregate_attributes.nocopy {
+            return type_completion_error(
+                env,
+                format!("Copyable aggregate cannot contain nocopy field '{}'", name),
+            );
+        }
+
+        if field_attributes.nodrop && !aggregate_attributes.nodrop {
+            return type_completion_error(
+                env,
+                format!(
+                    "Aggregate containing nodrop field '{}' must also be nodrop",
+                    name
+                ),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn owned_move_attributes(env: &TypeEnvironment, ty: &MIRType) -> MIRMoveAttributes {
+    match &ty.kind {
+        MIRTypeKind::Structured { .. }
+        | MIRTypeKind::Union { .. }
+        | MIRTypeKind::TaggedUnion { .. } => ty.move_attributes,
+        MIRTypeKind::Array { inner_type, .. } => {
+            owned_move_attributes(env, env.symbols.resolve_type_id(*inner_type))
+        }
+        _ => MIRMoveAttributes::default(),
+    }
+}
+
+fn type_completion_error<T>(env: &TypeEnvironment, message: impl Into<String>) -> CXResult<T> {
+    env.type_error_at_range(&Default::default(), message.into(), Vec::new())
 }
 
 fn completed_function_name(
