@@ -195,7 +195,6 @@ fn lower_union<'a>(
         .map(|f| usize::from(convert_type(f, definitions).size()))
         .max()
         .unwrap_or(0)
-        .min(0)
         .into();
 
     LMIRTypeKind::Opaque { bytes: size }
