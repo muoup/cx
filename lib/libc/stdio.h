@@ -2,7 +2,7 @@
 
 typedef void FILE;
 
-FILE *fopen(char *filename, char *mode);
+FILE *fopen(const char *filename, char *mode);
 int fclose(FILE *stream);
 void clearerr(FILE *stream);
 

@@ -1,4 +1,5 @@
 use crate::environment::TypeEnvironment;
+use crate::symbol::{completion::complete_template_input, resolution::apply_template};
 use crate::type_checking::aggregate::fields::struct_field;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::locals::ensure_binding_available;
@@ -9,6 +10,7 @@ use cx_ast::ast::modifiers::CX_CONST;
 use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::data::{MIRType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
+use cx_mir::symbol::MIRSymbol;
 use cx_mir::type_context::MIRTypeContext;
 use cx_util::CXResult;
 
@@ -144,18 +146,42 @@ pub fn typecheck_access(
             };
 
             let query = strong_name.child(name.clone());
-            let function = env
-                .get_symbol(&query)?
-                .ok_or_else(|| {
+            let mut symbol = env.get_symbol(&query)?.ok_or_else(|| {
+                typecheck_error!(
+                    env,
+                    Some(expr.token_range()),
+                    "Member '{}' not found on type '{}'",
+                    name,
+                    base.source_type.display_with(&env.symbols)
+                )
+            })?;
+
+            if let Some(completed_input) = template_input
+                .as_ref()
+                .map(|input| complete_template_input(env, namespace, input))
+                .transpose()?
+            {
+                symbol = apply_template(env, &symbol, completed_input)?.ok_or_else(|| {
                     typecheck_error!(
                         env,
                         Some(expr.token_range()),
-                        "Member '{}' not found on type '{}'",
+                        "Member '{}' on type '{}' does not accept template arguments",
                         name,
                         base.source_type.display_with(&env.symbols)
                     )
-                })
-                .map(|symbol| symbol.as_expression())?
+                })?;
+            }
+
+            if matches!(symbol, MIRSymbol::Template { .. }) {
+                return Ok(TypecheckResult::incomplete_templated_callee(
+                    query,
+                    template_input.clone(),
+                )
+                .with_deduction_arg_prefix(vec![base.source_type.clone()]));
+            }
+
+            let function = symbol
+                .as_expression()
                 .ok_or_else(|| {
                     typecheck_error!(
                         env,
