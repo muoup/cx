@@ -477,7 +477,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
 
         MIRExpressionKind::Variable { name, location } => {
             match location {
-                SymbolValueOrigin::Contract | SymbolValueOrigin::Local => {
+                SymbolValueOrigin::Local => {
                     if let Some(local_value) = builder.get_symbol(name) {
                         return Ok(local_value);
                     }
@@ -1405,7 +1405,7 @@ pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResu
     let has_return_buffer = bc_proto.signature.return_abi.has_indirect_return_param();
     let mut lowered_param_index = if has_return_buffer { 1 } else { 0 };
 
-    for (i, param) in mir_fn.prototype.signature.params.iter().enumerate() {
+    for (i, param) in mir_fn.prototype.signature().params.iter().enumerate() {
         let abi_param = bc_proto
             .signature
             .params

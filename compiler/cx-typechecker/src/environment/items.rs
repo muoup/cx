@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use cx_mir::mir::data::MIRFunction;
+use cx_mir::mir::data::MIRFunctionPrototype;
 use cx_mir::mir::data::MIRTemplateInput;
 use cx_mir::mir::global::MIRGlobalVariable;
 use cx_mir::mir::r#type::MIRType;
@@ -10,6 +11,7 @@ use cx_util::namespace::QualifiedName;
 pub enum MIRFunctionGenRequest {
     Template {
         name: QualifiedName,
+        prototype: MIRFunctionPrototype,
         input: MIRTemplateInput,
     },
     TypeConstructor {

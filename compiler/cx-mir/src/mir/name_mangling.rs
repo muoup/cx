@@ -5,26 +5,14 @@ use cx_ast::registry::{ExportNameMode, GlobalSymbolRegistry};
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 pub fn base_mangle_standard(global_registry: &GlobalSymbolRegistry, name: &QualifiedName) -> String {
-    mangle_qualified_symbol(global_registry, name)
-}
-
-pub fn mangle_qualified_symbol(
-    global_registry: &GlobalSymbolRegistry,
-    name: &QualifiedName,
-) -> String {
     if global_registry.export_name_mode(&name.namespace) == ExportNameMode::Root {
-        return name.name.as_string();
+        return name.name.as_str().to_string();
     }
-
-    let flat_name = name.as_flat_name();
-    if !flat_name.contains("::") {
-        return flat_name;
-    }
-
-    format!("_N{}", flat_name.replace("::", "_"))
+  
+    mangle_namespace_symbol(name)
 }
 
-pub fn mangle_namespace_symbol(name: &QualifiedName) -> String {
+fn mangle_namespace_symbol(name: &QualifiedName) -> String {
     let mut mangled = String::from("_N");
 
     for segment in name.namespace.segments() {
@@ -54,14 +42,6 @@ pub fn base_mangle_member(
     member_type: &MIRType,
 ) -> String {
     format!("_M{}_{}", type_mangle(definitions, member_type), name)
-}
-
-pub fn base_mangle_static_member(
-    definitions: &impl MIRTypeContext,
-    name: &str,
-    member_type: &MIRType,
-) -> String {
-    format!("_S{}_{}", type_mangle(definitions, member_type), name)
 }
 
 pub(crate) fn type_mangle(registry: &impl MIRTypeContext, ty: &MIRType) -> String {

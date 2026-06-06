@@ -6,11 +6,10 @@ use crate::{
 };
 use cx_ast::ast::{expression::CXExpression, template::CXTemplateInput};
 use cx_mir::{
-    mir::expression::{MIRExpressionKind, SymbolValueOrigin},
-    symbol::MIRSymbol,
     EnvironmentNamespace,
+    mir::expression::{MIRExpressionKind, SymbolValueOrigin},
 };
-use cx_util::{namespace::QualifiedName, CXResult};
+use cx_util::{CXResult, namespace::QualifiedName};
 
 pub(crate) fn typecheck_identifier(
     env: &mut TypeEnvironment,
@@ -35,40 +34,24 @@ pub(crate) fn typecheck_identifier(
         symbol = apply_template(env, &symbol, completed_input)?.unwrap();
     }
 
-    match symbol {
-        MIRSymbol::Expression(value) => {
-            let origin = match &value.kind {
-                MIRExpressionKind::Variable { location, .. } => Some(*location),
-                _ => None,
-            };
-
-            if origin == Some(SymbolValueOrigin::Global) && env.function.in_safe_context() {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "Safe functions may not access global variables"
-                );
-            }
-
-            let result = TypecheckResult::from(value);
-
-            if matches!(origin, Some(SymbolValueOrigin::Local)) {
-                Ok(result.with_binding(TypecheckedBinding::local(name.name.clone())))
-            } else {
-                Ok(result)
-            }
-        }
-
-        MIRSymbol::Template { .. } => Ok(TypecheckResult::incomplete_templated_callee(
-            name.clone(),
-            None,
-        )),
-
-        MIRSymbol::Type(_) => log_typecheck_error!(
+    let Some(expr) = symbol.as_expression() else {
+        return log_typecheck_error!(
             env,
             Some(expr.token_range()),
-            "Type '{}' cannot be used as a value",
+            "Identifier '{}' does not refer to a value",
             name
-        ),
-    }
+        );
+    };
+
+    Ok(match &expr.kind {
+        MIRExpressionKind::Variable {
+            name,
+            location: SymbolValueOrigin::Local,
+        } => {
+            let name = name.clone();
+            TypecheckResult::from(expr).with_binding(TypecheckedBinding::local(name))
+        }
+        
+        _ => TypecheckResult::from(expr),
+    })
 }

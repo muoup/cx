@@ -1,31 +1,23 @@
-
 use cx_ast::{
     ast::{function::CXFunctionContract, modifiers::CXLinkageMode},
     symbols::CXSymbolKind,
 };
-use cx_mir::{
-    mir::{
-        data::{
-            MIRFunction, MIRFunctionPrototype, MIRFunctionSignature, MIRParameter, MIRTemplateInput,
-        },
-        expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
-        r#type::MIRType,
+use cx_mir::mir::{
+    data::{
+        MIRFunction, MIRFunctionPrototype, MIRFunctionSignature, MIRParameter, MIRTemplateInput,
     },
+    expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
+    r#type::MIRType,
 };
 use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 use crate::{
     environment::{MIRFunctionGenRequest, TypeEnvironment},
-    symbol::{
-        completion::complete_prototype,
-        resolution::{apply_template_input, symbol_lexical_namespace},
-    },
+    symbol::resolution::{apply_template_input, symbol_lexical_namespace},
     type_checking::functions::typecheck_function,
 };
 
-pub fn fulfill_requests(
-    env: &mut TypeEnvironment,
-) -> CXResult<()> {
+pub fn fulfill_requests(env: &mut TypeEnvironment) -> CXResult<()> {
     while let Some(request) = env.items.pop_request() {
         match request {
             MIRFunctionGenRequest::TypeConstructor {
@@ -37,9 +29,11 @@ pub fn fulfill_requests(
                 realize_tagged_union_constructor(env, name, union_type, variant_type, variant_index)
             }
 
-            MIRFunctionGenRequest::Template { name, input } => {
-                realize_fn_template(env, &name, &input)?
-            }
+            MIRFunctionGenRequest::Template {
+                name,
+                prototype,
+                input,
+            } => realize_fn_template(env, &name, prototype, &input)?,
         }
     }
 
@@ -57,12 +51,12 @@ fn realize_tagged_union_constructor(
         return;
     }
     env.items.mark_request_fulfilled(name.clone());
-    
+
     let param_name = CXIdent::new("value");
-    let prototype = MIRFunctionPrototype {
-        name: CXIdent::new(name),
-        linkage: CXLinkageMode::Static,
-        signature: MIRFunctionSignature {
+    let prototype = MIRFunctionPrototype::new(
+        CXIdent::new(name),
+        CXLinkageMode::Static,
+        MIRFunctionSignature {
             return_type: union_type.clone(),
             params: if variant_type.is_unit() {
                 Vec::new()
@@ -75,7 +69,7 @@ fn realize_tagged_union_constructor(
             var_args: false,
             contract: CXFunctionContract::default(),
         },
-    };
+    );
 
     let value = if variant_type.is_unit() {
         MIRExpression {
@@ -112,7 +106,7 @@ fn realize_tagged_union_constructor(
     };
     let body = MIRExpression {
         token_range: None,
-        _type: prototype.signature.return_type.clone(),
+        _type: prototype.signature().return_type.clone(),
         kind: MIRExpressionKind::Return {
             value: Some(Box::new(constructed)),
             postcondition: None,
@@ -126,20 +120,23 @@ fn realize_tagged_union_constructor(
 fn realize_fn_template(
     env: &mut TypeEnvironment,
     name: &QualifiedName,
+    prototype: MIRFunctionPrototype,
     input: &MIRTemplateInput,
 ) -> CXResult<()> {
+    println!("NAME: {}", name);
+    
     let stmt = env
         .symbols
         .get_global_registry()
         .resolve(name)
-        .expect("Expected template to be in the global registry");
+        .unwrap_or_else(|| {
+            unreachable!(
+                "Expected function template '{}' to be present in the symbol registry",
+                name
+            )
+        });
 
-    let CXSymbolKind::FunctionTemplate {
-        template,
-        definition,
-        body,
-    } = &stmt.kind
-    else {
+    let CXSymbolKind::FunctionTemplate { template, body, .. } = &stmt.kind else {
         unreachable!("Expected template to be a function template");
     };
 
@@ -147,12 +144,12 @@ fn realize_fn_template(
     env.symbols.push_local_scope();
     let result = (|| {
         apply_template_input(env, &template, input)?;
-        let prototype = complete_prototype(env, &namespace, &definition)?;
 
-        if env.items.request_fulfilled(prototype.name.as_str()) {
+        if env.items.request_fulfilled(prototype.name()) {
             return Ok(());
         }
-        env.items.mark_request_fulfilled(prototype.name.as_str().into());
+        env.items
+            .mark_request_fulfilled(prototype.name().into());
 
         typecheck_function(env, &namespace, prototype, &body)?;
 

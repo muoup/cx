@@ -13,7 +13,7 @@ use cx_mir::{
             MIRFunctionPrototype, MIRFunctionSignature, MIRMoveAttributes, MIRParameter,
             MIRTemplateInput,
         },
-        name_mangling::{base_mangle_member, base_mangle_standard, base_mangle_static_member},
+        name_mangling::{base_mangle_member, base_mangle_standard},
         r#type::{MIRField, MIRType, MIRTypeId, MIRTypeKind},
     },
     symbol::MIRSymbol,
@@ -171,7 +171,7 @@ fn complete_type_value(
         CXTypeKind::FunctionPointer { prototype } => {
             let prototype = complete_prototype(env, namespace, prototype)?;
             MIRTypeKind::Function {
-                signature: Box::new(prototype.signature),
+                signature: Box::new(prototype.signature().clone()),
             }
             .into()
         }
@@ -221,16 +221,16 @@ pub fn complete_prototype(
 
     let name = completed_function_name(env, &namespace, &prototype.kind)?;
 
-    Ok(MIRFunctionPrototype {
+    Ok(MIRFunctionPrototype::new(
         name,
-        linkage: prototype.linkage,
-        signature: MIRFunctionSignature {
+        prototype.linkage,
+        MIRFunctionSignature {
             return_type,
             params,
             var_args: prototype.var_args,
             contract: prototype.contract.clone(),
         },
-    })
+    ))
 }
 
 fn complete_receiver_parameter(
@@ -554,13 +554,10 @@ fn completed_function_name(
         ),
         CXFunctionKind::MemberFunction {
             member_type, name, ..
-        } => {
+        }
+        | CXFunctionKind::StaticMemberFunction { member_type, name } => {
             let member_type = complete_type(env, namespace, &member_type.as_type())?;
             base_mangle_member(&env.symbols, name.as_str(), &member_type)
-        }
-        CXFunctionKind::StaticMemberFunction { member_type, name } => {
-            let member_type = complete_type(env, namespace, &member_type.as_type())?;
-            base_mangle_static_member(&env.symbols, name.as_str(), &member_type)
         }
     };
 

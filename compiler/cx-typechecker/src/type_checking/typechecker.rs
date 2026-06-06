@@ -320,7 +320,7 @@ fn typecheck_expr_inner(
         }
 
         CXExprKind::Return { value } => {
-            let return_type = env.current_function().signature.return_type.clone();
+            let return_type = env.current_function().signature().return_type.clone();
             let value = value
                 .as_ref()
                 .map(|v| {
@@ -437,7 +437,7 @@ pub fn add_implicit_return(
 
     let func = env.current_function().clone();
 
-    let implicit_value = if func.name().as_str() == "main" {
+    let implicit_value = if func.name() == "main" {
         Some(Box::new(MIRExpression {
             token_range: None,
             kind: MIRExpressionKind::IntLiteral(0),
@@ -446,7 +446,7 @@ pub fn add_implicit_return(
                 signed: true,
             }),
         }))
-    } else if func.signature.return_type.is_unit() {
+    } else if func.signature().return_type.is_unit() {
         None
     } else {
         return log_typecheck_error!(

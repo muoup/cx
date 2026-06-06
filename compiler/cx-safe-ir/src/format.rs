@@ -555,23 +555,23 @@ impl FMIRNodeBody {
 
 impl Display for FMIRFunctionDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{} :: ", self.function.prototype.name)?;
+        write!(f, "{} :: ", self.function.prototype.name())?;
 
         write!(
             f,
             "{}",
             self.function
                 .prototype
-                .signature
+                .signature()
                 .return_type
                 .display_with(self.definitions)
         )?;
-        for param in &self.function.prototype.signature.params {
+        for param in &self.function.prototype.signature().params {
             write!(f, " -> {}", param._type.display_with(self.definitions))?;
         }
 
         writeln!(f)?;
-        writeln!(f, "{} =", self.function.prototype.name)?;
+        writeln!(f, "{} =", self.function.prototype.name())?;
         let base_indent = Indent::new().push();
         base_indent.fmt(f)?;
         self.function

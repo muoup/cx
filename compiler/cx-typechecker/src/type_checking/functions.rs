@@ -27,7 +27,7 @@ pub fn typecheck_function(
     env.function
         .configure_merge_scope(body, "function exit", Some("fallthrough"), true);
 
-    for MIRParameter { name, _type } in prototype.signature.params.iter() {
+    for MIRParameter { name, _type } in prototype.signature().params.iter() {
         let Some(name) = name else {
             continue;
         };

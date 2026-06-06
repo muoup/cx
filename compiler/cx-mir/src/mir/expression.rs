@@ -48,8 +48,7 @@ pub struct MIRSourceRange {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SymbolValueOrigin {
     Local,
-    Global,
-    Contract,
+    Global
 }
 
 #[derive(Clone, Debug, Default)]

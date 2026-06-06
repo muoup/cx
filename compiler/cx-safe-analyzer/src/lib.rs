@@ -36,7 +36,7 @@ impl AnalysisDiagnosticContext {
         Self {
             compilation_unit: compilation_unit.to_path_buf(),
             file_contents: std::fs::read_to_string(compilation_unit).ok(),
-            function_name: function_prototype.name.as_string(),
+            function_name: function_prototype.name().to_owned(),
         }
     }
 
@@ -148,7 +148,7 @@ impl<'a> FMIRContext<'a> {
         let mut context = FMIRContext::new(mir.source_path.to_owned(), &mir.registry);
 
         for function in mir.functions.iter() {
-            if !function.prototype.signature.contract.safe {
+            if !function.prototype.signature().contract.safe {
                 continue;
             }
 
@@ -162,7 +162,7 @@ impl<'a> FMIRContext<'a> {
         let fmir_function = convert_mir(&mut self.env, mir_function)?;
 
         self.functions
-            .insert(mir_function.prototype.name.as_string(), fmir_function);
+            .insert(mir_function.prototype.name().to_owned(), fmir_function);
 
         Ok(())
     }

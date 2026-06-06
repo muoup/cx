@@ -18,8 +18,7 @@ use cx_mir::{
         },
         expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
         global::{MIRGlobalVarKind, MIRGlobalVariable},
-        name_mangling::{base_mangle_static_member, base_mangle_templated_name},
-        r#type::MIRTypeKind,
+        name_mangling::{base_mangle_member, base_mangle_templated_name},
     },
     symbol::MIRSymbol,
     type_context::MIRTypeContext,
@@ -55,11 +54,11 @@ pub fn resolve_symbol(
             env.items.push_generated_global(MIRGlobalVariable {
                 is_mutable: false,
                 linkage: CXLinkageMode::Extern,
-                kind: MIRGlobalVarKind::Variable { 
+                kind: MIRGlobalVarKind::Variable {
                     name: name.clone(),
                     _type: ty.clone(),
                     initializer: None,
-                }
+                },
             });
 
             Ok(MIRSymbol::Expression(MIRExpression {
@@ -68,7 +67,7 @@ pub fn resolve_symbol(
                     name: name.clone(),
                     location: SymbolValueOrigin::Global,
                 },
-                _type: env.symbols.mem_ref_to(ty)
+                _type: env.symbols.mem_ref_to(ty),
             }))
         }
 
@@ -76,16 +75,7 @@ pub fn resolve_symbol(
             let prototype_namespace = function_lexical_namespace(namespace, &prototype.kind);
             let prototype = complete_prototype(env, &prototype_namespace, prototype)?;
 
-            Ok(MIRSymbol::Expression(MIRExpression {
-                token_range: None,
-                _type: MIRTypeKind::Function {
-                    signature: Box::new(prototype.signature),
-                }
-                .into(),
-                kind: MIRExpressionKind::FunctionReference {
-                    name: prototype.name,
-                },
-            }))
+            Ok(MIRSymbol::FunctionReference(prototype))
         }
 
         CXSymbolKind::TypeConstructor {
@@ -103,7 +93,7 @@ pub fn resolve_symbol(
             );
 
             Ok(MIRSymbol::Template {
-                input: template.clone(),
+                template_prototype: template.clone(),
                 name: name.clone(),
                 source: Box::new(source),
                 namespace: namespace.clone(),
@@ -132,7 +122,7 @@ pub fn resolve_symbol(
             let source = CXSymbol::new(symbol.visibility, CXSymbolKind::Type(definition.clone()));
 
             Ok(MIRSymbol::Template {
-                input: input.clone(),
+                template_prototype: input.clone(),
                 name: name.clone(),
                 source: Box::new(source),
                 namespace: namespace.clone(),
@@ -150,7 +140,7 @@ pub fn resolve_symbol(
             );
 
             Ok(MIRSymbol::Template {
-                input: input.clone(),
+                template_prototype: input.clone(),
                 name: name.clone(),
                 source: Box::new(source),
                 namespace: namespace.clone(),
@@ -177,12 +167,12 @@ fn resolve_type_constructor(
         ));
     };
 
-    let name = base_mangle_static_member(&env.symbols, name.as_str(), &union_type);
+    // let name = base_mangle_member(&env.symbols, name.as_str(), &union_type);
 
-    let prototype = MIRFunctionPrototype {
-        name: CXIdent::new(name.clone()),
-        linkage: CXLinkageMode::Static,
-        signature: MIRFunctionSignature {
+    let prototype = MIRFunctionPrototype::new(
+        name.clone(),
+        CXLinkageMode::Static,
+        MIRFunctionSignature {
             return_type: union_type.clone(),
             params: if variant_type.is_unit() {
                 Vec::new()
@@ -195,26 +185,18 @@ fn resolve_type_constructor(
             var_args: false,
             contract: CXFunctionContract::default(),
         },
-    };
+    )
+    .with_mangled_name(|n| base_mangle_member(&env.symbols, n, &union_type));
 
     env.items
         .push_request(MIRFunctionGenRequest::TypeConstructor {
-            name,
+            name: prototype.name().to_owned(),
             union_type,
             variant_type,
             variant_index,
         });
 
-    Ok(MIRSymbol::Expression(MIRExpression {
-        token_range: None,
-        _type: MIRTypeKind::Function {
-            signature: Box::new(prototype.signature),
-        }
-        .into(),
-        kind: MIRExpressionKind::FunctionReference {
-            name: prototype.name,
-        },
-    }))
+    Ok(MIRSymbol::FunctionReference(prototype))
 }
 
 pub fn apply_template(
@@ -223,7 +205,7 @@ pub fn apply_template(
     template_input: MIRTemplateInput,
 ) -> CXResult<Option<MIRSymbol>> {
     let MIRSymbol::Template {
-        input,
+        template_prototype: input,
         name,
         source,
         namespace,
@@ -232,7 +214,6 @@ pub fn apply_template(
         return Ok(None);
     };
 
-    let is_function = matches!(&source.kind, CXSymbolKind::FunctionReference(_));
     if input.types.len() != template_input.args.len() {
         return CXError::create_result(format!(
             "Template '{}' expects {} arguments, found {}",
@@ -249,17 +230,18 @@ pub fn apply_template(
     })();
     env.symbols.pop_local_scope();
 
-    let mut result = result?;
+    let mut symbol = result?;
+    attach_template_metadata(env, &mut symbol, namespace, template_input.clone());
 
-    if is_function {
+    if let MIRSymbol::FunctionReference(prototype) = &symbol {
         env.items.push_request(MIRFunctionGenRequest::Template {
-            name: QualifiedName::new(namespace.clone(), name.clone()),
-            input: template_input.clone(),
+            name: QualifiedName::new(namespace.clone(), prototype.base_name().clone()),
+            prototype: prototype.clone(),
+            input: template_input,
         });
     }
 
-    attach_template_metadata(env, &mut result, namespace, template_input);
-    Ok(Some(result))
+    Ok(Some(symbol))
 }
 
 pub fn symbol_lexical_namespace(
@@ -310,20 +292,30 @@ fn attach_template_metadata(
     _namespace: &EnvironmentNamespace,
     input: MIRTemplateInput,
 ) {
-    let MIRSymbol::Type(id) = symbol else {
-        return;
-    };
-
-    let mut ty = env.symbols.resolve_type_id(*id).clone();
-    ty.template_info = Some(Box::new(TemplateInfo {
-        base_name: ty.strong_identifier.clone(),
-        template_input: input.clone(),
-    }));
-    ty.strong_identifier.as_mut().map(|base| {
-        base.name =
-            base_mangle_templated_name(&env.symbols, base.name.as_str(), input.args.as_slice())
+    match symbol {
+        MIRSymbol::Type(id) => {
+            let mut ty = env.symbols.resolve_type_id(*id).clone();
+            ty.template_info = Some(Box::new(TemplateInfo {
+                base_name: ty.strong_identifier.clone(),
+                template_input: input.clone(),
+            }));
+            ty.strong_identifier.as_mut().map(|base| {
+                base.name = base_mangle_templated_name(
+                    &env.symbols,
+                    base.name.as_str(),
+                    input.args.as_slice(),
+                )
                 .into()
-    });
+            });
+            env.symbols.overwrite_type_id(*id, ty);
+        }
 
-    env.symbols.overwrite_type_id(*id, ty);
+        MIRSymbol::FunctionReference(prototype) => {
+            prototype.mangle_name(|name| {
+                base_mangle_templated_name(&env.symbols, name, input.args.as_slice())
+            });
+        }
+
+        _ => (),
+    }
 }

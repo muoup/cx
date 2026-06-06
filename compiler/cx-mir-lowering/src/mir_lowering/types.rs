@@ -4,9 +4,9 @@ use cx_ast::ast::modifiers::CXLinkageMode;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRFunctionPrototype, LinkageType};
 use cx_mir::mir::data::{MIRFloatType, MIRFunctionPrototype, MIRIntegerType, MIRType, MIRTypeKind};
-use cx_mir::mir::name_mangling::mangle_namespace_symbol;
 use cx_mir::registry::MIRDecomposedRegistry;
 use cx_mir::type_context::MIRTypeContext;
+use cx_util::identifier::CXIdent;
 
 impl LMIRBuilder {
     pub(crate) fn convert_cx_type(&self, cx_type: &MIRType) -> LMIRType {
@@ -59,15 +59,15 @@ pub(crate) fn convert_cx_prototype(
     definitions: &MIRDecomposedRegistry,
 ) -> LMIRFunctionPrototype {
     let signature = classify_signature(
-        &cx_proto.signature.return_type,
-        &cx_proto.signature.params,
-        cx_proto.signature.var_args,
+        &cx_proto.signature().return_type,
+        &cx_proto.signature().params,
+        cx_proto.signature().var_args,
         definitions,
     );
 
     LMIRFunctionPrototype {
-        name: cx_proto.name.clone(),
-        linkage: convert_linkage(cx_proto.linkage),
+        name: CXIdent::from(cx_proto.name()),
+        linkage: convert_linkage(cx_proto.linkage()),
         signature,
     }
 }
@@ -124,6 +124,7 @@ pub(crate) fn convert_type_kind(
 
         MIRTypeKind::TaggedUnion { variants } => LMIRTypeKind::Struct {
             name: mangle_namespace_symbol(cx_type.strong_identifier().unwrap()),
+            
             fields: vec![
                 (
                     "data".to_string(),
@@ -160,7 +161,6 @@ pub(crate) fn convert_type_kind(
             name: cx_type
                 .strong_identifier()
                 .map(mangle_namespace_symbol)
-                .unwrap_or_default(),
             fields: cx_type
                 .aggregate_fields(definitions)
                 .unwrap()
@@ -183,6 +183,7 @@ pub(crate) fn convert_type_kind(
                 cx_type.display_with(definitions)
             )
         }
+
         MIRTypeKind::Str => LMIRTypeKind::Integer(LMIRIntegerType::I8),
     }
 }

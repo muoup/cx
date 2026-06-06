@@ -40,7 +40,7 @@ impl<'a> FMIREnvironment<'a> {
         self.region_table = ScopedMap::new_with_starting_scope();
         self.current_mir_prototype = Some(prototype);
 
-        let params = self.current_mir_prototype().signature.params.clone();
+        let params = self.current_mir_prototype().signature().params.clone();
         for param in params.iter() {
             let Some(name) = param.name.clone() else {
                 continue;

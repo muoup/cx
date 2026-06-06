@@ -32,7 +32,7 @@ pub fn typecheck_return(
     namespace: &EnvironmentNamespace,
     value: Option<MIRExpression>,
 ) -> CXResult<TypecheckResult> {
-    let return_type = env.current_function().signature.return_type.clone();
+    let return_type = env.current_function().signature().return_type.clone();
 
     let return_value = match (value, &return_type) {
         (Some(mut some_value), return_type) if !return_type.is_unit() => {
@@ -90,7 +90,7 @@ pub fn typecheck_return(
 
     if let Some((ret_name, ret_contract)) = env
         .current_function()
-        .signature
+        .signature()
         .contract
         .postcondition
         .clone()
@@ -105,7 +105,7 @@ pub fn typecheck_return(
 
         env.push_scope(false, false);
 
-        for param in env.current_function().signature.params.clone() {
+        for param in env.current_function().signature().params.clone() {
             let Some(name) = param.name else {
                 continue;
             };

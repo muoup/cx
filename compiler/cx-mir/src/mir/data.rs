@@ -85,18 +85,54 @@ impl MIRFunctionSignature {
 
 #[derive(Debug, Clone)]
 pub struct MIRFunctionPrototype {
-    pub name: CXIdent,
-    pub linkage: CXLinkageMode,
-    pub signature: MIRFunctionSignature,
+    name: CXIdent,
+    mangled_name: Option<String>,
+    linkage: CXLinkageMode,
+    signature: MIRFunctionSignature,
 }
 
 impl MIRFunctionPrototype {
-    pub fn name(&self) -> &CXIdent {
+    pub fn new(name: CXIdent, linkage: CXLinkageMode, signature: MIRFunctionSignature) -> Self {
+        Self {
+            name,
+            mangled_name: None,
+            linkage,
+            signature,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        self.mangled_name.as_ref()
+            .map(String::as_str)
+            .unwrap_or(self.name.as_str())
+    }
+
+    pub fn base_name(&self) -> &CXIdent {
         &self.name
     }
 
     pub fn signature(&self) -> &MIRFunctionSignature {
         &self.signature
+    }
+
+    pub fn linkage(&self) -> CXLinkageMode {
+        self.linkage
+    }
+
+    pub fn with_mangled_name<F>(mut self, f: F) -> Self
+        where F: FnOnce(&str) -> String {
+        self.mangle_name(f);
+        self
+    }
+
+    pub fn mangle_name<F>(&mut self, f: F)
+        where F: FnOnce(&str) -> String {
+
+        if let Some(mangled) = &self.mangled_name {
+            self.mangled_name = Some(f(mangled));
+        } else {
+            self.mangled_name = Some(f(self.name.as_str()));
+        }
     }
 
     pub fn contextual_eq(&self, other: &Self, definitions: &impl MIRTypeContext) -> bool {

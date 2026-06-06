@@ -5,7 +5,7 @@ use cx_mir::{
     intrinsic_types::INTRINSIC_TYPES,
     mir::{
         data::MIRFunctionPrototype,
-        expression::{MIRExpression, MIRExpressionKind, MIRPureExpression},
+        expression::{MIRExpression, MIRPureExpression},
         r#type::{MIRType, MIRTypeId, MIRTypeKind},
     },
     registry::MIRDecomposedRegistry,
@@ -119,12 +119,12 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.global_cache.insert(name, symbol);
     }
 
-    pub fn insert_type_symbol(&mut self, name: QualifiedName, id: MIRTypeId) {
-        self.insert_symbol(name, MIRSymbol::Type(id));
-    }
-
     pub fn insert_value(&mut self, name: QualifiedName, expr: MIRExpression) {
         self.insert_symbol(name, MIRSymbol::Expression(expr));
+    }
+
+    pub fn insert_type_symbol(&mut self, name: QualifiedName, id: MIRTypeId) {
+        self.insert_symbol(name, MIRSymbol::Type(id));
     }
 
     pub fn insert_local_value(&mut self, name: QualifiedName, expr: MIRExpression) {
@@ -138,16 +138,7 @@ impl<'a> MIRSymbolRegistry<'a> {
     pub fn insert_function_symbol(&mut self, name: QualifiedName, prototype: MIRFunctionPrototype) {
         self.insert_symbol(
             name,
-            MIRSymbol::Expression(MIRExpression {
-                token_range: None,
-                _type: MIRTypeKind::Function {
-                    signature: Box::new(prototype.signature().clone()),
-                }
-                .into(),
-                kind: MIRExpressionKind::FunctionReference {
-                    name: prototype.name.clone(),
-                },
-            }),
+            MIRSymbol::FunctionReference(prototype)
         );
     }
 
