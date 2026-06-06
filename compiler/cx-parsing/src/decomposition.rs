@@ -45,6 +45,14 @@ impl<'a> DecompositionEnv<'a> {
             return &mut self.symbol_buckets[idx].1;
         };
 
+        if !namespace.is_root() {
+            let Some(strip) = namespace.strip(self.namespace) else {
+                panic!("Namespace {} is not a child of current namespace {}", namespace, self.namespace);
+            };
+
+            self.namespace_aliases.insert(strip, namespace.clone());
+        }
+
         let data = SymbolNamespaceData::new();
         self.symbol_buckets.push((namespace.clone(), data));
         &mut self.symbol_buckets.last_mut().unwrap().1

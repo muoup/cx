@@ -60,6 +60,18 @@ impl NamespacePath {
         Self(segments)
     }
 
+    pub fn strip(&self, prefix: &Self) -> Option<Self> {
+        if self.0.len() < prefix.0.len() {
+            return None;
+        }
+
+        if self.0[..prefix.0.len()] != prefix.0[..] {
+            return None;
+        }
+
+        Some(Self(self.0[prefix.0.len()..].to_vec()))
+    }
+
     pub fn parent_and_name(&self) -> Option<(Self, CXIdent)> {
         let (name, parent) = self.0.split_last()?;
         Some((Self(parent.to_vec()), name.clone()))

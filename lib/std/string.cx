@@ -15,8 +15,8 @@ string string::new() safe {
     std::optional::opt<string> s = string::try_new_string();
     
     match (move s) {
-        std::optional::opt<string>::some(val) => return move val;
-        std::optional::opt<string>::none(_) => {
+        std::optional::opt::some<string>(val) => return move val;
+        std::optional::opt::none<string>(_) => {
             std::io::println("Failed to allocate memory for string");
             @unsafe(exit(1));
         }
@@ -35,7 +35,7 @@ std::optional::opt<string> string::try_new_string() safe {
         void* base_buffer = malloc(16);
 
         if (base_buffer == NULL) {
-            return std::optional::opt<string>::none();
+            return std::optional::opt::none<string>();
         }
         
         string s = (string) {
@@ -45,7 +45,7 @@ std::optional::opt<string> string::try_new_string() safe {
         };
         *s.data = '\0';
     
-        return std::optional::opt<string>::some(move s);
+        return std::optional::opt::some<string>(move s);
     };
 }
 
