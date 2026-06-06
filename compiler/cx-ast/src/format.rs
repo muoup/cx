@@ -2,7 +2,14 @@ use cx_util::identifier::CXIdent;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 use crate::ast::{
-    CXAST, CXASTStmt, expression::{CXBinOp, CXExprKind, CXExpression, CXInitIndex}, function::{CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXReceiverMode}, global_var::{CXEnumVariant, CXGlobalVariable}, modifiers::{CX_CONST, CXLinkageMode}, pattern::CXPattern, template::CXTemplateInput, types::{CXField, CXType, CXTypeKind}
+    CXAST, CXASTDefinition, CXASTStmt,
+    expression::{CXBinOp, CXExprKind, CXExpression, CXInitIndex},
+    function::{CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXReceiverMode},
+    global_var::{CXEnumVariant, CXGlobalVariable},
+    modifiers::{CX_CONST, CXLinkageMode},
+    pattern::CXPattern,
+    template::CXTemplateInput,
+    types::{CXField, CXType, CXTypeKind},
 };
 
 // Helper struct for indented formatting of CXExpr
@@ -60,14 +67,13 @@ impl Display for CXEnumVariant {
         } else {
             write!(f, "{}", self.name)
         }
-    }    
+    }
 }
 
 impl Display for CXGlobalVariable {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            CXGlobalVariable::EnumDefinition(variant) =>
-                variant.fmt(f),
+            CXGlobalVariable::EnumDefinition(variant) => variant.fmt(f),
 
             CXGlobalVariable::Standard {
                 _type,
@@ -89,6 +95,18 @@ impl Display for CXGlobalVariable {
                 Ok(())
             }
         }
+    }
+}
+
+impl Display for CXASTDefinition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        if self.namespace.is_root() {
+            write!(f, "[root] ")?;
+        } else {
+            write!(f, "[{}] ", self.namespace)?;
+        }
+
+        Display::fmt(&self.stmt, f)
     }
 }
 

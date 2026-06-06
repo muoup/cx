@@ -1,10 +1,11 @@
 import std::optional;
-import std::io;
+
+#include <stdio.h>
 
 int main() {
     std::optional::opt<int> value = std::optional::opt<int>::some(7);
     if (value is std::optional::opt<int>::some(inner)) {
-        std::io::printf("%d\n", inner);
+        printf("%d\n", inner);
     }
     return 0;
 }

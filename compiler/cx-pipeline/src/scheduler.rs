@@ -271,6 +271,10 @@ pub(crate) fn perform_job(
                 .insert_module(output.module_symbols.clone());
             context
                 .module_db
+                .preparse_registry
+                .insert_module(output.root_symbols.clone());
+            context
+                .module_db
                 .lex_tokens
                 .insert(job.unit.clone(), tokens);
             context

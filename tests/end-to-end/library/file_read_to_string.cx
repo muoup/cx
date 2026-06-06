@@ -1,5 +1,4 @@
 import std::file;
-import std::io;
 import std::optional;
 import std::string;
 
@@ -9,7 +8,7 @@ i32 main() {
     std::file::file f = std::file::file::open("end-to-end/library/file_read_to_string.txt", "r").unwrap();
     std::string::string s = f.read_to_string();
 
-    std::io::printf("%s", @unsafe((const char*)s.as_str()));
+    printf("%s", @unsafe((const char*)s.as_str()));
 
     f.close();
     s.drop();

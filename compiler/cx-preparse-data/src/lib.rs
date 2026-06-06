@@ -13,6 +13,7 @@ pub struct PreparseContents {
     pub module: String,
     pub imports: Vec<ModulePath>,
     pub module_symbols: PreparseModuleSymbols,
+    pub root_symbols: PreparseModuleSymbols,
     pub namespace_aliases: HashMap<NamespacePath, NamespacePath>,
 }
 
@@ -32,6 +33,7 @@ impl PreparseContents {
             module,
             imports: Vec::new(),
             module_symbols: PreparseModuleSymbols::new(namespace),
+            root_symbols: PreparseModuleSymbols::new(NamespacePath::root()),
             namespace_aliases,
         }
     }

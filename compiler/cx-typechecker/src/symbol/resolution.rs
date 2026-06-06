@@ -1,5 +1,5 @@
 use cx_ast::{
-    ast::template::CXTemplatePrototype,
+    ast::{function::CXFunctionKind, template::CXTemplatePrototype},
     symbols::{CXSymbol, CXSymbolKind},
 };
 use cx_util::{CXError, CXResult, identifier::CXIdent, namespace::QualifiedName};
@@ -54,7 +54,8 @@ pub fn resolve_symbol(
         }
 
         CXSymbolKind::FunctionReference(prototype) => {
-            let prototype = complete_prototype(env, namespace, prototype)?;
+            let prototype_namespace = function_lexical_namespace(namespace, &prototype.kind);
+            let prototype = complete_prototype(env, &prototype_namespace, prototype)?;
 
             Ok(MIRSymbol::Expression(MIRExpression {
                 token_range: None,
@@ -127,7 +128,6 @@ pub fn apply_template(
     };
 
     let is_function = matches!(&source.kind, CXSymbolKind::FunctionReference(_));
-
     if input.types.len() != template_input.args.len() {
         return CXError::create_result(format!(
             "Template '{}' expects {} arguments, found {}",
@@ -155,6 +155,35 @@ pub fn apply_template(
 
     attach_template_metadata(env, &mut result, namespace, template_input);
     Ok(Some(result))
+}
+
+pub fn symbol_lexical_namespace(
+    namespace: &EnvironmentNamespace,
+    symbol: &CXSymbol,
+) -> EnvironmentNamespace {
+    match &symbol.kind {
+        CXSymbolKind::FunctionReference(prototype)
+        | CXSymbolKind::FunctionTemplate {
+            definition: prototype,
+            ..
+        } => function_lexical_namespace(namespace, &prototype.kind),
+        _ => namespace.clone(),
+    }
+}
+
+fn function_lexical_namespace(
+    namespace: &EnvironmentNamespace,
+    kind: &CXFunctionKind,
+) -> EnvironmentNamespace {
+    match kind {
+        CXFunctionKind::MemberFunction { .. } | CXFunctionKind::StaticMemberFunction { .. } => {
+            namespace
+                .parent_and_name()
+                .map(|(parent, _)| parent)
+                .unwrap_or_else(|| namespace.clone())
+        }
+        CXFunctionKind::Standard(_) => namespace.clone(),
+    }
 }
 
 pub fn apply_template_input(

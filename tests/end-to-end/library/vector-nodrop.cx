@@ -1,12 +1,13 @@
 import std::vector;
-import std::io;
+
+#include <stdio.h>
 
 struct test_type : @nodrop {
     int num;
 };
 
 void destructor(test_type t) {
-    std::io::printf("dropped num: %d\n", t.num);
+    printf("dropped num: %d\n", t.num);
     @leak(t);
 }
 

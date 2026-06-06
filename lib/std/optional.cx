@@ -1,6 +1,6 @@
 import std::io;
 
-void exit(int code);
+#include <stdlib.h>
 
 public:
 

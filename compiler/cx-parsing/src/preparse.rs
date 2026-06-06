@@ -1,10 +1,8 @@
-use crate::{assert_token_matches, next_kind, try_next};
+use crate::{assert_token_matches, next_kind};
 use cx_pipeline_data::CompilerConfig;
-use cx_preparse_data::PreparseContents;
+use cx_preparse_data::{PreparseContents, symbol_data::PreparseModuleSymbols};
 use cx_tokens::{TokenIter, identifier, keyword, operator, punctuator, specifier};
 use cx_util::{CXResult, identifier::CXIdent, log_error, module_path::ModulePath};
-
-use crate::parse::try_parse_simple_identifier;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PreparseConfig {
@@ -27,6 +25,20 @@ pub(crate) struct PreparseData<'a> {
     pub(crate) visibility_mode: cx_preparse_data::VisibilityMode,
 }
 
+impl PreparseData<'_> {
+    fn current_symbols_mut(&mut self) -> &mut PreparseModuleSymbols {
+        let Some(token) = self.tokens.prev() else {
+            return &mut self.contents.module_symbols;
+        };
+
+        if token.file_origin.as_ref() == self.tokens.file.as_path() {
+            &mut self.contents.module_symbols
+        } else {
+            &mut self.contents.root_symbols
+        }
+    }
+}
+
 pub(crate) fn iterate_tokens(data: &mut PreparseData) -> CXResult<()> {
     while data.tokens.has_next() {
         consume_token(data)?;
@@ -46,24 +58,36 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
                 data.tokens.back();
                 return Ok(());
             };
+            let ident = CXIdent::new(ident.as_str());
+            let visibility = data.visibility_mode;
 
-            data.contents
-                .module_symbols
-                .add_type(CXIdent::new(ident.as_str()), data.visibility_mode);
+            data.current_symbols_mut().add_type(ident, visibility);
         }
 
         keyword!(Typedef) => {
-            while !try_next!(data.tokens, punctuator!(Semicolon)) && data.tokens.has_next() {
-                data.tokens.next();
+            let mut last_ident = None;
+            let mut depth = 0usize;
+
+            while let Some(token) = data.tokens.next() {
+                match &token.kind {
+                    punctuator!(OpenBrace) | punctuator!(OpenParen) | punctuator!(OpenBracket) => {
+                        depth += 1
+                    }
+                    punctuator!(CloseBrace)
+                    | punctuator!(CloseParen)
+                    | punctuator!(CloseBracket) => depth = depth.saturating_sub(1),
+                    punctuator!(Semicolon) if depth == 0 => break,
+                    identifier!(ident) => last_ident = Some(CXIdent::new(ident.as_str())),
+                    _ => {}
+                }
             }
 
-            let Some(ident) = try_parse_simple_identifier(&mut data.tokens) else {
+            let Some(ident) = last_ident else {
                 return Ok(());
             };
 
-            data.contents
-                .module_symbols
-                .add_type(ident, data.visibility_mode);
+            let visibility = data.visibility_mode;
+            data.current_symbols_mut().add_type(ident, visibility);
         }
 
         keyword!(Import) => {

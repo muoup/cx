@@ -11,4 +11,3 @@ pub struct CXTemplateInput {
 pub struct CXTemplatePrototype {
     pub types: Vec<CXIdent>,
 }
-

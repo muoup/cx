@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use cx_ast::ast::{CXAST, CXASTStmt};
+use cx_ast::ast::{CXAST, CXASTDefinition, CXASTStmt};
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_preparse_data::{PreparseContents, VisibilityMode};
 use cx_tokens::TokenIter;
@@ -90,7 +90,10 @@ impl<'a> ParserData<'a> {
     }
 
     pub fn add_stmt(&mut self, stmt: CXASTStmt) {
-        self.ast.definition_stmts.push(stmt)
+        let namespace = self.namespace_for_current_stmt();
+        self.ast
+            .definition_stmts
+            .push(CXASTDefinition { namespace, stmt })
     }
 
     pub fn take_ast(mut self) -> CXAST {
@@ -115,6 +118,27 @@ impl<'a> ParserData<'a> {
         self.registry
             .get_symbol(&resolved_name.namespace, &resolved_name.name)
             .is_some()
+            || (name.namespace.is_root()
+                && self
+                    .registry
+                    .get_symbol(&NamespacePath::root(), &name.name)
+                    .is_some())
             || (name.namespace.is_root() && self.temporary_type_names.contains_key(&name.name))
+    }
+
+    fn namespace_for_current_stmt(&self) -> NamespacePath {
+        let Some(token) = self.tokens.prev() else {
+            return self.current_module_namespace();
+        };
+
+        if token.file_origin.as_ref() == self.tokens.file.as_path() {
+            self.current_module_namespace()
+        } else {
+            NamespacePath::root()
+        }
+    }
+
+    fn current_module_namespace(&self) -> NamespacePath {
+        NamespacePath::from(self.ast.module_path.clone())
     }
 }

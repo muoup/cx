@@ -1,4 +1,4 @@
-import std::io;
+#include <stdio.h>
 
 typedef<T> T* Ptr;
 
@@ -17,5 +17,5 @@ int main() {
     };
 
     access(&data);
-    std::io::printf("data: %d\n", *data.ptr); //Output: data: 42
+    printf("data: %d\n", *data.ptr); //Output: data: 42
 }

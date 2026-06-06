@@ -1,12 +1,13 @@
 import std::string;
 import std::optional;
-import std::io;
+
+#include <stdio.h>
 
 int main() {
     std::string::string s = std::string::string::new();
     s.append("Hello, worl");
     s.append_char('d');
     s.append_char('!');
-    std::io::printf("%s\n", s.data);
+    printf("%s\n", s.data);
     s.drop();
 }

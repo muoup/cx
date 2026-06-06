@@ -131,21 +131,33 @@ impl TypeEnvironment<'_> {
             return Ok(Some(preresolved_symbol.clone()));
         }
 
-        let name = self.symbols.resolve_qualified_alias(name);
+        let aliased_name = self.symbols.resolve_qualified_alias(name).into_owned();
 
-        let Some(untyped_symbol) = self.symbols.get_global_registry().resolve(name.as_ref()) else {
-            return Ok(None);
+        let (resolved_name, untyped_symbol) = match self
+            .symbols
+            .get_global_registry()
+            .resolve(&aliased_name)
+            .map(|symbol| (aliased_name.clone(), symbol))
+            .or_else(|| {
+                name.namespace.is_root().then(|| {
+                    self.symbols
+                        .get_global_registry()
+                        .resolve(name)
+                        .map(|symbol| (name.clone(), symbol))
+                })?
+            }) {
+            Some(result) => result,
+            None => return Ok(None),
         };
 
         let symbol = resolve_symbol(
             self,
-            &name.as_ref().namespace,
-            &name.as_ref().name,
+            &resolved_name.namespace,
+            &resolved_name.name,
             &untyped_symbol,
         )?;
 
-        self.symbols
-            .insert_symbol(name.into_owned(), symbol.clone());
+        self.symbols.insert_symbol(resolved_name, symbol.clone());
         Ok(Some(symbol))
     }
 }

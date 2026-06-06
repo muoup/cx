@@ -16,7 +16,10 @@ use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 use crate::{
     environment::{MIRFunctionGenRequest, TypeEnvironment},
-    symbol::{completion::complete_prototype, resolution::apply_template_input},
+    symbol::{
+        completion::complete_prototype,
+        resolution::{apply_template_input, symbol_lexical_namespace},
+    },
     type_checking::functions::typecheck_function,
 };
 
@@ -136,7 +139,7 @@ fn realize_fn_template(
         unreachable!("Expected template to be a function template");
     };
 
-    let namespace = name.namespace.clone();
+    let namespace = symbol_lexical_namespace(&name.namespace, &stmt);
     env.symbols.push_local_scope();
     let result = (|| {
         apply_template_input(env, &template, input)?;

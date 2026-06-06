@@ -1,10 +1,6 @@
 use std::collections::HashMap;
 
-use cx_util::{
-    identifier::CXIdent,
-    module_path::ModulePath,
-    namespace::NamespacePath,
-};
+use cx_util::{identifier::CXIdent, module_path::ModulePath, namespace::NamespacePath};
 
 use crate::ast::{
     expression::CXExpression, function::CXFunctionPrototype, global_var::CXGlobalVariable,
@@ -23,8 +19,14 @@ pub mod types;
 pub struct CXAST {
     pub module_path: ModulePath,
     pub imports: Vec<ModulePath>,
-    pub definition_stmts: Vec<CXASTStmt>,
+    pub definition_stmts: Vec<CXASTDefinition>,
     pub namespace_aliases: HashMap<NamespacePath, NamespacePath>,
+}
+
+#[derive(Debug)]
+pub struct CXASTDefinition {
+    pub namespace: NamespacePath,
+    pub stmt: CXASTStmt,
 }
 
 #[derive(Debug)]

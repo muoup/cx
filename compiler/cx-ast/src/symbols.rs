@@ -60,6 +60,19 @@ impl SymbolNamespaceData {
         self.symbols.insert(name.into(), symbol);
     }
 
+    pub fn merge_from(&mut self, other: SymbolNamespaceData) {
+        let enum_offset = self.enum_blocks.len();
+        self.enum_blocks.extend(other.enum_blocks);
+        self.symbols
+            .extend(other.symbols.into_iter().map(|(name, mut symbol)| {
+                if let CXSymbolKind::EnumIdent { enum_block_idx, .. } = &mut symbol.kind {
+                    *enum_block_idx += enum_offset;
+                }
+
+                (name, symbol)
+            }));
+    }
+
     pub fn insert_enum_block(&mut self, block: CXEnumDefinition) -> EnumBlockIdx {
         self.enum_blocks.push(block);
         self.enum_blocks.len() - 1

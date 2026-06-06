@@ -1,16 +1,17 @@
 import std::file;
-import std::io;
 import std::optional;
+
+#include <stdio.h>
 
 int main() {
     std::optional::opt<std::file::file> maybe_file = std::file::file::open("end-to-end/library/file_read_to_string.txt", "r");
 
     match (move maybe_file) {
         std::optional::opt<std::file::file>::some(f) => {
-            std::io::printf("opened\n");
+            printf("opened\n");
             f.close();
         }
-        std::optional::opt<std::file::file>::none() => std::io::printf("missing\n");
+        std::optional::opt<std::file::file>::none() => printf("missing\n");
     }
 
     return 0;

@@ -3,8 +3,6 @@ import std::io;
 
 #include <stdlib.h>
 
-void exit(int);
-
 public:
 
 struct string : @nodrop {

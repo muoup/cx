@@ -257,7 +257,21 @@ fn complete_identifier_type(
         return Ok(_ty.as_type_id().unwrap()); // unfailable
     }
 
-    let Some(symbol) = env.symbols.get_global_registry().resolve(&alias_name) else {
+    let resolved_name = env
+        .symbols
+        .get_global_registry()
+        .resolve(&alias_name)
+        .map(|symbol| (alias_name.clone(), symbol))
+        .or_else(|| {
+            name.namespace.is_root().then(|| {
+                env.symbols
+                    .get_global_registry()
+                    .resolve(name)
+                    .map(|symbol| (name.clone(), symbol))
+            })?
+        });
+
+    let Some((resolved_name, symbol)) = resolved_name else {
         if predeclaration != PredeclarationType::None {
             let id = env.symbols.reserve_type_id();
             env.symbols.insert_type_symbol(alias_name, id);
@@ -278,11 +292,11 @@ fn complete_identifier_type(
 
             let prereserved_id = env.symbols.reserve_type_id();
             env.symbols
-                .insert_type_symbol(alias_name.clone(), prereserved_id);
+                .insert_type_symbol(resolved_name.clone(), prereserved_id);
 
-            let mut completed = complete_type_value(env, &alias_name.namespace, definition)?;
+            let mut completed = complete_type_value(env, &resolved_name.namespace, definition)?;
             if completed.debug_name.is_none() {
-                completed.debug_name = Some(alias_name.name.clone());
+                completed.debug_name = Some(resolved_name.name.clone());
             }
 
             env.symbols.overwrite_type_id(prereserved_id, completed);
@@ -290,7 +304,8 @@ fn complete_identifier_type(
         }
 
         CXSymbolKind::TypeTemplate { .. } => {
-            let mir_symbol = resolve_symbol(env, &alias_name.namespace, &alias_name.name, &symbol)?;
+            let mir_symbol =
+                resolve_symbol(env, &resolved_name.namespace, &resolved_name.name, &symbol)?;
             let Some(input) = template_input else {
                 return CXError::create_result(format!(
                     "Template type '{name}' requires explicit template arguments"

@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::RwLock};
 
 use cx_util::namespace::{NamespacePath, QualifiedName};
 
-use crate::symbols::{SymbolNamespaceData, CXSymbol};
+use crate::symbols::{CXSymbol, SymbolNamespaceData};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ExportNameMode {
@@ -34,7 +34,12 @@ impl GlobalSymbolRegistry {
             .write()
             .expect("GlobalSymbolRegistry write lock poisoned");
 
-        if inner.namespaces.contains_key(&namespace) {
+        if let Some(existing) = inner.namespaces.get_mut(&namespace) {
+            if namespace.is_root() {
+                existing.merge_from(data);
+                return None;
+            }
+
             return Some((namespace, data));
         }
 
@@ -81,23 +86,25 @@ impl GlobalSymbolRegistry {
             .cloned()
     }
 
-    pub fn get_bucket<'b, 'c>(&'b self, namespace: &NamespacePath) -> Option<(impl Sized + use<'b>, &'c SymbolNamespaceData)> {
+    pub fn get_bucket<'b, 'c>(
+        &'b self,
+        namespace: &NamespacePath,
+    ) -> Option<(impl Sized + use<'b>, &'c SymbolNamespaceData)> {
         let inner = self
             .inner
             .read()
             .expect("GlobalSymbolRegistry read lock poisoned");
 
-        let data = inner.namespaces
-            .get(namespace)?;
+        let data = inner.namespaces.get(namespace)?;
 
-        // This is incredibly unnecessary but I thought it was funny. This is my 11:40 PM attempt at 
+        // This is incredibly unnecessary but I thought it was funny. This is my 11:40 PM attempt at
         // recreating RwLockReadGuard::map that is not current stable.
-        // 
+        //
         // Also not sure how to do a true opaque type for locks which we don't want the user to touch,
         // but impl Sized kinda rocks
         unsafe {
             let data = std::mem::transmute(data);
-            
+
             Some((inner, data))
         }
     }
