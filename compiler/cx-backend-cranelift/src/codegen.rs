@@ -77,6 +77,7 @@ pub(crate) fn codegen_function(
         target_frontend_config: &global_state.target_frontend_config,
 
         function_ids: &mut global_state.function_ids,
+        global_ids: &global_state.global_ids,
 
         variable_table: VariableTable::new(),
         block_map: HashMap::new(),

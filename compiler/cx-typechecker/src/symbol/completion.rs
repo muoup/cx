@@ -376,8 +376,13 @@ fn complete_identifier_type(
         }
 
         CXSymbolKind::TypeTemplate { .. } => {
-            let mir_symbol =
-                resolve_symbol(env, &resolved_name.namespace, &resolved_name.name, &symbol)?;
+            let mir_symbol = resolve_symbol(
+                env,
+                namespace,
+                &resolved_name.namespace,
+                &resolved_name.name,
+                &symbol,
+            )?;
             let Some(input) = template_input else {
                 return CXError::create_result(format!(
                     "Template type '{name}' requires explicit template arguments"

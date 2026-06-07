@@ -1,5 +1,5 @@
-use crate::inst_calling::prepare_function_sig;
 use crate::FunctionState;
+use crate::inst_calling::prepare_function_sig;
 use cranelift_module::{FuncId, Linkage, Module};
 use cx_lmir::{LMIRFunctionSignature, LinkageType};
 use cx_util::CXResult;

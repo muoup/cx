@@ -3,8 +3,11 @@ use cranelift_module::{DataDescription, Linkage, Module};
 use cx_lmir::{LMIRGlobalType, LMIRGlobalValue};
 use cx_util::CXResult;
 
-pub(crate) fn generate_global(state: &mut GlobalState, variable: &LMIRGlobalValue) -> CXResult<()> {
-    match &variable._type {
+pub(crate) fn generate_global(
+    state: &mut GlobalState,
+    variable: &LMIRGlobalValue,
+) -> CXResult<()> {
+    let id = match &variable._type {
         LMIRGlobalType::StringLiteral(str) => {
             let id = state
                 .object_module
@@ -19,6 +22,7 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &LMIRGlobalValu
 
             state.object_module.define_data(id, &data).unwrap();
             state.object_module.declare_data_in_data(id, &mut data);
+            id
         }
 
         LMIRGlobalType::Variable {
@@ -32,45 +36,49 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &LMIRGlobalValu
                 .unwrap();
 
             if linkage == Linkage::Import {
-                return Ok(());
-            }
-
-            let mut data = DataDescription::new();
-
-            if let Some(initial_value) = initial_value {
-                let bytes: [u8; 8] = i64::to_ne_bytes(*initial_value);
-                let type_size = _type.size();
-
-                // Little Endian:
-                // 1111 2222 3333 4444
-                // ~~~~~~~~~ = i16
-                //
-                // Big Endian:
-                // 4444 3333 2222 1111
-                //     i16 = ~~~~~~~~~
-                let relevant_data = if cfg!(target_endian = "little") {
-                    bytes
-                        .iter()
-                        .take(usize::from(type_size))
-                        .cloned()
-                        .collect::<Vec<_>>()
-                } else {
-                    bytes
-                        .iter()
-                        .skip(8 - usize::from(type_size))
-                        .cloned()
-                        .collect::<Vec<_>>()
-                };
-
-                data.define(relevant_data.into_boxed_slice());
-                state.object_module.define_data(id, &data).expect("");
+                id
             } else {
-                let size = _type.size();
-                data.define_zeroinit(usize::from(size));
-                state.object_module.define_data(id, &data).expect("");
+                let mut data = DataDescription::new();
+
+                if let Some(initial_value) = initial_value {
+                    let bytes: [u8; 8] = i64::to_ne_bytes(*initial_value);
+                    let type_size = _type.size();
+
+                    // Little Endian:
+                    // 1111 2222 3333 4444
+                    // ~~~~~~~~~ = i16
+                    //
+                    // Big Endian:
+                    // 4444 3333 2222 1111
+                    //     i16 = ~~~~~~~~~
+                    let relevant_data = if cfg!(target_endian = "little") {
+                        bytes
+                            .iter()
+                            .take(usize::from(type_size))
+                            .cloned()
+                            .collect::<Vec<_>>()
+                    } else {
+                        bytes
+                            .iter()
+                            .skip(8 - usize::from(type_size))
+                            .cloned()
+                            .collect::<Vec<_>>()
+                    };
+
+                    data.define(relevant_data.into_boxed_slice());
+                    state.object_module.define_data(id, &data).expect("");
+                } else {
+                    let size = _type.size();
+                    data.define_zeroinit(usize::from(size));
+                    state.object_module.define_data(id, &data).expect("");
+                }
+
+                id
             }
         }
-    }
+    };
+
+    state.global_ids.push(id);
 
     Ok(())
 }

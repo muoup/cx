@@ -164,6 +164,7 @@ impl TypeEnvironment<'_> {
 
         let symbol = resolve_symbol(
             self,
+            namespace,
             &resolved_name.namespace,
             &resolved_name.name,
             &untyped_symbol,

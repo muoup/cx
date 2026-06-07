@@ -34,13 +34,14 @@ use crate::{
 
 pub fn resolve_symbol(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    evaluation_namespace: &EnvironmentNamespace,
+    symbol_namespace: &EnvironmentNamespace,
     name: &CXIdent,
     symbol: &CXSymbol,
 ) -> CXResult<MIRSymbol> {
     match &symbol.kind {
         CXSymbolKind::Type(ty) => {
-            let mut completed = complete_type(env, namespace, ty)?;
+            let mut completed = complete_type(env, symbol_namespace, ty)?;
             if completed.debug_name.is_none() {
                 completed.debug_name = Some(name.clone());
             }
@@ -49,17 +50,19 @@ pub fn resolve_symbol(
         }
 
         CXSymbolKind::AddressableGlobal(name, ty) => {
-            let ty = complete_type(env, &namespace, ty)?;
+            let ty = complete_type(env, symbol_namespace, ty)?;
 
-            env.items.push_generated_global(MIRGlobalVariable {
-                is_mutable: false,
-                linkage: CXLinkageMode::Extern,
-                kind: MIRGlobalVarKind::Variable {
-                    name: name.clone(),
-                    _type: ty.clone(),
-                    initializer: None,
-                },
-            });
+            if evaluation_namespace != symbol_namespace {
+                env.items.push_generated_global(MIRGlobalVariable {
+                    is_mutable: false,
+                    linkage: CXLinkageMode::Extern,
+                    kind: MIRGlobalVarKind::Variable {
+                        name: name.clone(),
+                        _type: ty.clone(),
+                        initializer: None,
+                    },
+                });
+            }
 
             Ok(MIRSymbol::Expression(MIRExpression {
                 token_range: None,
@@ -72,7 +75,8 @@ pub fn resolve_symbol(
         }
 
         CXSymbolKind::FunctionReference(prototype) => {
-            let prototype_namespace = function_lexical_namespace(namespace, &prototype.kind);
+            let prototype_namespace =
+                function_lexical_namespace(symbol_namespace, &prototype.kind);
             let prototype = complete_prototype(env, &prototype_namespace, prototype)?;
 
             Ok(MIRSymbol::FunctionReference(prototype))
@@ -96,7 +100,7 @@ pub fn resolve_symbol(
                 template_prototype: template.clone(),
                 name: name.clone(),
                 source: Box::new(source),
-                namespace: namespace.clone(),
+                namespace: symbol_namespace.clone(),
             })
         }
 
@@ -104,12 +108,12 @@ pub fn resolve_symbol(
             template: None,
             union_type,
             variant_index,
-        } => resolve_type_constructor(env, namespace, name, union_type, *variant_index),
+        } => resolve_type_constructor(env, symbol_namespace, name, union_type, *variant_index),
 
         CXSymbolKind::EnumIdent {
             enum_block_idx,
             variant_index,
-        } => resolve_enum_block(env, namespace, *enum_block_idx).map(|b| {
+        } => resolve_enum_block(env, symbol_namespace, *enum_block_idx).map(|b| {
             b.variant_expr(*variant_index)
                 .expect("Expected enum variant to be in the global registry")
                 .clone()
@@ -125,7 +129,7 @@ pub fn resolve_symbol(
                 template_prototype: input.clone(),
                 name: name.clone(),
                 source: Box::new(source),
-                namespace: namespace.clone(),
+                namespace: symbol_namespace.clone(),
             })
         }
 
@@ -143,7 +147,7 @@ pub fn resolve_symbol(
                 template_prototype: input.clone(),
                 name: name.clone(),
                 source: Box::new(source),
-                namespace: namespace.clone(),
+                namespace: symbol_namespace.clone(),
             })
         }
     }
@@ -224,7 +228,7 @@ pub fn apply_template(
     env.symbols.push_local_scope();
     let result = (|| {
         apply_template_input(env, input, &template_input)?;
-        resolve_symbol(env, namespace, name, source)
+        resolve_symbol(env, namespace, namespace, name, source)
     })();
     env.symbols.pop_local_scope();
 
