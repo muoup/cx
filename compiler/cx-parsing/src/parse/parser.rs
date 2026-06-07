@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use cx_ast::ast::{CXAST, CXASTDefinition, CXASTStmt, function::CXFunctionKind};
+use cx_ast::ast::{function::CXFunctionKind, CXASTDefinition, CXASTStmt, CXAST};
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_preparse_data::{PreparseContents, VisibilityMode};
 use cx_tokens::TokenIter;

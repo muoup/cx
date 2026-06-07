@@ -1,9 +1,11 @@
 use cx_ast::ast::expression::{CXExpression, CXInitIndex};
 use cx_mir::{
-    EnvironmentNamespace, mir::{
+    EnvironmentNamespace,
+    mir::{
         data::{MIRType, MIRTypeKind},
         expression::{MIRExpressionKind, StructInitialization},
-    }, type_context::MIRTypeContext
+    },
+    type_context::MIRTypeContext,
 };
 use cx_tokens::TokenRange;
 use cx_util::CXResult;

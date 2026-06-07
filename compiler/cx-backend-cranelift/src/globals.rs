@@ -1,4 +1,4 @@
-use crate::{GlobalState, routines::convert_linkage};
+use crate::{routines::convert_linkage, GlobalState};
 use cranelift_module::{DataDescription, Linkage, Module};
 use cx_lmir::{LMIRGlobalType, LMIRGlobalValue};
 use cx_util::CXResult;

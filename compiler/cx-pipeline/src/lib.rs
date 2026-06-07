@@ -15,9 +15,9 @@ use cx_pipeline_data::jobs::{CompilationJob, CompilationStep};
 use cx_pipeline_data::{
     CompilationMode, CompilationUnit, CompilerConfig, GlobalCompilationContext,
 };
-use cx_util::format::with_dump_directory;
 use cx_util::CXError;
 use cx_util::CXResult;
+use cx_util::format::with_dump_directory;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Mutex;

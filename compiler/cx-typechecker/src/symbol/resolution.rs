@@ -300,11 +300,7 @@ fn attach_template_metadata(
                 template_input: input.clone(),
             }));
             ty.strong_identifier = ty.strong_identifier.as_ref().map(|base| {
-                base_mangle_templated_name(
-                    &env.symbols,
-                    base.as_str(),
-                    input.args.as_slice(),
-                )
+                base_mangle_templated_name(&env.symbols, base.as_str(), input.args.as_slice())
             });
             env.symbols.overwrite_type_id(*id, ty);
         }

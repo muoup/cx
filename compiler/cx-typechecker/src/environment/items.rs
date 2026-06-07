@@ -26,7 +26,7 @@ pub struct ItemRegistry {
     generated_functions: Vec<MIRFunction>,
     generated_globals: Vec<MIRGlobalVariable>,
     requests: Vec<MIRFunctionGenRequest>,
-    requests_fulfilled: HashSet<String>
+    requests_fulfilled: HashSet<String>,
 }
 
 impl ItemRegistry {

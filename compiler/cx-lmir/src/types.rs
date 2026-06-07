@@ -74,22 +74,7 @@ pub enum LMIRTypeKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TypePaddedSize(usize);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TypeSize(usize);
-
-impl From<TypePaddedSize> for usize {
-    fn from(s: TypePaddedSize) -> usize {
-        s.0
-    }
-}
-
-impl From<usize> for TypePaddedSize {
-    fn from(s: usize) -> TypePaddedSize {
-        TypePaddedSize(s)
-    }
-}
 
 impl From<TypeSize> for usize {
     fn from(s: TypeSize) -> usize {
@@ -161,13 +146,6 @@ impl LMIRType {
                 .unwrap_or(8),
             LMIRTypeKind::Unit => 1,
         }
-    }
-
-    pub fn padded_size(&self) -> TypePaddedSize {
-        let size : usize = self.size().into();
-        let align : usize = self.alignment().into();
-
-        TypePaddedSize(size + (size % align))
     }
 
     #[inline]

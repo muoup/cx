@@ -3,13 +3,13 @@
 //! This module handles lowering of MIRExpression (AST-style IR) to LMIR.
 
 use cx_lmir::{
-    types::{LMIRIntegerType, LMIRType, LMIRTypeKind, TypePaddedSize},
+    types::{LMIRIntegerType, LMIRType, LMIRTypeKind, TypeSize},
     LMIRABISlot, LMIRFunctionSignature, LMIRInstructionKind, LMIRIntBinOp, LMIRParameterABI,
-    LMIRPtrBinOp, LMIRValue,
+    LMIRPtrBinOp, LMIRValue, LinkageType,
 };
 use cx_mir::{
     mir::{
-        data::{MIRFunction, MIRFunctionSignature, MIRTypeKind},
+        data::{MIRFunction, MIRFunctionPrototype, MIRFunctionSignature, MIRTypeKind},
         expression::{
             MIRExpression, MIRExpressionKind, MIRFunctionContract, StructInitialization,
             SymbolValueOrigin,
@@ -518,6 +518,11 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
 
         MIRExpressionKind::FunctionReference { name } => Ok(LMIRValue::FunctionRef(name.clone())),
 
+        MIRExpressionKind::SizeOf { _type } => Ok(LMIRValue::IntImmediate {
+            val: usize::from(builder.convert_cx_type(_type).size()) as i64,
+            _type: LMIRIntegerType::I64,
+        }),
+
         // ===== Arithmetic & Logic =====
         MIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
             lower_binary_op(builder, lhs, rhs, op, &expr._type)
@@ -694,15 +699,15 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                 .map(|v| lower_expression(builder, v))
                 .transpose()?;
 
-            if let Some((binding, postcondition)) = postcondition {
+            if let Some(postcondition) = postcondition {
                 builder.push_scope(None, None);
-                if let Some(binding) = binding {
+                if let Some(binding) = &postcondition.binding {
                     if let Some(val) = val.clone() {
                         builder.insert_symbol(binding.clone(), val);
                     }
                 }
 
-                let result = lower_return(builder, val, Some(postcondition.as_ref()));
+                let result = lower_return(builder, val, Some(postcondition));
                 builder.pop_scope()?;
                 result
             } else {
@@ -783,13 +788,13 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             let bc_array = lower_expression(builder, array)?;
             let bc_index = lower_expression(builder, index)?;
             let bc_element_type = builder.convert_cx_type(element_type);
-            let element_size = bc_element_type.padded_size();
+            let element_size = bc_element_type.size();
 
             builder.add_new_instruction(
                 LMIRInstructionKind::PointerBinOp {
                     op: LMIRPtrBinOp::ADD,
                     ptr_type: bc_element_type,
-                    type_padded_size: element_size,
+                    type_size: element_size,
                     left: bc_array,
                     right: bc_index,
                 },
@@ -969,7 +974,16 @@ fn lower_call(
             }
         }
 
-        lower_contract_assertion(builder, precondition, "precondition violation")?;
+        let assertion_prototype = contract
+            .assertion_prototype
+            .as_ref()
+            .expect("precondition requires assertion prototype");
+        lower_contract_assertion(
+            builder,
+            precondition,
+            "precondition violation",
+            assertion_prototype,
+        )?;
 
         builder.pop_scope()?;
     }
@@ -1049,7 +1063,7 @@ fn lower_call(
         value
     };
 
-    if let Some((ret_name, postcondition)) = &contract.postcondition {
+    if let Some(postcondition) = &contract.postcondition {
         builder.push_scope(None, None);
 
         for (arg_expr, param) in args_cloned.into_iter().zip(signature.params.iter()) {
@@ -1058,11 +1072,11 @@ fn lower_call(
             }
         }
 
-        if let Some(ret_name) = ret_name {
+        if let Some(ret_name) = &postcondition.binding {
             builder.insert_symbol((*ret_name).clone(), value.clone());
         }
 
-        let assumption = lower_expression(builder, postcondition)?;
+        let assumption = lower_expression(builder, &postcondition.condition)?;
         builder.add_new_instruction(
             LMIRInstructionKind::CompilerAssumption {
                 condition: assumption,
@@ -1146,7 +1160,7 @@ fn lower_abi_slot_load(
             LMIRInstructionKind::PointerBinOp {
                 op: LMIRPtrBinOp::ADD,
                 ptr_type: slot._type.clone(),
-                type_padded_size: TypePaddedSize::from(1),
+                type_size: TypeSize::from(1),
                 left: source,
                 right: builder.int_const(slot.offset as i32, LMIRIntegerType::I64),
             },
@@ -1200,19 +1214,22 @@ pub(crate) fn lower_contract_assertion(
     builder: &mut LMIRBuilder,
     condition: &MIRExpression,
     message: &str,
+    assertion_prototype: &MIRFunctionPrototype,
 ) -> CXResult<()> {
     let condition_val = lower_expression(builder, condition)?;
     let message_global = builder.create_static_string(message.to_string());
 
-    let Some(assert_prototype) = builder.get_prototype("__compiler_assert").cloned() else {
-        return cx_util::CXError::create_result(
-            "Function contract used but __compiler_assert not found. Ensure std::intrinsic::assertion is imported.".to_string()
-        );
-    };
+    let mut assert_prototype = builder.convert_cx_prototype(assertion_prototype);
+    assert_prototype.linkage = LinkageType::External;
+    let assert_name = assert_prototype.name.clone();
+
+    if builder.get_prototype(assert_name.as_str()).is_none() {
+        builder.insert_fn_prototype(assert_prototype.clone());
+    }
 
     builder.add_new_instruction(
         LMIRInstructionKind::DirectCall {
-            func: cx_util::identifier::CXIdent::from("__compiler_assert"),
+            func: assert_name,
             args: vec![condition_val, message_global],
             method_sig: assert_prototype.signature().clone(),
         },
@@ -1229,7 +1246,7 @@ fn lower_array_initializer(
     element_type: &cx_mir::mir::data::MIRType,
 ) -> CXResult<LMIRValue> {
     let bc_element_type = builder.convert_cx_type(element_type);
-    let element_size = bc_element_type.padded_size();
+    let element_size = bc_element_type.size();
 
     let array_type = LMIRType::from(LMIRTypeKind::Array {
         element: Box::new(bc_element_type.clone()),
@@ -1253,7 +1270,7 @@ fn lower_array_initializer(
             LMIRInstructionKind::PointerBinOp {
                 op: LMIRPtrBinOp::ADD,
                 ptr_type: bc_element_type.clone(),
-                type_padded_size: element_size,
+                type_size: element_size,
                 left: allocation.clone(),
                 right: LMIRValue::IntImmediate {
                     val: i as i64,
@@ -1437,7 +1454,7 @@ pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResu
                                 LMIRInstructionKind::PointerBinOp {
                                     op: LMIRPtrBinOp::ADD,
                                     ptr_type: slot._type.clone(),
-                                    type_padded_size: TypePaddedSize::from(1),
+                                    type_size: TypeSize::from(1),
                                     left: alloc.clone(),
                                     right: builder
                                         .int_const(slot.offset as i32, LMIRIntegerType::I64),

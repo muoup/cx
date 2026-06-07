@@ -11,15 +11,15 @@ use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
 use cx_lmir::{LMIRABISlot, LMIRFunctionSignature};
 use cx_lmir::{LMIRBlockID, LMIRRegister, LMIRUnit, LMIRValue};
 use cx_util::identifier::CXIdent;
-use cx_util::{CXError, CXResult, log_error};
+use cx_util::{log_error, CXError, CXResult};
 use std::collections::HashMap;
 
 mod codegen;
 mod globals;
 mod inst_calling;
 mod instruction;
-mod value_type;
 mod routines;
+mod value_type;
 
 #[derive(Debug, Clone)]
 pub(crate) enum CodegenValue {
@@ -184,7 +184,11 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
     }
 
     for func in bc.fn_defs.iter() {
-        let Some(func_id) = global_state.function_ids.get(func.prototype.name.as_str()).cloned() else {
+        let Some(func_id) = global_state
+            .function_ids
+            .get(func.prototype.name.as_str())
+            .cloned()
+        else {
             log_error!(
                 "Function not found in function map: {}",
                 func.prototype.name

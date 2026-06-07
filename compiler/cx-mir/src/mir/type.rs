@@ -339,18 +339,6 @@ impl MIRType {
         .with_name(CXIdent::from("__internal_function"))
     }
 
-    pub fn padded_size(&self, _definitions: &impl MIRTypeContext) -> usize {
-        match &self.kind {
-            MIRTypeKind::Integer { _type, .. } => _type.bytes() as usize,
-            MIRTypeKind::Float { _type } => _type.bytes() as usize,
-            MIRTypeKind::PointerTo { .. } | MIRTypeKind::MemoryReference { .. } => 8,
-            MIRTypeKind::Unit => 0,
-            MIRTypeKind::Array { length, .. } => *length,
-            MIRTypeKind::Opaque { size } => *size,
-            _ => 0,
-        }
-    }
-
     pub fn with_name(mut self, name: CXIdent) -> MIRType {
         self.strong_identifier = Some(name.as_string());
         self
@@ -479,14 +467,17 @@ impl MIRType {
     }
 
     pub fn debug_name(&self) -> Option<&CXIdent> {
-        self.debug_name.as_ref()
+        self.debug_name
+            .as_ref()
             .or_else(|| self.lookup_identifier.as_ref().map(|id| &id.name))
     }
 
     pub fn member_lookup_identifier(&self) -> Option<&QualifiedName> {
-        self.lookup_identifier
-            .as_ref()
-            .or_else(|| self.template_info.as_ref().and_then(|info| info.base_name.as_ref()))
+        self.lookup_identifier.as_ref().or_else(|| {
+            self.template_info
+                .as_ref()
+                .and_then(|info| info.base_name.as_ref())
+        })
     }
 
     pub fn get_base_identifier(&self) -> Option<&QualifiedName> {

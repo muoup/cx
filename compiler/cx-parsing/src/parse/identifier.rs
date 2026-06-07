@@ -6,13 +6,14 @@ use cx_ast::ast::{
     types::{CXType, CXTypeKind, PredeclarationType},
 };
 use cx_tokens::{
-    TokenIter, operator,
+    operator,
     token::{OperatorType, TokenKind},
+    TokenIter,
 };
 use cx_util::{
-    CXError, CXResult,
     identifier::CXIdent,
     namespace::{NamespacePath, QualifiedName},
+    CXError, CXResult,
 };
 
 use crate::{next_kind, try_next};

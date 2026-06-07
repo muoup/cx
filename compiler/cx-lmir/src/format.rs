@@ -1,4 +1,4 @@
-use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind, TypeSize, TypePaddedSize};
+use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind, TypeSize};
 use crate::{
     LMIRBasicBlock, LMIRFloatBinOp, LMIRFloatUnOp, LMIRFunction, LMIRFunctionPrototype,
     LMIRFunctionSignature, LMIRGlobalType, LMIRInstruction, LMIRInstructionKind, LMIRIntBinOp,
@@ -228,11 +228,11 @@ impl Display for LMIRInstruction {
             LMIRInstructionKind::PointerBinOp {
                 left,
                 ptr_type,
-                type_padded_size,
+                type_size,
                 right,
                 op,
             } => {
-                write!(f, "{left} {op} {right} [{ptr_type}*, {type_padded_size}]")
+                write!(f, "{left} {op} {right} [{ptr_type}*, {type_size}]")
             }
             LMIRInstructionKind::IntegerBinOp { left, right, op } => {
                 write!(f, "{left} {op} {right} [i]")
@@ -259,12 +259,6 @@ impl Display for LMIRInstruction {
 impl Display for TypeSize {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}b", usize::from(*self))
-    }
-}
-
-impl Display for TypePaddedSize {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}pb", usize::from(*self))
     }
 }
 

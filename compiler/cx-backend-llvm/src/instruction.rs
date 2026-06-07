@@ -329,7 +329,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
         LMIRInstructionKind::PointerBinOp {
             left,
             ptr_type: _,
-            type_padded_size,
+            type_size,
             right,
             op,
             ..
@@ -340,7 +340,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             generate_ptr_binop(
                 global_state,
                 function_state,
-                usize::from(*type_padded_size) as u64,
+                usize::from(*type_size) as u64,
                 left_value,
                 right_value,
                 *op,

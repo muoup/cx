@@ -14,6 +14,7 @@ use crate::{
     log_typecheck_error,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
+        contracts::resolve_assertion_prototype,
         control_flow::enqueue_jump_arrow,
         result::TypecheckResult,
         typechecker::typecheck_expr,
@@ -140,6 +141,7 @@ pub fn typecheck_return(
         let postcondition = typecheck_expr(env, namespace, &ret_contract, None)
             .and_then(|res| res.standard_ready_coerce(env, ret_contract.token_range()))
             .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
+        let assertion_prototype = Box::new(resolve_assertion_prototype(env, namespace)?);
 
         env.pop_scope()?;
 
@@ -147,7 +149,11 @@ pub fn typecheck_return(
             MIRType::unit(),
             MIRExpressionKind::Return {
                 value: return_value,
-                postcondition: Some((ret_name.clone(), Box::new(postcondition))),
+                postcondition: Some(cx_mir::mir::expression::MIRPostcondition {
+                    binding: ret_name.clone(),
+                    condition: Box::new(postcondition),
+                    assertion_prototype,
+                }),
             },
         ))
     } else {

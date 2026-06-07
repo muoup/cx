@@ -1,7 +1,10 @@
-use cx_mir::{mir::{
-    expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
-    r#type::{MIRType, MIRTypeKind},
-}, type_context::MIRTypeContext};
+use cx_mir::{
+    mir::{
+        expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
+        r#type::{MIRType, MIRTypeKind},
+    },
+    type_context::MIRTypeContext,
+};
 use cx_util::CXResult;
 
 use crate::{

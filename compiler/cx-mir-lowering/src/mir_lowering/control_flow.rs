@@ -4,11 +4,14 @@ use cx_lmir::{
     types::{LMIRIntegerType, LMIRType, LMIRTypeKind},
     LMIRInstructionKind, LMIRValue,
 };
-use cx_mir::{mir::{
-    data::{MIRType, MIRTypeKind},
-    expression::{MIRExpression, MIRExpressionKind},
-    pattern::MIRPattern,
-}, type_context::MIRTypeContext};
+use cx_mir::{
+    mir::{
+        data::{MIRType, MIRTypeKind},
+        expression::{MIRExpression, MIRExpressionKind, MIRPostcondition},
+        pattern::MIRPattern,
+    },
+    type_context::MIRTypeContext,
+};
 use cx_util::CXResult;
 
 use super::expressions::lower_expression;
@@ -316,7 +319,8 @@ pub fn lower_match(
     exhaustive: bool,
 ) -> CXResult<LMIRValue> {
     let mut bc_condition = lower_expression(builder, condition)?;
-    let inner = condition._type
+    let inner = condition
+        ._type
         .mem_ref_inner()
         .map(|id| builder.registry.resolve_type_id(id))
         .unwrap_or_else(|| &condition._type)
@@ -440,11 +444,16 @@ pub fn lower_match(
 pub fn lower_return(
     builder: &mut LMIRBuilder,
     bc_value: Option<LMIRValue>,
-    postcondition: Option<&MIRExpression>,
+    postcondition: Option<&MIRPostcondition>,
 ) -> CXResult<LMIRValue> {
     if let Some(postcondition) = postcondition {
         builder.push_scope(None, None);
-        lower_contract_assertion(builder, postcondition, "postcondition failed")?;
+        lower_contract_assertion(
+            builder,
+            &postcondition.condition,
+            "postcondition failed",
+            &postcondition.assertion_prototype,
+        )?;
         builder.pop_scope()?;
     }
 

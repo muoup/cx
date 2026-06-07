@@ -207,7 +207,7 @@ pub(crate) fn codegen_instruction(
             op,
             left,
             right,
-            type_padded_size,
+            type_size,
             ..
         } => {
             let left = context.get_value(left)?.as_value();
@@ -220,7 +220,7 @@ pub(crate) fn codegen_instruction(
                         let right_scaled = context
                             .builder
                             .ins()
-                            .imul_imm(right, usize::from(*type_padded_size) as i64); // assuming type_padded_size is 1 for simplicity
+                            .imul_imm(right, usize::from(*type_size) as i64);
 
                         context.builder.ins().iadd(left, right_scaled)
                     }
@@ -229,7 +229,7 @@ pub(crate) fn codegen_instruction(
                         let right_scaled = context
                             .builder
                             .ins()
-                            .imul_imm(right, usize::from(*type_padded_size) as i64);
+                            .imul_imm(right, usize::from(*type_size) as i64);
 
                         context.builder.ins().isub(left, right_scaled)
                     }

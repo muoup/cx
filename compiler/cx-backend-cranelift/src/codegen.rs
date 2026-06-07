@@ -27,9 +27,7 @@ pub(crate) fn codegen_fn_prototype(
     global_state
         .function_ids
         .insert(prototype.name.to_string(), id);
-    global_state
-        .function_sigs
-        .insert(id, sig);
+    global_state.function_sigs.insert(id, sig);
 
     Ok(id)
 }

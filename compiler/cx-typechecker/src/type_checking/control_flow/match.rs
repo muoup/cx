@@ -8,20 +8,20 @@ use crate::symbol::completion::complete_template_input;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::pattern::tagged_union::{
-    resolve_type_constructor_pattern, TypeConstructor,
+    TypeConstructor, resolve_type_constructor_pattern,
 };
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::template::CXTemplateInput;
 use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
+use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
     pattern::MIRPattern,
 };
 use cx_mir::type_context::MIRTypeContext;
-use cx_mir::EnvironmentNamespace;
-use cx_util::{namespace::QualifiedName, CXResult};
+use cx_util::{CXResult, namespace::QualifiedName};
 
 pub fn typecheck_match(
     env: &mut TypeEnvironment,

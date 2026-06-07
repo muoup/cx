@@ -12,7 +12,7 @@ use cx_mir::{
     symbol::MIRSymbol,
     type_context::MIRTypeContext,
 };
-use cx_util::{identifier::CXIdent, namespace::QualifiedName, scoped_map::ScopedMap, CXResult};
+use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName, scoped_map::ScopedMap};
 
 /// Module-local symbol definitions
 pub struct MIRSymbolRegistry<'a> {
@@ -136,10 +136,7 @@ impl<'a> MIRSymbolRegistry<'a> {
     }
 
     pub fn insert_function_symbol(&mut self, name: QualifiedName, prototype: MIRFunctionPrototype) {
-        self.insert_symbol(
-            name,
-            MIRSymbol::FunctionReference(prototype)
-        );
+        self.insert_symbol(name, MIRSymbol::FunctionReference(prototype));
     }
 
     pub fn pointer_to(&mut self, ty: MIRType) -> MIRType {

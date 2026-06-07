@@ -278,8 +278,8 @@ pub fn convert_expression(
             env.push_scope();
             let postcondition_node = postcondition
                 .as_ref()
-                .map(|(binding, expr)| {
-                    if let Some(binding) = binding {
+                .map(|postcondition| {
+                    if let Some(binding) = &postcondition.binding {
                         env.insert_variable(
                             binding.clone(),
                             return_value._type.clone(),
@@ -291,7 +291,7 @@ pub fn convert_expression(
                         );
                     }
 
-                    convert_expression(env, expr)
+                    convert_expression(env, &postcondition.condition)
                 })
                 .transpose()?
                 .unwrap_or(FMIRNode::unit());

@@ -45,7 +45,9 @@ impl MIRSymbol {
 
             MIRSymbol::Expression(expr) => Ok(expr.clone()),
 
-            MIRSymbol::Template { .. } => CXError::create_result("Could not deduce arguments to template"),
+            MIRSymbol::Template { .. } => {
+                CXError::create_result("Could not deduce arguments to template")
+            }
 
             _ => CXError::create_result("Symbol does not refer to a value"),
         }

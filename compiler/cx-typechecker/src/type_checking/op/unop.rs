@@ -213,7 +213,7 @@ pub(crate) fn typecheck_sizeof_type(
     ty: &CXType,
 ) -> CXResult<TypecheckResult> {
     let tc_type = complete_type(env, namespace, ty)?;
-    Ok(sizeof_result(tc_type.padded_size(&env.symbols)))
+    Ok(sizeof_result(tc_type))
 }
 
 pub(crate) fn typecheck_sizeof_expr(
@@ -224,13 +224,13 @@ pub(crate) fn typecheck_sizeof_expr(
     let tc_expr = typecheck_expr(env, namespace, expr, None)
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
 
-    Ok(sizeof_result(tc_expr._type.padded_size(&env.symbols)))
+    Ok(sizeof_result(tc_expr._type))
 }
 
-fn sizeof_result(size: usize) -> TypecheckResult {
+fn sizeof_result(_type: MIRType) -> TypecheckResult {
     TypecheckResult::from(MIRExpression {
         token_range: None,
-        kind: MIRExpressionKind::IntLiteral(size as i64),
+        kind: MIRExpressionKind::SizeOf { _type },
         _type: MIRType::from(MIRTypeKind::Integer {
             _type: MIRIntegerType::I64,
             signed: false,

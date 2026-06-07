@@ -2,7 +2,8 @@ use crate::attributes::*;
 use crate::typing::{bc_llvm_prototype, bc_llvm_type, convert_linkage};
 use cx_lmir::types::{LMIRType, LMIRTypeKind};
 use cx_lmir::{
-    ElementID, LMIRABISlot, LMIRBasicBlock, LMIRBlockID, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype, LMIRFunctionSignature, LMIRReturnABI, LMIRUnit, LMIRValue
+    ElementID, LMIRABISlot, LMIRBasicBlock, LMIRBlockID, LMIRFunction, LMIRFunctionMap,
+    LMIRFunctionPrototype, LMIRFunctionSignature, LMIRReturnABI, LMIRUnit, LMIRValue,
 };
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;

@@ -3,10 +3,14 @@ use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_mir::EnvironmentNamespace;
-use cx_mir::mir::data::{MIRFunctionSignature, MIRType};
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRFunctionContract};
+use cx_mir::mir::data::{MIRFunctionPrototype, MIRFunctionSignature, MIRType};
+use cx_mir::mir::expression::{
+    MIRExpression, MIRExpressionKind, MIRFunctionContract, MIRPostcondition,
+};
+use cx_mir::symbol::MIRSymbol;
 use cx_util::CXResult;
-use cx_util::namespace::QualifiedName;
+use cx_util::identifier::CXIdent;
+use cx_util::namespace::{NamespacePath, QualifiedName};
 
 pub(crate) fn typecheck_contract(
     env: &mut TypeEnvironment,
@@ -15,6 +19,12 @@ pub(crate) fn typecheck_contract(
 ) -> CXResult<MIRFunctionContract> {
     let naive_contract = &prototype.contract;
     let previous_mode = env.push_contract_mode(naive_contract.safe);
+    let assertion_prototype =
+        if naive_contract.precondition.is_some() || naive_contract.postcondition.is_some() {
+            Some(Box::new(resolve_assertion_prototype(env, namespace)?))
+        } else {
+            None
+        };
 
     env.push_scope(false, false);
 
@@ -67,7 +77,13 @@ pub(crate) fn typecheck_contract(
             .and_then(|v| v.standard_ready_coerce(env, post_expr.token_range()))
             .and_then(|v| std_rval_promotion(env, v))
             .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
-        Some((ret_name.clone(), Box::new(tc_post)))
+        Some(MIRPostcondition {
+            binding: ret_name.clone(),
+            condition: Box::new(tc_post),
+            assertion_prototype: assertion_prototype
+                .clone()
+                .expect("postcondition requires assertion prototype"),
+        })
     } else {
         None
     };
@@ -77,7 +93,32 @@ pub(crate) fn typecheck_contract(
 
     Ok(MIRFunctionContract {
         safe: naive_contract.safe,
+        assertion_prototype,
         precondition,
         postcondition,
     })
+}
+
+pub(crate) fn resolve_assertion_prototype(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+) -> CXResult<MIRFunctionPrototype> {
+    let name = QualifiedName::new(
+        NamespacePath::from_scoped_path("std::intrinsic::assertion"),
+        CXIdent::new("__compiler_assert"),
+    );
+
+    let Some(symbol) = env.get_symbol(namespace, &name)? else {
+        return cx_util::CXError::create_result(
+            "Function contract used but std::intrinsic::assertion::__compiler_assert was not found",
+        );
+    };
+
+    let MIRSymbol::FunctionReference(prototype) = symbol else {
+        return cx_util::CXError::create_result(
+            "std::intrinsic::assertion::__compiler_assert is not a function",
+        );
+    };
+
+    Ok(prototype)
 }

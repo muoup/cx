@@ -139,11 +139,7 @@ fn complete_callee(
     match function.try_into_callee() {
         TypecheckExtract::Succ(callee) => Ok(callee),
         TypecheckExtract::Fail(_function) => {
-            log_typecheck_error!(
-                env,
-                expr.token_range(),
-                "Could not deduce callee"
-            )
+            log_typecheck_error!(env, expr.token_range(), "Could not deduce callee")
 
             // TODO: Deduction
         }

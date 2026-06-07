@@ -183,12 +183,7 @@ pub fn typecheck_access(
             let function = symbol
                 .as_expression()
                 .map_err(|err| {
-                    typecheck_error!(
-                        env,
-                        Some(expr.token_range()),
-                        "{}",
-                        err.error_content()
-                    )
+                    typecheck_error!(env, Some(expr.token_range()), "{}", err.error_content())
                 })?
                 .clone();
 

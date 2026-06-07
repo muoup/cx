@@ -62,7 +62,7 @@ pub fn try_implicit_coercion(
 
         return integer::try_conversion(env, expr, target_type);
     }
-    
+
     match (&expr._type.kind, &target_type.kind) {
         (MIRTypeKind::Float { _type: from_float }, MIRTypeKind::Float { _type: to_float })
             if from_float != to_float =>
@@ -74,9 +74,9 @@ pub fn try_implicit_coercion(
             )
         }
 
-        (MIRTypeKind::MemoryReference { inner_type, .. }, _) 
-            if !target_type.is_memory_reference()
-        => {
+        (MIRTypeKind::MemoryReference { inner_type, .. }, _)
+            if !target_type.is_memory_reference() =>
+        {
             lvalue::try_conversion(env, expr)?
                 .or_else(|expr| try_implicit_coercion(env, expr, target_type))
         }

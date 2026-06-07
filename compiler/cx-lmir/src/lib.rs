@@ -1,4 +1,4 @@
-use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, TypePaddedSize};
+use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, TypeSize};
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use std::collections::HashMap;
 
@@ -257,7 +257,7 @@ pub enum LMIRInstructionKind {
     PointerBinOp {
         op: LMIRPtrBinOp,
         ptr_type: LMIRType,
-        type_padded_size: TypePaddedSize,
+        type_size: TypeSize,
         left: LMIRValue,
         right: LMIRValue,
     },

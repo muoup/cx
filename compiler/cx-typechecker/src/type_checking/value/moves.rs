@@ -36,7 +36,7 @@ pub(crate) fn typecheck_move(
     if !inner_val._type.is_memory_reference() {
         return Ok(TypecheckResult::from(inner_val));
     }
-    
+
     let Some(binding) = binding else {
         return log_typecheck_error!(
             env,

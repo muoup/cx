@@ -146,8 +146,7 @@ fn realize_fn_template(
         if env.items.request_fulfilled(prototype.name()) {
             return Ok(());
         }
-        env.items
-            .mark_request_fulfilled(prototype.name().into());
+        env.items.mark_request_fulfilled(prototype.name().into());
 
         typecheck_function(env, &namespace, prototype, &body)?;
 

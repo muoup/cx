@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
 use cx_mir::{
-    EnvironmentNamespace,
-    MIRUnit,
+    EnvironmentNamespace, MIRUnit,
     mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId},
     symbol::MIRSymbol,
     type_context::MIRTypeContext,

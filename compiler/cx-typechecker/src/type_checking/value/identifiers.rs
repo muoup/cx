@@ -2,7 +2,8 @@ use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
     symbol::{completion::complete_template_input, resolution::apply_template},
-    type_checking::result::{TypecheckResult, TypecheckedBinding}, typecheck_error,
+    type_checking::result::{TypecheckResult, TypecheckedBinding},
+    typecheck_error,
 };
 use cx_ast::ast::{expression::CXExpression, template::CXTemplateInput};
 use cx_mir::{
@@ -34,15 +35,9 @@ pub(crate) fn typecheck_identifier(
         symbol = apply_template(env, &symbol, completed_input)?.unwrap();
     }
 
-    let expr = symbol.as_expression()
-        .map_err(|err|
-            typecheck_error!(
-                env,
-                Some(expr.token_range()),
-                "{}",
-                err.error_message()
-            )
-        )?;
+    let expr = symbol.as_expression().map_err(|err| {
+        typecheck_error!(env, Some(expr.token_range()), "{}", err.error_message())
+    })?;
 
     Ok(match &expr.kind {
         MIRExpressionKind::Variable {
@@ -52,7 +47,7 @@ pub(crate) fn typecheck_identifier(
             let name = name.clone();
             TypecheckResult::from(expr).with_binding(TypecheckedBinding::local(name))
         }
-        
+
         _ => TypecheckResult::from(expr),
     })
 }

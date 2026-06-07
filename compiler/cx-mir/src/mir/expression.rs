@@ -2,14 +2,23 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 
+use crate::mir::data::MIRFunctionPrototype;
 use crate::mir::pattern::MIRPattern;
 use crate::mir::r#type::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
 
 #[derive(Clone, Debug, Default)]
 pub struct MIRFunctionContract {
     pub safe: bool,
+    pub assertion_prototype: Option<Box<MIRFunctionPrototype>>,
     pub precondition: Option<Box<MIRExpression>>,
-    pub postcondition: Option<(Option<CXIdent>, Box<MIRExpression>)>,
+    pub postcondition: Option<MIRPostcondition>,
+}
+
+#[derive(Clone, Debug)]
+pub struct MIRPostcondition {
+    pub binding: Option<CXIdent>,
+    pub condition: Box<MIRExpression>,
+    pub assertion_prototype: Box<MIRFunctionPrototype>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -21,7 +30,7 @@ pub struct MIRExpression {
 
 #[derive(Clone, Debug)]
 pub enum MIRPureExpression {
-    IntegerLiteral(i64, MIRIntegerType, bool)
+    IntegerLiteral(i64, MIRIntegerType, bool),
 }
 
 impl MIRPureExpression {
@@ -48,7 +57,7 @@ pub struct MIRSourceRange {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SymbolValueOrigin {
     Local,
-    Global
+    Global,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -75,6 +84,10 @@ pub enum MIRExpressionKind {
     // The callable signature is stored in the expression's type
     FunctionReference {
         name: CXIdent,
+    },
+
+    SizeOf {
+        _type: MIRType,
     },
 
     // Arithmetic & Logic
@@ -203,7 +216,7 @@ pub enum MIRExpressionKind {
     },
 
     Return {
-        postcondition: Option<(Option<CXIdent>, Box<MIRExpression>)>,
+        postcondition: Option<MIRPostcondition>,
         value: Option<Box<MIRExpression>>,
     },
 

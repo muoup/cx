@@ -4,13 +4,16 @@ use crate::type_context::MIRTypeContext;
 use cx_ast::registry::{ExportNameMode, GlobalSymbolRegistry};
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
-pub fn base_mangle_standard(global_registry: &GlobalSymbolRegistry, name: &QualifiedName) -> String {
+pub fn base_mangle_standard(
+    global_registry: &GlobalSymbolRegistry,
+    name: &QualifiedName,
+) -> String {
     if name.namespace.is_root()
         || global_registry.export_name_mode(&name.namespace) == ExportNameMode::Root
     {
         return name.name.as_str().to_string();
     }
-  
+
     mangle_namespace_symbol(name)
 }
 

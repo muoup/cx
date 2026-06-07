@@ -1,8 +1,8 @@
 use crate::{assert_token_matches, next_kind};
 use cx_pipeline_data::CompilerConfig;
-use cx_preparse_data::{PreparseContents, symbol_data::PreparseModuleSymbols};
-use cx_tokens::{TokenIter, identifier, keyword, operator, punctuator, specifier};
-use cx_util::{CXResult, identifier::CXIdent, log_error, module_path::ModulePath};
+use cx_preparse_data::{symbol_data::PreparseModuleSymbols, PreparseContents};
+use cx_tokens::{identifier, keyword, operator, punctuator, specifier, TokenIter};
+use cx_util::{identifier::CXIdent, log_error, module_path::ModulePath, CXResult};
 
 #[derive(Debug, Clone, Copy)]
 pub struct PreparseConfig {
