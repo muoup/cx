@@ -1,12 +1,16 @@
 use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
+use crate::symbol::deduction::complete_templated_callee;
 use crate::type_checking::coercion::implicit::conversion::try_argument_conversion;
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::lvalue;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::contracts::typecheck_contract;
-use crate::type_checking::result::{CalleeExtraction, TypecheckExtract, TypecheckResult};
+use crate::type_checking::result::{
+    CalleeExtraction, PendingReceiver, TypecheckExtract, TypecheckResult,
+};
 use crate::type_checking::typechecker::typecheck_expr;
+use crate::type_checking::value::moves::typecheck_move;
 use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
 use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::data::{MIRFloatType, MIRType, MIRTypeKind};
@@ -131,19 +135,120 @@ pub(crate) fn finish_function_call<'a>(
 
 fn complete_callee(
     env: &mut TypeEnvironment,
-    _namespace: &EnvironmentNamespace,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     function: TypecheckResult,
-    _arg_types: &[MIRType],
+    arg_types: &[MIRType],
+    has_incomplete_args: bool,
 ) -> CXResult<CalleeExtraction> {
     match function.try_into_callee() {
-        TypecheckExtract::Succ(callee) => Ok(callee),
-        TypecheckExtract::Fail(_function) => {
-            log_typecheck_error!(env, expr.token_range(), "Could not deduce callee")
+        TypecheckExtract::Succ(callee) => {
+            complete_pending_receiver(env, namespace, expr, callee, None)
+        }
+        TypecheckExtract::Fail(function) => {
+            let Some((
+                name,
+                template_input,
+                source_base_type,
+                implicit_args,
+                pending_receiver,
+            )) = function.into_incomplete_callee_parts()
+            else {
+                return log_typecheck_error!(env, expr.token_range(), "Could not deduce callee");
+            };
 
-            // TODO: Deduction
+            let deduction_arg_types = source_base_type
+                .into_iter()
+                .chain(arg_types.iter().cloned())
+                .collect::<Vec<_>>();
+
+            let symbol = match complete_templated_callee(
+                env,
+                namespace,
+                &name,
+                template_input.as_ref(),
+                &deduction_arg_types,
+            ) {
+                Ok(symbol) => symbol,
+                Err(err) if has_incomplete_args => {
+                    return log_typecheck_error!(
+                        env,
+                        expr.token_range(),
+                        "{}; two-sided deduction is not implemented",
+                        err.error_content()
+                    );
+                }
+                Err(err) => {
+                    return log_typecheck_error!(
+                        env,
+                        expr.token_range(),
+                        "{}",
+                        err.error_content()
+                    );
+                }
+            };
+
+            let function = match symbol.as_expression() {
+                Ok(function) => function,
+                Err(err) => {
+                    return log_typecheck_error!(
+                        env,
+                        expr.token_range(),
+                        "{}",
+                        err.error_content()
+                    );
+                }
+            };
+
+            complete_pending_receiver(
+                env,
+                namespace,
+                expr,
+                CalleeExtraction {
+                    function,
+                    implicit_args,
+                },
+                pending_receiver,
+            )
         }
     }
+}
+
+fn complete_pending_receiver(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    expr: &CXExpression,
+    mut callee: CalleeExtraction,
+    pending_receiver: Option<PendingReceiver>,
+) -> CXResult<CalleeExtraction> {
+    let Some(PendingReceiver { source, binding }) = pending_receiver else {
+        return Ok(callee);
+    };
+
+    let MIRTypeKind::Function { signature } = &callee.function._type.kind else {
+        unreachable!("function references must have function type")
+    };
+
+    let needs_move = signature
+        .params
+        .get(0)
+        .map(|param| !param._type.is_memory_reference())
+        .unwrap_or(false);
+
+    let receiver = if needs_move {
+        let mut receiver = TypecheckResult::from(source);
+        if let Some(binding) = binding {
+            receiver = receiver.with_binding(binding);
+        }
+
+        typecheck_move(env, namespace, receiver, expr)
+            .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?
+    } else {
+        source
+    };
+
+    callee.implicit_args.insert(0, receiver);
+    Ok(callee)
 }
 
 pub(crate) fn comma_separated<'a>(
@@ -176,19 +281,19 @@ pub(crate) fn comma_separated<'a>(
     Ok(exprs)
 }
 
-pub(crate) fn ready_arg_types(
+pub(crate) fn ready_arg_type_prefix(
     args: &[(&CXExpression, TypecheckResult)],
-) -> CXResult<Option<Vec<MIRType>>> {
+) -> CXResult<(Vec<MIRType>, bool)> {
     let mut arg_types = Vec::with_capacity(args.len());
 
     for (_, arg) in args {
         let Some(arg_type) = arg.get_type_if_ready()? else {
-            return Ok(None);
+            return Ok((arg_types, true));
         };
         arg_types.push(arg_type);
     }
 
-    Ok(Some(arg_types))
+    Ok((arg_types, false))
 }
 
 pub(crate) fn typecheck_method_call(
@@ -199,10 +304,17 @@ pub(crate) fn typecheck_method_call(
     expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     let tc_args = comma_separated(env, namespace, rhs)?;
-    let arg_types = ready_arg_types(&tc_args)?.unwrap_or_default();
+    let (arg_types, has_incomplete_args) = ready_arg_type_prefix(&tc_args)?;
 
     let function = typecheck_expr(env, namespace, lhs, None)?;
-    let function = complete_callee(env, namespace, expr, function, &arg_types)?;
+    let function = complete_callee(
+        env,
+        namespace,
+        expr,
+        function,
+        &arg_types,
+        has_incomplete_args,
+    )?;
 
     finish_function_call(env, namespace, expr, function, tc_args)
 }

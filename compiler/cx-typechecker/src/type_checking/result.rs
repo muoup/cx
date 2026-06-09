@@ -2,6 +2,7 @@ use cx_ast::ast::template::CXTemplateInput;
 use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
+use cx_mir::symbol::MIRSymbol;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
 use cx_util::{CXError, CXResult};
@@ -57,6 +58,7 @@ pub enum TypecheckState {
     IncompleteTemplatedCallee {
         name: QualifiedName,
         template_input: Option<CXTemplateInput>,
+        context: IncompleteCalleeContext,
     },
     NeedsExpectedType(ExpectedTypeDeferredExpr),
 }
@@ -115,19 +117,44 @@ impl<T> TypecheckExtract<T> {
 pub struct CalleeExtraction {
     pub function: MIRExpression,
     pub implicit_args: Vec<MIRExpression>,
-    pub deduction_arg_prefix: Vec<MIRType>,
 }
 
 impl CalleeExtraction {
-    pub fn new(
-        function: MIRExpression,
-        implicit_args: Vec<MIRExpression>,
-        deduction_arg_prefix: Vec<MIRType>,
-    ) -> Self {
+    pub fn new(function: MIRExpression, implicit_args: Vec<MIRExpression>) -> Self {
         Self {
             function,
             implicit_args,
-            deduction_arg_prefix,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingReceiver {
+    pub source: MIRExpression,
+    pub binding: Option<TypecheckedBinding>,
+}
+
+impl PendingReceiver {
+    pub fn new(source: MIRExpression, binding: Option<TypecheckedBinding>) -> Self {
+        Self { source, binding }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct IncompleteCalleeContext {
+    pub source_base_type: Option<MIRType>,
+    pub pending_receiver: Option<PendingReceiver>,
+}
+
+impl IncompleteCalleeContext {
+    pub fn none() -> Self {
+        Self::default()
+    }
+
+    pub fn member(source_base_type: MIRType, pending_receiver: PendingReceiver) -> Self {
+        Self {
+            source_base_type: Some(source_base_type),
+            pending_receiver: Some(pending_receiver),
         }
     }
 }
@@ -138,8 +165,6 @@ pub struct TypecheckResult {
     expression: TypecheckState,
     /// Implicit parameters carried upward for call sites (e.g. member receivers)
     implicit_parameters: Vec<MIRExpression>,
-    /// Types that participate in function template deduction but are not ordinary explicit arguments.
-    deduction_arg_prefix: Vec<MIRType>,
     /// Binding/place information for expressions that still denote a local place.
     binding: Option<TypecheckedBinding>,
     /// True when this value adopts an existing region instead of initializing a fresh one.
@@ -151,7 +176,6 @@ impl From<MIRExpression> for TypecheckResult {
         Self {
             expression: TypecheckState::Ready(expression),
             implicit_parameters: Vec::new(),
-            deduction_arg_prefix: Vec::new(),
             binding: None,
             adopting: false,
         }
@@ -167,7 +191,6 @@ impl TypecheckResult {
                 _type,
             }),
             implicit_parameters: Vec::new(),
-            deduction_arg_prefix: Vec::new(),
             binding: None,
             adopting: false,
         }
@@ -216,14 +239,15 @@ impl TypecheckResult {
     pub fn incomplete_templated_callee(
         name: QualifiedName,
         template_input: Option<CXTemplateInput>,
+        context: IncompleteCalleeContext,
     ) -> Self {
         Self {
             expression: TypecheckState::IncompleteTemplatedCallee {
                 name,
                 template_input,
+                context,
             },
             implicit_parameters: Vec::new(),
-            deduction_arg_prefix: Vec::new(),
             binding: None,
             adopting: false,
         }
@@ -237,7 +261,6 @@ impl TypecheckResult {
         Self {
             expression: TypecheckState::NeedsExpectedType(ExpectedTypeDeferredExpr::new(resolver)),
             implicit_parameters: Vec::new(),
-            deduction_arg_prefix: Vec::new(),
             binding: None,
             adopting: false,
         }
@@ -245,11 +268,6 @@ impl TypecheckResult {
 
     pub fn with_implicit_parameters(mut self, implicit_parameters: Vec<MIRExpression>) -> Self {
         self.implicit_parameters = implicit_parameters;
-        self
-    }
-
-    pub fn with_deduction_arg_prefix(mut self, deduction_arg_prefix: Vec<MIRType>) -> Self {
-        self.deduction_arg_prefix = deduction_arg_prefix;
         self
     }
 
@@ -271,6 +289,13 @@ impl TypecheckResult {
         self.adopting
     }
 
+    pub fn ready_expression(&self) -> Option<&MIRExpression> {
+        match &self.expression {
+            TypecheckState::Ready(expression) => Some(expression),
+            _ => None,
+        }
+    }
+
     pub fn try_into_expression(self) -> TypecheckExtract<MIRExpression> {
         match self.expression {
             TypecheckState::Ready(expression) => TypecheckExtract::Succ(expression),
@@ -283,7 +308,6 @@ impl TypecheckResult {
             TypecheckState::Ready(function) => TypecheckExtract::Succ(CalleeExtraction::new(
                 function,
                 self.implicit_parameters,
-                self.deduction_arg_prefix,
             )),
             expression => TypecheckExtract::Fail(Self { expression, ..self }),
         }
@@ -294,18 +318,21 @@ impl TypecheckResult {
     ) -> Option<(
         QualifiedName,
         Option<CXTemplateInput>,
-        Vec<MIRType>,
+        Option<MIRType>,
         Vec<MIRExpression>,
+        Option<PendingReceiver>,
     )> {
         match self.expression {
             TypecheckState::IncompleteTemplatedCallee {
                 name,
                 template_input,
+                context,
             } => Some((
                 name,
                 template_input,
-                self.deduction_arg_prefix,
+                context.source_base_type,
                 self.implicit_parameters,
+                context.pending_receiver,
             )),
             _ => None,
         }
@@ -349,12 +376,28 @@ impl TypecheckResult {
             TypecheckState::NeedsExpectedType(expr) => Ok(Self {
                 expression: TypecheckState::Ready(expr.resolve(env, namespace, expected_type)?),
                 implicit_parameters: self.implicit_parameters,
-                deduction_arg_prefix: self.deduction_arg_prefix,
                 binding: self.binding,
                 adopting: self.adopting,
             }),
 
             _ => Ok(self),
         }
+    }
+
+    pub fn from_symbol(
+        symbol: MIRSymbol,
+        name: QualifiedName,
+        template_input: Option<CXTemplateInput>,
+        context: IncompleteCalleeContext,
+    ) -> CXResult<Self> {
+        if matches!(symbol, MIRSymbol::Template { .. }) {
+            return Ok(Self::incomplete_templated_callee(
+                name,
+                template_input,
+                context,
+            ));
+        }
+
+        symbol.as_expression().map(Self::from)
     }
 }
