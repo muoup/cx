@@ -119,7 +119,7 @@ pub fn typecheck_access(
                     struct_field(&env.symbols, &base.source_type, name.as_str())
             {
                 // First, we check if we are trying to access a struct member
-                return Ok(TypecheckResult::new(
+                let mut result = TypecheckResult::new(
                     env.symbols
                         .mem_ref_to(struct_field.field_type.clone().with_specifier(
                             if base.source_type.get_specifier(CX_CONST) {
@@ -133,7 +133,13 @@ pub fn typecheck_access(
                         member_index: struct_field.index,
                         aggregate_type: base.source_type.clone(),
                     },
-                ));
+                );
+
+                if let Some(binding) = lhs_binding.as_ref().map(|binding| binding.project()) {
+                    result = result.with_binding(binding);
+                }
+
+                return Ok(result);
             }
 
             let Some(lookup_name) = base.source_type.member_lookup_identifier().cloned() else {

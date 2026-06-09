@@ -29,6 +29,7 @@ impl LMIRBuilder {
         convert_integer_type(cx_itype)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn convert_float_type(&self, cx_ftype: &MIRFloatType) -> LMIRFloatType {
         convert_float_type(cx_ftype)
     }

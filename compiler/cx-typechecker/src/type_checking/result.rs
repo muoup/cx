@@ -102,18 +102,6 @@ pub enum TypecheckExtract<T> {
     Succ(T),
 }
 
-impl<T> TypecheckExtract<T> {
-    pub fn into_result<F>(self, f: F) -> CXResult<T>
-    where
-        F: FnOnce(TypecheckResult) -> CXResult<T>,
-    {
-        match self {
-            Self::Succ(value) => Ok(value),
-            Self::Fail(result) => f(result),
-        }
-    }
-}
-
 pub struct CalleeExtraction {
     pub function: MIRExpression,
     pub implicit_args: Vec<MIRExpression>,
