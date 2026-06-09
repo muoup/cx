@@ -2,7 +2,9 @@ use crate::{assert_token_matches, next_kind};
 use cx_pipeline_data::CompilerConfig;
 use cx_preparse_data::{symbol_data::PreparseModuleSymbols, PreparseContents};
 use cx_tokens::{identifier, keyword, operator, punctuator, specifier, TokenIter};
-use cx_util::{identifier::CXIdent, log_error, module_path::ModulePath, CXResult};
+use cx_util::{
+    identifier::CXIdent, log_error, module_path::ModulePath, namespace::NamespacePath, CXResult,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct PreparseConfig {
@@ -94,7 +96,19 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
 
         keyword!(Import) => {
             data.tokens.back();
-            let import_path = parse_import(&mut data.tokens)?;
+            let ParsedImport { path, alias } = parse_import(&mut data.tokens)?;
+            let import_namespace = NamespacePath::from(path.clone());
+
+            if import_namespace == data.contents.module_symbols.namespace {
+                return log_preparse_error!(data.tokens, "Cannot import current module '{}'", path);
+            }
+
+            if let Some(alias) = alias {
+                data.contents
+                    .add_namespace_alias(alias, import_namespace.clone());
+            }
+
+            let import_path = path;
             data.contents.imports.push(import_path);
         }
 
@@ -114,10 +128,16 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
     Ok(())
 }
 
-fn parse_import(tokens: &mut TokenIter) -> CXResult<ModulePath> {
+struct ParsedImport {
+    path: ModulePath,
+    alias: Option<NamespacePath>,
+}
+
+fn parse_import(tokens: &mut TokenIter) -> CXResult<ParsedImport> {
     assert_token_matches!(tokens, keyword!(Import), "'import'");
 
     let mut import_path = String::new();
+    let mut alias = None;
 
     loop {
         let Some(tok) = tokens.next() else {
@@ -126,6 +146,11 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<ModulePath> {
 
         match &tok.kind {
             punctuator!(Semicolon) => break,
+            keyword!(As) => {
+                alias = Some(parse_import_alias(tokens)?);
+                assert_token_matches!(tokens, punctuator!(Semicolon), "';'");
+                break;
+            }
             operator!(ScopeRes) => import_path.push('/'),
             identifier!(ident) => import_path.push_str(ident),
 
@@ -133,5 +158,31 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<ModulePath> {
         }
     }
 
-    Ok(ModulePath::new(import_path))
+    if import_path.is_empty() {
+        return log_preparse_error!(tokens, "Import path cannot be empty");
+    }
+
+    Ok(ParsedImport {
+        path: ModulePath::new(import_path),
+        alias,
+    })
+}
+
+fn parse_import_alias(tokens: &mut TokenIter) -> CXResult<NamespacePath> {
+    let Some(tok) = tokens.next() else {
+        return log_preparse_error!(
+            tokens,
+            "Reached end of token stream when parsing import alias"
+        );
+    };
+
+    let identifier!(ident) = &tok.kind else {
+        return log_preparse_error!(tokens, "Expected identifier after import alias 'as'");
+    };
+
+    if ident == "_" {
+        Ok(NamespacePath::root())
+    } else {
+        Ok(NamespacePath::root().child(CXIdent::new(ident.as_str())))
+    }
 }

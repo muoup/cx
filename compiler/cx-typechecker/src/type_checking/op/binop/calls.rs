@@ -146,13 +146,8 @@ fn complete_callee(
             complete_pending_receiver(env, namespace, expr, callee, None)
         }
         TypecheckExtract::Fail(function) => {
-            let Some((
-                name,
-                template_input,
-                source_base_type,
-                implicit_args,
-                pending_receiver,
-            )) = function.into_incomplete_callee_parts()
+            let Some((name, template_input, source_base_type, implicit_args, pending_receiver)) =
+                function.into_incomplete_callee_parts()
             else {
                 return log_typecheck_error!(env, expr.token_range(), "Could not deduce callee");
             };

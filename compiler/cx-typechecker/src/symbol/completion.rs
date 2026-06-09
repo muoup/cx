@@ -4,7 +4,7 @@ use cx_ast::ast::{
     template::CXTemplateInput,
     types::{CXField, CXStructAttributes, CXType, CXTypeKind, PredeclarationType},
 };
-use cx_ast::symbols::CXSymbolKind;
+use cx_ast::symbols::{CXSymbol, CXSymbolKind};
 use cx_util::{CXError, CXResult, identifier::CXIdent, namespace::QualifiedName};
 
 use cx_mir::{
@@ -315,43 +315,83 @@ fn complete_identifier_type(
         return Ok(_ty.as_type_id().unwrap()); // unfailable
     }
 
-    let alias_name = if name.namespace.is_root() {
-        QualifiedName::new(namespace.clone(), name.name.clone())
-    } else {
-        env.symbols
-            .get_global_registry()
-            .resolve_qualified_alias(namespace, name)
-    };
-
-    if &alias_name != name
-        && let Some(_ty) = env.symbols.get_preresolved_symbol(&alias_name)
-    {
-        return Ok(_ty.as_type_id().unwrap()); // unfailable
-    }
-
-    let resolved_name = env
+    let candidates = env
         .symbols
         .get_global_registry()
-        .resolve(&alias_name)
-        .map(|symbol| (alias_name.clone(), symbol))
-        .or_else(|| {
-            name.namespace.is_root().then(|| {
-                env.symbols
-                    .get_global_registry()
-                    .resolve(name)
-                    .map(|symbol| (name.clone(), symbol))
-            })?
-        });
+        .resolve_qualified_aliases(namespace, name);
 
-    let Some((resolved_name, symbol)) = resolved_name else {
+    let mut resolved = Vec::new();
+    for candidate in candidates.iter().cloned() {
+        let lookup = if let Some(_ty) = env.symbols.get_preresolved_symbol(&candidate) {
+            Some(TypeLookup::Resolved(_ty.as_type_id().unwrap()))
+        } else {
+            env.symbols
+                .get_global_registry()
+                .resolve(&candidate)
+                .map(TypeLookup::Untyped)
+        };
+
+        let Some(lookup) = lookup else {
+            continue;
+        };
+
+        if name.namespace.is_root() && candidate.namespace == *namespace {
+            return complete_identifier_type_lookup(
+                env,
+                namespace,
+                name,
+                candidate,
+                lookup,
+                template_input,
+            );
+        }
+
+        resolved.push((candidate, lookup));
+    }
+
+    let Some((resolved_name, lookup)) = resolved.pop() else {
         if predeclaration != PredeclarationType::None {
             let id = env.symbols.reserve_type_id();
-            env.symbols.insert_type_symbol(alias_name, id);
+            let reserve_name = candidates.first().cloned().unwrap_or_else(|| name.clone());
+            env.symbols.insert_type_symbol(reserve_name, id);
 
             return Ok(id);
         }
 
         return CXError::create_result(format!("Type not found: {name}"));
+    };
+
+    if !resolved.is_empty() {
+        let mut candidates = resolved
+            .iter()
+            .map(|(name, _)| name.as_flat_name())
+            .collect::<Vec<_>>();
+        candidates.push(resolved_name.as_flat_name());
+        return Err(crate::typecheck_error!(
+            env,
+            None::<cx_tokens::TokenRange>,
+            "Type '{name}' is ambiguous; candidates: {}",
+            candidates.join(", ")
+        ));
+    }
+
+    complete_identifier_type_lookup(env, namespace, name, resolved_name, lookup, template_input)
+}
+
+fn complete_identifier_type_lookup(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    name: &QualifiedName,
+    resolved_name: QualifiedName,
+    lookup: TypeLookup,
+    template_input: &Option<CXTemplateInput>,
+) -> CXResult<MIRTypeId> {
+    if let TypeLookup::Resolved(id) = lookup {
+        return Ok(id);
+    }
+
+    let TypeLookup::Untyped(symbol) = lookup else {
+        unreachable!("resolved lookup was handled above")
     };
 
     match &symbol.kind {
@@ -404,6 +444,11 @@ fn complete_identifier_type(
 
         _ => CXError::create_result(format!("Symbol '{name}' is not a type")),
     }
+}
+
+enum TypeLookup {
+    Resolved(MIRTypeId),
+    Untyped(CXSymbol),
 }
 
 fn make_aggregate_type<F>(

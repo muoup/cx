@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-
+use cx_preparse_data::NamespaceAliases;
 use cx_util::{identifier::CXIdent, module_path::ModulePath, namespace::NamespacePath};
 
 use crate::ast::{
@@ -20,7 +19,7 @@ pub struct CXAST {
     pub module_path: ModulePath,
     pub imports: Vec<ModulePath>,
     pub definition_stmts: Vec<CXASTDefinition>,
-    pub namespace_aliases: HashMap<NamespacePath, NamespacePath>,
+    pub namespace_aliases: NamespaceAliases,
 }
 
 #[derive(Debug)]
@@ -57,7 +56,7 @@ impl CXAST {
             module_path,
             imports,
             definition_stmts: Vec::new(),
-            namespace_aliases: HashMap::new(),
+            namespace_aliases: NamespaceAliases::new(),
         }
     }
 }

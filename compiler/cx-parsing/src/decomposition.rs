@@ -7,9 +7,9 @@ use cx_ast::{
     decomposition::{CXGenerationAST, CXGenerationStmt},
     symbols::{CXSymbol, CXSymbolKind, SymbolNamespaceData},
 };
-use std::collections::HashMap;
 
 use cx_ast::ast::types::{CXType, CXTypeKind, PredeclarationType};
+use cx_preparse_data::NamespaceAliases;
 use cx_util::namespace::{NamespacePath, QualifiedName};
 
 pub struct DecompositionEnv<'a> {
@@ -19,10 +19,7 @@ pub struct DecompositionEnv<'a> {
 }
 
 impl<'a> DecompositionEnv<'a> {
-    pub fn new(
-        namespace: &'a NamespacePath,
-        namespace_aliases: HashMap<NamespacePath, NamespacePath>,
-    ) -> Self {
+    pub fn new(namespace: &'a NamespacePath, namespace_aliases: NamespaceAliases) -> Self {
         Self {
             namespace,
             symbol_buckets: vec![(

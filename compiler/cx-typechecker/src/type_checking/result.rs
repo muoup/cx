@@ -305,10 +305,9 @@ impl TypecheckResult {
 
     pub fn try_into_callee(self) -> TypecheckExtract<CalleeExtraction> {
         match self.expression {
-            TypecheckState::Ready(function) => TypecheckExtract::Succ(CalleeExtraction::new(
-                function,
-                self.implicit_parameters,
-            )),
+            TypecheckState::Ready(function) => {
+                TypecheckExtract::Succ(CalleeExtraction::new(function, self.implicit_parameters))
+            }
             expression => TypecheckExtract::Fail(Self { expression, ..self }),
         }
     }

@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use cx_ast::symbols::CXSymbol;
 use cx_mir::{
     EnvironmentNamespace, MIRUnit,
     mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId},
@@ -134,32 +135,71 @@ impl TypeEnvironment<'_> {
             return Ok(Some(preresolved_symbol.clone()));
         }
 
-        let aliased_name = self
+        let candidates = self
             .symbols
             .get_global_registry()
-            .resolve_qualified_alias(namespace, name);
+            .resolve_qualified_aliases(namespace, name);
 
-        if &aliased_name != name
-            && let Some(preresolved_symbol) = self.symbols.get_preresolved_symbol(&aliased_name)
-        {
-            return Ok(Some(preresolved_symbol.clone()));
-        }
-
-        let (resolved_name, untyped_symbol) = match self
-            .symbols
-            .get_global_registry()
-            .resolve(&aliased_name)
-            .map(|symbol| (aliased_name.clone(), symbol))
-            .or_else(|| {
-                name.namespace.is_root().then(|| {
+        let mut resolved = Vec::new();
+        for candidate in candidates {
+            let lookup =
+                if let Some(preresolved_symbol) = self.symbols.get_preresolved_symbol(&candidate) {
+                    Some(SymbolLookup::Resolved(preresolved_symbol.clone()))
+                } else {
                     self.symbols
                         .get_global_registry()
-                        .resolve(name)
-                        .map(|symbol| (name.clone(), symbol))
-                })?
-            }) {
-            Some(result) => result,
-            None => return Ok(None),
+                        .resolve(&candidate)
+                        .map(SymbolLookup::Untyped)
+                };
+
+            let Some(lookup) = lookup else {
+                continue;
+            };
+
+            if name.namespace.is_root() && candidate.namespace == *namespace {
+                return self.resolve_lookup(namespace, candidate, lookup).map(Some);
+            }
+
+            resolved.push((candidate, lookup));
+        }
+
+        if resolved.is_empty() {
+            return Ok(None);
+        }
+
+        if resolved.len() > 1 {
+            let candidates = resolved
+                .iter()
+                .map(|(name, _)| name.as_flat_name())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(crate::typecheck_error!(
+                self,
+                None::<cx_tokens::TokenRange>,
+                "Symbol '{name}' is ambiguous; candidates: {candidates}"
+            ));
+        }
+
+        let (resolved_name, lookup) = resolved
+            .pop()
+            .expect("resolved symbol list should have exactly one item");
+
+        self.resolve_lookup(namespace, resolved_name, lookup)
+            .map(Some)
+    }
+
+    fn resolve_lookup(
+        &mut self,
+        namespace: &EnvironmentNamespace,
+        resolved_name: QualifiedName,
+        lookup: SymbolLookup,
+    ) -> CXResult<MIRSymbol> {
+        if let SymbolLookup::Resolved(symbol) = lookup {
+            return Ok(symbol);
+        }
+
+        let SymbolLookup::Untyped(untyped_symbol) = lookup else {
+            unreachable!("resolved lookup was handled above")
         };
 
         let symbol = resolve_symbol(
@@ -171,8 +211,13 @@ impl TypeEnvironment<'_> {
         )?;
 
         self.symbols.insert_symbol(resolved_name, symbol.clone());
-        Ok(Some(symbol))
+        Ok(symbol)
     }
+}
+
+enum SymbolLookup {
+    Resolved(MIRSymbol),
+    Untyped(CXSymbol),
 }
 
 // Under consideration -- functions that may be removed in the refactor

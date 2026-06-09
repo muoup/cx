@@ -86,20 +86,48 @@ impl GlobalSymbolRegistry {
             .cloned()
     }
 
-    pub fn resolve_qualified_alias(
+    pub fn resolve_qualified_aliases(
         &self,
         lexical_namespace: &NamespacePath,
         name: &QualifiedName,
-    ) -> QualifiedName {
+    ) -> Vec<QualifiedName> {
         let inner = self
             .inner
             .read()
             .expect("GlobalSymbolRegistry read lock poisoned");
 
-        inner
-            .namespaces
-            .get(lexical_namespace)
-            .and_then(|data| data.resolve_qualified_alias(name))
+        let mut candidates = Vec::new();
+        if !name.namespace.is_root() {
+            push_unique(&mut candidates, name.clone());
+        }
+
+        if let Some(data) = inner.namespaces.get(lexical_namespace) {
+            for alias in data.resolve_qualified_aliases(name) {
+                push_unique(&mut candidates, alias);
+            }
+        }
+
+        if name.namespace.is_root() {
+            push_unique(
+                &mut candidates,
+                QualifiedName {
+                    namespace: NamespacePath::root(),
+                    name: name.name.clone(),
+                },
+            );
+        }
+
+        candidates
+    }
+
+    pub fn resolve_qualified_alias(
+        &self,
+        lexical_namespace: &NamespacePath,
+        name: &QualifiedName,
+    ) -> QualifiedName {
+        self.resolve_qualified_aliases(lexical_namespace, name)
+            .into_iter()
+            .next()
             .unwrap_or_else(|| name.clone())
     }
 
@@ -124,5 +152,11 @@ impl GlobalSymbolRegistry {
 
             Some((inner, data))
         }
+    }
+}
+
+fn push_unique(names: &mut Vec<QualifiedName>, name: QualifiedName) {
+    if !names.contains(&name) {
+        names.push(name);
     }
 }

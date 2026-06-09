@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use cx_preparse_data::NamespaceAliases;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::{NamespacePath, QualifiedName};
 
@@ -52,7 +53,7 @@ pub enum CXSymbolKind {
 pub struct SymbolNamespaceData {
     enum_blocks: Vec<CXEnumDefinition>,
     symbols: HashMap<String, CXSymbol>,
-    namespace_aliases: HashMap<NamespacePath, NamespacePath>,
+    namespace_aliases: NamespaceAliases,
 }
 
 impl SymbolNamespaceData {
@@ -64,9 +65,7 @@ impl SymbolNamespaceData {
         }
     }
 
-    pub fn new_with_namespace_aliases(
-        namespace_aliases: HashMap<NamespacePath, NamespacePath>,
-    ) -> Self {
+    pub fn new_with_namespace_aliases(namespace_aliases: NamespaceAliases) -> Self {
         Self {
             enum_blocks: Vec::new(),
             symbols: HashMap::new(),
@@ -81,7 +80,11 @@ impl SymbolNamespaceData {
     pub fn merge_from(&mut self, other: SymbolNamespaceData) {
         let enum_offset = self.enum_blocks.len();
         self.enum_blocks.extend(other.enum_blocks);
-        self.namespace_aliases.extend(other.namespace_aliases);
+        for (alias, targets) in other.namespace_aliases {
+            for target in targets {
+                self.insert_namespace_alias(alias.clone(), target);
+            }
+        }
         self.symbols
             .extend(other.symbols.into_iter().map(|(name, mut symbol)| {
                 if let CXSymbolKind::EnumIdent { enum_block_idx, .. } = &mut symbol.kind {
@@ -101,16 +104,65 @@ impl SymbolNamespaceData {
         self.symbols.get(name)
     }
 
-    pub fn resolve_qualified_alias(&self, name: &QualifiedName) -> Option<QualifiedName> {
-        self.namespace_aliases
-            .get(&name.namespace)
-            .map(|alias| QualifiedName {
-                namespace: alias.clone(),
-                name: name.name.clone(),
+    pub fn insert_namespace_alias(&mut self, alias: NamespacePath, target: NamespacePath) {
+        let targets = self.namespace_aliases.entry(alias).or_default();
+        if !targets.contains(&target) {
+            targets.push(target);
+        }
+    }
+
+    pub fn resolve_qualified_aliases(&self, name: &QualifiedName) -> Vec<QualifiedName> {
+        let mut aliases = self
+            .namespace_aliases
+            .iter()
+            .filter_map(|(alias, targets)| {
+                if alias.is_root() {
+                    Some((alias, targets))
+                } else {
+                    name.namespace.strip(alias).map(|_| (alias, targets))
+                }
             })
+            .collect::<Vec<_>>();
+
+        aliases.sort_by(|(left, _), (right, _)| {
+            right
+                .segments()
+                .len()
+                .cmp(&left.segments().len())
+                .then_with(|| left.as_scope_string().cmp(&right.as_scope_string()))
+        });
+
+        let mut resolved = Vec::new();
+        for (alias, targets) in aliases {
+            let suffix = if alias.is_root() {
+                name.namespace.clone()
+            } else {
+                name.namespace
+                    .strip(alias)
+                    .expect("Alias prefix was checked above")
+            };
+
+            for target in targets {
+                push_unique(
+                    &mut resolved,
+                    QualifiedName {
+                        namespace: target.join(&suffix),
+                        name: name.name.clone(),
+                    },
+                );
+            }
+        }
+
+        resolved
     }
 
     pub fn get_enum_block(&self, idx: usize) -> Option<&CXEnumDefinition> {
         self.enum_blocks.get(idx)
+    }
+}
+
+fn push_unique(names: &mut Vec<QualifiedName>, name: QualifiedName) {
+    if !names.contains(&name) {
+        names.push(name);
     }
 }

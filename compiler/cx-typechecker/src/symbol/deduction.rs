@@ -38,13 +38,15 @@ pub(crate) fn complete_templated_callee(
     if let Some(input) = template_input {
         let completed_input = complete_template_input(env, namespace, input)?;
         return apply_template(env, &symbol, completed_input)?.ok_or_else(|| {
-            CXError::create_boxed(format!("Symbol '{}' does not accept template arguments", name))
+            CXError::create_boxed(format!(
+                "Symbol '{}' does not accept template arguments",
+                name
+            ))
         });
     }
 
-    deduce_template_symbol(env, namespace, &symbol, arg_types)?.ok_or_else(|| {
-        CXError::create_boxed(format!("Symbol '{}' is not a template", name))
-    })
+    deduce_template_symbol(env, namespace, &symbol, arg_types)?
+        .ok_or_else(|| CXError::create_boxed(format!("Symbol '{}' is not a template", name)))
 }
 
 pub(crate) fn deduce_template_symbol(

@@ -1,10 +1,9 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use cx_ast::ast::{function::CXFunctionKind, CXASTDefinition, CXASTStmt, CXAST};
 use cx_preparse_data::registry::GlobalPreparseRegistry;
-use cx_preparse_data::{PreparseContents, VisibilityMode};
+use cx_preparse_data::{NamespaceAliases, PreparseContents, VisibilityMode};
 use cx_tokens::TokenIter;
 use cx_util::identifier::CXIdent;
 use cx_util::module_path::ModulePath;
@@ -19,7 +18,7 @@ pub struct ParserData<'a> {
     pub file_origin: Arc<str>,
     // uses u8 mapping instead of a set to prevent problems with shadowing
     pub temporary_type_names: HashMap<CXIdent, u8>,
-    namespace_aliases: HashMap<NamespacePath, NamespacePath>,
+    namespace_aliases: NamespaceAliases,
 
     pub registry: &'a GlobalPreparseRegistry,
     pub ast: CXAST,
@@ -102,28 +101,61 @@ impl<'a> ParserData<'a> {
         self.ast
     }
 
-    pub fn resolve_qualified_alias<'b>(&self, name: &'b QualifiedName) -> Cow<'b, QualifiedName> {
-        if let Some(alias) = self.namespace_aliases.get(&name.namespace) {
-            Cow::Owned(QualifiedName {
-                namespace: alias.clone(),
-                name: name.name.clone(),
+    pub fn resolve_qualified_aliases(&self, name: &QualifiedName) -> Vec<QualifiedName> {
+        let mut candidates = Vec::new();
+        push_unique(&mut candidates, name.clone());
+
+        let mut aliases = self
+            .namespace_aliases
+            .iter()
+            .filter_map(|(alias, targets)| {
+                if alias.is_root() {
+                    Some((alias, targets))
+                } else {
+                    name.namespace.strip(alias).map(|_| (alias, targets))
+                }
             })
-        } else {
-            Cow::Borrowed(name)
+            .collect::<Vec<_>>();
+
+        aliases.sort_by(|(left, _), (right, _)| {
+            right
+                .segments()
+                .len()
+                .cmp(&left.segments().len())
+                .then_with(|| left.as_scope_string().cmp(&right.as_scope_string()))
+        });
+
+        for (alias, targets) in aliases {
+            let suffix = if alias.is_root() {
+                name.namespace.clone()
+            } else {
+                name.namespace
+                    .strip(alias)
+                    .expect("Alias prefix was checked above")
+            };
+
+            for target in targets {
+                push_unique(
+                    &mut candidates,
+                    QualifiedName {
+                        namespace: target.join(&suffix),
+                        name: name.name.clone(),
+                    },
+                );
+            }
         }
+
+        candidates
     }
 
     pub fn is_type_ident(&self, name: &QualifiedName) -> bool {
-        let resolved_name = self.resolve_qualified_alias(name);
-
-        self.registry
-            .get_symbol(&resolved_name.namespace, &resolved_name.name)
-            .is_some()
-            || (name.namespace.is_root()
-                && self
-                    .registry
-                    .get_symbol(&NamespacePath::root(), &name.name)
-                    .is_some())
+        self.resolve_qualified_aliases(name)
+            .iter()
+            .any(|resolved_name| {
+                self.registry
+                    .get_symbol(&resolved_name.namespace, &resolved_name.name)
+                    .is_some()
+            })
             || (name.namespace.is_root() && self.temporary_type_names.contains_key(&name.name))
     }
 
@@ -152,7 +184,8 @@ impl<'a> ParserData<'a> {
             CXASTStmt::TypeDefinition {
                 name: Some(name), ..
             } => {
-                self.namespace_aliases.insert(
+                insert_namespace_alias(
+                    &mut self.namespace_aliases,
                     NamespacePath::root().child(name.clone()),
                     namespace.child(name.clone()),
                 );
@@ -168,12 +201,32 @@ impl<'a> ParserData<'a> {
                             | CXFunctionKind::StaticMemberFunction { .. }
                     )
                 {
-                    self.namespace_aliases
-                        .insert(q_namespace.clone(), namespace.join(&q_namespace));
+                    insert_namespace_alias(
+                        &mut self.namespace_aliases,
+                        q_namespace.clone(),
+                        namespace.join(&q_namespace),
+                    );
                 }
             }
 
             _ => {}
         }
+    }
+}
+
+fn insert_namespace_alias(
+    aliases: &mut NamespaceAliases,
+    alias: NamespacePath,
+    target: NamespacePath,
+) {
+    let targets = aliases.entry(alias).or_default();
+    if !targets.contains(&target) {
+        targets.push(target);
+    }
+}
+
+fn push_unique(candidates: &mut Vec<QualifiedName>, name: QualifiedName) {
+    if !candidates.contains(&name) {
+        candidates.push(name);
     }
 }

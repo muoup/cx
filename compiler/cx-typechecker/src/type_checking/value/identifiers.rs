@@ -41,9 +41,7 @@ pub(crate) fn typecheck_identifier(
         template_input.cloned(),
         IncompleteCalleeContext::none(),
     )
-    .map_err(|err| {
-        typecheck_error!(env, Some(expr.token_range()), "{}", err.error_message())
-    })?;
+    .map_err(|err| typecheck_error!(env, Some(expr.token_range()), "{}", err.error_message()))?;
 
     let binding = match result.ready_expression().map(|expr| &expr.kind) {
         Some(MIRExpressionKind::Variable {

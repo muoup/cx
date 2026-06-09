@@ -250,6 +250,7 @@ pub enum KeywordType {
 
     // CX Specific
     Import,
+    As,
     Strong,
     Weak,
     Template,
@@ -358,6 +359,7 @@ impl TokenKind {
 
             // CX Extensions
             "import" => TokenKind::Keyword(KeywordType::Import),
+            "as" => TokenKind::Keyword(KeywordType::As),
 
             "weak" => TokenKind::Keyword(KeywordType::Weak),
             "move" => TokenKind::Operator(OperatorType::Move),

@@ -162,16 +162,15 @@ pub fn typecheck_access(
                 .map(|input| complete_template_input(env, namespace, input))
                 .transpose()?
             {
-                symbol = apply_template(env, &symbol, completed_input)?
-                    .ok_or_else(|| {
-                        typecheck_error!(
-                            env,
-                            Some(expr.token_range()),
-                            "Member '{}' on type '{}' does not accept template arguments",
-                            name,
-                            base.source_type.display_with(&env.symbols)
-                        )
-                    })?;
+                symbol = apply_template(env, &symbol, completed_input)?.ok_or_else(|| {
+                    typecheck_error!(
+                        env,
+                        Some(expr.token_range()),
+                        "Member '{}' on type '{}' does not accept template arguments",
+                        name,
+                        base.source_type.display_with(&env.symbols)
+                    )
+                })?;
             }
 
             let member_result = TypecheckResult::from_symbol(
@@ -180,10 +179,7 @@ pub fn typecheck_access(
                 template_input.clone(),
                 IncompleteCalleeContext::member(
                     base.source_type.clone(),
-                    PendingReceiver::new(
-                        base.source.clone(),
-                        lhs_binding.clone(),
-                    ),
+                    PendingReceiver::new(base.source.clone(), lhs_binding.clone()),
                 ),
             )
             .map_err(|err| {

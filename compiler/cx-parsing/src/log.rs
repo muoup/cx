@@ -71,12 +71,14 @@ macro_rules! log_preparse_error {
     ($toks:expr, $($arg:tt)*) => {
         {
             let message = format!("{}", format!($($arg)*));
+            let toks = &$toks;
+            let token = toks.peek().cloned().or_else(|| toks.prev().cloned()).unwrap();
 
             Err(Box::new($crate::log::ParseErrorLog {
                 message,
-                file: $toks.file.clone(),
-                token: $toks.peek().unwrap().clone(),
-                previous_token: $toks.prev().cloned(),
+                file: toks.file.clone(),
+                token,
+                previous_token: toks.prev().cloned(),
             }) as Box<dyn cx_util::CXErrorTrait>)
         }
     };

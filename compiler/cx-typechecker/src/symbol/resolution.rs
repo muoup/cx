@@ -75,8 +75,7 @@ pub fn resolve_symbol(
         }
 
         CXSymbolKind::FunctionReference(prototype) => {
-            let prototype_namespace =
-                function_lexical_namespace(symbol_namespace, &prototype.kind);
+            let prototype_namespace = function_lexical_namespace(symbol_namespace, &prototype.kind);
             let prototype = complete_prototype(env, &prototype_namespace, prototype)?;
 
             Ok(MIRSymbol::FunctionReference(prototype))
