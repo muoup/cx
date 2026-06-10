@@ -1,0 +1,7 @@
+import std::vector as _;
+
+enum union Node : @nodrop {
+    Children :: vector<Node>,
+    Empty :: void
+};
+

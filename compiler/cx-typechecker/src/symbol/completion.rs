@@ -36,7 +36,7 @@ pub fn complete_template_input(
     let args = input
         .params
         .iter()
-        .map(|param| complete_type(env, namespace, param))
+        .map(|param| complete_type_id(env, namespace, param))
         .collect::<CXResult<Vec<_>>>()?;
 
     Ok(MIRTemplateInput { args })

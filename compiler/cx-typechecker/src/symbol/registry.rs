@@ -31,6 +31,20 @@ impl MIRTypeContext for MIRSymbolRegistry<'_> {
             .get(&id)
             .unwrap_or_else(|| panic!("Invalid MIRTypeId {} in AST!", id))
     }
+
+    fn try_resolve_type_id(&self, id: MIRTypeId) -> Option<&MIRType> {
+        self.typeid_defs.get(&id)
+    }
+
+    fn type_id_lookup_identifier(&self, id: MIRTypeId) -> Option<&QualifiedName> {
+        self.global_cache
+            .iter()
+            .find_map(|(name, symbol)| (symbol.as_type_id() == Some(id)).then_some(name))
+            .or_else(|| {
+                self.try_resolve_type_id(id)
+                    .and_then(|ty| ty.lookup_identifier())
+            })
+    }
 }
 
 impl<'a> MIRSymbolRegistry<'a> {
@@ -102,6 +116,15 @@ impl<'a> MIRSymbolRegistry<'a> {
         );
 
         Ok(type_id)
+    }
+
+    pub fn insert_local_type_id(&mut self, name: String, type_id: MIRTypeId) -> CXResult<()> {
+        self.local_symbols.insert(
+            QualifiedName::new_raw(CXIdent::new(name)),
+            MIRSymbol::Type(type_id),
+        );
+
+        Ok(())
     }
 
     pub fn push_local_scope(&mut self) {

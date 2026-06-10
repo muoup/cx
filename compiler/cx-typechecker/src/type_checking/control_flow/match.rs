@@ -118,7 +118,9 @@ pub fn typecheck_match(
                     return log_typecheck_error!(
                         env,
                         Some(condition.token_range()),
-                        "Tagged union variant does not match the type being matched"
+                        "Tagged union variant does not match the type being matched, found '{}', expected '{}'",
+                        union_name,
+                        expected_union_name
                     );
                 }
                 validate_variant_template_input(

@@ -1,7 +1,18 @@
+use cx_util::namespace::QualifiedName;
+
 use crate::mir::data::{MIRIntegerType, MIRType, MIRTypeId, MIRTypeKind};
 
 pub trait MIRTypeContext {
     fn resolve_type_id(&self, id: MIRTypeId) -> &MIRType;
+
+    fn try_resolve_type_id(&self, id: MIRTypeId) -> Option<&MIRType> {
+        Some(self.resolve_type_id(id))
+    }
+
+    fn type_id_lookup_identifier(&self, id: MIRTypeId) -> Option<&QualifiedName> {
+        self.try_resolve_type_id(id)
+            .and_then(|ty| ty.lookup_identifier())
+    }
 
     fn ptr_inner(&self, ty: &MIRType) -> Option<&MIRType> {
         ty.ptr_inner().map(|id| self.resolve_type_id(id))

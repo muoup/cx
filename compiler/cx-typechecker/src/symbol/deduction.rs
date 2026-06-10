@@ -128,12 +128,14 @@ fn deduce_template_input(
         .types
         .iter()
         .map(|name| {
-            bindings.remove(name.as_str()).ok_or_else(|| {
+            let ty = bindings.remove(name.as_str()).ok_or_else(|| {
                 CXError::create_boxed(format!(
                     "Could not deduce template argument '{}' for function {}",
                     name, shell.kind
                 ))
-            })
+            })?;
+
+            Ok(env.symbols.generate_type_id(ty))
         })
         .collect::<CXResult<Vec<_>>>()?;
 
@@ -216,13 +218,14 @@ fn deduce_from_cx_type(
                 .iter()
                 .zip(template_info.template_input.args.iter())
             {
+                let actual_arg = env.symbols.resolve_type_id(*actual_arg).clone();
                 deduce_from_cx_type(
                     env,
                     namespace,
                     template_prototype,
                     bindings,
                     formal_arg,
-                    actual_arg,
+                    &actual_arg,
                 )?;
             }
 

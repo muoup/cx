@@ -1,4 +1,4 @@
-use crate::mir::data::{MIRType, MIRTypeKind};
+use crate::mir::data::{MIRType, MIRTypeId, MIRTypeKind};
 use crate::mir::r#type::MIRField;
 use crate::type_context::MIRTypeContext;
 use cx_ast::registry::{ExportNameMode, GlobalSymbolRegistry};
@@ -32,11 +32,11 @@ fn mangle_namespace_symbol(name: &QualifiedName) -> String {
 pub fn base_mangle_templated_name(
     definitions: &impl MIRTypeContext,
     name: &str,
-    template_args: &[MIRType],
+    template_args: &[MIRTypeId],
 ) -> String {
     let mut mangled = format!("_T{}{}", template_args.len(), name);
     for arg in template_args {
-        mangled.push_str(&type_mangle(definitions, arg));
+        mangled.push_str(&type_id_mangle(definitions, *arg));
     }
     mangled
 }
@@ -147,11 +147,26 @@ fn push_identifier(mangled: &mut String, definitions: &impl MIRTypeContext, ty: 
         if let Some(template_info) = ty.get_template_data() {
             mangled.push('T');
             for arg in &template_info.template_input.args {
-                mangled.push_str(&type_mangle(definitions, arg));
+                mangled.push_str(&type_id_mangle(definitions, *arg));
             }
             mangled.push('E');
         }
     }
+}
+
+fn type_id_mangle(registry: &impl MIRTypeContext, id: MIRTypeId) -> String {
+    if let Some(ty) = registry.try_resolve_type_id(id) {
+        return type_mangle(registry, ty);
+    }
+
+    if let Some(name) = registry.type_id_lookup_identifier(id) {
+        let mut mangled = String::from("N");
+        push_string_segment(&mut mangled, &name.as_flat_name());
+        return mangled;
+    }
+
+    registry.resolve_type_id(id);
+    unreachable!("resolve_type_id should panic for invalid type ids")
 }
 
 fn push_symbol_segment(mangled: &mut String, name: &CXIdent) {

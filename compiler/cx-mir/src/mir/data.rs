@@ -168,7 +168,7 @@ impl MIRFunctionPrototype {
 
 #[derive(Debug, Clone)]
 pub struct MIRTemplateInput {
-    pub args: Vec<MIRType>,
+    pub args: Vec<MIRTypeId>,
 }
 
 impl MIRTemplateInput {

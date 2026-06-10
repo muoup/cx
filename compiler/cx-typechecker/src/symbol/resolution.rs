@@ -283,8 +283,7 @@ pub fn apply_template_input(
     input: &MIRTemplateInput,
 ) -> CXResult<()> {
     for (param, arg) in prototype.types.iter().zip(input.args.iter()) {
-        env.symbols
-            .insert_local_type(param.as_string(), arg.clone())?;
+        env.symbols.insert_local_type_id(param.as_string(), *arg)?;
     }
 
     Ok(())
