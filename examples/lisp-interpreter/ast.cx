@@ -9,12 +9,12 @@ public:
 enum union lisp_node : @nodrop {
     Program     :: std::vector<lisp_node>,
     Number      :: f64,
-    Symbol      :: string,
+    Symbol      :: std::string,
 
     // (fndef <name> (<params>...) <body>...)
     FnDef       :: struct : @nodrop {
         std::string name;
-        std::vector<string> params;
+        std::vector<std::string> params;
         std::vector<lisp_node> body;
     },
     FnCall      :: struct : @nodrop {
@@ -46,7 +46,7 @@ void lisp_node::drop(lisp_node node) {
             std::vector<ast::lisp_node> body = @adopt(fn_def.body);
 
             name.drop();
-            params.drop_with<string>(string::drop);
+            params.drop_with<std::string>(std::string::drop);
             body.drop_with<lisp_node>(lisp_node::drop);
         }
         lisp_node::FnCall(fn_call) => {

@@ -130,7 +130,7 @@ char* parser::parse_token(*this) {
     return copy_range(this.source, start, this.pos);
 }
 
-string parser::parse_name(*this) {
+std::string parser::parse_name(*this) {
     return string_from_owned_token(this.parse_token());
 }
 
@@ -200,8 +200,8 @@ std::vector<lisp_node> parser::parse_expr_list_until_close(*this) {
     return move exprs;
 }
 
-vector<string> parser::parse_params(*this) {
-    std::vector<ast::string> params = std::vector<ast::string>::new<string>();
+vector<std::string> parser::parse_params(*this) {
+    std::vector<std::string> params = std::vector::new<std::string>();
 
     this.expect('(');
     this.skip_ws();
@@ -224,7 +224,7 @@ lisp_node parser::parse_list(*this) {
     if (token_eq(op, "fndef")) {
         free(op);
         std::string name = this.parse_name();
-        std::vector<string> params = this.parse_params();
+        std::vector<std::string> params = this.parse_params();
         std::vector<lisp_node> body = this.parse_expr_list_until_close();
 
         return lisp_node::FnDef({
