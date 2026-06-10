@@ -1,10 +1,9 @@
 use crate::{assert_token_matches, next_kind};
+use cx_log::{log_error, CXResult};
 use cx_pipeline_data::CompilerConfig;
 use cx_preparse_data::{symbol_data::PreparseModuleSymbols, PreparseContents};
 use cx_tokens::{identifier, keyword, operator, punctuator, specifier, TokenIter};
-use cx_util::{
-    identifier::CXIdent, log_error, module_path::ModulePath, namespace::NamespacePath, CXResult,
-};
+use cx_util::{identifier::CXIdent, module_path::ModulePath, namespace::NamespacePath};
 
 #[derive(Debug, Clone, Copy)]
 pub struct PreparseConfig {

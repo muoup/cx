@@ -20,6 +20,7 @@ cx-backend-llvm = { path = "../cx-backend-llvm", optional = true }
 cx-backend-cranelift = { path = "../cx-backend-cranelift" }
 
 cx-c-header = { path = "../cx-c-header" }
+cx-log = { path = "../cx-log" }
 cx-pipeline-data = { path = "../cx-pipeline-data" }
 cx-tokens = { path = "../cx-tokens" }
 cx-preparse-data = { path = "../cx-preparse-data" }

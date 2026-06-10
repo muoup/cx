@@ -3,11 +3,11 @@ use crate::{
     type_checking::typechecker::typecheck_expr,
 };
 use cx_ast::ast::expression::CXExpression;
+use cx_log::CXResult;
 use cx_mir::{
     EnvironmentNamespace,
     mir::{data::MIRType, expression::MIRExpressionKind},
 };
-use cx_util::CXResult;
 
 pub(crate) fn typecheck_unsafe(
     env: &mut TypeEnvironment,

@@ -3,12 +3,12 @@ use crate::{assert_token_matches, next_kind, peek_next_kind, try_next};
 use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression, CXInitIndex, CXUnpackBinding};
 use cx_ast::ast::pattern::CXPattern;
 use cx_ast::ast::types::CXTypeKind;
+use cx_log::{log_error, CXResult};
 use cx_mir::intrinsic_types::is_intrinsic_type;
 use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, specifier};
 use cx_util::namespace::{NamespacePath, QualifiedName};
 use cx_util::unsafe_float::FloatWrapper;
-use cx_util::{log_error, CXResult};
 
 use crate::parse::operators::{
     binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
@@ -504,7 +504,21 @@ pub(crate) fn parse_expr_val(
         }
         TokenKind::Identifier(_) => {
             data.back();
-            parse_expr_identifier(data)?.kind
+
+            let expr = parse_expr_identifier(data)?;
+
+            if try_next!(data.tokens, TokenKind::Identifier(_)) {
+                // A common type error is of the form `A b` where A is not a recognized type, this would be picked up
+                // as an "found unknown token identifer" error but can be far more accurately diagnosed as a missing
+                // type error. There is no valid syntax of an identifier followed by another identifier otherwise
+                return log_parse_underline_error!(
+                    data,
+                    expr.token_range(),
+                    "Could not resolve type for variable declaration"
+                );
+            }
+
+            expr.kind
         }
 
         TokenKind::Keyword(_) => {

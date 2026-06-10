@@ -14,6 +14,7 @@ use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::template::CXTemplateInput;
 use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
+use cx_log::CXResult;
 use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
@@ -21,7 +22,7 @@ use cx_mir::mir::{
     pattern::MIRPattern,
 };
 use cx_mir::type_context::MIRTypeContext;
-use cx_util::{CXResult, namespace::QualifiedName};
+use cx_util::namespace::QualifiedName;
 
 pub fn typecheck_match(
     env: &mut TypeEnvironment,

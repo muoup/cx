@@ -1,5 +1,6 @@
 use cx_ast::{ast::template::CXTemplatePrototype, symbols::CXSymbol};
-use cx_util::{CXError, CXResult, identifier::CXIdent};
+use cx_log::{CXError, CXResult};
+use cx_util::identifier::CXIdent;
 
 use crate::{
     EnvironmentNamespace,

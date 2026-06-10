@@ -1,113 +1,53 @@
-use cx_util::CXErrorTrait;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use cx_tokens::TokenRange;
+use cx_log::UnderlineError;
 use cx_tokens::token::Token;
+use cx_tokens::{TokenRange, byte_range_for_tokens, file_origin_for_tokens};
 
-#[derive(Clone, Debug)]
-pub struct TypeError {
-    pub compilation_unit: PathBuf,
-    pub token_start: usize,
-    pub token_end: usize,
-    pub byte_start: usize,
-    pub byte_end: usize,
-    pub message: String,
-    pub notes: Vec<String>,
-}
-
-pub trait TypeErrorRangeArg {
+pub trait TypecheckErrorRangeArg {
     fn to_range(&self) -> Option<TokenRange>;
 }
 
-impl TypeErrorRangeArg for &TokenRange {
+impl TypecheckErrorRangeArg for &TokenRange {
     fn to_range(&self) -> Option<TokenRange> {
         Some((*self).clone())
     }
 }
 
-impl TypeErrorRangeArg for Option<&TokenRange> {
+impl TypecheckErrorRangeArg for Option<&TokenRange> {
     fn to_range(&self) -> Option<TokenRange> {
         self.cloned()
     }
 }
 
-impl TypeErrorRangeArg for Option<TokenRange> {
+impl TypecheckErrorRangeArg for Option<TokenRange> {
     fn to_range(&self) -> Option<TokenRange> {
         self.clone()
     }
 }
 
-impl CXErrorTrait for TypeError {
-    fn pretty_print(&self) {
-        cx_log::pretty_underline_error_with_notes(
-            &self.error_message(),
-            &self.notes,
-            self.compilation_unit.as_path(),
-            self.byte_start,
-            self.byte_end,
-        );
-    }
-
-    fn error_prefix(&self) -> String {
-        "TYPE ERROR".to_string()
-    }
-
-    fn error_content(&self) -> String {
-        self.message.clone()
-    }
-
-    fn compilation_unit(&self) -> Option<PathBuf> {
-        Some(self.compilation_unit.clone())
-    }
-
-    fn token_start(&self) -> Option<usize> {
-        Some(self.token_start)
-    }
-
-    fn token_end(&self) -> Option<usize> {
-        Some(self.token_end)
-    }
-
-    fn notes(&self) -> Vec<String> {
-        self.notes.clone()
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
-pub fn byte_range_for_tokens(
+pub fn type_error_for_range(
     tokens: &[Token],
-    start_token: usize,
-    end_token: usize,
-) -> (usize, usize) {
-    let Some(start) = tokens.get(start_token) else {
-        return (0, 1);
-    };
-    let end = tokens
-        .get(end_token.saturating_sub(1))
-        .map(|token| token.byte_end_index)
-        .unwrap_or(start.byte_end_index);
+    fallback_file: &Path,
+    range: &TokenRange,
+    message: String,
+    notes: Vec<String>,
+) -> UnderlineError {
+    let compilation_unit = (!range.file_origin.is_empty())
+        .then(|| PathBuf::from(range.file_origin.as_ref()))
+        .or_else(|| file_origin_for_tokens(tokens, range.start_token, range.end_token))
+        .unwrap_or_else(|| fallback_file.to_owned());
+    let (byte_start, byte_end) = byte_range_for_tokens(tokens, range.start_token, range.end_token);
 
-    (
-        start.byte_start_index,
-        end.max(start.byte_start_index.saturating_add(1)),
+    UnderlineError::new(
+        "TYPE ERROR",
+        message,
+        compilation_unit,
+        byte_start,
+        byte_end,
     )
-}
-
-pub fn file_origin_for_tokens(
-    tokens: &[Token],
-    start_token: usize,
-    end_token: usize,
-) -> Option<PathBuf> {
-    tokens
-        .get(start_token)
-        .or_else(|| end_token.checked_sub(1).and_then(|index| tokens.get(index)))
-        .and_then(|token| {
-            (!token.file_origin.as_os_str().is_empty())
-                .then(|| PathBuf::from(token.file_origin.as_ref()))
-        })
+    .with_token_range(range.start_token, range.end_token)
+    .with_notes(notes)
 }
 
 #[macro_export]
@@ -118,32 +58,16 @@ macro_rules! typecheck_error {
 
             // panic!("{}", message);
 
-            let range = $crate::log::TypeErrorRangeArg::to_range(&$range);
+            let range = $crate::log::TypecheckErrorRangeArg::to_range(&$range)
+                .unwrap_or_default();
 
-            let (start_token, end_token) = if let Some(range) = range.as_ref() {
-                (range.start_token, range.end_token)
-            } else {
-                (0, 0)
-            };
-            let compilation_unit = range
-                .as_ref()
-                .and_then(|range| {
-                    (!range.file_origin.is_empty()).then(|| std::path::PathBuf::from(range.file_origin.as_ref()))
-                })
-                .or_else(|| $crate::log::file_origin_for_tokens($env.source.tokens, start_token, end_token))
-                .unwrap_or_else(|| $env.source.compilation_unit.as_path().to_owned());
-            let (byte_start, byte_end) =
-                $crate::log::byte_range_for_tokens($env.source.tokens, start_token, end_token);
-
-            Box::new($crate::log::TypeError {
+            Box::new($crate::log::type_error_for_range(
+                $env.source.tokens,
+                $env.source.compilation_unit.as_path(),
+                &range,
                 message,
-                token_start: start_token,
-                token_end: end_token,
-                byte_start,
-                byte_end,
-                compilation_unit,
-                notes: Vec::new(),
-            }) as Box<dyn cx_util::CXErrorTrait>
+                Vec::new(),
+            )) as Box<dyn cx_log::CXErrorTrait>
         }
     };
 }

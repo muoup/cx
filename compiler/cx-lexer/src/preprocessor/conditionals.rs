@@ -1,4 +1,4 @@
-use cx_util::CXResult;
+use cx_log::CXResult;
 
 use crate::{
     context::LexingContext,

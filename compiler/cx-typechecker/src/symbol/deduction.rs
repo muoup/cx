@@ -6,13 +6,14 @@ use cx_ast::ast::{
     types::{CXType, CXTypeKind},
 };
 use cx_ast::symbols::CXSymbolKind;
+use cx_log::{CXError, CXResult};
 use cx_mir::{
     EnvironmentNamespace,
     mir::data::{MIRFunctionSignature, MIRTemplateInput, MIRType, MIRTypeKind},
     symbol::MIRSymbol,
     type_context::MIRTypeContext,
 };
-use cx_util::{CXError, CXResult, namespace::QualifiedName};
+use cx_util::namespace::QualifiedName;
 
 use crate::{
     environment::TypeEnvironment,

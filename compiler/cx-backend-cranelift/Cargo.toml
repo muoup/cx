@@ -5,6 +5,7 @@ edition = "2021"
 autotests = false
 
 [dependencies]
+cx-log = { path = "../cx-log" }
 cx-util = { path = "../cx-util" }
 cx-lmir = { path = "../cx-lmir" }
 cx-ast = { path = "../cx-ast" }

@@ -9,8 +9,8 @@ use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Module};
 use cx_lmir::{LMIRBasicBlock, LMIRFunction, LMIRFunctionPrototype};
+use cx_log::{CXError, CXResult};
 use cx_util::format::dump_data;
-use cx_util::{CXError, CXResult};
 
 pub(crate) fn codegen_fn_prototype(
     global_state: &mut GlobalState,

@@ -2,12 +2,12 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 
+use cx_log::{CXError, CXResult};
 use cx_mir::MIRUnit;
 use cx_mir::mir::data::{MIRFunction, MIRFunctionPrototype};
 use cx_mir::registry::MIRDecomposedRegistry;
 use cx_safe_ir::ast::{FMIRFunction, FMIRNode};
 use cx_tokens::TokenRange;
-use cx_util::{CXError, CXResult};
 
 use crate::mir_conversion::{convert_mir, environment::FMIREnvironment};
 use crate::simplify::assert_proven_conditions;

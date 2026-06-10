@@ -25,10 +25,10 @@ use crate::type_checking::value::{
     unsafe_ops::typecheck_unsafe,
 };
 use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
+use cx_log::CXResult;
 use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::data::{MIRIntegerType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
-use cx_util::CXResult;
 
 use crate::type_checking::control_flow::r#match::typecheck_match;
 use crate::type_checking::control_flow::switch::typecheck_switch;

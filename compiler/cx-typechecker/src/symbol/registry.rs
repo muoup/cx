@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use cx_ast::registry::GlobalSymbolRegistry;
+use cx_log::CXResult;
 use cx_mir::{
     intrinsic_types::INTRINSIC_TYPES,
     mir::{
@@ -12,7 +13,7 @@ use cx_mir::{
     symbol::MIRSymbol,
     type_context::MIRTypeContext,
 };
-use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName, scoped_map::ScopedMap};
+use cx_util::{identifier::CXIdent, namespace::QualifiedName, scoped_map::ScopedMap};
 
 /// Module-local symbol definitions
 pub struct MIRSymbolRegistry<'a> {

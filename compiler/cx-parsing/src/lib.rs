@@ -1,8 +1,8 @@
 use cx_ast::ast::CXAST;
+use cx_log::CXResult;
 use cx_preparse_data::{registry::GlobalPreparseRegistry, PreparseContents};
 use cx_tokens::TokenIter;
-use cx_util::{namespace::NamespacePath, CXResult};
-pub use log::ParseErrorLog;
+use cx_util::namespace::NamespacePath;
 
 use crate::{
     decomposition::DecompositionEnv,

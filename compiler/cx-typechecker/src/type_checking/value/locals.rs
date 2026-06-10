@@ -10,12 +10,13 @@ use crate::{
     },
 };
 use cx_ast::ast::{expression::CXExpression, types::CXType};
+use cx_log::CXResult;
 use cx_mir::{
     EnvironmentNamespace,
     mir::expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
 };
 use cx_tokens::TokenRange;
-use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 pub(crate) fn ensure_binding_available(
     env: &mut TypeEnvironment,

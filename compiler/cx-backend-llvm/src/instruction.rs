@@ -7,7 +7,7 @@ use cx_lmir::{
     LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind,
     LMIRIntUnOp, LMIRReturnABI,
 };
-use cx_util::log_error;
+use cx_log::log_error;
 use inkwell::AddressSpace;
 use inkwell::attributes::AttributeLoc;
 use inkwell::values::BasicValue;

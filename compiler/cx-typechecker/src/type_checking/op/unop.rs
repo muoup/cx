@@ -2,6 +2,7 @@ use cx_ast::ast::{
     expression::{CXExpression, CXUnOp},
     types::CXType,
 };
+use cx_log::CXResult;
 use cx_mir::{
     EnvironmentNamespace,
     mir::{
@@ -10,7 +11,6 @@ use cx_mir::{
     },
     type_context::MIRTypeContext,
 };
-use cx_util::CXResult;
 
 use crate::{
     environment::TypeEnvironment,

@@ -2,13 +2,13 @@ use crate::environment::TypeEnvironment;
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::typechecker::typecheck_expr;
+use cx_log::CXResult;
 use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::data::{MIRFunctionPrototype, MIRFunctionSignature, MIRType};
 use cx_mir::mir::expression::{
     MIRExpression, MIRExpressionKind, MIRFunctionContract, MIRPostcondition,
 };
 use cx_mir::symbol::MIRSymbol;
-use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::{NamespacePath, QualifiedName};
 
@@ -109,13 +109,13 @@ pub(crate) fn resolve_assertion_prototype(
     );
 
     let Some(symbol) = env.get_symbol(namespace, &name)? else {
-        return cx_util::CXError::create_result(
+        return cx_log::CXError::create_result(
             "Function contract used but std::intrinsic::assertion::__compiler_assert was not found",
         );
     };
 
     let MIRSymbol::FunctionReference(prototype) = symbol else {
-        return cx_util::CXError::create_result(
+        return cx_log::CXError::create_result(
             "std::intrinsic::assertion::__compiler_assert is not a function",
         );
     };

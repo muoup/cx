@@ -1,9 +1,9 @@
 use cx_ast::ast::modifiers::CX_CONST;
+use cx_log::CXResult;
 use cx_mir::{
     mir::expression::{MIRExpression, MIRExpressionKind},
     type_context::MIRTypeContext,
 };
-use cx_util::CXResult;
 
 use crate::{
     environment::TypeEnvironment,

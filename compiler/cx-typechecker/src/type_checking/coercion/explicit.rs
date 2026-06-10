@@ -1,5 +1,5 @@
+use cx_log::CXResult;
 use cx_mir::mir::{data::MIRType, expression::MIRExpression};
-use cx_util::CXResult;
 
 use crate::{
     environment::TypeEnvironment,

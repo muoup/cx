@@ -6,6 +6,7 @@ use crate::{
     },
 };
 use cx_ast::ast::expression::CXExpression;
+use cx_log::CXResult;
 use cx_mir::{
     EnvironmentNamespace,
     mir::{
@@ -13,7 +14,7 @@ use cx_mir::{
         expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
     },
 };
-use cx_util::{CXResult, namespace::QualifiedName};
+use cx_util::namespace::QualifiedName;
 
 pub fn typecheck_function(
     env: &mut TypeEnvironment,

@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-use cx_util::{CXError, CXResult, module_path::cx_library_directory};
+use cx_log::{CXError, CXResult};
+use cx_util::module_path::cx_library_directory;
 
 use crate::{
     context::{LexingContext, SourceInput},

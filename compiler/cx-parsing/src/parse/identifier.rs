@@ -5,6 +5,7 @@ use cx_ast::ast::{
     template::CXTemplateInput,
     types::{CXType, CXTypeKind, PredeclarationType},
 };
+use cx_log::{CXError, CXResult};
 use cx_tokens::{
     operator,
     token::{OperatorType, TokenKind},
@@ -13,7 +14,6 @@ use cx_tokens::{
 use cx_util::{
     identifier::CXIdent,
     namespace::{NamespacePath, QualifiedName},
-    CXError, CXResult,
 };
 
 use crate::{next_kind, try_next};

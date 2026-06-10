@@ -1,12 +1,9 @@
 use crate::{routines::convert_linkage, GlobalState};
 use cranelift_module::{DataDescription, Linkage, Module};
 use cx_lmir::{LMIRGlobalType, LMIRGlobalValue};
-use cx_util::CXResult;
+use cx_log::CXResult;
 
-pub(crate) fn generate_global(
-    state: &mut GlobalState,
-    variable: &LMIRGlobalValue,
-) -> CXResult<()> {
+pub(crate) fn generate_global(state: &mut GlobalState, variable: &LMIRGlobalValue) -> CXResult<()> {
     let id = match &variable._type {
         LMIRGlobalType::StringLiteral(str) => {
             let id = state

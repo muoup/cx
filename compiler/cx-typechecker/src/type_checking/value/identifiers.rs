@@ -6,11 +6,12 @@ use crate::{
     typecheck_error,
 };
 use cx_ast::ast::{expression::CXExpression, template::CXTemplateInput};
+use cx_log::CXResult;
 use cx_mir::{
     EnvironmentNamespace,
     mir::expression::{MIRExpressionKind, SymbolValueOrigin},
 };
-use cx_util::{CXResult, namespace::QualifiedName};
+use cx_util::namespace::QualifiedName;
 
 pub(crate) fn typecheck_identifier(
     env: &mut TypeEnvironment,

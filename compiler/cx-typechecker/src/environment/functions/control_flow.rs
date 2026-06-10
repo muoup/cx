@@ -1,12 +1,10 @@
 use std::path::Path;
 
 use cx_ast::ast::expression::CXExpression;
+use cx_log::CXResult;
 use cx_tokens::TokenRange;
 use cx_tokens::token::Token;
-use cx_util::CXResult;
 use cx_util::scoped_map::ScopedMap;
-
-use crate::log::TypeError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BindingMoveState {
@@ -636,23 +634,13 @@ impl ControlFlow {
         message: String,
         notes: Vec<String>,
     ) -> CXResult<T> {
-        let (byte_start, byte_end) =
-            crate::log::byte_range_for_tokens(tokens, range.start_token, range.end_token);
-        let compilation_unit = (!range.file_origin.is_empty())
-            .then(|| range.file_origin.as_ref().into())
-            .or_else(|| {
-                crate::log::file_origin_for_tokens(tokens, range.start_token, range.end_token)
-            })
-            .unwrap_or_else(|| compilation_unit.to_owned());
-        Err(Box::new(TypeError {
+        Err(Box::new(crate::log::type_error_for_range(
+            tokens,
             compilation_unit,
-            token_start: range.start_token,
-            token_end: range.end_token,
-            byte_start,
-            byte_end,
+            range,
             message,
             notes,
-        }))
+        )))
     }
 
     fn describe_move_state(state: BindingMoveState) -> &'static str {

@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use cx_ast::ast::expression::CXExpression;
+use cx_log::CXResult;
 use cx_mir::mir::data::MIRFunctionPrototype;
 use cx_tokens::token::Token;
-use cx_util::CXResult;
 
 use crate::environment::functions::control_flow::{
     BindingMoveState, ControlFlow, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind,

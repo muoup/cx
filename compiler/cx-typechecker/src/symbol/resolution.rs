@@ -7,7 +7,8 @@ use cx_ast::{
     },
     symbols::{CXSymbol, CXSymbolKind},
 };
-use cx_util::{CXError, CXResult, identifier::CXIdent};
+use cx_log::{CXError, CXResult};
+use cx_util::identifier::CXIdent;
 
 use cx_mir::{
     EnvironmentNamespace,

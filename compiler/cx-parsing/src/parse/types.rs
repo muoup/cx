@@ -10,11 +10,11 @@ use cx_ast::ast::{
     template::CXTemplatePrototype,
     types::{CXField, CXStructAttributes, CXType, CXTypeKind, PredeclarationType},
 };
+use cx_log::CXResult;
 use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
 use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, TokenIter, TokenRange};
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
-use cx_util::CXResult;
 
 use crate::parse::functions::{parse_params, ParseParamsResult};
 use crate::parse::templates::{note_templated_types, try_parse_template, unnote_templated_types};

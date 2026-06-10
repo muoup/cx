@@ -1,5 +1,6 @@
+use cx_log::CXResult;
 use cx_tokens::token::TokenKind;
-use cx_util::{CXResult, char_iter::CharIter};
+use cx_util::char_iter::CharIter;
 
 pub(crate) fn number(iter: &mut CharIter, file_origin: &str) -> CXResult<TokenKind> {
     let start_index = iter.current_iter;

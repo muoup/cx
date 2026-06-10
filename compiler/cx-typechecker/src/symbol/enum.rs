@@ -1,10 +1,11 @@
 use cx_ast::ast::global_var::CXEnumDefinition;
+use cx_log::CXResult;
 use cx_mir::{
     EnvironmentNamespace,
     mir::expression::{MIRExpression, MIRExpressionKind},
     symbol::MIRSymbol,
 };
-use cx_util::{CXResult, namespace::QualifiedName};
+use cx_util::namespace::QualifiedName;
 
 use crate::{
     environment::TypeEnvironment,

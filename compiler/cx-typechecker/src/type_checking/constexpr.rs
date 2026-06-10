@@ -1,7 +1,7 @@
+use cx_log::CXResult;
 use cx_mir::mir::expression::{
     MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRIntegerBinOp,
 };
-use cx_util::CXResult;
 
 use crate::{environment::TypeEnvironment, log_typecheck_error};
 

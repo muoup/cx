@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use cx_ast::symbols::CXSymbol;
+use cx_log::CXResult;
 use cx_mir::{
     EnvironmentNamespace, MIRUnit,
     mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId},
@@ -11,7 +12,6 @@ use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
 use cx_tokens::TokenRange;
 use cx_tokens::token::Token;
-use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
 
@@ -21,7 +21,6 @@ pub use crate::environment::functions::control_flow::{
 };
 use crate::environment::items::ItemRegistry;
 use crate::environment::source::SourceContext;
-use crate::log::TypeError;
 use crate::{
     environment::functions::context::FunctionContext, symbol::registry::MIRSymbolRegistry,
 };
@@ -228,30 +227,13 @@ impl TypeEnvironment<'_> {
         message: String,
         notes: Vec<String>,
     ) -> CXResult<T> {
-        let (byte_start, byte_end) = crate::log::byte_range_for_tokens(
+        Err(Box::new(crate::log::type_error_for_range(
             self.source.tokens,
-            range.start_token,
-            range.end_token,
-        );
-        let compilation_unit = (!range.file_origin.is_empty())
-            .then(|| PathBuf::from(range.file_origin.as_ref()))
-            .or_else(|| {
-                crate::log::file_origin_for_tokens(
-                    self.source.tokens,
-                    range.start_token,
-                    range.end_token,
-                )
-            })
-            .unwrap_or_else(|| self.source.compilation_unit.as_path().to_owned());
-        Err(Box::new(TypeError {
-            compilation_unit,
-            token_start: range.start_token,
-            token_end: range.end_token,
-            byte_start,
-            byte_end,
+            self.source.compilation_unit.as_path(),
+            range,
             message,
             notes,
-        }))
+        )))
     }
 
     pub fn type_eq(&self, type1: &MIRType, type2: &MIRType) -> bool {

@@ -1,3 +1,4 @@
+use cx_log::CXResult;
 use cx_mir::{
     EnvironmentNamespace,
     mir::{
@@ -7,7 +8,7 @@ use cx_mir::{
     type_context::MIRTypeContext,
 };
 use cx_tokens::TokenRange;
-use cx_util::{CXResult, namespace::QualifiedName};
+use cx_util::namespace::QualifiedName;
 
 use crate::{
     environment::{ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment},

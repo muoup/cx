@@ -4,6 +4,7 @@ use crate::mir_lowering::types::convert_cx_prototype;
 use crate::{LMIRResult, LMIRUnit};
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::*;
+use cx_log::CXResult;
 use cx_mir::mir::data::MIRFunctionPrototype;
 use cx_mir::registry::MIRDecomposedRegistry;
 use cx_mir::MIRUnit;
@@ -11,7 +12,6 @@ use cx_util::format::dump_all;
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
 use cx_util::unsafe_float::FloatWrapper;
-use cx_util::CXResult;
 
 #[derive(Debug)]
 pub struct LMIRBuilder {

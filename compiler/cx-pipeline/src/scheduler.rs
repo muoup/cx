@@ -1,9 +1,10 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::progress::ProgressReporter;
+use cx_log::{CXError, CXErrorTrait, CXResult};
 use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::preparse::PreparseConfig;
-use cx_parsing::{ParseErrorLog, decompose_ast, parse_ast, preparse};
+use cx_parsing::{decompose_ast, parse_ast, preparse};
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::directories::internal_directory;
 use cx_pipeline_data::internal_storage::{resource_path, retrieve_data};
@@ -16,12 +17,10 @@ use cx_pipeline_data::{
 use cx_safe_analyzer::FMIRContext;
 use cx_tokens::TokenIter;
 use cx_typechecker::environment::TypeEnvironment;
-use cx_typechecker::log::TypeError;
 use cx_typechecker::typecheck;
 use cx_util::format::dump_data;
 use cx_util::module_path::ModulePath;
 use cx_util::namespace::NamespacePath;
-use cx_util::{CXError, CXErrorTrait, CXResult};
 use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::HashMap;
@@ -476,7 +475,6 @@ pub enum LSPErrorSpan {
 
 #[derive(Debug, Clone)]
 pub enum LSPErrors {
-    TypeError(TypeError),
     SpannedError {
         compilation_unit: std::path::PathBuf,
         message: String,
@@ -577,47 +575,17 @@ fn handle_job_collect_errors(
         .into()
     };
 
-    fn line_start_byte(contents: &str, index: usize) -> usize {
-        let safe_index = index.min(contents.len());
-        contents[..safe_index]
-            .rfind('\n')
-            .map(|idx| idx + 1)
-            .unwrap_or(0)
-    }
-
-    fn line_content_start_byte(contents: &str, index: usize) -> usize {
-        let line_start = line_start_byte(contents, index);
-        let line_end = contents[line_start..]
-            .find('\n')
-            .map(|offset| line_start + offset)
-            .unwrap_or(contents.len());
-        let line = &contents[line_start..line_end];
-        let first_non_whitespace = line
-            .char_indices()
-            .find(|(_, ch)| !ch.is_whitespace())
-            .map(|(offset, _)| offset)
-            .unwrap_or(0);
-
-        line_start + first_non_whitespace
-    }
-
     fn spanned_error(error: &dyn CXErrorTrait) -> Option<LSPErrors> {
-        if let Some(parse_error) = error.as_any().downcast_ref::<ParseErrorLog>() {
-            let file_contents = std::fs::read_to_string(&parse_error.file).ok()?;
-            let anchor_token = parse_error
-                .previous_token
-                .as_ref()
-                .unwrap_or(&parse_error.token);
-            let start = line_content_start_byte(&file_contents, anchor_token.byte_start_index);
-            let end = anchor_token
-                .byte_end_index
-                .max(anchor_token.byte_start_index.saturating_add(1));
-
+        if let (Some(compilation_unit), Some(start), Some(end)) = (
+            error.compilation_unit(),
+            error.byte_start(),
+            error.byte_end(),
+        ) {
             return Some(LSPErrors::SpannedError {
-                compilation_unit: parse_error.file.clone(),
-                message: parse_error.message.clone(),
+                compilation_unit,
+                message: error.error_message(),
                 span: LSPErrorSpan::ByteRange { start, end },
-                notes: Vec::new(),
+                notes: error.notes(),
             });
         }
 

@@ -313,6 +313,7 @@ dependencies = [
  "cranelift-object",
  "cx-ast",
  "cx-lmir",
+ "cx-log",
  "cx-util",
 ]
 
@@ -321,6 +322,7 @@ name = "cx-backend-llvm"
 version = "0.0.0"
 dependencies = [
  "cx-lmir",
+ "cx-log",
  "cx-pipeline-data",
  "cx-util",
  "inkwell",
@@ -355,9 +357,6 @@ dependencies = [
 [[package]]
 name = "cx-log"
 version = "0.0.0"
-dependencies = [
- "cx-util",
-]
 
 [[package]]
 name = "cx-lsp"
@@ -370,7 +369,6 @@ dependencies = [
  "cx-pipeline-data",
  "cx-tokens",
  "cx-typechecker",
- "cx-util",
  "dashmap",
  "tokio",
  "tower-lsp",
@@ -381,6 +379,7 @@ name = "cx-mir"
 version = "0.0.0"
 dependencies = [
  "cx-ast",
+ "cx-log",
  "cx-tokens",
  "cx-util",
  "speedy",
@@ -393,6 +392,7 @@ version = "0.0.0"
 dependencies = [
  "cx-ast",
  "cx-lmir",
+ "cx-log",
  "cx-mir",
  "cx-parsing",
  "cx-util",
@@ -421,6 +421,7 @@ dependencies = [
  "cx-c-header",
  "cx-lexer",
  "cx-lmir",
+ "cx-log",
  "cx-mir",
  "cx-mir-lowering",
  "cx-parsing",
@@ -485,7 +486,7 @@ dependencies = [
 name = "cx-tokens"
 version = "0.0.0"
 dependencies = [
- "cx-util",
+ "cx-log",
  "speedy",
 ]
 

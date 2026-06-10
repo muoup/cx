@@ -1,8 +1,9 @@
+use cx_log::CXResult;
 use cx_tokens::{
     punctuator,
     token::{OperatorType, PunctuatorType, TokenKind},
 };
-use cx_util::{CXResult, char_iter::CharIter};
+use cx_util::char_iter::CharIter;
 
 use crate::lexer::number::number;
 

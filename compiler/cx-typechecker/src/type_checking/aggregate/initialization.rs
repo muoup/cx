@@ -1,4 +1,5 @@
 use cx_ast::ast::expression::{CXExpression, CXInitIndex};
+use cx_log::CXResult;
 use cx_mir::{
     EnvironmentNamespace,
     mir::{
@@ -8,7 +9,6 @@ use cx_mir::{
     type_context::MIRTypeContext,
 };
 use cx_tokens::TokenRange;
-use cx_util::CXResult;
 
 use crate::{
     environment::TypeEnvironment,

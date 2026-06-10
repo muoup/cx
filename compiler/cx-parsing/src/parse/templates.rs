@@ -2,9 +2,10 @@ use crate::parse::ParserData;
 use crate::{assert_token_matches, peek_kind, try_next};
 use cx_ast::ast::template::{CXTemplateInput, CXTemplatePrototype};
 use cx_ast::ast::types::{CXType, CXTypeKind, PredeclarationType};
+use cx_log::CXResult;
 use cx_tokens::{identifier, operator, TokenIter};
 use cx_util::namespace::NamespacePath;
-use cx_util::{identifier::CXIdent, namespace::QualifiedName, CXResult};
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::parse::types::parse_initializer;
 

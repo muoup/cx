@@ -5,7 +5,7 @@ use cx_lmir::{
     ElementID, LMIRABISlot, LMIRBasicBlock, LMIRBlockID, LMIRFunction, LMIRFunctionMap,
     LMIRFunctionPrototype, LMIRFunctionSignature, LMIRReturnABI, LMIRUnit, LMIRValue,
 };
-use cx_util::CXResult;
+use cx_log::CXResult;
 use cx_util::identifier::CXIdent;
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;

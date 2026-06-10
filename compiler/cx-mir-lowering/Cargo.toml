@@ -8,6 +8,7 @@ autotests = false
 cx-parsing = { path = "../cx-parsing" }
 
 cx-ast = { path = "../cx-ast" }
+cx-log = { path = "../cx-log" }
 cx-mir = { path = "../cx-mir" }
 cx-lmir = { path = "../cx-lmir" }
 

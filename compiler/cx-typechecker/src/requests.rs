@@ -2,6 +2,7 @@ use cx_ast::{
     ast::{function::CXFunctionContract, modifiers::CXLinkageMode},
     symbols::CXSymbolKind,
 };
+use cx_log::CXResult;
 use cx_mir::mir::{
     data::{
         MIRFunction, MIRFunctionPrototype, MIRFunctionSignature, MIRParameter, MIRTemplateInput,
@@ -9,7 +10,7 @@ use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
     r#type::MIRType,
 };
-use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::{
     environment::{MIRFunctionGenRequest, TypeEnvironment},

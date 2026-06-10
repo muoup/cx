@@ -1,6 +1,6 @@
 use crate::progress::ProgressReporter;
+use cx_log::{CXError, CXResult};
 use cx_pipeline_data::GlobalCompilationContext;
-use cx_util::{CXError, CXResult};
 use std::process::Command;
 
 /// Relocatable link: combines all .o files into a single .o (ld -r).

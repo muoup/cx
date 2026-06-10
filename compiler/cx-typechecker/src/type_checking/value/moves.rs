@@ -14,6 +14,7 @@ use cx_ast::ast::{
     expression::{CXExpression, CXUnpackBinding},
     modifiers::CX_CONST,
 };
+use cx_log::CXResult;
 use cx_mir::{
     EnvironmentNamespace,
     mir::{
@@ -22,7 +23,7 @@ use cx_mir::{
     },
     type_context::MIRTypeContext,
 };
-use cx_util::{CXResult, identifier::CXIdent, namespace::QualifiedName};
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 pub(crate) fn typecheck_move(
     env: &mut TypeEnvironment,

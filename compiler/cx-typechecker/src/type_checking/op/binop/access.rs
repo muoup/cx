@@ -9,11 +9,11 @@ use crate::type_checking::value::moves::typecheck_move;
 use crate::{log_typecheck_error, typecheck_error};
 use cx_ast::ast::expression::{CXExprKind, CXExpression};
 use cx_ast::ast::modifiers::CX_CONST;
+use cx_log::CXResult;
 use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::data::{MIRType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_mir::type_context::MIRTypeContext;
-use cx_util::CXResult;
 
 struct AccessBase {
     source: MIRExpression,

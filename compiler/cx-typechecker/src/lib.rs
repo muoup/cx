@@ -1,8 +1,8 @@
 use cx_ast::ast::modifiers::{CX_CONST, CXLinkageMode};
 use cx_ast::decomposition::{CXGenerationAST, CXGenerationStmt};
+use cx_log::CXResult;
 use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::global::{MIRGlobalVarKind, MIRGlobalVariable};
-use cx_util::CXResult;
 
 pub mod environment;
 pub mod log;

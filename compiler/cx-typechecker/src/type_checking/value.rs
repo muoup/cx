@@ -5,12 +5,12 @@ pub(crate) mod moves;
 pub(crate) mod unsafe_ops;
 
 use crate::{environment::TypeEnvironment, log_typecheck_error};
+use cx_log::CXResult;
 use cx_mir::{
     mir::data::{MIRType, MIRTypeKind},
     type_context::MIRTypeContext,
 };
 use cx_tokens::TokenRange;
-use cx_util::CXResult;
 
 pub(crate) fn ensure_valid_allocation_type(
     env: &mut TypeEnvironment,

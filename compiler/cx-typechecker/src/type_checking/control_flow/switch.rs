@@ -5,12 +5,12 @@ use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::expression::CXExpression;
+use cx_log::CXResult;
 use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
 };
-use cx_util::CXResult;
 
 pub fn typecheck_switch(
     env: &mut TypeEnvironment,

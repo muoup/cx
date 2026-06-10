@@ -12,11 +12,11 @@ use crate::type_checking::result::{
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_checking::value::moves::typecheck_move;
 use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
+use cx_log::CXResult;
 use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::data::{MIRFloatType, MIRType, MIRTypeKind};
 use cx_mir::mir::expression::MIRExpressionKind;
 use cx_mir::type_context::MIRTypeContext;
-use cx_util::CXResult;
 
 pub(crate) fn finish_function_call<'a>(
     env: &mut TypeEnvironment,

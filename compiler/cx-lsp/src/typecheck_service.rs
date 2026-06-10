@@ -5,7 +5,6 @@
 
 use cx_pipeline::{LSPErrorSpan, LSPErrors};
 use cx_tokens::token::Token;
-use cx_typechecker::log::TypeError;
 use std::collections::HashMap;
 use std::path::Path;
 use tower_lsp::lsp_types::{
@@ -119,33 +118,11 @@ fn related_information(
     )
 }
 
-pub fn type_error_to_diagnostic(error: &TypeError) -> Diagnostic {
-    let file_path = &error.compilation_unit;
-    let file_contents = std::fs::read_to_string(file_path).unwrap_or_default();
-    let uri = Url::from_file_path(file_path).ok();
-    let range = cx_lexer::lex(&file_contents)
-        .map(|tokens| token_range(&file_contents, &tokens, error.token_start, error.token_end))
-        .unwrap_or_else(|_| fallback_range(&file_contents, None));
-    let related_information = uri
-        .as_ref()
-        .and_then(|uri| related_information(uri, range, &error.notes));
-
-    Diagnostic {
-        range,
-        severity: Some(DiagnosticSeverity::ERROR),
-        message: error.message.clone(),
-        related_information,
-        source: Some("cx".to_string()),
-        ..Default::default()
-    }
-}
-
 /// Convert an LSPErrors to an LSP Diagnostic
 ///
-/// This handles both TypeError and FatalError variants.
+/// This handles both spanned errors and fatal errors.
 pub fn lsp_error_to_diagnostic(error: &LSPErrors) -> Diagnostic {
     match error {
-        LSPErrors::TypeError(e) => type_error_to_diagnostic(e),
         LSPErrors::SpannedError {
             compilation_unit,
             message,
@@ -200,7 +177,6 @@ pub fn group_diagnostics_by_file(errors: &[LSPErrors]) -> HashMap<Url, Vec<Diagn
 
     for error in errors {
         let compilation_unit = match error {
-            LSPErrors::TypeError(e) => &e.compilation_unit,
             LSPErrors::SpannedError {
                 compilation_unit, ..
             } => compilation_unit,

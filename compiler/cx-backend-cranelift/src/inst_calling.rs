@@ -6,7 +6,7 @@ use cranelift::prelude::{Signature, Value};
 use cranelift_module::{FuncId, Module};
 use cranelift_object::ObjectModule;
 use cx_lmir::{LMIRFunctionSignature, LMIRParameterABI, LMIRReturnABI, LMIRValue};
-use cx_util::CXResult;
+use cx_log::CXResult;
 
 pub(crate) fn prepare_function_sig(
     object_module: &mut ObjectModule,

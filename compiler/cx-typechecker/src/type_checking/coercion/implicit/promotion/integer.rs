@@ -1,8 +1,8 @@
+use cx_log::CXResult;
 use cx_mir::mir::{
     expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
     r#type::{MIRType, MIRTypeKind},
 };
-use cx_util::CXResult;
 
 use crate::{
     environment::TypeEnvironment,

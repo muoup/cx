@@ -5,7 +5,8 @@ use cx_ast::ast::{
     types::{CXField, CXStructAttributes, CXType, CXTypeKind, PredeclarationType},
 };
 use cx_ast::symbols::{CXSymbol, CXSymbolKind};
-use cx_util::{CXError, CXResult, identifier::CXIdent, namespace::QualifiedName};
+use cx_log::{CXError, CXResult};
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use cx_mir::{
     mir::{

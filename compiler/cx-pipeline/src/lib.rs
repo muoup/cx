@@ -8,6 +8,8 @@ use crate::progress::ProgressReporter;
 use crate::scheduler::scheduling_loop;
 use crate::scheduler::scheduling_loop_collect_errors;
 use cx_ast::registry::ExportNameMode;
+use cx_log::CXError;
+use cx_log::CXResult;
 use cx_pipeline_data::config::{CXProjectConfig, TargetConfig};
 use cx_pipeline_data::db::ModuleData;
 use cx_pipeline_data::internal_storage::resource_path;
@@ -15,8 +17,6 @@ use cx_pipeline_data::jobs::{CompilationJob, CompilationStep};
 use cx_pipeline_data::{
     CompilationMode, CompilationUnit, CompilerConfig, GlobalCompilationContext,
 };
-use cx_util::CXError;
-use cx_util::CXResult;
 use cx_util::format::with_dump_directory;
 use std::collections::HashSet;
 use std::path::Path;

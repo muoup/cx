@@ -5,8 +5,8 @@ use crate::routines::get_function;
 use crate::value_type::get_cranelift_type;
 use crate::{CodegenValue, FunctionState};
 use cranelift::codegen::ir;
-use cranelift::codegen::ir::InstructionData;
 use cranelift::codegen::ir::stackslot::StackSize;
+use cranelift::codegen::ir::InstructionData;
 use cranelift::frontend::Switch;
 use cranelift::prelude::{InstBuilder, MemFlags, StackSlotData, StackSlotKind};
 use cranelift_module::Module;
@@ -15,7 +15,7 @@ use cx_lmir::{
     LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind,
     LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRReturnABI,
 };
-use cx_util::CXResult;
+use cx_log::CXResult;
 use std::ops::IndexMut;
 
 fn load_return_slots(

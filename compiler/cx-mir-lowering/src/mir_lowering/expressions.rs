@@ -7,6 +7,7 @@ use cx_lmir::{
     LMIRABISlot, LMIRFunctionSignature, LMIRInstructionKind, LMIRIntBinOp, LMIRParameterABI,
     LMIRPtrBinOp, LMIRValue, LinkageType,
 };
+use cx_log::CXResult;
 use cx_mir::{
     mir::{
         data::{MIRFunction, MIRFunctionPrototype, MIRFunctionSignature, MIRTypeKind},
@@ -20,7 +21,7 @@ use cx_mir::{
     registry::MIRDecomposedRegistry,
     type_context::MIRTypeContext,
 };
-use cx_util::{identifier::CXIdent, CXResult};
+use cx_util::identifier::CXIdent;
 
 use crate::{builder::LMIRBuilder, mir_lowering::types::convert_type};
 

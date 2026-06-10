@@ -5,13 +5,14 @@ use cx_ast::ast::{
     template::CXTemplatePrototype,
     CXASTStmt,
 };
+use cx_log::CXResult;
 use cx_preparse_data::VisibilityMode;
 use cx_tokens::{
     keyword, operator, punctuator, specifier,
     token::{SpecifierType, TokenKind},
     TokenIter,
 };
-use cx_util::{identifier::CXIdent, CXResult};
+use cx_util::identifier::CXIdent;
 
 use crate::{
     assert_token_matches, next_kind,

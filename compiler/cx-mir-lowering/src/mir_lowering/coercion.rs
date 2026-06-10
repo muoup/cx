@@ -4,12 +4,12 @@ use cx_lmir::{
     types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind},
     LMIRCoercionType, LMIRInstructionKind, LMIRIntBinOp, LMIRValue,
 };
+use cx_log::CXResult;
 use cx_mir::mir::{
     data::MIRType,
     expression::{MIRCoercion, MIRExpression},
     r#type::MIRIntegerType,
 };
-use cx_util::CXResult;
 
 use super::expressions::lower_expression;
 use crate::builder::LMIRBuilder;

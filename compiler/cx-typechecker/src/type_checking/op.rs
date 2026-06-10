@@ -1,7 +1,7 @@
 use crate::{environment::TypeEnvironment, type_checking::result::TypecheckResult};
 use cx_ast::ast::expression::CXBinOp;
+use cx_log::CXResult;
 use cx_mir::mir::expression::MIRExpression;
-use cx_util::CXResult;
 
 pub use unop::typecheck_unop;
 

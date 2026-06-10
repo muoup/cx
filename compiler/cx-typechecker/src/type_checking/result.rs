@@ -1,11 +1,11 @@
 use cx_ast::ast::template::CXTemplateInput;
+use cx_log::{CXError, CXResult};
 use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_mir::symbol::MIRSymbol;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
-use cx_util::{CXError, CXResult};
 
 use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;

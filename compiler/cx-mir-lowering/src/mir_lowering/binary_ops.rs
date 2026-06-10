@@ -4,6 +4,7 @@ use cx_lmir::{
     types::{LMIRIntegerType, LMIRType, TypeSize},
     LMIRFloatBinOp, LMIRInstructionKind, LMIRIntBinOp, LMIRPtrBinOp, LMIRValue,
 };
+use cx_log::CXResult;
 use cx_mir::{
     mir::{
         data::{MIRType, MIRTypeKind},
@@ -14,7 +15,6 @@ use cx_mir::{
     },
     type_context::MIRTypeContext,
 };
-use cx_util::CXResult;
 
 use super::expressions::lower_expression;
 use crate::builder::LMIRBuilder;

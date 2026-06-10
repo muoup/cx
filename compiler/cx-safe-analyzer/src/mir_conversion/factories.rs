@@ -1,3 +1,4 @@
+use cx_log::{CXError, CXResult};
 use cx_mir::{
     mir::{
         data::{MIRIntegerType, MIRType, MIRTypeKind},
@@ -9,7 +10,7 @@ use cx_mir::{
     type_context::MIRTypeContext,
 };
 use cx_safe_ir::{ast::*, intrinsic::*};
-use cx_util::{CXError, CXResult, identifier::CXIdent};
+use cx_util::identifier::CXIdent;
 
 use crate::{
     log_analysis_error,

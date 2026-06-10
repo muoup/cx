@@ -7,6 +7,7 @@ edition = "2024"
 speedy = "0.8.7"
 
 cx-ast = { path = "../cx-ast" }
+cx-log = { path = "../cx-log" }
 cx-tokens = { path = "../cx-tokens" }
 cx-util = { path = "../cx-util" }
 

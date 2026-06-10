@@ -1,4 +1,5 @@
 use crate::{log_analysis_error, mir_conversion::factories::*};
+use cx_log::CXResult;
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind, MIRUnOp},
@@ -7,7 +8,6 @@ use cx_safe_ir::{
     ast::{CVMOperation, FMIRNode, FMIRNodeBody, FMIRType, FRc, MemoryLocation},
     intrinsic::FMIRIntrinsicKind,
 };
-use cx_util::CXResult;
 
 use crate::mir_conversion::environment::FMIREnvironment;
 
