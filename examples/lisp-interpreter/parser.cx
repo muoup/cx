@@ -1,8 +1,9 @@
-import ast;
-import std::box;
-import std::vector;
-import std::string;
-import std::io;
+import std::box as std;
+import std::vector as std;
+import std::string as std;
+import std::io as std;
+
+import ast as _;
 
 #include <stdlib.h>
 #include <ctype.h>
@@ -73,8 +74,8 @@ char* copy_range(const char* source, usize start, usize end) {
     return result;
 }
 
-string string_from_owned_token(char* token) {
-    string result = string::new();
+std::string std::string_from_owned_token(char* token) {
+    std::string result = std::string::new();
     result.append((const char*) token);
     result.data[result.length] = '\0';
     free(token);
@@ -148,14 +149,14 @@ char* parser::parse_string_literal(*this) {
 }
 
 lisp_node parser::parse_program(*this) {
-    vector<lisp_node> body = vector<lisp_node>::new<lisp_node>();
+    std::vector<lisp_node> body = std::vector::new<lisp_node>();
 
     this.skip_ws();
     while (this.peek() != '\0') {
         usize previous_pos = this.pos;
         lisp_node expr = this.parse_expr();
         this.expect_progress(previous_pos);
-        body.push<lisp_node>(move expr);
+        body.push(move expr);
         this.skip_ws();
     }
 
@@ -183,8 +184,8 @@ lisp_node parser::parse_expr(*this) {
     return lisp_node::Symbol(string_from_owned_token(token));
 }
 
-vector<lisp_node> parser::parse_expr_list_until_close(*this) {
-    vector<lisp_node> exprs = vector<lisp_node>::new<lisp_node>();
+std::vector<lisp_node> parser::parse_expr_list_until_close(*this) {
+    std::vector<lisp_node> exprs = std::vector::new<lisp_node>();
 
     this.skip_ws();
     while (this.peek() != ')' && this.peek() != '\0') {
@@ -200,15 +201,15 @@ vector<lisp_node> parser::parse_expr_list_until_close(*this) {
 }
 
 vector<string> parser::parse_params(*this) {
-    vector<string> params = vector<string>::new<string>();
+    std::vector<ast::string> params = std::vector<ast::string>::new<string>();
 
     this.expect('(');
     this.skip_ws();
     while (this.peek() != ')' && this.peek() != '\0') {
         usize previous_pos = this.pos;
-        string param = this.parse_name();
+        std::string param = this.parse_name();
         this.expect_progress(previous_pos);
-        params.push<string>(move param);
+        params.push(move param);
         this.skip_ws();
     }
     this.expect(')');
@@ -222,9 +223,9 @@ lisp_node parser::parse_list(*this) {
 
     if (token_eq(op, "fndef")) {
         free(op);
-        string name = this.parse_name();
-        vector<string> params = this.parse_params();
-        vector<lisp_node> body = this.parse_expr_list_until_close();
+        std::string name = this.parse_name();
+        std::vector<string> params = this.parse_params();
+        std::vector<lisp_node> body = this.parse_expr_list_until_close();
 
         return lisp_node::FnDef({
             .name = move name,
@@ -239,8 +240,8 @@ lisp_node parser::parse_list(*this) {
         lisp_node right_node = this.parse_expr();
         this.expect(')');
 
-        box<lisp_node> left = box<lisp_node>::new<lisp_node>(move left_node);
-        box<lisp_node> right = box<lisp_node>::new<lisp_node>(move right_node);
+        std::box<lisp_node> left = std::box::new(move left_node);
+        std::box<lisp_node> right = std::box::new(move right_node);
 
         return lisp_node::Plus({
             .left = move left,
@@ -254,8 +255,8 @@ lisp_node parser::parse_list(*this) {
         lisp_node right_node = this.parse_expr();
         this.expect(')');
 
-        box<lisp_node> left = box<lisp_node>::new<lisp_node>(move left_node);
-        box<lisp_node> right = box<lisp_node>::new<lisp_node>(move right_node);
+        std::box<lisp_node> left = std::box::new(move left_node);
+        std::box<lisp_node> right = std::box::new(move right_node);
 
         return lisp_node::Minus({
             .left = move left,
@@ -268,7 +269,7 @@ lisp_node parser::parse_list(*this) {
         lisp_node value_node = this.parse_expr();
         this.expect(')');
 
-        box<lisp_node> value = box<lisp_node>::new<lisp_node>(move value_node);
+        std::box<lisp_node> value = std::box::new(move value_node);
         return lisp_node::PrintNum(move value);
     }
 
@@ -279,8 +280,8 @@ lisp_node parser::parse_list(*this) {
         return lisp_node::PrintStr(value);
     }
 
-    string name = string_from_owned_token(op);
-    vector<lisp_node> args = this.parse_expr_list_until_close();
+    std::string name = string_from_owned_token(op);
+    std::vector<lisp_node> args = this.parse_expr_list_until_close();
 
     return lisp_node::FnCall({
         .name = move name,

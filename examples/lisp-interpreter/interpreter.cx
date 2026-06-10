@@ -1,9 +1,10 @@
 import ast;
 import parser;
-import std::box;
-import std::vector;
-import std::io;
-import std::string;
+
+import std::box as std;
+import std::vector as std;
+import std::io as std;
+import std::string as std;
 
 #include <stdlib.h>
 
@@ -11,7 +12,7 @@ public:
 
 void interpret(lisp_node* node) {
     interpreter interpret = {
-        .functions = vector<function_decl>::new<function_decl>()
+        .functions = std::vector::new<function_decl>()
     };
 
     interpret.interpret(node);
@@ -20,9 +21,9 @@ void interpret(lisp_node* node) {
 }
 
 void run(const char* source) {
-    lisp_node node = parse(source);
+    ast::lisp_node node = parser::parse(source);
     interpret(&node);
-    lisp_node::drop(move node);
+    ast::lisp_node::drop(move node);
 }
 
 private:
@@ -37,7 +38,8 @@ struct binding {
 };
 
 struct interpreter : @nodrop {
-    vector<function_decl> functions;
+    std::vector<function_decl> functions
+    ;
 };
 
 bool str_eq(char* left, char* right) {
