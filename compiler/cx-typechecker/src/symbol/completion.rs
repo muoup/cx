@@ -1,5 +1,5 @@
 use cx_ast::ast::{
-    function::{CXFunctionKind, CXFunctionPrototype, CXReceiverMode},
+    function::{CXFunctionKind, CXFunctionPrototype},
     modifiers::{CXTypeQualifiers, VisibilityMode},
     template::CXTemplateInput,
     types::{CXField, CXStructAttributes, CXType, CXTypeKind, PredeclarationType},
@@ -15,7 +15,7 @@ use cx_mir::{
             MIRFunctionPrototype, MIRFunctionSignature, MIRMoveAttributes, MIRParameter,
             MIRTemplateInput,
         },
-        name_mangling::{base_mangle_member, base_mangle_standard},
+        name_mangling::{base_mangle_member, mangle_qualified_name},
         r#type::{MIRField, MIRType, MIRTypeId, MIRTypeKind},
     },
     symbol::MIRSymbol,
@@ -223,10 +223,6 @@ pub fn complete_prototype(
     let return_type = complete_type(env, &namespace, &prototype.return_type)?;
     let mut params = complete_explicit_parameters(env, namespace, prototype)?;
 
-    if let Some(receiver) = complete_receiver_parameter(env, namespace, &prototype.kind)? {
-        params.insert(0, receiver);
-    }
-
     // If we have legacy int main(void)-like syntax, we treat it as main with no parameters
     if params.len() == 1 {
         let first_param = &params[0];
@@ -238,7 +234,7 @@ pub fn complete_prototype(
 
     let lookup_identifier = function_lookup_identifier(namespace, &prototype.kind);
     let debug_name = lookup_identifier.name.clone();
-    let symbol_name = completed_function_name(env, &namespace, &prototype.kind)?;
+    let symbol_name = completed_function_name(env, &namespace, &prototype.kind, &params)?;
 
     Ok(MIRFunctionPrototype::new(
         symbol_name,
@@ -267,34 +263,6 @@ fn function_lookup_identifier(
     } = kind.into_key();
 
     QualifiedName::new(namespace.join(&relative_namespace), name)
-}
-
-fn complete_receiver_parameter(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    kind: &CXFunctionKind,
-) -> CXResult<Option<MIRParameter>> {
-    let CXFunctionKind::MemberFunction {
-        member_type,
-        receiver,
-        ..
-    } = kind
-    else {
-        return Ok(None);
-    };
-
-    let receiver_base = member_type.as_type().add_specifier(receiver.specifiers);
-    let receiver_type = complete_type(env, namespace, &receiver_base)?;
-    let receiver_type = match receiver.mode {
-        CXReceiverMode::ByMove => receiver_type,
-        CXReceiverMode::ByRef => env.symbols.mem_ref_to(receiver_type),
-        CXReceiverMode::None => return Ok(None),
-    };
-
-    Ok(Some(MIRParameter {
-        name: Some(CXIdent::new("this")),
-        _type: receiver_type,
-    }))
 }
 
 fn complete_explicit_parameters(
@@ -444,10 +412,7 @@ fn complete_identifier_type_lookup(
             env.symbols
                 .insert_type_symbol(resolved_name.clone(), prereserved_id);
 
-            let mut completed = complete_type_value(env, &resolved_name.namespace, definition)?;
-            if completed.debug_name.is_none() {
-                completed.debug_name = Some(resolved_name.name.clone());
-            }
+            let completed = complete_type_value(env, &resolved_name.namespace, definition)?;
 
             env.symbols.overwrite_type_id(prereserved_id, completed);
             Ok(prereserved_id)
@@ -560,7 +525,7 @@ where
         .map(|name| {
             let lookup_identifier = QualifiedName::new(namespace.clone(), name.clone());
             let strong_identifier =
-                base_mangle_standard(env.symbols.get_global_registry(), &lookup_identifier);
+                mangle_qualified_name(env.symbols.get_global_registry(), &lookup_identifier);
             (Some(strong_identifier), Some(lookup_identifier))
         })
         .unwrap_or((None, None));
@@ -737,20 +702,53 @@ fn completed_function_name(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     kind: &CXFunctionKind,
+    params: &[MIRParameter],
 ) -> CXResult<String> {
     let name = match kind {
-        CXFunctionKind::Standard(name) => base_mangle_standard(
+        CXFunctionKind::Standard(name) => mangle_qualified_name(
             env.symbols.get_global_registry(),
             &QualifiedName::new(namespace.clone(), name.clone()),
         ),
         CXFunctionKind::MemberFunction {
             member_type, name, ..
-        }
-        | CXFunctionKind::StaticMemberFunction { member_type, name } => {
-            let member_type = complete_type(env, namespace, &member_type.as_type())?;
+        } => {
+            let member_type = complete_member_owner_type(env, namespace, member_type, params)?;
             base_mangle_member(&env.symbols, name.as_str(), &member_type)
         }
     };
 
     Ok(name)
+}
+
+fn complete_member_owner_type(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    member_type: &QualifiedName,
+    params: &[MIRParameter],
+) -> CXResult<MIRType> {
+    let syntactic_owner = CXTypeKind::Identifier {
+        name: member_type.clone(),
+        predeclaration: PredeclarationType::None,
+        template_input: None,
+    }
+    .to_type();
+
+    if let Ok(owner) = complete_type(env, namespace, &syntactic_owner) {
+        return Ok(owner);
+    }
+
+    let Some(first_param) = params.first() else {
+        return complete_type(env, namespace, &syntactic_owner);
+    };
+
+    Ok(member_owner_from_parameter(env, &first_param._type))
+}
+
+fn member_owner_from_parameter(env: &TypeEnvironment, ty: &MIRType) -> MIRType {
+    match &ty.kind {
+        MIRTypeKind::MemoryReference { inner_type, .. } | MIRTypeKind::PointerTo { inner_type } => {
+            env.symbols.resolve_type_id(*inner_type).clone()
+        }
+        _ => ty.clone(),
+    }
 }

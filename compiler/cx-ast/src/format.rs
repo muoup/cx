@@ -616,10 +616,9 @@ impl Display for CXFunctionKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             CXFunctionKind::Standard(name) => write!(f, "{name}"),
-            CXFunctionKind::MemberFunction {
-                member_type,
-                name,
-            } => write!(f, "{member_type}::{name}")
+            CXFunctionKind::MemberFunction { member_type, name } => {
+                write!(f, "{member_type}::{name}")
+            }
         }
     }
 }

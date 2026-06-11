@@ -264,12 +264,10 @@ fn function_lexical_namespace(
     kind: &CXFunctionKind,
 ) -> EnvironmentNamespace {
     match kind {
-        CXFunctionKind::MemberFunction { .. } | CXFunctionKind::StaticMemberFunction { .. } => {
-            namespace
-                .parent_and_name()
-                .map(|(parent, _)| parent)
-                .unwrap_or_else(|| namespace.clone())
-        }
+        CXFunctionKind::MemberFunction { .. } => namespace
+            .parent_and_name()
+            .map(|(parent, _)| parent)
+            .unwrap_or_else(|| namespace.clone()),
         CXFunctionKind::Standard(_) => namespace.clone(),
     }
 }
@@ -318,7 +316,10 @@ fn attach_template_metadata(
                     base_mangle_templated_name(
                         &env.symbols,
                         name,
-                        input.args.iter().map(|arg| env.symbols.resolve_type_id(*arg))
+                        input
+                            .args
+                            .iter()
+                            .map(|arg| env.symbols.resolve_type_id(*arg)),
                     )
                 });
             }

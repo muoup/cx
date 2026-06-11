@@ -81,23 +81,6 @@ pub(crate) fn parse_template_prototype(tokens: &mut TokenIter) -> CXResult<CXTem
     Ok(CXTemplatePrototype { types: type_decls })
 }
 
-pub(crate) fn convert_template_proto_to_args(prototype: CXTemplatePrototype) -> CXTemplateInput {
-    let params = prototype
-        .types
-        .into_iter()
-        .map(|name| {
-            CXTypeKind::Identifier {
-                name: QualifiedName::new_raw(name),
-                predeclaration: PredeclarationType::None,
-                template_input: None,
-            }
-            .to_type()
-        })
-        .collect();
-
-    CXTemplateInput { params }
-}
-
 pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<CXTemplateInput> {
     assert_token_matches!(data.tokens, operator!(Less), "'<'");
 

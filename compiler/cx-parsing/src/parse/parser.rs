@@ -195,11 +195,7 @@ impl<'a> ParserData<'a> {
                 let q_namespace = prototype.kind.into_key().namespace;
 
                 if !q_namespace.is_root()
-                    && matches!(
-                        &prototype.kind,
-                        CXFunctionKind::MemberFunction { .. }
-                            | CXFunctionKind::StaticMemberFunction { .. }
-                    )
+                    && matches!(&prototype.kind, CXFunctionKind::MemberFunction { .. })
                 {
                     insert_namespace_alias(
                         &mut self.namespace_aliases,

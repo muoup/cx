@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use cx_ast::ast::{
-    function::{CXFunctionKind, CXFunctionPrototype},
+    function::CXFunctionPrototype,
     template::{CXTemplateInput, CXTemplatePrototype},
     types::{CXType, CXTypeKind},
 };
@@ -83,37 +83,15 @@ fn deduce_template_input(
     };
 
     let mut bindings = TemplateBindings::new();
-    let param_arg_types = match &shell.kind {
-        CXFunctionKind::Standard(_) | CXFunctionKind::StaticMemberFunction { .. } => arg_types,
-        CXFunctionKind::MemberFunction { member_type, .. } => {
-            let Some((receiver_type, param_arg_types)) = arg_types.split_first() else {
-                return CXError::create_result(
-                    "Member function template deduction requires a receiver argument",
-                );
-            };
-
-            deduce_from_cx_type(
-                env,
-                namespace,
-                template_prototype,
-                &mut bindings,
-                &member_type.as_type(),
-                receiver_type,
-            )?;
-
-            param_arg_types
-        }
-    };
-
-    if param_arg_types.len() > shell.params.len() && !shell.var_args {
+    if arg_types.len() > shell.params.len() && !shell.var_args {
         return CXError::create_result(format!(
             "Function template expects {} arguments, found {}",
             shell.params.len(),
-            param_arg_types.len()
+            arg_types.len()
         ));
     }
 
-    for (param, actual_type) in shell.params.iter().zip(param_arg_types.iter()) {
+    for (param, actual_type) in shell.params.iter().zip(arg_types.iter()) {
         deduce_from_cx_type(
             env,
             namespace,

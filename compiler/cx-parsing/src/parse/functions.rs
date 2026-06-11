@@ -1,7 +1,5 @@
 use crate::{
-    assert_token_matches, next_kind,
-    parse::try_parse_qualified_name,
-    peek_next_kind, try_next,
+    assert_token_matches, next_kind, parse::try_parse_qualified_name, peek_next_kind, try_next,
 };
 use cx_ast::ast::{
     function::{CXFunctionContract, CXFunctionKind, CXFunctionPrototype, CXParameter},
@@ -18,10 +16,8 @@ use cx_tokens::{
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::parse::{
-    expressions::parse_expr,
-    parser::ParserData,
-    templates::{convert_template_proto_to_args, try_parse_template},
-    types::{parse_initializer, parse_specifier},
+    expressions::parse_expr, parser::ParserData, templates::try_parse_template,
+    types::parse_initializer,
 };
 
 pub struct FunctionDeclaration {
@@ -61,11 +57,11 @@ pub fn try_function_parse(
                 namespace: member_namespace,
                 name: member_name,
             },
-            name: name
+            name: name,
         }
     };
 
-    if !try_next!(data.tokens, punctuator!(OpenParen)) {
+    if !matches!(peek_next_kind!(data.tokens)?, punctuator!(OpenParen)) {
         data.tokens.index = range_start;
         return Ok(None);
     };

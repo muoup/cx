@@ -1,11 +1,7 @@
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
-use crate::ast::{
-    expression::CXExpression,
-    modifiers::CXLinkageMode,
-    types::CXType,
-};
+use crate::ast::{expression::CXExpression, modifiers::CXLinkageMode, types::CXType};
 
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq)]
 pub struct CXFunctionContract {
@@ -38,7 +34,7 @@ pub enum CXFunctionKind {
     MemberFunction {
         member_type: QualifiedName,
         name: CXIdent,
-    }
+    },
 }
 
 impl CXFunctionKind {
@@ -47,7 +43,7 @@ impl CXFunctionKind {
             CXFunctionKind::Standard(name) => QualifiedName::new_raw(name.clone()),
             CXFunctionKind::MemberFunction {
                 member_type, name, ..
-            } => member_type.clone().child(name.clone())
+            } => member_type.clone().child(name.clone()),
         }
     }
 }

@@ -1,4 +1,4 @@
-use crate::mir::data::{MIRType, MIRTypeId, MIRTypeKind};
+use crate::mir::data::{MIRType, MIRTypeKind};
 use crate::mir::r#type::MIRField;
 use crate::type_context::MIRTypeContext;
 use cx_ast::registry::{ExportNameMode, GlobalSymbolRegistry};
@@ -57,35 +57,18 @@ pub(crate) fn type_mangle(definitions: &impl MIRTypeContext, ty: &MIRType) -> St
 
     match &ty.kind {
         MIRTypeKind::Integer { _type, signed } => {
-            format!(
-                "{}{}",
-                 if *signed { 's' } else { 'u' },
-                 _type
-            )
+            format!("{}{}", if *signed { 's' } else { 'u' }, _type)
         }
         MIRTypeKind::Float { _type } => {
-            format!(
-                "{}{}",
-                 'f',
-                 _type
-            )
+            format!("{}{}", 'f', _type)
         }
-        MIRTypeKind::Str => {
-            "_str".to_owned()
-        }
-        MIRTypeKind::Undefined => {
-            "X".to_owned()
-        }
-        MIRTypeKind::Unit => {
-            "v".to_owned()
-        }
+        MIRTypeKind::Str => "_str".to_owned(),
+        MIRTypeKind::Undefined => "X".to_owned(),
+        MIRTypeKind::Unit => "v".to_owned(),
         MIRTypeKind::PointerTo { inner_type } => {
             let inner_type = definitions.resolve_type_id(*inner_type);
 
-            format!(
-                "P{}",
-                type_mangle(definitions, inner_type)
-            )
+            format!("P{}", type_mangle(definitions, inner_type))
         }
         MIRTypeKind::MemoryReference {
             inner_type,
@@ -93,10 +76,9 @@ pub(crate) fn type_mangle(definitions: &impl MIRTypeContext, ty: &MIRType) -> St
         } => {
             format!(
                 "R{}{}",
-                bitfield.as_ref()
-                    .map(
-                        |bitfield| format!("b{}_{}}}", bitfield.bit_offset, bitfield.bit_width)
-                    )
+                bitfield
+                    .as_ref()
+                    .map(|bitfield| format!("b{}_{}}}", bitfield.bit_offset, bitfield.bit_width))
                     .unwrap_or("".to_owned()),
                 type_mangle(definitions, definitions.resolve_type_id(*inner_type))
             )
@@ -108,43 +90,39 @@ pub(crate) fn type_mangle(definitions: &impl MIRTypeContext, ty: &MIRType) -> St
             length: size,
             inner_type,
         } => {
-            format!("A{}_{}", size, type_mangle(definitions, definitions.resolve_type_id(*inner_type)))
+            format!(
+                "A{}_{}",
+                size,
+                type_mangle(definitions, definitions.resolve_type_id(*inner_type))
+            )
         }
         MIRTypeKind::Function { signature } => {
             format!(
                 "F{}{}{}{}",
                 type_mangle(definitions, &signature.return_type),
                 signature.params.len(),
-                signature.params.iter().map(|param| type_mangle(definitions, &param._type)).collect::<String>(),
+                signature
+                    .params
+                    .iter()
+                    .map(|param| type_mangle(definitions, &param._type))
+                    .collect::<String>(),
                 if signature.var_args { 'V' } else { 'v' }
             )
         }
         MIRTypeKind::Structured { fields } => {
-            let mut mangled =
-                format!(
-                    "S{}",
-                    fields.len()
-                );
+            let mut mangled = format!("S{}", fields.len());
             push_move_attributes(&mut mangled, ty);
             push_aggregate_fields(&mut mangled, definitions, fields);
             mangled
         }
         MIRTypeKind::Union { variants } => {
-            let mut mangled =
-                format!(
-                    "U{}",
-                    variants.len()
-                );
+            let mut mangled = format!("U{}", variants.len());
             push_move_attributes(&mut mangled, ty);
             push_aggregate_fields(&mut mangled, definitions, variants);
             mangled
         }
         MIRTypeKind::TaggedUnion { variants } => {
-            let mut mangled =
-                format!(
-                    "T{}",
-                    variants.len()
-                );
+            let mut mangled = format!("T{}", variants.len());
             push_move_attributes(&mut mangled, ty);
             push_aggregate_fields(&mut mangled, definitions, variants);
             mangled

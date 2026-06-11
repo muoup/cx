@@ -1,0 +1,18 @@
+struct Resource {
+    int value;
+};
+
+Resource Resource::new(int value) {
+    return (Resource) {
+        .value = value
+    };
+}
+
+int Resource::get(Resource& this) {
+    return this.value;
+}
+
+int main() {
+    Resource resource = Resource::new(7);
+    return resource.get();
+}

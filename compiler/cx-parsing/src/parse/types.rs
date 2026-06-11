@@ -476,16 +476,8 @@ pub(crate) fn parse_type_mods(
                 params,
                 var_args,
                 contract,
-                receiver,
                 ..
             } = parse_params(data)?;
-
-            if receiver.is_some() {
-                return log_parse_error!(
-                    data,
-                    "Function pointer types may not declare a 'this' receiver"
-                );
-            }
 
             let prototype = CXFunctionPrototype {
                 kind: CXFunctionKind::Standard(CXIdent::new("__internal_fnptr")),
@@ -639,13 +631,8 @@ pub(crate) fn parse_typedef_initializer(
         params,
         var_args,
         contract,
-        receiver,
         ..
     } = parse_params(data)?;
-
-    if receiver.is_some() {
-        return log_parse_error!(data, "Function typedefs may not declare a 'this' receiver");
-    }
 
     let prototype = CXFunctionPrototype {
         kind: CXFunctionKind::Standard(CXIdent::new("__internal_fnptr")),
