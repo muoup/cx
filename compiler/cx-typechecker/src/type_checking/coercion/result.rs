@@ -17,6 +17,16 @@ pub enum CoercionResult {
 }
 
 impl CoercionResult {
+    pub fn and_then<F>(self, f: F) -> CXResult<Self>
+    where
+        F: FnOnce(MIRExpression) -> CXResult<Self>,
+    {
+        Ok(match self {
+            CoercionResult::Success { expr } => f(expr)?,
+            unapplied => unapplied,
+        })
+    }
+    
     pub fn or_else<F>(self, f: F) -> CXResult<Self>
     where
         F: FnOnce(MIRExpression) -> CXResult<Self>,

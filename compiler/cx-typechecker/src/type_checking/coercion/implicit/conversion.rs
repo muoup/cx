@@ -78,7 +78,7 @@ pub fn try_implicit_coercion(
             if !target_type.is_memory_reference() =>
         {
             lvalue::try_conversion(env, expr)?
-                .or_else(|expr| try_implicit_coercion(env, expr, target_type))
+                .and_then(|expr| try_implicit_coercion(env, expr, target_type))
         }
 
         (_, MIRTypeKind::PointerTo { inner_type })

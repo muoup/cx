@@ -40,6 +40,7 @@ pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
 
         CXBinOp::LAnd => 14,
         CXBinOp::LOr => 15,
+        
         CXBinOp::Pipe => 16,
         CXBinOp::Assign(_) => 17,
 
@@ -60,6 +61,8 @@ pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
 
         CXUnOp::Is(_) => 3,
         CXUnOp::ExplicitCast(_) => 3,
+
+        CXUnOp::Move => 4,
     }
 }
 
@@ -73,6 +76,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
             OperatorType::Minus => Some(CXUnOp::Negative),
             OperatorType::Exclamation => Some(CXUnOp::LNot),
             OperatorType::Tilda => Some(CXUnOp::BNot),
+            OperatorType::Move => Some(CXUnOp::Move),
 
             _ => {
                 data.tokens.back();

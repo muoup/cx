@@ -526,14 +526,6 @@ pub(crate) fn parse_expr_val(
             parse_keyword_expr(data)?.kind
         }
 
-        TokenKind::Operator(OperatorType::Move) => {
-            let expr = parse_expr(data)?;
-
-            CXExprKind::Move {
-                expr: Box::new(expr),
-            }
-        }
-
         TokenKind::Punctuator(PunctuatorType::OpenParen) => {
             if try_next!(
                 data.tokens,

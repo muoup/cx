@@ -240,10 +240,6 @@ impl<'a> Display for CXExprFormatter<'a> {
                 CXExprFormatter::new(rhs, self.depth + 1).fmt(f)?;
                 Ok(())
             }
-            CXExprKind::Move { expr } => {
-                writeln!(f, "Move")?;
-                CXExprFormatter::new(expr, self.depth + 1).fmt(f)
-            }
             CXExprKind::Unpack { expr, bindings } => {
                 writeln!(f, "Unpack")?;
                 CXExprFormatter::new(expr, self.depth + 1).fmt(f)?;

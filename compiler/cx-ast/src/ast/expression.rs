@@ -140,10 +140,6 @@ pub enum CXExprKind {
         bindings: Vec<CXUnpackBinding>,
     },
 
-    Move {
-        expr: Box<CXExpression>,
-    },
-
     InitializerList {
         indices: Vec<CXInitIndex>,
     },
@@ -156,6 +152,8 @@ pub enum CXUnOp {
     Negative,
     BNot,
     LNot,
+
+    Move,
 
     ExplicitCast(CXType),
     Is(Box<CXPattern>),

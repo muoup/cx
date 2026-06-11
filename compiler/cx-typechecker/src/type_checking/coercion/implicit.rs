@@ -4,7 +4,6 @@ use cx_mir::{
         expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
         r#type::MIRType,
     },
-    type_context::MIRTypeContext,
 };
 
 use crate::{
@@ -44,15 +43,9 @@ pub fn implicit_cast(
         log_typecheck_error!(
             env,
             expr.token_range.as_ref(),
-            "No implicit cast from {} ({:?}) to {} ({:?})",
+            "No implicit cast from {} to {}",
             from_type.display_with(&env.symbols),
-            env.symbols
-                .ptr_inner(&from_type)
-                .and_then(|ty| ty.strong_identifier()),
             to_type.display_with(&env.symbols),
-            env.symbols
-                .ptr_inner(&to_type)
-                .and_then(|ty| ty.strong_identifier()),
         )
     })
 }
