@@ -12,6 +12,6 @@ int main() {
     return 0;
 }
 
-void Resource::drop(this) {
+void Resource::drop(Resource this) {
     @leak(this);
 }

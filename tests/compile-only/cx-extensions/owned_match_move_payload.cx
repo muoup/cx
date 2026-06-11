@@ -7,7 +7,7 @@ enum union MaybeResource : @nodrop {
     some :: Resource
 };
 
-void Resource::drop(this) safe {
+void Resource::drop(Resource this) safe {
     @unsafe {
         @leak(this);
     };

@@ -234,7 +234,8 @@ pub fn complete_prototype(
 
     let lookup_identifier = function_lookup_identifier(namespace, &prototype.kind);
     let debug_name = lookup_identifier.name.clone();
-    let symbol_name = completed_function_name(env, &namespace, &prototype.kind, &params)?;
+    let symbol_name =
+        completed_function_name(env, &namespace, &prototype.kind, &return_type, &params)?;
 
     Ok(MIRFunctionPrototype::new(
         symbol_name,
@@ -702,6 +703,7 @@ fn completed_function_name(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     kind: &CXFunctionKind,
+    return_type: &MIRType,
     params: &[MIRParameter],
 ) -> CXResult<String> {
     let name = match kind {
@@ -712,7 +714,8 @@ fn completed_function_name(
         CXFunctionKind::MemberFunction {
             member_type, name, ..
         } => {
-            let member_type = complete_member_owner_type(env, namespace, member_type, params)?;
+            let member_type =
+                complete_member_owner_type(env, namespace, member_type, return_type, params)?;
             base_mangle_member(&env.symbols, name.as_str(), &member_type)
         }
     };
@@ -724,6 +727,7 @@ fn complete_member_owner_type(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     member_type: &QualifiedName,
+    return_type: &MIRType,
     params: &[MIRParameter],
 ) -> CXResult<MIRType> {
     let syntactic_owner = CXTypeKind::Identifier {
@@ -737,11 +741,11 @@ fn complete_member_owner_type(
         return Ok(owner);
     }
 
-    let Some(first_param) = params.first() else {
-        return complete_type(env, namespace, &syntactic_owner);
-    };
+    if let Some(first_param) = params.first() {
+        return Ok(member_owner_from_parameter(env, &first_param._type));
+    }
 
-    Ok(member_owner_from_parameter(env, &first_param._type))
+    Ok(member_owner_from_parameter(env, return_type))
 }
 
 fn member_owner_from_parameter(env: &TypeEnvironment, ty: &MIRType) -> MIRType {

@@ -7,7 +7,7 @@ void adopt_value(Resource* ptr) safe {
     value.drop();
 }
 
-void Resource::drop(this) safe {
+void Resource::drop(Resource this) safe {
     @unsafe {
         @leak(this);
     };

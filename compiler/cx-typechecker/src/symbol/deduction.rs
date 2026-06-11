@@ -132,16 +132,14 @@ fn deduce_from_cx_type(
         && !matches!(formal.kind, CXTypeKind::MemoryReference { .. })
     {
         let inner_type = env.symbols.resolve_type_id(*inner_type).clone();
-        if !inner_type.is_nocopy() {
-            return deduce_from_cx_type(
-                env,
-                namespace,
-                template_prototype,
-                bindings,
-                formal,
-                &inner_type,
-            );
-        }
+        return deduce_from_cx_type(
+            env,
+            namespace,
+            template_prototype,
+            bindings,
+            formal,
+            &inner_type,
+        );
     }
 
     match &formal.kind {

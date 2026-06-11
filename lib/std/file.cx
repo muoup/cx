@@ -19,38 +19,38 @@ std::optional::opt<file> file::open(const char* path, const char* mode) {
     return std::optional::opt::some<file>((file) { .handle = handle });
 }
 
-void file::write(*this, const char* data) {
+void file::write(file& this, const char* data) {
     if (this.handle != NULL) {
         fputs(data, this.handle);
     }
 }
 
-void file::write_line(*this, const char* data) {
+void file::write_line(file& this, const char* data) {
     if (this.handle != NULL) {
         fputs(data, this.handle);
         fputc('\n', this.handle);
     }
 }
 
-void file::flush(*this) {
+void file::flush(file& this) {
     if (this.handle != NULL) {
         fflush(this.handle);
     }
 }
 
-void file::read_line(*this, char* buffer, u64 buffer_size) {
+void file::read_line(file& this, char* buffer, u64 buffer_size) {
     if (this.handle != NULL) {
         fgets(buffer, buffer_size, this.handle);
     }
 }
 
-void file::read(*this, char* buffer, u64 buffer_size) {
+void file::read(file& this, char* buffer, u64 buffer_size) {
     if (this.handle != NULL) {
         fread(buffer, 1, buffer_size, this.handle);
     }
 }
 
-std::string::string file::read_to_string(*this) {
+std::string::string file::read_to_string(file& this) {
     int c;
     std::string::string s = std::string::string::new();
 
@@ -62,7 +62,7 @@ std::string::string file::read_to_string(*this) {
     return move s;
 }
 
-void file::close(this) {
+void file::close(file this) {
     if (this.handle != NULL) {
         fclose(this.handle);
         this.handle = NULL;

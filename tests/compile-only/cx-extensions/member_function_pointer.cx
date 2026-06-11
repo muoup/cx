@@ -2,7 +2,7 @@ struct Resource : @nodrop {
     int value;
 };
 
-void Resource::drop(this) {
+void Resource::drop(Resource this) {
     @leak(this);
 }
 

@@ -179,12 +179,13 @@ pub fn typecheck_access(
                 })?;
             }
 
+            let deduction_receiver_type = env.symbols.mem_ref_to(base.source_type.clone());
             let member_result = TypecheckResult::from_symbol(
                 symbol,
                 query,
                 template_input.clone(),
                 IncompleteCalleeContext::member(
-                    base.source_type.clone(),
+                    deduction_receiver_type,
                     PendingReceiver::new(base.source.clone(), lhs_binding.clone()),
                 ),
             )

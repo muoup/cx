@@ -39,15 +39,15 @@ opt<c_socket> c_socket::open(i32 domain, i32 kind, i32 protocol) {
     return std::optional::opt::some<c_socket>((c_socket) { .fd = fd });
 }
 
-i32 c_socket::bind(*this, socket_addr* addr) {
+i32 c_socket::bind(c_socket& this, socket_addr* addr) {
     return bind(this.fd, &addr.address, addr.length);
 }
 
-i32 c_socket::listen(*this, i32 backlog) {
+i32 c_socket::listen(c_socket& this, i32 backlog) {
     return listen(this.fd, backlog);
 }
 
-opt<c_socket> c_socket::accept(*this) {
+opt<c_socket> c_socket::accept(c_socket& this) {
     sockaddr_in address;
     u32 length = (u32) sizeof(sockaddr_in);
     i32 fd = accept(this.fd, &address, &length);
@@ -59,15 +59,15 @@ opt<c_socket> c_socket::accept(*this) {
     return opt::some<c_socket>((c_socket) { .fd = fd });
 }
 
-i64 c_socket::read(*this, void* buffer, u64 length) {
+i64 c_socket::read(c_socket& this, void* buffer, u64 length) {
     return read(this.fd, buffer, length);
 }
 
-i64 c_socket::write(*this, const void* buffer, u64 length) {
+i64 c_socket::write(c_socket& this, const void* buffer, u64 length) {
     return write(this.fd, buffer, length);
 }
 
-void c_socket::close(this) {
+void c_socket::close(c_socket this) {
     close(this.fd);
     @leak(this);
 }

@@ -9,7 +9,7 @@ Resource pass_through(Resource resource) {
     return move resource;
 }
 
-void Resource::drop(this) {
+void Resource::drop(Resource this) {
     printf("drop %d\n", this.data);
     @leak(this);
 }

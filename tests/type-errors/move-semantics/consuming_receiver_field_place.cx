@@ -6,7 +6,7 @@ struct Container {
     Item inner;
 };
 
-void Item::consume(*this) {}
+void Item::consume(Item this) {}
 
 int main() {
     Container container = (Container) {

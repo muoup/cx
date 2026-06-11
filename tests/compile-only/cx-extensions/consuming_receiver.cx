@@ -8,7 +8,7 @@ Resource make_resource() {
     };
 }
 
-void Resource::drop(this) safe {
+void Resource::drop(Resource this) safe {
     @unsafe {
         @leak(this);
     };

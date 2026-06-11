@@ -8,7 +8,7 @@ struct vector<T> : @nodrop {
     usize capacity;
 };
 
-vector<T> vector<T>::new<T>() {
+vector<T> vector::new<T>() {
     return (vector<T>) {
         .data = malloc(4 * sizeof(T)),
         .length = 0,
@@ -16,14 +16,14 @@ vector<T> vector<T>::new<T>() {
     };
 }
 
-void vector<T>::drop<T>(this) {
+void vector::drop<T>(vector<T> this) {
     @unsafe {
         free(this.data);
         @leak(this);
     };
 }
 
-void vector<T>::drop_with<T>(this, void (*destructor)(T)) {
+void vector::drop_with<T>(vector<T> this, void (*destructor)(T)) {
     @unsafe {
         for (u64 i = 0; i < this.length; i++) {
             T value = @adopt(this.data[i]);
@@ -43,7 +43,7 @@ vector<T> vector::with_capacity<T>(usize capacity) {
     };
 }
 
-void vector<T>::push<T>(*this, T object) {
+void vector::push<T>(vector<T>& this, T object) {
     if (this.length == this.capacity) {
         this.capacity = this.capacity * 2 + 1;
         this.data = realloc(this.data, this.capacity * sizeof(T));
@@ -53,7 +53,7 @@ void vector<T>::push<T>(*this, T object) {
     this.length++;
 }
 
-std::optional::opt<T> vector<T>::pop<T>(*this) {
+std::optional::opt<T> vector::pop<T>(vector<T>& this) {
     if (this.length == 0) return std::optional::opt::none<T>();
 
     T buffer;
@@ -64,7 +64,7 @@ std::optional::opt<T> vector<T>::pop<T>(*this) {
     return move buffer;
 }
 
-std::optional::opt<T&> vector<T>::at<T>(*this, usize index) {
+std::optional::opt<T&> vector::at<T>(vector<T>& this, usize index) {
     if (index >= this.length) {
         return std::optional::opt::none<T&>();
     }

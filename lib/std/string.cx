@@ -49,7 +49,7 @@ std::optional::opt<string> string::try_new_string() safe {
     };
 }
 
-void string::append(*this, const char* s) {
+void string::append(string& this, const char* s) {
     u64 str_length = strlen(s);
 
     while (this.length + str_length >= this.capacity) {
@@ -60,7 +60,7 @@ void string::append(*this, const char* s) {
     this.length = str_length + this.length;
 }
 
-void string::append_char(*this, char c) {
+void string::append_char(string& this, char c) {
     if (this.length + 1 >= this.capacity) {
         this._realloc();
     }
@@ -69,14 +69,14 @@ void string::append_char(*this, char c) {
     this.data[this.length] = 0;
 }
 
-void string::drop(this) safe {
+void string::drop(string this) safe {
     @unsafe {
         free(this.data);
         @leak(this);
     };
 }
 
-_str& string::as_str(*this) safe {
+_str& string::as_str(string& this) safe {
     // SAFETY: We ensure via our API that our internal const char* is a valid c-string with null-termination,
     // so this cast is safe as long as the caller does not mutate the string data through the returned reference.
     return @unsafe((_str&) this.data);
@@ -84,7 +84,7 @@ _str& string::as_str(*this) safe {
 
 private:
 
-void string::_realloc(*this) {
+void string::_realloc(string& this) {
     this.capacity = this.capacity * 2;
     this.data = realloc(this.data, this.capacity);
 }
