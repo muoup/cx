@@ -411,6 +411,7 @@ impl Display for CXBinOp {
             CXBinOp::BitXor => write!(f, "^"),
             CXBinOp::LShift => write!(f, "<<"),
             CXBinOp::RShift => write!(f, ">>"),
+            CXBinOp::Pipe => write!(f, "|>"),
         }
     }
 }

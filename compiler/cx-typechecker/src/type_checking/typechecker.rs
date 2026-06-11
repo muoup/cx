@@ -13,7 +13,7 @@ use crate::type_checking::op::binop::access::typecheck_access;
 use crate::type_checking::op::binop::assign::typecheck_assignment;
 use crate::type_checking::op::binop::calls::typecheck_method_call;
 use crate::type_checking::op::unop::{typecheck_sizeof_expr, typecheck_sizeof_type};
-use crate::type_checking::op::{self, typecheck_binop};
+use crate::type_checking::op::{self, try_typecheck_special_binop, typecheck_binop};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::{
     identifiers::typecheck_identifier,
@@ -377,6 +377,10 @@ fn typecheck_expr_inner(
         } => typecheck_method_call(env, namespace, lhs, rhs, expr)?,
 
         CXExprKind::BinOp { op, lhs, rhs } => {
+            if let Some(expr) = try_typecheck_special_binop(env, namespace, op, expr, lhs, rhs)? {
+                return Ok(expr);
+            }
+            
             let lhs = typecheck_expr(env, namespace, lhs, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
             let rhs = typecheck_expr(env, namespace, rhs, None)

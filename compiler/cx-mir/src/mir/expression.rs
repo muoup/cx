@@ -421,6 +421,10 @@ impl MIRExpression {
         self._type.clone()
     }
 
+    pub fn get_type_ref(&self) -> &MIRType {
+        &self._type
+    }
+
     pub fn int_literal(value: i64, itype: MIRIntegerType, is_signed: bool) -> Self {
         Self {
             kind: MIRExpressionKind::IntLiteral(value),

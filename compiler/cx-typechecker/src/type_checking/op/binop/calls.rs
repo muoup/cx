@@ -298,15 +298,26 @@ pub(crate) fn typecheck_method_call(
     rhs: &CXExpression,
     expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
+    let function = typecheck_expr(env, namespace, lhs, None)?;
+    
+    typecheck_callee_method_call(env, namespace, function, rhs, expr)
+}
+
+pub(crate) fn typecheck_callee_method_call(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    callee: TypecheckResult,
+    rhs: &CXExpression,
+    expr: &CXExpression,
+) -> CXResult<TypecheckResult> {
     let tc_args = comma_separated(env, namespace, rhs)?;
     let (arg_types, has_incomplete_args) = ready_arg_type_prefix(&tc_args)?;
 
-    let function = typecheck_expr(env, namespace, lhs, None)?;
     let function = complete_callee(
         env,
         namespace,
         expr,
-        function,
+        callee,
         &arg_types,
         has_incomplete_args,
     )?;

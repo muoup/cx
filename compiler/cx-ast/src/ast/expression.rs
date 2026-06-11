@@ -3,13 +3,11 @@ use std::sync::Arc;
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
-use uuid::Uuid;
 
 use crate::ast::{pattern::CXPattern, template::CXTemplateInput, types::CXType};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct CXExpression {
-    pub uuid: u64,
     pub kind: CXExprKind,
     pub range: TokenRange,
 }
@@ -17,7 +15,6 @@ pub struct CXExpression {
 impl Clone for CXExpression {
     fn clone(&self) -> Self {
         CXExpression {
-            uuid: Uuid::new_v4().as_u128() as u64,
             kind: self.kind.clone(),
             range: self.range.clone(),
         }
@@ -27,7 +24,6 @@ impl Clone for CXExpression {
 impl Default for CXExpression {
     fn default() -> Self {
         CXExpression {
-            uuid: 0,
             kind: CXExprKind::Taken,
             range: TokenRange::default(),
         }
@@ -197,6 +193,7 @@ pub enum CXBinOp {
     Access,
     MethodCall,
     ArrayIndex,
+    Pipe
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -221,7 +218,6 @@ impl CXExprKind {
         };
 
         CXExpression {
-            uuid: Uuid::new_v4().as_u128() as u64,
             kind: self,
             range: TokenRange::new(start_index, end_index, Arc::from("")),
         }
@@ -240,7 +236,6 @@ impl CXExprKind {
         };
 
         CXExpression {
-            uuid: Uuid::new_v4().as_u128() as u64,
             kind: self,
             range: TokenRange::new(start_index, end_index, file_origin),
         }

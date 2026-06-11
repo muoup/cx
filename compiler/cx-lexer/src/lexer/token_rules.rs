@@ -71,7 +71,11 @@ pub(crate) fn operator(iter: &mut CharIter) -> Option<TokenKind> {
             Some('|') => {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::DoubleBar))
-            }
+            },
+            Some('>') => {
+                iter.next();
+                Some(TokenKind::Operator(OperatorType::Pipe))
+            },
             _ => Some(TokenKind::Operator(OperatorType::Bar)),
         },
         '&' => match iter.peek() {

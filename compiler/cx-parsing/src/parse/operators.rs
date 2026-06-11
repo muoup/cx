@@ -40,9 +40,10 @@ pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
 
         CXBinOp::LAnd => 14,
         CXBinOp::LOr => 15,
-        CXBinOp::Assign(_) => 16,
+        CXBinOp::Pipe => 16,
+        CXBinOp::Assign(_) => 17,
 
-        CXBinOp::Comma => 17,
+        CXBinOp::Comma => 18,
     }
 }
 
@@ -163,6 +164,8 @@ fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<CXBinOp> {
         OperatorType::Caret => CXBinOp::BitXor,
         OperatorType::DoubleBar => CXBinOp::LOr,
         OperatorType::DoubleAmpersand => CXBinOp::LAnd,
+
+        OperatorType::Pipe => CXBinOp::Pipe,
 
         _ => return log_parse_error!(data, "Invalid binary operator: {:?}", op),
     })
