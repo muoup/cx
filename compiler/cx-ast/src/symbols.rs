@@ -19,6 +19,10 @@ impl CXSymbol {
     pub fn new(visibility: VisibilityMode, kind: CXSymbolKind) -> Self {
         Self { visibility, kind }
     }
+
+    pub fn is_type(&self) -> bool {
+        matches!(self.kind, CXSymbolKind::Type(_))
+    }
 }
 
 pub type EnumBlockIdx = usize;

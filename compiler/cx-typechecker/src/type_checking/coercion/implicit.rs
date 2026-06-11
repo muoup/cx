@@ -41,9 +41,11 @@ pub fn implicit_cast(
         log_typecheck_error!(
             env,
             expr.token_range.as_ref(),
-            "No implicit cast from {} to {}",
+            "No implicit cast from {} ({:?}) to {} ({:?})",
             from_type.display_with(&env.symbols),
-            to_type.display_with(&env.symbols)
+            from_type.strong_identifier(),
+            to_type.display_with(&env.symbols),
+            to_type.strong_identifier()
         )
     })
 }

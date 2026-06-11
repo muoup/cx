@@ -120,17 +120,6 @@ impl GlobalSymbolRegistry {
         candidates
     }
 
-    pub fn resolve_qualified_alias(
-        &self,
-        lexical_namespace: &NamespacePath,
-        name: &QualifiedName,
-    ) -> QualifiedName {
-        self.resolve_qualified_aliases(lexical_namespace, name)
-            .into_iter()
-            .next()
-            .unwrap_or_else(|| name.clone())
-    }
-
     pub fn get_bucket<'b, 'c>(
         &'b self,
         namespace: &NamespacePath,

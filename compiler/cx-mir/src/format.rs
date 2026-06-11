@@ -1,5 +1,5 @@
 use cx_ast::ast::modifiers::{CX_CONST, CX_RESTRICT, CX_VOLATILE, CXTypeQualifiers};
-use cx_util::identifier::CXIdent;
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::mir::data::{MIRFunctionPrototype, MIRFunctionSignature, MIRParameter};
 use crate::mir::expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp};
@@ -121,11 +121,13 @@ fn indentation(depth: usize) -> String {
 
 fn write_type_reference(
     f: &mut Formatter<'_>,
+    definitions: &dyn MIRTypeContext,
     ty: &MIRType,
     id: Option<MIRTypeId>,
+    state: &mut TypeDisplayState,
 ) -> std::fmt::Result {
-    if let Some(name) = ty.debug_name() {
-        write!(f, "{name}")
+    if write_type_name(f, definitions, ty, id, state)? {
+        Ok(())
     } else if let Some(id) = id {
         write!(f, "{id}")
     } else {
@@ -141,14 +143,83 @@ fn write_type_reference(
 
 fn write_recursive_reference(
     f: &mut Formatter<'_>,
+    definitions: &dyn MIRTypeContext,
     ty: &MIRType,
     id: MIRTypeId,
 ) -> std::fmt::Result {
-    if let Some(name) = ty.debug_name() {
-        write!(f, "{name}")
+    if write_type_base_name(f, definitions, ty, Some(id))? {
+        Ok(())
     } else {
         write!(f, "{id}<recursive>")
     }
+}
+
+fn write_type_name(
+    f: &mut Formatter<'_>,
+    definitions: &dyn MIRTypeContext,
+    ty: &MIRType,
+    id: Option<MIRTypeId>,
+    state: &mut TypeDisplayState,
+) -> Result<bool, std::fmt::Error> {
+    if !write_type_base_name(f, definitions, ty, id)? {
+        return Ok(false);
+    }
+
+    let Some(template_info) = ty.get_template_data() else {
+        return Ok(true);
+    };
+
+    if template_info.template_input.args.is_empty() {
+        return Ok(true);
+    }
+
+    write!(f, "<")?;
+    for (idx, arg) in template_info.template_input.args.iter().enumerate() {
+        if idx > 0 {
+            write!(f, ", ")?;
+        }
+        write_type_id(f, definitions, *arg, state)?;
+    }
+    write!(f, ">")?;
+
+    Ok(true)
+}
+
+fn write_type_base_name(
+    f: &mut Formatter<'_>,
+    definitions: &dyn MIRTypeContext,
+    ty: &MIRType,
+    id: Option<MIRTypeId>,
+) -> Result<bool, std::fmt::Error> {
+    if let Some(name) = ty
+        .get_template_data()
+        .and_then(|template_info| template_info.base_name.as_ref())
+        .or_else(|| ty.lookup_identifier())
+        .or_else(|| id.and_then(|id| definitions.type_id_lookup_identifier(id)))
+    {
+        write_qualified_name(f, name)?;
+        return Ok(true);
+    }
+
+    if let Some(name) = &ty.debug_name {
+        write!(f, "{name}")?;
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+fn has_type_name(definitions: &dyn MIRTypeContext, ty: &MIRType, id: Option<MIRTypeId>) -> bool {
+    ty.get_template_data()
+        .and_then(|template_info| template_info.base_name.as_ref())
+        .or_else(|| ty.lookup_identifier())
+        .or_else(|| id.and_then(|id| definitions.type_id_lookup_identifier(id)))
+        .is_some()
+        || ty.debug_name.is_some()
+}
+
+fn write_qualified_name(f: &mut Formatter<'_>, name: &QualifiedName) -> std::fmt::Result {
+    write!(f, "{name}")
 }
 
 fn write_type_root(
@@ -157,13 +228,7 @@ fn write_type_root(
     ty: &MIRType,
 ) -> std::fmt::Result {
     let mut state = TypeDisplayState::default();
-    write_type_value(f, definitions, ty, &mut state)?;
-
-    if let Some(ident) = ty.strong_identifier() {
-        write!(f, " /* {ident} */")?;
-    }
-
-    Ok(())
+    write_type_value(f, definitions, ty, &mut state)
 }
 
 fn write_type_value(
@@ -184,7 +249,7 @@ fn write_type_id(
     let ty = definitions.resolve_type_id(id);
 
     if state.contains(id) {
-        return write_recursive_reference(f, ty, id);
+        return write_recursive_reference(f, definitions, ty, id);
     }
 
     state.enter(id);
@@ -236,8 +301,9 @@ fn write_aggregate(
     state: &mut TypeDisplayState,
 ) -> std::fmt::Result {
     write!(f, "{keyword}")?;
-    if let Some(name) = ty.debug_name() {
-        write!(f, " {name}")?;
+    if has_type_name(definitions, ty, None) {
+        write!(f, " ")?;
+        write_type_name(f, definitions, ty, None, state)?;
     }
     write!(f, " {{")?;
     if !fields.is_empty() {
@@ -276,7 +342,7 @@ fn write_type_body(
     id: Option<MIRTypeId>,
     state: &mut TypeDisplayState,
 ) -> std::fmt::Result {
-    if id.is_some()
+    if (id.is_some() || has_type_name(definitions, ty, id))
         && matches!(
             ty.kind,
             MIRTypeKind::Structured { .. }
@@ -286,7 +352,7 @@ fn write_type_body(
         )
     {
         write_type_qualifiers_prefix(f, ty.specifiers)?;
-        return write_type_reference(f, ty, id);
+        return write_type_reference(f, definitions, ty, id, state);
     }
 
     if !matches!(ty.kind, MIRTypeKind::PointerTo { .. }) {
@@ -338,7 +404,7 @@ fn write_type_body(
             write!(f, "; {size}]")
         }
         MIRTypeKind::Opaque { size } => write!(f, "opaque({size})"),
-        MIRTypeKind::Undefined => write_type_reference(f, ty, id),
+        MIRTypeKind::Undefined => write_type_reference(f, definitions, ty, id, state),
         MIRTypeKind::Str => write!(f, "_str"),
         MIRTypeKind::Function { signature } => {
             write_signature_with_context(f, signature, definitions, state)

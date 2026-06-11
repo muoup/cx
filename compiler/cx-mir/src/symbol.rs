@@ -1,6 +1,6 @@
 use cx_ast::{ast::template::CXTemplatePrototype, symbols::CXSymbol};
 use cx_log::{CXError, CXResult};
-use cx_util::identifier::CXIdent;
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::{
     EnvironmentNamespace,
@@ -8,6 +8,7 @@ use crate::{
         data::{MIRFunctionPrototype, MIRTypeId, MIRTypeKind},
         expression::{MIRExpression, MIRExpressionKind},
     },
+    type_context::MIRTypeContext,
 };
 
 #[derive(Clone, Debug)]
@@ -27,6 +28,27 @@ impl MIRSymbol {
     pub fn as_type_id(&self) -> Option<MIRTypeId> {
         match self {
             MIRSymbol::Type(id) => Some(*id),
+            _ => None,
+        }
+    }
+
+    pub fn as_pattern_target(&self, env: &impl MIRTypeContext) -> Option<QualifiedName> {
+        match self {
+            MIRSymbol::Type(id) => env.type_id_lookup_identifier(*id).cloned(),
+
+            MIRSymbol::Template {
+                name,
+                namespace,
+                source,
+                ..
+            } => {
+                if source.is_type() {
+                    Some(QualifiedName::new(namespace.clone(), name.clone()))
+                } else {
+                    None
+                }
+            }
+
             _ => None,
         }
     }

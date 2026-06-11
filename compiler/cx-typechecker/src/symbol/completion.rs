@@ -6,6 +6,7 @@ use cx_ast::ast::{
 };
 use cx_ast::symbols::{CXSymbol, CXSymbolKind};
 use cx_log::{CXError, CXResult};
+use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use cx_mir::{
@@ -319,7 +320,7 @@ fn complete_identifier_type(
     name: &QualifiedName,
     predeclaration: PredeclarationType,
     template_input: &Option<CXTemplateInput>,
-    range: Option<&cx_tokens::TokenRange>,
+    range: Option<&TokenRange>,
 ) -> CXResult<MIRTypeId> {
     if name.namespace.is_root()
         && let Some(_ty) = env.symbols.get_local_symbol(name)
@@ -328,8 +329,16 @@ fn complete_identifier_type(
         return Ok(id);
     }
 
-    if let Some(_ty) = env.symbols.get_preresolved_symbol(name) {
-        return Ok(_ty.as_type_id().unwrap()); // unfailable
+    if let Some(symbol) = env.symbols.get_preresolved_symbol(name).cloned() {
+        return complete_identifier_type_lookup(
+            env,
+            namespace,
+            name,
+            name.clone(),
+            TypeLookup::Resolved(symbol),
+            template_input,
+            range,
+        );
     }
 
     let candidates = env
@@ -339,8 +348,8 @@ fn complete_identifier_type(
 
     let mut resolved = Vec::new();
     for candidate in candidates.iter().cloned() {
-        let lookup = if let Some(_ty) = env.symbols.get_preresolved_symbol(&candidate) {
-            Some(TypeLookup::Resolved(_ty.as_type_id().unwrap()))
+        let lookup = if let Some(symbol) = env.symbols.get_preresolved_symbol(&candidate).cloned() {
+            Some(TypeLookup::Resolved(symbol))
         } else {
             env.symbols
                 .get_global_registry()
@@ -413,8 +422,8 @@ fn complete_identifier_type_lookup(
     template_input: &Option<CXTemplateInput>,
     range: Option<&cx_tokens::TokenRange>,
 ) -> CXResult<MIRTypeId> {
-    if let TypeLookup::Resolved(id) = lookup {
-        return Ok(id);
+    if let TypeLookup::Resolved(symbol) = lookup {
+        return complete_resolved_type_lookup(env, namespace, name, symbol, template_input, range);
     }
 
     let TypeLookup::Untyped(symbol) = lookup else {
@@ -452,31 +461,7 @@ fn complete_identifier_type_lookup(
                 &resolved_name.name,
                 &symbol,
             )?;
-            let Some(input) = template_input else {
-                return type_completion_error(
-                    env,
-                    range,
-                    format!("Template type '{name}' requires explicit template arguments"),
-                );
-            };
-            let input = complete_template_input(env, namespace, input)?;
-            let symbol = apply_template(env, &mir_symbol, input)?.ok_or_else(|| {
-                crate::typecheck_error!(
-                    env,
-                    range.cloned(),
-                    "Type '{name}' does not accept template arguments"
-                )
-            })?;
-
-            match symbol {
-                MIRSymbol::Type(id) => Ok(id),
-                MIRSymbol::Template { .. } => type_completion_error(
-                    env,
-                    range,
-                    format!("Template type '{name}' requires explicit template arguments"),
-                ),
-                _ => type_completion_error(env, range, format!("Symbol '{name}' is not a type")),
-            }
+            complete_template_type_lookup(env, namespace, name, &mir_symbol, template_input, range)
         }
 
         _ => type_completion_error(env, range, format!("Symbol '{name}' is not a type")),
@@ -484,8 +469,70 @@ fn complete_identifier_type_lookup(
 }
 
 enum TypeLookup {
-    Resolved(MIRTypeId),
+    Resolved(MIRSymbol),
     Untyped(CXSymbol),
+}
+
+fn complete_resolved_type_lookup(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    name: &QualifiedName,
+    symbol: MIRSymbol,
+    template_input: &Option<CXTemplateInput>,
+    range: Option<&cx_tokens::TokenRange>,
+) -> CXResult<MIRTypeId> {
+    match symbol {
+        MIRSymbol::Type(id) => {
+            if template_input.is_some() {
+                type_completion_error(
+                    env,
+                    range,
+                    format!("Type '{name}' does not accept template arguments"),
+                )
+            } else {
+                Ok(id)
+            }
+        }
+        MIRSymbol::Template { .. } => {
+            complete_template_type_lookup(env, namespace, name, &symbol, template_input, range)
+        }
+        _ => type_completion_error(env, range, format!("Symbol '{name}' is not a type")),
+    }
+}
+
+fn complete_template_type_lookup(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    name: &QualifiedName,
+    mir_symbol: &MIRSymbol,
+    template_input: &Option<CXTemplateInput>,
+    range: Option<&cx_tokens::TokenRange>,
+) -> CXResult<MIRTypeId> {
+    let Some(input) = template_input else {
+        return type_completion_error(
+            env,
+            range,
+            format!("Template type '{name}' requires explicit template arguments"),
+        );
+    };
+    let input = complete_template_input(env, namespace, input)?;
+    let symbol = apply_template(env, mir_symbol, input)?.ok_or_else(|| {
+        crate::typecheck_error!(
+            env,
+            range.cloned(),
+            "Type '{name}' does not accept template arguments"
+        )
+    })?;
+
+    match symbol {
+        MIRSymbol::Type(id) => Ok(id),
+        MIRSymbol::Template { .. } => type_completion_error(
+            env,
+            range,
+            format!("Template type '{name}' requires explicit template arguments"),
+        ),
+        _ => type_completion_error(env, range, format!("Symbol '{name}' is not a type")),
+    }
 }
 
 fn make_aggregate_type<F>(
@@ -683,7 +730,7 @@ fn type_completion_error<T>(
         env.source.compilation_unit.as_path(),
         range,
         message.into(),
-        Vec::new()
+        Vec::new(),
     ))
 }
 

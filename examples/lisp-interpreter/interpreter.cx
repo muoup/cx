@@ -98,7 +98,7 @@ lisp_node* interpreter::find_function(*this, char* name) {
     return NULL;
 }
 
-f64 interpreter::call_function(*this, char* name, vector<lisp_node>* args, binding* locals, usize local_count) {
+f64 interpreter::call_function(*this, char* name, std::vector<lisp_node>* args, binding* locals, usize local_count) {
     lisp_node* fn_node = this.find_function(name);
     if (fn_node == NULL) {
         printf("Unknown function: %s\n", name);

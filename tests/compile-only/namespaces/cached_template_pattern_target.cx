@@ -1,0 +1,16 @@
+import std::optional;
+
+int main() {
+    std::optional::opt<int> value = std::optional::opt::some<int>(1);
+
+    if (value is std::optional::opt::some<int>(inner)) {
+        return inner;
+    }
+
+    std::optional::opt<int> later = std::optional::opt::none<int>();
+    if (later is std::optional::opt::none<int>(_)) {
+        return 0;
+    }
+
+    return 1;
+}

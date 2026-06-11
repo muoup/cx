@@ -3,7 +3,7 @@ use cx_log::CXResult;
 use cx_mir::EnvironmentNamespace;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
-use crate::{environment::TypeEnvironment, log_typecheck_error};
+use crate::{environment::TypeEnvironment, log_typecheck_error, typecheck_error};
 
 pub struct TypeConstructor {
     pub union_name: QualifiedName,
@@ -52,13 +52,18 @@ pub fn resolve_type_constructor_pattern(
     };
 
     let union_name = QualifiedName::new(union_namespace, union_name);
-    let union_name = if union_name.namespace.is_root() {
-        QualifiedName::new(namespace.clone(), union_name.name)
-    } else {
-        env.symbols
-            .get_global_registry()
-            .resolve_qualified_alias(namespace, &union_name)
-    };
+
+    let union_name = env
+        .get_symbol(namespace, &union_name)?
+        .and_then(|symbol| symbol.as_pattern_target(&env.symbols))
+        .ok_or_else(|| {
+            typecheck_error!(
+                env,
+                Some(expr.token_range()),
+                "Could not resolve pattern target '{}'",
+                union_name
+            )
+        })?;
 
     Ok(TypeConstructor {
         union_name,
