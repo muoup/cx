@@ -106,6 +106,53 @@ impl std::fmt::Display for CXError {
 }
 
 #[derive(Clone, Debug)]
+pub struct UnspannedError {
+    pub prefix: String,
+    pub message: String,
+    pub notes: Vec<String>,
+}
+
+impl UnspannedError {
+    pub fn new(prefix: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            prefix: prefix.into(),
+            message: message.into(),
+            notes: Vec::new(),
+        }
+    }
+
+    pub fn with_notes(mut self, notes: Vec<String>) -> Self {
+        self.notes = notes;
+        self
+    }
+}
+
+impl CXErrorTrait for UnspannedError {
+    fn pretty_print(&self) {
+        println!("{}", self.error_message());
+        for note in &self.notes {
+            println!("note: {note}");
+        }
+    }
+
+    fn error_prefix(&self) -> String {
+        self.prefix.clone()
+    }
+
+    fn error_content(&self) -> String {
+        self.message.clone()
+    }
+
+    fn notes(&self) -> Vec<String> {
+        self.notes.clone()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct PointingError {
     pub prefix: String,
     pub message: String,

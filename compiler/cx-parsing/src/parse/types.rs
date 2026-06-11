@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::parse::expressions::parse_expr;
 use crate::parse::{try_parse_simple_identifier, ParserData};
 use crate::{assert_token_matches, next_kind, peek_kind, try_next};
@@ -19,6 +21,19 @@ use cx_util::namespace::QualifiedName;
 use crate::parse::functions::{parse_params, ParseParamsResult};
 use crate::parse::templates::{note_templated_types, try_parse_template, unnote_templated_types};
 use crate::parse::{parse_intrinsic, try_parse_qualified_name, try_parse_type_identifier};
+
+fn token_range(start: usize, end: usize) -> TokenRange {
+    TokenRange::new(start, end.max(start.saturating_add(1)), Arc::from(""))
+}
+
+fn with_type_end_range(mut ty: CXType, end: usize) -> CXType {
+    let start = ty
+        .range()
+        .map(|range| range.start_token)
+        .unwrap_or(end.saturating_sub(1));
+    ty.range = Some(token_range(start, end));
+    ty
+}
 
 fn parse_type_attributes(data: &mut ParserData, kind_name: &str) -> CXResult<CXStructAttributes> {
     let mut attributes = CXStructAttributes::default();
@@ -411,12 +426,14 @@ pub(crate) fn parse_type_mods(
             assert_token_matches!(data.tokens, operator!(Asterisk), "'*'");
 
             let specs = parse_specifier(&mut data.tokens);
-            let acc_type = CXType::new(
+            let range = acc_type.range.clone();
+            let mut acc_type = CXType::new(
                 specs,
                 CXTypeKind::PointerTo {
                     inner_type: Box::new(acc_type),
                 },
             );
+            acc_type.range = range;
 
             parse_type_mods(data, acc_type)
         }
@@ -432,13 +449,14 @@ pub(crate) fn parse_type_mods(
         operator!(Ampersand) => {
             data.tokens.next();
 
-            parse_type_mods(
-                data,
-                CXTypeKind::MemoryReference {
-                    inner_type: Box::new(acc_type),
-                }
-                .to_type(),
-            )
+            let range = acc_type.range.clone();
+            let mut ref_type = CXTypeKind::MemoryReference {
+                inner_type: Box::new(acc_type),
+            }
+            .to_type();
+            ref_type.range = range;
+
+            parse_type_mods(data, ref_type)
         }
 
         punctuator!(OpenParen) => {
@@ -479,14 +497,13 @@ pub(crate) fn parse_type_mods(
                 range: TokenRange::default(),
             };
 
-            Ok((
-                name,
-                CXTypeKind::FunctionPointer {
-                    prototype: Box::new(prototype),
-                }
-                .to_type()
-                .pointer_to(0),
-            ))
+            let fn_ptr_type = CXTypeKind::FunctionPointer {
+                prototype: Box::new(prototype),
+            }
+            .to_type()
+            .pointer_to(0);
+
+            Ok((name, with_type_end_range(fn_ptr_type, data.tokens.index)))
         }
 
         identifier!() => {
@@ -514,13 +531,17 @@ pub(crate) fn parse_type_suffix_mod(
             data.tokens.next();
 
             if try_next!(data.tokens, punctuator!(CloseBracket)) {
+                let range = acc_type.range.clone();
                 acc_type = CXTypeKind::ImplicitSizedArray(Box::new(acc_type)).to_type();
+                acc_type.range = range;
             } else {
                 let inner = parse_expr(data)?;
                 assert_token_matches!(data.tokens, punctuator!(CloseBracket), "']'");
 
+                let range = acc_type.range.clone();
                 acc_type =
                     CXTypeKind::ExplicitSizedArray(Box::new(acc_type), Box::new(inner)).to_type();
+                acc_type.range = range;
             }
 
             parse_type_suffix_mod(data, acc_type)
@@ -529,13 +550,14 @@ pub(crate) fn parse_type_suffix_mod(
         operator!(Ampersand) => {
             data.tokens.next();
 
-            parse_type_suffix_mod(
-                data,
-                CXTypeKind::MemoryReference {
-                    inner_type: Box::new(acc_type),
-                }
-                .to_type(),
-            )
+            let range = acc_type.range.clone();
+            let mut ref_type = CXTypeKind::MemoryReference {
+                inner_type: Box::new(acc_type),
+            }
+            .to_type();
+            ref_type.range = range;
+
+            parse_type_suffix_mod(data, ref_type)
         }
 
         _ => Ok(acc_type),
@@ -543,6 +565,7 @@ pub(crate) fn parse_type_suffix_mod(
 }
 
 pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<CXType> {
+    let start_index = data.tokens.index;
     let Some(next_token) = data.tokens.peek() else {
         return log_parse_error!(data, "Expected type base, found end of tokens.");
     };
@@ -577,7 +600,9 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<CXType> {
 
     let specifiers = parse_specifier(&mut data.tokens);
 
-    Ok(_type?.add_specifier(specifiers))
+    Ok(_type?
+        .add_specifier(specifiers)
+        .with_range(token_range(start_index, data.tokens.index)))
 }
 
 pub(crate) fn parse_base_mods(
@@ -586,7 +611,9 @@ pub(crate) fn parse_base_mods(
 ) -> CXResult<(Option<CXIdent>, CXType)> {
     let (name, modified_type) = parse_type_mods(data, acc_type)?;
 
-    Ok((name, parse_type_suffix_mod(data, modified_type)?))
+    let modified_type = parse_type_suffix_mod(data, modified_type)?;
+
+    Ok((name, with_type_end_range(modified_type, data.tokens.index)))
 }
 
 pub(crate) fn parse_initializer(

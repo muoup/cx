@@ -1,3 +1,4 @@
+use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::ast::{
@@ -9,6 +10,7 @@ use crate::ast::{
 pub struct CXType {
     pub kind: CXTypeKind,
     pub specifiers: CXTypeQualifiers,
+    pub range: Option<TokenRange>,
 }
 
 #[derive(Debug, Default, Hash, Clone, Copy, PartialEq, Eq)]
@@ -93,21 +95,37 @@ impl From<&str> for CXType {
 
 impl CXType {
     pub fn new(specifiers: CXTypeQualifiers, kind: CXTypeKind) -> Self {
-        Self { kind, specifiers }
+        Self {
+            kind,
+            specifiers,
+            range: None,
+        }
     }
 
     pub fn pointer_to(self, specifier: CXTypeQualifiers) -> Self {
-        Self::new(
+        let range = self.range.clone();
+        let mut ty = Self::new(
             specifier,
             CXTypeKind::PointerTo {
                 inner_type: Box::new(self),
             },
-        )
+        );
+        ty.range = range;
+        ty
     }
 
     pub fn add_specifier(mut self, specifier: CXTypeQualifiers) -> Self {
         self.specifiers |= specifier;
         self
+    }
+
+    pub fn with_range(mut self, range: TokenRange) -> Self {
+        self.range = Some(range);
+        self
+    }
+
+    pub fn range(&self) -> Option<&TokenRange> {
+        self.range.as_ref()
     }
 
     pub fn get_name(&self) -> Option<&CXIdent> {

@@ -1,0 +1,12 @@
+struct Plain {
+    int value;
+};
+
+struct Holder {
+    Plain<int> value;
+};
+
+int main() {
+    Holder holder;
+    return 0;
+}
