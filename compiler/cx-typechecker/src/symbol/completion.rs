@@ -444,7 +444,14 @@ fn complete_identifier_type_lookup(
             println!("Prereserving type ID {prereserved_id} for '{resolved_name}'");
             env.symbols
                 .insert_type_symbol(resolved_name.clone(), prereserved_id);
-            
+            env.symbols.overwrite_type_id(
+                prereserved_id,
+                MIRType::from(MIRTypeKind::Undefined)
+                    .with_strong_identifier(
+                        CXIdent::from(mangle_qualified_name(env.symbols.get_global_registry(), &resolved_name))
+                    ),
+            );
+
             let completed = complete_type_value(env, &resolved_name.namespace, definition)?;
 
             env.symbols.overwrite_type_id(prereserved_id, completed);

@@ -3,7 +3,7 @@ import std::io as std;
 import std::file as std;
 import std::string as std;
 
-import interpreter;
+import interpreter as _;
 
 i32 main(i32 argc, char** argv) {
     if (argc == 1) {
@@ -11,10 +11,10 @@ i32 main(i32 argc, char** argv) {
         return 1;
     }
 
-    std::opt<file> o = file::open(argv[1], "r");
+    std::opt<std::file> o = std::file::open(argv[1], "r");
 
     if (!o.is_some()) {
-        println("Could not find file specified.");
+        std::println("Could not find file specified.");
     }
 
     std::file f = o.unwrap();

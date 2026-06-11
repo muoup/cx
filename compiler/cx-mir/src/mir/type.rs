@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 
-use cx_ast::ast::modifiers::{CXTypeQualifiers, VisibilityMode};
+use cx_ast::{ast::modifiers::{CXTypeQualifiers, VisibilityMode}, registry::GlobalSymbolRegistry};
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 use speedy::{Readable, Writable};
 
 use crate::{
-    mir::data::{MIRFunctionSignature, TemplateInfo},
+    mir::{data::{MIRFunctionSignature, TemplateInfo}, name_mangling::mangle_qualified_name},
     type_context::MIRTypeContext,
 };
 
@@ -334,17 +334,11 @@ impl MIRType {
         MIRType::from(MIRTypeKind::Function {
             signature: Box::new(MIRFunctionSignature::default()),
         })
-        .with_name(CXIdent::from("__internal_function"))
+        .with_strong_identifier(CXIdent::from("__internal_function"))
     }
 
-    pub fn with_name(mut self, name: CXIdent) -> MIRType {
+    pub fn with_strong_identifier(mut self, name: CXIdent) -> MIRType {
         self.strong_identifier = Some(name.as_string());
-        self
-    }
-
-    pub fn with_qualified_name(mut self, name: QualifiedName) -> MIRType {
-        self.lookup_identifier = Some(name.clone());
-        self.strong_identifier = Some(name.as_flat_name());
         self
     }
 
