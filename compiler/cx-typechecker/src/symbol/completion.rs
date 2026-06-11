@@ -15,7 +15,7 @@ use cx_mir::{
             MIRFunctionPrototype, MIRFunctionSignature, MIRMoveAttributes, MIRParameter,
             MIRTemplateInput,
         },
-        name_mangling::{base_mangle_member, base_mangle_standard},
+        name_mangling::{base_mangle_member, mangle_qualified_name},
         r#type::{MIRField, MIRType, MIRTypeId, MIRTypeKind},
     },
     symbol::MIRSymbol,
@@ -441,13 +441,11 @@ fn complete_identifier_type_lookup(
             }
 
             let prereserved_id = env.symbols.reserve_type_id();
+            println!("Prereserving type ID {prereserved_id} for '{resolved_name}'");
             env.symbols
                 .insert_type_symbol(resolved_name.clone(), prereserved_id);
-
-            let mut completed = complete_type_value(env, &resolved_name.namespace, definition)?;
-            if completed.debug_name.is_none() {
-                completed.debug_name = Some(resolved_name.name.clone());
-            }
+            
+            let completed = complete_type_value(env, &resolved_name.namespace, definition)?;
 
             env.symbols.overwrite_type_id(prereserved_id, completed);
             Ok(prereserved_id)
@@ -560,7 +558,7 @@ where
         .map(|name| {
             let lookup_identifier = QualifiedName::new(namespace.clone(), name.clone());
             let strong_identifier =
-                base_mangle_standard(env.symbols.get_global_registry(), &lookup_identifier);
+                mangle_qualified_name(env.symbols.get_global_registry(), &lookup_identifier);
             (Some(strong_identifier), Some(lookup_identifier))
         })
         .unwrap_or((None, None));
@@ -571,7 +569,6 @@ where
         move_attributes,
         strong_identifier,
         lookup_identifier,
-        debug_name: name,
         template_info: None,
         kind: kind_ctor(fields),
     })
@@ -740,7 +737,7 @@ fn completed_function_name(
     kind: &CXFunctionKind,
 ) -> CXResult<String> {
     let name = match kind {
-        CXFunctionKind::Standard(name) => base_mangle_standard(
+        CXFunctionKind::Standard(name) => mangle_qualified_name(
             env.symbols.get_global_registry(),
             &QualifiedName::new(namespace.clone(), name.clone()),
         ),

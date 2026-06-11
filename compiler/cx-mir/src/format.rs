@@ -201,11 +201,6 @@ fn write_type_base_name(
         return Ok(true);
     }
 
-    if let Some(name) = &ty.debug_name {
-        write!(f, "{name}")?;
-        return Ok(true);
-    }
-
     Ok(false)
 }
 
@@ -215,7 +210,6 @@ fn has_type_name(definitions: &dyn MIRTypeContext, ty: &MIRType, id: Option<MIRT
         .or_else(|| ty.lookup_identifier())
         .or_else(|| id.and_then(|id| definitions.type_id_lookup_identifier(id)))
         .is_some()
-        || ty.debug_name.is_some()
 }
 
 fn write_qualified_name(f: &mut Formatter<'_>, name: &QualifiedName) -> std::fmt::Result {

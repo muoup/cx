@@ -19,7 +19,6 @@ pub struct MIRType {
     pub move_attributes: MIRMoveAttributes,
     pub strong_identifier: Option<String>,
     pub lookup_identifier: Option<QualifiedName>,
-    pub debug_name: Option<CXIdent>,
 
     pub template_info: Option<Box<TemplateInfo>>,
     pub kind: MIRTypeKind,
@@ -274,7 +273,6 @@ impl Default for MIRType {
             move_attributes: MIRMoveAttributes::default(),
             strong_identifier: None,
             lookup_identifier: None,
-            debug_name: None,
             template_info: None,
             kind: MIRTypeKind::Unit,
         }
@@ -347,11 +345,6 @@ impl MIRType {
     pub fn with_qualified_name(mut self, name: QualifiedName) -> MIRType {
         self.lookup_identifier = Some(name.clone());
         self.strong_identifier = Some(name.as_flat_name());
-        self
-    }
-
-    pub fn with_debug_name(mut self, name: CXIdent) -> MIRType {
-        self.debug_name = Some(name);
         self
     }
 
@@ -466,12 +459,6 @@ impl MIRType {
         self.lookup_identifier.as_ref()
     }
 
-    pub fn debug_name(&self) -> Option<&CXIdent> {
-        self.debug_name
-            .as_ref()
-            .or_else(|| self.lookup_identifier.as_ref().map(|id| &id.name))
-    }
-
     pub fn member_lookup_identifier(&self) -> Option<&QualifiedName> {
         self.lookup_identifier.as_ref().or_else(|| {
             self.template_info
@@ -508,10 +495,6 @@ impl MIRType {
         self.strong_identifier = Some(new_name.as_flat_name());
     }
 
-    pub fn set_debug_name(&mut self, new_name: CXIdent) {
-        self.debug_name = Some(new_name);
-    }
-
     pub fn named_struct(
         name: CXIdent,
         _type_id: MIRTypeId,
@@ -520,7 +503,6 @@ impl MIRType {
     ) -> Self {
         MIRType {
             strong_identifier: Some(name.as_string()),
-            debug_name: None,
             template_info,
             move_attributes: attributes,
             kind: MIRTypeKind::Structured { fields: vec![] },
@@ -531,7 +513,6 @@ impl MIRType {
     pub fn named_union(name: CXIdent, _type_id: MIRTypeId) -> Self {
         MIRType {
             strong_identifier: Some(name.as_string()),
-            debug_name: None,
             kind: MIRTypeKind::Union { variants: vec![] },
             ..Default::default()
         }
@@ -545,7 +526,6 @@ impl MIRType {
     ) -> Self {
         MIRType {
             strong_identifier: Some(name.as_string()),
-            debug_name: None,
             template_info,
             move_attributes: attributes,
             kind: MIRTypeKind::TaggedUnion { variants: vec![] },
@@ -610,7 +590,6 @@ impl MIRType {
         template_info: &Option<Box<TemplateInfo>>,
     ) {
         self.strong_identifier = Some(new_name.as_string());
-        self.debug_name.get_or_insert_with(|| new_name.clone());
         self.template_info = template_info.clone();
     }
 }

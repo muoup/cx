@@ -42,10 +42,7 @@ pub fn resolve_symbol(
 ) -> CXResult<MIRSymbol> {
     match &symbol.kind {
         CXSymbolKind::Type(ty) => {
-            let mut completed = complete_type(env, symbol_namespace, ty)?;
-            if completed.debug_name.is_none() {
-                completed.debug_name = Some(name.clone());
-            }
+            let completed = complete_type(env, symbol_namespace, ty)?;
             let id = env.symbols.generate_type_id(completed);
             Ok(MIRSymbol::Type(id))
         }
@@ -303,7 +300,14 @@ fn attach_template_metadata(
                 template_input: input.clone(),
             }));
             ty.strong_identifier = ty.strong_identifier.as_ref().map(|base| {
-                base_mangle_templated_name(&env.symbols, base.as_str(), input.args.as_slice())
+                base_mangle_templated_name(
+                    &env.symbols,
+                    base.as_str(),
+                    input
+                        .args
+                        .iter()
+                        .map(|arg| env.symbols.resolve_type_id(*arg)),
+                )
             });
             env.symbols.overwrite_type_id(*id, ty);
         }
@@ -311,7 +315,11 @@ fn attach_template_metadata(
         MIRSymbol::FunctionReference(prototype) => {
             if prototype.lookup_identifier().is_some() {
                 prototype.map_symbol_name(|name| {
-                    base_mangle_templated_name(&env.symbols, name, input.args.as_slice())
+                    base_mangle_templated_name(
+                        &env.symbols,
+                        name,
+                        input.args.iter().map(|arg| env.symbols.resolve_type_id(*arg))
+                    )
                 });
             }
         }

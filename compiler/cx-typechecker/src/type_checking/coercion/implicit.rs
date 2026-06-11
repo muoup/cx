@@ -1,8 +1,8 @@
 use cx_log::CXResult;
-use cx_mir::mir::{
+use cx_mir::{mir::{
     expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
     r#type::MIRType,
-};
+}, type_context::MIRTypeContext};
 
 use crate::{
     environment::TypeEnvironment,
@@ -43,9 +43,9 @@ pub fn implicit_cast(
             expr.token_range.as_ref(),
             "No implicit cast from {} ({:?}) to {} ({:?})",
             from_type.display_with(&env.symbols),
-            from_type.strong_identifier(),
+            env.symbols.ptr_inner(&from_type).and_then(|ty| ty.strong_identifier()),
             to_type.display_with(&env.symbols),
-            to_type.strong_identifier()
+            env.symbols.ptr_inner(&to_type).and_then(|ty| ty.strong_identifier()),
         )
     })
 }
