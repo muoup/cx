@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 
-use cx_ast::{ast::modifiers::{CXTypeQualifiers, VisibilityMode}, registry::GlobalSymbolRegistry};
+use cx_ast::ast::modifiers::{CXTypeQualifiers, VisibilityMode};
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 use speedy::{Readable, Writable};
 
 use crate::{
-    mir::{data::{MIRFunctionSignature, TemplateInfo}, name_mangling::mangle_qualified_name},
+    mir::data::{MIRFunctionSignature, TemplateInfo},
     type_context::MIRTypeContext,
 };
 

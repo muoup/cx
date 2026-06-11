@@ -3,9 +3,9 @@ use std::fmt::{Debug, Display, Formatter, Result};
 
 use crate::ast::{
     expression::{CXBinOp, CXExprKind, CXExpression, CXInitIndex},
-    function::{CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXReceiverMode},
+    function::{CXFunctionKind, CXFunctionPrototype},
     global_var::{CXEnumVariant, CXGlobalVariable},
-    modifiers::{CXLinkageMode, CX_CONST},
+    modifiers::CXLinkageMode,
     pattern::CXPattern,
     template::CXTemplateInput,
     types::{CXField, CXType, CXTypeKind},
@@ -612,17 +612,6 @@ impl Display for CXTemplateInput {
     }
 }
 
-impl Display for CXFunctionTypeIdent {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CXFunctionTypeIdent::Standard(name) => write!(f, "{name}"),
-            CXFunctionTypeIdent::Templated(name, template_input) => {
-                write!(f, "{}{}", name, template_input)
-            }
-        }
-    }
-}
-
 impl Display for CXFunctionKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -630,35 +619,7 @@ impl Display for CXFunctionKind {
             CXFunctionKind::MemberFunction {
                 member_type,
                 name,
-                receiver,
-            } => {
-                write!(f, "{member_type}::{name}")?;
-
-                match receiver.mode {
-                    CXReceiverMode::ByRef => {
-                        let is_const = (receiver.specifiers & CX_CONST) != 0;
-
-                        write!(
-                            f,
-                            " (receiver: {}*this)",
-                            if is_const { "const " } else { "" }
-                        )
-                    }
-                    CXReceiverMode::ByMove => {
-                        let is_const = (receiver.specifiers & CX_CONST) != 0;
-
-                        write!(
-                            f,
-                            " (receiver: {}this)",
-                            if is_const { "const " } else { "" }
-                        )
-                    }
-                    CXReceiverMode::None => Ok(()),
-                }
-            }
-            CXFunctionKind::StaticMemberFunction { member_type, name } => {
-                write!(f, "{member_type}::{name}")
-            }
+            } => write!(f, "{member_type}::{name}")
         }
     }
 }
