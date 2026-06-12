@@ -4,7 +4,7 @@ use cx_ast::ast::{
     template::CXTemplateInput,
     types::{CXField, CXStructAttributes, CXType, CXTypeKind, PredeclarationType},
 };
-use cx_ast::symbols::{CXSymbol, CXSymbolKind};
+use cx_ast::symbols::CXSymbolKind;
 use cx_log::{CXError, CXResult};
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
@@ -24,7 +24,7 @@ use cx_mir::{
 
 use crate::{
     EnvironmentNamespace,
-    environment::TypeEnvironment,
+    environment::{SymbolLookup, SymbolLookupKind, TypeEnvironment},
     symbol::resolution::{apply_template, resolve_symbol},
     type_checking::{constexpr::constexpr_evaluate, typechecker::typecheck_expr},
 };
@@ -291,63 +291,10 @@ fn complete_identifier_type(
     template_input: &Option<CXTemplateInput>,
     range: Option<&TokenRange>,
 ) -> CXResult<MIRTypeId> {
-    if name.namespace.is_root()
-        && let Some(_ty) = env.symbols.get_local_symbol(name)
-        && let Some(id) = _ty.as_type_id()
-    {
-        return Ok(id);
-    }
-
-    if let Some(symbol) = env.symbols.get_preresolved_symbol(name).cloned() {
-        return complete_identifier_type_lookup(
-            env,
-            namespace,
-            name,
-            name.clone(),
-            TypeLookup::Resolved(symbol),
-            template_input,
-            range,
-        );
-    }
-
-    let candidates = env
-        .symbols
-        .get_global_registry()
-        .resolve_qualified_aliases(namespace, name);
-
-    let mut resolved = Vec::new();
-    for candidate in candidates.iter().cloned() {
-        let lookup = if let Some(symbol) = env.symbols.get_preresolved_symbol(&candidate).cloned() {
-            Some(TypeLookup::Resolved(symbol))
-        } else {
-            env.symbols
-                .get_global_registry()
-                .resolve(&candidate)
-                .map(TypeLookup::Untyped)
-        };
-
-        let Some(lookup) = lookup else {
-            continue;
-        };
-
-        if name.namespace.is_root() && candidate.namespace == *namespace {
-            return complete_identifier_type_lookup(
-                env,
-                namespace,
-                name,
-                candidate,
-                lookup,
-                template_input,
-                range,
-            );
-        }
-
-        resolved.push((candidate, lookup));
-    }
-
-    let Some((resolved_name, lookup)) = resolved.pop() else {
+    let Some(lookup) = env.lookup_symbol(namespace, name, range.cloned())? else {
         if predeclaration != PredeclarationType::None {
             let id = env.symbols.reserve_type_id();
+            let candidates = env.symbol_lookup_candidates(namespace, name);
             let reserve_name = candidates.first().cloned().unwrap_or_else(|| name.clone());
             env.symbols.insert_type_symbol(reserve_name, id);
 
@@ -357,45 +304,23 @@ fn complete_identifier_type(
         return type_completion_error(env, range, format!("Type not found: {name}"));
     };
 
-    if !resolved.is_empty() {
-        let mut candidates = resolved
-            .iter()
-            .map(|(name, _)| name.as_flat_name())
-            .collect::<Vec<_>>();
-        candidates.push(resolved_name.as_flat_name());
-        return Err(crate::typecheck_error!(
-            env,
-            range.cloned(),
-            "Type '{name}' is ambiguous; candidates: {}",
-            candidates.join(", ")
-        ));
-    }
-
-    complete_identifier_type_lookup(
-        env,
-        namespace,
-        name,
-        resolved_name,
-        lookup,
-        template_input,
-        range,
-    )
+    complete_identifier_type_lookup(env, namespace, name, lookup, template_input, range)
 }
 
 fn complete_identifier_type_lookup(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     name: &QualifiedName,
-    resolved_name: QualifiedName,
-    lookup: TypeLookup,
+    lookup: SymbolLookup,
     template_input: &Option<CXTemplateInput>,
     range: Option<&cx_tokens::TokenRange>,
 ) -> CXResult<MIRTypeId> {
-    if let TypeLookup::Resolved(symbol) = lookup {
+    let resolved_name = lookup.resolved_name;
+    if let SymbolLookupKind::Resolved(symbol) = lookup.kind {
         return complete_resolved_type_lookup(env, namespace, name, symbol, template_input, range);
     }
 
-    let TypeLookup::Untyped(symbol) = lookup else {
+    let SymbolLookupKind::Untyped(symbol) = lookup.kind else {
         unreachable!("resolved lookup was handled above")
     };
 
@@ -409,15 +334,15 @@ fn complete_identifier_type_lookup(
                 );
             }
 
-            let dummy_type = MIRType::from(MIRTypeKind::Undefined)
-                .with_strong_identifier(
-                    CXIdent::from(mangle_qualified_name(env.symbols.get_global_registry(), &resolved_name))
-                );
+            let dummy_type =
+                MIRType::from(MIRTypeKind::Undefined).with_strong_identifier(CXIdent::from(
+                    mangle_qualified_name(env.symbols.get_global_registry(), &resolved_name),
+                ));
             let prereserved_id = env.symbols.reserve_type_id();
             env.symbols
                 .insert_type_symbol(resolved_name.clone(), prereserved_id);
             env.symbols.overwrite_type_id(prereserved_id, dummy_type);
-            
+
             let completed = complete_type_value(env, &resolved_name.namespace, definition)?;
 
             env.symbols.overwrite_type_id(prereserved_id, completed);
@@ -437,11 +362,6 @@ fn complete_identifier_type_lookup(
 
         _ => type_completion_error(env, range, format!("Symbol '{name}' is not a type")),
     }
-}
-
-enum TypeLookup {
-    Resolved(MIRSymbol),
-    Untyped(CXSymbol),
 }
 
 fn complete_resolved_type_lookup(

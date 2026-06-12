@@ -15,7 +15,7 @@ void interpret(lisp_node* node) {
         .program_length = 0
     };
 
-    interpret |> interpreter::interpret(node);
+    interpret |> interpreter::interpreter::interpret(node);
 }
 
 void run(const char* source) {

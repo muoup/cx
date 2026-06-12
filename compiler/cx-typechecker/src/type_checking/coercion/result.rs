@@ -26,7 +26,7 @@ impl CoercionResult {
             unapplied => unapplied,
         })
     }
-    
+
     pub fn or_else<F>(self, f: F) -> CXResult<Self>
     where
         F: FnOnce(MIRExpression) -> CXResult<Self>,

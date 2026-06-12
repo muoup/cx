@@ -191,7 +191,7 @@ pub enum CXBinOp {
     Access,
     MethodCall,
     ArrayIndex,
-    Pipe
+    Pipe,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

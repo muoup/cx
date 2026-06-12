@@ -13,9 +13,7 @@ void interpret(lisp_node* node) {
     interpreter interpret = {
         .functions = std::vector::new<function_decl>()
     };
-
-    interpret.interpret(node);
-
+    interpret.interpreter();
     interpret.drop();
 }
 

@@ -23,7 +23,8 @@ use crate::{
         },
         op::binop::is::typecheck_is,
         result::TypecheckResult,
-        typechecker::typecheck_expr, value::moves::typecheck_move,
+        typechecker::typecheck_expr,
+        value::moves::typecheck_move,
     },
 };
 
@@ -36,7 +37,7 @@ pub fn typecheck_unop(
     Ok(match op {
         CXUnOp::Move => typecheck_expr(env, namespace, operand, None)
             .and_then(|v| typecheck_move(env, namespace, v, operand))?,
-        
+
         CXUnOp::PreIncrement(increment_amount) | CXUnOp::PostIncrement(increment_amount) => {
             let operand = typecheck_expr(env, namespace, operand, None)
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))?;

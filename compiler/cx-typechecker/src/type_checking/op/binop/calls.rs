@@ -299,7 +299,7 @@ pub(crate) fn typecheck_method_call(
     expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     let function = typecheck_expr(env, namespace, lhs, None)?;
-    
+
     typecheck_callee_method_call(env, namespace, function, rhs, expr)
 }
 

@@ -1,9 +1,7 @@
 use cx_log::CXResult;
-use cx_mir::{
-    mir::{
-        expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
-        r#type::MIRType,
-    },
+use cx_mir::mir::{
+    expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
+    r#type::MIRType,
 };
 
 use crate::{

@@ -198,7 +198,7 @@ pub enum OperatorType {
 
     Move,
     Is,
-    Pipe
+    Pipe,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]

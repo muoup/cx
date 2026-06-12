@@ -40,7 +40,7 @@ pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
 
         CXBinOp::LAnd => 14,
         CXBinOp::LOr => 15,
-        
+
         CXBinOp::Pipe => 16,
         CXBinOp::Assign(_) => 17,
 
