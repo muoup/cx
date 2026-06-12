@@ -1,10 +1,9 @@
-use std::collections::HashSet;
-
 use cx_ast::ast::modifiers::{CXTypeQualifiers, VisibilityMode};
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 use speedy::{Readable, Writable};
 
 use crate::{
+    mir::contextual_eq::{TypeComparisonState, TypeContextEqual},
     mir::data::{MIRFunctionSignature, TemplateInfo},
     type_context::MIRTypeContext,
 };
@@ -136,56 +135,25 @@ pub enum MIRFloatType {
     F64,
 }
 
-#[derive(Default)]
-pub(crate) struct TypeComparisonState {
-    compared_ids: HashSet<TypeIdPair>,
-}
-
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-struct TypeIdPair {
-    left: MIRTypeId,
-    right: MIRTypeId,
-}
-
-impl TypeIdPair {
-    fn new(left: MIRTypeId, right: MIRTypeId) -> Self {
-        if left <= right {
-            Self { left, right }
-        } else {
-            Self {
-                left: right,
-                right: left,
-            }
-        }
-    }
-}
-
-impl MIRTypeId {
-    pub fn contextual_eq(&self, other: &Self, definitions: &impl MIRTypeContext) -> bool {
-        let mut state = TypeComparisonState::default();
-        self.contextual_eq_with_state(other, definitions, &mut state)
-    }
-
-    pub(crate) fn contextual_eq_with_state(
+impl<Context: MIRTypeContext + ?Sized> TypeContextEqual<Context> for MIRTypeId {
+    fn compare(
         &self,
         other: &Self,
-        definitions: &impl MIRTypeContext,
+        definitions: &Context,
         state: &mut TypeComparisonState,
     ) -> bool {
         if self == other {
             return true;
         }
 
-        let pair = TypeIdPair::new(*self, *other);
-        if state.compared_ids.contains(&pair) {
+        if !state.compare_type_ids_once(*self, *other) {
             return true;
         }
 
         let left = definitions.resolve_type_id(*self);
         let right = definitions.resolve_type_id(*other);
 
-        state.compared_ids.insert(pair);
-        left.contextual_eq_with_state(right, definitions, state)
+        left.compare(right, definitions, state)
     }
 }
 
@@ -279,16 +247,11 @@ impl Default for MIRType {
     }
 }
 
-impl MIRType {
-    pub fn contextual_eq(&self, other: &Self, definitions: &impl MIRTypeContext) -> bool {
-        let mut state = TypeComparisonState::default();
-        self.contextual_eq_with_state(other, definitions, &mut state)
-    }
-
-    pub(crate) fn contextual_eq_with_state(
+impl<Context: MIRTypeContext + ?Sized> TypeContextEqual<Context> for MIRType {
+    fn compare(
         &self,
         other: &Self,
-        definitions: &impl MIRTypeContext,
+        definitions: &Context,
         state: &mut TypeComparisonState,
     ) -> bool {
         if self.specifiers != other.specifiers || self.move_attributes != other.move_attributes {
@@ -299,11 +262,10 @@ impl MIRType {
             (Some(left), Some(right)) => {
                 return left == right
                     && match (&self.template_info, &other.template_info) {
-                        (Some(left), Some(right)) => left.template_input.contextual_eq_with_state(
-                            &right.template_input,
-                            definitions,
-                            state,
-                        ),
+                        (Some(left), Some(right)) => {
+                            left.template_input
+                                .compare(&right.template_input, definitions, state)
+                        }
                         (None, None) => true,
                         (Some(_), None) | (None, Some(_)) => false,
                     };
@@ -312,10 +274,11 @@ impl MIRType {
             (None, None) => {}
         }
 
-        self.kind
-            .contextual_eq_with_state(&other.kind, definitions, state)
+        self.kind.compare(&other.kind, definitions, state)
     }
+}
 
+impl MIRType {
     pub fn unit() -> Self {
         Self::default()
     }
@@ -565,14 +528,14 @@ impl MIRType {
         };
 
         fields
-                .iter()
-                .map(|f| {
-                    Some((
-                        f.name()?.to_string(),
-                        definitions.resolve_type_id(f.ty()).clone(),
-                    ))
-                })
-                .collect::<Option<_>>()
+            .iter()
+            .map(|f| {
+                Some((
+                    f.name()?.to_string(),
+                    definitions.resolve_type_id(f.ty()).clone(),
+                ))
+            })
+            .collect::<Option<_>>()
     }
 
     pub fn rewrite_named_type_metadata(
@@ -595,16 +558,11 @@ impl From<MIRTypeKind> for MIRType {
     }
 }
 
-impl MIRTypeKind {
-    pub fn contextual_eq(&self, other: &Self, definitions: &impl MIRTypeContext) -> bool {
-        let mut state = TypeComparisonState::default();
-        self.contextual_eq_with_state(other, definitions, &mut state)
-    }
-
-    pub(crate) fn contextual_eq_with_state(
+impl<Context: MIRTypeContext + ?Sized> TypeContextEqual<Context> for MIRTypeKind {
+    fn compare(
         &self,
         other: &Self,
-        definitions: &impl MIRTypeContext,
+        definitions: &Context,
         state: &mut TypeComparisonState,
     ) -> bool {
         match (self, other) {
@@ -632,11 +590,11 @@ impl MIRTypeKind {
             | (
                 MIRTypeKind::TaggedUnion { variants: left },
                 MIRTypeKind::TaggedUnion { variants: right },
-            ) => named_type_fields_contextual_eq(left, right, definitions, state),
+            ) => compare_named_type_fields(left, right, definitions, state),
             (
                 MIRTypeKind::PointerTo { inner_type: left },
                 MIRTypeKind::PointerTo { inner_type: right },
-            ) => left.contextual_eq_with_state(right, definitions, state),
+            ) => left.compare(right, definitions, state),
             (
                 MIRTypeKind::MemoryReference {
                     inner_type: left,
@@ -646,10 +604,7 @@ impl MIRTypeKind {
                     inner_type: right,
                     bitfield: right_bitfield,
                 },
-            ) => {
-                left_bitfield == right_bitfield
-                    && left.contextual_eq_with_state(right, definitions, state)
-            }
+            ) => left_bitfield == right_bitfield && left.compare(right, definitions, state),
             (
                 MIRTypeKind::Array {
                     length: left_len,
@@ -659,14 +614,11 @@ impl MIRTypeKind {
                     length: right_len,
                     inner_type: right_inner,
                 },
-            ) => {
-                left_len == right_len
-                    && left_inner.contextual_eq_with_state(right_inner, definitions, state)
-            }
+            ) => left_len == right_len && left_inner.compare(right_inner, definitions, state),
             (
                 MIRTypeKind::Function { signature: left },
                 MIRTypeKind::Function { signature: right },
-            ) => left.contextual_eq_with_state(right, definitions, state),
+            ) => left.compare(right, definitions, state),
             (MIRTypeKind::Opaque { size: left }, MIRTypeKind::Opaque { size: right }) => {
                 left == right
             }
@@ -675,10 +627,10 @@ impl MIRTypeKind {
     }
 }
 
-fn named_type_fields_contextual_eq(
+fn compare_named_type_fields<Context: MIRTypeContext + ?Sized>(
     left: &[MIRField],
     right: &[MIRField],
-    definitions: &impl MIRTypeContext,
+    definitions: &Context,
     state: &mut TypeComparisonState,
 ) -> bool {
     left.len() == right.len()
@@ -695,10 +647,7 @@ fn named_type_fields_contextual_eq(
                         name: right_name,
                         type_id: right_id,
                     },
-                ) => {
-                    left_name == right_name
-                        && left_id.contextual_eq_with_state(right_id, definitions, state)
-                }
+                ) => left_name == right_name && left_id.compare(right_id, definitions, state),
                 (
                     MIRField::Bitfield {
                         name: left_name,
@@ -713,7 +662,7 @@ fn named_type_fields_contextual_eq(
                 ) => {
                     left_name == right_name
                         && left_width == right_width
-                        && left_id.contextual_eq_with_state(right_id, definitions, state)
+                        && left_id.compare(right_id, definitions, state)
                 }
                 _ => false,
             })

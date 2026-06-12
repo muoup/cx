@@ -8,20 +8,21 @@ use crate::symbol::completion::complete_template_input;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::pattern::tagged_union::{
-    TypeConstructor, resolve_type_constructor_pattern,
+    resolve_type_constructor_pattern, TypeConstructor,
 };
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::template::CXTemplateInput;
 use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
 use cx_log::CXResult;
-use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::{
+    contextual_eq::TypeContextEqual,
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
     pattern::MIRPattern,
 };
 use cx_mir::type_context::MIRTypeContext;
+use cx_mir::EnvironmentNamespace;
 use cx_util::namespace::QualifiedName;
 
 pub fn typecheck_match(
@@ -29,7 +30,7 @@ pub fn typecheck_match(
     namespace: &EnvironmentNamespace,
     condition: &CXExpression,
     arms: &[(CXPattern, CXExpression)],
-    default: Option<&Box<CXExpression>>,
+    default: Option<&CXExpression>,
 ) -> CXResult<TypecheckResult> {
     let mut expr_value = typecheck_expr(env, namespace, condition, None)
         .and_then(|v| v.standard_ready_coerce(env, condition.token_range()))

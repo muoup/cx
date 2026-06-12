@@ -146,13 +146,11 @@ fn complete_callee(
             complete_pending_receiver(env, namespace, expr, callee, None)
         }
         TypecheckExtract::Fail(function) => {
-            let Some((name, template_input, source_base_type, implicit_args, pending_receiver)) =
-                function.into_incomplete_callee_parts()
-            else {
+            let Some(parts) = function.into_incomplete_callee_parts() else {
                 return log_typecheck_error!(env, expr.token_range(), "Could not deduce callee");
             };
 
-            let deduction_arg_types = source_base_type
+            let deduction_arg_types = parts.source_base_type
                 .into_iter()
                 .chain(arg_types.iter().cloned())
                 .collect::<Vec<_>>();
@@ -160,8 +158,8 @@ fn complete_callee(
             let symbol = match complete_templated_callee(
                 env,
                 namespace,
-                &name,
-                template_input.as_ref(),
+                &parts.name,
+                parts.template_input.as_ref(),
                 &deduction_arg_types,
             ) {
                 Ok(symbol) => symbol,
@@ -201,9 +199,9 @@ fn complete_callee(
                 expr,
                 CalleeExtraction {
                     function,
-                    implicit_args,
+                    implicit_args: parts.implicit_args,
                 },
-                pending_receiver,
+                parts.pending_receiver,
             )
         }
     }
@@ -225,7 +223,8 @@ fn complete_pending_receiver(
     };
 
     let needs_move = signature
-        .params.first()
+        .params
+        .first()
         .map(|param| !param._type.is_memory_reference())
         .unwrap_or(false);
 

@@ -5,6 +5,7 @@ use cx_ast::symbols::CXSymbol;
 use cx_log::CXResult;
 use cx_mir::{
     EnvironmentNamespace, MIRUnit,
+    mir::contextual_eq::TypeContextEqual,
     mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId},
     symbol::MIRSymbol,
     type_context::MIRTypeContext,

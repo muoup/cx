@@ -63,6 +63,14 @@ pub enum TypecheckState {
     NeedsExpectedType(ExpectedTypeDeferredExpr),
 }
 
+pub struct IncompleteCalleeParts {
+    pub name: QualifiedName,
+    pub template_input: Option<CXTemplateInput>,
+    pub source_base_type: Option<MIRType>,
+    pub implicit_args: Vec<MIRExpression>,
+    pub pending_receiver: Option<PendingReceiver>,
+}
+
 type ExpectedTypeResolver =
     dyn FnOnce(&mut TypeEnvironment, &EnvironmentNamespace, &MIRType) -> CXResult<MIRExpression>;
 
@@ -302,25 +310,19 @@ impl TypecheckResult {
 
     pub fn into_incomplete_callee_parts(
         self,
-    ) -> Option<(
-        QualifiedName,
-        Option<CXTemplateInput>,
-        Option<MIRType>,
-        Vec<MIRExpression>,
-        Option<PendingReceiver>,
-    )> {
+    ) -> Option<IncompleteCalleeParts> {
         match self.expression {
             TypecheckState::IncompleteTemplatedCallee {
                 name,
                 template_input,
                 context,
-            } => Some((
+            } => Some(IncompleteCalleeParts {
                 name,
                 template_input,
-                context.source_base_type,
-                self.implicit_parameters,
-                context.pending_receiver,
-            )),
+                source_base_type: context.source_base_type,
+                implicit_args: self.implicit_parameters,
+                pending_receiver: context.pending_receiver,
+            }),
             _ => None,
         }
     }

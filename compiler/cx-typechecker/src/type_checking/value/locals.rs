@@ -67,7 +67,7 @@ pub(crate) fn typecheck_var_declaration(
     expr: &CXExpression,
     ty: &CXType,
     name: &CXIdent,
-    initial_value: Option<&Box<CXExpression>>,
+    initial_value: Option<&CXExpression>,
 ) -> CXResult<TypecheckResult> {
     let ty = complete_type(env, namespace, ty)?;
 

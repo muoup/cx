@@ -1,8 +1,8 @@
 use cx_ast::ast::{function::CXFunctionContract, modifiers::CXLinkageMode};
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
+use crate::mir::contextual_eq::{compare_ordered, TypeComparisonState, TypeContextEqual};
 use crate::mir::expression::MIRExpression;
-use crate::mir::r#type::TypeComparisonState;
 pub use crate::mir::r#type::{
     MIRFloatType, MIRIntegerType, MIRMoveAttributes, MIRType, MIRTypeId, MIRTypeKind,
 };
@@ -20,22 +20,14 @@ pub struct MIRParameter {
     pub _type: MIRType,
 }
 
-impl MIRParameter {
-    pub fn contextual_eq(&self, other: &Self, definitions: &impl MIRTypeContext) -> bool {
-        let mut state = TypeComparisonState::default();
-        self.contextual_eq_with_state(other, definitions, &mut state)
-    }
-
-    pub(crate) fn contextual_eq_with_state(
+impl<Context: MIRTypeContext + ?Sized> TypeContextEqual<Context> for MIRParameter {
+    fn compare(
         &self,
         other: &Self,
-        definitions: &impl MIRTypeContext,
+        definitions: &Context,
         state: &mut TypeComparisonState,
     ) -> bool {
-        self.name == other.name
-            && self
-                ._type
-                .contextual_eq_with_state(&other._type, definitions, state)
+        self.name == other.name && self._type.compare(&other._type, definitions, state)
     }
 }
 
@@ -58,28 +50,23 @@ impl Default for MIRFunctionSignature {
     }
 }
 
-impl MIRFunctionSignature {
-    pub fn contextual_eq(&self, other: &Self, definitions: &impl MIRTypeContext) -> bool {
-        let mut state = TypeComparisonState::default();
-        self.contextual_eq_with_state(other, definitions, &mut state)
-    }
-
-    pub(crate) fn contextual_eq_with_state(
+impl<Context: MIRTypeContext + ?Sized> TypeContextEqual<Context> for MIRFunctionSignature {
+    fn compare(
         &self,
         other: &Self,
-        definitions: &impl MIRTypeContext,
+        definitions: &Context,
         state: &mut TypeComparisonState,
     ) -> bool {
         self.var_args == other.var_args
             && self
                 .return_type
-                .contextual_eq_with_state(&other.return_type, definitions, state)
+                .compare(&other.return_type, definitions, state)
             && self.params.len() == other.params.len()
             && self
                 .params
                 .iter()
                 .zip(other.params.iter())
-                .all(|(left, right)| left._type.contextual_eq(&right._type, definitions))
+                .all(|(left, right)| left._type.compare(&right._type, definitions, state))
     }
 }
 
@@ -147,22 +134,17 @@ impl MIRFunctionPrototype {
     {
         self.symbol_name = f(self.symbol_name.as_str());
     }
+}
 
-    pub fn contextual_eq(&self, other: &Self, definitions: &impl MIRTypeContext) -> bool {
-        let mut state = TypeComparisonState::default();
-        self.contextual_eq_with_state(other, definitions, &mut state)
-    }
-
-    pub(crate) fn contextual_eq_with_state(
+impl<Context: MIRTypeContext + ?Sized> TypeContextEqual<Context> for MIRFunctionPrototype {
+    fn compare(
         &self,
         other: &Self,
-        definitions: &impl MIRTypeContext,
+        definitions: &Context,
         state: &mut TypeComparisonState,
     ) -> bool {
         self.symbol_name == other.symbol_name
-            && self
-                .signature
-                .contextual_eq_with_state(&other.signature, definitions, state)
+            && self.signature.compare(&other.signature, definitions, state)
     }
 }
 
@@ -171,24 +153,14 @@ pub struct MIRTemplateInput {
     pub args: Vec<MIRTypeId>,
 }
 
-impl MIRTemplateInput {
-    pub fn contextual_eq(&self, other: &Self, definitions: &impl MIRTypeContext) -> bool {
-        let mut state = TypeComparisonState::default();
-        self.contextual_eq_with_state(other, definitions, &mut state)
-    }
-
-    pub(crate) fn contextual_eq_with_state(
+impl<Context: MIRTypeContext + ?Sized> TypeContextEqual<Context> for MIRTemplateInput {
+    fn compare(
         &self,
         other: &Self,
-        definitions: &impl MIRTypeContext,
+        definitions: &Context,
         state: &mut TypeComparisonState,
     ) -> bool {
-        self.args.len() == other.args.len()
-            && self
-                .args
-                .iter()
-                .zip(other.args.iter())
-                .all(|(left, right)| left.contextual_eq_with_state(right, definitions, state))
+        compare_ordered(&self.args, &other.args, definitions, state)
     }
 }
 
@@ -198,23 +170,16 @@ pub struct TemplateInfo {
     pub template_input: MIRTemplateInput,
 }
 
-impl TemplateInfo {
-    pub fn contextual_eq(&self, other: &Self, definitions: &impl MIRTypeContext) -> bool {
-        let mut state = TypeComparisonState::default();
-        self.contextual_eq_with_state(other, definitions, &mut state)
-    }
-
-    pub(crate) fn contextual_eq_with_state(
+impl<Context: MIRTypeContext + ?Sized> TypeContextEqual<Context> for TemplateInfo {
+    fn compare(
         &self,
         other: &Self,
-        definitions: &impl MIRTypeContext,
+        definitions: &Context,
         state: &mut TypeComparisonState,
     ) -> bool {
         self.base_name == other.base_name
-            && self.template_input.contextual_eq_with_state(
-                &other.template_input,
-                definitions,
-                state,
-            )
+            && self
+                .template_input
+                .compare(&other.template_input, definitions, state)
     }
 }

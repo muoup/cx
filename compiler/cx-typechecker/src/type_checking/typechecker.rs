@@ -81,7 +81,14 @@ fn typecheck_expr_inner(
             _type,
             name,
             initial_value,
-        } => typecheck_var_declaration(env, namespace, expr, _type, name, initial_value.as_ref())?,
+        } => typecheck_var_declaration(
+            env,
+            namespace,
+            expr,
+            _type,
+            name,
+            initial_value.as_ref().map(|v| v.as_ref()),
+        )?,
 
         CXExprKind::Identifier {
             name,
@@ -417,7 +424,7 @@ fn typecheck_expr_inner(
             condition,
             arms,
             default,
-        } => typecheck_match(env, namespace, condition, arms, default.as_ref())?,
+        } => typecheck_match(env, namespace, condition, arms, default.as_ref().map(Box::as_ref))?,
 
         CXExprKind::Taken => unreachable!("Taken expressions should not be typechecked"),
     };
