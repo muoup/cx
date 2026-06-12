@@ -35,6 +35,27 @@ pub struct BuildArgs {
     pub verbose: bool,
 }
 
+#[derive(Debug, Default)]
+struct CommonArgs {
+    backend: Option<CompilerBackend>,
+    optimization_level: Option<OptimizationLevel>,
+    analysis: bool,
+    verbose: bool,
+}
+
+#[derive(Debug)]
+struct ParsedCommonArgs {
+    common: CommonArgs,
+    rest: Vec<String>,
+}
+
+#[derive(Debug, Default)]
+struct FileSpecificArgs {
+    input_files: Vec<String>,
+    output_file: Option<String>,
+    compile_only: bool,
+}
+
 pub fn print_help() {
     println!("Usage:");
     println!("  cx <file.cx>... [options]");
@@ -89,72 +110,58 @@ pub(crate) fn default_backend_name() -> &'static str {
     }
 }
 
-fn parse_common_flag(
-    arg: &str,
-    args_iter: &mut std::iter::Skip<std::slice::Iter<'_, String>>,
-    backend: &mut Option<CompilerBackend>,
-    optimization_level: &mut Option<OptimizationLevel>,
-    analysis: &mut bool,
-    verbose: &mut bool,
-    output_file: Option<&mut Option<String>>,
-    compile_only: Option<&mut bool>,
-) -> Result<bool, String> {
-    match arg {
-        "-h" | "--help" | "-help" => {
-            print_help();
-            std::process::exit(0);
-        }
-        #[cfg(feature = "backend-llvm")]
-        "--backend-llvm" => *backend = Some(CompilerBackend::LLVM),
-        "--backend-cranelift" => *backend = Some(CompilerBackend::Cranelift),
-        "-O0" => *optimization_level = Some(OptimizationLevel::O0),
-        "-O1" => *optimization_level = Some(OptimizationLevel::O1),
-        "-O2" => *optimization_level = Some(OptimizationLevel::O2),
-        "-O3" => *optimization_level = Some(OptimizationLevel::O3),
-        "-Osize" => *optimization_level = Some(OptimizationLevel::Osize),
-        "-Ofast" => *optimization_level = Some(OptimizationLevel::Ofast),
-        "--analysis" => *analysis = true,
-        "--verbose" => *verbose = true,
-        "-c" => {
-            if let Some(compile_only) = compile_only {
-                *compile_only = true;
-            } else {
-                return Err("-c flag is not supported with `cx build`".to_string());
+fn parse_common_flags(args: impl IntoIterator<Item = String>) -> ParsedCommonArgs {
+    let mut common = CommonArgs::default();
+    let mut rest = Vec::new();
+    let mut args_iter = args.into_iter();
+
+    while let Some(arg) = args_iter.next() {
+        if arg == "-o" {
+            rest.push(arg);
+            if let Some(path) = args_iter.next() {
+                rest.push(path);
             }
+            continue;
         }
-        "-o" => {
-            if let Some(out) = output_file {
-                if let Some(path) = args_iter.next() {
-                    *out = Some(path.clone());
-                } else {
-                    return Err("-o flag requires an output file path".to_string());
-                }
-            } else {
-                return Err("-o flag is not supported with `cx build`".to_string());
+
+        match arg.as_str() {
+            "-h" | "--help" | "-help" => {
+                print_help();
+                std::process::exit(0);
             }
+            #[cfg(feature = "backend-llvm")]
+            "--backend-llvm" => common.backend = Some(CompilerBackend::LLVM),
+            "--backend-cranelift" => common.backend = Some(CompilerBackend::Cranelift),
+            "-O0" => common.optimization_level = Some(OptimizationLevel::O0),
+            "-O1" => common.optimization_level = Some(OptimizationLevel::O1),
+            "-O2" => common.optimization_level = Some(OptimizationLevel::O2),
+            "-O3" => common.optimization_level = Some(OptimizationLevel::O3),
+            "-Osize" => common.optimization_level = Some(OptimizationLevel::Osize),
+            "-Ofast" => common.optimization_level = Some(OptimizationLevel::Ofast),
+            "--analysis" => common.analysis = true,
+            "--verbose" => common.verbose = true,
+            _ => rest.push(arg),
         }
-        _ => return Ok(false),
     }
-    Ok(true)
+
+    ParsedCommonArgs { common, rest }
 }
 
 pub fn parse_args() -> Result<Command, String> {
-    let args = std::env::args().collect::<Vec<String>>();
-    let mut args_iter = args.iter().skip(1);
+    let args = std::env::args().skip(1).collect::<Vec<String>>();
+    let mut args_iter = args.into_iter();
 
-    if args_iter.len() == 0 {
+    let Some(first_arg) = args_iter.next() else {
         print_help();
         std::process::exit(1);
-    }
-
-    let first_arg = args_iter.next().unwrap();
+    };
 
     if first_arg == "build" {
-        return parse_build_args(&mut args_iter);
+        return parse_build_args(args_iter);
     }
 
     if first_arg == "init" {
-        return parse_init_args(&mut args_iter);
+        return parse_init_args(args_iter);
     }
 
     // Check for flags that might come before the file
@@ -164,30 +171,18 @@ pub fn parse_args() -> Result<Command, String> {
     }
 
     // Legacy single-file mode
-    parse_file_args(&mut args.iter().skip(1))
+    parse_file_args(std::iter::once(first_arg).chain(args_iter))
 }
 
-fn parse_build_args(
-    args_iter: &mut std::iter::Skip<std::slice::Iter<'_, String>>,
-) -> Result<Command, String> {
+fn parse_build_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
+    let ParsedCommonArgs { common, rest } = parse_common_flags(args);
     let mut target = None;
-    let mut backend = None;
-    let mut optimization_level = None;
-    let mut analysis = false;
-    let mut verbose = false;
 
-    while let Some(arg) = args_iter.next() {
-        if parse_common_flag(
-            arg.as_str(),
-            args_iter,
-            &mut backend,
-            &mut optimization_level,
-            &mut analysis,
-            &mut verbose,
-            None,
-            None,
-        )? {
-            continue;
+    for arg in rest {
+        match arg.as_str() {
+            "-c" => return Err("-c flag is not supported with `cx build`".to_string()),
+            "-o" => return Err("-o flag is not supported with `cx build`".to_string()),
+            _ => {}
         }
 
         if arg.starts_with('-') {
@@ -197,49 +192,25 @@ fn parse_build_args(
         if target.is_some() {
             return Err("Multiple targets not supported".to_string());
         }
-        target = Some(arg.clone());
+        target = Some(arg);
     }
 
     Ok(Command::Build(BuildArgs {
         target,
-        backend,
-        optimization_level,
-        analysis: if analysis { Some(true) } else { None },
-        verbose,
+        backend: common.backend,
+        optimization_level: common.optimization_level,
+        analysis: if common.analysis { Some(true) } else { None },
+        verbose: common.verbose,
     }))
 }
 
-fn parse_file_args(
-    args_iter: &mut std::iter::Skip<std::slice::Iter<'_, String>>,
-) -> Result<Command, String> {
-    let mut output_file = None;
-    let mut compile_only = false;
-    let mut backend = None;
-    let mut optimization_level = None;
-    let mut analysis = false;
-    let mut verbose = false;
-    let mut input_files = Vec::new();
-
-    while let Some(arg) = args_iter.next() {
-        if parse_common_flag(
-            arg.as_str(),
-            args_iter,
-            &mut backend,
-            &mut optimization_level,
-            &mut analysis,
-            &mut verbose,
-            Some(&mut output_file),
-            Some(&mut compile_only),
-        )? {
-            continue;
-        }
-
-        if arg.starts_with('-') {
-            return Err(format!("Unknown flag: {arg}"));
-        }
-
-        input_files.push(arg.to_string());
-    }
+fn parse_file_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
+    let ParsedCommonArgs { common, rest } = parse_common_flags(args);
+    let FileSpecificArgs {
+        input_files,
+        output_file,
+        compile_only,
+    } = parse_file_specific_args(rest)?;
 
     if input_files.is_empty() {
         return Err("Usage: cx <file.cx>... [options]".to_string());
@@ -259,20 +230,49 @@ fn parse_file_args(
         input_files,
         output_file,
         compile_only,
-        backend: backend.unwrap_or_else(default_backend),
-        optimization_level: optimization_level.unwrap_or_default(),
-        analysis,
-        verbose,
+        backend: common.backend.unwrap_or_else(default_backend),
+        optimization_level: common.optimization_level.unwrap_or_default(),
+        analysis: common.analysis,
+        verbose: common.verbose,
     }))
 }
 
-fn parse_init_args(
-    args_iter: &mut std::iter::Skip<std::slice::Iter<'_, String>>,
-) -> Result<Command, String> {
+fn parse_file_specific_args(
+    args: impl IntoIterator<Item = String>,
+) -> Result<FileSpecificArgs, String> {
+    let mut parsed = FileSpecificArgs::default();
+    let mut args_iter = args.into_iter();
+
+    while let Some(arg) = args_iter.next() {
+        if arg == "-c" {
+            parsed.compile_only = true;
+            continue;
+        }
+
+        if arg == "-o" {
+            parsed.output_file = Some(
+                args_iter
+                    .next()
+                    .ok_or_else(|| "-o flag requires an output file path".to_string())?,
+            );
+            continue;
+        }
+
+        if arg.starts_with('-') {
+            return Err(format!("Unknown flag: {arg}"));
+        }
+
+        parsed.input_files.push(arg);
+    }
+
+    Ok(parsed)
+}
+
+fn parse_init_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
+    let mut args_iter = args.into_iter();
     let project_name = args_iter
         .next()
-        .ok_or_else(|| "Usage: cx init <project-name>".to_string())?
-        .clone();
+        .ok_or_else(|| "Usage: cx init <project-name>".to_string())?;
 
     if project_name.starts_with('-') {
         return Err(format!("Invalid project name: '{project_name}'"));

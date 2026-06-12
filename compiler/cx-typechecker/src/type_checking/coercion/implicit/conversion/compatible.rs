@@ -43,7 +43,7 @@ pub fn compatible_types(env: &TypeEnvironment, type1: &MIRType, type2: &MIRType)
             let inner1 = env.symbols.resolve_type_id(*inner1);
             let inner2 = env.symbols.resolve_type_id(*inner2);
 
-            compatible_types(env, &inner1, &inner2)
+            compatible_types(env, inner1, inner2)
         }
 
         (
@@ -61,7 +61,7 @@ pub fn compatible_types(env: &TypeEnvironment, type1: &MIRType, type2: &MIRType)
                 return Ok(true);
             }
 
-            compatible_types(env, &inner1, &inner2)
+            compatible_types(env, inner1, inner2)
         }
 
         (
@@ -81,7 +81,7 @@ pub fn compatible_types(env: &TypeEnvironment, type1: &MIRType, type2: &MIRType)
             let inner1 = env.symbols.resolve_type_id(*inner1);
             let inner2 = env.symbols.resolve_type_id(*inner2);
 
-            compatible_types(env, &inner1, &inner2)
+            compatible_types(env, inner1, inner2)
         }
 
         // TODO: Should we have standalone enumeration types instead of decaying them immediately to their underlying integral type?
@@ -130,7 +130,7 @@ pub fn compatible_types(env: &TypeEnvironment, type1: &MIRType, type2: &MIRType)
                 let field_type1 = env.symbols.resolve_type_id(field1.ty());
                 let field_type2 = env.symbols.resolve_type_id(field2.ty());
 
-                compatible_types(env, &field_type1, &field_type2).unwrap_or(false)
+                compatible_types(env, field_type1, field_type2).unwrap_or(false)
             }))
         }
 

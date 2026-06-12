@@ -168,14 +168,14 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .build_unconditional_branch(function_state.get_block(target).unwrap())
                 .unwrap();
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::Return { value } => {
             let Some(value) = value else {
                 function_state.builder.build_return(None).unwrap();
 
-                return Some(CodegenValue::NULL);
+                return Some(CodegenValue::Null);
             };
 
             let value = function_state.get_value(value).unwrap();
@@ -195,7 +195,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                     .build_return(Some(&return_value))
                     .unwrap();
 
-                return Some(CodegenValue::NULL);
+                return Some(CodegenValue::Null);
             }
 
             let basic_val = any_to_basic_val(value.get_value())?;
@@ -205,7 +205,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .build_return(Some(&basic_val))
                 .unwrap();
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::Store {
@@ -256,10 +256,10 @@ pub(crate) fn generate_instruction<'a, 'b>(
                         .build_store(memory_val, basic_val)
                         .unwrap();
                 }
-                CodegenValue::NULL => {}
+                CodegenValue::Null => {}
             }
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::Memcpy {
@@ -283,7 +283,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .build_memcpy(dest_val, 1, src_val, 1, size_val)
                 .unwrap();
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::Load { memory, _type } => {
@@ -323,7 +323,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .builder
                 .build_memset(any_value, 1, zero, size_value)
                 .unwrap();
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::PointerBinOp {
@@ -526,7 +526,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .build_conditional_branch(condition_value, true_block_val, false_block_val)
                 .unwrap();
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::JumpTable {
@@ -559,7 +559,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 )
                 .unwrap();
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::Coercion {
@@ -772,7 +772,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
         LMIRInstructionKind::CompilerAssumption { condition: _ } => {
             // TODO: Implement assumptions in LLVM
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
     })
 }
@@ -784,7 +784,7 @@ fn codegen_call_return<'a, 'b>(
 ) -> Option<CodegenValue<'a>> {
     let basic = match call.try_as_basic_value() {
         ValueKind::Basic(val) => val,
-        ValueKind::Instruction(_) => return Some(CodegenValue::NULL),
+        ValueKind::Instruction(_) => return Some(CodegenValue::Null),
     };
 
     match &method_sig.return_abi {

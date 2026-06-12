@@ -324,8 +324,8 @@ fn typecheck_expr_inner(
             let value = value
                 .as_ref()
                 .map(|v| {
-                    Ok(typecheck_expr(env, namespace, v, Some(&return_type))?
-                        .standard_ready_coerce(env, expr.token_range())?)
+                    typecheck_expr(env, namespace, v, Some(&return_type))?
+                        .standard_ready_coerce(env, expr.token_range())
                 })
                 .transpose()?;
             typecheck_return(env, namespace, value)?

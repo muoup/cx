@@ -99,7 +99,7 @@ impl<'a> FunctionState<'a, '_> {
 
             LMIRValue::Register { .. } | LMIRValue::Global(..) => self.value_map.get(val).cloned(),
 
-            LMIRValue::NULL => Some(CodegenValue::NULL),
+            LMIRValue::NULL => Some(CodegenValue::Null),
         }
     }
 
@@ -116,7 +116,7 @@ impl<'a> FunctionState<'a, '_> {
 pub(crate) enum CodegenValue<'a> {
     Value(AnyValueEnum<'a>),
     AggregateSlots(Vec<(LMIRABISlot, BasicValueEnum<'a>)>),
-    NULL,
+    Null,
 }
 
 impl<'a> CodegenValue<'a> {

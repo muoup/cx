@@ -57,7 +57,7 @@ pub(crate) fn resolve_enum_block<'a, 'b>(
             .value
             .as_ref()
             .map(|expr| {
-                typecheck_expr(env, namespace, &expr, None)
+                typecheck_expr(env, namespace, expr, None)
                     .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                     .and_then(|v| constexpr_evaluate(env, v))
                     .and_then(|v| {
@@ -71,9 +71,8 @@ pub(crate) fn resolve_enum_block<'a, 'b>(
                     })
             })
             .transpose()?
-            .map(|v| {
+            .inspect(|&v| {
                 idx = v;
-                v
             })
             .unwrap_or(idx);
 

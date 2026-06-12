@@ -134,9 +134,9 @@ pub fn library_compilation(
         link_relocatable(&compiler_context, &exported_symbols, &mut reporter)
     });
 
-    if result.is_err() {
+    if let Err(e) = result {
         reporter.clear_line();
-        return Err(result.unwrap_err());
+        return Err(e);
     }
 
     reporter.finish();

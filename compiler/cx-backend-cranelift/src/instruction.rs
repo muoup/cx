@@ -125,7 +125,7 @@ pub(crate) fn codegen_instruction(
                                 .collect::<Vec<_>>();
                             context.builder.ins().return_(values.as_slice())
                         }
-                        CodegenValue::NULL => context.builder.ins().return_(&[]),
+                        CodegenValue::Null => context.builder.ins().return_(&[]),
                     };
                 }
                 None => {
@@ -133,7 +133,7 @@ pub(crate) fn codegen_instruction(
                 }
             };
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::Load { memory, _type } => {
@@ -475,7 +475,7 @@ pub(crate) fn codegen_instruction(
                 .ins()
                 .brif(condition, true_block, &[], false_block, &[]);
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::Jump { target } => {
@@ -483,7 +483,7 @@ pub(crate) fn codegen_instruction(
 
             context.builder.ins().jump(target, &[]);
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::StructAccess {
@@ -529,7 +529,7 @@ pub(crate) fn codegen_instruction(
                 }
             }
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::Memcpy {
@@ -546,7 +546,7 @@ pub(crate) fn codegen_instruction(
                 .builder
                 .call_memcpy(*context.target_frontend_config, dest, src, size);
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::ZeroMemory { memory, _type } => {
@@ -565,7 +565,7 @@ pub(crate) fn codegen_instruction(
                 size_literal,
             );
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::Phi { predecessors } => {
@@ -816,9 +816,9 @@ pub(crate) fn codegen_instruction(
 
             switch.emit(&mut context.builder, value.as_value(), default_block);
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
-        LMIRInstructionKind::CompilerAssumption { .. } => CodegenValue::NULL,
+        LMIRInstructionKind::CompilerAssumption { .. } => CodegenValue::Null,
     })
 }

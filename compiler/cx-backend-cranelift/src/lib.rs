@@ -26,7 +26,7 @@ pub(crate) enum CodegenValue {
     Value(Value),
     Aggregate(Vec<Value>),
     AggregateSlots(Vec<(LMIRABISlot, Value)>),
-    NULL,
+    Null,
 }
 
 impl CodegenValue {
@@ -40,7 +40,7 @@ impl CodegenValue {
 
     #[allow(dead_code)]
     pub(crate) fn is_null(&self) -> bool {
-        matches!(self, CodegenValue::NULL)
+        matches!(self, CodegenValue::Null)
     }
 }
 
@@ -88,7 +88,7 @@ impl FunctionState<'_> {
 
     pub(crate) fn get_value(&mut self, bc_value: &LMIRValue) -> CXResult<CodegenValue> {
         match bc_value {
-            LMIRValue::NULL => Ok(CodegenValue::NULL),
+            LMIRValue::NULL => Ok(CodegenValue::Null),
 
             LMIRValue::ParameterRef(i) => Ok(CodegenValue::Value(Value::from_u32(*i))),
 

@@ -245,7 +245,7 @@ pub(crate) fn typecheck_unpack(
     let field_map = fields
         .iter()
         .enumerate()
-        .filter_map(|(index, field)| Some((field.name()?.to_string(), (index, field.ty().clone()))))
+        .filter_map(|(index, field)| Some((field.name()?.to_string(), (index, field.ty()))))
         .collect::<HashMap<_, _>>();
 
     let mut seen_fields = HashSet::new();

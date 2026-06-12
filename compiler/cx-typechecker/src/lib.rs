@@ -51,7 +51,7 @@ pub fn typecheck(
                 let constexpr_init = initializer
                     .as_ref()
                     .map(|init| {
-                        typecheck_expr(env, namespace, &init, Some(&_type))
+                        typecheck_expr(env, namespace, init, Some(&_type))
                             .and_then(|tc| tc.standard_ready_coerce(env, init.token_range()))
                             .and_then(|tc| constexpr_evaluate(env, tc))
                     })
@@ -70,7 +70,7 @@ pub fn typecheck(
                     linkage: *linkage,
                     kind: MIRGlobalVarKind::Variable {
                         name: name.clone(),
-                        _type: _type,
+                        _type,
                         initializer: constexpr_init,
                     },
                 };

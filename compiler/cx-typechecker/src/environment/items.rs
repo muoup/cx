@@ -41,7 +41,7 @@ impl ItemRegistry {
     }
 
     pub fn drain_generated_items(self) -> (Vec<MIRFunction>, Vec<MIRGlobalVariable>) {
-        if self.requests.len() > 0 {
+        if !self.requests.is_empty() {
             unreachable!(
                 "Attempted to drain generated items while there are still pending generation requests. This is a bug."
             )

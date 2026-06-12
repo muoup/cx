@@ -222,7 +222,7 @@ pub fn complete_prototype(
     namespace: &EnvironmentNamespace,
     prototype: &CXFunctionPrototype,
 ) -> CXResult<MIRFunctionPrototype> {
-    let return_type = complete_type(env, &namespace, &prototype.return_type)?;
+    let return_type = complete_type(env, namespace, &prototype.return_type)?;
     let mut params = complete_explicit_parameters(env, namespace, prototype)?;
 
     // If we have legacy int main(void)-like syntax, we treat it as main with no parameters
@@ -236,7 +236,7 @@ pub fn complete_prototype(
 
     let lookup_identifier = function_lookup_identifier(namespace, &prototype.kind);
     let debug_name = lookup_identifier.name.clone();
-    let symbol_name = completed_function_name(env, &namespace, &prototype.kind)?;
+    let symbol_name = completed_function_name(env, namespace, &prototype.kind)?;
 
     Ok(MIRFunctionPrototype::new(
         symbol_name,
@@ -278,7 +278,7 @@ fn complete_explicit_parameters(
         .map(|param| {
             Ok(MIRParameter {
                 name: param.name.clone(),
-                _type: complete_type(env, &namespace, &param._type)?,
+                _type: complete_type(env, namespace, &param._type)?,
             })
         })
         .collect::<CXResult<Vec<_>>>()

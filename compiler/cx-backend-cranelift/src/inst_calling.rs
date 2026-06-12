@@ -70,7 +70,7 @@ pub(crate) fn prepare_parameters<'a>(
             CodegenValue::AggregateSlots(values) => {
                 params.extend(values.into_iter().map(|(_, value)| value))
             }
-            CodegenValue::NULL => {}
+            CodegenValue::Null => {}
         }
     }
     Ok(params)
@@ -83,7 +83,7 @@ pub(crate) fn get_method_return(
 ) -> CodegenValue {
     let results = context.builder.inst_results(inst);
     match results {
-        [] => CodegenValue::NULL,
+        [] => CodegenValue::Null,
         [value] => CodegenValue::Value(*value),
         values => match &signature.return_abi {
             LMIRReturnABI::Direct { slots } => CodegenValue::AggregateSlots(

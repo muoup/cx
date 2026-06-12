@@ -134,9 +134,9 @@ fn parse_fn_merge(
         });
     } else {
         let body = if let Some(template_prototype) = template_prototype.as_ref() {
-            note_templated_types(data, &template_prototype)?;
+            note_templated_types(data, template_prototype)?;
             let body = parse_body(data);
-            unnote_templated_types(data, &template_prototype);
+            unnote_templated_types(data, template_prototype);
             body
         } else {
             parse_body(data)

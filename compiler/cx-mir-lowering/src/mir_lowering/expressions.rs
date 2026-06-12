@@ -96,7 +96,7 @@ fn aggregate_member_layout(
                         }
 
                         let field_type = definitions.resolve_type_id(*type_id);
-                        let bc_field_type = convert_type(&field_type, definitions);
+                        let bc_field_type = convert_type(field_type, definitions);
                         let alignment = bc_field_type.alignment();
                         offset = offset.div_ceil(alignment as usize) * alignment as usize;
 

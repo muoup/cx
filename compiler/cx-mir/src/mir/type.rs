@@ -564,8 +564,7 @@ impl MIRType {
             _ => return None,
         };
 
-        Some(
-            fields
+        fields
                 .iter()
                 .map(|f| {
                     Some((
@@ -573,8 +572,7 @@ impl MIRType {
                         definitions.resolve_type_id(f.ty()).clone(),
                     ))
                 })
-                .collect::<Option<_>>()?,
-        )
+                .collect::<Option<_>>()
     }
 
     pub fn rewrite_named_type_metadata(

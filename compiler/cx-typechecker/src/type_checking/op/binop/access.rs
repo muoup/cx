@@ -203,8 +203,7 @@ pub fn typecheck_access(
             };
 
             let needs_move = signature
-                .params
-                .get(0)
+                .params.first()
                 .map(|param| !param._type.is_memory_reference())
                 .unwrap_or(false);
 

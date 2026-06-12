@@ -82,7 +82,7 @@ impl TypeEnvironment<'_> {
         let (functions, globals) = self.items.drain_generated_items();
 
         Ok(MIRUnit {
-            functions: functions,
+            functions,
             global_variables: globals,
             registry: self.symbols.decompose(),
             source_path: self.source.compilation_unit.as_path().to_owned(),
@@ -193,11 +193,11 @@ impl TypeEnvironment<'_> {
             .collect::<Vec<_>>()
             .join(", ");
 
-        return Err(crate::typecheck_error!(
+        Err(crate::typecheck_error!(
             self,
             range,
             "Symbol '{name}' is ambiguous; candidates: {candidates}"
-        ));
+        ))
     }
 
     pub fn get_symbol(

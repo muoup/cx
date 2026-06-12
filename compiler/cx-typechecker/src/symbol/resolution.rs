@@ -310,8 +310,8 @@ fn attach_template_metadata(
             env.symbols.overwrite_type_id(*id, ty);
         }
 
-        MIRSymbol::FunctionReference(prototype) => {
-            if prototype.lookup_identifier().is_some() {
+        MIRSymbol::FunctionReference(prototype)
+            if prototype.lookup_identifier().is_some() => {
                 prototype.map_symbol_name(|name| {
                     base_mangle_templated_name(
                         &env.symbols,
@@ -323,7 +323,6 @@ fn attach_template_metadata(
                     )
                 });
             }
-        }
 
         _ => (),
     }
