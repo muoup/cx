@@ -4,7 +4,6 @@ use crate::{
     environment::{BindingMoveState, TypeEnvironment},
     log_typecheck_error,
     type_checking::{
-        coercion::implicit::conversion::try_argument_conversion,
         result::{BindingPlaceKind, TypecheckResult},
         typechecker::typecheck_expr,
         value::locals::{ensure_binding_available, mark_binding},
@@ -32,7 +31,7 @@ pub(crate) fn typecheck_move(
     inner_expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     let binding = inner.binding().cloned();
-    let mut inner_val = inner.standard_ready_coerce(env, inner_expr.token_range())?;
+    let inner_val = inner.standard_ready_coerce(env, inner_expr.token_range())?;
 
     if !inner_val._type.is_memory_reference() {
         return Ok(TypecheckResult::from(inner_val));
@@ -66,12 +65,8 @@ pub(crate) fn typecheck_move(
         unreachable!()
     };
 
-    if inner_type.is_nocopy() {
-        ensure_binding_available(env, Some(inner_expr.token_range()), Some(&binding))?;
-        mark_binding(env, &binding, BindingMoveState::Moved);
-    } else {
-        inner_val = try_argument_conversion(env, inner_val, &inner_type)?;
-    }
+    ensure_binding_available(env, Some(inner_expr.token_range()), Some(&binding))?;
+    mark_binding(env, &binding, BindingMoveState::Moved);
 
     Ok(TypecheckResult::new(
         inner_type,
@@ -124,13 +119,10 @@ pub(crate) fn typecheck_adopt(
         );
     }
 
-    Ok(TypecheckResult::new(
-        inner_type,
-        MIRExpressionKind::RegionMove {
-            source: Box::new(value),
-        },
+    Ok(
+        TypecheckResult::new(inner_type, MIRExpressionKind::Typechange(Box::new(value)))
+            .with_adopting(),
     )
-    .with_adopting())
 }
 
 pub(crate) fn typecheck_leak(
@@ -197,44 +189,10 @@ pub(crate) fn typecheck_unpack(
     inner: &CXExpression,
     bindings: &[CXUnpackBinding],
 ) -> CXResult<TypecheckResult> {
-    let value = typecheck_expr(env, namespace, inner, None)?;
+    let value = typecheck_expr(env, namespace, inner, None)
+        .and_then(|v| v.standard_ready_coerce(env, inner.token_range()))?;
 
-    let Some(source_binding) = value.binding().cloned() else {
-        return log_typecheck_error!(
-            env,
-            Some(expr.token_range()),
-            "@unpack currently requires a local identifier"
-        );
-    };
-
-    if source_binding.kind != BindingPlaceKind::Local {
-        return log_typecheck_error!(
-            env,
-            Some(expr.token_range()),
-            "@unpack on aggregate fields or projections is not implemented"
-        );
-    };
-
-    let value = value.standard_ready_coerce(env, inner.token_range())?;
-
-    let Some(inner_type) = env.symbols.mem_ref_inner(&value._type).cloned() else {
-        return log_typecheck_error!(
-            env,
-            Some(expr.token_range()),
-            "@unpack requires a stack local value"
-        );
-    };
-
-    if !matches!(inner_type.kind, MIRTypeKind::Structured { .. }) {
-        return log_typecheck_error!(
-            env,
-            Some(expr.token_range()),
-            "@unpack requires a struct type, found {}",
-            inner_type.display_with(&env.symbols)
-        );
-    }
-
-    let MIRTypeKind::Structured { fields } = &inner_type.kind else {
+    let MIRTypeKind::Structured { fields } = &value._type.kind else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
@@ -250,6 +208,7 @@ pub(crate) fn typecheck_unpack(
 
     let mut seen_fields = HashSet::new();
     let mut seen_bindings = HashSet::new();
+    
     for unpack_binding in bindings {
         if !field_map.contains_key(unpack_binding.field.as_str()) {
             return log_typecheck_error!(
@@ -257,7 +216,7 @@ pub(crate) fn typecheck_unpack(
                 Some(expr.token_range()),
                 "@unpack field '{}' does not exist on {}",
                 unpack_binding.field,
-                inner_type.display_with(&env.symbols)
+                value._type.display_with(&env.symbols)
             );
         }
 
@@ -288,14 +247,11 @@ pub(crate) fn typecheck_unpack(
                 env,
                 Some(expr.token_range()),
                 "@unpack of {} must bind @nodrop field '{}'",
-                inner_type.display_with(&env.symbols),
+                value._type.display_with(&env.symbols),
                 field_name
             );
         }
     }
-
-    ensure_binding_available(env, Some(inner.token_range()), Some(&source_binding))?;
-    mark_binding(env, &source_binding, BindingMoveState::Moved);
 
     let mut statements = Vec::new();
     for unpack_binding in bindings {
@@ -311,26 +267,16 @@ pub(crate) fn typecheck_unpack(
             kind: MIRExpressionKind::MemberAccess {
                 base: Box::new(value.clone()),
                 member_index: *member_index,
-                aggregate_type: inner_type.clone(),
+                aggregate_type: value._type.clone(),
             },
         };
 
-        let initial_value = if field_type.is_nocopy() {
-            MIRExpression {
-                token_range: None,
-                _type: field_type.clone(),
-                kind: MIRExpressionKind::RegionMove {
-                    source: Box::new(field_place),
-                },
-            }
-        } else {
-            MIRExpression {
-                token_range: None,
-                _type: field_type.clone(),
-                kind: MIRExpressionKind::RegionDuplicate {
-                    source: Box::new(field_place),
-                },
-            }
+        let initial_value = MIRExpression {
+            token_range: None,
+            _type: field_type.clone(),
+            kind: MIRExpressionKind::RegionMove {
+                source: Box::new(field_place),
+            },
         };
 
         let binding_name = CXIdent::new(unpack_binding.binding.as_str());
@@ -346,10 +292,8 @@ pub(crate) fn typecheck_unpack(
                 _type: binding_ref_type,
             },
         );
-        if field_type.is_nocopy() {
-            env.function
-                .track_binding(binding_name.as_string(), field_type.is_nodrop());
-        }
+        env.function
+            .track_binding(binding_name.as_string(), field_type.is_nodrop());
 
         statements.push(MIRExpression {
             token_range: None,

@@ -1,7 +1,6 @@
 use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
 use crate::symbol::deduction::complete_templated_callee;
-use crate::type_checking::coercion::implicit::conversion::try_argument_conversion;
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::lvalue;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
@@ -75,9 +74,16 @@ pub(crate) fn finish_function_call<'a>(
 
     for (i, (_arg_expr, val)) in tc_args.into_iter().enumerate() {
         let mut val = if let Some(param) = signature.params.get(i) {
-            val.apply_expected_type(env, namespace, &param._type)
-                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
-                .and_then(|v| try_argument_conversion(env, v, &param._type))?
+            let val = val
+                .apply_expected_type(env, namespace, &param._type)
+                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
+            let val = if param._type.is_memory_reference() {
+                val
+            } else {
+                std_rval_promotion(env, val)?
+            };
+
+            implicit_cast(env, val, &param._type)?
         } else {
             val.standard_ready_coerce(env, expr.token_range())?
         };
@@ -150,7 +156,8 @@ fn complete_callee(
                 return log_typecheck_error!(env, expr.token_range(), "Could not deduce callee");
             };
 
-            let deduction_arg_types = parts.source_base_type
+            let deduction_arg_types = parts
+                .source_base_type
                 .into_iter()
                 .chain(arg_types.iter().cloned())
                 .collect::<Vec<_>>();

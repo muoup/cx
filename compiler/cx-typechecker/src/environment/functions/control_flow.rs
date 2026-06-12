@@ -13,6 +13,16 @@ pub enum BindingMoveState {
     ConditionallyMoved,
 }
 
+impl BindingMoveState {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BindingMoveState::Available => "available",
+            BindingMoveState::Moved => "moved",
+            BindingMoveState::ConditionallyMoved => "conditionally moved",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct TrackedBindingState {
     pub state: BindingMoveState,
@@ -152,9 +162,9 @@ impl ControlFlow {
                 .collect::<Vec<_>>();
 
             if let Some(range) = scope.anchor_range.as_ref() {
-                return Self::type_error_at_range(
-                    compilation_unit,
+                return crate::log::type_error_result_for_range(
                     tokens,
+                    compilation_unit,
                     range,
                     format!(
                         "nodrop local(s) reach scope end without move or @leak: {}",
@@ -468,9 +478,9 @@ impl ControlFlow {
                         .collect::<Vec<_>>();
 
                     if !live.is_empty() {
-                        return Self::type_error_at_range(
-                            compilation_unit,
+                        return crate::log::type_error_result_for_range(
                             tokens,
+                            compilation_unit,
                             &state.join_range,
                             format!(
                                 "nodrop binding(s) must be moved or @leak'ed before function exit: {}",
@@ -585,7 +595,7 @@ impl ControlFlow {
                 let state_summary = states
                     .iter()
                     .map(|(label, state)| {
-                        format!("{label} => {}", Self::describe_move_state(*state))
+                        format!("{label} => {}", state.as_str())
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -610,11 +620,11 @@ impl ControlFlow {
             .iter()
             .map(|note| format!("conflict: {note}"))
             .collect::<Vec<_>>();
-        Self::type_error_at_range::<Option<Vec<(String, TrackedBindingState)>>>(
-            compilation_unit,
+        crate::log::type_error_result_for_range::<Option<Vec<(String, TrackedBindingState)>>>(
             tokens,
+            compilation_unit,
             join_range,
-            format!("nocopy binding(s) have inconsistent move state at {join_name}"),
+            format!("moved binding(s) have inconsistent move state at {join_name}"),
             notes,
         )
     }
@@ -624,30 +634,6 @@ impl ControlFlow {
             if let Some(existing) = self.tracked_bindings.get_mut(name) {
                 *existing = binding.clone();
             }
-        }
-    }
-
-    fn type_error_at_range<T>(
-        compilation_unit: &Path,
-        tokens: &[Token],
-        range: &TokenRange,
-        message: String,
-        notes: Vec<String>,
-    ) -> CXResult<T> {
-        Err(Box::new(crate::log::type_error_for_range(
-            tokens,
-            compilation_unit,
-            range,
-            message,
-            notes,
-        )))
-    }
-
-    fn describe_move_state(state: BindingMoveState) -> &'static str {
-        match state {
-            BindingMoveState::Available => "available",
-            BindingMoveState::Moved => "moved",
-            BindingMoveState::ConditionallyMoved => "conditionally moved",
         }
     }
 }

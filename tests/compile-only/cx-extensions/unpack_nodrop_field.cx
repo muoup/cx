@@ -14,7 +14,7 @@ void Resource::drop(Resource this) safe {
 }
 
 void Container::drop(Container this) safe {
-    @unpack(this) {
+    @unpack(move this) {
         resource: resource,
     };
 

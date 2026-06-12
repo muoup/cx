@@ -115,9 +115,6 @@ pub enum MIRExpressionKind {
     RegionDuplicate {
         source: Box<MIRExpression>,
     },
-    ByValueArgument {
-        source: Box<MIRExpression>,
-    },
     RegionMove {
         source: Box<MIRExpression>,
     },

@@ -70,8 +70,43 @@ pub fn type_error_for_optional_range(
     ))
 }
 
+pub fn type_error_result_for_range<T>(
+    tokens: &[Token],
+    fallback_file: &Path,
+    range: &TokenRange,
+    message: String,
+    notes: Vec<String>,
+) -> cx_log::CXResult<T> {
+    Err(Box::new(type_error_for_range(
+        tokens,
+        fallback_file,
+        range,
+        message,
+        notes,
+    )))
+}
+
 #[macro_export]
 macro_rules! typecheck_error {
+    ($env:expr, $range:expr, notes: $notes:expr, $($arg:tt)*) => {
+        {
+            let message = format!($($arg)*);
+
+            // panic!("{}", message);
+
+            let range = $crate::log::TypecheckErrorRangeArg::to_range(&$range)
+                .filter(|range| !range.is_empty());
+
+            $crate::log::type_error_for_optional_range(
+                $env.source.tokens,
+                $env.source.compilation_unit.as_path(),
+                range.as_ref(),
+                message,
+                $notes,
+            )
+        }
+    };
+
     ($env:expr, $range:expr, $($arg:tt)*) => {
         {
             let message = format!($($arg)*);
@@ -94,6 +129,14 @@ macro_rules! typecheck_error {
 
 #[macro_export]
 macro_rules! log_typecheck_error {
+    ($env:expr, $range:expr, notes: $notes:expr, $($arg:tt)*) => {
+        {
+            use $crate::typecheck_error;
+
+            Err(typecheck_error!($env, $range, notes: $notes, $($arg)*))
+        }
+    };
+
     ($env:expr, $range:expr, $($arg:tt)*) => {
         {
             use $crate::typecheck_error;

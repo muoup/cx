@@ -8,13 +8,14 @@ use crate::symbol::completion::complete_template_input;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::pattern::tagged_union::{
-    resolve_type_constructor_pattern, TypeConstructor,
+    TypeConstructor, resolve_type_constructor_pattern,
 };
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::template::CXTemplateInput;
 use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
 use cx_log::CXResult;
+use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::{
     contextual_eq::TypeContextEqual,
     data::{MIRType, MIRTypeKind},
@@ -22,7 +23,6 @@ use cx_mir::mir::{
     pattern::MIRPattern,
 };
 use cx_mir::type_context::MIRTypeContext;
-use cx_mir::EnvironmentNamespace;
 use cx_util::namespace::QualifiedName;
 
 pub fn typecheck_match(
@@ -209,10 +209,8 @@ pub fn typecheck_match(
                             },
                         );
 
-                        if variant_type.is_nocopy() {
-                            env.function
-                                .track_binding(inner_name.as_string(), variant_type.is_nodrop());
-                        }
+                        env.function
+                            .track_binding(inner_name.as_string(), variant_type.is_nodrop());
 
                         let body_expr = typecheck_expr(env, namespace, body, None)
                             .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;

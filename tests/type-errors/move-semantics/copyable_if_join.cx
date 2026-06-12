@@ -1,0 +1,19 @@
+struct Data {
+    int value;
+};
+
+void consume(Data data) {
+    return;
+}
+
+int main() {
+    Data data = (Data) {
+        .value = 1
+    };
+
+    if (1) {
+        consume(move data);
+    }
+
+    return data.value;
+}

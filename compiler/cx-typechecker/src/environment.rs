@@ -308,23 +308,7 @@ pub(crate) enum SymbolLookupKind {
     Untyped(CXSymbol),
 }
 
-// Under consideration -- functions that may be removed in the refactor
 impl TypeEnvironment<'_> {
-    pub fn type_error_at_range<T>(
-        &self,
-        range: &TokenRange,
-        message: String,
-        notes: Vec<String>,
-    ) -> CXResult<T> {
-        Err(Box::new(crate::log::type_error_for_range(
-            self.source.tokens,
-            self.source.compilation_unit.as_path(),
-            range,
-            message,
-            notes,
-        )))
-    }
-
     pub fn type_eq(&self, type1: &MIRType, type2: &MIRType) -> bool {
         type1.contextual_eq(type2, &self.symbols)
     }

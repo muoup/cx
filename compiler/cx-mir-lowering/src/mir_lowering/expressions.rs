@@ -659,12 +659,19 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             Ok(bc_target)
         }
 
-        MIRExpressionKind::RegionMove { source } => lower_expression(builder, source),
+        MIRExpressionKind::RegionMove { source } => { 
+            let lmir_type = builder.convert_cx_type(&source._type);
+            
+            if lmir_type.is_memory_resident() {
+                lower_expression(builder, source.as_ref())
+            } else {
+                lower_region_duplicate(builder, source, &expr._type)
+            }
+        }
 
         MIRExpressionKind::RegionDuplicate { source } => {
             lower_region_duplicate(builder, source, &expr._type)
         }
-        MIRExpressionKind::ByValueArgument { source } => lower_expression(builder, source),
 
         MIRExpressionKind::If {
             condition,
@@ -1120,11 +1127,7 @@ fn lower_call_argument(
     match abi_arg {
         LMIRParameterABI::Direct { slots } => {
             if semantic_param_type.is_memory_resident() {
-                let source = if let MIRExpressionKind::ByValueArgument { source } = &arg.kind {
-                    source.as_ref()
-                } else {
-                    arg
-                };
+                let source = call_argument_region_source(arg);
                 let source_value = lower_expression(builder, source)?;
                 slots
                     .iter()
@@ -1135,7 +1138,7 @@ fn lower_call_argument(
             }
         }
         LMIRParameterABI::Indirect { alignment } => {
-            if let MIRExpressionKind::ByValueArgument { source } = &arg.kind {
+            if let MIRExpressionKind::RegionDuplicate { source } = &arg.kind {
                 return Ok(vec![lower_byval_copy_argument(
                     builder,
                     source,
@@ -1146,6 +1149,14 @@ fn lower_call_argument(
 
             Ok(vec![lower_expression(builder, arg)?])
         }
+    }
+}
+
+fn call_argument_region_source(arg: &MIRExpression) -> &MIRExpression {
+    match &arg.kind {
+        MIRExpressionKind::RegionDuplicate { source }
+        | MIRExpressionKind::RegionMove { source } => source,
+        _ => arg,
     }
 }
 

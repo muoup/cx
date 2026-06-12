@@ -46,10 +46,8 @@ pub fn typecheck_function(
                 _type: ref_type,
             },
         );
-        if _type.is_nocopy() {
-            env.function
-                .track_binding(name.as_string(), _type.is_nodrop());
-        }
+        env.function
+            .track_binding(name.as_string(), _type.is_nodrop());
     }
 
     let body_expr = typecheck_expr(env, namespace, body, None)

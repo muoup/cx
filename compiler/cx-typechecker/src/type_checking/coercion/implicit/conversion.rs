@@ -1,8 +1,9 @@
-use cx_ast::ast::modifiers::CX_CONST;
 use cx_log::CXResult;
 use cx_mir::{
     mir::{
-        expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRPtrBinOp},
+        expression::{
+            MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRPtrBinOp,
+        },
         r#type::{MIRIntegerType, MIRType, MIRTypeKind},
     },
     type_context::MIRTypeContext,
@@ -13,7 +14,8 @@ use crate::{
     type_checking::coercion::{
         CoercionResult,
         implicit::{
-            self, coercion_expr, implicit_cast, promotion::{integer, lvalue, std_rval_promotion, std_rval_promotion_coercion}
+            self, coercion_expr,
+            promotion::{integer, lvalue, std_rval_promotion_coercion},
         },
     },
 };
@@ -74,69 +76,86 @@ pub fn try_implicit_coercion(
             )
         }
 
-        (MIRTypeKind::Float { _type: from_float }, MIRTypeKind::Integer { _type: MIRIntegerType::I1, .. }) =>
-        {
-            CoercionResult::success(
-                MIRExpression {
-                    _type: target_type.clone(),
+        (
+            MIRTypeKind::Float { _type: from_float },
+            MIRTypeKind::Integer {
+                _type: MIRIntegerType::I1,
+                ..
+            },
+        ) => CoercionResult::success(MIRExpression {
+            _type: target_type.clone(),
+            token_range: expr.token_range.clone(),
+            kind: MIRExpressionKind::BinaryOperation {
+                op: MIRBinOp::Float {
+                    ftype: *from_float,
+                    op: MIRFloatBinOp::FNE,
+                },
+                rhs: Box::new(MIRExpression {
+                    _type: MIRTypeKind::Float { _type: *from_float }.into(),
                     token_range: expr.token_range.clone(),
-                    kind: MIRExpressionKind::BinaryOperation {
-                        op: MIRBinOp::Float { ftype: *from_float, op: MIRFloatBinOp::FNE },
-                        rhs: Box::new(MIRExpression {
-                            _type: MIRTypeKind::Float { _type: *from_float }.into(),
-                            token_range: expr.token_range.clone(),
-                            kind: MIRExpressionKind::FloatLiteral(0.0.into())
-                        }),
-                        lhs: Box::new(expr),
-                    },
-                }
-            )
-        },
+                    kind: MIRExpressionKind::FloatLiteral(0.0.into()),
+                }),
+                lhs: Box::new(expr),
+            },
+        }),
 
-        (MIRTypeKind::PointerTo { .. }, MIRTypeKind::Integer { _type: MIRIntegerType::I1, .. }) => {
-            CoercionResult::success(
-                MIRExpression {
-                    _type: target_type.clone(),
+        (
+            MIRTypeKind::PointerTo { .. },
+            MIRTypeKind::Integer {
+                _type: MIRIntegerType::I1,
+                ..
+            },
+        ) => CoercionResult::success(MIRExpression {
+            _type: target_type.clone(),
+            token_range: expr.token_range.clone(),
+            kind: MIRExpressionKind::BinaryOperation {
+                op: MIRBinOp::Pointer {
+                    op: MIRPtrBinOp::NE,
+                },
+                rhs: Box::new(MIRExpression {
+                    _type: from_type.clone(),
                     token_range: expr.token_range.clone(),
-                    kind: MIRExpressionKind::BinaryOperation {
-                        op: MIRBinOp::Pointer { op: MIRPtrBinOp::NE },
-                        rhs: Box::new(MIRExpression {
-                            _type: from_type.clone(),
+                    kind: MIRExpressionKind::TypeConversion {
+                        conversion: MIRCoercion::IntToPtr { sextend: false },
+                        operand: Box::new(MIRExpression {
+                            _type: env.get_intrinsic_type("int"),
                             token_range: expr.token_range.clone(),
-                            kind: MIRExpressionKind::TypeConversion { 
-                                conversion: MIRCoercion::IntToPtr { sextend: false },
-                                operand: Box::new(MIRExpression {
-                                    _type: env.get_intrinsic_type("int"),
-                                    token_range: expr.token_range.clone(),
-                                    kind: MIRExpressionKind::IntLiteral(0)
-                                })
-                            }
+                            kind: MIRExpressionKind::IntLiteral(0),
                         }),
-                        lhs: Box::new(expr),
                     },
-                }
-            )
-        },
+                }),
+                lhs: Box::new(expr),
+            },
+        }),
 
-        (MIRTypeKind::Float { .. }, MIRTypeKind::Integer { signed, _type: to_int }) => {
-            implicit::coercion_expr(
-                expr,
-                target_type.clone(),
-                MIRCoercion::FloatToInt { 
-                    to_type: *to_int,
-                    sextend: *signed,
-                }
-            )
-        },
+        (
+            MIRTypeKind::Float { .. },
+            MIRTypeKind::Integer {
+                signed,
+                _type: to_int,
+            },
+        ) => implicit::coercion_expr(
+            expr,
+            target_type.clone(),
+            MIRCoercion::FloatToInt {
+                to_type: *to_int,
+                sextend: *signed,
+            },
+        ),
 
         (MIRTypeKind::PointerTo { .. }, MIRTypeKind::Integer { _type: itype, .. }) => {
             implicit::coercion_expr(
-                expr, 
+                expr,
                 target_type.clone(),
-                MIRCoercion::PtrToInt { 
-                    to_type: *itype
-                }
+                MIRCoercion::PtrToInt { to_type: *itype },
             )
+        }
+
+        (MIRTypeKind::MemoryReference { inner_type, .. }, _)
+            if target_type.is_memory_reference()
+                && env.type_eq(env.symbols.resolve_type_id(*inner_type), target_type) =>
+        {
+            lvalue::try_conversion(env, expr)
         }
 
         (MIRTypeKind::MemoryReference { inner_type, .. }, _)
@@ -181,68 +200,4 @@ pub fn try_implicit_coercion(
 
         _ => CoercionResult::unapplied(expr),
     }
-}
-
-// FIXME: Do we need this?
-pub fn try_argument_conversion(
-    env: &mut TypeEnvironment,
-    expr: MIRExpression,
-    argument_type: &MIRType,
-) -> CXResult<MIRExpression> {
-    if let Some(expr) = try_deferred_by_value_argument(env, &expr, argument_type) {
-        return implicit_cast(env, expr, argument_type);
-    }
-
-    let expr = if argument_type.is_memory_reference() {
-        let expr_type = expr.get_type();
-        if let Some(inner) = env.symbols.mem_ref_inner(&expr_type)
-            && env.type_eq(inner, argument_type)
-        {
-            lvalue::try_conversion(env, expr)?.expr()
-        } else {
-            expr
-        }
-    } else {
-        std_rval_promotion(env, expr)?
-    };
-
-    implicit_cast(env, expr, argument_type)
-}
-
-fn try_deferred_by_value_argument(
-    env: &TypeEnvironment,
-    expr: &MIRExpression,
-    argument_type: &MIRType,
-) -> Option<MIRExpression> {
-    if argument_type.is_memory_reference() {
-        return None;
-    }
-
-    let expr_type = expr.get_type();
-    let inner = env.symbols.mem_ref_inner(&expr_type)?;
-    let unqualified_inner = inner.without_specifier(CX_CONST);
-
-    if !is_deferred_by_value_candidate(&unqualified_inner)
-        || unqualified_inner.is_nocopy()
-        || !env.type_eq(&unqualified_inner, argument_type)
-    {
-        return None;
-    }
-
-    Some(MIRExpression {
-        token_range: expr.token_range.clone(),
-        _type: argument_type.clone(),
-        kind: MIRExpressionKind::ByValueArgument {
-            source: Box::new(expr.clone()),
-        },
-    })
-}
-
-fn is_deferred_by_value_candidate(ty: &MIRType) -> bool {
-    matches!(
-        ty.kind,
-        MIRTypeKind::Structured { .. }
-            | MIRTypeKind::Union { .. }
-            | MIRTypeKind::TaggedUnion { .. }
-    )
 }
