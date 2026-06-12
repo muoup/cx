@@ -1,5 +1,5 @@
 use cx_ast::ast::template::CXTemplateInput;
-use cx_log::{CXError, CXResult};
+use cx_log::CXResult;
 use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
@@ -308,9 +308,7 @@ impl TypecheckResult {
         }
     }
 
-    pub fn into_incomplete_callee_parts(
-        self,
-    ) -> Option<IncompleteCalleeParts> {
+    pub fn into_incomplete_callee_parts(self) -> Option<IncompleteCalleeParts> {
         match self.expression {
             TypecheckState::IncompleteTemplatedCallee {
                 name,
@@ -328,16 +326,11 @@ impl TypecheckResult {
     }
 
     /// Get the type of this typecheck result's expression
-    pub fn get_type_if_ready(&self) -> CXResult<Option<MIRType>> {
+    pub fn ready_type(&self) -> Option<&MIRType> {
         match &self.expression {
-            TypecheckState::Ready(expression) => Ok(Some(expression._type.clone())),
-            TypecheckState::NeedsExpectedType(_) => Ok(None),
-            TypecheckState::IncompleteTemplatedCallee { name, .. } => {
-                CXError::create_result(format!(
-                    "Templated function '{}' requires an argument list for template deduction",
-                    name
-                ))
-            }
+            TypecheckState::Ready(expression) => Some(&expression._type),
+            TypecheckState::NeedsExpectedType(_) => None,
+            TypecheckState::IncompleteTemplatedCallee { .. } => None,
         }
     }
 

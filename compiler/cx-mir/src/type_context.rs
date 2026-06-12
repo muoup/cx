@@ -1,6 +1,6 @@
 use cx_util::namespace::QualifiedName;
 
-use crate::mir::data::{MIRIntegerType, MIRType, MIRTypeId, MIRTypeKind};
+use crate::mir::data::{MIRFunctionSignature, MIRIntegerType, MIRType, MIRTypeId, MIRTypeKind};
 
 pub trait MIRTypeContext {
     fn resolve_type_id(&self, id: MIRTypeId) -> &MIRType;
@@ -24,6 +24,19 @@ pub trait MIRTypeContext {
 
     fn array_inner(&self, ty: &MIRType) -> Option<&MIRType> {
         ty.array_inner().map(|id| self.resolve_type_id(id))
+    }
+
+    fn intern_signature<'a>(&'a self, ty: &'a MIRType) -> Option<&'a MIRFunctionSignature> {
+        if let MIRTypeKind::Function { signature } = &self
+            .ptr_inner(ty)
+            .or_else(|| self.mem_ref_inner(ty))
+            .unwrap_or_else(|| ty)
+            .kind
+        {
+            return Some(signature.as_ref());
+        }
+
+        None
     }
 
     fn is_c_str(&self, ty: &MIRType) -> bool {

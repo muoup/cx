@@ -4,7 +4,6 @@ use crate::symbol::deduction::complete_templated_callee;
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::lvalue;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
-use crate::type_checking::contracts::typecheck_contract;
 use crate::type_checking::result::{
     CalleeExtraction, PendingReceiver, TypecheckExtract, TypecheckResult,
 };
@@ -13,130 +12,246 @@ use crate::type_checking::value::moves::typecheck_move;
 use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
 use cx_log::CXResult;
 use cx_mir::EnvironmentNamespace;
-use cx_mir::mir::data::{MIRFloatType, MIRType, MIRTypeKind};
-use cx_mir::mir::expression::MIRExpressionKind;
+use cx_mir::mir::data::{MIRFloatType, MIRFunctionSignature, MIRType, MIRTypeKind};
+use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_mir::type_context::MIRTypeContext;
 
-pub(crate) fn finish_function_call<'a>(
+pub(crate) fn typecheck_method_call(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &'a CXExpression,
-    callee: CalleeExtraction,
-    mut tc_args: Vec<(&'a CXExpression, TypecheckResult)>,
+    lhs: &CXExpression,
+    rhs: &CXExpression,
+    expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
-    tc_args = callee
-        .implicit_args
-        .iter()
-        .map(|val| (expr, TypecheckResult::from(val.clone())))
-        .chain(tc_args)
-        .collect();
+    let function = typecheck_expr(env, namespace, lhs, None)?;
 
-    let loaded_function = lvalue::try_conversion(env, callee.function)?.expr();
-    let loaded_function_type = loaded_function.get_type();
-    let loaded_function_type = env
+    typecheck_callee_method_call(env, namespace, function, rhs, expr)
+}
+
+pub(crate) fn typecheck_callee_method_call(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    callee: TypecheckResult,
+    rhs: &CXExpression,
+    expr: &CXExpression,
+) -> CXResult<TypecheckResult> {
+    let tc_args = comma_separated(env, namespace, rhs)?;
+    let callee = complete_callee(env, namespace, expr, callee, &tc_args)?;
+    let arg_count = call_arg_count(&callee, &tc_args);
+    let CalleeExtraction {
+        function,
+        implicit_args,
+    } = callee;
+    let (loaded_function, signature) = load_callable(env, expr, function)?;
+
+    check_argument_count(env, expr, &signature, arg_count)?;
+
+    let argument_results =
+        complete_call_arguments(env, namespace, &signature, implicit_args, tc_args)?;
+    let arguments = complete_call_argument_expressions(env, expr, &signature, argument_results)?;
+    let contract = typecheck_contract(env, namespace, &signature)?;
+
+    Ok(TypecheckResult::new(
+        signature.return_type,
+        MIRExpressionKind::CallFunction {
+            function: Box::new(loaded_function),
+            arguments,
+            contract,
+        },
+    ))
+}
+
+fn load_callable(
+    env: &mut TypeEnvironment,
+    expr: &CXExpression,
+    function: MIRExpression,
+) -> CXResult<(MIRExpression, MIRFunctionSignature)> {
+    let loaded_function = lvalue::try_conversion(env, function)?.expr();
+    let function_type = loaded_function.get_type();
+    let callable_type = env
         .symbols
-        .ptr_inner(&loaded_function_type)
+        .ptr_inner(&function_type)
         .cloned()
-        .unwrap_or(loaded_function_type);
+        .unwrap_or(function_type);
 
-    let MIRTypeKind::Function { signature } = &loaded_function_type.kind else {
+    let MIRTypeKind::Function { signature } = &callable_type.kind else {
         return log_typecheck_error!(
             env,
             expr.token_range(),
             "Attempted to call value of non-function type {}",
-            loaded_function_type.display_with(&env.symbols)
+            callable_type.display_with(&env.symbols)
         );
     };
 
-    if tc_args.len() != signature.params.len() && !signature.var_args {
+    Ok((loaded_function, signature.as_ref().clone()))
+}
+
+fn check_argument_count(
+    env: &TypeEnvironment,
+    expr: &CXExpression,
+    signature: &MIRFunctionSignature,
+    arg_count: usize,
+) -> CXResult<()> {
+    if arg_count != signature.params.len() && !signature.var_args {
         return log_typecheck_error!(
             env,
             expr.token_range(),
             "Call to {} expects {} arguments, found {}",
             signature.display_with(&env.symbols),
             signature.params.len(),
-            tc_args.len()
+            arg_count
         );
     }
 
-    if tc_args.len() < signature.params.len() {
+    if arg_count < signature.params.len() {
         return log_typecheck_error!(
             env,
             expr.token_range(),
             "Call to {} expects at least {} arguments, found {}",
             signature.display_with(&env.symbols),
             signature.params.len(),
-            tc_args.len()
+            arg_count
         );
     }
 
-    let mut args = Vec::with_capacity(tc_args.len());
+    Ok(())
+}
 
-    for (i, (_arg_expr, val)) in tc_args.into_iter().enumerate() {
-        let mut val = if let Some(param) = signature.params.get(i) {
-            let val = val
-                .apply_expected_type(env, namespace, &param._type)
-                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
-            let val = if param._type.is_memory_reference() {
-                val
-            } else {
-                std_rval_promotion(env, val)?
-            };
+fn complete_fixed_argument(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    val: TypecheckResult,
+    target_type: &MIRType,
+) -> CXResult<TypecheckResult> {
+    val.apply_expected_type(env, namespace, target_type)
+}
 
-            implicit_cast(env, val, &param._type)?
-        } else {
-            val.standard_ready_coerce(env, expr.token_range())?
-        };
+fn coerce_fixed_argument(
+    env: &mut TypeEnvironment,
+    expr: &CXExpression,
+    val: TypecheckResult,
+    target_type: &MIRType,
+) -> CXResult<MIRExpression> {
+    let val = val.standard_ready_coerce(env, expr.token_range())?;
+    let val = if target_type.is_memory_reference() {
+        val
+    } else {
+        std_rval_promotion(env, val)?
+    };
 
-        if i < signature.params.len() {
-            args.push(val);
-            continue;
+    implicit_cast(env, val, target_type)
+}
+
+fn complete_vararg_argument(
+    env: &mut TypeEnvironment,
+    expr: &CXExpression,
+    val: TypecheckResult,
+) -> CXResult<MIRExpression> {
+    let mut val = val.standard_ready_coerce(env, expr.token_range())?;
+
+    val = std_rval_promotion(env, val)?;
+    let arg_type = val._type.clone();
+
+    match &arg_type.kind {
+        MIRTypeKind::PointerTo { .. } => {}
+        MIRTypeKind::Integer { .. } => {}
+        MIRTypeKind::Float {
+            _type: MIRFloatType::F32,
+        } => {
+            val = implicit_cast(
+                env,
+                val,
+                &MIRTypeKind::Float {
+                    _type: MIRFloatType::F64,
+                }
+                .into(),
+            )?;
         }
-
-        val = std_rval_promotion(env, val)?;
-        let arg_type = val._type.clone();
-
-        match &arg_type.kind {
-            MIRTypeKind::PointerTo { .. } => {}
-            MIRTypeKind::Integer { .. } => {}
-            MIRTypeKind::Float {
-                _type: MIRFloatType::F32,
-            } => {
-                val = implicit_cast(
-                    env,
-                    val,
-                    &MIRTypeKind::Float {
-                        _type: MIRFloatType::F64,
-                    }
-                    .into(),
-                )?;
-            }
-            MIRTypeKind::Float {
-                _type: MIRFloatType::F64,
-            } => {}
-            _ => {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "Cannot pass {} to varargs: expected an intrinsic type or pointer",
-                    arg_type.display_with(&env.symbols)
-                );
-            }
+        MIRTypeKind::Float {
+            _type: MIRFloatType::F64,
+        } => {}
+        _ => {
+            return log_typecheck_error!(
+                env,
+                Some(expr.token_range()),
+                "Cannot pass {} to varargs: expected an intrinsic type or pointer",
+                arg_type.display_with(&env.symbols)
+            );
         }
-
-        args.push(val);
     }
 
-    let contract = typecheck_contract(env, namespace, signature.as_ref())?;
+    Ok(val)
+}
 
-    Ok(TypecheckResult::new(
-        signature.return_type.clone(),
-        MIRExpressionKind::CallFunction {
-            function: Box::new(loaded_function),
-            arguments: args,
-            contract,
-        },
-    ))
+fn complete_call_arguments(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    signature: &MIRFunctionSignature,
+    implicit_args: Vec<MIRExpression>,
+    explicit_args: Vec<(&CXExpression, TypecheckResult)>,
+) -> CXResult<Vec<TypecheckResult>> {
+    let tc_args = implicit_args
+        .into_iter()
+        .map(TypecheckResult::from)
+        .chain(explicit_args.into_iter().map(|(_, val)| val));
+
+    tc_args
+        .enumerate()
+        .map(|(i, val)| {
+            if let Some(param) = signature.params.get(i) {
+                complete_fixed_argument(env, namespace, val, &param._type)
+            } else {
+                Ok(val)
+            }
+        })
+        .collect()
+}
+
+fn coerce_call_arguments(
+    env: &mut TypeEnvironment,
+    expr: &CXExpression,
+    signature: &MIRFunctionSignature,
+    args: Vec<TypecheckResult>,
+) -> CXResult<Vec<MIRExpression>> {
+    let mut coerced_args = Vec::with_capacity(args.len());
+
+    for (i, val) in args.into_iter().enumerate() {
+        let val = if let Some(param) = signature.params.get(i) {
+            coerce_fixed_argument(env, expr, val, &param._type)?
+        } else {
+            complete_vararg_argument(env, expr, val)?
+        };
+
+        coerced_args.push(val);
+    }
+
+    Ok(coerced_args)
+}
+
+fn deduction_arg_types(
+    source_base_type: Option<MIRType>,
+    args: &[(&CXExpression, TypecheckResult)],
+) -> Vec<MIRType> {
+    source_base_type
+        .into_iter()
+        .chain(args.iter().filter_map(|(_, arg)| arg.ready_type().cloned()))
+        .collect()
+}
+
+fn call_arg_count(
+    callee: &CalleeExtraction,
+    explicit_args: &[(&CXExpression, TypecheckResult)],
+) -> usize {
+    callee.implicit_args.len() + explicit_args.len()
+}
+
+fn complete_call_argument_expressions(
+    env: &mut TypeEnvironment,
+    expr: &CXExpression,
+    signature: &MIRFunctionSignature,
+    args: Vec<TypecheckResult>,
+) -> CXResult<Vec<MIRExpression>> {
+    coerce_call_arguments(env, expr, signature, args)
 }
 
 fn complete_callee(
@@ -144,8 +259,7 @@ fn complete_callee(
     namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     function: TypecheckResult,
-    arg_types: &[MIRType],
-    has_incomplete_args: bool,
+    args: &[(&CXExpression, TypecheckResult)],
 ) -> CXResult<CalleeExtraction> {
     match function.try_into_callee() {
         TypecheckExtract::Succ(callee) => {
@@ -156,11 +270,7 @@ fn complete_callee(
                 return log_typecheck_error!(env, expr.token_range(), "Could not deduce callee");
             };
 
-            let deduction_arg_types = parts
-                .source_base_type
-                .into_iter()
-                .chain(arg_types.iter().cloned())
-                .collect::<Vec<_>>();
+            let deduction_arg_types = deduction_arg_types(parts.source_base_type, args);
 
             let symbol = match complete_templated_callee(
                 env,
@@ -170,14 +280,6 @@ fn complete_callee(
                 &deduction_arg_types,
             ) {
                 Ok(symbol) => symbol,
-                Err(err) if has_incomplete_args => {
-                    return log_typecheck_error!(
-                        env,
-                        expr.token_range(),
-                        "{}; two-sided deduction is not implemented",
-                        err.error_content()
-                    );
-                }
                 Err(err) => {
                     return log_typecheck_error!(
                         env,
@@ -279,53 +381,4 @@ pub(crate) fn comma_separated<'a>(
     exprs.reverse();
 
     Ok(exprs)
-}
-
-pub(crate) fn ready_arg_type_prefix(
-    args: &[(&CXExpression, TypecheckResult)],
-) -> CXResult<(Vec<MIRType>, bool)> {
-    let mut arg_types = Vec::with_capacity(args.len());
-
-    for (_, arg) in args {
-        let Some(arg_type) = arg.get_type_if_ready()? else {
-            return Ok((arg_types, true));
-        };
-        arg_types.push(arg_type);
-    }
-
-    Ok((arg_types, false))
-}
-
-pub(crate) fn typecheck_method_call(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    lhs: &CXExpression,
-    rhs: &CXExpression,
-    expr: &CXExpression,
-) -> CXResult<TypecheckResult> {
-    let function = typecheck_expr(env, namespace, lhs, None)?;
-
-    typecheck_callee_method_call(env, namespace, function, rhs, expr)
-}
-
-pub(crate) fn typecheck_callee_method_call(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    callee: TypecheckResult,
-    rhs: &CXExpression,
-    expr: &CXExpression,
-) -> CXResult<TypecheckResult> {
-    let tc_args = comma_separated(env, namespace, rhs)?;
-    let (arg_types, has_incomplete_args) = ready_arg_type_prefix(&tc_args)?;
-
-    let function = complete_callee(
-        env,
-        namespace,
-        expr,
-        callee,
-        &arg_types,
-        has_incomplete_args,
-    )?;
-
-    finish_function_call(env, namespace, expr, function, tc_args)
 }
