@@ -2,8 +2,8 @@ use cx_ast::ast::modifiers::CX_CONST;
 use cx_log::CXResult;
 use cx_mir::{
     mir::{
-        expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
-        r#type::{MIRType, MIRTypeKind},
+        expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRPtrBinOp},
+        r#type::{MIRIntegerType, MIRType, MIRTypeKind},
     },
     type_context::MIRTypeContext,
 };
@@ -13,8 +13,7 @@ use crate::{
     type_checking::coercion::{
         CoercionResult,
         implicit::{
-            self, implicit_cast,
-            promotion::{integer, lvalue, std_rval_promotion, std_rval_promotion_coercion},
+            self, coercion_expr, implicit_cast, promotion::{integer, lvalue, std_rval_promotion, std_rval_promotion_coercion}
         },
     },
 };
@@ -50,7 +49,7 @@ pub fn try_implicit_coercion(
             };
             let signed = *signed;
 
-            return crate::type_checking::coercion::implicit::coercion_expr(
+            return coercion_expr(
                 expr,
                 target_type.clone(),
                 MIRCoercion::IntToFloat {
@@ -63,6 +62,7 @@ pub fn try_implicit_coercion(
         return integer::try_conversion(env, expr, target_type);
     }
 
+    // TODO: Organize this into different XXX::try_conversion functions / modules
     match (&expr._type.kind, &target_type.kind) {
         (MIRTypeKind::Float { _type: from_float }, MIRTypeKind::Float { _type: to_float })
             if from_float != to_float =>
@@ -71,6 +71,71 @@ pub fn try_implicit_coercion(
                 expr,
                 target_type.clone(),
                 MIRCoercion::FloatCast { to_type: *to_float },
+            )
+        }
+
+        (MIRTypeKind::Float { _type: from_float }, MIRTypeKind::Integer { _type: MIRIntegerType::I1, .. }) =>
+        {
+            CoercionResult::success(
+                MIRExpression {
+                    _type: target_type.clone(),
+                    token_range: expr.token_range.clone(),
+                    kind: MIRExpressionKind::BinaryOperation {
+                        op: MIRBinOp::Float { ftype: *from_float, op: MIRFloatBinOp::FNE },
+                        rhs: Box::new(MIRExpression {
+                            _type: MIRTypeKind::Float { _type: *from_float }.into(),
+                            token_range: expr.token_range.clone(),
+                            kind: MIRExpressionKind::FloatLiteral(0.0.into())
+                        }),
+                        lhs: Box::new(expr),
+                    },
+                }
+            )
+        },
+
+        (MIRTypeKind::PointerTo { .. }, MIRTypeKind::Integer { _type: MIRIntegerType::I1, .. }) => {
+            CoercionResult::success(
+                MIRExpression {
+                    _type: target_type.clone(),
+                    token_range: expr.token_range.clone(),
+                    kind: MIRExpressionKind::BinaryOperation {
+                        op: MIRBinOp::Pointer { op: MIRPtrBinOp::NE },
+                        rhs: Box::new(MIRExpression {
+                            _type: from_type.clone(),
+                            token_range: expr.token_range.clone(),
+                            kind: MIRExpressionKind::TypeConversion { 
+                                conversion: MIRCoercion::IntToPtr { sextend: false },
+                                operand: Box::new(MIRExpression {
+                                    _type: env.get_intrinsic_type("int"),
+                                    token_range: expr.token_range.clone(),
+                                    kind: MIRExpressionKind::IntLiteral(0)
+                                })
+                            }
+                        }),
+                        lhs: Box::new(expr),
+                    },
+                }
+            )
+        },
+
+        (MIRTypeKind::Float { .. }, MIRTypeKind::Integer { signed, _type: to_int }) => {
+            implicit::coercion_expr(
+                expr,
+                target_type.clone(),
+                MIRCoercion::FloatToInt { 
+                    to_type: *to_int,
+                    sextend: *signed,
+                }
+            )
+        },
+
+        (MIRTypeKind::PointerTo { .. }, MIRTypeKind::Integer { _type: itype, .. }) => {
+            implicit::coercion_expr(
+                expr, 
+                target_type.clone(),
+                MIRCoercion::PtrToInt { 
+                    to_type: *itype
+                }
             )
         }
 

@@ -3,8 +3,8 @@ use cx_log::CXResult;
 use cx_mir::{
     mir::{
         expression::{
-            MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp,
-            MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
+            MIRBinOp, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp,
+            MIRPtrBinOp, MIRPtrDiffBinOp,
         },
         r#type::{MIRIntegerType, MIRType, MIRTypeKind},
     },
@@ -62,8 +62,8 @@ pub(crate) fn resolve_logical(
         );
     }
 
-    let lhs = coerce_scalar_to_bool(env, lhs)?;
-    let rhs = coerce_scalar_to_bool(env, rhs)?;
+    let lhs = implicit_cast(env, lhs, &MIRType::bool())?;
+    let rhs = implicit_cast(env, rhs, &MIRType::bool())?;
 
     let operator = MIRBinOp::Integer {
         itype: MIRIntegerType::I1,
@@ -82,69 +82,6 @@ pub(crate) fn resolve_logical(
             rhs: Box::new(rhs),
         },
     ))
-}
-
-fn coerce_scalar_to_bool(
-    env: &mut TypeEnvironment,
-    expr: MIRExpression,
-) -> CXResult<MIRExpression> {
-    if expr._type.is_integer() {
-        return implicit_cast(env, expr, &MIRType::bool());
-    }
-
-    match &expr._type.kind {
-        MIRTypeKind::Float { _type } => {
-            let zero = MIRExpression {
-                token_range: expr.token_range.clone(),
-                kind: MIRExpressionKind::FloatLiteral(0.0.into()),
-                _type: expr._type.clone(),
-            };
-
-            Ok(MIRExpression {
-                token_range: expr.token_range.clone(),
-                kind: MIRExpressionKind::BinaryOperation {
-                    op: MIRBinOp::Float {
-                        ftype: *_type,
-                        op: MIRFloatBinOp::FNE,
-                    },
-                    lhs: Box::new(expr),
-                    rhs: Box::new(zero),
-                },
-                _type: MIRType::bool(),
-            })
-        }
-        MIRTypeKind::PointerTo { .. } => {
-            let zero = MIRExpression {
-                token_range: expr.token_range.clone(),
-                kind: MIRExpressionKind::TypeConversion {
-                    conversion: MIRCoercion::IntToPtr { sextend: false },
-                    operand: Box::new(MIRExpression {
-                        token_range: expr.token_range.clone(),
-                        kind: MIRExpressionKind::IntLiteral(0),
-                        _type: MIRTypeKind::Integer {
-                            _type: MIRIntegerType::I64,
-                            signed: false,
-                        }
-                        .into(),
-                    }),
-                },
-                _type: expr._type.clone(),
-            };
-
-            Ok(MIRExpression {
-                token_range: expr.token_range.clone(),
-                kind: MIRExpressionKind::BinaryOperation {
-                    op: MIRBinOp::Pointer {
-                        op: MIRPtrBinOp::NE,
-                    },
-                    lhs: Box::new(expr),
-                    rhs: Box::new(zero),
-                },
-                _type: MIRType::bool(),
-            })
-        }
-        _ => unreachable!("logical operands should already be scalar"),
-    }
 }
 
 pub(crate) fn resolve_std_arithmetic(
