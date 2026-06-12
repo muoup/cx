@@ -378,15 +378,15 @@ fn typecheck_expr_inner(
 
         CXExprKind::BinOp { op, lhs, rhs } => {
             if let Some(expr) = try_typecheck_special_binop(env, namespace, op, expr, lhs, rhs)? {
-                return Ok(expr);
+                expr
+            } else {
+                let lhs = typecheck_expr(env, namespace, lhs, None)
+                    .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
+                let rhs = typecheck_expr(env, namespace, rhs, None)
+                    .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
+
+                typecheck_binop(env, op, lhs, rhs)?
             }
-
-            let lhs = typecheck_expr(env, namespace, lhs, None)
-                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
-            let rhs = typecheck_expr(env, namespace, rhs, None)
-                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
-
-            typecheck_binop(env, op, lhs, rhs)?
         }
 
         CXExprKind::InitializerList { indices } => {

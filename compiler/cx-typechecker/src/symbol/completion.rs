@@ -15,7 +15,7 @@ use cx_mir::{
             MIRFunctionPrototype, MIRFunctionSignature, MIRMoveAttributes, MIRParameter,
             MIRTemplateInput,
         },
-        name_mangling::{base_mangle_member, mangle_qualified_name},
+        name_mangling::{mangle_namespace_symbol, mangle_qualified_name},
         r#type::{MIRField, MIRType, MIRTypeId, MIRTypeKind},
     },
     symbol::MIRSymbol,
@@ -234,8 +234,7 @@ pub fn complete_prototype(
 
     let lookup_identifier = function_lookup_identifier(namespace, &prototype.kind);
     let debug_name = lookup_identifier.name.clone();
-    let symbol_name =
-        completed_function_name(env, &namespace, &prototype.kind, &return_type, &params)?;
+    let symbol_name = completed_function_name(env, &namespace, &prototype.kind)?;
 
     Ok(MIRFunctionPrototype::new(
         symbol_name,
@@ -625,59 +624,23 @@ fn type_completion_error<T>(
 }
 
 fn completed_function_name(
-    env: &mut TypeEnvironment,
+    env: &TypeEnvironment,
     namespace: &EnvironmentNamespace,
     kind: &CXFunctionKind,
-    return_type: &MIRType,
-    params: &[MIRParameter],
 ) -> CXResult<String> {
     let name = match kind {
         CXFunctionKind::Standard(name) => mangle_qualified_name(
             env.symbols.get_global_registry(),
             &QualifiedName::new(namespace.clone(), name.clone()),
         ),
-        CXFunctionKind::MemberFunction {
-            member_type, name, ..
-        } => {
-            let member_type =
-                complete_member_owner_type(env, namespace, member_type, return_type, params)?;
-            base_mangle_member(&env.symbols, name.as_str(), &member_type)
-        }
+        CXFunctionKind::AssociatedFunction {
+            namespace: associated_namespace,
+            name,
+        } => mangle_namespace_symbol(&QualifiedName::new(
+            namespace.child(associated_namespace.clone()),
+            name.clone(),
+        )),
     };
 
     Ok(name)
-}
-
-fn complete_member_owner_type(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    member_type: &QualifiedName,
-    return_type: &MIRType,
-    params: &[MIRParameter],
-) -> CXResult<MIRType> {
-    let syntactic_owner = CXTypeKind::Identifier {
-        name: member_type.clone(),
-        predeclaration: PredeclarationType::None,
-        template_input: None,
-    }
-    .to_type();
-
-    if let Ok(owner) = complete_type(env, namespace, &syntactic_owner) {
-        return Ok(owner);
-    }
-
-    if let Some(first_param) = params.first() {
-        return Ok(member_owner_from_parameter(env, &first_param._type));
-    }
-
-    Ok(member_owner_from_parameter(env, return_type))
-}
-
-fn member_owner_from_parameter(env: &TypeEnvironment, ty: &MIRType) -> MIRType {
-    match &ty.kind {
-        MIRTypeKind::MemoryReference { inner_type, .. } | MIRTypeKind::PointerTo { inner_type } => {
-            env.symbols.resolve_type_id(*inner_type).clone()
-        }
-        _ => ty.clone(),
-    }
 }

@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::RwLock};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::RwLock,
+};
 
 use cx_util::namespace::{NamespacePath, QualifiedName};
 
@@ -20,6 +23,7 @@ pub struct GlobalSymbolRegistry {
 struct GlobalSymbolRegistryData {
     namespaces: HashMap<NamespacePath, SymbolNamespaceData>,
     export_name_modes: HashMap<NamespacePath, ExportNameMode>,
+    namespace_friends: HashSet<(NamespacePath, NamespacePath)>,
 }
 
 impl GlobalSymbolRegistry {
@@ -54,6 +58,26 @@ impl GlobalSymbolRegistry {
             .expect("GlobalSymbolRegistry write lock poisoned")
             .export_name_modes
             .insert(namespace, mode);
+    }
+
+    pub fn insert_namespace_friend(&self, namespace: NamespacePath, friend: NamespacePath) {
+        self.inner
+            .write()
+            .expect("GlobalSymbolRegistry write lock poisoned")
+            .namespace_friends
+            .insert((namespace, friend));
+    }
+
+    pub fn namespaces_are_friends(
+        &self,
+        namespace: &NamespacePath,
+        friend: &NamespacePath,
+    ) -> bool {
+        self.inner
+            .read()
+            .expect("GlobalSymbolRegistry read lock poisoned")
+            .namespace_friends
+            .contains(&(namespace.clone(), friend.clone()))
     }
 
     pub fn export_name_mode(&self, namespace: &NamespacePath) -> ExportNameMode {

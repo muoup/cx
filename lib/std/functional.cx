@@ -1,0 +1,11 @@
+public:
+
+T tap<T>(T value, void (*func)(T&)) {
+    func(value);
+    return value;
+}
+
+T inspect<T>(T value, void (*func)(const T&)) {
+    func(value);
+    return value;
+}

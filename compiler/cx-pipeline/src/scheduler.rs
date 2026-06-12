@@ -356,7 +356,7 @@ pub(crate) fn perform_job(
             }
 
             let namespace = NamespacePath::from(job.unit.module_path().clone());
-            let (symbol_buckets, generation_ast) =
+            let (symbol_buckets, namespace_friends, generation_ast) =
                 decompose_ast(&namespace, parsed_ast).destructure();
 
             for (namespace, bucket) in symbol_buckets {
@@ -370,6 +370,13 @@ pub(crate) fn perform_job(
                         namespace
                     );
                 }
+            }
+
+            for (namespace, friend) in namespace_friends {
+                context
+                    .module_db
+                    .symbol_registry
+                    .insert_namespace_friend(namespace, friend);
             }
 
             context

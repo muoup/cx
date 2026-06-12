@@ -1,6 +1,7 @@
 import std::box as std;
 import std::vector as std;
 import std::io as std;
+import std::functional as std;
 
 import ast as _;
 import parser;
@@ -9,18 +10,18 @@ import parser;
 
 public:
 
-void interpret(lisp_node* node) {
+void interpret(lisp_node& node) {
     interpreter interpret = {
         .program_body = NULL,
         .program_length = 0
     };
 
-    interpret |> interpreter::interpreter::interpret(node);
+    interpreter::interpreter::interpret(interpret, node);
 }
 
 void run(const char* source) {
-    source |> parser::parse
-        |> interpret
+    parser::parse(source)
+        |> std::tap<ast::lisp_node>(interpret)
         |> lisp_node::drop;
 }
 
@@ -49,7 +50,7 @@ bool str_eq(char* left, char* right) {
     return 1 == 0;
 }
 
-void interpreter::interpret(interpreter& this, lisp_node* node) {
+void interpreter::interpret(interpreter& this, lisp_node& node) {
     this |> interpreter::eval(node, NULL, 0);
 }
 

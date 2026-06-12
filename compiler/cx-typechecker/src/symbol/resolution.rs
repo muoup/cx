@@ -264,7 +264,7 @@ fn function_lexical_namespace(
     kind: &CXFunctionKind,
 ) -> EnvironmentNamespace {
     match kind {
-        CXFunctionKind::MemberFunction { .. } => namespace
+        CXFunctionKind::AssociatedFunction { .. } => namespace
             .parent_and_name()
             .map(|(parent, _)| parent)
             .unwrap_or_else(|| namespace.clone()),

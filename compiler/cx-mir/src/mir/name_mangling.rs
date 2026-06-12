@@ -17,7 +17,7 @@ pub fn mangle_qualified_name(
     mangle_namespace_symbol(name)
 }
 
-fn mangle_namespace_symbol(name: &QualifiedName) -> String {
+pub fn mangle_namespace_symbol(name: &QualifiedName) -> String {
     let mut mangled = String::from("_N");
 
     for segment in name.namespace.segments() {

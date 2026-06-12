@@ -46,18 +46,16 @@ pub fn try_function_parse(
     let kind = if name.namespace.is_root() {
         CXFunctionKind::Standard(name.name)
     } else {
-        let (member_namespace, member_name) = name
-            .namespace
-            .parent_and_name()
-            .unwrap_or_else(|| unreachable!());
-        let name = name.name;
+        if name.namespace.segments().len() != 1 {
+            return log_parse_error!(
+                data,
+                "Associated function declarations must have exactly two segments"
+            );
+        }
 
-        CXFunctionKind::MemberFunction {
-            member_type: QualifiedName {
-                namespace: member_namespace,
-                name: member_name,
-            },
-            name: name,
+        CXFunctionKind::AssociatedFunction {
+            namespace: name.namespace.segments()[0].clone(),
+            name: name.name,
         }
     };
 

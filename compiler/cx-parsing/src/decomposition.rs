@@ -15,6 +15,7 @@ use cx_util::namespace::{NamespacePath, QualifiedName};
 pub struct DecompositionEnv<'a> {
     namespace: &'a NamespacePath,
     symbol_buckets: Vec<(NamespacePath, SymbolNamespaceData)>,
+    namespace_friends: Vec<(NamespacePath, NamespacePath)>,
     stmts: Vec<CXGenerationStmt>,
 }
 
@@ -26,16 +27,23 @@ impl<'a> DecompositionEnv<'a> {
                 namespace.clone(),
                 SymbolNamespaceData::new_with_namespace_aliases(namespace_aliases),
             )],
+            namespace_friends: Vec::new(),
             stmts: Vec::new(),
         }
     }
 
-    pub fn destructure(self) -> (Vec<(NamespacePath, SymbolNamespaceData)>, CXGenerationAST) {
+    pub fn destructure(
+        self,
+    ) -> (
+        Vec<(NamespacePath, SymbolNamespaceData)>,
+        Vec<(NamespacePath, NamespacePath)>,
+        CXGenerationAST,
+    ) {
         let ast = CXGenerationAST {
             generation_stmts: self.stmts,
         };
 
-        (self.symbol_buckets, ast)
+        (self.symbol_buckets, self.namespace_friends, ast)
     }
 
     pub fn get_bucket_mut(&mut self, namespace: &NamespacePath) -> &mut SymbolNamespaceData {
@@ -54,6 +62,13 @@ impl<'a> DecompositionEnv<'a> {
                     namespace, self.namespace
                 );
             };
+        }
+
+        if !namespace.is_root() {
+            let relation = (self.namespace.clone(), namespace.clone());
+            if !self.namespace_friends.contains(&relation) {
+                self.namespace_friends.push(relation);
+            }
         }
 
         let data = SymbolNamespaceData::new();

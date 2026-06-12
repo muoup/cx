@@ -31,19 +31,16 @@ pub struct CXParameter {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum CXFunctionKind {
     Standard(CXIdent),
-    MemberFunction {
-        member_type: QualifiedName,
-        name: CXIdent,
-    },
+    AssociatedFunction { namespace: CXIdent, name: CXIdent },
 }
 
 impl CXFunctionKind {
     pub fn into_key(&self) -> QualifiedName {
         match self {
             CXFunctionKind::Standard(name) => QualifiedName::new_raw(name.clone()),
-            CXFunctionKind::MemberFunction {
-                member_type, name, ..
-            } => member_type.clone().child(name.clone()),
+            CXFunctionKind::AssociatedFunction { namespace, name } => {
+                QualifiedName::new_raw(namespace.clone()).child(name.clone())
+            }
         }
     }
 }

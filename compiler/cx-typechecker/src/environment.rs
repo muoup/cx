@@ -144,7 +144,7 @@ impl TypeEnvironment<'_> {
 
         let mut resolved = Vec::new();
         for candidate in self.symbol_lookup_candidates(namespace, name) {
-            let lookup = self.lookup_candidate(namespace, name, &candidate);
+            let lookup = self.lookup_candidate(namespace, &candidate);
 
             let Some(lookup) = lookup else {
                 continue;
@@ -172,21 +172,27 @@ impl TypeEnvironment<'_> {
         }
 
         // Possibility 1 -- if one of the candidates matches exactly with the pre-aliased name, prefer it
-        if let Some(exact_match) = resolved.iter().position(|lookup| lookup.resolved_name == *name) {
+        if let Some(exact_match) = resolved
+            .iter()
+            .position(|lookup| lookup.resolved_name == *name)
+        {
             return Ok(Some(resolved.swap_remove(exact_match)));
         }
 
         // Possibility 2 -- if one of the candidates matches our namespace exactly, prefer it
-        if let Some(namespace_match) = resolved.iter().position(|lookup| lookup.resolved_name.namespace == *namespace) {
+        if let Some(namespace_match) = resolved
+            .iter()
+            .position(|lookup| lookup.resolved_name.namespace == *namespace)
+        {
             return Ok(Some(resolved.swap_remove(namespace_match)));
         }
-        
+
         let candidates = resolved
             .iter()
             .map(|lookup| lookup.resolved_name.as_flat_name())
             .collect::<Vec<_>>()
             .join(", ");
-        
+
         return Err(crate::typecheck_error!(
             self,
             range,
@@ -219,7 +225,6 @@ impl TypeEnvironment<'_> {
     fn lookup_candidate(
         &self,
         namespace: &EnvironmentNamespace,
-        requested_name: &QualifiedName,
         candidate: &QualifiedName,
     ) -> Option<SymbolLookupKind> {
         if let Some(preresolved_symbol) = self.symbols.get_preresolved_symbol(candidate) {
@@ -227,27 +232,40 @@ impl TypeEnvironment<'_> {
         }
 
         let symbol = self.symbols.get_global_registry().resolve(candidate)?;
-        self.symbol_visible_from(namespace, requested_name, candidate, &symbol)
+        self.symbol_visible_from(namespace, candidate, &symbol)
             .then_some(SymbolLookupKind::Untyped(symbol))
     }
 
     fn symbol_visible_from(
         &self,
         namespace: &EnvironmentNamespace,
-        requested_name: &QualifiedName,
         candidate: &QualifiedName,
         symbol: &CXSymbol,
     ) -> bool {
         match symbol.visibility {
-            VisibilityMode::Public | VisibilityMode::Package => true,
-            VisibilityMode::Private => {
-                let current_module = self.source.compilation_unit.to_namespace_path();
-                let same_module = candidate.namespace.strip(&current_module).is_some()
-                    || namespace.strip(&candidate.namespace).is_some();
-                let exact_namespace = candidate.namespace == requested_name.namespace;
-                let local_root_lookup = requested_name.namespace.is_root();
+            VisibilityMode::Public => true,
+            VisibilityMode::Package | VisibilityMode::Private => {
+                if candidate.namespace.is_root() {
+                    return true;
+                }
 
-                same_module && (exact_namespace || local_root_lookup)
+                if &candidate.namespace == namespace {
+                    return true;
+                }
+
+                if self
+                    .symbols
+                    .get_global_registry()
+                    .namespaces_are_friends(namespace, &candidate.namespace)
+                {
+                    return true;
+                }
+
+                if matches!(symbol.visibility, VisibilityMode::Package) {
+                    return candidate.namespace.strip(namespace).is_some();
+                }
+
+                false
             }
         }
     }
