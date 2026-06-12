@@ -3,6 +3,7 @@ use cx_ast::ast::{
     function::CXFunctionPrototype,
     global_var::CXGlobalVariable,
     template::CXTemplatePrototype,
+    types::{CXType, CXTypeKind},
     CXASTStmt,
 };
 use cx_log::CXResult;
@@ -94,6 +95,16 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
 
     assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
 
+    if let CXTypeKind::Identifier {
+        name: type_name,
+        template_input: None,
+        ..
+    } = &_type.kind {
+        if type_name.namespace.is_root() && type_name.name == name {
+            return Ok(());
+        }
+    };
+    
     data.add_stmt(CXASTStmt::TypeDefinition {
         name: Some(name),
         visibility: data.visibility,

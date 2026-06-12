@@ -21,7 +21,7 @@ use crate::type_checking::value::{
         typecheck_float_literal, typecheck_int_literal, typecheck_string_literal, typecheck_unit,
     },
     locals::typecheck_var_declaration,
-    moves::{typecheck_adopt, typecheck_leak, typecheck_move, typecheck_unpack},
+    moves::{typecheck_adopt, typecheck_leak, typecheck_unpack},
     unsafe_ops::typecheck_unsafe,
 };
 use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
