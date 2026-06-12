@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use cx_ast::ast::{
     function::{CXFunctionKind, CXFunctionPrototype},
     modifiers::{CXTypeQualifiers, VisibilityMode},
@@ -455,6 +457,10 @@ where
         })
         .unwrap_or((None, None));
 
+    if let Some(strong_identifier) = &strong_identifier {
+        ensure_aggregate_fields_not_recursive(env, &fields, strong_identifier)?;
+    }
+
     Ok(MIRType {
         visibility: VisibilityMode::Private,
         specifiers: ty.specifiers,
@@ -464,6 +470,114 @@ where
         template_info: None,
         kind: kind_ctor(fields),
     })
+}
+
+fn ensure_aggregate_fields_not_recursive(
+    env: &TypeEnvironment,
+    fields: &[MIRField],
+    aggregate_identifier: &str,
+) -> CXResult<()> {
+    for field in fields {
+        let mut visited = HashSet::new();
+        if type_contains_by_value(env, field.ty(), aggregate_identifier, &mut visited) {
+            let name = field.name().unwrap_or("<anonymous>");
+            return type_completion_error(
+                env,
+                None,
+                format!("Aggregate field '{}' has recursive type", name),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn ensure_aggregate_fields_complete(env: &TypeEnvironment, fields: &[MIRField]) -> CXResult<()> {
+    for field in fields {
+        let id = field.ty();
+        if !env.symbols.contains(id) {
+            let name = field.name().unwrap_or("<anonymous>");
+            return type_completion_error(
+                env,
+                None,
+                format!("Aggregate field '{}' has incomplete type", name),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn ensure_aggregate_move_restrictions(
+    env: &TypeEnvironment,
+    aggregate_attributes: MIRMoveAttributes,
+    fields: &[MIRField],
+) -> CXResult<()> {
+    for field in fields {
+        let field_type = env.symbols.resolve_type_id(field.ty());
+        let field_attributes = owned_move_attributes(env, field_type);
+        let name = field.name().unwrap_or("<anonymous>");
+
+        if field_attributes.nocopy && !aggregate_attributes.nocopy {
+            return type_completion_error(
+                env,
+                None,
+                format!("Copyable aggregate cannot contain nocopy field '{}'", name),
+            );
+        }
+
+        if field_attributes.nodrop && !aggregate_attributes.nodrop {
+            return type_completion_error(
+                env,
+                None,
+                format!(
+                    "Aggregate containing nodrop field '{}' must also be nodrop",
+                    name
+                ),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn type_contains_by_value(
+    env: &TypeEnvironment,
+    id: MIRTypeId,
+    aggregate_identifier: &str,
+    visited: &mut HashSet<MIRTypeId>,
+) -> bool {
+    if !visited.insert(id) {
+        return false;
+    }
+
+    let Some(ty) = env.symbols.try_resolve_type_id(id) else {
+        return false;
+    };
+
+    if ty.strong_identifier() == Some(aggregate_identifier) {
+        return true;
+    }
+
+    match &ty.kind {
+        MIRTypeKind::Structured { fields }
+        | MIRTypeKind::Union { variants: fields }
+        | MIRTypeKind::TaggedUnion { variants: fields } => fields
+            .iter()
+            .any(|field| type_contains_by_value(env, field.ty(), aggregate_identifier, visited)),
+        MIRTypeKind::Array { inner_type, .. } => {
+            type_contains_by_value(env, *inner_type, aggregate_identifier, visited)
+        }
+        MIRTypeKind::PointerTo { .. }
+        | MIRTypeKind::MemoryReference { .. }
+        | MIRTypeKind::Function { .. } => false,
+        MIRTypeKind::Unit
+        | MIRTypeKind::Integer { .. }
+        | MIRTypeKind::Float { .. }
+        | MIRTypeKind::Opaque { .. }
+        | MIRTypeKind::Undefined
+        | MIRTypeKind::Str => false,
+    }
 }
 
 fn resolve_aggregate_move_attributes(
@@ -546,55 +660,6 @@ fn complete_field(
             })
         }
     }
-}
-
-fn ensure_aggregate_fields_complete(env: &TypeEnvironment, fields: &[MIRField]) -> CXResult<()> {
-    for field in fields {
-        let id = field.ty();
-        if !env.symbols.contains(id) {
-            let name = field.name().unwrap_or("<anonymous>");
-            return type_completion_error(
-                env,
-                None,
-                format!("Aggregate field '{}' has incomplete type", name),
-            );
-        }
-    }
-
-    Ok(())
-}
-
-fn ensure_aggregate_move_restrictions(
-    env: &TypeEnvironment,
-    aggregate_attributes: MIRMoveAttributes,
-    fields: &[MIRField],
-) -> CXResult<()> {
-    for field in fields {
-        let field_type = env.symbols.resolve_type_id(field.ty());
-        let field_attributes = owned_move_attributes(env, field_type);
-        let name = field.name().unwrap_or("<anonymous>");
-
-        if field_attributes.nocopy && !aggregate_attributes.nocopy {
-            return type_completion_error(
-                env,
-                None,
-                format!("Copyable aggregate cannot contain nocopy field '{}'", name),
-            );
-        }
-
-        if field_attributes.nodrop && !aggregate_attributes.nodrop {
-            return type_completion_error(
-                env,
-                None,
-                format!(
-                    "Aggregate containing nodrop field '{}' must also be nodrop",
-                    name
-                ),
-            );
-        }
-    }
-
-    Ok(())
 }
 
 fn owned_move_attributes(env: &TypeEnvironment, ty: &MIRType) -> MIRMoveAttributes {
