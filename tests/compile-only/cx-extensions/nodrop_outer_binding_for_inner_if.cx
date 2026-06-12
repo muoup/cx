@@ -1,0 +1,28 @@
+import std::vector as std;
+
+struct Resource : @nodrop {
+    int value;
+};
+
+void drop_resource(Resource value) {
+    @leak(value);
+}
+
+int main() {
+    std::vector<Resource> values = std::vector::with_capacity<Resource>(1);
+
+    for (usize i = 0; i < 1; i++) {
+        if (i == 0) {
+            int marker = 1;
+        }
+
+        Resource value = {
+            .value = 2
+        };
+        std::vector::push<Resource>(values, move value);
+    }
+
+    std::vector::drop_with<Resource>(move values, drop_resource);
+    return 0;
+}
+

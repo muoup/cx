@@ -2,6 +2,7 @@ import std::box as std;
 import std::vector as std;
 import std::io as std;
 import std::functional as std;
+import std::span as std;
 
 import ast as _;
 import parser;
@@ -51,7 +52,12 @@ bool str_eq(char* left, char* right) {
 }
 
 void interpreter::interpret(interpreter& this, lisp_node& node) {
-    this |> interpreter::eval(node, NULL, 0);
+    std::span<binding> locals = {
+        .data = NULL,
+        .length = 0
+    };
+
+    this |> interpreter::eval(node, locals);
 }
 
 void interpreter::register_program_functions(interpreter& this, lisp_node* body, usize body_length) {
@@ -59,10 +65,10 @@ void interpreter::register_program_functions(interpreter& this, lisp_node* body,
     this.program_length = body_length;
 }
 
-f64 find_local(binding* locals, usize local_count, char* name) {
-    for (usize i = 0; i < local_count; i++) {
-        if (str_eq(locals[i].name, name)) {
-            return locals[i].value;
+f64 find_local(std::span<binding> locals, char* name) {
+    for (usize i = 0; i < locals.length; i++) {
+        if (str_eq(locals.data[i].name, name)) {
+            return locals.data[i].value;
         }
     }
 
@@ -86,7 +92,7 @@ lisp_node* interpreter::find_function(interpreter& this, char* name) {
     return NULL;
 }
 
-f64 interpreter::call_function(interpreter& this, char* name, lisp_node* args, usize arg_count, binding* locals, usize local_count) {
+f64 interpreter::call_function(interpreter& this, char* name, std::span<lisp_node> args, std::span<binding> locals) {
     lisp_node* fn_node = this |> interpreter::find_function(name);
     if (fn_node == NULL) {
         printf("Unknown function: %s\n", name);
@@ -96,23 +102,31 @@ f64 interpreter::call_function(interpreter& this, char* name, lisp_node* args, u
     f64 result = 0.0;
     match (fn_node) {
         lisp_node::FnDef(fn_def) => {
-            binding* call_locals = malloc(fn_def.params.length * sizeof(binding));
+            std::vector<binding> call_locals = std::vector::with_capacity<binding>(fn_def.params.length);
 
             for (usize i = 0; i < fn_def.params.length; i++) {
                 f64 arg_value = 0.0;
-                if (i < arg_count) {
-                    arg_value = this |> interpreter::eval(&args[i], locals, local_count);
+                if (i < args.length) {
+                    arg_value = this |> interpreter::eval(args.at(i), locals);
                 }
 
-                call_locals[i].name = fn_def.params.data[i].data;
-                call_locals[i].value = arg_value;
+                binding local = {
+                    .name = fn_def.params.data[i].data,
+                    .value = arg_value
+                };
+                std::vector::push<binding>(call_locals, move local);
             }
+
+            std::span<binding> call_local_span = {
+                .data = call_locals.data,
+                .length = call_locals.length
+            };
 
             for (usize i = 0; i < fn_def.body.length; i++) {
-                result = this |> interpreter::eval(&fn_def.body.data[i], call_locals, fn_def.params.length);
+                result = this |> interpreter::eval(fn_def.body.data[i], call_local_span);
             }
 
-            free(call_locals);
+            std::vector::drop<binding>(move call_locals);
         }
         default => {}
     }
@@ -120,26 +134,33 @@ f64 interpreter::call_function(interpreter& this, char* name, lisp_node* args, u
     return result;
 }
 
-f64 interpreter::eval(interpreter& this, lisp_node* node, binding* locals, usize local_count) {
+f64 interpreter::eval(interpreter& this, lisp_node& node, std::span<binding> locals) {
     match (node) {
         lisp_node::Program(body) => {
             this |> interpreter::register_program_functions(body.data, body.length);
 
             f64 result = 0.0;
             for (usize i = 0; i < body.length; i++) {
-                result = this |> interpreter::eval(&body.data[i], locals, local_count);
+                result = this |> interpreter::eval(body.data[i], locals);
             }
 
             return result;
         }
         lisp_node::Number(num) => return num;
-        lisp_node::Symbol(name) => return find_local(locals, local_count, name.data);
+        lisp_node::Symbol(name) => return find_local(locals, name.data);
         lisp_node::FnDef(_) => return 0.0;
-        lisp_node::FnCall(fn_call) => return this |> interpreter::call_function(fn_call.name.data, fn_call.args.data, fn_call.args.length, locals, local_count);
-        lisp_node::Plus(plus) => return (this |> interpreter::eval(plus.left.ptr, locals, local_count)) + (this |> interpreter::eval(plus.right.ptr, locals, local_count));
-        lisp_node::Minus(minus) => return (this |> interpreter::eval(minus.left.ptr, locals, local_count)) - (this |> interpreter::eval(minus.right.ptr, locals, local_count));
+        lisp_node::FnCall(fn_call) => {
+            std::span<lisp_node> args = {
+                .data = fn_call.args.data,
+                .length = fn_call.args.length
+            };
+
+            return this |> interpreter::call_function(fn_call.name.data, args, locals);
+        }
+        lisp_node::Plus(plus) => return (this |> interpreter::eval(*(plus.left.ptr), locals)) + (this |> interpreter::eval(*(plus.right.ptr), locals));
+        lisp_node::Minus(minus) => return (this |> interpreter::eval(*(minus.left.ptr), locals)) - (this |> interpreter::eval(*(minus.right.ptr), locals));
         lisp_node::PrintNum(value) => {
-            printf("%f\n", this |> interpreter::eval(value.ptr, locals, local_count));
+            printf("%f\n", this |> interpreter::eval(*(value.ptr), locals));
             return 0.0;
         }
         lisp_node::PrintStr(value) => {

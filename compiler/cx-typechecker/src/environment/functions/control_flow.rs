@@ -621,8 +621,8 @@ impl ControlFlow {
 
     fn apply_merged_bindings(&mut self, merged_bindings: &[(String, TrackedBindingState)]) {
         for (name, binding) in merged_bindings {
-            if self.tracked_bindings.get(name).is_some() {
-                self.tracked_bindings.insert(name.clone(), binding.clone());
+            if let Some(existing) = self.tracked_bindings.get_mut(name) {
+                *existing = binding.clone();
             }
         }
     }

@@ -10,9 +10,6 @@ import ast as _;
 #undef isdigit
 #undef isspace
 
-double atof(char* str);
-void exit(int status);
-
 public:
 
 lisp_node parse(const char* source) {
@@ -74,7 +71,7 @@ char* copy_range(const char* source, usize start, usize end) {
     return result;
 }
 
-std::string std::string_from_owned_token(char* token) {
+std::string string_from_owned_token(char* token) {
     std::string result = std::string::new();
     result |> std::string::append((const char*) token);
     result.data[result.length] = '\0';
@@ -156,7 +153,7 @@ lisp_node parser::parse_program(parser& this) {
         usize previous_pos = this.pos;
         lisp_node expr = this |> parser::parse_expr;
         this |> parser::expect_progress(previous_pos);
-        body |> std::vector::push(move expr);
+        body |> std::vector::push<lisp_node>(move expr);
         this |> parser::skip_ws;
     }
 
@@ -209,7 +206,7 @@ std::vector<std::string> parser::parse_params(parser& this) {
         usize previous_pos = this.pos;
         std::string param = this |> parser::parse_name;
         this |> parser::expect_progress(previous_pos);
-        params |> std::vector::push(move param);
+        params |> std::vector::push<std::string>(move param);
         this |> parser::skip_ws;
     }
     this |> parser::expect(')');

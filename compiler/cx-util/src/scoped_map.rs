@@ -99,6 +99,14 @@ where
         self.data.get(name)
     }
 
+    pub fn get_mut<Q>(&mut self, name: &Q) -> Option<&mut V>
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
+        self.data.get_mut(name)
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
         self.data.iter()
     }
