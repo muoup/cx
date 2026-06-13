@@ -55,13 +55,12 @@ impl<'a> DecompositionEnv<'a> {
             return &mut self.symbol_buckets[idx].1;
         };
 
-        if !namespace.is_root()
-            && namespace.strip(self.namespace).is_none() {
-                panic!(
-                    "Namespace {} is not a child of current namespace {}",
-                    namespace, self.namespace
-                );
-            };
+        if !namespace.is_root() && namespace.strip(self.namespace).is_none() {
+            panic!(
+                "Namespace {} is not a child of current namespace {}",
+                namespace, self.namespace
+            );
+        };
 
         if !namespace.is_root() {
             let relation = (self.namespace.clone(), namespace.clone());

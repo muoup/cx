@@ -594,9 +594,7 @@ impl ControlFlow {
             } else {
                 let state_summary = states
                     .iter()
-                    .map(|(label, state)| {
-                        format!("{label} => {}", state.as_str())
-                    })
+                    .map(|(label, state)| format!("{label} => {}", state.as_str()))
                     .collect::<Vec<_>>()
                     .join(", ");
                 inconsistent.push(format!("{name} [{state_summary}]"));

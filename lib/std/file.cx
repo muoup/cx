@@ -56,7 +56,7 @@ std::string::string file::read_to_string(file& this) {
 
     // TODO: Replace with faster buffering system
     while ((c = fgetc(this.handle)) != EOF) {
-        s->append_char((char)c);
+        s |> std::string::string::append_char((char)c);
     }
 
     return move s;

@@ -571,11 +571,9 @@ pub(crate) fn parse_structured_initialization(data: &mut ParserData) -> CXResult
         }
     }
 
-    Ok(
-        CXExprKind::InitializerList { indices: inits }.into_expr(
-            init_index,
-            data.tokens.index,
-            data.file_origin_for_range(init_index, data.tokens.index),
-        ),
-    )
+    Ok(CXExprKind::InitializerList { indices: inits }.into_expr(
+        init_index,
+        data.tokens.index,
+        data.file_origin_for_range(init_index, data.tokens.index),
+    ))
 }

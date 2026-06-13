@@ -424,7 +424,13 @@ fn typecheck_expr_inner(
             condition,
             arms,
             default,
-        } => typecheck_match(env, namespace, condition, arms, default.as_ref().map(Box::as_ref))?,
+        } => typecheck_match(
+            env,
+            namespace,
+            condition,
+            arms,
+            default.as_ref().map(Box::as_ref),
+        )?,
 
         CXExprKind::Taken => unreachable!("Taken expressions should not be typechecked"),
     };

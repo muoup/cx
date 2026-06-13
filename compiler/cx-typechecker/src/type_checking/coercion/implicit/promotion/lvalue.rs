@@ -32,7 +32,7 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResul
         return CoercionResult::unapplied(expr);
     };
 
-    if mem_inner.is_array() || mem_inner.is_str() {
+    if mem_inner.is_array() || mem_inner.is_str() || mem_inner.is_function() {
         return CoercionResult::unapplied(expr);
     }
 

@@ -34,7 +34,7 @@ impl TypeIdPair {
 
 pub trait TypeContextEqual<Context: MIRTypeContext + ?Sized> {
     fn compare(&self, other: &Self, definitions: &Context, state: &mut TypeComparisonState)
-        -> bool;
+    -> bool;
 
     fn contextual_eq(&self, other: &Self, definitions: &Context) -> bool {
         let mut state = TypeComparisonState::default();

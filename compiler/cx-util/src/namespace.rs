@@ -137,6 +137,14 @@ impl QualifiedName {
         Some(self.name)
     }
 
+    pub fn root_name_ref(&self) -> Option<&CXIdent> {
+        if !self.namespace.is_root() {
+            return None;
+        }
+
+        Some(&self.name)
+    }
+
     pub fn child(self, name: CXIdent) -> Self {
         Self {
             namespace: self.namespace.child(self.name),

@@ -18,7 +18,7 @@ use cx_util::{
 
 use crate::{next_kind, try_next};
 
-use super::{types::is_type_decl, parser::ParserData, templates::parse_template_args};
+use super::{parser::ParserData, templates::parse_template_args, types::is_type_decl};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedIdentifier {

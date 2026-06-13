@@ -1,7 +1,7 @@
 use cx_ast::ast::{function::CXFunctionContract, modifiers::CXLinkageMode};
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
-use crate::mir::contextual_eq::{compare_ordered, TypeComparisonState, TypeContextEqual};
+use crate::mir::contextual_eq::{TypeComparisonState, TypeContextEqual, compare_ordered};
 use crate::mir::expression::MIRExpression;
 pub use crate::mir::r#type::{
     MIRFloatType, MIRIntegerType, MIRMoveAttributes, MIRType, MIRTypeId, MIRTypeKind,

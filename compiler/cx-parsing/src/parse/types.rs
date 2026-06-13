@@ -15,7 +15,9 @@ use cx_ast::ast::{
 use cx_log::CXResult;
 use cx_mir::intrinsic_types::is_intrinsic_type;
 use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
-use cx_tokens::{TokenIter, TokenRange, identifier, intrinsic, keyword, operator, punctuator, specifier};
+use cx_tokens::{
+    identifier, intrinsic, keyword, operator, punctuator, specifier, TokenIter, TokenRange,
+};
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
 

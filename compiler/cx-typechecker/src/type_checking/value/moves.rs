@@ -208,7 +208,7 @@ pub(crate) fn typecheck_unpack(
 
     let mut seen_fields = HashSet::new();
     let mut seen_bindings = HashSet::new();
-    
+
     for unpack_binding in bindings {
         if !field_map.contains_key(unpack_binding.field.as_str()) {
             return log_typecheck_error!(

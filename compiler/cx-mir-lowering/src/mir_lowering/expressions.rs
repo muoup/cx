@@ -659,9 +659,9 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             Ok(bc_target)
         }
 
-        MIRExpressionKind::RegionMove { source } => { 
+        MIRExpressionKind::RegionMove { source } => {
             let lmir_type = builder.convert_cx_type(&source._type);
-            
+
             if lmir_type.is_memory_resident() {
                 lower_expression(builder, source.as_ref())
             } else {

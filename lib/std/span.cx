@@ -31,7 +31,7 @@ T& span::at<T>(span<T>& this, usize index) {
 }
 
 std::opt<T&> span::first<T>(span<T>& this) {
-    return this.get(0);
+    return this |> span::get<T>(0);
 }
 
 std::opt<T&> span::last<T>(span<T>& this) {

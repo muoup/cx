@@ -3,18 +3,18 @@ use crate::log_typecheck_error;
 use crate::symbol::completion::complete_template_input;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::pattern::tagged_union::{
-    resolve_type_constructor_pattern, TypeConstructor,
+    TypeConstructor, resolve_type_constructor_pattern,
 };
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
 use cx_log::CXResult;
+use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::contextual_eq::TypeContextEqual;
 use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin};
 use cx_mir::mir::pattern::MIRPattern;
 use cx_mir::type_context::MIRTypeContext;
-use cx_mir::EnvironmentNamespace;
 use cx_util::namespace::QualifiedName;
 
 pub(crate) fn typecheck_is(

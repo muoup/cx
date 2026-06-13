@@ -29,11 +29,7 @@ pub fn try_typecheck_special_binop(
 
             match &rhs.kind {
                 CXExprKind::Identifier { .. } => {
-                    let callee = typecheck_expr(env, namespace, rhs, None)?
-                        .standard_ready_coerce(env, rhs.token_range())?;
-
-                    let tc_result = TypecheckResult::from(callee)
-                        .with_implicit_parameters(vec![implicit_param]);
+                    let callee = typecheck_expr(env, namespace, rhs, None)?;
 
                     let faux_param = CXExpression {
                         kind: CXExprKind::Unit,
@@ -43,7 +39,8 @@ pub fn try_typecheck_special_binop(
                     Some(typecheck_callee_method_call(
                         env,
                         namespace,
-                        tc_result,
+                        callee,
+                        vec![implicit_param],
                         &faux_param,
                         expr,
                     )?)
@@ -54,14 +51,15 @@ pub fn try_typecheck_special_binop(
                     lhs,
                     rhs,
                 } => {
-                    let callee = typecheck_expr(env, namespace, lhs, None)?
-                        .standard_ready_coerce(env, lhs.token_range())?;
-
-                    let tc_result = TypecheckResult::from(callee)
-                        .with_implicit_parameters(vec![implicit_param]);
+                    let callee = typecheck_expr(env, namespace, lhs, None)?;
 
                     Some(typecheck_callee_method_call(
-                        env, namespace, tc_result, rhs, expr,
+                        env,
+                        namespace,
+                        callee,
+                        vec![implicit_param],
+                        rhs,
+                        expr,
                     )?)
                 }
 

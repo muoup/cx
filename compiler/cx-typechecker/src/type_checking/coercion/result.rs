@@ -66,12 +66,6 @@ impl CoercionResult {
         })
     }
 
-    pub fn expr(self) -> MIRExpression {
-        match self {
-            CoercionResult::Success { expr } | CoercionResult::Unapplied { expr, .. } => expr,
-        }
-    }
-
     pub fn catch_unapplied<F>(self, on_unapplied: F) -> CXResult<MIRExpression>
     where
         F: FnOnce(MIRExpression, Option<CoercionObstacle>) -> CXResult<MIRExpression>,

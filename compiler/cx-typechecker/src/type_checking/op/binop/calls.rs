@@ -5,11 +5,8 @@ use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::lvalue;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::contracts::typecheck_contract;
-use crate::type_checking::result::{
-    CalleeExtraction, PendingReceiver, TypecheckExtract, TypecheckResult,
-};
+use crate::type_checking::result::{TypecheckExtract, TypecheckResult};
 use crate::type_checking::typechecker::typecheck_expr;
-use crate::type_checking::value::moves::typecheck_move;
 use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
 use cx_log::CXResult;
 use cx_mir::EnvironmentNamespace;
@@ -26,26 +23,22 @@ pub(crate) fn typecheck_method_call(
 ) -> CXResult<TypecheckResult> {
     let function = typecheck_expr(env, namespace, lhs, None)?;
 
-    typecheck_callee_method_call(env, namespace, function, rhs, expr)
+    typecheck_callee_method_call(env, namespace, function, vec![], rhs, expr)
 }
 
 pub(crate) fn typecheck_callee_method_call(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     callee: TypecheckResult,
+    implicit_args: Vec<MIRExpression>,
     rhs: &CXExpression,
     expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     let tc_args = comma_separated(env, namespace, rhs)?;
-    let callee = complete_callee(env, namespace, expr, callee, &tc_args)?;
-    let arg_count = call_arg_count(&callee, &tc_args);
-    let CalleeExtraction {
-        function,
-        implicit_args,
-    } = callee;
-    let (loaded_function, signature) = load_callable(env, expr, function)?;
+    let callee = complete_callee(env, namespace, expr, callee, &implicit_args, &tc_args)?;
+    let (loaded_function, signature) = load_callable(env, expr, callee)?;
 
-    check_argument_count(env, expr, &signature, arg_count)?;
+    check_argument_count(env, expr, &signature, tc_args.len() + implicit_args.len())?;
 
     let argument_results =
         complete_call_arguments(env, namespace, &signature, implicit_args, tc_args)?;
@@ -67,24 +60,23 @@ fn load_callable(
     expr: &CXExpression,
     function: MIRExpression,
 ) -> CXResult<(MIRExpression, MIRFunctionSignature)> {
-    let loaded_function = lvalue::try_conversion(env, function)?.expr();
+    let loaded_function =
+        lvalue::try_conversion(env, function)?.catch_unapplied(|expr, _| Ok(expr))?;
     let function_type = loaded_function.get_type();
-    let callable_type = env
+    let Some(callable_type) = env
         .symbols
-        .ptr_inner(&function_type)
+        .intern_signature(loaded_function.get_type_ref())
         .cloned()
-        .unwrap_or(function_type);
-
-    let MIRTypeKind::Function { signature } = &callable_type.kind else {
+    else {
         return log_typecheck_error!(
             env,
             expr.token_range(),
             "Attempted to call value of non-function type {}",
-            callable_type.display_with(&env.symbols)
+            function_type.display_with(&env.symbols)
         );
     };
 
-    Ok((loaded_function, signature.as_ref().clone()))
+    Ok((loaded_function, callable_type))
 }
 
 fn check_argument_count(
@@ -230,20 +222,14 @@ fn coerce_call_arguments(
 }
 
 fn deduction_arg_types(
-    source_base_type: Option<MIRType>,
+    implicit_args: &[MIRExpression],
     args: &[(&CXExpression, TypecheckResult)],
 ) -> Vec<MIRType> {
-    source_base_type
-        .into_iter()
+    implicit_args
+        .iter()
+        .map(MIRExpression::get_type)
         .chain(args.iter().filter_map(|(_, arg)| arg.ready_type().cloned()))
         .collect()
-}
-
-fn call_arg_count(
-    callee: &CalleeExtraction,
-    explicit_args: &[(&CXExpression, TypecheckResult)],
-) -> usize {
-    callee.implicit_args.len() + explicit_args.len()
 }
 
 fn complete_call_argument_expressions(
@@ -260,18 +246,18 @@ fn complete_callee(
     namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     function: TypecheckResult,
+    implicit_args: &[MIRExpression],
     args: &[(&CXExpression, TypecheckResult)],
-) -> CXResult<CalleeExtraction> {
-    match function.try_into_callee() {
-        TypecheckExtract::Succ(callee) => {
-            complete_pending_receiver(env, namespace, expr, callee, None)
-        }
+) -> CXResult<MIRExpression> {
+    match function.try_into_expression() {
+        TypecheckExtract::Succ(callee) => Ok(callee),
+
         TypecheckExtract::Fail(function) => {
             let Some(parts) = function.into_incomplete_callee_parts() else {
                 return log_typecheck_error!(env, expr.token_range(), "Could not deduce callee");
             };
 
-            let deduction_arg_types = deduction_arg_types(parts.source_base_type, args);
+            let deduction_arg_types = deduction_arg_types(implicit_args, args);
 
             let symbol = match complete_templated_callee(
                 env,
@@ -291,67 +277,14 @@ fn complete_callee(
                 }
             };
 
-            let function = match symbol.as_expression() {
-                Ok(function) => function,
+            match symbol.as_expression() {
+                Ok(function) => Ok(function),
                 Err(err) => {
-                    return log_typecheck_error!(
-                        env,
-                        expr.token_range(),
-                        "{}",
-                        err.error_content()
-                    );
+                    log_typecheck_error!(env, expr.token_range(), "{}", err.error_content())
                 }
-            };
-
-            complete_pending_receiver(
-                env,
-                namespace,
-                expr,
-                CalleeExtraction {
-                    function,
-                    implicit_args: parts.implicit_args,
-                },
-                parts.pending_receiver,
-            )
+            }
         }
     }
-}
-
-fn complete_pending_receiver(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
-    mut callee: CalleeExtraction,
-    pending_receiver: Option<PendingReceiver>,
-) -> CXResult<CalleeExtraction> {
-    let Some(PendingReceiver { source, binding }) = pending_receiver else {
-        return Ok(callee);
-    };
-
-    let MIRTypeKind::Function { signature } = &callee.function._type.kind else {
-        unreachable!("function references must have function type")
-    };
-
-    let needs_move = signature
-        .params
-        .first()
-        .map(|param| !param._type.is_memory_reference())
-        .unwrap_or(false);
-
-    let receiver = if needs_move {
-        let mut receiver = TypecheckResult::from(source);
-        if let Some(binding) = binding {
-            receiver = receiver.with_binding(binding);
-        }
-
-        typecheck_move(env, namespace, receiver, expr)
-            .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?
-    } else {
-        source
-    };
-
-    callee.implicit_args.insert(0, receiver);
-    Ok(callee)
 }
 
 pub(crate) fn comma_separated<'a>(
