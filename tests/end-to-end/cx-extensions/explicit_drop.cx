@@ -21,6 +21,6 @@ int main() {
     Resource forwarded = pass_through(move resource);
 
     std::io::println("after pass_through");
-    move forwarded |> Resource::drop;
+    move forwarded |> Resource::drop();
     return 0;
 }

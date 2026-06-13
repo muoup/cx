@@ -28,24 +28,6 @@ pub fn try_typecheck_special_binop(
                 .standard_ready_coerce(env, lhs.token_range())?;
 
             match &rhs.kind {
-                CXExprKind::Identifier { .. } => {
-                    let callee = typecheck_expr(env, namespace, rhs, None)?;
-
-                    let faux_param = CXExpression {
-                        kind: CXExprKind::Unit,
-                        range: rhs.token_range().clone(),
-                    };
-
-                    Some(typecheck_callee_method_call(
-                        env,
-                        namespace,
-                        callee,
-                        vec![implicit_param],
-                        &faux_param,
-                        expr,
-                    )?)
-                }
-
                 CXExprKind::BinOp {
                     op: CXBinOp::MethodCall,
                     lhs,

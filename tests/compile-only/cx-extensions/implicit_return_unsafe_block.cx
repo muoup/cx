@@ -22,7 +22,7 @@ void box::drop(box this) {
 
 int main() {
     box value = box::new(3);
-    move value |> box::drop;
+    move value |> box::drop();
     return 0;
 }
 

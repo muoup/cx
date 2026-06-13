@@ -19,7 +19,7 @@ int main() {
     });
     match (move maybe) {
         MaybeResource::some(inner) => {
-            move inner |> Resource::drop;
+            move inner |> Resource::drop();
         }
         MaybeResource::none() => {}
     }

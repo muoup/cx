@@ -40,7 +40,7 @@ void box::drop_with<T>(box<T> this, void(*drop_value)(T)) {
         drop_value(@adopt(*this.ptr));
     };
 
-    move this |> box::drop<T>;
+    move this |> box::drop<T>();
 }
 
 void box::drop<T>(box<T> this) safe {

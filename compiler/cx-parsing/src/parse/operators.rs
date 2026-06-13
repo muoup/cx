@@ -26,6 +26,8 @@ impl PrecOperator {
 pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
     match op {
         CXBinOp::Access | CXBinOp::MethodCall | CXBinOp::ArrayIndex => 1,
+        CXBinOp::Pipe => 2,
+
         CXBinOp::Multiply | CXBinOp::Divide | CXBinOp::Modulus => 4,
         CXBinOp::Add | CXBinOp::Subtract => 5,
 
@@ -41,7 +43,6 @@ pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
         CXBinOp::LAnd => 14,
         CXBinOp::LOr => 15,
 
-        CXBinOp::Pipe => 16,
         CXBinOp::Assign(_) => 17,
 
         CXBinOp::Comma => 18,
@@ -51,6 +52,7 @@ pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
 pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
     match op {
         CXUnOp::PostIncrement(_) => 1,
+        CXUnOp::Move => 1,
 
         CXUnOp::PreIncrement(_) => 2,
         CXUnOp::BNot => 2,
@@ -62,7 +64,6 @@ pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
         CXUnOp::Is(_) => 3,
         CXUnOp::ExplicitCast(_) => 3,
 
-        CXUnOp::Move => 4,
     }
 }
 

@@ -15,6 +15,6 @@ int main() {
         }
     };
 
-    move container.inner |> Item::consume;
+    move container.inner |> Item::consume();
     return 0;
 }

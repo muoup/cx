@@ -16,5 +16,5 @@ public:
 
 int main() {
     private_alias_shadow value = {};
-    return value |> private_alias_shadow::call;
+    return value |> private_alias_shadow::call();
 }

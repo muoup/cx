@@ -5,12 +5,12 @@ import std::optional;
 
 int main() {
     std::file::file f = std::file::file::open("test.txt", "w")
-        |> std::optional::opt::unwrap<std::file::file>;
+        |> std::optional::opt::unwrap<std::file::file>();
     
     // Some extra work
     if (f.handle != NULL) {
         f |> std::file::file::write_line("Hello, world!");
     }
     
-    f |> std::file::file::flush;
+    f |> std::file::file::flush();
 }

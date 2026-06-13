@@ -18,7 +18,7 @@ void Container::drop(Container this) safe {
         resource: resource,
     };
 
-    move resource |> Resource::drop;
+    move resource |> Resource::drop();
 }
 
 int main() {
@@ -29,6 +29,6 @@ int main() {
         .count = 2
     };
 
-    move container |> Container::drop;
+    move container |> Container::drop();
     return 0;
 }

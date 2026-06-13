@@ -9,5 +9,5 @@ int main() {
     s |> std::string::string::append_char('d');
     s |> std::string::string::append_char('!');
     printf("%s\n", s.data);
-    move s |> std::string::string::drop;
+    move s |> std::string::string::drop();
 }

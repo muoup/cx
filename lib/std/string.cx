@@ -53,7 +53,7 @@ void string::append(string& this, const char* s) {
     u64 str_length = strlen(s);
 
     while (this.length + str_length >= this.capacity) {
-        this |> string::_realloc;
+        this |> string::_realloc();
     }
 
     memcpy(this.data + this.length, s, str_length);
@@ -62,7 +62,7 @@ void string::append(string& this, const char* s) {
 
 void string::append_char(string& this, char c) {
     if (this.length + 1 >= this.capacity) {
-        this |> string::_realloc;
+        this |> string::_realloc();
     }
 
     this.data[this.length++] = c;

@@ -39,13 +39,13 @@ void lisp_node::drop(lisp_node node) {
     match (node_ref) {
         lisp_node::Program(body) => move body |> std::vector::drop_with<lisp_node>(lisp_node::drop);
         lisp_node::Number(_) => {}
-        lisp_node::Symbol(name) => move name |> std::string::drop;
+        lisp_node::Symbol(name) => move name |> std::string::drop();
         lisp_node::FnDef(fn_def) => {
             std::string name = @adopt(fn_def.name);
             std::vector<std::string> params = @adopt(fn_def.params);
             std::vector<ast::lisp_node> body = @adopt(fn_def.body);
 
-            move name |> std::string::drop;
+            move name |> std::string::drop();
             move params |> std::vector::drop_with<std::string>(std::string::drop);
             move body |> std::vector::drop_with<lisp_node>(lisp_node::drop);
         }
@@ -53,7 +53,7 @@ void lisp_node::drop(lisp_node node) {
             std::string name = @adopt(fn_call.name);
             std::vector<ast::lisp_node> args = @adopt(fn_call.args);
 
-            move name |> std::string::drop;
+            move name |> std::string::drop();
             move args |> std::vector::drop_with<lisp_node>(lisp_node::drop);
         }
         lisp_node::Plus(plus) => {

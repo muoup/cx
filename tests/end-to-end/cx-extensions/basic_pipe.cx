@@ -13,7 +13,7 @@ IntWrapper IntWrapper::new(int x) {
 
 int main() {
     IntWrapper wrapper = IntWrapper::new(5)
-        |> IntWrapper::transform;
+        |> IntWrapper::transform();
 
     printf("Transformed IntWrapper: %d\n", wrapper.x);
 }

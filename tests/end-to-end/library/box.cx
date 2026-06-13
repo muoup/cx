@@ -5,6 +5,6 @@ import std::box;
 
 int main() {
   std::box::box<int> i = std::box::box::new<int>(2);
-  printf("i = %d\n", i |> std::box::box::deref_mut<int>);
-  move i |> std::box::box::drop<int>;
+  printf("i = %d\n", i |> std::box::box::deref_mut<int>());
+  move i |> std::box::box::drop<int>();
 }

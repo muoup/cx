@@ -1,0 +1,5 @@
+int identity(int x) { return x; }
+
+int main() {
+    return 1 |> identity() > 2;
+}

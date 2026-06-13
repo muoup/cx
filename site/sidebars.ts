@@ -40,7 +40,7 @@ const sidebars: SidebarsConfig = {
         {
             type: "doc",
             id: "manual/member-functions",
-            label: "3. Member Functions",
+            label: "3. Associated Functions",
         },
         {
             type: "doc",
