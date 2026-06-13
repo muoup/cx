@@ -4,6 +4,6 @@ int main() {
     std::vector::vector<int> ints = std::vector::vector::new<int>();
     std::vector::vector<f64> floats = move ints;
 
-    floats.drop<f64>();
+    move floats |> std::vector::vector::drop<f64>;
     return 0;
 }

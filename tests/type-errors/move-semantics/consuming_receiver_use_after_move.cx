@@ -13,6 +13,6 @@ int main() {
         .data = 1
     };
 
-    value.drop();
+    move value |> Resource::drop;
     return value.data;
 }

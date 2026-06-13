@@ -15,8 +15,8 @@ int main() {
     std::vector::vector<test_type> t = std::vector::vector::new<test_type>();
 
     for (int i = 0; i < 10; i++) {
-        t.push((test_type) { .num = i });
+        t |> std::vector::vector::push<test_type>((test_type) { .num = i });
     }
 
-    t.drop_with(destructor);
+    move t |> std::vector::vector::drop_with<test_type>(destructor);
 }

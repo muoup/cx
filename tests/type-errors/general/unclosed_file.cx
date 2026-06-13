@@ -4,12 +4,13 @@ import std::optional;
 #include <stdlib.h>
 
 int main() {
-    std::file::file f = std::file::file::open("test.txt", "w").unwrap<std::file::file>();
+    std::file::file f = std::file::file::open("test.txt", "w")
+        |> std::optional::opt::unwrap<std::file::file>;
     
     // Some extra work
     if (f.handle != NULL) {
-        f.write_line("Hello, world!");
+        f |> std::file::file::write_line("Hello, world!");
     }
     
-    f.flush();
+    f |> std::file::file::flush;
 }

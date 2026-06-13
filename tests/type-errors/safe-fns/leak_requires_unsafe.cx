@@ -11,6 +11,6 @@ int main() {
         .data = 1
     };
 
-    value.drop();
+    value |> Resource::drop;
     return 0;
 }

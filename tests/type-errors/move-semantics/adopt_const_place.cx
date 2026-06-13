@@ -6,7 +6,7 @@ int main() {
     Resource* ptr = malloc(sizeof(Resource));
     const Resource& source = *ptr;
     Resource adopted = @unsafe(@adopt(source));
-    adopted.drop();
+    move adopted |> Resource::drop;
     free(ptr);
     return 0;
 }

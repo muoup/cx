@@ -16,9 +16,9 @@ int main() {
     };
 
     if (cond) {
-        value.drop();
+        move value |> Resource::drop;
     } else {
-        value.drop();
+        move value |> Resource::drop;
     }
 
     std::io::println("done");

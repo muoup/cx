@@ -4,8 +4,8 @@ import std::vector as v;
 
 int main() {
     v::vector<int> vec = v::vector::new<int>();
-    vec.push<int>(42);
+    vec |> v::vector::push<int>(42);
     printf("%zu\n", vec.length);
-    vec.drop<int>();
+    move vec |> v::vector::drop<int>;
     return 0;
 }

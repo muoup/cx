@@ -8,7 +8,7 @@ int main() {
     };
 
     Resource adopted = @unsafe(@adopt(move value));
-    adopted.drop();
+    move adopted |> Resource::drop;
     return 0;
 }
 

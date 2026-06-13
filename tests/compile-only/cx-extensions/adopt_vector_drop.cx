@@ -14,7 +14,7 @@ int main() {
         .data = 11
     };
 
-    values.push<Resource>(move value);
-    values.drop_with<Resource>(destroy);
+    values |> std::vector::vector::push<Resource>(move value);
+    move values |> std::vector::vector::drop_with<Resource>(destroy);
     return 0;
 }

@@ -13,5 +13,5 @@ int main() {
     templated_object<int> object = (templated_object<int>) {
         .value = 3
     };
-    object.drop<int>();
+    move object |> templated_object::drop<int>;
 }

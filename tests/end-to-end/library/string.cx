@@ -5,9 +5,9 @@ import std::optional;
 
 int main() {
     std::string::string s = std::string::string::new();
-    s.append("Hello, worl");
-    s.append_char('d');
-    s.append_char('!');
+    s |> std::string::string::append("Hello, worl");
+    s |> std::string::string::append_char('d');
+    s |> std::string::string::append_char('!');
     printf("%s\n", s.data);
-    s.drop();
+    move s |> std::string::string::drop;
 }
