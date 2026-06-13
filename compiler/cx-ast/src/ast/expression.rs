@@ -208,20 +208,7 @@ pub struct CXUnpackBinding {
 }
 
 impl CXExprKind {
-    pub fn into_expr(self, start_index: usize, end_index: usize) -> CXExpression {
-        let (start_index, end_index) = if start_index > end_index {
-            (0, 0)
-        } else {
-            (start_index, end_index)
-        };
-
-        CXExpression {
-            kind: self,
-            range: TokenRange::new(start_index, end_index, Arc::from("")),
-        }
-    }
-
-    pub fn into_expr_with_origin(
+    pub fn into_expr(
         self,
         start_index: usize,
         end_index: usize,

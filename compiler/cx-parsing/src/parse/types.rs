@@ -13,14 +13,41 @@ use cx_ast::ast::{
     types::{CXField, CXStructAttributes, CXType, CXTypeKind, PredeclarationType},
 };
 use cx_log::CXResult;
+use cx_mir::intrinsic_types::is_intrinsic_type;
 use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
-use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, TokenIter, TokenRange};
+use cx_tokens::{TokenIter, TokenRange, identifier, intrinsic, keyword, operator, punctuator, specifier};
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
 
 use crate::parse::functions::{parse_params, ParseParamsResult};
 use crate::parse::templates::{note_templated_types, try_parse_template, unnote_templated_types};
 use crate::parse::{parse_intrinsic, try_parse_qualified_name, try_parse_type_identifier};
+
+pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
+    let tok = data.tokens.peek().map(|tok| tok.kind.clone());
+
+    if tok.is_none() {
+        return Ok(false);
+    }
+
+    Ok(match &tok.unwrap() {
+        intrinsic!() | specifier!() | keyword!(Struct, Union, Enum) => true,
+
+        identifier!(name) if is_intrinsic_type(name) => true,
+
+        TokenKind::Identifier(_) => {
+            let pre_idx = data.tokens.index;
+            let Some(ident) = try_parse_qualified_name(&mut data.tokens)? else {
+                unreachable!()
+            };
+            data.tokens.index = pre_idx;
+
+            data.is_type_ident(&ident)
+        }
+
+        _ => false,
+    })
+}
 
 fn token_range(start: usize, end: usize) -> TokenRange {
     TokenRange::new(start, end.max(start.saturating_add(1)), Arc::from(""))

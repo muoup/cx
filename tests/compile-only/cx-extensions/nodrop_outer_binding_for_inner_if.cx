@@ -4,7 +4,7 @@ struct Resource : @nodrop {
     int value;
 };
 
-void drop_resource(Resource value) {
+void Resource::drop_resource(Resource value) {
     @leak(value);
 }
 
@@ -19,10 +19,9 @@ int main() {
         Resource value = {
             .value = 2
         };
-        std::vector::push<Resource>(values, move value);
+        values |> std::vector::push<Resource>(move value);
     }
 
-    std::vector::drop_with<Resource>(move values, drop_resource);
+    move values |> std::vector::drop_with<Resource>(Resource::drop_resource);
     return 0;
 }
-

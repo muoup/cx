@@ -33,6 +33,13 @@ impl<'a> TokenIter<'a> {
         self.slice.get(self.index)
     }
 
+    pub fn peek_prev(&self) -> Option<&Token> {
+        if self.index == 0 {
+            return None;
+        }
+        self.slice.get(self.index - 1)
+    }
+
     pub fn back(&mut self) {
         self.index -= 1;
     }

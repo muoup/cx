@@ -5,8 +5,8 @@ use cx_log::CXResult;
 use cx_tokens::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_tokens::{operator, punctuator};
 
-use crate::parse::expressions::{is_type_decl, parse_pattern};
-use crate::parse::types::parse_initializer;
+use crate::parse::expressions::parse_pattern;
+use crate::parse::types::{is_type_decl, parse_initializer};
 
 #[derive(Debug, Clone)]
 pub(crate) enum PrecOperator {

@@ -18,7 +18,7 @@ use cx_util::{
 
 use crate::{next_kind, try_next};
 
-use super::{expressions::is_type_decl, parser::ParserData, templates::parse_template_args};
+use super::{types::is_type_decl, parser::ParserData, templates::parse_template_args};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedIdentifier {
@@ -53,7 +53,7 @@ impl ParsedIdentifier {
             name: self.name,
             template_input: self.template_input,
         }
-        .into_expr_with_origin(start_index, end_index, file_origin)
+        .into_expr(start_index, end_index, file_origin)
     }
 
     #[allow(dead_code)]

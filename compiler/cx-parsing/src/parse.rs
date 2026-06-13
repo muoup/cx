@@ -18,9 +18,10 @@ use cx_util::identifier::CXIdent;
 use crate::{
     assert_token_matches, next_kind,
     parse::{
-        expressions::{expression_requires_semicolon, parse_expr},
+        expressions::parse_expr,
         functions::try_function_parse,
         parser::ParserData,
+        statement::parse_stmt,
         templates::{note_templated_types, parse_template_prototype, unnote_templated_types},
         types::{parse_initializer, parse_typedef_initializer},
     },
@@ -33,6 +34,7 @@ mod expressions;
 mod functions;
 mod identifier;
 mod operators;
+mod statement;
 mod templates;
 mod types;
 
@@ -41,12 +43,11 @@ pub(crate) use identifier::{
 };
 
 pub fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
-    match data
-        .tokens
-        .peek()
-        .expect("CRITICAL: parse_global_stmt() should not be called with no remaining tokens!")
-        .kind
-    {
+    let Some(token) = data.tokens.peek() else {
+        return Ok(());
+    };
+
+    match &token.kind {
         keyword!(Import) => data.tokens.goto_statement_end()?,
         keyword!(Typedef) => parse_typedef(data)?,
         punctuator!(Semicolon) => {
@@ -221,28 +222,16 @@ fn parse_body(data: &mut ParserData) -> CXResult<CXExpression> {
         let mut body = Vec::new();
 
         while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-            let stmt = parse_expr(data)?;
-
-            if expression_requires_semicolon(&stmt) {
-                assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
-            }
-
-            body.push(stmt);
+            body.push(parse_stmt(data)?);
         }
 
-        Ok(CXExprKind::Block { exprs: body }.into_expr_with_origin(
+        Ok(CXExprKind::Block { exprs: body }.into_expr(
             start_index,
             data.tokens.index,
             data.file_origin_for_range(start_index, data.tokens.index),
         ))
     } else {
-        let body = parse_expr(data)?;
-
-        if expression_requires_semicolon(&body) {
-            assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
-        }
-
-        Ok(body)
+        Ok(parse_stmt(data)?)
     }
 }
 

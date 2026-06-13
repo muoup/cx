@@ -1,19 +1,17 @@
-use crate::parse::{try_parse_qualified_name, try_parse_simple_identifier, ParserData};
+use crate::parse::{try_parse_simple_identifier, ParserData};
 use crate::{assert_token_matches, next_kind, peek_next_kind, try_next};
-use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression, CXInitIndex, CXUnpackBinding};
+use cx_ast::ast::expression::{CXExprKind, CXExpression, CXInitIndex, CXUnpackBinding};
 use cx_ast::ast::pattern::CXPattern;
-use cx_ast::ast::types::CXTypeKind;
-use cx_log::{log_error, CXResult};
-use cx_mir::intrinsic_types::is_intrinsic_type;
+use cx_log::CXResult;
 use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
-use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, specifier};
-use cx_util::namespace::{NamespacePath, QualifiedName};
+use cx_tokens::{identifier, operator, punctuator};
+use cx_util::namespace::QualifiedName;
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::parse::operators::{
     binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
 };
-use crate::parse::types::{parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
+use crate::parse::types::{is_type_decl, parse_initializer};
 use crate::parse::{parse_body, parse_intrinsic, try_parse_identifier};
 
 fn parse_at_intrinsic_expr(
@@ -38,7 +36,7 @@ fn parse_at_intrinsic_expr(
             Ok(CXExprKind::Unsafe {
                 expr: Box::new(expr),
             }
-            .into_expr_with_origin(
+            .into_expr(
                 start_index,
                 data.tokens.index,
                 data.file_origin_for_range(start_index, data.tokens.index),
@@ -53,7 +51,7 @@ fn parse_at_intrinsic_expr(
             Ok(CXExprKind::Leak {
                 expr: Box::new(expr),
             }
-            .into_expr_with_origin(
+            .into_expr(
                 start_index,
                 data.tokens.index,
                 data.file_origin_for_range(start_index, data.tokens.index),
@@ -68,7 +66,7 @@ fn parse_at_intrinsic_expr(
             Ok(CXExprKind::Adopt {
                 expr: Box::new(expr),
             }
-            .into_expr_with_origin(
+            .into_expr(
                 start_index,
                 data.tokens.index,
                 data.file_origin_for_range(start_index, data.tokens.index),
@@ -103,7 +101,7 @@ fn parse_at_intrinsic_expr(
                 expr: Box::new(expr),
                 bindings,
             }
-            .into_expr_with_origin(
+            .into_expr(
                 start_index,
                 data.tokens.index,
                 data.file_origin_for_range(start_index, data.tokens.index),
@@ -116,43 +114,6 @@ fn parse_at_intrinsic_expr(
             log_parse_error!(data, "Unknown intrinsic expression '{}'", ident)
         }
     }
-}
-
-pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
-    let tok = data.tokens.peek().map(|tok| tok.kind.clone());
-
-    if tok.is_none() {
-        return Ok(false);
-    }
-
-    Ok(match &tok.unwrap() {
-        intrinsic!() | specifier!() | keyword!(Struct, Union, Enum) => true,
-
-        identifier!(name) if is_intrinsic_type(name) => true,
-
-        TokenKind::Identifier(_) => {
-            let pre_idx = data.tokens.index;
-            let Some(ident) = try_parse_qualified_name(&mut data.tokens)? else {
-                unreachable!()
-            };
-            data.tokens.index = pre_idx;
-
-            data.is_type_ident(&ident)
-        }
-
-        _ => false,
-    })
-}
-
-pub(crate) fn expression_requires_semicolon(expr: &CXExpression) -> bool {
-    !matches!(
-        expr.kind,
-        CXExprKind::If { .. }
-            | CXExprKind::While { .. }
-            | CXExprKind::For { .. }
-            | CXExprKind::Match { .. }
-            | CXExprKind::Switch { .. }
-    )
 }
 
 pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<CXExpression> {
@@ -203,7 +164,7 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<CXExpression> {
             then_branch: Box::new(then_branch),
             else_branch: Box::new(else_branch),
         }
-        .into_expr_with_origin(
+        .into_expr(
             start_index,
             end_index,
             data.file_origin_for_range(start_index, end_index),
@@ -211,115 +172,6 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<CXExpression> {
     }
 
     Ok(expr)
-}
-
-pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpression> {
-    let start_index = data.tokens.index;
-
-    let specifiers = parse_specifier(&mut data.tokens);
-    let base_type = parse_type_base(data)?.add_specifier(specifiers);
-
-    let mut decls = Vec::new();
-    data.change_comma_mode(false);
-
-    loop {
-        let (name, _type) = parse_base_mods(data, base_type.clone())?;
-
-        if let Some(name) = name {
-            // Check for initializer after variable name
-            let initial_value = if try_next!(data.tokens, TokenKind::Assignment(None)) {
-                data.change_comma_mode(false);
-                let init_expr = parse_expr(data)?;
-                data.pop_comma_mode();
-                Some(Box::new(init_expr))
-            } else {
-                None
-            };
-
-            decls.push(
-                CXExprKind::VarDeclaration {
-                    _type,
-                    name,
-                    initial_value,
-                }
-                .into_expr_with_origin(
-                    start_index,
-                    data.tokens.index,
-                    data.file_origin_for_range(start_index, data.tokens.index),
-                ),
-            );
-        } else {
-            // FIXME: This logic is a mess, we can probably heavily simplify this.
-
-            // If our expression starts with a type but has no name, we have a few options:
-            //  1. We could be in a sizeof expression (e.g. sizeof(T)), in which we should just return the type as a dummy expression
-            //  2. We could be in a scope resolution expression for either a static member function or a variant of a tagged enum
-
-            assert_token_matches!(data.tokens, operator!(ScopeRes), "'::'");
-            let variant_expr = parse_expr_identifier(data)?;
-
-            let type_name = match _type.kind {
-                CXTypeKind::Identifier {
-                    name: type_name, ..
-                } => type_name,
-                _ => {
-                    return log_parse_error!(data, "Expected identifier before scope resolution");
-                }
-            };
-
-            let scoped_name_expr =
-                qualify_identifier_under_type(data, type_name, variant_expr, start_index)?;
-
-            if !try_next!(data.tokens, punctuator!(OpenParen)) {
-                decls.push(scoped_name_expr);
-                break;
-            }
-
-            // FIXME: Unify this logic with the logic for creating a argument list for a function call.
-            let inner_expr = if try_next!(data.tokens, punctuator!(CloseParen)) {
-                CXExprKind::Unit.into_expr_with_origin(
-                    start_index,
-                    data.tokens.index,
-                    data.file_origin_for_range(start_index, data.tokens.index),
-                )
-            } else {
-                data.change_comma_mode(true);
-                let inner_expr = parse_expr(data)?;
-                data.pop_comma_mode();
-                assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-                inner_expr
-            };
-
-            let method_call_expr = CXExprKind::BinOp {
-                lhs: Box::new(scoped_name_expr),
-                rhs: Box::new(inner_expr),
-                op: CXBinOp::MethodCall,
-            }
-            .into_expr_with_origin(
-                start_index,
-                data.tokens.index,
-                data.file_origin_for_range(start_index, data.tokens.index),
-            );
-
-            decls.push(method_call_expr);
-        }
-
-        if !try_next!(data.tokens, TokenKind::Operator(OperatorType::Comma)) {
-            break;
-        }
-    }
-
-    data.pop_comma_mode();
-
-    if decls.len() == 1 {
-        Ok(decls.pop().unwrap())
-    } else {
-        Ok(CXExprKind::Block { exprs: decls }.into_expr_with_origin(
-            start_index,
-            data.tokens.index,
-            data.file_origin_for_range(start_index, data.tokens.index),
-        ))
-    }
 }
 
 pub(crate) fn parse_expr_op_concat(
@@ -416,7 +268,7 @@ fn compress_one_expr(
                 operand: Box::new(rhs),
             };
 
-            Ok(acc.into_expr_with_origin(
+            Ok(acc.into_expr(
                 start_index,
                 end_index,
                 data.file_origin_for_range(start_index, end_index),
@@ -435,7 +287,7 @@ fn compress_one_expr(
                 op: bin_op,
             };
 
-            Ok(acc.into_expr_with_origin(
+            Ok(acc.into_expr(
                 start_index,
                 end_index,
                 data.file_origin_for_range(start_index, end_index),
@@ -472,10 +324,6 @@ pub(crate) fn parse_expr_val(
     op_stack: &mut Vec<PrecOperator>,
 ) -> CXResult<()> {
     let start_index = data.tokens.index;
-    if is_type_decl(data)? {
-        expr_stack.push(parse_declaration(data)?);
-        return Ok(());
-    }
 
     while let Some(op) = parse_prefix_unop(data)? {
         op_stack.push(PrecOperator::UnOp(op));
@@ -521,9 +369,9 @@ pub(crate) fn parse_expr_val(
             expr.kind
         }
 
-        TokenKind::Keyword(_) => {
-            data.back();
-            parse_keyword_expr(data)?.kind
+        TokenKind::Keyword(keyword) => {
+            let keyword = *keyword;
+            parse_keyword_expr(data, keyword)?.kind
         }
 
         TokenKind::Punctuator(PunctuatorType::OpenParen) => {
@@ -531,7 +379,7 @@ pub(crate) fn parse_expr_val(
                 data.tokens,
                 TokenKind::Punctuator(PunctuatorType::CloseParen)
             ) {
-                expr_stack.push(CXExprKind::Unit.into_expr_with_origin(
+                expr_stack.push(CXExprKind::Unit.into_expr(
                     0,
                     0,
                     data.file_origin_for_range(start_index, data.tokens.index),
@@ -565,7 +413,7 @@ pub(crate) fn parse_expr_val(
                 data.tokens,
                 TokenKind::Punctuator(PunctuatorType::CloseBracket)
             ) {
-                expr_stack.push(CXExprKind::Unit.into_expr_with_origin(
+                expr_stack.push(CXExprKind::Unit.into_expr(
                     start_index,
                     data.tokens.index,
                     data.file_origin_for_range(start_index, data.tokens.index),
@@ -588,7 +436,7 @@ pub(crate) fn parse_expr_val(
             return log_parse_error!(data, "Expected expression value");
         }
     }
-    .into_expr_with_origin(
+    .into_expr(
         start_index,
         data.tokens.index,
         data.file_origin_for_range(start_index, data.tokens.index),
@@ -619,203 +467,13 @@ pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CXResult<CXExpress
     ))
 }
 
-fn qualify_identifier_under_type(
+pub(crate) fn parse_keyword_expr(
     data: &mut ParserData,
-    type_name: QualifiedName,
-    rhs: CXExpression,
-    start_index: usize,
+    keyword_type: KeywordType,
 ) -> CXResult<CXExpression> {
-    let qualify = |name: QualifiedName| {
-        let scoped_path = format!("{}::{}", type_name.as_flat_name(), name.as_flat_name());
-        let (namespace, name) = NamespacePath::from_scoped_path(&scoped_path)
-            .parent_and_name()
-            .expect("qualified type member name should not be empty");
-        QualifiedName::new(namespace, name)
-    };
-
-    let kind = match rhs.kind {
-        CXExprKind::Identifier {
-            name,
-            template_input,
-        } => CXExprKind::Identifier {
-            name: qualify(name),
-            template_input,
-        },
-        _ => {
-            return log_parse_error!(data, "Expected identifier after type scope resolution");
-        }
-    };
-
-    Ok(kind.into_expr_with_origin(
-        start_index,
-        data.tokens.index,
-        data.file_origin_for_range(start_index, data.tokens.index),
-    ))
-}
-
-pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> CXResult<CXExpression> {
-    let start_index = data.tokens.index;
-
-    let TokenKind::Keyword(keyword_type) = next_kind!(data.tokens)? else {
-        unreachable!(
-            "PANIC: parse_keyword_expr called with non-keyword token: {:#?}",
-            data.tokens.peek()
-        );
-    };
+    let start_index = data.tokens.index - 1;
 
     match keyword_type {
-        KeywordType::Return => {
-            let value = if try_next!(data.tokens, punctuator!(Semicolon)) {
-                data.tokens.back();
-
-                None
-            } else {
-                Some(Box::new(parse_expr(data)?))
-            };
-
-            Ok(CXExprKind::Return { value })
-        }
-        KeywordType::If => {
-            assert_token_matches!(
-                data.tokens,
-                TokenKind::Punctuator(PunctuatorType::OpenParen),
-                "'('"
-            );
-            let expr = parse_expr(data)?;
-            assert_token_matches!(
-                data.tokens,
-                TokenKind::Punctuator(PunctuatorType::CloseParen),
-                "')'"
-            );
-            let then_body = parse_body(data)?;
-            let else_body = if try_next!(data.tokens, TokenKind::Keyword(KeywordType::Else)) {
-                Some(parse_body(data)?)
-            } else {
-                None
-            };
-
-            Ok(CXExprKind::If {
-                condition: Box::new(expr),
-                then_branch: Box::new(then_body),
-                else_branch: else_body.map(Box::new),
-            })
-        }
-
-        KeywordType::Switch => {
-            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-            let expr = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-            assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
-
-            let mut block = Vec::new();
-            let mut cases = Vec::new();
-            let mut default_case = None;
-            let mut index = 0;
-
-            while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-                if try_next!(data.tokens, keyword!(Case)) {
-                    assert_token_matches!(data.tokens, TokenKind::IntLiteral(val));
-                    cases.push((*val as u64, index as usize));
-                    assert_token_matches!(
-                        data.tokens,
-                        TokenKind::Punctuator(PunctuatorType::Colon),
-                        "':'"
-                    );
-                    continue;
-                } else if try_next!(data.tokens, keyword!(Default)) {
-                    assert_token_matches!(
-                        data.tokens,
-                        TokenKind::Punctuator(PunctuatorType::Colon),
-                        "':'"
-                    );
-                    if default_case.is_some() {
-                        log_error!("Multiple default cases in switch statement");
-                    }
-                    default_case = Some(index as usize);
-                    continue;
-                }
-
-                let expr = parse_expr(data)?;
-                index += 1;
-
-                if expression_requires_semicolon(&expr) {
-                    assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
-                }
-                block.push(expr);
-            }
-
-            Ok(CXExprKind::Switch {
-                condition: Box::new(expr),
-                block,
-                cases,
-                default_case,
-            })
-        }
-
-        KeywordType::Match => {
-            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-            let expr = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-            assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
-
-            let mut arms = Vec::new();
-            let mut default_arm = None;
-
-            data.change_comma_mode(false);
-
-            while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-                if try_next!(data.tokens, keyword!(Default)) {
-                    assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
-                    if default_arm.is_some() {
-                        log_error!("Multiple default cases in match statement");
-                    }
-                    default_arm = Some(Box::new(parse_body(data)?));
-                    continue;
-                }
-
-                let value = parse_pattern(data)?;
-                assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
-                let body = parse_body(data)?;
-
-                arms.push((value, body));
-            }
-
-            data.pop_comma_mode();
-
-            Ok(CXExprKind::Match {
-                condition: Box::new(expr),
-                arms,
-                default: default_arm,
-            })
-        }
-
-        KeywordType::Do => {
-            let body = parse_body(data)?;
-            assert_token_matches!(data.tokens, keyword!(While), "'while'");
-            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-            let expr = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-            assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
-
-            Ok(CXExprKind::While {
-                condition: Box::new(expr),
-                body: Box::new(body),
-                pre_eval: false,
-            })
-        }
-        KeywordType::While => {
-            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-            let expr = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-            let body = parse_body(data)?;
-
-            Ok(CXExprKind::While {
-                condition: Box::new(expr),
-                body: Box::new(body),
-                pre_eval: true,
-            })
-        }
-
         KeywordType::Sizeof => {
             assert_token_matches!(
                 data.tokens,
@@ -846,76 +504,26 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> CXResult<CXExpression
             Ok(return_type)
         }
 
-        KeywordType::Break => Ok(CXExprKind::Break),
-        KeywordType::Continue => Ok(CXExprKind::Continue),
-        KeywordType::For => {
-            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+        KeywordType::Return => {
+            let value = if try_next!(data.tokens, punctuator!(Semicolon)) {
+                data.tokens.back();
 
-            let init = if matches!(
-                data.tokens.peek().map(|token| &token.kind),
-                Some(punctuator!(Semicolon))
-            ) {
-                CXExprKind::Unit.into_expr_with_origin(
-                    data.tokens.index,
-                    data.tokens.index,
-                    data.file_origin_for_range(data.tokens.index, data.tokens.index),
-                )
+                None
             } else {
-                parse_expr(data)?
+                Some(Box::new(parse_expr(data)?))
             };
-            assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
 
-            let condition = if matches!(
-                data.tokens.peek().map(|token| &token.kind),
-                Some(punctuator!(Semicolon))
-            ) {
-                CXExprKind::IntLiteral { val: 1, bytes: 4 }.into_expr_with_origin(
-                    data.tokens.index,
-                    data.tokens.index,
-                    data.file_origin_for_range(data.tokens.index, data.tokens.index),
-                )
-            } else {
-                parse_expr(data)?
-            };
-            assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
-
-            let increment = if matches!(
-                data.tokens.peek().map(|token| &token.kind),
-                Some(punctuator!(CloseParen))
-            ) {
-                CXExprKind::Unit.into_expr_with_origin(
-                    data.tokens.index,
-                    data.tokens.index,
-                    data.file_origin_for_range(data.tokens.index, data.tokens.index),
-                )
-            } else {
-                parse_expr(data)?
-            };
-            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-
-            let body = parse_body(data)?;
-
-            Ok(CXExprKind::For {
-                init: Box::new(init),
-                condition: Box::new(condition),
-                increment: Box::new(increment),
-                body: Box::new(body),
-            })
+            Ok(CXExprKind::Return { value })
         }
 
         _ => {
-            let keyword_type = *keyword_type;
             data.tokens.back();
 
-            return log_parse_error!(
-                data,
-                "Unexpected keyword in expression: {:#?}",
-                keyword_type
-            );
+            return log_parse_error!(data, "Unexpected token");
         }
     }
     .map(|e| {
-        e.into_expr_with_origin(
+        e.into_expr(
             start_index,
             data.tokens.index,
             data.file_origin_for_range(start_index, data.tokens.index),
@@ -964,7 +572,7 @@ pub(crate) fn parse_structured_initialization(data: &mut ParserData) -> CXResult
     }
 
     Ok(
-        CXExprKind::InitializerList { indices: inits }.into_expr_with_origin(
+        CXExprKind::InitializerList { indices: inits }.into_expr(
             init_index,
             data.tokens.index,
             data.file_origin_for_range(init_index, data.tokens.index),

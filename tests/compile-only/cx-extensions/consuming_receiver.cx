@@ -16,7 +16,7 @@ void Resource::drop(Resource this) safe {
 
 int main() {
     Resource value = make_resource();
-    value.drop();
-    make_resource().drop();
+    move value |> Resource::drop();
+    make_resource() |> Resource::drop;
     return 0;
 }

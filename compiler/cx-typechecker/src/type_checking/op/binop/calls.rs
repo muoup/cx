@@ -4,6 +4,7 @@ use crate::symbol::deduction::complete_templated_callee;
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::lvalue;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
+use crate::type_checking::contracts::typecheck_contract;
 use crate::type_checking::result::{
     CalleeExtraction, PendingReceiver, TypecheckExtract, TypecheckResult,
 };

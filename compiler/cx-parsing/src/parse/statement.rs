@@ -1,0 +1,410 @@
+use cx_ast::ast::{
+    expression::{CXBinOp, CXExprKind, CXExpression},
+    types::CXTypeKind,
+};
+use cx_log::{log_error, CXResult};
+use cx_tokens::{
+    keyword, operator, punctuator,
+    token::{KeywordType, OperatorType, PunctuatorType, TokenKind},
+};
+use cx_util::namespace::{NamespacePath, QualifiedName};
+
+use crate::{
+    assert_token_matches, next_kind,
+    parse::{
+        expressions::{parse_expr, parse_expr_identifier, parse_pattern},
+        parse_body,
+        parser::ParserData,
+        types::{is_type_decl, parse_base_mods, parse_specifier, parse_type_base},
+    },
+    try_next,
+};
+
+pub(crate) fn parse_stmt(data: &mut ParserData) -> CXResult<CXExpression> {
+    let start_index = data.tokens.index;
+
+    try_parse_stmt(data)?.map(Result::Ok).unwrap_or_else(|| {
+        data.tokens.index = start_index;
+        let expr = parse_expr(data);
+        assert_token_matches!(
+            data.tokens,
+            punctuator!(Semicolon),
+            "';' after expression statement"
+        );
+        expr
+    })
+}
+
+pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<CXExpression>> {
+    match next_kind!(data.tokens)? {
+        TokenKind::Keyword(keyword) => {
+            let keyword = *keyword;
+
+            if let Some(result) = try_parse_keyword_stmt(data, keyword)? {
+                return Ok(Some(result));
+            }
+        }
+
+        punctuator!(Semicolon) => {
+            return Ok(Some(CXExprKind::Unit.into_expr(
+                data.tokens.index,
+                data.tokens.index,
+                data.file_origin.clone(),
+            )))
+        }
+
+        _ => {}
+    }
+
+    data.back();
+    if is_type_decl(data)? {
+        let stmt = parse_declaration_stmt(data)?;
+        assert_token_matches!(data.tokens, punctuator!(Semicolon), ";");
+        Ok(Some(stmt))
+    } else {
+        Ok(None)
+    }
+}
+
+pub(crate) fn try_parse_keyword_stmt(
+    data: &mut ParserData,
+    keyword_type: KeywordType,
+) -> CXResult<Option<CXExpression>> {
+    let start = data.tokens.index - 1;
+
+    Ok(match keyword_type {
+        KeywordType::If => {
+            assert_token_matches!(
+                data.tokens,
+                TokenKind::Punctuator(PunctuatorType::OpenParen),
+                "'('"
+            );
+            let expr = parse_expr(data)?;
+            assert_token_matches!(
+                data.tokens,
+                TokenKind::Punctuator(PunctuatorType::CloseParen),
+                "')'"
+            );
+            let then_body = parse_body(data)?;
+            let else_body = if try_next!(data.tokens, TokenKind::Keyword(KeywordType::Else)) {
+                Some(parse_body(data)?)
+            } else {
+                None
+            };
+
+            Some(CXExprKind::If {
+                condition: Box::new(expr),
+                then_branch: Box::new(then_body),
+                else_branch: else_body.map(Box::new),
+            })
+        }
+
+        KeywordType::Switch => {
+            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+            let expr = parse_expr(data)?;
+            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+            assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
+
+            let mut block = Vec::new();
+            let mut cases = Vec::new();
+            let mut default_case = None;
+            let mut index = 0;
+
+            while !try_next!(data.tokens, punctuator!(CloseBrace)) {
+                if try_next!(data.tokens, keyword!(Case)) {
+                    assert_token_matches!(data.tokens, TokenKind::IntLiteral(val));
+                    cases.push((*val as u64, index as usize));
+                    assert_token_matches!(
+                        data.tokens,
+                        TokenKind::Punctuator(PunctuatorType::Colon),
+                        "':'"
+                    );
+                    continue;
+                } else if try_next!(data.tokens, keyword!(Default)) {
+                    assert_token_matches!(
+                        data.tokens,
+                        TokenKind::Punctuator(PunctuatorType::Colon),
+                        "':'"
+                    );
+                    if default_case.is_some() {
+                        log_error!("Multiple default cases in switch statement");
+                    }
+                    default_case = Some(index as usize);
+                    continue;
+                }
+
+                let expr = parse_stmt(data)?;
+                index += 1;
+                block.push(expr);
+            }
+
+            Some(CXExprKind::Switch {
+                condition: Box::new(expr),
+                block,
+                cases,
+                default_case,
+            })
+        }
+
+        KeywordType::Match => {
+            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+            let expr = parse_expr(data)?;
+            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+            assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
+
+            let mut arms = Vec::new();
+            let mut default_arm = None;
+
+            data.change_comma_mode(false);
+
+            while !try_next!(data.tokens, punctuator!(CloseBrace)) {
+                if try_next!(data.tokens, keyword!(Default)) {
+                    assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
+                    if default_arm.is_some() {
+                        log_error!("Multiple default cases in match statement");
+                    }
+                    default_arm = Some(Box::new(parse_body(data)?));
+                    continue;
+                }
+
+                let value = parse_pattern(data)?;
+                assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
+                let body = parse_body(data)?;
+                arms.push((value, body));
+            }
+
+            data.pop_comma_mode();
+
+            Some(CXExprKind::Match {
+                condition: Box::new(expr),
+                arms,
+                default: default_arm,
+            })
+        }
+
+        KeywordType::Do => {
+            let body = parse_body(data)?;
+            assert_token_matches!(data.tokens, keyword!(While), "'while'");
+            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+            let expr = parse_expr(data)?;
+            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+            assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
+
+            Some(CXExprKind::While {
+                condition: Box::new(expr),
+                body: Box::new(body),
+                pre_eval: false,
+            })
+        }
+
+        KeywordType::While => {
+            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+            let expr = parse_expr(data)?;
+            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+            let body = parse_body(data)?;
+
+            Some(CXExprKind::While {
+                condition: Box::new(expr),
+                body: Box::new(body),
+                pre_eval: true,
+            })
+        }
+
+        KeywordType::Break => Some(CXExprKind::Break),
+        KeywordType::Continue => Some(CXExprKind::Continue),
+        KeywordType::For => {
+            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+
+            let init = parse_stmt(data)?;
+
+            let condition = if matches!(
+                data.tokens.peek().map(|token| &token.kind),
+                Some(punctuator!(Semicolon))
+            ) {
+                CXExprKind::IntLiteral { val: 1, bytes: 4 }.into_expr(
+                    data.tokens.index,
+                    data.tokens.index,
+                    data.file_origin_for_range(data.tokens.index, data.tokens.index),
+                )
+            } else {
+                parse_expr(data)?
+            };
+            assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
+
+            let increment = if matches!(
+                data.tokens.peek().map(|token| &token.kind),
+                Some(punctuator!(CloseParen))
+            ) {
+                CXExprKind::Unit.into_expr(
+                    data.tokens.index,
+                    data.tokens.index,
+                    data.file_origin_for_range(data.tokens.index, data.tokens.index),
+                )
+            } else {
+                parse_expr(data)?
+            };
+            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+
+            let body = parse_body(data)?;
+
+            Some(CXExprKind::For {
+                init: Box::new(init),
+                condition: Box::new(condition),
+                increment: Box::new(increment),
+                body: Box::new(body),
+            })
+        }
+
+        _ => return Ok(None),
+    }
+    .map(|kind| {
+        kind.into_expr(
+            start,
+            data.tokens.index,
+            data.file_origin_for_range(start, data.tokens.index),
+        )
+    }))
+}
+
+pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<CXExpression> {
+    let start_index = data.tokens.index;
+
+    let specifiers = parse_specifier(&mut data.tokens);
+    let base_type = parse_type_base(data)?.add_specifier(specifiers);
+
+    let mut decls = Vec::new();
+    data.change_comma_mode(false);
+
+    loop {
+        let (name, _type) = parse_base_mods(data, base_type.clone())?;
+
+        if let Some(name) = name {
+            // Check for initializer after variable name
+            let initial_value = if try_next!(data.tokens, TokenKind::Assignment(None)) {
+                data.change_comma_mode(false);
+                let init_expr = parse_expr(data)?;
+                data.pop_comma_mode();
+                Some(Box::new(init_expr))
+            } else {
+                None
+            };
+
+            decls.push(
+                CXExprKind::VarDeclaration {
+                    _type,
+                    name,
+                    initial_value,
+                }
+                .into_expr(
+                    start_index,
+                    data.tokens.index,
+                    data.file_origin_for_range(start_index, data.tokens.index),
+                ),
+            );
+        } else {
+            // FIXME: This logic is a mess, we can probably heavily simplify this.
+
+            // If our expression starts with a type but has no name, we have a few options:
+            //  1. We could be in a sizeof expression (e.g. sizeof(T)), in which we should just return the type as a dummy expression
+            //  2. We could be in a scope resolution expression for either a static member function or a variant of a tagged enum
+
+            assert_token_matches!(data.tokens, operator!(ScopeRes), "'::'");
+            let variant_expr = parse_expr_identifier(data)?;
+
+            let type_name = match _type.kind {
+                CXTypeKind::Identifier {
+                    name: type_name, ..
+                } => type_name,
+                _ => {
+                    return log_parse_error!(data, "Expected identifier before scope resolution");
+                }
+            };
+
+            let scoped_name_expr =
+                qualify_identifier_under_type(data, type_name, variant_expr, start_index)?;
+
+            if !try_next!(data.tokens, punctuator!(OpenParen)) {
+                decls.push(scoped_name_expr);
+                break;
+            }
+
+            // FIXME: Unify this logic with the logic for creating a argument list for a function call.
+            let inner_expr = if try_next!(data.tokens, punctuator!(CloseParen)) {
+                CXExprKind::Unit.into_expr(
+                    start_index,
+                    data.tokens.index,
+                    data.file_origin_for_range(start_index, data.tokens.index),
+                )
+            } else {
+                data.change_comma_mode(true);
+                let inner_expr = parse_expr(data)?;
+                data.pop_comma_mode();
+                assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+                inner_expr
+            };
+
+            let method_call_expr = CXExprKind::BinOp {
+                lhs: Box::new(scoped_name_expr),
+                rhs: Box::new(inner_expr),
+                op: CXBinOp::MethodCall,
+            }
+            .into_expr(
+                start_index,
+                data.tokens.index,
+                data.file_origin_for_range(start_index, data.tokens.index),
+            );
+
+            decls.push(method_call_expr);
+        }
+
+        if !try_next!(data.tokens, TokenKind::Operator(OperatorType::Comma)) {
+            break;
+        }
+    }
+
+    data.pop_comma_mode();
+
+    if decls.len() == 1 {
+        Ok(decls.pop().unwrap())
+    } else {
+        Ok(CXExprKind::Block { exprs: decls }.into_expr(
+            start_index,
+            data.tokens.index,
+            data.file_origin_for_range(start_index, data.tokens.index),
+        ))
+    }
+}
+
+fn qualify_identifier_under_type(
+    data: &mut ParserData,
+    type_name: QualifiedName,
+    rhs: CXExpression,
+    start_index: usize,
+) -> CXResult<CXExpression> {
+    let qualify = |name: QualifiedName| {
+        let scoped_path = format!("{}::{}", type_name.as_flat_name(), name.as_flat_name());
+        let (namespace, name) = NamespacePath::from_scoped_path(&scoped_path)
+            .parent_and_name()
+            .expect("qualified type member name should not be empty");
+        QualifiedName::new(namespace, name)
+    };
+
+    let kind = match rhs.kind {
+        CXExprKind::Identifier {
+            name,
+            template_input,
+        } => CXExprKind::Identifier {
+            name: qualify(name),
+            template_input,
+        },
+        _ => {
+            return log_parse_error!(data, "Expected identifier after type scope resolution");
+        }
+    };
+
+    Ok(kind.into_expr(
+        start_index,
+        data.tokens.index,
+        data.file_origin_for_range(start_index, data.tokens.index),
+    ))
+}
