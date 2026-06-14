@@ -121,25 +121,29 @@ impl GlobalSymbolRegistry {
             .expect("GlobalSymbolRegistry read lock poisoned");
 
         let mut candidates = Vec::new();
-        if !name.namespace.is_root() {
-            push_unique(&mut candidates, name.clone());
-        }
-
-        if let Some(data) = inner.namespaces.get(lexical_namespace) {
-            for alias in data.resolve_qualified_aliases(name) {
-                push_unique(&mut candidates, alias);
-            }
-        }
 
         if name.namespace.is_root() {
-            push_unique(
-                &mut candidates,
-                QualifiedName {
-                    namespace: NamespacePath::root(),
-                    name: name.name.clone(),
-                },
-            );
+            candidates.push(QualifiedName {
+                namespace: NamespacePath::root(),
+                name: name.name.clone(),
+            });
+        } else {
+            candidates.push(name.clone());
         }
+
+        let Some(data) = inner.namespaces.get(lexical_namespace) else {
+            unreachable!();
+        };
+
+        candidates.extend(
+            data.resolve_aliases(&name.namespace)
+                .map(|target| QualifiedName {
+                    namespace: target.clone(),
+                    name: name.name.clone(),
+                }),
+        );
+
+        println!("Name: {}, Candidates: {:?}", name, candidates);
 
         candidates
     }
@@ -165,11 +169,5 @@ impl GlobalSymbolRegistry {
 
             Some((inner, data))
         }
-    }
-}
-
-fn push_unique(names: &mut Vec<QualifiedName>, name: QualifiedName) {
-    if !names.contains(&name) {
-        names.push(name);
     }
 }

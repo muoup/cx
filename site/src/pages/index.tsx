@@ -168,7 +168,7 @@ function MainLayout() {
                             {socketSnippet.map((line, index) => (
                                 <span
                                     className={
-                                        index === 11
+                                        index === 12
                                             ? styles.errorLine
                                             : undefined
                                     }

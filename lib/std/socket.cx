@@ -9,7 +9,7 @@ enum {
     SOCK_DGRAM = 2
 };
 
-struct c_socket : @nodrop {
+struct socket : @nodrop {
     i32 fd;
 };
 
@@ -29,45 +29,45 @@ struct socket_addr {
     u32 length;
 };
 
-opt<c_socket> c_socket::open(i32 domain, i32 kind, i32 protocol) {
+std::opt<std::socket::socket> socket::open(i32 domain, i32 kind, i32 protocol) {
     i32 fd = socket(domain, kind, protocol);
 
     if (fd < 0) {
-        return opt::none<c_socket>();
+        return opt::none<std::socket::socket>();
     }
 
-    return std::optional::opt::some<c_socket>((c_socket) { .fd = fd });
+    return std::opt::some<std::socket::socket>((std::socket::socket) { .fd = fd });
 }
 
-i32 c_socket::bind(c_socket& this, socket_addr* addr) {
+i32 socket::bind(std::socket::socket& this, socket_addr* addr) {
     return bind(this.fd, &addr.address, addr.length);
 }
 
-i32 c_socket::listen(c_socket& this, i32 backlog) {
+i32 socket::listen(std::socket::socket& this, i32 backlog) {
     return listen(this.fd, backlog);
 }
 
-opt<c_socket> c_socket::accept(c_socket& this) {
+std::opt<std::socket::socket> socket::accept(std::socket::socket& this) {
     sockaddr_in address;
     u32 length = (u32) sizeof(sockaddr_in);
     i32 fd = accept(this.fd, &address, &length);
 
     if (fd < 0) {
-        return opt::none<c_socket>();
+        return opt::none<std::socket::socket>();
     }
 
-    return opt::some<c_socket>((c_socket) { .fd = fd });
+    return opt::some<std::socket::socket>((std::socket::socket) { .fd = fd });
 }
 
-i64 c_socket::read(c_socket& this, void* buffer, u64 length) {
+i64 socket::read(std::socket::socket& this, void* buffer, u64 length) {
     return read(this.fd, buffer, length);
 }
 
-i64 c_socket::write(c_socket& this, const void* buffer, u64 length) {
+i64 socket::write(std::socket::socket& this, const void* buffer, u64 length) {
     return write(this.fd, buffer, length);
 }
 
-void c_socket::close(c_socket this) {
+void socket::close(std::socket::socket this) {
     close(this.fd);
     @leak(this);
 }

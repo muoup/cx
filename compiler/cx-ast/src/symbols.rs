@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use cx_preparse_data::NamespaceAliases;
 use cx_util::identifier::CXIdent;
-use cx_util::namespace::{NamespacePath, QualifiedName};
+use cx_util::namespace::NamespacePath;
 
 use crate::ast::{
     expression::CXExpression, function::CXFunctionPrototype, global_var::CXEnumDefinition,
@@ -115,58 +115,13 @@ impl SymbolNamespaceData {
         }
     }
 
-    pub fn resolve_qualified_aliases(&self, name: &QualifiedName) -> Vec<QualifiedName> {
-        let mut aliases = self
-            .namespace_aliases
-            .iter()
-            .filter_map(|(alias, targets)| {
-                if alias.is_root() {
-                    Some((alias, targets))
-                } else {
-                    name.namespace.strip(alias).map(|_| (alias, targets))
-                }
-            })
-            .collect::<Vec<_>>();
-
-        aliases.sort_by(|(left, _), (right, _)| {
-            right
-                .segments()
-                .len()
-                .cmp(&left.segments().len())
-                .then_with(|| left.as_scope_string().cmp(&right.as_scope_string()))
-        });
-
-        let mut resolved = Vec::new();
-        for (alias, targets) in aliases {
-            let suffix = if alias.is_root() {
-                name.namespace.clone()
-            } else {
-                name.namespace
-                    .strip(alias)
-                    .expect("Alias prefix was checked above")
-            };
-
-            for target in targets {
-                push_unique(
-                    &mut resolved,
-                    QualifiedName {
-                        namespace: target.join(&suffix),
-                        name: name.name.clone(),
-                    },
-                );
-            }
-        }
-
-        resolved
+    pub fn resolve_aliases(&self, namespace: &NamespacePath) -> impl Iterator<Item = &NamespacePath> {
+        self.namespace_aliases.get(&namespace)
+            .map(|t| t.as_slice().iter())
+            .unwrap_or_else(|| [].iter())
     }
 
     pub fn get_enum_block(&self, idx: usize) -> Option<&CXEnumDefinition> {
         self.enum_blocks.get(idx)
-    }
-}
-
-fn push_unique(names: &mut Vec<QualifiedName>, name: QualifiedName) {
-    if !names.contains(&name) {
-        names.push(name);
     }
 }

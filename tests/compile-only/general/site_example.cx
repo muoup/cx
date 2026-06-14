@@ -1,0 +1,21 @@
+import std::io as std;
+import std::optional as std;
+import std::socket as std;
+
+std::opt<std::socket> try_serve(u16 port) {
+    std::socket listener =
+        std::socket::open(AF_INET, SOCK_STREAM, 0)
+        |> std::opt::unwrap<std::socket>();
+
+    std::socket_addr addr = std::socket_addr::ipv4("0.0.0.0", port);
+
+    if (listener |> c_socket::bind(&addr) < 0) {
+        return std::opt::none<std::stocket>();
+    }
+
+    if (listener |> c_socket::listen(128) < 0) {
+        return std::opt::none<std::socket>();
+    }
+
+    return move listener |> std::opt::some<std::socket>();
+}

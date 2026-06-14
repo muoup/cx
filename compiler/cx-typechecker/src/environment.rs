@@ -21,7 +21,7 @@ pub use crate::environment::functions::control_flow::{
     BindingMoveState, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
     ScopeExitTarget, ScopeId, TrackedBindingState,
 };
-use crate::environment::items::ItemRegistry;
+use crate::{environment::items::ItemRegistry, log_typecheck_error};
 use crate::environment::source::SourceContext;
 use crate::{
     environment::functions::context::FunctionContext, symbol::registry::MIRSymbolRegistry,
@@ -194,11 +194,11 @@ impl TypeEnvironment<'_> {
             .collect::<Vec<_>>()
             .join(", ");
 
-        Err(crate::typecheck_error!(
+        log_typecheck_error!(
             self,
             range,
             "Symbol '{name}' is ambiguous; candidates: {candidates}"
-        ))
+        )
     }
 
     pub fn get_symbol(
