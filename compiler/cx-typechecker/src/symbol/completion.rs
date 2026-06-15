@@ -292,13 +292,10 @@ fn complete_identifier_type(
     template_input: &Option<CXTemplateInput>,
     range: Option<&TokenRange>,
 ) -> CXResult<MIRTypeId> {
-    let Some(lookup) = env.lookup_symbol(namespace, name, range.cloned())? else {
-        if predeclaration != PredeclarationType::None {
+    let Some(lookup) = env.lookup_symbol(namespace, name, range)? else {
+        if predeclaration != PredeclarationType::None && name.namespace.is_root() {
             let id = env.symbols.reserve_type_id();
-            let candidates = env.symbol_lookup_candidates(namespace, name);
-            let reserve_name = candidates.first().cloned().unwrap_or_else(|| name.clone());
-            env.symbols.insert_type_symbol(reserve_name, id);
-
+            env.symbols.insert_type_symbol(name.clone(), id);
             return Ok(id);
         }
 
@@ -596,7 +593,7 @@ fn resolve_aggregate_move_attributes(
 
     if let Some(param_name) = &attributes.copy_traits {
         let name = QualifiedName::new_raw(CXIdent::new(param_name.as_str()));
-        let Some(symbol) = env.get_symbol(namespace, &name)? else {
+        let Some(symbol) = env.get_symbol(namespace, &name, None)? else {
             return type_completion_error(
                 env,
                 None,

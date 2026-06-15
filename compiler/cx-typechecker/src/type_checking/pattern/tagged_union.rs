@@ -54,7 +54,7 @@ pub fn resolve_type_constructor_pattern(
     let union_name = QualifiedName::new(union_namespace, union_name);
 
     let union_name = env
-        .get_symbol(namespace, &union_name)?
+        .get_symbol(namespace, &union_name, Some(expr.token_range()))?
         .and_then(|symbol| symbol.as_pattern_target(&env.symbols))
         .ok_or_else(|| {
             typecheck_error!(

@@ -108,7 +108,7 @@ pub(crate) fn resolve_assertion_prototype(
         CXIdent::new("__compiler_assert"),
     );
 
-    let Some(symbol) = env.get_symbol(namespace, &name)? else {
+    let Some(symbol) = env.get_symbol(namespace, &name, None)? else {
         return cx_log::CXError::create_result(
             "Function contract used but std::intrinsic::assertion::__compiler_assert was not found",
         );

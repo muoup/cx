@@ -9,5 +9,6 @@ cx-mir = { path = "../cx-mir" }
 cx-ast = { path = "../cx-ast" }
 cx-pipeline-data = { path = "../cx-pipeline-data" }
 
+cx-namespace = { path = "../cx-namespace" }
 cx-util = { path = "../cx-util" }
 cx-log = { path = "../cx-log" }

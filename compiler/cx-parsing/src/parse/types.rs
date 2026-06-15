@@ -44,7 +44,7 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
             };
             data.tokens.index = pre_idx;
 
-            data.is_type_ident(&ident)
+            data.is_type_ident(&ident)?
         }
 
         _ => false,

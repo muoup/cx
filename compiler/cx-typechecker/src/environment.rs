@@ -10,18 +10,18 @@ use cx_mir::{
     symbol::MIRSymbol,
     type_context::MIRTypeContext,
 };
+use cx_namespace::{MIRQualifiedLookup, result::QualifiedLookupResult};
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
 use cx_tokens::TokenRange;
 use cx_tokens::token::Token;
-use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
+use cx_util::{identifier::CXIdent, namespace::NamespacePath};
 
 pub use crate::environment::functions::control_flow::{
     BindingMoveState, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
     ScopeExitTarget, ScopeId, TrackedBindingState,
 };
-use crate::{environment::items::ItemRegistry, log_typecheck_error};
 use crate::environment::source::SourceContext;
 use crate::{
     environment::functions::context::FunctionContext, symbol::registry::MIRSymbolRegistry,
@@ -29,6 +29,7 @@ use crate::{
 use crate::{
     environment::functions::context::FunctionModeSnapshot, symbol::resolution::resolve_symbol,
 };
+use crate::{environment::items::ItemRegistry, log_typecheck_error};
 pub(crate) mod functions;
 pub(crate) mod items;
 pub(crate) mod source;
@@ -121,120 +122,45 @@ impl TypeEnvironment<'_> {
         self.function.restore_mode(snapshot);
     }
 
-    pub(crate) fn lookup_symbol(
-        &mut self,
-        namespace: &EnvironmentNamespace,
-        name: &QualifiedName,
-        range: Option<TokenRange>,
-    ) -> CXResult<Option<SymbolLookup>> {
-        if name.namespace.is_root()
-            && let Some(local_symbol) = self.symbols.get_local_symbol(name)
-        {
-            return Ok(Some(SymbolLookup {
-                resolved_name: name.clone(),
-                kind: SymbolLookupKind::Resolved(local_symbol.clone()),
-            }));
-        }
-
-        if let Some(preresolved_symbol) = self.symbols.get_preresolved_symbol(name) {
-            return Ok(Some(SymbolLookup {
-                resolved_name: name.clone(),
-                kind: SymbolLookupKind::Resolved(preresolved_symbol.clone()),
-            }));
-        }
-
-        let mut resolved = Vec::new();
-        for candidate in self.symbol_lookup_candidates(namespace, name) {
-            let lookup = self.lookup_candidate(namespace, &candidate);
-
-            let Some(lookup) = lookup else {
-                continue;
-            };
-
-            if name.namespace.is_root() && candidate.namespace == *namespace {
-                return Ok(Some(SymbolLookup {
-                    resolved_name: candidate,
-                    kind: lookup,
-                }));
-            }
-
-            resolved.push(SymbolLookup {
-                resolved_name: candidate,
-                kind: lookup,
-            });
-        }
-
-        if resolved.is_empty() {
-            return Ok(None);
-        }
-
-        if resolved.len() == 1 {
-            return Ok(resolved.pop());
-        }
-
-        // Possibility 1 -- if one of the candidates matches exactly with the pre-aliased name, prefer it
-        if let Some(exact_match) = resolved
-            .iter()
-            .position(|lookup| lookup.resolved_name == *name)
-        {
-            return Ok(Some(resolved.swap_remove(exact_match)));
-        }
-
-        // Possibility 2 -- if one of the candidates matches our namespace exactly, prefer it
-        if let Some(namespace_match) = resolved
-            .iter()
-            .position(|lookup| lookup.resolved_name.namespace == *namespace)
-        {
-            return Ok(Some(resolved.swap_remove(namespace_match)));
-        }
-
-        let candidates = resolved
-            .iter()
-            .map(|lookup| lookup.resolved_name.as_flat_name())
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        log_typecheck_error!(
-            self,
-            range,
-            "Symbol '{name}' is ambiguous; candidates: {candidates}"
-        )
-    }
-
     pub fn get_symbol(
         &mut self,
         namespace: &EnvironmentNamespace,
         name: &QualifiedName,
+        range: Option<&TokenRange>,
     ) -> CXResult<Option<MIRSymbol>> {
-        let Some(lookup) = self.lookup_symbol(namespace, name, None)? else {
-            return Ok(None);
-        };
-
-        self.resolve_lookup(namespace, lookup).map(Some)
+        self.lookup_symbol(namespace, name, range)?
+            .map(|lookup| self.resolve_lookup(namespace, lookup))
+            .transpose()
     }
 
-    pub(crate) fn symbol_lookup_candidates(
-        &self,
+    pub fn lookup_symbol(
+        &mut self,
         namespace: &EnvironmentNamespace,
         name: &QualifiedName,
-    ) -> Vec<QualifiedName> {
-        self.symbols
-            .get_global_registry()
-            .resolve_qualified_aliases(namespace, name)
-    }
+        range: Option<&TokenRange>,
+    ) -> CXResult<Option<SymbolLookup>> {
+        let qualified_lookup = self.qualified_lookup(namespace, name);
 
-    fn lookup_candidate(
-        &self,
-        namespace: &EnvironmentNamespace,
-        candidate: &QualifiedName,
-    ) -> Option<SymbolLookupKind> {
-        if let Some(preresolved_symbol) = self.symbols.get_preresolved_symbol(candidate) {
-            return Some(SymbolLookupKind::Resolved(preresolved_symbol.clone()));
+        match qualified_lookup {
+            QualifiedLookupResult::Found {
+                resolved_name: _,
+                value,
+            } => Ok(Some(value)),
+
+            QualifiedLookupResult::NotFound => Ok(None),
+            QualifiedLookupResult::Ambiguous { candidates } => {
+                return log_typecheck_error!(
+                    self,
+                    range,
+                    "Ambiguous Symbol Reference, candidates: {}",
+                    candidates
+                        .iter()
+                        .map(|c| c.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
         }
-
-        let symbol = self.symbols.get_global_registry().resolve(candidate)?;
-        self.symbol_visible_from(namespace, candidate, &symbol)
-            .then_some(SymbolLookupKind::Untyped(symbol))
     }
 
     fn symbol_visible_from(
@@ -296,19 +222,7 @@ impl TypeEnvironment<'_> {
         self.symbols.insert_symbol(resolved_name, symbol.clone());
         Ok(symbol)
     }
-}
 
-pub(crate) struct SymbolLookup {
-    pub resolved_name: QualifiedName,
-    pub kind: SymbolLookupKind,
-}
-
-pub(crate) enum SymbolLookupKind {
-    Resolved(MIRSymbol),
-    Untyped(CXSymbol),
-}
-
-impl TypeEnvironment<'_> {
     pub fn type_eq(&self, type1: &MIRType, type2: &MIRType) -> bool {
         type1.contextual_eq(type2, &self.symbols)
     }
@@ -318,4 +232,71 @@ impl TypeEnvironment<'_> {
             .contains(id)
             .then(|| self.symbols.resolve_type_id(id))
     }
+}
+
+impl MIRQualifiedLookup for TypeEnvironment<'_> {
+    type Output = SymbolLookup;
+
+    fn lookup_local(
+        &self,
+        _lexical_namespace: &EnvironmentNamespace,
+        name: &QualifiedName,
+    ) -> Option<Self::Output> {
+        self.symbols
+            .get_local_symbol(name)
+            .map(|sym| SymbolLookup {
+                resolved_name: name.clone(),
+                kind: SymbolLookupKind::Resolved(sym.clone()),
+            })
+    }
+
+    fn lookup_exact(
+        &self,
+        lexical_namespace: &EnvironmentNamespace,
+        name: &QualifiedName,
+    ) -> Option<Self::Output> {
+        self.symbols
+            .get_preresolved_symbol(name)
+            .map(|sym| SymbolLookup {
+                resolved_name: name.clone(),
+                kind: SymbolLookupKind::Resolved(sym.clone()),
+            })
+            .or_else(|| {
+                self.symbols
+                    .get_global_registry()
+                    .resolve(name)
+                    .filter(|sym|
+                        self.symbol_visible_from(
+                            lexical_namespace,
+                            name,
+                            sym
+                        )
+                    )
+                    .map(|sym| SymbolLookup {
+                        resolved_name: name.clone(),
+                        kind: SymbolLookupKind::Untyped(sym.clone()),
+                    })
+            })
+    }
+
+    fn resolve_aliases(
+        &self,
+        lexical_namespace: &NamespacePath,
+        namespace: &NamespacePath,
+    ) -> Vec<NamespacePath> {
+        self.symbols
+            .get_global_registry()
+            .resolve_aliases(lexical_namespace, namespace)
+            .expect("failed to resolve namespace aliases")
+    }
+}
+
+pub struct SymbolLookup {
+    pub resolved_name: QualifiedName,
+    pub kind: SymbolLookupKind,
+}
+
+pub enum SymbolLookupKind {
+    Resolved(MIRSymbol),
+    Untyped(CXSymbol),
 }

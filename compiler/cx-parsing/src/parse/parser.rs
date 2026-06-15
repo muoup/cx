@@ -2,7 +2,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use cx_ast::ast::{function::CXFunctionKind, CXASTDefinition, CXASTStmt, CXAST};
+use cx_log::CXResult;
+use cx_namespace::MIRQualifiedLookup;
+use cx_namespace::result::QualifiedLookupResult;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
+use cx_preparse_data::symbol_data::PreparseSymbolKind;
 use cx_preparse_data::{NamespaceAliases, PreparseContents, VisibilityMode};
 use cx_tokens::TokenIter;
 use cx_util::identifier::CXIdent;
@@ -101,62 +105,26 @@ impl<'a> ParserData<'a> {
         self.ast
     }
 
-    pub fn resolve_qualified_aliases(&self, name: &QualifiedName) -> Vec<QualifiedName> {
-        let mut candidates = Vec::new();
-        push_unique(&mut candidates, name.clone());
-
-        let mut aliases = self
-            .namespace_aliases
-            .iter()
-            .filter_map(|(alias, targets)| {
-                if alias.is_root() {
-                    Some((alias, targets))
-                } else {
-                    name.namespace.strip(alias).map(|_| (alias, targets))
-                }
-            })
-            .collect::<Vec<_>>();
-
-        aliases.sort_by(|(left, _), (right, _)| {
-            right
-                .segments()
-                .len()
-                .cmp(&left.segments().len())
-                .then_with(|| left.as_scope_string().cmp(&right.as_scope_string()))
-        });
-
-        for (alias, targets) in aliases {
-            let suffix = if alias.is_root() {
-                name.namespace.clone()
-            } else {
-                name.namespace
-                    .strip(alias)
-                    .expect("Alias prefix was checked above")
-            };
-
-            for target in targets {
-                push_unique(
-                    &mut candidates,
-                    QualifiedName {
-                        namespace: target.join(&suffix),
-                        name: name.name.clone(),
-                    },
-                );
-            }
-        }
-
-        candidates
+    pub fn is_type_ident(&self, name: &QualifiedName) -> CXResult<bool> {
+        Ok(matches!(self.query_identifier(name.clone())?, true)
+            || (name.namespace.is_root() && self.temporary_type_names.contains_key(&name.name)))
     }
 
-    pub fn is_type_ident(&self, name: &QualifiedName) -> bool {
-        self.resolve_qualified_aliases(name)
-            .iter()
-            .any(|resolved_name| {
-                self.registry
-                    .get_symbol(&resolved_name.namespace, &resolved_name.name)
-                    .is_some()
-            })
-            || (name.namespace.is_root() && self.temporary_type_names.contains_key(&name.name))
+    pub fn query_identifier(&self, name: QualifiedName) -> CXResult<bool> {
+        match self.qualified_lookup(&self.namespace_for_current_stmt(), &name) {
+            QualifiedLookupResult::Found { .. } => Ok(true),
+            QualifiedLookupResult::NotFound => Ok(false),
+            QualifiedLookupResult::Ambiguous { candidates } => log_parse_error!(
+                self,
+                "Ambiguous identifier '{}', candidates: {}",
+                name,
+                candidates
+                    .iter()
+                    .map(|n| n.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
     }
 
     fn namespace_for_current_stmt(&self) -> NamespacePath {
@@ -181,27 +149,20 @@ impl<'a> ParserData<'a> {
         }
 
         match stmt {
-            CXASTStmt::TypeDefinition {
-                name: Some(name), ..
-            } => {
-                insert_namespace_alias(
-                    &mut self.namespace_aliases,
-                    NamespacePath::root().child(name.clone()),
-                    namespace.child(name.clone()),
-                );
-            }
-
             CXASTStmt::FunctionDefinition { prototype, .. } => {
                 let q_namespace = prototype.kind.into_key().namespace;
 
                 if !q_namespace.is_root()
                     && matches!(&prototype.kind, CXFunctionKind::AssociatedFunction { .. })
                 {
-                    insert_namespace_alias(
-                        &mut self.namespace_aliases,
-                        q_namespace.clone(),
-                        namespace.join(&q_namespace),
-                    );
+                    let entry = self
+                        .namespace_aliases
+                        .entry(namespace.clone())
+                        .or_insert(Vec::new());
+
+                    if !entry.contains(&q_namespace) {
+                        entry.push(q_namespace);
+                    }
                 }
             }
 
@@ -210,19 +171,33 @@ impl<'a> ParserData<'a> {
     }
 }
 
-fn insert_namespace_alias(
-    aliases: &mut NamespaceAliases,
-    alias: NamespacePath,
-    target: NamespacePath,
-) {
-    let targets = aliases.entry(alias).or_default();
-    if !targets.contains(&target) {
-        targets.push(target);
-    }
-}
+impl MIRQualifiedLookup for ParserData<'_> {
+    type Output = PreparseSymbolKind;
 
-fn push_unique(candidates: &mut Vec<QualifiedName>, name: QualifiedName) {
-    if !candidates.contains(&name) {
-        candidates.push(name);
+    fn lookup_local(
+        &self,
+        _lexical_namespace: &NamespacePath,
+        _name: &QualifiedName,
+    ) -> Option<PreparseSymbolKind> {
+        None
+    }
+    
+    fn lookup_exact(
+        &self,
+        _lexical_namespace: &NamespacePath,
+        name: &QualifiedName,
+    ) -> Option<PreparseSymbolKind> {
+        self.registry.get_symbol(&name.namespace, &name.name)
+    }
+
+    fn resolve_aliases(
+        &self,
+        _lexical_namespace: &NamespacePath,
+        namespace: &NamespacePath,
+    ) -> Vec<NamespacePath> {
+        self.namespace_aliases
+            .get(namespace)
+            .cloned()
+            .unwrap_or_default()
     }
 }

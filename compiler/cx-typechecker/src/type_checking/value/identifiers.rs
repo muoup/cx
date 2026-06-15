@@ -20,7 +20,7 @@ pub(crate) fn typecheck_identifier(
     name: &QualifiedName,
     template_input: Option<&CXTemplateInput>,
 ) -> CXResult<TypecheckResult> {
-    let Some(mut symbol) = env.get_symbol(namespace, name)? else {
+    let Some(mut symbol) = env.get_symbol(namespace, name, Some(expr.token_range()))? else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),

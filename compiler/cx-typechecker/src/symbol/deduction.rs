@@ -32,7 +32,7 @@ pub(crate) fn complete_templated_callee(
     template_input: Option<&CXTemplateInput>,
     arg_types: &[MIRType],
 ) -> CXResult<MIRSymbol> {
-    let Some(symbol) = env.get_symbol(namespace, name)? else {
+    let Some(symbol) = env.get_symbol(namespace, name, None)? else {
         return CXError::create_result(format!("Templated function '{}' not found", name));
     };
 

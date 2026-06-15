@@ -115,8 +115,12 @@ impl SymbolNamespaceData {
         }
     }
 
-    pub fn resolve_aliases(&self, namespace: &NamespacePath) -> impl Iterator<Item = &NamespacePath> {
-        self.namespace_aliases.get(&namespace)
+    pub fn resolve_aliases(
+        &self,
+        namespace: &NamespacePath,
+    ) -> impl Iterator<Item = &NamespacePath> {
+        self.namespace_aliases
+            .get(&namespace)
             .map(|t| t.as_slice().iter())
             .unwrap_or_else(|| [].iter())
     }

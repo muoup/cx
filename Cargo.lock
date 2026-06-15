@@ -296,6 +296,7 @@ dependencies = [
 name = "cx-ast"
 version = "0.0.0"
 dependencies = [
+ "cx-namespace",
  "cx-preparse-data",
  "cx-tokens",
  "cx-util",
@@ -399,12 +400,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-namespace"
+version = "0.0.0"
+dependencies = [
+ "cx-util",
+]
+
+[[package]]
 name = "cx-parsing"
 version = "0.0.0"
 dependencies = [
  "cx-ast",
  "cx-log",
  "cx-mir",
+ "cx-namespace",
  "cx-pipeline-data",
  "cx-preparse-data",
  "cx-tokens",
@@ -506,6 +515,7 @@ dependencies = [
  "cx-ast",
  "cx-log",
  "cx-mir",
+ "cx-namespace",
  "cx-pipeline-data",
  "cx-tokens",
  "cx-util",

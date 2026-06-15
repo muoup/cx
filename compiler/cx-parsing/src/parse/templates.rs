@@ -17,7 +17,7 @@ pub(crate) fn note_templated_types(
         if data.is_type_ident(&QualifiedName {
             namespace: NamespacePath::root(),
             name: template_name.clone(),
-        }) {
+        })? {
             continue;
         }
 

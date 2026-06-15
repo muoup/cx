@@ -110,42 +110,14 @@ impl GlobalSymbolRegistry {
             .cloned()
     }
 
-    pub fn resolve_qualified_aliases(
+    pub fn resolve_aliases(
         &self,
         lexical_namespace: &NamespacePath,
-        name: &QualifiedName,
-    ) -> Vec<QualifiedName> {
-        let inner = self
-            .inner
-            .read()
-            .expect("GlobalSymbolRegistry read lock poisoned");
+        namespace: &NamespacePath,
+    ) -> Option<Vec<NamespacePath>> {
+        let (_, data) = self.get_bucket(lexical_namespace)?;
 
-        let mut candidates = Vec::new();
-
-        if name.namespace.is_root() {
-            candidates.push(QualifiedName {
-                namespace: NamespacePath::root(),
-                name: name.name.clone(),
-            });
-        } else {
-            candidates.push(name.clone());
-        }
-
-        let Some(data) = inner.namespaces.get(lexical_namespace) else {
-            unreachable!();
-        };
-
-        candidates.extend(
-            data.resolve_aliases(&name.namespace)
-                .map(|target| QualifiedName {
-                    namespace: target.clone(),
-                    name: name.name.clone(),
-                }),
-        );
-
-        println!("Name: {}, Candidates: {:?}", name, candidates);
-
-        candidates
+        Some(data.resolve_aliases(namespace).cloned().collect::<Vec<_>>())
     }
 
     pub fn get_bucket<'b, 'c>(
