@@ -88,6 +88,7 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) {
         env.namespace
     };
 
+
     match definition.stmt {
         CXASTStmt::TypeDefinition {
             name,

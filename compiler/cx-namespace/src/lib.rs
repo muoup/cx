@@ -58,16 +58,33 @@ pub trait MIRQualifiedLookup {
             }
         }
 
-        let mut resolved = self.resolve_aliases(lexical_namespace, &name.namespace)
+        let mut aliases = self.resolve_aliases(lexical_namespace, &name.namespace)
             .into_iter()
-            .filter_map(|candidate_namespace| {
-                let candidate_name = QualifiedName {
-                    namespace: candidate_namespace,
-                    name: name.name.clone(),
-                };
+            .map(|alias_namespace| QualifiedName {
+                namespace: alias_namespace,
+                name: name.name.clone(),
+            })
+            .collect::<Vec<_>>();
+        
+        if !name.namespace.is_root() {
+            let (parent, child) = name.namespace.parent_and_name()
+                .unwrap();
 
-                self.lookup_exact(lexical_namespace, &candidate_name)
-                    .map(|value| (candidate_name, value))
+            aliases.extend(
+                self.resolve_aliases(lexical_namespace, &parent)
+                    .into_iter()
+                    .map(|alias| QualifiedName {
+                        namespace: alias.child(child.clone()),
+                        name: name.name.clone(),
+                    })
+            );
+        }
+
+        let mut resolved = aliases
+            .into_iter()
+            .filter_map(|name| {
+                self.lookup_exact(lexical_namespace, &name)
+                    .map(|value| (name, value))
             })
             .collect::<Vec<_>>();
 
