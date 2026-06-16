@@ -1,3 +1,6 @@
+extern "C":
+#include <stdlib.h>
+
 public:
 
 struct box<T> : @nodrop {
@@ -49,7 +52,3 @@ void box::drop<T>(box<T> this) safe {
         @leak(this);
     };
 }
-
-private:
-
-#include <stdlib.h>

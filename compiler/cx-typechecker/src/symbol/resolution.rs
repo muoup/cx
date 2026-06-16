@@ -13,6 +13,7 @@ use cx_util::identifier::CXIdent;
 use cx_mir::{
     EnvironmentNamespace,
     mir::{
+        contextual_eq::TypeContextEqual,
         data::{
             MIRFunctionPrototype, MIRFunctionSignature, MIRParameter, MIRTemplateInput,
             TemplateInfo,
@@ -41,6 +42,15 @@ pub fn resolve_symbol(
     symbol: &CXSymbol,
 ) -> CXResult<MIRSymbol> {
     match &symbol.kind {
+        CXSymbolKind::DuplicateDefinition(definitions) => resolve_duplicate_definition(
+            env,
+            evaluation_namespace,
+            symbol_namespace,
+            name,
+            symbol.visibility,
+            definitions,
+        ),
+
         CXSymbolKind::Type(ty) => {
             let completed = complete_type(env, symbol_namespace, ty)?;
             let id = env.symbols.generate_type_id(completed);
@@ -147,6 +157,69 @@ pub fn resolve_symbol(
                 namespace: symbol_namespace.clone(),
             })
         }
+    }
+}
+
+fn resolve_duplicate_definition(
+    env: &mut TypeEnvironment,
+    evaluation_namespace: &EnvironmentNamespace,
+    symbol_namespace: &EnvironmentNamespace,
+    name: &CXIdent,
+    visibility: cx_ast::ast::modifiers::VisibilityMode,
+    definitions: &[CXSymbolKind],
+) -> CXResult<MIRSymbol> {
+    let Some((first, rest)) = definitions.split_first() else {
+        return CXError::create_result(format!(
+            "Duplicate symbol declaration '{}' has no definitions",
+            name
+        ));
+    };
+
+    let first = resolve_symbol(
+        env,
+        evaluation_namespace,
+        symbol_namespace,
+        name,
+        &CXSymbol::new(visibility, first.clone()),
+    )?;
+
+    for definition in rest {
+        let candidate = resolve_symbol(
+            env,
+            evaluation_namespace,
+            symbol_namespace,
+            name,
+            &CXSymbol::new(visibility, definition.clone()),
+        )?;
+
+        if !mir_symbols_equivalent(env, &first, &candidate) {
+            return CXError::create_result(format!(
+                "Duplicate symbol declaration '{}' resolves to incompatible definitions",
+                name
+            ));
+        }
+    }
+
+    Ok(first)
+}
+
+fn mir_symbols_equivalent(env: &TypeEnvironment, left: &MIRSymbol, right: &MIRSymbol) -> bool {
+    match (left, right) {
+        (MIRSymbol::Type(left), MIRSymbol::Type(right)) => env.type_eq(
+            env.symbols.resolve_type_id(*left),
+            env.symbols.resolve_type_id(*right),
+        ),
+
+        (MIRSymbol::FunctionReference(left), MIRSymbol::FunctionReference(right)) => {
+            left.linkage() == right.linkage() && left.contextual_eq(right, &env.symbols)
+        }
+
+        (MIRSymbol::Expression(left), MIRSymbol::Expression(right)) => {
+            env.type_eq(&left._type, &right._type)
+                && format!("{:?}", left.kind) == format!("{:?}", right.kind)
+        }
+
+        _ => false,
     }
 }
 

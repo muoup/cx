@@ -9,7 +9,7 @@ use crate::ast::{
     modifiers::VisibilityMode, template::CXTemplatePrototype, types::CXType,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CXSymbol {
     pub visibility: VisibilityMode,
     pub kind: CXSymbolKind,
@@ -21,13 +21,22 @@ impl CXSymbol {
     }
 
     pub fn is_type(&self) -> bool {
-        matches!(self.kind, CXSymbolKind::Type(_))
+        match &self.kind {
+            CXSymbolKind::Type(_) => true,
+            CXSymbolKind::DuplicateDefinition(definitions) => definitions.iter().any(|kind| {
+                matches!(
+                    kind,
+                    CXSymbolKind::Type(_) | CXSymbolKind::TypeTemplate { .. }
+                )
+            }),
+            _ => false,
+        }
     }
 }
 
 pub type EnumBlockIdx = usize;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CXSymbolKind {
     Type(CXType),
     FunctionReference(CXFunctionPrototype),
@@ -50,6 +59,7 @@ pub enum CXSymbolKind {
         definition: CXFunctionPrototype,
         body: Box<CXExpression>,
     },
+    DuplicateDefinition(Vec<CXSymbolKind>),
     // Templated variables should not be supported
 }
 

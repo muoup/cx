@@ -1,19 +1,17 @@
 import std::io as std;
 import std::optional as std;
-import std::socket as std;
+import std::net::udp as std::net;
 
 std::opt<std::socket> try_serve(u16 port) {
-    std::socket listener =
-        std::socket::open(AF_INET, SOCK_STREAM, 0)
-        |> std::opt::unwrap<std::socket>();
+    std::net::endpoint endpoint = std::net::endpoint::ipv4("0.0.0.0", port);
 
-    std::socket_addr addr = std::socket_addr::ipv4("0.0.0.0", port);
+    std::net::udp_socket socket = std::net::udp_socket::open(std::socket::AF_INET, std::socket::SOCK_STREAM, 0);
 
-    if (listener |> c_socket::bind(&addr) < 0) {
-        return std::opt::none<std::stocket>();
+    if (socket |> std::net::udp_socket::bind(&addr) < 0) {
+        return std::opt::none<std::socket>();
     }
 
-    if (listener |> c_socket::listen(128) < 0) {
+    if (listener |> std::net::udp_socket::listen(128) < 0) {
         return std::opt::none<std::socket>();
     }
 

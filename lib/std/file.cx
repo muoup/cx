@@ -1,7 +1,9 @@
-#include <stdio.h>
-
 import std::optional;
 import std::string;
+
+extern "C":
+
+#include <stdio.h>
 
 public:
 

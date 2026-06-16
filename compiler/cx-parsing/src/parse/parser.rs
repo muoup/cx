@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use cx_ast::ast::{function::CXFunctionKind, CXASTDefinition, CXASTStmt, CXAST};
 use cx_log::CXResult;
-use cx_namespace::MIRQualifiedLookup;
 use cx_namespace::result::QualifiedLookupResult;
+use cx_namespace::MIRQualifiedLookup;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_preparse_data::symbol_data::PreparseSymbolKind;
 use cx_preparse_data::{NamespaceAliases, PreparseContents, VisibilityMode};
@@ -17,6 +17,7 @@ use cx_util::namespace::{NamespacePath, QualifiedName};
 pub struct ParserData<'a> {
     pub tokens: TokenIter<'a>,
     pub visibility: VisibilityMode,
+    pub extern_c_mode: bool,
     pub expr_commas: Vec<bool>,
     pub pp_contents: &'a PreparseContents,
     pub file_origin: Arc<str>,
@@ -39,6 +40,7 @@ impl<'a> ParserData<'a> {
         Self {
             tokens,
             visibility: VisibilityMode::Package,
+            extern_c_mode: false,
             expr_commas: vec![true],
             pp_contents,
             file_origin,
@@ -128,14 +130,10 @@ impl<'a> ParserData<'a> {
     }
 
     fn namespace_for_current_stmt(&self) -> NamespacePath {
-        let Some(token) = self.tokens.prev() else {
-            return self.current_module_namespace();
-        };
-
-        if token.file_origin.as_ref() == self.tokens.file.as_path() {
-            self.current_module_namespace()
-        } else {
+        if self.extern_c_mode {
             NamespacePath::root()
+        } else {
+            self.current_module_namespace()
         }
     }
 
@@ -181,7 +179,7 @@ impl MIRQualifiedLookup for ParserData<'_> {
     ) -> Option<PreparseSymbolKind> {
         None
     }
-    
+
     fn lookup_exact(
         &self,
         _lexical_namespace: &NamespacePath,

@@ -1,4 +1,4 @@
-private:
+extern "C":
 
 #include <stdio.h>
 

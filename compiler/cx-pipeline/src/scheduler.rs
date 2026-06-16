@@ -357,7 +357,7 @@ pub(crate) fn perform_job(
 
             let namespace = NamespacePath::from(job.unit.module_path().clone());
             let (symbol_buckets, namespace_friends, generation_ast) =
-                decompose_ast(&namespace, parsed_ast).destructure();
+                decompose_ast(&namespace, parsed_ast)?.destructure();
 
             for (namespace, bucket) in symbol_buckets {
                 if let Some((namespace, _)) = context

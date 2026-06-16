@@ -24,18 +24,15 @@ pub(crate) struct PreparseData<'a> {
     pub(crate) contents: &'a mut PreparseContents,
     pub(crate) tokens: TokenIter<'a>,
     pub(crate) visibility_mode: cx_preparse_data::VisibilityMode,
+    pub(crate) extern_c_mode: bool,
 }
 
 impl PreparseData<'_> {
     fn current_symbols_mut(&mut self) -> &mut PreparseModuleSymbols {
-        let Some(token) = self.tokens.prev() else {
-            return &mut self.contents.module_symbols;
-        };
-
-        if token.file_origin.as_ref() == self.tokens.file.as_path() {
-            &mut self.contents.module_symbols
-        } else {
+        if self.extern_c_mode {
             &mut self.contents.root_symbols
+        } else {
+            &mut self.contents.module_symbols
         }
     }
 }
@@ -52,8 +49,9 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
     let Some(next_token) = data.tokens.next() else {
         return Ok(());
     };
+    let next_kind = next_token.kind.clone();
 
-    match &next_token.kind {
+    match &next_kind {
         keyword!(Struct) | keyword!(Union) | keyword!(Enum) => {
             let Some(identifier!(ident)) = next_kind!(data.tokens).ok() else {
                 data.tokens.back();
@@ -113,16 +111,58 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
 
         specifier!(Public) => {
             data.visibility_mode = cx_preparse_data::VisibilityMode::Public;
+            data.extern_c_mode = false;
             assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
         }
 
         specifier!(Private) => {
             data.visibility_mode = cx_preparse_data::VisibilityMode::Private;
+            data.extern_c_mode = false;
             assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
+        }
+
+        specifier!(Extern) if is_extern_c_section(data) => {
+            data.tokens.back();
+            parse_extern_c_mod(data)?;
         }
 
         _ => (),
     }
+
+    Ok(())
+}
+
+fn is_extern_c_section(data: &PreparseData) -> bool {
+    matches!(
+        (
+            data.tokens.peek_prev().map(|token| &token.kind),
+            data.tokens.peek().map(|token| &token.kind),
+        ),
+        (
+            Some(cx_tokens::token::TokenKind::Specifier(
+                cx_tokens::token::SpecifierType::Extern
+            )),
+            Some(cx_tokens::token::TokenKind::StringLiteral(abi))
+        ) if abi == "C"
+    )
+}
+
+fn parse_extern_c_mod(data: &mut PreparseData) -> CXResult<()> {
+    assert_token_matches!(data.tokens, specifier!(Extern), "'extern'");
+    assert_token_matches!(
+        data.tokens,
+        cx_tokens::token::TokenKind::StringLiteral(abi),
+        "\"C\""
+    );
+
+    if abi != "C" {
+        return log_preparse_error!(data.tokens, "Unsupported extern ABI '{}'", abi);
+    }
+
+    assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
+
+    data.visibility_mode = cx_preparse_data::VisibilityMode::Private;
+    data.extern_c_mode = true;
 
     Ok(())
 }

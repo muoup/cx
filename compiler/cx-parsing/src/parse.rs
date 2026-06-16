@@ -2,6 +2,7 @@ use cx_ast::ast::{
     expression::{CXExprKind, CXExpression},
     function::CXFunctionPrototype,
     global_var::CXGlobalVariable,
+    modifiers::CXLinkageMode,
     template::CXTemplatePrototype,
     types::CXTypeKind,
     CXASTStmt,
@@ -53,9 +54,42 @@ pub fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
         punctuator!(Semicolon) => {
             data.tokens.next();
         }
+        specifier!(Extern) if is_extern_c_section(data) => parse_extern_c_mod(data)?,
         specifier!(Public) | specifier!(Private) => parse_access_mods(data)?,
         _ => parse_global_expr(data)?,
     };
+
+    Ok(())
+}
+
+fn is_extern_c_section(data: &ParserData) -> bool {
+    matches!(
+        (
+            data.tokens.slice.get(data.tokens.index).map(|token| &token.kind),
+            data.tokens
+                .slice
+                .get(data.tokens.index + 1)
+                .map(|token| &token.kind),
+        ),
+        (
+            Some(TokenKind::Specifier(SpecifierType::Extern)),
+            Some(TokenKind::StringLiteral(abi))
+        ) if abi == "C"
+    )
+}
+
+fn parse_extern_c_mod(data: &mut ParserData) -> CXResult<()> {
+    assert_token_matches!(data.tokens, specifier!(Extern), "'extern'");
+    assert_token_matches!(data.tokens, TokenKind::StringLiteral(abi), "\"C\"");
+
+    if abi != "C" {
+        return log_parse_error!(data, "Unsupported extern ABI '{}'", abi);
+    }
+
+    assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
+
+    data.visibility = VisibilityMode::Private;
+    data.extern_c_mode = true;
 
     Ok(())
 }
@@ -64,8 +98,14 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
     assert_token_matches!(data.tokens, TokenKind::Specifier(specifier));
 
     match specifier {
-        SpecifierType::Public => data.visibility = VisibilityMode::Public,
-        SpecifierType::Private => data.visibility = VisibilityMode::Private,
+        SpecifierType::Public => {
+            data.visibility = VisibilityMode::Public;
+            data.extern_c_mode = false;
+        }
+        SpecifierType::Private => {
+            data.visibility = VisibilityMode::Private;
+            data.extern_c_mode = false;
+        }
 
         _ => return log_parse_error!(data, "Unexpected specifier in global scope"),
     };
@@ -156,6 +196,11 @@ fn parse_fn_merge(
 
 fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
     let (name, return_type, linkage) = parse_initializer(data)?;
+    let linkage = if data.extern_c_mode && linkage == CXLinkageMode::Standard {
+        CXLinkageMode::Extern
+    } else {
+        linkage
+    };
 
     let Some(name) = name else {
         // Blank statement consisting on just a type, (i.e. struct [name] { [fields] };)

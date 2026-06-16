@@ -1,6 +1,7 @@
 import std::optional as std;
 import std::io as std;
 
+extern "C":
 #include <stdio.h>
 
 public:

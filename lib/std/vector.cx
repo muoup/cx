@@ -1,5 +1,9 @@
 import std::optional;
 
+extern "C":
+#include <stdlib.h>
+#include <string.h>
+
 public:
 
 struct vector<T> : @nodrop {
@@ -71,8 +75,3 @@ std::optional::opt<T&> vector::at<T>(vector<T>& this, usize index) {
 
     return std::optional::opt::some<T&>(this.data[index]);
 }
-
-private:
-
-#include <stdlib.h>
-#include <string.h>

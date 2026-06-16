@@ -358,6 +358,17 @@ fn complete_identifier_type_lookup(
             complete_template_type_lookup(env, namespace, name, &mir_symbol, template_input, range)
         }
 
+        CXSymbolKind::DuplicateDefinition(_) => {
+            let mir_symbol = resolve_symbol(
+                env,
+                namespace,
+                &resolved_name.namespace,
+                &resolved_name.name,
+                &symbol,
+            )?;
+            complete_resolved_type_lookup(env, namespace, name, mir_symbol, template_input, range)
+        }
+
         _ => type_completion_error(env, range, format!("Symbol '{name}' is not a type")),
     }
 }

@@ -32,6 +32,7 @@ pub fn preparse(
         config,
         tokens,
         visibility_mode: cx_preparse_data::VisibilityMode::Private,
+        extern_c_mode: false,
     };
 
     while data.tokens.has_next() {
@@ -55,13 +56,16 @@ pub fn parse_ast(
     Ok(data.take_ast())
 }
 
-pub fn decompose_ast<'a>(namespace: &'a NamespacePath, ast: CXAST) -> DecompositionEnv<'a> {
+pub fn decompose_ast<'a>(
+    namespace: &'a NamespacePath,
+    ast: CXAST,
+) -> CXResult<DecompositionEnv<'a>> {
     let namespace_aliases = ast.namespace_aliases;
     let mut env = DecompositionEnv::new(namespace, namespace_aliases);
 
-    ast.definition_stmts
-        .into_iter()
-        .for_each(|stmt| env.decompose_stmt(stmt));
+    for stmt in ast.definition_stmts {
+        env.decompose_stmt(stmt)?;
+    }
 
-    env
+    Ok(env)
 }

@@ -9,6 +9,7 @@ use cx_ast::{
 };
 
 use cx_ast::ast::types::{CXType, CXTypeKind, PredeclarationType};
+use cx_log::CXResult;
 use cx_preparse_data::NamespaceAliases;
 use cx_util::namespace::{NamespacePath, QualifiedName};
 
@@ -74,12 +75,45 @@ impl<'a> DecompositionEnv<'a> {
         &mut self.symbol_buckets.last_mut().unwrap().1
     }
 
-    pub fn decompose_stmt(&mut self, definition: CXASTDefinition) {
-        decompose_stmt(self, definition);
+    pub fn decompose_stmt(&mut self, definition: CXASTDefinition) -> CXResult<()> {
+        decompose_stmt(self, definition)
     }
 }
 
-fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) {
+fn insert_symbol(
+    env: &mut DecompositionEnv,
+    namespace: &NamespacePath,
+    name: impl Into<String>,
+    symbol: CXSymbol,
+) -> CXResult<()> {
+    let name = name.into();
+
+    if let Some(existing) = env
+        .get_bucket_mut(namespace)
+        .get_symbol(name.as_str())
+        .cloned()
+    {
+        let mut definitions = match existing.kind {
+            CXSymbolKind::DuplicateDefinition(definitions) => definitions,
+            kind => vec![kind],
+        };
+        definitions.push(symbol.kind);
+
+        env.get_bucket_mut(namespace).insert_symbol(
+            name,
+            CXSymbol::new(
+                existing.visibility,
+                CXSymbolKind::DuplicateDefinition(definitions),
+            ),
+        );
+        return Ok(());
+    }
+
+    env.get_bucket_mut(namespace).insert_symbol(name, symbol);
+    Ok(())
+}
+
+fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) -> CXResult<()> {
     let stmt_namespace = definition.namespace;
 
     let base_namespace = if stmt_namespace.is_root() {
@@ -87,7 +121,6 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) {
     } else {
         env.namespace
     };
-
 
     match definition.stmt {
         CXASTStmt::TypeDefinition {
@@ -97,7 +130,7 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) {
             _type,
         } => {
             let Some(name) = name else {
-                return;
+                return Ok(());
             };
 
             let symbol = match template_prototype.clone() {
@@ -111,8 +144,7 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) {
                 None => CXSymbol::new(visibility, CXSymbolKind::Type(_type.clone())),
             };
 
-            env.get_bucket_mut(base_namespace)
-                .insert_symbol(name.to_string(), symbol);
+            insert_symbol(env, base_namespace, name.to_string(), symbol)?;
 
             if let CXTypeKind::TaggedUnion { variants, .. } = &_type.kind {
                 let union_name = QualifiedName::new(base_namespace.clone(), name.clone());
@@ -125,7 +157,6 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) {
                 }
                 .to_type();
                 let variant_namespace = base_namespace.child(name);
-                let bucket = env.get_bucket_mut(&variant_namespace);
 
                 for (variant_index, variant) in variants.iter().enumerate() {
                     let Some((variant_name, _)) = variant.standard_parts() else {
@@ -141,7 +172,7 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) {
                         },
                     );
 
-                    bucket.insert_symbol(variant_name.clone(), symbol);
+                    insert_symbol(env, &variant_namespace, variant_name.clone(), symbol)?;
                 }
             }
         }
@@ -157,10 +188,11 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) {
                 namespace: q_namespace,
             } = prototype.kind.into_key();
             let namespace = base_namespace.join(&q_namespace);
+            let mut generated_body = None;
             let symbol = match template_prototype {
                 Some(input) => {
                     let Some(body) = body else {
-                        return;
+                        return Ok(());
                     };
 
                     CXSymbol::new(
@@ -173,19 +205,18 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) {
                     )
                 }
                 None => {
-                    if let Some(body) = body {
-                        env.stmts.push(CXGenerationStmt::Function {
-                            prototype: prototype.clone(),
-                            body,
-                        })
-                    }
+                    generated_body = body.map(|body| (prototype.clone(), body));
 
                     CXSymbol::new(visibility, CXSymbolKind::FunctionReference(prototype))
                 }
             };
 
-            env.get_bucket_mut(&namespace)
-                .insert_symbol(name.to_string(), symbol);
+            insert_symbol(env, &namespace, name.to_string(), symbol)?;
+
+            if let Some((prototype, body)) = generated_body {
+                env.stmts
+                    .push(CXGenerationStmt::Function { prototype, body });
+            }
         }
 
         CXASTStmt::GlobalVariableDefinition {
@@ -205,7 +236,7 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) {
                         },
                     );
 
-                    bucket.insert_symbol(variant.name.as_string(), symbol);
+                    insert_symbol(env, base_namespace, variant.name.as_string(), symbol)?;
                 }
             }
 
@@ -221,8 +252,7 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) {
                     CXSymbolKind::AddressableGlobal(name.clone(), _type.clone()),
                 );
 
-                env.get_bucket_mut(base_namespace)
-                    .insert_symbol(name.to_string(), symbol);
+                insert_symbol(env, base_namespace, name.to_string(), symbol)?;
 
                 env.stmts.push(CXGenerationStmt::AddressableGlobal {
                     name: name.clone(),
@@ -232,7 +262,9 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) {
                 });
             }
         },
-    }
+    };
+
+    Ok(())
 }
 
 fn convert_template_proto_to_args(prototype: CXTemplatePrototype) -> CXTemplateInput {

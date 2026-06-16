@@ -1,7 +1,12 @@
 import std::optional;
 import std::io;
 
+extern "C":
+
 #include <stdlib.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 public:
 
@@ -88,7 +93,3 @@ void string::_realloc(string& this) {
     this.capacity = this.capacity * 2;
     this.data = realloc(this.data, this.capacity);
 }
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
