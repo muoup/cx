@@ -87,6 +87,10 @@ _str& string::as_str(string& this) safe {
     return @unsafe((_str&) this.data);
 }
 
+usize string::str_length(const _str& this) {
+    return strlen(this);
+}
+
 private:
 
 void string::_realloc(string& this) {

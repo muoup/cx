@@ -15,6 +15,10 @@ bool opt::is_some<T>(opt<T>& this) {
     return this is opt::some<T>(_);
 }
 
+bool opt::is_none<T>(opt<T>& this) {
+    return this is opt::none<T>();
+}
+
 opt<U> opt::map<T, U>(opt<T> this, U (*func)(T)) {
     if (this is opt::some<T>(value)) {
         return opt::some<U>(func(value));

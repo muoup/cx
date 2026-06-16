@@ -1,12 +1,16 @@
 import std::optional as std;
+import std::span as std;
 
 extern "C":
 
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-
-private:
+i32 socket(int domain, int type, int protocol);
+i32 bind(int sockfd, const void* addr, u32 addrlen);
+i32 listen(int sockfd, int backlog);
+i64 sendto(int sockfd, const void* buf, size_t len, int flags, const void* dest_addr, u32 addrlen);
+i64 recvfrom(int sockfd, void* buf, size_t len, int flags, void* src_addr, u32* addrlen);
+u32 inet_addr(const char* cp);
+u16 htons(u16 hostshort);
+i32 close(int fd);
 
 enum {
     LINUX_AF_INET = 2,
@@ -69,32 +73,16 @@ std::opt<udp_socket> udp_socket::open() {
     return std::opt::some<udp_socket>((udp_socket) { .fd = fd });
 }
 
-std::opt<udp_socket> udp_socket::bind(udp_socket this, endpoint& local) {
-    match (move opened) {
-        std::opt::some<udp_socket>(sock) => {
-            if (bind(sock.fd, &local.address, local.length) < 0) {
-                close(sock.fd);
-                return std::opt::none<udp_socket>();
-            }
-
-            return std::opt::some<udp_socket>(move sock);
-        }
-        std::opt::none<udp_socket>(_) => {
-            return std::opt::none<udp_socket>();
-        }
-    }
-}
-
-std::opt<udp_socket> udp_socket::listen(udp_socket this, i32 backlog) {
-    if (listen(this.fd, backlog) < 0) {
+std::opt<udp_socket> udp_socket::bind(udp_socket this, endpoint addr) {
+    if (bind(this.fd, &addr.address, addr.length) < 0) {
         return std::opt::none<udp_socket>();
     }
 
-    return std::opt::some<udp_socket>(move this);
+    return move this |> std::opt::some<udp_socket>();
 }
 
-std::opt<u64> udp_socket::send_to(udp_socket& this, const void* buffer, u64 length, endpoint* remote) {
-    i64 sent = sendto(this.fd, buffer, length, 0, &remote.address, remote.length);
+std::opt<u64> udp_socket::send_to(udp_socket& this, const std::span<const u8> buffer, endpoint& remote) {
+    i64 sent = sendto(this.fd, buffer.data, buffer.length, 0, &remote.address, remote.length);
 
     if (sent < 0) {
         return std::opt::none<u64>();

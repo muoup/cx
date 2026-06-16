@@ -1,4 +1,4 @@
-use crate::{assert_token_matches, next_kind};
+use crate::{assert_token_matches, next_kind, parse::try_parse_qualified_name};
 use cx_log::{log_error, CXResult};
 use cx_pipeline_data::CompilerConfig;
 use cx_preparse_data::{symbol_data::PreparseModuleSymbols, PreparseContents};
@@ -208,20 +208,16 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<ParsedImport> {
 }
 
 fn parse_import_alias(tokens: &mut TokenIter) -> CXResult<NamespacePath> {
-    let Some(tok) = tokens.next() else {
+    let Some(ident) = try_parse_qualified_name(tokens)? else {
         return log_preparse_error!(
             tokens,
-            "Reached end of token stream when parsing import alias"
+            "Expected identifier for import alias"
         );
     };
 
-    let identifier!(ident) = &tok.kind else {
-        return log_preparse_error!(tokens, "Expected identifier after import alias 'as'");
-    };
-
-    if ident == "_" {
+    if ident.namespace.is_root() && ident.name.as_str() == "_" {
         Ok(NamespacePath::root())
     } else {
-        Ok(NamespacePath::root().child(CXIdent::new(ident.as_str())))
+        Ok(ident.namespace.child(ident.name))
     }
 }
