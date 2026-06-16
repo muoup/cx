@@ -3,19 +3,27 @@
 //! This module handles lowering of MIRExpression (AST-style IR) to LMIR.
 
 use cx_lmir::{
-    types::{LMIRIntegerType, LMIRType, LMIRTypeKind},
+    types::{LMIRIntegerType, LMIRType, LMIRTypeKind, TypeSize},
     LMIRABISlot, LMIRFunctionSignature, LMIRInstructionKind, LMIRIntBinOp, LMIRParameterABI,
-    LMIRPtrBinOp, LMIRValue,
+    LMIRPtrBinOp, LMIRValue, LinkageType,
 };
-use cx_mir::mir::{
-    data::{MIRFunctionSignature, MIRTypeKind},
-    expression::{MIRExpression, MIRExpressionKind, MIRFunctionContract, StructInitialization},
-    program::MIRFunction,
-    r#type::{MIRField, MIRType},
+use cx_log::CXResult;
+use cx_mir::{
+    mir::{
+        data::{MIRFunction, MIRFunctionPrototype, MIRFunctionSignature, MIRTypeKind},
+        expression::{
+            MIRExpression, MIRExpressionKind, MIRFunctionContract, StructInitialization,
+            SymbolValueOrigin,
+        },
+        pattern::MIRPattern,
+        r#type::{MIRField, MIRType},
+    },
+    registry::MIRDecomposedRegistry,
+    type_context::MIRTypeContext,
 };
-use cx_util::{identifier::CXIdent, CXResult};
+use cx_util::identifier::CXIdent;
 
-use crate::builder::LMIRBuilder;
+use crate::{builder::LMIRBuilder, mir_lowering::types::convert_type};
 
 use super::abi::classify_signature;
 use super::binary_ops::{lower_binary_op, lower_unary_op};
@@ -42,16 +50,16 @@ enum AggregateMemberLayout {
 
 fn aggregate_member_layout(
     aggregate_type: &MIRType,
-    definitions: &cx_mir::mir::data::MIRTypeContext,
+    definitions: &MIRDecomposedRegistry,
     member_index: usize,
 ) -> AggregateMemberLayout {
-    let aggregate_type = definitions.memory_resident_type(aggregate_type);
+    let aggregate_type = definitions
+        .mem_ref_inner(aggregate_type)
+        .unwrap_or(aggregate_type);
+
     match &aggregate_type.kind {
-        MIRTypeKind::Union { .. } => {
-            let fields = definitions
-                .aggregate_fields(aggregate_type)
-                .expect("union type must have fields");
-            let field = fields
+        MIRTypeKind::Union { variants } => {
+            let field = variants
                 .get(member_index)
                 .unwrap_or_else(|| panic!("member index {member_index} out of bounds"));
             match field {
@@ -61,10 +69,7 @@ fn aggregate_member_layout(
                     width,
                     ..
                 } => {
-                    let storage_type = definitions
-                        .get(*integer_type_id)
-                        .unwrap_or_else(|| panic!("Unknown type id {}", integer_type_id.0))
-                        .clone();
+                    let storage_type = definitions.resolve_type_id(*integer_type_id).clone();
                     AggregateMemberLayout::Bitfield {
                         storage_byte_offset: 0,
                         bit_offset: 0,
@@ -74,29 +79,26 @@ fn aggregate_member_layout(
                 }
             }
         }
-        MIRTypeKind::Structured { .. } => {
-            let fields = definitions
-                .aggregate_fields(aggregate_type)
-                .expect("structured tycx_mir::mir::r#type::pe must have fields");
+        MIRTypeKind::Structured { fields } => {
             let mut offset = 0usize;
-            let mut active_storage: Option<(MIRType, usize, usize)> = None;
+            let mut active_storage: Option<(LMIRType, usize, usize)> = None;
 
             for (index, field) in fields.iter().enumerate() {
                 match field {
                     MIRField::Standard { type_id, .. } => {
-                        if let Some((storage_type, storage_offset, used_bits)) =
+                        if let Some((bc_storage_type, storage_offset, used_bits)) =
                             active_storage.take()
                         {
-                            offset = storage_offset
-                                + (used_bits.div_ceil(storage_type.type_size(definitions) * 8))
-                                    * storage_type.type_size(definitions);
+                            let size_bytes = usize::from(bc_storage_type.size());
+
+                            offset =
+                                storage_offset + (used_bits.div_ceil(size_bytes) * 8) * size_bytes;
                         }
 
-                        let field_type = definitions
-                            .get(*type_id)
-                            .unwrap_or_else(|| panic!("Unknown type id {}", type_id.0));
-                        let alignment = field_type.type_alignment(definitions);
-                        offset = offset.div_ceil(alignment) * alignment;
+                        let field_type = definitions.resolve_type_id(*type_id);
+                        let bc_field_type = convert_type(field_type, definitions);
+                        let alignment = bc_field_type.alignment();
+                        offset = offset.div_ceil(alignment as usize) * alignment as usize;
 
                         if index == member_index {
                             return AggregateMemberLayout::Standard {
@@ -104,42 +106,45 @@ fn aggregate_member_layout(
                             };
                         }
 
-                        offset += field_type.type_size(definitions);
+                        offset += usize::from(bc_field_type.size());
                     }
                     MIRField::Bitfield {
                         integer_type_id,
                         width,
                         ..
                     } => {
-                        let storage_type = definitions
-                            .get(*integer_type_id)
-                            .unwrap_or_else(|| panic!("Unknown type id {}", integer_type_id.0))
-                            .clone();
-                        let storage_bits = storage_type.type_size(definitions) * 8;
-                        let storage_align = storage_type.type_alignment(definitions);
+                        let storage_type = definitions.resolve_type_id(*integer_type_id).clone();
+                        let bc_storage_type = convert_type(&storage_type, definitions);
+                        let storage_bits = usize::from(bc_storage_type.size()) * 8;
+                        let storage_align = bc_storage_type.alignment();
 
                         if *width == 0 {
                             active_storage = None;
-                            offset = offset.div_ceil(storage_align) * storage_align;
+                            offset =
+                                offset.div_ceil(storage_align as usize) * storage_align as usize;
                             continue;
                         }
 
                         let (storage_offset, bit_offset) = match active_storage.take() {
                             Some((active_type, storage_offset, used_bits))
-                                if active_type.contextual_eq(&storage_type, definitions)
+                                if active_type == bc_storage_type
                                     && used_bits + *width <= storage_bits =>
                             {
                                 (storage_offset, used_bits)
                             }
                             Some((active_type, storage_offset, used_bits)) => {
+                                let active_size_bytes = usize::from(active_type.size());
+
                                 offset = storage_offset
-                                    + (used_bits.div_ceil(active_type.type_size(definitions) * 8))
-                                        * active_type.type_size(definitions);
-                                offset = offset.div_ceil(storage_align) * storage_align;
+                                    + (used_bits.div_ceil(active_size_bytes * 8))
+                                        * active_size_bytes;
+                                offset = offset.div_ceil(storage_align as usize)
+                                    * storage_align as usize;
                                 (offset, 0)
                             }
                             None => {
-                                offset = offset.div_ceil(storage_align) * storage_align;
+                                offset = offset.div_ceil(storage_align as usize)
+                                    * storage_align as usize;
                                 (offset, 0)
                             }
                         };
@@ -153,7 +158,8 @@ fn aggregate_member_layout(
                             };
                         }
 
-                        active_storage = Some((storage_type, storage_offset, bit_offset + *width));
+                        active_storage =
+                            Some((bc_storage_type, storage_offset, bit_offset + *width));
                     }
                 }
             }
@@ -232,7 +238,7 @@ fn lower_region_duplicate(
             LMIRType::default_pointer(),
             true,
         )?;
-        let literal = builder.int_const(lmir_type.size() as i32, LMIRIntegerType::I64);
+        let literal = builder.int_const(usize::from(lmir_type.size()) as i32, LMIRIntegerType::I64);
 
         builder.add_new_instruction(
             LMIRInstructionKind::Memcpy {
@@ -269,7 +275,7 @@ fn lower_bitfield_read(
         bit_offset,
         bit_width,
         storage_type,
-    } = aggregate_member_layout(aggregate_type, &builder.type_definitions, member_index)
+    } = aggregate_member_layout(aggregate_type, &builder.registry, member_index)
     else {
         return Ok(None);
     };
@@ -337,7 +343,7 @@ fn lower_bitfield_write(
         bit_offset,
         bit_width,
         storage_type,
-    } = aggregate_member_layout(aggregate_type, &builder.type_definitions, *member_index)
+    } = aggregate_member_layout(aggregate_type, &builder.registry, *member_index)
     else {
         return Ok(None);
     };
@@ -444,31 +450,45 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             _type: LMIRIntegerType::I1,
         }),
 
-        MIRExpressionKind::IntLiteral(val, _type, _signed) => {
-            let bc_type = builder.convert_integer_type(_type);
+        MIRExpressionKind::IntLiteral(val) => {
+            let bc_type = builder.convert_cx_type(&expr._type);
+            let LMIRTypeKind::Integer(i_type) = bc_type.kind else {
+                unreachable!("Integer literal with non-integer type");
+            };
+
             Ok(LMIRValue::IntImmediate {
                 val: *val,
-                _type: bc_type,
+                _type: i_type,
             })
         }
 
-        MIRExpressionKind::FloatLiteral(val, _type) => {
-            let bc_type = builder.convert_float_type(_type);
+        MIRExpressionKind::FloatLiteral(val) => {
+            let bc_type = builder.convert_cx_type(&expr._type);
+            let LMIRTypeKind::Float(f_type) = bc_type.kind else {
+                unreachable!("Float literal with non-float type");
+            };
+
             Ok(LMIRValue::FloatImmediate {
                 val: *val,
-                _type: bc_type,
+                _type: f_type,
             })
         }
 
         MIRExpressionKind::Unit => Ok(LMIRValue::NULL),
 
-        MIRExpressionKind::Variable(name) => {
-            if let Some(local_value) = builder.get_symbol(name) {
-                return Ok(local_value);
-            }
+        MIRExpressionKind::Variable { name, location } => {
+            match location {
+                SymbolValueOrigin::Local => {
+                    if let Some(local_value) = builder.get_symbol(name) {
+                        return Ok(local_value);
+                    }
+                }
 
-            if let Some(global_value) = builder.get_global_symbol(name.as_str()) {
-                return Ok(global_value);
+                SymbolValueOrigin::Global => {
+                    if let Some(global_value) = builder.get_global_symbol(name.as_str()) {
+                        return Ok(global_value);
+                    }
+                }
             }
 
             unreachable!("Variable '{}' not found in symbol table", name);
@@ -498,6 +518,11 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
         }
 
         MIRExpressionKind::FunctionReference { name } => Ok(LMIRValue::FunctionRef(name.clone())),
+
+        MIRExpressionKind::SizeOf { _type } => Ok(LMIRValue::IntImmediate {
+            val: usize::from(builder.convert_cx_type(_type).size()) as i64,
+            _type: LMIRIntegerType::I64,
+        }),
 
         // ===== Arithmetic & Logic =====
         MIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
@@ -611,7 +636,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                         dest: bc_target.clone(),
                         src: bc_value,
                         size: LMIRValue::IntImmediate {
-                            val: bc_type.size() as i64,
+                            val: usize::from(bc_type.size()) as i64,
                             _type: LMIRIntegerType::I64,
                         },
                         alignment: bc_type.alignment(),
@@ -634,12 +659,19 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             Ok(bc_target)
         }
 
-        MIRExpressionKind::RegionMove { source } => lower_expression(builder, source),
+        MIRExpressionKind::RegionMove { source } => {
+            let lmir_type = builder.convert_cx_type(&source._type);
+
+            if lmir_type.is_memory_resident() {
+                lower_expression(builder, source.as_ref())
+            } else {
+                lower_region_duplicate(builder, source, &expr._type)
+            }
+        }
 
         MIRExpressionKind::RegionDuplicate { source } => {
             lower_region_duplicate(builder, source, &expr._type)
         }
-        MIRExpressionKind::ByValueArgument { source } => lower_expression(builder, source),
 
         MIRExpressionKind::If {
             condition,
@@ -675,15 +707,15 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                 .map(|v| lower_expression(builder, v))
                 .transpose()?;
 
-            if let Some((binding, postcondition)) = postcondition {
+            if let Some(postcondition) = postcondition {
                 builder.push_scope(None, None);
-                if let Some(binding) = binding {
+                if let Some(binding) = &postcondition.binding {
                     if let Some(val) = val.clone() {
                         builder.insert_symbol(binding.clone(), val);
                     }
                 }
 
-                let result = lower_return(builder, val, Some(postcondition.as_ref()));
+                let result = lower_return(builder, val, Some(postcondition));
                 builder.pop_scope()?;
                 result
             } else {
@@ -739,7 +771,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             let bc_struct_type = builder.convert_cx_type(aggregate_type);
             let AggregateMemberLayout::Standard {
                 byte_offset: field_offset,
-            } = aggregate_member_layout(aggregate_type, &builder.type_definitions, *member_index)
+            } = aggregate_member_layout(aggregate_type, &builder.registry, *member_index)
             else {
                 panic!("bitfield member access must be loaded or stored directly");
             };
@@ -764,13 +796,13 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             let bc_array = lower_expression(builder, array)?;
             let bc_index = lower_expression(builder, index)?;
             let bc_element_type = builder.convert_cx_type(element_type);
-            let element_size = bc_element_type.size() as u64;
+            let element_size = bc_element_type.size();
 
             builder.add_new_instruction(
                 LMIRInstructionKind::PointerBinOp {
                     op: LMIRPtrBinOp::ADD,
                     ptr_type: bc_element_type,
-                    type_padded_size: element_size,
+                    type_size: element_size,
                     left: bc_array,
                     right: bc_index,
                 },
@@ -779,23 +811,29 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             )
         }
 
-        MIRExpressionKind::PatternIs {
-            lhs,
-            sum_type,
-            variant_index,
-            inner_name,
-        } => {
+        MIRExpressionKind::PatternIs { lhs, pattern } => {
             let bc_lhs = lower_expression(builder, lhs)?;
 
-            let alias = builder.add_new_instruction(
-                LMIRInstructionKind::Alias {
-                    value: bc_lhs.clone(),
-                },
-                LMIRType::default_pointer(),
-                true,
-            )?;
+            let MIRPattern::TaggedUnionVariant {
+                sum_type,
+                variant_index,
+                inner_name,
+            } = pattern
+            else {
+                unreachable!("'is' patterns are only emitted for tagged union variants");
+            };
 
-            builder.insert_symbol(inner_name.clone(), alias);
+            if let Some(inner_name) = inner_name {
+                let alias = builder.add_new_instruction(
+                    LMIRInstructionKind::Alias {
+                        value: bc_lhs.clone(),
+                    },
+                    LMIRType::default_pointer(),
+                    true,
+                )?;
+
+                builder.insert_symbol(inner_name.clone(), alias);
+            }
             let tag_ptr = get_tagged_union_tag(builder, bc_lhs, sum_type)?;
             let tag_value = builder.add_new_instruction(
                 LMIRInstructionKind::Load {
@@ -908,10 +946,7 @@ fn lower_call(
     let signature = match &function._type.kind {
         MIRTypeKind::Function { signature } => signature.as_ref().clone(),
         MIRTypeKind::PointerTo { inner_type, .. } => {
-            let inner_type = builder
-                .type_definitions
-                .get(*inner_type)
-                .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
+            let inner_type = builder.registry.resolve_type_id(*inner_type);
             if let MIRTypeKind::Function { signature } = &inner_type.kind {
                 signature.as_ref().clone()
             } else {
@@ -947,7 +982,16 @@ fn lower_call(
             }
         }
 
-        lower_contract_assertion(builder, precondition, "precondition violation")?;
+        let assertion_prototype = contract
+            .assertion_prototype
+            .as_ref()
+            .expect("precondition requires assertion prototype");
+        lower_contract_assertion(
+            builder,
+            precondition,
+            "precondition violation",
+            assertion_prototype,
+        )?;
 
         builder.pop_scope()?;
     }
@@ -1027,7 +1071,7 @@ fn lower_call(
         value
     };
 
-    if let Some((ret_name, postcondition)) = &contract.postcondition {
+    if let Some(postcondition) = &contract.postcondition {
         builder.push_scope(None, None);
 
         for (arg_expr, param) in args_cloned.into_iter().zip(signature.params.iter()) {
@@ -1036,11 +1080,11 @@ fn lower_call(
             }
         }
 
-        if let Some(ret_name) = ret_name {
+        if let Some(ret_name) = &postcondition.binding {
             builder.insert_symbol((*ret_name).clone(), value.clone());
         }
 
-        let assumption = lower_expression(builder, postcondition)?;
+        let assumption = lower_expression(builder, &postcondition.condition)?;
         builder.add_new_instruction(
             LMIRInstructionKind::CompilerAssumption {
                 condition: assumption,
@@ -1070,7 +1114,7 @@ fn lower_call_signature(
         &semantic_signature.return_type,
         &semantic_signature.params,
         semantic_signature.var_args,
-        &builder.type_definitions,
+        &builder.registry,
     )
 }
 
@@ -1083,11 +1127,7 @@ fn lower_call_argument(
     match abi_arg {
         LMIRParameterABI::Direct { slots } => {
             if semantic_param_type.is_memory_resident() {
-                let source = if let MIRExpressionKind::ByValueArgument { source } = &arg.kind {
-                    source.as_ref()
-                } else {
-                    arg
-                };
+                let source = call_argument_region_source(arg);
                 let source_value = lower_expression(builder, source)?;
                 slots
                     .iter()
@@ -1098,7 +1138,7 @@ fn lower_call_argument(
             }
         }
         LMIRParameterABI::Indirect { alignment } => {
-            if let MIRExpressionKind::ByValueArgument { source } = &arg.kind {
+            if let MIRExpressionKind::RegionDuplicate { source } = &arg.kind {
                 return Ok(vec![lower_byval_copy_argument(
                     builder,
                     source,
@@ -1109,6 +1149,14 @@ fn lower_call_argument(
 
             Ok(vec![lower_expression(builder, arg)?])
         }
+    }
+}
+
+fn call_argument_region_source(arg: &MIRExpression) -> &MIRExpression {
+    match &arg.kind {
+        MIRExpressionKind::RegionDuplicate { source }
+        | MIRExpressionKind::RegionMove { source } => source,
+        _ => arg,
     }
 }
 
@@ -1124,7 +1172,7 @@ fn lower_abi_slot_load(
             LMIRInstructionKind::PointerBinOp {
                 op: LMIRPtrBinOp::ADD,
                 ptr_type: slot._type.clone(),
-                type_padded_size: 1,
+                type_size: TypeSize::from(1),
                 left: source,
                 right: builder.int_const(slot.offset as i32, LMIRIntegerType::I64),
             },
@@ -1158,7 +1206,7 @@ fn lower_byval_copy_argument(
         LMIRType::default_pointer(),
         true,
     )?;
-    let size = builder.int_const(pointee.size() as i32, LMIRIntegerType::I64);
+    let size = builder.int_const(usize::from(pointee.size()) as i32, LMIRIntegerType::I64);
 
     builder.add_new_instruction(
         LMIRInstructionKind::Memcpy {
@@ -1178,19 +1226,22 @@ pub(crate) fn lower_contract_assertion(
     builder: &mut LMIRBuilder,
     condition: &MIRExpression,
     message: &str,
+    assertion_prototype: &MIRFunctionPrototype,
 ) -> CXResult<()> {
     let condition_val = lower_expression(builder, condition)?;
     let message_global = builder.create_static_string(message.to_string());
 
-    let Some(assert_prototype) = builder.get_prototype("__compiler_assert").cloned() else {
-        return cx_util::CXError::create_result(
-            "Function contract used but __compiler_assert not found. Ensure std::intrinsic::assertion is imported.".to_string()
-        );
-    };
+    let mut assert_prototype = builder.convert_cx_prototype(assertion_prototype);
+    assert_prototype.linkage = LinkageType::External;
+    let assert_name = assert_prototype.name.clone();
+
+    if builder.get_prototype(assert_name.as_str()).is_none() {
+        builder.insert_fn_prototype(assert_prototype.clone());
+    }
 
     builder.add_new_instruction(
         LMIRInstructionKind::DirectCall {
-            func: cx_util::identifier::CXIdent::from("__compiler_assert"),
+            func: assert_name,
             args: vec![condition_val, message_global],
             method_sig: assert_prototype.signature().clone(),
         },
@@ -1207,7 +1258,7 @@ fn lower_array_initializer(
     element_type: &cx_mir::mir::data::MIRType,
 ) -> CXResult<LMIRValue> {
     let bc_element_type = builder.convert_cx_type(element_type);
-    let element_size = bc_element_type.size() as u64;
+    let element_size = bc_element_type.size();
 
     let array_type = LMIRType::from(LMIRTypeKind::Array {
         element: Box::new(bc_element_type.clone()),
@@ -1231,7 +1282,7 @@ fn lower_array_initializer(
             LMIRInstructionKind::PointerBinOp {
                 op: LMIRPtrBinOp::ADD,
                 ptr_type: bc_element_type.clone(),
-                type_padded_size: element_size,
+                type_size: element_size,
                 left: allocation.clone(),
                 right: LMIRValue::IntImmediate {
                     val: i as i64,
@@ -1251,7 +1302,7 @@ fn lower_array_initializer(
                     dest: elem_addr,
                     src: bc_elem,
                     size: LMIRValue::IntImmediate {
-                        val: bc_element_type.size() as i64,
+                        val: usize::from(bc_element_type.size()) as i64,
                         _type: LMIRIntegerType::I64,
                     },
                     alignment: bc_element_type.alignment(),
@@ -1292,11 +1343,8 @@ fn lower_struct_initializer(
     )?;
 
     for initialization in initializations {
-        let layout = aggregate_member_layout(
-            struct_type,
-            &builder.type_definitions,
-            initialization.field_index,
-        );
+        let layout =
+            aggregate_member_layout(struct_type, &builder.registry, initialization.field_index);
 
         let field_offset = match layout {
             AggregateMemberLayout::Standard { byte_offset } => byte_offset,
@@ -1349,7 +1397,7 @@ fn lower_struct_initializer(
                     dest: field_addr,
                     src: bc_value,
                     size: LMIRValue::IntImmediate {
-                        val: bc_field_type.size() as i64,
+                        val: usize::from(bc_field_type.size()) as i64,
                         _type: LMIRIntegerType::I64,
                     },
                     alignment: bc_field_type.alignment(),
@@ -1386,7 +1434,7 @@ pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResu
     let has_return_buffer = bc_proto.signature.return_abi.has_indirect_return_param();
     let mut lowered_param_index = if has_return_buffer { 1 } else { 0 };
 
-    for (i, param) in mir_fn.prototype.params.iter().enumerate() {
+    for (i, param) in mir_fn.prototype.signature().params.iter().enumerate() {
         let abi_param = bc_proto
             .signature
             .params
@@ -1418,7 +1466,7 @@ pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResu
                                 LMIRInstructionKind::PointerBinOp {
                                     op: LMIRPtrBinOp::ADD,
                                     ptr_type: slot._type.clone(),
-                                    type_padded_size: 1,
+                                    type_size: TypeSize::from(1),
                                     left: alloc.clone(),
                                     right: builder
                                         .int_const(slot.offset as i32, LMIRIntegerType::I64),

@@ -1,10 +1,8 @@
-private:
+extern "C":
 
 #include <stdio.h>
 
 public:
-
-int printf(const char* fmt, ...);
 
 void print(const _str& s) safe {
     @unsafe { printf(s); };

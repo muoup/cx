@@ -31,15 +31,16 @@ const socketSnippet = [
     "",
     "opt<c_socket> try_serve(u16 port) {",
     "    c_socket listener =",
-    "        c_socket::open(AF_INET, SOCK_STREAM, 0).unwrap();",
+    "        c_socket::open(AF_INET, SOCK_STREAM, 0)",
+    "        |> std::optional::opt::unwrap<c_socket>();",
     "",
     '    socket_addr addr = socket_addr::ipv4("0.0.0.0", port);',
     "",
-    "    if (listener.bind(&addr) < 0) {",
+    "    if (listener |> c_socket::bind(&addr) < 0) {",
     "        return opt<c_socket>::none();",
     "    }",
     "",
-    "    if (listener.listen(128) < 0) {",
+    "    if (listener |> c_socket::listen(128) < 0) {",
     "        return opt<c_socket>::none();",
     "    }",
     "",
@@ -48,13 +49,13 @@ const socketSnippet = [
 ];
 
 const cxTokenPattern =
-    /("[^"]*"|\b(?:import|if|return|move)\b|\b(?:opt|socket|socket_addr|u16|i32)\b|\b(?:std::[A-Za-z_:]+|AF_INET|SOCK_STREAM)\b|\b\d+\b|[A-Za-z_][A-Za-z0-9_]*(?=\())/g;
+    /("[^"]*"|\b(?:import|if|return|move)\b|\b(?:opt|c_socket|socket_addr|u16|i32)\b|\b(?:std::[A-Za-z_:]+|AF_INET|SOCK_STREAM)\b|\b\d+\b|[A-Za-z_][A-Za-z0-9_]*(?=\())/g;
 
 function cxTokenClass(token: string) {
     if (/^"/.test(token)) return styles.tokenString;
     if (/^\d+$/.test(token)) return styles.tokenNumber;
     if (/^(import|if|return|move)$/.test(token)) return styles.tokenKeyword;
-    if (/^(opt|socket|socket_addr|u16|i32)$/.test(token)) {
+    if (/^(opt|c_socket|socket_addr|u16|i32)$/.test(token)) {
         return styles.tokenType;
     }
     if (/^(std::[A-Za-z_:]+|AF_INET|SOCK_STREAM)$/.test(token)) {
@@ -167,7 +168,7 @@ function MainLayout() {
                             {socketSnippet.map((line, index) => (
                                 <span
                                     className={
-                                        index === 11
+                                        index === 12
                                             ? styles.errorLine
                                             : undefined
                                     }

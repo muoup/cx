@@ -2,13 +2,15 @@ pub(crate) mod identifiers;
 pub(crate) mod literals;
 pub(crate) mod locals;
 pub(crate) mod moves;
-pub(crate) mod sizeof;
 pub(crate) mod unsafe_ops;
 
 use crate::{environment::TypeEnvironment, log_typecheck_error};
-use cx_mir::mir::data::{MIRType, MIRTypeKind};
+use cx_log::CXResult;
+use cx_mir::{
+    mir::data::{MIRType, MIRTypeKind},
+    type_context::MIRTypeContext,
+};
 use cx_tokens::TokenRange;
-use cx_util::CXResult;
 
 pub(crate) fn ensure_valid_allocation_type(
     env: &mut TypeEnvironment,
@@ -22,7 +24,7 @@ pub(crate) fn ensure_valid_allocation_type(
             range,
             "Cannot create {} of function type '{}'; use a pointer to the function type instead",
             context,
-            ty.display_with(&env.symbols.context)
+            ty.display_with(&env.symbols)
         ),
         MIRTypeKind::Str => log_typecheck_error!(
             env,
@@ -31,12 +33,7 @@ pub(crate) fn ensure_valid_allocation_type(
             context
         ),
         MIRTypeKind::Array { inner_type, .. } => {
-            let inner_type = env
-                .symbols
-                .context
-                .get(*inner_type)
-                .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
-                .clone();
+            let inner_type = env.symbols.resolve_type_id(*inner_type).clone();
             ensure_valid_allocation_type(env, range, "an array element", &inner_type)
         }
         _ => Ok(()),

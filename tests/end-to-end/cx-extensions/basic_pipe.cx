@@ -1,0 +1,19 @@
+import std::io;
+
+struct IntWrapper { int x; };
+
+IntWrapper IntWrapper::transform(IntWrapper wrapper) {
+    wrapper.x += 1;
+    return wrapper;
+}
+
+IntWrapper IntWrapper::new(int x) {
+    return (IntWrapper) { x };
+}
+
+int main() {
+    IntWrapper wrapper = IntWrapper::new(5)
+        |> IntWrapper::transform();
+
+    printf("Transformed IntWrapper: %d\n", wrapper.x);
+}

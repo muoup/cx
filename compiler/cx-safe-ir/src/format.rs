@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter, Result};
 
-use cx_mir::mir::r#type::MIRTypeContext;
+use cx_mir::registry::MIRDecomposedRegistry;
 
 use crate::ast::*;
 use crate::intrinsic::*;
@@ -78,21 +78,24 @@ impl Display for Indent {
 
 pub struct FMIRTypeDisplay<'a> {
     ty: &'a FMIRType,
-    definitions: &'a MIRTypeContext,
+    definitions: &'a MIRDecomposedRegistry,
 }
 
 pub struct FMIRNodeDisplay<'a> {
     node: &'a FMIRNode,
-    definitions: &'a MIRTypeContext,
+    definitions: &'a MIRDecomposedRegistry,
 }
 
 pub struct FMIRFunctionDisplay<'a> {
     function: &'a FMIRFunction,
-    definitions: &'a MIRTypeContext,
+    definitions: &'a MIRDecomposedRegistry,
 }
 
 impl FMIRType {
-    pub fn display_with<'a>(&'a self, definitions: &'a MIRTypeContext) -> FMIRTypeDisplay<'a> {
+    pub fn display_with<'a>(
+        &'a self,
+        definitions: &'a MIRDecomposedRegistry,
+    ) -> FMIRTypeDisplay<'a> {
         FMIRTypeDisplay {
             ty: self,
             definitions,
@@ -101,7 +104,10 @@ impl FMIRType {
 }
 
 impl FMIRNode {
-    pub fn display_with<'a>(&'a self, definitions: &'a MIRTypeContext) -> FMIRNodeDisplay<'a> {
+    pub fn display_with<'a>(
+        &'a self,
+        definitions: &'a MIRDecomposedRegistry,
+    ) -> FMIRNodeDisplay<'a> {
         FMIRNodeDisplay {
             node: self,
             definitions,
@@ -110,7 +116,10 @@ impl FMIRNode {
 }
 
 impl FMIRFunction {
-    pub fn display_with<'a>(&'a self, definitions: &'a MIRTypeContext) -> FMIRFunctionDisplay<'a> {
+    pub fn display_with<'a>(
+        &'a self,
+        definitions: &'a MIRDecomposedRegistry,
+    ) -> FMIRFunctionDisplay<'a> {
         FMIRFunctionDisplay {
             function: self,
             definitions,
@@ -190,7 +199,7 @@ impl FMIRNode {
         &self,
         f: &mut Formatter<'_>,
         indent: &Indent,
-        definitions: &MIRTypeContext,
+        definitions: &MIRDecomposedRegistry,
     ) -> Result {
         self.body.fmt_with_indent(f, indent, definitions)
     }
@@ -339,7 +348,7 @@ impl FMIRNodeBody {
         &self,
         f: &mut Formatter<'_>,
         indent: &Indent,
-        definitions: &MIRTypeContext,
+        definitions: &MIRDecomposedRegistry,
     ) -> Result {
         match self {
             FMIRNodeBody::Application { function, argument } => match &function.body {
@@ -546,22 +555,23 @@ impl FMIRNodeBody {
 
 impl Display for FMIRFunctionDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{} :: ", self.function.prototype.name)?;
+        write!(f, "{} :: ", self.function.prototype.name())?;
 
         write!(
             f,
             "{}",
             self.function
                 .prototype
+                .signature()
                 .return_type
                 .display_with(self.definitions)
         )?;
-        for param in &self.function.prototype.params {
+        for param in &self.function.prototype.signature().params {
             write!(f, " -> {}", param._type.display_with(self.definitions))?;
         }
 
         writeln!(f)?;
-        writeln!(f, "{} =", self.function.prototype.name)?;
+        writeln!(f, "{} =", self.function.prototype.name())?;
         let base_indent = Indent::new().push();
         base_indent.fmt(f)?;
         self.function

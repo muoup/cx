@@ -1,90 +1,74 @@
-use cx_ast::{
-    ast::{CXBinOp, CXExprKind, CXExpression},
-    data::{CXTypeKind, PredeclarationType},
-};
-use cx_mir::mir::{data::MIRType, program::MIRBaseMappings};
-use cx_util::{CXResult, identifier::CXIdent};
+use cx_ast::ast::{expression::CXExpression, pattern::CXPattern, template::CXTemplateInput};
+use cx_log::CXResult;
+use cx_mir::EnvironmentNamespace;
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
-use crate::{environment::TypeEnvironment, log_typecheck_error};
+use crate::{environment::TypeEnvironment, log_typecheck_error, typecheck_error};
 
-pub struct TypeConstructor<'a> {
-    pub union_type: MIRType,
+pub struct TypeConstructor {
+    pub union_name: QualifiedName,
     pub variant_name: CXIdent,
-    pub inner: Option<&'a CXExpression>,
+    pub template_input: Option<CXTemplateInput>,
+    pub inner_name: Option<CXIdent>,
 }
 
-pub fn deconstruct_type_constructor<'a>(
+pub fn resolve_type_constructor_pattern(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    pattern: &'a CXExpression,
-) -> CXResult<TypeConstructor<'a>> {
-    let (constructor, inner) = match &pattern.kind {
-        CXExprKind::BinOp {
-            op: CXBinOp::MethodCall,
-            lhs,
-            rhs: inner,
-        } => (lhs.as_ref(), Some(inner.as_ref())),
-
-        _ => (pattern, None),
-    };
-
-    let CXExprKind::BinOp {
-        op: CXBinOp::ScopeRes,
-        lhs: union,
-        rhs: variant,
-    } = &constructor.kind
+    namespace: &EnvironmentNamespace,
+    expr: &CXExpression,
+    pattern: &CXPattern,
+) -> CXResult<TypeConstructor> {
+    let CXPattern::Variant {
+        constructor,
+        template_input,
+        inner,
+    } = pattern
     else {
         return log_typecheck_error!(
             env,
-            Some(pattern.token_range()),
-            "Expected type constructor"
+            Some(expr.token_range()),
+            "Expected qualified tagged union variant pattern"
         );
     };
 
-    let union_name = match &union.kind {
-        CXExprKind::Identifier(union_name) => {
-            let as_type = CXTypeKind::Identifier {
-                predeclaration: PredeclarationType::None,
-                name: union_name.clone(),
-            }
-            .to_type();
+    let Some((union_namespace, union_name)) = constructor.namespace.parent_and_name() else {
+        return log_typecheck_error!(
+            env,
+            Some(expr.token_range()),
+            "Expected tagged union variant pattern to name a type member constructor"
+        );
+    };
 
-            env.complete_type(base_data, union, &as_type)?
-        }
-
-        CXExprKind::TemplatedIdentifier {
-            name,
-            template_input,
-        } => {
-            let as_type = CXTypeKind::TemplatedIdentifier {
-                name: name.clone(),
-                input: template_input.clone(),
-            }
-            .to_type();
-
-            env.complete_type(base_data, union, &as_type)?
-        }
-
-        _ => {
+    let inner_name = match inner.as_deref() {
+        None => None,
+        Some(CXPattern::Binding(name)) => Some(name.clone()),
+        Some(_) => {
             return log_typecheck_error!(
                 env,
-                Some(union.token_range()),
-                "Expected union name in type constructor pattern"
+                Some(expr.token_range()),
+                "Tagged union variant payload pattern must be a binding"
             );
         }
     };
 
-    let CXExprKind::Identifier(variant_name) = &variant.kind else {
-        return log_typecheck_error!(
-            env,
-            Some(variant.token_range()),
-            "Expected variant name in type constructor pattern"
-        );
-    };
+    let union_name = QualifiedName::new(union_namespace, union_name);
+
+    let union_name = env
+        .get_symbol(namespace, &union_name, Some(expr.token_range()))?
+        .and_then(|symbol| symbol.as_pattern_target(&env.symbols))
+        .ok_or_else(|| {
+            typecheck_error!(
+                env,
+                Some(expr.token_range()),
+                "Could not resolve pattern target '{}'",
+                union_name
+            )
+        })?;
 
     Ok(TypeConstructor {
-        union_type: union_name,
-        variant_name: variant_name.clone(),
-        inner,
+        union_name,
+        variant_name: constructor.name.clone(),
+        template_input: template_input.clone(),
+        inner_name,
     })
 }

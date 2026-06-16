@@ -1,56 +1,6 @@
-use cx_util::CXErrorTrait;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-#[derive(Clone, Debug)]
-pub struct AnalysisError {
-    pub compilation_unit: PathBuf,
-    pub token_start: usize,
-    pub token_end: usize,
-    pub byte_start: usize,
-    pub byte_end: usize,
-    pub message: String,
-    pub notes: Vec<String>,
-}
-
-impl CXErrorTrait for AnalysisError {
-    fn pretty_print(&self) {
-        cx_log::pretty_underline_error_with_notes(
-            &self.error_message(),
-            &self.notes,
-            self.compilation_unit.as_path(),
-            self.byte_start,
-            self.byte_end,
-        );
-    }
-
-    fn error_prefix(&self) -> String {
-        "ANALYSIS ERROR".to_string()
-    }
-
-    fn error_content(&self) -> String {
-        self.message.clone()
-    }
-
-    fn compilation_unit(&self) -> Option<PathBuf> {
-        Some(self.compilation_unit.clone())
-    }
-
-    fn token_start(&self) -> Option<usize> {
-        Some(self.token_start)
-    }
-
-    fn token_end(&self) -> Option<usize> {
-        Some(self.token_end)
-    }
-
-    fn notes(&self) -> Vec<String> {
-        self.notes.clone()
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
+use cx_tokens::byte_range_for_tokens;
 
 pub fn byte_range_for_source_tokens(
     file_path: &Path,
@@ -63,18 +13,8 @@ pub fn byte_range_for_source_tokens(
     let Ok(tokens) = cx_lexer::lex(&source) else {
         return (0, 1);
     };
-    let Some(start) = tokens.get(start_token) else {
-        return (0, 1);
-    };
-    let end = tokens
-        .get(end_token.saturating_sub(1))
-        .map(|token| token.byte_end_index)
-        .unwrap_or(start.byte_end_index);
 
-    (
-        start.byte_start_index,
-        end.max(start.byte_start_index.saturating_add(1)),
-    )
+    byte_range_for_tokens(&tokens, start_token, end_token)
 }
 
 #[macro_export]
@@ -98,15 +38,16 @@ macro_rules! log_analysis_error {
             let (byte_start, byte_end) =
                 $crate::log::byte_range_for_source_tokens(compilation_unit.as_path(), token_start, token_end);
 
-            Err(Box::new($crate::log::AnalysisError {
-                message,
-                token_start,
-                token_end,
-                byte_start,
-                byte_end,
-                compilation_unit,
-                notes: Vec::new(),
-            }) as Box<dyn cx_util::CXErrorTrait>)
+            Err(Box::new(
+                cx_log::UnderlineError::new(
+                    "ANALYSIS ERROR",
+                    message,
+                    compilation_unit,
+                    byte_start,
+                    byte_end,
+                )
+                .with_token_range(token_start, token_end),
+            ) as Box<dyn cx_log::CXErrorTrait>)
         }
     };
 }

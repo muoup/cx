@@ -1,4 +1,4 @@
-use cx_util::CXResult;
+use cx_log::CXResult;
 
 pub use crate::token::TokenRange;
 use crate::token::{PunctuatorType, Token, TokenKind};
@@ -31,6 +31,13 @@ impl<'a> TokenIter<'a> {
 
     pub fn peek(&self) -> Option<&Token> {
         self.slice.get(self.index)
+    }
+
+    pub fn peek_prev(&self) -> Option<&Token> {
+        if self.index == 0 {
+            return None;
+        }
+        self.slice.get(self.index - 1)
     }
 
     pub fn back(&mut self) {
@@ -85,4 +92,37 @@ impl<'a> TokenIter<'a> {
 
         Ok(())
     }
+}
+
+pub fn byte_range_for_tokens(
+    tokens: &[Token],
+    start_token: usize,
+    end_token: usize,
+) -> (usize, usize) {
+    let Some(start) = tokens.get(start_token) else {
+        return (0, 1);
+    };
+    let end = tokens
+        .get(end_token.saturating_sub(1))
+        .map(|token| token.byte_end_index)
+        .unwrap_or(start.byte_end_index);
+
+    (
+        start.byte_start_index,
+        end.max(start.byte_start_index.saturating_add(1)),
+    )
+}
+
+pub fn file_origin_for_tokens(
+    tokens: &[Token],
+    start_token: usize,
+    end_token: usize,
+) -> Option<PathBuf> {
+    tokens
+        .get(start_token)
+        .or_else(|| end_token.checked_sub(1).and_then(|index| tokens.get(index)))
+        .and_then(|token| {
+            (!token.file_origin.as_os_str().is_empty())
+                .then(|| PathBuf::from(token.file_origin.as_ref()))
+        })
 }

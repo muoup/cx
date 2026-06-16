@@ -1,0 +1,10 @@
+import std::io;
+
+struct Holder {
+    Missing value;
+};
+
+int main() {
+    Holder holder;
+    return 0;
+}

@@ -1,14 +1,15 @@
 use cx_util::identifier::CXIdent;
-use std::fmt::{Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter, Result};
 
-use crate::{
-    ast::{
-        CXBinOp, CXExprKind, CXExpression, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXAST,
-    },
-    data::{
-        CXFunctionKey, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXLinkageMode,
-        CXReceiverMode, CXTemplate, CXTemplateInput, CXType, CXTypeKind, CX_CONST,
-    },
+use crate::ast::{
+    expression::{CXBinOp, CXExprKind, CXExpression, CXInitIndex},
+    function::{CXFunctionKind, CXFunctionPrototype},
+    global_var::{CXEnumVariant, CXGlobalVariable},
+    modifiers::CXLinkageMode,
+    pattern::CXPattern,
+    template::CXTemplateInput,
+    types::{CXField, CXType, CXTypeKind},
+    CXASTDefinition, CXASTStmt, CXAST,
 };
 
 // Helper struct for indented formatting of CXExpr
@@ -39,28 +40,12 @@ impl<'a> CXExprFormatter<'a> {
 
 impl Display for CXAST {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        writeln!(f, "CXAST for file: {}", self.file_path)?;
-        if !self.global_variables.is_empty() {
-            writeln!(f, "\n-- Global Variables --")?;
-            for global in &self.global_variables {
-                writeln!(f, "{}: {}", global.0, global.1.resource)?;
-            }
+        writeln!(f, "CXAST for file: {}", self.module_path)?;
+
+        for def in self.definition_stmts.iter() {
+            writeln!(f, "{}", def)?;
         }
-        if !self.function_stmts.is_empty() {
-            writeln!(f, "\n-- Function Definitions --")?;
-            for func in &self.function_stmts {
-                writeln!(f, "{func}")?;
-            }
-        }
-        if !self.type_data.is_empty() {
-            writeln!(f, "\n-- Type Definitions --")?;
-            for ty in self.type_data.standard_iter() {
-                writeln!(f, "{}: {}", ty.0, ty.1.resource)?;
-            }
-            for ty in self.type_data.template_iter() {
-                writeln!(f, "{}: {}", ty.0, ty.1.resource)?;
-            }
-        }
+
         Ok(())
     }
 }
@@ -75,22 +60,26 @@ impl Display for CXLinkageMode {
     }
 }
 
+impl Display for CXEnumVariant {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        if let Some(value) = &self.value {
+            write!(f, "{} = {}", self.name, value)
+        } else {
+            write!(f, "{}", self.name)
+        }
+    }
+}
+
 impl Display for CXGlobalVariable {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            CXGlobalVariable::EnumDefinition { variants } => {
-                let variants = variants
-                    .iter()
-                    .map(|variant| variant.name.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                write!(f, "enum {{ {} }}", variants)
-            }
+            CXGlobalVariable::EnumDefinition(variant) => variant.fmt(f),
 
             CXGlobalVariable::Standard {
                 _type,
                 is_mutable,
                 initializer,
+                ..
             } => {
                 write!(
                     f,
@@ -109,37 +98,72 @@ impl Display for CXGlobalVariable {
     }
 }
 
-impl Display for CXFunctionStmt {
+impl Display for CXASTDefinition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        if self.namespace.is_root() {
+            write!(f, "[root] ")?;
+        } else {
+            write!(f, "[{}] ", self.namespace)?;
+        }
+
+        Display::fmt(&self.stmt, f)
+    }
+}
+
+impl Display for CXASTStmt {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            CXFunctionStmt::TypeDecl { name, _type } => {
-                if let Some(name) = name {
-                    writeln!(f, "type {} = {}", name, _type)
-                } else {
-                    writeln!(f, "type {}", _type)
+            CXASTStmt::TypeDefinition {
+                name,
+                visibility,
+                template_prototype,
+                _type,
+            } => {
+                write!(f, "{visibility:?} ")?;
+                if let Some(template) = template_prototype {
+                    let params = template
+                        .types
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    write!(f, "template <{params}> ")?;
+                }
+
+                match name {
+                    Some(name) => write!(f, "type {name} = {_type};"),
+                    None => write!(f, "type {_type};"),
                 }
             }
 
-            CXFunctionStmt::FunctionDefinition { prototype, body } => {
-                writeln!(f, "FunctionDef {} {{ ", prototype)?;
-                write!(f, "{}", CXExprFormatter::new(body, 1))?;
-                writeln!(f, "}}")
-            }
-
-            CXFunctionStmt::TemplatedFunction {
+            CXASTStmt::FunctionDefinition {
                 prototype,
+                visibility,
                 template_prototype,
                 body,
             } => {
-                writeln!(f, "TemplatedFunction {prototype} {{ ")?;
-                writeln!(
-                    f,
-                    "Template Prototype: {}",
-                    template_prototype.types.join(", ")
-                )?;
-                write!(f, "{}", CXExprFormatter::new(body, 1))?;
-                writeln!(f, "}}")
+                write!(f, "{visibility:?} ")?;
+                if let Some(template) = template_prototype {
+                    let params = template
+                        .types
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    write!(f, "template <{params}> ")?;
+                }
+                write!(f, "fn {prototype}")?;
+                if let Some(body) = body {
+                    write!(f, " {body}")
+                } else {
+                    write!(f, ";")
+                }
             }
+
+            CXASTStmt::GlobalVariableDefinition {
+                visibility,
+                variable,
+            } => write!(f, "{visibility:?} {variable};"),
         }
     }
 }
@@ -154,6 +178,7 @@ impl<'a> Display for CXExprFormatter<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         self.indent(f)?;
         match &self.expr.kind {
+            CXExprKind::Taken => writeln!(f, "Taken"),
             CXExprKind::Block { exprs, .. } => {
                 writeln!(f, "Block {{ ")?;
                 for stmt in exprs {
@@ -162,19 +187,22 @@ impl<'a> Display for CXExprFormatter<'a> {
                 self.indent(f)?;
                 writeln!(f, "}}")
             }
-            CXExprKind::Identifier(ident) => writeln!(f, "Identifier {}", ident),
-            CXExprKind::TemplatedIdentifier {
-                name: fn_name,
+            CXExprKind::Identifier {
+                name,
                 template_input,
             } => {
-                let arg_string = template_input
-                    .params
-                    .iter()
-                    .map(|arg| arg.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                if let Some(template_input) = template_input {
+                    let arg_string = template_input
+                        .params
+                        .iter()
+                        .map(|arg| format!("{}", arg))
+                        .collect::<Vec<_>>()
+                        .join(", ");
 
-                writeln!(f, "TemplatedIdentifier {}<{}>", fn_name, arg_string)
+                    writeln!(f, "Identifier {}<{}>", name, arg_string)
+                } else {
+                    writeln!(f, "Identifier {}", name)
+                }
             }
             CXExprKind::VarDeclaration {
                 name,
@@ -211,10 +239,6 @@ impl<'a> Display for CXExprFormatter<'a> {
                 CXExprFormatter::new(lhs, self.depth + 1).fmt(f)?;
                 CXExprFormatter::new(rhs, self.depth + 1).fmt(f)?;
                 Ok(())
-            }
-            CXExprKind::Move { expr } => {
-                writeln!(f, "Move")?;
-                CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
             CXExprKind::Unpack { expr, bindings } => {
                 writeln!(f, "Unpack")?;
@@ -301,7 +325,6 @@ impl<'a> Display for CXExprFormatter<'a> {
             CXExprKind::SizeOfType { _type } => {
                 writeln!(f, "SizeOfType ({_type})")
             }
-            CXExprKind::Taken => writeln!(f, "Taken"),
             CXExprKind::Unit => writeln!(f, "Unit"),
             CXExprKind::Match {
                 condition,
@@ -345,14 +368,6 @@ impl<'a> Display for CXExprFormatter<'a> {
                 }
                 Ok(())
             }
-            CXExprKind::TypeConstructor {
-                union_name,
-                variant_name,
-                inner,
-            } => {
-                writeln!(f, "TypeConstructor {}::{}", union_name, variant_name)?;
-                CXExprFormatter::new(inner, self.depth + 1).fmt(f)
-            }
             CXExprKind::Break => writeln!(f, "Break"),
             CXExprKind::Continue => writeln!(f, "Continue"),
         }
@@ -374,7 +389,6 @@ impl Display for CXBinOp {
             CXBinOp::Greater => write!(f, ">"),
             CXBinOp::GreaterEqual => write!(f, ">="),
             CXBinOp::Access => write!(f, "."),
-            CXBinOp::ScopeRes => write!(f, "::"),
             CXBinOp::MethodCall => write!(f, "()"),
             CXBinOp::ArrayIndex => write!(f, "[]"),
             CXBinOp::Comma => write!(f, ","),
@@ -385,7 +399,6 @@ impl Display for CXBinOp {
                     write!(f, "=")
                 }
             }
-            CXBinOp::Is => write!(f, "is"),
 
             CXBinOp::LAnd => write!(f, "&&"),
             CXBinOp::LOr => write!(f, "||"),
@@ -394,6 +407,7 @@ impl Display for CXBinOp {
             CXBinOp::BitXor => write!(f, "^"),
             CXBinOp::LShift => write!(f, "<<"),
             CXBinOp::RShift => write!(f, ">>"),
+            CXBinOp::Pipe => write!(f, "|>"),
         }
     }
 }
@@ -438,13 +452,22 @@ impl Display for CXType {
 impl Display for CXTypeKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CXTypeKind::Identifier { name, .. } => write!(f, "{name}"),
-            CXTypeKind::TemplatedIdentifier { name, input } => write!(f, "{name}{input}"),
+            CXTypeKind::Identifier {
+                name,
+                template_input,
+                ..
+            } => {
+                if let Some(input) = template_input {
+                    write!(f, "{name}{input}")
+                } else {
+                    write!(f, "{name}")
+                }
+            }
             CXTypeKind::ExplicitSizedArray(inner, size) => write!(f, "[{inner}; {size}]"),
             CXTypeKind::ImplicitSizedArray(inner) => write!(f, "[{inner}]"),
-            CXTypeKind::MemoryReference { inner_type } => write!(f, "{inner_type}&"),
+            CXTypeKind::MemoryReference { inner_type } => write!(f, "&{inner_type}"),
             CXTypeKind::PointerTo { inner_type } => {
-                write!(f, "{}*", inner_type)
+                write!(f, "*{}", inner_type)
             }
 
             CXTypeKind::Structured {
@@ -455,8 +478,8 @@ impl Display for CXTypeKind {
                 let fields_str = fields
                     .iter()
                     .map(|field| match field {
-                        crate::data::CXField::Standard { _type, .. } => format!("{_type}"),
-                        crate::data::CXField::Bitfield {
+                        CXField::Standard { _type, .. } => format!("{_type}"),
+                        CXField::Bitfield {
                             name,
                             integer_type,
                             width,
@@ -495,8 +518,8 @@ impl Display for CXTypeKind {
                 let fields_str = fields
                     .iter()
                     .map(|field| match field {
-                        crate::data::CXField::Standard { _type, .. } => format!("{_type}"),
-                        crate::data::CXField::Bitfield {
+                        CXField::Standard { _type, .. } => format!("{_type}"),
+                        CXField::Bitfield {
                             name,
                             integer_type,
                             width,
@@ -526,12 +549,10 @@ impl Display for CXTypeKind {
                 let variants_str = variants
                     .iter()
                     .map(|field| match field {
-                        crate::data::CXField::Standard { name, _type } => {
+                        CXField::Standard { name, _type } => {
                             format!("{name}: {_type}")
                         }
-                        crate::data::CXField::Bitfield { .. } => {
-                            "<invalid bitfield variant>".to_string()
-                        }
+                        CXField::Bitfield { .. } => "<invalid bitfield variant>".to_string(),
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -588,81 +609,45 @@ impl Display for CXTemplateInput {
     }
 }
 
-impl<Shell: Display> Display for CXTemplate<Shell> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.shell.fmt(f)?;
-
-        let params_str = self.prototype.types.join(", ");
-        write!(f, "<{params_str}>")
-    }
-}
-
-impl Display for CXFunctionTypeIdent {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CXFunctionTypeIdent::Standard(name) => write!(f, "{name}"),
-            CXFunctionTypeIdent::Templated(name, template_input) => {
-                write!(f, "{}{}", name, template_input)
-            }
-        }
-    }
-}
-
 impl Display for CXFunctionKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             CXFunctionKind::Standard(name) => write!(f, "{name}"),
-            CXFunctionKind::MemberFunction {
-                member_type,
-                name,
-                receiver,
-            } => {
-                write!(f, "{member_type}::{name}")?;
-
-                match receiver.mode {
-                    CXReceiverMode::ByRef => {
-                        let is_const = (receiver.specifiers & CX_CONST) != 0;
-
-                        write!(
-                            f,
-                            " (receiver: {}*this)",
-                            if is_const { "const " } else { "" }
-                        )
-                    }
-                    CXReceiverMode::ByMove => {
-                        let is_const = (receiver.specifiers & CX_CONST) != 0;
-
-                        write!(
-                            f,
-                            " (receiver: {}this)",
-                            if is_const { "const " } else { "" }
-                        )
-                    }
-                    CXReceiverMode::None => Ok(()),
-                }
-            }
-            CXFunctionKind::StaticMemberFunction { member_type, name } => {
-                write!(f, "{member_type}::{name}")
+            CXFunctionKind::AssociatedFunction { namespace, name } => {
+                write!(f, "{namespace}::{name}")
             }
         }
     }
 }
 
-impl Display for CXFunctionKey {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl Display for CXPattern {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            CXFunctionKey::Standard(name) => write!(f, "{name}"),
-            CXFunctionKey::MemberFunction {
-                type_base_name,
-                name,
+            CXPattern::Binding(name) => write!(f, "{name}"),
+            CXPattern::Integer(value) => write!(f, "{value}"),
+            CXPattern::Float(value) => write!(f, "{value}"),
+            CXPattern::Variant {
+                constructor,
+                template_input,
+                inner,
             } => {
-                write!(f, "(member) {type_base_name}::{name}")
-            }
-            CXFunctionKey::StaticMemberFunction {
-                type_base_name,
-                name,
-            } => {
-                write!(f, "(static) {type_base_name}::{name}")
+                write!(f, "{constructor}")?;
+                if let Some(input) = template_input {
+                    write!(
+                        f,
+                        "<{}>",
+                        input
+                            .params
+                            .iter()
+                            .map(|param| param.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )?;
+                }
+                if let Some(inner) = inner {
+                    write!(f, "({inner})")?;
+                }
+                Ok(())
             }
         }
     }

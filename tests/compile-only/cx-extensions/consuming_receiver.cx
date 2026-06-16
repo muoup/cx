@@ -8,7 +8,7 @@ Resource make_resource() {
     };
 }
 
-void Resource::drop(this) safe {
+void Resource::drop(Resource this) safe {
     @unsafe {
         @leak(this);
     };
@@ -16,7 +16,7 @@ void Resource::drop(this) safe {
 
 int main() {
     Resource value = make_resource();
-    value.drop();
-    make_resource().drop();
+    move value |> Resource::drop();
+    make_resource() |> Resource::drop();
     return 0;
 }

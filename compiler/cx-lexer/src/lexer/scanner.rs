@@ -1,7 +1,8 @@
 use std::{path::Path, sync::Arc};
 
+use cx_log::CXResult;
 use cx_tokens::token::{Token, TokenKind};
-use cx_util::{CXResult, char_iter::CharIter};
+use cx_util::char_iter::CharIter;
 
 use crate::{
     context::SourceInput,
@@ -77,11 +78,10 @@ impl<'a> Lexer<'a> {
             while let Some(c) = iter.next() {
                 match c {
                     '\n' => break,
-                    '/'
-                        if (iter.peek() == Some('/') || iter.peek() == Some('*')) => {
-                            iter.back();
-                            break;
-                        }
+                    '/' if (iter.peek() == Some('/') || iter.peek() == Some('*')) => {
+                        iter.back();
+                        break;
+                    }
                     _ => {}
                 }
             }
@@ -137,7 +137,7 @@ impl<'a> TokenAccumulator<'a> {
                     &self.file_origin.to_string_lossy(),
                 )?
             {
-                self.add_token(token);
+                self.add_token(token, self.iter.current_iter);
                 self.last_consume = self.iter.current_iter;
             }
 
@@ -147,7 +147,7 @@ impl<'a> TokenAccumulator<'a> {
                 token_rules::operator(self.iter).or_else(|| token_rules::punctuator(self.iter))
             {
                 self.consume(previous_lex);
-                self.add_token(operator);
+                self.add_token(operator, self.iter.current_iter);
                 self.last_consume = self.iter.current_iter;
             } else if Some(true) == self.iter.peek().map(|c| c.is_whitespace()) {
                 self.consume(previous_lex);
@@ -166,11 +166,11 @@ impl<'a> TokenAccumulator<'a> {
         Ok(())
     }
 
-    fn add_token(&mut self, kind: TokenKind) {
+    fn add_token(&mut self, kind: TokenKind, byte_end_index: usize) {
         self.tokens.push(Token {
             kind,
             byte_start_index: self.last_consume,
-            byte_end_index: self.iter.current_iter,
+            byte_end_index,
             file_origin: self.file_origin.clone(),
         })
     }
@@ -182,9 +182,9 @@ impl<'a> TokenAccumulator<'a> {
 
         let text = self.iter.source[self.last_consume..up_to].to_string();
         if text.chars().any(|c| !c.is_whitespace()) {
-            self.add_token(TokenKind::from_str(text));
+            self.add_token(TokenKind::from_str(text), up_to);
         }
 
-        self.last_consume = self.iter.current_iter;
+        self.last_consume = up_to;
     }
 }

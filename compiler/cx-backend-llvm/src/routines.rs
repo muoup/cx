@@ -1,7 +1,7 @@
 use crate::GlobalState;
 use crate::typing::bc_llvm_signature;
 use cx_lmir::LMIRFunctionSignature;
-use cx_util::log_error;
+use cx_log::log_error;
 use inkwell::values::FunctionValue;
 
 pub(crate) fn get_function<'a>(

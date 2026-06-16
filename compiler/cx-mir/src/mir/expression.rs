@@ -3,26 +3,34 @@ use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 
 use crate::mir::data::MIRFunctionPrototype;
+use crate::mir::pattern::MIRPattern;
 use crate::mir::r#type::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
 
-#[derive(Clone, Debug, Default, Readable, Writable)]
+#[derive(Clone, Debug, Default)]
 pub struct MIRFunctionContract {
     pub safe: bool,
+    pub assertion_prototype: Option<Box<MIRFunctionPrototype>>,
     pub precondition: Option<Box<MIRExpression>>,
-    pub postcondition: Option<(Option<CXIdent>, Box<MIRExpression>)>,
+    pub postcondition: Option<MIRPostcondition>,
 }
 
-#[derive(Clone, Debug, Default, Readable, Writable)]
+#[derive(Clone, Debug)]
+pub struct MIRPostcondition {
+    pub binding: Option<CXIdent>,
+    pub condition: Box<MIRExpression>,
+    pub assertion_prototype: Box<MIRFunctionPrototype>,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct MIRExpression {
     pub kind: MIRExpressionKind,
     pub _type: MIRType,
     pub token_range: Option<TokenRange>,
 }
 
-#[derive(Clone, Debug, Readable, Writable)]
+#[derive(Clone, Debug)]
 pub enum MIRPureExpression {
     IntegerLiteral(i64, MIRIntegerType, bool),
-    FunctionReference(Box<MIRFunctionPrototype>),
 }
 
 impl MIRPureExpression {
@@ -30,19 +38,10 @@ impl MIRPureExpression {
         match self {
             Self::IntegerLiteral(value, integer_type, signed) => MIRExpression {
                 token_range: None,
-                kind: MIRExpressionKind::IntLiteral(*value, *integer_type, *signed),
+                kind: MIRExpressionKind::IntLiteral(*value),
                 _type: MIRType::from(MIRTypeKind::Integer {
                     _type: *integer_type,
                     signed: *signed,
-                }),
-            },
-            Self::FunctionReference(prototype) => MIRExpression {
-                token_range: None,
-                kind: MIRExpressionKind::FunctionReference {
-                    name: prototype.name.clone(),
-                },
-                _type: MIRType::from(MIRTypeKind::Function {
-                    signature: Box::new(prototype.signature()),
                 }),
             },
         }
@@ -55,18 +54,28 @@ pub struct MIRSourceRange {
     pub end_token: usize,
 }
 
-#[derive(Clone, Debug, Default, Readable, Writable)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SymbolValueOrigin {
+    Local,
+    Global,
+}
+
+#[derive(Clone, Debug, Default)]
 pub enum MIRExpressionKind {
     // Literals
     BoolLiteral(bool),
-    IntLiteral(i64, MIRIntegerType, bool),
-    FloatLiteral(FloatWrapper, MIRFloatType),
+    IntLiteral(i64),
+    FloatLiteral(FloatWrapper),
 
     #[default]
     Unit,
 
     // Variables
-    Variable(CXIdent),
+    Variable {
+        name: CXIdent,
+        location: SymbolValueOrigin,
+    },
+
     ContractVariable {
         name: CXIdent,
         force_param: bool,
@@ -75,6 +84,10 @@ pub enum MIRExpressionKind {
     // The callable signature is stored in the expression's type
     FunctionReference {
         name: CXIdent,
+    },
+
+    SizeOf {
+        _type: MIRType,
     },
 
     // Arithmetic & Logic
@@ -102,9 +115,6 @@ pub enum MIRExpressionKind {
     RegionDuplicate {
         source: Box<MIRExpression>,
     },
-    ByValueArgument {
-        source: Box<MIRExpression>,
-    },
     RegionMove {
         source: Box<MIRExpression>,
     },
@@ -130,9 +140,7 @@ pub enum MIRExpressionKind {
 
     PatternIs {
         lhs: Box<MIRExpression>,
-        sum_type: MIRType,
-        variant_index: usize,
-        inner_name: CXIdent,
+        pattern: MIRPattern,
     },
 
     // Tagged Unions
@@ -151,6 +159,7 @@ pub enum MIRExpressionKind {
         sum_type: MIRType,
     },
 
+    // Internal node used by generated type-constructor functions.
     ConstructTaggedUnion {
         variant_index: usize,
         value: Box<MIRExpression>,
@@ -198,13 +207,13 @@ pub enum MIRExpressionKind {
 
     Match {
         condition: Box<MIRExpression>,
-        arms: Vec<(Box<MIRExpression>, Box<MIRExpression>)>,
+        arms: Vec<(MIRPattern, Box<MIRExpression>)>,
         default: Option<Box<MIRExpression>>,
         exhaustive: bool,
     },
 
     Return {
-        postcondition: Option<(Option<CXIdent>, Box<MIRExpression>)>,
+        postcondition: Option<MIRPostcondition>,
         value: Option<Box<MIRExpression>>,
     },
 
@@ -311,7 +320,7 @@ pub enum MIRFloatBinOp {
     FGE,
 }
 
-#[derive(Clone, Debug, Readable, Writable)]
+#[derive(Clone, Debug)]
 pub enum MIRBinOp {
     Integer {
         itype: MIRIntegerType,
@@ -398,7 +407,7 @@ pub enum MIRCoercion {
     ReinterpretBits,
 }
 
-#[derive(Clone, Debug, Readable, Writable)]
+#[derive(Clone, Debug)]
 pub struct StructInitialization {
     pub field_index: usize,
     pub value: MIRExpression,
@@ -409,9 +418,13 @@ impl MIRExpression {
         self._type.clone()
     }
 
+    pub fn get_type_ref(&self) -> &MIRType {
+        &self._type
+    }
+
     pub fn int_literal(value: i64, itype: MIRIntegerType, is_signed: bool) -> Self {
         Self {
-            kind: MIRExpressionKind::IntLiteral(value, itype, is_signed),
+            kind: MIRExpressionKind::IntLiteral(value),
             _type: MIRType {
                 kind: MIRTypeKind::Integer {
                     _type: itype,

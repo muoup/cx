@@ -1,12 +1,20 @@
+use cx_log::CXResult;
 use cx_mir::mir::expression::{
     MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRIntegerBinOp,
 };
-use cx_util::CXResult;
 
 use crate::{environment::TypeEnvironment, log_typecheck_error};
 
 pub enum ConstexprResult {
     Integer(i64),
+}
+
+impl ConstexprResult {
+    pub fn get_integer(self) -> Option<i64> {
+        match self {
+            ConstexprResult::Integer(i) => Some(i),
+        }
+    }
 }
 
 // FIXME: We currently use a very oversimplified evaluation engine where all integers are handled as i64,
@@ -18,7 +26,7 @@ pub fn constexpr_evaluate(
     expr: MIRExpression,
 ) -> CXResult<ConstexprResult> {
     Ok(match expr.kind {
-        MIRExpressionKind::IntLiteral(val, _type, _) => ConstexprResult::Integer(val),
+        MIRExpressionKind::IntLiteral(val) => ConstexprResult::Integer(val),
 
         MIRExpressionKind::BinaryOperation {
             lhs,
@@ -80,8 +88,13 @@ pub fn constexpr_evaluate(
             conversion,
         } => match conversion {
             MIRCoercion::Integral { .. } => constexpr_evaluate(env, *operand)?,
-
-            _ => todo!(),
+            _ => {
+                return log_typecheck_error!(
+                    env,
+                    operand.token_range.as_ref(),
+                    "Invalid conversion in constexpr context"
+                );
+            }
         },
 
         MIRExpressionKind::If {
@@ -114,12 +127,4 @@ pub fn constexpr_evaluate(
             );
         }
     })
-}
-
-impl ConstexprResult {
-    pub fn get_integer(self) -> Option<i64> {
-        match self {
-            ConstexprResult::Integer(i) => Some(i),
-        }
-    }
 }

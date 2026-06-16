@@ -1,18 +1,21 @@
-use cx_mir::mir::{
-    expression::{MIRExpression, MIRExpressionKind},
-    program::MIRBaseMappings,
-    r#type::MIRType,
+use cx_log::CXResult;
+use cx_mir::{
+    EnvironmentNamespace,
+    mir::{
+        expression::{MIRExpression, MIRExpressionKind},
+        r#type::MIRType,
+    },
+    type_context::MIRTypeContext,
 };
 use cx_tokens::TokenRange;
-use cx_util::CXResult;
+use cx_util::namespace::QualifiedName;
 
 use crate::{
-    environment::{
-        ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment, symbols::SymbolValueOrigin,
-    },
+    environment::{ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment},
     log_typecheck_error,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
+        contracts::resolve_assertion_prototype,
         control_flow::enqueue_jump_arrow,
         result::TypecheckResult,
         typechecker::typecheck_expr,
@@ -28,10 +31,10 @@ fn typechange_can_forward_region(return_type: &MIRType) -> bool {
 
 pub fn typecheck_return(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     value: Option<MIRExpression>,
 ) -> CXResult<TypecheckResult> {
-    let return_type = env.current_function().return_type.clone();
+    let return_type = env.current_function().signature().return_type.clone();
 
     let return_value = match (value, &return_type) {
         (Some(mut some_value), return_type) if !return_type.is_unit() => {
@@ -41,8 +44,8 @@ pub fn typecheck_return(
             // of the implicit cast behavior here so instead of creating a temporary buffer to copy
             // into, and then memcpy from that buffer, we can just "unsafely" coerce the &T to a T
             // so we will induce in effect just a direct memcpy from the source T to the return buffer.
-            if let Some(inner) = env.symbols.context.mem_ref_inner(&_ty).cloned()
-                && env.symbols.is_copyable(&inner)
+            if let Some(inner) = env.symbols.mem_ref_inner(&_ty).cloned()
+                && !inner.is_nocopy()
                 && typechange_can_forward_region(&inner)
             {
                 some_value = MIRExpression {
@@ -50,7 +53,7 @@ pub fn typecheck_return(
                     token_range: some_value.token_range.clone(),
                     kind: MIRExpressionKind::Typechange(Box::new(some_value)),
                 };
-            } else if env.symbols.context.mem_ref_inner(return_type).is_none() {
+            } else if env.symbols.mem_ref_inner(return_type).is_none() {
                 some_value = std_rval_promotion(env, some_value)?;
             }
 
@@ -64,7 +67,7 @@ pub fn typecheck_return(
                 env,
                 value.token_range.as_ref(),
                 "Cannot return from function {} with a void return type",
-                env.current_function().display_with(&env.symbols.context)
+                env.current_function().display_with(&env.symbols)
             );
         }
 
@@ -73,7 +76,7 @@ pub fn typecheck_return(
                 env,
                 Option::<TokenRange>::None,
                 "Function {} expects a return value, but none was provided",
-                env.current_function().display_with(&env.symbols.context)
+                env.current_function().display_with(&env.symbols)
             );
         }
     };
@@ -87,7 +90,13 @@ pub fn typecheck_return(
         },
     );
 
-    if let Some((ret_name, ret_contract)) = env.current_function().contract.postcondition.clone() {
+    if let Some((ret_name, ret_contract)) = env
+        .current_function()
+        .signature()
+        .contract
+        .postcondition
+        .clone()
+    {
         if ret_name.is_some() && return_type.is_unit() {
             return log_typecheck_error!(
                 env,
@@ -98,13 +107,13 @@ pub fn typecheck_return(
 
         env.push_scope(false, false);
 
-        for param in env.current_function().params.clone() {
+        for param in env.current_function().signature().params.clone() {
             let Some(name) = param.name else {
                 continue;
             };
 
-            env.symbols.insert_value(
-                name.clone(),
+            env.symbols.insert_local_value(
+                QualifiedName::new_raw(name.clone()),
                 MIRExpression {
                     kind: MIRExpressionKind::ContractVariable {
                         name: name.clone(),
@@ -113,13 +122,12 @@ pub fn typecheck_return(
                     token_range: None,
                     _type: param._type.clone(),
                 },
-                Some(SymbolValueOrigin::Contract),
             );
         }
 
         if let Some(ret_name) = ret_name.as_ref() {
-            env.symbols.insert_value(
-                ret_name.clone(),
+            env.symbols.insert_local_value(
+                QualifiedName::new_raw(ret_name.clone()),
                 MIRExpression {
                     kind: MIRExpressionKind::ContractVariable {
                         name: ret_name.clone(),
@@ -128,24 +136,29 @@ pub fn typecheck_return(
                     token_range: None,
                     _type: return_type.clone(),
                 },
-                Some(SymbolValueOrigin::Contract),
             );
         }
 
-        let postcondition = typecheck_expr(env, base_data, &ret_contract, None)
-            .and_then(|v| implicit_cast(env, v.into_expression(), &MIRType::bool()))?;
+        let postcondition = typecheck_expr(env, namespace, &ret_contract, None)
+            .and_then(|res| res.standard_ready_coerce(env, ret_contract.token_range()))
+            .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
+        let assertion_prototype = Box::new(resolve_assertion_prototype(env, namespace)?);
 
         env.pop_scope()?;
 
-        Ok(TypecheckResult::new_base(
+        Ok(TypecheckResult::new(
             MIRType::unit(),
             MIRExpressionKind::Return {
                 value: return_value,
-                postcondition: Some((ret_name.clone(), Box::new(postcondition))),
+                postcondition: Some(cx_mir::mir::expression::MIRPostcondition {
+                    binding: ret_name.clone(),
+                    condition: Box::new(postcondition),
+                    assertion_prototype,
+                }),
             },
         ))
     } else {
-        Ok(TypecheckResult::new_base(
+        Ok(TypecheckResult::new(
             MIRType::unit(),
             MIRExpressionKind::Return {
                 value: return_value,

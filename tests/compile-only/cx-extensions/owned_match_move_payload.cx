@@ -7,7 +7,7 @@ enum union MaybeResource : @nodrop {
     some :: Resource
 };
 
-void Resource::drop(this) safe {
+void Resource::drop(Resource this) safe {
     @unsafe {
         @leak(this);
     };
@@ -19,8 +19,7 @@ int main() {
     });
     match (move maybe) {
         MaybeResource::some(inner) => {
-            Resource value = move inner;
-            value.drop();
+            move inner |> Resource::drop();
         }
         MaybeResource::none() => {}
     }

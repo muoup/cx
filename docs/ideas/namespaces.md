@@ -160,9 +160,9 @@ Suggested defaults:
 - `.cx`: namespace inferred from module path; CX mangling enabled.
 - `.cxh`: global namespace; standard C-style functions unmangled by default.
 
-Standard non-member, non-templated functions in C-linkage/global modules remain C-compatible without per-function annotations.
+Standard non-associated, non-templated functions in C-linkage/global modules remain C-compatible without per-function annotations.
 
-Templated functions, member functions, and other compile-time CX constructs remain non-C-interoperable unless lowered through an explicit wrapper.
+Templated functions, associated functions, and other compile-time CX constructs remain non-C-interoperable unless lowered through an explicit wrapper.
 
 ## Implementation Direction
 

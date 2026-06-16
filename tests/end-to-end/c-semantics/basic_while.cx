@@ -2,7 +2,7 @@ import std::io;
 
 void while_loop(int n) {
     while (n > 0) {
-        print_char('0' + n);
+        std::io::print_char('0' + n);
         n = n - 1;
     }
     return;

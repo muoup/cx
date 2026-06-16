@@ -10,8 +10,8 @@ use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
 use cx_lmir::{LMIRABISlot, LMIRFunctionSignature};
 use cx_lmir::{LMIRBlockID, LMIRRegister, LMIRUnit, LMIRValue};
+use cx_log::{log_error, CXError, CXResult};
 use cx_util::identifier::CXIdent;
-use cx_util::{log_error, CXError, CXResult};
 use std::collections::HashMap;
 
 mod codegen;
@@ -26,7 +26,7 @@ pub(crate) enum CodegenValue {
     Value(Value),
     Aggregate(Vec<Value>),
     AggregateSlots(Vec<(LMIRABISlot, Value)>),
-    NULL,
+    Null,
 }
 
 impl CodegenValue {
@@ -40,7 +40,7 @@ impl CodegenValue {
 
     #[allow(dead_code)]
     pub(crate) fn is_null(&self) -> bool {
-        matches!(self, CodegenValue::NULL)
+        matches!(self, CodegenValue::Null)
     }
 }
 
@@ -51,6 +51,7 @@ pub struct FunctionState<'a> {
     pub(crate) target_frontend_config: &'a TargetFrontendConfig,
 
     pub(crate) function_ids: &'a mut HashMap<String, FuncId>,
+    pub(crate) global_ids: &'a [DataId],
 
     pub(crate) block_map: HashMap<CXIdent, Block>,
     pub(crate) builder: FunctionBuilder<'a>,
@@ -67,7 +68,8 @@ pub(crate) struct GlobalState<'a> {
     pub(crate) target_frontend_config: TargetFrontendConfig,
 
     pub(crate) function_ids: HashMap<String, FuncId>,
-    pub(crate) function_sigs: &'a mut HashMap<String, ir::Signature>,
+    pub(crate) global_ids: Vec<DataId>,
+    pub(crate) function_sigs: &'a mut HashMap<FuncId, ir::Signature>,
 }
 
 impl FunctionState<'_> {
@@ -86,7 +88,7 @@ impl FunctionState<'_> {
 
     pub(crate) fn get_value(&mut self, bc_value: &LMIRValue) -> CXResult<CodegenValue> {
         match bc_value {
-            LMIRValue::NULL => Ok(CodegenValue::NULL),
+            LMIRValue::NULL => Ok(CodegenValue::Null),
 
             LMIRValue::ParameterRef(i) => Ok(CodegenValue::Value(Value::from_u32(*i))),
 
@@ -124,9 +126,13 @@ impl FunctionState<'_> {
             }
 
             LMIRValue::Global(id) => {
+                let Some(data_id) = self.global_ids.get(*id as usize).cloned() else {
+                    return CXError::create_result(format!("Global not found: g{id}"));
+                };
+
                 let global_ref = self
                     .object_module
-                    .declare_data_in_func(DataId::from_u32(*id), self.builder.func);
+                    .declare_data_in_func(data_id, self.builder.func);
 
                 let gv = self
                     .builder
@@ -172,6 +178,7 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
         context: Context::new(),
         target_frontend_config: isa.frontend_config(),
         function_ids: HashMap::new(),
+        global_ids: Vec::new(),
         function_sigs: &mut HashMap::new(),
     };
 
@@ -183,8 +190,12 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
         codegen_fn_prototype(&mut global_state, fn_prototype)?;
     }
 
-    for func in &bc.fn_defs {
-        let Some(func_id) = global_state.function_ids.get(&func.prototype.name).cloned() else {
+    for func in bc.fn_defs.iter() {
+        let Some(func_id) = global_state
+            .function_ids
+            .get(func.prototype.name.as_str())
+            .cloned()
+        else {
             log_error!(
                 "Function not found in function map: {}",
                 func.prototype.name
@@ -193,7 +204,7 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
 
         let func_sig = global_state
             .function_sigs
-            .remove(&func.prototype.name)
+            .remove(&func_id)
             .unwrap_or_else(|| {
                 panic!("Function prototype not found for: {}", func.prototype.name);
             });

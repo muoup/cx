@@ -1,6 +1,6 @@
 use cx_lmir::LMIRUnit;
-use cx_mir::mir::program::MIRUnit;
-use cx_util::CXResult;
+use cx_log::CXResult;
+use cx_mir::MIRUnit;
 
 use crate::{builder::LMIRBuilder, mir_lowering::lower_mir};
 

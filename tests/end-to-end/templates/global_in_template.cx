@@ -1,5 +1,11 @@
-import includes::global_template_include;
-import std::io;
+int printf(char* fmt, ...);
+
+int x;
+
+T increment<T>() {
+    x++;
+    return x;
+}
 
 void procedure() {
     int result = increment<int>();

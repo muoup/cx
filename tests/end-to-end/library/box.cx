@@ -1,9 +1,10 @@
 import std::box;
-import std::io;
+
+#include <stdio.h>
 #include <stdlib.h>
 
 int main() {
-  box<int> i = box<int>::new<int>(2);
-  printf("i = %d\n", i.deref_mut<int>());
-  i.drop<int>();
+  std::box::box<int> i = std::box::box::new<int>(2);
+  printf("i = %d\n", i |> std::box::box::deref_mut<int>());
+  move i |> std::box::box::drop<int>();
 }

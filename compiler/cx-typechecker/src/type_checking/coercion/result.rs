@@ -1,5 +1,5 @@
+use cx_log::CXResult;
 use cx_mir::mir::expression::MIRExpression;
-use cx_util::CXResult;
 
 pub enum CoercionObstacle {
     Uncopyable,
@@ -17,6 +17,16 @@ pub enum CoercionResult {
 }
 
 impl CoercionResult {
+    pub fn and_then<F>(self, f: F) -> CXResult<Self>
+    where
+        F: FnOnce(MIRExpression) -> CXResult<Self>,
+    {
+        Ok(match self {
+            CoercionResult::Success { expr } => f(expr)?,
+            unapplied => unapplied,
+        })
+    }
+
     pub fn or_else<F>(self, f: F) -> CXResult<Self>
     where
         F: FnOnce(MIRExpression) -> CXResult<Self>,
@@ -54,12 +64,6 @@ impl CoercionResult {
             expr,
             cause: Some(cause),
         })
-    }
-
-    pub fn expr(self) -> MIRExpression {
-        match self {
-            CoercionResult::Success { expr } | CoercionResult::Unapplied { expr, .. } => expr,
-        }
     }
 
     pub fn catch_unapplied<F>(self, on_unapplied: F) -> CXResult<MIRExpression>

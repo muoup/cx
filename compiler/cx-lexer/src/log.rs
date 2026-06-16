@@ -1,4 +1,4 @@
-use cx_util::CXErrorTrait;
+use cx_log::CXErrorTrait;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug)]
@@ -58,7 +58,7 @@ macro_rules! log_lexer_error {
                 source: $source.to_string(),
                 start_index: $start,
                 end_index: $end,
-            }) as Box<dyn cx_util::CXErrorTrait>)
+            }) as Box<dyn cx_log::CXErrorTrait>)
         }
     };
 }

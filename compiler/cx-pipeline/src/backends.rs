@@ -1,6 +1,6 @@
 use cx_lmir::LMIRUnit;
+use cx_log::CXResult;
 use cx_pipeline_data::OptimizationLevel;
-use cx_util::CXResult;
 
 #[cfg(feature = "backend-llvm")]
 pub(crate) fn llvm_compile(

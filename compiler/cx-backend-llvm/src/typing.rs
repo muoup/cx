@@ -21,7 +21,7 @@ fn anonymous_struct_name() -> String {
     format!("anonymous_struct_{}", *counter)
 }
 
-pub(crate) fn any_to_basic_type<'a>(any_type: AnyTypeEnum) -> Option<BasicTypeEnum> {
+pub(crate) fn any_to_basic_type(any_type: AnyTypeEnum) -> Option<BasicTypeEnum> {
     match any_type {
         AnyTypeEnum::IntType(int_type) => Some(int_type.into()),
         AnyTypeEnum::FloatType(float_type) => Some(float_type.into()),

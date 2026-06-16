@@ -1,17 +1,20 @@
 //! Binary and unary operation lowering
 
 use cx_lmir::{
-    types::{LMIRIntegerType, LMIRType},
+    types::{LMIRIntegerType, LMIRType, TypeSize},
     LMIRFloatBinOp, LMIRInstructionKind, LMIRIntBinOp, LMIRPtrBinOp, LMIRValue,
 };
-use cx_mir::mir::{
-    data::{MIRType, MIRTypeKind},
-    expression::{
-        MIRBinOp, MIRExpression, MIRFloatBinOp, MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
-        MIRUnOp,
+use cx_log::CXResult;
+use cx_mir::{
+    mir::{
+        data::{MIRType, MIRTypeKind},
+        expression::{
+            MIRBinOp, MIRExpression, MIRFloatBinOp, MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
+            MIRUnOp,
+        },
     },
+    type_context::MIRTypeContext,
 };
-use cx_util::CXResult;
 
 use super::expressions::lower_expression;
 use crate::builder::LMIRBuilder;
@@ -58,10 +61,11 @@ pub fn lower_binary_op(
                 MIRPtrDiffBinOp::ADD => LMIRPtrBinOp::ADD,
                 MIRPtrDiffBinOp::SUB => LMIRPtrBinOp::SUB,
             };
+
             LMIRInstructionKind::PointerBinOp {
                 op: ptr_op,
                 ptr_type: bc_inner_type.clone(),
-                type_padded_size: ptr_inner.padded_size(&builder.type_definitions) as u64,
+                type_size: bc_inner_type.size(),
                 left: bc_lhs,
                 right: bc_rhs,
             }
@@ -78,7 +82,7 @@ pub fn lower_binary_op(
             LMIRInstructionKind::PointerBinOp {
                 op: ptr_op,
                 ptr_type: LMIRType::default_pointer(),
-                type_padded_size: 1,
+                type_size: TypeSize::from(1),
                 left: bc_lhs,
                 right: bc_rhs,
             }
@@ -265,16 +269,14 @@ pub fn lower_unary_op(
                 }
 
                 MIRTypeKind::PointerTo { inner_type, .. } => {
-                    let inner_type = builder
-                        .type_definitions
-                        .get(*inner_type)
-                        .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
+                    let inner_type = builder.registry.resolve_type_id(*inner_type);
                     let bc_inner_type = builder.convert_cx_type(inner_type);
+                    let type_size = bc_inner_type.size();
 
                     LMIRInstructionKind::PointerBinOp {
                         op: LMIRPtrBinOp::ADD,
                         ptr_type: bc_inner_type,
-                        type_padded_size: result_type.padded_size(&builder.type_definitions) as u64,
+                        type_size,
                         left: pre_loaded_val.clone(),
                         right: LMIRValue::IntImmediate {
                             val: *amt as i64,

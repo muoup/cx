@@ -5,7 +5,7 @@ use inkwell::values::{AnyValue, AnyValueEnum, IntValue};
 pub(crate) fn generate_ptr_binop<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &FunctionState<'a, 'b>,
-    type_padded_size: u64,
+    type_size: u64,
     left_value: AnyValueEnum<'a>,
     right_value: AnyValueEnum<'a>,
     op: LMIRPtrBinOp,
@@ -17,10 +17,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                 .builder
                 .build_int_mul(
                     right_value.into_int_value(),
-                    global_state
-                        .context
-                        .i64_type()
-                        .const_int(type_padded_size, false),
+                    global_state.context.i64_type().const_int(type_size, false),
                     crate::instruction::inst_num().as_str(),
                 )
                 .ok()?
@@ -51,10 +48,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                 .builder
                 .build_int_mul(
                     negative.into_int_value(),
-                    global_state
-                        .context
-                        .i64_type()
-                        .const_int(type_padded_size, false),
+                    global_state.context.i64_type().const_int(type_size, false),
                     crate::instruction::inst_num().as_str(),
                 )
                 .ok()?

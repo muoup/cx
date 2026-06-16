@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-use cx_util::{CXError, CXResult, module_path::cx_library_directory};
+use cx_log::{CXError, CXResult};
+use cx_util::module_path::cx_library_directory;
 
 use crate::{
     context::{LexingContext, SourceInput},
@@ -131,8 +132,8 @@ pub(crate) fn resolve_path(
 
     search
         .into_iter()
-        .chain(system)
         .chain(std::iter::once(bundled))
+        .chain(system)
         .find(|path| path.is_file())
 }
 

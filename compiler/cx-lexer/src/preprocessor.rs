@@ -4,7 +4,7 @@ pub mod define;
 pub mod expr;
 pub mod includes;
 
-use cx_util::CXResult;
+use cx_log::CXResult;
 
 use crate::{
     context::LexingContext,

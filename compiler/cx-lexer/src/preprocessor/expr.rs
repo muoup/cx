@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
+use cx_log::CXResult;
 use cx_tokens::token::{OperatorType, PunctuatorType, Token, TokenKind};
-use cx_util::CXResult;
 
 use crate::{
     context::{LexingContext, Macro},

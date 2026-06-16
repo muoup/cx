@@ -33,8 +33,8 @@ ulong complete_request(request* request) safe<std::clock> { ... };
 void foo(...) safe<std::clock, std::fileops> {
     vector<request> requests = ...;
     ulong average_completion_time = iter::from(requests)
-        .map(complete_request)
-        .sum() / requests.length;
+        |> iterator::map(complete_request)
+        |> iterator::sum() / requests.length;
 
     printf("Fulfilling requests took an average of %.2f seconds\n", (float) average_completion_time / 1000);
 }

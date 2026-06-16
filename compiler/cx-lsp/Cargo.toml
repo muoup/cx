@@ -15,4 +15,3 @@ cx-pipeline = { path = "../cx-pipeline" }
 cx-pipeline-data = { path = "../cx-pipeline-data" }
 cx-tokens = { path = "../cx-tokens" }
 cx-typechecker = { path = "../cx-typechecker" }
-cx-util = { path = "../cx-util" }

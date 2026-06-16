@@ -7,18 +7,18 @@ struct Container : @nodrop {
     int count;
 };
 
-void Resource::drop(this) safe {
+void Resource::drop(Resource this) safe {
     @unsafe {
         @leak(this);
     };
 }
 
-void Container::drop(this) safe {
-    @unpack(this) {
+void Container::drop(Container this) safe {
+    @unpack(move this) {
         resource: resource,
     };
 
-    resource.drop();
+    move resource |> Resource::drop();
 }
 
 int main() {
@@ -29,6 +29,6 @@ int main() {
         .count = 2
     };
 
-    container.drop();
+    move container |> Container::drop();
     return 0;
 }

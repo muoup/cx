@@ -1,11 +1,11 @@
 use std::{collections::HashMap, path::Path};
 
+use cx_log::CXResult;
 use cx_mir::mir::data::MIRFunctionPrototype;
 use cx_safe_ir::{
     ast::{FMIRNode, FMIRNodeBody},
     intrinsic::FMIRIntrinsicKind,
 };
-use cx_util::CXResult;
 
 use crate::{
     AnalysisDiagnosticContext,

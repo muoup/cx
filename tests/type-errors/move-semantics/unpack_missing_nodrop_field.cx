@@ -7,7 +7,7 @@ struct Container : @nodrop {
     int count;
 };
 
-void Container::drop(this) {
+void Container::drop(Container this) {
     @unpack(this) {
         count: count,
     };

@@ -1,8 +1,9 @@
+use cx_log::CXResult;
 use cx_tokens::{
     punctuator,
     token::{OperatorType, PunctuatorType, TokenKind},
 };
-use cx_util::{CXResult, char_iter::CharIter};
+use cx_util::char_iter::CharIter;
 
 use crate::lexer::number::number;
 
@@ -71,6 +72,10 @@ pub(crate) fn operator(iter: &mut CharIter) -> Option<TokenKind> {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::DoubleBar))
             }
+            Some('>') => {
+                iter.next();
+                Some(TokenKind::Operator(OperatorType::Pipe))
+            }
             _ => Some(TokenKind::Operator(OperatorType::Bar)),
         },
         '&' => match iter.peek() {
@@ -91,11 +96,10 @@ pub(crate) fn operator(iter: &mut CharIter) -> Option<TokenKind> {
         }
         '~' => Some(TokenKind::Operator(OperatorType::Tilda)),
 
-        ':'
-            if Some(':') == iter.peek() => {
-                iter.next();
-                Some(TokenKind::Operator(OperatorType::ScopeRes))
-            }
+        ':' if Some(':') == iter.peek() => {
+            iter.next();
+            Some(TokenKind::Operator(OperatorType::ScopeRes))
+        }
 
         '>' => match iter.peek() {
             Some('=') => {

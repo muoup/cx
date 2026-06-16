@@ -1,8 +1,8 @@
 #[macro_use]
 mod log;
 
+use cx_log::{CXError, CXResult};
 use cx_tokens::token::Token;
-use cx_util::{CXError, CXResult};
 pub use log::LexerError;
 use std::path::{Path, PathBuf};
 

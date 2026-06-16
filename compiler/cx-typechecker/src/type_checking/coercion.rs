@@ -1,8 +1,11 @@
-use cx_mir::mir::{
-    expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
-    r#type::{MIRType, MIRTypeKind},
+use cx_log::CXResult;
+use cx_mir::{
+    mir::{
+        expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
+        r#type::{MIRType, MIRTypeKind},
+    },
+    type_context::MIRTypeContext,
 };
-use cx_util::CXResult;
 
 use crate::{
     environment::TypeEnvironment,
@@ -41,8 +44,7 @@ pub fn try_explicit_cast(
             }
 
             (MIRTypeKind::PointerTo { .. }, MIRTypeKind::MemoryReference { .. })
-                if env.symbols.context.is_c_str(&from_type)
-                    && env.symbols.context.is_cx_str(target_type) =>
+                if env.symbols.is_c_str(&from_type) && env.symbols.is_cx_str(target_type) =>
             {
                 coerced(MIRCoercion::ReinterpretBits)
             }

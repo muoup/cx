@@ -8,10 +8,10 @@ int main() {
     };
 
     Resource adopted = @unsafe(@adopt(move value));
-    adopted.drop();
+    move adopted |> Resource::drop();
     return 0;
 }
 
-void Resource::drop(this) {
+void Resource::drop(Resource this) {
     @leak(this);
 }

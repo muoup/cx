@@ -1,12 +1,16 @@
-use cx_mir::mir::{
-    data::{MIRIntegerType, MIRType, MIRTypeKind},
-    expression::{
-        MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp,
-        MIRPtrBinOp, MIRPtrDiffBinOp, MIRUnOp,
+use cx_log::{CXError, CXResult};
+use cx_mir::{
+    mir::{
+        data::{MIRIntegerType, MIRType, MIRTypeKind},
+        expression::{
+            MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp,
+            MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp, MIRUnOp,
+        },
     },
+    type_context::MIRTypeContext,
 };
 use cx_safe_ir::{ast::*, intrinsic::*};
-use cx_util::{CXError, CXResult, identifier::CXIdent};
+use cx_util::identifier::CXIdent;
 
 use crate::{
     log_analysis_error,
@@ -203,7 +207,13 @@ pub fn coercion_intrinsic(
         MIRCoercion::Typechange | MIRCoercion::ReinterpretBits => {
             FMIRCastIntrinsic::ReinterpretBits
         }
-        MIRCoercion::GetFnPtr => todo!(),
+        MIRCoercion::GetFnPtr => {
+            return log_analysis_error!(
+                _env,
+                _expr,
+                "Function pointer decay is not supported in safe analysis yet"
+            );
+        }
     })
 }
 
@@ -243,9 +253,8 @@ pub(crate) fn app2(
 
 pub(crate) fn source_variable_name(expr: &MIRExpression) -> Option<&CXIdent> {
     match &expr.kind {
-        MIRExpressionKind::Variable(name) | MIRExpressionKind::ContractVariable { name, .. } => {
-            Some(name)
-        }
+        MIRExpressionKind::Variable { name, .. }
+        | MIRExpressionKind::ContractVariable { name, .. } => Some(name),
         MIRExpressionKind::MemberAccess { base, .. } => source_variable_name(base),
         _ => None,
     }
@@ -332,7 +341,7 @@ pub(crate) fn increment_amount_node(
     let MIRTypeKind::Integer { _type, signed } = &mir_type.kind else {
         return CXError::create_result(format!(
             "FMIR increment desugaring expected integer type, found '{}'",
-            mir_type.display_with(&env.type_definitions)
+            mir_type.display_with(env.type_definitions)
         ));
     };
 
@@ -360,7 +369,7 @@ pub(crate) fn convert_increment(
     else {
         return CXError::create_result(format!(
             "FMIR increment desugaring expected memory reference operand, found '{}'",
-            operand_expr._type.display_with(&env.type_definitions)
+            operand_expr._type.display_with(env.type_definitions)
         ));
     };
 
@@ -405,7 +414,7 @@ pub(crate) fn convert_increment(
         _ => {
             return CXError::create_result(format!(
                 "FMIR increment desugaring requires integer or pointer inner type, found '{}'",
-                value_type.display_with(&env.type_definitions)
+                value_type.display_with(env.type_definitions)
             ));
         }
     };

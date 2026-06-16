@@ -1,15 +1,13 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::progress::ProgressReporter;
-use crate::template_realizing::realize_templates;
-use cx_ast::ast::VisibilityMode;
+use cx_log::{CXError, CXErrorTrait, CXResult};
 use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
-use cx_parsing::ParseErrorLog;
-use cx_parsing::parse::parse_ast;
-use cx_parsing::preparse::{PreparseConfig, preparse};
+use cx_parsing::preparse::PreparseConfig;
+use cx_parsing::{decompose_ast, parse_ast, preparse};
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::directories::internal_directory;
-use cx_pipeline_data::internal_storage::{resource_path, retrieve_data, retrieve_text, store_text};
+use cx_pipeline_data::internal_storage::{resource_path, retrieve_data};
 use cx_pipeline_data::jobs::{
     CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue,
 };
@@ -19,16 +17,13 @@ use cx_pipeline_data::{
 use cx_safe_analyzer::FMIRContext;
 use cx_tokens::TokenIter;
 use cx_typechecker::environment::TypeEnvironment;
-use cx_typechecker::gather_interface;
-use cx_typechecker::log::TypeError;
 use cx_typechecker::typecheck;
 use cx_util::format::dump_data;
 use cx_util::module_path::ModulePath;
-use cx_util::{CXError, CXErrorTrait, CXResult};
+use cx_util::namespace::NamespacePath;
 use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::HashMap;
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::Write;
 
 pub(crate) fn scheduling_loop(
@@ -83,7 +78,7 @@ pub(crate) fn scheduling_loop(
             continue;
         }
 
-        if !queue.requirements_complete(&job) {
+        if !queue.requirements_complete(&job, |unit| import_units_for_unit(context, unit)) {
             queue.push_job(job);
             continue;
         }
@@ -92,8 +87,7 @@ pub(crate) fn scheduling_loop(
 
         let step_name = match job.step {
             CompilationStep::PreParse => "Lexing",
-            CompilationStep::ASTParse => "Parsing",
-            CompilationStep::InterfaceCombine => "Resolving",
+            CompilationStep::Parse => "Parsing",
             CompilationStep::Typechecking => "Typechecking",
             CompilationStep::LMIRGen => "Lowering",
             CompilationStep::Codegen => "Compiling",
@@ -142,12 +136,54 @@ fn import_jobs_for_unit(
     Ok(jobs)
 }
 
+fn import_requirements_for_unit(
+    context: &GlobalCompilationContext,
+    imports: &[ModulePath],
+    step: CompilationStep,
+    shallow: bool,
+) -> Vec<CompilationJobRequirement> {
+    imports
+        .iter()
+        .map(|import| CompilationJobRequirement {
+            unit: CompilationUnit::from_module_path(
+                import.clone(),
+                &context.config.working_directory,
+            ),
+            step,
+            shallow,
+        })
+        .collect()
+}
+
+fn import_units_for_unit(
+    context: &GlobalCompilationContext,
+    unit: &CompilationUnit,
+) -> Option<Vec<CompilationUnit>> {
+    context
+        .module_db
+        .preparse_base
+        .lock()
+        .get(unit)
+        .map(|preparse| {
+            preparse
+                .imports
+                .iter()
+                .map(|import| {
+                    CompilationUnit::from_module_path(
+                        import.clone(),
+                        &context.config.working_directory,
+                    )
+                })
+                .collect()
+        })
+}
+
 pub(crate) fn handle_job(
     context: &GlobalCompilationContext,
     mut job: CompilationJob,
     retain_lmir: bool,
 ) -> CXResult<Box<[CompilationJob]>> {
-    let map_reqs_new_stage = |job: CompilationJob, new_step: CompilationStep| {
+    let map_reqs_new_stage = |job: CompilationJob, new_step: CompilationStep, shallow: bool| {
         let new_requirements = job
             .requirements
             .into_iter()
@@ -158,6 +194,7 @@ pub(crate) fn handle_job(
                     // requirement for the next step of a standard job is that all imports
                     // have completed the step it has just completed
                     step: job.step,
+                    shallow,
                 }
             })
             .collect::<Vec<_>>();
@@ -178,18 +215,22 @@ pub(crate) fn handle_job(
     match job.step {
         CompilationStep::PreParse => {
             let pp_data = context.module_db.preparse_base.get(&job.unit);
-
             let mut new_jobs = import_jobs_for_unit(context, &pp_data.imports)?;
 
-            job.step = CompilationStep::ASTParse;
+            job.step = CompilationStep::Parse;
+            job.requirements = import_requirements_for_unit(
+                context,
+                &pp_data.imports,
+                CompilationStep::PreParse,
+                true,
+            );
             new_jobs.push(job);
 
             Ok(new_jobs.into())
         }
-        CompilationStep::ASTParse => map_reqs_new_stage(job, CompilationStep::InterfaceCombine),
-        CompilationStep::InterfaceCombine => map_reqs_new_stage(job, CompilationStep::Typechecking),
-        CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::LMIRGen),
-        CompilationStep::LMIRGen => map_reqs_new_stage(job, CompilationStep::Codegen),
+        CompilationStep::Parse => map_reqs_new_stage(job, CompilationStep::Typechecking, false),
+        CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::LMIRGen, true),
+        CompilationStep::LMIRGen => map_reqs_new_stage(job, CompilationStep::Codegen, true),
         CompilationStep::Codegen => Ok([].into()),
     }
 }
@@ -238,18 +279,18 @@ pub(crate) fn perform_job(
             let file_contents = std::fs::read_to_string(&file_path)
                 .unwrap_or_else(|_| panic!("File not found: {}", job.unit));
 
-            let mut hasher = DefaultHasher::new();
-            file_contents.hash(&mut hasher);
+            // let mut hasher = DefaultHasher::new();
+            // file_contents.hash(&mut hasher);
 
-            let current_hash = hasher.finish().to_string();
-            let previous_hash = retrieve_text(context, &job.unit, ".hash").unwrap_or_default();
+            // let current_hash = hasher.finish().to_string();
+            // let previous_hash = retrieve_text(context, &job.unit, ".hash").unwrap_or_default();
 
-            let _identical_hash = previous_hash == current_hash;
-            let _object_exists =
-                std::fs::metadata(internal_directory(context, &job.unit).with_extension("o"))
-                    .is_ok();
+            // let identical_hash = previous_hash == current_hash;
+            // let object_exists =
+            //     std::fs::metadata(internal_directory(context, &job.unit).with_extension("o"))
+            //         .is_ok();
 
-            store_text(context, &job.unit, ".hash", &current_hash);
+            // store_text(context, &job.unit, ".hash", &current_hash);
 
             let tokens = cx_lexer::lex_with_context(
                 file_contents.as_str(),
@@ -258,8 +299,12 @@ pub(crate) fn perform_job(
             )?;
 
             let preparse_config = PreparseConfig::from_compiler_config(&context.config);
-            let mut output = preparse(&preparse_config, TokenIter::new(&tokens, file_path))?;
-            output.module = job.unit.to_string();
+            let mut output = preparse(
+                &preparse_config,
+                TokenIter::new(&tokens, file_path),
+                job.unit.to_string(),
+                NamespacePath::from(job.unit.module_path().clone()),
+            )?;
 
             if !job.unit.is_std_lib() {
                 output.imports.extend(
@@ -268,7 +313,14 @@ pub(crate) fn perform_job(
                         .map(|s| ModulePath::from_source_path(s)),
                 );
             }
-
+            context
+                .module_db
+                .preparse_registry
+                .insert_module(output.module_symbols.clone());
+            context
+                .module_db
+                .preparse_registry
+                .insert_module(output.root_symbols.clone());
             context
                 .module_db
                 .lex_tokens
@@ -289,53 +341,54 @@ pub(crate) fn perform_job(
             // };
         }
 
-        CompilationStep::ASTParse => {
-            let mut pp_data = context.module_db.preparse_base.get_cloned(&job.unit);
+        CompilationStep::Parse => {
+            let pp_data = context.module_db.preparse_base.get(&job.unit);
             let lexemes = context.module_db.lex_tokens.get(&job.unit);
-
-            for import in pp_data.imports.iter() {
-                let other_pp_data =
-                    context
-                        .module_db
-                        .preparse_base
-                        .get(&CompilationUnit::from_module_path(
-                            import.clone(),
-                            &context.config.working_directory,
-                        ));
-                let required_visiblity = VisibilityMode::Public;
-
-                for resource in other_pp_data.type_idents.iter() {
-                    if resource.visibility < required_visiblity {
-                        continue;
-                    };
-
-                    pp_data.type_idents.push(resource.transfer(import));
-                }
-            }
 
             let parsed_ast = parse_ast(
                 TokenIter::new(&lexemes, job.unit.as_path().to_path_buf()),
-                &pp_data,
+                pp_data.as_ref(),
+                &context.module_db.preparse_registry,
             )?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&parsed_ast);
             }
 
+            let namespace = NamespacePath::from(job.unit.module_path().clone());
+            let (symbol_buckets, namespace_friends, generation_ast) =
+                decompose_ast(&namespace, parsed_ast)?.destructure();
+
+            for (namespace, bucket) in symbol_buckets {
+                if let Some((namespace, _)) = context
+                    .module_db
+                    .symbol_registry
+                    .insert_module(namespace, bucket)
+                {
+                    panic!(
+                        "Duplicate module namespace found during decomposition: {}",
+                        namespace
+                    );
+                }
+            }
+
+            for (namespace, friend) in namespace_friends {
+                context
+                    .module_db
+                    .symbol_registry
+                    .insert_namespace_friend(namespace, friend);
+            }
+
             context
                 .module_db
-                .naive_ast
-                .insert(job.unit.clone(), parsed_ast);
-        }
-
-        CompilationStep::InterfaceCombine => {
-            gather_interface(context, &job.unit)?;
+                .generation_ast
+                .insert(job.unit.clone(), generation_ast);
         }
 
         CompilationStep::Typechecking => {
-            let structure_data = context.module_db.base_mappings.get(&job.unit);
-            let self_ast = context.module_db.naive_ast.get(&job.unit);
+            let self_ast = context.module_db.generation_ast.get(&job.unit);
             let lexemes = context.module_db.lex_tokens.get(&job.unit);
+            let namespace = NamespacePath::from(job.unit.module_path().clone());
 
             let mut env = TypeEnvironment::new(
                 lexemes.as_ref(),
@@ -344,8 +397,7 @@ pub(crate) fn perform_job(
                 &context.module_db,
             );
 
-            typecheck(&mut env, structure_data.as_ref(), &self_ast)?;
-            realize_templates(&job.unit, &mut env)?;
+            typecheck(&mut env, &namespace, &self_ast)?;
 
             let mir = env.finish_mir_unit()?;
             if !job.unit.is_std_lib() || context.config.verbose {
@@ -430,7 +482,6 @@ pub enum LSPErrorSpan {
 
 #[derive(Debug, Clone)]
 pub enum LSPErrors {
-    TypeError(TypeError),
     SpannedError {
         compilation_unit: std::path::PathBuf,
         message: String,
@@ -467,7 +518,7 @@ pub(crate) fn scheduling_loop_collect_errors(
         compilation_exists.insert(job.unit.clone(), job.compilation_exists);
 
         // Skip incremental compilation logic for LSP - always recompile
-        if !queue.requirements_complete(&job) {
+        if !queue.requirements_complete(&job, |unit| import_units_for_unit(context, unit)) {
             queue.push_job(job);
             continue;
         }
@@ -512,13 +563,14 @@ fn handle_job_collect_errors(
     job: &CompilationJob,
     error_collector: &mut Vec<LSPErrors>,
 ) -> Option<HandleJobResult> {
-    let map_reqs_new_stage = |new_step: CompilationStep| -> Box<[CompilationJob]> {
+    let map_reqs_new_stage = |new_step: CompilationStep, shallow: bool| -> Box<[CompilationJob]> {
         let new_requirements = job
             .requirements
             .iter()
             .map(|req| CompilationJobRequirement {
                 unit: req.unit.clone(),
                 step: job.step,
+                shallow,
             })
             .collect::<Vec<_>>();
 
@@ -530,47 +582,17 @@ fn handle_job_collect_errors(
         .into()
     };
 
-    fn line_start_byte(contents: &str, index: usize) -> usize {
-        let safe_index = index.min(contents.len());
-        contents[..safe_index]
-            .rfind('\n')
-            .map(|idx| idx + 1)
-            .unwrap_or(0)
-    }
-
-    fn line_content_start_byte(contents: &str, index: usize) -> usize {
-        let line_start = line_start_byte(contents, index);
-        let line_end = contents[line_start..]
-            .find('\n')
-            .map(|offset| line_start + offset)
-            .unwrap_or(contents.len());
-        let line = &contents[line_start..line_end];
-        let first_non_whitespace = line
-            .char_indices()
-            .find(|(_, ch)| !ch.is_whitespace())
-            .map(|(offset, _)| offset)
-            .unwrap_or(0);
-
-        line_start + first_non_whitespace
-    }
-
     fn spanned_error(error: &dyn CXErrorTrait) -> Option<LSPErrors> {
-        if let Some(parse_error) = error.as_any().downcast_ref::<ParseErrorLog>() {
-            let file_contents = std::fs::read_to_string(&parse_error.file).ok()?;
-            let anchor_token = parse_error
-                .previous_token
-                .as_ref()
-                .unwrap_or(&parse_error.token);
-            let start = line_content_start_byte(&file_contents, anchor_token.byte_start_index);
-            let end = anchor_token
-                .byte_end_index
-                .max(anchor_token.byte_start_index.saturating_add(1));
-
+        if let (Some(compilation_unit), Some(start), Some(end)) = (
+            error.compilation_unit(),
+            error.byte_start(),
+            error.byte_end(),
+        ) {
             return Some(LSPErrors::SpannedError {
-                compilation_unit: parse_error.file.clone(),
-                message: parse_error.message.clone(),
+                compilation_unit,
+                message: error.error_message(),
                 span: LSPErrorSpan::ByteRange { start, end },
-                notes: Vec::new(),
+                notes: error.notes(),
             });
         }
 
@@ -628,18 +650,23 @@ fn handle_job_collect_errors(
 
             // Add the next step for this job
             let mut next_job = job.clone();
-            next_job.step = CompilationStep::ASTParse;
-            next_job.requirements = Vec::new();
+            next_job.step = CompilationStep::Parse;
+            next_job.requirements = import_requirements_for_unit(
+                context,
+                &pp_data.imports,
+                CompilationStep::PreParse,
+                true,
+            );
             new_jobs.push(next_job);
 
             Some(HandleJobResult::Success(new_jobs.into()))
         }
-        CompilationStep::ASTParse => Some(HandleJobResult::Success(map_reqs_new_stage(
-            CompilationStep::InterfaceCombine,
-        ))),
-        CompilationStep::InterfaceCombine => Some(HandleJobResult::Success(map_reqs_new_stage(
+
+        CompilationStep::Parse => Some(HandleJobResult::Success(map_reqs_new_stage(
             CompilationStep::Typechecking,
+            false,
         ))),
+
         CompilationStep::Typechecking => {
             // Stop here for LSP - no need for bytecode/codegen
             Some(HandleJobResult::Success([].into()))

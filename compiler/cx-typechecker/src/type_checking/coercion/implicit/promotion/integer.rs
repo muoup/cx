@@ -1,8 +1,8 @@
+use cx_log::CXResult;
 use cx_mir::mir::{
     expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
     r#type::{MIRType, MIRTypeKind},
 };
-use cx_util::CXResult;
 
 use crate::{
     environment::TypeEnvironment,
@@ -17,11 +17,9 @@ pub fn try_promotion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResult
         return CoercionResult::unapplied(expr);
     };
 
-    let integer_type = env
-        .get_realized_type("int")
-        .expect("int type should be defined");
+    let integer_type = env.get_intrinsic_type("int");
 
-    let MIRTypeKind::Integer { _type: int, .. } = integer_type.kind else {
+    let MIRTypeKind::Integer { _type: int, .. } = &integer_type.kind else {
         unreachable!("int type should be an integer");
     };
 

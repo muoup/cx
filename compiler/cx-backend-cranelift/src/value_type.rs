@@ -1,6 +1,6 @@
 use cranelift::codegen::ir;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
-use cx_util::{CXError, CXResult};
+use cx_log::{CXError, CXResult};
 
 pub(crate) fn get_cranelift_abi_type(val_type: &LMIRType) -> CXResult<ir::AbiParam> {
     get_cranelift_type(val_type).map(ir::AbiParam::new)

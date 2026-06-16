@@ -5,11 +5,11 @@ struct Resource : @nodrop {
 };
 
 Resource pass_through(Resource resource) {
-    println("pass_through");
+    std::io::println("pass_through");
     return move resource;
 }
 
-void Resource::drop(this) {
+void Resource::drop(Resource this) {
     printf("drop %d\n", this.data);
     @leak(this);
 }
@@ -20,7 +20,7 @@ int main() {
     };
     Resource forwarded = pass_through(move resource);
 
-    println("after pass_through");
-    forwarded.drop();
+    std::io::println("after pass_through");
+    move forwarded |> Resource::drop();
     return 0;
 }

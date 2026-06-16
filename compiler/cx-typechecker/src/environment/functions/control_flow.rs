@@ -1,18 +1,26 @@
-use std::path::Path;
+use std::{collections::HashSet, path::Path};
 
-use cx_ast::ast::CXExpression;
+use cx_ast::ast::expression::CXExpression;
+use cx_log::CXResult;
 use cx_tokens::TokenRange;
 use cx_tokens::token::Token;
-use cx_util::CXResult;
 use cx_util::scoped_map::ScopedMap;
-
-use crate::log::TypeError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BindingMoveState {
     Available,
     Moved,
     ConditionallyMoved,
+}
+
+impl BindingMoveState {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BindingMoveState::Available => "available",
+            BindingMoveState::Moved => "moved",
+            BindingMoveState::ConditionallyMoved => "conditionally moved",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -154,9 +162,9 @@ impl ControlFlow {
                 .collect::<Vec<_>>();
 
             if let Some(range) = scope.anchor_range.as_ref() {
-                return Self::type_error_at_range(
-                    compilation_unit,
+                return crate::log::type_error_result_for_range(
                     tokens,
+                    compilation_unit,
                     range,
                     format!(
                         "nodrop local(s) reach scope end without move or @leak: {}",
@@ -455,6 +463,7 @@ impl ControlFlow {
                     &arrows,
                     &state.join_range,
                     &state.join_name,
+                    state.require_nodrop_discharge,
                 )?
                 else {
                     return Ok(None);
@@ -470,9 +479,9 @@ impl ControlFlow {
                         .collect::<Vec<_>>();
 
                     if !live.is_empty() {
-                        return Self::type_error_at_range(
-                            compilation_unit,
+                        return crate::log::type_error_result_for_range(
                             tokens,
+                            compilation_unit,
                             &state.join_range,
                             format!(
                                 "nodrop binding(s) must be moved or @leak'ed before function exit: {}",
@@ -500,6 +509,7 @@ impl ControlFlow {
                     &continue_arrows,
                     &state.join_range,
                     "loop continue join",
+                    false,
                 )?
                 else {
                     let Some(exit_bindings) = Self::merge_binding_states(
@@ -509,6 +519,7 @@ impl ControlFlow {
                         &state.exit_arrows,
                         &state.join_range,
                         "loop exit join",
+                        false,
                     )?
                     else {
                         return Ok(None);
@@ -538,6 +549,7 @@ impl ControlFlow {
                     &exit_arrows,
                     &state.join_range,
                     "loop exit join",
+                    false,
                 )?
                 else {
                     return Ok(None);
@@ -556,6 +568,7 @@ impl ControlFlow {
         arrows: &[ControlFlowArrow],
         join_range: &TokenRange,
         join_name: &str,
+        discharge_only_nodrop: bool,
     ) -> CXResult<Option<Vec<(String, TrackedBindingState)>>> {
         if arrows.is_empty() {
             return Ok(None);
@@ -564,14 +577,42 @@ impl ControlFlow {
         let mut merged_bindings = Vec::new();
         let mut inconsistent = Vec::new();
 
-        for (name, base_binding) in entry_snapshot.tracked_bindings.iter() {
+        // TODO: This can probably be simplified
+        
+        let mut names = entry_snapshot
+            .tracked_bindings
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect::<HashSet<_>>();
+        for arrow in arrows {
+            names.extend(
+                arrow
+                    .snapshot
+                    .tracked_bindings
+                    .iter()
+                    .map(|(name, _)| name.clone()),
+            );
+        }
+        let mut names = names.into_iter().collect::<Vec<_>>();
+        names.sort();
+
+        for name in names {
+            let base_binding = entry_snapshot
+                .tracked_bindings
+                .get(name.as_str())
+                .or_else(|| {
+                    arrows
+                        .iter()
+                        .find_map(|arrow| arrow.snapshot.tracked_bindings.get(name.as_str()))
+                })
+                .expect("Binding name came from entry or arrow snapshot");
             let states = arrows
                 .iter()
                 .filter_map(|arrow| {
                     arrow
                         .snapshot
                         .tracked_bindings
-                        .get(name)
+                        .get(name.as_str())
                         .map(|binding| (arrow.label.as_str(), binding.state))
                 })
                 .collect::<Vec<_>>();
@@ -583,12 +624,12 @@ impl ControlFlow {
             let first_state = states[0].1;
             let merged_state = if states.iter().all(|(_, state)| *state == first_state) {
                 first_state
+            } else if discharge_only_nodrop && !base_binding.nodrop {
+                BindingMoveState::ConditionallyMoved
             } else {
                 let state_summary = states
                     .iter()
-                    .map(|(label, state)| {
-                        format!("{label} => {}", Self::describe_move_state(*state))
-                    })
+                    .map(|(label, state)| format!("{label} => {}", state.as_str()))
                     .collect::<Vec<_>>()
                     .join(", ");
                 inconsistent.push(format!("{name} [{state_summary}]"));
@@ -596,7 +637,7 @@ impl ControlFlow {
             };
 
             merged_bindings.push((
-                name.clone(),
+                name,
                 TrackedBindingState {
                     state: merged_state,
                     ..base_binding.clone()
@@ -612,54 +653,20 @@ impl ControlFlow {
             .iter()
             .map(|note| format!("conflict: {note}"))
             .collect::<Vec<_>>();
-        Self::type_error_at_range::<Option<Vec<(String, TrackedBindingState)>>>(
-            compilation_unit,
+        crate::log::type_error_result_for_range::<Option<Vec<(String, TrackedBindingState)>>>(
             tokens,
+            compilation_unit,
             join_range,
-            format!("nocopy binding(s) have inconsistent move state at {join_name}"),
+            format!("moved binding(s) have inconsistent move state at {join_name}"),
             notes,
         )
     }
 
     fn apply_merged_bindings(&mut self, merged_bindings: &[(String, TrackedBindingState)]) {
         for (name, binding) in merged_bindings {
-            if self.tracked_bindings.get(name).is_some() {
-                self.tracked_bindings.insert(name.clone(), binding.clone());
+            if let Some(existing) = self.tracked_bindings.get_mut(name) {
+                *existing = binding.clone();
             }
-        }
-    }
-
-    fn type_error_at_range<T>(
-        compilation_unit: &Path,
-        tokens: &[Token],
-        range: &TokenRange,
-        message: String,
-        notes: Vec<String>,
-    ) -> CXResult<T> {
-        let (byte_start, byte_end) =
-            crate::log::byte_range_for_tokens(tokens, range.start_token, range.end_token);
-        let compilation_unit = (!range.file_origin.is_empty())
-            .then(|| range.file_origin.as_ref().into())
-            .or_else(|| {
-                crate::log::file_origin_for_tokens(tokens, range.start_token, range.end_token)
-            })
-            .unwrap_or_else(|| compilation_unit.to_owned());
-        Err(Box::new(TypeError {
-            compilation_unit,
-            token_start: range.start_token,
-            token_end: range.end_token,
-            byte_start,
-            byte_end,
-            message,
-            notes,
-        }))
-    }
-
-    fn describe_move_state(state: BindingMoveState) -> &'static str {
-        match state {
-            BindingMoveState::Available => "available",
-            BindingMoveState::Moved => "moved",
-            BindingMoveState::ConditionallyMoved => "conditionally moved",
         }
     }
 }

@@ -173,11 +173,13 @@ fn expect_failure(input: &Path, analysis: bool, expected_stage: FailureStage) {
     }
 }
 
-fn run_binary(path: &Path) -> String {
+fn run_binary(path: &Path) -> Result<String, String> {
     let output = Command::new(path)
         .output()
-        .unwrap_or_else(|_| panic!("Failed to run output binary: {}", path.display()));
-    String::from_utf8(output.stdout).expect("Executable output was not valid UTF-8")
+        .map_err(|_| format!("Failed to run output binary: {}", path.display()))?;
+
+    String::from_utf8(output.stdout)
+        .map_err(|_| "Executable output was not valid UTF-8".to_string())
 }
 
 fn test_root() -> &'static Path {
@@ -204,55 +206,81 @@ fn run_end_to_end_test(input: &Path) {
         .display()
         .to_string();
 
-    let cranelift_temp = TestTempDir::new(&format!("{test_label}-cranelift"));
-    let cranelift_internal = cranelift_temp.path().join("internal");
-    std::fs::create_dir_all(&cranelift_internal).expect("Failed to create internal directory");
-    let cranelift_output = cranelift_temp.path().join("case.out");
-    let cranelift_config = compiler_config(
-        CompilerBackend::Cranelift,
-        cranelift_output.clone(),
+    let mut failures = Vec::new();
+
+    if let Err(failure) = run_backend_end_to_end(
+        input,
+        &expected_output,
         working_directory,
-        &cranelift_internal,
+        &test_label,
+        CompilerBackend::Cranelift,
+    ) {
+        failures.push(failure);
+    }
+
+    if cfg!(feature = "backend-llvm") {
+        if let Err(failure) = run_backend_end_to_end(
+            input,
+            &expected_output,
+            working_directory,
+            &test_label,
+            CompilerBackend::LLVM,
+        ) {
+            failures.push(failure);
+        }
+    }
+
+    if !failures.is_empty() {
+        panic!(
+            "End-to-end backend failures for {}:\n\n{}",
+            input.display(),
+            failures.join("\n\n")
+        );
+    }
+}
+
+fn run_backend_end_to_end(
+    input: &Path,
+    expected_output: &str,
+    working_directory: &Path,
+    test_label: &str,
+    backend: CompilerBackend,
+) -> Result<(), String> {
+    let backend_name = match backend {
+        CompilerBackend::Cranelift => "Cranelift",
+        CompilerBackend::LLVM => "LLVM",
+    };
+
+    let temp = TestTempDir::new(&format!("{test_label}-{backend_name}"));
+    let internal = temp.path().join("internal");
+    std::fs::create_dir_all(&internal).expect("Failed to create internal directory");
+    let output = temp.path().join("case.out");
+    let config = compiler_config(
+        backend,
+        output.clone(),
+        working_directory,
+        &internal,
         false,
         CompilationMode::Executable,
     );
 
-    standard_compilation(cranelift_config, base_file_name(input)).unwrap_or_else(|err| {
-        err.pretty_print();
-        panic!("Cranelift compilation failed");
-    });
-    assert_eq!(
-        expected_output,
-        run_binary(&cranelift_output),
-        "Cranelift output mismatch for {}",
-        input.display()
-    );
-
-    if cfg!(feature = "backend-llvm") {
-        let llvm_temp = TestTempDir::new(&format!("{test_label}-llvm"));
-        let llvm_internal = llvm_temp.path().join("internal");
-        std::fs::create_dir_all(&llvm_internal).expect("Failed to create internal directory");
-        let llvm_output = llvm_temp.path().join("case.out");
-        let llvm_config = compiler_config(
-            CompilerBackend::LLVM,
-            llvm_output.clone(),
-            working_directory,
-            &llvm_internal,
-            false,
-            CompilationMode::Executable,
-        );
-
-        standard_compilation(llvm_config, base_file_name(input)).unwrap_or_else(|err| {
-            err.pretty_print();
-            panic!("LLVM compilation failed");
-        });
-        assert_eq!(
-            expected_output,
-            run_binary(&llvm_output),
-            "LLVM output mismatch for {}",
-            input.display()
-        );
+    if let Err(err) = standard_compilation(config, base_file_name(input)) {
+        return Err(format!(
+            "{backend_name} compilation failed:\n{}",
+            err.error_message()
+        ));
     }
+
+    let actual_output =
+        run_binary(&output).map_err(|err| format!("{backend_name} execution failed: {err}"))?;
+
+    if expected_output != actual_output {
+        return Err(format!(
+            "{backend_name} output mismatch:\nexpected:\n{expected_output:?}\nactual:\n{actual_output:?}",
+        ));
+    }
+
+    Ok(())
 }
 
 #[allow(dead_code)]

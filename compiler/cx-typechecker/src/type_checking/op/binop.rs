@@ -1,12 +1,15 @@
-use cx_ast::ast::CXBinOp;
-use cx_mir::mir::{
-    expression::{
-        MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp,
-        MIRPtrBinOp, MIRPtrDiffBinOp,
+use cx_ast::ast::expression::CXBinOp;
+use cx_log::CXResult;
+use cx_mir::{
+    mir::{
+        expression::{
+            MIRBinOp, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp,
+            MIRPtrBinOp, MIRPtrDiffBinOp,
+        },
+        r#type::{MIRIntegerType, MIRType, MIRTypeKind},
     },
-    r#type::{MIRIntegerType, MIRType, MIRTypeKind},
+    type_context::MIRTypeContext,
 };
-use cx_util::CXResult;
 
 use crate::{
     environment::TypeEnvironment,
@@ -21,7 +24,6 @@ pub(crate) mod access;
 pub(crate) mod assign;
 pub(crate) mod calls;
 pub(crate) mod is;
-pub(crate) mod scoped_calls;
 
 pub(crate) fn dispatch(
     env: &mut TypeEnvironment,
@@ -55,13 +57,13 @@ pub(crate) fn resolve_logical(
             lhs.token_range.as_ref(),
             "Invalid operands to logical operation {:?}, {} and {}",
             op,
-            lhs._type.display_with(&env.symbols.context),
-            rhs._type.display_with(&env.symbols.context)
+            lhs._type.display_with(&env.symbols),
+            rhs._type.display_with(&env.symbols)
         );
     }
 
-    let lhs = coerce_scalar_to_bool(env, lhs)?;
-    let rhs = coerce_scalar_to_bool(env, rhs)?;
+    let lhs = implicit_cast(env, lhs, &MIRType::bool())?;
+    let rhs = implicit_cast(env, rhs, &MIRType::bool())?;
 
     let operator = MIRBinOp::Integer {
         itype: MIRIntegerType::I1,
@@ -72,7 +74,7 @@ pub(crate) fn resolve_logical(
         },
     };
 
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         MIRType::bool(),
         MIRExpressionKind::BinaryOperation {
             op: operator,
@@ -80,69 +82,6 @@ pub(crate) fn resolve_logical(
             rhs: Box::new(rhs),
         },
     ))
-}
-
-fn coerce_scalar_to_bool(
-    env: &mut TypeEnvironment,
-    expr: MIRExpression,
-) -> CXResult<MIRExpression> {
-    if expr._type.is_integer() {
-        return implicit_cast(env, expr, &MIRType::bool());
-    }
-
-    match &expr._type.kind {
-        MIRTypeKind::Float { _type } => {
-            let zero = MIRExpression {
-                token_range: expr.token_range.clone(),
-                kind: MIRExpressionKind::FloatLiteral(0.0.into(), *_type),
-                _type: expr._type.clone(),
-            };
-
-            Ok(MIRExpression {
-                token_range: expr.token_range.clone(),
-                kind: MIRExpressionKind::BinaryOperation {
-                    op: MIRBinOp::Float {
-                        ftype: *_type,
-                        op: MIRFloatBinOp::FNE,
-                    },
-                    lhs: Box::new(expr),
-                    rhs: Box::new(zero),
-                },
-                _type: MIRType::bool(),
-            })
-        }
-        MIRTypeKind::PointerTo { .. } => {
-            let zero = MIRExpression {
-                token_range: expr.token_range.clone(),
-                kind: MIRExpressionKind::TypeConversion {
-                    conversion: MIRCoercion::IntToPtr { sextend: false },
-                    operand: Box::new(MIRExpression {
-                        token_range: expr.token_range.clone(),
-                        kind: MIRExpressionKind::IntLiteral(0, MIRIntegerType::I64, false),
-                        _type: MIRTypeKind::Integer {
-                            _type: MIRIntegerType::I64,
-                            signed: false,
-                        }
-                        .into(),
-                    }),
-                },
-                _type: expr._type.clone(),
-            };
-
-            Ok(MIRExpression {
-                token_range: expr.token_range.clone(),
-                kind: MIRExpressionKind::BinaryOperation {
-                    op: MIRBinOp::Pointer {
-                        op: MIRPtrBinOp::NE,
-                    },
-                    lhs: Box::new(expr),
-                    rhs: Box::new(zero),
-                },
-                _type: MIRType::bool(),
-            })
-        }
-        _ => unreachable!("logical operands should already be scalar"),
-    }
 }
 
 pub(crate) fn resolve_std_arithmetic(
@@ -165,8 +104,8 @@ pub(crate) fn resolve_std_arithmetic(
             env,
             lhs.token_range.as_ref(),
             "Invalid binary operation {op} for types {} and {}",
-            lhs.get_type().display_with(&env.symbols.context),
-            rhs.get_type().display_with(&env.symbols.context)
+            lhs.get_type().display_with(&env.symbols),
+            rhs.get_type().display_with(&env.symbols)
         )
     }
 }
@@ -214,13 +153,13 @@ fn coerce_float_binop(
                 env,
                 lhs.token_range.as_ref(),
                 "Invalid float binary operation {op} for types {} and {}",
-                lhs.get_type().display_with(&env.symbols.context),
-                rhs.get_type().display_with(&env.symbols.context)
+                lhs.get_type().display_with(&env.symbols),
+                rhs.get_type().display_with(&env.symbols)
             );
         }
     };
 
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         return_type,
         MIRExpressionKind::BinaryOperation {
             op: MIRBinOp::Float {
@@ -260,7 +199,7 @@ fn coerce_pointer_binop(
             }
         };
 
-        return Ok(TypecheckResult::new_base(
+        return Ok(TypecheckResult::new(
             return_type,
             MIRExpressionKind::BinaryOperation {
                 op: MIRBinOp::Pointer { op },
@@ -284,7 +223,7 @@ fn coerce_pointer_binop(
     *non_pointer = implicit_cast(env, std::mem::take(non_pointer), &intptr.into())?;
 
     let ptr_type = pointer._type.clone();
-    let ptr_inner = Box::new(env.symbols.context.ptr_inner(&ptr_type).cloned().unwrap());
+    let ptr_inner = Box::new(env.symbols.ptr_inner(&ptr_type).cloned().unwrap());
 
     let (return_type, op) = match op {
         CXBinOp::Add => (
@@ -296,7 +235,7 @@ fn coerce_pointer_binop(
         ),
 
         CXBinOp::ArrayIndex => (
-            env.symbols.context.mem_ref_to(ptr_inner.as_ref().clone()),
+            env.symbols.mem_ref_to(ptr_inner.as_ref().clone()),
             MIRBinOp::PtrDiff {
                 op: MIRPtrDiffBinOp::ADD,
                 ptr_inner,
@@ -340,7 +279,7 @@ fn coerce_pointer_binop(
         }
     };
 
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         return_type,
         MIRExpressionKind::BinaryOperation {
             op,
@@ -393,8 +332,8 @@ fn coerce_integral_binop(
                 env,
                 lhs.token_range.as_ref(),
                 "Invalid integer binary operation {op} for types {} and {}",
-                lhs.get_type().display_with(&env.symbols.context),
-                rhs.get_type().display_with(&env.symbols.context)
+                lhs.get_type().display_with(&env.symbols),
+                rhs.get_type().display_with(&env.symbols)
             );
         }
     };
@@ -404,12 +343,12 @@ fn coerce_integral_binop(
             env,
             lhs.token_range.as_ref(),
             "Invalid integer binary operation {op} for types {} and {}",
-            lhs.get_type().display_with(&env.symbols.context),
-            rhs.get_type().display_with(&env.symbols.context)
+            lhs.get_type().display_with(&env.symbols),
+            rhs.get_type().display_with(&env.symbols)
         );
     };
 
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         return_type,
         MIRExpressionKind::BinaryOperation {
             op: MIRBinOp::Integer {

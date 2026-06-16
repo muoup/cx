@@ -1,7 +1,10 @@
 //! MIR to LMIR lowering
 
-use cx_mir::mir::program::{MIRFunction, MIRGlobalVariable, MIRUnit};
-use cx_util::CXResult;
+use cx_log::CXResult;
+use cx_mir::{
+    mir::{data::MIRFunction, global::MIRGlobalVariable},
+    MIRUnit,
+};
 
 use crate::builder::LMIRBuilder;
 

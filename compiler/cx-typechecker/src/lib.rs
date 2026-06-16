@@ -1,110 +1,86 @@
-use cx_ast::ast::{CXAST, CXFunctionStmt, VisibilityMode};
-use cx_mir::mir::program::MIRBaseMappings;
-use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
-use cx_util::CXResult;
-
-pub mod log;
+use cx_ast::ast::modifiers::{CX_CONST, CXLinkageMode};
+use cx_ast::decomposition::{CXGenerationAST, CXGenerationStmt};
+use cx_log::CXResult;
+use cx_mir::EnvironmentNamespace;
+use cx_mir::mir::global::{MIRGlobalVarKind, MIRGlobalVariable};
 
 pub mod environment;
+pub mod log;
+pub(crate) mod requests;
+pub mod symbol;
 mod type_checking;
 
-pub use type_checking::{
-    complete_base_functions, complete_base_globals, realize_fn_implementation,
-};
-
+use crate::requests::fulfill_requests;
+use crate::symbol::completion::{complete_prototype, complete_type};
+use crate::type_checking::constexpr::constexpr_evaluate;
+use crate::type_checking::typechecker::typecheck_expr;
 use crate::{environment::TypeEnvironment, type_checking::functions::typecheck_function};
 
 pub fn typecheck(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    ast: &CXAST,
+    namespace: &EnvironmentNamespace,
+    ast: &CXGenerationAST,
 ) -> CXResult<()> {
-    complete_base_globals(env, base_data)?;
-    complete_base_functions(env, base_data)?;
+    for stmt in ast.generation_stmts.iter() {
+        match stmt {
+            CXGenerationStmt::Function { prototype, body } => {
+                let prototype = complete_prototype(env, namespace, prototype)?;
+                typecheck_function(env, namespace, prototype.clone(), body)?;
+            }
 
-    for stmt in ast.function_stmts.iter() {
-        if let CXFunctionStmt::FunctionDefinition { prototype, body } = stmt {
-            let prototype = env.complete_prototype(base_data, None, prototype)?;
-            typecheck_function(env, base_data, prototype.clone(), body)?;
+            CXGenerationStmt::StringLiteral { name, value } => {
+                let global = MIRGlobalVariable {
+                    is_mutable: false,
+                    linkage: CXLinkageMode::Static,
+                    kind: MIRGlobalVarKind::StringLiteral {
+                        name: name.clone(),
+                        value: value.clone(),
+                    },
+                };
+
+                env.items.push_generated_global(global);
+            }
+
+            CXGenerationStmt::AddressableGlobal {
+                name,
+                _type,
+                linkage,
+                initializer,
+            } => {
+                let _type = complete_type(env, namespace, _type)?;
+                let constexpr_init = initializer
+                    .as_ref()
+                    .map(|init| {
+                        typecheck_expr(env, namespace, init, Some(&_type))
+                            .and_then(|tc| tc.standard_ready_coerce(env, init.token_range()))
+                            .and_then(|tc| constexpr_evaluate(env, tc))
+                    })
+                    .transpose()?
+                    .map(|ce| {
+                        ce.get_integer().ok_or_else(|| {
+                            unreachable!(
+                                "Global variable initializer must be a constant integer expression"
+                            )
+                        })
+                    })
+                    .transpose()?;
+
+                let global = MIRGlobalVariable {
+                    is_mutable: _type.get_specifier(CX_CONST),
+                    linkage: *linkage,
+                    kind: MIRGlobalVarKind::Variable {
+                        name: name.clone(),
+                        _type,
+                        initializer: constexpr_init,
+                    },
+                };
+
+                env.items.push_generated_global(global);
+            }
         }
     }
 
-    Ok(())
-}
-
-pub fn gather_interface(
-    context: &GlobalCompilationContext,
-    unit: &CompilationUnit,
-) -> CXResult<()> {
-    let interface = build_interface(context, unit)?;
-    context
-        .module_db
-        .base_mappings
-        .insert(unit.clone(), interface);
+    fulfill_requests(env)?;
 
     Ok(())
-}
-
-pub fn build_interface(
-    context: &GlobalCompilationContext,
-    unit: &CompilationUnit,
-) -> CXResult<MIRBaseMappings> {
-    let ast = context.module_db.naive_ast.get(unit);
-    let mut base_type_map = ast.type_data.clone();
-    let mut base_fn_map = ast.function_data.clone();
-    let mut base_globals = ast.global_variables.clone();
-
-    for import in ast.imports.iter() {
-        let unit =
-            CompilationUnit::from_module_path(import.clone(), &context.config.working_directory);
-        let ast = context.module_db.naive_ast.get(&unit);
-
-        for (type_name, cx_type) in ast.type_data.standard_iter() {
-            if cx_type.visibility != VisibilityMode::Public {
-                continue;
-            };
-
-            base_type_map.insert_standard(type_name.clone(), cx_type.transfer(import));
-        }
-
-        for (fn_name, cx_fn) in ast.function_data.standard_iter() {
-            if cx_fn.visibility != VisibilityMode::Public {
-                continue;
-            };
-
-            base_fn_map.insert_standard(fn_name.clone(), cx_fn.transfer(import));
-        }
-
-        for (type_template_name, type_template) in ast.type_data.template_iter() {
-            if type_template.visibility != VisibilityMode::Public {
-                continue;
-            };
-
-            base_type_map
-                .insert_template(type_template_name.clone(), type_template.transfer(import));
-        }
-
-        for (fn_template_name, fn_template) in ast.function_data.template_iter() {
-            if fn_template.visibility != VisibilityMode::Public {
-                continue;
-            };
-
-            base_fn_map.insert_template(fn_template_name.clone(), fn_template.transfer(import));
-        }
-
-        for (global_name, global_var) in ast.global_variables.iter() {
-            if global_var.visibility != VisibilityMode::Public {
-                continue;
-            };
-
-            base_globals.insert(global_name.clone(), global_var.transfer(import));
-        }
-    }
-
-    Ok(MIRBaseMappings {
-        unit: unit.as_str().to_owned(),
-        type_data: base_type_map,
-        fn_data: base_fn_map,
-        global_variables: base_globals,
-    })
 }

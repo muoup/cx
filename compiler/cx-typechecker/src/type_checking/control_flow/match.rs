@@ -3,30 +3,38 @@ use std::collections::HashSet;
 use crate::environment::ScopeArrowSink;
 use crate::environment::ScopeExitTarget;
 use crate::environment::TypeEnvironment;
-use crate::environment::symbols::SymbolValueOrigin;
 use crate::log_typecheck_error;
+use crate::symbol::completion::complete_template_input;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::control_flow::expr_may_fall_through;
-use crate::type_checking::pattern::tagged_union::{TypeConstructor, deconstruct_type_constructor};
+use crate::type_checking::pattern::tagged_union::{
+    TypeConstructor, resolve_type_constructor_pattern,
+};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::{CXExprKind, CXExpression};
+use cx_ast::ast::template::CXTemplateInput;
+use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
+use cx_log::CXResult;
+use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::{
-    data::{MIRIntegerType, MIRType, MIRTypeKind},
-    expression::{MIRExpression, MIRExpressionKind},
-    program::MIRBaseMappings,
+    contextual_eq::TypeContextEqual,
+    data::{MIRType, MIRTypeKind},
+    expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
+    pattern::MIRPattern,
 };
-use cx_util::CXResult;
+use cx_mir::type_context::MIRTypeContext;
+use cx_util::namespace::QualifiedName;
 
 pub fn typecheck_match(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     condition: &CXExpression,
-    arms: &[(CXExpression, CXExpression)],
-    default: Option<&Box<CXExpression>>,
+    arms: &[(CXPattern, CXExpression)],
+    default: Option<&CXExpression>,
 ) -> CXResult<TypecheckResult> {
-    let mut expr_value = typecheck_expr(env, base_data, condition, None)
-        .and_then(|val| std_rval_promotion(env, val.into_expression()))?;
+    let mut expr_value = typecheck_expr(env, namespace, condition, None)
+        .and_then(|v| v.standard_ready_coerce(env, condition.token_range()))
+        .and_then(|v| std_rval_promotion(env, v))?;
     let mut expr_type = expr_value.get_type();
 
     env.push_scope(false, false);
@@ -54,7 +62,7 @@ pub fn typecheck_match(
                 _type: expr_type.clone(),
             };
         }
-        _ => condition_owned = true
+        _ => condition_owned = true,
     }
 
     let mut match_is_exhaustive = false;
@@ -63,40 +71,17 @@ pub fn typecheck_match(
             // Integer matching: each arm has an integer literal pattern
             let mut result_arms = Vec::new();
 
-            // Derive integer type from condition
-            let MIRTypeKind::Integer { _type, signed } = &expr_type.kind else {
-                return log_typecheck_error!(
-                    env,
-                    Some(condition.token_range()),
-                    "Match condition must be an integer type, found {}",
-                    expr_type.display_with(&env.symbols.context)
-                );
-            };
-
             for (pattern, body) in arms.iter() {
-                let CXExprKind::IntLiteral {
-                    val: pattern_value, ..
-                } = &pattern.kind
-                else {
+                let CXPattern::Integer(pattern_value) = pattern else {
                     return log_typecheck_error!(
                         env,
-                        Some(pattern.token_range()),
+                        Some(condition.token_range()),
                         "Match pattern must be an integer literal"
                     );
                 };
 
-                // Create a pattern expression that matches this value
-                // Use the condition's integer type for the pattern
-                let pattern_expr = MIRExpression {
-                    token_range: None,
-                    kind: MIRExpressionKind::IntLiteral(*pattern_value, *_type, *signed),
-                    _type: MIRType::from(MIRTypeKind::Integer {
-                        signed: *signed,
-                        _type: *_type,
-                    }),
-                };
-
-                let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
+                let body_expr = typecheck_expr(env, namespace, body, None)
+                    .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
                 if expr_may_fall_through(&body_expr) {
                     env.function.enqueue_scope_arrow(
                         &ScopeExitTarget {
@@ -109,95 +94,88 @@ pub fn typecheck_match(
                 }
                 env.function.restore_snapshot(&base_snapshot);
 
-                result_arms.push((Box::new(pattern_expr), Box::new(body_expr)));
+                result_arms.push((MIRPattern::Integer(*pattern_value), Box::new(body_expr)));
             }
 
             result_arms
         }
 
-        MIRTypeKind::TaggedUnion { .. } => {
-            let expected_union_name = expr_type.get_name().unwrap();
-            let variants = expr_type
-                .aggregate_fields(&env.symbols.context)
-                .expect("Tagged union match requires completed variants")
-                .clone();
+        MIRTypeKind::TaggedUnion { variants, .. } => {
+            let expected_union_name = expr_type.member_lookup_identifier().unwrap();
+
             // Tagged union matching: each arm has a type constructor pattern
             let mut result_arms = Vec::new();
             let mut matched_variants = HashSet::new();
 
             for (pattern, body) in arms.iter() {
                 let TypeConstructor {
-                    union_type,
+                    union_name,
                     variant_name,
-                    inner,
-                } = deconstruct_type_constructor(env, base_data, pattern)?;
-                let inner = inner.filter(|inner| !matches!(inner.kind, CXExprKind::Unit));
+                    template_input,
+                    inner_name,
+                } = resolve_type_constructor_pattern(env, namespace, condition, pattern)?;
 
-                if union_type.get_name().unwrap().as_str() != expected_union_name.as_str() {
+                if expected_union_name != &union_name {
                     return log_typecheck_error!(
                         env,
-                        Some(pattern.token_range()),
-                        "Tagged union variant does not match the type being matched"
+                        Some(condition.token_range()),
+                        "Tagged union variant does not match the type being matched, found '{}', expected '{}'",
+                        union_name,
+                        expected_union_name
                     );
                 }
+                validate_variant_template_input(
+                    env,
+                    namespace,
+                    &expr_type,
+                    template_input.as_ref(),
+                    condition,
+                )?;
 
-                let Some((variant_id, variant_type)) = variants
-                    .iter()
-                    .enumerate()
-                    .find(|(_, (name, _))| name.as_str() == variant_name.as_str())
-                    .map(|(id, (_, _type))| (id, _type))
-                else {
+                let variant_idx = variants.iter().position(|field| {
+                    let Some(name) = field.name() else {
+                        return false;
+                    };
+
+                    name == variant_name.as_str()
+                });
+
+                let Some(variant_id) = variant_idx else {
                     return log_typecheck_error!(
                         env,
-                        Some(pattern.token_range()),
+                        Some(condition.token_range()),
                         "Variant '{}' not found in tagged union '{}'",
                         variant_name,
                         expected_union_name
                     );
                 };
-                matched_variants.insert(variant_id);
 
-                // Create a pattern that matches the tag value
-                let pattern_expr = MIRExpression {
-                    token_range: None,
-                    kind: MIRExpressionKind::IntLiteral(
-                        variant_id as i64,
-                        MIRIntegerType::I8,
-                        false,
-                    ),
-                    _type: MIRType::from(MIRTypeKind::Integer {
-                        signed: false,
-                        _type: MIRIntegerType::I8,
-                    }),
-                };
+                let variant_type = env
+                    .symbols
+                    .resolve_type_id(variants[variant_id].ty())
+                    .clone();
+
+                matched_variants.insert(variant_id);
 
                 let variant_get_type = if !expr_type.is_memory_reference() {
                     variant_type.clone()
                 } else {
-                    env.symbols.context.mem_ref_to(variant_type.clone())
+                    env.symbols.mem_ref_to(variant_type.clone())
                 };
 
                 // Extract the variant value and bind it
-                let variant_value_expr = TypecheckResult::new_base(
-                    variant_get_type,
-                    MIRExpressionKind::TaggedUnionGet {
+                let variant_value_expr = MIRExpression {
+                    _type: variant_get_type,
+                    token_range: None,
+                    kind: MIRExpressionKind::TaggedUnionGet {
                         value: Box::new(expr_value.clone()),
                         variant_type: variant_type.clone(),
                     },
-                )
-                .into_expression();
+                };
 
-                let body_expr = if let Some(inner) = inner {
-                    let CXExprKind::Identifier(name) = &inner.kind else {
-                        return log_typecheck_error!(
-                            env,
-                            variant_value_expr.token_range.as_ref(),
-                            "Tagged union variant pattern must bind to an identifier"
-                        );
-                    };
-
+                let body_expr = if let Some(inner_name) = &inner_name {
                     let body_expr = if condition_owned {
-                        let variant_ref_type = env.symbols.context.mem_ref_to(variant_type.clone());
+                        let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
                         let variant_region = MIRExpression {
                             token_range: None,
                             _type: variant_ref_type.clone(),
@@ -210,7 +188,7 @@ pub fn typecheck_match(
                             token_range: None,
                             _type: variant_ref_type.clone(),
                             kind: MIRExpressionKind::BindRegion {
-                                name: name.clone(),
+                                name: inner_name.clone(),
                                 _type: variant_type.clone(),
                                 initial_region: Box::new(variant_region),
                                 adopting: true,
@@ -219,21 +197,23 @@ pub fn typecheck_match(
 
                         env.push_scope(false, false);
                         env.function.set_scope_anchor(body);
-                        env.symbols.insert_value(
-                            name.clone(),
+                        env.symbols.insert_local_value(
+                            QualifiedName::root(inner_name.clone()),
                             MIRExpression {
                                 token_range: None,
-                                kind: MIRExpressionKind::Variable(name.clone()),
+                                kind: MIRExpressionKind::Variable {
+                                    name: inner_name.clone(),
+                                    location: SymbolValueOrigin::Local,
+                                },
                                 _type: variant_ref_type,
                             },
-                            Some(SymbolValueOrigin::Local),
                         );
-                        if env.symbols.is_nocopy(variant_type) {
-                            env.function
-                                .track_binding(name.as_string(), env.symbols.is_nodrop(variant_type));
-                        }
 
-                        let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
+                        env.function
+                            .track_binding(inner_name.as_string(), variant_type.is_nodrop());
+
+                        let body_expr = typecheck_expr(env, namespace, body, None)
+                            .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
                         env.pop_scope()?;
 
                         MIRExpression {
@@ -245,14 +225,14 @@ pub fn typecheck_match(
                         }
                     } else {
                         // Typecheck the body with the borrowed variant value bound.
-                        env.symbols.push_scope();
-                        env.symbols.insert_value(
-                            name.clone(),
+                        env.push_scope(false, false);
+                        env.symbols.insert_local_value(
+                            QualifiedName::new_raw(inner_name.clone()),
                             variant_value_expr,
-                            Some(SymbolValueOrigin::Local),
                         );
-                        let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
-                        env.symbols.pop_scope();
+                        let body_expr = typecheck_expr(env, namespace, body, None)
+                            .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
+                        env.pop_scope()?;
                         body_expr
                     };
                     if expr_may_fall_through(&body_expr) {
@@ -268,7 +248,8 @@ pub fn typecheck_match(
                     env.function.restore_snapshot(&base_snapshot);
                     body_expr
                 } else {
-                    let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
+                    let body_expr = typecheck_expr(env, namespace, body, None)
+                        .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
                     if expr_may_fall_through(&body_expr) {
                         env.function.enqueue_scope_arrow(
                             &ScopeExitTarget {
@@ -282,7 +263,14 @@ pub fn typecheck_match(
                     body_expr
                 };
 
-                result_arms.push((Box::new(pattern_expr), Box::new(body_expr)));
+                result_arms.push((
+                    MIRPattern::TaggedUnionVariant {
+                        sum_type: expr_type.clone(),
+                        variant_index: variant_id,
+                        inner_name,
+                    },
+                    Box::new(body_expr),
+                ));
             }
 
             match_is_exhaustive = matched_variants.len() == variants.len();
@@ -294,7 +282,7 @@ pub fn typecheck_match(
                 env,
                 Some(condition.token_range()),
                 "Match condition must be an integer or tagged union type, found {}",
-                expr_type.display_with(&env.symbols.context)
+                expr_type.display_with(&env.symbols)
             );
         }
     };
@@ -302,7 +290,8 @@ pub fn typecheck_match(
     // Handle default case
     let default_body = match default {
         Some(default_expr) => {
-            let body = typecheck_expr(env, base_data, default_expr, None)?.into_expression();
+            let body = typecheck_expr(env, namespace, default_expr, None)
+                .and_then(|v| v.standard_ready_coerce(env, default_expr.token_range()))?;
             if expr_may_fall_through(&body) {
                 env.function.enqueue_scope_arrow(
                     &ScopeExitTarget {
@@ -333,7 +322,7 @@ pub fn typecheck_match(
     env.pop_scope()?;
 
     // Build the match expression
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         MIRType::unit(),
         MIRExpressionKind::Match {
             condition: Box::new(expr_value),
@@ -342,4 +331,34 @@ pub fn typecheck_match(
             exhaustive: match_is_exhaustive || default.is_some(),
         },
     ))
+}
+
+fn validate_variant_template_input(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    union_type: &MIRType,
+    template_input: Option<&CXTemplateInput>,
+    condition: &CXExpression,
+) -> CXResult<()> {
+    let Some(template_input) = template_input else {
+        return Ok(());
+    };
+    let completed_input = complete_template_input(env, namespace, template_input)?;
+    let Some(template_data) = union_type.get_template_data() else {
+        return log_typecheck_error!(
+            env,
+            Some(condition.token_range()),
+            "Non-templated tagged union pattern may not have template arguments"
+        );
+    };
+
+    if !completed_input.contextual_eq(&template_data.template_input, &env.symbols) {
+        return log_typecheck_error!(
+            env,
+            Some(condition.token_range()),
+            "Tagged union pattern template arguments do not match the matched type"
+        );
+    }
+
+    Ok(())
 }

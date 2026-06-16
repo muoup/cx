@@ -1,6 +1,8 @@
 import std::io;
 
-void exit(int code);
+extern "C":
+
+#include <stdlib.h>
 
 public:
 
@@ -9,31 +11,35 @@ enum union opt<T> : @copy_traits(T) {
     some :: T
 };
 
-bool opt<T>::is_some<T>(*this) {
-    return this is opt<T>::some(_);
+bool opt::is_some<T>(opt<T>& this) {
+    return this is opt::some<T>(_);
 }
 
-opt<U> opt<T>::map<T, U>(*this, U (*func)(T)) {
-    if (this is opt<T>::some(value)) {
-        return opt<U>::some(func(value));
+bool opt::is_none<T>(opt<T>& this) {
+    return this is opt::none<T>();
+}
+
+opt<U> opt::map<T, U>(opt<T> this, U (*func)(T)) {
+    if (this is opt::some<T>(value)) {
+        return opt::some<U>(func(value));
     }
 
-    return opt<U>::none();
+    return opt::none<U>();
 }
 
-T opt<T>::unwrap_or<T>(*this, T otherwise) {
-    if (this is opt<T>::some(value)) {
+T opt::unwrap_or<T>(opt<T> this, T otherwise) {
+    if (this is opt::some<T>(value)) {
         return value;
     }
 
     return move otherwise;
 }
 
-T opt<T>::unwrap<T>(this) {
+T opt::unwrap<T>(opt<T> this) {
     match (move this) {
-        opt<T>::some(val) => return move val;
-        opt<T>::none() => {
-            println("Error: called `opt::unwrap()` on a `None` value");
+        opt::some<T>(val) => return move val;
+        opt::none<T>() => {
+            std::io::println("Error: called `opt::unwrap()` on a `None` value");
             exit(1);
         }
     }

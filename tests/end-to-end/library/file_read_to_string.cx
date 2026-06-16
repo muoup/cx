@@ -1,18 +1,18 @@
 import std::file;
-import std::io;
 import std::optional;
 import std::string;
 
 #include <stdio.h>
 
 i32 main() {
-    file f = file::open("end-to-end/library/file_read_to_string.txt", "r").unwrap();
-    string s = f.read_to_string();
+    std::file::file f = std::file::file::open("end-to-end/library/file_read_to_string.txt", "r")
+        |> std::optional::opt::unwrap<std::file::file>();
+    std::string::string s = f |> std::file::file::read_to_string();
 
-    printf("%s", @unsafe((const char*)s.as_str()));
+    printf("%s", @unsafe((const char*)(s |> std::string::string::as_str())));
 
-    f.close();
-    s.drop();
+    move f |> std::file::file::close();
+    move s |> std::string::string::drop();
 
     return 0;
 }

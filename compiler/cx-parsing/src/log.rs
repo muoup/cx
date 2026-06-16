@@ -1,49 +1,75 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use cx_log::{PointingError, UnderlineError};
 use cx_tokens::token::Token;
-use cx_util::CXErrorTrait;
+use cx_tokens::{byte_range_for_tokens, file_origin_for_tokens, TokenRange};
 
-#[derive(Clone, Debug)]
-pub struct ParseErrorLog {
-    pub message: String,
-    pub file: PathBuf,
-    pub token: Token,
-    pub previous_token: Option<Token>,
+fn file_for_token(default_file: &Path, token: &Token) -> PathBuf {
+    if token.file_origin.as_os_str().is_empty() {
+        default_file.to_owned()
+    } else {
+        PathBuf::from(token.file_origin.as_ref())
+    }
 }
 
-impl CXErrorTrait for ParseErrorLog {
-    fn pretty_print(&self) {
-        let file = if self.token.file_origin.as_os_str().is_empty() {
-            self.file.clone()
-        } else {
-            PathBuf::from(self.token.file_origin.as_ref())
-        };
-        cx_log::pretty_point_error(&self.message, &file, self.token.byte_start_index);
-    }
+fn line_start_byte(contents: &str, index: usize) -> usize {
+    let safe_index = index.min(contents.len());
+    contents[..safe_index]
+        .rfind('\n')
+        .map(|idx| idx + 1)
+        .unwrap_or(0)
+}
 
-    fn error_prefix(&self) -> String {
-        "PARSER ERROR".to_string()
-    }
+fn line_content_start_byte(contents: &str, index: usize) -> usize {
+    let line_start = line_start_byte(contents, index);
+    let line_end = contents[line_start..]
+        .find('\n')
+        .map(|offset| line_start + offset)
+        .unwrap_or(contents.len());
+    let line = &contents[line_start..line_end];
+    let first_non_whitespace = line
+        .char_indices()
+        .find(|(_, ch)| !ch.is_whitespace())
+        .map(|(offset, _)| offset)
+        .unwrap_or(0);
 
-    fn error_content(&self) -> String {
-        self.message.clone()
-    }
+    line_start + first_non_whitespace
+}
 
-    fn compilation_unit(&self) -> Option<PathBuf> {
-        Some(self.file.clone())
-    }
+pub fn pointing_error(
+    default_file: &Path,
+    token: Token,
+    previous_token: Option<Token>,
+    message: String,
+) -> PointingError {
+    let file = file_for_token(default_file, &token);
+    let anchor_token = previous_token.as_ref().unwrap_or(&token);
+    let diagnostic_start = std::fs::read_to_string(&file)
+        .ok()
+        .map(|source| line_content_start_byte(&source, anchor_token.byte_start_index))
+        .unwrap_or(anchor_token.byte_start_index);
+    let diagnostic_end = anchor_token
+        .byte_end_index
+        .max(anchor_token.byte_start_index.saturating_add(1));
 
-    fn token_start(&self) -> Option<usize> {
-        Some(self.token.byte_start_index)
-    }
+    PointingError::new("PARSER ERROR", message, file, token.byte_start_index)
+        .with_diagnostic_range(diagnostic_start, diagnostic_end)
+}
 
-    fn token_end(&self) -> Option<usize> {
-        Some(self.token.byte_end_index)
-    }
+pub fn underline_error(
+    default_file: &Path,
+    tokens: &[Token],
+    range: &TokenRange,
+    message: String,
+) -> UnderlineError {
+    let file = (!range.file_origin.is_empty())
+        .then(|| PathBuf::from(range.file_origin.as_ref()))
+        .or_else(|| file_origin_for_tokens(tokens, range.start_token, range.end_token))
+        .unwrap_or_else(|| default_file.to_owned());
+    let (byte_start, byte_end) = byte_range_for_tokens(tokens, range.start_token, range.end_token);
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
+    UnderlineError::new("PARSER ERROR", message, file, byte_start, byte_end)
+        .with_token_range(range.start_token, range.end_token)
 }
 
 #[macro_export]
@@ -56,12 +82,12 @@ macro_rules! log_parse_error {
             //     panic!();
             // }
 
-            Err(Box::new($crate::log::ParseErrorLog {
+            Err(Box::new($crate::log::pointing_error(
+                $data.tokens.file.as_path(),
+                $data.tokens.slice[$data.tokens.index].clone(),
+                $data.tokens.prev().cloned(),
                 message,
-                file: $data.tokens.file.clone(),
-                token: $data.tokens.slice[$data.tokens.index].clone(),
-                previous_token: $data.tokens.prev().cloned(),
-            }) as Box<dyn cx_util::CXErrorTrait>)
+            )) as Box<dyn cx_log::CXErrorTrait>)
         }
     };
 }
@@ -71,13 +97,32 @@ macro_rules! log_preparse_error {
     ($toks:expr, $($arg:tt)*) => {
         {
             let message = format!("{}", format!($($arg)*));
+            let toks = &$toks;
+            let token = toks.peek().cloned().or_else(|| toks.prev().cloned()).unwrap();
 
-            Err(Box::new($crate::log::ParseErrorLog {
+            Err(Box::new($crate::log::pointing_error(
+                toks.file.as_path(),
+                token,
+                toks.prev().cloned(),
                 message,
-                file: $toks.file.clone(),
-                token: $toks.peek().unwrap().clone(),
-                previous_token: $toks.prev().cloned(),
-            }) as Box<dyn cx_util::CXErrorTrait>)
+            )) as Box<dyn cx_log::CXErrorTrait>)
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! log_parse_underline_error {
+    ($data:expr, $toks:expr, $($arg:tt)*) => {
+        {
+            let message = format!("{}", format!($($arg)*));
+
+            Err(Box::new($crate::log::underline_error(
+                $data.tokens.file.as_path(),
+                $data.tokens.slice,
+                $toks,
+                message,
+            )) as Box<dyn cx_log::CXErrorTrait>)
+
         }
     };
 }

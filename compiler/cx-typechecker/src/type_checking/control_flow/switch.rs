@@ -4,17 +4,17 @@ use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::CXExpression;
+use cx_ast::ast::expression::CXExpression;
+use cx_log::CXResult;
+use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
-    program::MIRBaseMappings,
 };
-use cx_util::CXResult;
 
 pub fn typecheck_switch(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     condition: &CXExpression,
     block: &[CXExpression],
     cases: &[(u64, usize)],
@@ -26,8 +26,9 @@ pub fn typecheck_switch(
         .configure_merge_scope(condition, "switch join", None, false);
 
     let join_scope_idx = env.function.current_scope_index();
-    let condition_value = typecheck_expr(env, base_data, condition, None)
-        .and_then(|val| std_rval_promotion(env, val.into_expression()))?;
+    let condition_value = typecheck_expr(env, namespace, condition, None)
+        .and_then(|v| v.standard_ready_coerce(env, condition.token_range()))
+        .and_then(|v| std_rval_promotion(env, v))?;
     let base_snapshot = env.function.current_snapshot();
 
     // Build match arms from the cases
@@ -46,7 +47,8 @@ pub fn typecheck_switch(
             );
         };
 
-        let case_body_expr = typecheck_expr(env, base_data, case_expr, None)?.into_expression();
+        let case_body_expr = typecheck_expr(env, namespace, case_expr, None)
+            .and_then(|v| v.standard_ready_coerce(env, case_expr.token_range()))?;
         if expr_may_fall_through(&case_body_expr) {
             env.function.enqueue_scope_arrow(
                 &ScopeExitTarget {
@@ -66,15 +68,13 @@ pub fn typecheck_switch(
                 env,
                 condition_value.token_range.as_ref(),
                 "Switch condition must be an integer type, found {}",
-                condition_value
-                    .get_type()
-                    .display_with(&env.symbols.context)
+                condition_value.get_type().display_with(&env.symbols)
             );
         };
 
         let pattern_expr = MIRExpression {
             token_range: None,
-            kind: MIRExpressionKind::IntLiteral(*case_value as i64, *_type, *signed),
+            kind: MIRExpressionKind::IntLiteral(*case_value as i64),
             _type: MIRType::from(MIRTypeKind::Integer {
                 signed: *signed,
                 _type: *_type,
@@ -96,7 +96,8 @@ pub fn typecheck_switch(
                     block.len()
                 );
             };
-            let body_expr = typecheck_expr(env, base_data, expr, None)?.into_expression();
+            let body_expr = typecheck_expr(env, namespace, expr, None)
+                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
             if expr_may_fall_through(&body_expr) {
                 env.function.enqueue_scope_arrow(
                     &ScopeExitTarget {
@@ -127,7 +128,7 @@ pub fn typecheck_switch(
     env.pop_scope()?;
 
     // Build the match expression
-    Ok(TypecheckResult::new_base(
+    Ok(TypecheckResult::new(
         MIRType::unit(),
         MIRExpressionKind::CSwitch {
             condition: Box::new(condition_value),

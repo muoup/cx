@@ -4,11 +4,15 @@ use cx_lmir::{
     types::{LMIRIntegerType, LMIRType, LMIRTypeKind},
     LMIRInstructionKind, LMIRValue,
 };
-use cx_mir::mir::{
-    data::{MIRType, MIRTypeKind},
-    expression::{MIRExpression, MIRExpressionKind},
+use cx_log::CXResult;
+use cx_mir::{
+    mir::{
+        data::{MIRType, MIRTypeKind},
+        expression::{MIRExpression, MIRExpressionKind, MIRPostcondition},
+        pattern::MIRPattern,
+    },
+    type_context::MIRTypeContext,
 };
-use cx_util::CXResult;
 
 use super::expressions::lower_expression;
 use crate::{
@@ -253,7 +257,7 @@ pub fn lower_cswitch(
         let case_block_id = builder.create_block(Some("switch_case"));
         case_blocks.push(case_block_id.clone());
 
-        if let MIRExpressionKind::IntLiteral(value, _, _) = &case_value.kind {
+        if let MIRExpressionKind::IntLiteral(value) = &case_value.kind {
             targets.push((*value as u64, case_block_id));
         } else {
             panic!("CSwitch case must be an integer literal");
@@ -310,16 +314,17 @@ pub fn lower_cswitch(
 pub fn lower_match(
     builder: &mut LMIRBuilder,
     condition: &MIRExpression,
-    arms: &[(Box<MIRExpression>, Box<MIRExpression>)],
+    arms: &[(MIRPattern, Box<MIRExpression>)],
     default: Option<&MIRExpression>,
     exhaustive: bool,
 ) -> CXResult<LMIRValue> {
     let mut bc_condition = lower_expression(builder, condition)?;
-    let inner = builder
-        .type_definitions
-        .mem_ref_inner(&condition._type)
-        .cloned()
-        .unwrap_or_else(|| condition._type.clone());
+    let inner = condition
+        ._type
+        .mem_ref_inner()
+        .map(|id| builder.registry.resolve_type_id(id))
+        .unwrap_or_else(|| &condition._type)
+        .clone();
 
     if inner.is_tagged_union() {
         let tag_ptr = get_tagged_union_tag(builder, bc_condition.clone(), &inner)?;
@@ -350,11 +355,12 @@ pub fn lower_match(
         let arm_block_id = builder.create_block(Some("match_arm"));
         arm_blocks.push(arm_block_id.clone());
 
-        if let MIRExpressionKind::IntLiteral(value, _, _) = &pattern.kind {
-            targets.push((*value as u64, arm_block_id));
-        } else {
-            panic!("Match pattern must be an integer literal");
-        }
+        let value = match pattern {
+            MIRPattern::Integer(value) => *value as u64,
+            MIRPattern::TaggedUnionVariant { variant_index, .. } => *variant_index as u64,
+            MIRPattern::Float(..) => unreachable!("Float match patterns are not supported"),
+        };
+        targets.push((value, arm_block_id));
     }
 
     builder.add_new_instruction(
@@ -369,7 +375,6 @@ pub fn lower_match(
 
     for (i, (_, arm_body)) in arms.iter().enumerate() {
         builder.set_current_block(arm_blocks[i].clone());
-
         let arm_falls_through = is_fall_through(arm_body);
         builder.push_scope(None, None);
         lower_expression(builder, arm_body)?;
@@ -439,11 +444,16 @@ pub fn lower_match(
 pub fn lower_return(
     builder: &mut LMIRBuilder,
     bc_value: Option<LMIRValue>,
-    postcondition: Option<&MIRExpression>,
+    postcondition: Option<&MIRPostcondition>,
 ) -> CXResult<LMIRValue> {
     if let Some(postcondition) = postcondition {
         builder.push_scope(None, None);
-        lower_contract_assertion(builder, postcondition, "postcondition failed")?;
+        lower_contract_assertion(
+            builder,
+            &postcondition.condition,
+            "postcondition failed",
+            &postcondition.assertion_prototype,
+        )?;
         builder.pop_scope()?;
     }
 
@@ -460,7 +470,7 @@ pub fn lower_return(
                     dest: return_buffer.clone(),
                     src,
                     size: LMIRValue::IntImmediate {
-                        val: return_type.size() as i64,
+                        val: usize::from(return_type.size()) as i64,
                         _type: LMIRIntegerType::I64,
                     },
                     alignment: return_type.alignment(),
@@ -490,16 +500,13 @@ fn is_fall_through(expr: &MIRExpression) -> bool {
         | MIRExpressionKind::Break { .. }
         | MIRExpressionKind::Continue { .. } => false,
         MIRExpressionKind::Unsafe { expression, .. } => is_fall_through(expression),
-        MIRExpressionKind::Block { statements } => statements
-            .last()
-            .map(is_fall_through)
-            .unwrap_or(true),
-        MIRExpressionKind::CallFunction { function, .. } => {
-            !matches!(
-                &function.kind,
-                MIRExpressionKind::FunctionReference { name } if name.as_str() == "exit"
-            )
+        MIRExpressionKind::Block { statements } => {
+            statements.last().map(is_fall_through).unwrap_or(true)
         }
+        MIRExpressionKind::CallFunction { function, .. } => !matches!(
+            &function.kind,
+            MIRExpressionKind::FunctionReference { name } if name.as_str() == "exit"
+        ),
         _ => true,
     }
 }

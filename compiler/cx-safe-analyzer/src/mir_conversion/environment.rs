@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use cx_mir::mir::data::{MIRFunctionPrototype, MIRTypeContext};
+use cx_mir::{mir::data::MIRFunctionPrototype, registry::MIRDecomposedRegistry};
 use cx_safe_ir::ast::{FMIRNode, FMIRType, MemoryLocation};
 use cx_util::{identifier::CXIdent, scoped_map::ScopedMap};
 
@@ -19,15 +19,15 @@ pub struct VariableIdentifier {
     pub known_value: Option<FMIRNode>,
 }
 
-pub(crate) struct FMIREnvironment {
+pub(crate) struct FMIREnvironment<'a> {
     current_mir_prototype: Option<MIRFunctionPrototype>,
     region_table: ScopedMap<String, VariableIdentifier>,
     pub compilation_unit: PathBuf,
-    pub type_definitions: MIRTypeContext,
+    pub type_definitions: &'a MIRDecomposedRegistry,
 }
 
-impl FMIREnvironment {
-    pub fn new(compilation_unit: PathBuf, type_definitions: MIRTypeContext) -> Self {
+impl<'a> FMIREnvironment<'a> {
+    pub fn new(compilation_unit: PathBuf, type_definitions: &'a MIRDecomposedRegistry) -> Self {
         Self {
             current_mir_prototype: None,
             region_table: ScopedMap::new_with_starting_scope(),
@@ -40,7 +40,7 @@ impl FMIREnvironment {
         self.region_table = ScopedMap::new_with_starting_scope();
         self.current_mir_prototype = Some(prototype);
 
-        let params = self.current_mir_prototype().params.clone();
+        let params = self.current_mir_prototype().signature().params.clone();
         for param in params.iter() {
             let Some(name) = param.name.clone() else {
                 continue;

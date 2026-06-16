@@ -3,9 +3,10 @@ use crate::typing::{bc_llvm_prototype, bc_llvm_type, convert_linkage};
 use cx_lmir::types::{LMIRType, LMIRTypeKind};
 use cx_lmir::{
     ElementID, LMIRABISlot, LMIRBasicBlock, LMIRBlockID, LMIRFunction, LMIRFunctionMap,
-    LMIRFunctionPrototype, LMIRReturnABI, LMIRUnit, LMIRValue,
+    LMIRFunctionPrototype, LMIRFunctionSignature, LMIRReturnABI, LMIRUnit, LMIRValue,
 };
-use cx_util::CXResult;
+use cx_log::CXResult;
+use cx_util::identifier::CXIdent;
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -43,8 +44,8 @@ pub(crate) struct FunctionState<'a, 'b> {
     context: &'a Context,
     function_value: &'b FunctionValue<'a>,
 
-    current_function: String,
-    signature: cx_lmir::LMIRFunctionSignature,
+    current_function: CXIdent,
+    signature: LMIRFunctionSignature,
 
     builder: Builder<'a>,
     value_map: HashMap<LMIRValue, CodegenValue<'a>>,
@@ -98,7 +99,7 @@ impl<'a> FunctionState<'a, '_> {
 
             LMIRValue::Register { .. } | LMIRValue::Global(..) => self.value_map.get(val).cloned(),
 
-            LMIRValue::NULL => Some(CodegenValue::NULL),
+            LMIRValue::NULL => Some(CodegenValue::Null),
         }
     }
 
@@ -115,7 +116,7 @@ impl<'a> FunctionState<'a, '_> {
 pub(crate) enum CodegenValue<'a> {
     Value(AnyValueEnum<'a>),
     AggregateSlots(Vec<(LMIRABISlot, BasicValueEnum<'a>)>),
-    NULL,
+    Null,
 }
 
 impl<'a> CodegenValue<'a> {

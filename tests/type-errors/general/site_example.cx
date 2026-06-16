@@ -1,0 +1,27 @@
+import std::io as std;
+import std::optional as std;
+import std::span as std;
+import std::string as std;
+import std::functional as std;
+
+import std::net::udp as std::net;
+
+std::opt<std::net::udp_socket> try_serve(u16 port) {
+    std::net::endpoint addr = std::net::endpoint::ipv4("0.0.0.0", port)
+        |> std::opt::unwrap();
+
+    std::net::udp_socket socket = std::net::udp_socket::open()
+        |> std::opt::unwrap()
+        |> std::net::udp_socket::bind(addr)
+        |> std::opt::unwrap();
+
+    const _str& hello = "Hello, world!";
+    std::span<const u8> buffer = std::span::str_as_bytes(hello);
+    std::opt<u64> result = socket |> std::net::udp_socket::send_to(buffer, addr);
+
+    if (result |> std::opt::is_none()) {
+        return std::opt::none<std::net::udp_socket>();
+    }
+    
+    return move socket |> std::opt::some<std::net::udp_socket>();
+}

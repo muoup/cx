@@ -13,16 +13,16 @@ use cranelift_module::Module;
 use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
 use cx_lmir::{
     LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind,
-    LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp,
+    LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRReturnABI,
 };
-use cx_util::CXResult;
+use cx_log::CXResult;
 use std::ops::IndexMut;
 
 fn load_return_slots(
     context: &mut FunctionState,
     target: cranelift::prelude::Value,
 ) -> CXResult<Vec<cranelift::prelude::Value>> {
-    let cx_lmir::LMIRReturnABI::Direct { slots } = &context.signature.return_abi else {
+    let LMIRReturnABI::Direct { slots } = &context.signature.return_abi else {
         return Ok(vec![target]);
     };
 
@@ -48,7 +48,7 @@ pub(crate) fn codegen_instruction(
         LMIRInstructionKind::Allocate { _type, alignment } => {
             let slot = context.builder.create_sized_stack_slot(StackSlotData::new(
                 StackSlotKind::ExplicitSlot,
-                StackSize::from(_type.size() as u16),
+                StackSize::from(usize::from(_type.size()) as u16),
                 *alignment,
             ));
 
@@ -79,7 +79,6 @@ pub(crate) fn codegen_instruction(
             method_sig,
         } => {
             let (val, params) = prepare_method_call(context, func_ptr, args)?;
-
             let mut sig = prepare_function_sig(context.object_module, method_sig)?;
 
             for i in method_sig.expanded_param_count()..params.len() {
@@ -126,7 +125,7 @@ pub(crate) fn codegen_instruction(
                                 .collect::<Vec<_>>();
                             context.builder.ins().return_(values.as_slice())
                         }
-                        CodegenValue::NULL => context.builder.ins().return_(&[]),
+                        CodegenValue::Null => context.builder.ins().return_(&[]),
                     };
                 }
                 None => {
@@ -134,7 +133,7 @@ pub(crate) fn codegen_instruction(
                 }
             };
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::Load { memory, _type } => {
@@ -165,7 +164,7 @@ pub(crate) fn codegen_instruction(
             value,
             coercion_type: LMIRCoercionType::PtrToInt,
         } => {
-            let bytes = instruction.value_type.size();
+            let bytes = usize::from(instruction.value_type.size());
             let val = context.get_value(value)?;
 
             if bytes < 8 {
@@ -208,7 +207,7 @@ pub(crate) fn codegen_instruction(
             op,
             left,
             right,
-            type_padded_size,
+            type_size,
             ..
         } => {
             let left = context.get_value(left)?.as_value();
@@ -221,7 +220,7 @@ pub(crate) fn codegen_instruction(
                         let right_scaled = context
                             .builder
                             .ins()
-                            .imul_imm(right, *type_padded_size as i64); // assuming type_padded_size is 1 for simplicity
+                            .imul_imm(right, usize::from(*type_size) as i64);
 
                         context.builder.ins().iadd(left, right_scaled)
                     }
@@ -230,7 +229,7 @@ pub(crate) fn codegen_instruction(
                         let right_scaled = context
                             .builder
                             .ins()
-                            .imul_imm(right, *type_padded_size as i64);
+                            .imul_imm(right, usize::from(*type_size) as i64);
 
                         context.builder.ins().isub(left, right_scaled)
                     }
@@ -476,7 +475,7 @@ pub(crate) fn codegen_instruction(
                 .ins()
                 .brif(condition, true_block, &[], false_block, &[]);
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::Jump { target } => {
@@ -484,7 +483,7 @@ pub(crate) fn codegen_instruction(
 
             context.builder.ins().jump(target, &[]);
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::StructAccess {
@@ -530,7 +529,7 @@ pub(crate) fn codegen_instruction(
                 }
             }
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::Memcpy {
@@ -547,7 +546,7 @@ pub(crate) fn codegen_instruction(
                 .builder
                 .call_memcpy(*context.target_frontend_config, dest, src, size);
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::ZeroMemory { memory, _type } => {
@@ -555,7 +554,7 @@ pub(crate) fn codegen_instruction(
             let size_literal = context
                 .builder
                 .ins()
-                .iconst(ir::Type::int(64).unwrap(), _type.size() as i64);
+                .iconst(ir::Type::int(64).unwrap(), usize::from(_type.size()) as i64);
 
             let zero = context.builder.ins().iconst(ir::Type::int(8).unwrap(), 0);
 
@@ -566,7 +565,7 @@ pub(crate) fn codegen_instruction(
                 size_literal,
             );
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::Phi { predecessors } => {
@@ -817,9 +816,9 @@ pub(crate) fn codegen_instruction(
 
             switch.emit(&mut context.builder, value.as_value(), default_block);
 
-            CodegenValue::NULL
+            CodegenValue::Null
         }
 
-        LMIRInstructionKind::CompilerAssumption { .. } => CodegenValue::NULL,
+        LMIRInstructionKind::CompilerAssumption { .. } => CodegenValue::Null,
     })
 }

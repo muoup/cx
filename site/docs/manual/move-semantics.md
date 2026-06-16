@@ -89,15 +89,15 @@ void good_string_usage2(string s) {
         This function will compile as well as we have ensured to the compiler that we know that 's' is falling out scope and that is okay as
         we have freed its inner memory.
     
-        The more idiomatic way to handle this is to have a "drop" function. If one declares some:
+        The more idiomatic way to handle this is to have a "drop" function. If one declares:
     
-        void string::drop(this) {
+        void string::drop(string s) {
             free(s.data);
             @leak(s);
         }
 
-        With the above function, we could instead call s.drop() here. The 's' binding is killed because the above function is a consuming
-        member function.
+        With the above function, we could instead call `move s |> string::drop` here. The 's' binding is killed because
+        the function consumes the value.
     */ 
 }
 
@@ -114,15 +114,15 @@ struct InnerVector : @nodrop {
     size_t capacity;
 };
 
-// void Inner::drop(this) { ... }
+// void Inner::drop(Inner this) { ... }
 
-void InnerVector::drop(this) {
+void InnerVector::drop(InnerVector this) {
     for (usize i = 0; i < length; i++) {
-        InnerVector& index = data[i];
+        Inner& index = data[i];
 
-        // This method call is not valid because index is a reference type. Inner::drop is a consuming member call
-        // so we must own the value that we are calling drop on.
-        index.drop();
+        // This call is not valid because index is only a reference. Inner::drop consumes its first parameter,
+        // so we must own the value that we pass to it.
+        index |> Inner::drop();
     }
 
     @leak(this);
@@ -132,13 +132,13 @@ void InnerVector::drop(this) {
 Since in the above example, data is heap allocated as one large contiguous memory buffer, there isn't a clean way to represent "owning" each part of the buffer. What is needed is some way to pretend to own part of the buffer and assure the compiler that it is understood that this could go wrong. CX allows for the concept of "adopting" a foreign region, where a reference can be transformed into an owning value for edge cases such as this.
 
 ```cpp
-void InnerVector::drop(this) {
+void InnerVector::drop(InnerVector this) {
     for (usize i = 0; i < length; i++) {
-        InnerVector index = @adopt(data[i]);
+        Inner index = @adopt(data[i]);
 
         // This is valid, index here acts as a reference that is asserting to the compiler that it wants to be treated
         // as if it owns the value.
-        index.drop();
+        move index |> Inner::drop();
     }
 }
 ```

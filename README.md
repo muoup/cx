@@ -7,7 +7,7 @@ CX is a research vehicle for extending a largely C-shaped language with explicit
 - explicit ownership attributes via `@nocopy` and `@nodrop`
 - function contracts via `where` clauses
 - tagged unions, `match`, and `is`
-- member and static member functions
+- associated functions and pipe-style receiver calls
 - opt-in `safe` functions
 - optional FMIR-based verification under `--analysis`
 

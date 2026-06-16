@@ -6,6 +6,7 @@ pub mod jobs;
 
 use crate::db::ModuleData;
 use cx_util::module_path::ModulePath;
+use cx_util::namespace::NamespacePath;
 use speedy::{Context, Readable, Writable};
 use std::collections::HashSet;
 use std::fmt::Display;
@@ -136,7 +137,7 @@ impl CompilationUnit {
 
     pub fn from_rooted(path: &str, working_directory: &Path) -> Self {
         let module_path = ModulePath::from_source_path(path);
-        let extension = if path.ends_with(".cxh") { "cxl" } else { "cx" };
+        let extension = if path.ends_with(".cxh") { "cxh" } else { "cx" };
         Self::from_module_path_with_extension(module_path, working_directory, extension)
     }
 
@@ -167,6 +168,10 @@ impl CompilationUnit {
 
     pub fn to_string(&self) -> String {
         self.path.to_str().unwrap().to_string()
+    }
+
+    pub fn to_namespace_path(&self) -> cx_util::namespace::NamespacePath {
+        NamespacePath::from_slash_path(self.identifier())
     }
 
     pub fn as_str(&self) -> &str {

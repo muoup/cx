@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use cx_ast::ast::CXExpression;
+use cx_ast::ast::expression::CXExpression;
+use cx_log::CXResult;
 use cx_mir::mir::data::MIRFunctionPrototype;
 use cx_tokens::token::Token;
-use cx_util::CXResult;
 
 use crate::environment::functions::control_flow::{
     BindingMoveState, ControlFlow, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind,
@@ -29,7 +29,7 @@ pub struct FunctionModeSnapshot {
 
 impl FunctionContext {
     pub fn begin_function(&mut self, prototype: MIRFunctionPrototype) {
-        self.require_safe = prototype.contract.safe;
+        self.require_safe = prototype.signature().contract.safe;
         self.require_pure = false;
         self.unsafe_depth = 0;
         self.flow = Some(ControlFlow::new());

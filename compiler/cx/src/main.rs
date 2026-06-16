@@ -5,6 +5,7 @@ mod init;
 use args::Command;
 use cx_pipeline::standard_compilation;
 use cx_pipeline_data::{CompilationMode, CompilerConfig};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 
@@ -89,8 +90,8 @@ fn run_standard_compilation(config: CompilerConfig, path: &Path) {
     match standard_compilation(config, path) {
         Ok(_) => {}
         Err(err) => {
-            println!();
             err.pretty_print();
+            let _ = std::io::stdout().flush();
             std::process::exit(1);
         }
     }

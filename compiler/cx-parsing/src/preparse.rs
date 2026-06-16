@@ -1,14 +1,9 @@
-use cx_ast::{
-    assert_token_matches,
-    ast::VisibilityMode,
-    data::{CXLinkageMode, ModuleResource},
-    next_kind, try_next, PreparseContents,
-};
+use crate::{assert_token_matches, next_kind, parse::try_parse_qualified_name};
+use cx_log::{log_error, CXResult};
 use cx_pipeline_data::CompilerConfig;
+use cx_preparse_data::{symbol_data::PreparseModuleSymbols, PreparseContents};
 use cx_tokens::{identifier, keyword, operator, punctuator, specifier, TokenIter};
-use cx_util::{identifier::CXIdent, log_error, module_path::ModulePath, CXResult};
-
-use crate::parse::try_parse_ident;
+use cx_util::{identifier::CXIdent, module_path::ModulePath, namespace::NamespacePath};
 
 #[derive(Debug, Clone, Copy)]
 pub struct PreparseConfig {
@@ -28,27 +23,21 @@ pub(crate) struct PreparseData<'a> {
     pub(crate) config: &'a PreparseConfig,
     pub(crate) contents: &'a mut PreparseContents,
     pub(crate) tokens: TokenIter<'a>,
-    pub(crate) visibility_mode: VisibilityMode,
+    pub(crate) visibility_mode: cx_preparse_data::VisibilityMode,
+    pub(crate) extern_c_mode: bool,
 }
 
-pub fn preparse(config: &PreparseConfig, tokens: TokenIter) -> CXResult<PreparseContents> {
-    let mut contents = PreparseContents::default();
-
-    let mut data = PreparseData {
-        config,
-        contents: &mut contents,
-        tokens,
-        visibility_mode: VisibilityMode::Private,
-    };
-
-    while data.tokens.has_next() {
-        iterate_tokens(&mut data)?;
+impl PreparseData<'_> {
+    fn current_symbols_mut(&mut self) -> &mut PreparseModuleSymbols {
+        if self.extern_c_mode {
+            &mut self.contents.root_symbols
+        } else {
+            &mut self.contents.module_symbols
+        }
     }
-
-    Ok(contents)
 }
 
-fn iterate_tokens(data: &mut PreparseData) -> CXResult<()> {
+pub(crate) fn iterate_tokens(data: &mut PreparseData) -> CXResult<()> {
     while data.tokens.has_next() {
         consume_token(data)?;
     }
@@ -60,51 +49,81 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
     let Some(next_token) = data.tokens.next() else {
         return Ok(());
     };
+    let next_kind = next_token.kind.clone();
 
-    match &next_token.kind {
+    match &next_kind {
         keyword!(Struct) | keyword!(Union) | keyword!(Enum) => {
             let Some(identifier!(ident)) = next_kind!(data.tokens).ok() else {
                 data.tokens.back();
                 return Ok(());
             };
+            let ident = CXIdent::new(ident.as_str());
+            let visibility = data.visibility_mode;
 
-            data.contents.type_idents.push(ModuleResource::new(
-                CXIdent::new(ident.as_str()),
-                data.visibility_mode,
-                CXLinkageMode::Standard,
-            ));
+            data.current_symbols_mut().add_type(ident, visibility);
         }
 
         keyword!(Typedef) => {
-            while !try_next!(data.tokens, punctuator!(Semicolon)) && data.tokens.has_next() {
-                data.tokens.next();
+            let mut last_ident = None;
+            let mut depth = 0usize;
+
+            while let Some(token) = data.tokens.next() {
+                match &token.kind {
+                    punctuator!(OpenBrace) | punctuator!(OpenParen) | punctuator!(OpenBracket) => {
+                        depth += 1
+                    }
+                    punctuator!(CloseBrace)
+                    | punctuator!(CloseParen)
+                    | punctuator!(CloseBracket) => depth = depth.saturating_sub(1),
+                    punctuator!(Semicolon) if depth == 0 => break,
+                    identifier!(ident) if depth == 0 => {
+                        last_ident = Some(CXIdent::new(ident.as_str()))
+                    }
+                    _ => {}
+                }
             }
 
-            let Some(ident) = try_parse_ident(&mut data.tokens) else {
+            let Some(ident) = last_ident else {
                 return Ok(());
             };
 
-            data.contents.type_idents.push(ModuleResource::new(
-                ident.clone(),
-                data.visibility_mode,
-                CXLinkageMode::Standard,
-            ));
+            let visibility = data.visibility_mode;
+            data.current_symbols_mut().add_type(ident, visibility);
         }
 
         keyword!(Import) => {
             data.tokens.back();
-            let import_path = parse_import(&mut data.tokens)?;
+            let ParsedImport { path, alias } = parse_import(&mut data.tokens)?;
+            let import_namespace = NamespacePath::from(path.clone());
+
+            if import_namespace == data.contents.module_symbols.namespace {
+                return log_preparse_error!(data.tokens, "Cannot import current module '{}'", path);
+            }
+
+            if let Some(alias) = alias {
+                data.contents
+                    .add_namespace_alias(alias, import_namespace.clone());
+            }
+
+            let import_path = path;
             data.contents.imports.push(import_path);
         }
 
         specifier!(Public) => {
-            data.visibility_mode = VisibilityMode::Public;
+            data.visibility_mode = cx_preparse_data::VisibilityMode::Public;
+            data.extern_c_mode = false;
             assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
         }
 
         specifier!(Private) => {
-            data.visibility_mode = VisibilityMode::Private;
+            data.visibility_mode = cx_preparse_data::VisibilityMode::Private;
+            data.extern_c_mode = false;
             assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
+        }
+
+        specifier!(Extern) if is_extern_c_section(data) => {
+            data.tokens.back();
+            parse_extern_c_mod(data)?;
         }
 
         _ => (),
@@ -113,10 +132,51 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
     Ok(())
 }
 
-fn parse_import(tokens: &mut TokenIter) -> CXResult<ModulePath> {
+fn is_extern_c_section(data: &PreparseData) -> bool {
+    matches!(
+        (
+            data.tokens.peek_prev().map(|token| &token.kind),
+            data.tokens.peek().map(|token| &token.kind),
+        ),
+        (
+            Some(cx_tokens::token::TokenKind::Specifier(
+                cx_tokens::token::SpecifierType::Extern
+            )),
+            Some(cx_tokens::token::TokenKind::StringLiteral(abi))
+        ) if abi == "C"
+    )
+}
+
+fn parse_extern_c_mod(data: &mut PreparseData) -> CXResult<()> {
+    assert_token_matches!(data.tokens, specifier!(Extern), "'extern'");
+    assert_token_matches!(
+        data.tokens,
+        cx_tokens::token::TokenKind::StringLiteral(abi),
+        "\"C\""
+    );
+
+    if abi != "C" {
+        return log_preparse_error!(data.tokens, "Unsupported extern ABI '{}'", abi);
+    }
+
+    assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
+
+    data.visibility_mode = cx_preparse_data::VisibilityMode::Private;
+    data.extern_c_mode = true;
+
+    Ok(())
+}
+
+struct ParsedImport {
+    path: ModulePath,
+    alias: Option<NamespacePath>,
+}
+
+fn parse_import(tokens: &mut TokenIter) -> CXResult<ParsedImport> {
     assert_token_matches!(tokens, keyword!(Import), "'import'");
 
     let mut import_path = String::new();
+    let mut alias = None;
 
     loop {
         let Some(tok) = tokens.next() else {
@@ -125,6 +185,11 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<ModulePath> {
 
         match &tok.kind {
             punctuator!(Semicolon) => break,
+            keyword!(As) => {
+                alias = Some(parse_import_alias(tokens)?);
+                assert_token_matches!(tokens, punctuator!(Semicolon), "';'");
+                break;
+            }
             operator!(ScopeRes) => import_path.push('/'),
             identifier!(ident) => import_path.push_str(ident),
 
@@ -132,5 +197,27 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<ModulePath> {
         }
     }
 
-    Ok(ModulePath::new(import_path))
+    if import_path.is_empty() {
+        return log_preparse_error!(tokens, "Import path cannot be empty");
+    }
+
+    Ok(ParsedImport {
+        path: ModulePath::new(import_path),
+        alias,
+    })
+}
+
+fn parse_import_alias(tokens: &mut TokenIter) -> CXResult<NamespacePath> {
+    let Some(ident) = try_parse_qualified_name(tokens)? else {
+        return log_preparse_error!(
+            tokens,
+            "Expected identifier for import alias"
+        );
+    };
+
+    if ident.namespace.is_root() && ident.name.as_str() == "_" {
+        Ok(NamespacePath::root())
+    } else {
+        Ok(ident.namespace.child(ident.name))
+    }
 }

@@ -2,11 +2,12 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 
-use cx_mir::mir::data::MIRFunctionPrototype;
-use cx_mir::mir::program::{MIRFunction, MIRUnit};
+use cx_log::{CXError, CXResult};
+use cx_mir::MIRUnit;
+use cx_mir::mir::data::{MIRFunction, MIRFunctionPrototype};
+use cx_mir::registry::MIRDecomposedRegistry;
 use cx_safe_ir::ast::{FMIRFunction, FMIRNode};
 use cx_tokens::TokenRange;
-use cx_util::{CXError, CXResult};
 
 use crate::mir_conversion::{convert_mir, environment::FMIREnvironment};
 use crate::simplify::assert_proven_conditions;
@@ -19,8 +20,8 @@ pub(crate) mod traversal;
 
 pub type FMIRAnalysisPass<'a> = &'a dyn Fn(&FMIRContext, FMIRFunction) -> CXResult<FMIRFunction>;
 
-pub struct FMIRContext {
-    env: FMIREnvironment,
+pub struct FMIRContext<'a> {
+    env: FMIREnvironment<'a>,
     functions: HashMap<String, FMIRFunction>,
 }
 
@@ -35,7 +36,7 @@ impl AnalysisDiagnosticContext {
         Self {
             compilation_unit: compilation_unit.to_path_buf(),
             file_contents: std::fs::read_to_string(compilation_unit).ok(),
-            function_name: function_prototype.name.as_string(),
+            function_name: function_prototype.name().to_owned(),
         }
     }
 
@@ -135,22 +136,19 @@ impl AnalysisDiagnosticContext {
     }
 }
 
-impl FMIRContext {
-    pub fn new(compilation_unit: PathBuf) -> Self {
+impl<'a> FMIRContext<'a> {
+    pub fn new(unit: PathBuf, registry: &'a MIRDecomposedRegistry) -> Self {
         FMIRContext {
-            env: FMIREnvironment::new(compilation_unit, Default::default()),
+            env: FMIREnvironment::new(unit, registry),
             functions: HashMap::new(),
         }
     }
 
-    pub fn new_from(mir: &MIRUnit) -> CXResult<Self> {
-        let mut context = FMIRContext {
-            env: FMIREnvironment::new(mir.source_path.to_owned(), mir.type_definitions.clone()),
-            functions: HashMap::new(),
-        };
+    pub fn new_from(mir: &'a MIRUnit) -> CXResult<Self> {
+        let mut context = FMIRContext::new(mir.source_path.to_owned(), &mir.registry);
 
         for function in mir.functions.iter() {
-            if !function.prototype.contract.safe {
+            if !function.prototype.signature().contract.safe {
                 continue;
             }
 
@@ -164,7 +162,7 @@ impl FMIRContext {
         let fmir_function = convert_mir(&mut self.env, mir_function)?;
 
         self.functions
-            .insert(mir_function.prototype.name.as_string(), fmir_function);
+            .insert(mir_function.prototype.name().to_owned(), fmir_function);
 
         Ok(())
     }
@@ -191,7 +189,7 @@ impl FMIRContext {
     }
 }
 
-impl Display for FMIRContext {
+impl Display for FMIRContext<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut names = self.functions.keys().cloned().collect::<Vec<_>>();
         names.sort();
@@ -199,7 +197,7 @@ impl Display for FMIRContext {
         writeln!(f, "FMIR Context:")?;
         for name in names {
             if let Some(function) = self.functions.get(&name) {
-                writeln!(f, "{}", function.display_with(&self.env.type_definitions))?;
+                writeln!(f, "{}", function.display_with(self.env.type_definitions))?;
             }
         }
 

@@ -1,9 +1,11 @@
 use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
-use cx_ast::PreparseContents;
-use cx_ast::ast::CXAST;
+use cx_ast::decomposition::CXGenerationAST;
+use cx_ast::registry::GlobalSymbolRegistry;
 use cx_lmir::LMIRUnit;
-use cx_mir::mir::program::{MIRBaseMappings, MIRUnit};
+use cx_mir::{EnvironmentNamespace, MIRUnit};
+use cx_preparse_data::PreparseContents;
+use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_tokens::token::Token;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::{HashMap, HashSet};
@@ -15,11 +17,14 @@ use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 pub struct ModuleData {
     pub do_not_reexport: RwLock<HashSet<CompilationUnit>>,
 
+    pub preparse_registry: GlobalPreparseRegistry,
+    pub symbol_registry: GlobalSymbolRegistry,
+
     pub lex_tokens: ModuleMap<Vec<Token>>,
     pub preparse_base: ModuleMap<PreparseContents>,
 
-    pub naive_ast: ModuleMap<CXAST>,
-    pub base_mappings: ModuleMap<MIRBaseMappings>,
+    pub generation_ast: ModuleMap<CXGenerationAST>,
+    pub base_mappings: ModuleMap<EnvironmentNamespace>,
 
     pub mir: ModuleMap<MIRUnit>,
     pub lmir: ModuleMap<LMIRUnit>,
@@ -35,12 +40,12 @@ impl ModuleData {
     pub fn new() -> Self {
         ModuleData {
             do_not_reexport: RwLock::new(HashSet::new()),
+            preparse_registry: GlobalPreparseRegistry::default(),
+            symbol_registry: GlobalSymbolRegistry::default(),
 
             lex_tokens: ModuleMap::new(".cx-tokens"),
-
             preparse_base: ModuleMap::new(".cx-preparse"),
-
-            naive_ast: ModuleMap::new(".cx-naive-ast"),
+            generation_ast: ModuleMap::new(".cx-naive-ast"),
 
             base_mappings: ModuleMap::new(".cx-structure-data"),
             mir: ModuleMap::new(".cx-typechecked-ast"),

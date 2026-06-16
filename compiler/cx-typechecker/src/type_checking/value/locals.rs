@@ -1,27 +1,32 @@
 use crate::{
-    environment::{BindingMoveState, TypeEnvironment, symbols::SymbolValueOrigin},
+    environment::{BindingMoveState, TypeEnvironment},
     log_typecheck_error,
+    symbol::completion::complete_type,
     type_checking::{
-        coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
+        coercion::implicit::implicit_cast,
         result::{BindingPlaceKind, TypecheckResult, TypecheckedBinding},
         typechecker::typecheck_expr,
         value::ensure_valid_allocation_type,
     },
 };
-use cx_ast::ast::CXExpression;
-use cx_ast::data::CXType;
-use cx_mir::mir::{
-    expression::{MIRExpression, MIRExpressionKind},
-    program::MIRBaseMappings,
+use cx_ast::ast::{expression::CXExpression, types::CXType};
+use cx_log::CXResult;
+use cx_mir::{
+    EnvironmentNamespace,
+    mir::expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
 };
 use cx_tokens::TokenRange;
-use cx_util::{CXResult, identifier::CXIdent};
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 pub(crate) fn ensure_binding_available(
     env: &mut TypeEnvironment,
-    range: Option<TokenRange>,
-    name: &CXIdent,
+    range: Option<&TokenRange>,
+    expr: Option<&TypecheckedBinding>,
 ) -> CXResult<()> {
+    let Some(name) = expr.map(|b| &b.root) else {
+        return Ok(());
+    };
+
     let Some(binding) = env.function.tracked_binding(name.as_str()) else {
         return Ok(());
     };
@@ -58,22 +63,23 @@ pub(crate) fn mark_binding(
 
 pub(crate) fn typecheck_var_declaration(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
+    namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     ty: &CXType,
     name: &CXIdent,
-    initial_value: Option<&Box<CXExpression>>,
+    initial_value: Option<&CXExpression>,
 ) -> CXResult<TypecheckResult> {
-    let ty = env.complete_type(base_data, expr, ty)?;
+    let ty = complete_type(env, namespace, ty)?;
 
     ensure_valid_allocation_type(env, Some(expr.token_range().clone()), "a variable", &ty)?;
 
-    let mem_type = env.symbols.context.mem_ref_to(ty.clone());
+    let mem_type = env.symbols.mem_ref_to(ty.clone());
     let (initial_region, adopting) = match initial_value {
         Some(init_expr) => {
-            let init_tc = typecheck_expr(env, base_data, init_expr, Some(&ty))?;
-            let adopting = init_tc.adopting;
-            let init_expr = std_rval_promotion(env, init_tc.into_expression())
+            let init_tc = typecheck_expr(env, namespace, init_expr, Some(&ty))?;
+            let adopting = init_tc.is_adopting();
+            let init_expr = init_tc
+                .standard_ready_coerce(env, expr.token_range())
                 .and_then(|v| implicit_cast(env, v, &ty))?;
             (Box::new(init_expr), adopting)
         }
@@ -100,20 +106,20 @@ pub(crate) fn typecheck_var_declaration(
         },
         _type: mem_type.clone(),
     };
-    env.symbols.insert_value(
-        name.clone(),
+
+    env.symbols.insert_local_value(
+        QualifiedName::new_raw(name.clone()),
         MIRExpression {
             token_range: None,
-            kind: MIRExpressionKind::Variable(name.clone()),
+            kind: MIRExpressionKind::Variable {
+                name: name.clone(),
+                location: SymbolValueOrigin::Local,
+            },
             _type: mem_type,
         },
-        Some(SymbolValueOrigin::Local),
     );
 
-    if env.symbols.is_nocopy(&ty) {
-        env.function
-            .track_binding(name.as_string(), env.symbols.is_nodrop(&ty));
-    }
+    env.function.track_binding(name.as_string(), ty.is_nodrop());
 
     Ok(TypecheckResult::from(binding))
 }

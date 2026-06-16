@@ -1,40 +1,56 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
-use cx_ast::ast::VisibilityMode;
-use cx_ast::{
-    ast::{CXFunctionStmt, CXGlobalVariable, CXAST},
-    data::{
-        CXFunctionPrototype, CXFunctionTemplate, CXLinkageMode, CXTemplatePrototype, CXType,
-        CXTypeTemplate, ModuleResource,
-    },
-    PreparseContents,
-};
+use cx_ast::ast::{function::CXFunctionKind, CXASTDefinition, CXASTStmt, CXAST};
+use cx_log::CXResult;
+use cx_namespace::result::QualifiedLookupResult;
+use cx_namespace::MIRQualifiedLookup;
+use cx_preparse_data::registry::GlobalPreparseRegistry;
+use cx_preparse_data::symbol_data::PreparseSymbolKind;
+use cx_preparse_data::{NamespaceAliases, PreparseContents, VisibilityMode};
 use cx_tokens::TokenIter;
+use cx_util::identifier::CXIdent;
+use cx_util::module_path::ModulePath;
+use cx_util::namespace::{NamespacePath, QualifiedName};
 
 #[derive(Debug)]
 pub struct ParserData<'a> {
     pub tokens: TokenIter<'a>,
     pub visibility: VisibilityMode,
+    pub extern_c_mode: bool,
     pub expr_commas: Vec<bool>,
     pub pp_contents: &'a PreparseContents,
     pub file_origin: Arc<str>,
+    // uses u8 mapping instead of a set to prevent problems with shadowing
+    pub temporary_type_names: HashMap<CXIdent, u8>,
+    namespace_aliases: NamespaceAliases,
 
+    pub registry: &'a GlobalPreparseRegistry,
     pub ast: CXAST,
 }
 
 impl<'a> ParserData<'a> {
-    pub fn new(tokens: TokenIter<'a>, pp_contents: &'a PreparseContents) -> Self {
+    pub fn new(
+        tokens: TokenIter<'a>,
+        pp_contents: &'a PreparseContents,
+        registry: &'a GlobalPreparseRegistry,
+    ) -> Self {
         let file_origin: Arc<str> = Arc::from(tokens.file.to_string_lossy().as_ref());
+
         Self {
             tokens,
             visibility: VisibilityMode::Package,
+            extern_c_mode: false,
             expr_commas: vec![true],
             pp_contents,
             file_origin,
-            ast: CXAST {
-                imports: pp_contents.imports.clone(),
-                ..Default::default()
-            },
+            registry,
+            temporary_type_names: HashMap::new(),
+            namespace_aliases: pp_contents.namespace_aliases.clone(),
+            ast: CXAST::new(
+                ModulePath::from_source_path(pp_contents.module.as_str()),
+                pp_contents.imports.clone(),
+            ),
         }
     }
 
@@ -78,81 +94,108 @@ impl<'a> ParserData<'a> {
             .expect("CRITICAL: No comma mode to get!")
     }
 
-    pub fn add_type(
-        &mut self,
-        name: String,
-        _type: CXType,
-        prototype: Option<CXTemplatePrototype>,
-    ) {
-        match prototype {
-            Some(proto) => {
-                self.ast.type_data.insert_template(
-                    name,
-                    ModuleResource::new(
-                        CXTypeTemplate {
-                            prototype: proto.clone(),
-                            shell: _type,
-                        },
-                        self.visibility,
-                        CXLinkageMode::Standard,
-                    ),
-                );
-            }
-            None => {
-                self.ast.type_data.insert_standard(
-                    name,
-                    ModuleResource::new(_type, self.visibility, CXLinkageMode::Standard),
-                );
-            }
+    pub fn add_stmt(&mut self, stmt: CXASTStmt) {
+        let namespace = self.namespace_for_current_stmt();
+        self.register_stmt_namespace_aliases(&namespace, &stmt);
+        self.ast
+            .definition_stmts
+            .push(CXASTDefinition { namespace, stmt })
+    }
+
+    pub fn take_ast(mut self) -> CXAST {
+        self.ast.namespace_aliases = self.namespace_aliases;
+        self.ast
+    }
+
+    pub fn is_type_ident(&self, name: &QualifiedName) -> CXResult<bool> {
+        Ok(matches!(self.query_identifier(name.clone())?, true)
+            || (name.namespace.is_root() && self.temporary_type_names.contains_key(&name.name)))
+    }
+
+    pub fn query_identifier(&self, name: QualifiedName) -> CXResult<bool> {
+        match self.qualified_lookup(&self.namespace_for_current_stmt(), &name) {
+            QualifiedLookupResult::Found { .. } => Ok(true),
+            QualifiedLookupResult::NotFound => Ok(false),
+            QualifiedLookupResult::Ambiguous { candidates } => log_parse_error!(
+                self,
+                "Ambiguous identifier '{}', candidates: {}",
+                name,
+                candidates
+                    .iter()
+                    .map(|n| n.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
         }
     }
 
-    pub fn add_function(
-        &mut self,
-        function: CXFunctionPrototype,
-        prototype: Option<CXTemplatePrototype>,
-    ) {
-        match prototype {
-            Some(proto) => {
-                let linkage = function.linkage;
-                self.ast.function_data.insert_template(
-                    function.kind.into_key(),
-                    ModuleResource::new(
-                        CXFunctionTemplate {
-                            prototype: proto.clone(),
-                            shell: function,
-                        },
-                        self.visibility,
-                        linkage,
-                    ),
-                );
-            }
-            None => {
-                let linkage = function.linkage;
-                self.ast.function_data.insert_standard(
-                    function.kind.into_key(),
-                    ModuleResource::new(function, self.visibility, linkage),
-                );
-            }
+    fn namespace_for_current_stmt(&self) -> NamespacePath {
+        if self.extern_c_mode {
+            NamespacePath::root()
+        } else {
+            self.current_module_namespace()
         }
     }
 
-    pub fn add_global_variable(
-        &mut self,
-        name: String,
-        var: CXGlobalVariable,
-        linkage: CXLinkageMode,
-    ) {
-        self.ast
-            .global_variables
-            .insert(name, ModuleResource::new(var, self.visibility, linkage));
+    fn current_module_namespace(&self) -> NamespacePath {
+        self.pp_contents.module_symbols.namespace.clone()
     }
 
-    pub fn add_function_stmt(&mut self, stmt: CXFunctionStmt) {
-        self.ast.function_stmts.push(stmt)
+    fn register_stmt_namespace_aliases(&mut self, namespace: &NamespacePath, stmt: &CXASTStmt) {
+        if namespace.is_root() {
+            return;
+        }
+
+        match stmt {
+            CXASTStmt::FunctionDefinition { prototype, .. } => {
+                let q_namespace = prototype.kind.into_key().namespace;
+
+                if !q_namespace.is_root()
+                    && matches!(&prototype.kind, CXFunctionKind::AssociatedFunction { .. })
+                {
+                    let entry = self
+                        .namespace_aliases
+                        .entry(namespace.clone())
+                        .or_insert(Vec::new());
+
+                    if !entry.contains(&q_namespace) {
+                        entry.push(q_namespace);
+                    }
+                }
+            }
+
+            _ => {}
+        }
+    }
+}
+
+impl MIRQualifiedLookup for ParserData<'_> {
+    type Output = PreparseSymbolKind;
+
+    fn lookup_local(
+        &self,
+        _lexical_namespace: &NamespacePath,
+        _name: &QualifiedName,
+    ) -> Option<PreparseSymbolKind> {
+        None
     }
 
-    pub fn take_ast(self) -> CXAST {
-        self.ast
+    fn lookup_exact(
+        &self,
+        _lexical_namespace: &NamespacePath,
+        name: &QualifiedName,
+    ) -> Option<PreparseSymbolKind> {
+        self.registry.get_symbol(&name.namespace, &name.name)
+    }
+
+    fn resolve_aliases(
+        &self,
+        _lexical_namespace: &NamespacePath,
+        namespace: &NamespacePath,
+    ) -> Vec<NamespacePath> {
+        self.namespace_aliases
+            .get(namespace)
+            .cloned()
+            .unwrap_or_default()
     }
 }

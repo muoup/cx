@@ -1,9 +1,12 @@
 import std::optional;
 import std::io;
 
-#include <stdlib.h>
+extern "C":
 
-void exit(int);
+#include <stdlib.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 public:
 
@@ -14,12 +17,12 @@ struct string : @nodrop {
 };
 
 string string::new() safe {
-    opt<string> s = string::try_new_string();
+    std::optional::opt<string> s = string::try_new_string();
     
     match (move s) {
-        opt<string>::some(val) => return move val;
-        opt<string>::none(_) => {
-            println("Failed to allocate memory for string");
+        std::optional::opt::some<string>(val) => return move val;
+        std::optional::opt::none<string>(_) => {
+            std::io::println("Failed to allocate memory for string");
             @unsafe(exit(1));
         }
     }
@@ -32,12 +35,12 @@ string string::new() safe {
     };
 }
 
-opt<string> string::try_new_string() safe {
+std::optional::opt<string> string::try_new_string() safe {
     @unsafe {
         void* base_buffer = malloc(16);
 
         if (base_buffer == NULL) {
-            return opt<string>::none();
+            return std::optional::opt::none<string>();
         }
         
         string s = (string) {
@@ -47,50 +50,50 @@ opt<string> string::try_new_string() safe {
         };
         *s.data = '\0';
     
-        return opt<string>::some(move s);
+        return std::optional::opt::some<string>(move s);
     };
 }
 
-void string::append(*this, const char* s) {
+void string::append(string& this, const char* s) {
     u64 str_length = strlen(s);
 
     while (this.length + str_length >= this.capacity) {
-        this._realloc();
+        this |> string::_realloc();
     }
 
     memcpy(this.data + this.length, s, str_length);
     this.length = str_length + this.length;
 }
 
-void string::append_char(*this, char c) {
+void string::append_char(string& this, char c) {
     if (this.length + 1 >= this.capacity) {
-        this._realloc();
+        this |> string::_realloc();
     }
 
     this.data[this.length++] = c;
     this.data[this.length] = 0;
 }
 
-void string::drop(this) safe {
+void string::drop(string this) safe {
     @unsafe {
         free(this.data);
         @leak(this);
     };
 }
 
-_str& string::as_str(*this) safe {
+_str& string::as_str(string& this) safe {
     // SAFETY: We ensure via our API that our internal const char* is a valid c-string with null-termination,
     // so this cast is safe as long as the caller does not mutate the string data through the returned reference.
     return @unsafe((_str&) this.data);
 }
 
+usize string::str_length(const _str& this) {
+    return strlen(this);
+}
+
 private:
 
-void string::_realloc(*this) {
+void string::_realloc(string& this) {
     this.capacity = this.capacity * 2;
     this.data = realloc(this.data, this.capacity);
 }
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>

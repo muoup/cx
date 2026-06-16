@@ -4,10 +4,10 @@ struct Resource : @nodrop {
 
 void adopt_value(Resource* ptr) safe {
     Resource value = @adopt(*ptr);
-    value.drop();
+    move value |> Resource::drop();
 }
 
-void Resource::drop(this) safe {
+void Resource::drop(Resource this) safe {
     @unsafe {
         @leak(this);
     };

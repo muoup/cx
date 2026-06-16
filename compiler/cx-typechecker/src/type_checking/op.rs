@@ -1,10 +1,57 @@
-use crate::{environment::TypeEnvironment, type_checking::result::TypecheckResult};
-use cx_ast::ast::{CXBinOp, CXExpression, CXUnOp};
-use cx_mir::mir::{expression::MIRExpression, program::MIRBaseMappings};
-use cx_util::CXResult;
+use crate::{
+    environment::TypeEnvironment,
+    type_checking::{
+        op::binop::calls::typecheck_callee_method_call, result::TypecheckResult,
+        typechecker::typecheck_expr,
+    },
+};
+use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
+use cx_log::CXResult;
+use cx_mir::{EnvironmentNamespace, mir::expression::MIRExpression};
+
+pub use unop::typecheck_unop;
 
 pub mod binop;
 pub mod unop;
+
+pub fn try_typecheck_special_binop(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    op: &CXBinOp,
+    expr: &CXExpression,
+    lhs: &CXExpression,
+    rhs: &CXExpression,
+) -> CXResult<Option<TypecheckResult>> {
+    Ok(match op {
+        CXBinOp::Pipe => {
+            let implicit_param = typecheck_expr(env, namespace, lhs, None)?
+                .standard_ready_coerce(env, lhs.token_range())?;
+
+            match &rhs.kind {
+                CXExprKind::BinOp {
+                    op: CXBinOp::MethodCall,
+                    lhs,
+                    rhs,
+                } => {
+                    let callee = typecheck_expr(env, namespace, lhs, None)?;
+
+                    Some(typecheck_callee_method_call(
+                        env,
+                        namespace,
+                        callee,
+                        vec![implicit_param],
+                        rhs,
+                        expr,
+                    )?)
+                }
+
+                _ => None,
+            }
+        }
+
+        _ => None,
+    })
+}
 
 pub fn typecheck_binop(
     env: &mut TypeEnvironment,
@@ -13,13 +60,4 @@ pub fn typecheck_binop(
     rhs: MIRExpression,
 ) -> CXResult<TypecheckResult> {
     binop::dispatch(env, op, lhs, rhs)
-}
-
-pub fn typecheck_unop(
-    env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    op: &CXUnOp,
-    operand: &CXExpression,
-) -> CXResult<TypecheckResult> {
-    unop::dispatch(env, base_data, op, operand)
 }

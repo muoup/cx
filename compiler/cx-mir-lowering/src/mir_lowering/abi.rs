@@ -1,13 +1,14 @@
 use super::types::convert_type;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRABISlot, LMIRFunctionSignature, LMIRParameter, LMIRParameterABI, LMIRReturnABI};
-use cx_mir::mir::data::{MIRParameter, MIRType, MIRTypeContext};
+use cx_mir::mir::data::{MIRParameter, MIRType};
+use cx_mir::registry::MIRDecomposedRegistry;
 
 pub(crate) fn classify_signature(
     return_type: &MIRType,
     params: &[MIRParameter],
     var_args: bool,
-    definitions: &MIRTypeContext,
+    definitions: &MIRDecomposedRegistry,
 ) -> LMIRFunctionSignature {
     let return_type = convert_type(return_type, definitions);
     let return_abi = classify_return(return_type.clone());
@@ -47,7 +48,7 @@ fn classify_return(return_type: LMIRType) -> LMIRReturnABI {
     }
 }
 
-fn classify_param(param: &MIRParameter, definitions: &MIRTypeContext) -> LMIRParameter {
+fn classify_param(param: &MIRParameter, definitions: &MIRDecomposedRegistry) -> LMIRParameter {
     let _type = convert_type(&param._type, definitions);
     let abi = if !_type.is_memory_resident() {
         LMIRParameterABI::Direct {
@@ -133,7 +134,7 @@ fn direct_integer_aggregate_slots(ty: &LMIRType) -> Option<Vec<LMIRABISlot>> {
         return None;
     }
 
-    match ty.size() {
+    match usize::from(ty.size()) {
         0 => None,
         size @ 1..=8 => Some(vec![LMIRABISlot {
             _type: integer_slot_type(size)?,

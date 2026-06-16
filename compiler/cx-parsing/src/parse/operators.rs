@@ -1,12 +1,12 @@
+use crate::next_kind;
 use crate::parse::ParserData;
-use cx_ast::ast::{CXBinOp, CXUnOp};
-use cx_ast::next_kind;
-use cx_tokens::punctuator;
+use cx_ast::ast::expression::{CXBinOp, CXUnOp};
+use cx_log::CXResult;
 use cx_tokens::token::{OperatorType, PunctuatorType, TokenKind};
-use cx_util::CXResult;
+use cx_tokens::{operator, punctuator};
 
-use crate::parse::expressions::is_type_decl;
-use crate::parse::types::parse_initializer;
+use crate::parse::expressions::parse_pattern;
+use crate::parse::types::{is_type_decl, parse_initializer};
 
 #[derive(Debug, Clone)]
 pub(crate) enum PrecOperator {
@@ -25,11 +25,9 @@ impl PrecOperator {
 
 pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
     match op {
-        CXBinOp::Access
-        | CXBinOp::ScopeRes
-        | CXBinOp::MethodCall
-        | CXBinOp::ArrayIndex
-        | CXBinOp::Is => 1,
+        CXBinOp::Access | CXBinOp::MethodCall | CXBinOp::ArrayIndex => 1,
+        CXBinOp::Pipe => 2,
+
         CXBinOp::Multiply | CXBinOp::Divide | CXBinOp::Modulus => 4,
         CXBinOp::Add | CXBinOp::Subtract => 5,
 
@@ -44,15 +42,17 @@ pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
 
         CXBinOp::LAnd => 14,
         CXBinOp::LOr => 15,
-        CXBinOp::Assign(_) => 16,
 
-        CXBinOp::Comma => 17,
+        CXBinOp::Assign(_) => 17,
+
+        CXBinOp::Comma => 18,
     }
 }
 
 pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
     match op {
         CXUnOp::PostIncrement(_) => 1,
+        CXUnOp::Move => 1,
 
         CXUnOp::PreIncrement(_) => 2,
         CXUnOp::BNot => 2,
@@ -61,7 +61,9 @@ pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
         CXUnOp::Dereference => 2,
         CXUnOp::AddressOf => 2,
 
+        CXUnOp::Is(_) => 3,
         CXUnOp::ExplicitCast(_) => 3,
+
     }
 }
 
@@ -75,6 +77,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
             OperatorType::Minus => Some(CXUnOp::Negative),
             OperatorType::Exclamation => Some(CXUnOp::LNot),
             OperatorType::Tilda => Some(CXUnOp::BNot),
+            OperatorType::Move => Some(CXUnOp::Move),
 
             _ => {
                 data.tokens.back();
@@ -86,7 +89,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
         punctuator!(OpenParen) => {
             let pre_index = data.tokens.index - 1;
 
-            if !is_type_decl(data) {
+            if !is_type_decl(data)? {
                 data.tokens.index = pre_index;
                 return Ok(None);
             }
@@ -114,21 +117,31 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
     })
 }
 
-pub(crate) fn parse_postfix_unop(data: &mut ParserData) -> Option<CXUnOp> {
-    Some(match &data.tokens.next()?.kind {
+pub(crate) fn parse_postfix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp>> {
+    let Some(token) = data.tokens.next() else {
+        return Ok(None);
+    };
+
+    Ok(match &token.kind {
+        operator!(Is) => {
+            let pattern = parse_pattern(data)?;
+
+            Some(CXUnOp::Is(Box::new(pattern)))
+        }
+
         TokenKind::Operator(op) => match op {
-            OperatorType::Increment => CXUnOp::PostIncrement(1),
-            OperatorType::Decrement => CXUnOp::PostIncrement(-1),
+            OperatorType::Increment => Some(CXUnOp::PostIncrement(1)),
+            OperatorType::Decrement => Some(CXUnOp::PostIncrement(-1)),
 
             _ => {
                 data.tokens.back();
-                return None;
+                None
             }
         },
 
         _ => {
             data.tokens.back();
-            return None;
+            None
         }
     })
 }
@@ -142,7 +155,6 @@ fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<CXBinOp> {
         OperatorType::Percent => CXBinOp::Modulus,
 
         OperatorType::Access => CXBinOp::Access,
-        OperatorType::ScopeRes => CXBinOp::ScopeRes,
         OperatorType::Comma => CXBinOp::Comma,
 
         OperatorType::Equal => CXBinOp::Equal,
@@ -158,7 +170,7 @@ fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<CXBinOp> {
         OperatorType::DoubleBar => CXBinOp::LOr,
         OperatorType::DoubleAmpersand => CXBinOp::LAnd,
 
-        OperatorType::Is => CXBinOp::Is,
+        OperatorType::Pipe => CXBinOp::Pipe,
 
         _ => return log_parse_error!(data, "Invalid binary operator: {:?}", op),
     })

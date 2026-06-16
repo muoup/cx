@@ -1,4 +1,4 @@
-use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType};
+use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, TypeSize};
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use std::collections::HashMap;
 
@@ -173,7 +173,7 @@ impl LMIRFunctionSignature {
 
 #[derive(Debug, Clone)]
 pub struct LMIRFunctionPrototype {
-    pub name: String,
+    pub name: CXIdent,
     pub linkage: LinkageType,
     pub signature: LMIRFunctionSignature,
 }
@@ -257,7 +257,7 @@ pub enum LMIRInstructionKind {
     PointerBinOp {
         op: LMIRPtrBinOp,
         ptr_type: LMIRType,
-        type_padded_size: u64,
+        type_size: TypeSize,
         left: LMIRValue,
         right: LMIRValue,
     },
