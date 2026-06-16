@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{collections::HashSet, path::Path};
 
 use cx_ast::ast::expression::CXExpression;
 use cx_log::CXResult;
@@ -463,6 +463,7 @@ impl ControlFlow {
                     &arrows,
                     &state.join_range,
                     &state.join_name,
+                    state.require_nodrop_discharge,
                 )?
                 else {
                     return Ok(None);
@@ -508,6 +509,7 @@ impl ControlFlow {
                     &continue_arrows,
                     &state.join_range,
                     "loop continue join",
+                    false,
                 )?
                 else {
                     let Some(exit_bindings) = Self::merge_binding_states(
@@ -517,6 +519,7 @@ impl ControlFlow {
                         &state.exit_arrows,
                         &state.join_range,
                         "loop exit join",
+                        false,
                     )?
                     else {
                         return Ok(None);
@@ -546,6 +549,7 @@ impl ControlFlow {
                     &exit_arrows,
                     &state.join_range,
                     "loop exit join",
+                    false,
                 )?
                 else {
                     return Ok(None);
@@ -564,6 +568,7 @@ impl ControlFlow {
         arrows: &[ControlFlowArrow],
         join_range: &TokenRange,
         join_name: &str,
+        discharge_only_nodrop: bool,
     ) -> CXResult<Option<Vec<(String, TrackedBindingState)>>> {
         if arrows.is_empty() {
             return Ok(None);
@@ -572,14 +577,42 @@ impl ControlFlow {
         let mut merged_bindings = Vec::new();
         let mut inconsistent = Vec::new();
 
-        for (name, base_binding) in entry_snapshot.tracked_bindings.iter() {
+        // TODO: This can probably be simplified
+        
+        let mut names = entry_snapshot
+            .tracked_bindings
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect::<HashSet<_>>();
+        for arrow in arrows {
+            names.extend(
+                arrow
+                    .snapshot
+                    .tracked_bindings
+                    .iter()
+                    .map(|(name, _)| name.clone()),
+            );
+        }
+        let mut names = names.into_iter().collect::<Vec<_>>();
+        names.sort();
+
+        for name in names {
+            let base_binding = entry_snapshot
+                .tracked_bindings
+                .get(name.as_str())
+                .or_else(|| {
+                    arrows
+                        .iter()
+                        .find_map(|arrow| arrow.snapshot.tracked_bindings.get(name.as_str()))
+                })
+                .expect("Binding name came from entry or arrow snapshot");
             let states = arrows
                 .iter()
                 .filter_map(|arrow| {
                     arrow
                         .snapshot
                         .tracked_bindings
-                        .get(name)
+                        .get(name.as_str())
                         .map(|binding| (arrow.label.as_str(), binding.state))
                 })
                 .collect::<Vec<_>>();
@@ -591,6 +624,8 @@ impl ControlFlow {
             let first_state = states[0].1;
             let merged_state = if states.iter().all(|(_, state)| *state == first_state) {
                 first_state
+            } else if discharge_only_nodrop && !base_binding.nodrop {
+                BindingMoveState::ConditionallyMoved
             } else {
                 let state_summary = states
                     .iter()
@@ -602,7 +637,7 @@ impl ControlFlow {
             };
 
             merged_bindings.push((
-                name.clone(),
+                name,
                 TrackedBindingState {
                     state: merged_state,
                     ..base_binding.clone()
