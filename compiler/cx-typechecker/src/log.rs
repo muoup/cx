@@ -1,89 +1,43 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use cx_log::UnderlineError;
+use cx_log::{CXErrorTrait, DiagnosticSpan};
+use cx_tokens::TokenRangeArg;
 use cx_tokens::token::Token;
-use cx_tokens::{TokenRange, byte_range_for_tokens, file_origin_for_tokens};
 
-pub trait TypecheckErrorRangeArg {
-    fn to_range(&self) -> Option<TokenRange>;
-}
-
-impl TypecheckErrorRangeArg for &TokenRange {
-    fn to_range(&self) -> Option<TokenRange> {
-        Some((*self).clone())
-    }
-}
-
-impl TypecheckErrorRangeArg for Option<&TokenRange> {
-    fn to_range(&self) -> Option<TokenRange> {
-        self.cloned()
-    }
-}
-
-impl TypecheckErrorRangeArg for Option<TokenRange> {
-    fn to_range(&self) -> Option<TokenRange> {
-        self.clone()
-    }
-}
-
-pub fn type_error_for_range(
-    tokens: &[Token],
-    fallback_file: &Path,
-    range: &TokenRange,
+pub fn produce_typecheck_error(
+    span: Option<DiagnosticSpan>,
     message: String,
     notes: Vec<String>,
-) -> UnderlineError {
-    let compilation_unit = (!range.file_origin.is_empty())
-        .then(|| PathBuf::from(range.file_origin.as_ref()))
-        .or_else(|| file_origin_for_tokens(tokens, range.start_token, range.end_token))
-        .unwrap_or_else(|| fallback_file.to_owned());
-    let (byte_start, byte_end) = byte_range_for_tokens(tokens, range.start_token, range.end_token);
-
-    UnderlineError::new(
-        "TYPE ERROR",
-        message,
-        compilation_unit,
-        byte_start,
-        byte_end,
-    )
-    .with_token_range(range.start_token, range.end_token)
-    .with_notes(notes)
+) -> Box<dyn CXErrorTrait> {
+    cx_log::produce_diagnostic_error("TYPE ERROR", message, notes, span)
 }
 
 pub fn type_error_for_optional_range(
     tokens: &[Token],
     fallback_file: &Path,
-    range: Option<&TokenRange>,
+    range: impl TokenRangeArg,
     message: String,
     notes: Vec<String>,
 ) -> Box<dyn cx_log::CXErrorTrait> {
-    let Some(range) = range.filter(|range| !range.is_empty()) else {
-        return Box::new(cx_log::UnspannedError::new("TYPE ERROR", message).with_notes(notes));
-    };
-
-    Box::new(type_error_for_range(
-        tokens,
-        fallback_file,
-        range,
+    produce_typecheck_error(
+        range.to_diagnostic_span(tokens, fallback_file),
         message,
         notes,
-    ))
+    )
 }
 
 pub fn type_error_result_for_range<T>(
     tokens: &[Token],
     fallback_file: &Path,
-    range: &TokenRange,
+    range: impl TokenRangeArg,
     message: String,
     notes: Vec<String>,
 ) -> cx_log::CXResult<T> {
-    Err(Box::new(type_error_for_range(
-        tokens,
-        fallback_file,
-        range,
+    Err(produce_typecheck_error(
+        range.to_diagnostic_span(tokens, fallback_file),
         message,
         notes,
-    )))
+    ))
 }
 
 #[macro_export]
@@ -94,13 +48,14 @@ macro_rules! typecheck_error {
 
             // panic!("{}", message);
 
-            let range = $crate::log::TypecheckErrorRangeArg::to_range(&$range)
-                .filter(|range| !range.is_empty());
-
-            $crate::log::type_error_for_optional_range(
+            let span = cx_tokens::TokenRangeArg::to_diagnostic_span(
+                &$range,
                 $env.source.tokens,
                 $env.source.compilation_unit.as_path(),
-                range.as_ref(),
+            );
+
+            $crate::log::produce_typecheck_error(
+                span,
                 message,
                 $notes,
             )
@@ -113,13 +68,14 @@ macro_rules! typecheck_error {
 
             // panic!("{}", message);
 
-            let range = $crate::log::TypecheckErrorRangeArg::to_range(&$range)
-                .filter(|range| !range.is_empty());
-
-            $crate::log::type_error_for_optional_range(
+            let span = cx_tokens::TokenRangeArg::to_diagnostic_span(
+                &$range,
                 $env.source.tokens,
                 $env.source.compilation_unit.as_path(),
-                range.as_ref(),
+            );
+
+            $crate::log::produce_typecheck_error(
+                span,
                 message,
                 Vec::new(),
             )

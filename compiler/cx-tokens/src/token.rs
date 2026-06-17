@@ -1,5 +1,6 @@
 use std::{path::Path, sync::Arc};
 
+use cx_log::DiagnosticSpan;
 use speedy::{Context, Readable, Reader, Writable, Writer};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -30,6 +31,58 @@ impl TokenRange {
 
     pub fn is_empty(&self) -> bool {
         self.start_token == 0 && self.end_token == 0
+    }
+
+    pub fn file_origin_path(&self) -> Option<std::path::PathBuf> {
+        (!self.file_origin.is_empty()).then(|| std::path::PathBuf::from(self.file_origin.as_ref()))
+    }
+
+    pub fn to_diagnostic_span(
+        &self,
+        tokens: &[Token],
+        fallback_file: &Path,
+    ) -> Option<DiagnosticSpan> {
+        if self.is_empty() {
+            return None;
+        }
+
+        let compilation_unit = self
+            .file_origin_path()
+            .or_else(|| crate::file_origin_for_tokens(tokens, self.start_token, self.end_token))
+            .unwrap_or_else(|| fallback_file.to_owned());
+        let (byte_start, byte_end) =
+            crate::byte_range_for_tokens(tokens, self.start_token, self.end_token);
+
+        Some(DiagnosticSpan::new(compilation_unit, byte_start, byte_end))
+    }
+}
+
+pub trait TokenRangeArg {
+    fn to_diagnostic_span(&self, tokens: &[Token], fallback_file: &Path) -> Option<DiagnosticSpan>;
+}
+
+impl TokenRangeArg for TokenRange {
+    fn to_diagnostic_span(&self, tokens: &[Token], fallback_file: &Path) -> Option<DiagnosticSpan> {
+        TokenRange::to_diagnostic_span(self, tokens, fallback_file)
+    }
+}
+
+impl<T: TokenRangeArg + ?Sized> TokenRangeArg for &T {
+    fn to_diagnostic_span(&self, tokens: &[Token], fallback_file: &Path) -> Option<DiagnosticSpan> {
+        (*self).to_diagnostic_span(tokens, fallback_file)
+    }
+}
+
+impl TokenRangeArg for Option<&TokenRange> {
+    fn to_diagnostic_span(&self, tokens: &[Token], fallback_file: &Path) -> Option<DiagnosticSpan> {
+        self.and_then(|range| range.to_diagnostic_span(tokens, fallback_file))
+    }
+}
+
+impl TokenRangeArg for Option<TokenRange> {
+    fn to_diagnostic_span(&self, tokens: &[Token], fallback_file: &Path) -> Option<DiagnosticSpan> {
+        self.as_ref()
+            .and_then(|range| range.to_diagnostic_span(tokens, fallback_file))
     }
 }
 

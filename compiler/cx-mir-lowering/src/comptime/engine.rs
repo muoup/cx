@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use cx_mir::mir::data::MIRFunctionPrototype;
 
 use crate::builder::LMIRBuilder;
@@ -18,9 +16,5 @@ impl<'builder> ComptimeEngine<'builder> {
             builder,
             current_prototype,
         }
-    }
-
-    pub(crate) fn source_path(&self) -> &Path {
-        self.builder.source_path()
     }
 }

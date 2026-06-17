@@ -473,19 +473,13 @@ pub(crate) fn perform_job(
     Ok(JobResult::StandardSuccess)
 }
 
-/// Error type for LSP that includes both type errors and fatal errors
-#[derive(Debug, Clone)]
-pub enum LSPErrorSpan {
-    TokenRange { start: usize, end: usize },
-    ByteRange { start: usize, end: usize },
-}
-
 #[derive(Debug, Clone)]
 pub enum LSPErrors {
     SpannedError {
         compilation_unit: std::path::PathBuf,
         message: String,
-        span: LSPErrorSpan,
+        byte_start: usize,
+        byte_end: usize,
         notes: Vec<String>,
     },
     FatalError {
@@ -591,23 +585,8 @@ fn handle_job_collect_errors(
             return Some(LSPErrors::SpannedError {
                 compilation_unit,
                 message: error.error_message(),
-                span: LSPErrorSpan::ByteRange { start, end },
-                notes: error.notes(),
-            });
-        }
-
-        if let (Some(compilation_unit), Some(token_start), Some(token_end)) = (
-            error.compilation_unit(),
-            error.token_start(),
-            error.token_end(),
-        ) {
-            return Some(LSPErrors::SpannedError {
-                compilation_unit,
-                message: error.error_message(),
-                span: LSPErrorSpan::TokenRange {
-                    start: token_start,
-                    end: token_end,
-                },
+                byte_start: start,
+                byte_end: end,
                 notes: error.notes(),
             });
         }

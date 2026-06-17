@@ -2,13 +2,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use cx_ast::ast::{function::CXFunctionKind, CXASTDefinition, CXASTStmt, CXAST};
-use cx_log::CXResult;
+use cx_log::{CXResult, DiagnosticPointer};
 use cx_namespace::result::QualifiedLookupResult;
 use cx_namespace::MIRQualifiedLookup;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_preparse_data::symbol_data::PreparseSymbolKind;
 use cx_preparse_data::{NamespaceAliases, PreparseContents, VisibilityMode};
-use cx_tokens::TokenIter;
+use cx_tokens::{diagnostic_pointer_for_token, TokenIter};
 use cx_util::identifier::CXIdent;
 use cx_util::module_path::ModulePath;
 use cx_util::namespace::{NamespacePath, QualifiedName};
@@ -85,6 +85,23 @@ impl<'a> ParserData<'a> {
             .filter(|origin| !origin.as_os_str().is_empty())
             .map(|origin| Arc::from(origin.to_string_lossy().as_ref()))
             .unwrap_or_else(|| self.file_origin.clone())
+    }
+
+    pub fn diagnostic_pointer_at(&self, index: usize) -> Option<DiagnosticPointer> {
+        let token = self.tokens.slice.get(index)?;
+        let previous_token = index
+            .checked_sub(1)
+            .and_then(|prev_index| self.tokens.slice.get(prev_index));
+
+        Some(diagnostic_pointer_for_token(
+            self.tokens.file.as_path(),
+            token,
+            previous_token,
+        ))
+    }
+
+    pub fn current_diagnostic_pointer(&self) -> Option<DiagnosticPointer> {
+        self.diagnostic_pointer_at(self.tokens.index)
     }
 
     pub fn get_comma_mode(&self) -> bool {

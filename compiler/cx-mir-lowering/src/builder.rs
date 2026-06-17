@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::Path};
+use std::collections::HashMap;
 
 use crate::mir_lowering::types::convert_cx_prototype;
 use crate::{LMIRResult, LMIRUnit};
@@ -17,10 +17,9 @@ use cx_util::unsafe_float::FloatWrapper;
 pub struct LMIRBuilder {
     pub registry: MIRDecomposedRegistry,
     pub fn_map: LMIRFunctionMap,
-    
+
     functions: Vec<LMIRFunction>,
     global_variables: Vec<LMIRGlobalValue>,
-    source_path: std::path::PathBuf,
 
     symbol_table: ScopedMap<String, LMIRValue>,
     goto_stack: Vec<LMIRGotoContext>,
@@ -50,7 +49,6 @@ impl LMIRBuilder {
             functions: Vec::new(),
             global_variables: Vec::new(),
             registry: mir.registry.clone(),
-            source_path: mir.source_path.clone(),
 
             fn_map: HashMap::new(),
             symbol_table: ScopedMap::new_with_starting_scope(),
@@ -200,10 +198,6 @@ impl LMIRBuilder {
 
     pub fn current_mir_prototype(&self) -> &MIRFunctionPrototype {
         &self.fun().mir_prototype
-    }
-
-    pub(crate) fn source_path(&self) -> &Path {
-        self.source_path.as_path()
     }
 
     pub fn current_prototype(&self) -> &LMIRFunctionPrototype {

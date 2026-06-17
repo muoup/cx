@@ -23,7 +23,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 // Re-export LSP diagnostic types for use by cx-lsp
-pub use crate::scheduler::{LSPErrorSpan, LSPErrors};
+pub use crate::scheduler::LSPErrors;
 
 pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResult<()> {
     let verbose = config.verbose;

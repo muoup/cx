@@ -3,8 +3,7 @@
 //! This module provides utilities for converting compiler type errors
 //! into LSP diagnostics format.
 
-use cx_pipeline::{LSPErrorSpan, LSPErrors};
-use cx_tokens::token::Token;
+use cx_pipeline::LSPErrors;
 use std::collections::HashMap;
 use std::path::Path;
 use tower_lsp::lsp_types::{
@@ -34,29 +33,6 @@ fn byte_index_to_position(file_contents: &str, index: usize) -> Position {
             .map(|line| line.chars().count() as u32)
             .unwrap_or(0),
     }
-}
-
-fn token_range(
-    file_contents: &str,
-    tokens: &[Token],
-    token_start: usize,
-    token_end: usize,
-) -> Range {
-    let start_token_index = token_start.min(tokens.len().saturating_sub(1));
-    let end_token_index = token_end
-        .saturating_sub(1)
-        .min(tokens.len().saturating_sub(1));
-
-    let start = tokens
-        .get(start_token_index)
-        .map(|token| byte_index_to_position(file_contents, token.byte_start_index))
-        .unwrap_or_default();
-    let end = tokens
-        .get(end_token_index)
-        .map(|token| byte_index_to_position(file_contents, token.byte_end_index))
-        .unwrap_or(start);
-
-    Range { start, end }
 }
 
 fn byte_range(file_contents: &str, start: usize, end: usize) -> Range {
@@ -126,17 +102,13 @@ pub fn lsp_error_to_diagnostic(error: &LSPErrors) -> Diagnostic {
         LSPErrors::SpannedError {
             compilation_unit,
             message,
-            span,
+            byte_start,
+            byte_end,
             notes,
         } => {
             let file_contents = std::fs::read_to_string(compilation_unit).unwrap_or_default();
             let uri = Url::from_file_path(compilation_unit).ok();
-            let range = match span {
-                LSPErrorSpan::TokenRange { start, end } => cx_lexer::lex(&file_contents)
-                    .map(|tokens| token_range(&file_contents, &tokens, *start, *end))
-                    .unwrap_or_else(|_| fallback_range(&file_contents, None)),
-                LSPErrorSpan::ByteRange { start, end } => byte_range(&file_contents, *start, *end),
-            };
+            let range = byte_range(&file_contents, *byte_start, *byte_end);
             let related_information = uri
                 .as_ref()
                 .and_then(|uri| related_information(uri, range, notes));

@@ -38,15 +38,10 @@ macro_rules! log_analysis_error {
             let (byte_start, byte_end) =
                 $crate::log::byte_range_for_source_tokens(compilation_unit.as_path(), token_start, token_end);
 
+            let span = cx_log::DiagnosticSpan::new(compilation_unit, byte_start, byte_end);
+
             Err(Box::new(
-                cx_log::UnderlineError::new(
-                    "ANALYSIS ERROR",
-                    message,
-                    compilation_unit,
-                    byte_start,
-                    byte_end,
-                )
-                .with_token_range(token_start, token_end),
+                cx_log::UnderlineError::new("ANALYSIS ERROR", message, span),
             ) as Box<dyn cx_log::CXErrorTrait>)
         }
     };

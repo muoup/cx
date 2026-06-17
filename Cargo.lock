@@ -392,12 +392,10 @@ name = "cx-mir-lowering"
 version = "0.0.0"
 dependencies = [
  "cx-ast",
- "cx-lexer",
  "cx-lmir",
  "cx-log",
  "cx-mir",
  "cx-parsing",
- "cx-tokens",
  "cx-util",
 ]
 
