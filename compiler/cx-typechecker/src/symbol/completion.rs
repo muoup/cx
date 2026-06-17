@@ -695,7 +695,7 @@ fn type_completion_error<T>(
     message: impl Into<String>,
 ) -> CXResult<T> {
     if let Some(range) = range {
-        return Err(crate::log::produce_typecheck_error_for_range(
+        return Err(crate::log::produce_typecheck_error(
             env.source.tokens,
             env.source.compilation_unit.as_path(),
             range,
