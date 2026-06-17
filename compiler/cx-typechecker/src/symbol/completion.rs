@@ -121,7 +121,7 @@ fn complete_type_value(
                 .and_then(|v| constexpr_evaluate(env, v))
                 .and_then(|v| {
                     v.get_integer().ok_or_else(|| {
-                        CXErrorBase::create_boxed("Array size must be an integer literal")
+                        CXErrorBase::create_boxed_error("Array size must be an integer literal")
                     })
                 })?;
             MIRTypeKind::Array {

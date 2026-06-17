@@ -435,7 +435,7 @@ impl ControlFlow {
         &mut self,
         scope: &Scope,
         current_snapshot: Option<&ControlFlowSnapshot>,
-    ) -> CXResult<Option<ControlFlowSnapshot>> {
+    ) -> CXRawResult<Option<ControlFlowSnapshot>> {
         match &scope.flow_kind {
             ScopeFlowKind::Plain => Ok(current_snapshot.cloned()),
             ScopeFlowKind::Merge(state) => {

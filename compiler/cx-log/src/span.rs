@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::error::{CXErrorContext, UnderlineError};
+use crate::error::{CXError, UnderlineError};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiagnosticSpan {
@@ -48,12 +48,7 @@ pub fn produce_diagnostic_error(
     prefix: impl Into<String>,
     message: String,
     notes: Vec<String>,
-    span: Option<DiagnosticSpan>,
+    span: DiagnosticSpan,
 ) -> Box<dyn CXError> {
-    let prefix = prefix.into();
-    let Some(span) = span else {
-        return Box::new(UnspannedError::new(prefix, message).with_notes(notes));
-    };
-
-    Box::new(UnderlineError::new(prefix, message, span).with_notes(notes))
+    Box::new(UnderlineError::new(prefix.into(), message, span).with_notes(notes))
 }

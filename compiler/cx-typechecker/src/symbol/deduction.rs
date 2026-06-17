@@ -39,7 +39,7 @@ pub(crate) fn complete_templated_callee(
     if let Some(input) = template_input {
         let completed_input = complete_template_input(env, namespace, input)?;
         return apply_template(env, &symbol, completed_input)?.ok_or_else(|| {
-            CXErrorBase::create_boxed(format!(
+            CXErrorBase::create_boxed_error(format!(
                 "Symbol '{}' does not accept template arguments",
                 name
             ))
@@ -47,7 +47,7 @@ pub(crate) fn complete_templated_callee(
     }
 
     deduce_template_symbol(env, namespace, &symbol, arg_types)?
-        .ok_or_else(|| CXErrorBase::create_boxed(format!("Symbol '{}' is not a template", name)))
+        .ok_or_else(|| CXErrorBase::create_boxed_error(format!("Symbol '{}' is not a template", name)))
 }
 
 pub(crate) fn deduce_template_symbol(
@@ -107,7 +107,7 @@ fn deduce_template_input(
         .iter()
         .map(|name| {
             let ty = bindings.remove(name.as_str()).ok_or_else(|| {
-                CXErrorBase::create_boxed(format!(
+                CXErrorBase::create_boxed_error(format!(
                     "Could not deduce template argument '{}' for function {}",
                     name, shell.kind
                 ))

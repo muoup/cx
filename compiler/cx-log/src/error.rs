@@ -3,21 +3,18 @@ use std::path::PathBuf;
 use crate::span::{DiagnosticPointer, DiagnosticSpan};
 
 pub type CXResult<T> = Result<T, Box<dyn CXError>>;
-pub struct CXRawResult<T>(Result<T, Box<dyn CXErrorMessage>>);
+pub type CXRawResult<T> = Result<T, Box<dyn CXErrorMessage>>;
 
-impl<T> CXRawResult<T> {
-    pub fn new(result: Result<T, Box<dyn CXErrorMessage>>) -> Self {
-        CXRawResult(result)
-    }
-
-    pub fn complete(self, context: Box<dyn CXErrorContext>) -> CXResult<T> {
-        self.0.map_err(|msg| {
-            Box::new(CXComposedError {
-                error: msg,
-                context,
-            }) as Box<dyn CXError>
-        })
-    }
+pub fn complete_raw_result<T>(
+    result: CXRawResult<T>,
+    context: Box<dyn CXErrorContext>,
+) -> CXResult<T> {
+    result.map_err(|msg| {
+        Box::new(CXComposedError {
+            error: msg,
+            context,
+        }) as Box<dyn CXError>
+    })
 }
 
 pub trait CXErrorMessage {
@@ -63,19 +60,20 @@ impl CXErrorBase {
     }
 
     pub fn create_result<T, U: Into<String>>(msg: U) -> CXRawResult<T> {
-        CXRawResult::new(Err(Box::new(CXErrorBase::new(msg))))
+        Err(Box::new(CXErrorBase::new(msg)))
     }
 
-    pub fn create_boxed<U: Into<String>>(msg: U) -> Box<dyn CXErrorMessage> {
+    pub fn create_boxed_error<U: Into<String>>(msg: U) -> Box<dyn CXErrorMessage> {
         Box::new(CXErrorBase::new(msg))
     }
 }
 
-#[derive(Clone, Debug)]
 pub struct CXComposedError {
     pub error: Box<dyn CXErrorMessage>,
     pub context: Box<dyn CXErrorContext>,
 }
+
+impl CXError for CXComposedError {}
 
 impl CXErrorMessage for CXComposedError {
     fn error_content(&self) -> String {
@@ -123,20 +121,13 @@ impl PointingError {
         }
     }
 
-    pub fn legacy(
-        prefix: impl Into<String>,
-        message: impl Into<String>,
-        file: PathBuf,
-        point: usize,
-    ) -> Self {
-        Self::new(prefix, message, DiagnosticPointer::new(file, point))
-    }
-
     pub fn with_diagnostic_range(mut self, start: usize, end: usize) -> Self {
         self.pointer = self.pointer.with_diagnostic_range(start, end);
         self
     }
 }
+
+impl CXError for PointingError {}
 
 impl CXErrorMessage for PointingError {
     fn error_content(&self) -> String {
@@ -189,6 +180,8 @@ impl UnderlineError {
         self
     }
 }
+
+impl CXError for UnderlineError {}
 
 impl CXErrorMessage for UnderlineError {
     fn error_content(&self) -> String {

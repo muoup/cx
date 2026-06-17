@@ -49,14 +49,14 @@ impl AnalysisDiagnosticContext {
         let owned_file_contents;
         let file_contents = if source_path == self.compilation_unit.as_path() {
             self.file_contents.as_ref().ok_or_else(|| {
-                CXErrorBase::create_boxed(format!(
+                CXErrorBase::create_boxed_error(format!(
                     "Failed to read source file for analysis diagnostics: {}",
                     self.compilation_unit.display()
                 ))
             })?
         } else {
             owned_file_contents = std::fs::read_to_string(source_path).map_err(|_| {
-                CXErrorBase::create_boxed(format!(
+                CXErrorBase::create_boxed_error(format!(
                     "Failed to read source file for analysis diagnostics: {}",
                     source_path.display()
                 ))
@@ -64,14 +64,14 @@ impl AnalysisDiagnosticContext {
             &owned_file_contents
         };
         let tokens = cx_lexer::lex(file_contents).map_err(|_| {
-            CXErrorBase::create_boxed(format!(
+            CXErrorBase::create_boxed_error(format!(
                 "Failed to lex source file for analysis diagnostics: {}",
                 source_path.display()
             ))
         })?;
 
         let start_token = tokens.get(range.start_token).ok_or_else(|| {
-            CXErrorBase::create_boxed(format!(
+            CXErrorBase::create_boxed_error(format!(
                 "Invalid source range: start token index {} out of bounds",
                 range.start_token
             ))
@@ -79,7 +79,7 @@ impl AnalysisDiagnosticContext {
         let end_token = tokens
             .get(range.end_token.saturating_sub(1))
             .ok_or_else(|| {
-                CXErrorBase::create_boxed(format!(
+                CXErrorBase::create_boxed_error(format!(
                     "Invalid source range: end token index {} out of bounds",
                     range.end_token
                 ))
@@ -94,7 +94,7 @@ impl AnalysisDiagnosticContext {
 
         let source_slice = file_contents
             .get(start_token.byte_start_index..end_token.byte_end_index)
-            .ok_or(CXErrorBase::create_boxed(format!(
+            .ok_or(CXErrorBase::create_boxed_error(format!(
                 "Invalid source range: token indices {} to {} out of bounds in file {}",
                 range.start_token,
                 range.end_token,
@@ -110,7 +110,7 @@ impl AnalysisDiagnosticContext {
                 .token_range
                 .as_ref()
                 .ok_or_else(|| {
-                    CXErrorBase::create_boxed("Condition node has no source range for diagnostics")
+                    CXErrorBase::create_boxed_error("Condition node has no source range for diagnostics")
                 })
                 .and_then(|range| self.source_text_for_range(range))?;
             return Ok(format!(

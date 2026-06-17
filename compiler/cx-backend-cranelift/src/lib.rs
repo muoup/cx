@@ -94,7 +94,7 @@ impl FunctionState<'_> {
 
             LMIRValue::FunctionRef(name) => {
                 let (_func_id, func_ref) = self.get_function(name.as_str()).ok_or_else(|| {
-                    CXErrorBase::create_boxed(format!("Function not found: {}", name))
+                    CXErrorBase::create_boxed_error(format!("Function not found: {}", name))
                 })?;
                 let as_value = self.builder.ins().func_addr(self.pointer_type, func_ref);
 
@@ -216,5 +216,5 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
         .object_module
         .finish()
         .emit()
-        .map_err(|e| CXErrorBase::create_boxed(format!("Failed to emit object file: {e}")))
+        .map_err(|e| CXErrorBase::create_boxed_error(format!("Failed to emit object file: {e}")))
 }

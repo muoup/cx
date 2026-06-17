@@ -41,7 +41,7 @@ pub(crate) fn codegen_block(
 
     for instr in fn_block.body.iter() {
         let ret = codegen_instruction(context, instr).map_err(|err| {
-            CXErrorBase::create_boxed(format!(
+            CXErrorBase::create_boxed_error(format!(
                 "Failed to codegen instruction: {instr:#?}\nError: {}",
                 err.error_message()
             ))

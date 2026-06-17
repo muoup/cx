@@ -442,7 +442,7 @@ pub(crate) fn perform_job(
             };
             let internal_directory = internal_directory(context, &job.unit).with_extension("o");
             let internal_directory_str = internal_directory.to_str().ok_or(
-                CXErrorBase::create_boxed("Internal directory path is not valid UTF-8"),
+                CXErrorBase::create_boxed_error("Internal directory path is not valid UTF-8"),
             )?;
 
             let buffer = match context.config.backend {

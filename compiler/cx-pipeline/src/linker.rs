@@ -37,7 +37,7 @@ pub(crate) fn link_relocatable(
 
     let output = cmd
         .output()
-        .map_err(|e| CXErrorBase::create_boxed(format!("Failed to execute linker: {}", e)))?;
+        .map_err(|e| CXErrorBase::create_boxed_error(format!("Failed to execute linker: {}", e)))?;
 
     if output.status.success() {
         Ok(())
@@ -100,7 +100,7 @@ pub(crate) fn link(
 
     let output = cmd
         .output()
-        .map_err(|e| CXErrorBase::create_boxed(format!("Failed to execute linker: {}", e)))?;
+        .map_err(|e| CXErrorBase::create_boxed_error(format!("Failed to execute linker: {}", e)))?;
 
     if output.status.success() {
         Ok(())
