@@ -1,4 +1,4 @@
-use cx_log::{CXErrorBase, CXResult};
+use cx_log::{CXResult, CXUnspannedError};
 use cx_mir::{
     mir::{
         data::{MIRIntegerType, MIRType, MIRTypeKind},
@@ -339,10 +339,13 @@ pub(crate) fn increment_amount_node(
     mir_type: &MIRType,
 ) -> CXResult<FMIRNode> {
     let MIRTypeKind::Integer { _type, signed } = &mir_type.kind else {
-        return CXErrorBase::create_result(format!(
-            "FMIR increment desugaring expected integer type, found '{}'",
-            mir_type.display_with(env.type_definitions)
-        ));
+        return CXUnspannedError::result(
+            "ANALYSIS ERROR",
+            format!(
+                "FMIR increment desugaring expected integer type, found '{}'",
+                mir_type.display_with(env.type_definitions)
+            ),
+        );
     };
 
     Ok(FMIRNode {
@@ -367,10 +370,13 @@ pub(crate) fn convert_increment(
         .mem_ref_inner(&operand_expr._type)
         .cloned()
     else {
-        return CXErrorBase::create_result(format!(
-            "FMIR increment desugaring expected memory reference operand, found '{}'",
-            operand_expr._type.display_with(env.type_definitions)
-        ));
+        return CXUnspannedError::result(
+            "ANALYSIS ERROR",
+            format!(
+                "FMIR increment desugaring expected memory reference operand, found '{}'",
+                operand_expr._type.display_with(env.type_definitions)
+            ),
+        );
     };
 
     let old_value_load = load_node(
@@ -412,10 +418,13 @@ pub(crate) fn convert_increment(
             )
         }
         _ => {
-            return CXErrorBase::create_result(format!(
-                "FMIR increment desugaring requires integer or pointer inner type, found '{}'",
-                value_type.display_with(env.type_definitions)
-            ));
+            return CXUnspannedError::result(
+                "ANALYSIS ERROR",
+                format!(
+                    "FMIR increment desugaring requires integer or pointer inner type, found '{}'",
+                    value_type.display_with(env.type_definitions)
+                ),
+            );
         }
     };
 

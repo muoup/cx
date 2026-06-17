@@ -10,7 +10,7 @@ use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
 use cx_lmir::{LMIRABISlot, LMIRFunctionSignature};
 use cx_lmir::{LMIRBlockID, LMIRRegister, LMIRUnit, LMIRValue};
-use cx_log::{log_error, CXErrorBase, CXResult};
+use cx_log::{CXResult, CXUnspannedError};
 use cx_util::identifier::CXIdent;
 use std::collections::HashMap;
 
@@ -94,7 +94,10 @@ impl FunctionState<'_> {
 
             LMIRValue::FunctionRef(name) => {
                 let (_func_id, func_ref) = self.get_function(name.as_str()).ok_or_else(|| {
-                    CXErrorBase::create_boxed_error(format!("Function not found: {}", name))
+                    CXUnspannedError::boxed(
+                        "CODEGEN ERROR",
+                        format!("Function not found: {}", name),
+                    )
                 })?;
                 let as_value = self.builder.ins().func_addr(self.pointer_type, func_ref);
 
@@ -127,7 +130,10 @@ impl FunctionState<'_> {
 
             LMIRValue::Global(id) => {
                 let Some(data_id) = self.global_ids.get(*id as usize).cloned() else {
-                    return CXErrorBase::create_result(format!("Global not found: g{id}"));
+                    return CXUnspannedError::result(
+                        "CODEGEN ERROR",
+                        format!("Global not found: g{id}"),
+                    );
                 };
 
                 let global_ref = self
@@ -144,10 +150,10 @@ impl FunctionState<'_> {
 
             LMIRValue::Register { register, _type } => {
                 let Some(var) = self.variable_table.get(register).cloned() else {
-                    return CXErrorBase::create_result(format!(
-                        "Variable not found in variable table: {:?}",
-                        bc_value
-                    ));
+                    return CXUnspannedError::result(
+                        "CODEGEN ERROR",
+                        format!("Variable not found in variable table: {:?}", bc_value),
+                    );
                 };
 
                 Ok(var)
@@ -196,9 +202,12 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
             .get(func.prototype.name.as_str())
             .cloned()
         else {
-            log_error!(
-                "Function not found in function map: {}",
-                func.prototype.name
+            return CXUnspannedError::result(
+                "CODEGEN ERROR",
+                format!(
+                    "Function not found in function map: {}",
+                    func.prototype.name
+                ),
             );
         };
 
@@ -212,9 +221,7 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
         codegen_function(&mut global_state, func_id, func_sig, func)?;
     }
 
-    global_state
-        .object_module
-        .finish()
-        .emit()
-        .map_err(|e| CXErrorBase::create_boxed_error(format!("Failed to emit object file: {e}")))
+    global_state.object_module.finish().emit().map_err(|e| {
+        CXUnspannedError::boxed("CODEGEN ERROR", format!("Failed to emit object file: {e}"))
+    })
 }

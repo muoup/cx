@@ -7,7 +7,7 @@ use cx_ast::ast::{
     types::{CXField, CXStructAttributes, CXType, CXTypeKind, PredeclarationType},
 };
 use cx_ast::symbols::CXSymbolKind;
-use cx_log::{CXErrorBase, CXResult};
+use cx_log::{CXResult, CXUnspannedError};
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
@@ -106,12 +106,15 @@ fn complete_type_value(
                 template_input,
                 ty.range(),
             )?;
-            env.symbols
-                .try_resolve_type_id(id)
-                .cloned()
-                .ok_or_else(|| {
-                    crate::typecheck_error!(env, ty.range().cloned(), "Type '{}' is incomplete", ty)
-                })?
+            let Some(completed) = env.symbols.try_resolve_type_id(id).cloned() else {
+                return type_completion_error(
+                    env,
+                    ty.range(),
+                    format!("Type '{}' is incomplete", ty),
+                );
+            };
+
+            completed
         }
 
         CXTypeKind::ExplicitSizedArray(inner, size) => {
@@ -121,7 +124,11 @@ fn complete_type_value(
                 .and_then(|v| constexpr_evaluate(env, v))
                 .and_then(|v| {
                     v.get_integer().ok_or_else(|| {
-                        CXErrorBase::create_boxed_error("Array size must be an integer literal")
+                        crate::typecheck_error!(
+                            env,
+                            size.token_range(),
+                            "Array size must be an integer literal"
+                        )
                     })
                 })?;
             MIRTypeKind::Array {
@@ -416,13 +423,13 @@ fn complete_template_type_lookup(
         );
     };
     let input = complete_template_input(env, namespace, input)?;
-    let symbol = apply_template(env, mir_symbol, input)?.ok_or_else(|| {
-        crate::typecheck_error!(
+    let Some(symbol) = apply_template(env, mir_symbol, input)? else {
+        return type_completion_error(
             env,
-            range.cloned(),
-            "Type '{name}' does not accept template arguments"
-        )
-    })?;
+            range,
+            format!("Type '{name}' does not accept template arguments"),
+        );
+    };
 
     match symbol {
         MIRSymbol::Type(id) => Ok(id),
@@ -687,13 +694,17 @@ fn type_completion_error<T>(
     range: Option<&cx_tokens::TokenRange>,
     message: impl Into<String>,
 ) -> CXResult<T> {
-    Err(crate::log::type_error_for_optional_range(
-        env.source.tokens,
-        env.source.compilation_unit.as_path(),
-        range,
-        message.into(),
-        Vec::new(),
-    ))
+    if let Some(range) = range {
+        return Err(crate::log::produce_typecheck_error_for_range(
+            env.source.tokens,
+            env.source.compilation_unit.as_path(),
+            range,
+            message.into(),
+            Vec::new(),
+        ));
+    }
+
+    CXUnspannedError::result("TYPE ERROR", message)
 }
 
 fn completed_function_name(

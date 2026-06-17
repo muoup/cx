@@ -42,7 +42,7 @@ macro_rules! log_analysis_error {
 
             Err(Box::new(
                 cx_log::UnderlineError::new("ANALYSIS ERROR", message, span),
-            ) as Box<dyn cx_log::CXErrorTrait>)
+            ) as Box<dyn cx_log::CXError>)
         }
     };
 }

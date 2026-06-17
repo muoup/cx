@@ -86,7 +86,7 @@ pub fn typecheck_access(
     rhs: &CXExpression,
     expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
-    ensure_binding_available(env, Some(expr.token_range()), lhs.binding())?;
+    ensure_binding_available(env, expr.token_range(), lhs.binding())?;
     let lhs_binding = lhs.binding().cloned();
 
     let base = resolve_access_base(

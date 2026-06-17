@@ -21,12 +21,7 @@ pub(crate) fn typecheck_identifier(
     template_input: Option<&CXTemplateInput>,
 ) -> CXResult<TypecheckResult> {
     let Some(mut symbol) = env.get_symbol(namespace, name, Some(expr.token_range()))? else {
-        return log_typecheck_error!(
-            env,
-            Some(expr.token_range()),
-            "Identifier '{}' not found",
-            name
-        );
+        return log_typecheck_error!(env, expr.token_range(), "Identifier '{}' not found", name);
     };
 
     if let Some(completed_input) = template_input
@@ -37,9 +32,7 @@ pub(crate) fn typecheck_identifier(
     }
 
     let result = TypecheckResult::from_symbol(symbol, name.clone(), template_input.cloned())
-        .map_err(|err| {
-            typecheck_error!(env, Some(expr.token_range()), "{}", err.error_message())
-        })?;
+        .map_err(|err| typecheck_error!(env, expr.token_range(), "{}", err.error_content()))?;
 
     let binding = match result.ready_expression().map(|expr| &expr.kind) {
         Some(MIRExpressionKind::Variable {

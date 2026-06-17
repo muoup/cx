@@ -26,13 +26,13 @@ pub fn typecheck_function(
     env.push_scope(false, false);
     env.function.set_scope_anchor(body);
     env.function
-        .configure_merge_scope(body, "function exit", Some("fallthrough"), true);
+        .configure_merge_scope(body, Some("fallthrough"), true);
 
     for MIRParameter { name, _type } in prototype.signature().params.iter() {
         let Some(name) = name else {
             continue;
         };
-        ensure_valid_allocation_type(env, Some(body.token_range().clone()), "a parameter", _type)?;
+        ensure_valid_allocation_type(env, body.token_range().clone(), "a parameter", _type)?;
         let ref_type = env.symbols.mem_ref_to(_type.clone());
 
         env.symbols.insert_local_value(

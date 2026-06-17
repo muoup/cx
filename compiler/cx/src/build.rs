@@ -1,3 +1,5 @@
+use std::io;
+
 use cx_pipeline::project_compilation;
 use cx_pipeline_data::{
     config::find_and_load_config, CompilationMode, CompilerBackend, CompilerConfig,
@@ -66,13 +68,11 @@ pub(crate) fn run_build_mode(args: BuildArgs) {
         include_dirs: vec![],
     };
 
-    match project_compilation(base_config, &config, args.target.as_deref()) {
-        Ok(_) => {}
-        Err(err) => {
-            err.print();
-            std::process::exit(1);
-        }
-    }
+    project_compilation(base_config, &config, args.target.as_deref()).unwrap_or_else(|err| {
+        err.print(&mut io::stdout()).unwrap();
+
+        std::process::exit(1);
+    });
 }
 
 fn parse_backend(s: &str) -> Result<CompilerBackend, String> {

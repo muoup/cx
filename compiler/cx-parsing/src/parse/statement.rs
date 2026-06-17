@@ -2,7 +2,7 @@ use cx_ast::ast::{
     expression::{CXBinOp, CXExprKind, CXExpression},
     types::CXTypeKind,
 };
-use cx_log::{log_error, CXResult};
+use cx_log::CXResult;
 use cx_tokens::{
     keyword, operator, punctuator,
     token::{KeywordType, OperatorType, PunctuatorType, TokenKind},
@@ -127,7 +127,10 @@ pub(crate) fn try_parse_keyword_stmt(
                         "':'"
                     );
                     if default_case.is_some() {
-                        log_error!("Multiple default cases in switch statement");
+                        return log_parse_error!(
+                            data,
+                            "Multiple default cases in switch statement"
+                        );
                     }
                     default_case = Some(index as usize);
                     continue;
@@ -161,7 +164,7 @@ pub(crate) fn try_parse_keyword_stmt(
                 if try_next!(data.tokens, keyword!(Default)) {
                     assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
                     if default_arm.is_some() {
-                        log_error!("Multiple default cases in match statement");
+                        return log_parse_error!(data, "Multiple default cases in match statement");
                     }
                     default_arm = Some(Box::new(parse_body(data)?));
                     continue;

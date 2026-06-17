@@ -26,7 +26,7 @@ pub fn resolve_type_constructor_pattern(
     else {
         return log_typecheck_error!(
             env,
-            Some(expr.token_range()),
+            expr.token_range(),
             "Expected qualified tagged union variant pattern"
         );
     };
@@ -34,7 +34,7 @@ pub fn resolve_type_constructor_pattern(
     let Some((union_namespace, union_name)) = constructor.namespace.parent_and_name() else {
         return log_typecheck_error!(
             env,
-            Some(expr.token_range()),
+            expr.token_range(),
             "Expected tagged union variant pattern to name a type member constructor"
         );
     };
@@ -45,7 +45,7 @@ pub fn resolve_type_constructor_pattern(
         Some(_) => {
             return log_typecheck_error!(
                 env,
-                Some(expr.token_range()),
+                expr.token_range(),
                 "Tagged union variant payload pattern must be a binding"
             );
         }
@@ -59,7 +59,7 @@ pub fn resolve_type_constructor_pattern(
         .ok_or_else(|| {
             typecheck_error!(
                 env,
-                Some(expr.token_range()),
+                expr.token_range(),
                 "Could not resolve pattern target '{}'",
                 union_name
             )

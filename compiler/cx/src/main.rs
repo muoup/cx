@@ -5,7 +5,6 @@ mod init;
 use args::Command;
 use cx_pipeline::standard_compilation;
 use cx_pipeline_data::{CompilationMode, CompilerConfig};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 
@@ -87,14 +86,10 @@ fn compiler_config_with_dirs(
 }
 
 fn run_standard_compilation(config: CompilerConfig, path: &Path) {
-    match standard_compilation(config, path) {
-        Ok(_) => {}
-        Err(err) => {
-            err.print();
-            let _ = std::io::stdout().flush();
-            std::process::exit(1);
-        }
-    }
+    standard_compilation(config, path).unwrap_or_else(|err| {
+        err.print(&mut std::io::stdout())
+            .expect("Failed to write error message");
+    });
 }
 
 fn link_objects(output: &Path, objects: &[PathBuf]) {

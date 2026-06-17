@@ -1,5 +1,5 @@
-use cx_log::CXErrorContext;
-use std::path::{Path, PathBuf};
+use cx_log::{CXError, CXErrorContext, CXErrorMessage};
+use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
 pub struct LexerError {
@@ -10,27 +10,23 @@ pub struct LexerError {
     pub end_index: usize,
 }
 
-fn pretty_underline_error(
-    message: &str,
-    file_path: &Path,
-    source: &str,
-    start_index: usize,
-    end_index: usize,
-) {
-    cx_log::pretty_underline_source_error(message, file_path, source, start_index, end_index);
-}
+impl CXError for LexerError {}
 
 impl CXErrorContext for LexerError {
-    fn print(&self) {
-        pretty_underline_error(
-            &self.error_message(),
-            self.file.as_path(),
-            &self.source,
-            self.start_index,
-            self.end_index,
-        );
+    fn compilation_unit(&self) -> Option<PathBuf> {
+        Some(self.file.clone())
     }
 
+    fn byte_start(&self) -> Option<usize> {
+        Some(self.start_index)
+    }
+
+    fn byte_end(&self) -> Option<usize> {
+        Some(self.end_index)
+    }
+}
+
+impl CXErrorMessage for LexerError {
     fn error_prefix(&self) -> String {
         "LEXER ERROR".to_string()
     }
@@ -38,12 +34,6 @@ impl CXErrorContext for LexerError {
     fn error_content(&self) -> String {
         self.message.clone()
     }
-
-    fn compilation_unit(&self) -> Option<PathBuf> {
-        Some(self.file.clone())
-    }
-
-
 }
 
 #[macro_export]
@@ -56,7 +46,7 @@ macro_rules! log_lexer_error {
                 source: $source.to_string(),
                 start_index: $start,
                 end_index: $end,
-            }) as Box<dyn cx_log::CXErrorTrait>)
+            }) as Box<dyn cx_log::CXError>)
         }
     };
 }

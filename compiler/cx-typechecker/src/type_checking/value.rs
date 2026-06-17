@@ -14,7 +14,7 @@ use cx_tokens::TokenRange;
 
 pub(crate) fn ensure_valid_allocation_type(
     env: &mut TypeEnvironment,
-    range: Option<TokenRange>,
+    range: TokenRange,
     context: &str,
     ty: &MIRType,
 ) -> CXResult<()> {
@@ -34,7 +34,7 @@ pub(crate) fn ensure_valid_allocation_type(
         ),
         MIRTypeKind::Array { inner_type, .. } => {
             let inner_type = env.symbols.resolve_type_id(*inner_type).clone();
-            ensure_valid_allocation_type(env, range, "an array element", &inner_type)
+            ensure_valid_allocation_type(env, range.clone(), "an array element", &inner_type)
         }
         _ => Ok(()),
     }

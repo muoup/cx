@@ -88,13 +88,11 @@ impl FunctionContext {
     pub fn configure_merge_scope(
         &mut self,
         expr: &CXExpression,
-        join_name: impl Into<String>,
         include_current_snapshot: Option<&str>,
         require_nodrop_discharge: bool,
     ) {
         self.flow_mut().configure_merge_scope(
             expr,
-            join_name,
             include_current_snapshot,
             require_nodrop_discharge,
         );

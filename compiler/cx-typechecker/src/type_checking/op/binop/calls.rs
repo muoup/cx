@@ -166,7 +166,7 @@ fn complete_vararg_argument(
         _ => {
             return log_typecheck_error!(
                 env,
-                Some(expr.token_range()),
+                expr.token_range(),
                 "Cannot pass {} to varargs: expected an intrinsic type or pointer",
                 arg_type.display_with(&env.symbols)
             );
@@ -272,7 +272,7 @@ fn complete_callee(
                         env,
                         expr.token_range(),
                         "{}",
-                        err.to_string()
+                        err.error_message()
                     );
                 }
             };
@@ -280,7 +280,7 @@ fn complete_callee(
             match symbol.as_expression() {
                 Ok(function) => Ok(function),
                 Err(err) => {
-                    log_typecheck_error!(env, expr.token_range(), "{}", err.to_string())
+                    log_typecheck_error!(env, expr.token_range(), "{}", err.error_content())
                 }
             }
         }

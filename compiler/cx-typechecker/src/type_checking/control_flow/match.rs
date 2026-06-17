@@ -39,8 +39,7 @@ pub fn typecheck_match(
 
     env.push_scope(false, false);
     env.function.set_scope_anchor(condition);
-    env.function
-        .configure_merge_scope(condition, "match join", None, false);
+    env.function.configure_merge_scope(condition, None, false);
 
     let join_scope_idx = env.function.current_scope_index();
     let base_snapshot = env.function.current_snapshot();
@@ -75,7 +74,7 @@ pub fn typecheck_match(
                 let CXPattern::Integer(pattern_value) = pattern else {
                     return log_typecheck_error!(
                         env,
-                        Some(condition.token_range()),
+                        condition.token_range(),
                         "Match pattern must be an integer literal"
                     );
                 };
@@ -118,7 +117,7 @@ pub fn typecheck_match(
                 if expected_union_name != &union_name {
                     return log_typecheck_error!(
                         env,
-                        Some(condition.token_range()),
+                        condition.token_range(),
                         "Tagged union variant does not match the type being matched, found '{}', expected '{}'",
                         union_name,
                         expected_union_name
@@ -143,7 +142,7 @@ pub fn typecheck_match(
                 let Some(variant_id) = variant_idx else {
                     return log_typecheck_error!(
                         env,
-                        Some(condition.token_range()),
+                        condition.token_range(),
                         "Variant '{}' not found in tagged union '{}'",
                         variant_name,
                         expected_union_name
@@ -280,7 +279,7 @@ pub fn typecheck_match(
         _ => {
             return log_typecheck_error!(
                 env,
-                Some(condition.token_range()),
+                condition.token_range(),
                 "Match condition must be an integer or tagged union type, found {}",
                 expr_type.display_with(&env.symbols)
             );
@@ -347,7 +346,7 @@ fn validate_variant_template_input(
     let Some(template_data) = union_type.get_template_data() else {
         return log_typecheck_error!(
             env,
-            Some(condition.token_range()),
+            condition.token_range(),
             "Non-templated tagged union pattern may not have template arguments"
         );
     };
@@ -355,7 +354,7 @@ fn validate_variant_template_input(
     if !completed_input.contextual_eq(&template_data.template_input, &env.symbols) {
         return log_typecheck_error!(
             env,
-            Some(condition.token_range()),
+            condition.token_range(),
             "Tagged union pattern template arguments do not match the matched type"
         );
     }

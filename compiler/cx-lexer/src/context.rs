@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use cx_log::{CXErrorBase, CXResult};
+use cx_log::{CXResult, CXUnspannedError};
 use cx_tokens::token::{PunctuatorType, Token, TokenKind};
 use cx_util::module_path::cx_library_directory;
 
@@ -47,11 +47,14 @@ impl LexingContext {
     ) -> CXResult<Self> {
         let builtin_path = PathBuf::from(cx_library_directory("libc/internal/__builtins.h"));
         let builtin_source = std::fs::read_to_string(&builtin_path).map_err(|e| {
-            CXErrorBase::create_boxed_error(format!(
-                "Failed to read internal builtin header {}: {}",
-                builtin_path.display(),
-                e
-            ))
+            CXUnspannedError::boxed(
+                "LEXER ERROR",
+                format!(
+                    "Failed to read internal builtin header {}: {}",
+                    builtin_path.display(),
+                    e
+                ),
+            )
         })?;
 
         Ok(Self {

@@ -40,7 +40,7 @@ pub(crate) fn typecheck_move(
     let Some(binding) = binding else {
         return log_typecheck_error!(
             env,
-            Some(inner_expr.token_range()),
+            inner_expr.token_range(),
             "Move expressions can currently only be applied to stack variable identifiers"
         );
     };
@@ -48,7 +48,7 @@ pub(crate) fn typecheck_move(
     if binding.kind != BindingPlaceKind::Local {
         return log_typecheck_error!(
             env,
-            Some(inner_expr.token_range()),
+            inner_expr.token_range(),
             "Moving out of aggregate fields or projections is not implemented"
         );
     };
@@ -56,7 +56,7 @@ pub(crate) fn typecheck_move(
     if !matches!(inner_val.kind, MIRExpressionKind::Variable { .. }) {
         return log_typecheck_error!(
             env,
-            Some(inner_expr.token_range()),
+            inner_expr.token_range(),
             "Move expressions can currently only be applied to stack variable identifiers",
         );
     }
@@ -65,7 +65,7 @@ pub(crate) fn typecheck_move(
         unreachable!()
     };
 
-    ensure_binding_available(env, Some(inner_expr.token_range()), Some(&binding))?;
+    ensure_binding_available(env, inner_expr.token_range(), Some(&binding))?;
     mark_binding(env, &binding, BindingMoveState::Moved);
 
     Ok(TypecheckResult::new(
@@ -85,7 +85,7 @@ pub(crate) fn typecheck_adopt(
     if env.function.in_safe_context() {
         return log_typecheck_error!(
             env,
-            Some(expr.token_range()),
+            expr.token_range(),
             "@adopt is unsafe and must be wrapped in @unsafe in safe functions"
         );
     }
@@ -96,7 +96,7 @@ pub(crate) fn typecheck_adopt(
     let Some(inner_type) = env.symbols.mem_ref_inner(&value._type).cloned() else {
         return log_typecheck_error!(
             env,
-            Some(expr.token_range()),
+            expr.token_range(),
             "@adopt requires an addressable memory place"
         );
     };
@@ -104,7 +104,7 @@ pub(crate) fn typecheck_adopt(
     if value._type.get_specifier(CX_CONST) || inner_type.get_specifier(CX_CONST) {
         return log_typecheck_error!(
             env,
-            Some(expr.token_range()),
+            expr.token_range(),
             "@adopt cannot adopt from a const memory place"
         );
     }
@@ -114,7 +114,7 @@ pub(crate) fn typecheck_adopt(
     {
         return log_typecheck_error!(
             env,
-            Some(expr.token_range()),
+            expr.token_range(),
             "@adopt of a local binding is not allowed; use move for local bindings"
         );
     }
@@ -134,7 +134,7 @@ pub(crate) fn typecheck_leak(
     if env.function.in_safe_context() {
         return log_typecheck_error!(
             env,
-            Some(expr.token_range()),
+            expr.token_range(),
             "@leak is unsafe and must be wrapped in @unsafe in safe functions"
         );
     }
@@ -144,7 +144,7 @@ pub(crate) fn typecheck_leak(
     let Some(binding) = value.binding().cloned() else {
         return log_typecheck_error!(
             env,
-            Some(expr.token_range()),
+            expr.token_range(),
             "@leak currently requires a local identifier"
         );
     };
@@ -152,7 +152,7 @@ pub(crate) fn typecheck_leak(
     if binding.kind != BindingPlaceKind::Local {
         return log_typecheck_error!(
             env,
-            Some(expr.token_range()),
+            expr.token_range(),
             "@leak on aggregate fields or projections is not implemented"
         );
     };
@@ -162,7 +162,7 @@ pub(crate) fn typecheck_leak(
     let Some(inner_type) = env.symbols.mem_ref_inner(&value._type).cloned() else {
         return log_typecheck_error!(
             env,
-            Some(expr.token_range()),
+            expr.token_range(),
             "@leak requires a stack local value"
         );
     };
@@ -171,7 +171,7 @@ pub(crate) fn typecheck_leak(
         return Ok(TypecheckResult::from(value));
     }
 
-    ensure_binding_available(env, Some(inner.token_range()), Some(&binding))?;
+    ensure_binding_available(env, inner.token_range(), Some(&binding))?;
     mark_binding(env, &binding, BindingMoveState::Moved);
 
     Ok(TypecheckResult::new(
@@ -193,11 +193,7 @@ pub(crate) fn typecheck_unpack(
         .and_then(|v| v.standard_ready_coerce(env, inner.token_range()))?;
 
     let MIRTypeKind::Structured { fields } = &value._type.kind else {
-        return log_typecheck_error!(
-            env,
-            Some(expr.token_range()),
-            "@unpack expects a struct type"
-        );
+        return log_typecheck_error!(env, expr.token_range(), "@unpack expects a struct type");
     };
 
     let field_map = fields
@@ -213,7 +209,7 @@ pub(crate) fn typecheck_unpack(
         if !field_map.contains_key(unpack_binding.field.as_str()) {
             return log_typecheck_error!(
                 env,
-                Some(expr.token_range()),
+                expr.token_range(),
                 "@unpack field '{}' does not exist on {}",
                 unpack_binding.field,
                 value._type.display_with(&env.symbols)
@@ -223,7 +219,7 @@ pub(crate) fn typecheck_unpack(
         if !seen_fields.insert(unpack_binding.field.as_string()) {
             return log_typecheck_error!(
                 env,
-                Some(expr.token_range()),
+                expr.token_range(),
                 "@unpack field '{}' is bound more than once",
                 unpack_binding.field
             );
@@ -232,7 +228,7 @@ pub(crate) fn typecheck_unpack(
         if !seen_bindings.insert(unpack_binding.binding.as_string()) {
             return log_typecheck_error!(
                 env,
-                Some(expr.token_range()),
+                expr.token_range(),
                 "@unpack binding '{}' is introduced more than once",
                 unpack_binding.binding
             );
@@ -245,7 +241,7 @@ pub(crate) fn typecheck_unpack(
         if _ty.is_nodrop() && !seen_fields.contains(field_name) {
             return log_typecheck_error!(
                 env,
-                Some(expr.token_range()),
+                expr.token_range(),
                 "@unpack of {} must bind @nodrop field '{}'",
                 value._type.display_with(&env.symbols),
                 field_name

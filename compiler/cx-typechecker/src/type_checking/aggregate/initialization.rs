@@ -85,7 +85,7 @@ pub fn typecheck_initializer_list(
 
         _ => log_typecheck_error!(
             env,
-            Some(expr.token_range()),
+            expr.token_range(),
             "Cannot coerce initializer to type {}",
             to_type.display_with(&env.symbols)
         ),
@@ -104,7 +104,7 @@ fn typecheck_array_initializer(
         if let Some(name) = &index.name {
             return log_typecheck_error!(
                 env,
-                Some(&TokenRange::default()),
+                &TokenRange::default(),
                 "Array initializer cannot have named indices, found: {name}"
             );
         }
@@ -115,7 +115,7 @@ fn typecheck_array_initializer(
     {
         return log_typecheck_error!(
             env,
-            Some(&TokenRange::default()),
+            &TokenRange::default(),
             "Too many elements in array initializer (expected {}, found {})",
             size,
             indices.len()
@@ -155,7 +155,7 @@ fn typecheck_structured_initializer(
     let Some(fields) = to_type.aggregate_fields(&env.symbols) else {
         return log_typecheck_error!(
             env,
-            Some(expr.token_range()),
+            expr.token_range(),
             "Expected a structured type for initializer, found {}",
             to_type.display_with(&env.symbols)
         );
@@ -175,7 +175,7 @@ fn typecheck_structured_initializer(
             else {
                 return log_typecheck_error!(
                     env,
-                    Some(expr.token_range()),
+                    expr.token_range(),
                     "Structured initializer has unexpected field: {name}"
                 );
             };
@@ -185,7 +185,7 @@ fn typecheck_structured_initializer(
         if counter >= fields.len() {
             return log_typecheck_error!(
                 env,
-                Some(expr.token_range()),
+                expr.token_range(),
                 "Too many elements in struct initializer"
             );
         }
@@ -193,7 +193,7 @@ fn typecheck_structured_initializer(
         if initialized_fields[counter] {
             return log_typecheck_error!(
                 env,
-                Some(expr.token_range()),
+                expr.token_range(),
                 "Field '{}' initialized more than once",
                 fields[counter].0
             );
@@ -209,7 +209,10 @@ fn typecheck_structured_initializer(
         else {
             return log_typecheck_error!(
                 env,
-                value.token_range.as_ref(),
+                value
+                    .token_range
+                    .as_ref()
+                    .expect("typechecked expression missing token range"),
                 "Could not find field '{}' in type {}",
                 field_name,
                 to_type.display_with(&env.symbols)

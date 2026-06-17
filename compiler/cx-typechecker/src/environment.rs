@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use cx_ast::ast::modifiers::VisibilityMode;
 use cx_ast::symbols::CXSymbol;
-use cx_log::CXResult;
+use cx_log::{CXResult, CXUnspannedError};
 use cx_mir::{
     EnvironmentNamespace, MIRUnit,
     mir::contextual_eq::TypeContextEqual,
@@ -149,9 +149,7 @@ impl TypeEnvironment<'_> {
 
             QualifiedLookupResult::NotFound => Ok(None),
             QualifiedLookupResult::Ambiguous { candidates } => {
-                return log_typecheck_error!(
-                    self,
-                    range,
+                let message = format!(
                     "Ambiguous Symbol Reference, candidates: {}",
                     candidates
                         .iter()
@@ -159,6 +157,12 @@ impl TypeEnvironment<'_> {
                         .collect::<Vec<_>>()
                         .join(", ")
                 );
+
+                if let Some(range) = range {
+                    return log_typecheck_error!(self, range, "{}", message);
+                }
+
+                return CXUnspannedError::result("TYPE ERROR", message);
             }
         }
     }
@@ -242,12 +246,10 @@ impl MIRQualifiedLookup for TypeEnvironment<'_> {
         _lexical_namespace: &EnvironmentNamespace,
         name: &QualifiedName,
     ) -> Option<Self::Output> {
-        self.symbols
-            .get_local_symbol(name)
-            .map(|sym| SymbolLookup {
-                resolved_name: name.clone(),
-                kind: SymbolLookupKind::Resolved(sym.clone()),
-            })
+        self.symbols.get_local_symbol(name).map(|sym| SymbolLookup {
+            resolved_name: name.clone(),
+            kind: SymbolLookupKind::Resolved(sym.clone()),
+        })
     }
 
     fn lookup_exact(
@@ -265,13 +267,7 @@ impl MIRQualifiedLookup for TypeEnvironment<'_> {
                 self.symbols
                     .get_global_registry()
                     .resolve(name)
-                    .filter(|sym|
-                        self.symbol_visible_from(
-                            lexical_namespace,
-                            name,
-                            sym
-                        )
-                    )
+                    .filter(|sym| self.symbol_visible_from(lexical_namespace, name, sym))
                     .map(|sym| SymbolLookup {
                         resolved_name: name.clone(),
                         kind: SymbolLookupKind::Untyped(sym.clone()),

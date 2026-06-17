@@ -22,8 +22,7 @@ pub fn typecheck_switch(
 ) -> CXResult<TypecheckResult> {
     env.push_scope(true, false);
     env.function.set_scope_anchor(condition);
-    env.function
-        .configure_merge_scope(condition, "switch join", None, false);
+    env.function.configure_merge_scope(condition, None, false);
 
     let join_scope_idx = env.function.current_scope_index();
     let condition_value = typecheck_expr(env, namespace, condition, None)
@@ -40,7 +39,10 @@ pub fn typecheck_switch(
         let Some(case_expr) = block.get(*case_index as usize) else {
             return log_typecheck_error!(
                 env,
-                condition_value.token_range.as_ref(),
+                condition_value
+                    .token_range
+                    .as_ref()
+                    .expect("typechecked expression missing token range"),
                 "Switch case index {} out of bounds (block has {} expressions)",
                 *case_index,
                 block.len()
@@ -66,7 +68,10 @@ pub fn typecheck_switch(
         let MIRTypeKind::Integer { _type, signed } = &condition_value.get_type().kind else {
             return log_typecheck_error!(
                 env,
-                condition_value.token_range.as_ref(),
+                condition_value
+                    .token_range
+                    .as_ref()
+                    .expect("typechecked expression missing token range"),
                 "Switch condition must be an integer type, found {}",
                 condition_value.get_type().display_with(&env.symbols)
             );
@@ -90,7 +95,10 @@ pub fn typecheck_switch(
             let Some(expr) = block.get(idx) else {
                 return log_typecheck_error!(
                     env,
-                    condition_value.token_range.as_ref(),
+                    condition_value
+                        .token_range
+                        .as_ref()
+                        .expect("typechecked expression missing token range"),
                     "Switch default case index {} out of bounds (block has {} expressions)",
                     idx,
                     block.len()

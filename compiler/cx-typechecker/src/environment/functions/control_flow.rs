@@ -1,13 +1,12 @@
 use std::{collections::HashSet, path::Path};
 
 use cx_ast::ast::expression::CXExpression;
+
 use cx_log::error::CXRawResult;
-use cx_log::{CXErrorBase, CXResult};
+use cx_log::{CXError, CXErrorBase, CXResult, DiagnosticSpan};
 use cx_tokens::TokenRange;
 use cx_tokens::token::Token;
 use cx_util::scoped_map::ScopedMap;
-
-use crate::log_typecheck_error;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BindingMoveState {
@@ -35,6 +34,21 @@ pub struct TrackedBindingState {
 #[derive(Clone)]
 pub struct ControlFlowSnapshot {
     pub tracked_bindings: ScopedMap<String, TrackedBindingState>,
+}
+
+fn scope_error(
+    compilation_unit: &Path,
+    tokens: &[Token],
+    scope: &Scope,
+    error: Box<dyn cx_log::CXErrorMessage>,
+) -> Box<dyn CXError> {
+    let span = scope
+        .anchor_range
+        .as_ref()
+        .and_then(|range| range.to_diagnostic_span(tokens, compilation_unit))
+        .unwrap_or_else(|| DiagnosticSpan::new(compilation_unit.to_owned(), 0, 1));
+
+    cx_log::produce_diagnostic_error("TYPE ERROR", error.error_content(), Vec::new(), span)
 }
 
 #[derive(Clone)]
@@ -73,8 +87,6 @@ pub struct ScopeExitTarget {
 
 #[derive(Clone)]
 pub struct MergeScopeState {
-    pub join_name: String,
-    pub join_range: TokenRange,
     pub entry_snapshot: ControlFlowSnapshot,
     pub incoming_arrows: Vec<ControlFlowArrow>,
     pub include_current_snapshot: Option<String>,
@@ -90,7 +102,6 @@ pub enum LoopScopeKind {
 #[derive(Clone)]
 pub struct LoopScopeState {
     pub loop_kind: LoopScopeKind,
-    pub join_range: TokenRange,
     pub entry_snapshot: ControlFlowSnapshot,
     pub continue_arrows: Vec<ControlFlowArrow>,
     pub exit_arrows: Vec<ControlFlowArrow>,
@@ -139,7 +150,7 @@ impl ControlFlow {
         });
     }
 
-    pub fn pop_scope(&mut self) -> CXRawResult<()> {
+    pub fn pop_scope(&mut self, compilation_unit: &Path, tokens: &[Token]) -> CXResult<()> {
         let Some(scope) = self.scope_stack.last().cloned() else {
             panic!("Scope stack has uneven push/pop");
         };
@@ -149,8 +160,9 @@ impl ControlFlow {
         self.tracked_bindings.pop_scope();
         self.scope_stack.pop().unwrap();
 
-        let outgoing_snapshot =
-            self.resolve_scope_flow(&scope, current_snapshot.as_ref())?;
+        let outgoing_snapshot = self
+            .resolve_scope_flow(&scope, current_snapshot.as_ref())
+            .map_err(|err| scope_error(compilation_unit, tokens, &scope, err))?;
         let final_reachable = outgoing_snapshot.is_some();
 
         if final_reachable
@@ -164,9 +176,14 @@ impl ControlFlow {
                 .map(|(name, _)| name)
                 .collect::<Vec<_>>();
 
-            return CXErrorBase::create_result(format!(
-                "nodrop binding(s) dropped at end of scope: {}",
-                live.join(", ")
+            return Err(scope_error(
+                compilation_unit,
+                tokens,
+                &scope,
+                CXErrorBase::raw_boxed(format!(
+                    "nodrop binding(s) dropped at end of scope: {}",
+                    live.join(", ")
+                )),
             ));
         }
 
@@ -205,7 +222,6 @@ impl ControlFlow {
     pub fn configure_merge_scope(
         &mut self,
         expr: &CXExpression,
-        join_name: impl Into<String>,
         include_current_snapshot: Option<&str>,
         require_nodrop_discharge: bool,
     ) {
@@ -218,8 +234,6 @@ impl ControlFlow {
             .expect("Missing scope to configure");
         scope.anchor_range = Some(range.clone());
         scope.flow_kind = ScopeFlowKind::Merge(MergeScopeState {
-            join_name: join_name.into(),
-            join_range: range,
             entry_snapshot,
             incoming_arrows: Vec::new(),
             include_current_snapshot: include_current_snapshot.map(str::to_string),
@@ -238,7 +252,6 @@ impl ControlFlow {
         scope.anchor_range = Some(range.clone());
         scope.flow_kind = ScopeFlowKind::Loop(LoopScopeState {
             loop_kind,
-            join_range: range,
             entry_snapshot,
             continue_arrows: Vec::new(),
             exit_arrows: Vec::new(),
@@ -468,7 +481,7 @@ impl ControlFlow {
                         .collect::<Vec<_>>();
 
                     if !live.is_empty() {
-                        return CXErrorBase::create_result(format!(
+                        return CXErrorBase::raw_result(format!(
                             "nodrop binding(s) must be moved or @leak'ed before function exit: {}",
                             live.join(", ")
                         ));
@@ -485,11 +498,8 @@ impl ControlFlow {
                 }];
                 continue_arrows.extend(state.continue_arrows.clone());
 
-                let Some(loop_carried_bindings) = Self::merge_binding_states(
-                    &state.entry_snapshot,
-                    &continue_arrows,
-                    false,
-                )?
+                let Some(loop_carried_bindings) =
+                    Self::merge_binding_states(&state.entry_snapshot, &continue_arrows, false)?
                 else {
                     let Some(exit_bindings) = Self::merge_binding_states(
                         &state.entry_snapshot,
@@ -517,11 +527,8 @@ impl ControlFlow {
                     snapshot: loop_exit_snapshot,
                 });
 
-                let Some(exit_bindings) = Self::merge_binding_states(
-                    &state.entry_snapshot,
-                    &exit_arrows,
-                    false,
-                )?
+                let Some(exit_bindings) =
+                    Self::merge_binding_states(&state.entry_snapshot, &exit_arrows, false)?
                 else {
                     return Ok(None);
                 };
@@ -536,7 +543,7 @@ impl ControlFlow {
         entry_snapshot: &ControlFlowSnapshot,
         arrows: &[ControlFlowArrow],
         discharge_only_nodrop: bool,
-    ) -> CXResult<Option<Vec<(String, TrackedBindingState)>>> {
+    ) -> CXRawResult<Option<Vec<(String, TrackedBindingState)>>> {
         if arrows.is_empty() {
             return Ok(None);
         }
@@ -622,7 +629,7 @@ impl ControlFlow {
             .collect::<Vec<_>>()
             .join("; ");
 
-        CXErrorBase::create_result(format!("inconsistent move state for binding(s): {notes}"))
+        CXErrorBase::raw_result(format!("inconsistent move state for binding(s): {notes}"))
     }
 
     fn apply_merged_bindings(&mut self, merged_bindings: &[(String, TrackedBindingState)]) {

@@ -1,6 +1,7 @@
 use cx_pipeline::standard_compilation;
 use cx_pipeline_data::{CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel};
 
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -128,7 +129,8 @@ fn expect_compile_success(input: &Path, analysis: bool) {
     );
 
     standard_compilation(config, base_file_name(input)).unwrap_or_else(|err| {
-        err.print();
+        err.print(&mut io::stdout()).unwrap();
+
         panic!("Expected compilation success but got failure");
     });
 }
@@ -164,12 +166,11 @@ fn expect_failure(input: &Path, analysis: bool, expected_stage: FailureStage) {
     let actual_stage = classify_failure_stage(message.as_str());
 
     if actual_stage != Some(expected_stage) {
-        eprintln!(
+        err.print(&mut io::stdout()).unwrap();
+        panic!(
             "\nExpected failure stage: {:?}\nActual failure stage: {:?}\n\n",
             expected_stage, actual_stage
         );
-        err.print();
-        panic!();
     }
 }
 

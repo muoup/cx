@@ -7,25 +7,26 @@ use cx_lmir::{
     LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind,
     LMIRIntUnOp, LMIRReturnABI,
 };
-use cx_log::log_error;
 use inkwell::AddressSpace;
 use inkwell::attributes::AttributeLoc;
 use inkwell::values::BasicValue;
 use inkwell::values::{AnyValue, AnyValueEnum, ValueKind};
-use std::sync::Mutex;
+use std::cell::Cell;
 
-static NUM: Mutex<usize> = Mutex::new(0);
+thread_local! {
+    static NUM: Cell<usize> = Cell::new(0);
+}
 
 pub(crate) fn reset_num() {
-    let mut num = NUM.lock().unwrap();
-    *num = 0;
+    NUM.with(|num| num.set(0));
 }
 
 pub(crate) fn inst_num() -> String {
-    let mut num = NUM.lock().unwrap();
-    *num += 1;
-
-    format!("inst_{}", *num)
+    format!("inst_{}", NUM.with(|num| {
+        let current = num.get();
+        num.set(current + 1);
+        current
+    }))
 }
 
 pub(crate) fn generate_instruction<'a, 'b>(
@@ -61,7 +62,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             method_sig,
         } => {
             let Some(function_val) = get_function(global_state, func.as_str(), method_sig) else {
-                log_error!("Function not found in module: {}", func);
+                return None;
             };
 
             let arg_vals = args

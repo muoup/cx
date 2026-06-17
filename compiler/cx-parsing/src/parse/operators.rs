@@ -63,7 +63,6 @@ pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
 
         CXUnOp::Is(_) => 3,
         CXUnOp::ExplicitCast(_) => 3,
-
     }
 }
 

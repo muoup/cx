@@ -1,5 +1,5 @@
 use crate::{assert_token_matches, next_kind, parse::try_parse_qualified_name};
-use cx_log::{log_error, CXResult};
+use cx_log::CXResult;
 use cx_pipeline_data::CompilerConfig;
 use cx_preparse_data::{symbol_data::PreparseModuleSymbols, PreparseContents};
 use cx_tokens::{identifier, keyword, operator, punctuator, specifier, TokenIter};
@@ -193,7 +193,13 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<ParsedImport> {
             operator!(ScopeRes) => import_path.push('/'),
             identifier!(ident) => import_path.push_str(ident),
 
-            _ => log_error!("Reached invalid token in import path: {:?}", tok),
+            _ => {
+                return log_preparse_error!(
+                    tokens,
+                    "Reached invalid token in import path: {:?}",
+                    tok
+                )
+            }
         }
     }
 
@@ -209,10 +215,7 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<ParsedImport> {
 
 fn parse_import_alias(tokens: &mut TokenIter) -> CXResult<NamespacePath> {
     let Some(ident) = try_parse_qualified_name(tokens)? else {
-        return log_preparse_error!(
-            tokens,
-            "Expected identifier for import alias"
-        );
+        return log_preparse_error!(tokens, "Expected identifier for import alias");
     };
 
     if ident.namespace.is_root() && ident.name.as_str() == "_" {

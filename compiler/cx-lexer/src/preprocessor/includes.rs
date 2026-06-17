@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use cx_log::{CXErrorBase, CXResult};
+use cx_log::{CXResult, CXUnspannedError};
 use cx_util::module_path::cx_library_directory;
 
 use crate::{
@@ -70,11 +70,10 @@ pub(crate) fn handle_include(
     }
 
     let source = std::fs::read_to_string(path.as_path()).map_err(|e| {
-        CXErrorBase::create_boxed_error(format!(
-            "Failed to read included file {}: {}",
-            path.display(),
-            e
-        ))
+        CXUnspannedError::boxed(
+            "LEXER ERROR",
+            format!("Failed to read included file {}: {}", path.display(), e),
+        )
     })?;
 
     Ok(LexTransition::PushSource(SourceInput { source, path }))

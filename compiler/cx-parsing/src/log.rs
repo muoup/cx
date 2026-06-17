@@ -43,7 +43,7 @@ macro_rules! log_parse_error {
                 $data.tokens.slice[$data.tokens.index].clone(),
                 $data.tokens.prev().cloned(),
                 message,
-            )) as Box<dyn cx_log::CXErrorTrait>)
+            )) as Box<dyn cx_log::CXError>)
         }
     };
 }
@@ -61,7 +61,7 @@ macro_rules! log_preparse_error {
                 token,
                 toks.prev().cloned(),
                 message,
-            )) as Box<dyn cx_log::CXErrorTrait>)
+            )) as Box<dyn cx_log::CXError>)
         }
     };
 }
@@ -77,7 +77,7 @@ macro_rules! log_parse_underline_error {
                 $data.tokens.slice,
                 $toks,
                 message,
-            )) as Box<dyn cx_log::CXErrorTrait>)
+            )) as Box<dyn cx_log::CXError>)
 
         }
     };

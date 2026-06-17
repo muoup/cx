@@ -8,8 +8,8 @@ use crate::progress::ProgressReporter;
 use crate::scheduler::scheduling_loop;
 use crate::scheduler::scheduling_loop_collect_errors;
 use cx_ast::registry::ExportNameMode;
-use cx_log::CXErrorBase;
 use cx_log::CXResult;
+use cx_log::CXUnspannedError;
 use cx_pipeline_data::config::{CXProjectConfig, TargetConfig};
 use cx_pipeline_data::db::ModuleData;
 use cx_pipeline_data::internal_storage::resource_path;
@@ -34,9 +34,10 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
         linking_files: Mutex::new(HashSet::new()),
     };
 
-    let base_file_str = base_file
-        .to_str()
-        .ok_or(CXErrorBase::create_boxed_error("Base file path is not valid UTF-8"))?;
+    let base_file_str = base_file.to_str().ok_or(CXUnspannedError::boxed(
+        "COMPILATION ERROR",
+        "Base file path is not valid UTF-8",
+    ))?;
     let entry_unit =
         CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory);
     compiler_context
@@ -57,19 +58,25 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
                 let object_path = resource_path(&compiler_context, &entry_unit, ".o");
                 if let Some(parent) = compiler_context.config.output.parent() {
                     std::fs::create_dir_all(parent).map_err(|e| {
-                        CXErrorBase::create_boxed_error(format!(
-                            "Failed to create object output directory {}: {}",
-                            parent.display(),
-                            e
-                        ))
+                        CXUnspannedError::boxed(
+                            "COMPILATION ERROR",
+                            format!(
+                                "Failed to create object output directory {}: {}",
+                                parent.display(),
+                                e
+                            ),
+                        )
                     })?;
                 }
                 std::fs::copy(&object_path, &compiler_context.config.output).map_err(|e| {
-                    CXErrorBase::create_boxed_error(format!(
-                        "Failed to write object file {}: {}",
-                        compiler_context.config.output.display(),
-                        e
-                    ))
+                    CXUnspannedError::boxed(
+                        "COMPILATION ERROR",
+                        format!(
+                            "Failed to write object file {}: {}",
+                            compiler_context.config.output.display(),
+                            e
+                        ),
+                    )
                 })?;
                 Ok(())
             }
@@ -101,9 +108,10 @@ pub fn library_compilation(
         linking_files: Mutex::new(HashSet::new()),
     };
 
-    let base_file_str = base_file
-        .to_str()
-        .ok_or(CXErrorBase::create_boxed_error("Base file path is not valid UTF-8"))?;
+    let base_file_str = base_file.to_str().ok_or(CXUnspannedError::boxed(
+        "COMPILATION ERROR",
+        "Base file path is not valid UTF-8",
+    ))?;
 
     let entry_unit =
         CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory);
@@ -155,17 +163,20 @@ pub fn project_compilation(
     let workspace = project_config
         .workspace
         .as_ref()
-        .ok_or(CXErrorBase::create_boxed_error("cx.toml has no [workspace] section"))?;
+        .ok_or(CXUnspannedError::boxed(
+            "COMPILATION ERROR",
+            "cx.toml has no [workspace] section",
+        ))?;
 
     let filter_name;
     let targets: Vec<(&String, &TargetConfig)> = if let Some(filter) = target_filter {
         let target = workspace
             .targets
             .get(filter)
-            .ok_or(CXErrorBase::create_boxed_error(format!(
-                "Target '{}' not found in cx.toml",
-                filter
-            )))?;
+            .ok_or(CXUnspannedError::boxed(
+                "COMPILATION ERROR",
+                format!("Target '{}' not found in cx.toml", filter),
+            ))?;
         filter_name = filter.to_string();
         vec![(&filter_name, target)]
     } else {
@@ -208,11 +219,14 @@ pub fn project_compilation(
             .join("output")
             .join(target_name);
         std::fs::create_dir_all(&output_dir).map_err(|e| {
-            CXErrorBase::create_boxed_error(format!(
-                "Failed to create output directory {}: {}",
-                output_dir.display(),
-                e
-            ))
+            CXUnspannedError::boxed(
+                "COMPILATION ERROR",
+                format!(
+                    "Failed to create output directory {}: {}",
+                    output_dir.display(),
+                    e
+                ),
+            )
         })?;
 
         // Build binaries
@@ -266,11 +280,10 @@ pub fn project_compilation(
 
                 let header_path = output_dir.join(format!("{}.h", library.name));
                 std::fs::write(&header_path, header).map_err(|e| {
-                    CXErrorBase::create_boxed_error(format!(
-                        "Failed to write header {}: {}",
-                        header_path.display(),
-                        e
-                    ))
+                    CXUnspannedError::boxed(
+                        "COMPILATION ERROR",
+                        format!("Failed to write header {}: {}", header_path.display(), e),
+                    )
                 })?;
 
                 eprintln!("  Generated {}", header_path.display());

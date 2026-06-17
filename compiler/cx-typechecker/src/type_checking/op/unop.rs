@@ -45,7 +45,10 @@ pub fn typecheck_unop(
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
                 return log_typecheck_error!(
                     env,
-                    operand.token_range.as_ref(),
+                    operand
+                        .token_range
+                        .as_ref()
+                        .expect("typechecked expression missing token range"),
                     "Cannot apply pre-increment to non-reference type {}",
                     operand._type.display_with(&env.symbols)
                 );
@@ -73,7 +76,10 @@ pub fn typecheck_unop(
                 _ => {
                     return log_typecheck_error!(
                         env,
-                        operand.token_range.as_ref(),
+                        operand
+                            .token_range
+                            .as_ref()
+                            .expect("typechecked expression missing token range"),
                         "Pre-increment operator requires an integer or pointer type, found {}",
                         inner.display_with(&env.symbols)
                     );
@@ -108,7 +114,10 @@ pub fn typecheck_unop(
             if !operand._type.is_integer() {
                 return log_typecheck_error!(
                     env,
-                    operand.token_range.as_ref(),
+                    operand
+                        .token_range
+                        .as_ref()
+                        .expect("typechecked expression missing token range"),
                     "Bitwise NOT operator requires an integer type, found {}",
                     operand._type.display_with(&env.symbols)
                 );
@@ -135,7 +144,10 @@ pub fn typecheck_unop(
                 _ => {
                     return log_typecheck_error!(
                         env,
-                        operand.token_range.as_ref(),
+                        operand
+                            .token_range
+                            .as_ref()
+                            .expect("typechecked expression missing token range"),
                         "Negation operator requires an integer or float type, found {}",
                         operand.display_with(&env.symbols)
                     );
@@ -158,7 +170,10 @@ pub fn typecheck_unop(
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
                 return log_typecheck_error!(
                     env,
-                    operand.token_range.as_ref(),
+                    operand
+                        .token_range
+                        .as_ref()
+                        .expect("typechecked expression missing token range"),
                     "Cannot take the address of a non-reference type"
                 );
             };
@@ -182,7 +197,10 @@ pub fn typecheck_unop(
             let Some(inner) = env.symbols.ptr_inner(&operand._type).cloned() else {
                 return log_typecheck_error!(
                     env,
-                    operand.token_range.as_ref(),
+                    operand
+                        .token_range
+                        .as_ref()
+                        .expect("typechecked expression missing token range"),
                     "Cannot dereference non-pointer type {}",
                     operand._type.display_with(&env.symbols)
                 );

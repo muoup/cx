@@ -1,5 +1,5 @@
 use crate::progress::ProgressReporter;
-use cx_log::{CXErrorBase, CXResult};
+use cx_log::{CXResult, CXUnspannedError};
 use cx_pipeline_data::GlobalCompilationContext;
 use std::process::Command;
 
@@ -35,9 +35,9 @@ pub(crate) fn link_relocatable(
         cmd.arg(file);
     }
 
-    let output = cmd
-        .output()
-        .map_err(|e| CXErrorBase::create_boxed_error(format!("Failed to execute linker: {}", e)))?;
+    let output = cmd.output().map_err(|e| {
+        CXUnspannedError::boxed("LINK ERROR", format!("Failed to execute linker: {}", e))
+    })?;
 
     if output.status.success() {
         Ok(())
@@ -47,10 +47,13 @@ pub(crate) fn link_relocatable(
             String::from_utf8_lossy(&output.stderr)
         );
         eprintln!("[Linker] Command: {cmd:?}");
-        CXErrorBase::create_result(format!(
-            "Relocatable linking failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ))
+        CXUnspannedError::result(
+            "LINK ERROR",
+            format!(
+                "Relocatable linking failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ),
+        )
     }
 }
 
@@ -90,17 +93,17 @@ pub(crate) fn link(
                 cmd.arg(format!("-l{}", entry.name));
             }
             other => {
-                return CXErrorBase::create_result(format!(
-                    "Unknown link kind '{}' for library '{}'",
-                    other, entry.name
-                ));
+                return CXUnspannedError::result(
+                    "LINK ERROR",
+                    format!("Unknown link kind '{}' for library '{}'", other, entry.name),
+                );
             }
         }
     }
 
-    let output = cmd
-        .output()
-        .map_err(|e| CXErrorBase::create_boxed_error(format!("Failed to execute linker: {}", e)))?;
+    let output = cmd.output().map_err(|e| {
+        CXUnspannedError::boxed("LINK ERROR", format!("Failed to execute linker: {}", e))
+    })?;
 
     if output.status.success() {
         Ok(())
@@ -110,9 +113,12 @@ pub(crate) fn link(
             String::from_utf8_lossy(&output.stderr)
         );
         eprintln!("[Linker] Command: {cmd:?}");
-        CXErrorBase::create_result(format!(
-            "Linking failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ))
+        CXUnspannedError::result(
+            "LINK ERROR",
+            format!(
+                "Linking failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ),
+        )
     }
 }

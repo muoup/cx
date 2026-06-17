@@ -20,7 +20,7 @@ use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 pub(crate) fn ensure_binding_available(
     env: &mut TypeEnvironment,
-    range: Option<&TokenRange>,
+    range: &TokenRange,
     expr: Option<&TypecheckedBinding>,
 ) -> CXResult<()> {
     let Some(name) = expr.map(|b| &b.root) else {
@@ -71,7 +71,7 @@ pub(crate) fn typecheck_var_declaration(
 ) -> CXResult<TypecheckResult> {
     let ty = complete_type(env, namespace, ty)?;
 
-    ensure_valid_allocation_type(env, Some(expr.token_range().clone()), "a variable", &ty)?;
+    ensure_valid_allocation_type(env, expr.token_range().clone(), "a variable", &ty)?;
 
     let mem_type = env.symbols.mem_ref_to(ty.clone());
     let (initial_region, adopting) = match initial_value {

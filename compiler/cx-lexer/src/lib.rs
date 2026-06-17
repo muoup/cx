@@ -1,7 +1,7 @@
 #[macro_use]
 mod log;
 
-use cx_log::{CXErrorBase, CXResult};
+use cx_log::{CXResult, CXUnspannedError};
 use cx_tokens::token::Token;
 pub use log::LexerError;
 use std::path::{Path, PathBuf};
@@ -26,11 +26,14 @@ pub fn lex_with_context(
 
 pub fn lex_file(source_path: &Path, include_dirs: &[PathBuf]) -> CXResult<Vec<Token>> {
     let source = std::fs::read_to_string(source_path).map_err(|e| {
-        CXErrorBase::create_boxed_error(format!(
-            "Failed to read source file {}: {}",
-            source_path.display(),
-            e
-        ))
+        CXUnspannedError::boxed(
+            "LEXER ERROR",
+            format!(
+                "Failed to read source file {}: {}",
+                source_path.display(),
+                e
+            ),
+        )
     })?;
 
     lex_with_context(&source, source_path, include_dirs)

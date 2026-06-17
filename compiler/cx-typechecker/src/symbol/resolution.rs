@@ -7,7 +7,7 @@ use cx_ast::{
     },
     symbols::{CXSymbol, CXSymbolKind},
 };
-use cx_log::{CXErrorBase, CXResult};
+use cx_log::{CXResult, CXUnspannedError};
 use cx_util::identifier::CXIdent;
 
 use cx_mir::{
@@ -169,10 +169,10 @@ fn resolve_duplicate_definition(
     definitions: &[CXSymbolKind],
 ) -> CXResult<MIRSymbol> {
     let Some((first, rest)) = definitions.split_first() else {
-        return CXErrorBase::create_result(format!(
-            "Duplicate symbol declaration '{}' has no definitions",
-            name
-        ));
+        return CXUnspannedError::result(
+            "TYPE ERROR",
+            format!("Duplicate symbol declaration '{}' has no definitions", name),
+        );
     };
 
     let first = resolve_symbol(
@@ -193,10 +193,13 @@ fn resolve_duplicate_definition(
         )?;
 
         if !mir_symbols_equivalent(env, &first, &candidate) {
-            return CXErrorBase::create_result(format!(
-                "Duplicate symbol declaration '{}' resolves to incompatible definitions",
-                name
-            ));
+            return CXUnspannedError::result(
+                "TYPE ERROR",
+                format!(
+                    "Duplicate symbol declaration '{}' resolves to incompatible definitions",
+                    name
+                ),
+            );
         }
     }
 
@@ -231,14 +234,20 @@ fn resolve_type_constructor(
     variant_index: usize,
 ) -> CXResult<MIRSymbol> {
     let union_type = complete_type(env, namespace, union_type)?;
-    let variants = union_type
-        .aggregate_fields(&env.symbols)
-        .ok_or_else(|| CXErrorBase::create_boxed_error("Type constructor target is not a tagged union"))?;
+    let variants = union_type.aggregate_fields(&env.symbols).ok_or_else(|| {
+        CXUnspannedError::boxed(
+            "TYPE ERROR",
+            "Type constructor target is not a tagged union",
+        )
+    })?;
     let Some((_, variant_type)) = variants.get(variant_index).cloned() else {
-        return CXErrorBase::create_result(format!(
-            "Type constructor variant index {} is out of bounds",
-            variant_index
-        ));
+        return CXUnspannedError::result(
+            "TYPE ERROR",
+            format!(
+                "Type constructor variant index {} is out of bounds",
+                variant_index
+            ),
+        );
     };
 
     let prototype = MIRFunctionPrototype::new(
@@ -287,12 +296,15 @@ pub fn apply_template(
     };
 
     if input.types.len() != template_input.args.len() {
-        return CXErrorBase::create_result(format!(
-            "Template '{}' expects {} arguments, found {}",
-            name,
-            input.types.len(),
-            template_input.args.len()
-        ));
+        return CXUnspannedError::result(
+            "TYPE ERROR",
+            format!(
+                "Template '{}' expects {} arguments, found {}",
+                name,
+                input.types.len(),
+                template_input.args.len()
+            ),
+        );
     }
 
     env.symbols.push_local_scope();

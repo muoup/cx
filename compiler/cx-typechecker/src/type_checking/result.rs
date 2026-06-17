@@ -1,5 +1,5 @@
 use cx_ast::ast::template::CXTemplateInput;
-use cx_log::CXResult;
+use cx_log::{CXRawResult, CXResult};
 use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
@@ -288,7 +288,7 @@ impl TypecheckResult {
         symbol: MIRSymbol,
         name: QualifiedName,
         template_input: Option<CXTemplateInput>,
-    ) -> CXResult<Self> {
+    ) -> CXRawResult<Self> {
         if matches!(symbol, MIRSymbol::Template { .. }) {
             return Ok(Self::incomplete_template(name, template_input));
         }

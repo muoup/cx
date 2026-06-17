@@ -1,19 +1,34 @@
-use cx_log::{CXErrorContext, DiagnosticSpan};
+use cx_log::{CXError, DiagnosticSpan};
+use cx_tokens::{TokenRange, token::Token};
 
 pub fn produce_typecheck_error(
-    span: Option<DiagnosticSpan>,
+    span: DiagnosticSpan,
     message: String,
     notes: Vec<String>,
-) -> Box<dyn CXErrorContext> {
+) -> Box<dyn CXError> {
     cx_log::produce_diagnostic_error("TYPE ERROR", message, notes, span)
 }
 
 pub(crate) fn produce_comptime_error(
-    span: Option<DiagnosticSpan>,
+    span: DiagnosticSpan,
     message: String,
     notes: Vec<String>,
-) -> Box<dyn CXErrorContext> {
+) -> Box<dyn CXError> {
     cx_log::produce_diagnostic_error("COMPTIME ERROR", message, notes, span)
+}
+
+pub fn produce_typecheck_error_for_range(
+    tokens: &[Token],
+    fallback_file: &std::path::Path,
+    range: &TokenRange,
+    message: String,
+    notes: Vec<String>,
+) -> Box<dyn CXError> {
+    let span = range
+        .to_diagnostic_span(tokens, fallback_file)
+        .unwrap_or_else(|| DiagnosticSpan::new(fallback_file.to_owned(), 0, 1));
+
+    produce_typecheck_error(span, message, notes)
 }
 
 #[macro_export]
@@ -36,11 +51,14 @@ macro_rules! comptime_error {
     ($env:expr, $range:expr, notes: $notes:expr, $($arg:tt)*) => {
         {
             let message = format!($($arg)*);
-            let _engine = &$env;
-            let _range = &$range;
+            let engine = &$env;
+            let range = &$range;
+            let span = range
+                .to_diagnostic_span(engine.source.tokens, engine.source.compilation_unit.as_path())
+                .unwrap_or_else(|| cx_log::DiagnosticSpan::new(engine.source.compilation_unit.as_path(), 0, 1));
 
             $crate::log::produce_comptime_error(
-                None,
+                span,
                 message,
                 $notes,
             )
@@ -50,11 +68,14 @@ macro_rules! comptime_error {
     ($env:expr, $range:expr, $($arg:tt)*) => {
         {
             let message = format!($($arg)*);
-            let _engine = &$env;
-            let _range = &$range;
+            let engine = &$env;
+            let range = &$range;
+            let span = range
+                .to_diagnostic_span(engine.source.tokens, engine.source.compilation_unit.as_path())
+                .unwrap_or_else(|| cx_log::DiagnosticSpan::new(engine.source.compilation_unit.as_path(), 0, 1));
 
             $crate::log::produce_comptime_error(
-                None,
+                span,
                 message,
                 Vec::new(),
             )
@@ -70,14 +91,12 @@ macro_rules! typecheck_error {
 
             // panic!("{}", message);
 
-            let span = cx_tokens::TokenRangeArg::to_diagnostic_span(
-                &$range,
+            let range = &$range;
+
+            $crate::log::produce_typecheck_error_for_range(
                 $env.source.tokens,
                 $env.source.compilation_unit.as_path(),
-            );
-
-            $crate::log::produce_typecheck_error(
-                span,
+                range,
                 message,
                 $notes,
             )
@@ -90,14 +109,12 @@ macro_rules! typecheck_error {
 
             // panic!("{}", message);
 
-            let span = cx_tokens::TokenRangeArg::to_diagnostic_span(
-                &$range,
+            let range = &$range;
+
+            $crate::log::produce_typecheck_error_for_range(
                 $env.source.tokens,
                 $env.source.compilation_unit.as_path(),
-            );
-
-            $crate::log::produce_typecheck_error(
-                span,
+                range,
                 message,
                 Vec::new(),
             )

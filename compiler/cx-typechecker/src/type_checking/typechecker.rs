@@ -104,8 +104,7 @@ fn typecheck_expr_inner(
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))?;
             env.push_scope(false, false);
-            env.function
-                .configure_merge_scope(expr, "if join", None, false);
+            env.function.configure_merge_scope(expr, None, false);
             let join_scope_idx = env.function.current_scope_index();
 
             let then_result = typecheck_fallthrough_scope(
@@ -278,7 +277,7 @@ fn typecheck_expr_inner(
             let Some(scope_idx) = env.function.nearest_break_scope() else {
                 return log_typecheck_error!(
                     env,
-                    Some(expr.token_range()),
+                    expr.token_range(),
                     "'break' used outside of a loop or switch context"
                 );
             };
@@ -304,7 +303,7 @@ fn typecheck_expr_inner(
             let Some(scope_idx) = env.function.nearest_continue_scope() else {
                 return log_typecheck_error!(
                     env,
-                    Some(expr.token_range()),
+                    expr.token_range(),
                     "'continue' used outside of a loop context"
                 );
             };
@@ -335,7 +334,7 @@ fn typecheck_expr_inner(
                         .standard_ready_coerce(env, expr.token_range())
                 })
                 .transpose()?;
-            typecheck_return(env, namespace, value)?
+            typecheck_return(env, namespace, expr.token_range(), value)?
         }
 
         CXExprKind::Unsafe { expr: inner } => {
@@ -465,14 +464,23 @@ pub fn add_implicit_return(
     } else {
         return log_typecheck_error!(
             env,
-            expr.token_range.as_ref(),
+            expr.token_range
+                .as_ref()
+                .expect("typechecked expression missing token range"),
             "Function '{}' with non-void return type must have an explicit return statement",
             func.name()
         );
     };
 
-    let ret =
-        typecheck_return(env, namespace, implicit_value.map(|v| *v))?.internal_ready_assertion();
+    let ret = typecheck_return(
+        env,
+        namespace,
+        expr.token_range
+            .as_ref()
+            .expect("typechecked block missing token range"),
+        implicit_value.map(|v| *v),
+    )?
+    .internal_ready_assertion();
 
     Ok(MIRExpression {
         token_range: None,

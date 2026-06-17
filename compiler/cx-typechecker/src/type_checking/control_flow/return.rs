@@ -7,7 +7,6 @@ use cx_mir::{
     },
     type_context::MIRTypeContext,
 };
-use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 
 use crate::{
@@ -32,6 +31,7 @@ fn typechange_can_forward_region(return_type: &MIRType) -> bool {
 pub fn typecheck_return(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
+    return_range: &cx_tokens::TokenRange,
     value: Option<MIRExpression>,
 ) -> CXResult<TypecheckResult> {
     let return_type = env.current_function().signature().return_type.clone();
@@ -65,7 +65,10 @@ pub fn typecheck_return(
         (Some(value), _) => {
             return log_typecheck_error!(
                 env,
-                value.token_range.as_ref(),
+                value
+                    .token_range
+                    .as_ref()
+                    .expect("typechecked expression missing token range"),
                 "Cannot return from function {} with a void return type",
                 env.current_function().display_with(&env.symbols)
             );
@@ -74,7 +77,7 @@ pub fn typecheck_return(
         (None, _) => {
             return log_typecheck_error!(
                 env,
-                Option::<TokenRange>::None,
+                return_range,
                 "Function {} expects a return value, but none was provided",
                 env.current_function().display_with(&env.symbols)
             );
@@ -100,7 +103,7 @@ pub fn typecheck_return(
         if ret_name.is_some() && return_type.is_unit() {
             return log_typecheck_error!(
                 env,
-                Option::<TokenRange>::None,
+                return_range,
                 "Cannot have a named return variable in a function with void return type"
             );
         }

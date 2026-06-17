@@ -1,5 +1,5 @@
 use cx_ast::{ast::template::CXTemplatePrototype, symbols::CXSymbol};
-use cx_log::{CXErrorBase, CXResult};
+use cx_log::{CXErrorBase, CXRawResult};
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::{
@@ -53,7 +53,7 @@ impl MIRSymbol {
         }
     }
 
-    pub fn as_expression(&self) -> CXResult<MIRExpression> {
+    pub fn as_expression(&self) -> CXRawResult<MIRExpression> {
         match self {
             MIRSymbol::FunctionReference(prototype) => Ok(MIRExpression {
                 token_range: None,
@@ -69,10 +69,10 @@ impl MIRSymbol {
             MIRSymbol::Expression(expr) => Ok(expr.clone()),
 
             MIRSymbol::Template { .. } => {
-                CXErrorBase::create_result("Could not deduce arguments to template")
+                CXErrorBase::raw_result("Could not deduce arguments to template")
             }
 
-            _ => CXErrorBase::create_result("Symbol does not refer to a value"),
+            _ => CXErrorBase::raw_result("Symbol does not refer to a value"),
         }
     }
 }
