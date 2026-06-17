@@ -18,7 +18,7 @@ This keeps traditional constant computation simple while giving metaprogramming 
 
 Normal functions are runtime-only:
 
-```cx
+```cpp
 int add(int lhs, int rhs) {
     return lhs + rhs;
 }
@@ -26,7 +26,7 @@ int add(int lhs, int rhs) {
 
 `constexpr` functions are ordinary functions that may also be evaluated at compile time:
 
-```cx
+```cpp
 constexpr int square(int value) {
     return value * value;
 }
@@ -36,8 +36,8 @@ The intended model is similar to C++ `constexpr`: the function remains callable 
 
 `comptime` functions are compile-time VM functions:
 
-```cx
-comptime Type fast_vector(Type inner) {
+```cpp
+comptime type fast_vector(type inner) {
     if (inner == bool) {
         return std::bitset;
     }
@@ -52,7 +52,7 @@ A `comptime` function is not a normal runtime function. It may work with type va
 
 A comptime function may accept a runtime expression as a typed staged value. The preferred spelling is:
 
-```cx
+```cpp
 expr T value
 ```
 
@@ -60,9 +60,9 @@ This means `value` is not a comptime-known `T`; it is a typed runtime expression
 
 For example:
 
-```cx
+```c
 comptime expr T opt::try<T>(expr opt<T> self) {
-    emit match (self) {
+    return emit match (self) {
         opt::some(value) => value;
         opt::none() => return opt::none<T>();
     };
@@ -85,7 +85,7 @@ Inside emitted code, runtime control flow belongs to the caller's runtime contex
 
 ```cx
 comptime expr T opt::try<T>(expr opt<T> self) {
-    emit match (self) {
+    return emit match (self) {
         opt::some(value) => value;
         opt::none() => return opt::none<T>();
     };

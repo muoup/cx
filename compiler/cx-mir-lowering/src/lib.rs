@@ -7,6 +7,10 @@ use crate::{builder::LMIRBuilder, mir_lowering::lower_mir};
 pub mod builder;
 pub mod mir_lowering;
 
+pub(crate) mod log;
+
+mod comptime;
+
 pub type LMIRResult<T> = Option<T>;
 
 pub fn generate_lmir(mir: &MIRUnit) -> CXResult<LMIRUnit> {
