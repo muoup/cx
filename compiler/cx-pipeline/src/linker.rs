@@ -1,5 +1,5 @@
 use crate::progress::ProgressReporter;
-use cx_log::{CXError, CXResult};
+use cx_log::{CXErrorBase, CXResult};
 use cx_pipeline_data::GlobalCompilationContext;
 use std::process::Command;
 
@@ -37,7 +37,7 @@ pub(crate) fn link_relocatable(
 
     let output = cmd
         .output()
-        .map_err(|e| CXError::create_boxed(format!("Failed to execute linker: {}", e)))?;
+        .map_err(|e| CXErrorBase::create_boxed(format!("Failed to execute linker: {}", e)))?;
 
     if output.status.success() {
         Ok(())
@@ -47,7 +47,7 @@ pub(crate) fn link_relocatable(
             String::from_utf8_lossy(&output.stderr)
         );
         eprintln!("[Linker] Command: {cmd:?}");
-        CXError::create_result(format!(
+        CXErrorBase::create_result(format!(
             "Relocatable linking failed: {}",
             String::from_utf8_lossy(&output.stderr)
         ))
@@ -90,7 +90,7 @@ pub(crate) fn link(
                 cmd.arg(format!("-l{}", entry.name));
             }
             other => {
-                return CXError::create_result(format!(
+                return CXErrorBase::create_result(format!(
                     "Unknown link kind '{}' for library '{}'",
                     other, entry.name
                 ));
@@ -100,7 +100,7 @@ pub(crate) fn link(
 
     let output = cmd
         .output()
-        .map_err(|e| CXError::create_boxed(format!("Failed to execute linker: {}", e)))?;
+        .map_err(|e| CXErrorBase::create_boxed(format!("Failed to execute linker: {}", e)))?;
 
     if output.status.success() {
         Ok(())
@@ -110,7 +110,7 @@ pub(crate) fn link(
             String::from_utf8_lossy(&output.stderr)
         );
         eprintln!("[Linker] Command: {cmd:?}");
-        CXError::create_result(format!(
+        CXErrorBase::create_result(format!(
             "Linking failed: {}",
             String::from_utf8_lossy(&output.stderr)
         ))

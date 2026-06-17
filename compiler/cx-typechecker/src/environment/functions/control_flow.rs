@@ -1,10 +1,13 @@
 use std::{collections::HashSet, path::Path};
 
 use cx_ast::ast::expression::CXExpression;
-use cx_log::CXResult;
+use cx_log::error::CXRawResult;
+use cx_log::{CXErrorBase, CXResult};
 use cx_tokens::TokenRange;
 use cx_tokens::token::Token;
 use cx_util::scoped_map::ScopedMap;
+
+use crate::log_typecheck_error;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BindingMoveState {
@@ -136,7 +139,7 @@ impl ControlFlow {
         });
     }
 
-    pub fn pop_scope(&mut self, compilation_unit: &Path, tokens: &[Token]) -> CXResult<()> {
+    pub fn pop_scope(&mut self) -> CXRawResult<()> {
         let Some(scope) = self.scope_stack.last().cloned() else {
             panic!("Scope stack has uneven push/pop");
         };
@@ -147,7 +150,7 @@ impl ControlFlow {
         self.scope_stack.pop().unwrap();
 
         let outgoing_snapshot =
-            self.resolve_scope_flow(compilation_unit, tokens, &scope, current_snapshot.as_ref())?;
+            self.resolve_scope_flow(&scope, current_snapshot.as_ref())?;
         let final_reachable = outgoing_snapshot.is_some();
 
         if final_reachable
@@ -161,18 +164,10 @@ impl ControlFlow {
                 .map(|(name, _)| name)
                 .collect::<Vec<_>>();
 
-            if let Some(range) = scope.anchor_range.as_ref() {
-                return crate::log::type_error_result_for_range(
-                    tokens,
-                    compilation_unit,
-                    range,
-                    format!(
-                        "nodrop local(s) reach scope end without move or @leak: {}",
-                        live.join(", ")
-                    ),
-                    Vec::new(),
-                );
-            }
+            return CXErrorBase::create_result(format!(
+                "nodrop binding(s) dropped at end of scope: {}",
+                live.join(", ")
+            ));
         }
 
         if let Some(target) = scope.natural_exit_target
@@ -438,8 +433,6 @@ impl ControlFlow {
 
     fn resolve_scope_flow(
         &mut self,
-        compilation_unit: &Path,
-        tokens: &[Token],
         scope: &Scope,
         current_snapshot: Option<&ControlFlowSnapshot>,
     ) -> CXResult<Option<ControlFlowSnapshot>> {
@@ -457,12 +450,8 @@ impl ControlFlow {
                 }
 
                 let Some(merged_bindings) = Self::merge_binding_states(
-                    compilation_unit,
-                    tokens,
                     &state.entry_snapshot,
                     &arrows,
-                    &state.join_range,
-                    &state.join_name,
                     state.require_nodrop_discharge,
                 )?
                 else {
@@ -479,16 +468,10 @@ impl ControlFlow {
                         .collect::<Vec<_>>();
 
                     if !live.is_empty() {
-                        return crate::log::type_error_result_for_range(
-                            tokens,
-                            compilation_unit,
-                            &state.join_range,
-                            format!(
-                                "nodrop binding(s) must be moved or @leak'ed before function exit: {}",
-                                live.join(", ")
-                            ),
-                            Vec::new(),
-                        );
+                        return CXErrorBase::create_result(format!(
+                            "nodrop binding(s) must be moved or @leak'ed before function exit: {}",
+                            live.join(", ")
+                        ));
                     }
                 }
 
@@ -503,22 +486,14 @@ impl ControlFlow {
                 continue_arrows.extend(state.continue_arrows.clone());
 
                 let Some(loop_carried_bindings) = Self::merge_binding_states(
-                    compilation_unit,
-                    tokens,
                     &state.entry_snapshot,
                     &continue_arrows,
-                    &state.join_range,
-                    "loop continue join",
                     false,
                 )?
                 else {
                     let Some(exit_bindings) = Self::merge_binding_states(
-                        compilation_unit,
-                        tokens,
                         &state.entry_snapshot,
                         &state.exit_arrows,
-                        &state.join_range,
-                        "loop exit join",
                         false,
                     )?
                     else {
@@ -543,12 +518,8 @@ impl ControlFlow {
                 });
 
                 let Some(exit_bindings) = Self::merge_binding_states(
-                    compilation_unit,
-                    tokens,
                     &state.entry_snapshot,
                     &exit_arrows,
-                    &state.join_range,
-                    "loop exit join",
                     false,
                 )?
                 else {
@@ -562,12 +533,8 @@ impl ControlFlow {
     }
 
     fn merge_binding_states(
-        compilation_unit: &Path,
-        tokens: &[Token],
         entry_snapshot: &ControlFlowSnapshot,
         arrows: &[ControlFlowArrow],
-        join_range: &TokenRange,
-        join_name: &str,
         discharge_only_nodrop: bool,
     ) -> CXResult<Option<Vec<(String, TrackedBindingState)>>> {
         if arrows.is_empty() {
@@ -578,7 +545,7 @@ impl ControlFlow {
         let mut inconsistent = Vec::new();
 
         // TODO: This can probably be simplified
-        
+
         let mut names = entry_snapshot
             .tracked_bindings
             .iter()
@@ -652,14 +619,10 @@ impl ControlFlow {
         let notes = inconsistent
             .iter()
             .map(|note| format!("conflict: {note}"))
-            .collect::<Vec<_>>();
-        crate::log::type_error_result_for_range::<Option<Vec<(String, TrackedBindingState)>>>(
-            tokens,
-            compilation_unit,
-            join_range,
-            format!("moved binding(s) have inconsistent move state at {join_name}"),
-            notes,
-        )
+            .collect::<Vec<_>>()
+            .join("; ");
+
+        CXErrorBase::create_result(format!("inconsistent move state for binding(s): {notes}"))
     }
 
     fn apply_merged_bindings(&mut self, merged_bindings: &[(String, TrackedBindingState)]) {

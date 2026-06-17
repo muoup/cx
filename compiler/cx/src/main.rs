@@ -90,7 +90,7 @@ fn run_standard_compilation(config: CompilerConfig, path: &Path) {
     match standard_compilation(config, path) {
         Ok(_) => {}
         Err(err) => {
-            err.pretty_print();
+            err.print();
             let _ = std::io::stdout().flush();
             std::process::exit(1);
         }

@@ -1,5 +1,5 @@
 use cx_ast::{ast::template::CXTemplatePrototype, symbols::CXSymbol};
-use cx_log::{CXError, CXResult};
+use cx_log::{CXErrorBase, CXResult};
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::{
@@ -69,10 +69,10 @@ impl MIRSymbol {
             MIRSymbol::Expression(expr) => Ok(expr.clone()),
 
             MIRSymbol::Template { .. } => {
-                CXError::create_result("Could not deduce arguments to template")
+                CXErrorBase::create_result("Could not deduce arguments to template")
             }
 
-            _ => CXError::create_result("Symbol does not refer to a value"),
+            _ => CXErrorBase::create_result("Symbol does not refer to a value"),
         }
     }
 }

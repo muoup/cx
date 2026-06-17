@@ -5,7 +5,7 @@ use cx_ast::ast::{
     template::CXTemplateInput,
     types::{CXType, CXTypeKind, PredeclarationType},
 };
-use cx_log::{CXError, CXResult};
+use cx_log::{CXErrorBase, CXResult};
 use cx_tokens::{
     operator,
     token::{OperatorType, TokenKind},
@@ -59,7 +59,7 @@ impl ParsedIdentifier {
     #[allow(dead_code)]
     pub(crate) fn into_qualified_name(self) -> CXResult<QualifiedName> {
         if self.template_input.is_some() {
-            return CXError::create_result(format!(
+            return CXErrorBase::create_result(format!(
                 "Expected non-templated identifier, found '{}<...>'",
                 self.name
             ));

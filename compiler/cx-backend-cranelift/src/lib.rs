@@ -10,7 +10,7 @@ use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
 use cx_lmir::{LMIRABISlot, LMIRFunctionSignature};
 use cx_lmir::{LMIRBlockID, LMIRRegister, LMIRUnit, LMIRValue};
-use cx_log::{log_error, CXError, CXResult};
+use cx_log::{log_error, CXErrorBase, CXResult};
 use cx_util::identifier::CXIdent;
 use std::collections::HashMap;
 
@@ -94,7 +94,7 @@ impl FunctionState<'_> {
 
             LMIRValue::FunctionRef(name) => {
                 let (_func_id, func_ref) = self.get_function(name.as_str()).ok_or_else(|| {
-                    CXError::create_boxed(format!("Function not found: {}", name))
+                    CXErrorBase::create_boxed(format!("Function not found: {}", name))
                 })?;
                 let as_value = self.builder.ins().func_addr(self.pointer_type, func_ref);
 
@@ -127,7 +127,7 @@ impl FunctionState<'_> {
 
             LMIRValue::Global(id) => {
                 let Some(data_id) = self.global_ids.get(*id as usize).cloned() else {
-                    return CXError::create_result(format!("Global not found: g{id}"));
+                    return CXErrorBase::create_result(format!("Global not found: g{id}"));
                 };
 
                 let global_ref = self
@@ -144,7 +144,7 @@ impl FunctionState<'_> {
 
             LMIRValue::Register { register, _type } => {
                 let Some(var) = self.variable_table.get(register).cloned() else {
-                    return CXError::create_result(format!(
+                    return CXErrorBase::create_result(format!(
                         "Variable not found in variable table: {:?}",
                         bc_value
                     ));
@@ -216,5 +216,5 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
         .object_module
         .finish()
         .emit()
-        .map_err(|e| CXError::create_boxed(format!("Failed to emit object file: {e}")))
+        .map_err(|e| CXErrorBase::create_boxed(format!("Failed to emit object file: {e}")))
 }

@@ -1,6 +1,6 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::progress::ProgressReporter;
-use cx_log::{CXError, CXErrorTrait, CXResult};
+use cx_log::{CXErrorBase, CXErrorContext, CXResult};
 use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::preparse::PreparseConfig;
@@ -120,7 +120,7 @@ fn import_jobs_for_unit(
 
     for import in imports {
         if !context.module_mode && !import.is_library_module() {
-            return CXError::create_result(format!(
+            return CXErrorBase::create_result(format!(
                 "Import '{}' is not available in single-file compilation mode. Only compiler library modules under `std::` may be imported here; use `cx build` for project/module imports.",
                 import.as_str().replace('/', "::")
             ));
@@ -442,7 +442,7 @@ pub(crate) fn perform_job(
             };
             let internal_directory = internal_directory(context, &job.unit).with_extension("o");
             let internal_directory_str = internal_directory.to_str().ok_or(
-                CXError::create_boxed("Internal directory path is not valid UTF-8"),
+                CXErrorBase::create_boxed("Internal directory path is not valid UTF-8"),
             )?;
 
             let buffer = match context.config.backend {
@@ -576,7 +576,7 @@ fn handle_job_collect_errors(
         .into()
     };
 
-    fn spanned_error(error: &dyn CXErrorTrait) -> Option<LSPErrors> {
+    fn spanned_error(error: &dyn CXErrorContext) -> Option<LSPErrors> {
         if let (Some(compilation_unit), Some(start), Some(end)) = (
             error.compilation_unit(),
             error.byte_start(),
@@ -587,7 +587,6 @@ fn handle_job_collect_errors(
                 message: error.error_message(),
                 byte_start: start,
                 byte_end: end,
-                notes: error.notes(),
             });
         }
 

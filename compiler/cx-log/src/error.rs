@@ -1,26 +1,31 @@
-use std::fmt::Formatter;
 use std::path::PathBuf;
 
-use crate::pretty::{pretty_point_error, pretty_underline_error_with_notes};
 use crate::span::{DiagnosticPointer, DiagnosticSpan};
 
-pub trait CXErrorTrait {
-    fn pretty_print(&self);
+pub type CXResult<T> = Result<T, Box<dyn CXError>>;
+pub struct CXRawResult<T>(Result<T, Box<dyn CXErrorMessage>>);
 
-    /// Attempt to downcast this error to a concrete type.
-    /// Returns Some if the error is of the given type, None otherwise.
-    fn as_any(&self) -> &dyn std::any::Any {
-        &()
+impl<T> CXRawResult<T> {
+    pub fn new(result: Result<T, Box<dyn CXErrorMessage>>) -> Self {
+        CXRawResult(result)
     }
 
-    fn error_prefix(&self) -> String;
+    pub fn complete(self, context: Box<dyn CXErrorContext>) -> CXResult<T> {
+        self.0.map_err(|msg| {
+            Box::new(CXComposedError {
+                error: msg,
+                context,
+            }) as Box<dyn CXError>
+        })
+    }
+}
 
+pub trait CXErrorMessage {
     fn error_content(&self) -> String;
+}
 
-    /// Get the error as a string for LSP diagnostics
-    fn error_message(&self) -> String {
-        format!("{}: {}", self.error_prefix(), self.error_content())
-    }
+pub trait CXErrorContext {
+    fn error_prefix(&self) -> String;
 
     /// Get the compilation unit for this error, if applicable
     fn compilation_unit(&self) -> Option<PathBuf> {
@@ -36,112 +41,63 @@ pub trait CXErrorTrait {
     fn byte_end(&self) -> Option<usize> {
         None
     }
-
-    /// Get any supplementary notes associated with this error, if applicable.
-    fn notes(&self) -> Vec<String> {
-        Vec::new()
-    }
 }
 
-pub struct CXError {
+pub trait CXError: CXErrorMessage + CXErrorContext {}
+
+pub struct CXErrorBase {
     pub message: String,
 }
 
-impl CXErrorTrait for CXError {
-    fn pretty_print(&self) {
-        println!("CXError: {}", self.message);
-    }
-
-    fn error_prefix(&self) -> String {
-        "Error".to_string()
-    }
-
+impl CXErrorMessage for CXErrorBase {
     fn error_content(&self) -> String {
         self.message.clone()
     }
 }
 
-pub type CXResult<T> = Result<T, Box<dyn CXErrorTrait>>;
-
-impl CXError {
+impl CXErrorBase {
     pub fn new<T: Into<String>>(msg: T) -> Self {
-        CXError {
+        CXErrorBase {
             message: msg.into(),
         }
     }
 
-    pub fn unimplemented<T, U: Into<String>>(msg: U) -> CXResult<T> {
-        Err(Box::new(CXError::new(format!(
-            "Unimplemented: {}",
-            msg.into()
-        ))))
+    pub fn create_result<T, U: Into<String>>(msg: U) -> CXRawResult<T> {
+        CXRawResult::new(Err(Box::new(CXErrorBase::new(msg))))
     }
 
-    pub fn create_result<T, U: Into<String>>(msg: U) -> CXResult<T> {
-        Err(Box::new(CXError::new(msg)))
-    }
-
-    pub fn create_boxed<U: Into<String>>(msg: U) -> Box<dyn CXErrorTrait> {
-        Box::new(CXError::new(msg))
-    }
-}
-
-impl std::fmt::Debug for CXError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "CXError: {}", self.message)
-    }
-}
-
-impl std::fmt::Display for CXError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "CXError: {}", self.message)
+    pub fn create_boxed<U: Into<String>>(msg: U) -> Box<dyn CXErrorMessage> {
+        Box::new(CXErrorBase::new(msg))
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct UnspannedError {
-    pub prefix: String,
-    pub message: String,
-    pub notes: Vec<String>,
+pub struct CXComposedError {
+    pub error: Box<dyn CXErrorMessage>,
+    pub context: Box<dyn CXErrorContext>,
 }
 
-impl UnspannedError {
-    pub fn new(prefix: impl Into<String>, message: impl Into<String>) -> Self {
-        Self {
-            prefix: prefix.into(),
-            message: message.into(),
-            notes: Vec::new(),
-        }
-    }
-
-    pub fn with_notes(mut self, notes: Vec<String>) -> Self {
-        self.notes = notes;
-        self
-    }
-}
-
-impl CXErrorTrait for UnspannedError {
-    fn pretty_print(&self) {
-        println!("{}", self.error_message());
-        for note in &self.notes {
-            println!("note: {note}");
-        }
-    }
-
-    fn error_prefix(&self) -> String {
-        self.prefix.clone()
-    }
-
+impl CXErrorMessage for CXComposedError {
     fn error_content(&self) -> String {
-        self.message.clone()
+        self.error.error_content()
+    }
+}
+
+impl CXErrorContext for CXComposedError {
+    fn error_prefix(&self) -> String {
+        self.context.error_prefix()
     }
 
-    fn notes(&self) -> Vec<String> {
-        self.notes.clone()
+    fn compilation_unit(&self) -> Option<PathBuf> {
+        self.context.compilation_unit()
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn byte_start(&self) -> Option<usize> {
+        self.context.byte_start()
+    }
+
+    fn byte_end(&self) -> Option<usize> {
+        self.context.byte_end()
     }
 }
 
@@ -182,21 +138,15 @@ impl PointingError {
     }
 }
 
-impl CXErrorTrait for PointingError {
-    fn pretty_print(&self) {
-        pretty_point_error(
-            &self.message,
-            self.pointer.compilation_unit.as_path(),
-            self.pointer.point,
-        );
-    }
-
-    fn error_prefix(&self) -> String {
-        self.prefix.clone()
-    }
-
+impl CXErrorMessage for PointingError {
     fn error_content(&self) -> String {
         self.message.clone()
+    }
+}
+
+impl CXErrorContext for PointingError {
+    fn error_prefix(&self) -> String {
+        self.prefix.clone()
     }
 
     fn compilation_unit(&self) -> Option<PathBuf> {
@@ -209,14 +159,6 @@ impl CXErrorTrait for PointingError {
 
     fn byte_end(&self) -> Option<usize> {
         Some(self.pointer.diagnostic_end)
-    }
-
-    fn notes(&self) -> Vec<String> {
-        self.notes.clone()
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }
 
@@ -242,43 +184,21 @@ impl UnderlineError {
         }
     }
 
-    pub fn legacy(
-        prefix: impl Into<String>,
-        message: impl Into<String>,
-        file: PathBuf,
-        byte_start: usize,
-        byte_end: usize,
-    ) -> Self {
-        Self::new(
-            prefix,
-            message,
-            DiagnosticSpan::new(file, byte_start, byte_end),
-        )
-    }
-
     pub fn with_notes(mut self, notes: Vec<String>) -> Self {
         self.notes = notes;
         self
     }
 }
 
-impl CXErrorTrait for UnderlineError {
-    fn pretty_print(&self) {
-        pretty_underline_error_with_notes(
-            &self.error_message(),
-            &self.notes,
-            self.span.compilation_unit.as_path(),
-            self.span.byte_start,
-            self.span.byte_end,
-        );
-    }
-
-    fn error_prefix(&self) -> String {
-        self.prefix.clone()
-    }
-
+impl CXErrorMessage for UnderlineError {
     fn error_content(&self) -> String {
         self.message.clone()
+    }
+}
+
+impl CXErrorContext for UnderlineError {
+    fn error_prefix(&self) -> String {
+        self.prefix.clone()
     }
 
     fn compilation_unit(&self) -> Option<PathBuf> {
@@ -291,13 +211,5 @@ impl CXErrorTrait for UnderlineError {
 
     fn byte_end(&self) -> Option<usize> {
         Some(self.span.byte_end)
-    }
-
-    fn notes(&self) -> Vec<String> {
-        self.notes.clone()
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }

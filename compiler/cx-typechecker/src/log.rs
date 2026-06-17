@@ -1,43 +1,65 @@
-use std::path::Path;
-
-use cx_log::{CXErrorTrait, DiagnosticSpan};
-use cx_tokens::TokenRangeArg;
-use cx_tokens::token::Token;
+use cx_log::{CXErrorContext, DiagnosticSpan};
 
 pub fn produce_typecheck_error(
     span: Option<DiagnosticSpan>,
     message: String,
     notes: Vec<String>,
-) -> Box<dyn CXErrorTrait> {
+) -> Box<dyn CXErrorContext> {
     cx_log::produce_diagnostic_error("TYPE ERROR", message, notes, span)
 }
 
-pub fn type_error_for_optional_range(
-    tokens: &[Token],
-    fallback_file: &Path,
-    range: impl TokenRangeArg,
+pub(crate) fn produce_comptime_error(
+    span: Option<DiagnosticSpan>,
     message: String,
     notes: Vec<String>,
-) -> Box<dyn cx_log::CXErrorTrait> {
-    produce_typecheck_error(
-        range.to_diagnostic_span(tokens, fallback_file),
-        message,
-        notes,
-    )
+) -> Box<dyn CXErrorContext> {
+    cx_log::produce_diagnostic_error("COMPTIME ERROR", message, notes, span)
 }
 
-pub fn type_error_result_for_range<T>(
-    tokens: &[Token],
-    fallback_file: &Path,
-    range: impl TokenRangeArg,
-    message: String,
-    notes: Vec<String>,
-) -> cx_log::CXResult<T> {
-    Err(produce_typecheck_error(
-        range.to_diagnostic_span(tokens, fallback_file),
-        message,
-        notes,
-    ))
+#[macro_export]
+macro_rules! log_comptime_error {
+    ($env:expr, $range:expr, notes: $notes:expr, $($arg:tt)*) => {
+        {
+            Err($crate::comptime_error!($env, $range, notes: $notes, $($arg)*))
+        }
+    };
+
+    ($env:expr, $range:expr, $($arg:tt)*) => {
+        {
+            Err($crate::comptime_error!($env, $range, $($arg)*))
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! comptime_error {
+    ($env:expr, $range:expr, notes: $notes:expr, $($arg:tt)*) => {
+        {
+            let message = format!($($arg)*);
+            let _engine = &$env;
+            let _range = &$range;
+
+            $crate::log::produce_comptime_error(
+                None,
+                message,
+                $notes,
+            )
+        }
+    };
+
+    ($env:expr, $range:expr, $($arg:tt)*) => {
+        {
+            let message = format!($($arg)*);
+            let _engine = &$env;
+            let _range = &$range;
+
+            $crate::log::produce_comptime_error(
+                None,
+                message,
+                Vec::new(),
+            )
+        }
+    };
 }
 
 #[macro_export]

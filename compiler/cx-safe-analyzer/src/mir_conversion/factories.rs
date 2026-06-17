@@ -1,4 +1,4 @@
-use cx_log::{CXError, CXResult};
+use cx_log::{CXErrorBase, CXResult};
 use cx_mir::{
     mir::{
         data::{MIRIntegerType, MIRType, MIRTypeKind},
@@ -339,7 +339,7 @@ pub(crate) fn increment_amount_node(
     mir_type: &MIRType,
 ) -> CXResult<FMIRNode> {
     let MIRTypeKind::Integer { _type, signed } = &mir_type.kind else {
-        return CXError::create_result(format!(
+        return CXErrorBase::create_result(format!(
             "FMIR increment desugaring expected integer type, found '{}'",
             mir_type.display_with(env.type_definitions)
         ));
@@ -367,7 +367,7 @@ pub(crate) fn convert_increment(
         .mem_ref_inner(&operand_expr._type)
         .cloned()
     else {
-        return CXError::create_result(format!(
+        return CXErrorBase::create_result(format!(
             "FMIR increment desugaring expected memory reference operand, found '{}'",
             operand_expr._type.display_with(env.type_definitions)
         ));
@@ -412,7 +412,7 @@ pub(crate) fn convert_increment(
             )
         }
         _ => {
-            return CXError::create_result(format!(
+            return CXErrorBase::create_result(format!(
                 "FMIR increment desugaring requires integer or pointer inner type, found '{}'",
                 value_type.display_with(env.type_definitions)
             ));

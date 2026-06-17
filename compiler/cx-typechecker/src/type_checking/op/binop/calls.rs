@@ -272,7 +272,7 @@ fn complete_callee(
                         env,
                         expr.token_range(),
                         "{}",
-                        err.error_content()
+                        err.to_string()
                     );
                 }
             };
@@ -280,7 +280,7 @@ fn complete_callee(
             match symbol.as_expression() {
                 Ok(function) => Ok(function),
                 Err(err) => {
-                    log_typecheck_error!(env, expr.token_range(), "{}", err.error_content())
+                    log_typecheck_error!(env, expr.token_range(), "{}", err.to_string())
                 }
             }
         }

@@ -109,13 +109,13 @@ pub(crate) fn resolve_assertion_prototype(
     );
 
     let Some(symbol) = env.get_symbol(namespace, &name, None)? else {
-        return cx_log::CXError::create_result(
+        return cx_log::CXErrorBase::create_result(
             "Function contract used but std::intrinsic::assertion::__compiler_assert was not found",
         );
     };
 
     let MIRSymbol::FunctionReference(prototype) = symbol else {
-        return cx_log::CXError::create_result(
+        return cx_log::CXErrorBase::create_result(
             "std::intrinsic::assertion::__compiler_assert is not a function",
         );
     };

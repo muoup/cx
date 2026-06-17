@@ -69,7 +69,7 @@ pub(crate) fn run_build_mode(args: BuildArgs) {
     match project_compilation(base_config, &config, args.target.as_deref()) {
         Ok(_) => {}
         Err(err) => {
-            err.pretty_print();
+            err.print();
             std::process::exit(1);
         }
     }

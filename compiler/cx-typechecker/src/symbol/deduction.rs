@@ -6,7 +6,7 @@ use cx_ast::ast::{
     types::{CXType, CXTypeKind},
 };
 use cx_ast::symbols::CXSymbolKind;
-use cx_log::{CXError, CXResult};
+use cx_log::{CXErrorBase, CXResult};
 use cx_mir::{
     EnvironmentNamespace,
     mir::data::{MIRFunctionSignature, MIRTemplateInput, MIRType, MIRTypeKind},
@@ -33,13 +33,13 @@ pub(crate) fn complete_templated_callee(
     arg_types: &[MIRType],
 ) -> CXResult<MIRSymbol> {
     let Some(symbol) = env.get_symbol(namespace, name, None)? else {
-        return CXError::create_result(format!("Templated function '{}' not found", name));
+        return CXErrorBase::create_result(format!("Templated function '{}' not found", name));
     };
 
     if let Some(input) = template_input {
         let completed_input = complete_template_input(env, namespace, input)?;
         return apply_template(env, &symbol, completed_input)?.ok_or_else(|| {
-            CXError::create_boxed(format!(
+            CXErrorBase::create_boxed(format!(
                 "Symbol '{}' does not accept template arguments",
                 name
             ))
@@ -47,7 +47,7 @@ pub(crate) fn complete_templated_callee(
     }
 
     deduce_template_symbol(env, namespace, &symbol, arg_types)?
-        .ok_or_else(|| CXError::create_boxed(format!("Symbol '{}' is not a template", name)))
+        .ok_or_else(|| CXErrorBase::create_boxed(format!("Symbol '{}' is not a template", name)))
 }
 
 pub(crate) fn deduce_template_symbol(
@@ -79,12 +79,12 @@ fn deduce_template_input(
     arg_types: &[MIRType],
 ) -> CXResult<MIRTemplateInput> {
     let CXSymbolKind::FunctionReference(shell) = &source.kind else {
-        return CXError::create_result("Only function template deduction is implemented");
+        return CXErrorBase::create_result("Only function template deduction is implemented");
     };
 
     let mut bindings = TemplateBindings::new();
     if arg_types.len() > shell.params.len() && !shell.var_args {
-        return CXError::create_result(format!(
+        return CXErrorBase::create_result(format!(
             "Function template expects {} arguments, found {}",
             shell.params.len(),
             arg_types.len()
@@ -107,7 +107,7 @@ fn deduce_template_input(
         .iter()
         .map(|name| {
             let ty = bindings.remove(name.as_str()).ok_or_else(|| {
-                CXError::create_boxed(format!(
+                CXErrorBase::create_boxed(format!(
                     "Could not deduce template argument '{}' for function {}",
                     name, shell.kind
                 ))
@@ -161,7 +161,7 @@ fn deduce_from_cx_type(
             ..
         } => {
             let Some(template_info) = actual.get_template_data() else {
-                return CXError::create_result(format!(
+                return CXErrorBase::create_result(format!(
                     "Expected realized template type '{}' while deducing, found {}",
                     name,
                     actual.display_with(&env.symbols)
@@ -169,7 +169,7 @@ fn deduce_from_cx_type(
             };
 
             if !template_base_matches(name, template_info.base_name.as_ref()) {
-                return CXError::create_result(format!(
+                return CXErrorBase::create_result(format!(
                     "Expected template type '{}', found '{}'",
                     name,
                     template_info
@@ -181,7 +181,7 @@ fn deduce_from_cx_type(
             }
 
             if input.params.len() != template_info.template_input.args.len() {
-                return CXError::create_result(format!(
+                return CXErrorBase::create_result(format!(
                     "Template arity mismatch for '{}': expected {}, found {}",
                     name,
                     input.params.len(),
@@ -310,14 +310,14 @@ fn deduce_from_function_signature(
     actual: &MIRFunctionSignature,
 ) -> CXResult<()> {
     if formal.var_args != actual.var_args {
-        return CXError::create_result(format!(
+        return CXErrorBase::create_result(format!(
             "Function pointer varargs mismatch during template deduction: expected {}, found {}",
             formal.var_args, actual.var_args
         ));
     }
 
     if formal.params.len() != actual.params.len() {
-        return CXError::create_result(format!(
+        return CXErrorBase::create_result(format!(
             "Function pointer arity mismatch during template deduction: expected {}, found {}",
             formal.params.len(),
             actual.params.len()
@@ -358,7 +358,7 @@ fn bind_template_argument(
             return Ok(());
         }
 
-        return CXError::create_result(format!(
+        return CXErrorBase::create_result(format!(
             "Conflicting deductions for template argument '{}': {} vs {}",
             name,
             existing.display_with(&env.symbols),
@@ -383,7 +383,7 @@ fn concrete_type_mismatch(
     formal: &CXType,
     actual: &MIRType,
 ) -> CXResult<()> {
-    CXError::create_result(format!(
+    CXErrorBase::create_result(format!(
         "Template deduction mismatch: expected {}, found {}",
         formal,
         actual.display_with(&env.symbols)

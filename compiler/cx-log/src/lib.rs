@@ -2,7 +2,7 @@ pub mod error;
 pub mod pretty;
 pub mod span;
 
-pub use error::{CXError, CXErrorTrait, CXResult, PointingError, UnderlineError, UnspannedError};
+pub use error::{CXErrorBase, CXErrorContext, CXResult, PointingError, UnderlineError};
 pub use pretty::*;
 pub use span::{DiagnosticPointer, DiagnosticSpan, produce_diagnostic_error};
 

@@ -7,7 +7,7 @@ use cx_ast::ast::{
     types::{CXField, CXStructAttributes, CXType, CXTypeKind, PredeclarationType},
 };
 use cx_ast::symbols::CXSymbolKind;
-use cx_log::{CXError, CXResult};
+use cx_log::{CXErrorBase, CXResult};
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
@@ -121,7 +121,7 @@ fn complete_type_value(
                 .and_then(|v| constexpr_evaluate(env, v))
                 .and_then(|v| {
                     v.get_integer().ok_or_else(|| {
-                        CXError::create_boxed("Array size must be an integer literal")
+                        CXErrorBase::create_boxed("Array size must be an integer literal")
                     })
                 })?;
             MIRTypeKind::Array {

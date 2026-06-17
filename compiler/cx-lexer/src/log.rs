@@ -1,4 +1,4 @@
-use cx_log::CXErrorTrait;
+use cx_log::CXErrorContext;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug)]
@@ -20,8 +20,8 @@ fn pretty_underline_error(
     cx_log::pretty_underline_source_error(message, file_path, source, start_index, end_index);
 }
 
-impl CXErrorTrait for LexerError {
-    fn pretty_print(&self) {
+impl CXErrorContext for LexerError {
+    fn print(&self) {
         pretty_underline_error(
             &self.error_message(),
             self.file.as_path(),
@@ -43,9 +43,7 @@ impl CXErrorTrait for LexerError {
         Some(self.file.clone())
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
+
 }
 
 #[macro_export]

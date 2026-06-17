@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use cx_log::{CXError, CXResult};
+use cx_log::{CXErrorBase, CXResult};
 use cx_util::module_path::cx_library_directory;
 
 use crate::{
@@ -70,7 +70,7 @@ pub(crate) fn handle_include(
     }
 
     let source = std::fs::read_to_string(path.as_path()).map_err(|e| {
-        CXError::create_boxed(format!(
+        CXErrorBase::create_boxed(format!(
             "Failed to read included file {}: {}",
             path.display(),
             e
