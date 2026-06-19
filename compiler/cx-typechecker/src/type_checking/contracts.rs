@@ -36,7 +36,7 @@ pub(crate) fn typecheck_contract(
             env.symbols.insert_local_value(
                 QualifiedName::new_raw(name.clone()),
                 MIRExpression {
-                    token_range: TokenRange::default(),
+                    token_range: TokenRange::internal(),
                     kind: MIRExpressionKind::ContractVariable {
                         name: name.clone(),
                         force_param: false,
@@ -64,7 +64,7 @@ pub(crate) fn typecheck_contract(
             env.symbols.insert_local_value(
                 QualifiedName::new_raw(ret_name.clone()),
                 MIRExpression {
-                    token_range: TokenRange::default(),
+                    token_range: TokenRange::internal(),
                     kind: MIRExpressionKind::ContractVariable {
                         name: ret_name.clone(),
                         force_param: false,

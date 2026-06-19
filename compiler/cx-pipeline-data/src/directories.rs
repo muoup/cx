@@ -12,7 +12,8 @@ pub fn internal_directory(context: &GlobalCompilationContext, unit: &Compilation
     let mut complete_path = context.config.internal_directory.clone();
     complete_path.push(profile_hash);
 
-    let identifier_path = Path::new(unit.identifier());
+    let identifier = unit.identifier();
+    let identifier_path = Path::new(&identifier);
     for component in identifier_path.components() {
         match component {
             Component::Normal(part) => complete_path.push(part),

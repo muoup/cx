@@ -74,7 +74,7 @@ pub fn resolve_symbol(
             }
 
             Ok(MIRSymbol::Expression(MIRExpression {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Variable {
                     name: name.clone(),
                     location: SymbolValueOrigin::Global,
@@ -332,15 +332,16 @@ pub fn apply_template(
 }
 
 pub fn symbol_lexical_namespace(
-    namespace: &EnvironmentNamespace,
+    namespace: impl Into<EnvironmentNamespace>,
     symbol: &CXSymbol,
 ) -> EnvironmentNamespace {
+    let namespace = namespace.into();
     match &symbol.kind {
         CXSymbolKind::FunctionReference(prototype)
         | CXSymbolKind::FunctionTemplate {
             definition: prototype,
             ..
-        } => function_lexical_namespace(namespace, &prototype.kind),
+        } => function_lexical_namespace(&namespace, &prototype.kind),
         _ => namespace.clone(),
     }
 }
@@ -353,7 +354,8 @@ fn function_lexical_namespace(
         CXFunctionKind::AssociatedFunction { .. } => namespace
             .parent_and_name()
             .map(|(parent, _)| parent)
-            .unwrap_or_else(|| namespace.clone()),
+            .unwrap_or_else(|| namespace.as_namespace_path().clone())
+            .into(),
         CXFunctionKind::Standard(_) => namespace.clone(),
     }
 }

@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use cx_ast::ast::modifiers::VisibilityMode;
 use cx_ast::symbols::CXSymbol;
 use cx_log::{CXResult, CXUnspannedError};
@@ -11,10 +9,8 @@ use cx_mir::{
     type_context::MIRTypeContext,
 };
 use cx_namespace::{MIRQualifiedLookup, result::QualifiedLookupResult};
-use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
 use cx_tokens::TokenRange;
-use cx_tokens::token::Token;
 use cx_util::namespace::QualifiedName;
 use cx_util::{identifier::CXIdent, namespace::NamespacePath};
 
@@ -22,7 +18,6 @@ pub use crate::environment::functions::control_flow::{
     BindingMoveState, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
     ScopeExitTarget, ScopeId, TrackedBindingState,
 };
-use crate::environment::source::SourceContext;
 use crate::{
     environment::functions::context::FunctionContext, symbol::registry::MIRSymbolRegistry,
 };
@@ -32,14 +27,14 @@ use crate::{
 use crate::{environment::items::ItemRegistry, log_typecheck_error};
 pub(crate) mod functions;
 pub(crate) mod items;
-pub(crate) mod source;
 
 pub use items::MIRFunctionGenRequest;
 
 pub const DEFER_ACCUMULATION_REGISTER: &str = "__defer_accumulation_register";
 
 pub struct TypeEnvironment<'a> {
-    pub source: SourceContext<'a>,
+    pub current_namespace: EnvironmentNamespace,
+    pub module_data: &'a ModuleData,
     pub symbols: MIRSymbolRegistry<'a>,
     pub items: ItemRegistry,
     pub function: FunctionContext,
@@ -47,14 +42,13 @@ pub struct TypeEnvironment<'a> {
 
 impl TypeEnvironment<'_> {
     pub fn new<'a>(
-        tokens: &'a [Token],
-        compilation_unit: CompilationUnit,
-        working_directory: PathBuf,
+        current_namespace: EnvironmentNamespace,
         module_data: &'a ModuleData,
     ) -> TypeEnvironment<'a> {
         TypeEnvironment {
             symbols: MIRSymbolRegistry::new(&module_data.symbol_registry),
-            source: SourceContext::new(tokens, compilation_unit, working_directory, module_data),
+            current_namespace,
+            module_data,
             items: ItemRegistry::new(),
             function: FunctionContext::default(),
         }
@@ -87,7 +81,7 @@ impl TypeEnvironment<'_> {
             functions,
             global_variables: globals,
             registry: self.symbols.decompose(),
-            source_path: self.source.compilation_unit.as_path().to_owned(),
+            source_namespace: self.current_namespace,
         })
     }
 
@@ -98,8 +92,15 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn pop_scope(&mut self) -> CXResult<()> {
+        let tokens = self.module_data.lex_tokens.get(&self.current_namespace);
+        let source_path = self
+            .module_data
+            .unit_for_namespace(&self.current_namespace)
+            .map(|unit| unit.as_path().to_owned())
+            .unwrap_or_default();
+
         self.function
-            .pop_scope(self.source.compilation_unit.as_path(), self.source.tokens)?;
+            .pop_scope(source_path.as_path(), tokens.as_ref())?;
         self.symbols.pop_local_scope();
         Ok(())
     }
@@ -180,7 +181,7 @@ impl TypeEnvironment<'_> {
                     return true;
                 }
 
-                if &candidate.namespace == namespace {
+                if &candidate.namespace == namespace.as_namespace_path() {
                     return true;
                 }
 
@@ -218,7 +219,7 @@ impl TypeEnvironment<'_> {
         let symbol = resolve_symbol(
             self,
             namespace,
-            &resolved_name.namespace,
+            &EnvironmentNamespace::from(&resolved_name.namespace),
             &resolved_name.name,
             &untyped_symbol,
         )?;
@@ -243,7 +244,7 @@ impl MIRQualifiedLookup for TypeEnvironment<'_> {
 
     fn lookup_local(
         &self,
-        _lexical_namespace: &EnvironmentNamespace,
+        _lexical_namespace: &NamespacePath,
         name: &QualifiedName,
     ) -> Option<Self::Output> {
         self.symbols.get_local_symbol(name).map(|sym| SymbolLookup {
@@ -254,7 +255,7 @@ impl MIRQualifiedLookup for TypeEnvironment<'_> {
 
     fn lookup_exact(
         &self,
-        lexical_namespace: &EnvironmentNamespace,
+        lexical_namespace: &NamespacePath,
         name: &QualifiedName,
     ) -> Option<Self::Output> {
         self.symbols
@@ -267,7 +268,13 @@ impl MIRQualifiedLookup for TypeEnvironment<'_> {
                 self.symbols
                     .get_global_registry()
                     .resolve(name)
-                    .filter(|sym| self.symbol_visible_from(lexical_namespace, name, sym))
+                    .filter(|sym| {
+                        self.symbol_visible_from(
+                            &EnvironmentNamespace::from(lexical_namespace),
+                            name,
+                            sym,
+                        )
+                    })
                     .map(|sym| SymbolLookup {
                         resolved_name: name.clone(),
                         kind: SymbolLookupKind::Untyped(sym.clone()),

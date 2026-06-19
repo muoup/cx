@@ -82,7 +82,7 @@ pub(crate) fn resolve_enum_block<'a, 'b>(
         env.symbols.insert_value(
             symbol,
             MIRExpression {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 _type: env.get_intrinsic_type("int"),
                 kind: MIRExpressionKind::IntLiteral(value),
             },

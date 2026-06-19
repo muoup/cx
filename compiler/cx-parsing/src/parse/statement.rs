@@ -323,7 +323,8 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<CXExpres
                 }
             };
 
-            let scoped_name_expr =
+            // FIXME: This is incorrect, associated namespace should not be based on type namespace.
+            let scoped_name_expr = 
                 qualify_identifier_under_type(data, type_name, variant_expr, start_index)?;
 
             if !try_next!(data.tokens, punctuator!(OpenParen)) {

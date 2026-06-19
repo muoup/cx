@@ -32,7 +32,7 @@ fn resolve_access_base(
         if let Some(inner_type) = env.symbols.mem_ref_inner(&lhs_type).cloned() {
             if let Some(ptr_inner) = env.symbols.ptr_inner(&inner_type).cloned() {
                 lhs = MIRExpression {
-                    token_range: TokenRange::default(),
+                    token_range: TokenRange::internal(),
                     kind: MIRExpressionKind::RegionDuplicate {
                         source: Box::new(lhs),
                     },
@@ -44,7 +44,7 @@ fn resolve_access_base(
 
             if env.symbols.mem_ref_inner(&inner_type).is_some() {
                 lhs = MIRExpression {
-                    token_range: TokenRange::default(),
+                    token_range: TokenRange::internal(),
                     kind: MIRExpressionKind::RegionDuplicate {
                         source: Box::new(lhs),
                     },

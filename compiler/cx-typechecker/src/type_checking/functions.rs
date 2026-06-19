@@ -39,7 +39,7 @@ pub fn typecheck_function(
         env.symbols.insert_local_value(
             QualifiedName::new_raw(name.clone()),
             MIRExpression {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Variable {
                     name: name.clone(),
                     location: SymbolValueOrigin::Local,

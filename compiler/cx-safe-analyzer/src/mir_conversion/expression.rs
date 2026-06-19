@@ -18,7 +18,7 @@ pub fn convert_expression(
 ) -> CXResult<FMIRNode> {
     let node = match &mir_expr.kind {
         MIRExpressionKind::BoolLiteral(value) => Ok(FMIRNode {
-            token_range: TokenRange::default(),
+            token_range: TokenRange::internal(),
             body: FMIRNodeBody::BooleanLiteral(*value),
             _type: FMIRType::Pure {
                 mir_type: MIRType::bool(),
@@ -35,7 +35,7 @@ pub fn convert_expression(
             };
 
             Ok(FMIRNode {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 body: FMIRNodeBody::IntegerLiteral(*value),
                 _type: FMIRType::Pure {
                     mir_type: MIRType::from(MIRTypeKind::Integer {
@@ -52,7 +52,7 @@ pub fn convert_expression(
             };
 
             Ok(FMIRNode {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 body: FMIRNodeBody::FloatLiteral(value.into()),
                 _type: FMIRType::Pure {
                     mir_type: MIRTypeKind::Float { _type: *ftype }.into(),
@@ -84,7 +84,7 @@ pub fn convert_expression(
             let operation = CVMOperation::Unsafe;
 
             let allocation = FMIRNode {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 body: FMIRNodeBody::Alloca,
                 _type: FMIRType::CMonad {
                     inner: Box::new(FMIRType::pure(mir_expr.get_type())),
@@ -97,7 +97,7 @@ pub fn convert_expression(
             };
 
             let store = FMIRNode {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 body: FMIRNodeBody::Store {
                     pointer: FRc::new(allocation.clone()),
                     value: FRc::new(initial_value.clone()),
@@ -133,7 +133,7 @@ pub fn convert_expression(
             );
 
             let bind_effect = FMIRNode {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 body: FMIRNodeBody::Unit,
                 _type: monad_unit(CVMOperation::Access {
                     reads: vec![],
@@ -163,7 +163,7 @@ pub fn convert_expression(
                 .union(&else_node_value._type);
 
             Ok(FMIRNode {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 _type: effect.apply(then_node_value._type.inner_type().clone()),
                 body: FMIRNodeBody::If {
                     condition: FRc::new(condition_node),
@@ -196,7 +196,7 @@ pub fn convert_expression(
             }
 
             Ok(FMIRNode {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 _type: effect.apply(default_node._type.inner_type().clone()),
                 body: FMIRNodeBody::Match {
                     condition: FRc::new(condition_node),
@@ -216,7 +216,7 @@ pub fn convert_expression(
 
             let loop_effect = condition_node._type.union(&body_node._type);
             let loop_node = FMIRNode {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 _type: loop_effect.clone().apply(FMIRType::pure(MIRType::unit())),
                 body: FMIRNodeBody::CLoop {
                     condition: FRc::new(condition_node.clone()),
@@ -244,7 +244,7 @@ pub fn convert_expression(
 
             let loop_body = then_node(body_node, increment_node);
             let loop_node = FMIRNode {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 _type: condition_node
                     ._type
                     .union(&loop_body._type)
@@ -269,7 +269,7 @@ pub fn convert_expression(
                 .unwrap_or_else(FMIRNode::unit);
 
             let return_node = FMIRNode {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 _type: FMIRType::unsafe_effect(FMIRType::pure(MIRType::unit())),
                 body: FMIRNodeBody::CReturn {
                     value: FRc::new(return_value.clone()),
@@ -321,7 +321,7 @@ pub fn convert_expression(
             }
 
             Ok(FMIRNode {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 body: FMIRNodeBody::VariableAlias {
                     name: name.as_string(),
                 },
@@ -346,7 +346,7 @@ pub fn convert_expression(
             }
 
             Ok(FMIRNode {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 body: FMIRNodeBody::VariableAlias {
                     name: name.as_string(),
                 },
@@ -366,7 +366,7 @@ pub fn convert_expression(
             let effect = lhs_node._type.union(&rhs_node._type);
 
             Ok(FMIRNode {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 _type: effect.apply(FMIRType::pure(mir_expr.get_type())),
                 body: result.body,
             })
@@ -399,7 +399,7 @@ pub fn convert_expression(
             let effect = operand_node._type.identity();
 
             Ok(FMIRNode {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 _type: effect.apply(FMIRType::pure(mir_expr.get_type())),
                 body: result.body,
             })
@@ -509,7 +509,7 @@ pub fn convert_expression(
             for argument in argument_nodes {
                 effect = effect.union(&argument._type);
                 application = FMIRNode {
-                    token_range: TokenRange::default(),
+                    token_range: TokenRange::internal(),
                     _type: FMIRType::pure(MIRType::internal_function()),
                     body: FMIRNodeBody::Application {
                         function: FRc::new(application),
@@ -525,7 +525,7 @@ pub fn convert_expression(
             // TODO: Contract enforcement
 
             Ok(FMIRNode {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 _type: effect.apply(FMIRType::pure(mir_expr.get_type())),
                 body: application.body,
             })
@@ -544,7 +544,7 @@ pub fn convert_expression(
             let effect = operand_node._type.identity();
 
             Ok(FMIRNode {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 _type: effect.apply(FMIRType::pure(mir_expr.get_type())),
                 body: converted.body,
             })

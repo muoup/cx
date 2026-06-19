@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use cx_log::{CXResult, CXUnspannedError};
-use cx_mir::MIRUnit;
 use cx_mir::mir::data::{MIRFunction, MIRFunctionPrototype};
 use cx_mir::registry::MIRDecomposedRegistry;
+use cx_mir::{EnvironmentNamespace, MIRUnit};
+use cx_pipeline_data::db::ModuleData;
 use cx_safe_ir::ast::{FMIRFunction, FMIRNode};
 use cx_tokens::TokenRange;
 
@@ -25,80 +26,59 @@ pub struct FMIRContext<'a> {
     functions: HashMap<String, FMIRFunction>,
 }
 
-struct AnalysisDiagnosticContext {
-    compilation_unit: PathBuf,
-    file_contents: Option<String>,
+pub(crate) struct AnalysisDiagnosticContext<'a> {
+    current_namespace: EnvironmentNamespace,
+    module_data: &'a ModuleData,
     function_name: String,
 }
 
-impl AnalysisDiagnosticContext {
-    fn new(function_prototype: &MIRFunctionPrototype, compilation_unit: &Path) -> Self {
+impl<'a> AnalysisDiagnosticContext<'a> {
+    fn new(
+        function_prototype: &MIRFunctionPrototype,
+        current_namespace: EnvironmentNamespace,
+        module_data: &'a ModuleData,
+    ) -> Self {
         Self {
-            compilation_unit: compilation_unit.to_path_buf(),
-            file_contents: std::fs::read_to_string(compilation_unit).ok(),
+            current_namespace,
+            module_data,
             function_name: function_prototype.name().to_owned(),
         }
     }
 
-    fn source_text_for_range(&self, range: &TokenRange) -> CXResult<String> {
-        let source_path = if range.file_origin.is_empty() {
-            self.compilation_unit.as_path()
-        } else {
-            Path::new(range.file_origin.as_ref())
-        };
-        let owned_file_contents;
-        let file_contents = if source_path == self.compilation_unit.as_path() {
-            self.file_contents.as_ref().ok_or_else(|| {
-                CXUnspannedError::boxed(
-                    "ANALYSIS ERROR",
-                    format!(
-                        "Failed to read source file for analysis diagnostics: {}",
-                        self.compilation_unit.display()
-                    ),
-                )
-            })?
-        } else {
-            owned_file_contents = std::fs::read_to_string(source_path).map_err(|_| {
-                CXUnspannedError::boxed(
-                    "ANALYSIS ERROR",
-                    format!(
-                        "Failed to read source file for analysis diagnostics: {}",
-                        source_path.display()
-                    ),
-                )
-            })?;
-            &owned_file_contents
-        };
-        let tokens = cx_lexer::lex(file_contents).map_err(|_| {
-            CXUnspannedError::boxed(
-                "ANALYSIS ERROR",
-                format!(
-                    "Failed to lex source file for analysis diagnostics: {}",
-                    source_path.display()
-                ),
-            )
-        })?;
+    pub(crate) fn current_namespace(&self) -> &EnvironmentNamespace {
+        &self.current_namespace
+    }
 
-        let start_token = tokens.get(range.start_token).ok_or_else(|| {
+    pub(crate) fn module_data(&self) -> &ModuleData {
+        self.module_data
+    }
+
+    fn source_text_for_range(&self, range: &TokenRange) -> CXResult<String> {
+        let TokenRange::Source {
+            namespace,
+            start_token,
+            end_token,
+        } = range
+        else {
+            return CXUnspannedError::result(
+                "ANALYSIS ERROR",
+                "Cannot resolve source text for a non-source token range",
+            );
+        };
+
+        let tokens = self.module_data.lex_tokens.get(namespace);
+        let start_token = tokens.get(*start_token).ok_or_else(|| {
             CXUnspannedError::boxed(
                 "ANALYSIS ERROR",
-                format!(
-                    "Invalid source range: start token index {} out of bounds",
-                    range.start_token
-                ),
+                format!("Invalid source range: start token index {start_token} out of bounds"),
             )
         })?;
-        let end_token = tokens
-            .get(range.end_token.saturating_sub(1))
-            .ok_or_else(|| {
-                CXUnspannedError::boxed(
-                    "ANALYSIS ERROR",
-                    format!(
-                        "Invalid source range: end token index {} out of bounds",
-                        range.end_token
-                    ),
-                )
-            })?;
+        let end_token = tokens.get(end_token.saturating_sub(1)).ok_or_else(|| {
+            CXUnspannedError::boxed(
+                "ANALYSIS ERROR",
+                format!("Invalid source range: end token index {end_token} out of bounds"),
+            )
+        })?;
         if start_token.file_origin != end_token.file_origin {
             return CXUnspannedError::result(
                 "ANALYSIS ERROR",
@@ -110,15 +90,32 @@ impl AnalysisDiagnosticContext {
             );
         }
 
+        let source_path = if start_token.file_origin.as_os_str().is_empty() {
+            self.module_data
+                .unit_for_namespace(namespace)
+                .map(|unit| unit.as_path().to_owned())
+                .unwrap_or_else(|| PathBuf::from(namespace.identifier()))
+        } else {
+            start_token.file_origin.as_ref().to_path_buf()
+        };
+
+        let file_contents = std::fs::read_to_string(source_path.as_path()).map_err(|_| {
+            CXUnspannedError::boxed(
+                "ANALYSIS ERROR",
+                format!(
+                    "Failed to read source file for analysis diagnostics: {}",
+                    source_path.display()
+                ),
+            )
+        })?;
+
         let source_slice = file_contents
             .get(start_token.byte_start_index..end_token.byte_end_index)
             .ok_or(CXUnspannedError::boxed(
                 "ANALYSIS ERROR",
                 format!(
-                    "Invalid source range: token indices {} to {} out of bounds in file {}",
-                    range.start_token,
-                    range.end_token,
-                    self.compilation_unit.display()
+                    "Invalid source range: token indices {start_token} to {end_token} out of bounds in file {}",
+                    source_path.display()
                 ),
             ))?
             .trim();
@@ -127,6 +124,9 @@ impl AnalysisDiagnosticContext {
 
     fn failure_message(&self, message: &str, condition: &FMIRNode) -> String {
         if let Some(ret_name) = message.strip_prefix("postcondition failed:") {
+            let post_condition_expr = self
+                .source_text_for_range(&condition.token_range)
+                .unwrap_or_else(|_| "<unknown>".to_string());
             return format!(
                 "In function `{}`, contract condition\n   post({}): ({})\nwill never be true at return site",
                 self.function_name, ret_name, post_condition_expr
@@ -152,15 +152,20 @@ impl AnalysisDiagnosticContext {
 }
 
 impl<'a> FMIRContext<'a> {
-    pub fn new(unit: PathBuf, registry: &'a MIRDecomposedRegistry) -> Self {
+    pub fn new(
+        current_namespace: EnvironmentNamespace,
+        module_data: &'a ModuleData,
+        registry: &'a MIRDecomposedRegistry,
+    ) -> Self {
         FMIRContext {
-            env: FMIREnvironment::new(unit, registry),
+            env: FMIREnvironment::new(current_namespace, module_data, registry),
             functions: HashMap::new(),
         }
     }
 
-    pub fn new_from(mir: &'a MIRUnit) -> CXResult<Self> {
-        let mut context = FMIRContext::new(mir.source_path.to_owned(), &mir.registry);
+    pub fn new_from(mir: &'a MIRUnit, module_data: &'a ModuleData) -> CXResult<Self> {
+        let mut context =
+            FMIRContext::new(mir.source_namespace.clone(), module_data, &mir.registry);
 
         for function in mir.functions.iter() {
             if !function.prototype.signature().contract.safe {
@@ -191,9 +196,14 @@ impl<'a> FMIRContext<'a> {
         Ok(())
     }
 
-    pub fn apply_standard_analysis_passes(&mut self, compilation_unit: &Path) -> CXResult<()> {
+    pub fn apply_standard_analysis_passes(&mut self) -> CXResult<()> {
         for function in self.functions.values() {
-            assert_proven_conditions(&function.prototype, &function.body, compilation_unit)?;
+            assert_proven_conditions(
+                &function.prototype,
+                &function.body,
+                self.env.current_namespace.clone(),
+                self.env.module_data,
+            )?;
         }
 
         Ok(())

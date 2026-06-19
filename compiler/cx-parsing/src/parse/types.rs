@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::parse::expressions::parse_expr;
 use crate::parse::{try_parse_simple_identifier, ParserData};
 use crate::{assert_token_matches, next_kind, peek_kind, try_next};
@@ -51,16 +49,25 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
     })
 }
 
-fn token_range(start: usize, end: usize) -> TokenRange {
-    TokenRange::new(start, end.max(start.saturating_add(1)), Arc::from(""))
+fn token_range(data: &ParserData, start: usize, end: usize) -> TokenRange {
+    TokenRange::new(
+        start,
+        end.max(start.saturating_add(1)),
+        data.file_origin_for_range(start, end),
+    )
 }
 
 fn with_type_end_range(mut ty: CXType, end: usize) -> CXType {
-    let start = ty
-        .range()
-        .map(|range| range.start_token)
-        .unwrap_or(end.saturating_sub(1));
-    ty.range = Some(token_range(start, end));
+    ty.range = Some(match ty.range() {
+        Some(TokenRange::Source {
+            namespace,
+            start_token,
+            ..
+        }) => TokenRange::new(*start_token, end, namespace.clone()),
+        Some(TokenRange::Internal) => TokenRange::internal(),
+        Some(TokenRange::Error(message)) => TokenRange::error(message.clone()),
+        None => TokenRange::error("Cannot extend type range without a start range"),
+    });
     ty
 }
 
@@ -515,7 +522,7 @@ pub(crate) fn parse_type_mods(
                 var_args,
                 contract,
                 linkage: CXLinkageMode::Standard,
-                range: TokenRange::default(),
+                range: TokenRange::internal(),
             };
 
             let fn_ptr_type = CXTypeKind::FunctionPointer {
@@ -621,9 +628,11 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<CXType> {
 
     let specifiers = parse_specifier(&mut data.tokens);
 
-    Ok(_type?
-        .add_specifier(specifiers)
-        .with_range(token_range(start_index, data.tokens.index)))
+    Ok(_type?.add_specifier(specifiers).with_range(token_range(
+        data,
+        start_index,
+        data.tokens.index,
+    )))
 }
 
 pub(crate) fn parse_base_mods(
@@ -670,7 +679,7 @@ pub(crate) fn parse_typedef_initializer(
         var_args,
         contract,
         linkage: CXLinkageMode::Standard,
-        range: TokenRange::default(),
+        range: TokenRange::internal(),
     };
 
     Ok((

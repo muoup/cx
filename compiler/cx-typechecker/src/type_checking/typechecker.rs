@@ -66,7 +66,7 @@ fn typecheck_expr_inner(
             }
 
             TypecheckResult::from(MIRExpression {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Block { statements: block },
                 _type: MIRType::unit(),
             })
@@ -141,7 +141,7 @@ fn typecheck_expr_inner(
             env.pop_scope()?;
 
             TypecheckResult::from(MIRExpression {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::If {
                     condition: Box::new(condition_result),
                     then_branch: Box::new(then_result),
@@ -169,7 +169,7 @@ fn typecheck_expr_inner(
                 .and_then(|v| implicit_cast(env, v, &then_result._type))?;
 
             TypecheckResult::from(MIRExpression {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::If {
                     condition: Box::new(condition_result),
                     then_branch: Box::new(then_result.clone()),
@@ -212,7 +212,7 @@ fn typecheck_expr_inner(
             env.pop_scope()?;
 
             TypecheckResult::from(MIRExpression {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::While {
                     condition: Box::new(condition_result),
                     body: Box::new(body_result),
@@ -263,7 +263,7 @@ fn typecheck_expr_inner(
             env.pop_scope()?;
 
             TypecheckResult::from(MIRExpression {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::For {
                     init: Box::new(init_result),
                     condition: Box::new(condition_result),
@@ -292,7 +292,7 @@ fn typecheck_expr_inner(
             );
 
             TypecheckResult::from(MIRExpression {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Break {
                     scope_depth: scope_idx.index(),
                 },
@@ -318,7 +318,7 @@ fn typecheck_expr_inner(
             );
 
             TypecheckResult::from(MIRExpression {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Continue {
                     scope_depth: scope_idx.index(),
                 },
@@ -453,7 +453,7 @@ pub fn add_implicit_return(
 
     let implicit_value = if func.name() == "main" {
         Some(Box::new(MIRExpression {
-            token_range: TokenRange::default(),
+            token_range: TokenRange::internal(),
             kind: MIRExpressionKind::IntLiteral(0),
             _type: MIRType::from(MIRTypeKind::Integer {
                 _type: MIRIntegerType::I32,
@@ -471,11 +471,16 @@ pub fn add_implicit_return(
         );
     };
 
-    let ret = typecheck_return(env, namespace, &expr.token_range, implicit_value.map(|v| *v))?
-        .internal_ready_assertion();
+    let ret = typecheck_return(
+        env,
+        namespace,
+        &expr.token_range,
+        implicit_value.map(|v| *v),
+    )?
+    .internal_ready_assertion();
 
     Ok(MIRExpression {
-        token_range: TokenRange::default(),
+        token_range: TokenRange::internal(),
         kind: MIRExpressionKind::Block {
             statements: vec![expr, ret],
         },

@@ -3,10 +3,11 @@ use crate::{CompilationUnit, GlobalCompilationContext};
 use cx_ast::decomposition::CXGenerationAST;
 use cx_ast::registry::GlobalSymbolRegistry;
 use cx_lmir::LMIRUnit;
-use cx_mir::{EnvironmentNamespace, MIRUnit};
+use cx_mir::MIRUnit;
 use cx_preparse_data::PreparseContents;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_tokens::token::Token;
+use cx_util::namespace::EnvironmentNamespace;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -15,7 +16,8 @@ use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[derive(Debug)]
 pub struct ModuleData {
-    pub do_not_reexport: RwLock<HashSet<CompilationUnit>>,
+    module_units: RwLock<HashMap<EnvironmentNamespace, CompilationUnit>>,
+    pub do_not_reexport: RwLock<HashSet<EnvironmentNamespace>>,
 
     pub preparse_registry: GlobalPreparseRegistry,
     pub symbol_registry: GlobalSymbolRegistry,
@@ -39,6 +41,7 @@ impl Default for ModuleData {
 impl ModuleData {
     pub fn new() -> Self {
         ModuleData {
+            module_units: RwLock::new(HashMap::new()),
             do_not_reexport: RwLock::new(HashSet::new()),
             preparse_registry: GlobalPreparseRegistry::default(),
             symbol_registry: GlobalSymbolRegistry::default(),
@@ -58,25 +61,62 @@ impl ModuleData {
         self.preparse_base.store_all_data(context);
     }
 
+    pub fn register_unit(&self, unit: &CompilationUnit) {
+        self.module_units
+            .write()
+            .expect("register_unit: Deadlock detected")
+            .insert(unit.namespace().clone(), unit.clone());
+    }
+
+    pub fn unit_for_namespace(&self, namespace: &EnvironmentNamespace) -> Option<CompilationUnit> {
+        self.module_units
+            .read()
+            .expect("unit_for_namespace: Deadlock detected")
+            .get(namespace)
+            .cloned()
+    }
+
     pub fn no_reexport(&self, unit: &CompilationUnit) -> bool {
         self.do_not_reexport
             .read()
             .expect("no_reexport: Deadlock detected")
-            .contains(unit)
+            .contains(unit.namespace())
     }
 
     pub fn set_no_reexport(&self, unit: &CompilationUnit) {
         self.do_not_reexport
             .write()
             .expect("set_no_reexport: Deadlock detected")
-            .insert(unit.clone());
+            .insert(unit.namespace().clone());
     }
 }
 
 #[derive(Debug)]
 pub struct ModuleMap<Data> {
     pub storage_extension: String,
-    loaded_data: RwLock<HashMap<CompilationUnit, Arc<Data>>>,
+    loaded_data: RwLock<HashMap<EnvironmentNamespace, Arc<Data>>>,
+}
+
+pub trait ModuleMapKey {
+    fn module_key(&self) -> EnvironmentNamespace;
+}
+
+impl ModuleMapKey for EnvironmentNamespace {
+    fn module_key(&self) -> EnvironmentNamespace {
+        self.clone()
+    }
+}
+
+impl ModuleMapKey for CompilationUnit {
+    fn module_key(&self) -> EnvironmentNamespace {
+        self.namespace().clone()
+    }
+}
+
+impl<T: ModuleMapKey + ?Sized> ModuleMapKey for &T {
+    fn module_key(&self) -> EnvironmentNamespace {
+        (*self).module_key()
+    }
 }
 
 impl<Data> ModuleMap<Data> {
@@ -87,13 +127,14 @@ impl<Data> ModuleMap<Data> {
         }
     }
 
-    pub fn take(&self, unit: &CompilationUnit) -> Data {
+    pub fn take(&self, key: impl ModuleMapKey) -> Data {
+        let key = key.module_key();
         let mut lock = self
             .loaded_data
             .write()
             .expect("Failed to acquire write lock on loaded data");
 
-        let removed = lock.remove(unit).expect("Data not found in the module map");
+        let removed = lock.remove(&key).expect("Data not found in the module map");
 
         Arc::try_unwrap(removed)
             .ok()
@@ -102,14 +143,15 @@ impl<Data> ModuleMap<Data> {
 
     pub fn take_lock(
         &self,
-        unit: &CompilationUnit,
+        key: impl ModuleMapKey,
     ) -> (
-        RwLockWriteGuard<'_, HashMap<CompilationUnit, Arc<Data>>>,
+        RwLockWriteGuard<'_, HashMap<EnvironmentNamespace, Arc<Data>>>,
         Data,
     ) {
+        let key = key.module_key();
         let mut lock = self.lock_mut();
 
-        let data = lock.remove(unit).expect("Data not found in the module map");
+        let data = lock.remove(&key).expect("Data not found in the module map");
 
         // wait until data has only one reference
         while Arc::strong_count(&data) > 1 {
@@ -119,18 +161,18 @@ impl<Data> ModuleMap<Data> {
         (lock, Arc::try_unwrap(data).ok().unwrap())
     }
 
-    pub fn get(&self, unit: &CompilationUnit) -> Arc<Data> {
+    pub fn get(&self, key: impl ModuleMapKey) -> Arc<Data> {
+        let key = key.module_key();
         let lock = self
             .loaded_data
             .read()
             .expect("Failed to acquire read lock on loaded data");
 
-        lock.get(unit)
+        lock.get(&key)
             .unwrap_or_else(|| {
                 println!(
                     "Data with suffix {} does not contain information for unit: {}",
-                    self.storage_extension,
-                    unit.identifier()
+                    self.storage_extension, key
                 );
                 println!("Keys: {:?}", lock.keys().collect::<Vec<_>>());
                 panic!("Data not found in the module map")
@@ -138,20 +180,20 @@ impl<Data> ModuleMap<Data> {
             .clone()
     }
 
-    pub fn get_cloned(&self, unit: &CompilationUnit) -> Data
+    pub fn get_cloned(&self, key: impl ModuleMapKey) -> Data
     where
         Data: Clone,
     {
-        self.get(unit).as_ref().clone()
+        self.get(key).as_ref().clone()
     }
 
-    pub fn insert(&self, unit: CompilationUnit, data: Data) {
+    pub fn insert(&self, key: impl Into<EnvironmentNamespace>, data: Data) {
         let mut lock = self
             .loaded_data
             .write()
             .expect("Failed to acquire write lock on loaded data");
 
-        lock.insert(unit, Arc::from(data));
+        lock.insert(key.into(), Arc::from(data));
     }
 
     pub fn take_all(&self) -> Vec<Data> {
@@ -165,13 +207,13 @@ impl<Data> ModuleMap<Data> {
             .collect()
     }
 
-    pub fn lock(&self) -> RwLockReadGuard<'_, HashMap<CompilationUnit, Arc<Data>>> {
+    pub fn lock(&self) -> RwLockReadGuard<'_, HashMap<EnvironmentNamespace, Arc<Data>>> {
         self.loaded_data
             .read()
             .expect("Failed to acquire read lock on loaded data")
     }
 
-    pub fn lock_mut(&self) -> RwLockWriteGuard<'_, HashMap<CompilationUnit, Arc<Data>>> {
+    pub fn lock_mut(&self) -> RwLockWriteGuard<'_, HashMap<EnvironmentNamespace, Arc<Data>>> {
         self.loaded_data
             .write()
             .expect("Failed to acquire write lock on loaded data")
@@ -184,7 +226,7 @@ impl<'a, Data: Readable<'a, LittleEndian> + Writable<LittleEndian> + Clone> Modu
         context: &GlobalCompilationContext,
         unit: &CompilationUnit,
     ) -> Option<()> {
-        let data = retrieve_data::<HashMap<CompilationUnit, Data>>(
+        let data = retrieve_data::<HashMap<EnvironmentNamespace, Data>>(
             context,
             unit,
             &self.storage_extension,
@@ -205,12 +247,16 @@ impl<'a, Data: Readable<'a, LittleEndian> + Writable<LittleEndian> + Clone> Modu
             .read()
             .expect("Failed to acquire read lock on loaded data");
 
-        for unit in lock.keys() {
-            if context.module_db.no_reexport(unit) {
+        for namespace in lock.keys() {
+            let Some(unit) = context.module_db.unit_for_namespace(namespace) else {
+                continue;
+            };
+
+            if context.module_db.no_reexport(&unit) {
                 continue;
             }
 
-            self.store_data(context, unit);
+            self.store_data(context, &unit);
         }
     }
 

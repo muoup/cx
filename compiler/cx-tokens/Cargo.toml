@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 cx-log = { path = "../cx-log" }
+cx-util = { path = "../cx-util" }
 speedy = "0.8.7"

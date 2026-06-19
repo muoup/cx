@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use cx_ast::ast::{
     expression::{CXExprKind, CXExpression},
     template::CXTemplateInput,
@@ -13,7 +11,7 @@ use cx_tokens::{
 };
 use cx_util::{
     identifier::CXIdent,
-    namespace::{NamespacePath, QualifiedName},
+    namespace::{EnvironmentNamespace, NamespacePath, QualifiedName},
 };
 
 use crate::{next_kind, try_next};
@@ -47,7 +45,7 @@ impl ParsedIdentifier {
         self,
         start_index: usize,
         end_index: usize,
-        file_origin: Arc<str>,
+        file_origin: EnvironmentNamespace,
     ) -> CXExpression {
         CXExprKind::Identifier {
             name: self.name,

@@ -259,7 +259,7 @@ pub(crate) fn typecheck_unpack(
         let field_type = env.symbols.resolve_type_id(*field_ty_id).clone();
 
         let field_place = MIRExpression {
-            token_range: TokenRange::default(),
+            token_range: TokenRange::internal(),
             _type: env.symbols.mem_ref_to(field_type.clone()),
             kind: MIRExpressionKind::MemberAccess {
                 base: Box::new(value.clone()),
@@ -269,7 +269,7 @@ pub(crate) fn typecheck_unpack(
         };
 
         let initial_value = MIRExpression {
-            token_range: TokenRange::default(),
+            token_range: TokenRange::internal(),
             _type: field_type.clone(),
             kind: MIRExpressionKind::RegionMove {
                 source: Box::new(field_place),
@@ -281,7 +281,7 @@ pub(crate) fn typecheck_unpack(
         env.symbols.insert_local_value(
             QualifiedName::new_raw(binding_name.clone()),
             MIRExpression {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Variable {
                     name: binding_name.clone(),
                     location: SymbolValueOrigin::Local,
@@ -293,13 +293,13 @@ pub(crate) fn typecheck_unpack(
             .track_binding(binding_name.as_string(), field_type.is_nodrop());
 
         statements.push(MIRExpression {
-            token_range: TokenRange::default(),
+            token_range: TokenRange::internal(),
             _type: env.symbols.mem_ref_to(field_type.clone()),
             kind: MIRExpressionKind::BindRegion {
                 name: binding_name,
                 _type: field_type.clone(),
                 initial_region: Box::new(MIRExpression {
-                    token_range: TokenRange::default(),
+                    token_range: TokenRange::internal(),
                     _type: env.symbols.mem_ref_to(field_type.clone()),
                     kind: MIRExpressionKind::RegionCreate {
                         _type: field_type.clone(),

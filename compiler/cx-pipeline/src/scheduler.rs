@@ -20,7 +20,6 @@ use cx_typechecker::environment::TypeEnvironment;
 use cx_typechecker::typecheck;
 use cx_util::format::dump_data;
 use cx_util::module_path::ModulePath;
-use cx_util::namespace::NamespacePath;
 use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::HashMap;
@@ -41,6 +40,7 @@ pub(crate) fn scheduling_loop(
     // TODO: Parallelize this loop
     'queue: while !queue.is_empty() {
         let mut job = queue.pop_job().unwrap();
+        context.module_db.register_unit(&job.unit);
 
         compilation_exists.insert(job.unit.clone(), job.compilation_exists);
 
@@ -166,7 +166,7 @@ fn import_units_for_unit(
         .module_db
         .preparse_base
         .lock()
-        .get(unit)
+        .get(&unit.namespace().clone())
         .map(|preparse| {
             preparse
                 .imports
@@ -306,7 +306,7 @@ pub(crate) fn perform_job(
                 &preparse_config,
                 TokenIter::new(&tokens, file_path),
                 job.unit.to_string(),
-                NamespacePath::from(job.unit.module_path().clone()),
+                job.unit.namespace().as_namespace_path().clone(),
             )?;
 
             if !job.unit.is_std_lib() {
@@ -358,7 +358,7 @@ pub(crate) fn perform_job(
                 dump_data(&parsed_ast);
             }
 
-            let namespace = NamespacePath::from(job.unit.module_path().clone());
+            let namespace = job.unit.namespace().as_namespace_path().clone();
             let (symbol_buckets, namespace_friends, generation_ast) =
                 decompose_ast(&namespace, parsed_ast)?.destructure();
 
@@ -390,15 +390,9 @@ pub(crate) fn perform_job(
 
         CompilationStep::Typechecking => {
             let self_ast = context.module_db.generation_ast.get(&job.unit);
-            let lexemes = context.module_db.lex_tokens.get(&job.unit);
-            let namespace = NamespacePath::from(job.unit.module_path().clone());
+            let namespace = job.unit.namespace().clone();
 
-            let mut env = TypeEnvironment::new(
-                lexemes.as_ref(),
-                job.unit.clone(),
-                context.config.working_directory.clone(),
-                &context.module_db,
-            );
+            let mut env = TypeEnvironment::new(job.unit.namespace().clone(), &context.module_db);
 
             typecheck(&mut env, &namespace, &self_ast)?;
 
@@ -409,14 +403,14 @@ pub(crate) fn perform_job(
 
             // There is likely a better way to do this, but for now, we unconditionally generate FMIR no matter if analysis
             // is enabled to have a central source of truth for auditing safe functions for uncontained unsafe behavior.
-            let mut fmir_context = FMIRContext::new_from(&mir)?;
+            let mut fmir_context = FMIRContext::new_from(&mir, &context.module_db)?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&fmir_context);
             }
 
             if context.config.analysis {
-                fmir_context.apply_standard_analysis_passes(job.unit.as_path())?;
+                fmir_context.apply_standard_analysis_passes()?;
             }
 
             context.module_db.mir.insert(job.unit.clone(), mir);

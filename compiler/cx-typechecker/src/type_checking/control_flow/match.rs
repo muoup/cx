@@ -55,7 +55,7 @@ pub fn typecheck_match(
                 .clone();
 
             expr_value = MIRExpression {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::RegionDuplicate {
                     source: Box::new(expr_value),
                 },
@@ -166,7 +166,7 @@ pub fn typecheck_match(
                 // Extract the variant value and bind it
                 let variant_value_expr = MIRExpression {
                     _type: variant_get_type,
-                    token_range: TokenRange::default(),
+                    token_range: TokenRange::internal(),
                     kind: MIRExpressionKind::TaggedUnionGet {
                         value: Box::new(expr_value.clone()),
                         variant_type: variant_type.clone(),
@@ -177,7 +177,7 @@ pub fn typecheck_match(
                     let body_expr = if condition_owned {
                         let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
                         let variant_region = MIRExpression {
-                            token_range: TokenRange::default(),
+                            token_range: TokenRange::internal(),
                             _type: variant_ref_type.clone(),
                             kind: MIRExpressionKind::TaggedUnionGet {
                                 value: Box::new(expr_value.clone()),
@@ -185,7 +185,7 @@ pub fn typecheck_match(
                             },
                         };
                         let bind_region = MIRExpression {
-                            token_range: TokenRange::default(),
+                            token_range: TokenRange::internal(),
                             _type: variant_ref_type.clone(),
                             kind: MIRExpressionKind::BindRegion {
                                 name: inner_name.clone(),
@@ -200,7 +200,7 @@ pub fn typecheck_match(
                         env.symbols.insert_local_value(
                             QualifiedName::root(inner_name.clone()),
                             MIRExpression {
-                                token_range: TokenRange::default(),
+                                token_range: TokenRange::internal(),
                                 kind: MIRExpressionKind::Variable {
                                     name: inner_name.clone(),
                                     location: SymbolValueOrigin::Local,
@@ -217,7 +217,7 @@ pub fn typecheck_match(
                         env.pop_scope()?;
 
                         MIRExpression {
-                            token_range: TokenRange::default(),
+                            token_range: TokenRange::internal(),
                             _type: MIRType::unit(),
                             kind: MIRExpressionKind::Block {
                                 statements: vec![bind_region, body_expr],

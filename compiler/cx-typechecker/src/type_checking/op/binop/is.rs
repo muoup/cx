@@ -85,7 +85,7 @@ pub(crate) fn typecheck_is(
         env.symbols.insert_local_value(
             QualifiedName::new_raw(inner_name.clone()),
             MIRExpression {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Variable {
                     name: inner_name.clone(),
                     location: SymbolValueOrigin::Local,

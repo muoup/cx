@@ -191,7 +191,7 @@ pub fn typecheck_unop(
 
             // Dereference returns a memory reference to the inner type
             TypecheckResult::from(MIRExpression {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Typechange(Box::new(operand)),
                 _type: env.symbols.mem_ref_to(inner),
             })
@@ -234,7 +234,7 @@ pub(crate) fn typecheck_sizeof_expr(
 
 fn sizeof_result(_type: MIRType) -> TypecheckResult {
     TypecheckResult::from(MIRExpression {
-        token_range: TokenRange::default(),
+        token_range: TokenRange::internal(),
         kind: MIRExpressionKind::SizeOf { _type },
         _type: MIRType::from(MIRTypeKind::Integer {
             _type: MIRIntegerType::I64,

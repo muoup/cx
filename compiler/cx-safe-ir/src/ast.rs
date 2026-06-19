@@ -288,7 +288,7 @@ impl FMIRNode {
         FMIRNode {
             _type: FMIRType::pure(MIRType::unit()),
             body: FMIRNodeBody::Unit,
-            token_range: TokenRange::default(),
+            token_range: TokenRange::internal(),
         }
     }
 
@@ -297,7 +297,7 @@ impl FMIRNode {
         FMIRNode {
             _type: FMIRType::unsafe_effect(FMIRType::pure(MIRType::unit())),
             body: FMIRNodeBody::CLoop { condition, body },
-            token_range: TokenRange::default(),
+            token_range: TokenRange::internal(),
         }
     }
 
@@ -314,7 +314,7 @@ impl FMIRNode {
                 then_branch,
                 else_branch: else_branch.unwrap_or(Rc::new(FMIRNode::unit())),
             },
-            token_range: TokenRange::default(),
+            token_range: TokenRange::internal(),
         }
     }
 }

@@ -124,7 +124,7 @@ impl TypecheckResult {
     pub fn new(_type: MIRType, kind: MIRExpressionKind) -> Self {
         Self {
             expression: TypecheckState::Ready(MIRExpression {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 kind,
                 _type,
             }),
@@ -260,7 +260,7 @@ impl TypecheckResult {
             | TypecheckState::NeedsExpectedType(_) => return Ok(()),
         };
 
-        if expression.token_range.is_empty() {
+        if !matches!(expression.token_range, TokenRange::Source { .. }) {
             expression.token_range = token_range;
         }
 

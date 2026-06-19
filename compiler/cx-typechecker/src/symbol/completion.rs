@@ -348,7 +348,11 @@ fn complete_identifier_type_lookup(
                 .insert_type_symbol(resolved_name.clone(), prereserved_id);
             env.symbols.overwrite_type_id(prereserved_id, dummy_type);
 
-            let completed = complete_type_value(env, &resolved_name.namespace, definition)?;
+            let completed = complete_type_value(
+                env,
+                &EnvironmentNamespace::from(&resolved_name.namespace),
+                definition,
+            )?;
 
             env.symbols.overwrite_type_id(prereserved_id, completed);
             Ok(prereserved_id)
@@ -358,7 +362,7 @@ fn complete_identifier_type_lookup(
             let mir_symbol = resolve_symbol(
                 env,
                 namespace,
-                &resolved_name.namespace,
+                &EnvironmentNamespace::from(&resolved_name.namespace),
                 &resolved_name.name,
                 &symbol,
             )?;
@@ -369,7 +373,7 @@ fn complete_identifier_type_lookup(
             let mir_symbol = resolve_symbol(
                 env,
                 namespace,
-                &resolved_name.namespace,
+                &EnvironmentNamespace::from(&resolved_name.namespace),
                 &resolved_name.name,
                 &symbol,
             )?;
@@ -696,8 +700,8 @@ fn type_completion_error<T>(
 ) -> CXResult<T> {
     if let Some(range) = range {
         return Err(crate::log::produce_typecheck_error(
-            env.source.tokens,
-            env.source.compilation_unit.as_path(),
+            env.module_data,
+            &env.current_namespace,
             range,
             message.into(),
             Vec::new(),

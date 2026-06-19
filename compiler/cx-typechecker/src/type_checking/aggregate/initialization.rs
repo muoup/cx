@@ -44,7 +44,7 @@ pub fn typecheck_initializer_list(
                 )
                 .and_then(|v| v.standard_ready_coerce(env, &token_range))?;
 
-                if expression.token_range.is_empty() {
+                if !matches!(expression.token_range, TokenRange::Source { .. }) {
                     expression.token_range = token_range.clone();
                 }
 
@@ -104,7 +104,7 @@ fn typecheck_array_initializer(
         if let Some(name) = &index.name {
             return log_typecheck_error!(
                 env,
-                &TokenRange::default(),
+                &TokenRange::internal(),
                 "Array initializer cannot have named indices, found: {name}"
             );
         }
@@ -115,7 +115,7 @@ fn typecheck_array_initializer(
     {
         return log_typecheck_error!(
             env,
-            &TokenRange::default(),
+            &TokenRange::internal(),
             "Too many elements in array initializer (expected {}, found {})",
             size,
             indices.len()

@@ -44,7 +44,10 @@ impl MIRSymbol {
                 ..
             } => {
                 if source.is_type() {
-                    Some(QualifiedName::new(namespace.clone(), name.clone()))
+                    Some(QualifiedName::new(
+                        namespace.as_namespace_path().clone(),
+                        name.clone(),
+                    ))
                 } else {
                     None
                 }
@@ -57,7 +60,7 @@ impl MIRSymbol {
     pub fn as_expression(&self) -> CXRawResult<MIRExpression> {
         match self {
             MIRSymbol::FunctionReference(prototype) => Ok(MIRExpression {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 _type: MIRTypeKind::Function {
                     signature: Box::new(prototype.signature().clone()),
                 }

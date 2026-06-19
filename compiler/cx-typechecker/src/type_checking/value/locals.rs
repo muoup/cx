@@ -85,7 +85,7 @@ pub(crate) fn typecheck_var_declaration(
         }
         None => (
             Box::new(MIRExpression {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::RegionCreate {
                     _type: ty.clone(),
                     initial_value: None,
@@ -97,7 +97,7 @@ pub(crate) fn typecheck_var_declaration(
     };
 
     let binding = MIRExpression {
-        token_range: TokenRange::default(),
+        token_range: TokenRange::internal(),
         kind: MIRExpressionKind::BindRegion {
             name: name.clone(),
             _type: ty.clone(),
@@ -110,7 +110,7 @@ pub(crate) fn typecheck_var_declaration(
     env.symbols.insert_local_value(
         QualifiedName::new_raw(name.clone()),
         MIRExpression {
-            token_range: TokenRange::default(),
+            token_range: TokenRange::internal(),
             kind: MIRExpressionKind::Variable {
                 name: name.clone(),
                 location: SymbolValueOrigin::Local,

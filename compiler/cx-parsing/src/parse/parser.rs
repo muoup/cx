@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use cx_ast::ast::{function::CXFunctionKind, CXASTDefinition, CXASTStmt, CXAST};
 use cx_log::{CXResult, DiagnosticPointer};
@@ -11,7 +10,7 @@ use cx_preparse_data::{NamespaceAliases, PreparseContents, VisibilityMode};
 use cx_tokens::{diagnostic_pointer_for_token, TokenIter};
 use cx_util::identifier::CXIdent;
 use cx_util::module_path::ModulePath;
-use cx_util::namespace::{NamespacePath, QualifiedName};
+use cx_util::namespace::{EnvironmentNamespace, NamespacePath, QualifiedName};
 
 #[derive(Debug)]
 pub struct ParserData<'a> {
@@ -20,7 +19,7 @@ pub struct ParserData<'a> {
     pub extern_c_mode: bool,
     pub expr_commas: Vec<bool>,
     pub pp_contents: &'a PreparseContents,
-    pub file_origin: Arc<str>,
+    pub file_origin: EnvironmentNamespace,
     // uses u8 mapping instead of a set to prevent problems with shadowing
     pub temporary_type_names: HashMap<CXIdent, u8>,
     namespace_aliases: NamespaceAliases,
@@ -35,7 +34,7 @@ impl<'a> ParserData<'a> {
         pp_contents: &'a PreparseContents,
         registry: &'a GlobalPreparseRegistry,
     ) -> Self {
-        let file_origin: Arc<str> = Arc::from(tokens.file.to_string_lossy().as_ref());
+        let file_origin = EnvironmentNamespace::from(pp_contents.module_symbols.namespace.clone());
 
         Self {
             tokens,
@@ -71,20 +70,12 @@ impl<'a> ParserData<'a> {
         self.expr_commas.pop();
     }
 
-    pub fn file_origin_for_range(&self, start_token: usize, end_token: usize) -> Arc<str> {
-        self.tokens
-            .slice
-            .get(start_token)
-            .map(|token| token.file_origin.clone())
-            .or_else(|| {
-                end_token
-                    .checked_sub(1)
-                    .and_then(|index| self.tokens.slice.get(index))
-                    .map(|token| token.file_origin.clone())
-            })
-            .filter(|origin| !origin.as_os_str().is_empty())
-            .map(|origin| Arc::from(origin.to_string_lossy().as_ref()))
-            .unwrap_or_else(|| self.file_origin.clone())
+    pub fn file_origin_for_range(
+        &self,
+        _start_token: usize,
+        _end_token: usize,
+    ) -> EnvironmentNamespace {
+        self.file_origin.clone()
     }
 
     pub fn diagnostic_pointer_at(&self, index: usize) -> Option<DiagnosticPointer> {

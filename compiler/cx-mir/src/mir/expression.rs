@@ -21,11 +21,21 @@ pub struct MIRPostcondition {
     pub assertion_prototype: Box<MIRFunctionPrototype>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct MIRExpression {
     pub kind: MIRExpressionKind,
     pub _type: MIRType,
     pub token_range: TokenRange,
+}
+
+impl Default for MIRExpression {
+    fn default() -> Self {
+        Self {
+            kind: MIRExpressionKind::default(),
+            _type: MIRType::default(),
+            token_range: TokenRange::internal(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -37,7 +47,7 @@ impl MIRPureExpression {
     pub fn as_value(&self) -> MIRExpression {
         match self {
             Self::IntegerLiteral(value, integer_type, signed) => MIRExpression {
-                token_range: TokenRange::default(),
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::IntLiteral(*value),
                 _type: MIRType::from(MIRTypeKind::Integer {
                     _type: *integer_type,
@@ -433,7 +443,7 @@ impl MIRExpression {
 
                 ..Default::default()
             },
-            token_range: TokenRange::default(),
+            token_range: TokenRange::internal(),
         }
     }
 }

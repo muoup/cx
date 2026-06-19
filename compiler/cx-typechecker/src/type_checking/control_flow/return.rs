@@ -120,7 +120,7 @@ pub fn typecheck_return(
                         name: name.clone(),
                         force_param: true,
                     },
-                    token_range: TokenRange::default(),
+                    token_range: TokenRange::internal(),
                     _type: param._type.clone(),
                 },
             );
@@ -134,7 +134,7 @@ pub fn typecheck_return(
                         name: ret_name.clone(),
                         force_param: false,
                     },
-                    token_range: TokenRange::default(),
+                    token_range: TokenRange::internal(),
                     _type: return_type.clone(),
                 },
             );
