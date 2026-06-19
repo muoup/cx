@@ -48,6 +48,10 @@ impl FunctionContext {
         self.current_function.as_ref().unwrap()
     }
 
+    pub fn try_current_function(&self) -> Option<&MIRFunctionPrototype> {
+        self.current_function.as_ref()
+    }
+
     fn flow(&self) -> &ControlFlow {
         self.flow
             .as_ref()

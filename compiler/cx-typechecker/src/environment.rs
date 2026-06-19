@@ -67,6 +67,10 @@ impl TypeEnvironment<'_> {
         self.function.current_function()
     }
 
+    pub fn try_current_function(&self) -> Option<&MIRFunctionPrototype> {
+        self.function.try_current_function()
+    }
+
     pub fn in_defer<F, T>(&mut self, f: F) -> CXResult<T>
     where
         F: FnOnce(&mut Self) -> CXResult<T>,

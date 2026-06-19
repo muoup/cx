@@ -104,8 +104,8 @@ macro_rules! comptime_error {
             let message = format!($($arg)*);
 
             $crate::log::produce_comptime_error(
-                $engine.env.module_data,
-                &$engine.env.current_namespace,
+                $engine.env().module_data,
+                &$engine.env().current_namespace,
                 &$range,
                 message,
                 $notes,

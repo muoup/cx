@@ -25,10 +25,7 @@ use cx_mir::{
 };
 
 use crate::{
-    EnvironmentNamespace,
-    environment::{SymbolLookup, SymbolLookupKind, TypeEnvironment},
-    symbol::resolution::{apply_template, resolve_symbol},
-    type_checking::{constexpr::constexpr_evaluate, typechecker::typecheck_expr},
+    EnvironmentNamespace, comptime::evaluate_comptime_expression, environment::{SymbolLookup, SymbolLookupKind, TypeEnvironment}, symbol::resolution::{apply_template, resolve_symbol}, type_checking::typechecker::typecheck_expr
 };
 
 pub fn complete_template_input(
@@ -121,12 +118,12 @@ fn complete_type_value(
             let inner_type = complete_type_id(env, namespace, inner)?;
             let size = typecheck_expr(env, namespace, size, None)
                 .and_then(|v| v.standard_ready_coerce(env, size.token_range()))
-                .and_then(|v| constexpr_evaluate(env, v))
+                .and_then(|v| evaluate_comptime_expression(env, v))
                 .and_then(|v| {
-                    v.get_integer().ok_or_else(|| {
+                    v.as_integer().ok_or_else(|| {
                         crate::typecheck_error!(
                             env,
-                            size.token_range(),
+                            v.token_range,
                             "Array size must be an integer literal"
                         )
                     })

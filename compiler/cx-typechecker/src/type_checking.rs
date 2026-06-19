@@ -1,6 +1,5 @@
 pub mod aggregate;
 pub mod coercion;
-pub mod constexpr;
 pub mod contracts;
 pub mod control_flow;
 pub mod functions;
