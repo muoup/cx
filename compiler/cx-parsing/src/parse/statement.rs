@@ -1,18 +1,16 @@
-use cx_ast::ast::{
-    expression::{CXBinOp, CXExprKind, CXExpression},
-    types::CXTypeKind,
-};
+use cx_ast::ast::
+    expression::{CXExprKind, CXExpression}
+;
 use cx_log::CXResult;
 use cx_tokens::{
-    keyword, operator, punctuator,
+    keyword, punctuator,
     token::{KeywordType, OperatorType, PunctuatorType, TokenKind},
 };
-use cx_util::namespace::{NamespacePath, QualifiedName};
 
 use crate::{
     assert_token_matches, next_kind,
     parse::{
-        expressions::{parse_expr, parse_expr_identifier, parse_pattern},
+        expressions::{parse_expr, parse_pattern},
         parse_body,
         parser::ParserData,
         types::{is_type_decl, parse_base_mods, parse_specifier, parse_type_base},
@@ -305,60 +303,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<CXExpres
                 ),
             );
         } else {
-            // FIXME: This logic is a mess, we can probably heavily simplify this.
-
-            // If our expression starts with a type but has no name, we have a few options:
-            //  1. We could be in a sizeof expression (e.g. sizeof(T)), in which we should just return the type as a dummy expression
-            //  2. We could be in a scope resolution expression for either a static member function or a variant of a tagged enum
-
-            assert_token_matches!(data.tokens, operator!(ScopeRes), "'::'");
-            let variant_expr = parse_expr_identifier(data)?;
-
-            let type_name = match _type.kind {
-                CXTypeKind::Identifier {
-                    name: type_name, ..
-                } => type_name,
-                _ => {
-                    return log_parse_error!(data, "Expected identifier before scope resolution");
-                }
-            };
-
-            // FIXME: This is incorrect, associated namespace should not be based on type namespace.
-            let scoped_name_expr = 
-                qualify_identifier_under_type(data, type_name, variant_expr, start_index)?;
-
-            if !try_next!(data.tokens, punctuator!(OpenParen)) {
-                decls.push(scoped_name_expr);
-                break;
-            }
-
-            // FIXME: Unify this logic with the logic for creating a argument list for a function call.
-            let inner_expr = if try_next!(data.tokens, punctuator!(CloseParen)) {
-                CXExprKind::Unit.into_expr(
-                    start_index,
-                    data.tokens.index,
-                    data.file_origin_for_range(start_index, data.tokens.index),
-                )
-            } else {
-                data.change_comma_mode(true);
-                let inner_expr = parse_expr(data)?;
-                data.pop_comma_mode();
-                assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-                inner_expr
-            };
-
-            let method_call_expr = CXExprKind::BinOp {
-                lhs: Box::new(scoped_name_expr),
-                rhs: Box::new(inner_expr),
-                op: CXBinOp::MethodCall,
-            }
-            .into_expr(
-                start_index,
-                data.tokens.index,
-                data.file_origin_for_range(start_index, data.tokens.index),
-            );
-
-            decls.push(method_call_expr);
+            return log_parse_error!(data, "Expected variable name in declaration");
         }
 
         if !try_next!(data.tokens, TokenKind::Operator(OperatorType::Comma)) {
@@ -377,38 +322,4 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<CXExpres
             data.file_origin_for_range(start_index, data.tokens.index),
         ))
     }
-}
-
-fn qualify_identifier_under_type(
-    data: &mut ParserData,
-    type_name: QualifiedName,
-    rhs: CXExpression,
-    start_index: usize,
-) -> CXResult<CXExpression> {
-    let qualify = |name: QualifiedName| {
-        let scoped_path = format!("{}::{}", type_name.as_flat_name(), name.as_flat_name());
-        let (namespace, name) = NamespacePath::from_scoped_path(&scoped_path)
-            .parent_and_name()
-            .expect("qualified type member name should not be empty");
-        QualifiedName::new(namespace, name)
-    };
-
-    let kind = match rhs.kind {
-        CXExprKind::Identifier {
-            name,
-            template_input,
-        } => CXExprKind::Identifier {
-            name: qualify(name),
-            template_input,
-        },
-        _ => {
-            return log_parse_error!(data, "Expected identifier after type scope resolution");
-        }
-    };
-
-    Ok(kind.into_expr(
-        start_index,
-        data.tokens.index,
-        data.file_origin_for_range(start_index, data.tokens.index),
-    ))
 }
