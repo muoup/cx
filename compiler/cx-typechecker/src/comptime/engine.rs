@@ -1,19 +1,19 @@
 use cx_mir::mir::data::MIRFunctionPrototype;
 
-use crate::builder::LMIRBuilder;
+use crate::environment::TypeEnvironment;
 
 pub struct ComptimeEngine<'builder> {
-    builder: &'builder mut LMIRBuilder,
+    pub(crate) env: &'builder mut TypeEnvironment<'builder>,
     current_prototype: MIRFunctionPrototype,
 }
 
 impl<'builder> ComptimeEngine<'builder> {
     pub fn new(
-        builder: &'builder mut LMIRBuilder,
+        builder: &'builder mut TypeEnvironment<'builder>,
         current_prototype: MIRFunctionPrototype,
     ) -> Self {
         Self {
-            builder,
+            env: builder,
             current_prototype,
         }
     }

@@ -5,6 +5,7 @@ use cx_mir::{
     mir::expression::{MIRExpression, MIRExpressionKind},
     symbol::MIRSymbol,
 };
+use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 
 use crate::{
@@ -81,7 +82,7 @@ pub(crate) fn resolve_enum_block<'a, 'b>(
         env.symbols.insert_value(
             symbol,
             MIRExpression {
-                token_range: None,
+                token_range: TokenRange::default(),
                 _type: env.get_intrinsic_type("int"),
                 kind: MIRExpressionKind::IntLiteral(value),
             },

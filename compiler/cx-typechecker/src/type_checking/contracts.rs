@@ -9,6 +9,7 @@ use cx_mir::mir::expression::{
     MIRExpression, MIRExpressionKind, MIRFunctionContract, MIRPostcondition,
 };
 use cx_mir::symbol::MIRSymbol;
+use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::{NamespacePath, QualifiedName};
 
@@ -35,7 +36,7 @@ pub(crate) fn typecheck_contract(
             env.symbols.insert_local_value(
                 QualifiedName::new_raw(name.clone()),
                 MIRExpression {
-                    token_range: None,
+                    token_range: TokenRange::default(),
                     kind: MIRExpressionKind::ContractVariable {
                         name: name.clone(),
                         force_param: false,
@@ -63,7 +64,7 @@ pub(crate) fn typecheck_contract(
             env.symbols.insert_local_value(
                 QualifiedName::new_raw(ret_name.clone()),
                 MIRExpression {
-                    token_range: None,
+                    token_range: TokenRange::default(),
                     kind: MIRExpressionKind::ContractVariable {
                         name: ret_name.clone(),
                         force_param: false,

@@ -44,8 +44,8 @@ pub fn typecheck_initializer_list(
                 )
                 .and_then(|v| v.standard_ready_coerce(env, &token_range))?;
 
-                if expression.token_range.is_none() {
-                    expression.token_range = Some(token_range.clone());
+                if expression.token_range.is_empty() {
+                    expression.token_range = token_range.clone();
                 }
 
                 Ok(expression)
@@ -209,10 +209,7 @@ fn typecheck_structured_initializer(
         else {
             return log_typecheck_error!(
                 env,
-                value
-                    .token_range
-                    .as_ref()
-                    .expect("typechecked expression missing token range"),
+                value.token_range,
                 "Could not find field '{}' in type {}",
                 field_name,
                 to_type.display_with(&env.symbols)

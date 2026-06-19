@@ -15,6 +15,7 @@ use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin};
 use cx_mir::mir::pattern::MIRPattern;
 use cx_mir::type_context::MIRTypeContext;
+use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 
 pub(crate) fn typecheck_is(
@@ -84,7 +85,7 @@ pub(crate) fn typecheck_is(
         env.symbols.insert_local_value(
             QualifiedName::new_raw(inner_name.clone()),
             MIRExpression {
-                token_range: None,
+                token_range: TokenRange::default(),
                 kind: MIRExpressionKind::Variable {
                     name: inner_name.clone(),
                     location: SymbolValueOrigin::Local,

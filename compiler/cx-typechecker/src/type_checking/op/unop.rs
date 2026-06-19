@@ -11,6 +11,7 @@ use cx_mir::{
     },
     type_context::MIRTypeContext,
 };
+use cx_tokens::TokenRange;
 
 use crate::{
     environment::TypeEnvironment,
@@ -45,10 +46,7 @@ pub fn typecheck_unop(
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
                 return log_typecheck_error!(
                     env,
-                    operand
-                        .token_range
-                        .as_ref()
-                        .expect("typechecked expression missing token range"),
+                    operand.token_range,
                     "Cannot apply pre-increment to non-reference type {}",
                     operand._type.display_with(&env.symbols)
                 );
@@ -76,10 +74,7 @@ pub fn typecheck_unop(
                 _ => {
                     return log_typecheck_error!(
                         env,
-                        operand
-                            .token_range
-                            .as_ref()
-                            .expect("typechecked expression missing token range"),
+                        operand.token_range,
                         "Pre-increment operator requires an integer or pointer type, found {}",
                         inner.display_with(&env.symbols)
                     );
@@ -114,10 +109,7 @@ pub fn typecheck_unop(
             if !operand._type.is_integer() {
                 return log_typecheck_error!(
                     env,
-                    operand
-                        .token_range
-                        .as_ref()
-                        .expect("typechecked expression missing token range"),
+                    operand.token_range,
                     "Bitwise NOT operator requires an integer type, found {}",
                     operand._type.display_with(&env.symbols)
                 );
@@ -144,10 +136,7 @@ pub fn typecheck_unop(
                 _ => {
                     return log_typecheck_error!(
                         env,
-                        operand
-                            .token_range
-                            .as_ref()
-                            .expect("typechecked expression missing token range"),
+                        operand.token_range,
                         "Negation operator requires an integer or float type, found {}",
                         operand.display_with(&env.symbols)
                     );
@@ -170,10 +159,7 @@ pub fn typecheck_unop(
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
                 return log_typecheck_error!(
                     env,
-                    operand
-                        .token_range
-                        .as_ref()
-                        .expect("typechecked expression missing token range"),
+                    operand.token_range,
                     "Cannot take the address of a non-reference type"
                 );
             };
@@ -197,10 +183,7 @@ pub fn typecheck_unop(
             let Some(inner) = env.symbols.ptr_inner(&operand._type).cloned() else {
                 return log_typecheck_error!(
                     env,
-                    operand
-                        .token_range
-                        .as_ref()
-                        .expect("typechecked expression missing token range"),
+                    operand.token_range,
                     "Cannot dereference non-pointer type {}",
                     operand._type.display_with(&env.symbols)
                 );
@@ -208,7 +191,7 @@ pub fn typecheck_unop(
 
             // Dereference returns a memory reference to the inner type
             TypecheckResult::from(MIRExpression {
-                token_range: None,
+                token_range: TokenRange::default(),
                 kind: MIRExpressionKind::Typechange(Box::new(operand)),
                 _type: env.symbols.mem_ref_to(inner),
             })
@@ -251,7 +234,7 @@ pub(crate) fn typecheck_sizeof_expr(
 
 fn sizeof_result(_type: MIRType) -> TypecheckResult {
     TypecheckResult::from(MIRExpression {
-        token_range: None,
+        token_range: TokenRange::default(),
         kind: MIRExpressionKind::SizeOf { _type },
         _type: MIRType::from(MIRTypeKind::Integer {
             _type: MIRIntegerType::I64,

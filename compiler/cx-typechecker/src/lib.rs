@@ -6,8 +6,11 @@ use cx_mir::mir::global::{MIRGlobalVarKind, MIRGlobalVariable};
 
 pub mod environment;
 pub mod log;
-pub(crate) mod requests;
 pub mod symbol;
+
+pub(crate) mod requests;
+
+pub(crate) mod comptime;
 mod type_checking;
 
 use crate::requests::fulfill_requests;

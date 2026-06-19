@@ -11,6 +11,7 @@ use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
 };
+use cx_tokens::TokenRange;
 
 pub fn typecheck_switch(
     env: &mut TypeEnvironment,
@@ -39,10 +40,7 @@ pub fn typecheck_switch(
         let Some(case_expr) = block.get(*case_index as usize) else {
             return log_typecheck_error!(
                 env,
-                condition_value
-                    .token_range
-                    .as_ref()
-                    .expect("typechecked expression missing token range"),
+                condition_value.token_range,
                 "Switch case index {} out of bounds (block has {} expressions)",
                 *case_index,
                 block.len()
@@ -68,17 +66,14 @@ pub fn typecheck_switch(
         let MIRTypeKind::Integer { _type, signed } = &condition_value.get_type().kind else {
             return log_typecheck_error!(
                 env,
-                condition_value
-                    .token_range
-                    .as_ref()
-                    .expect("typechecked expression missing token range"),
+                condition_value.token_range,
                 "Switch condition must be an integer type, found {}",
                 condition_value.get_type().display_with(&env.symbols)
             );
         };
 
         let pattern_expr = MIRExpression {
-            token_range: None,
+            token_range: TokenRange::default(),
             kind: MIRExpressionKind::IntLiteral(*case_value as i64),
             _type: MIRType::from(MIRTypeKind::Integer {
                 signed: *signed,
@@ -95,10 +90,7 @@ pub fn typecheck_switch(
             let Some(expr) = block.get(idx) else {
                 return log_typecheck_error!(
                     env,
-                    condition_value
-                        .token_range
-                        .as_ref()
-                        .expect("typechecked expression missing token range"),
+                    condition_value.token_range,
                     "Switch default case index {} out of bounds (block has {} expressions)",
                     idx,
                     block.len()

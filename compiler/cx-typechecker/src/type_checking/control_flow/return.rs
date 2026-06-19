@@ -7,6 +7,7 @@ use cx_mir::{
     },
     type_context::MIRTypeContext,
 };
+use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 
 use crate::{
@@ -65,10 +66,7 @@ pub fn typecheck_return(
         (Some(value), _) => {
             return log_typecheck_error!(
                 env,
-                value
-                    .token_range
-                    .as_ref()
-                    .expect("typechecked expression missing token range"),
+                value.token_range,
                 "Cannot return from function {} with a void return type",
                 env.current_function().display_with(&env.symbols)
             );
@@ -122,7 +120,7 @@ pub fn typecheck_return(
                         name: name.clone(),
                         force_param: true,
                     },
-                    token_range: None,
+                    token_range: TokenRange::default(),
                     _type: param._type.clone(),
                 },
             );
@@ -136,7 +134,7 @@ pub fn typecheck_return(
                         name: ret_name.clone(),
                         force_param: false,
                     },
-                    token_range: None,
+                    token_range: TokenRange::default(),
                     _type: return_type.clone(),
                 },
             );

@@ -54,9 +54,7 @@ pub(crate) fn resolve_logical(
     if !valid_logical_operand(&lhs) || !valid_logical_operand(&rhs) {
         return log_typecheck_error!(
             env,
-            lhs.token_range
-                .as_ref()
-                .expect("typechecked expression missing token range"),
+            lhs.token_range,
             "Invalid operands to logical operation {:?}, {} and {}",
             op,
             lhs._type.display_with(&env.symbols),
@@ -104,9 +102,7 @@ pub(crate) fn resolve_std_arithmetic(
     } else {
         log_typecheck_error!(
             env,
-            lhs.token_range
-                .as_ref()
-                .expect("typechecked expression missing token range"),
+            lhs.token_range,
             "Invalid binary operation {op} for types {} and {}",
             lhs.get_type().display_with(&env.symbols),
             rhs.get_type().display_with(&env.symbols)
@@ -155,9 +151,7 @@ fn coerce_float_binop(
         _ => {
             return log_typecheck_error!(
                 env,
-                lhs.token_range
-                    .as_ref()
-                    .expect("typechecked expression missing token range"),
+                lhs.token_range,
                 "Invalid float binary operation {op} for types {} and {}",
                 lhs.get_type().display_with(&env.symbols),
                 rhs.get_type().display_with(&env.symbols)
@@ -199,9 +193,7 @@ fn coerce_pointer_binop(
             _ => {
                 return log_typecheck_error!(
                     env,
-                    lhs.token_range
-                        .as_ref()
-                        .expect("typechecked expression missing token range"),
+                    lhs.token_range,
                     "Invalid binary operation {op} for pointer types"
                 );
             }
@@ -281,9 +273,7 @@ fn coerce_pointer_binop(
         _ => {
             return log_typecheck_error!(
                 env,
-                lhs.token_range
-                    .as_ref()
-                    .expect("typechecked expression missing token range"),
+                lhs.token_range,
                 "Invalid binary operation {op} for pointer and non-pointer types"
             );
         }
@@ -340,9 +330,7 @@ fn coerce_integral_binop(
         _ => {
             return log_typecheck_error!(
                 env,
-                lhs.token_range
-                    .as_ref()
-                    .expect("typechecked expression missing token range"),
+                lhs.token_range,
                 "Invalid integer binary operation {op} for types {} and {}",
                 lhs.get_type().display_with(&env.symbols),
                 rhs.get_type().display_with(&env.symbols)
@@ -353,9 +341,7 @@ fn coerce_integral_binop(
     let Some(op) = lower_int_binop(op, true) else {
         return log_typecheck_error!(
             env,
-            lhs.token_range
-                .as_ref()
-                .expect("typechecked expression missing token range"),
+            lhs.token_range,
             "Invalid integer binary operation {op} for types {} and {}",
             lhs.get_type().display_with(&env.symbols),
             rhs.get_type().display_with(&env.symbols)

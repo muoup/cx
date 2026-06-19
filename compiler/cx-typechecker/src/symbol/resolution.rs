@@ -8,6 +8,7 @@ use cx_ast::{
     symbols::{CXSymbol, CXSymbolKind},
 };
 use cx_log::{CXResult, CXUnspannedError};
+use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use cx_mir::{
@@ -73,7 +74,7 @@ pub fn resolve_symbol(
             }
 
             Ok(MIRSymbol::Expression(MIRExpression {
-                token_range: None,
+                token_range: TokenRange::default(),
                 kind: MIRExpressionKind::Variable {
                     name: name.clone(),
                     location: SymbolValueOrigin::Global,

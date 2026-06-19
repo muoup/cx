@@ -20,7 +20,7 @@ pub struct ModuleData {
     pub preparse_registry: GlobalPreparseRegistry,
     pub symbol_registry: GlobalSymbolRegistry,
 
-    pub lex_tokens: ModuleMap<Vec<Token>>,
+    pub lex_tokens: ModuleMap<Box<[Token]>>,
     pub preparse_base: ModuleMap<PreparseContents>,
 
     pub generation_ast: ModuleMap<CXGenerationAST>,

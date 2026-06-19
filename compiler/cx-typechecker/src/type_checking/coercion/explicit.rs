@@ -18,9 +18,7 @@ pub(crate) fn explicit_cast(
         CoercionResult::Success { expr, .. } => Ok(expr),
         CoercionResult::Unapplied { expr, .. } => log_typecheck_error!(
             env,
-            expr.token_range
-                .as_ref()
-                .expect("typechecked expression missing token range"),
+            expr.token_range,
             "No explicit cast from {} to {}",
             from_type.display_with(&env.symbols),
             to_type.display_with(&env.symbols)

@@ -327,7 +327,7 @@ pub(crate) fn perform_job(
             context
                 .module_db
                 .lex_tokens
-                .insert(job.unit.clone(), tokens);
+                .insert(job.unit.clone(), tokens.into_boxed_slice());
             context
                 .module_db
                 .preparse_base

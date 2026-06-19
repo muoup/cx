@@ -4,7 +4,7 @@ use cx_tokens::{TokenRange, token::Token};
 pub fn convert_token_range(
     tokens: &[Token],
     fallback_file: &std::path::Path,
-    range: &TokenRange
+    range: &TokenRange,
 ) -> DiagnosticSpan {
     range
         .to_diagnostic_span(tokens, fallback_file)
@@ -18,7 +18,12 @@ pub fn produce_typecheck_error(
     message: String,
     notes: Vec<String>,
 ) -> Box<dyn CXError> {
-    cx_log::produce_diagnostic_error("TYPE ERROR", message, notes, convert_token_range(tokens, fallback_file, range))
+    cx_log::produce_diagnostic_error(
+        "TYPE ERROR",
+        message,
+        notes,
+        convert_token_range(tokens, fallback_file, range),
+    )
 }
 
 pub fn produce_comptime_error(
@@ -28,40 +33,48 @@ pub fn produce_comptime_error(
     message: String,
     notes: Vec<String>,
 ) -> Box<dyn CXError> {
-    cx_log::produce_diagnostic_error("COMPTIME ERROR", message, notes, convert_token_range(tokens, fallback_file, range))
+    cx_log::produce_diagnostic_error(
+        "COMPTIME ERROR",
+        message,
+        notes,
+        convert_token_range(tokens, fallback_file, range),
+    )
 }
 
 #[macro_export]
 macro_rules! log_comptime_error {
-    ($env:expr, $range:expr, notes: $notes:expr, $($arg:tt)*) => {
+    ($engine:expr, $range:expr, notes: $notes:expr, $($arg:tt)*) => {
         {
-            Err($crate::comptime_error!($env, $range, notes: $notes, $($arg)*))
+            Err($crate::comptime_error!($engine, $range, notes: $notes, $($arg)*))
         }
     };
 
-    ($env:expr, $range:expr, $($arg:tt)*) => {
+    ($engine:expr, $range:expr, $($arg:tt)*) => {
         {
-            Err($crate::comptime_error!($env, $range, $($arg)*))
+            Err($crate::comptime_error!($engine, $range, $($arg)*))
         }
     };
 }
 
 #[macro_export]
 macro_rules! comptime_error {
-    ($env:expr, $range:expr, notes: $notes:expr, $($arg:tt)*) => {
+    ($engine:expr, $range:expr, notes: $notes:expr, $($arg:tt)*) => {
         {
             let message = format!($($arg)*);
+
             $crate::log::produce_comptime_error(
-                span,
-                message,
+                $engine.env.source.tokens,
+                $engine.env.source.compilation_unit.as_path(),
+                &$range,
                 $notes,
+                message,
             )
         }
     };
 
-    ($env:expr, $range:expr, $($arg:tt)*) => {
+    ($engine:expr, $range:expr, $($arg:tt)*) => {
         {
-            $crate::comptime_error!($env, $range, notes: Vec::new(), $($arg)*)
+            $crate::comptime_error!($engine, $range, notes: Vec::new(), $($arg)*)
         }
     };
 }

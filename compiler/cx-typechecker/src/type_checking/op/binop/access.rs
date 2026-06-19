@@ -10,6 +10,7 @@ use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::data::{MIRType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_mir::type_context::MIRTypeContext;
+use cx_tokens::TokenRange;
 
 struct AccessBase {
     source: MIRExpression,
@@ -31,7 +32,7 @@ fn resolve_access_base(
         if let Some(inner_type) = env.symbols.mem_ref_inner(&lhs_type).cloned() {
             if let Some(ptr_inner) = env.symbols.ptr_inner(&inner_type).cloned() {
                 lhs = MIRExpression {
-                    token_range: None,
+                    token_range: TokenRange::default(),
                     kind: MIRExpressionKind::RegionDuplicate {
                         source: Box::new(lhs),
                     },
@@ -43,7 +44,7 @@ fn resolve_access_base(
 
             if env.symbols.mem_ref_inner(&inner_type).is_some() {
                 lhs = MIRExpression {
-                    token_range: None,
+                    token_range: TokenRange::default(),
                     kind: MIRExpressionKind::RegionDuplicate {
                         source: Box::new(lhs),
                     },

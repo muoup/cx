@@ -40,9 +40,7 @@ pub fn implicit_cast(
     try_implicit_coercion(env, value, to_type)?.catch_unapplied(|expr, _| {
         log_typecheck_error!(
             env,
-            expr.token_range
-                .as_ref()
-                .expect("typechecked expression missing token range"),
+            expr.token_range,
             "No implicit cast from {} to {}",
             from_type.display_with(&env.symbols),
             to_type.display_with(&env.symbols),

@@ -10,6 +10,7 @@ use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
     r#type::MIRType,
 };
+use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::{
@@ -74,13 +75,13 @@ fn realize_tagged_union_constructor(
 
     let value = if variant_type.is_unit() {
         MIRExpression {
-            token_range: None,
+            token_range: TokenRange::default(),
             _type: variant_type.clone(),
             kind: MIRExpressionKind::Unit,
         }
     } else {
         let param_ref = MIRExpression {
-            token_range: None,
+            token_range: TokenRange::default(),
             _type: env.symbols.mem_ref_to(variant_type.clone()),
             kind: MIRExpressionKind::Variable {
                 name: param_name,
@@ -89,7 +90,7 @@ fn realize_tagged_union_constructor(
         };
 
         MIRExpression {
-            token_range: None,
+            token_range: TokenRange::default(),
             _type: variant_type.clone(),
             kind: MIRExpressionKind::RegionDuplicate {
                 source: Box::new(param_ref),
@@ -97,7 +98,7 @@ fn realize_tagged_union_constructor(
         }
     };
     let constructed = MIRExpression {
-        token_range: None,
+        token_range: TokenRange::default(),
         _type: union_type.clone(),
         kind: MIRExpressionKind::ConstructTaggedUnion {
             variant_index,
@@ -106,7 +107,7 @@ fn realize_tagged_union_constructor(
         },
     };
     let body = MIRExpression {
-        token_range: None,
+        token_range: TokenRange::default(),
         _type: prototype.signature().return_type.clone(),
         kind: MIRExpressionKind::Return {
             value: Some(Box::new(constructed)),

@@ -1,5 +1,6 @@
 use cx_ast::{ast::template::CXTemplatePrototype, symbols::CXSymbol};
 use cx_log::{CXErrorBase, CXRawResult};
+use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::{
@@ -56,7 +57,7 @@ impl MIRSymbol {
     pub fn as_expression(&self) -> CXRawResult<MIRExpression> {
         match self {
             MIRSymbol::FunctionReference(prototype) => Ok(MIRExpression {
-                token_range: None,
+                token_range: TokenRange::default(),
                 _type: MIRTypeKind::Function {
                     signature: Box::new(prototype.signature().clone()),
                 }

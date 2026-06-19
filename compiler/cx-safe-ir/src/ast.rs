@@ -103,7 +103,7 @@ pub enum FMIRType {
 pub struct FMIRNode {
     pub _type: FMIRType,
     pub body: FMIRNodeBody,
-    pub token_range: Option<TokenRange>,
+    pub token_range: TokenRange,
 }
 
 #[derive(Clone, Debug)]
@@ -288,7 +288,7 @@ impl FMIRNode {
         FMIRNode {
             _type: FMIRType::pure(MIRType::unit()),
             body: FMIRNodeBody::Unit,
-            token_range: None,
+            token_range: TokenRange::default(),
         }
     }
 
@@ -297,7 +297,7 @@ impl FMIRNode {
         FMIRNode {
             _type: FMIRType::unsafe_effect(FMIRType::pure(MIRType::unit())),
             body: FMIRNodeBody::CLoop { condition, body },
-            token_range: None,
+            token_range: TokenRange::default(),
         }
     }
 
@@ -314,7 +314,7 @@ impl FMIRNode {
                 then_branch,
                 else_branch: else_branch.unwrap_or(Rc::new(FMIRNode::unit())),
             },
-            token_range: None,
+            token_range: TokenRange::default(),
         }
     }
 }

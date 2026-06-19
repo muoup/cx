@@ -76,9 +76,7 @@ pub fn constexpr_evaluate(
                 _ => {
                     return log_typecheck_error!(
                         env,
-                        expr.token_range
-                            .as_ref()
-                            .expect("typechecked expression missing token range"),
+                        expr.token_range,
                         "Invalid unary expression in constexpr context"
                     );
                 }
@@ -93,10 +91,7 @@ pub fn constexpr_evaluate(
             _ => {
                 return log_typecheck_error!(
                     env,
-                    operand
-                        .token_range
-                        .as_ref()
-                        .expect("typechecked expression missing token range"),
+                    operand.token_range,
                     "Invalid conversion in constexpr context"
                 );
             }
@@ -118,9 +113,7 @@ pub fn constexpr_evaluate(
             } else {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range
-                        .as_ref()
-                        .expect("typechecked expression missing token range"),
+                    expr.token_range,
                     "Invalid conditional expression in constexpr context"
                 );
             }
@@ -129,9 +122,7 @@ pub fn constexpr_evaluate(
         _ => {
             return log_typecheck_error!(
                 env,
-                expr.token_range
-                    .as_ref()
-                    .expect("typechecked expression missing token range"),
+                expr.token_range,
                 "Invalid expression in constexpr context"
             );
         }

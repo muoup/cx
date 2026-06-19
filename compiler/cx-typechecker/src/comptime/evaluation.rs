@@ -32,9 +32,9 @@ pub fn lower_comptime_expression<'a>(
         _ => {
             return log_comptime_error!(
                 builder,
-                comptime_expr.token_range.as_ref(),
+                comptime_expr.token_range,
                 "Invalid expression used in a comptime context"
-            )
+            );
         }
     }
 }

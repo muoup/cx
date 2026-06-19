@@ -125,28 +125,18 @@ impl AnalysisDiagnosticContext {
         Ok(source_slice.to_string())
     }
 
-    fn failure_message(&self, message: &str, condition: &FMIRNode) -> CXResult<String> {
+    fn failure_message(&self, message: &str, condition: &FMIRNode) -> String {
         if let Some(ret_name) = message.strip_prefix("postcondition failed:") {
-            let post_condition_expr = condition
-                .token_range
-                .as_ref()
-                .ok_or_else(|| {
-                    CXUnspannedError::boxed(
-                        "ANALYSIS ERROR",
-                        "Condition node has no source range for diagnostics",
-                    )
-                })
-                .and_then(|range| self.source_text_for_range(range))?;
-            return Ok(format!(
+            return format!(
                 "In function `{}`, contract condition\n   post({}): ({})\nwill never be true at return site",
                 self.function_name, ret_name, post_condition_expr
-            ));
+            );
         }
 
-        Ok(format!(
+        format!(
             "FMIR analysis error in safe function '{}': {} (condition proven false)",
             self.function_name, message
-        ))
+        )
     }
 
     fn fail_proven_false(
@@ -155,7 +145,8 @@ impl AnalysisDiagnosticContext {
         node: &FMIRNode,
         condition: &FMIRNode,
     ) -> CXResult<VisitControl> {
-        let resolved_message = self.failure_message(message, condition)?;
+        let resolved_message = self.failure_message(message, condition);
+
         log_analysis_error!(self, node, "{}", resolved_message)
     }
 }

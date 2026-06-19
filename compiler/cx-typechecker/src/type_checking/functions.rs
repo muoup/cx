@@ -14,6 +14,7 @@ use cx_mir::{
         expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
     },
 };
+use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 
 pub fn typecheck_function(
@@ -38,7 +39,7 @@ pub fn typecheck_function(
         env.symbols.insert_local_value(
             QualifiedName::new_raw(name.clone()),
             MIRExpression {
-                token_range: None,
+                token_range: TokenRange::default(),
                 kind: MIRExpressionKind::Variable {
                     name: name.clone(),
                     location: SymbolValueOrigin::Local,
