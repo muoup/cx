@@ -17,6 +17,10 @@ impl DiagnosticSpan {
             byte_end: byte_end.max(byte_start.saturating_add(1)),
         }
     }
+
+    pub fn empty() -> Self {
+        Self::new(PathBuf::from(""), 0, 0)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

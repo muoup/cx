@@ -3,14 +3,14 @@ use std::path::PathBuf;
 use cx_log::{CXError, CXUnspannedError, DiagnosticSpan};
 use cx_pipeline_data::db::ModuleData;
 use cx_tokens::TokenRange;
-use cx_util::namespace::EnvironmentNamespace;
 
 pub fn convert_token_range(
     module_data: &ModuleData,
-    current_namespace: &EnvironmentNamespace,
     range: &TokenRange,
 ) -> DiagnosticSpan {
-    let namespace = range.namespace().unwrap_or(current_namespace);
+    let Some(namespace) = range.namespace() else {
+        return DiagnosticSpan::empty();
+    };
     let tokens = module_data.lex_tokens.get(namespace);
     let fallback_file = module_data
         .unit_for_namespace(namespace)
@@ -25,17 +25,16 @@ pub fn convert_token_range(
 pub fn produce_compile_error(
     prefix: &'static str,
     module_data: &ModuleData,
-    current_namespace: &EnvironmentNamespace,
     range: &TokenRange,
     message: String,
     mut notes: Vec<String>,
-) -> Box<dyn CXError> {
+) -> CXErr {
     match range {
         TokenRange::Source { .. } => cx_log::produce_diagnostic_error(
             prefix,
             message,
             notes,
-            convert_token_range(module_data, current_namespace, range),
+            convert_token_range(module_data, range),
         ),
         TokenRange::Internal => {
             notes.push("diagnostic originated in compiler-generated code".to_string());
@@ -50,15 +49,13 @@ pub fn produce_compile_error(
 
 pub fn produce_typecheck_error(
     module_data: &ModuleData,
-    current_namespace: &EnvironmentNamespace,
     range: &TokenRange,
     message: String,
     notes: Vec<String>,
-) -> Box<dyn CXError> {
+) -> CXErr {
     produce_compile_error(
         "TYPE ERROR",
         module_data,
-        current_namespace,
         range,
         message,
         notes,
@@ -67,15 +64,13 @@ pub fn produce_typecheck_error(
 
 pub fn produce_comptime_error(
     module_data: &ModuleData,
-    current_namespace: &EnvironmentNamespace,
     range: &TokenRange,
     message: String,
     notes: Vec<String>,
-) -> Box<dyn CXError> {
+) -> CXErr {
     produce_compile_error(
         "COMPTIME ERROR",
         module_data,
-        current_namespace,
         range,
         message,
         notes,
@@ -105,7 +100,6 @@ macro_rules! comptime_error {
 
             $crate::log::produce_comptime_error(
                 $engine.env().module_data,
-                &$engine.env().current_namespace,
                 &$range,
                 message,
                 $notes,
@@ -128,7 +122,6 @@ macro_rules! typecheck_error {
 
             $crate::log::produce_typecheck_error(
                 $env.module_data,
-                &$env.current_namespace,
                 &$range,
                 message,
                 $notes,

@@ -4,19 +4,42 @@ use std::{io, path::PathBuf};
 use crate::span::{DiagnosticPointer, DiagnosticSpan};
 use crate::{point_error, pretty_underline_error, write_unspanned};
 
-pub type CXResult<T> = Result<T, Box<dyn CXError>>;
-pub type CXRawResult<T> = Result<T, Box<dyn CXErrorMessage>>;
+pub struct CXErr(pub Box<dyn CXError>);
+pub struct CXRawErr(pub Box<dyn CXErrorMessage>);
+pub enum CXMaybeRawErr {
+    Raw(CXRawErr),
+    Complete(Box<dyn CXError>),
+}
 
-pub fn complete_raw_result<T>(
-    result: CXRawResult<T>,
-    context: Box<dyn CXErrorContext>,
-) -> CXResult<T> {
-    result.map_err(|msg| {
-        Box::new(CXComposedError {
-            error: msg,
-            context,
-        }) as Box<dyn CXError>
-    })
+pub type CXResult<T> = Result<T, CXErr>;
+pub type CXRawResult<T> = Result<T, CXRawErr>;
+pub type CXMaybeRawResult<T> = Result<T, CXMaybeRawErr>;
+
+impl CXRawErr {
+    pub fn complete(
+        self,
+        context: Box<dyn CXErrorContext>,
+    ) -> CXErr {
+        CXErr(Box::new(CXComposedError::new(self.0, context)))
+    }
+
+    pub fn result<T>(
+        message: impl Into<String>
+    ) -> CXRawResult<T> {
+        Err(CXRawErr(Box::new(CXErrorBase::new(message))))
+    }
+}
+
+impl CXMaybeRawErr {
+    pub fn complete(
+        self,
+        context: Box<dyn CXErrorContext>,
+    ) -> CXErr {
+        match self {
+            CXMaybeRawErr::Raw(raw) => raw.complete(context),
+            CXMaybeRawErr::Complete(complete) => complete,
+        }
+    }
 }
 
 pub trait CXErrorMessage {
@@ -87,9 +110,6 @@ impl CXErrorBase {
         }
     }
 
-    pub fn raw_result<T, U: Into<String>>(msg: U) -> CXRawResult<T> {
-        Err(Box::new(CXErrorBase::new(msg)))
-    }
 
     pub fn raw_boxed<U: Into<String>>(msg: U) -> Box<dyn CXErrorMessage> {
         Box::new(CXErrorBase::new(msg))
@@ -117,7 +137,7 @@ impl CXUnspannedError {
     }
 
     pub fn result<T>(prefix: impl Into<String>, message: impl Into<String>) -> CXResult<T> {
-        Err(Self::boxed(prefix, message))
+        Err(CXErr(Self::boxed(prefix, message)))
     }
 
     pub fn with_notes(mut self, notes: Vec<String>) -> Self {
@@ -145,8 +165,17 @@ impl CXErrorContext for CXUnspannedError {
 }
 
 pub struct CXComposedError {
-    pub error: Box<dyn CXErrorMessage>,
-    pub context: Box<dyn CXErrorContext>,
+    error: Box<dyn CXErrorMessage>,
+    context: Box<dyn CXErrorContext>,
+}
+
+impl CXComposedError {
+    pub fn new(
+        error: Box<dyn CXErrorMessage>,
+        context: Box<dyn CXErrorContext>,
+    ) -> Self {
+        Self { error, context }
+    }
 }
 
 impl CXError for CXComposedError {}

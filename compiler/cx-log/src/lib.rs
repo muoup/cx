@@ -4,7 +4,7 @@ pub mod span;
 
 pub use error::{
     CXError, CXErrorBase, CXErrorContext, CXErrorMessage, CXRawResult, CXResult, CXUnspannedError,
-    PointingError, UnderlineError, complete_raw_result,
+    PointingError, UnderlineError,
 };
 pub use pretty::*;
 pub use span::{DiagnosticPointer, DiagnosticSpan, produce_diagnostic_error};

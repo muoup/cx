@@ -25,8 +25,8 @@ pub struct MIRGenerationRequest {
 
 #[derive(Debug, Clone)]
 pub struct MIRUnit {
+    pub source_namespace: EnvironmentNamespace,
     pub functions: Vec<MIRFunction>,
     pub global_variables: Vec<MIRGlobalVariable>,
     pub registry: MIRDecomposedRegistry,
-    pub source_namespace: EnvironmentNamespace,
 }

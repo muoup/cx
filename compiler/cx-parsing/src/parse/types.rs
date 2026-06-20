@@ -3,12 +3,13 @@ use crate::parse::{try_parse_simple_identifier, ParserData};
 use crate::{assert_token_matches, next_kind, peek_kind, try_next};
 use cx_ast::ast::global_var::CXEnumDefinition;
 use cx_ast::ast::CXASTStmt;
+use cx_ast::ast::types::CXMoveSemantics;
 use cx_ast::ast::{
     function::{CXFunctionKind, CXFunctionPrototype},
     global_var::{CXEnumVariant, CXGlobalVariable},
     modifiers::{CXLinkageMode, CXTypeQualifiers, CX_CONST, CX_RESTRICT, CX_VOLATILE},
     template::CXTemplatePrototype,
-    types::{CXField, CXStructAttributes, CXType, CXTypeKind, PredeclarationType},
+    types::{CXField, CXAggregateAttributes, CXType, CXTypeKind, PredeclarationType},
 };
 use cx_log::CXResult;
 use cx_mir::intrinsic_types::is_intrinsic_type;
@@ -57,30 +58,16 @@ fn token_range(data: &ParserData, start: usize, end: usize) -> TokenRange {
     )
 }
 
-fn with_type_end_range(mut ty: CXType, end: usize) -> CXType {
-    ty.range = Some(match ty.range() {
-        Some(TokenRange::Source {
-            namespace,
-            start_token,
-            ..
-        }) => TokenRange::new(*start_token, end, namespace.clone()),
-        Some(TokenRange::Internal) => TokenRange::internal(),
-        Some(TokenRange::Error(message)) => TokenRange::error(message.clone()),
-        None => TokenRange::error("Cannot extend type range without a start range"),
-    });
-    ty
-}
-
-fn parse_type_attributes(data: &mut ParserData, kind_name: &str) -> CXResult<CXStructAttributes> {
-    let mut attributes = CXStructAttributes::default();
+fn parse_type_attributes(data: &mut ParserData, kind_name: &str) -> CXResult<CXAggregateAttributes> {
+    let mut attributes = CXAggregateAttributes::default();
 
     if try_next!(data.tokens, punctuator!(Colon)) {
         loop {
             assert_token_matches!(data.tokens, TokenKind::CompilerIdentifier(attr));
 
             match attr.as_str() {
-                "nocopy" => attributes.nocopy = true,
-                "nodrop" => attributes.nodrop = true,
+                "nocopy" => attributes.semantics = CXMoveSemantics::Nocopy,
+                "nodrop" => attributes.semantics = CXMoveSemantics::Nodrop,
                 "copy_traits" => {
                     assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
                     assert_token_matches!(data.tokens, identifier!(type_param));
@@ -531,7 +518,7 @@ pub(crate) fn parse_type_mods(
             .to_type()
             .pointer_to(0);
 
-            Ok((name, with_type_end_range(fn_ptr_type, data.tokens.index)))
+            Ok((name, fn_ptr_type))
         }
 
         identifier!() => {
@@ -643,7 +630,7 @@ pub(crate) fn parse_base_mods(
 
     let modified_type = parse_type_suffix_mod(data, modified_type)?;
 
-    Ok((name, with_type_end_range(modified_type, data.tokens.index)))
+    Ok((name, modified_type))
 }
 
 pub(crate) fn parse_initializer(

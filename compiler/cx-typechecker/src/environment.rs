@@ -1,6 +1,6 @@
 use cx_ast::ast::modifiers::VisibilityMode;
 use cx_ast::symbols::CXSymbol;
-use cx_log::{CXResult, CXUnspannedError};
+use cx_log::{CXRawResult, CXResult, error::CXRawErr};
 use cx_mir::{
     EnvironmentNamespace, MIRUnit,
     mir::contextual_eq::TypeContextEqual,
@@ -10,7 +10,6 @@ use cx_mir::{
 };
 use cx_namespace::{MIRQualifiedLookup, result::QualifiedLookupResult};
 use cx_pipeline_data::db::ModuleData;
-use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 use cx_util::{identifier::CXIdent, namespace::NamespacePath};
 
@@ -24,7 +23,7 @@ use crate::{
 use crate::{
     environment::functions::context::FunctionModeSnapshot, symbol::resolution::resolve_symbol,
 };
-use crate::{environment::items::ItemRegistry, log_typecheck_error};
+use crate::environment::items::ItemRegistry;
 pub(crate) mod functions;
 pub(crate) mod items;
 
@@ -33,7 +32,6 @@ pub use items::MIRFunctionGenRequest;
 pub const DEFER_ACCUMULATION_REGISTER: &str = "__defer_accumulation_register";
 
 pub struct TypeEnvironment<'a> {
-    pub current_namespace: EnvironmentNamespace,
     pub module_data: &'a ModuleData,
     pub symbols: MIRSymbolRegistry<'a>,
     pub items: ItemRegistry,
@@ -42,12 +40,10 @@ pub struct TypeEnvironment<'a> {
 
 impl TypeEnvironment<'_> {
     pub fn new<'a>(
-        current_namespace: EnvironmentNamespace,
         module_data: &'a ModuleData,
     ) -> TypeEnvironment<'a> {
         TypeEnvironment {
             symbols: MIRSymbolRegistry::new(&module_data.symbol_registry),
-            current_namespace,
             module_data,
             items: ItemRegistry::new(),
             function: FunctionContext::default(),
@@ -78,14 +74,14 @@ impl TypeEnvironment<'_> {
         f(self)
     }
 
-    pub fn finish_mir_unit(self) -> CXResult<MIRUnit> {
+    pub fn finish_mir_unit(self, source_namespace: EnvironmentNamespace) -> CXResult<MIRUnit> {
         let (functions, globals) = self.items.drain_generated_items();
 
         Ok(MIRUnit {
+            source_namespace,
             functions,
             global_variables: globals,
-            registry: self.symbols.decompose(),
-            source_namespace: self.current_namespace,
+            registry: self.symbols.decompose()
         })
     }
 
@@ -95,18 +91,10 @@ impl TypeEnvironment<'_> {
             .push_scope(has_break_merge, has_continue_merge);
     }
 
-    pub fn pop_scope(&mut self) -> CXResult<()> {
-        let tokens = self.module_data.lex_tokens.get(&self.current_namespace);
-        let source_path = self
-            .module_data
-            .unit_for_namespace(&self.current_namespace)
-            .map(|unit| unit.as_path().to_owned())
-            .unwrap_or_default();
-
-        self.function
-            .pop_scope(source_path.as_path(), tokens.as_ref())?;
+    pub fn pop_scope(&mut self) -> CXRawResult<()> {
+        self.function.pop_scope()?;
         self.symbols.pop_local_scope();
-        Ok(())
+        CXRawResult::Ok(())
     }
 
     pub fn push_unsafe(&mut self) {
@@ -131,9 +119,8 @@ impl TypeEnvironment<'_> {
         &mut self,
         namespace: &EnvironmentNamespace,
         name: &QualifiedName,
-        range: Option<&TokenRange>,
-    ) -> CXResult<Option<MIRSymbol>> {
-        self.lookup_symbol(namespace, name, range)?
+    ) -> CXRawResult<Option<MIRSymbol>> {
+        self.lookup_symbol(namespace, name)?
             .map(|lookup| self.resolve_lookup(namespace, lookup))
             .transpose()
     }
@@ -142,17 +129,16 @@ impl TypeEnvironment<'_> {
         &mut self,
         namespace: &EnvironmentNamespace,
         name: &QualifiedName,
-        range: Option<&TokenRange>,
-    ) -> CXResult<Option<SymbolLookup>> {
+    ) -> CXRawResult<Option<SymbolLookup>> {
         let qualified_lookup = self.qualified_lookup(namespace, name);
 
         match qualified_lookup {
             QualifiedLookupResult::Found {
                 resolved_name: _,
                 value,
-            } => Ok(Some(value)),
+            } => CXRawResult::Ok(Some(value)),
 
-            QualifiedLookupResult::NotFound => Ok(None),
+            QualifiedLookupResult::NotFound => CXRawResult::Ok(None),
             QualifiedLookupResult::Ambiguous { candidates } => {
                 let message = format!(
                     "Ambiguous Symbol Reference, candidates: {}",
@@ -163,11 +149,7 @@ impl TypeEnvironment<'_> {
                         .join(", ")
                 );
 
-                if let Some(range) = range {
-                    return log_typecheck_error!(self, range, "{}", message);
-                }
-
-                return CXUnspannedError::result("TYPE ERROR", message);
+                return CXRawErr::result(message);
             }
         }
     }

@@ -8,7 +8,7 @@ use crate::ast::{
     modifiers::CXLinkageMode,
     pattern::CXPattern,
     template::CXTemplateInput,
-    types::{CXField, CXType, CXTypeKind},
+    types::{CXField, CXMoveSemantics, CXType, CXTypeKind},
     CXASTDefinition, CXASTStmt, CXAST,
 };
 
@@ -495,12 +495,13 @@ impl Display for CXTypeKind {
                     .collect::<Vec<_>>()
                     .join(", ");
                 let mut attrs = Vec::new();
-                if attributes.nocopy {
-                    attrs.push("@nocopy");
+
+                match attributes.semantics {
+                    CXMoveSemantics::POD => {}
+                    CXMoveSemantics::Nocopy => attrs.push("@nocopy"),
+                    CXMoveSemantics::Nodrop => attrs.push("@nodrop"),
                 }
-                if attributes.nodrop {
-                    attrs.push("@nodrop");
-                }
+
                 let attr_str = if attrs.is_empty() {
                     String::new()
                 } else {
@@ -557,11 +558,10 @@ impl Display for CXTypeKind {
                     .collect::<Vec<_>>()
                     .join(", ");
                 let mut attrs = Vec::new();
-                if attributes.nocopy {
-                    attrs.push("@nocopy");
-                }
-                if attributes.nodrop {
-                    attrs.push("@nodrop");
+                match attributes.semantics {
+                    CXMoveSemantics::POD => {}
+                    CXMoveSemantics::Nocopy => attrs.push("@nocopy"),
+                    CXMoveSemantics::Nodrop => attrs.push("@nodrop"),
                 }
                 write!(
                     f,

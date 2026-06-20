@@ -15,7 +15,7 @@ pub struct MIRTypeId(pub u64);
 pub struct MIRType {
     pub visibility: VisibilityMode,
     pub specifiers: CXTypeQualifiers,
-    pub move_attributes: MIRMoveAttributes,
+    pub move_attributes: MIRAggregateAttributes,
     pub strong_identifier: Option<String>,
     pub lookup_identifier: Option<QualifiedName>,
 
@@ -24,9 +24,26 @@ pub struct MIRType {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]
-pub struct MIRMoveAttributes {
-    pub nocopy: bool,
-    pub nodrop: bool,
+pub struct MIRAggregateAttributes {
+    pub semantics: MIRMoveSemantics,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]
+pub enum MIRMoveSemantics {
+    #[default]
+    POD,
+    Nocopy,
+    Nodrop,
+}
+
+impl MIRMoveSemantics {
+    pub fn is_nocopy(&self) -> bool {
+        matches!(self, MIRMoveSemantics::Nocopy)
+    }
+
+    pub fn is_nodrop(&self) -> bool {
+        self.is_nocopy() || matches!(self, MIRMoveSemantics::Nodrop)
+    }
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -238,7 +255,7 @@ impl Default for MIRType {
         MIRType {
             visibility: VisibilityMode::Private,
             specifiers: CXTypeQualifiers::default(),
-            move_attributes: MIRMoveAttributes::default(),
+            move_attributes: MIRAggregateAttributes::default(),
             strong_identifier: None,
             lookup_identifier: None,
             template_info: None,
@@ -388,14 +405,18 @@ impl MIRType {
     }
 
     pub fn is_nodrop(&self) -> bool {
-        self.struct_attributes().map(|a| a.nodrop).unwrap_or(false)
+        self.struct_attributes()
+            .map(|a| a.semantics.is_nodrop())
+            .unwrap_or(false)
     }
 
     pub fn is_nocopy(&self) -> bool {
-        self.struct_attributes().map(|a| a.nocopy).unwrap_or(false)
+        self.struct_attributes()
+            .map(|a| a.semantics.is_nocopy())
+            .unwrap_or(false)
     }
 
-    pub fn struct_attributes(&self) -> Option<MIRMoveAttributes> {
+    pub fn struct_attributes(&self) -> Option<MIRAggregateAttributes> {
         match self.kind {
             MIRTypeKind::Structured { .. }
             | MIRTypeKind::Union { .. }
@@ -456,7 +477,7 @@ impl MIRType {
         name: CXIdent,
         _type_id: MIRTypeId,
         template_info: Option<Box<TemplateInfo>>,
-        attributes: MIRMoveAttributes,
+        attributes: MIRAggregateAttributes,
     ) -> Self {
         MIRType {
             strong_identifier: Some(name.as_string()),
@@ -479,7 +500,7 @@ impl MIRType {
         name: CXIdent,
         _type_id: MIRTypeId,
         template_info: Option<Box<TemplateInfo>>,
-        attributes: MIRMoveAttributes,
+        attributes: MIRAggregateAttributes,
     ) -> Self {
         MIRType {
             strong_identifier: Some(name.as_string()),

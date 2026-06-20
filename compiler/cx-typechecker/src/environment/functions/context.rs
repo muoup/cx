@@ -1,10 +1,8 @@
 use std::collections::HashMap;
-use std::path::Path;
 
 use cx_ast::ast::expression::CXExpression;
-use cx_log::CXResult;
+use cx_log::CXRawResult;
 use cx_mir::mir::data::MIRFunctionPrototype;
-use cx_tokens::token::Token;
 
 use crate::environment::functions::control_flow::{
     BindingMoveState, ControlFlow, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind,
@@ -69,8 +67,8 @@ impl FunctionContext {
             .push_scope(has_break_merge, has_continue_merge);
     }
 
-    pub fn pop_scope(&mut self, compilation_unit: &Path, tokens: &[Token]) -> CXResult<()> {
-        self.flow_mut().pop_scope(compilation_unit, tokens)
+    pub fn pop_scope(&mut self) -> CXRawResult<()> {
+        self.flow_mut().pop_scope()
     }
 
     pub fn current_snapshot(&self) -> ControlFlowSnapshot {
