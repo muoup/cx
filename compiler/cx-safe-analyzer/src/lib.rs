@@ -68,13 +68,13 @@ impl<'a> AnalysisDiagnosticContext<'a> {
 
         let tokens = self.module_data.lex_tokens.get(namespace);
         let start_token = tokens.get(*start_token).ok_or_else(|| {
-            CXUnspannedError::boxed(
+            CXUnspannedError::err(
                 "ANALYSIS ERROR",
                 format!("Invalid source range: start token index {start_token} out of bounds"),
             )
         })?;
         let end_token = tokens.get(end_token.saturating_sub(1)).ok_or_else(|| {
-            CXUnspannedError::boxed(
+            CXUnspannedError::err(
                 "ANALYSIS ERROR",
                 format!("Invalid source range: end token index {end_token} out of bounds"),
             )
@@ -100,7 +100,7 @@ impl<'a> AnalysisDiagnosticContext<'a> {
         };
 
         let file_contents = std::fs::read_to_string(source_path.as_path()).map_err(|_| {
-            CXUnspannedError::boxed(
+            CXUnspannedError::err(
                 "ANALYSIS ERROR",
                 format!(
                     "Failed to read source file for analysis diagnostics: {}",
@@ -111,7 +111,7 @@ impl<'a> AnalysisDiagnosticContext<'a> {
 
         let source_slice = file_contents
             .get(start_token.byte_start_index..end_token.byte_end_index)
-            .ok_or(CXUnspannedError::boxed(
+            .ok_or(CXUnspannedError::err(
                 "ANALYSIS ERROR",
                 format!(
                     "Invalid source range: token indices {start_token} to {end_token} out of bounds in file {}",

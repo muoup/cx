@@ -1,6 +1,5 @@
 pub mod error;
-pub mod pretty;
-pub mod span;
+pub mod format;
 
 pub use error::{
     CXError, CXErrorBase, CXErrorContext, CXErrorMessage, CXRawResult, CXResult, CXUnspannedError,

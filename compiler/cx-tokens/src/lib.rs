@@ -1,7 +1,5 @@
-use cx_log::{CXResult, DiagnosticPointer};
-
 use crate::token::{PunctuatorType, Token, TokenKind};
-pub use crate::token::{TokenRange, TokenRangeArg};
+pub use crate::token::TokenRange;
 use std::path::PathBuf;
 
 pub mod format;
@@ -67,7 +65,7 @@ impl<'a> TokenIter<'a> {
         }
     }
 
-    pub fn goto_statement_end(&mut self) -> CXResult<()> {
+    pub fn goto_statement_end(&mut self) -> Option<()> {
         let mut bracket_stack = 0;
 
         while let Some(token) = self.next() {
@@ -90,90 +88,6 @@ impl<'a> TokenIter<'a> {
             }
         }
 
-        Ok(())
+        Some(())
     }
-}
-
-pub fn byte_range_for_tokens(
-    tokens: &[Token],
-    start_token: usize,
-    end_token: usize,
-) -> (usize, usize) {
-    let Some(start) = tokens.get(start_token) else {
-        return (0, 1);
-    };
-    let end = tokens
-        .get(end_token.saturating_sub(1))
-        .map(|token| token.byte_end_index)
-        .unwrap_or(start.byte_end_index);
-
-    (
-        start.byte_start_index,
-        end.max(start.byte_start_index.saturating_add(1)),
-    )
-}
-
-pub fn file_origin_for_tokens(
-    tokens: &[Token],
-    start_token: usize,
-    end_token: usize,
-) -> Option<PathBuf> {
-    tokens
-        .get(start_token)
-        .or_else(|| end_token.checked_sub(1).and_then(|index| tokens.get(index)))
-        .and_then(|token| {
-            (!token.file_origin.as_os_str().is_empty())
-                .then(|| PathBuf::from(token.file_origin.as_ref()))
-        })
-}
-
-pub fn diagnostic_pointer_for_token(
-    default_file: &std::path::Path,
-    token: &Token,
-    previous_token: Option<&Token>,
-) -> DiagnosticPointer {
-    let file = file_for_token(default_file, token);
-    let anchor_token = previous_token.unwrap_or(token);
-    let diagnostic_start = std::fs::read_to_string(&file)
-        .ok()
-        .map(|source| line_content_start_byte(&source, anchor_token.byte_start_index))
-        .unwrap_or(anchor_token.byte_start_index);
-    let diagnostic_end = anchor_token
-        .byte_end_index
-        .max(anchor_token.byte_start_index.saturating_add(1));
-
-    DiagnosticPointer::new(file, token.byte_start_index)
-        .with_diagnostic_range(diagnostic_start, diagnostic_end)
-}
-
-fn file_for_token(default_file: &std::path::Path, token: &Token) -> PathBuf {
-    if token.file_origin.as_os_str().is_empty() {
-        default_file.to_owned()
-    } else {
-        PathBuf::from(token.file_origin.as_ref())
-    }
-}
-
-fn line_start_byte(contents: &str, index: usize) -> usize {
-    let safe_index = index.min(contents.len());
-    contents[..safe_index]
-        .rfind('\n')
-        .map(|idx| idx + 1)
-        .unwrap_or(0)
-}
-
-fn line_content_start_byte(contents: &str, index: usize) -> usize {
-    let line_start = line_start_byte(contents, index);
-    let line_end = contents[line_start..]
-        .find('\n')
-        .map(|offset| line_start + offset)
-        .unwrap_or(contents.len());
-    let line = &contents[line_start..line_end];
-    let first_non_whitespace = line
-        .char_indices()
-        .find(|(_, ch)| !ch.is_whitespace())
-        .map(|(offset, _)| offset)
-        .unwrap_or(0);
-
-    line_start + first_non_whitespace
 }

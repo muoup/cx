@@ -9,6 +9,7 @@ use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Module};
 use cx_lmir::{LMIRBasicBlock, LMIRFunction, LMIRFunctionPrototype};
+use cx_log::error::CXErr;
 use cx_log::{CXResult, CXUnspannedError};
 use cx_util::format::dump_data;
 
@@ -41,13 +42,13 @@ pub(crate) fn codegen_block(
 
     for instr in fn_block.body.iter() {
         let ret = codegen_instruction(context, instr).map_err(|err| {
-            CXUnspannedError::boxed(
+            CXErr(CXUnspannedError::err(
                 "CODEGEN ERROR",
                 format!(
                     "Failed to codegen instruction: {instr:#?}\nError: {}",
-                    err.error_message()
+                    err.0.error_message()
                 ),
-            )
+            ))
         })?;
 
         if let Some(result) = instr.result.as_ref() {

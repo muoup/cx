@@ -38,12 +38,12 @@ pub fn complete_template_input(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     input: &CXTemplateInput,
-) -> CXResult<MIRTemplateInput> {
+) -> CXRawResult<MIRTemplateInput> {
     let args = input
         .params
         .iter()
         .map(|param| complete_type_id(env, namespace, param))
-        .collect::<CXResult<Vec<_>>>()?;
+        .collect::<CXRawResult<Vec<_>>>()?;
 
     Ok(MIRTemplateInput { args })
 }
@@ -65,7 +65,7 @@ pub fn complete_type_id(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     ty: &CXType,
-) -> CXResult<MIRTypeId> {
+) -> CXRawResult<MIRTypeId> {
     match &ty.kind {
         CXTypeKind::Identifier {
             name,
@@ -80,7 +80,8 @@ pub fn complete_type_id(
                 template_input,
                 ty.range(),
             )?;
-            apply_type_specifiers(env, id, ty.specifiers)
+            
+            Ok(apply_type_specifiers(env, id, ty.specifiers))
         }
 
         _ => {
@@ -210,17 +211,18 @@ fn apply_type_specifiers(
     env: &mut TypeEnvironment,
     id: MIRTypeId,
     specifiers: CXTypeQualifiers,
-) -> CXResult<MIRTypeId> {
+) -> MIRTypeId {
     if specifiers == 0 {
-        return Ok(id);
+        return id;
     }
 
     let Some(mut ty) = env.symbols.try_resolve_type_id(id).cloned() else {
-        return Ok(id);
+        return id;
     };
+    
     ty.specifiers |= specifiers;
 
-    Ok(env.symbols.generate_type_id(ty))
+    env.symbols.generate_type_id(ty)
 }
 
 pub fn complete_prototype(
@@ -641,7 +643,8 @@ fn complete_field(
 ) -> CXResult<MIRField> {
     match field {
         CXField::Standard { name, _type } => {
-            let id = complete_type_id(env, namespace, _type)?;
+            let id = complete_type_id(env, namespace, _type)
+                .map_err(|err| env.complete_error(err));
             if !env.symbols.contains(id) {
                 return log_typecheck_error!(
                     env,

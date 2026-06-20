@@ -1,22 +1,8 @@
 use std::{io::Write, path::Path};
 
-pub(crate) fn write_unspanned(
-    f: &mut dyn Write,
-    message: &str,
-    notes: &[String],
-) -> std::io::Result<()> {
-    writeln!(f, "{message}")?;
-    for note in notes {
-        writeln!(f, "note: {note}")?;
-    }
-
-    Ok(())
-}
-
 pub(crate) fn pretty_underline_error(
     f: &mut dyn Write,
     message: &str,
-    notes: &[String],
     file_path: &Path,
     start_index: usize,
     end_index: usize,

@@ -236,7 +236,7 @@ fn resolve_type_constructor(
 ) -> CXResult<MIRSymbol> {
     let union_type = complete_type(env, namespace, union_type)?;
     let variants = union_type.aggregate_fields(&env.symbols).ok_or_else(|| {
-        CXUnspannedError::boxed(
+        CXUnspannedError::err(
             "TYPE ERROR",
             "Type constructor target is not a tagged union",
         )

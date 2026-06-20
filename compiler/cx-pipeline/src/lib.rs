@@ -34,7 +34,7 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
         linking_files: Mutex::new(HashSet::new()),
     };
 
-    let base_file_str = base_file.to_str().ok_or(CXUnspannedError::boxed(
+    let base_file_str = base_file.to_str().ok_or(CXUnspannedError::err(
         "COMPILATION ERROR",
         "Base file path is not valid UTF-8",
     ))?;
@@ -58,7 +58,7 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
                 let object_path = resource_path(&compiler_context, &entry_unit, ".o");
                 if let Some(parent) = compiler_context.config.output.parent() {
                     std::fs::create_dir_all(parent).map_err(|e| {
-                        CXUnspannedError::boxed(
+                        CXUnspannedError::err(
                             "COMPILATION ERROR",
                             format!(
                                 "Failed to create object output directory {}: {}",
@@ -69,7 +69,7 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
                     })?;
                 }
                 std::fs::copy(&object_path, &compiler_context.config.output).map_err(|e| {
-                    CXUnspannedError::boxed(
+                    CXUnspannedError::err(
                         "COMPILATION ERROR",
                         format!(
                             "Failed to write object file {}: {}",
@@ -108,7 +108,7 @@ pub fn library_compilation(
         linking_files: Mutex::new(HashSet::new()),
     };
 
-    let base_file_str = base_file.to_str().ok_or(CXUnspannedError::boxed(
+    let base_file_str = base_file.to_str().ok_or(CXUnspannedError::err(
         "COMPILATION ERROR",
         "Base file path is not valid UTF-8",
     ))?;
@@ -163,7 +163,7 @@ pub fn project_compilation(
     let workspace = project_config
         .workspace
         .as_ref()
-        .ok_or(CXUnspannedError::boxed(
+        .ok_or(CXUnspannedError::err(
             "COMPILATION ERROR",
             "cx.toml has no [workspace] section",
         ))?;
@@ -173,7 +173,7 @@ pub fn project_compilation(
         let target = workspace
             .targets
             .get(filter)
-            .ok_or(CXUnspannedError::boxed(
+            .ok_or(CXUnspannedError::err(
                 "COMPILATION ERROR",
                 format!("Target '{}' not found in cx.toml", filter),
             ))?;
@@ -219,7 +219,7 @@ pub fn project_compilation(
             .join("output")
             .join(target_name);
         std::fs::create_dir_all(&output_dir).map_err(|e| {
-            CXUnspannedError::boxed(
+            CXUnspannedError::err(
                 "COMPILATION ERROR",
                 format!(
                     "Failed to create output directory {}: {}",
@@ -280,7 +280,7 @@ pub fn project_compilation(
 
                 let header_path = output_dir.join(format!("{}.h", library.name));
                 std::fs::write(&header_path, header).map_err(|e| {
-                    CXUnspannedError::boxed(
+                    CXUnspannedError::err(
                         "COMPILATION ERROR",
                         format!("Failed to write header {}: {}", header_path.display(), e),
                     )

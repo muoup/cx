@@ -3,13 +3,16 @@ use crate::{CompilationUnit, GlobalCompilationContext};
 use cx_ast::decomposition::CXGenerationAST;
 use cx_ast::registry::GlobalSymbolRegistry;
 use cx_lmir::LMIRUnit;
+use cx_log::DiagnosticSpan;
 use cx_mir::MIRUnit;
 use cx_preparse_data::PreparseContents;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
+use cx_tokens::TokenRange;
 use cx_tokens::token::Token;
 use cx_util::namespace::EnvironmentNamespace;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 // TODO: For large codebases, this should eventually should support unloading infrequently used data
 // to save memory, but for now, this is not a priority.
@@ -88,6 +91,18 @@ impl ModuleData {
             .write()
             .expect("set_no_reexport: Deadlock detected")
             .insert(unit.namespace().clone());
+    }
+
+    pub fn convert_token_range(&self, range: &TokenRange) -> DiagnosticSpan {
+        match range {
+            TokenRange::Source { namespace, start_token, end_token } => {
+                let lock = self.lex_tokens.get(namespace);
+
+                
+                
+                todo!()
+            },
+        }
     }
 }
 

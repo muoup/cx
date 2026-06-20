@@ -21,7 +21,7 @@ pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> CXResult<ir::Type> {
         LMIRTypeKind::Vector { element, count } => {
             let element = get_cranelift_type(&LMIRTypeKind::Float(*element).into())?;
             element.by(*count as u32).ok_or_else(|| {
-                CXUnspannedError::boxed(
+                CXUnspannedError::err(
                     "CODEGEN ERROR",
                     format!("Unsupported vector type for codegen: {element} x {count}"),
                 )

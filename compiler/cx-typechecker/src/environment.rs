@@ -1,6 +1,9 @@
 use cx_ast::ast::modifiers::VisibilityMode;
 use cx_ast::symbols::CXSymbol;
-use cx_log::{CXRawResult, CXResult, error::CXRawErr};
+use cx_log::{
+    CXRawResult, CXResult,
+    error::{CXComposedError, CXErr, CXRawErr},
+};
 use cx_mir::{
     EnvironmentNamespace, MIRUnit,
     mir::contextual_eq::TypeContextEqual,
@@ -17,13 +20,13 @@ pub use crate::environment::functions::control_flow::{
     BindingMoveState, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
     ScopeExitTarget, ScopeId, TrackedBindingState,
 };
+use crate::environment::items::ItemRegistry;
 use crate::{
     environment::functions::context::FunctionContext, symbol::registry::MIRSymbolRegistry,
 };
 use crate::{
     environment::functions::context::FunctionModeSnapshot, symbol::resolution::resolve_symbol,
 };
-use crate::environment::items::ItemRegistry;
 pub(crate) mod functions;
 pub(crate) mod items;
 
@@ -39,9 +42,7 @@ pub struct TypeEnvironment<'a> {
 }
 
 impl TypeEnvironment<'_> {
-    pub fn new<'a>(
-        module_data: &'a ModuleData,
-    ) -> TypeEnvironment<'a> {
+    pub fn new<'a>(module_data: &'a ModuleData) -> TypeEnvironment<'a> {
         TypeEnvironment {
             symbols: MIRSymbolRegistry::new(&module_data.symbol_registry),
             module_data,
@@ -81,7 +82,7 @@ impl TypeEnvironment<'_> {
             source_namespace,
             functions,
             global_variables: globals,
-            registry: self.symbols.decompose()
+            registry: self.symbols.decompose(),
         })
     }
 
@@ -218,10 +219,8 @@ impl TypeEnvironment<'_> {
         type1.contextual_eq(type2, &self.symbols)
     }
 
-    pub fn get_named_type_definition(&self, id: MIRTypeId) -> Option<&MIRType> {
-        self.symbols
-            .contains(id)
-            .then(|| self.symbols.resolve_type_id(id))
+    pub(crate) fn complete_err(&self, err: CXRawErr, range: &TokenRange) -> CXErr {
+        CXErr(Box::new(CXComposedError::new(err, todo!())))
     }
 }
 

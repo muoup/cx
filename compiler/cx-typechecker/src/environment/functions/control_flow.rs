@@ -1,11 +1,9 @@
-use std::{collections::HashSet, path::Path};
+use std::collections::HashSet;
 
 use cx_ast::ast::expression::CXExpression;
 
 use cx_log::error::{CXRawErr, CXRawResult};
-use cx_log::{CXError, DiagnosticSpan};
 use cx_tokens::TokenRange;
-use cx_tokens::token::Token;
 use cx_util::scoped_map::ScopedMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,21 +32,6 @@ pub struct TrackedBindingState {
 #[derive(Clone)]
 pub struct ControlFlowSnapshot {
     pub tracked_bindings: ScopedMap<String, TrackedBindingState>,
-}
-
-fn scope_error(
-    compilation_unit: &Path,
-    tokens: &[Token],
-    scope: &Scope,
-    error: Box<dyn cx_log::CXErrorMessage>,
-) -> Box<dyn CXError> {
-    let span = scope
-        .anchor_range
-        .as_ref()
-        .and_then(|range| range.to_diagnostic_span(tokens, compilation_unit))
-        .unwrap_or_else(|| DiagnosticSpan::new(compilation_unit.to_owned(), 0, 1));
-
-    cx_log::produce_diagnostic_error("TYPE ERROR", error.error_content(), Vec::new(), span)
 }
 
 #[derive(Clone)]

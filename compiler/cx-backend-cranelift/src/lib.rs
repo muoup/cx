@@ -94,7 +94,7 @@ impl FunctionState<'_> {
 
             LMIRValue::FunctionRef(name) => {
                 let (_func_id, func_ref) = self.get_function(name.as_str()).ok_or_else(|| {
-                    CXUnspannedError::boxed(
+                    CXUnspannedError::err(
                         "CODEGEN ERROR",
                         format!("Function not found: {}", name),
                     )
@@ -222,6 +222,6 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
     }
 
     global_state.object_module.finish().emit().map_err(|e| {
-        CXUnspannedError::boxed("CODEGEN ERROR", format!("Failed to emit object file: {e}"))
+        CXUnspannedError::err("CODEGEN ERROR", format!("Failed to emit object file: {e}"))
     })
 }

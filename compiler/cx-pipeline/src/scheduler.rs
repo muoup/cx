@@ -439,7 +439,7 @@ pub(crate) fn perform_job(
             };
             let internal_directory = internal_directory(context, &job.unit).with_extension("o");
             let internal_directory_str =
-                internal_directory.to_str().ok_or(CXUnspannedError::boxed(
+                internal_directory.to_str().ok_or(CXUnspannedError::err(
                     "COMPILATION ERROR",
                     "Internal directory path is not valid UTF-8",
                 ))?;

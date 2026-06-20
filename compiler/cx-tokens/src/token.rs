@@ -1,6 +1,5 @@
 use std::{path::Path, sync::Arc};
 
-use cx_log::DiagnosticSpan;
 use cx_util::namespace::EnvironmentNamespace;
 use speedy::{Context, Readable, Reader, Writable, Writer};
 
@@ -66,71 +65,6 @@ impl TokenRange {
             } => Some((namespace, *start_token, *end_token)),
             Self::Internal | Self::Error(_) => None,
         }
-    }
-
-    pub fn to_diagnostic_span(
-        &self,
-        tokens: &[Token],
-        fallback_file: &Path,
-    ) -> Option<DiagnosticSpan> {
-        let Self::Source {
-            start_token,
-            end_token,
-            ..
-        } = self
-        else {
-            return None;
-        };
-
-        let compilation_unit = self
-            .file_origin_path(tokens)
-            .or_else(|| crate::file_origin_for_tokens(tokens, *start_token, *end_token))
-            .unwrap_or_else(|| fallback_file.to_owned());
-        let (byte_start, byte_end) = crate::byte_range_for_tokens(tokens, *start_token, *end_token);
-
-        Some(DiagnosticSpan::new(compilation_unit, byte_start, byte_end))
-    }
-
-    fn file_origin_path(&self, tokens: &[Token]) -> Option<std::path::PathBuf> {
-        let Self::Source {
-            start_token,
-            end_token,
-            ..
-        } = self
-        else {
-            return None;
-        };
-
-        crate::file_origin_for_tokens(tokens, *start_token, *end_token)
-    }
-}
-
-pub trait TokenRangeArg {
-    fn to_diagnostic_span(&self, tokens: &[Token], fallback_file: &Path) -> Option<DiagnosticSpan>;
-}
-
-impl TokenRangeArg for TokenRange {
-    fn to_diagnostic_span(&self, tokens: &[Token], fallback_file: &Path) -> Option<DiagnosticSpan> {
-        TokenRange::to_diagnostic_span(self, tokens, fallback_file)
-    }
-}
-
-impl<T: TokenRangeArg + ?Sized> TokenRangeArg for &T {
-    fn to_diagnostic_span(&self, tokens: &[Token], fallback_file: &Path) -> Option<DiagnosticSpan> {
-        (*self).to_diagnostic_span(tokens, fallback_file)
-    }
-}
-
-impl TokenRangeArg for Option<&TokenRange> {
-    fn to_diagnostic_span(&self, tokens: &[Token], fallback_file: &Path) -> Option<DiagnosticSpan> {
-        self.and_then(|range| range.to_diagnostic_span(tokens, fallback_file))
-    }
-}
-
-impl TokenRangeArg for Option<TokenRange> {
-    fn to_diagnostic_span(&self, tokens: &[Token], fallback_file: &Path) -> Option<DiagnosticSpan> {
-        self.as_ref()
-            .and_then(|range| range.to_diagnostic_span(tokens, fallback_file))
     }
 }
 

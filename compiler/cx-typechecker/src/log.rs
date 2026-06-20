@@ -1,25 +1,11 @@
 use std::path::PathBuf;
 
-use cx_log::{CXError, CXUnspannedError, DiagnosticSpan};
+use cx_log::{CXUnspannedError, DiagnosticSpan};
 use cx_pipeline_data::db::ModuleData;
 use cx_tokens::TokenRange;
 
-pub fn convert_token_range(
-    module_data: &ModuleData,
-    range: &TokenRange,
-) -> DiagnosticSpan {
-    let Some(namespace) = range.namespace() else {
-        return DiagnosticSpan::empty();
-    };
-    let tokens = module_data.lex_tokens.get(namespace);
-    let fallback_file = module_data
-        .unit_for_namespace(namespace)
-        .map(|unit| unit.as_path().to_owned())
-        .unwrap_or_else(|| PathBuf::from(namespace.identifier()));
-
-    range
-        .to_diagnostic_span(tokens.as_ref(), fallback_file.as_path())
-        .unwrap_or_else(|| DiagnosticSpan::new(fallback_file, 0, 1))
+pub fn convert_token_range(module_data: &ModuleData, range: &TokenRange) -> DiagnosticSpan {
+    
 }
 
 pub fn produce_compile_error(
@@ -53,13 +39,7 @@ pub fn produce_typecheck_error(
     message: String,
     notes: Vec<String>,
 ) -> CXErr {
-    produce_compile_error(
-        "TYPE ERROR",
-        module_data,
-        range,
-        message,
-        notes,
-    )
+    produce_compile_error("TYPE ERROR", module_data, range, message, notes)
 }
 
 pub fn produce_comptime_error(
@@ -68,13 +48,7 @@ pub fn produce_comptime_error(
     message: String,
     notes: Vec<String>,
 ) -> CXErr {
-    produce_compile_error(
-        "COMPTIME ERROR",
-        module_data,
-        range,
-        message,
-        notes,
-    )
+    produce_compile_error("COMPTIME ERROR", module_data, range, message, notes)
 }
 
 #[macro_export]

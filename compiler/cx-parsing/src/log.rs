@@ -1,13 +1,11 @@
-use std::path::Path;
 
 use cx_log::{DiagnosticSpan, PointingError, UnderlineError};
-use cx_tokens::token::Token;
-use cx_tokens::{diagnostic_pointer_for_token, TokenRange};
+use cx_tokens::TokenRange;
+
+use crate::parse::parser::ParserData;
 
 pub fn pointing_error(
-    default_file: &Path,
-    token: Token,
-    previous_token: Option<Token>,
+    data: &ParserData,
     message: String,
 ) -> PointingError {
     let pointer = diagnostic_pointer_for_token(default_file, &token, previous_token.as_ref());
@@ -16,13 +14,12 @@ pub fn pointing_error(
 }
 
 pub fn underline_error(
-    default_file: &Path,
-    tokens: &[Token],
+    data: &ParserData,
     range: &TokenRange,
     message: String,
 ) -> UnderlineError {
     let span = range
-        .to_diagnostic_span(tokens, default_file)
+        .to_diagnostic_span(tokens)
         .unwrap_or_else(|| DiagnosticSpan::new(default_file.to_owned(), 0, 1));
 
     UnderlineError::new("PARSER ERROR", message, span)

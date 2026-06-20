@@ -452,6 +452,7 @@ version = "0.0.0"
 dependencies = [
  "cx-ast",
  "cx-lmir",
+ "cx-log",
  "cx-mir",
  "cx-preparse-data",
  "cx-tokens",
@@ -496,7 +497,6 @@ dependencies = [
 name = "cx-tokens"
 version = "0.0.0"
 dependencies = [
- "cx-log",
  "cx-util",
  "speedy",
 ]

@@ -91,7 +91,7 @@ pub(crate) fn produce_analysis_error(
                 .map(|unit| unit.as_path().to_owned())
                 .unwrap_or_else(|| PathBuf::from(namespace.identifier()));
             let span = range
-                .to_diagnostic_span(tokens.as_ref(), fallback_file.as_path())
+                .to_diagnostic_span(tokens.as_ref())
                 .unwrap_or_else(|| DiagnosticSpan::new(fallback_file, 0, 1));
 
             cx_log::produce_diagnostic_error("ANALYSIS ERROR", message, Vec::new(), span)
