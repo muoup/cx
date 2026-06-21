@@ -18,6 +18,10 @@ impl CXPointingContext {
     pub fn new(file: PathBuf, str_index: usize) -> Self {
         Self { file, str_index }
     }
+
+    pub fn error(file: impl Into<PathBuf>, str_index: usize) -> CXErrContext {
+        Box::new(Self::new(file.into(), str_index))
+    }
 }
 
 impl CXErrorContext for CXPointingContext {

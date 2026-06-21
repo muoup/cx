@@ -1,9 +1,10 @@
 use cx_log::CXResult;
 use cx_tokens::token::TokenKind;
-use cx_util::char_iter::CharIter;
 
-pub(crate) fn number(iter: &mut CharIter, file_origin: &str) -> CXResult<TokenKind> {
-    let start_index = iter.current_iter;
+use crate::lexer::source::LexCursor;
+
+pub(crate) fn number(iter: &mut LexCursor<'_>) -> CXResult<TokenKind> {
+    let start_index = iter.cursor();
 
     if iter.peek() == Some('.') {
         iter.next();
@@ -13,10 +14,10 @@ pub(crate) fn number(iter: &mut CharIter, file_origin: &str) -> CXResult<TokenKi
 
         if matches!(iter.peek(), Some('e' | 'E')) && !consume_exponent(iter) {
             consume_numeric_tail(iter);
-            return invalid_numeric_literal(iter, file_origin, start_index);
+            return invalid_numeric_literal(iter, start_index);
         }
 
-        return parse_float_literal(iter, file_origin, start_index);
+        return parse_float_literal(iter, start_index);
     }
 
     if iter.peek() == Some('0') {
@@ -24,16 +25,16 @@ pub(crate) fn number(iter: &mut CharIter, file_origin: &str) -> CXResult<TokenKi
         match iter.peek() {
             Some('x' | 'X') => {
                 iter.next();
-                return integer_with_radix(iter, file_origin, start_index, 16);
+                return integer_with_radix(iter, start_index, 16);
             }
             Some('b' | 'B') => {
                 iter.next();
-                return integer_with_radix(iter, file_origin, start_index, 2);
+                return integer_with_radix(iter, start_index, 2);
             }
             Some('.' | 'e' | 'E') => {}
             _ => {
                 iter.back();
-                return integer_with_radix(iter, file_origin, start_index, 8);
+                return integer_with_radix(iter, start_index, 8);
             }
         }
     }
@@ -55,111 +56,98 @@ pub(crate) fn number(iter: &mut CharIter, file_origin: &str) -> CXResult<TokenKi
         is_float = true;
         if !consume_exponent(iter) {
             consume_numeric_tail(iter);
-            return invalid_numeric_literal(iter, file_origin, start_index);
+            return invalid_numeric_literal(iter, start_index);
         }
     }
 
     if is_float {
-        parse_float_literal(iter, file_origin, start_index)
+        parse_float_literal(iter, start_index)
     } else {
-        let number_end = iter.current_iter;
+        let number_end = iter.cursor();
         consume_integer_suffix(iter);
         if is_identifier_continue(iter.peek()) {
             consume_numeric_tail(iter);
-            return invalid_numeric_literal(iter, file_origin, start_index);
+            return invalid_numeric_literal(iter, start_index);
         }
 
-        parse_integer_literal(iter, file_origin, start_index, number_end, 10)
+        parse_integer_literal(iter, start_index, number_end, 10)
     }
 }
 
 fn integer_with_radix(
-    iter: &mut CharIter,
-    file_origin: &str,
+    iter: &mut LexCursor<'_>,
     start_index: usize,
     radix: u32,
 ) -> CXResult<TokenKind> {
-    let digit_start = iter.current_iter;
+    let digit_start = iter.cursor();
     while iter.peek().is_some_and(|c| c.is_digit(radix)) {
         iter.next();
     }
 
-    let number_end = iter.current_iter;
+    let number_end = iter.cursor();
     if digit_start == number_end {
         consume_numeric_tail(iter);
-        return invalid_numeric_literal(iter, file_origin, start_index);
+        return invalid_numeric_literal(iter, start_index);
     }
 
     consume_integer_suffix(iter);
     if is_identifier_continue(iter.peek()) {
         consume_numeric_tail(iter);
-        return invalid_numeric_literal(iter, file_origin, start_index);
+        return invalid_numeric_literal(iter, start_index);
     }
 
-    parse_integer_literal(iter, file_origin, digit_start, number_end, radix)
+    parse_integer_literal(iter, digit_start, number_end, radix)
 }
 
-fn parse_float_literal(
-    iter: &mut CharIter,
-    file_origin: &str,
-    start_index: usize,
-) -> CXResult<TokenKind> {
-    let number_end = iter.current_iter;
+fn parse_float_literal(iter: &mut LexCursor<'_>, start_index: usize) -> CXResult<TokenKind> {
+    let number_end = iter.cursor();
     let bytes = consume_float_suffix(iter);
     if is_identifier_continue(iter.peek()) {
         consume_numeric_tail(iter);
-        return invalid_numeric_literal(iter, file_origin, start_index);
+        return invalid_numeric_literal(iter, start_index);
     }
 
-    let num = &iter.source[start_index..number_end];
+    let num = &iter.source()[start_index..number_end];
     match num.parse() {
         Ok(value) => Ok(TokenKind::FloatLiteral(value, bytes)),
-        Err(_) => log_lexer_error!(
-            file_origin,
-            iter.source,
-            start_index,
-            iter.current_iter,
-            "Invalid numeric literal: {num}"
-        ),
+        Err(_) => iter.log_error(start_index, format!("Invalid numeric literal: {num}")),
     }
 }
 
 fn parse_integer_literal(
-    iter: &CharIter,
-    file_origin: &str,
+    iter: &LexCursor<'_>,
     digits_start: usize,
     digits_end: usize,
     radix: u32,
 ) -> CXResult<TokenKind> {
-    let digits = &iter.source[digits_start..digits_end];
+    let digits = &iter.source()[digits_start..digits_end];
     match u64::from_str_radix(digits, radix) {
         Ok(value) => Ok(TokenKind::IntLiteral(value as i64)),
-        Err(_) => log_lexer_error!(
-            file_origin,
-            iter.source,
+        Err(_) => iter.log_error(
             digits_start,
-            iter.current_iter,
-            "Invalid numeric literal: {}",
-            &iter.source[digits_start..iter.current_iter]
+            format!(
+                "Invalid numeric literal: {}",
+                &iter.source()[digits_start..iter.cursor()]
+            ),
         ),
     }
 }
 
-fn consume_exponent(iter: &mut CharIter) -> bool {
+fn consume_exponent(iter: &mut LexCursor<'_>) -> bool {
     iter.next();
     if matches!(iter.peek(), Some('+' | '-')) {
         iter.next();
     }
 
-    let digit_start = iter.current_iter;
+    let digit_start = iter.cursor();
     while matches!(iter.peek(), Some('0'..='9')) {
         iter.next();
     }
 
-    digit_start != iter.current_iter
+    digit_start != iter.cursor()
 }
 
-fn consume_float_suffix(iter: &mut CharIter) -> u8 {
+fn consume_float_suffix(iter: &mut LexCursor<'_>) -> u8 {
     match iter.peek() {
         Some('f' | 'F') => {
             iter.next();
@@ -173,7 +161,7 @@ fn consume_float_suffix(iter: &mut CharIter) -> u8 {
     }
 }
 
-fn consume_integer_suffix(iter: &mut CharIter) {
+fn consume_integer_suffix(iter: &mut LexCursor<'_>) {
     let mut saw_unsigned = false;
     let mut saw_long = false;
 
@@ -195,24 +183,19 @@ fn consume_integer_suffix(iter: &mut CharIter) {
     }
 }
 
-fn consume_numeric_tail(iter: &mut CharIter) {
+fn consume_numeric_tail(iter: &mut LexCursor<'_>) {
     while is_identifier_continue(iter.peek()) {
         iter.next();
     }
 }
 
-fn invalid_numeric_literal(
-    iter: &CharIter,
-    file_origin: &str,
-    start_index: usize,
-) -> CXResult<TokenKind> {
-    log_lexer_error!(
-        file_origin,
-        iter.source,
+fn invalid_numeric_literal(iter: &LexCursor<'_>, start_index: usize) -> CXResult<TokenKind> {
+    iter.log_error(
         start_index,
-        iter.current_iter,
-        "Invalid numeric literal: {}",
-        &iter.source[start_index..iter.current_iter]
+        format!(
+            "Invalid numeric literal: {}",
+            &iter.source()[start_index..iter.cursor()]
+        ),
     )
 }
 

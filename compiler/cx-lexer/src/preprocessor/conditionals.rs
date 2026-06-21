@@ -10,20 +10,16 @@ pub(crate) fn handle_ifdef(
     context: &mut LexingContext,
     directive: &str,
     directive_start: usize,
-    directive_end: usize,
+    _directive_end: usize,
 ) -> CXResult<LexTransition> {
     context.current_frame_mut().skip_whitespace();
     let name_start = context.current_frame().cursor;
     let Some(name) = context.current_frame_mut().next_word() else {
         let frame = context.current_frame();
 
-        return log_lexer_error!(
-            frame.file_path.as_path(),
-            &frame.source,
+        return frame.cursor_view().log_error(
             directive_start,
-            directive_end,
-            "{} requires a macro name",
-            directive
+            format!("{} requires a macro name", directive),
         );
     };
 
@@ -60,31 +56,23 @@ pub(crate) fn handle_if(
 pub(crate) fn handle_elif(
     context: &mut LexingContext,
     directive_start: usize,
-    directive_end: usize,
+    _directive_end: usize,
 ) -> CXResult<LexTransition> {
     let parent_can_activate = match context.current_frame().conditionals.last() {
         Some(frame) if frame.else_seen => {
             let source = context.current_frame();
 
-            return log_lexer_error!(
-                source.file_path.as_path(),
-                &source.source,
-                directive_start,
-                directive_end,
-                "#elif after #else"
-            );
+            return source
+                .cursor_view()
+                .log_error(directive_start, "#elif after #else");
         }
         Some(frame) => frame.parent_active && !frame.any_branch_taken,
         None => {
             let source = context.current_frame();
 
-            return log_lexer_error!(
-                source.file_path.as_path(),
-                &source.source,
-                directive_start,
-                directive_end,
-                "#elif without matching #if"
-            );
+            return source
+                .cursor_view()
+                .log_error(directive_start, "#elif without matching #if");
         }
     };
 
@@ -105,31 +93,23 @@ pub(crate) fn handle_elif(
 pub(crate) fn handle_else(
     context: &mut LexingContext,
     directive_start: usize,
-    directive_end: usize,
+    _directive_end: usize,
 ) -> CXResult<LexTransition> {
     context.skip_tail();
     let Some(frame) = context.current_frame_mut().conditionals.last_mut() else {
         let source = context.current_frame();
 
-        return log_lexer_error!(
-            source.file_path.as_path(),
-            &source.source,
-            directive_start,
-            directive_end,
-            "#else without matching #if"
-        );
+        return source
+            .cursor_view()
+            .log_error(directive_start, "#else without matching #if");
     };
 
     if frame.else_seen {
         let source = context.current_frame();
 
-        return log_lexer_error!(
-            source.file_path.as_path(),
-            &source.source,
-            directive_start,
-            directive_end,
-            "Duplicate #else"
-        );
+        return source
+            .cursor_view()
+            .log_error(directive_start, "Duplicate #else");
     }
 
     frame.else_seen = true;
@@ -141,20 +121,16 @@ pub(crate) fn handle_else(
 pub(crate) fn handle_endif(
     context: &mut LexingContext,
     directive_start: usize,
-    directive_end: usize,
+    _directive_end: usize,
 ) -> CXResult<LexTransition> {
     context.skip_tail();
 
     if context.current_frame_mut().conditionals.pop().is_none() {
         let source = context.current_frame();
 
-        return log_lexer_error!(
-            source.file_path.as_path(),
-            &source.source,
-            directive_start,
-            directive_end,
-            "#endif without matching #if"
-        );
+        return source
+            .cursor_view()
+            .log_error(directive_start, "#endif without matching #if");
     }
     Ok(LexTransition::Continue)
 }
@@ -162,20 +138,19 @@ pub(crate) fn handle_endif(
 pub(crate) fn handle_error(
     context: &mut LexingContext,
     directive_start: usize,
-    directive_end: usize,
+    _directive_end: usize,
 ) -> CXResult<LexTransition> {
     let message = rest_of_logical_directive(context.current_frame_mut());
     if context.current_frame().is_active() {
         let frame = context.current_frame();
 
-        return log_lexer_error!(
-            frame.file_path.as_path(),
-            &frame.source,
+        return frame.cursor_view().log_error(
             directive_start,
-            directive_end,
-            "#error{}{}",
-            if message.trim().is_empty() { "" } else { ": " },
-            message.trim()
+            format!(
+                "#error{}{}",
+                if message.trim().is_empty() { "" } else { ": " },
+                message.trim()
+            ),
         );
     }
     Ok(LexTransition::Continue)
@@ -198,7 +173,7 @@ pub(crate) fn rest_of_logical_directive(frame: &mut SourceFrame) -> String {
         trim_continuation_backslash(&mut output);
         output.push(' ');
         if frame.peek() == Some('\n') {
-            frame.with_iter(|iter| {
+            frame.with_cursor(|iter| {
                 iter.next();
             });
         }
@@ -213,7 +188,7 @@ fn read_directive_line(frame: &mut SourceFrame, output: &mut String) -> bool {
             '\n' => return false,
             '"' | '\'' => read_quoted_directive_text(frame, output, c),
             '/' => {
-                frame.with_iter(|iter| {
+                frame.with_cursor(|iter| {
                     iter.next();
                 });
 
@@ -225,7 +200,7 @@ fn read_directive_line(frame: &mut SourceFrame, output: &mut String) -> bool {
                     }
                     Some('*') => {
                         output.push(' ');
-                        frame.with_iter(|iter| {
+                        frame.with_cursor(|iter| {
                             iter.next();
                         });
                         if skip_block_comment(frame) {
@@ -237,7 +212,7 @@ fn read_directive_line(frame: &mut SourceFrame, output: &mut String) -> bool {
             }
             _ => {
                 output.push(c);
-                frame.with_iter(|iter| {
+                frame.with_cursor(|iter| {
                     iter.next();
                 });
             }
@@ -249,7 +224,7 @@ fn read_directive_line(frame: &mut SourceFrame, output: &mut String) -> bool {
 
 fn read_quoted_directive_text(frame: &mut SourceFrame, output: &mut String, quote: char) {
     output.push(quote);
-    frame.with_iter(|iter| {
+    frame.with_cursor(|iter| {
         iter.next();
     });
 
@@ -259,7 +234,7 @@ fn read_quoted_directive_text(frame: &mut SourceFrame, output: &mut String, quot
         }
 
         output.push(c);
-        frame.with_iter(|iter| {
+        frame.with_cursor(|iter| {
             iter.next();
         });
 
@@ -270,7 +245,7 @@ fn read_quoted_directive_text(frame: &mut SourceFrame, output: &mut String, quot
                 }
 
                 output.push(escaped);
-                frame.with_iter(|iter| {
+                frame.with_cursor(|iter| {
                     iter.next();
                 });
             }
@@ -284,14 +259,14 @@ fn skip_block_comment(frame: &mut SourceFrame) -> bool {
     let mut crossed_newline = false;
 
     while let Some(c) = frame.peek() {
-        frame.with_iter(|iter| {
+        frame.with_cursor(|iter| {
             iter.next();
         });
 
         if c == '\n' {
             crossed_newline = true;
         } else if c == '*' && frame.peek() == Some('/') {
-            frame.with_iter(|iter| {
+            frame.with_cursor(|iter| {
                 iter.next();
             });
             break;
@@ -309,7 +284,7 @@ fn trim_continuation_backslash(output: &mut String) {
 
 pub(crate) fn read_macro_head(frame: &mut SourceFrame) -> Option<(String, Option<Vec<String>>)> {
     let start = frame.cursor;
-    frame.with_iter(|iter| {
+    frame.with_cursor(|iter| {
         while let Some(c) = iter.peek() {
             if c.is_ascii_alphanumeric() || c == '_' {
                 iter.next();
@@ -329,7 +304,7 @@ pub(crate) fn read_macro_head(frame: &mut SourceFrame) -> Option<(String, Option
         return Some((name, None));
     }
 
-    frame.with_iter(|iter| {
+    frame.with_cursor(|iter| {
         iter.next();
     });
     let params_start = frame.cursor;
@@ -344,12 +319,12 @@ pub(crate) fn read_macro_head(frame: &mut SourceFrame) -> Option<(String, Option
                     .map(|param| param.trim().to_string())
                     .collect()
             };
-            frame.with_iter(|iter| {
+            frame.with_cursor(|iter| {
                 iter.next();
             });
             return Some((name, Some(params)));
         }
-        frame.with_iter(|iter| {
+        frame.with_cursor(|iter| {
             iter.next();
         });
     }

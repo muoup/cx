@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 
-use cx_log::{CXResult, CXUnspannedError};
+use cx_log::{
+    CXResult,
+    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+};
 use cx_util::module_path::cx_library_directory;
 
 use crate::{
@@ -12,7 +15,7 @@ use crate::{
 pub(crate) fn handle_include(
     context: &mut LexingContext,
     directive_start: usize,
-    directive_end: usize,
+    _directive_end: usize,
 ) -> CXResult<LexTransition> {
     if !context.current_frame().is_active() {
         context.skip_tail();
@@ -25,27 +28,22 @@ pub(crate) fn handle_include(
     let Some(file_name) = context.current_frame_mut().next_word() else {
         let frame = context.current_frame();
 
-        return log_lexer_error!(
-            frame.file_path.as_path(),
-            &frame.source,
-            directive_start,
-            directive_end,
-            "#include requires a file path"
-        );
+        return frame
+            .cursor_view()
+            .log_error(directive_start, "#include requires a file path");
     };
-    let file_name_end = context.current_frame().cursor;
+    let _file_name_end = context.current_frame().cursor;
 
     if !(file_name.starts_with('"') && file_name.ends_with('"'))
         && !(file_name.starts_with('<') && file_name.ends_with('>'))
     {
         let frame = context.current_frame();
-        return log_lexer_error!(
-            frame.file_path.as_path(),
-            &frame.source,
+        return frame.cursor_view().log_error(
             file_name_start,
-            file_name_end,
-            "Invalid include path '{}': expected \"...\" or <...>",
-            file_name
+            format!(
+                "Invalid include path '{}': expected \"...\" or <...>",
+                file_name
+            ),
         );
     }
 
@@ -54,12 +52,9 @@ pub(crate) fn handle_include(
         Some(path) => path,
         None => {
             let frame = context.current_frame();
-            return log_lexer_error!(
-                frame.file_path.as_path(),
-                &frame.source,
+            return frame.cursor_view().log_error(
                 file_name_start,
-                file_name_end,
-                "Included file not found: {file_name}"
+                format!("Included file not found: {file_name}"),
             );
         }
     };
@@ -70,9 +65,12 @@ pub(crate) fn handle_include(
     }
 
     let source = std::fs::read_to_string(path.as_path()).map_err(|e| {
-        CXStdErrorMsg::error(
-            "LEXER ERROR",
-            format!("Failed to read included file {}: {}", path.display(), e),
+        CXErr::new(
+            CXStdErrMessage::error(
+                "LEXER ERROR",
+                format!("Failed to read included file {}: {}", path.display(), e),
+            ),
+            CXInternalContext::error("failed to read included source file"),
         )
     })?;
 

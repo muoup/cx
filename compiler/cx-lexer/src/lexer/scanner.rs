@@ -2,11 +2,14 @@ use std::{path::Path, sync::Arc};
 
 use cx_log::CXResult;
 use cx_tokens::token::{Token, TokenKind};
-use cx_util::char_iter::CharIter;
 
 use crate::{
     context::SourceInput,
-    lexer::{comments::handle_comment, source::SourceFrame, token_rules},
+    lexer::{
+        comments::handle_comment,
+        source::{LexCursor, SourceFrame},
+        token_rules,
+    },
 };
 
 pub(crate) enum LexEvent {
@@ -44,7 +47,7 @@ impl<'a> Lexer<'a> {
             match self.frame.peek() {
                 Some('#') => return Ok(LexEvent::Directive),
                 Some('/') => {
-                    let handled = self.frame.with_iter(handle_comment);
+                    let handled = self.frame.with_cursor(handle_comment);
                     if handled {
                         continue;
                     }
@@ -74,12 +77,12 @@ impl<'a> Lexer<'a> {
         self.frame.skip_whitespace();
         let start = self.frame.cursor;
 
-        self.frame.with_iter(|iter| {
-            while let Some(c) = iter.next() {
+        self.frame.with_cursor(|cursor| {
+            while let Some(c) = cursor.next() {
                 match c {
                     '\n' => break,
-                    '/' if (iter.peek() == Some('/') || iter.peek() == Some('*')) => {
-                        iter.back();
+                    '/' if (cursor.peek() == Some('/') || cursor.peek() == Some('*')) => {
+                        cursor.back();
                         break;
                     }
                     _ => {}
@@ -105,64 +108,60 @@ fn tokenize_range(
     end: usize,
     file_origin: &Path,
 ) -> CXResult<Vec<Token>> {
-    let mut iter = CharIter::new(&source[..end]);
-    iter.current_iter = start;
-    let mut accumulator = TokenAccumulator::new(&mut iter, file_origin);
+    let mut cursor = LexCursor::new(&source[..end], file_origin, start);
+    let mut accumulator = TokenAccumulator::new(&mut cursor, file_origin);
     accumulator.generate_tokens()?;
     Ok(accumulator.tokens)
 }
 
 struct TokenAccumulator<'a> {
-    iter: &'a mut CharIter<'a>,
+    cursor: &'a mut LexCursor<'a>,
     file_origin: Arc<Path>,
     last_consume: usize,
     tokens: Vec<Token>,
 }
 
 impl<'a> TokenAccumulator<'a> {
-    fn new(iter: &'a mut CharIter<'a>, file_origin: &Path) -> Self {
+    fn new(cursor: &'a mut LexCursor<'a>, file_origin: &Path) -> Self {
         Self {
-            last_consume: iter.current_iter,
-            iter,
+            last_consume: cursor.cursor(),
+            cursor,
             file_origin: Arc::from(file_origin),
             tokens: Vec::new(),
         }
     }
 
     fn generate_tokens(&mut self) -> CXResult<()> {
-        while self.iter.has_next() && self.iter.peek() != Some('\n') {
-            if self.last_consume == self.iter.current_iter
-                && let Some(token) = token_rules::literal_or_prefixed_token(
-                    self.iter,
-                    &self.file_origin.to_string_lossy(),
-                )?
+        while self.cursor.has_next() && self.cursor.peek() != Some('\n') {
+            if self.last_consume == self.cursor.cursor()
+                && let Some(token) = token_rules::literal_or_prefixed_token(self.cursor)?
             {
-                self.add_token(token, self.iter.current_iter);
-                self.last_consume = self.iter.current_iter;
+                self.add_token(token, self.cursor.cursor());
+                self.last_consume = self.cursor.cursor();
             }
 
-            let previous_lex = self.iter.current_iter;
+            let previous_lex = self.cursor.cursor();
 
             if let Some(operator) =
-                token_rules::operator(self.iter).or_else(|| token_rules::punctuator(self.iter))
+                token_rules::operator(self.cursor).or_else(|| token_rules::punctuator(self.cursor))
             {
                 self.consume(previous_lex);
-                self.add_token(operator, self.iter.current_iter);
-                self.last_consume = self.iter.current_iter;
-            } else if Some(true) == self.iter.peek().map(|c| c.is_whitespace()) {
+                self.add_token(operator, self.cursor.cursor());
+                self.last_consume = self.cursor.cursor();
+            } else if Some(true) == self.cursor.peek().map(|c| c.is_whitespace()) {
                 self.consume(previous_lex);
 
-                while let Some(true) = self.iter.peek().map(|c| c.is_whitespace()) {
-                    self.iter.next();
+                while let Some(true) = self.cursor.peek().map(|c| c.is_whitespace()) {
+                    self.cursor.next();
                 }
 
-                self.last_consume = self.iter.current_iter;
+                self.last_consume = self.cursor.cursor();
             } else {
-                self.iter.next();
+                self.cursor.next();
             }
         }
 
-        self.consume(self.iter.current_iter);
+        self.consume(self.cursor.cursor());
         Ok(())
     }
 
@@ -180,7 +179,7 @@ impl<'a> TokenAccumulator<'a> {
             return;
         }
 
-        let text = self.iter.source[self.last_consume..up_to].to_string();
+        let text = self.cursor.source()[self.last_consume..up_to].to_string();
         if text.chars().any(|c| !c.is_whitespace()) {
             self.add_token(TokenKind::from_str(text), up_to);
         }

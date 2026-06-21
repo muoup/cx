@@ -3,25 +3,21 @@ use cx_tokens::{
     punctuator,
     token::{OperatorType, PunctuatorType, TokenKind},
 };
-use cx_util::char_iter::CharIter;
 
-use crate::lexer::number::number;
+use crate::lexer::{number::number, source::LexCursor};
 
-pub(crate) fn literal_or_prefixed_token(
-    iter: &mut CharIter,
-    file_origin: &str,
-) -> CXResult<Option<TokenKind>> {
+pub(crate) fn literal_or_prefixed_token(iter: &mut LexCursor<'_>) -> CXResult<Option<TokenKind>> {
     match iter.peek() {
-        Some('0'..='9') => number(iter, file_origin).map(Some),
-        Some('.') if iter.next_is(u8::is_ascii_digit) => number(iter, file_origin).map(Some),
+        Some('0'..='9') => number(iter).map(Some),
+        Some('.') if iter.next_is(u8::is_ascii_digit) => number(iter).map(Some),
         Some('"') => Ok(string(iter)),
-        Some('\'') => char_literal(iter, file_origin).map(Some),
+        Some('\'') => char_literal(iter).map(Some),
         _ => Ok(None),
     }
 }
 
-pub(crate) fn operator(iter: &mut CharIter) -> Option<TokenKind> {
-    fn try_assignment(iter: &mut CharIter, operator: OperatorType) -> Option<TokenKind> {
+pub(crate) fn operator(iter: &mut LexCursor<'_>) -> Option<TokenKind> {
+    fn try_assignment(iter: &mut LexCursor<'_>, operator: OperatorType) -> Option<TokenKind> {
         if Some('=') == iter.peek() {
             iter.next();
             Some(TokenKind::Assignment(Some(operator)))
@@ -134,7 +130,7 @@ pub(crate) fn operator(iter: &mut CharIter) -> Option<TokenKind> {
     }
 }
 
-pub(crate) fn punctuator(iter: &mut CharIter) -> Option<TokenKind> {
+pub(crate) fn punctuator(iter: &mut LexCursor<'_>) -> Option<TokenKind> {
     if !iter.has_next() {
         return None;
     }
@@ -158,9 +154,9 @@ pub(crate) fn punctuator(iter: &mut CharIter) -> Option<TokenKind> {
     }
 }
 
-fn string(iter: &mut CharIter) -> Option<TokenKind> {
+fn string(iter: &mut LexCursor<'_>) -> Option<TokenKind> {
     assert_eq!(iter.next(), Some('"'));
-    let start_iter = iter.current_iter;
+    let start_iter = iter.cursor();
     while let Some(c) = iter.next() {
         if c == '\\' {
             iter.next();
@@ -170,7 +166,7 @@ fn string(iter: &mut CharIter) -> Option<TokenKind> {
             break;
         }
     }
-    let string = iter.source[start_iter..iter.current_iter - 1]
+    let string = iter.source()[start_iter..iter.cursor() - 1]
         .replace("\\n", "\n")
         .replace("\\t", "\t")
         .replace("\\r", "\r")
@@ -179,18 +175,12 @@ fn string(iter: &mut CharIter) -> Option<TokenKind> {
     Some(TokenKind::StringLiteral(string))
 }
 
-fn char_literal(iter: &mut CharIter, file_origin: &str) -> CXResult<TokenKind> {
-    let start_index = iter.current_iter;
+fn char_literal(iter: &mut LexCursor<'_>) -> CXResult<TokenKind> {
+    let start_index = iter.cursor();
     assert_eq!(iter.next(), Some('\''));
 
     let Some(c) = iter.next() else {
-        return log_lexer_error!(
-            file_origin,
-            iter.source,
-            start_index,
-            iter.current_iter,
-            "Unterminated character literal"
-        );
+        return iter.log_error(start_index, "Unterminated character literal");
     };
 
     let Some(kind) = (match iter.next() {
@@ -207,13 +197,7 @@ fn char_literal(iter: &mut CharIter, file_origin: &str) -> CXResult<TokenKind> {
         }
         _ => None,
     }) else {
-        return log_lexer_error!(
-            file_origin,
-            iter.source,
-            start_index,
-            iter.current_iter,
-            "Invalid character literal"
-        );
+        return iter.log_error(start_index, "Invalid character literal");
     };
 
     Ok(kind)
