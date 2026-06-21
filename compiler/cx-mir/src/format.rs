@@ -667,13 +667,6 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }
-            MIRExpressionKind::SizeOf { _type } => {
-                write!(f, "SizeOf ")?;
-                self.write_type(f, _type)?;
-                write!(f, " <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")
-            }
             MIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
                 write!(f, "BinaryOperation ")?;
                 self.write_bin_op(f, op)?;

@@ -32,6 +32,7 @@ use crate::{
 pub(crate) mod control_flow;
 pub(crate) mod function_context;
 pub(crate) mod items;
+pub(crate) mod types;
 
 pub use items::MIRFunctionGenRequest;
 

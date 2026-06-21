@@ -96,10 +96,6 @@ pub enum MIRExpressionKind {
         name: CXIdent,
     },
 
-    SizeOf {
-        _type: MIRType,
-    },
-
     // Arithmetic & Logic
     BinaryOperation {
         lhs: Box<MIRExpression>,

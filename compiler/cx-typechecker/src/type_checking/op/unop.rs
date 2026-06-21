@@ -14,7 +14,7 @@ use cx_mir::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    environment::TypeEnvironment,
+    environment::{TypeEnvironment, types::sizeof_type_size},
     symbol::completion::complete_type,
     type_checking::{
         coercion::{
@@ -221,7 +221,8 @@ pub(crate) fn typecheck_sizeof_type(
     ty: &CXType,
 ) -> CXResult<TypecheckResult> {
     let tc_type = complete_type(env, namespace, ty)?;
-    Ok(sizeof_result(tc_type))
+
+    sizeof_result(env, _expr.range.clone(), tc_type)
 }
 
 pub(crate) fn typecheck_sizeof_expr(
@@ -232,16 +233,26 @@ pub(crate) fn typecheck_sizeof_expr(
     let tc_expr = typecheck_expr(env, namespace, expr, None)
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
 
-    Ok(sizeof_result(tc_expr._type))
+    sizeof_result(env, tc_expr.token_range, tc_expr._type)
 }
 
-fn sizeof_result(_type: MIRType) -> TypecheckResult {
-    TypecheckResult::from(MIRExpression {
-        token_range: TokenRange::internal(),
-        kind: MIRExpressionKind::SizeOf { _type },
-        _type: MIRType::from(MIRTypeKind::Integer {
-            _type: MIRIntegerType::I64,
-            signed: false,
-        }),
-    })
+fn sizeof_result(
+    env: &mut TypeEnvironment,
+    range: TokenRange,
+    _type: MIRType,
+) -> CXResult<TypecheckResult> {
+    sizeof_type_size(env, &_type)
+        .map_err(|err| {
+            env.complete_err(err, &range)
+        })
+        .map(|size| {
+            TypecheckResult::from(MIRExpression {
+                token_range: range,
+                kind: MIRExpressionKind::IntLiteral(size as i64),
+                _type: MIRType::from(MIRTypeKind::Integer {
+                    _type: MIRIntegerType::I64,
+                    signed: false,
+                }),
+            })
+        })
 }

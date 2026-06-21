@@ -519,11 +519,6 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
 
         MIRExpressionKind::FunctionReference { name } => Ok(LMIRValue::FunctionRef(name.clone())),
 
-        MIRExpressionKind::SizeOf { _type } => Ok(LMIRValue::IntImmediate {
-            val: usize::from(builder.convert_cx_type(_type).size()) as i64,
-            _type: LMIRIntegerType::I64,
-        }),
-
         // ===== Arithmetic & Logic =====
         MIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
             lower_binary_op(builder, lhs, rhs, op, &expr._type)
