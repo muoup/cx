@@ -19,18 +19,18 @@ use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 use cx_util::{identifier::CXIdent, namespace::NamespacePath};
 
-pub use crate::environment::functions::control_flow::{
+pub use crate::environment::control_flow::{
     BindingMoveState, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
     ScopeExitTarget, ScopeId, TrackedBindingState,
 };
 use crate::environment::items::ItemRegistry;
+use crate::{environment::function_context::FunctionContext, symbol::registry::MIRSymbolRegistry};
 use crate::{
-    environment::functions::context::FunctionContext, symbol::registry::MIRSymbolRegistry,
+    environment::function_context::FunctionModeSnapshot, symbol::resolution::resolve_symbol,
 };
-use crate::{
-    environment::functions::context::FunctionModeSnapshot, symbol::resolution::resolve_symbol,
-};
-pub(crate) mod functions;
+
+pub(crate) mod control_flow;
+pub(crate) mod function_context;
 pub(crate) mod items;
 
 pub use items::MIRFunctionGenRequest;

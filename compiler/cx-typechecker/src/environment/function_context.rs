@@ -4,7 +4,7 @@ use cx_ast::ast::expression::CXExpression;
 use cx_log::CXRawResult;
 use cx_mir::mir::data::MIRFunctionPrototype;
 
-use crate::environment::functions::control_flow::{
+use crate::environment::control_flow::{
     BindingMoveState, ControlFlow, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind,
     ScopeArrowSink, ScopeExitTarget, ScopeId, TrackedBindingState,
 };
