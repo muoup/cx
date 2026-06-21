@@ -1,5 +1,8 @@
 use std::path::PathBuf;
 
+#[cfg(not(feature = "ignore-system-headers"))]
+use std::sync::OnceLock;
+
 use cx_log::{
     CXResult,
     error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
@@ -126,7 +129,7 @@ pub(crate) fn resolve_path(
     #[cfg(not(feature = "ignore-system-headers"))]
     let search = search
         .into_iter()
-        .chain(system_include_dirs().into_iter().map(|dir| dir.join(inner)));
+        .chain(system_include_dirs().iter().map(|dir| dir.join(inner)));
 
     #[cfg(feature = "ignore-system-headers")]
     let search = search.into_iter();
@@ -136,22 +139,27 @@ pub(crate) fn resolve_path(
         .find(|path| path.is_file())
 }
 
-fn system_include_dirs() -> Vec<PathBuf> {
-    #[cfg(unix)]
-    {
-        let mut dirs = vec![PathBuf::from("/usr/include")];
-        dirs.extend(multiarch_include_dirs());
-        dirs.extend(gcc_include_dirs());
-        dirs
-    }
+#[cfg(not(feature = "ignore-system-headers"))]
+fn system_include_dirs() -> &'static [PathBuf] {
+    static SYSTEM_INCLUDE_DIRS: OnceLock<Vec<PathBuf>> = OnceLock::new();
 
-    #[cfg(not(unix))]
-    {
-        vec![]
-    }
+    SYSTEM_INCLUDE_DIRS.get_or_init(discover_system_include_dirs)
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(feature = "ignore-system-headers")))]
+fn discover_system_include_dirs() -> Vec<PathBuf> {
+    let mut dirs = vec![PathBuf::from("/usr/include")];
+    dirs.extend(multiarch_include_dirs());
+    dirs.extend(gcc_include_dirs());
+    dirs
+}
+
+#[cfg(all(not(unix), not(feature = "ignore-system-headers")))]
+fn discover_system_include_dirs() -> Vec<PathBuf> {
+    vec![]
+}
+
+#[cfg(all(unix, not(feature = "ignore-system-headers")))]
 fn multiarch_include_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
@@ -170,7 +178,7 @@ fn multiarch_include_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(feature = "ignore-system-headers")))]
 fn gcc_include_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     let Ok(targets) = std::fs::read_dir("/usr/lib/gcc") else {

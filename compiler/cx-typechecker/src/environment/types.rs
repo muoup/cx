@@ -65,7 +65,10 @@ pub fn sizeof_type_size(env: &TypeEnvironment, _ty: &MIRType) -> CXRawResult<usi
                 .max()
                 .unwrap_or(0);
 
-            Ok(apply_padding(tag_size + max_variant_size, (tag_size + max_variant_size).min(8))) // Align to tag size
+            Ok(apply_padding(
+                tag_size + max_variant_size,
+                (tag_size + max_variant_size).min(8),
+            )) // Align to tag size
         }
 
         _ => env.log_error_base(format!(

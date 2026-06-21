@@ -242,9 +242,7 @@ fn sizeof_result(
     _type: MIRType,
 ) -> CXResult<TypecheckResult> {
     sizeof_type_size(env, &_type)
-        .map_err(|err| {
-            env.complete_err(err, &range)
-        })
+        .map_err(|err| env.complete_err(err, &range))
         .map(|size| {
             TypecheckResult::from(MIRExpression {
                 token_range: range,
