@@ -5,7 +5,8 @@ edition = "2021"
 build = "build.rs"
 
 [features]
-default = ["cx-pipeline-data/test"]
+default = ["cx-pipeline-data/test", "system-headers"]
+system-headers = ["cx-pipeline/system-headers"]
 backend-llvm = ["cx-pipeline/backend-llvm"]
 
 [[test]]
@@ -15,4 +16,4 @@ harness = true
 
 [dependencies]
 cx-pipeline-data = { path = "../compiler/cx-pipeline-data" }
-cx-pipeline = { path = "../compiler/cx-pipeline" }
+cx-pipeline = { path = "../compiler/cx-pipeline", default-features = false }

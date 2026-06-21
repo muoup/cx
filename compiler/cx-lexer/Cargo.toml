@@ -3,6 +3,10 @@ name = "cx-lexer"
 version = "0.0.0"
 edition = "2024"
 
+[features]
+default = ["system-headers"]
+system-headers = []
+
 [dependencies]
 cx-log = { path = "../cx-log" }
 cx-tokens = { path = "../cx-tokens" }

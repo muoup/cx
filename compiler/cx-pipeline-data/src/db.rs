@@ -114,7 +114,7 @@ impl ModuleData {
                     ));
                 };
 
-                let Some(end) = tokens.get(*end_token) else {
+                let Some(end) = tokens.get(end_token.saturating_sub(1)) else {
                     return CXInternalContext::error(format!(
                         "failed to resolve diagnostic context: end token {end_token} not found in namespace {namespace}"
                     ));

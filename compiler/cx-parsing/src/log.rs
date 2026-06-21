@@ -45,7 +45,7 @@ fn range_context(tokens: &TokenIter<'_>, range: &TokenRange) -> cx_log::error::C
             "parser diagnostic start token {start_token} is out of bounds"
         ));
     };
-    let Some(end) = tokens.slice.get(*end_token) else {
+    let Some(end) = tokens.slice.get(end_token.saturating_sub(1)) else {
         return CXInternalContext::error(format!(
             "parser diagnostic end token {end_token} is out of bounds"
         ));

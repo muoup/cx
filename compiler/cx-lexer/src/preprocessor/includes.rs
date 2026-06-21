@@ -117,20 +117,22 @@ pub(crate) fn resolve_path(
     }
 
     let bundled = PathBuf::from(cx_library_directory(&format!("libc/{inner}")));
-    let system = system_include_dirs()
-        .into_iter()
-        .map(|dir| dir.join(inner))
-        .collect::<Vec<_>>();
 
     let search = candidates
         .into_iter()
         .chain(include_dirs.iter().map(|dir| dir.join(inner)))
         .collect::<Vec<_>>();
 
-    search
+    #[cfg(feature = "system-headers")]
+    let search = search
         .into_iter()
+        .chain(system_include_dirs().into_iter().map(|dir| dir.join(inner)));
+
+    #[cfg(not(feature = "system-headers"))]
+    let search = search.into_iter();
+
+    search
         .chain(std::iter::once(bundled))
-        .chain(system)
         .find(|path| path.is_file())
 }
 

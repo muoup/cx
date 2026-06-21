@@ -4,14 +4,15 @@ version = "0.0.0"
 edition = "2024"
 
 [features]
-default = []
+default = ["system-headers"]
+system-headers = ["cx-lexer/system-headers"]
 backend-llvm = ["dep:cx-backend-llvm"]
 
 [dependencies]
 speedy = { version = "0.8.7" }
 fs2 = { version = "0.4.3" }
 
-cx-lexer = { path = "../cx-lexer" }
+cx-lexer = { path = "../cx-lexer", default-features = false }
 cx-parsing = { path = "../cx-parsing" }
 cx-typechecker = { path = "../cx-typechecker" }
 cx-safe-analyzer = { path = "../cx-safe-analyzer" }
