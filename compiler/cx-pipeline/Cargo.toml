@@ -4,8 +4,8 @@ version = "0.0.0"
 edition = "2024"
 
 [features]
-default = ["system-headers"]
-system-headers = ["cx-lexer/system-headers"]
+default = []
+ignore-system-headers = ["cx-lexer/ignore-system-headers"]
 backend-llvm = ["dep:cx-backend-llvm"]
 
 [dependencies]

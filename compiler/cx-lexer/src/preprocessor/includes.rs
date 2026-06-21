@@ -123,12 +123,12 @@ pub(crate) fn resolve_path(
         .chain(include_dirs.iter().map(|dir| dir.join(inner)))
         .collect::<Vec<_>>();
 
-    #[cfg(feature = "system-headers")]
+    #[cfg(not(feature = "ignore-system-headers"))]
     let search = search
         .into_iter()
         .chain(system_include_dirs().into_iter().map(|dir| dir.join(inner)));
 
-    #[cfg(not(feature = "system-headers"))]
+    #[cfg(feature = "ignore-system-headers")]
     let search = search.into_iter();
 
     search

@@ -4,8 +4,8 @@ version = "0.0.0"
 edition = "2024"
 
 [features]
-default = ["system-headers"]
-system-headers = []
+default = []
+ignore-system-headers = []
 
 [dependencies]
 cx-log = { path = "../cx-log" }
