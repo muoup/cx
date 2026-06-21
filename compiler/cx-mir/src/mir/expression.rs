@@ -222,6 +222,10 @@ pub enum MIRExpressionKind {
         postcondition: Option<MIRPostcondition>,
         value: Option<Box<MIRExpression>>,
     },
+    Yield {
+        value: Option<Box<MIRExpression>>,
+        target_scope: usize,
+    },
 
     // Sequential Statements
     Block {

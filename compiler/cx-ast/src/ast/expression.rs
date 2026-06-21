@@ -127,6 +127,9 @@ pub enum CXExprKind {
     Return {
         value: Option<Box<CXExpression>>,
     },
+    Yield {
+        value: Option<Box<CXExpression>>,
+    },
 
     Unsafe {
         expr: Box<CXExpression>,
@@ -235,6 +238,7 @@ impl CXExprKind {
         matches!(
             self,
             CXExprKind::Return { .. }
+                | CXExprKind::Yield { .. }
                 | CXExprKind::Break
                 | CXExprKind::Continue
                 | CXExprKind::Taken

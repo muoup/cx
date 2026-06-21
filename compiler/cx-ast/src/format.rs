@@ -234,6 +234,13 @@ impl<'a> Display for CXExprFormatter<'a> {
                 }
                 Ok(())
             }
+            CXExprKind::Yield { value } => {
+                writeln!(f, "Yield")?;
+                if let Some(value) = value {
+                    CXExprFormatter::new(value, self.depth + 1).fmt(f)?;
+                }
+                Ok(())
+            }
             CXExprKind::BinOp { lhs, rhs, op } => {
                 writeln!(f, "BinOp {:?}", op)?;
                 CXExprFormatter::new(lhs, self.depth + 1).fmt(f)?;

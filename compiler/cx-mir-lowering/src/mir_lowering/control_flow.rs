@@ -317,8 +317,11 @@ pub fn lower_match(
     arms: &[(MIRPattern, Box<MIRExpression>)],
     default: Option<&MIRExpression>,
     exhaustive: bool,
+    result_type: &MIRType,
 ) -> CXResult<LMIRValue> {
     let mut bc_condition = lower_expression(builder, condition)?;
+    let result_lmir_type = builder.convert_cx_type(result_type);
+    let value_match = !matches!(result_type.kind, MIRTypeKind::Unit);
     let inner = condition
         ._type
         .mem_ref_inner()
@@ -339,7 +342,7 @@ pub fn lower_match(
     }
 
     let exit_block_id = builder.create_block(Some("match_exit"));
-    let default_block_id = if default.is_some() {
+    let default_block_id = if default.is_some() || value_match {
         builder.create_block(Some("match_default"))
     } else {
         exit_block_id.clone()
@@ -347,6 +350,7 @@ pub fn lower_match(
 
     builder.push_scope(None, Some(exit_block_id.clone()));
     let mut exit_has_predecessor = default.is_none() && !exhaustive;
+    let mut result_predecessors = Vec::new();
 
     let mut targets = Vec::new();
     let mut arm_blocks = Vec::new();
@@ -375,11 +379,46 @@ pub fn lower_match(
 
     for (i, (_, arm_body)) in arms.iter().enumerate() {
         builder.set_current_block(arm_blocks[i].clone());
+        let arm_yield_block = if value_match {
+            Some(builder.create_block(Some("match_arm_yield")))
+        } else {
+            None
+        };
+        let yield_target = arm_yield_block
+            .clone()
+            .unwrap_or_else(|| exit_block_id.clone());
         let arm_falls_through = is_fall_through(arm_body);
         builder.push_scope(None, None);
+        builder.push_yield_target(yield_target, result_lmir_type.clone());
         lower_expression(builder, arm_body)?;
+        let yield_context = builder.pop_yield_target();
         builder.pop_scope()?;
-        if arm_falls_through && !builder.current_block_closed() {
+
+        if value_match {
+            if !yield_context.yields.is_empty() {
+                let arm_yield_block =
+                    arm_yield_block.expect("Value-producing match arm missing yield block");
+                builder.move_block_to_end(&arm_yield_block);
+                builder.set_current_block(arm_yield_block.clone());
+                let arm_result = builder.add_new_instruction(
+                    LMIRInstructionKind::Phi {
+                        predecessors: yield_context.yields,
+                    },
+                    result_lmir_type.clone(),
+                    true,
+                )?;
+                if !builder.current_block_closed() {
+                    builder.add_new_instruction(
+                        LMIRInstructionKind::Jump {
+                            target: exit_block_id.clone(),
+                        },
+                        LMIRType::unit(),
+                        false,
+                    )?;
+                }
+                result_predecessors.push((arm_result, arm_yield_block));
+            }
+        } else if arm_falls_through && !builder.current_block_closed() {
             exit_has_predecessor = true;
             builder.add_new_instruction(
                 LMIRInstructionKind::Jump {
@@ -401,11 +440,45 @@ pub fn lower_match(
     if let Some(default_expr) = default {
         builder.set_current_block(default_block_id);
 
+        let default_yield_block = if value_match {
+            Some(builder.create_block(Some("match_default_yield")))
+        } else {
+            None
+        };
+        let yield_target = default_yield_block
+            .clone()
+            .unwrap_or_else(|| exit_block_id.clone());
         let default_falls_through = is_fall_through(default_expr);
         builder.push_scope(None, None);
+        builder.push_yield_target(yield_target, result_lmir_type.clone());
         lower_expression(builder, default_expr)?;
+        let yield_context = builder.pop_yield_target();
         builder.pop_scope()?;
-        if default_falls_through && !builder.current_block_closed() {
+        if value_match {
+            if !yield_context.yields.is_empty() {
+                let default_yield_block =
+                    default_yield_block.expect("Value-producing match default missing yield block");
+                builder.move_block_to_end(&default_yield_block);
+                builder.set_current_block(default_yield_block.clone());
+                let default_result = builder.add_new_instruction(
+                    LMIRInstructionKind::Phi {
+                        predecessors: yield_context.yields,
+                    },
+                    result_lmir_type.clone(),
+                    true,
+                )?;
+                if !builder.current_block_closed() {
+                    builder.add_new_instruction(
+                        LMIRInstructionKind::Jump {
+                            target: exit_block_id.clone(),
+                        },
+                        LMIRType::unit(),
+                        false,
+                    )?;
+                }
+                result_predecessors.push((default_result, default_yield_block));
+            }
+        } else if default_falls_through && !builder.current_block_closed() {
             exit_has_predecessor = true;
             builder.add_new_instruction(
                 LMIRInstructionKind::Jump {
@@ -422,10 +495,19 @@ pub fn lower_match(
                 false,
             )?;
         }
+    } else if value_match {
+        builder.set_current_block(default_block_id);
+        let current = builder.current_block();
+        builder.add_new_instruction(
+            LMIRInstructionKind::Jump { target: current },
+            LMIRType::unit(),
+            false,
+        )?;
     }
 
+    builder.move_block_to_end(&exit_block_id);
     builder.set_current_block(exit_block_id.clone());
-    if !exit_has_predecessor {
+    if !value_match && !exit_has_predecessor {
         builder.add_new_instruction(
             LMIRInstructionKind::Jump {
                 target: exit_block_id.clone(),
@@ -437,7 +519,17 @@ pub fn lower_match(
 
     builder.pop_scope()?;
 
-    Ok(LMIRValue::NULL)
+    if value_match && !result_predecessors.is_empty() {
+        builder.add_new_instruction(
+            LMIRInstructionKind::Phi {
+                predecessors: result_predecessors,
+            },
+            result_lmir_type,
+            true,
+        )
+    } else {
+        Ok(LMIRValue::NULL)
+    }
 }
 
 /// Lower a return statement
@@ -497,6 +589,7 @@ pub fn lower_return(
 fn is_fall_through(expr: &MIRExpression) -> bool {
     match &expr.kind {
         MIRExpressionKind::Return { .. }
+        | MIRExpressionKind::Yield { .. }
         | MIRExpressionKind::Break { .. }
         | MIRExpressionKind::Continue { .. } => false,
         MIRExpressionKind::Unsafe { expression, .. } => is_fall_through(expression),

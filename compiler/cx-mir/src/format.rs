@@ -1130,6 +1130,23 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 Ok(())
             }
+            MIRExpressionKind::Yield {
+                value,
+                target_scope,
+            } => {
+                write!(f, "Yield -> scope {} <'", target_scope)?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, ">")?;
+                if let Some(value) = value {
+                    MIRExpressionFormatter {
+                        expr: value,
+                        depth: self.depth + 1,
+                        definitions: self.definitions,
+                    }
+                    .fmt(f)?;
+                }
+                Ok(())
+            }
             MIRExpressionKind::Block { statements } => {
                 write!(f, "Block {{ <'")?;
                 self.write_type(f, &self.expr._type)?;

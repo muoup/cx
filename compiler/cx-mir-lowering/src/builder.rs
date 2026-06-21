@@ -23,6 +23,7 @@ pub struct LMIRBuilder {
 
     symbol_table: ScopedMap<String, LMIRValue>,
     goto_stack: Vec<LMIRGotoContext>,
+    yield_stack: Vec<LMIRYieldContext>,
     function_context: Option<LMIRFunctionContext>,
 }
 
@@ -30,6 +31,13 @@ pub struct LMIRBuilder {
 pub struct LMIRGotoContext {
     pub break_block: Option<CXIdent>,
     pub continue_block: Option<CXIdent>,
+}
+
+#[derive(Debug)]
+pub struct LMIRYieldContext {
+    pub target_block: CXIdent,
+    pub result_type: LMIRType,
+    pub yields: Vec<(LMIRValue, CXIdent)>,
 }
 
 #[derive(Debug)]
@@ -53,6 +61,7 @@ impl LMIRBuilder {
             fn_map: HashMap::new(),
             symbol_table: ScopedMap::new_with_starting_scope(),
             goto_stack: Vec::new(),
+            yield_stack: Vec::new(),
             function_context: None,
         }
     }
@@ -171,6 +180,33 @@ impl LMIRBuilder {
             .iter()
             .rev()
             .find_map(|ctx| ctx.break_block.as_ref())
+    }
+
+    pub fn push_yield_target(&mut self, target_block: CXIdent, result_type: LMIRType) {
+        self.yield_stack.push(LMIRYieldContext {
+            target_block,
+            result_type,
+            yields: Vec::new(),
+        });
+    }
+
+    pub fn pop_yield_target(&mut self) -> LMIRYieldContext {
+        self.yield_stack
+            .pop()
+            .expect("Yield target stack has uneven push/pop")
+    }
+
+    pub fn current_yield_target(&self) -> Option<&LMIRYieldContext> {
+        self.yield_stack.last()
+    }
+
+    pub fn record_yield(&mut self, value: LMIRValue) {
+        let block = self.current_block();
+        self.yield_stack
+            .last_mut()
+            .expect("Yield lowered outside of an active yield target")
+            .yields
+            .push((value, block));
     }
 
     pub fn move_block_to_end(&mut self, block_id: &CXIdent) {

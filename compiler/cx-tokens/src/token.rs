@@ -308,6 +308,10 @@ pub enum KeywordType {
     Template,
     Class,
     Match,
+    Yield,
+    Comptime,
+    Expr,
+    Emit,
     Where,
     Safe,
 
@@ -421,6 +425,10 @@ impl TokenKind {
             "class" => TokenKind::Keyword(KeywordType::Class),
 
             "match" => TokenKind::Keyword(KeywordType::Match),
+            "yield" => TokenKind::Keyword(KeywordType::Yield),
+            "comptime" => TokenKind::Keyword(KeywordType::Comptime),
+            "expr" => TokenKind::Keyword(KeywordType::Expr),
+            "emit" => TokenKind::Keyword(KeywordType::Emit),
             "is" => TokenKind::Operator(OperatorType::Is),
 
             "safe" => TokenKind::Keyword(KeywordType::Safe),

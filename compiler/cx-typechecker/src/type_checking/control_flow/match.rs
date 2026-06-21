@@ -31,6 +31,7 @@ pub fn typecheck_match(
     condition: &CXExpression,
     arms: &[(CXPattern, CXExpression)],
     default: Option<&CXExpression>,
+    expected_type: Option<&MIRType>,
 ) -> CXResult<TypecheckResult> {
     let mut expr_value = typecheck_expr(env, namespace, condition, None)
         .and_then(|v| v.standard_ready_coerce(env, condition.token_range()))
@@ -44,6 +45,9 @@ pub fn typecheck_match(
     let join_scope_idx = env.function.current_scope_index();
     let base_snapshot = env.function.current_snapshot();
     let mut condition_owned = false;
+    let mut arm_flows = Vec::new();
+    env.function
+        .push_yield_context(join_scope_idx, expected_type.cloned());
 
     match &expr_type.kind {
         MIRTypeKind::MemoryReference { inner_type, .. }
@@ -75,9 +79,8 @@ pub fn typecheck_match(
                     );
                 };
 
-                let body_expr = typecheck_expr(env, namespace, body, None)
-                    .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
-                if expr_may_fall_through(&body_expr) {
+                let (body_expr, flow) = typecheck_match_arm_body(env, namespace, body, "arm")?;
+                if flow.may_fall_through {
                     env.function.enqueue_scope_arrow(
                         &ScopeExitTarget {
                             target_scope: join_scope_idx,
@@ -88,6 +91,7 @@ pub fn typecheck_match(
                     );
                 }
                 env.function.restore_snapshot(&base_snapshot);
+                arm_flows.push(flow);
 
                 result_arms.push((MIRPattern::Integer(*pattern_value), Box::new(body_expr)));
             }
@@ -163,7 +167,7 @@ pub fn typecheck_match(
                 };
 
                 let body_expr = if let Some(inner_name) = &inner_name {
-                    let body_expr = if condition_owned {
+                    let (body_expr, flow) = if condition_owned {
                         let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
                         let variant_region = MIRExpression {
                             token_range: TokenRange::internal(),
@@ -201,18 +205,21 @@ pub fn typecheck_match(
                         env.function
                             .track_binding(inner_name.as_string(), variant_type.is_nodrop());
 
-                        let body_expr = typecheck_expr(env, namespace, body, None)
-                            .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
+                        let (body_expr, flow) =
+                            typecheck_match_arm_body(env, namespace, body, "arm")?;
                         env.pop_scope()
                             .map_err(|err| env.complete_err(err, body.token_range()))?;
 
-                        MIRExpression {
-                            token_range: TokenRange::internal(),
-                            _type: MIRType::unit(),
-                            kind: MIRExpressionKind::Block {
-                                statements: vec![bind_region, body_expr],
+                        (
+                            MIRExpression {
+                                token_range: TokenRange::internal(),
+                                _type: MIRType::unit(),
+                                kind: MIRExpressionKind::Block {
+                                    statements: vec![bind_region, body_expr],
+                                },
                             },
-                        }
+                            flow,
+                        )
                     } else {
                         // Typecheck the body with the borrowed variant value bound.
                         env.push_scope(false, false);
@@ -220,13 +227,13 @@ pub fn typecheck_match(
                             QualifiedName::new_raw(inner_name.clone()),
                             variant_value_expr,
                         );
-                        let body_expr = typecheck_expr(env, namespace, body, None)
-                            .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
+                        let (body_expr, flow) =
+                            typecheck_match_arm_body(env, namespace, body, "arm")?;
                         env.pop_scope()
                             .map_err(|err| env.complete_err(err, body.token_range()))?;
-                        body_expr
+                        (body_expr, flow)
                     };
-                    if expr_may_fall_through(&body_expr) {
+                    if flow.may_fall_through {
                         env.function.enqueue_scope_arrow(
                             &ScopeExitTarget {
                                 target_scope: join_scope_idx,
@@ -237,11 +244,11 @@ pub fn typecheck_match(
                         );
                     }
                     env.function.restore_snapshot(&base_snapshot);
+                    arm_flows.push(flow);
                     body_expr
                 } else {
-                    let body_expr = typecheck_expr(env, namespace, body, None)
-                        .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
-                    if expr_may_fall_through(&body_expr) {
+                    let (body_expr, flow) = typecheck_match_arm_body(env, namespace, body, "arm")?;
+                    if flow.may_fall_through {
                         env.function.enqueue_scope_arrow(
                             &ScopeExitTarget {
                                 target_scope: join_scope_idx,
@@ -251,6 +258,7 @@ pub fn typecheck_match(
                             env.function.current_snapshot(),
                         );
                     }
+                    arm_flows.push(flow);
                     body_expr
                 };
 
@@ -282,9 +290,8 @@ pub fn typecheck_match(
     // Handle default case
     let default_body = match default {
         Some(default_expr) => {
-            let body = typecheck_expr(env, namespace, default_expr, None)
-                .and_then(|v| v.standard_ready_coerce(env, default_expr.token_range()))?;
-            if expr_may_fall_through(&body) {
+            let (body, flow) = typecheck_match_arm_body(env, namespace, default_expr, "default")?;
+            if flow.may_fall_through {
                 env.function.enqueue_scope_arrow(
                     &ScopeExitTarget {
                         target_scope: join_scope_idx,
@@ -295,6 +302,7 @@ pub fn typecheck_match(
                 );
             }
             env.function.restore_snapshot(&base_snapshot);
+            arm_flows.push(flow);
             Some(Box::new(body))
         }
         None => None,
@@ -311,17 +319,73 @@ pub fn typecheck_match(
         );
     }
 
+    let yield_context = env.function.pop_yield_context();
+    let result_type = yield_context.result_type.unwrap_or_else(MIRType::unit);
+    if !result_type.is_unit() {
+        for flow in &arm_flows {
+            if flow.may_fall_through {
+                return env.log_error(
+                    &flow.range,
+                    format!(
+                        "Value-producing match {label} may fall through without yielding a value",
+                        label = flow.label
+                    ),
+                );
+            }
+        }
+
+        if default.is_none() && !match_is_exhaustive {
+            return env.log_error(
+                condition.token_range(),
+                format!("Value-producing match must be exhaustive or provide a default arm"),
+            );
+        }
+    }
+
     env.pop_scope()
         .map_err(|err| env.complete_err(err, condition.token_range()))?;
 
     // Build the match expression
     Ok(TypecheckResult::new(
-        MIRType::unit(),
+        result_type,
         MIRExpressionKind::Match {
             condition: Box::new(expr_value),
             arms: match_arms,
             default: default_body,
             exhaustive: match_is_exhaustive || default.is_some(),
+        },
+    ))
+}
+
+struct MatchArmFlow {
+    range: TokenRange,
+    label: &'static str,
+    may_fall_through: bool,
+    #[allow(dead_code)]
+    yield_count: usize,
+}
+
+fn typecheck_match_arm_body(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    body: &CXExpression,
+    label: &'static str,
+) -> CXResult<(MIRExpression, MatchArmFlow)> {
+    let yield_count_before = env.function.current_yield_count();
+    let body_expr = typecheck_expr(env, namespace, body, None)
+        .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
+    let yield_count = env
+        .function
+        .current_yield_count()
+        .saturating_sub(yield_count_before);
+
+    Ok((
+        body_expr.clone(),
+        MatchArmFlow {
+            range: body.token_range().clone(),
+            label,
+            may_fall_through: expr_may_fall_through(&body_expr),
+            yield_count,
         },
     ))
 }

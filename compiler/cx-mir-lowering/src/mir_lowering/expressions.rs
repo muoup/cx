@@ -718,6 +718,27 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             }
         }
 
+        MIRExpressionKind::Yield { value, .. } => {
+            let Some(target) = builder.current_yield_target() else {
+                panic!("Yield expression lowered outside of an active yield target");
+            };
+            let target_block = target.target_block.clone();
+            let value = value
+                .as_ref()
+                .map(|value| lower_expression(builder, value))
+                .transpose()?
+                .unwrap_or(LMIRValue::NULL);
+
+            builder.record_yield(value);
+            builder.add_new_instruction(
+                LMIRInstructionKind::Jump {
+                    target: target_block,
+                },
+                LMIRType::unit(),
+                false,
+            )
+        }
+
         MIRExpressionKind::Block { statements } => {
             for statement in statements {
                 lower_expression(builder, statement)?;
@@ -924,7 +945,14 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             arms,
             default,
             exhaustive,
-        } => lower_match(builder, condition, arms, default.as_deref(), *exhaustive),
+        } => lower_match(
+            builder,
+            condition,
+            arms,
+            default.as_deref(),
+            *exhaustive,
+            &expr._type,
+        ),
     }
 }
 

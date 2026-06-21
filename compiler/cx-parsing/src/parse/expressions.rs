@@ -4,7 +4,7 @@ use cx_ast::ast::expression::{CXExprKind, CXExpression, CXInitIndex, CXUnpackBin
 use cx_ast::ast::pattern::CXPattern;
 use cx_log::CXResult;
 use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
-use cx_tokens::{identifier, operator, punctuator};
+use cx_tokens::{identifier, keyword, operator, punctuator};
 use cx_util::namespace::QualifiedName;
 use cx_util::unsafe_float::FloatWrapper;
 
@@ -507,6 +507,65 @@ pub(crate) fn parse_keyword_expr(
             };
 
             Ok(CXExprKind::Return { value })
+        }
+
+        KeywordType::Yield => {
+            let value = if try_next!(data.tokens, punctuator!(Semicolon)) {
+                data.tokens.back();
+
+                None
+            } else {
+                Some(Box::new(parse_expr(data)?))
+            };
+
+            Ok(CXExprKind::Yield { value })
+        }
+
+        KeywordType::Match => {
+            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+            let expr = parse_expr(data)?;
+            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+            assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
+
+            let mut arms = Vec::new();
+            let mut default_arm = None;
+
+            data.change_comma_mode(false);
+
+            while !try_next!(data.tokens, punctuator!(CloseBrace)) {
+                if try_next!(data.tokens, keyword!(Default)) {
+                    assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
+                    if default_arm.is_some() {
+                        return data
+                            .log_error(format!("Multiple default cases in match expression"));
+                    }
+                    default_arm = Some(Box::new(parse_body(data)?));
+                    continue;
+                }
+
+                let value = parse_pattern(data)?;
+                assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
+                let body = parse_body(data)?;
+                arms.push((value, body));
+            }
+
+            data.pop_comma_mode();
+
+            Ok(CXExprKind::Match {
+                condition: Box::new(expr),
+                arms,
+                default: default_arm,
+            })
+        }
+
+        KeywordType::Comptime => {
+            data.log_error(format!("'comptime' is reserved but is not implemented yet"))
+        }
+        KeywordType::Expr => {
+            data.log_error(format!("'expr' is reserved but is not implemented yet"))
+        }
+        KeywordType::Emit => {
+            data.log_error(format!("'emit' is reserved but is not implemented yet"))
         }
 
         _ => {

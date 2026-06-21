@@ -8,10 +8,12 @@ use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 pub(crate) mod r#match;
 pub(crate) mod r#return;
 pub(crate) mod switch;
+pub(crate) mod r#yield;
 
 pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
     match &expr.kind {
         MIRExpressionKind::Return { .. }
+        | MIRExpressionKind::Yield { .. }
         | MIRExpressionKind::Break { .. }
         | MIRExpressionKind::Continue { .. } => false,
         MIRExpressionKind::Unsafe { expression, .. } => expr_may_fall_through(expression),

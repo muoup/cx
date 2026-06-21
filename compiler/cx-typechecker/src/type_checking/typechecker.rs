@@ -4,6 +4,7 @@ use crate::environment::{LoopScopeKind, ScopeArrowSink, ScopeExitTarget, TypeEnv
 use crate::type_checking::aggregate::initialization::typecheck_initializer_list;
 use crate::type_checking::coercion::implicit::{implicit_cast, promotion::std_rval_promotion};
 use crate::type_checking::control_flow::r#return::typecheck_return;
+use crate::type_checking::control_flow::r#yield::typecheck_yield;
 use crate::type_checking::control_flow::{
     enqueue_jump_arrow, expr_may_fall_through, process_for_increment_arrows,
     typecheck_fallthrough_scope,
@@ -338,6 +339,13 @@ fn typecheck_expr_inner(
             typecheck_return(env, namespace, expr.token_range(), value)?
         }
 
+        CXExprKind::Yield { value } => typecheck_yield(
+            env,
+            namespace,
+            expr.token_range(),
+            value.as_ref().map(Box::as_ref),
+        )?,
+
         CXExprKind::Unsafe { expr: inner } => {
             typecheck_unsafe(env, namespace, inner, expected_type)?
         }
@@ -430,6 +438,7 @@ fn typecheck_expr_inner(
             condition,
             arms,
             default.as_ref().map(Box::as_ref),
+            expected_type,
         )?,
 
         CXExprKind::Taken => unreachable!("Taken expressions should not be typechecked"),
