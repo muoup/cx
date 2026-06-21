@@ -37,12 +37,12 @@ pub enum MIRMoveSemantics {
 }
 
 impl MIRMoveSemantics {
-    pub fn is_nocopy(&self) -> bool {
-        matches!(self, MIRMoveSemantics::Nocopy)
+    pub fn is_nodrop(&self) -> bool {
+        matches!(self, MIRMoveSemantics::Nodrop)
     }
 
-    pub fn is_nodrop(&self) -> bool {
-        self.is_nocopy() || matches!(self, MIRMoveSemantics::Nodrop)
+    pub fn is_nocopy(&self) -> bool {
+        self.is_nodrop() || matches!(self, MIRMoveSemantics::Nocopy)
     }
 }
 
