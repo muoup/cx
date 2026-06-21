@@ -2,13 +2,13 @@ use crate::inst_calling::prepare_function_sig;
 use crate::FunctionState;
 use cranelift_module::{FuncId, Linkage, Module};
 use cx_lmir::{LMIRFunctionSignature, LinkageType};
-use cx_log::CXResult;
+use cx_log::CXRawResult;
 
 pub fn get_function(
     context: &mut FunctionState,
     name: &str,
     signature: &LMIRFunctionSignature,
-) -> CXResult<FuncId> {
+) -> CXRawResult<FuncId> {
     if let Some(func_id) = context.function_ids.get(name) {
         return Ok(*func_id);
     }

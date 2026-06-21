@@ -47,7 +47,7 @@ impl LexingContext {
     ) -> CXResult<Self> {
         let builtin_path = PathBuf::from(cx_library_directory("libc/internal/__builtins.h"));
         let builtin_source = std::fs::read_to_string(&builtin_path).map_err(|e| {
-            CXUnspannedError::err(
+            CXStdErrorMsg::error(
                 "LEXER ERROR",
                 format!(
                     "Failed to read internal builtin header {}: {}",

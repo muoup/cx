@@ -70,7 +70,7 @@ pub(crate) fn handle_include(
     }
 
     let source = std::fs::read_to_string(path.as_path()).map_err(|e| {
-        CXUnspannedError::err(
+        CXStdErrorMsg::error(
             "LEXER ERROR",
             format!("Failed to read included file {}: {}", path.display(), e),
         )

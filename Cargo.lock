@@ -359,6 +359,9 @@ dependencies = [
 [[package]]
 name = "cx-log"
 version = "0.0.0"
+dependencies = [
+ "cx-tokens",
+]
 
 [[package]]
 name = "cx-lsp"

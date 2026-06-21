@@ -317,8 +317,7 @@ fn complete_identifier_type(
                 namespace,
                 name,
                 symbol,
-                template_input,
-                range,
+                template_input
             );
         }
         SymbolLookupKind::Untyped(symbol) => symbol,
@@ -388,8 +387,7 @@ fn complete_resolved_type_lookup(
     name: &QualifiedName,
     symbol: MIRSymbol,
     template_input: &Option<CXTemplateInput>,
-    range: &TokenRange,
-) -> CXResult<MIRTypeId> {
+) -> CXMaybeRawResult<MIRTypeId> {
     match symbol {
         MIRSymbol::Type(id) => {
             if template_input.is_some() {
@@ -403,8 +401,9 @@ fn complete_resolved_type_lookup(
             }
         }
         MIRSymbol::Template { .. } => {
-            complete_template_type_lookup(env, namespace, name, &symbol, template_input, range)
+            complete_template_type_lookup(env, namespace, name, &symbol, template_input)
         }
+        
         _ => log_typecheck_error!(env, range, "Symbol '{name}' is not a type"),
     }
 }

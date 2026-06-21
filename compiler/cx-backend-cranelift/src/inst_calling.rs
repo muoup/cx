@@ -6,12 +6,12 @@ use cranelift::prelude::{Signature, Value};
 use cranelift_module::{FuncId, Module};
 use cranelift_object::ObjectModule;
 use cx_lmir::{LMIRFunctionSignature, LMIRParameterABI, LMIRReturnABI, LMIRValue};
-use cx_log::CXResult;
+use cx_log::CXRawResult;
 
 pub(crate) fn prepare_function_sig(
     object_module: &mut ObjectModule,
     signature: &LMIRFunctionSignature,
-) -> CXResult<Signature> {
+) -> CXRawResult<Signature> {
     let mut sig = Signature::new(object_module.target_config().default_call_conv);
 
     match &signature.return_abi {
@@ -51,7 +51,7 @@ pub(crate) fn prepare_method_call<'a>(
     context: &'a mut FunctionState,
     func: &LMIRValue,
     args: &'a [LMIRValue],
-) -> CXResult<(CodegenValue, Vec<Value>)> {
+) -> CXRawResult<(CodegenValue, Vec<Value>)> {
     let val = context.get_value(func)?;
     let params = prepare_parameters(context, args)?;
 
@@ -61,7 +61,7 @@ pub(crate) fn prepare_method_call<'a>(
 pub(crate) fn prepare_parameters<'a>(
     context: &'a mut FunctionState,
     args: &'a [LMIRValue],
-) -> CXResult<Vec<Value>> {
+) -> CXRawResult<Vec<Value>> {
     let mut params = Vec::new();
     for arg in args {
         match context.get_value(arg)? {
@@ -99,7 +99,7 @@ pub(crate) fn get_func_ref(
     func_id: FuncId,
     signature: &LMIRFunctionSignature,
     args: &[Value],
-) -> CXResult<FuncRef> {
+) -> CXRawResult<FuncRef> {
     if !signature.var_args || args.len() == signature.expanded_param_count() {
         return Ok(context
             .object_module

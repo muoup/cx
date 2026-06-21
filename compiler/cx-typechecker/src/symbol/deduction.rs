@@ -32,7 +32,7 @@ pub(crate) fn complete_templated_callee(
     template_input: Option<&CXTemplateInput>,
     arg_types: &[MIRType],
 ) -> CXResult<MIRSymbol> {
-    let Some(symbol) = env.get_symbol(namespace, name, None)? else {
+    let Some(symbol) = env.get_symbol(namespace, name)? else {
         return CXUnspannedError::result(
             "TYPE ERROR",
             format!("Templated function '{}' not found", name),
@@ -42,7 +42,7 @@ pub(crate) fn complete_templated_callee(
     if let Some(input) = template_input {
         let completed_input = complete_template_input(env, namespace, input)?;
         return apply_template(env, &symbol, completed_input)?.ok_or_else(|| {
-            CXUnspannedError::err(
+            CXStdErrorMsg::error(
                 "TYPE ERROR",
                 format!("Symbol '{}' does not accept template arguments", name),
             )
@@ -50,7 +50,7 @@ pub(crate) fn complete_templated_callee(
     }
 
     deduce_template_symbol(env, namespace, &symbol, arg_types)?.ok_or_else(|| {
-        CXUnspannedError::err("TYPE ERROR", format!("Symbol '{}' is not a template", name))
+        CXStdErrorMsg::error("TYPE ERROR", format!("Symbol '{}' is not a template", name))
     })
 }
 
@@ -117,7 +117,7 @@ fn deduce_template_input(
         .iter()
         .map(|name| {
             let ty = bindings.remove(name.as_str()).ok_or_else(|| {
-                CXUnspannedError::err(
+                CXStdErrorMsg::error(
                     "TYPE ERROR",
                     format!(
                         "Could not deduce template argument '{}' for function {}",

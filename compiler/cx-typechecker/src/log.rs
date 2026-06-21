@@ -116,7 +116,7 @@ macro_rules! log_typecheck_error {
         {
             use $crate::typecheck_error;
 
-            Err(typecheck_error!($env, $range, notes: $notes, $($arg)*))
+            Err(typecheck_error!($env, $range, notes: $notes, $($arg)*).into())
         }
     };
 
@@ -124,7 +124,7 @@ macro_rules! log_typecheck_error {
         {
             use $crate::typecheck_error;
 
-            Err(typecheck_error!($env, $range, $($arg)*))
+            Err(typecheck_error!($env, $range, $($arg)*).into())
         }
     };
 }

@@ -10,7 +10,10 @@ use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
 use cx_lmir::{LMIRABISlot, LMIRFunctionSignature};
 use cx_lmir::{LMIRBlockID, LMIRRegister, LMIRUnit, LMIRValue};
-use cx_log::{CXResult, CXUnspannedError};
+use cx_log::error::context::CXInternalContext;
+use cx_log::error::message::{CXErrorMessage, CXStdErrMessage};
+use cx_log::error::CXErr;
+use cx_log::{CXRawResult, CXResult};
 use cx_util::identifier::CXIdent;
 use std::collections::HashMap;
 
@@ -86,7 +89,7 @@ impl FunctionState<'_> {
         self.block_map.get(id).cloned().unwrap()
     }
 
-    pub(crate) fn get_value(&mut self, bc_value: &LMIRValue) -> CXResult<CodegenValue> {
+    pub(crate) fn get_value(&mut self, bc_value: &LMIRValue) -> CXRawResult<CodegenValue> {
         match bc_value {
             LMIRValue::NULL => Ok(CodegenValue::Null),
 
@@ -94,10 +97,7 @@ impl FunctionState<'_> {
 
             LMIRValue::FunctionRef(name) => {
                 let (_func_id, func_ref) = self.get_function(name.as_str()).ok_or_else(|| {
-                    CXUnspannedError::err(
-                        "CODEGEN ERROR",
-                        format!("Function not found: {}", name),
-                    )
+                    CXStdErrMessage::error("CODEGEN ERROR", format!("Function not found: {}", name))
                 })?;
                 let as_value = self.builder.ins().func_addr(self.pointer_type, func_ref);
 
@@ -107,6 +107,7 @@ impl FunctionState<'_> {
             LMIRValue::IntImmediate { val, _type } => {
                 let int_type = get_cranelift_type(&LMIRTypeKind::Integer(*_type).into());
                 let value = self.builder.ins().iconst(int_type?, *val);
+
                 Ok(CodegenValue::Value(value))
             }
 
@@ -130,7 +131,7 @@ impl FunctionState<'_> {
 
             LMIRValue::Global(id) => {
                 let Some(data_id) = self.global_ids.get(*id as usize).cloned() else {
-                    return CXUnspannedError::result(
+                    return CXStdErrMessage::result(
                         "CODEGEN ERROR",
                         format!("Global not found: g{id}"),
                     );
@@ -150,7 +151,7 @@ impl FunctionState<'_> {
 
             LMIRValue::Register { register, _type } => {
                 let Some(var) = self.variable_table.get(register).cloned() else {
-                    return CXUnspannedError::result(
+                    return CXStdErrMessage::result(
                         "CODEGEN ERROR",
                         format!("Variable not found in variable table: {:?}", bc_value),
                     );
@@ -193,7 +194,15 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
     }
 
     for fn_prototype in bc.fn_map.values() {
-        codegen_fn_prototype(&mut global_state, fn_prototype)?;
+        codegen_fn_prototype(&mut global_state, fn_prototype).map_err(|e| {
+            CXErr::new(
+                e,
+                CXInternalContext::error(format!(
+                    "Failed to codegen function prototype: {}",
+                    fn_prototype.name
+                )),
+            )
+        })?;
     }
 
     for func in bc.fn_defs.iter() {
@@ -202,7 +211,7 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
             .get(func.prototype.name.as_str())
             .cloned()
         else {
-            return CXUnspannedError::result(
+            return CXStdErrMessage::result(
                 "CODEGEN ERROR",
                 format!(
                     "Function not found in function map: {}",
@@ -221,7 +230,9 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
         codegen_function(&mut global_state, func_id, func_sig, func)?;
     }
 
-    global_state.object_module.finish().emit().map_err(|e| {
-        CXUnspannedError::err("CODEGEN ERROR", format!("Failed to emit object file: {e}"))
+    global_state.object_module.finish().emit().map_err(|err| {
+        CXErr::new(
+            CXInternalContext::error(format!("Failed to emit object file: {e}")),
+        )
     })
 }

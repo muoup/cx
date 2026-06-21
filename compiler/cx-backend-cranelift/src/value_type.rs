@@ -1,12 +1,12 @@
 use cranelift::codegen::ir;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
-use cx_log::{CXResult, CXUnspannedError};
+use cx_log::{CXRawResult, error::message::CXStdErrMessage};
 
-pub(crate) fn get_cranelift_abi_type(val_type: &LMIRType) -> CXResult<ir::AbiParam> {
+pub(crate) fn get_cranelift_abi_type(val_type: &LMIRType) -> CXRawResult<ir::AbiParam> {
     get_cranelift_type(val_type).map(ir::AbiParam::new)
 }
 
-pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> CXResult<ir::Type> {
+pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> CXRawResult<ir::Type> {
     Ok(match &val_type.kind {
         LMIRTypeKind::Integer(LMIRIntegerType::I1) => ir::types::I8,
         LMIRTypeKind::Integer(LMIRIntegerType::I8) => ir::types::I8,
@@ -20,8 +20,9 @@ pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> CXResult<ir::Type> {
         LMIRTypeKind::Float(LMIRFloatType::F64) => ir::types::F64,
         LMIRTypeKind::Vector { element, count } => {
             let element = get_cranelift_type(&LMIRTypeKind::Float(*element).into())?;
+            
             element.by(*count as u32).ok_or_else(|| {
-                CXUnspannedError::err(
+                CXStdErrMessage::error(
                     "CODEGEN ERROR",
                     format!("Unsupported vector type for codegen: {element} x {count}"),
                 )
@@ -40,7 +41,7 @@ pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> CXResult<ir::Type> {
         // handling arrays, as anywhere where the type is used (i.e. in stack allocations)
         // will implicitly use the size which can be derived from the bc type.
         _ => {
-            return CXUnspannedError::result(
+            return CXStdErrMessage::result(
                 "CODEGEN ERROR",
                 format!("Unsupported type for codegen: {val_type:?}"),
             );

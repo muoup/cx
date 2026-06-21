@@ -3,13 +3,12 @@ use cx_lmir::{LMIRFunctionPrototype, LMIRUnit, LinkageType};
 use cx_pipeline_data::config::LinkEntry;
 use cx_util::identifier::CXIdent;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write;
 
 pub fn generate_header(
     _lib_name: &str,
     lmir_unit: &LMIRUnit,
     link_entries: &[LinkEntry],
-) -> Result<String, std::fmt::Error> {
+) -> std::io::Result<String> {
     let mut output = String::new();
 
     writeln!(output, "#pragma once")?;

@@ -36,7 +36,7 @@ pub(crate) fn link_relocatable(
     }
 
     let output = cmd.output().map_err(|e| {
-        CXUnspannedError::err("LINK ERROR", format!("Failed to execute linker: {}", e))
+        CXStdErrorMsg::error("LINK ERROR", format!("Failed to execute linker: {}", e))
     })?;
 
     if output.status.success() {
@@ -102,7 +102,7 @@ pub(crate) fn link(
     }
 
     let output = cmd.output().map_err(|e| {
-        CXUnspannedError::err("LINK ERROR", format!("Failed to execute linker: {}", e))
+        CXStdErrorMsg::error("LINK ERROR", format!("Failed to execute linker: {}", e))
     })?;
 
     if output.status.success() {

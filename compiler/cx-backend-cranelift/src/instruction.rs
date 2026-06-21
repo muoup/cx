@@ -16,6 +16,7 @@ use cx_lmir::{
     LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRReturnABI,
 };
 use cx_log::CXResult;
+use cx_log::error::CXRawResult;
 use std::ops::IndexMut;
 
 fn load_return_slots(
@@ -41,7 +42,7 @@ fn load_return_slots(
 pub(crate) fn codegen_instruction(
     context: &mut FunctionState,
     instruction: &LMIRInstruction,
-) -> CXResult<CodegenValue> {
+) -> CXRawResult<CodegenValue> {
     Ok(match &instruction.kind {
         LMIRInstructionKind::Alias { value } => context.get_value(value)?,
 
