@@ -15,14 +15,13 @@ use cx_lmir::{
     LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind,
     LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRReturnABI,
 };
-use cx_log::CXResult;
 use cx_log::error::CXRawResult;
 use std::ops::IndexMut;
 
 fn load_return_slots(
     context: &mut FunctionState,
     target: cranelift::prelude::Value,
-) -> CXResult<Vec<cranelift::prelude::Value>> {
+) -> CXRawResult<Vec<cranelift::prelude::Value>> {
     let LMIRReturnABI::Direct { slots } = &context.signature.return_abi else {
         return Ok(vec![target]);
     };

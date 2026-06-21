@@ -3,13 +3,13 @@ use cx_lmir::{LMIRFunctionPrototype, LMIRUnit, LinkageType};
 use cx_pipeline_data::config::LinkEntry;
 use cx_util::identifier::CXIdent;
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::Write;
 
 pub fn generate_header(
-    _lib_name: &str,
     lmir_unit: &LMIRUnit,
     link_entries: &[LinkEntry],
 ) -> std::io::Result<String> {
-    let mut output = String::new();
+    let mut output = Vec::new();
 
     writeln!(output, "#pragma once")?;
     writeln!(output)?;
@@ -77,7 +77,7 @@ pub fn generate_header(
     writeln!(output, "#endif")?;
     writeln!(output)?;
 
-    Ok(output)
+    Ok(String::from_utf8(output).unwrap())
 }
 
 fn collect_types(

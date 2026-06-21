@@ -3,7 +3,8 @@ use crate::{CompilationUnit, GlobalCompilationContext};
 use cx_ast::decomposition::CXGenerationAST;
 use cx_ast::registry::GlobalSymbolRegistry;
 use cx_lmir::LMIRUnit;
-use cx_log::DiagnosticSpan;
+use cx_log::error::CXErrContext;
+use cx_log::error::context::{CXInternalContext, CXUnderlineContext};
 use cx_mir::MIRUnit;
 use cx_preparse_data::PreparseContents;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
@@ -12,7 +13,6 @@ use cx_tokens::token::Token;
 use cx_util::namespace::EnvironmentNamespace;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 // TODO: For large codebases, this should eventually should support unloading infrequently used data
 // to save memory, but for now, this is not a priority.
@@ -93,15 +93,45 @@ impl ModuleData {
             .insert(unit.namespace().clone());
     }
 
-    pub fn convert_token_range(&self, range: &TokenRange) -> DiagnosticSpan {
+    pub fn convert_token_range(&self, range: &TokenRange) -> CXErrContext {
         match range {
-            TokenRange::Source { namespace, start_token, end_token } => {
-                let lock = self.lex_tokens.get(namespace);
+            TokenRange::Source {
+                namespace,
+                start_token,
+                end_token,
+            } => {
+                let lock = self.lex_tokens.lock();
 
-                
-                
-                todo!()
-            },
+                let Some(tokens) = lock.get(namespace) else {
+                    return CXInternalContext::error(format!(
+                        "failed to resolve diagnostic context: no tokens found for namespace {namespace}"
+                    ));
+                };
+
+                let Some(start) = tokens.get(*start_token) else {
+                    return CXInternalContext::error(format!(
+                        "failed to resolve diagnostic context: start token {start_token} not found in namespace {namespace}"
+                    ));
+                };
+
+                let Some(end) = tokens.get(*end_token) else {
+                    return CXInternalContext::error(format!(
+                        "failed to resolve diagnostic context: end token {end_token} not found in namespace {namespace}"
+                    ));
+                };
+
+                Box::new(CXUnderlineContext::new(
+                    start.file_origin.as_ref().to_path_buf(),
+                    start.byte_start_index,
+                    end.byte_end_index,
+                ))
+            }
+            TokenRange::Internal => {
+                CXInternalContext::error("diagnostic originated in compiler-generated code")
+            }
+            TokenRange::Error(range_error) => {
+                CXInternalContext::error(format!("failed to determine source range: {range_error}"))
+            }
         }
     }
 }

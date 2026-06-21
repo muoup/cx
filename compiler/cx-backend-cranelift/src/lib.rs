@@ -11,7 +11,7 @@ use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
 use cx_lmir::{LMIRABISlot, LMIRFunctionSignature};
 use cx_lmir::{LMIRBlockID, LMIRRegister, LMIRUnit, LMIRValue};
 use cx_log::error::context::CXInternalContext;
-use cx_log::error::message::{CXErrorMessage, CXStdErrMessage};
+use cx_log::error::message::CXStdErrMessage;
 use cx_log::error::CXErr;
 use cx_log::{CXRawResult, CXResult};
 use cx_util::identifier::CXIdent;
@@ -211,13 +211,16 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
             .get(func.prototype.name.as_str())
             .cloned()
         else {
-            return CXStdErrMessage::result(
-                "CODEGEN ERROR",
-                format!(
-                    "Function not found in function map: {}",
-                    func.prototype.name
+            return Err(CXErr::new(
+                CXStdErrMessage::error(
+                    "CODEGEN ERROR",
+                    format!(
+                        "Function not found in function map: {}",
+                        func.prototype.name
+                    ),
                 ),
-            );
+                CXInternalContext::error("Failed to look up function during codegen"),
+            ));
         };
 
         let func_sig = global_state
@@ -232,7 +235,11 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
 
     global_state.object_module.finish().emit().map_err(|err| {
         CXErr::new(
-            CXInternalContext::error(format!("Failed to emit object file: {e}")),
+            CXStdErrMessage::error(
+                "CODEGEN ERROR",
+                format!("Failed to emit object file: {err}"),
+            ),
+            CXInternalContext::error("Failed to finalize Cranelift object module"),
         )
     })
 }

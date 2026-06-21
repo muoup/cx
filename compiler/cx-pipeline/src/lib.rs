@@ -269,7 +269,7 @@ pub fn project_compilation(
 
                 // Generate .h header from LMIR
                 let Ok(header) =
-                    cx_c_header::generate_header(&library.name, &entry_lmir, &link_entries)
+                    cx_c_header::generate_header(&entry_lmir, &link_entries)
                 else {
                     eprintln!(
                         "Warning: Failed to generate header for library '{}': Header generation is best-effort and will not fail the build",
