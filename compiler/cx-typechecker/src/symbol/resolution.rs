@@ -7,7 +7,7 @@ use cx_ast::{
     },
     symbols::{CXSymbol, CXSymbolKind},
 };
-use cx_log::CXResult;
+use cx_log::{CXRawResult, CXResult};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
@@ -276,7 +276,7 @@ pub fn apply_template(
     env: &mut TypeEnvironment,
     symbol: &MIRSymbol,
     template_input: MIRTemplateInput,
-) -> CXResult<Option<MIRSymbol>> {
+) -> CXRawResult<Option<MIRSymbol>> {
     let MIRSymbol::Template {
         template_prototype: input,
         name,
@@ -288,7 +288,7 @@ pub fn apply_template(
     };
 
     if input.types.len() != template_input.args.len() {
-        return crate::log::internal_type_error(format!(
+        return env.log_error_base(format!(
             "Template '{}' expects {} arguments, found {}",
             name,
             input.types.len(),

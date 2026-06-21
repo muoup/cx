@@ -4,7 +4,7 @@ use cx_ast::ast::modifiers::VisibilityMode;
 use cx_ast::symbols::CXSymbol;
 use cx_log::{
     CXRawResult, CXResult,
-    error::{CXErr, CXErrMsg, context::CXInternalContext, message::CXStdErrMessage},
+    error::{CXErr, CXErrMsg, CXMaybeRawErr, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_mir::{
     EnvironmentNamespace, MIRUnit,
@@ -239,6 +239,13 @@ impl TypeEnvironment<'_> {
         crate::log::produce_(self.module_data, range.borrow(), message, Vec::new())
     }
 
+    pub(crate) fn log_error_base<T>(
+        &self,
+        message: impl Into<String>,
+    ) -> CXRawResult<T> {
+        CXStdErrMessage::result("TYPE ERROR", message.into())
+    }
+
     pub(crate) fn log_error<T>(
         &self,
         range: impl Borrow<TokenRange>,
@@ -249,6 +256,17 @@ impl TypeEnvironment<'_> {
 
     pub(crate) fn complete_err(&self, err: CXErrMsg, range: &TokenRange) -> CXErr {
         CXErr::new(err, self.module_data.convert_token_range(range))
+    }
+
+    pub(crate) fn complete_maybe_err(
+        &self,
+        err: CXMaybeRawErr,
+        range: &TokenRange,
+    ) -> CXErr {
+        match err {
+            CXMaybeRawErr::Complete(value) => value
+            CXMaybeRawErr::Raw(err) => self.complete_err(err, range),
+        }
     }
 
     pub(crate) fn complete_result<T>(

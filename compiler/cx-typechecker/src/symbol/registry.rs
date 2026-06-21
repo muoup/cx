@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use cx_ast::registry::GlobalSymbolRegistry;
-use cx_log::CXResult;
+use cx_log::{CXRawResult, CXResult};
 use cx_mir::{
     intrinsic_types::INTRINSIC_TYPES,
     mir::{
@@ -118,7 +118,7 @@ impl<'a> MIRSymbolRegistry<'a> {
         Ok(type_id)
     }
 
-    pub fn insert_local_type_id(&mut self, name: String, type_id: MIRTypeId) -> CXResult<()> {
+    pub fn insert_local_type_id(&mut self, name: String, type_id: MIRTypeId) -> CXRawResult<()> {
         self.local_symbols.insert(
             QualifiedName::new_raw(CXIdent::new(name)),
             MIRSymbol::Type(type_id),

@@ -4,11 +4,15 @@ use cx_ast::ast::{
     function::{CXFunctionKind, CXFunctionPrototype},
     modifiers::{CXTypeQualifiers, VisibilityMode},
     template::CXTemplateInput,
-    types::{CXAggregateAttributes, CXField, CXType, CXTypeKind, PredeclarationType},
+    types::{
+        CXAggregateAttributes, CXField, CXMoveSemantics, CXType, CXTypeKind, PredeclarationType,
+    },
 };
 use cx_ast::symbols::CXSymbolKind;
-use cx_log::{CXRawResult, CXResult, error::CXMaybeRawResult};
-use cx_tokens::TokenRange;
+use cx_log::{
+    CXRawResult, CXResult,
+    error::{CXMaybeRawErr, CXMaybeRawResult},
+};
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use cx_mir::{
@@ -18,7 +22,7 @@ use cx_mir::{
             MIRTemplateInput,
         },
         name_mangling::{mangle_namespace_symbol, mangle_qualified_name},
-        r#type::{MIRField, MIRType, MIRTypeId, MIRTypeKind},
+        r#type::{MIRField, MIRMoveSemantics, MIRType, MIRTypeId, MIRTypeKind},
     },
     symbol::MIRSymbol,
     type_context::MIRTypeContext,
@@ -36,12 +40,12 @@ pub fn complete_template_input(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     input: &CXTemplateInput,
-) -> CXRawResult<MIRTemplateInput> {
+) -> CXResult<MIRTemplateInput> {
     let args = input
         .params
         .iter()
         .map(|param| complete_type_id(env, namespace, param))
-        .collect::<CXRawResult<Vec<_>>>()?;
+        .collect::<CXResult<Vec<_>>>()?;
 
     Ok(MIRTemplateInput { args })
 }
@@ -52,7 +56,7 @@ pub fn complete_type(
     ty: &CXType,
 ) -> CXResult<MIRType> {
     let id = complete_type_id(env, namespace, ty)?;
-    
+
     let Some(completed) = env.symbols.try_resolve_type_id(id).cloned() else {
         return env.log_error(ty.range(), format!("Type '{}' is incomplete", ty));
     };
@@ -64,27 +68,23 @@ pub fn complete_type_id(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     ty: &CXType,
-) -> CXRawResult<MIRTypeId> {
+) -> CXResult<MIRTypeId> {
     match &ty.kind {
         CXTypeKind::Identifier {
             name,
             predeclaration,
             template_input,
         } => {
-            let id = complete_identifier_type(
-                env,
-                namespace,
-                name,
-                *predeclaration,
-                template_input,
-                ty.range(),
-            )?;
+            let id =
+                complete_identifier_type(env, namespace, name, *predeclaration, template_input)
+                    .map_err(|err| env.complete_maybe_err(err, ty.range()))?;
 
             Ok(apply_type_specifiers(env, id, ty.specifiers))
         }
 
         _ => {
             let completed = complete_type_value(env, namespace, ty)?;
+
             Ok(env.symbols.generate_type_id(completed))
         }
     }
@@ -101,14 +101,10 @@ fn complete_type_value(
             predeclaration,
             template_input,
         } => {
-            let id = complete_identifier_type(
-                env,
-                namespace,
-                name,
-                *predeclaration,
-                template_input,
-                ty.range(),
-            )?;
+            let id =
+                complete_identifier_type(env, namespace, name, *predeclaration, template_input)
+                    .map_err(|err| env.complete_maybe_err(err, ty.range()))?;
+
             let Some(completed) = env.symbols.try_resolve_type_id(id).cloned() else {
                 return env.log_error(ty.range(), format!("Type '{}' is incomplete", ty));
             };
@@ -296,7 +292,6 @@ fn complete_identifier_type(
     name: &QualifiedName,
     predeclaration: PredeclarationType,
     template_input: &Option<CXTemplateInput>,
-    range: &TokenRange,
 ) -> CXMaybeRawResult<MIRTypeId> {
     let Some(lookup) = env.lookup_symbol(namespace, name)? else {
         if predeclaration != PredeclarationType::None && name.namespace.is_root() {
@@ -306,10 +301,11 @@ fn complete_identifier_type(
         }
 
         return env
-            .log_error(range, format!("Type not found: {}", name))
-            .into();
+            .log_error_base(format!("Type not found: {}", name))
+            .map_err(|err| err.into());
     };
 
+    let resolved_name = lookup.resolved_name;
     let symbol = match lookup.kind {
         SymbolLookupKind::Resolved(symbol) => {
             return complete_resolved_type_lookup(env, namespace, name, symbol, template_input);
@@ -320,10 +316,9 @@ fn complete_identifier_type(
     match &symbol.kind {
         CXSymbolKind::Type(definition) => {
             if template_input.is_some() {
-                return env.log_error(
-                    range,
-                    format!("Type '{name}' does not accept template arguments"),
-                );
+                return env
+                    .log_error_base(format!("Type '{name}' does not accept template arguments"))
+                    .map_err(|err| err.into());
             }
 
             let dummy_type =
@@ -355,7 +350,7 @@ fn complete_identifier_type(
             )?;
 
             complete_template_type_lookup(env, namespace, name, &mir_symbol, template_input)
-                .map_err(|e| todo!())
+                .map_err(|e| e.into())
         }
 
         CXSymbolKind::DuplicateDefinition(_) => {
@@ -370,7 +365,9 @@ fn complete_identifier_type(
             complete_resolved_type_lookup(env, namespace, name, mir_symbol, template_input)
         }
 
-        _ => type_completion_error(env, range, format!("Symbol '{name}' is not a type")),
+        _ => env
+            .log_error_base(format!("Symbol '{name}' is not a type"))
+            .map_err(|err| err.into()),
     }
 }
 
@@ -384,19 +381,20 @@ fn complete_resolved_type_lookup(
     match symbol {
         MIRSymbol::Type(id) => {
             if template_input.is_some() {
-                env.log_error(
-                    range,
-                    format!("Type '{name}' does not accept template arguments"),
-                )
+                env.log_error_base(format!("Type '{name}' does not accept template arguments"))
+                    .map_err(|e| e.into())
             } else {
                 Ok(id)
             }
         }
         MIRSymbol::Template { .. } => {
             complete_template_type_lookup(env, namespace, name, &symbol, template_input)
+                .map_err(|e| e.into())
         }
 
-        _ => env.log_error(range, format!("Symbol '{name}' is not a type")),
+        _ => env
+            .log_error_base(format!("Symbol '{name}' is not a type"))
+            .map_err(|err| err.into()),
     }
 }
 
@@ -406,29 +404,29 @@ fn complete_template_type_lookup(
     name: &QualifiedName,
     mir_symbol: &MIRSymbol,
     template_input: &Option<CXTemplateInput>,
-) -> CXRawResult<MIRTypeId> {
+) -> CXMaybeRawResult<MIRTypeId> {
     let Some(input) = template_input else {
-        return Err(crate::log::type_error_msg(format!(
-            "Template type '{name}' requires explicit template arguments"
-        )));
+        return env
+            .log_error_base(format!("Type '{name}' requires template arguments"))
+            .map_err(|e| e.into());
     };
     let input = complete_template_input(env, namespace, input)?;
-    let Some(symbol) = apply_template(env, mir_symbol, input)? else {
-        return type_completion_error(
-            env,
-            &input.range(),
-            format!("Failed to apply template arguments to type '{name}'"),
-        );
+    let Some(symbol) = apply_template(env, mir_symbol, input).map_err(CXMaybeRawErr::from)? else {
+        return env
+            .log_error_base(format!("Failed to apply template arguments"))
+            .map_err(|e| e.into());
     };
 
     match symbol {
-        MIRSymbol::Type(id) => CXRawResult::Ok(id),
-        MIRSymbol::Template { .. } => type_completion_error(
-            env,
-            &input.range(),
-            format!("Template arguments did not resolve type '{name}' to a concrete type"),
-        ),
-        _ => type_completion_error(env, range, format!("Symbol '{name}' is not a type")),
+        MIRSymbol::Type(id) => Ok(id),
+        MIRSymbol::Template { .. } => env
+            .log_error_base(format!(
+                "Template arguments did not resolve type '{name}' to a concrete type"
+            ))
+            .map_err(|e| e.into()),
+        _ => env
+            .log_error_base(format!("Symbol '{name}' is not a type"))
+            .map_err(|err| err.into()),
     }
 }
 
@@ -448,9 +446,12 @@ where
         .iter()
         .map(|field| complete_field(env, namespace, field))
         .collect::<CXResult<Vec<_>>>()?;
-    ensure_aggregate_fields_complete(env, &fields)?;
-    let move_attributes = resolve_aggregate_move_attributes(env, namespace, attributes)?;
-    ensure_aggregate_move_restrictions(env, move_attributes, &fields)?;
+    ensure_aggregate_fields_complete(env, &fields)
+        .map_err(|err| env.complete_err(err, ty.range()))?;
+    let move_attributes = resolve_aggregate_move_attributes(env, namespace, attributes)
+        .map_err(|err| env.complete_maybe_err(err, ty.range()))?;
+    ensure_aggregate_move_restrictions(env, move_attributes, &fields)
+        .map_err(|err| env.complete_err(err, ty.range()))?;
 
     let (strong_identifier, lookup_identifier) = name
         .as_ref()
@@ -463,7 +464,8 @@ where
         .unwrap_or((None, None));
 
     if let Some(strong_identifier) = &strong_identifier {
-        ensure_aggregate_fields_not_recursive(env, &fields, strong_identifier)?;
+        ensure_aggregate_fields_not_recursive(env, &fields, strong_identifier)
+            .map_err(|err| env.complete_err(err, ty.range()))?;
     }
 
     Ok(MIRType {
@@ -481,32 +483,24 @@ fn ensure_aggregate_fields_not_recursive(
     env: &TypeEnvironment,
     fields: &[MIRField],
     aggregate_identifier: &str,
-) -> CXResult<()> {
+) -> CXRawResult<()> {
     for field in fields {
         let mut visited = HashSet::new();
         if type_contains_by_value(env, field.ty(), aggregate_identifier, &mut visited) {
             let name = field.name().unwrap_or("<anonymous>");
-            return type_completion_error(
-                env,
-                None,
-                format!("Aggregate field '{}' has recursive type", name),
-            );
+            return env.log_error_base(format!("Aggregate field '{}' has recursive type", name));
         }
     }
 
     Ok(())
 }
 
-fn ensure_aggregate_fields_complete(env: &TypeEnvironment, fields: &[MIRField]) -> CXResult<()> {
+fn ensure_aggregate_fields_complete(env: &TypeEnvironment, fields: &[MIRField]) -> CXRawResult<()> {
     for field in fields {
         let id = field.ty();
         if !env.symbols.contains(id) {
             let name = field.name().unwrap_or("<anonymous>");
-            return type_completion_error(
-                env,
-                None,
-                format!("Aggregate field '{}' has incomplete type", name),
-            );
+            return env.log_error_base(format!("Aggregate field '{}' has incomplete type", name));
         }
     }
 
@@ -517,30 +511,24 @@ fn ensure_aggregate_move_restrictions(
     env: &TypeEnvironment,
     aggregate_attributes: MIRAggregateAttributes,
     fields: &[MIRField],
-) -> CXResult<()> {
+) -> CXRawResult<()> {
     for field in fields {
         let field_type = env.symbols.resolve_type_id(field.ty());
         let field_attributes = owned_move_attributes(env, field_type);
         let name = field.name().unwrap_or("<anonymous>");
 
-        if field_attributes.nodrop && !aggregate_attributes.nodrop {
-            return env.log_error(
-                TokenRange::Internal,
-                format!(
-                    "Aggregate containing nodrop field '{}' must also be marked as @nodrop",
-                    name
-                ),
-            );
+        if field_attributes.semantics.is_nodrop() && !aggregate_attributes.semantics.is_nodrop() {
+            return env.log_error_base(format!(
+                "Aggregate containing nodrop field '{}' must also be marked as @nodrop",
+                name
+            ));
         }
 
-        if field_attributes.nocopy && !aggregate_attributes.nocopy {
-            return env.log_error(
-                TokenRange::Internal,
-                format!(
-                    "Aggregate containing nocopy field '{}' must also be marked as @nodrop",
-                    name
-                ),
-            );
+        if field_attributes.semantics.is_nocopy() && !aggregate_attributes.semantics.is_nocopy() {
+            return env.log_error_base(format!(
+                "Aggregate containing nocopy field '{}' must also be marked as @nodrop",
+                name
+            ));
         }
     }
 
@@ -590,38 +578,40 @@ fn resolve_aggregate_move_attributes(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     attributes: Option<&CXAggregateAttributes>,
-) -> CXResult<MIRAggregateAttributes> {
+) -> CXMaybeRawResult<MIRAggregateAttributes> {
     let Some(attributes) = attributes else {
         return Ok(MIRAggregateAttributes::default());
     };
 
     let mut move_attributes = MIRAggregateAttributes {
         semantics: match attributes.semantics {
-            CXMoveSemantics::POD => MoveSemantics::POD,
-            CXMoveSemantics::Nocopy => MoveSemantics::Nocopy,
-            CXMoveSemantics::Nodrop => MoveSemantics::Nodrop,
+            CXMoveSemantics::POD => MIRMoveSemantics::POD,
+            CXMoveSemantics::Nocopy => MIRMoveSemantics::Nocopy,
+            CXMoveSemantics::Nodrop => MIRMoveSemantics::Nodrop,
         },
     };
 
     if let Some(param_name) = &attributes.copy_traits {
         let name = QualifiedName::new_raw(CXIdent::new(param_name.as_str()));
-        let Some(symbol) = env.get_symbol(namespace, &name)? else {
-            return env.log_error(
-                TokenRange::Internal,
-                format!("copy_traits target '{}' is not a valid type", param_name),
-            );
+        let Some(symbol) = env
+            .get_symbol(namespace, &name)
+            .map_err(CXMaybeRawErr::from)?
+        else {
+            return env
+                .log_error_base(format!(
+                    "copy_traits target '{}' is not a valid type",
+                    param_name
+                ))
+                .map_err(|e| e.into());
         };
         let Some(id) = symbol.as_type_id() else {
-            return type_completion_error(
-                env,
-                None,
-                format!("copy_traits target '{}' is not a type", param_name),
-            );
+            return env
+                .log_error_base(format!("copy_traits target '{}' is not a type", param_name))
+                .map_err(|e| e.into());
         };
         let source_attributes = owned_move_attributes(env, env.symbols.resolve_type_id(id));
 
-        move_attributes.nocopy |= source_attributes.nocopy;
-        move_attributes.nodrop |= source_attributes.nodrop;
+        move_attributes.semantics = source_attributes.semantics;
     }
 
     Ok(move_attributes)
@@ -634,7 +624,8 @@ fn complete_field(
 ) -> CXResult<MIRField> {
     match field {
         CXField::Standard { name, _type } => {
-            let id = complete_type_id(env, namespace, _type).map_err(|err| env.complete_error(err));
+            let id = complete_type_id(env, namespace, _type)?;
+
             if !env.symbols.contains(id) {
                 return env.log_error(
                     _type.range(),
