@@ -1,7 +1,7 @@
 use cx_log::CXResult;
 use cx_mir::mir::{data::MIRFunctionPrototype, expression::MIRExpression};
 
-use crate::{log_analysis_error, mir_conversion::environment::FMIREnvironment};
+use crate::{log::AnalysisDiagnosticSource, mir_conversion::environment::FMIREnvironment};
 
 pub(crate) fn validate_safe_function_signature(
     env: &mut FMIREnvironment,
@@ -13,11 +13,9 @@ pub(crate) fn validate_safe_function_signature(
     }
 
     if prototype.signature().var_args {
-        return log_analysis_error!(
-            env,
+        return env.log_error(
             body,
-            "Safe function '{}' may not use varargs",
-            prototype.name()
+            format!("Safe function '{}' may not use varargs", prototype.name()),
         );
     }
 

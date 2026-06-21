@@ -2,8 +2,7 @@ use crate::environment::TypeEnvironment;
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_log::{CXResult, CXUnspannedError};
-use cx_log::error::CXComposedError;
+use cx_log::CXResult;
 use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::data::{MIRFunctionPrototype, MIRFunctionSignature, MIRType};
 use cx_mir::mir::expression::{
@@ -91,7 +90,7 @@ pub(crate) fn typecheck_contract(
     };
 
     env.pop_scope()
-        .map_err(|err| CXComposedError::new(err, typecheck_error!(env, prototype.token_range, "Error popping contract scope")))?;
+        .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
     env.restore_function_mode(previous_mode);
 
     Ok(MIRFunctionContract {
@@ -111,16 +110,14 @@ pub(crate) fn resolve_assertion_prototype(
         CXIdent::new("__compiler_assert"),
     );
 
-    let Some(symbol) = env.get_symbol(namespace, &name, None)? else {
-        return cx_log::CXUnspannedError::result(
-            "TYPE ERROR",
+    let Some(symbol) = env.get_symbol(namespace, &name)? else {
+        return crate::log::internal_type_error(
             "Function contract used but std::intrinsic::assertion::__compiler_assert was not found",
         );
     };
 
     let MIRSymbol::FunctionReference(prototype) = symbol else {
-        return cx_log::CXUnspannedError::result(
-            "TYPE ERROR",
+        return crate::log::internal_type_error(
             "std::intrinsic::assertion::__compiler_assert is not a function",
         );
     };

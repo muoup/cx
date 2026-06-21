@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use cx_ast::ast::expression::CXExpression;
 
-use cx_log::error::{CXRawErr, CXRawResult};
+use cx_log::error::{CXRawResult, message::CXStdErrMessage};
 use cx_tokens::TokenRange;
 use cx_util::scoped_map::ScopedMap;
 
@@ -157,10 +157,13 @@ impl ControlFlow {
                 .map(|(name, _)| name)
                 .collect::<Vec<_>>();
 
-            return CXRawErr::result(format!(
-                "nodrop binding(s) dropped at end of scope: {}",
-                live.join(", ")
-            ));
+            return CXStdErrMessage::result(
+                "TYPE ERROR",
+                format!(
+                    "nodrop binding(s) dropped at end of scope: {}",
+                    live.join(", ")
+                ),
+            );
         }
 
         if let Some(target) = scope.natural_exit_target
@@ -457,10 +460,13 @@ impl ControlFlow {
                         .collect::<Vec<_>>();
 
                     if !live.is_empty() {
-                        return CXRawErr::result(format!(
-                            "nodrop binding(s) must be moved or @leak'ed before function exit: {}",
-                            live.join(", ")
-                        ));
+                        return CXStdErrMessage::result(
+                            "TYPE ERROR",
+                            format!(
+                                "nodrop binding(s) must be moved or @leak'ed before function exit: {}",
+                                live.join(", ")
+                            ),
+                        );
                     }
                 }
 
@@ -605,7 +611,10 @@ impl ControlFlow {
             .collect::<Vec<_>>()
             .join("; ");
 
-        CXRawErr::result(format!("inconsistent move state for binding(s): {notes}"))
+        CXStdErrMessage::result(
+            "TYPE ERROR",
+            format!("inconsistent move state for binding(s): {notes}"),
+        )
     }
 
     fn apply_merged_bindings(&mut self, merged_bindings: &[(String, TrackedBindingState)]) {

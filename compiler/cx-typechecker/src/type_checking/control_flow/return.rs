@@ -12,7 +12,6 @@ use cx_util::namespace::QualifiedName;
 
 use crate::{
     environment::{ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment},
-    log_typecheck_error,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
         contracts::resolve_assertion_prototype,
@@ -64,20 +63,22 @@ pub fn typecheck_return(
         (None, _) if return_type.is_unit() => None,
 
         (Some(value), _) => {
-            return log_typecheck_error!(
-                env,
+            return env.log_error(
                 value.token_range,
-                "Cannot return from function {} with a void return type",
-                env.current_function().display_with(&env.symbols)
+                format!(
+                    "Cannot return from function {} with a void return type",
+                    env.current_function().display_with(&env.symbols)
+                ),
             );
         }
 
         (None, _) => {
-            return log_typecheck_error!(
-                env,
+            return env.log_error(
                 return_range,
-                "Function {} expects a return value, but none was provided",
-                env.current_function().display_with(&env.symbols)
+                format!(
+                    "Function {} expects a return value, but none was provided",
+                    env.current_function().display_with(&env.symbols)
+                ),
             );
         }
     };
@@ -99,10 +100,9 @@ pub fn typecheck_return(
         .clone()
     {
         if ret_name.is_some() && return_type.is_unit() {
-            return log_typecheck_error!(
-                env,
+            return env.log_error(
                 return_range,
-                "Cannot have a named return variable in a function with void return type"
+                format!("Cannot have a named return variable in a function with void return type"),
             );
         }
 

@@ -6,7 +6,6 @@ use cx_mir::mir::{
 
 use crate::{
     environment::TypeEnvironment,
-    log_typecheck_error,
     type_checking::coercion::{CoercionResult, implicit::conversion::try_implicit_coercion},
 };
 
@@ -38,12 +37,13 @@ pub fn implicit_cast(
     let from_type = value.get_type();
 
     try_implicit_coercion(env, value, to_type)?.catch_unapplied(|expr, _| {
-        log_typecheck_error!(
-            env,
+        env.log_error(
             expr.token_range,
-            "No implicit cast from {} to {}",
-            from_type.display_with(&env.symbols),
-            to_type.display_with(&env.symbols),
+            format!(
+                "No implicit cast from {} to {}",
+                from_type.display_with(&env.symbols),
+                to_type.display_with(&env.symbols),
+            ),
         )
     })
 }

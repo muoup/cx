@@ -1,5 +1,4 @@
 use crate::environment::{ScopeExitTarget, TypeEnvironment};
-use crate::log_typecheck_error;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::result::TypecheckResult;
@@ -38,12 +37,13 @@ pub fn typecheck_switch(
     for (case_index, case_value) in cases {
         // Find the expression at this case index
         let Some(case_expr) = block.get(*case_index as usize) else {
-            return log_typecheck_error!(
-                env,
+            return env.log_error(
                 condition_value.token_range,
-                "Switch case index {} out of bounds (block has {} expressions)",
-                *case_index,
-                block.len()
+                format!(
+                    "Switch case index {} out of bounds (block has {} expressions)",
+                    *case_index,
+                    block.len()
+                ),
             );
         };
 
@@ -64,11 +64,12 @@ pub fn typecheck_switch(
         // Create a pattern expression that matches the constant value
         // Use the condition's integer type for the pattern
         let MIRTypeKind::Integer { _type, signed } = &condition_value.get_type().kind else {
-            return log_typecheck_error!(
-                env,
+            return env.log_error(
                 condition_value.token_range,
-                "Switch condition must be an integer type, found {}",
-                condition_value.get_type().display_with(&env.symbols)
+                format!(
+                    "Switch condition must be an integer type, found {}",
+                    condition_value.get_type().display_with(&env.symbols)
+                ),
             );
         };
 
@@ -88,12 +89,13 @@ pub fn typecheck_switch(
     let default_body = match default_case {
         Some(&idx) => {
             let Some(expr) = block.get(idx) else {
-                return log_typecheck_error!(
-                    env,
+                return env.log_error(
                     condition_value.token_range,
-                    "Switch default case index {} out of bounds (block has {} expressions)",
-                    idx,
-                    block.len()
+                    format!(
+                        "Switch default case index {} out of bounds (block has {} expressions)",
+                        idx,
+                        block.len()
+                    ),
                 );
             };
             let body_expr = typecheck_expr(env, namespace, expr, None)

@@ -6,7 +6,7 @@ use cx_ast::ast::{
     types::{CXType, CXTypeKind},
 };
 use cx_ast::symbols::CXSymbolKind;
-use cx_log::{CXResult, CXUnspannedError};
+use cx_log::CXResult;
 use cx_mir::{
     EnvironmentNamespace,
     mir::data::{MIRFunctionSignature, MIRTemplateInput, MIRType, MIRTypeKind},
@@ -33,25 +33,21 @@ pub(crate) fn complete_templated_callee(
     arg_types: &[MIRType],
 ) -> CXResult<MIRSymbol> {
     let Some(symbol) = env.get_symbol(namespace, name)? else {
-        return CXUnspannedError::result(
-            "TYPE ERROR",
-            format!("Templated function '{}' not found", name),
-        );
+        return crate::log::internal_type_error(format!("Templated function '{}' not found", name));
     };
 
     if let Some(input) = template_input {
         let completed_input = complete_template_input(env, namespace, input)?;
         return apply_template(env, &symbol, completed_input)?.ok_or_else(|| {
-            CXStdErrorMsg::error(
-                "TYPE ERROR",
-                format!("Symbol '{}' does not accept template arguments", name),
-            )
+            crate::log::type_error_msg(format!(
+                "Symbol '{}' does not accept template arguments",
+                name
+            ))
         });
     }
 
-    deduce_template_symbol(env, namespace, &symbol, arg_types)?.ok_or_else(|| {
-        CXStdErrorMsg::error("TYPE ERROR", format!("Symbol '{}' is not a template", name))
-    })
+    deduce_template_symbol(env, namespace, &symbol, arg_types)?
+        .ok_or_else(|| crate::log::type_error_msg(format!("Symbol '{}' is not a template", name)))
 }
 
 pub(crate) fn deduce_template_symbol(
@@ -83,22 +79,16 @@ fn deduce_template_input(
     arg_types: &[MIRType],
 ) -> CXResult<MIRTemplateInput> {
     let CXSymbolKind::FunctionReference(shell) = &source.kind else {
-        return CXUnspannedError::result(
-            "TYPE ERROR",
-            "Only function template deduction is implemented",
-        );
+        return crate::log::internal_type_error("Only function template deduction is implemented");
     };
 
     let mut bindings = TemplateBindings::new();
     if arg_types.len() > shell.params.len() && !shell.var_args {
-        return CXUnspannedError::result(
-            "TYPE ERROR",
-            format!(
-                "Function template expects {} arguments, found {}",
-                shell.params.len(),
-                arg_types.len()
-            ),
-        );
+        return crate::log::internal_type_error(format!(
+            "Function template expects {} arguments, found {}",
+            shell.params.len(),
+            arg_types.len()
+        ));
     }
 
     for (param, actual_type) in shell.params.iter().zip(arg_types.iter()) {
@@ -117,13 +107,10 @@ fn deduce_template_input(
         .iter()
         .map(|name| {
             let ty = bindings.remove(name.as_str()).ok_or_else(|| {
-                CXStdErrorMsg::error(
-                    "TYPE ERROR",
-                    format!(
-                        "Could not deduce template argument '{}' for function {}",
-                        name, shell.kind
-                    ),
-                )
+                crate::log::type_error_msg(format!(
+                    "Could not deduce template argument '{}' for function {}",
+                    name, shell.kind
+                ))
             })?;
 
             Ok(env.symbols.generate_type_id(ty))
@@ -174,41 +161,32 @@ fn deduce_from_cx_type(
             ..
         } => {
             let Some(template_info) = actual.get_template_data() else {
-                return CXUnspannedError::result(
-                    "TYPE ERROR",
-                    format!(
-                        "Expected realized template type '{}' while deducing, found {}",
-                        name,
-                        actual.display_with(&env.symbols)
-                    ),
-                );
+                return crate::log::internal_type_error(format!(
+                    "Expected realized template type '{}' while deducing, found {}",
+                    name,
+                    actual.display_with(&env.symbols)
+                ));
             };
 
             if !template_base_matches(name, template_info.base_name.as_ref()) {
-                return CXUnspannedError::result(
-                    "TYPE ERROR",
-                    format!(
-                        "Expected template type '{}', found '{}'",
-                        name,
-                        template_info
-                            .base_name
-                            .as_ref()
-                            .map(|name| name.to_string())
-                            .unwrap_or_else(|| "<anonymous>".to_string())
-                    ),
-                );
+                return crate::log::internal_type_error(format!(
+                    "Expected template type '{}', found '{}'",
+                    name,
+                    template_info
+                        .base_name
+                        .as_ref()
+                        .map(|name| name.to_string())
+                        .unwrap_or_else(|| "<anonymous>".to_string())
+                ));
             }
 
             if input.params.len() != template_info.template_input.args.len() {
-                return CXUnspannedError::result(
-                    "TYPE ERROR",
-                    format!(
-                        "Template arity mismatch for '{}': expected {}, found {}",
-                        name,
-                        input.params.len(),
-                        template_info.template_input.args.len()
-                    ),
-                );
+                return crate::log::internal_type_error(format!(
+                    "Template arity mismatch for '{}': expected {}, found {}",
+                    name,
+                    input.params.len(),
+                    template_info.template_input.args.len()
+                ));
             }
 
             for (formal_arg, actual_arg) in input
@@ -332,24 +310,18 @@ fn deduce_from_function_signature(
     actual: &MIRFunctionSignature,
 ) -> CXResult<()> {
     if formal.var_args != actual.var_args {
-        return CXUnspannedError::result(
-            "TYPE ERROR",
-            format!(
-                "Function pointer varargs mismatch during template deduction: expected {}, found {}",
-                formal.var_args, actual.var_args
-            ),
-        );
+        return crate::log::internal_type_error(format!(
+            "Function pointer varargs mismatch during template deduction: expected {}, found {}",
+            formal.var_args, actual.var_args
+        ));
     }
 
     if formal.params.len() != actual.params.len() {
-        return CXUnspannedError::result(
-            "TYPE ERROR",
-            format!(
-                "Function pointer arity mismatch during template deduction: expected {}, found {}",
-                formal.params.len(),
-                actual.params.len()
-            ),
-        );
+        return crate::log::internal_type_error(format!(
+            "Function pointer arity mismatch during template deduction: expected {}, found {}",
+            formal.params.len(),
+            actual.params.len()
+        ));
     }
 
     deduce_from_cx_type(
@@ -386,15 +358,12 @@ fn bind_template_argument(
             return Ok(());
         }
 
-        return CXUnspannedError::result(
-            "TYPE ERROR",
-            format!(
-                "Conflicting deductions for template argument '{}': {} vs {}",
-                name,
-                existing.display_with(&env.symbols),
-                actual.display_with(&env.symbols)
-            ),
-        );
+        return crate::log::internal_type_error(format!(
+            "Conflicting deductions for template argument '{}': {} vs {}",
+            name,
+            existing.display_with(&env.symbols),
+            actual.display_with(&env.symbols)
+        ));
     }
 
     bindings.insert(name.to_string(), actual.clone());
@@ -414,12 +383,9 @@ fn concrete_type_mismatch(
     formal: &CXType,
     actual: &MIRType,
 ) -> CXResult<()> {
-    CXUnspannedError::result(
-        "TYPE ERROR",
-        format!(
-            "Template deduction mismatch: expected {}, found {}",
-            formal,
-            actual.display_with(&env.symbols)
-        ),
-    )
+    crate::log::internal_type_error(format!(
+        "Template deduction mismatch: expected {}, found {}",
+        formal,
+        actual.display_with(&env.symbols)
+    ))
 }

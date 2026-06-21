@@ -1,4 +1,8 @@
+use std::borrow::Borrow;
+
+use cx_log::CXResult;
 use cx_mir::mir::data::MIRFunctionPrototype;
+use cx_tokens::TokenRange;
 
 use crate::environment::TypeEnvironment;
 
@@ -18,6 +22,19 @@ impl<'env, 'data> ComptimeEngine<'env, 'data> {
 
     pub fn env(&self) -> &TypeEnvironment<'data> {
         self.env
+    }
+
+    pub fn log_error<T>(
+        &self,
+        range: impl Borrow<TokenRange>,
+        message: impl Into<String>,
+    ) -> CXResult<T> {
+        Err(crate::log::produce_comptime_error(
+            self.env.module_data,
+            range.borrow(),
+            message,
+            Vec::new(),
+        ))
     }
 
     #[allow(dead_code)]

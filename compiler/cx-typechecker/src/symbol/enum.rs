@@ -9,7 +9,8 @@ use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 
 use crate::{
-    comptime::evaluate_comptime_expression, environment::TypeEnvironment, type_checking::typechecker::typecheck_expr, typecheck_error
+    comptime::evaluate_comptime_expression, environment::TypeEnvironment,
+    type_checking::typechecker::typecheck_expr,
 };
 
 pub struct EnumBlockResolution<'a> {
@@ -61,10 +62,9 @@ pub(crate) fn resolve_enum_block<'a, 'b>(
                     .and_then(|v| evaluate_comptime_expression(env, v))
                     .and_then(|v| {
                         v.as_integer().ok_or_else(|| {
-                            typecheck_error!(
-                                env,
+                            env.error(
                                 v.token_range,
-                                "Expected enum variant value to be an integer"
+                                format!("Expected enum variant value to be an integer"),
                             )
                         })
                     })

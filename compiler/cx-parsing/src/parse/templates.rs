@@ -1,9 +1,9 @@
 use crate::parse::ParserData;
-use crate::{assert_token_matches, peek_kind, try_next};
+use crate::{assert_token_matches, log::ParserLogExt, peek_kind, try_next};
 use cx_ast::ast::template::{CXTemplateInput, CXTemplatePrototype};
 use cx_ast::ast::types::{CXType, CXTypeKind, PredeclarationType};
 use cx_log::CXResult;
-use cx_tokens::{identifier, operator, TokenIter};
+use cx_tokens::{TokenIter, identifier, operator};
 use cx_util::namespace::NamespacePath;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
@@ -88,7 +88,7 @@ pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<CXTemplateI
 
     loop {
         let (None, _type, _) = parse_initializer(data)? else {
-            return log_parse_error!(data, "Expected type declaration in template arguments!");
+            return data.log_error(format!("Expected type declaration in template arguments!"));
         };
 
         inputtype_s.push(_type);

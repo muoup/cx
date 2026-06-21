@@ -12,7 +12,6 @@ use cx_tokens::TokenRange;
 
 use crate::{
     environment::TypeEnvironment,
-    log_typecheck_error,
     type_checking::{
         aggregate::fields::struct_field,
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
@@ -83,11 +82,12 @@ pub fn typecheck_initializer_list(
             typecheck_structured_initializer(env, namespace, expr, indices, &to_type)
         }
 
-        _ => log_typecheck_error!(
-            env,
+        _ => env.log_error(
             expr.token_range(),
-            "Cannot coerce initializer to type {}",
-            to_type.display_with(&env.symbols)
+            format!(
+                "Cannot coerce initializer to type {}",
+                to_type.display_with(&env.symbols)
+            ),
         ),
     }
 }
@@ -102,10 +102,9 @@ fn typecheck_array_initializer(
 ) -> CXResult<TypecheckResult> {
     for index in indices {
         if let Some(name) = &index.name {
-            return log_typecheck_error!(
-                env,
+            return env.log_error(
                 &TokenRange::internal(),
-                "Array initializer cannot have named indices, found: {name}"
+                format!("Array initializer cannot have named indices, found: {name}"),
             );
         }
     }
@@ -113,12 +112,13 @@ fn typecheck_array_initializer(
     if let Some(size) = size
         && indices.len() > size
     {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             &TokenRange::internal(),
-            "Too many elements in array initializer (expected {}, found {})",
-            size,
-            indices.len()
+            format!(
+                "Too many elements in array initializer (expected {}, found {})",
+                size,
+                indices.len()
+            ),
         );
     }
 
@@ -153,11 +153,12 @@ fn typecheck_structured_initializer(
     to_type: &MIRType,
 ) -> CXResult<TypecheckResult> {
     let Some(fields) = to_type.aggregate_fields(&env.symbols) else {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "Expected a structured type for initializer, found {}",
-            to_type.display_with(&env.symbols)
+            format!(
+                "Expected a structured type for initializer, found {}",
+                to_type.display_with(&env.symbols)
+            ),
         );
     };
     let fields = fields.clone();
@@ -173,29 +174,25 @@ fn typecheck_structured_initializer(
                 .iter()
                 .position(|(field_name, _)| name.as_str() == field_name.as_str())
             else {
-                return log_typecheck_error!(
-                    env,
+                return env.log_error(
                     expr.token_range(),
-                    "Structured initializer has unexpected field: {name}"
+                    format!("Structured initializer has unexpected field: {name}"),
                 );
             };
             counter = found_index;
         }
 
         if counter >= fields.len() {
-            return log_typecheck_error!(
-                env,
+            return env.log_error(
                 expr.token_range(),
-                "Too many elements in struct initializer"
+                format!("Too many elements in struct initializer"),
             );
         }
 
         if initialized_fields[counter] {
-            return log_typecheck_error!(
-                env,
+            return env.log_error(
                 expr.token_range(),
-                "Field '{}' initialized more than once",
-                fields[counter].0
+                format!("Field '{}' initialized more than once", fields[counter].0),
             );
         }
 
@@ -207,12 +204,13 @@ fn typecheck_structured_initializer(
 
         let Some(struct_field_info) = struct_field(&env.symbols, to_type, field_name.as_str())
         else {
-            return log_typecheck_error!(
-                env,
+            return env.log_error(
                 value.token_range,
-                "Could not find field '{}' in type {}",
-                field_name,
-                to_type.display_with(&env.symbols)
+                format!(
+                    "Could not find field '{}' in type {}",
+                    field_name,
+                    to_type.display_with(&env.symbols)
+                ),
             );
         };
 

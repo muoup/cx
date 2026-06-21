@@ -1,18 +1,21 @@
+use std::borrow::Borrow;
+
 use cx_ast::ast::modifiers::VisibilityMode;
 use cx_ast::symbols::CXSymbol;
 use cx_log::{
     CXRawResult, CXResult,
-    error::{CXComposedError, CXErr, CXRawErr},
+    error::{CXErr, CXErrMsg, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_mir::{
     EnvironmentNamespace, MIRUnit,
     mir::contextual_eq::TypeContextEqual,
-    mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId},
+    mir::data::{MIRFunctionPrototype, MIRType},
     symbol::MIRSymbol,
     type_context::MIRTypeContext,
 };
 use cx_namespace::{MIRQualifiedLookup, result::QualifiedLookupResult};
 use cx_pipeline_data::db::ModuleData;
+use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 use cx_util::{identifier::CXIdent, namespace::NamespacePath};
 
@@ -120,8 +123,17 @@ impl TypeEnvironment<'_> {
         &mut self,
         namespace: &EnvironmentNamespace,
         name: &QualifiedName,
-    ) -> CXRawResult<Option<MIRSymbol>> {
-        self.lookup_symbol(namespace, name)?
+    ) -> CXResult<Option<MIRSymbol>> {
+        let lookup = self.lookup_symbol(namespace, name).map_err(|err| {
+            CXErr::new(
+                err,
+                CXInternalContext::error(
+                    "symbol lookup failed before a source range was available",
+                ),
+            )
+        })?;
+
+        lookup
             .map(|lookup| self.resolve_lookup(namespace, lookup))
             .transpose()
     }
@@ -150,7 +162,7 @@ impl TypeEnvironment<'_> {
                         .join(", ")
                 );
 
-                return CXRawErr::result(message);
+                return CXStdErrMessage::result("TYPE ERROR", message);
             }
         }
     }
@@ -219,8 +231,32 @@ impl TypeEnvironment<'_> {
         type1.contextual_eq(type2, &self.symbols)
     }
 
-    pub(crate) fn complete_err(&self, err: CXRawErr, range: &TokenRange) -> CXErr {
-        CXErr(Box::new(CXComposedError::new(err, todo!())))
+    pub(crate) fn error(
+        &self,
+        range: impl Borrow<TokenRange>,
+        message: impl Into<String>,
+    ) -> CXErr {
+        crate::log::produce_(self.module_data, range.borrow(), message, Vec::new())
+    }
+
+    pub(crate) fn log_error<T>(
+        &self,
+        range: impl Borrow<TokenRange>,
+        message: impl Into<String>,
+    ) -> CXResult<T> {
+        Err(self.error(range, message))
+    }
+
+    pub(crate) fn complete_err(&self, err: CXErrMsg, range: &TokenRange) -> CXErr {
+        CXErr::new(err, self.module_data.convert_token_range(range))
+    }
+
+    pub(crate) fn complete_result<T>(
+        &self,
+        result: CXRawResult<T>,
+        range: &TokenRange,
+    ) -> CXResult<T> {
+        result.map_err(|err| self.complete_err(err, range))
     }
 }
 

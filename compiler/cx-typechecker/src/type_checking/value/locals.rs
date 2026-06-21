@@ -1,6 +1,5 @@
 use crate::{
     environment::{BindingMoveState, TypeEnvironment},
-    log_typecheck_error,
     symbol::completion::complete_type,
     type_checking::{
         coercion::implicit::implicit_cast,
@@ -34,13 +33,14 @@ pub(crate) fn ensure_binding_available(
     match binding.state {
         BindingMoveState::Available => Ok(()),
         BindingMoveState::Moved => {
-            log_typecheck_error!(env, range, "Identifier '{}' has been moved", name)
+            env.log_error(range, format!("Identifier '{}' has been moved", name))
         }
-        BindingMoveState::ConditionallyMoved => log_typecheck_error!(
-            env,
+        BindingMoveState::ConditionallyMoved => env.log_error(
             range,
-            "Identifier '{}' was conditionally moved across a control-flow join",
-            name
+            format!(
+                "Identifier '{}' was conditionally moved across a control-flow join",
+                name
+            ),
         ),
     }
 }

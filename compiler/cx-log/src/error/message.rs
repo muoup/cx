@@ -12,12 +12,25 @@ pub trait CXErrorMessage {
 
 pub struct CXStdErrMessage {
     code: String,
-    message: String,    
+    message: String,
+}
+
+impl CXErrMsg {
+    pub fn code(&self) -> String {
+        self.0.code()
+    }
+
+    pub fn message(&self) -> String {
+        self.0.message()
+    }
 }
 
 impl CXStdErrMessage {
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
-        Self { code: code.into(), message: message.into() }
+        Self {
+            code: code.into(),
+            message: message.into(),
+        }
     }
 
     pub fn error(code: impl Into<String>, message: impl Into<String>) -> CXErrMsg {

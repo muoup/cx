@@ -6,7 +6,19 @@ pub type CXErrContext = Box<dyn CXErrorContext>;
 
 pub enum CXMaybeRawErr {
     Raw(CXErrMsg),
-    Complete(CXErr)
+    Complete(CXErr),
+}
+
+impl From<CXErrMsg> for CXMaybeRawErr {
+    fn from(value: CXErrMsg) -> Self {
+        Self::Raw(value)
+    }
+}
+
+impl From<CXErr> for CXMaybeRawErr {
+    fn from(value: CXErr) -> Self {
+        Self::Complete(value)
+    }
 }
 
 pub type CXResult<T> = Result<T, CXErr>;
@@ -26,8 +38,9 @@ impl CXErr {
         CXErr { error, context }
     }
 
-    pub fn output<F>(&self, f: &mut F) -> std::io::Result<()> 
-        where F: std::io::Write
+    pub fn output<F>(&self, f: &mut F) -> std::io::Result<()>
+    where
+        F: std::io::Write,
     {
         self.error.0.dump(f)?;
         self.context.dump(f)?;

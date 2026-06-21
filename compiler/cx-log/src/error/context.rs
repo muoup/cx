@@ -44,6 +44,10 @@ impl CXUnderlineContext {
             str_end,
         }
     }
+
+    pub fn error(file: impl Into<PathBuf>, str_start: usize, str_end: usize) -> CXErrContext {
+        Box::new(Self::new(file.into(), str_start, str_end))
+    }
 }
 
 impl CXErrorContext for CXUnderlineContext {

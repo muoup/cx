@@ -3,18 +3,20 @@ use cx_ast::ast::{
     template::CXTemplateInput,
     types::{CXType, CXTypeKind, PredeclarationType},
 };
-use cx_log::{CXResult, CXUnspannedError};
+use cx_log::{
+    CXResult,
+    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+};
 use cx_tokens::{
-    operator,
+    TokenIter, operator,
     token::{OperatorType, TokenKind},
-    TokenIter,
 };
 use cx_util::{
     identifier::CXIdent,
     namespace::{EnvironmentNamespace, NamespacePath, QualifiedName},
 };
 
-use crate::{next_kind, try_next};
+use crate::{log::TokenIterLogExt, next_kind, try_next};
 
 use super::{parser::ParserData, templates::parse_template_args, types::is_type_decl};
 
@@ -57,7 +59,12 @@ impl ParsedIdentifier {
     #[allow(dead_code)]
     pub(crate) fn into_qualified_name(self) -> CXResult<QualifiedName> {
         if self.template_input.is_some() {
-            return CXUnspannedError::result("PARSER ERROR", "Expected non-templated identifier");
+            return Err(CXErr::new(
+                CXStdErrMessage::error("PARSER ERROR", "Expected non-templated identifier"),
+                CXInternalContext::error(
+                    "non-templated identifier conversion has no active parser token context",
+                ),
+            ));
         }
 
         Ok(self.name)
@@ -120,7 +127,7 @@ pub(crate) fn try_parse_qualified_name(tokens: &mut TokenIter) -> CXResult<Optio
 
     loop {
         let TokenKind::Identifier(ident) = next_kind!(tokens)? else {
-            return log_preparse_error!(tokens, "Expected identifier after '::' in qualified name");
+            return tokens.log_error(format!("Expected identifier after '::' in qualified name"));
         };
 
         segments.push(CXIdent::new(ident.clone()));

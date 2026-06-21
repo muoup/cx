@@ -1,4 +1,4 @@
-use crate::{log_analysis_error, mir_conversion::factories::*};
+use crate::{log::AnalysisDiagnosticSource, mir_conversion::factories::*};
 use cx_log::CXResult;
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
@@ -337,11 +337,12 @@ pub fn convert_expression(
             };
 
             if !signature.contract.safe {
-                return log_analysis_error!(
-                    env,
+                return env.log_error(
                     mir_expr,
-                    "References to unsafe function `{}` may not be used in safe contexts",
-                    name
+                    format!(
+                        "References to unsafe function `{}` may not be used in safe contexts",
+                        name
+                    ),
                 );
             }
 
@@ -482,10 +483,9 @@ pub fn convert_expression(
 
         MIRExpressionKind::Typechange(inner) => {
             if inner._type.is_pointer() {
-                return log_analysis_error!(
-                    env,
+                return env.log_error(
                     mir_expr,
-                    "Dereferencing raw pointers is not allowed in safe contexts"
+                    format!("Dereferencing raw pointers is not allowed in safe contexts"),
                 );
             }
 

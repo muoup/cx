@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
-use cx_log::{CXResult, CXUnspannedError};
+use cx_log::CXResult;
 use cx_mir::mir::data::{MIRFunction, MIRFunctionPrototype};
 use cx_mir::registry::MIRDecomposedRegistry;
 use cx_mir::{EnvironmentNamespace, MIRUnit};
@@ -10,6 +10,7 @@ use cx_pipeline_data::db::ModuleData;
 use cx_safe_ir::ast::{FMIRFunction, FMIRNode};
 use cx_tokens::TokenRange;
 
+use crate::log::AnalysisDiagnosticSource;
 use crate::mir_conversion::{convert_mir, environment::FMIREnvironment};
 use crate::simplify::assert_proven_conditions;
 use crate::traversal::VisitControl;
@@ -60,34 +61,28 @@ impl<'a> AnalysisDiagnosticContext<'a> {
             end_token,
         } = range
         else {
-            return CXUnspannedError::result(
-                "ANALYSIS ERROR",
+            return crate::log::internal_analysis_error(
                 "Cannot resolve source text for a non-source token range",
             );
         };
 
         let tokens = self.module_data.lex_tokens.get(namespace);
-        let start_token = tokens.get(*start_token).ok_or_else(|| {
-            CXStdErrorMsg::error(
-                "ANALYSIS ERROR",
-                format!("Invalid source range: start token index {start_token} out of bounds"),
-            )
-        })?;
-        let end_token = tokens.get(end_token.saturating_sub(1)).ok_or_else(|| {
-            CXStdErrorMsg::error(
-                "ANALYSIS ERROR",
-                format!("Invalid source range: end token index {end_token} out of bounds"),
-            )
-        })?;
+        let Some(start_token) = tokens.get(*start_token) else {
+            return crate::log::internal_analysis_error(format!(
+                "Invalid source range: start token index {start_token} out of bounds"
+            ));
+        };
+        let Some(end_token) = tokens.get(end_token.saturating_sub(1)) else {
+            return crate::log::internal_analysis_error(format!(
+                "Invalid source range: end token index {end_token} out of bounds"
+            ));
+        };
         if start_token.file_origin != end_token.file_origin {
-            return CXUnspannedError::result(
-                "ANALYSIS ERROR",
-                format!(
-                    "Source range tokens have different file origins: {} and {}",
-                    start_token.file_origin.display(),
-                    end_token.file_origin.display()
-                ),
-            );
+            return crate::log::internal_analysis_error(format!(
+                "Source range tokens have different file origins: {} and {}",
+                start_token.file_origin.display(),
+                end_token.file_origin.display()
+            ));
         }
 
         let source_path = if start_token.file_origin.as_os_str().is_empty() {
@@ -100,25 +95,23 @@ impl<'a> AnalysisDiagnosticContext<'a> {
         };
 
         let file_contents = std::fs::read_to_string(source_path.as_path()).map_err(|_| {
-            CXStdErrorMsg::error(
-                "ANALYSIS ERROR",
-                format!(
-                    "Failed to read source file for analysis diagnostics: {}",
-                    source_path.display()
-                ),
-            )
+            crate::log::internal_analysis_error::<String>(format!(
+                "Failed to read source file for analysis diagnostics: {}",
+                source_path.display()
+            ))
+            .err()
+            .expect("internal_analysis_error always returns Err")
         })?;
 
-        let source_slice = file_contents
-            .get(start_token.byte_start_index..end_token.byte_end_index)
-            .ok_or(CXStdErrorMsg::error(
-                "ANALYSIS ERROR",
-                format!(
-                    "Invalid source range: token indices {start_token} to {end_token} out of bounds in file {}",
-                    source_path.display()
-                ),
-            ))?
-            .trim();
+        let Some(source_slice) =
+            file_contents.get(start_token.byte_start_index..end_token.byte_end_index)
+        else {
+            return crate::log::internal_analysis_error(format!(
+                "Invalid source range: token indices {start_token} to {end_token} out of bounds in file {}",
+                source_path.display()
+            ));
+        };
+        let source_slice = source_slice.trim();
         Ok(source_slice.to_string())
     }
 
@@ -147,7 +140,7 @@ impl<'a> AnalysisDiagnosticContext<'a> {
     ) -> CXResult<VisitControl> {
         let resolved_message = self.failure_message(message, condition);
 
-        log_analysis_error!(self, node, "{}", resolved_message)
+        self.log_error(node, format!("{}", resolved_message))
     }
 }
 

@@ -15,7 +15,6 @@ use cx_tokens::TokenRange;
 
 use crate::{
     environment::TypeEnvironment,
-    log_typecheck_error,
     symbol::completion::complete_type,
     type_checking::{
         coercion::{
@@ -44,11 +43,12 @@ pub fn typecheck_unop(
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))?;
 
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
-                return log_typecheck_error!(
-                    env,
+                return env.log_error(
                     operand.token_range,
-                    "Cannot apply pre-increment to non-reference type {}",
-                    operand._type.display_with(&env.symbols)
+                    format!(
+                        "Cannot apply pre-increment to non-reference type {}",
+                        operand._type.display_with(&env.symbols)
+                    ),
                 );
             };
 
@@ -72,11 +72,12 @@ pub fn typecheck_unop(
                 },
 
                 _ => {
-                    return log_typecheck_error!(
-                        env,
+                    return env.log_error(
                         operand.token_range,
-                        "Pre-increment operator requires an integer or pointer type, found {}",
-                        inner.display_with(&env.symbols)
+                        format!(
+                            "Pre-increment operator requires an integer or pointer type, found {}",
+                            inner.display_with(&env.symbols)
+                        ),
                     );
                 }
             }
@@ -107,11 +108,12 @@ pub fn typecheck_unop(
                 .and_then(|v| std_rval_promotion(env, v))?;
 
             if !operand._type.is_integer() {
-                return log_typecheck_error!(
-                    env,
+                return env.log_error(
                     operand.token_range,
-                    "Bitwise NOT operator requires an integer type, found {}",
-                    operand._type.display_with(&env.symbols)
+                    format!(
+                        "Bitwise NOT operator requires an integer type, found {}",
+                        operand._type.display_with(&env.symbols)
+                    ),
                 );
             }
 
@@ -134,11 +136,12 @@ pub fn typecheck_unop(
                 MIRTypeKind::Float { .. } => MIRUnOp::FNEG,
 
                 _ => {
-                    return log_typecheck_error!(
-                        env,
+                    return env.log_error(
                         operand.token_range,
-                        "Negation operator requires an integer or float type, found {}",
-                        operand.display_with(&env.symbols)
+                        format!(
+                            "Negation operator requires an integer or float type, found {}",
+                            operand.display_with(&env.symbols)
+                        ),
                     );
                 }
             };
@@ -157,10 +160,9 @@ pub fn typecheck_unop(
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))?;
 
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
-                return log_typecheck_error!(
-                    env,
+                return env.log_error(
                     operand.token_range,
-                    "Cannot take the address of a non-reference type"
+                    format!("Cannot take the address of a non-reference type"),
                 );
             };
 
@@ -181,11 +183,12 @@ pub fn typecheck_unop(
                 .and_then(|v| std_rval_promotion(env, v))?;
 
             let Some(inner) = env.symbols.ptr_inner(&operand._type).cloned() else {
-                return log_typecheck_error!(
-                    env,
+                return env.log_error(
                     operand.token_range,
-                    "Cannot dereference non-pointer type {}",
-                    operand._type.display_with(&env.symbols)
+                    format!(
+                        "Cannot dereference non-pointer type {}",
+                        operand._type.display_with(&env.symbols)
+                    ),
                 );
             };
 

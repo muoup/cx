@@ -1,5 +1,6 @@
 use crate::{
-    assert_token_matches, next_kind, parse::try_parse_qualified_name, peek_next_kind, try_next,
+    assert_token_matches, log::ParserLogExt, next_kind, parse::try_parse_qualified_name,
+    peek_next_kind, try_next,
 };
 use cx_ast::ast::{
     function::{CXFunctionContract, CXFunctionKind, CXFunctionPrototype, CXParameter},
@@ -9,9 +10,8 @@ use cx_ast::ast::{
 };
 use cx_log::CXResult;
 use cx_tokens::{
-    identifier, keyword, operator, punctuator,
+    TokenRange, identifier, keyword, operator, punctuator,
     token::{PunctuatorType, TokenKind},
-    TokenRange,
 };
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
@@ -47,10 +47,9 @@ pub fn try_function_parse(
         CXFunctionKind::Standard(name.name)
     } else {
         if name.namespace.segments().len() != 1 {
-            return log_parse_error!(
-                data,
+            return data.log_error(format!(
                 "Associated function declarations must have exactly two segments"
-            );
+            ));
         }
 
         CXFunctionKind::AssociatedFunction {
@@ -104,10 +103,9 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
         match next {
             keyword!(Precondition) => {
                 if contract.precondition.is_some() {
-                    return log_parse_error!(
-                        data,
+                    return data.log_error(format!(
                         "Precondition already defined in function contract."
-                    );
+                    ));
                 }
 
                 data.tokens.next();
@@ -120,10 +118,9 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
             }
             keyword!(Postcondition) => {
                 if contract.postcondition.is_some() {
-                    return log_parse_error!(
-                        data,
+                    return data.log_error(format!(
                         "Postcondition already defined in function contract."
-                    );
+                    ));
                 }
 
                 data.tokens.next();
@@ -211,7 +208,7 @@ fn skip_optional_parenthesized_tokens(data: &mut ParserData) -> CXResult<()> {
         }
     }
 
-    log_parse_error!(data, "Unclosed parenthesized declaration suffix")
+    data.log_error(format!("Unclosed parenthesized declaration suffix"))
 }
 
 pub(crate) struct ParseParamsResult {

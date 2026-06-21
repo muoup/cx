@@ -1,7 +1,6 @@
 use std::ops::Deref;
 
 use crate::environment::{LoopScopeKind, ScopeArrowSink, ScopeExitTarget, TypeEnvironment};
-use crate::log_typecheck_error;
 use crate::type_checking::aggregate::initialization::typecheck_initializer_list;
 use crate::type_checking::coercion::implicit::{implicit_cast, promotion::std_rval_promotion};
 use crate::type_checking::control_flow::r#return::typecheck_return;
@@ -276,10 +275,9 @@ fn typecheck_expr_inner(
 
         CXExprKind::Break => {
             let Some(scope_idx) = env.function.nearest_break_scope() else {
-                return log_typecheck_error!(
-                    env,
+                return env.log_error(
                     expr.token_range(),
-                    "'break' used outside of a loop or switch context"
+                    format!("'break' used outside of a loop or switch context"),
                 );
             };
             enqueue_jump_arrow(
@@ -302,10 +300,9 @@ fn typecheck_expr_inner(
 
         CXExprKind::Continue => {
             let Some(scope_idx) = env.function.nearest_continue_scope() else {
-                return log_typecheck_error!(
-                    env,
+                return env.log_error(
                     expr.token_range(),
-                    "'continue' used outside of a loop context"
+                    format!("'continue' used outside of a loop context"),
                 );
             };
             enqueue_jump_arrow(
@@ -463,11 +460,12 @@ pub fn add_implicit_return(
     } else if func.signature().return_type.is_unit() {
         None
     } else {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range,
-            "Function '{}' with non-void return type must have an explicit return statement",
-            func.name()
+            format!(
+                "Function '{}' with non-void return type must have an explicit return statement",
+                func.name()
+            ),
         );
     };
 

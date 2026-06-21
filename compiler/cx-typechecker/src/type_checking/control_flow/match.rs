@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use crate::environment::ScopeArrowSink;
 use crate::environment::ScopeExitTarget;
 use crate::environment::TypeEnvironment;
-use crate::log_typecheck_error;
 use crate::symbol::completion::complete_template_input;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::control_flow::expr_may_fall_through;
@@ -73,10 +72,9 @@ pub fn typecheck_match(
 
             for (pattern, body) in arms.iter() {
                 let CXPattern::Integer(pattern_value) = pattern else {
-                    return log_typecheck_error!(
-                        env,
+                    return env.log_error(
                         condition.token_range(),
-                        "Match pattern must be an integer literal"
+                        format!("Match pattern must be an integer literal"),
                     );
                 };
 
@@ -116,13 +114,7 @@ pub fn typecheck_match(
                 } = resolve_type_constructor_pattern(env, namespace, condition, pattern)?;
 
                 if expected_union_name != &union_name {
-                    return log_typecheck_error!(
-                        env,
-                        condition.token_range(),
-                        "Tagged union variant does not match the type being matched, found '{}', expected '{}'",
-                        union_name,
-                        expected_union_name
-                    );
+                    return env.log_error(condition.token_range(), format!("Tagged union variant does not match the type being matched, found '{}', expected '{}'", union_name, expected_union_name));
                 }
                 validate_variant_template_input(
                     env,
@@ -141,12 +133,12 @@ pub fn typecheck_match(
                 });
 
                 let Some(variant_id) = variant_idx else {
-                    return log_typecheck_error!(
-                        env,
+                    return env.log_error(
                         condition.token_range(),
-                        "Variant '{}' not found in tagged union '{}'",
-                        variant_name,
-                        expected_union_name
+                        format!(
+                            "Variant '{}' not found in tagged union '{}'",
+                            variant_name, expected_union_name
+                        ),
                     );
                 };
 
@@ -278,11 +270,12 @@ pub fn typecheck_match(
         }
 
         _ => {
-            return log_typecheck_error!(
-                env,
+            return env.log_error(
                 condition.token_range(),
-                "Match condition must be an integer or tagged union type, found {}",
-                expr_type.display_with(&env.symbols)
+                format!(
+                    "Match condition must be an integer or tagged union type, found {}",
+                    expr_type.display_with(&env.symbols)
+                ),
             );
         }
     };
@@ -345,18 +338,16 @@ fn validate_variant_template_input(
     };
     let completed_input = complete_template_input(env, namespace, template_input)?;
     let Some(template_data) = union_type.get_template_data() else {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             condition.token_range(),
-            "Non-templated tagged union pattern may not have template arguments"
+            format!("Non-templated tagged union pattern may not have template arguments"),
         );
     };
 
     if !completed_input.contextual_eq(&template_data.template_input, &env.symbols) {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             condition.token_range(),
-            "Tagged union pattern template arguments do not match the matched type"
+            format!("Tagged union pattern template arguments do not match the matched type"),
         );
     }
 

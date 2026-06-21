@@ -1,4 +1,4 @@
-use cx_log::{CXResult, CXUnspannedError};
+use cx_log::CXResult;
 use cx_mir::{
     mir::{
         data::{MIRIntegerType, MIRType, MIRTypeKind},
@@ -14,7 +14,7 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    log_analysis_error,
+    log::AnalysisDiagnosticSource,
     mir_conversion::{environment::FMIREnvironment, expression::convert_expression},
 };
 
@@ -209,10 +209,9 @@ pub fn coercion_intrinsic(
             FMIRCastIntrinsic::ReinterpretBits
         }
         MIRCoercion::GetFnPtr => {
-            return log_analysis_error!(
-                _env,
+            return _env.log_error(
                 _expr,
-                "Function pointer decay is not supported in safe analysis yet"
+                format!("Function pointer decay is not supported in safe analysis yet"),
             );
         }
     })
@@ -340,13 +339,10 @@ pub(crate) fn increment_amount_node(
     mir_type: &MIRType,
 ) -> CXResult<FMIRNode> {
     let MIRTypeKind::Integer { _type, signed } = &mir_type.kind else {
-        return CXUnspannedError::result(
-            "ANALYSIS ERROR",
-            format!(
-                "FMIR increment desugaring expected integer type, found '{}'",
-                mir_type.display_with(env.type_definitions)
-            ),
-        );
+        return crate::log::internal_analysis_error(format!(
+            "FMIR increment desugaring expected integer type, found '{}'",
+            mir_type.display_with(env.type_definitions)
+        ));
     };
 
     Ok(FMIRNode {
@@ -371,13 +367,10 @@ pub(crate) fn convert_increment(
         .mem_ref_inner(&operand_expr._type)
         .cloned()
     else {
-        return CXUnspannedError::result(
-            "ANALYSIS ERROR",
-            format!(
-                "FMIR increment desugaring expected memory reference operand, found '{}'",
-                operand_expr._type.display_with(env.type_definitions)
-            ),
-        );
+        return crate::log::internal_analysis_error(format!(
+            "FMIR increment desugaring expected memory reference operand, found '{}'",
+            operand_expr._type.display_with(env.type_definitions)
+        ));
     };
 
     let old_value_load = load_node(
@@ -419,13 +412,10 @@ pub(crate) fn convert_increment(
             )
         }
         _ => {
-            return CXUnspannedError::result(
-                "ANALYSIS ERROR",
-                format!(
-                    "FMIR increment desugaring requires integer or pointer inner type, found '{}'",
-                    value_type.display_with(env.type_definitions)
-                ),
-            );
+            return crate::log::internal_analysis_error(format!(
+                "FMIR increment desugaring requires integer or pointer inner type, found '{}'",
+                value_type.display_with(env.type_definitions)
+            ));
         }
     };
 
@@ -450,11 +440,7 @@ pub(crate) fn unsupported_expression_error(
     env: &FMIREnvironment,
     expr: &MIRExpression,
 ) -> CXResult<FMIRNode> {
-    log_analysis_error!(
-        env,
-        expr,
-        "Expression is not supported in safe context, use `unsafe` block if no safe alternative is available"
-    )
+    env.log_error(expr, format!("Expression is not supported in safe context, use `unsafe` block if no safe alternative is available"))
 }
 
 pub(crate) fn with_expression_range(mut node: FMIRNode, mir_expr: &MIRExpression) -> FMIRNode {

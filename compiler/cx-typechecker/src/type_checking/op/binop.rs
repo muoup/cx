@@ -13,7 +13,6 @@ use cx_mir::{
 
 use crate::{
     environment::TypeEnvironment,
-    log_typecheck_error,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
         result::TypecheckResult,
@@ -52,13 +51,14 @@ pub(crate) fn resolve_logical(
     };
 
     if !valid_logical_operand(&lhs) || !valid_logical_operand(&rhs) {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             lhs.token_range,
-            "Invalid operands to logical operation {:?}, {} and {}",
-            op,
-            lhs._type.display_with(&env.symbols),
-            rhs._type.display_with(&env.symbols)
+            format!(
+                "Invalid operands to logical operation {:?}, {} and {}",
+                op,
+                lhs._type.display_with(&env.symbols),
+                rhs._type.display_with(&env.symbols)
+            ),
         );
     }
 
@@ -100,12 +100,13 @@ pub(crate) fn resolve_std_arithmetic(
     } else if lhs._type.is_integer() && rhs._type.is_integer() {
         coerce_integral_binop(env, op, lhs, rhs)
     } else {
-        log_typecheck_error!(
-            env,
+        env.log_error(
             lhs.token_range,
-            "Invalid binary operation {op} for types {} and {}",
-            lhs.get_type().display_with(&env.symbols),
-            rhs.get_type().display_with(&env.symbols)
+            format!(
+                "Invalid binary operation {op} for types {} and {}",
+                lhs.get_type().display_with(&env.symbols),
+                rhs.get_type().display_with(&env.symbols)
+            ),
         )
     }
 }
@@ -149,12 +150,13 @@ fn coerce_float_binop(
         CXBinOp::GreaterEqual => (MIRFloatBinOp::FGE, MIRType::bool()),
 
         _ => {
-            return log_typecheck_error!(
-                env,
+            return env.log_error(
                 lhs.token_range,
-                "Invalid float binary operation {op} for types {} and {}",
-                lhs.get_type().display_with(&env.symbols),
-                rhs.get_type().display_with(&env.symbols)
+                format!(
+                    "Invalid float binary operation {op} for types {} and {}",
+                    lhs.get_type().display_with(&env.symbols),
+                    rhs.get_type().display_with(&env.symbols)
+                ),
             );
         }
     };
@@ -191,10 +193,9 @@ fn coerce_pointer_binop(
             CXBinOp::NotEqual => (MIRType::bool(), MIRPtrBinOp::NE),
 
             _ => {
-                return log_typecheck_error!(
-                    env,
+                return env.log_error(
                     lhs.token_range,
-                    "Invalid binary operation {op} for pointer types"
+                    format!("Invalid binary operation {op} for pointer types"),
                 );
             }
         };
@@ -271,10 +272,9 @@ fn coerce_pointer_binop(
         ),
 
         _ => {
-            return log_typecheck_error!(
-                env,
+            return env.log_error(
                 lhs.token_range,
-                "Invalid binary operation {op} for pointer and non-pointer types"
+                format!("Invalid binary operation {op} for pointer and non-pointer types"),
             );
         }
     };
@@ -328,23 +328,25 @@ fn coerce_integral_binop(
         | CXBinOp::NotEqual => MIRType::bool(),
 
         _ => {
-            return log_typecheck_error!(
-                env,
+            return env.log_error(
                 lhs.token_range,
-                "Invalid integer binary operation {op} for types {} and {}",
-                lhs.get_type().display_with(&env.symbols),
-                rhs.get_type().display_with(&env.symbols)
+                format!(
+                    "Invalid integer binary operation {op} for types {} and {}",
+                    lhs.get_type().display_with(&env.symbols),
+                    rhs.get_type().display_with(&env.symbols)
+                ),
             );
         }
     };
 
     let Some(op) = lower_int_binop(op, true) else {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             lhs.token_range,
-            "Invalid integer binary operation {op} for types {} and {}",
-            lhs.get_type().display_with(&env.symbols),
-            rhs.get_type().display_with(&env.symbols)
+            format!(
+                "Invalid integer binary operation {op} for types {} and {}",
+                lhs.get_type().display_with(&env.symbols),
+                rhs.get_type().display_with(&env.symbols)
+            ),
         );
     };
 

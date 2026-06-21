@@ -95,13 +95,14 @@ fn collect_types(
             for (_, field_ty) in fields {
                 collect_types(field_ty, type_defs, forward_decls);
             }
-            let mut def = format!("struct {name} {{\n");
+            let mut def = Vec::new();
+            write!(def, "struct {name} {{\n").unwrap();
             for (field_name, field_ty) in fields {
                 let c_type = lmir_type_to_c(field_ty, Some(field_name));
                 writeln!(def, "    {c_type};").unwrap();
             }
             write!(def, "}}").unwrap();
-            type_defs.insert(name.clone(), def);
+            type_defs.insert(name.clone(), String::from_utf8(def).unwrap());
         }
         LMIRTypeKind::Array { element, .. } => {
             collect_types(element, type_defs, forward_decls);

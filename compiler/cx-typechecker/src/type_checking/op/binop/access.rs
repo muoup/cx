@@ -1,5 +1,4 @@
 use crate::environment::TypeEnvironment;
-use crate::log_typecheck_error;
 use crate::type_checking::aggregate::fields::struct_field;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::locals::ensure_binding_available;
@@ -66,12 +65,7 @@ fn resolve_access_base(
             | MIRTypeKind::Union { .. }
             | MIRTypeKind::TaggedUnion { .. }
     ) {
-        return log_typecheck_error!(
-            env,
-            expr.token_range(),
-            "Expected a struct or union type on the left-hand side of an access expression, found {}",
-            lhs_inner.display_with(&env.symbols)
-        );
+        return env.log_error(expr.token_range(), format!("Expected a struct or union type on the left-hand side of an access expression, found {}", lhs_inner.display_with(&env.symbols)));
     }
 
     Ok(AccessBase {
@@ -102,27 +96,24 @@ pub fn typecheck_access(
         template_input: None,
     } = &rhs.kind
     else {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             rhs.token_range(),
-            "Invalid right-hand side of access expression: expected an identifier"
+            format!("Invalid right-hand side of access expression: expected an identifier"),
         );
     };
 
     let Some(rhs_name) = name.root_name_ref() else {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             rhs.token_range(),
-            "Invalid right-hand side of access expression: expected an identifier"
+            format!("Invalid right-hand side of access expression: expected an identifier"),
         );
     };
 
     let Some(struct_field) = struct_field(&env.symbols, &base.source_type, rhs_name.as_str())
     else {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             rhs.token_range(),
-            "Invalid right-hand side of access expression: expected an identifier"
+            format!("Invalid right-hand side of access expression: expected an identifier"),
         );
     };
 

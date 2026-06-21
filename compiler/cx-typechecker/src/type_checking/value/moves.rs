@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     environment::{BindingMoveState, TypeEnvironment},
-    log_typecheck_error,
     type_checking::{
         result::{BindingPlaceKind, TypecheckResult},
         typechecker::typecheck_expr,
@@ -39,27 +38,21 @@ pub(crate) fn typecheck_move(
     }
 
     let Some(binding) = binding else {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             inner_expr.token_range(),
-            "Move expressions can currently only be applied to stack variable identifiers"
+            format!("Move expressions can currently only be applied to stack variable identifiers"),
         );
     };
 
     if binding.kind != BindingPlaceKind::Local {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             inner_expr.token_range(),
-            "Moving out of aggregate fields or projections is not implemented"
+            format!("Moving out of aggregate fields or projections is not implemented"),
         );
     };
 
     if !matches!(inner_val.kind, MIRExpressionKind::Variable { .. }) {
-        return log_typecheck_error!(
-            env,
-            inner_expr.token_range(),
-            "Move expressions can currently only be applied to stack variable identifiers",
-        );
+        return env.log_error(inner_expr.token_range(), format!("Move expressions can currently only be applied to stack variable identifiers", ));
     }
 
     let Some(inner_type) = env.symbols.mem_ref_inner(&inner_val._type).cloned() else {
@@ -84,10 +77,9 @@ pub(crate) fn typecheck_adopt(
     inner: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     if env.function.in_safe_context() {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "@adopt is unsafe and must be wrapped in @unsafe in safe functions"
+            format!("@adopt is unsafe and must be wrapped in @unsafe in safe functions"),
         );
     }
 
@@ -95,28 +87,25 @@ pub(crate) fn typecheck_adopt(
     let binding = value.binding().cloned();
     let value = value.standard_ready_coerce(env, inner.token_range())?;
     let Some(inner_type) = env.symbols.mem_ref_inner(&value._type).cloned() else {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "@adopt requires an addressable memory place"
+            format!("@adopt requires an addressable memory place"),
         );
     };
 
     if value._type.get_specifier(CX_CONST) || inner_type.get_specifier(CX_CONST) {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "@adopt cannot adopt from a const memory place"
+            format!("@adopt cannot adopt from a const memory place"),
         );
     }
 
     if let Some(binding) = binding.as_ref()
         && binding.kind == BindingPlaceKind::Local
     {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "@adopt of a local binding is not allowed; use move for local bindings"
+            format!("@adopt of a local binding is not allowed; use move for local bindings"),
         );
     }
 
@@ -133,38 +122,34 @@ pub(crate) fn typecheck_leak(
     inner: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     if env.function.in_safe_context() {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "@leak is unsafe and must be wrapped in @unsafe in safe functions"
+            format!("@leak is unsafe and must be wrapped in @unsafe in safe functions"),
         );
     }
 
     let value = typecheck_expr(env, namespace, inner, None)?;
 
     let Some(binding) = value.binding().cloned() else {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "@leak currently requires a local identifier"
+            format!("@leak currently requires a local identifier"),
         );
     };
 
     if binding.kind != BindingPlaceKind::Local {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "@leak on aggregate fields or projections is not implemented"
+            format!("@leak on aggregate fields or projections is not implemented"),
         );
     };
 
     let value = value.standard_ready_coerce(env, inner.token_range())?;
 
     let Some(inner_type) = env.symbols.mem_ref_inner(&value._type).cloned() else {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "@leak requires a stack local value"
+            format!("@leak requires a stack local value"),
         );
     };
 
@@ -194,7 +179,7 @@ pub(crate) fn typecheck_unpack(
         .and_then(|v| v.standard_ready_coerce(env, inner.token_range()))?;
 
     let MIRTypeKind::Structured { fields } = &value._type.kind else {
-        return log_typecheck_error!(env, expr.token_range(), "@unpack expects a struct type");
+        return env.log_error(expr.token_range(), format!("@unpack expects a struct type"));
     };
 
     let field_map = fields
@@ -208,30 +193,33 @@ pub(crate) fn typecheck_unpack(
 
     for unpack_binding in bindings {
         if !field_map.contains_key(unpack_binding.field.as_str()) {
-            return log_typecheck_error!(
-                env,
+            return env.log_error(
                 expr.token_range(),
-                "@unpack field '{}' does not exist on {}",
-                unpack_binding.field,
-                value._type.display_with(&env.symbols)
+                format!(
+                    "@unpack field '{}' does not exist on {}",
+                    unpack_binding.field,
+                    value._type.display_with(&env.symbols)
+                ),
             );
         }
 
         if !seen_fields.insert(unpack_binding.field.as_string()) {
-            return log_typecheck_error!(
-                env,
+            return env.log_error(
                 expr.token_range(),
-                "@unpack field '{}' is bound more than once",
-                unpack_binding.field
+                format!(
+                    "@unpack field '{}' is bound more than once",
+                    unpack_binding.field
+                ),
             );
         }
 
         if !seen_bindings.insert(unpack_binding.binding.as_string()) {
-            return log_typecheck_error!(
-                env,
+            return env.log_error(
                 expr.token_range(),
-                "@unpack binding '{}' is introduced more than once",
-                unpack_binding.binding
+                format!(
+                    "@unpack binding '{}' is introduced more than once",
+                    unpack_binding.binding
+                ),
             );
         }
     }
@@ -240,12 +228,13 @@ pub(crate) fn typecheck_unpack(
         let _ty = env.symbols.resolve_type_id(*field_ty_id);
 
         if _ty.is_nodrop() && !seen_fields.contains(field_name) {
-            return log_typecheck_error!(
-                env,
+            return env.log_error(
                 expr.token_range(),
-                "@unpack of {} must bind @nodrop field '{}'",
-                value._type.display_with(&env.symbols),
-                field_name
+                format!(
+                    "@unpack of {} must bind @nodrop field '{}'",
+                    value._type.display_with(&env.symbols),
+                    field_name
+                ),
             );
         }
     }

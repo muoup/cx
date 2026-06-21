@@ -1,5 +1,4 @@
 use crate::environment::TypeEnvironment;
-use crate::log_typecheck_error;
 use crate::symbol::completion::complete_template_input;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::pattern::tagged_union::{
@@ -38,11 +37,12 @@ pub(crate) fn typecheck_is(
     };
 
     let Some(variants) = union_type.aggregate_fields(&env.symbols) else {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "'is' operator requires a tagged union on the left-hand side, found {}",
-            union_type.display_with(&env.symbols)
+            format!(
+                "'is' operator requires a tagged union on the left-hand side, found {}",
+                union_type.display_with(&env.symbols)
+            ),
         );
     };
     let variants = variants.clone();
@@ -56,13 +56,7 @@ pub(crate) fn typecheck_is(
     } = resolve_type_constructor_pattern(env, namespace, expr, pattern)?;
 
     if expected_union_name != &union_name {
-        return log_typecheck_error!(
-            env,
-            expr.token_range(),
-            "'is' operator left-hand side tagged union type {} does not match right-hand side tagged union type {}",
-            expected_union_name,
-            union_name
-        );
+        return env.log_error(expr.token_range(), format!("'is' operator left-hand side tagged union type {} does not match right-hand side tagged union type {}", expected_union_name, union_name));
     }
     validate_variant_template_input(env, namespace, union_type, template_input.as_ref(), expr)?;
 
@@ -72,12 +66,12 @@ pub(crate) fn typecheck_is(
         .find(|(_, (name, _))| name == variant_name.as_str())
         .map(|(i, (_, _ty))| (i, _ty))
     else {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "'is' operator variant name '{}' not found in tagged union {}",
-            variant_name,
-            union_name
+            format!(
+                "'is' operator variant name '{}' not found in tagged union {}",
+                variant_name, union_name
+            ),
         );
     };
     if let Some(inner_name) = &inner_name {
@@ -120,18 +114,16 @@ fn validate_variant_template_input(
     };
     let completed_input = complete_template_input(env, namespace, template_input)?;
     let Some(template_data) = union_type.get_template_data() else {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "Non-templated tagged union pattern may not have template arguments"
+            format!("Non-templated tagged union pattern may not have template arguments"),
         );
     };
 
     if !completed_input.contextual_eq(&template_data.template_input, &env.symbols) {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "Tagged union pattern template arguments do not match the left-hand side type"
+            format!("Tagged union pattern template arguments do not match the left-hand side type"),
         );
     }
 

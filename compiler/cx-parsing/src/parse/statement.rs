@@ -1,6 +1,4 @@
-use cx_ast::ast::
-    expression::{CXExprKind, CXExpression}
-;
+use cx_ast::ast::expression::{CXExprKind, CXExpression};
 use cx_log::CXResult;
 use cx_tokens::{
     keyword, punctuator,
@@ -8,7 +6,9 @@ use cx_tokens::{
 };
 
 use crate::{
-    assert_token_matches, next_kind,
+    assert_token_matches,
+    log::ParserLogExt,
+    next_kind,
     parse::{
         expressions::{parse_expr, parse_pattern},
         parse_body,
@@ -48,7 +48,7 @@ pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<CXExpress
                 data.tokens.index,
                 data.tokens.index,
                 data.file_origin.clone(),
-            )))
+            )));
         }
 
         _ => {}
@@ -125,10 +125,8 @@ pub(crate) fn try_parse_keyword_stmt(
                         "':'"
                     );
                     if default_case.is_some() {
-                        return log_parse_error!(
-                            data,
-                            "Multiple default cases in switch statement"
-                        );
+                        return data
+                            .log_error(format!("Multiple default cases in switch statement"));
                     }
                     default_case = Some(index as usize);
                     continue;
@@ -162,7 +160,8 @@ pub(crate) fn try_parse_keyword_stmt(
                 if try_next!(data.tokens, keyword!(Default)) {
                     assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
                     if default_arm.is_some() {
-                        return log_parse_error!(data, "Multiple default cases in match statement");
+                        return data
+                            .log_error(format!("Multiple default cases in match statement"));
                     }
                     default_arm = Some(Box::new(parse_body(data)?));
                     continue;
@@ -303,7 +302,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<CXExpres
                 ),
             );
         } else {
-            return log_parse_error!(data, "Expected variable name in declaration");
+            return data.log_error(format!("Expected variable name in declaration"));
         }
 
         if !try_next!(data.tokens, TokenKind::Operator(OperatorType::Comma)) {

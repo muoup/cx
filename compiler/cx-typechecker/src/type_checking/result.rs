@@ -8,7 +8,6 @@ use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
 
 use crate::environment::TypeEnvironment;
-use crate::log_typecheck_error;
 use cx_tokens::TokenRange;
 
 /// Richer representation of a typechecking result. Most expressions are ready MIR immediately,
@@ -140,15 +139,13 @@ impl TypecheckResult {
     ) -> CXResult<TypecheckResult> {
         match self.expression {
             TypecheckState::Ready(_) => Ok(self),
-            TypecheckState::IncompleteTemplatedCallee { .. } => log_typecheck_error!(
-                env,
+            TypecheckState::IncompleteTemplatedCallee { .. } => env.log_error(
                 token_range,
-                "Could not deduce templated function parameters",
+                format!("Could not deduce templated function parameters",),
             ),
-            TypecheckState::NeedsExpectedType(_) => log_typecheck_error!(
-                env,
+            TypecheckState::NeedsExpectedType(_) => env.log_error(
                 token_range,
-                "Could not resolve expression, expected type required but not provided",
+                format!("Could not resolve expression, expected type required but not provided",),
             ),
         }
     }

@@ -1,5 +1,4 @@
 use crate::environment::TypeEnvironment;
-use crate::log_typecheck_error;
 use crate::symbol::deduction::complete_templated_callee;
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::lvalue;
@@ -68,11 +67,12 @@ fn load_callable(
         .intern_signature(loaded_function.get_type_ref())
         .cloned()
     else {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "Attempted to call value of non-function type {}",
-            function_type.display_with(&env.symbols)
+            format!(
+                "Attempted to call value of non-function type {}",
+                function_type.display_with(&env.symbols)
+            ),
         );
     };
 
@@ -86,24 +86,26 @@ fn check_argument_count(
     arg_count: usize,
 ) -> CXResult<()> {
     if arg_count != signature.params.len() && !signature.var_args {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "Call to {} expects {} arguments, found {}",
-            signature.display_with(&env.symbols),
-            signature.params.len(),
-            arg_count
+            format!(
+                "Call to {} expects {} arguments, found {}",
+                signature.display_with(&env.symbols),
+                signature.params.len(),
+                arg_count
+            ),
         );
     }
 
     if arg_count < signature.params.len() {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "Call to {} expects at least {} arguments, found {}",
-            signature.display_with(&env.symbols),
-            signature.params.len(),
-            arg_count
+            format!(
+                "Call to {} expects at least {} arguments, found {}",
+                signature.display_with(&env.symbols),
+                signature.params.len(),
+                arg_count
+            ),
         );
     }
 
@@ -164,11 +166,12 @@ fn complete_vararg_argument(
             _type: MIRFloatType::F64,
         } => {}
         _ => {
-            return log_typecheck_error!(
-                env,
+            return env.log_error(
                 expr.token_range(),
-                "Cannot pass {} to varargs: expected an intrinsic type or pointer",
-                arg_type.display_with(&env.symbols)
+                format!(
+                    "Cannot pass {} to varargs: expected an intrinsic type or pointer",
+                    arg_type.display_with(&env.symbols)
+                ),
             );
         }
     }
@@ -254,7 +257,7 @@ fn complete_callee(
 
         TypecheckExtract::Fail(function) => {
             let Some(parts) = function.into_incomplete_callee_parts() else {
-                return log_typecheck_error!(env, expr.token_range(), "Could not deduce callee");
+                return env.log_error(expr.token_range(), format!("Could not deduce callee"));
             };
 
             let deduction_arg_types = deduction_arg_types(implicit_args, args);
@@ -268,20 +271,16 @@ fn complete_callee(
             ) {
                 Ok(symbol) => symbol,
                 Err(err) => {
-                    return log_typecheck_error!(
-                        env,
+                    return env.log_error(
                         expr.token_range(),
-                        "{}",
-                        err.error_message()
+                        "Failed to complete call argument expression",
                     );
                 }
             };
 
             match symbol.as_expression() {
                 Ok(function) => Ok(function),
-                Err(err) => {
-                    log_typecheck_error!(env, expr.token_range(), "{}", err.error_content())
-                }
+                Err(err) => env.log_error(expr.token_range(), format!("{}", err.message())),
             }
         }
     }
