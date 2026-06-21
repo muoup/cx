@@ -131,8 +131,16 @@ pub(crate) fn type_mangle(definitions: &impl MIRTypeContext, ty: &MIRType) -> St
 }
 
 fn push_move_attributes(mangled: &mut String, ty: &MIRType) {
-    mangled.push(if ty.move_attributes.semantics.is_nocopy() { 'C' } else { 'c' });
-    mangled.push(if ty.move_attributes.semantics.is_nodrop() { 'D' } else { 'd' });
+    mangled.push(if ty.move_attributes.semantics.is_nocopy() {
+        'C'
+    } else {
+        'c'
+    });
+    mangled.push(if ty.move_attributes.semantics.is_nodrop() {
+        'D'
+    } else {
+        'd'
+    });
 }
 
 fn push_aggregate_fields(

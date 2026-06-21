@@ -1,5 +1,6 @@
+use crate::pipeline_error;
 use crate::progress::ProgressReporter;
-use cx_log::{CXResult, CXUnspannedError};
+use cx_log::CXResult;
 use cx_pipeline_data::GlobalCompilationContext;
 use std::process::Command;
 
@@ -35,9 +36,9 @@ pub(crate) fn link_relocatable(
         cmd.arg(file);
     }
 
-    let output = cmd.output().map_err(|e| {
-        CXStdErrorMsg::error("LINK ERROR", format!("Failed to execute linker: {}", e))
-    })?;
+    let output = cmd
+        .output()
+        .map_err(|e| pipeline_error("LINK ERROR", format!("Failed to execute linker: {}", e)))?;
 
     if output.status.success() {
         Ok(())
@@ -47,13 +48,13 @@ pub(crate) fn link_relocatable(
             String::from_utf8_lossy(&output.stderr)
         );
         eprintln!("[Linker] Command: {cmd:?}");
-        CXUnspannedError::result(
+        Err(pipeline_error(
             "LINK ERROR",
             format!(
                 "Relocatable linking failed: {}",
                 String::from_utf8_lossy(&output.stderr)
             ),
-        )
+        ))
     }
 }
 
@@ -93,17 +94,17 @@ pub(crate) fn link(
                 cmd.arg(format!("-l{}", entry.name));
             }
             other => {
-                return CXUnspannedError::result(
+                return Err(pipeline_error(
                     "LINK ERROR",
                     format!("Unknown link kind '{}' for library '{}'", other, entry.name),
-                );
+                ));
             }
         }
     }
 
-    let output = cmd.output().map_err(|e| {
-        CXStdErrorMsg::error("LINK ERROR", format!("Failed to execute linker: {}", e))
-    })?;
+    let output = cmd
+        .output()
+        .map_err(|e| pipeline_error("LINK ERROR", format!("Failed to execute linker: {}", e)))?;
 
     if output.status.success() {
         Ok(())
@@ -113,12 +114,12 @@ pub(crate) fn link(
             String::from_utf8_lossy(&output.stderr)
         );
         eprintln!("[Linker] Command: {cmd:?}");
-        CXUnspannedError::result(
+        Err(pipeline_error(
             "LINK ERROR",
             format!(
                 "Linking failed: {}",
                 String::from_utf8_lossy(&output.stderr)
             ),
-        )
+        ))
     }
 }

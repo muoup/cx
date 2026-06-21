@@ -20,6 +20,7 @@ impl<'env, 'data> ComptimeEngine<'env, 'data> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn env(&self) -> &TypeEnvironment<'data> {
         self.env
     }

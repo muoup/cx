@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use cx_ast::ast::{CXAST, CXASTDefinition, CXASTStmt, function::CXFunctionKind};
+use cx_ast::ast::{function::CXFunctionKind, CXASTDefinition, CXASTStmt, CXAST};
 use cx_log::CXResult;
-use cx_namespace::MIRQualifiedLookup;
 use cx_namespace::result::QualifiedLookupResult;
+use cx_namespace::MIRQualifiedLookup;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_preparse_data::symbol_data::PreparseSymbolKind;
 use cx_preparse_data::{NamespaceAliases, PreparseContents, VisibilityMode};

@@ -29,7 +29,9 @@ pub(crate) fn typecheck_identifier(
         .map(|input| complete_template_input(env, namespace, input))
         .transpose()?
     {
-        symbol = apply_template(env, &symbol, completed_input)?.unwrap();
+        symbol = apply_template(env, &symbol, completed_input)
+            .map_err(|err| env.complete_maybe_err(err, expr.token_range()))?
+            .unwrap();
     }
 
     let result = TypecheckResult::from_symbol(symbol, name.clone(), template_input.cloned())

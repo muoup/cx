@@ -1,8 +1,8 @@
 use cx_ast::{
     ast::{
-        CXASTDefinition, CXASTStmt,
         global_var::CXGlobalVariable,
         template::{CXTemplateInput, CXTemplatePrototype},
+        CXASTDefinition, CXASTStmt,
     },
     decomposition::{CXGenerationAST, CXGenerationStmt},
     symbols::{CXSymbol, CXSymbolKind, SymbolNamespaceData},

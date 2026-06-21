@@ -55,7 +55,8 @@ pub fn typecheck_function(
         .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
     let with_implicit_return = add_implicit_return(env, namespace, body_expr)?;
 
-    env.pop_scope()?;
+    env.pop_scope()
+        .map_err(|err| env.complete_err(err, body.token_range()))?;
     env.function.end_function();
 
     env.items.push_generated_function(MIRFunction {

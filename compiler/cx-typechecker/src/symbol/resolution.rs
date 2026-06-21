@@ -7,7 +7,10 @@ use cx_ast::{
     },
     symbols::{CXSymbol, CXSymbolKind},
 };
-use cx_log::{CXRawResult, CXResult};
+use cx_log::{
+    CXRawResult, CXResult,
+    error::{CXMaybeRawErr, CXMaybeRawResult},
+};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
@@ -231,10 +234,11 @@ fn resolve_type_constructor(
     union_type: &CXType,
     variant_index: usize,
 ) -> CXResult<MIRSymbol> {
+    let range = union_type.range().clone();
     let union_type = complete_type(env, namespace, union_type)?;
-    let variants = union_type.aggregate_fields(&env.symbols).ok_or_else(|| {
-        crate::log::type_error_msg("Type constructor target is not a tagged union")
-    })?;
+    let variants = union_type
+        .aggregate_fields(&env.symbols)
+        .ok_or_else(|| env.error(&range, "Type constructor target is not a tagged union"))?;
     let Some((_, variant_type)) = variants.get(variant_index).cloned() else {
         return crate::log::internal_type_error(format!(
             "Type constructor variant index {} is out of bounds",
@@ -276,7 +280,7 @@ pub fn apply_template(
     env: &mut TypeEnvironment,
     symbol: &MIRSymbol,
     template_input: MIRTemplateInput,
-) -> CXRawResult<Option<MIRSymbol>> {
+) -> CXMaybeRawResult<Option<MIRSymbol>> {
     let MIRSymbol::Template {
         template_prototype: input,
         name,
@@ -288,18 +292,20 @@ pub fn apply_template(
     };
 
     if input.types.len() != template_input.args.len() {
-        return env.log_error_base(format!(
-            "Template '{}' expects {} arguments, found {}",
-            name,
-            input.types.len(),
-            template_input.args.len()
-        ));
+        return env
+            .log_error_base(format!(
+                "Template '{}' expects {} arguments, found {}",
+                name,
+                input.types.len(),
+                template_input.args.len()
+            ))
+            .map_err(CXMaybeRawErr::from);
     }
 
     env.symbols.push_local_scope();
-    let result = (|| {
-        apply_template_input(env, input, &template_input)?;
-        resolve_symbol(env, namespace, namespace, name, source)
+    let result = (|| -> CXMaybeRawResult<MIRSymbol> {
+        apply_template_input(env, input, &template_input).map_err(CXMaybeRawErr::from)?;
+        resolve_symbol(env, namespace, namespace, name, source).map_err(CXMaybeRawErr::from)
     })();
     env.symbols.pop_local_scope();
 
@@ -352,7 +358,7 @@ pub fn apply_template_input(
     env: &mut TypeEnvironment,
     prototype: &CXTemplatePrototype,
     input: &MIRTemplateInput,
-) -> CXResult<()> {
+) -> CXRawResult<()> {
     for (param, arg) in prototype.types.iter().zip(input.args.iter()) {
         env.symbols.insert_local_type_id(param.as_string(), *arg)?;
     }

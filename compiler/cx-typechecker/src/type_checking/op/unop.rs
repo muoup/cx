@@ -44,7 +44,7 @@ pub fn typecheck_unop(
 
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
                 return env.log_error(
-                    operand.token_range,
+                    &operand.token_range,
                     format!(
                         "Cannot apply pre-increment to non-reference type {}",
                         operand._type.display_with(&env.symbols)
@@ -73,7 +73,7 @@ pub fn typecheck_unop(
 
                 _ => {
                     return env.log_error(
-                        operand.token_range,
+                        &operand.token_range,
                         format!(
                             "Pre-increment operator requires an integer or pointer type, found {}",
                             inner.display_with(&env.symbols)
@@ -109,7 +109,7 @@ pub fn typecheck_unop(
 
             if !operand._type.is_integer() {
                 return env.log_error(
-                    operand.token_range,
+                    &operand.token_range,
                     format!(
                         "Bitwise NOT operator requires an integer type, found {}",
                         operand._type.display_with(&env.symbols)
@@ -137,7 +137,7 @@ pub fn typecheck_unop(
 
                 _ => {
                     return env.log_error(
-                        operand.token_range,
+                        &operand.token_range,
                         format!(
                             "Negation operator requires an integer or float type, found {}",
                             operand.display_with(&env.symbols)
@@ -161,7 +161,7 @@ pub fn typecheck_unop(
 
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
                 return env.log_error(
-                    operand.token_range,
+                    &operand.token_range,
                     format!("Cannot take the address of a non-reference type"),
                 );
             };
@@ -184,7 +184,7 @@ pub fn typecheck_unop(
 
             let Some(inner) = env.symbols.ptr_inner(&operand._type).cloned() else {
                 return env.log_error(
-                    operand.token_range,
+                    &operand.token_range,
                     format!(
                         "Cannot dereference non-pointer type {}",
                         operand._type.display_with(&env.symbols)

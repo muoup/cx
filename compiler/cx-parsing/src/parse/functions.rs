@@ -10,8 +10,9 @@ use cx_ast::ast::{
 };
 use cx_log::CXResult;
 use cx_tokens::{
-    TokenRange, identifier, keyword, operator, punctuator,
+    identifier, keyword, operator, punctuator,
     token::{PunctuatorType, TokenKind},
+    TokenRange,
 };
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 

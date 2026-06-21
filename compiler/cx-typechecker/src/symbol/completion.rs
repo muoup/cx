@@ -411,7 +411,7 @@ fn complete_template_type_lookup(
             .map_err(|e| e.into());
     };
     let input = complete_template_input(env, namespace, input)?;
-    let Some(symbol) = apply_template(env, mir_symbol, input).map_err(CXMaybeRawErr::from)? else {
+    let Some(symbol) = apply_template(env, mir_symbol, input)? else {
         return env
             .log_error_base(format!("Failed to apply template arguments"))
             .map_err(|e| e.into());

@@ -48,10 +48,7 @@ pub fn typecheck_match(
     match &expr_type.kind {
         MIRTypeKind::MemoryReference { inner_type, .. }
         | MIRTypeKind::PointerTo { inner_type, .. } => {
-            expr_type = env
-                .get_named_type_definition(*inner_type)
-                .expect("Memory reference or pointer inner type should be a named type")
-                .clone();
+            expr_type = env.symbols.resolve_type_id(*inner_type).clone();
 
             expr_value = MIRExpression {
                 token_range: TokenRange::internal(),
@@ -206,7 +203,8 @@ pub fn typecheck_match(
 
                         let body_expr = typecheck_expr(env, namespace, body, None)
                             .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
-                        env.pop_scope()?;
+                        env.pop_scope()
+                            .map_err(|err| env.complete_err(err, body.token_range()))?;
 
                         MIRExpression {
                             token_range: TokenRange::internal(),
@@ -224,7 +222,8 @@ pub fn typecheck_match(
                         );
                         let body_expr = typecheck_expr(env, namespace, body, None)
                             .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
-                        env.pop_scope()?;
+                        env.pop_scope()
+                            .map_err(|err| env.complete_err(err, body.token_range()))?;
                         body_expr
                     };
                     if expr_may_fall_through(&body_expr) {
@@ -312,7 +311,8 @@ pub fn typecheck_match(
         );
     }
 
-    env.pop_scope()?;
+    env.pop_scope()
+        .map_err(|err| env.complete_err(err, condition.token_range()))?;
 
     // Build the match expression
     Ok(TypecheckResult::new(

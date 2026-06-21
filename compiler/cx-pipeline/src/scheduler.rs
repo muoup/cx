@@ -1,6 +1,7 @@
 use crate::backends::{cranelift_compile, llvm_compile};
+use crate::pipeline_error;
 use crate::progress::ProgressReporter;
-use cx_log::{CXError, CXResult, CXUnspannedError};
+use cx_log::{CXResult, error::CXErr};
 use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::preparse::PreparseConfig;
@@ -120,13 +121,13 @@ fn import_jobs_for_unit(
 
     for import in imports {
         if !context.module_mode && !import.is_library_module() {
-            return CXUnspannedError::result(
+            return Err(pipeline_error(
                 "COMPILATION ERROR",
                 format!(
                     "Import '{}' is not available in single-file compilation mode. Only compiler library modules under `std::` may be imported here; use `cx build` for project/module imports.",
                     import.as_str().replace('/', "::")
                 ),
-            );
+            ));
         }
 
         jobs.push(CompilationJob::new(
@@ -396,7 +397,7 @@ pub(crate) fn perform_job(
 
             typecheck(&mut env, &namespace, &self_ast)?;
 
-            let mir = env.finish_mir_unit()?;
+            let mir = env.finish_mir_unit(namespace)?;
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&mir.display_pretty());
             }
@@ -438,11 +439,10 @@ pub(crate) fn perform_job(
                 &lmir_owned
             };
             let internal_directory = internal_directory(context, &job.unit).with_extension("o");
-            let internal_directory_str =
-                internal_directory.to_str().ok_or(CXStdErrorMsg::error(
-                    "COMPILATION ERROR",
-                    "Internal directory path is not valid UTF-8",
-                ))?;
+            let internal_directory_str = internal_directory.to_str().ok_or(pipeline_error(
+                "COMPILATION ERROR",
+                "Internal directory path is not valid UTF-8",
+            ))?;
 
             let buffer = match context.config.backend {
                 CompilerBackend::LLVM => llvm_compile(
@@ -575,21 +575,7 @@ fn handle_job_collect_errors(
         .into()
     };
 
-    fn spanned_error(error: &dyn CXError) -> Option<LSPErrors> {
-        if let (Some(compilation_unit), Some(start), Some(end)) = (
-            error.compilation_unit(),
-            error.byte_start(),
-            error.byte_end(),
-        ) {
-            return Some(LSPErrors::SpannedError {
-                compilation_unit,
-                message: error.error_message(),
-                byte_start: start,
-                byte_end: end,
-                notes: error.notes().to_vec(),
-            });
-        }
-
+    fn spanned_error(_error: &CXErr) -> Option<LSPErrors> {
         None
     }
 
@@ -597,9 +583,9 @@ fn handle_job_collect_errors(
     match perform_job(context, job, false) {
         Ok(_) => {}
         Err(e) => {
-            let lsp_error = spanned_error(e.as_ref()).unwrap_or(LSPErrors::FatalError {
+            let lsp_error = spanned_error(&e).unwrap_or(LSPErrors::FatalError {
                 compilation_unit: job.unit.as_path().to_path_buf(),
-                message: e.error_message(),
+                message: e.message(),
                 line: None,
             });
 
@@ -616,9 +602,9 @@ fn handle_job_collect_errors(
             let mut new_jobs = match import_jobs_for_unit(context, &pp_data.imports) {
                 Ok(jobs) => jobs,
                 Err(e) => {
-                    let lsp_error = spanned_error(e.as_ref()).unwrap_or(LSPErrors::FatalError {
+                    let lsp_error = spanned_error(&e).unwrap_or(LSPErrors::FatalError {
                         compilation_unit: job.unit.as_path().to_path_buf(),
-                        message: e.error_message(),
+                        message: e.message(),
                         line: None,
                     });
                     error_collector.push(lsp_error);

@@ -1,17 +1,18 @@
 use cx_ast::ast::{
-    CXASTStmt,
     expression::{CXExprKind, CXExpression},
     function::CXFunctionPrototype,
     global_var::CXGlobalVariable,
     modifiers::CXLinkageMode,
     template::CXTemplatePrototype,
     types::CXTypeKind,
+    CXASTStmt,
 };
 use cx_log::CXResult;
 use cx_preparse_data::VisibilityMode;
 use cx_tokens::{
-    TokenIter, keyword, operator, punctuator, specifier,
+    keyword, operator, punctuator, specifier,
     token::{SpecifierType, TokenKind},
+    TokenIter,
 };
 use cx_util::identifier::CXIdent;
 

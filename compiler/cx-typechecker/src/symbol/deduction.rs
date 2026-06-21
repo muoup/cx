@@ -6,7 +6,10 @@ use cx_ast::ast::{
     types::{CXType, CXTypeKind},
 };
 use cx_ast::symbols::CXSymbolKind;
-use cx_log::CXResult;
+use cx_log::{
+    CXResult,
+    error::{CXMaybeRawErr, CXMaybeRawResult},
+};
 use cx_mir::{
     EnvironmentNamespace,
     mir::data::{MIRFunctionSignature, MIRTemplateInput, MIRType, MIRTypeKind},
@@ -25,29 +28,37 @@ use crate::{
 
 type TemplateBindings = HashMap<String, MIRType>;
 
-pub(crate) fn complete_templated_callee(
+pub(crate) fn complete_templated_callee_maybe(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     name: &QualifiedName,
     template_input: Option<&CXTemplateInput>,
     arg_types: &[MIRType],
-) -> CXResult<MIRSymbol> {
-    let Some(symbol) = env.get_symbol(namespace, name)? else {
-        return crate::log::internal_type_error(format!("Templated function '{}' not found", name));
+) -> CXMaybeRawResult<MIRSymbol> {
+    let Some(symbol) = env
+        .get_symbol(namespace, name)
+        .map_err(CXMaybeRawErr::from)?
+    else {
+        return crate::log::internal_type_error(format!("Templated function '{}' not found", name))
+            .map_err(CXMaybeRawErr::from);
     };
 
     if let Some(input) = template_input {
         let completed_input = complete_template_input(env, namespace, input)?;
         return apply_template(env, &symbol, completed_input)?.ok_or_else(|| {
-            crate::log::type_error_msg(format!(
+            CXMaybeRawErr::from(crate::log::type_error_msg(format!(
                 "Symbol '{}' does not accept template arguments",
                 name
-            ))
+            )))
         });
     }
 
-    deduce_template_symbol(env, namespace, &symbol, arg_types)?
-        .ok_or_else(|| crate::log::type_error_msg(format!("Symbol '{}' is not a template", name)))
+    deduce_template_symbol(env, namespace, &symbol, arg_types)?.ok_or_else(|| {
+        CXMaybeRawErr::from(crate::log::type_error_msg(format!(
+            "Symbol '{}' is not a template",
+            name
+        )))
+    })
 }
 
 pub(crate) fn deduce_template_symbol(
@@ -55,7 +66,7 @@ pub(crate) fn deduce_template_symbol(
     _namespace: &EnvironmentNamespace,
     symbol: &MIRSymbol,
     arg_types: &[MIRType],
-) -> CXResult<Option<MIRSymbol>> {
+) -> CXMaybeRawResult<Option<MIRSymbol>> {
     let MIRSymbol::Template {
         template_prototype,
         source,
@@ -77,9 +88,10 @@ fn deduce_template_input(
     template_prototype: &CXTemplatePrototype,
     source: &cx_ast::symbols::CXSymbol,
     arg_types: &[MIRType],
-) -> CXResult<MIRTemplateInput> {
+) -> CXMaybeRawResult<MIRTemplateInput> {
     let CXSymbolKind::FunctionReference(shell) = &source.kind else {
-        return crate::log::internal_type_error("Only function template deduction is implemented");
+        return crate::log::internal_type_error("Only function template deduction is implemented")
+            .map_err(CXMaybeRawErr::from);
     };
 
     let mut bindings = TemplateBindings::new();
@@ -88,7 +100,8 @@ fn deduce_template_input(
             "Function template expects {} arguments, found {}",
             shell.params.len(),
             arg_types.len()
-        ));
+        ))
+        .map_err(CXMaybeRawErr::from);
     }
 
     for (param, actual_type) in shell.params.iter().zip(arg_types.iter()) {
@@ -107,15 +120,15 @@ fn deduce_template_input(
         .iter()
         .map(|name| {
             let ty = bindings.remove(name.as_str()).ok_or_else(|| {
-                crate::log::type_error_msg(format!(
+                CXMaybeRawErr::from(crate::log::type_error_msg(format!(
                     "Could not deduce template argument '{}' for function {}",
                     name, shell.kind
-                ))
+                )))
             })?;
 
             Ok(env.symbols.generate_type_id(ty))
         })
-        .collect::<CXResult<Vec<_>>>()?;
+        .collect::<CXMaybeRawResult<Vec<_>>>()?;
 
     Ok(MIRTemplateInput { args })
 }

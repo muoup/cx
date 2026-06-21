@@ -38,6 +38,10 @@ impl CXErr {
         CXErr { error, context }
     }
 
+    pub fn message(&self) -> String {
+        self.error.message()
+    }
+
     pub fn output<F>(&self, f: &mut F) -> std::io::Result<()>
     where
         F: std::io::Write,
@@ -46,5 +50,12 @@ impl CXErr {
         self.context.dump(f)?;
 
         Ok(())
+    }
+
+    pub fn print<F>(&self, f: &mut F) -> std::io::Result<()>
+    where
+        F: std::io::Write,
+    {
+        self.output(f)
     }
 }

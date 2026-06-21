@@ -30,12 +30,15 @@ pub(crate) fn get_error_loc(file_contents: &str, index: usize) -> (usize, usize)
         .lines()
         .last()
         .map(|line| line.len())
-        .unwrap_or(0)
-    ;
+        .unwrap_or(0);
     (last_line, last_col)
 }
 
-pub(crate) fn format_error_link(file_path: &Path, error_line: usize, error_padding: usize) -> String {
+pub(crate) fn format_error_link(
+    file_path: &Path,
+    error_line: usize,
+    error_padding: usize,
+) -> String {
     format!(
         "{}:{}:{}",
         file_path

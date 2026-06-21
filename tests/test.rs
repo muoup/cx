@@ -162,7 +162,9 @@ fn expect_failure(input: &Path, analysis: bool, expected_stage: FailureStage) {
         Err(err) => err,
     };
 
-    let message = err.error_message();
+    let mut error = Vec::new();
+    err.output(&mut error).unwrap();
+    let message = String::from_utf8(error).expect("Error message was not valid UTF-8");
     let actual_stage = classify_failure_stage(message.as_str());
 
     if actual_stage != Some(expected_stage) {
@@ -268,7 +270,7 @@ fn run_backend_end_to_end(
     if let Err(err) = standard_compilation(config, base_file_name(input)) {
         return Err(format!(
             "{backend_name} compilation failed:\n{}",
-            err.error_message()
+            err.message()
         ));
     }
 

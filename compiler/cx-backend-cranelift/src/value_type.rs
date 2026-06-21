@@ -1,6 +1,6 @@
 use cranelift::codegen::ir;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
-use cx_log::{CXRawResult, error::message::CXStdErrMessage};
+use cx_log::{error::message::CXStdErrMessage, CXRawResult};
 
 pub(crate) fn get_cranelift_abi_type(val_type: &LMIRType) -> CXRawResult<ir::AbiParam> {
     get_cranelift_type(val_type).map(ir::AbiParam::new)
@@ -20,7 +20,7 @@ pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> CXRawResult<ir::Type> {
         LMIRTypeKind::Float(LMIRFloatType::F64) => ir::types::F64,
         LMIRTypeKind::Vector { element, count } => {
             let element = get_cranelift_type(&LMIRTypeKind::Float(*element).into())?;
-            
+
             element.by(*count as u32).ok_or_else(|| {
                 CXStdErrMessage::error(
                     "CODEGEN ERROR",

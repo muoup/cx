@@ -76,7 +76,7 @@ impl MIRSymbol {
                 CXStdErrMessage::result("TYPE ERROR", "Could not deduce arguments to template")
             }
 
-            _ => CXStdErrMessage::result("TYPE ERROR", "Symbol does not refer to a value")
+            _ => CXStdErrMessage::result("TYPE ERROR", "Symbol does not refer to a value"),
         }
     }
 }

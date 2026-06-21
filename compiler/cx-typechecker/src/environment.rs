@@ -239,10 +239,7 @@ impl TypeEnvironment<'_> {
         crate::log::produce_(self.module_data, range.borrow(), message, Vec::new())
     }
 
-    pub(crate) fn log_error_base<T>(
-        &self,
-        message: impl Into<String>,
-    ) -> CXRawResult<T> {
+    pub(crate) fn log_error_base<T>(&self, message: impl Into<String>) -> CXRawResult<T> {
         CXStdErrMessage::result("TYPE ERROR", message.into())
     }
 
@@ -258,23 +255,11 @@ impl TypeEnvironment<'_> {
         CXErr::new(err, self.module_data.convert_token_range(range))
     }
 
-    pub(crate) fn complete_maybe_err(
-        &self,
-        err: CXMaybeRawErr,
-        range: &TokenRange,
-    ) -> CXErr {
+    pub(crate) fn complete_maybe_err(&self, err: CXMaybeRawErr, range: &TokenRange) -> CXErr {
         match err {
-            CXMaybeRawErr::Complete(value) => value
+            CXMaybeRawErr::Complete(value) => value,
             CXMaybeRawErr::Raw(err) => self.complete_err(err, range),
         }
-    }
-
-    pub(crate) fn complete_result<T>(
-        &self,
-        result: CXRawResult<T>,
-        range: &TokenRange,
-    ) -> CXResult<T> {
-        result.map_err(|err| self.complete_err(err, range))
     }
 }
 

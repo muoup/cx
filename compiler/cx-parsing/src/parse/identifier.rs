@@ -4,12 +4,13 @@ use cx_ast::ast::{
     types::{CXType, CXTypeKind, PredeclarationType},
 };
 use cx_log::{
+    error::{context::CXInternalContext, message::CXStdErrMessage, CXErr},
     CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_tokens::{
-    TokenIter, operator,
+    operator,
     token::{OperatorType, TokenKind},
+    TokenIter,
 };
 use cx_util::{
     identifier::CXIdent,

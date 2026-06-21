@@ -143,7 +143,8 @@ fn realize_fn_template(
     let namespace = symbol_lexical_namespace(&name.namespace, &stmt);
     env.symbols.push_local_scope();
     let result = (|| {
-        apply_template_input(env, template, input)?;
+        apply_template_input(env, template, input)
+            .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
 
         if env.items.request_fulfilled(prototype.name()) {
             return Ok(());

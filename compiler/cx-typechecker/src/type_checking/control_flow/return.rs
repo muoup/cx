@@ -145,7 +145,8 @@ pub fn typecheck_return(
             .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
         let assertion_prototype = Box::new(resolve_assertion_prototype(env, namespace)?);
 
-        env.pop_scope()?;
+        env.pop_scope()
+            .map_err(|err| env.complete_err(err, ret_contract.token_range()))?;
 
         Ok(TypecheckResult::new(
             MIRType::unit(),

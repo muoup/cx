@@ -1,5 +1,5 @@
-use crate::token::{PunctuatorType, Token, TokenKind};
 pub use crate::token::TokenRange;
+use crate::token::{PunctuatorType, Token, TokenKind};
 use std::path::PathBuf;
 
 pub mod format;

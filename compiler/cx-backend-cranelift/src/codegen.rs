@@ -9,9 +9,9 @@ use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Module};
 use cx_lmir::{LMIRBasicBlock, LMIRFunction, LMIRFunctionPrototype};
-use cx_log::CXRawResult;
 use cx_log::error::context::CXInternalContext;
 use cx_log::error::{CXErr, CXResult};
+use cx_log::CXRawResult;
 use cx_util::format::dump_data;
 
 pub(crate) fn codegen_fn_prototype(
@@ -106,13 +106,14 @@ pub(crate) fn codegen_function(
                 .signature
                 .expanded_param_type(index)
                 .unwrap(),
-        ).map_err(|err|
+        )
+        .map_err(|err| {
             CXErr::new(
                 err,
                 CXInternalContext::error("Failed to get Cranelift type for function parameter"),
             )
-        )?;
-        
+        })?;
+
         let arg = context
             .builder
             .append_block_param(first_block, cranelift_type);

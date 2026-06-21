@@ -22,11 +22,14 @@ pub(crate) fn reset_num() {
 }
 
 pub(crate) fn inst_num() -> String {
-    format!("inst_{}", NUM.with(|num| {
-        let current = num.get();
-        num.set(current + 1);
-        current
-    }))
+    format!(
+        "inst_{}",
+        NUM.with(|num| {
+            let current = num.get();
+            num.set(current + 1);
+            current
+        })
+    )
 }
 
 pub(crate) fn generate_instruction<'a, 'b>(

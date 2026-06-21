@@ -86,7 +86,8 @@ pub(crate) fn typecheck_fallthrough_scope(
     });
     let result = typecheck_expr(env, namespace, expr, None)
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
-    env.pop_scope()?;
+    env.pop_scope()
+        .map_err(|err| env.complete_err(err, expr.token_range()))?;
     Ok(result)
 }
 

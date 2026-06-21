@@ -1,5 +1,5 @@
 use crate::environment::TypeEnvironment;
-use crate::symbol::deduction::complete_templated_callee;
+use crate::symbol::deduction::complete_templated_callee_maybe;
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::lvalue;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
@@ -262,7 +262,7 @@ fn complete_callee(
 
             let deduction_arg_types = deduction_arg_types(implicit_args, args);
 
-            let symbol = match complete_templated_callee(
+            let symbol = match complete_templated_callee_maybe(
                 env,
                 namespace,
                 &parts.name,
@@ -271,10 +271,7 @@ fn complete_callee(
             ) {
                 Ok(symbol) => symbol,
                 Err(err) => {
-                    return env.log_error(
-                        expr.token_range(),
-                        "Failed to complete call argument expression",
-                    );
+                    return Err(env.complete_maybe_err(err, expr.token_range()));
                 }
             };
 

@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 
 use cx_log::{
-    CXResult,
     error::{
-        CXErr,
         context::{CXInternalContext, CXPointingContext, CXUnderlineContext},
         message::CXStdErrMessage,
+        CXErr,
     },
+    CXResult,
 };
-use cx_tokens::{TokenIter, TokenRange, token::Token};
+use cx_tokens::{token::Token, TokenIter, TokenRange};
 
 use crate::parse::parser::ParserData;
 

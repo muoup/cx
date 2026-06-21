@@ -137,7 +137,8 @@ fn typecheck_expr_inner(
                 None
             };
 
-            env.pop_scope()?;
+            env.pop_scope()
+                .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
             TypecheckResult::from(MIRExpression {
                 token_range: TokenRange::internal(),
@@ -208,7 +209,8 @@ fn typecheck_expr_inner(
                 ScopeArrowSink::LoopContinue,
                 "loop fallthrough",
             )?;
-            env.pop_scope()?;
+            env.pop_scope()
+                .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
             TypecheckResult::from(MIRExpression {
                 token_range: TokenRange::internal(),
@@ -259,7 +261,8 @@ fn typecheck_expr_inner(
             env.function
                 .restore_snapshot(&env.function.loop_entry_snapshot(loop_scope_idx));
             env.function.set_scope_reachable(loop_scope_idx, true);
-            env.pop_scope()?;
+            env.pop_scope()
+                .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
             TypecheckResult::from(MIRExpression {
                 token_range: TokenRange::internal(),

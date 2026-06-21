@@ -1,4 +1,4 @@
-use crate::parse::{ParserData, try_parse_simple_identifier};
+use crate::parse::{try_parse_simple_identifier, ParserData};
 use crate::{assert_token_matches, log::ParserLogExt, next_kind, peek_next_kind, try_next};
 use cx_ast::ast::expression::{CXExprKind, CXExpression, CXInitIndex, CXUnpackBinding};
 use cx_ast::ast::pattern::CXPattern;
@@ -9,7 +9,7 @@ use cx_util::namespace::QualifiedName;
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::parse::operators::{
-    PrecOperator, binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec,
+    binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
 };
 use crate::parse::types::{is_type_decl, parse_initializer};
 use crate::parse::{parse_body, parse_intrinsic, try_parse_identifier};

@@ -1,17 +1,17 @@
 use crate::parse::expressions::parse_expr;
-use crate::parse::{ParserData, try_parse_simple_identifier};
+use crate::parse::{try_parse_simple_identifier, ParserData};
 use crate::{
     assert_token_matches,
     log::{ParserLogExt, TokenIterLogExt},
     next_kind, peek_kind, try_next,
 };
-use cx_ast::ast::CXASTStmt;
 use cx_ast::ast::global_var::CXEnumDefinition;
 use cx_ast::ast::types::CXMoveSemantics;
+use cx_ast::ast::CXASTStmt;
 use cx_ast::ast::{
     function::{CXFunctionKind, CXFunctionPrototype},
     global_var::{CXEnumVariant, CXGlobalVariable},
-    modifiers::{CX_CONST, CX_RESTRICT, CX_VOLATILE, CXLinkageMode, CXTypeQualifiers},
+    modifiers::{CXLinkageMode, CXTypeQualifiers, CX_CONST, CX_RESTRICT, CX_VOLATILE},
     template::CXTemplatePrototype,
     types::{CXAggregateAttributes, CXField, CXType, CXTypeKind, PredeclarationType},
 };
@@ -19,12 +19,12 @@ use cx_log::CXResult;
 use cx_mir::intrinsic_types::is_intrinsic_type;
 use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
 use cx_tokens::{
-    TokenIter, TokenRange, identifier, intrinsic, keyword, operator, punctuator, specifier,
+    identifier, intrinsic, keyword, operator, punctuator, specifier, TokenIter, TokenRange,
 };
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
 
-use crate::parse::functions::{ParseParamsResult, parse_params};
+use crate::parse::functions::{parse_params, ParseParamsResult};
 use crate::parse::templates::{note_templated_types, try_parse_template, unnote_templated_types};
 use crate::parse::{parse_intrinsic, try_parse_qualified_name, try_parse_type_identifier};
 
