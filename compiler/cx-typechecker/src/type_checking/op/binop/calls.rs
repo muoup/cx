@@ -37,7 +37,7 @@ pub(crate) fn typecheck_callee_method_call(
     expected_type: Option<&MIRType>,
 ) -> CXResult<TypecheckResult> {
     let raw_args = comma_separated_exprs(rhs);
- 
+
     let scope = env.function.current_scope_index();
     let reachable = env.function.is_current_scope_reachable();
     let snapshot = env.function.current_snapshot();
@@ -46,7 +46,7 @@ pub(crate) fn typecheck_callee_method_call(
 
     env.function.restore_snapshot(&snapshot);
     env.function.set_scope_reachable(scope, reachable);
-    
+
     let callee = complete_callee(
         env,
         namespace,

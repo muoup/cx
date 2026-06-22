@@ -13,10 +13,8 @@ use cx_tokens::TokenRange;
 use crate::{
     environment::TypeEnvironment,
     type_checking::{
-        aggregate::fields::struct_field,
-        coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
-        result::TypecheckResult,
-        typechecker::typecheck_expr,
+        aggregate::fields::struct_field, coercion::implicit::implicit_cast,
+        result::TypecheckResult, typechecker::typecheck_expr,
     },
 };
 
@@ -199,7 +197,6 @@ fn typecheck_structured_initializer(
         let (field_name, field_type) = &fields[counter];
         let value = typecheck_expr(env, namespace, &index.value, Some(field_type))
             .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
-            .and_then(|v| std_rval_promotion(env, v))
             .and_then(|v| implicit_cast(env, v, field_type))?;
 
         let Some(struct_field_info) = struct_field(&env.symbols, to_type, field_name.as_str())

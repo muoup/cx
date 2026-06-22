@@ -58,4 +58,9 @@ pub trait MIRTypeContext {
             .map(|ty| ty.is_str())
             .unwrap_or(false)
     }
+
+    fn cvr_compatible(&self, type1: &MIRType, type2: &MIRType) -> bool {
+        // Determines if type1 has any CVR qualifiers that type2 does not have. If so, they are not compatible.
+        (type1.specifiers ^ type2.specifiers) & type1.specifiers == 0 
+    }
 }

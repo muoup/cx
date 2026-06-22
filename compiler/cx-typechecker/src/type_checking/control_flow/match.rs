@@ -56,6 +56,7 @@ pub fn typecheck_match(
     let mut match_condition = expr_value.source.clone();
     let mut match_subject_name = None;
     let mut match_is_exhaustive = false;
+
     let match_arms = match &expr_type.kind {
         MIRTypeKind::Integer { .. } => {
             let expr_value = std_rval_promotion(env, expr_value.source.clone())?;
@@ -95,8 +96,9 @@ pub fn typecheck_match(
 
         MIRTypeKind::TaggedUnion { variants, .. } => {
             let expected_union_name = expr_type.member_lookup_identifier().unwrap();
-            let subject_name = match_subject_ident(condition.token_range());
+            let subject_name = CXIdent::from("__internal_match_subject");
             match_subject_name = Some(subject_name.clone());
+
             let subject_expr = MIRExpression {
                 _type: expr_value.source._type.clone(),
                 token_range: TokenRange::internal(),
@@ -367,14 +369,6 @@ pub fn typecheck_match(
             exhaustive: match_is_exhaustive || default.is_some(),
         },
     ))
-}
-
-fn match_subject_ident(range: &TokenRange) -> CXIdent {
-    let suffix = range
-        .source_bounds()
-        .map(|(_, start, end)| format!("{start}_{end}"))
-        .unwrap_or_else(|| "internal".to_string());
-    CXIdent::new(format!("__cx_match_subject_{suffix}"))
 }
 
 struct MatchArmFlow {

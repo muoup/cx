@@ -151,11 +151,36 @@ pub fn try_implicit_coercion(
             )
         }
 
-        (MIRTypeKind::MemoryReference { inner_type, .. }, _)
-            if target_type.is_memory_reference()
-                && env.type_eq(env.symbols.resolve_type_id(*inner_type), target_type) =>
-        {
-            lvalue::try_conversion(env, expr)
+        (
+            MIRTypeKind::MemoryReference { inner_type: i1, .. },
+            MIRTypeKind::MemoryReference { inner_type: i2, .. },
+        ) if target_type.is_memory_reference() => {
+            let i1 = env.symbols.resolve_type_id(*i1);
+            let i2 = env.symbols.resolve_type_id(*i2);
+
+            if i1.is_memory_reference() {
+                return lvalue::try_conversion(env, expr);
+            }
+            
+            if compatible::compatible_types(env, &i1, &i2)? {
+                return implicit::coercion_expr(
+                    expr,
+                    target_type.clone(),
+                    MIRCoercion::ReinterpretBits,
+                );
+            }
+
+            if env.symbols.cvr_compatible(&i1, &i2)
+                && env.type_eq(&i1.clone().without_specifiers(), &i2.clone().without_specifiers())
+            {
+                return implicit::coercion_expr(
+                    expr,
+                    target_type.clone(),
+                    MIRCoercion::ReinterpretBits,
+                );
+            }
+
+            CoercionResult::unapplied(expr)
         }
 
         (MIRTypeKind::MemoryReference { inner_type, .. }, _)

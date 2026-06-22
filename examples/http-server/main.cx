@@ -4,49 +4,67 @@ import std::span as std;
 import std::string as std;
 import std::functional as std;
 
-import std::net::udp as std::net;
+import std::net::tcp as std::net;
 
 int main() {
-    const _str& INDEX_HTML = "<html><body><h1>Hello, world!</h1></body></html>";
-
     std::net::endpoint addr = std::net::endpoint::ipv4("0.0.0.0", 8080)
         |> std::opt::unwrap_or_else(.{
             std::io::println("Failed to create endpoint");
             return 1;
         });
 
-    std::net::udp_socket server = std::net::udp_socket::open()
+    std::net::tcp_listener server = std::net::tcp_listener::open()
         |> std::opt::unwrap_or_else(.{
             std::io::println("Failed to open socket");
             return 1;
         });
 
-    server |> std::net::udp_socket::bind(addr)
+    server |> std::net::tcp_listener::bind(addr)
         |> std::opt::unwrap_or_else(.{
-            move server |> std::net::udp_socket::close();
+            move server |> std::net::tcp_listener::close();
             std::io::println("Failed to bind socket");
             return 1;
         });
 
-    std::println("Server started on port 8080");
+    server |> std::net::tcp_listener::listen(128)
+        |> std::opt::unwrap_or_else(.{
+            move server |> std::net::tcp_listener::close();
+            std::io::println("Failed to listen on socket");
+            return 1;
+        });
+
+    std::println("Server started on 127.0.0.1:8080");
 
     char buffer[1024];
 
     while (1) {
-        std::println("Waiting for client request...");
+        std::println("Waiting for client connection...");
 
-        std::net::udp::datagram result = server
-            |> std::net::udp_socket::recv_from(buffer, 1023)
+        std::net::tcp_stream client = server |> std::net::tcp_listener::accept()
             |> std::opt::unwrap_or_else(.{
-                std::io::println("Failed to receive data");
+                std::io::println("Failed to accept client");
                 continue;
             });
 
-        std::println("Received request from client");
+        client |> std::net::tcp_stream::read(buffer, 1024)
+            |> std::opt::unwrap_or_else(.{
+                move client |> std::net::tcp_stream::close();
+                std::io::println("Failed to read request");
+                continue;
+            });
 
-        std::span<const u8> response_buffer = std::span::str_as_bytes(INDEX_HTML);
-        server |> std::net::udp_socket::send_to(response_buffer, result.source);
+        std::println("Received request");
+
+        std::span<const u8> response_buffer = std::span::str_as_bytes("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 48\r\nConnection: close\r\n\r\n<html><body><h1>Hello, world!</h1></body></html>");
+        client |> std::net::tcp_stream::write(response_buffer)
+            |> std::opt::unwrap_or_else(.{
+                move client |> std::net::tcp_stream::close();
+                std::io::println("Failed to write response");
+                continue;
+            });
+
+        move client |> std::net::tcp_stream::close();
     }
 
-    move server |> std::net::udp_socket::close();
+    move server |> std::net::tcp_listener::close();
 }
