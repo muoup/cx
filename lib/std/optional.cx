@@ -18,6 +18,23 @@ comptime expr T opt::try<T>(expr opt<T> self) {
     };
 }
 
+comptime expr T opt::try_or<T>(expr opt<T> self, expr void on_none) {
+    return emit match (self) {
+        opt::some<T>(value) => yield move value;
+        opt::none<T>() => {
+            on_none;
+            return opt::none();
+        }
+    };
+}
+
+comptime expr T opt::unwrap_or_else<T>(expr opt<T> self, expr void on_none) {
+    return emit match (self) {
+        opt::some<T>(value) => yield move value;
+        opt::none<T>() => on_none;
+    };
+}
+
 bool opt::is_some<T>(opt<T>& this) {
     return this is opt::some<T>(_);
 }

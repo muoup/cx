@@ -213,6 +213,7 @@ pub enum MIRExpressionKind {
 
     Match {
         condition: Box<MIRExpression>,
+        subject_name: Option<CXIdent>,
         arms: Vec<(MIRPattern, Box<MIRExpression>)>,
         default: Option<Box<MIRExpression>>,
         exhaustive: bool,

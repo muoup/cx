@@ -13,6 +13,7 @@ use cx_mir::{
     },
     type_context::MIRTypeContext,
 };
+use cx_util::identifier::CXIdent;
 
 use super::expressions::lower_expression;
 use crate::{
@@ -314,12 +315,14 @@ pub fn lower_cswitch(
 pub fn lower_match(
     builder: &mut LMIRBuilder,
     condition: &MIRExpression,
+    subject_name: Option<&CXIdent>,
     arms: &[(MIRPattern, Box<MIRExpression>)],
     default: Option<&MIRExpression>,
     exhaustive: bool,
     result_type: &MIRType,
 ) -> CXResult<LMIRValue> {
-    let mut bc_condition = lower_expression(builder, condition)?;
+    let match_subject = lower_expression(builder, condition)?;
+    let mut bc_condition = match_subject.clone();
     let result_lmir_type = builder.convert_cx_type(result_type);
     let value_match = !matches!(result_type.kind, MIRTypeKind::Unit);
     let inner = condition
@@ -349,6 +352,9 @@ pub fn lower_match(
     };
 
     builder.push_scope(None, Some(exit_block_id.clone()));
+    if let Some(subject_name) = subject_name {
+        builder.insert_symbol(subject_name.clone(), match_subject);
+    }
     let mut exit_has_predecessor = default.is_none() && !exhaustive;
     let mut result_predecessors = Vec::new();
 
@@ -426,6 +432,8 @@ pub fn lower_match(
                     false,
                 )?;
             }
+        } else if !yield_context.yields.is_empty() {
+            exit_has_predecessor = true;
         } else if arm_falls_through && !builder.current_block_closed() {
             exit_has_predecessor = true;
             builder.add_new_instruction(
@@ -494,6 +502,8 @@ pub fn lower_match(
                     false,
                 )?;
             }
+        } else if !yield_context.yields.is_empty() {
+            exit_has_predecessor = true;
         } else if default_falls_through && !builder.current_block_closed() {
             exit_has_predecessor = true;
             builder.add_new_instruction(

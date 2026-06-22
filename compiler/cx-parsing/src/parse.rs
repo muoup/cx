@@ -287,20 +287,27 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
     Ok(())
 }
 
-fn parse_body(data: &mut ParserData) -> CXResult<CXExpression> {
+pub(crate) fn parse_block(data: &mut ParserData) -> CXResult<CXExpression> {
+    assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
+
+    let start_index = data.tokens.index - 1;
+    let mut body = Vec::new();
+
+    while !try_next!(data.tokens, punctuator!(CloseBrace)) {
+        body.push(parse_stmt(data)?);
+    }
+
+    Ok(CXExprKind::Block { exprs: body }.into_expr(
+        start_index,
+        data.tokens.index,
+        data.file_origin_for_range(start_index, data.tokens.index),
+    ))
+}
+
+pub(crate) fn parse_body(data: &mut ParserData) -> CXResult<CXExpression> {
     if try_next!(data.tokens, punctuator!(OpenBrace)) {
-        let start_index = data.tokens.index - 1;
-        let mut body = Vec::new();
-
-        while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-            body.push(parse_stmt(data)?);
-        }
-
-        Ok(CXExprKind::Block { exprs: body }.into_expr(
-            start_index,
-            data.tokens.index,
-            data.file_origin_for_range(start_index, data.tokens.index),
-        ))
+        data.tokens.back();
+        parse_block(data)
     } else {
         Ok(parse_stmt(data)?)
     }

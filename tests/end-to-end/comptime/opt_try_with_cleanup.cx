@@ -1,0 +1,58 @@
+#include <stdio.h>
+
+import std::optional as std;
+
+struct resource : @nodrop {
+    int value;
+};
+
+void close(resource this) {
+    printf("close %d\n", this.value);
+    @leak(this);
+}
+
+std::opt<resource> maybe_resource(std::opt<int> probe) {
+    resource res = (resource) { .value = 7 };
+    int value = move probe |> std::opt::try_or(.{
+        move res |> close();
+    });
+
+    return move res |> std::opt::some<resource>();
+}
+
+std::opt<void> maybe_void(bool ok) {
+    if (ok) {
+        return std::opt::some();
+    }
+
+    return std::opt::none();
+}
+
+std::opt<int> void_then_value(bool ok) {
+    maybe_void(ok) |> std::opt::try_or(.{});
+    return std::opt::some<int>(3);
+}
+
+int main() {
+    std::opt<resource> some = maybe_resource(std::opt::some<int>(1));
+    match (move some) {
+        std::opt::some<resource>(res) => move res |> close();
+        std::opt::none<resource>() => printf("unexpected none\n");
+    }
+
+    std::opt<resource> none = maybe_resource(std::opt::none<int>());
+    match (move none) {
+        std::opt::some<resource>(res) => move res |> close();
+        std::opt::none<resource>() => printf("none\n");
+    }
+
+    match (void_then_value(1)) {
+        std::opt::some<int>(value) => printf("void some %d\n", value);
+        std::opt::none<int>() => printf("unexpected void none\n");
+    }
+
+    match (void_then_value(0)) {
+        std::opt::some<int>(value) => printf("unexpected void some %d\n", value);
+        std::opt::none<int>() => printf("void none\n");
+    }
+}

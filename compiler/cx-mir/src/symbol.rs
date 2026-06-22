@@ -9,7 +9,9 @@ use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 use crate::{
     EnvironmentNamespace,
     mir::{
-        data::{MIRComptimeFunctionPrototype, MIRFunctionPrototype, MIRTypeId, MIRTypeKind},
+        data::{
+            MIRComptimeFunctionPrototype, MIRFunctionPrototype, MIRType, MIRTypeId, MIRTypeKind,
+        },
         expression::{MIRExpression, MIRExpressionKind},
     },
     type_context::MIRTypeContext,
@@ -24,6 +26,11 @@ pub enum MIRSymbol {
         namespace: EnvironmentNamespace,
         body: Box<CXExpression>,
         template_bindings: Vec<(CXIdent, MIRTypeId)>,
+    },
+    StagedExpression {
+        namespace: EnvironmentNamespace,
+        expr: Box<CXExpression>,
+        expected_type: MIRType,
     },
     Expression(MIRExpression),
     Template {
@@ -84,6 +91,11 @@ impl MIRSymbol {
             MIRSymbol::ComptimeFunctionReference { .. } => CXStdErrMessage::result(
                 "TYPE ERROR",
                 "Comptime function cannot be used in runtime contexts",
+            ),
+
+            MIRSymbol::StagedExpression { .. } => CXStdErrMessage::result(
+                "TYPE ERROR",
+                "Staged expression cannot be used in runtime contexts",
             ),
 
             MIRSymbol::Template { .. } => {

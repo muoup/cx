@@ -11,7 +11,7 @@ use crate::{
     next_kind,
     parse::{
         expressions::{parse_expr, parse_pattern},
-        parse_body,
+        parse_block,
         parser::ParserData,
         types::{is_type_decl, parse_base_mods, parse_specifier, parse_type_base},
     },
@@ -51,6 +51,11 @@ pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<CXExpress
             )));
         }
 
+        punctuator!(OpenBrace) => {
+            data.tokens.back();
+            return Ok(Some(parse_block(data)?));
+        }
+
         _ => {}
     }
 
@@ -83,9 +88,9 @@ pub(crate) fn try_parse_keyword_stmt(
                 TokenKind::Punctuator(PunctuatorType::CloseParen),
                 "')'"
             );
-            let then_body = parse_body(data)?;
+            let then_body = parse_stmt(data)?;
             let else_body = if try_next!(data.tokens, TokenKind::Keyword(KeywordType::Else)) {
-                Some(parse_body(data)?)
+                Some(parse_stmt(data)?)
             } else {
                 None
             };
@@ -163,13 +168,13 @@ pub(crate) fn try_parse_keyword_stmt(
                         return data
                             .log_error(format!("Multiple default cases in match statement"));
                     }
-                    default_arm = Some(Box::new(parse_body(data)?));
+                    default_arm = Some(Box::new(parse_stmt(data)?));
                     continue;
                 }
 
                 let value = parse_pattern(data)?;
                 assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
-                let body = parse_body(data)?;
+                let body = parse_stmt(data)?;
                 arms.push((value, body));
             }
 
@@ -183,7 +188,7 @@ pub(crate) fn try_parse_keyword_stmt(
         }
 
         KeywordType::Do => {
-            let body = parse_body(data)?;
+            let body = parse_stmt(data)?;
             assert_token_matches!(data.tokens, keyword!(While), "'while'");
             assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
             let expr = parse_expr(data)?;
@@ -201,7 +206,7 @@ pub(crate) fn try_parse_keyword_stmt(
             assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
             let expr = parse_expr(data)?;
             assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-            let body = parse_body(data)?;
+            let body = parse_stmt(data)?;
 
             Some(CXExprKind::While {
                 condition: Box::new(expr),
@@ -245,7 +250,7 @@ pub(crate) fn try_parse_keyword_stmt(
             };
             assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
 
-            let body = parse_body(data)?;
+            let body = parse_stmt(data)?;
 
             Some(CXExprKind::For {
                 init: Box::new(init),

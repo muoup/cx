@@ -229,7 +229,9 @@ fn lower_region_duplicate(
     let lmir_type = builder.convert_cx_type(result_type);
     let source_value = lower_expression(builder, source)?;
 
-    if lmir_type.is_memory_resident() {
+    if lmir_type.is_void() {
+        Ok(LMIRValue::NULL)
+    } else if lmir_type.is_memory_resident() {
         let new_region = builder.add_new_instruction(
             LMIRInstructionKind::Allocate {
                 alignment: lmir_type.alignment(),
@@ -946,12 +948,14 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
 
         MIRExpressionKind::Match {
             condition,
+            subject_name,
             arms,
             default,
             exhaustive,
         } => lower_match(
             builder,
             condition,
+            subject_name.as_ref(),
             arms,
             default.as_deref(),
             *exhaustive,

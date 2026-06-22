@@ -7,7 +7,8 @@ use cx_ast::ast::{
 };
 use cx_ast::symbols::CXSymbolKind;
 use cx_log::{
-    CXRawResult, CXResult, error::{CXMaybeRawErr, CXMaybeRawResult}
+    CXRawResult, CXResult,
+    error::{CXMaybeRawErr, CXMaybeRawResult},
 };
 use cx_mir::{
     EnvironmentNamespace,

@@ -24,6 +24,7 @@ use cx_mir::mir::{
 };
 use cx_mir::type_context::MIRTypeContext;
 use cx_tokens::TokenRange;
+use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
 
 pub fn typecheck_match(
@@ -45,6 +46,7 @@ pub fn typecheck_match(
 
     let join_scope_idx = env.function.current_scope_index();
     let base_snapshot = env.function.current_snapshot();
+    let base_reachable = env.function.is_current_scope_reachable();
     let condition_owned = expr_value.owned;
     let mut arm_flows = Vec::new();
 
@@ -52,6 +54,7 @@ pub fn typecheck_match(
         .push_yield_context(join_scope_idx, expected_type.cloned());
 
     let mut match_condition = expr_value.source.clone();
+    let mut match_subject_name = None;
     let mut match_is_exhaustive = false;
     let match_arms = match &expr_type.kind {
         MIRTypeKind::Integer { .. } => {
@@ -80,6 +83,8 @@ pub fn typecheck_match(
                     );
                 }
                 env.function.restore_snapshot(&base_snapshot);
+                env.function
+                    .set_scope_reachable(join_scope_idx, base_reachable);
                 arm_flows.push(flow);
 
                 result_arms.push((MIRPattern::Integer(*pattern_value), Box::new(body_expr)));
@@ -90,6 +95,16 @@ pub fn typecheck_match(
 
         MIRTypeKind::TaggedUnion { variants, .. } => {
             let expected_union_name = expr_type.member_lookup_identifier().unwrap();
+            let subject_name = match_subject_ident(condition.token_range());
+            match_subject_name = Some(subject_name.clone());
+            let subject_expr = MIRExpression {
+                _type: expr_value.source._type.clone(),
+                token_range: TokenRange::internal(),
+                kind: MIRExpressionKind::Variable {
+                    name: subject_name,
+                    location: SymbolValueOrigin::Local,
+                },
+            };
 
             // Tagged union matching: each arm has a type constructor pattern
             let mut result_arms = Vec::new();
@@ -150,7 +165,7 @@ pub fn typecheck_match(
                     _type: variant_get_type,
                     token_range: TokenRange::internal(),
                     kind: MIRExpressionKind::TaggedUnionGet {
-                        value: Box::new(expr_value.source.clone()),
+                        value: Box::new(subject_expr.clone()),
                         variant_type: variant_type.clone(),
                     },
                 };
@@ -162,7 +177,7 @@ pub fn typecheck_match(
                             token_range: TokenRange::internal(),
                             _type: variant_ref_type.clone(),
                             kind: MIRExpressionKind::TaggedUnionGet {
-                                value: Box::new(expr_value.source.clone()),
+                                value: Box::new(subject_expr.clone()),
                                 variant_type: variant_type.clone(),
                             },
                         };
@@ -233,6 +248,8 @@ pub fn typecheck_match(
                         );
                     }
                     env.function.restore_snapshot(&base_snapshot);
+                    env.function
+                        .set_scope_reachable(join_scope_idx, base_reachable);
                     arm_flows.push(flow);
                     body_expr
                 } else {
@@ -247,6 +264,9 @@ pub fn typecheck_match(
                             env.function.current_snapshot(),
                         );
                     }
+                    env.function.restore_snapshot(&base_snapshot);
+                    env.function
+                        .set_scope_reachable(join_scope_idx, base_reachable);
                     arm_flows.push(flow);
                     body_expr
                 };
@@ -291,6 +311,8 @@ pub fn typecheck_match(
                 );
             }
             env.function.restore_snapshot(&base_snapshot);
+            env.function
+                .set_scope_reachable(join_scope_idx, base_reachable);
             arm_flows.push(flow);
             Some(Box::new(body))
         }
@@ -339,11 +361,20 @@ pub fn typecheck_match(
         result_type,
         MIRExpressionKind::Match {
             condition: Box::new(match_condition),
+            subject_name: match_subject_name,
             arms: match_arms,
             default: default_body,
             exhaustive: match_is_exhaustive || default.is_some(),
         },
     ))
+}
+
+fn match_subject_ident(range: &TokenRange) -> CXIdent {
+    let suffix = range
+        .source_bounds()
+        .map(|(_, start, end)| format!("{start}_{end}"))
+        .unwrap_or_else(|| "internal".to_string());
+    CXIdent::new(format!("__cx_match_subject_{suffix}"))
 }
 
 struct MatchArmFlow {

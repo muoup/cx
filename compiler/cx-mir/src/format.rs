@@ -1061,6 +1061,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             MIRExpressionKind::Match {
                 condition,
+                subject_name,
                 arms,
                 default,
                 exhaustive,
@@ -1068,6 +1069,10 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 write!(f, "Match exhaustive={exhaustive} <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
+                if let Some(subject_name) = subject_name {
+                    self.indent(f)?;
+                    writeln!(f, "Subject {subject_name}:")?;
+                }
                 MIRExpressionFormatter {
                     expr: condition,
                     depth: self.depth + 1,

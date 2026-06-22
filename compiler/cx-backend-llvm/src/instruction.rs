@@ -9,6 +9,7 @@ use cx_lmir::{
 };
 use inkwell::AddressSpace;
 use inkwell::attributes::AttributeLoc;
+use inkwell::types::BasicType;
 use inkwell::values::BasicValue;
 use inkwell::values::{AnyValue, AnyValueEnum, ValueKind};
 use std::cell::Cell;
@@ -479,9 +480,15 @@ pub(crate) fn generate_instruction<'a, 'b>(
         }
 
         LMIRInstructionKind::Phi { predecessors: from } => {
-            let val_type = bc_llvm_type(global_state.context, &block_instruction.value_type)?;
-            let as_basic_type =
-                any_to_basic_type(val_type).expect("Failed to convert value type to basic type");
+            let as_basic_type = if block_instruction.value_type.is_memory_resident() {
+                global_state
+                    .context
+                    .ptr_type(AddressSpace::from(0))
+                    .as_basic_type_enum()
+            } else {
+                let val_type = bc_llvm_type(global_state.context, &block_instruction.value_type)?;
+                any_to_basic_type(val_type).expect("Failed to convert value type to basic type")
+            };
 
             let phi_node = function_state
                 .builder

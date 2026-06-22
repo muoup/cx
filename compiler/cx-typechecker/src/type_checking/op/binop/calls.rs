@@ -1,4 +1,4 @@
-use crate::comptime::evaluate_comptime_call;
+use crate::comptime::{ComptimeCallArg, evaluate_comptime_call};
 use crate::environment::TypeEnvironment;
 use crate::symbol::deduction::complete_templated_callee_maybe;
 use crate::type_checking::coercion::implicit::implicit_cast;
@@ -36,7 +36,17 @@ pub(crate) fn typecheck_callee_method_call(
     expr: &CXExpression,
     expected_type: Option<&MIRType>,
 ) -> CXResult<TypecheckResult> {
-    let tc_args = comma_separated(env, namespace, rhs)?;
+    let raw_args = comma_separated_exprs(rhs);
+ 
+    let scope = env.function.current_scope_index();
+    let reachable = env.function.is_current_scope_reachable();
+    let snapshot = env.function.current_snapshot();
+
+    let tc_args = typecheck_args(env, namespace, raw_args.as_slice())?;
+
+    env.function.restore_snapshot(&snapshot);
+    env.function.set_scope_reachable(scope, reachable);
+    
     let callee = complete_callee(
         env,
         namespace,
@@ -46,22 +56,32 @@ pub(crate) fn typecheck_callee_method_call(
         &tc_args,
         expected_type,
     )?;
-    let all_args = implicit_args
-        .into_iter()
-        .map(TypecheckResult::from)
-        .chain(tc_args.into_iter().map(|(_, arg)| arg))
-        .collect::<Vec<_>>();
 
     let CompletedCallee::Runtime(callee) = callee else {
         let CompletedCallee::Comptime(function) = callee else {
             unreachable!()
         };
+        let all_args = implicit_args
+            .into_iter()
+            .map(ComptimeCallArg::Mir)
+            .chain(raw_args.into_iter().map(|arg| ComptimeCallArg::Source {
+                namespace,
+                expr: arg,
+            }))
+            .collect::<Vec<_>>();
         return evaluate_comptime_call(env, expr.token_range(), function, all_args);
     };
 
     let (loaded_function, signature) = load_callable(env, expr, callee)?;
 
-    check_argument_count(env, expr, &signature, all_args.len())?;
+    check_argument_count(env, expr, &signature, implicit_args.len() + raw_args.len())?;
+
+    let explicit_args = typecheck_args(env, namespace, &raw_args)?;
+    let all_args = implicit_args
+        .into_iter()
+        .map(TypecheckResult::from)
+        .chain(explicit_args.into_iter().map(|(_, arg)| arg))
+        .collect::<Vec<_>>();
 
     let argument_results = complete_call_arguments(env, namespace, &signature, all_args)?;
     let arguments = complete_call_argument_expressions(env, expr, &signature, argument_results)?;
@@ -75,6 +95,16 @@ pub(crate) fn typecheck_callee_method_call(
             contract,
         },
     ))
+}
+
+fn typecheck_args<'a>(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    args: &[&'a CXExpression],
+) -> CXResult<Vec<(&'a CXExpression, TypecheckResult)>> {
+    args.iter()
+        .map(|arg| typecheck_expr(env, namespace, arg, None).map(|result| (*arg, result)))
+        .collect()
 }
 
 fn load_callable(
@@ -334,16 +364,12 @@ enum CompletedCallee {
     Comptime(crate::type_checking::result::ComptimeFunctionValue),
 }
 
-pub(crate) fn comma_separated<'a>(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    expr: &'a CXExpression,
-) -> CXResult<Vec<(&'a CXExpression, TypecheckResult)>> {
+pub(crate) fn comma_separated_exprs<'a>(expr: &'a CXExpression) -> Vec<&'a CXExpression> {
     let mut expr_iter = expr;
     let mut exprs = Vec::new();
 
     if matches!(expr.kind, CXExprKind::Unit) {
-        return Ok(exprs);
+        return exprs;
     }
 
     while let CXExprKind::BinOp {
@@ -352,14 +378,12 @@ pub(crate) fn comma_separated<'a>(
         op: CXBinOp::Comma,
     } = &expr_iter.kind
     {
-        let tc_result = typecheck_expr(env, namespace, rhs, None)?;
-        exprs.push((rhs, tc_result));
+        exprs.push(rhs.as_ref());
         expr_iter = lhs;
     }
 
-    let tc_result = typecheck_expr(env, namespace, expr_iter, None)?;
-    exprs.push((expr_iter, tc_result));
+    exprs.push(expr_iter);
     exprs.reverse();
 
-    Ok(exprs)
+    exprs
 }

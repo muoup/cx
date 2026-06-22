@@ -21,6 +21,14 @@ pub(crate) mod engine;
 pub(crate) mod evaluation;
 pub(crate) mod value;
 
+pub(crate) enum ComptimeCallArg<'a> {
+    Mir(MIRExpression),
+    Source {
+        namespace: &'a cx_mir::EnvironmentNamespace,
+        expr: &'a CXExpression,
+    },
+}
+
 pub fn evaluate_comptime_expression(
     env: &mut TypeEnvironment,
     expr: MIRExpression,
@@ -32,7 +40,7 @@ pub(crate) fn evaluate_comptime_call(
     env: &mut TypeEnvironment,
     call_range: &cx_tokens::TokenRange,
     function: ComptimeFunctionValue,
-    args: Vec<TypecheckResult>,
+    args: Vec<ComptimeCallArg>,
 ) -> CXResult<TypecheckResult> {
     if args.len() != function.prototype.params().len() {
         return env.log_error(
@@ -65,9 +73,33 @@ pub(crate) fn evaluate_comptime_call(
                 );
             }
 
-            let staged = coerce_staged_argument(env, call_range, arg, &param.value_type._type)?;
-            env.symbols
-                .insert_local_value(QualifiedName::new_raw(name), staged);
+            match arg {
+                ComptimeCallArg::Mir(arg) => {
+                    let staged = coerce_staged_argument(
+                        env,
+                        call_range,
+                        TypecheckResult::from(arg),
+                        &param.value_type._type,
+                    )?;
+                    env.symbols
+                        .insert_local_value(QualifiedName::new_raw(name), staged);
+                }
+                ComptimeCallArg::Source { namespace, expr } => {
+                    check_staged_source_argument(
+                        env,
+                        namespace,
+                        call_range,
+                        expr,
+                        &param.value_type._type,
+                    )?;
+                    env.symbols.insert_local_staged_expression(
+                        QualifiedName::new_raw(name),
+                        namespace.clone(),
+                        expr.clone(),
+                        param.value_type._type.clone(),
+                    );
+                }
+            }
         }
 
         env.enter_comptime_context();
@@ -96,6 +128,28 @@ pub(crate) fn evaluate_comptime_call(
         }
     })();
     env.symbols.pop_local_scope();
+
+    result
+}
+
+fn check_staged_source_argument(
+    env: &mut TypeEnvironment,
+    namespace: &cx_mir::EnvironmentNamespace,
+    call_range: &cx_tokens::TokenRange,
+    expr: &CXExpression,
+    target_type: &cx_mir::mir::data::MIRType,
+) -> CXResult<()> {
+    let scope = env.function.current_scope_index();
+    let reachable = env.function.is_current_scope_reachable();
+    let snapshot = env.function.current_snapshot();
+
+    let result = (|| {
+        let arg = typecheck_expr(env, namespace, expr, Some(target_type))?;
+        coerce_staged_argument(env, call_range, arg, target_type).map(|_| ())
+    })();
+
+    env.function.restore_snapshot(&snapshot);
+    env.function.set_scope_reachable(scope, reachable);
 
     result
 }

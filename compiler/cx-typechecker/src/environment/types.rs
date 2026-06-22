@@ -53,6 +53,12 @@ pub fn sizeof_type_size(env: &TypeEnvironment, _ty: &MIRType) -> CXRawResult<usi
             Ok(apply_padding(size, size.min(8))) // Assuming 8-byte alignment for unions
         }
 
+        MIRTypeKind::Array { length, inner_type } => {
+            let inner_ty = env.symbols.resolve_type_id(*inner_type);
+
+            sizeof_type_size(env, &inner_ty).map(|s| s * *length)
+        }
+
         MIRTypeKind::TaggedUnion { variants } => {
             let tag_size = 1; // Assuming a 4-byte tag
             let max_variant_size = variants
