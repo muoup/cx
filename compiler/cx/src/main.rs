@@ -87,8 +87,7 @@ fn compiler_config_with_dirs(
 
 fn run_standard_compilation(config: CompilerConfig, path: &Path) {
     standard_compilation(config, path).unwrap_or_else(|err| {
-        err.print(&mut std::io::stdout())
-            .expect("Failed to write error message");
+        err.print().expect("Failed to write error message");
     });
 }
 

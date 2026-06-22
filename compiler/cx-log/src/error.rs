@@ -47,15 +47,13 @@ impl CXErr {
         F: std::io::Write,
     {
         self.error.0.dump(f)?;
+        writeln!(f)?;
         self.context.dump(f)?;
 
         Ok(())
     }
 
-    pub fn print<F>(&self, f: &mut F) -> std::io::Result<()>
-    where
-        F: std::io::Write,
-    {
-        self.output(f)
+    pub fn print(&self) -> std::io::Result<()> {
+        self.output(&mut std::io::stdout())
     }
 }

@@ -3,9 +3,7 @@ use std::fmt::{Debug, Display, Formatter, Result};
 
 use crate::ast::{
     expression::{CXBinOp, CXExprKind, CXExpression, CXInitIndex},
-    function::{
-        CXComptimeFnPrototype, CXComptimeValueType, CXFunctionKind, CXFunctionPrototype,
-    },
+    function::{CXComptimeFnPrototype, CXComptimeValueType, CXFunctionKind, CXFunctionPrototype},
     global_var::{CXEnumVariant, CXGlobalVariable},
     modifiers::CXLinkageMode,
     pattern::CXPattern,

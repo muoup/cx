@@ -1,11 +1,11 @@
 use crate::environment::TypeEnvironment;
 use crate::symbol::completion::complete_template_input;
-use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::pattern::tagged_union::{
     TypeConstructor, resolve_type_constructor_pattern,
 };
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
+use crate::type_checking::value::resolve_indirect_base;
 use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
 use cx_log::CXResult;
 use cx_mir::EnvironmentNamespace;
@@ -13,7 +13,6 @@ use cx_mir::mir::contextual_eq::TypeContextEqual;
 use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin};
 use cx_mir::mir::pattern::MIRPattern;
-use cx_mir::type_context::MIRTypeContext;
 use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 
@@ -24,17 +23,10 @@ pub(crate) fn typecheck_is(
     pattern: &CXPattern,
     expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
-    let tc_lhs: MIRExpression = typecheck_expr(env, namespace, lhs, None)
+    let tc_lhs = typecheck_expr(env, namespace, lhs, None)
         .and_then(|v| v.standard_ready_coerce(env, lhs.token_range()))
-        .and_then(|v| std_rval_promotion(env, v))?;
-    let tc_type = tc_lhs.get_type();
-    let owned_union_type;
-    let union_type = if let Some(inner) = env.symbols.mem_ref_inner(&tc_type) {
-        owned_union_type = inner.clone();
-        &owned_union_type
-    } else {
-        &tc_type
-    };
+        .map(|v| resolve_indirect_base(env, v))?;
+    let union_type = &tc_lhs.source_type;
 
     let Some(variants) = union_type.aggregate_fields(&env.symbols) else {
         return env.log_error(
@@ -92,7 +84,7 @@ pub(crate) fn typecheck_is(
     Ok(TypecheckResult::new(
         MIRType::bool(),
         MIRExpressionKind::PatternIs {
-            lhs: Box::new(tc_lhs),
+            lhs: Box::new(tc_lhs.source),
             pattern: MIRPattern::TaggedUnionVariant {
                 sum_type: union_type.clone(),
                 variant_index: expected_tag,

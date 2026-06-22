@@ -11,6 +11,7 @@ use crate::type_checking::pattern::tagged_union::{
 };
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
+use crate::type_checking::value::resolve_indirect_base;
 use cx_ast::ast::template::CXTemplateInput;
 use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
 use cx_log::CXResult;
@@ -33,10 +34,10 @@ pub fn typecheck_match(
     default: Option<&CXExpression>,
     expected_type: Option<&MIRType>,
 ) -> CXResult<TypecheckResult> {
-    let mut expr_value = typecheck_expr(env, namespace, condition, None)
+    let expr_value = typecheck_expr(env, namespace, condition, None)
         .and_then(|v| v.standard_ready_coerce(env, condition.token_range()))
-        .and_then(|v| std_rval_promotion(env, v))?;
-    let mut expr_type = expr_value.get_type();
+        .map(|v| resolve_indirect_base(env, v))?;
+    let expr_type = expr_value.source_type.clone();
 
     env.push_scope(false, false);
     env.function.set_scope_anchor(condition);
@@ -44,30 +45,18 @@ pub fn typecheck_match(
 
     let join_scope_idx = env.function.current_scope_index();
     let base_snapshot = env.function.current_snapshot();
-    let mut condition_owned = false;
+    let condition_owned = expr_value.owned;
     let mut arm_flows = Vec::new();
+
     env.function
         .push_yield_context(join_scope_idx, expected_type.cloned());
 
-    match &expr_type.kind {
-        MIRTypeKind::MemoryReference { inner_type, .. }
-        | MIRTypeKind::PointerTo { inner_type, .. } => {
-            expr_type = env.symbols.resolve_type_id(*inner_type).clone();
-
-            expr_value = MIRExpression {
-                token_range: TokenRange::internal(),
-                kind: MIRExpressionKind::RegionDuplicate {
-                    source: Box::new(expr_value),
-                },
-                _type: expr_type.clone(),
-            };
-        }
-        _ => condition_owned = true,
-    }
-
+    let mut match_condition = expr_value.source.clone();
     let mut match_is_exhaustive = false;
     let match_arms = match &expr_type.kind {
         MIRTypeKind::Integer { .. } => {
+            let expr_value = std_rval_promotion(env, expr_value.source.clone())?;
+            match_condition = expr_value;
             // Integer matching: each arm has an integer literal pattern
             let mut result_arms = Vec::new();
 
@@ -150,7 +139,7 @@ pub fn typecheck_match(
 
                 matched_variants.insert(variant_id);
 
-                let variant_get_type = if !expr_type.is_memory_reference() {
+                let variant_get_type = if condition_owned {
                     variant_type.clone()
                 } else {
                     env.symbols.mem_ref_to(variant_type.clone())
@@ -161,7 +150,7 @@ pub fn typecheck_match(
                     _type: variant_get_type,
                     token_range: TokenRange::internal(),
                     kind: MIRExpressionKind::TaggedUnionGet {
-                        value: Box::new(expr_value.clone()),
+                        value: Box::new(expr_value.source.clone()),
                         variant_type: variant_type.clone(),
                     },
                 };
@@ -173,7 +162,7 @@ pub fn typecheck_match(
                             token_range: TokenRange::internal(),
                             _type: variant_ref_type.clone(),
                             kind: MIRExpressionKind::TaggedUnionGet {
-                                value: Box::new(expr_value.clone()),
+                                value: Box::new(expr_value.source.clone()),
                                 variant_type: variant_type.clone(),
                             },
                         };
@@ -349,7 +338,7 @@ pub fn typecheck_match(
     Ok(TypecheckResult::new(
         result_type,
         MIRExpressionKind::Match {
-            condition: Box::new(expr_value),
+            condition: Box::new(match_condition),
             arms: match_arms,
             default: default_body,
             exhaustive: match_is_exhaustive || default.is_some(),

@@ -129,7 +129,7 @@ fn expect_compile_success(input: &Path, analysis: bool) {
     );
 
     standard_compilation(config, base_file_name(input)).unwrap_or_else(|err| {
-        err.print(&mut io::stdout()).unwrap();
+        err.print().unwrap();
 
         panic!("Expected compilation success but got failure");
     });
@@ -168,7 +168,7 @@ fn expect_failure(input: &Path, analysis: bool, expected_stage: FailureStage) {
     let actual_stage = classify_failure_stage(message.as_str());
 
     if actual_stage != Some(expected_stage) {
-        err.print(&mut io::stdout()).unwrap();
+        err.print().unwrap();
         panic!(
             "\nExpected failure stage: {:?}\nActual failure stage: {:?}\n\n",
             expected_stage, actual_stage

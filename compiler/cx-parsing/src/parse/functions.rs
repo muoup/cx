@@ -167,9 +167,7 @@ struct ComptimeValueInitializer {
     value_type: CXComptimeValueType,
 }
 
-fn parse_comptime_initializer(
-    data: &mut ParserData,
-) -> CXResult<ComptimeValueInitializer> {
+fn parse_comptime_initializer(data: &mut ParserData) -> CXResult<ComptimeValueInitializer> {
     let expr = try_next!(data.tokens, keyword!(Expr));
     let (name, _type, _) = parse_initializer(data)?;
 

@@ -1,0 +1,63 @@
+import std::io as std;
+import std::optional as std;
+import std::span as std;
+import std::string as std;
+import std::functional as std;
+
+import std::net::udp as std::net;
+
+int main() {
+    const _str& INDEX_HTML = "<html><body><h1>Hello, world!</h1></body></html>";
+
+    std::opt<std::net::udp_socket> socket = try_serve(8080);
+    std::net::udp_socket server = match (move socket) {
+        std::opt::some(s) => yield move s;
+        std::opt::none() => {
+            std::io::println("Failed to start server");
+            return 1;
+        }
+    };
+
+    std::io::println("Server started on port 8080");
+
+    char buffer[1024];
+
+    while (1) {
+        std::net::endpoint client_addr;
+        std::opt<std::net::udp::datagram> result = server |> std::net::udp_socket::recv_from(buffer, 1024);
+
+        if (result |> std::opt::is_none()) {
+            std::io::println("Failed to receive data");
+            continue;
+        }
+
+        const _str& response = INDEX_HTML;
+        std::span<const u8> response_buffer = std::span::str_as_bytes(response);
+        server |> std::net::udp_socket::send_to(response_buffer, client_addr);
+    }
+
+    move server |> std::net::udp_socket::close();
+}
+
+std::opt<std::net::udp_socket> try_serve(u16 port) {
+    std::net::endpoint addr = std::net::endpoint::ipv4("0.0.0.0", port)
+        |> std::opt::try();
+
+    std::net::udp_socket socket = std::net::udp_socket::open()
+        |> std::opt::try()
+        |> std::net::udp_socket::bind(addr)
+        |> std::opt::try();
+
+    const _str& hello = "Hello, world!";
+    std::span<const u8> buffer = std::span::str_as_bytes(hello);
+    std::opt<u64> result = socket 
+        |> std::net::udp_socket::send_to(buffer, addr)
+        |> std::opt::try();
+
+    if (result |> std::opt::is_none()) {
+        return std::opt::none<std::net::udp_socket>();
+    }
+    
+    return move socket 
+        |> std::opt::some<std::net::udp_socket>();
+}

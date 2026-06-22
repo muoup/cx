@@ -1,5 +1,3 @@
-use std::io;
-
 use cx_pipeline::project_compilation;
 use cx_pipeline_data::{
     config::find_and_load_config, CompilationMode, CompilerBackend, CompilerConfig,
@@ -69,7 +67,7 @@ pub(crate) fn run_build_mode(args: BuildArgs) {
     };
 
     project_compilation(base_config, &config, args.target.as_deref()).unwrap_or_else(|err| {
-        err.print(&mut io::stdout()).unwrap();
+        err.print().unwrap();
 
         std::process::exit(1);
     });
