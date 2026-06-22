@@ -24,7 +24,8 @@ int main() {
 
     while (1) {
         std::net::endpoint client_addr;
-        std::opt<std::net::udp::datagram> result = server |> std::net::udp_socket::recv_from(buffer, 1024);
+        std::opt<std::net::udp::datagram> result = server 
+            |> std::net::udp_socket::recv_from(buffer, 1024);
 
         if (result |> std::opt::is_none()) {
             std::io::println("Failed to receive data");
@@ -50,13 +51,9 @@ std::opt<std::net::udp_socket> try_serve(u16 port) {
 
     const _str& hello = "Hello, world!";
     std::span<const u8> buffer = std::span::str_as_bytes(hello);
-    std::opt<u64> result = socket 
+    u64 result = socket 
         |> std::net::udp_socket::send_to(buffer, addr)
         |> std::opt::try();
-
-    if (result |> std::opt::is_none()) {
-        return std::opt::none<std::net::udp_socket>();
-    }
     
     return move socket 
         |> std::opt::some<std::net::udp_socket>();
