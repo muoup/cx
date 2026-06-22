@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use cx_ast::ast::{
-    function::CXFunctionPrototype,
+    function::{CXComptimeFnPrototype, CXFunctionKind, CXFunctionPrototype},
     template::{CXTemplateInput, CXTemplatePrototype},
     types::{CXType, CXTypeKind},
 };
@@ -89,28 +89,36 @@ fn deduce_template_input(
     source: &cx_ast::symbols::CXSymbol,
     arg_types: &[MIRType],
 ) -> CXMaybeRawResult<MIRTemplateInput> {
-    let CXSymbolKind::FunctionReference(shell) = &source.kind else {
-        return crate::log::internal_type_error("Only function template deduction is implemented")
+    let shell = match &source.kind {
+        CXSymbolKind::FunctionReference(shell) => TemplateDeductionShell::Runtime(shell),
+        CXSymbolKind::ComptimeFunction { definition, .. } => {
+            TemplateDeductionShell::Comptime(definition)
+        }
+        _ => {
+            return crate::log::internal_type_error(
+                "Only function template deduction is implemented",
+            )
             .map_err(CXMaybeRawErr::from);
+        }
     };
 
     let mut bindings = TemplateBindings::new();
-    if arg_types.len() > shell.params.len() && !shell.var_args {
+    if arg_types.len() > shell.params_len() && !shell.var_args() {
         return crate::log::internal_type_error(format!(
             "Function template expects {} arguments, found {}",
-            shell.params.len(),
+            shell.params_len(),
             arg_types.len()
         ))
         .map_err(CXMaybeRawErr::from);
     }
 
-    for (param, actual_type) in shell.params.iter().zip(arg_types.iter()) {
+    for (formal_type, actual_type) in shell.formal_types().into_iter().zip(arg_types.iter()) {
         deduce_from_cx_type(
             env,
             namespace,
             template_prototype,
             &mut bindings,
-            &param._type,
+            formal_type,
             actual_type,
         )?;
     }
@@ -122,7 +130,8 @@ fn deduce_template_input(
             let ty = bindings.remove(name.as_str()).ok_or_else(|| {
                 CXMaybeRawErr::from(crate::log::type_error_msg(format!(
                     "Could not deduce template argument '{}' for function {}",
-                    name, shell.kind
+                    name,
+                    shell.name()
                 )))
             })?;
 
@@ -131,6 +140,45 @@ fn deduce_template_input(
         .collect::<CXMaybeRawResult<Vec<_>>>()?;
 
     Ok(MIRTemplateInput { args })
+}
+
+enum TemplateDeductionShell<'a> {
+    Runtime(&'a CXFunctionPrototype),
+    Comptime(&'a CXComptimeFnPrototype),
+}
+
+impl<'a> TemplateDeductionShell<'a> {
+    fn params_len(&self) -> usize {
+        match self {
+            Self::Runtime(shell) => shell.params.len(),
+            Self::Comptime(shell) => shell.params.len(),
+        }
+    }
+
+    fn var_args(&self) -> bool {
+        match self {
+            Self::Runtime(shell) => shell.var_args,
+            Self::Comptime(_) => false,
+        }
+    }
+
+    fn formal_types(&self) -> Vec<&'a CXType> {
+        match self {
+            Self::Runtime(shell) => shell.params.iter().map(|param| &param._type).collect(),
+            Self::Comptime(shell) => shell
+                .params
+                .iter()
+                .map(|param| &param.value_type._type)
+                .collect(),
+        }
+    }
+
+    fn name(&self) -> &CXFunctionKind {
+        match self {
+            Self::Runtime(shell) => &shell.kind,
+            Self::Comptime(shell) => &shell.kind,
+        }
+    }
 }
 
 fn deduce_from_cx_type(

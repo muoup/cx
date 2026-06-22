@@ -1,12 +1,14 @@
+use cx_ast::ast::expression::CXExpression;
 use cx_ast::ast::template::CXTemplateInput;
 use cx_log::{CXRawResult, CXResult};
 use cx_mir::EnvironmentNamespace;
-use cx_mir::mir::data::MIRType;
+use cx_mir::mir::data::{MIRComptimeFunctionPrototype, MIRType, MIRTypeId};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_mir::symbol::MIRSymbol;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
 
+use crate::comptime::value::ComptimeValue;
 use crate::environment::TypeEnvironment;
 use cx_tokens::TokenRange;
 
@@ -48,11 +50,28 @@ impl TypecheckedBinding {
 #[derive(Debug)]
 pub enum TypecheckState {
     Ready(MIRExpression),
+    Comptime(ComptimeTypecheckValue),
     IncompleteTemplatedCallee {
         name: QualifiedName,
         template_input: Option<CXTemplateInput>,
     },
     NeedsExpectedType(ExpectedTypeDeferredExpr),
+}
+
+#[derive(Debug, Clone)]
+pub enum ComptimeTypecheckValue {
+    Function(ComptimeFunctionValue),
+    Value(ComptimeValue),
+    #[allow(dead_code)]
+    StagedExpr(MIRExpression),
+}
+
+#[derive(Debug, Clone)]
+pub struct ComptimeFunctionValue {
+    pub prototype: MIRComptimeFunctionPrototype,
+    pub namespace: EnvironmentNamespace,
+    pub body: Box<CXExpression>,
+    pub template_bindings: Vec<(CXIdent, MIRTypeId)>,
 }
 
 pub struct IncompleteTemplate {
@@ -139,6 +158,10 @@ impl TypecheckResult {
     ) -> CXResult<TypecheckResult> {
         match self.expression {
             TypecheckState::Ready(_) => Ok(self),
+            TypecheckState::Comptime(_) => env.log_error(
+                token_range,
+                format!("Comptime value cannot be used as a runtime expression"),
+            ),
             TypecheckState::IncompleteTemplatedCallee { .. } => env.log_error(
                 token_range,
                 format!("Could not deduce templated function parameters",),
@@ -179,6 +202,31 @@ impl TypecheckResult {
                 name,
                 template_input,
             },
+            binding: None,
+            adopting: false,
+        }
+    }
+
+    pub fn comptime_function(value: ComptimeFunctionValue) -> Self {
+        Self {
+            expression: TypecheckState::Comptime(ComptimeTypecheckValue::Function(value)),
+            binding: None,
+            adopting: false,
+        }
+    }
+
+    pub fn comptime_value(value: ComptimeValue) -> Self {
+        Self {
+            expression: TypecheckState::Comptime(ComptimeTypecheckValue::Value(value)),
+            binding: None,
+            adopting: false,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn staged_expr(expression: MIRExpression) -> Self {
+        Self {
+            expression: TypecheckState::Comptime(ComptimeTypecheckValue::StagedExpr(expression)),
             binding: None,
             adopting: false,
         }
@@ -228,6 +276,13 @@ impl TypecheckResult {
         }
     }
 
+    pub fn try_into_comptime_value(self) -> TypecheckExtract<ComptimeTypecheckValue> {
+        match self.expression {
+            TypecheckState::Comptime(value) => TypecheckExtract::Succ(value),
+            expression => TypecheckExtract::Fail(Self { expression, ..self }),
+        }
+    }
+
     pub fn into_incomplete_callee_parts(self) -> Option<IncompleteTemplate> {
         match self.expression {
             TypecheckState::IncompleteTemplatedCallee {
@@ -245,6 +300,16 @@ impl TypecheckResult {
     pub fn ready_type(&self) -> Option<&MIRType> {
         match &self.expression {
             TypecheckState::Ready(expression) => Some(&expression._type),
+            TypecheckState::Comptime(ComptimeTypecheckValue::StagedExpr(expression)) => {
+                Some(&expression._type)
+            }
+            TypecheckState::Comptime(ComptimeTypecheckValue::Value(value)) => {
+                // FIXME: This allocates a type value; this path is only used for diagnostics and
+                // template deduction should avoid relying on it for non-staged comptime values.
+                let _ = value;
+                None
+            }
+            TypecheckState::Comptime(ComptimeTypecheckValue::Function(_)) => None,
             TypecheckState::NeedsExpectedType(_) => None,
             TypecheckState::IncompleteTemplatedCallee { .. } => None,
         }
@@ -254,7 +319,8 @@ impl TypecheckResult {
         let expression = match &mut self.expression {
             TypecheckState::Ready(expression) => expression,
             TypecheckState::IncompleteTemplatedCallee { .. }
-            | TypecheckState::NeedsExpectedType(_) => return Ok(()),
+            | TypecheckState::NeedsExpectedType(_)
+            | TypecheckState::Comptime(_) => return Ok(()),
         };
 
         if !matches!(expression.token_range, TokenRange::Source { .. }) {
@@ -288,6 +354,21 @@ impl TypecheckResult {
     ) -> CXRawResult<Self> {
         if matches!(symbol, MIRSymbol::Template { .. }) {
             return Ok(Self::incomplete_template(name, template_input));
+        }
+
+        if let MIRSymbol::ComptimeFunctionReference {
+            prototype,
+            namespace,
+            body,
+            template_bindings,
+        } = symbol
+        {
+            return Ok(Self::comptime_function(ComptimeFunctionValue {
+                prototype,
+                namespace,
+                body,
+                template_bindings,
+            }));
         }
 
         symbol.as_expression().map(Self::from)

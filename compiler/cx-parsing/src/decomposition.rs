@@ -219,6 +219,38 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) -> CX
             }
         }
 
+        CXASTStmt::ComptimeFunctionDefinition {
+            prototype,
+            visibility,
+            template_prototype,
+            body,
+        } => {
+            let QualifiedName {
+                name,
+                namespace: q_namespace,
+            } = prototype.kind.into_key();
+            let namespace = base_namespace.join(&q_namespace);
+            let symbol = match template_prototype {
+                Some(input) => CXSymbol::new(
+                    visibility,
+                    CXSymbolKind::ComptimeFunctionTemplate {
+                        template: input,
+                        definition: prototype,
+                        body,
+                    },
+                ),
+                None => CXSymbol::new(
+                    visibility,
+                    CXSymbolKind::ComptimeFunction {
+                        definition: prototype,
+                        body,
+                    },
+                ),
+            };
+
+            insert_symbol(env, &namespace, name.to_string(), symbol)?;
+        }
+
         CXASTStmt::GlobalVariableDefinition {
             visibility,
             variable,

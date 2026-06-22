@@ -3,7 +3,9 @@ use std::fmt::{Debug, Display, Formatter, Result};
 
 use crate::ast::{
     expression::{CXBinOp, CXExprKind, CXExpression, CXInitIndex},
-    function::{CXFunctionKind, CXFunctionPrototype},
+    function::{
+        CXComptimeFnPrototype, CXComptimeValueType, CXFunctionKind, CXFunctionPrototype,
+    },
     global_var::{CXEnumVariant, CXGlobalVariable},
     modifiers::CXLinkageMode,
     pattern::CXPattern,
@@ -160,6 +162,25 @@ impl Display for CXASTStmt {
                 }
             }
 
+            CXASTStmt::ComptimeFunctionDefinition {
+                prototype,
+                visibility,
+                template_prototype,
+                body,
+            } => {
+                write!(f, "{visibility:?} ")?;
+                if let Some(template) = template_prototype {
+                    let params = template
+                        .types
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    write!(f, "template <{params}> ")?;
+                }
+                write!(f, "comptime fn {prototype} {body}")
+            }
+
             CXASTStmt::GlobalVariableDefinition {
                 visibility,
                 variable,
@@ -240,6 +261,10 @@ impl<'a> Display for CXExprFormatter<'a> {
                     CXExprFormatter::new(value, self.depth + 1).fmt(f)?;
                 }
                 Ok(())
+            }
+            CXExprKind::Emit { expr } => {
+                writeln!(f, "Emit")?;
+                CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
             CXExprKind::BinOp { lhs, rhs, op } => {
                 writeln!(f, "BinOp {:?}", op)?;
@@ -596,6 +621,33 @@ impl Display for CXFunctionPrototype {
                 "{}: {}",
                 param.name.as_ref().unwrap_or(&CXIdent::new("_")),
                 param._type
+            )
+        }));
+
+        let params_str = params.join(", ");
+        write!(f, "{} :: {}({})", self.return_type, self.kind, params_str)
+    }
+}
+
+impl Display for CXComptimeValueType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.expr {
+            write!(f, "expr ")?;
+        }
+
+        write!(f, "{}", self._type)
+    }
+}
+
+impl Display for CXComptimeFnPrototype {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut params = Vec::new();
+
+        params.extend(self.params.iter().map(|param| {
+            format!(
+                "{}: {}",
+                param.name.as_ref().unwrap_or(&CXIdent::new("_")),
+                param.value_type
             )
         }));
 

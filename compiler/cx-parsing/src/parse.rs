@@ -55,6 +55,7 @@ pub fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
             data.tokens.goto_statement_end();
         }
         keyword!(Typedef) => parse_typedef(data)?,
+        keyword!(Comptime) => parse_comptime_fn_merge(data)?,
         punctuator!(Semicolon) => {
             data.tokens.next();
         }
@@ -116,6 +117,28 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
     };
 
     try_next!(data.tokens, punctuator!(Colon));
+
+    Ok(())
+}
+
+fn parse_comptime_fn_merge(data: &mut ParserData) -> CXResult<()> {
+    let func = functions::parse_comptime_function(data)?;
+
+    let body = if let Some(template_prototype) = func.template_prototype.as_ref() {
+        note_templated_types(data, template_prototype)?;
+        let body = parse_body(data);
+        unnote_templated_types(data, template_prototype);
+        body
+    } else {
+        parse_body(data)
+    }?;
+
+    data.add_stmt(CXASTStmt::ComptimeFunctionDefinition {
+        prototype: func.prototype,
+        visibility: data.visibility,
+        template_prototype: func.template_prototype,
+        body: Box::new(body),
+    });
 
     Ok(())
 }

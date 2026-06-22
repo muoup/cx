@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use cx_ast::ast::{
-    function::{CXFunctionKind, CXFunctionPrototype},
+    function::{CXComptimeFnPrototype, CXFunctionKind, CXFunctionPrototype},
     modifiers::{CXTypeQualifiers, VisibilityMode},
     template::CXTemplateInput,
     types::{
@@ -18,7 +18,8 @@ use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 use cx_mir::{
     mir::{
         data::{
-            MIRAggregateAttributes, MIRFunctionPrototype, MIRFunctionSignature, MIRParameter,
+            MIRAggregateAttributes, MIRComptimeFunctionPrototype, MIRComptimeParameter,
+            MIRComptimeValueType, MIRFunctionPrototype, MIRFunctionSignature, MIRParameter,
             MIRTemplateInput,
         },
         name_mangling::{mangle_namespace_symbol, mangle_qualified_name},
@@ -255,6 +256,37 @@ pub fn complete_prototype(
             .with_lookup_identifier(lookup_identifier)
             .with_debug_name(debug_name)
     })
+}
+
+pub fn complete_comptime_prototype(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    prototype: &CXComptimeFnPrototype,
+) -> CXResult<MIRComptimeFunctionPrototype> {
+    let return_type = MIRComptimeValueType {
+        expr: prototype.return_type.expr,
+        _type: complete_type(env, namespace, &prototype.return_type._type)?,
+    };
+    let params = prototype
+        .params
+        .iter()
+        .map(|param| {
+            Ok(MIRComptimeParameter {
+                name: param.name.clone(),
+                value_type: MIRComptimeValueType {
+                    expr: param.value_type.expr,
+                    _type: complete_type(env, namespace, &param.value_type._type)?,
+                },
+            })
+        })
+        .collect::<CXResult<Vec<_>>>()?;
+
+    let lookup_identifier = function_lookup_identifier(namespace, &prototype.kind);
+    let debug_name = lookup_identifier.name.clone();
+
+    Ok(MIRComptimeFunctionPrototype::new(return_type, params)
+        .with_lookup_identifier(lookup_identifier)
+        .with_debug_name(debug_name))
 }
 
 fn function_lookup_identifier(

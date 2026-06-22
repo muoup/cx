@@ -1,4 +1,7 @@
-use cx_ast::{ast::template::CXTemplatePrototype, symbols::CXSymbol};
+use cx_ast::{
+    ast::{expression::CXExpression, template::CXTemplatePrototype},
+    symbols::CXSymbol,
+};
 use cx_log::error::{CXRawResult, message::CXStdErrMessage};
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
@@ -6,7 +9,7 @@ use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 use crate::{
     EnvironmentNamespace,
     mir::{
-        data::{MIRFunctionPrototype, MIRTypeId, MIRTypeKind},
+        data::{MIRComptimeFunctionPrototype, MIRFunctionPrototype, MIRTypeId, MIRTypeKind},
         expression::{MIRExpression, MIRExpressionKind},
     },
     type_context::MIRTypeContext,
@@ -16,6 +19,12 @@ use crate::{
 pub enum MIRSymbol {
     Type(MIRTypeId),
     FunctionReference(MIRFunctionPrototype),
+    ComptimeFunctionReference {
+        prototype: MIRComptimeFunctionPrototype,
+        namespace: EnvironmentNamespace,
+        body: Box<CXExpression>,
+        template_bindings: Vec<(CXIdent, MIRTypeId)>,
+    },
     Expression(MIRExpression),
     Template {
         template_prototype: CXTemplatePrototype,
@@ -71,6 +80,11 @@ impl MIRSymbol {
             }),
 
             MIRSymbol::Expression(expr) => CXRawResult::Ok(expr.clone()),
+
+            MIRSymbol::ComptimeFunctionReference { .. } => CXStdErrMessage::result(
+                "TYPE ERROR",
+                "Comptime function cannot be used in runtime contexts",
+            ),
 
             MIRSymbol::Template { .. } => {
                 CXStdErrMessage::result("TYPE ERROR", "Could not deduce arguments to template")

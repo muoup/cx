@@ -33,7 +33,7 @@ use cx_mir::{
 use crate::{
     environment::{MIRFunctionGenRequest, TypeEnvironment},
     symbol::{
-        completion::{complete_prototype, complete_type},
+        completion::{complete_comptime_prototype, complete_prototype, complete_type},
         r#enum::resolve_enum_block,
     },
 };
@@ -91,6 +91,19 @@ pub fn resolve_symbol(
             let prototype = complete_prototype(env, &prototype_namespace, prototype)?;
 
             Ok(MIRSymbol::FunctionReference(prototype))
+        }
+
+        CXSymbolKind::ComptimeFunction { definition, body } => {
+            let prototype_namespace =
+                function_lexical_namespace(symbol_namespace, &definition.kind);
+            let prototype = complete_comptime_prototype(env, &prototype_namespace, definition)?;
+
+            Ok(MIRSymbol::ComptimeFunctionReference {
+                prototype,
+                namespace: prototype_namespace,
+                body: body.clone(),
+                template_bindings: Vec::new(),
+            })
         }
 
         CXSymbolKind::TypeConstructor {
@@ -161,6 +174,27 @@ pub fn resolve_symbol(
                 namespace: symbol_namespace.clone(),
             })
         }
+
+        CXSymbolKind::ComptimeFunctionTemplate {
+            template: input,
+            definition,
+            body,
+        } => {
+            let source = CXSymbol::new(
+                symbol.visibility,
+                CXSymbolKind::ComptimeFunction {
+                    definition: definition.clone(),
+                    body: body.clone(),
+                },
+            );
+
+            Ok(MIRSymbol::Template {
+                template_prototype: input.clone(),
+                name: name.clone(),
+                source: Box::new(source),
+                namespace: symbol_namespace.clone(),
+            })
+        }
     }
 }
 
@@ -217,6 +251,15 @@ fn mir_symbols_equivalent(env: &TypeEnvironment, left: &MIRSymbol, right: &MIRSy
         (MIRSymbol::FunctionReference(left), MIRSymbol::FunctionReference(right)) => {
             left.linkage() == right.linkage() && left.contextual_eq(right, &env.symbols)
         }
+
+        (
+            MIRSymbol::ComptimeFunctionReference {
+                prototype: left, ..
+            },
+            MIRSymbol::ComptimeFunctionReference {
+                prototype: right, ..
+            },
+        ) => left.lookup_identifier() == right.lookup_identifier(),
 
         (MIRSymbol::Expression(left), MIRSymbol::Expression(right)) => {
             env.type_eq(&left._type, &right._type)
@@ -310,6 +353,17 @@ pub fn apply_template(
     env.symbols.pop_local_scope();
 
     let mut symbol = result?;
+    if let MIRSymbol::ComptimeFunctionReference {
+        template_bindings, ..
+    } = &mut symbol
+    {
+        *template_bindings = input
+            .types
+            .iter()
+            .cloned()
+            .zip(template_input.args.iter().copied())
+            .collect();
+    }
     attach_template_metadata(env, &mut symbol, namespace, template_input.clone());
 
     if let MIRSymbol::FunctionReference(prototype) = &symbol
@@ -336,6 +390,10 @@ pub fn symbol_lexical_namespace(
             definition: prototype,
             ..
         } => function_lexical_namespace(&namespace, &prototype.kind),
+        CXSymbolKind::ComptimeFunction { definition, .. }
+        | CXSymbolKind::ComptimeFunctionTemplate { definition, .. } => {
+            function_lexical_namespace(&namespace, &definition.kind)
+        }
         _ => namespace.clone(),
     }
 }

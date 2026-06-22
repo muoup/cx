@@ -417,6 +417,14 @@ pub fn lower_match(
                     )?;
                 }
                 result_predecessors.push((arm_result, arm_yield_block));
+            } else if let Some(arm_yield_block) = arm_yield_block {
+                builder.set_current_block(arm_yield_block);
+                let current = builder.current_block();
+                builder.add_new_instruction(
+                    LMIRInstructionKind::Jump { target: current },
+                    LMIRType::unit(),
+                    false,
+                )?;
             }
         } else if arm_falls_through && !builder.current_block_closed() {
             exit_has_predecessor = true;
@@ -477,6 +485,14 @@ pub fn lower_match(
                     )?;
                 }
                 result_predecessors.push((default_result, default_yield_block));
+            } else if let Some(default_yield_block) = default_yield_block {
+                builder.set_current_block(default_yield_block);
+                let current = builder.current_block();
+                builder.add_new_instruction(
+                    LMIRInstructionKind::Jump { target: current },
+                    LMIRType::unit(),
+                    false,
+                )?;
             }
         } else if default_falls_through && !builder.current_block_closed() {
             exit_has_predecessor = true;

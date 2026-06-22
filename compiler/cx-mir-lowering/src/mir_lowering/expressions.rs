@@ -739,6 +739,10 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             )
         }
 
+        MIRExpressionKind::Emit(_) => {
+            panic!("emit expression reached runtime lowering");
+        }
+
         MIRExpressionKind::Block { statements } => {
             for statement in statements {
                 lower_expression(builder, statement)?;

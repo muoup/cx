@@ -226,6 +226,7 @@ pub enum MIRExpressionKind {
         value: Option<Box<MIRExpression>>,
         target_scope: usize,
     },
+    Emit(Box<MIRExpression>),
 
     // Sequential Statements
     Block {

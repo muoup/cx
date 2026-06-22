@@ -62,6 +62,11 @@ pub(crate) fn evaluate_expression(
             conversion,
         } => evaluate_type_conversion(engine, *operand, conversion, &expr_type, token_range)?,
 
+        MIRExpressionKind::Emit(expr) => ComptimeValue {
+            token_range,
+            kind: ComptimeKind::Emit(*expr),
+        },
+
         MIRExpressionKind::If {
             condition,
             then_branch,

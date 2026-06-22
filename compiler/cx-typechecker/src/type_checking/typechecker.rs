@@ -346,6 +346,23 @@ fn typecheck_expr_inner(
             value.as_ref().map(Box::as_ref),
         )?,
 
+        CXExprKind::Emit { expr: inner } => {
+            if !env.in_comptime_context() {
+                return env.log_error(
+                    expr.token_range(),
+                    format!("'emit' may only be used in a comptime context"),
+                );
+            }
+
+            let inner = typecheck_expr(env, namespace, inner, expected_type)?
+                .standard_ready_coerce(env, inner.token_range())?;
+            TypecheckResult::from(MIRExpression {
+                token_range: TokenRange::internal(),
+                _type: inner._type.clone(),
+                kind: MIRExpressionKind::Emit(Box::new(inner)),
+            })
+        }
+
         CXExprKind::Unsafe { expr: inner } => {
             typecheck_unsafe(env, namespace, inner, expected_type)?
         }

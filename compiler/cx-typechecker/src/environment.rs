@@ -43,6 +43,7 @@ pub struct TypeEnvironment<'a> {
     pub symbols: MIRSymbolRegistry<'a>,
     pub items: ItemRegistry,
     pub function: FunctionContext,
+    comptime_depth: usize,
 }
 
 impl TypeEnvironment<'_> {
@@ -52,6 +53,7 @@ impl TypeEnvironment<'_> {
             module_data,
             items: ItemRegistry::new(),
             function: FunctionContext::default(),
+            comptime_depth: 0,
         }
     }
 
@@ -118,6 +120,21 @@ impl TypeEnvironment<'_> {
 
     pub fn restore_function_mode(&mut self, snapshot: FunctionModeSnapshot) {
         self.function.restore_mode(snapshot);
+    }
+
+    pub fn enter_comptime_context(&mut self) {
+        self.comptime_depth += 1;
+    }
+
+    pub fn exit_comptime_context(&mut self) {
+        self.comptime_depth = self
+            .comptime_depth
+            .checked_sub(1)
+            .expect("Comptime context stack underflow");
+    }
+
+    pub fn in_comptime_context(&self) -> bool {
+        self.comptime_depth > 0
     }
 
     pub fn get_symbol(

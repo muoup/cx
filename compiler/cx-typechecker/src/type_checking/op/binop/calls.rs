@@ -1,10 +1,11 @@
+use crate::comptime::evaluate_comptime_call;
 use crate::environment::TypeEnvironment;
 use crate::symbol::deduction::complete_templated_callee_maybe;
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::lvalue;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::contracts::typecheck_contract;
-use crate::type_checking::result::{TypecheckExtract, TypecheckResult};
+use crate::type_checking::result::{ComptimeTypecheckValue, TypecheckExtract, TypecheckResult};
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
 use cx_log::CXResult;
@@ -35,12 +36,24 @@ pub(crate) fn typecheck_callee_method_call(
 ) -> CXResult<TypecheckResult> {
     let tc_args = comma_separated(env, namespace, rhs)?;
     let callee = complete_callee(env, namespace, expr, callee, &implicit_args, &tc_args)?;
+    let all_args = implicit_args
+        .into_iter()
+        .map(TypecheckResult::from)
+        .chain(tc_args.into_iter().map(|(_, arg)| arg))
+        .collect::<Vec<_>>();
+
+    let CompletedCallee::Runtime(callee) = callee else {
+        let CompletedCallee::Comptime(function) = callee else {
+            unreachable!()
+        };
+        return evaluate_comptime_call(env, expr.token_range(), function, all_args);
+    };
+
     let (loaded_function, signature) = load_callable(env, expr, callee)?;
 
-    check_argument_count(env, expr, &signature, tc_args.len() + implicit_args.len())?;
+    check_argument_count(env, expr, &signature, all_args.len())?;
 
-    let argument_results =
-        complete_call_arguments(env, namespace, &signature, implicit_args, tc_args)?;
+    let argument_results = complete_call_arguments(env, namespace, &signature, all_args)?;
     let arguments = complete_call_argument_expressions(env, expr, &signature, argument_results)?;
     let contract = typecheck_contract(env, namespace, &signature)?;
 
@@ -183,15 +196,9 @@ fn complete_call_arguments(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     signature: &MIRFunctionSignature,
-    implicit_args: Vec<MIRExpression>,
-    explicit_args: Vec<(&CXExpression, TypecheckResult)>,
+    args: Vec<TypecheckResult>,
 ) -> CXResult<Vec<TypecheckResult>> {
-    let tc_args = implicit_args
-        .into_iter()
-        .map(TypecheckResult::from)
-        .chain(explicit_args.into_iter().map(|(_, val)| val));
-
-    tc_args
+    args.into_iter()
         .enumerate()
         .map(|(i, val)| {
             if let Some(param) = signature.params.get(i) {
@@ -251,11 +258,24 @@ fn complete_callee(
     function: TypecheckResult,
     implicit_args: &[MIRExpression],
     args: &[(&CXExpression, TypecheckResult)],
-) -> CXResult<MIRExpression> {
+) -> CXResult<CompletedCallee> {
     match function.try_into_expression() {
-        TypecheckExtract::Succ(callee) => Ok(callee),
+        TypecheckExtract::Succ(callee) => Ok(CompletedCallee::Runtime(callee)),
 
         TypecheckExtract::Fail(function) => {
+            let function = match function.try_into_comptime_value() {
+                TypecheckExtract::Succ(ComptimeTypecheckValue::Function(function)) => {
+                    return Ok(CompletedCallee::Comptime(function));
+                }
+                TypecheckExtract::Succ(_) => {
+                    return env.log_error(
+                        expr.token_range(),
+                        format!("Comptime value is not callable"),
+                    );
+                }
+                TypecheckExtract::Fail(function) => function,
+            };
+
             let Some(parts) = function.into_incomplete_callee_parts() else {
                 return env.log_error(expr.token_range(), format!("Could not deduce callee"));
             };
@@ -275,12 +295,31 @@ fn complete_callee(
                 }
             };
 
-            match symbol.as_expression() {
-                Ok(function) => Ok(function),
+            match TypecheckResult::from_symbol(symbol, parts.name, parts.template_input) {
+                Ok(result) => match result.try_into_comptime_value() {
+                    TypecheckExtract::Succ(ComptimeTypecheckValue::Function(function)) => {
+                        Ok(CompletedCallee::Comptime(function))
+                    }
+                    TypecheckExtract::Succ(_) => env.log_error(
+                        expr.token_range(),
+                        format!("Comptime value is not callable"),
+                    ),
+                    TypecheckExtract::Fail(result) => match result.try_into_expression() {
+                        TypecheckExtract::Succ(function) => Ok(CompletedCallee::Runtime(function)),
+                        TypecheckExtract::Fail(_) => {
+                            env.log_error(expr.token_range(), format!("Could not deduce callee"))
+                        }
+                    },
+                },
                 Err(err) => env.log_error(expr.token_range(), format!("{}", err.message())),
             }
         }
     }
+}
+
+enum CompletedCallee {
+    Runtime(MIRExpression),
+    Comptime(crate::type_checking::result::ComptimeFunctionValue),
 }
 
 pub(crate) fn comma_separated<'a>(

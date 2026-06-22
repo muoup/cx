@@ -130,6 +130,9 @@ pub enum CXExprKind {
     Yield {
         value: Option<Box<CXExpression>>,
     },
+    Emit {
+        expr: Box<CXExpression>,
+    },
 
     Unsafe {
         expr: Box<CXExpression>,

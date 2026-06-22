@@ -565,7 +565,11 @@ pub(crate) fn parse_keyword_expr(
             data.log_error(format!("'expr' is reserved but is not implemented yet"))
         }
         KeywordType::Emit => {
-            data.log_error(format!("'emit' is reserved but is not implemented yet"))
+            let expr = parse_expr(data)?;
+
+            Ok(CXExprKind::Emit {
+                expr: Box::new(expr),
+            })
         }
 
         _ => {

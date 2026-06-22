@@ -29,6 +29,26 @@ pub struct CXParameter {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct CXComptimeFnPrototype {
+    pub kind: CXFunctionKind,
+    pub params: Vec<CXComptimeParameter>,
+    pub return_type: CXComptimeValueType,
+    pub range: TokenRange,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct CXComptimeParameter {
+    pub name: Option<CXIdent>,
+    pub value_type: CXComptimeValueType,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct CXComptimeValueType {
+    pub expr: bool,
+    pub _type: CXType,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum CXFunctionKind {
     Standard(CXIdent),
     AssociatedFunction { namespace: CXIdent, name: CXIdent },

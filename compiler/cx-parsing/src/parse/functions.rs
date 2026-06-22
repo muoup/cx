@@ -3,7 +3,10 @@ use crate::{
     peek_next_kind, try_next,
 };
 use cx_ast::ast::{
-    function::{CXFunctionContract, CXFunctionKind, CXFunctionPrototype, CXParameter},
+    function::{
+        CXComptimeFnPrototype, CXComptimeParameter, CXComptimeValueType, CXFunctionContract,
+        CXFunctionKind, CXFunctionPrototype, CXParameter,
+    },
     modifiers::CXLinkageMode,
     template::CXTemplatePrototype,
     types::CXType,
@@ -23,6 +26,11 @@ use crate::parse::{
 
 pub struct FunctionDeclaration {
     pub prototype: CXFunctionPrototype,
+    pub template_prototype: Option<CXTemplatePrototype>,
+}
+
+pub struct ComptimeFunctionDeclaration {
+    pub prototype: CXComptimeFnPrototype,
     pub template_prototype: Option<CXTemplatePrototype>,
 }
 
@@ -83,6 +91,114 @@ pub fn try_function_parse(
         prototype,
         template_prototype,
     }))
+}
+
+pub fn parse_comptime_function(data: &mut ParserData) -> CXResult<ComptimeFunctionDeclaration> {
+    assert_token_matches!(data.tokens, keyword!(Comptime), "'comptime'");
+    let return_type = parse_comptime_initializer(data)?;
+    let Some(name) = return_type.name else {
+        return data.log_error(format!("Expected comptime function name"));
+    };
+
+    let Some(declaration) = try_comptime_function_parse(data, return_type.value_type, name)? else {
+        return data.log_error(format!("Expected comptime function parameter list"));
+    };
+
+    Ok(declaration)
+}
+
+fn try_comptime_function_parse(
+    data: &mut ParserData,
+    return_type: CXComptimeValueType,
+    name: CXIdent,
+) -> CXResult<Option<ComptimeFunctionDeclaration>> {
+    let range_start = data.tokens.index;
+
+    let name = if try_next!(data.tokens, operator!(ScopeRes)) {
+        data.tokens.index = range_start - 1;
+
+        try_parse_qualified_name(&mut data.tokens)?.unwrap()
+    } else {
+        QualifiedName::root(name)
+    };
+
+    let template_prototype = try_parse_template(&mut data.tokens)?;
+
+    let kind = if name.namespace.is_root() {
+        CXFunctionKind::Standard(name.name)
+    } else {
+        if name.namespace.segments().len() != 1 {
+            return data.log_error(format!(
+                "Associated comptime function declarations must have exactly two segments"
+            ));
+        }
+
+        CXFunctionKind::AssociatedFunction {
+            namespace: name.namespace.segments()[0].clone(),
+            name: name.name,
+        }
+    };
+
+    if !matches!(peek_next_kind!(data.tokens)?, punctuator!(OpenParen)) {
+        data.tokens.index = range_start;
+        return Ok(None);
+    };
+
+    let args = parse_comptime_params(data)?;
+    let prototype = CXComptimeFnPrototype {
+        return_type,
+        kind,
+        params: args,
+        range: TokenRange::new(
+            range_start,
+            data.tokens.index,
+            data.file_origin_for_range(range_start, data.tokens.index),
+        ),
+    };
+
+    Ok(Some(ComptimeFunctionDeclaration {
+        prototype,
+        template_prototype,
+    }))
+}
+
+struct ComptimeValueInitializer {
+    name: Option<CXIdent>,
+    value_type: CXComptimeValueType,
+}
+
+fn parse_comptime_initializer(
+    data: &mut ParserData,
+) -> CXResult<ComptimeValueInitializer> {
+    let expr = try_next!(data.tokens, keyword!(Expr));
+    let (name, _type, _) = parse_initializer(data)?;
+
+    Ok(ComptimeValueInitializer {
+        name,
+        value_type: CXComptimeValueType { expr, _type },
+    })
+}
+
+fn parse_comptime_params(data: &mut ParserData) -> CXResult<Vec<CXComptimeParameter>> {
+    assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+
+    let mut params = Vec::new();
+
+    while !try_next!(data.tokens, punctuator!(CloseParen)) {
+        let parsed = parse_comptime_initializer(data)?;
+
+        params.push(CXComptimeParameter {
+            name: parsed.name,
+            value_type: parsed.value_type,
+        });
+
+        if !try_next!(data.tokens, operator!(Comma)) {
+            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+            break;
+        }
+    }
+
+    Ok(params)
 }
 
 pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunctionContract> {
