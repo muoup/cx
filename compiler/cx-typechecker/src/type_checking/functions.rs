@@ -14,6 +14,7 @@ use cx_mir::{
         expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
     },
 };
+use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 
 pub fn typecheck_function(
@@ -26,19 +27,19 @@ pub fn typecheck_function(
     env.push_scope(false, false);
     env.function.set_scope_anchor(body);
     env.function
-        .configure_merge_scope(body, "function exit", Some("fallthrough"), true);
+        .configure_merge_scope(body, Some("fallthrough"), true);
 
     for MIRParameter { name, _type } in prototype.signature().params.iter() {
         let Some(name) = name else {
             continue;
         };
-        ensure_valid_allocation_type(env, Some(body.token_range().clone()), "a parameter", _type)?;
+        ensure_valid_allocation_type(env, body.token_range().clone(), "a parameter", _type)?;
         let ref_type = env.symbols.mem_ref_to(_type.clone());
 
         env.symbols.insert_local_value(
             QualifiedName::new_raw(name.clone()),
             MIRExpression {
-                token_range: None,
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Variable {
                     name: name.clone(),
                     location: SymbolValueOrigin::Local,
@@ -54,7 +55,8 @@ pub fn typecheck_function(
         .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
     let with_implicit_return = add_implicit_return(env, namespace, body_expr)?;
 
-    env.pop_scope()?;
+    env.pop_scope()
+        .map_err(|err| env.complete_err(err, body.token_range()))?;
     env.function.end_function();
 
     env.items.push_generated_function(MIRFunction {

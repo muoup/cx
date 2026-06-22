@@ -1,58 +1,109 @@
 use std::{path::Path, sync::Arc};
 
+use cx_util::namespace::EnvironmentNamespace;
 use speedy::{Context, Readable, Reader, Writable, Writer};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct TokenRange {
-    pub start_token: usize,
-    pub end_token: usize,
-    pub file_origin: Arc<str>,
-}
-
-impl Default for TokenRange {
-    fn default() -> Self {
-        Self {
-            start_token: 0,
-            end_token: 0,
-            file_origin: Arc::from(""),
-        }
-    }
+pub enum TokenRange {
+    Internal,
+    Error(String),
+    Source {
+        namespace: EnvironmentNamespace,
+        start_token: usize,
+        end_token: usize,
+    },
 }
 
 impl TokenRange {
-    pub fn new(start_token: usize, end_token: usize, file_origin: Arc<str>) -> Self {
-        Self {
+    pub fn new(
+        start_token: usize,
+        end_token: usize,
+        namespace: impl Into<EnvironmentNamespace>,
+    ) -> Self {
+        Self::Source {
+            namespace: namespace.into(),
             start_token,
             end_token,
-            file_origin,
         }
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.start_token == 0 && self.end_token == 0
+    pub fn internal() -> Self {
+        Self::Internal
+    }
+
+    pub fn error(message: impl Into<String>) -> Self {
+        Self::Error(message.into())
+    }
+
+    pub fn namespace(&self) -> Option<&EnvironmentNamespace> {
+        match self {
+            Self::Source { namespace, .. } => Some(namespace),
+            Self::Internal | Self::Error(_) => None,
+        }
+    }
+
+    pub fn start_token(&self) -> Option<usize> {
+        match self {
+            Self::Source { start_token, .. } => Some(*start_token),
+            Self::Internal | Self::Error(_) => None,
+        }
+    }
+
+    pub fn end_token(&self) -> Option<usize> {
+        match self {
+            Self::Source { end_token, .. } => Some(*end_token),
+            Self::Internal | Self::Error(_) => None,
+        }
+    }
+
+    pub fn source_bounds(&self) -> Option<(&EnvironmentNamespace, usize, usize)> {
+        match self {
+            Self::Source {
+                namespace,
+                start_token,
+                end_token,
+            } => Some((namespace, *start_token, *end_token)),
+            Self::Internal | Self::Error(_) => None,
+        }
     }
 }
 
 impl<'a, C: Context> Readable<'a, C> for TokenRange {
     fn read_from<R: Reader<'a, C>>(reader: &mut R) -> Result<Self, C::Error> {
-        let start_token = reader.read_u64()? as usize;
-        let end_token = reader.read_u64()? as usize;
-        let file_origin_str: String = reader.read_value()?;
-        Ok(TokenRange {
-            start_token,
-            end_token,
-            file_origin: Arc::from(file_origin_str.as_str()),
-        })
+        match reader.read_u8()? {
+            0 => Ok(TokenRange::Internal),
+            1 => Ok(TokenRange::Error(String::read_from(reader)?)),
+            2 => Ok(TokenRange::Source {
+                namespace: EnvironmentNamespace::read_from(reader)?,
+                start_token: reader.read_u64()? as usize,
+                end_token: reader.read_u64()? as usize,
+            }),
+            _ => Ok(TokenRange::Error(
+                "Invalid serialized token range".to_string(),
+            )),
+        }
     }
 }
 
 impl<C: Context> Writable<C> for TokenRange {
     fn write_to<T: ?Sized + Writer<C>>(&self, writer: &mut T) -> Result<(), C::Error> {
-        writer.write_u64(self.start_token as u64)?;
-        writer.write_u64(self.end_token as u64)?;
-        let s: &str = &self.file_origin;
-        writer.write_value(&s.to_string())?;
-        Ok(())
+        match self {
+            TokenRange::Internal => writer.write_u8(0),
+            TokenRange::Error(message) => {
+                writer.write_u8(1)?;
+                message.write_to(writer)
+            }
+            TokenRange::Source {
+                namespace,
+                start_token,
+                end_token,
+            } => {
+                writer.write_u8(2)?;
+                namespace.write_to(writer)?;
+                writer.write_u64(*start_token as u64)?;
+                writer.write_u64(*end_token as u64)
+            }
+        }
     }
 }
 
@@ -257,6 +308,10 @@ pub enum KeywordType {
     Template,
     Class,
     Match,
+    Yield,
+    Comptime,
+    Expr,
+    Emit,
     Where,
     Safe,
 
@@ -370,6 +425,10 @@ impl TokenKind {
             "class" => TokenKind::Keyword(KeywordType::Class),
 
             "match" => TokenKind::Keyword(KeywordType::Match),
+            "yield" => TokenKind::Keyword(KeywordType::Yield),
+            "comptime" => TokenKind::Keyword(KeywordType::Comptime),
+            "expr" => TokenKind::Keyword(KeywordType::Expr),
+            "emit" => TokenKind::Keyword(KeywordType::Emit),
             "is" => TokenKind::Operator(OperatorType::Is),
 
             "safe" => TokenKind::Keyword(KeywordType::Safe),

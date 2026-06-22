@@ -1,6 +1,7 @@
 use crate::backends::{cranelift_compile, llvm_compile};
+use crate::pipeline_error;
 use crate::progress::ProgressReporter;
-use cx_log::{CXError, CXErrorTrait, CXResult};
+use cx_log::{error::CXErr, CXResult};
 use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::preparse::PreparseConfig;
@@ -20,7 +21,6 @@ use cx_typechecker::environment::TypeEnvironment;
 use cx_typechecker::typecheck;
 use cx_util::format::dump_data;
 use cx_util::module_path::ModulePath;
-use cx_util::namespace::NamespacePath;
 use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::HashMap;
@@ -41,6 +41,7 @@ pub(crate) fn scheduling_loop(
     // TODO: Parallelize this loop
     'queue: while !queue.is_empty() {
         let mut job = queue.pop_job().unwrap();
+        context.module_db.register_unit(&job.unit);
 
         compilation_exists.insert(job.unit.clone(), job.compilation_exists);
 
@@ -120,9 +121,12 @@ fn import_jobs_for_unit(
 
     for import in imports {
         if !context.module_mode && !import.is_library_module() {
-            return CXError::create_result(format!(
-                "Import '{}' is not available in single-file compilation mode. Only compiler library modules under `std::` may be imported here; use `cx build` for project/module imports.",
-                import.as_str().replace('/', "::")
+            return Err(pipeline_error(
+                "COMPILATION ERROR",
+                format!(
+                    "Import '{}' is not available in single-file compilation mode. Only compiler library modules under `std::` may be imported here; use `cx build` for project/module imports.",
+                    import.as_str().replace('/', "::")
+                ),
             ));
         }
 
@@ -163,7 +167,7 @@ fn import_units_for_unit(
         .module_db
         .preparse_base
         .lock()
-        .get(unit)
+        .get(&unit.namespace().clone())
         .map(|preparse| {
             preparse
                 .imports
@@ -303,7 +307,7 @@ pub(crate) fn perform_job(
                 &preparse_config,
                 TokenIter::new(&tokens, file_path),
                 job.unit.to_string(),
-                NamespacePath::from(job.unit.module_path().clone()),
+                job.unit.namespace().as_namespace_path().clone(),
             )?;
 
             if !job.unit.is_std_lib() {
@@ -324,7 +328,7 @@ pub(crate) fn perform_job(
             context
                 .module_db
                 .lex_tokens
-                .insert(job.unit.clone(), tokens);
+                .insert(job.unit.clone(), tokens.into_boxed_slice());
             context
                 .module_db
                 .preparse_base
@@ -355,7 +359,7 @@ pub(crate) fn perform_job(
                 dump_data(&parsed_ast);
             }
 
-            let namespace = NamespacePath::from(job.unit.module_path().clone());
+            let namespace = job.unit.namespace().as_namespace_path().clone();
             let (symbol_buckets, namespace_friends, generation_ast) =
                 decompose_ast(&namespace, parsed_ast)?.destructure();
 
@@ -387,33 +391,27 @@ pub(crate) fn perform_job(
 
         CompilationStep::Typechecking => {
             let self_ast = context.module_db.generation_ast.get(&job.unit);
-            let lexemes = context.module_db.lex_tokens.get(&job.unit);
-            let namespace = NamespacePath::from(job.unit.module_path().clone());
+            let namespace = job.unit.namespace().clone();
 
-            let mut env = TypeEnvironment::new(
-                lexemes.as_ref(),
-                job.unit.clone(),
-                context.config.working_directory.clone(),
-                &context.module_db,
-            );
+            let mut env = TypeEnvironment::new(&context.module_db);
 
             typecheck(&mut env, &namespace, &self_ast)?;
 
-            let mir = env.finish_mir_unit()?;
+            let mir = env.finish_mir_unit(namespace)?;
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&mir.display_pretty());
             }
 
             // There is likely a better way to do this, but for now, we unconditionally generate FMIR no matter if analysis
             // is enabled to have a central source of truth for auditing safe functions for uncontained unsafe behavior.
-            let mut fmir_context = FMIRContext::new_from(&mir)?;
+            let mut fmir_context = FMIRContext::new_from(&mir, &context.module_db)?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&fmir_context);
             }
 
             if context.config.analysis {
-                fmir_context.apply_standard_analysis_passes(job.unit.as_path())?;
+                fmir_context.apply_standard_analysis_passes()?;
             }
 
             context.module_db.mir.insert(job.unit.clone(), mir);
@@ -441,9 +439,10 @@ pub(crate) fn perform_job(
                 &lmir_owned
             };
             let internal_directory = internal_directory(context, &job.unit).with_extension("o");
-            let internal_directory_str = internal_directory.to_str().ok_or(
-                CXError::create_boxed("Internal directory path is not valid UTF-8"),
-            )?;
+            let internal_directory_str = internal_directory.to_str().ok_or(pipeline_error(
+                "COMPILATION ERROR",
+                "Internal directory path is not valid UTF-8",
+            ))?;
 
             let buffer = match context.config.backend {
                 CompilerBackend::LLVM => llvm_compile(
@@ -473,19 +472,13 @@ pub(crate) fn perform_job(
     Ok(JobResult::StandardSuccess)
 }
 
-/// Error type for LSP that includes both type errors and fatal errors
-#[derive(Debug, Clone)]
-pub enum LSPErrorSpan {
-    TokenRange { start: usize, end: usize },
-    ByteRange { start: usize, end: usize },
-}
-
 #[derive(Debug, Clone)]
 pub enum LSPErrors {
     SpannedError {
         compilation_unit: std::path::PathBuf,
         message: String,
-        span: LSPErrorSpan,
+        byte_start: usize,
+        byte_end: usize,
         notes: Vec<String>,
     },
     FatalError {
@@ -582,36 +575,7 @@ fn handle_job_collect_errors(
         .into()
     };
 
-    fn spanned_error(error: &dyn CXErrorTrait) -> Option<LSPErrors> {
-        if let (Some(compilation_unit), Some(start), Some(end)) = (
-            error.compilation_unit(),
-            error.byte_start(),
-            error.byte_end(),
-        ) {
-            return Some(LSPErrors::SpannedError {
-                compilation_unit,
-                message: error.error_message(),
-                span: LSPErrorSpan::ByteRange { start, end },
-                notes: error.notes(),
-            });
-        }
-
-        if let (Some(compilation_unit), Some(token_start), Some(token_end)) = (
-            error.compilation_unit(),
-            error.token_start(),
-            error.token_end(),
-        ) {
-            return Some(LSPErrors::SpannedError {
-                compilation_unit,
-                message: error.error_message(),
-                span: LSPErrorSpan::TokenRange {
-                    start: token_start,
-                    end: token_end,
-                },
-                notes: error.notes(),
-            });
-        }
-
+    fn spanned_error(_error: &CXErr) -> Option<LSPErrors> {
         None
     }
 
@@ -619,9 +583,9 @@ fn handle_job_collect_errors(
     match perform_job(context, job, false) {
         Ok(_) => {}
         Err(e) => {
-            let lsp_error = spanned_error(e.as_ref()).unwrap_or(LSPErrors::FatalError {
+            let lsp_error = spanned_error(&e).unwrap_or(LSPErrors::FatalError {
                 compilation_unit: job.unit.as_path().to_path_buf(),
-                message: e.error_message(),
+                message: e.message(),
                 line: None,
             });
 
@@ -638,9 +602,9 @@ fn handle_job_collect_errors(
             let mut new_jobs = match import_jobs_for_unit(context, &pp_data.imports) {
                 Ok(jobs) => jobs,
                 Err(e) => {
-                    let lsp_error = spanned_error(e.as_ref()).unwrap_or(LSPErrors::FatalError {
+                    let lsp_error = spanned_error(&e).unwrap_or(LSPErrors::FatalError {
                         compilation_unit: job.unit.as_path().to_path_buf(),
-                        message: e.error_message(),
+                        message: e.message(),
                         line: None,
                     });
                     error_collector.push(lsp_error);

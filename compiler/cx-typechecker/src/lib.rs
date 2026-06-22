@@ -6,13 +6,16 @@ use cx_mir::mir::global::{MIRGlobalVarKind, MIRGlobalVariable};
 
 pub mod environment;
 pub mod log;
-pub(crate) mod requests;
 pub mod symbol;
+
+pub(crate) mod requests;
+
+pub(crate) mod comptime;
 mod type_checking;
 
+use crate::comptime::evaluate_comptime_expression;
 use crate::requests::fulfill_requests;
 use crate::symbol::completion::{complete_prototype, complete_type};
-use crate::type_checking::constexpr::constexpr_evaluate;
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::{environment::TypeEnvironment, type_checking::functions::typecheck_function};
 
@@ -48,20 +51,15 @@ pub fn typecheck(
                 initializer,
             } => {
                 let _type = complete_type(env, namespace, _type)?;
-                let constexpr_init = initializer
+                let comptime_init = initializer
                     .as_ref()
                     .map(|init| {
                         typecheck_expr(env, namespace, init, Some(&_type))
                             .and_then(|tc| tc.standard_ready_coerce(env, init.token_range()))
-                            .and_then(|tc| constexpr_evaluate(env, tc))
-                    })
-                    .transpose()?
-                    .map(|ce| {
-                        ce.get_integer().ok_or_else(|| {
-                            unreachable!(
-                                "Global variable initializer must be a constant integer expression"
-                            )
-                        })
+                            .and_then(|tc| evaluate_comptime_expression(env, tc))
+                            .and_then(|ce| ce.as_integer().ok_or_else(|| {
+                                env.error(init.token_range(), "Global variable initializer must be a constant integer expression".to_string())
+                            }))
                     })
                     .transpose()?;
 
@@ -71,7 +69,7 @@ pub fn typecheck(
                     kind: MIRGlobalVarKind::Variable {
                         name: name.clone(),
                         _type,
-                        initializer: constexpr_init,
+                        initializer: comptime_init,
                     },
                 };
 

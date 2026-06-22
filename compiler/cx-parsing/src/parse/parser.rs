@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use cx_ast::ast::{function::CXFunctionKind, CXASTDefinition, CXASTStmt, CXAST};
 use cx_log::CXResult;
@@ -11,7 +10,9 @@ use cx_preparse_data::{NamespaceAliases, PreparseContents, VisibilityMode};
 use cx_tokens::TokenIter;
 use cx_util::identifier::CXIdent;
 use cx_util::module_path::ModulePath;
-use cx_util::namespace::{NamespacePath, QualifiedName};
+use cx_util::namespace::{EnvironmentNamespace, NamespacePath, QualifiedName};
+
+use crate::log::ParserLogExt;
 
 #[derive(Debug)]
 pub struct ParserData<'a> {
@@ -20,7 +21,7 @@ pub struct ParserData<'a> {
     pub extern_c_mode: bool,
     pub expr_commas: Vec<bool>,
     pub pp_contents: &'a PreparseContents,
-    pub file_origin: Arc<str>,
+    pub file_origin: EnvironmentNamespace,
     // uses u8 mapping instead of a set to prevent problems with shadowing
     pub temporary_type_names: HashMap<CXIdent, u8>,
     namespace_aliases: NamespaceAliases,
@@ -35,7 +36,7 @@ impl<'a> ParserData<'a> {
         pp_contents: &'a PreparseContents,
         registry: &'a GlobalPreparseRegistry,
     ) -> Self {
-        let file_origin: Arc<str> = Arc::from(tokens.file.to_string_lossy().as_ref());
+        let file_origin = EnvironmentNamespace::from(pp_contents.module_symbols.namespace.clone());
 
         Self {
             tokens,
@@ -71,20 +72,12 @@ impl<'a> ParserData<'a> {
         self.expr_commas.pop();
     }
 
-    pub fn file_origin_for_range(&self, start_token: usize, end_token: usize) -> Arc<str> {
-        self.tokens
-            .slice
-            .get(start_token)
-            .map(|token| token.file_origin.clone())
-            .or_else(|| {
-                end_token
-                    .checked_sub(1)
-                    .and_then(|index| self.tokens.slice.get(index))
-                    .map(|token| token.file_origin.clone())
-            })
-            .filter(|origin| !origin.as_os_str().is_empty())
-            .map(|origin| Arc::from(origin.to_string_lossy().as_ref()))
-            .unwrap_or_else(|| self.file_origin.clone())
+    pub fn file_origin_for_range(
+        &self,
+        _start_token: usize,
+        _end_token: usize,
+    ) -> EnvironmentNamespace {
+        self.file_origin.clone()
     }
 
     pub fn get_comma_mode(&self) -> bool {
@@ -108,7 +101,7 @@ impl<'a> ParserData<'a> {
     }
 
     pub fn is_type_ident(&self, name: &QualifiedName) -> CXResult<bool> {
-        Ok(matches!(self.query_identifier(name.clone())?, true)
+        Ok(self.query_identifier(name.clone())?
             || (name.namespace.is_root() && self.temporary_type_names.contains_key(&name.name)))
     }
 
@@ -116,8 +109,7 @@ impl<'a> ParserData<'a> {
         match self.qualified_lookup(&self.namespace_for_current_stmt(), &name) {
             QualifiedLookupResult::Found { .. } => Ok(true),
             QualifiedLookupResult::NotFound => Ok(false),
-            QualifiedLookupResult::Ambiguous { candidates } => log_parse_error!(
-                self,
+            QualifiedLookupResult::Ambiguous { candidates } => self.log_error(format!(
                 "Ambiguous identifier '{}', candidates: {}",
                 name,
                 candidates
@@ -125,7 +117,7 @@ impl<'a> ParserData<'a> {
                     .map(|n| n.to_string())
                     .collect::<Vec<_>>()
                     .join(", ")
-            ),
+            )),
         }
     }
 
@@ -146,25 +138,21 @@ impl<'a> ParserData<'a> {
             return;
         }
 
-        match stmt {
-            CXASTStmt::FunctionDefinition { prototype, .. } => {
-                let q_namespace = prototype.kind.into_key().namespace;
+        if let CXASTStmt::FunctionDefinition { prototype, .. } = stmt {
+            let q_namespace = prototype.kind.into_key().namespace;
 
-                if !q_namespace.is_root()
-                    && matches!(&prototype.kind, CXFunctionKind::AssociatedFunction { .. })
-                {
-                    let entry = self
-                        .namespace_aliases
-                        .entry(namespace.clone())
-                        .or_insert(Vec::new());
+            if !q_namespace.is_root()
+                && matches!(&prototype.kind, CXFunctionKind::AssociatedFunction { .. })
+            {
+                let entry = self
+                    .namespace_aliases
+                    .entry(namespace.clone())
+                    .or_default();
 
-                    if !entry.contains(&q_namespace) {
-                        entry.push(q_namespace);
-                    }
+                if !entry.contains(&q_namespace) {
+                    entry.push(q_namespace);
                 }
             }
-
-            _ => {}
         }
     }
 }

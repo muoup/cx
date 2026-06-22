@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
-use cx_ast::registry::GlobalSymbolRegistry;
-use cx_log::CXResult;
+use cx_ast::{ast::expression::CXExpression, registry::GlobalSymbolRegistry};
+use cx_log::{CXRawResult, CXResult};
 use cx_mir::{
+    EnvironmentNamespace,
     intrinsic_types::INTRINSIC_TYPES,
     mir::{
         data::MIRFunctionPrototype,
@@ -118,7 +119,7 @@ impl<'a> MIRSymbolRegistry<'a> {
         Ok(type_id)
     }
 
-    pub fn insert_local_type_id(&mut self, name: String, type_id: MIRTypeId) -> CXResult<()> {
+    pub fn insert_local_type_id(&mut self, name: String, type_id: MIRTypeId) -> CXRawResult<()> {
         self.local_symbols.insert(
             QualifiedName::new_raw(CXIdent::new(name)),
             MIRSymbol::Type(type_id),
@@ -153,6 +154,23 @@ impl<'a> MIRSymbolRegistry<'a> {
 
     pub fn insert_local_value(&mut self, name: QualifiedName, expr: MIRExpression) {
         self.local_symbols.insert(name, MIRSymbol::Expression(expr));
+    }
+
+    pub fn insert_local_staged_expression(
+        &mut self,
+        name: QualifiedName,
+        namespace: EnvironmentNamespace,
+        expr: CXExpression,
+        expected_type: MIRType,
+    ) {
+        self.local_symbols.insert(
+            name,
+            MIRSymbol::StagedExpression {
+                namespace,
+                expr: Box::new(expr),
+                expected_type,
+            },
+        );
     }
 
     pub fn insert_pure_value(&mut self, name: QualifiedName, expr: MIRPureExpression) {

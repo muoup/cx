@@ -1,12 +1,10 @@
 use std::collections::HashMap;
-use std::path::Path;
 
 use cx_ast::ast::expression::CXExpression;
-use cx_log::CXResult;
-use cx_mir::mir::data::MIRFunctionPrototype;
-use cx_tokens::token::Token;
+use cx_log::CXRawResult;
+use cx_mir::mir::data::{MIRFunctionPrototype, MIRType};
 
-use crate::environment::functions::control_flow::{
+use crate::environment::control_flow::{
     BindingMoveState, ControlFlow, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind,
     ScopeArrowSink, ScopeExitTarget, ScopeId, TrackedBindingState,
 };
@@ -18,6 +16,7 @@ pub struct FunctionContext {
     require_safe: bool,
     require_pure: bool,
     unsafe_depth: usize,
+    yield_stack: Vec<YieldContext>,
 }
 
 #[derive(Clone)]
@@ -27,6 +26,13 @@ pub struct FunctionModeSnapshot {
     unsafe_depth: usize,
 }
 
+#[derive(Clone)]
+pub struct YieldContext {
+    pub target_scope: ScopeId,
+    pub result_type: Option<MIRType>,
+    pub yield_count: usize,
+}
+
 impl FunctionContext {
     pub fn begin_function(&mut self, prototype: MIRFunctionPrototype) {
         self.require_safe = prototype.signature().contract.safe;
@@ -34,6 +40,7 @@ impl FunctionContext {
         self.unsafe_depth = 0;
         self.flow = Some(ControlFlow::new());
         self.current_function = Some(prototype);
+        self.yield_stack.clear();
     }
 
     pub fn end_function(&mut self) {
@@ -42,10 +49,15 @@ impl FunctionContext {
         self.require_safe = false;
         self.require_pure = false;
         self.unsafe_depth = 0;
+        self.yield_stack.clear();
     }
 
     pub fn current_function(&self) -> &MIRFunctionPrototype {
         self.current_function.as_ref().unwrap()
+    }
+
+    pub fn try_current_function(&self) -> Option<&MIRFunctionPrototype> {
+        self.current_function.as_ref()
     }
 
     fn flow(&self) -> &ControlFlow {
@@ -65,8 +77,8 @@ impl FunctionContext {
             .push_scope(has_break_merge, has_continue_merge);
     }
 
-    pub fn pop_scope(&mut self, compilation_unit: &Path, tokens: &[Token]) -> CXResult<()> {
-        self.flow_mut().pop_scope(compilation_unit, tokens)
+    pub fn pop_scope(&mut self) -> CXRawResult<()> {
+        self.flow_mut().pop_scope()
     }
 
     pub fn current_snapshot(&self) -> ControlFlowSnapshot {
@@ -88,13 +100,11 @@ impl FunctionContext {
     pub fn configure_merge_scope(
         &mut self,
         expr: &CXExpression,
-        join_name: impl Into<String>,
         include_current_snapshot: Option<&str>,
         require_nodrop_discharge: bool,
     ) {
         self.flow_mut().configure_merge_scope(
             expr,
-            join_name,
             include_current_snapshot,
             require_nodrop_discharge,
         );
@@ -154,6 +164,34 @@ impl FunctionContext {
 
     pub fn is_current_scope_reachable(&self) -> bool {
         self.flow().is_current_scope_reachable()
+    }
+
+    pub fn push_yield_context(&mut self, target_scope: ScopeId, result_type: Option<MIRType>) {
+        self.yield_stack.push(YieldContext {
+            target_scope,
+            result_type,
+            yield_count: 0,
+        });
+    }
+
+    pub fn pop_yield_context(&mut self) -> YieldContext {
+        self.yield_stack
+            .pop()
+            .expect("Yield context stack has uneven push/pop")
+    }
+
+    pub fn current_yield_context(&self) -> Option<&YieldContext> {
+        self.yield_stack.last()
+    }
+
+    pub fn current_yield_context_mut(&mut self) -> Option<&mut YieldContext> {
+        self.yield_stack.last_mut()
+    }
+
+    pub fn current_yield_count(&self) -> usize {
+        self.current_yield_context()
+            .map(|context| context.yield_count)
+            .unwrap_or(0)
     }
 
     pub fn track_binding(&mut self, name: String, nodrop: bool) {

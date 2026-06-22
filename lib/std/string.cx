@@ -1,5 +1,6 @@
 import std::optional;
 import std::io;
+import std::span as std;
 
 extern "C":
 
@@ -16,7 +17,7 @@ struct string : @nodrop {
     u64 capacity;
 };
 
-string string::new() safe {
+string string::new() {
     std::optional::opt<string> s = string::try_new_string();
     
     match (move s) {
@@ -35,7 +36,19 @@ string string::new() safe {
     };
 }
 
-std::optional::opt<string> string::try_new_string() safe {
+string string::from_str(const _str& s) {
+    string result = string::new();
+    result |> string::append(s);
+    return move result;
+}
+
+string string::from_span(const std::span<const char>& s) {
+    string result = string::new();
+    result |> string::append(s |> std::span::as_str());
+    return move result;
+}
+
+std::optional::opt<string> string::try_new_string() {
     @unsafe {
         void* base_buffer = malloc(16);
 
@@ -54,15 +67,16 @@ std::optional::opt<string> string::try_new_string() safe {
     };
 }
 
-void string::append(string& this, const char* s) {
+void string::append(string& this, const _str& s) {
     u64 str_length = strlen(s);
 
-    while (this.length + str_length >= this.capacity) {
+    while (this.length + str_length + 1 >= this.capacity) {
         this |> string::_realloc();
     }
 
     memcpy(this.data + this.length, s, str_length);
     this.length = str_length + this.length;
+    this.data[this.length] = 0;
 }
 
 void string::append_char(string& this, char c) {
@@ -74,14 +88,14 @@ void string::append_char(string& this, char c) {
     this.data[this.length] = 0;
 }
 
-void string::drop(string this) safe {
+void string::drop(string this) {
     @unsafe {
         free(this.data);
         @leak(this);
     };
 }
 
-_str& string::as_str(string& this) safe {
+_str& string::as_str(string& this) {
     // SAFETY: We ensure via our API that our internal const char* is a valid c-string with null-termination,
     // so this cast is safe as long as the caller does not mutate the string data through the returned reference.
     return @unsafe((_str&) this.data);
@@ -89,6 +103,32 @@ _str& string::as_str(string& this) safe {
 
 usize string::str_length(const _str& this) {
     return strlen(this);
+}
+
+string string::substring(const string& this, usize start, usize end) {
+    if (start > end || end > this.length) {
+        std::io::println("Invalid substring range");
+        @unsafe(exit(1));
+    }
+
+    string result = string::new();
+    for (usize i = start; i < end; i++) {
+        result |> string::append_char(this.data[i]);
+    }
+    return move result;
+}
+
+string string::substr(const _str& this, usize start, usize end) {
+    if (start > end || end > strlen(this)) {
+        std::io::println("Invalid substring range");
+        @unsafe(exit(1));
+    }
+
+    string result = string::new();
+    for (usize i = start; i < end; i++) {
+        result |> string::append_char(this[i]);
+    }
+    return move result;
 }
 
 private:

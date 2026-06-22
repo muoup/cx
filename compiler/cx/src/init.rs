@@ -35,10 +35,10 @@ binaries = [
         backend = args::default_backend_name(),
     );
 
-    let main_cx = r#"import std::io;
+    let main_cx = r#"import std::io as std;
 
 i32 main() {
-    println("Hello, world!");
+    std::println("Hello, world!");
     return 0;
 }
 "#;

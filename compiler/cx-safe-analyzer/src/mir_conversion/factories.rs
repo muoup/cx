@@ -1,4 +1,4 @@
-use cx_log::{CXError, CXResult};
+use cx_log::CXResult;
 use cx_mir::{
     mir::{
         data::{MIRIntegerType, MIRType, MIRTypeKind},
@@ -10,10 +10,11 @@ use cx_mir::{
     type_context::MIRTypeContext,
 };
 use cx_safe_ir::{ast::*, intrinsic::*};
+use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    log_analysis_error,
+    log::AnalysisDiagnosticSource,
     mir_conversion::{environment::FMIREnvironment, expression::convert_expression},
 };
 
@@ -26,7 +27,7 @@ pub(crate) fn monad_unit(operation: CVMOperation) -> FMIRType {
 
 pub(crate) fn intrinsic_alias(intrinsic: FMIRIntrinsicKind) -> FMIRNode {
     FMIRNode {
-        token_range: None,
+        token_range: TokenRange::internal(),
         body: FMIRNodeBody::IntrinsicFunction(FMIRIntrinsicFunction { kind: intrinsic }),
         _type: FMIRType::pure(MIRType::internal_function()),
     }
@@ -35,7 +36,7 @@ pub(crate) fn intrinsic_alias(intrinsic: FMIRIntrinsicKind) -> FMIRNode {
 pub(crate) fn then_node(first: FMIRNode, second: FMIRNode) -> FMIRNode {
     let combined = first._type.union(&second._type);
     FMIRNode {
-        token_range: None,
+        token_range: TokenRange::internal(),
         _type: combined.apply(second._type.inner_type().clone()),
         body: FMIRNodeBody::Then {
             first: FRc::new(first),
@@ -47,7 +48,7 @@ pub(crate) fn then_node(first: FMIRNode, second: FMIRNode) -> FMIRNode {
 pub(crate) fn bind_node(monad: FMIRNode, capture: CXIdent, function: FMIRNode) -> FMIRNode {
     let combined = monad._type.union(&function._type);
     FMIRNode {
-        token_range: None,
+        token_range: TokenRange::internal(),
         _type: combined.apply(function._type.inner_type().clone()),
         body: FMIRNodeBody::Bind {
             monad: FRc::new(monad),
@@ -208,10 +209,9 @@ pub fn coercion_intrinsic(
             FMIRCastIntrinsic::ReinterpretBits
         }
         MIRCoercion::GetFnPtr => {
-            return log_analysis_error!(
-                _env,
+            return _env.log_error(
                 _expr,
-                "Function pointer decay is not supported in safe analysis yet"
+                "Function pointer decay is not supported in safe analysis yet".to_string(),
             );
         }
     })
@@ -219,7 +219,7 @@ pub fn coercion_intrinsic(
 
 pub(crate) fn app1(intrinsic: FMIRIntrinsicKind, arg: FMIRNode, output_type: &MIRType) -> FMIRNode {
     FMIRNode {
-        token_range: None,
+        token_range: TokenRange::internal(),
         _type: FMIRType::pure(output_type.clone()),
         body: FMIRNodeBody::Application {
             function: FRc::new(intrinsic_alias(intrinsic)),
@@ -235,11 +235,11 @@ pub(crate) fn app2(
     output_type: &MIRType,
 ) -> FMIRNode {
     FMIRNode {
-        token_range: None,
+        token_range: TokenRange::internal(),
         _type: FMIRType::pure(output_type.clone()),
         body: FMIRNodeBody::Application {
             function: FRc::new(FMIRNode {
-                token_range: None,
+                token_range: TokenRange::internal(),
                 _type: FMIRType::pure(MIRType::internal_function()),
                 body: FMIRNodeBody::Application {
                     function: FRc::new(intrinsic_alias(intrinsic)),
@@ -307,7 +307,7 @@ pub(crate) fn load_node(
         .apply(FMIRType::pure(value_type.clone()));
 
     FMIRNode {
-        token_range: None,
+        token_range: TokenRange::internal(),
         _type: combined,
         body: FMIRNodeBody::Load {
             pointer: FRc::new(pointer),
@@ -324,7 +324,7 @@ pub(crate) fn store_node(pointer: FMIRNode, value: FMIRNode, operation: CVMOpera
         .apply(FMIRType::pure(MIRType::unit()));
 
     FMIRNode {
-        token_range: None,
+        token_range: TokenRange::internal(),
         _type: combined,
         body: FMIRNodeBody::Store {
             pointer: FRc::new(pointer),
@@ -339,14 +339,14 @@ pub(crate) fn increment_amount_node(
     mir_type: &MIRType,
 ) -> CXResult<FMIRNode> {
     let MIRTypeKind::Integer { _type, signed } = &mir_type.kind else {
-        return CXError::create_result(format!(
+        return crate::log::internal_analysis_error(format!(
             "FMIR increment desugaring expected integer type, found '{}'",
             mir_type.display_with(env.type_definitions)
         ));
     };
 
     Ok(FMIRNode {
-        token_range: None,
+        token_range: TokenRange::internal(),
         body: FMIRNodeBody::IntegerLiteral(value),
         _type: FMIRType::pure(MIRType::from(MIRTypeKind::Integer {
             _type: *_type,
@@ -367,7 +367,7 @@ pub(crate) fn convert_increment(
         .mem_ref_inner(&operand_expr._type)
         .cloned()
     else {
-        return CXError::create_result(format!(
+        return crate::log::internal_analysis_error(format!(
             "FMIR increment desugaring expected memory reference operand, found '{}'",
             operand_expr._type.display_with(env.type_definitions)
         ));
@@ -381,7 +381,7 @@ pub(crate) fn convert_increment(
 
     let old_capture = CXIdent::from("__inc_old");
     let old_alias = FMIRNode {
-        token_range: None,
+        token_range: TokenRange::internal(),
         body: FMIRNodeBody::VariableAlias {
             name: old_capture.as_string(),
         },
@@ -412,7 +412,7 @@ pub(crate) fn convert_increment(
             )
         }
         _ => {
-            return CXError::create_result(format!(
+            return crate::log::internal_analysis_error(format!(
                 "FMIR increment desugaring requires integer or pointer inner type, found '{}'",
                 value_type.display_with(env.type_definitions)
             ));
@@ -440,17 +440,10 @@ pub(crate) fn unsupported_expression_error(
     env: &FMIREnvironment,
     expr: &MIRExpression,
 ) -> CXResult<FMIRNode> {
-    log_analysis_error!(
-        env,
-        expr,
-        "Expression is not supported in safe context, use `unsafe` block if no safe alternative is available"
-    )
+    env.log_error(expr, "Expression is not supported in safe context, use `unsafe` block if no safe alternative is available".to_string())
 }
 
 pub(crate) fn with_expression_range(mut node: FMIRNode, mir_expr: &MIRExpression) -> FMIRNode {
-    if node.token_range.is_none() {
-        node.token_range = mir_expr.token_range.clone();
-    }
-
+    node.token_range = mir_expr.token_range.clone();
     node
 }

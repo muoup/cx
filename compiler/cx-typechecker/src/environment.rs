@@ -1,62 +1,59 @@
-use std::path::PathBuf;
+use std::borrow::Borrow;
 
 use cx_ast::ast::modifiers::VisibilityMode;
 use cx_ast::symbols::CXSymbol;
-use cx_log::CXResult;
+use cx_log::{
+    CXRawResult, CXResult,
+    error::{CXErr, CXErrMsg, CXMaybeRawErr, context::CXInternalContext, message::CXStdErrMessage},
+};
 use cx_mir::{
     EnvironmentNamespace, MIRUnit,
     mir::contextual_eq::TypeContextEqual,
-    mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId},
+    mir::data::{MIRFunctionPrototype, MIRType},
     symbol::MIRSymbol,
     type_context::MIRTypeContext,
 };
 use cx_namespace::{MIRQualifiedLookup, result::QualifiedLookupResult};
-use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
 use cx_tokens::TokenRange;
-use cx_tokens::token::Token;
 use cx_util::namespace::QualifiedName;
 use cx_util::{identifier::CXIdent, namespace::NamespacePath};
 
-pub use crate::environment::functions::control_flow::{
+pub use crate::environment::control_flow::{
     BindingMoveState, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
     ScopeExitTarget, ScopeId, TrackedBindingState,
 };
-use crate::environment::source::SourceContext;
+use crate::environment::items::ItemRegistry;
+use crate::{environment::function_context::FunctionContext, symbol::registry::MIRSymbolRegistry};
 use crate::{
-    environment::functions::context::FunctionContext, symbol::registry::MIRSymbolRegistry,
+    environment::function_context::FunctionModeSnapshot, symbol::resolution::resolve_symbol,
 };
-use crate::{
-    environment::functions::context::FunctionModeSnapshot, symbol::resolution::resolve_symbol,
-};
-use crate::{environment::items::ItemRegistry, log_typecheck_error};
-pub(crate) mod functions;
+
+pub(crate) mod control_flow;
+pub(crate) mod function_context;
 pub(crate) mod items;
-pub(crate) mod source;
+pub(crate) mod types;
 
 pub use items::MIRFunctionGenRequest;
 
 pub const DEFER_ACCUMULATION_REGISTER: &str = "__defer_accumulation_register";
 
 pub struct TypeEnvironment<'a> {
-    pub source: SourceContext<'a>,
+    pub module_data: &'a ModuleData,
     pub symbols: MIRSymbolRegistry<'a>,
     pub items: ItemRegistry,
     pub function: FunctionContext,
+    comptime_depth: usize,
 }
 
 impl TypeEnvironment<'_> {
-    pub fn new<'a>(
-        tokens: &'a [Token],
-        compilation_unit: CompilationUnit,
-        working_directory: PathBuf,
-        module_data: &'a ModuleData,
-    ) -> TypeEnvironment<'a> {
+    pub fn new<'a>(module_data: &'a ModuleData) -> TypeEnvironment<'a> {
         TypeEnvironment {
             symbols: MIRSymbolRegistry::new(&module_data.symbol_registry),
-            source: SourceContext::new(tokens, compilation_unit, working_directory, module_data),
+            module_data,
             items: ItemRegistry::new(),
             function: FunctionContext::default(),
+            comptime_depth: 0,
         }
     }
 
@@ -73,6 +70,10 @@ impl TypeEnvironment<'_> {
         self.function.current_function()
     }
 
+    pub fn try_current_function(&self) -> Option<&MIRFunctionPrototype> {
+        self.function.try_current_function()
+    }
+
     pub fn in_defer<F, T>(&mut self, f: F) -> CXResult<T>
     where
         F: FnOnce(&mut Self) -> CXResult<T>,
@@ -80,14 +81,14 @@ impl TypeEnvironment<'_> {
         f(self)
     }
 
-    pub fn finish_mir_unit(self) -> CXResult<MIRUnit> {
+    pub fn finish_mir_unit(self, source_namespace: EnvironmentNamespace) -> CXResult<MIRUnit> {
         let (functions, globals) = self.items.drain_generated_items();
 
         Ok(MIRUnit {
+            source_namespace,
             functions,
             global_variables: globals,
             registry: self.symbols.decompose(),
-            source_path: self.source.compilation_unit.as_path().to_owned(),
         })
     }
 
@@ -97,11 +98,10 @@ impl TypeEnvironment<'_> {
             .push_scope(has_break_merge, has_continue_merge);
     }
 
-    pub fn pop_scope(&mut self) -> CXResult<()> {
-        self.function
-            .pop_scope(self.source.compilation_unit.as_path(), self.source.tokens)?;
+    pub fn pop_scope(&mut self) -> CXRawResult<()> {
+        self.function.pop_scope()?;
         self.symbols.pop_local_scope();
-        Ok(())
+        CXRawResult::Ok(())
     }
 
     pub fn push_unsafe(&mut self) {
@@ -122,13 +122,36 @@ impl TypeEnvironment<'_> {
         self.function.restore_mode(snapshot);
     }
 
+    pub fn enter_comptime_context(&mut self) {
+        self.comptime_depth += 1;
+    }
+
+    pub fn exit_comptime_context(&mut self) {
+        self.comptime_depth = self
+            .comptime_depth
+            .checked_sub(1)
+            .expect("Comptime context stack underflow");
+    }
+
+    pub fn in_comptime_context(&self) -> bool {
+        self.comptime_depth > 0
+    }
+
     pub fn get_symbol(
         &mut self,
         namespace: &EnvironmentNamespace,
         name: &QualifiedName,
-        range: Option<&TokenRange>,
     ) -> CXResult<Option<MIRSymbol>> {
-        self.lookup_symbol(namespace, name, range)?
+        let lookup = self.lookup_symbol(namespace, name).map_err(|err| {
+            CXErr::new(
+                err,
+                CXInternalContext::error(
+                    "symbol lookup failed before a source range was available",
+                ),
+            )
+        })?;
+
+        lookup
             .map(|lookup| self.resolve_lookup(namespace, lookup))
             .transpose()
     }
@@ -137,21 +160,18 @@ impl TypeEnvironment<'_> {
         &mut self,
         namespace: &EnvironmentNamespace,
         name: &QualifiedName,
-        range: Option<&TokenRange>,
-    ) -> CXResult<Option<SymbolLookup>> {
+    ) -> CXRawResult<Option<SymbolLookup>> {
         let qualified_lookup = self.qualified_lookup(namespace, name);
 
         match qualified_lookup {
             QualifiedLookupResult::Found {
                 resolved_name: _,
                 value,
-            } => Ok(Some(value)),
+            } => CXRawResult::Ok(Some(value)),
 
-            QualifiedLookupResult::NotFound => Ok(None),
+            QualifiedLookupResult::NotFound => CXRawResult::Ok(None),
             QualifiedLookupResult::Ambiguous { candidates } => {
-                return log_typecheck_error!(
-                    self,
-                    range,
+                let message = format!(
                     "Ambiguous Symbol Reference, candidates: {}",
                     candidates
                         .iter()
@@ -159,6 +179,8 @@ impl TypeEnvironment<'_> {
                         .collect::<Vec<_>>()
                         .join(", ")
                 );
+
+                CXStdErrMessage::result("TYPE ERROR", message)
             }
         }
     }
@@ -176,7 +198,7 @@ impl TypeEnvironment<'_> {
                     return true;
                 }
 
-                if &candidate.namespace == namespace {
+                if &candidate.namespace == namespace.as_namespace_path() {
                     return true;
                 }
 
@@ -214,7 +236,7 @@ impl TypeEnvironment<'_> {
         let symbol = resolve_symbol(
             self,
             namespace,
-            &resolved_name.namespace,
+            &EnvironmentNamespace::from(&resolved_name.namespace),
             &resolved_name.name,
             &untyped_symbol,
         )?;
@@ -227,10 +249,35 @@ impl TypeEnvironment<'_> {
         type1.contextual_eq(type2, &self.symbols)
     }
 
-    pub fn get_named_type_definition(&self, id: MIRTypeId) -> Option<&MIRType> {
-        self.symbols
-            .contains(id)
-            .then(|| self.symbols.resolve_type_id(id))
+    pub(crate) fn error(
+        &self,
+        range: impl Borrow<TokenRange>,
+        message: impl Into<String>,
+    ) -> CXErr {
+        crate::log::produce_(self.module_data, range.borrow(), message, Vec::new())
+    }
+
+    pub(crate) fn log_error_base<T>(&self, message: impl Into<String>) -> CXRawResult<T> {
+        CXStdErrMessage::result("TYPE ERROR", message.into())
+    }
+
+    pub(crate) fn log_error<T>(
+        &self,
+        range: impl Borrow<TokenRange>,
+        message: impl Into<String>,
+    ) -> CXResult<T> {
+        Err(self.error(range, message))
+    }
+
+    pub(crate) fn complete_err(&self, err: CXErrMsg, range: &TokenRange) -> CXErr {
+        CXErr::new(err, self.module_data.convert_token_range(range))
+    }
+
+    pub(crate) fn complete_maybe_err(&self, err: CXMaybeRawErr, range: &TokenRange) -> CXErr {
+        match err {
+            CXMaybeRawErr::Complete(value) => value,
+            CXMaybeRawErr::Raw(err) => self.complete_err(err, range),
+        }
     }
 }
 
@@ -239,20 +286,18 @@ impl MIRQualifiedLookup for TypeEnvironment<'_> {
 
     fn lookup_local(
         &self,
-        _lexical_namespace: &EnvironmentNamespace,
+        _lexical_namespace: &NamespacePath,
         name: &QualifiedName,
     ) -> Option<Self::Output> {
-        self.symbols
-            .get_local_symbol(name)
-            .map(|sym| SymbolLookup {
-                resolved_name: name.clone(),
-                kind: SymbolLookupKind::Resolved(sym.clone()),
-            })
+        self.symbols.get_local_symbol(name).map(|sym| SymbolLookup {
+            resolved_name: name.clone(),
+            kind: SymbolLookupKind::Resolved(sym.clone()),
+        })
     }
 
     fn lookup_exact(
         &self,
-        lexical_namespace: &EnvironmentNamespace,
+        lexical_namespace: &NamespacePath,
         name: &QualifiedName,
     ) -> Option<Self::Output> {
         self.symbols
@@ -265,13 +310,13 @@ impl MIRQualifiedLookup for TypeEnvironment<'_> {
                 self.symbols
                     .get_global_registry()
                     .resolve(name)
-                    .filter(|sym|
+                    .filter(|sym| {
                         self.symbol_visible_from(
-                            lexical_namespace,
+                            &EnvironmentNamespace::from(lexical_namespace),
                             name,
-                            sym
+                            sym,
                         )
-                    )
+                    })
                     .map(|sym| SymbolLookup {
                         resolved_name: name.clone(),
                         kind: SymbolLookupKind::Untyped(sym.clone()),

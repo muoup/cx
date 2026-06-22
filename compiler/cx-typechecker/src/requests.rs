@@ -10,6 +10,7 @@ use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
     r#type::MIRType,
 };
+use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::{
@@ -74,13 +75,13 @@ fn realize_tagged_union_constructor(
 
     let value = if variant_type.is_unit() {
         MIRExpression {
-            token_range: None,
+            token_range: TokenRange::internal(),
             _type: variant_type.clone(),
             kind: MIRExpressionKind::Unit,
         }
     } else {
         let param_ref = MIRExpression {
-            token_range: None,
+            token_range: TokenRange::internal(),
             _type: env.symbols.mem_ref_to(variant_type.clone()),
             kind: MIRExpressionKind::Variable {
                 name: param_name,
@@ -89,7 +90,7 @@ fn realize_tagged_union_constructor(
         };
 
         MIRExpression {
-            token_range: None,
+            token_range: TokenRange::internal(),
             _type: variant_type.clone(),
             kind: MIRExpressionKind::RegionDuplicate {
                 source: Box::new(param_ref),
@@ -97,7 +98,7 @@ fn realize_tagged_union_constructor(
         }
     };
     let constructed = MIRExpression {
-        token_range: None,
+        token_range: TokenRange::internal(),
         _type: union_type.clone(),
         kind: MIRExpressionKind::ConstructTaggedUnion {
             variant_index,
@@ -106,7 +107,7 @@ fn realize_tagged_union_constructor(
         },
     };
     let body = MIRExpression {
-        token_range: None,
+        token_range: TokenRange::internal(),
         _type: prototype.signature().return_type.clone(),
         kind: MIRExpressionKind::Return {
             value: Some(Box::new(constructed)),
@@ -142,7 +143,8 @@ fn realize_fn_template(
     let namespace = symbol_lexical_namespace(&name.namespace, &stmt);
     env.symbols.push_local_scope();
     let result = (|| {
-        apply_template_input(env, template, input)?;
+        apply_template_input(env, template, input)
+            .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
 
         if env.items.request_fulfilled(prototype.name()) {
             return Ok(());

@@ -1,5 +1,4 @@
 use crate::environment::{ScopeExitTarget, TypeEnvironment};
-use crate::log_typecheck_error;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::result::TypecheckResult;
@@ -11,6 +10,7 @@ use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
 };
+use cx_tokens::TokenRange;
 
 pub fn typecheck_switch(
     env: &mut TypeEnvironment,
@@ -22,8 +22,7 @@ pub fn typecheck_switch(
 ) -> CXResult<TypecheckResult> {
     env.push_scope(true, false);
     env.function.set_scope_anchor(condition);
-    env.function
-        .configure_merge_scope(condition, "switch join", None, false);
+    env.function.configure_merge_scope(condition, None, false);
 
     let join_scope_idx = env.function.current_scope_index();
     let condition_value = typecheck_expr(env, namespace, condition, None)
@@ -38,12 +37,13 @@ pub fn typecheck_switch(
     for (case_index, case_value) in cases {
         // Find the expression at this case index
         let Some(case_expr) = block.get(*case_index as usize) else {
-            return log_typecheck_error!(
-                env,
-                condition_value.token_range.as_ref(),
-                "Switch case index {} out of bounds (block has {} expressions)",
-                *case_index,
-                block.len()
+            return env.log_error(
+                &condition_value.token_range,
+                format!(
+                    "Switch case index {} out of bounds (block has {} expressions)",
+                    *case_index,
+                    block.len()
+                ),
             );
         };
 
@@ -64,16 +64,17 @@ pub fn typecheck_switch(
         // Create a pattern expression that matches the constant value
         // Use the condition's integer type for the pattern
         let MIRTypeKind::Integer { _type, signed } = &condition_value.get_type().kind else {
-            return log_typecheck_error!(
-                env,
-                condition_value.token_range.as_ref(),
-                "Switch condition must be an integer type, found {}",
-                condition_value.get_type().display_with(&env.symbols)
+            return env.log_error(
+                &condition_value.token_range,
+                format!(
+                    "Switch condition must be an integer type, found {}",
+                    condition_value.get_type().display_with(&env.symbols)
+                ),
             );
         };
 
         let pattern_expr = MIRExpression {
-            token_range: None,
+            token_range: TokenRange::internal(),
             kind: MIRExpressionKind::IntLiteral(*case_value as i64),
             _type: MIRType::from(MIRTypeKind::Integer {
                 signed: *signed,
@@ -88,12 +89,13 @@ pub fn typecheck_switch(
     let default_body = match default_case {
         Some(&idx) => {
             let Some(expr) = block.get(idx) else {
-                return log_typecheck_error!(
-                    env,
-                    condition_value.token_range.as_ref(),
-                    "Switch default case index {} out of bounds (block has {} expressions)",
-                    idx,
-                    block.len()
+                return env.log_error(
+                    condition_value.token_range,
+                    format!(
+                        "Switch default case index {} out of bounds (block has {} expressions)",
+                        idx,
+                        block.len()
+                    ),
                 );
             };
             let body_expr = typecheck_expr(env, namespace, expr, None)
@@ -125,7 +127,8 @@ pub fn typecheck_switch(
         );
     }
 
-    env.pop_scope()?;
+    env.pop_scope()
+        .map_err(|err| env.complete_err(err, condition.token_range()))?;
 
     // Build the match expression
     Ok(TypecheckResult::new(

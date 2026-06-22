@@ -5,6 +5,7 @@ use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
     global::{MIRGlobalVarKind, MIRGlobalVariable},
 };
+use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 use cx_util::unsafe_float::FloatWrapper;
 
@@ -18,7 +19,7 @@ fn anonymous_name_gen() -> String {
 
 pub(crate) fn typecheck_int_literal(val: i64, bytes: u8) -> TypecheckResult {
     TypecheckResult::from(MIRExpression {
-        token_range: None,
+        token_range: TokenRange::internal(),
         kind: MIRExpressionKind::IntLiteral(val),
         _type: MIRType::from(MIRTypeKind::Integer {
             _type: MIRIntegerType::from_bytes(bytes).unwrap(),
@@ -29,7 +30,7 @@ pub(crate) fn typecheck_int_literal(val: i64, bytes: u8) -> TypecheckResult {
 
 pub(crate) fn typecheck_float_literal(val: FloatWrapper, bytes: u8) -> TypecheckResult {
     TypecheckResult::from(MIRExpression {
-        token_range: None,
+        token_range: TokenRange::internal(),
         kind: MIRExpressionKind::FloatLiteral(val),
         _type: MIRType::from(MIRTypeKind::Float {
             _type: MIRFloatType::from_bytes(bytes).unwrap(),
@@ -55,7 +56,7 @@ pub(crate) fn typecheck_string_literal(env: &mut TypeEnvironment, val: &str) -> 
         .mem_ref_to(MIRType::from(MIRTypeKind::Str).add_specifier(CX_CONST));
 
     TypecheckResult::from(MIRExpression {
-        token_range: None,
+        token_range: TokenRange::internal(),
         kind: MIRExpressionKind::Variable {
             name: name_ident,
             location: SymbolValueOrigin::Global,
@@ -66,7 +67,7 @@ pub(crate) fn typecheck_string_literal(env: &mut TypeEnvironment, val: &str) -> 
 
 pub(crate) fn typecheck_unit() -> TypecheckResult {
     TypecheckResult::from(MIRExpression {
-        token_range: None,
+        token_range: TokenRange::internal(),
         kind: MIRExpressionKind::Unit,
         _type: MIRType::unit(),
     })

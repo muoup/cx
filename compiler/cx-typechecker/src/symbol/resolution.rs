@@ -7,7 +7,11 @@ use cx_ast::{
     },
     symbols::{CXSymbol, CXSymbolKind},
 };
-use cx_log::{CXError, CXResult};
+use cx_log::{
+    CXRawResult, CXResult,
+    error::{CXMaybeRawErr, CXMaybeRawResult},
+};
+use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use cx_mir::{
@@ -29,7 +33,7 @@ use cx_mir::{
 use crate::{
     environment::{MIRFunctionGenRequest, TypeEnvironment},
     symbol::{
-        completion::{complete_prototype, complete_type},
+        completion::{complete_comptime_prototype, complete_prototype, complete_type},
         r#enum::resolve_enum_block,
     },
 };
@@ -73,7 +77,7 @@ pub fn resolve_symbol(
             }
 
             Ok(MIRSymbol::Expression(MIRExpression {
-                token_range: None,
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Variable {
                     name: name.clone(),
                     location: SymbolValueOrigin::Global,
@@ -87,6 +91,19 @@ pub fn resolve_symbol(
             let prototype = complete_prototype(env, &prototype_namespace, prototype)?;
 
             Ok(MIRSymbol::FunctionReference(prototype))
+        }
+
+        CXSymbolKind::ComptimeFunction { definition, body } => {
+            let prototype_namespace =
+                function_lexical_namespace(symbol_namespace, &definition.kind);
+            let prototype = complete_comptime_prototype(env, &prototype_namespace, definition)?;
+
+            Ok(MIRSymbol::ComptimeFunctionReference {
+                prototype,
+                namespace: prototype_namespace,
+                body: body.clone(),
+                template_bindings: Vec::new(),
+            })
         }
 
         CXSymbolKind::TypeConstructor {
@@ -157,6 +174,27 @@ pub fn resolve_symbol(
                 namespace: symbol_namespace.clone(),
             })
         }
+
+        CXSymbolKind::ComptimeFunctionTemplate {
+            template: input,
+            definition,
+            body,
+        } => {
+            let source = CXSymbol::new(
+                symbol.visibility,
+                CXSymbolKind::ComptimeFunction {
+                    definition: definition.clone(),
+                    body: body.clone(),
+                },
+            );
+
+            Ok(MIRSymbol::Template {
+                template_prototype: input.clone(),
+                name: name.clone(),
+                source: Box::new(source),
+                namespace: symbol_namespace.clone(),
+            })
+        }
     }
 }
 
@@ -169,7 +207,7 @@ fn resolve_duplicate_definition(
     definitions: &[CXSymbolKind],
 ) -> CXResult<MIRSymbol> {
     let Some((first, rest)) = definitions.split_first() else {
-        return CXError::create_result(format!(
+        return crate::log::internal_type_error(format!(
             "Duplicate symbol declaration '{}' has no definitions",
             name
         ));
@@ -193,7 +231,7 @@ fn resolve_duplicate_definition(
         )?;
 
         if !mir_symbols_equivalent(env, &first, &candidate) {
-            return CXError::create_result(format!(
+            return crate::log::internal_type_error(format!(
                 "Duplicate symbol declaration '{}' resolves to incompatible definitions",
                 name
             ));
@@ -214,6 +252,15 @@ fn mir_symbols_equivalent(env: &TypeEnvironment, left: &MIRSymbol, right: &MIRSy
             left.linkage() == right.linkage() && left.contextual_eq(right, &env.symbols)
         }
 
+        (
+            MIRSymbol::ComptimeFunctionReference {
+                prototype: left, ..
+            },
+            MIRSymbol::ComptimeFunctionReference {
+                prototype: right, ..
+            },
+        ) => left.lookup_identifier() == right.lookup_identifier(),
+
         (MIRSymbol::Expression(left), MIRSymbol::Expression(right)) => {
             env.type_eq(&left._type, &right._type)
                 && format!("{:?}", left.kind) == format!("{:?}", right.kind)
@@ -230,12 +277,13 @@ fn resolve_type_constructor(
     union_type: &CXType,
     variant_index: usize,
 ) -> CXResult<MIRSymbol> {
+    let range = union_type.range().clone();
     let union_type = complete_type(env, namespace, union_type)?;
     let variants = union_type
         .aggregate_fields(&env.symbols)
-        .ok_or_else(|| CXError::create_boxed("Type constructor target is not a tagged union"))?;
+        .ok_or_else(|| env.error(&range, "Type constructor target is not a tagged union"))?;
     let Some((_, variant_type)) = variants.get(variant_index).cloned() else {
-        return CXError::create_result(format!(
+        return crate::log::internal_type_error(format!(
             "Type constructor variant index {} is out of bounds",
             variant_index
         ));
@@ -275,7 +323,7 @@ pub fn apply_template(
     env: &mut TypeEnvironment,
     symbol: &MIRSymbol,
     template_input: MIRTemplateInput,
-) -> CXResult<Option<MIRSymbol>> {
+) -> CXMaybeRawResult<Option<MIRSymbol>> {
     let MIRSymbol::Template {
         template_prototype: input,
         name,
@@ -287,22 +335,35 @@ pub fn apply_template(
     };
 
     if input.types.len() != template_input.args.len() {
-        return CXError::create_result(format!(
-            "Template '{}' expects {} arguments, found {}",
-            name,
-            input.types.len(),
-            template_input.args.len()
-        ));
+        return env
+            .log_error_base(format!(
+                "Template '{}' expects {} arguments, found {}",
+                name,
+                input.types.len(),
+                template_input.args.len()
+            ))
+            .map_err(CXMaybeRawErr::from);
     }
 
     env.symbols.push_local_scope();
-    let result = (|| {
-        apply_template_input(env, input, &template_input)?;
-        resolve_symbol(env, namespace, namespace, name, source)
+    let result = (|| -> CXMaybeRawResult<MIRSymbol> {
+        apply_template_input(env, input, &template_input).map_err(CXMaybeRawErr::from)?;
+        resolve_symbol(env, namespace, namespace, name, source).map_err(CXMaybeRawErr::from)
     })();
     env.symbols.pop_local_scope();
 
     let mut symbol = result?;
+    if let MIRSymbol::ComptimeFunctionReference {
+        template_bindings, ..
+    } = &mut symbol
+    {
+        *template_bindings = input
+            .types
+            .iter()
+            .cloned()
+            .zip(template_input.args.iter().copied())
+            .collect();
+    }
     attach_template_metadata(env, &mut symbol, namespace, template_input.clone());
 
     if let MIRSymbol::FunctionReference(prototype) = &symbol
@@ -319,15 +380,20 @@ pub fn apply_template(
 }
 
 pub fn symbol_lexical_namespace(
-    namespace: &EnvironmentNamespace,
+    namespace: impl Into<EnvironmentNamespace>,
     symbol: &CXSymbol,
 ) -> EnvironmentNamespace {
+    let namespace = namespace.into();
     match &symbol.kind {
         CXSymbolKind::FunctionReference(prototype)
         | CXSymbolKind::FunctionTemplate {
             definition: prototype,
             ..
-        } => function_lexical_namespace(namespace, &prototype.kind),
+        } => function_lexical_namespace(&namespace, &prototype.kind),
+        CXSymbolKind::ComptimeFunction { definition, .. }
+        | CXSymbolKind::ComptimeFunctionTemplate { definition, .. } => {
+            function_lexical_namespace(&namespace, &definition.kind)
+        }
         _ => namespace.clone(),
     }
 }
@@ -340,7 +406,8 @@ fn function_lexical_namespace(
         CXFunctionKind::AssociatedFunction { .. } => namespace
             .parent_and_name()
             .map(|(parent, _)| parent)
-            .unwrap_or_else(|| namespace.clone()),
+            .unwrap_or_else(|| namespace.as_namespace_path().clone())
+            .into(),
         CXFunctionKind::Standard(_) => namespace.clone(),
     }
 }
@@ -349,7 +416,7 @@ pub fn apply_template_input(
     env: &mut TypeEnvironment,
     prototype: &CXTemplatePrototype,
     input: &MIRTemplateInput,
-) -> CXResult<()> {
+) -> CXRawResult<()> {
     for (param, arg) in prototype.types.iter().zip(input.args.iter()) {
         env.symbols.insert_local_type_id(param.as_string(), *arg)?;
     }

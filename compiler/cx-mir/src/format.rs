@@ -369,8 +369,8 @@ fn write_type_body(
         }
         MIRTypeKind::Unit => write!(f, "()"),
         MIRTypeKind::PointerTo { inner_type } => {
-            write!(f, "*")?;
             write_type_id(f, definitions, *inner_type, state)?;
+            write!(f, "*")?;
             write_type_qualifiers_suffix(f, ty.specifiers)
         }
         MIRTypeKind::MemoryReference {
@@ -664,13 +664,6 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             MIRExpressionKind::FunctionReference { name } => {
                 write!(f, "FunctionReference {name} <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")
-            }
-            MIRExpressionKind::SizeOf { _type } => {
-                write!(f, "SizeOf ")?;
-                self.write_type(f, _type)?;
-                write!(f, " <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }
@@ -1068,6 +1061,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             MIRExpressionKind::Match {
                 condition,
+                subject_name,
                 arms,
                 default,
                 exhaustive,
@@ -1075,6 +1069,10 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 write!(f, "Match exhaustive={exhaustive} <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
+                if let Some(subject_name) = subject_name {
+                    self.indent(f)?;
+                    writeln!(f, "Subject {subject_name}:")?;
+                }
                 MIRExpressionFormatter {
                     expr: condition,
                     depth: self.depth + 1,
@@ -1136,6 +1134,34 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     .fmt(f)?;
                 }
                 Ok(())
+            }
+            MIRExpressionKind::Yield {
+                value,
+                target_scope,
+            } => {
+                write!(f, "Yield -> scope {} <'", target_scope)?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, ">")?;
+                if let Some(value) = value {
+                    MIRExpressionFormatter {
+                        expr: value,
+                        depth: self.depth + 1,
+                        definitions: self.definitions,
+                    }
+                    .fmt(f)?;
+                }
+                Ok(())
+            }
+            MIRExpressionKind::Emit(expr) => {
+                write!(f, "Emit <'")?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, ">")?;
+                MIRExpressionFormatter {
+                    expr,
+                    depth: self.depth + 1,
+                    definitions: self.definitions,
+                }
+                .fmt(f)
             }
             MIRExpressionKind::Block { statements } => {
                 write!(f, "Block {{ <'")?;

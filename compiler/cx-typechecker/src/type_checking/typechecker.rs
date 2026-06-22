@@ -1,10 +1,10 @@
 use std::ops::Deref;
 
 use crate::environment::{LoopScopeKind, ScopeArrowSink, ScopeExitTarget, TypeEnvironment};
-use crate::log_typecheck_error;
 use crate::type_checking::aggregate::initialization::typecheck_initializer_list;
 use crate::type_checking::coercion::implicit::{implicit_cast, promotion::std_rval_promotion};
 use crate::type_checking::control_flow::r#return::typecheck_return;
+use crate::type_checking::control_flow::r#yield::typecheck_yield;
 use crate::type_checking::control_flow::{
     enqueue_jump_arrow, expr_may_fall_through, process_for_increment_arrows,
     typecheck_fallthrough_scope,
@@ -29,6 +29,7 @@ use cx_log::CXResult;
 use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::data::{MIRIntegerType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
+use cx_tokens::TokenRange;
 
 use crate::type_checking::control_flow::r#match::typecheck_match;
 use crate::type_checking::control_flow::switch::typecheck_switch;
@@ -65,7 +66,7 @@ fn typecheck_expr_inner(
             }
 
             TypecheckResult::from(MIRExpression {
-                token_range: None,
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Block { statements: block },
                 _type: MIRType::unit(),
             })
@@ -104,8 +105,7 @@ fn typecheck_expr_inner(
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))?;
             env.push_scope(false, false);
-            env.function
-                .configure_merge_scope(expr, "if join", None, false);
+            env.function.configure_merge_scope(expr, None, false);
             let join_scope_idx = env.function.current_scope_index();
 
             let then_result = typecheck_fallthrough_scope(
@@ -138,10 +138,11 @@ fn typecheck_expr_inner(
                 None
             };
 
-            env.pop_scope()?;
+            env.pop_scope()
+                .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
             TypecheckResult::from(MIRExpression {
-                token_range: None,
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::If {
                     condition: Box::new(condition_result),
                     then_branch: Box::new(then_result),
@@ -169,7 +170,7 @@ fn typecheck_expr_inner(
                 .and_then(|v| implicit_cast(env, v, &then_result._type))?;
 
             TypecheckResult::from(MIRExpression {
-                token_range: None,
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::If {
                     condition: Box::new(condition_result),
                     then_branch: Box::new(then_result.clone()),
@@ -209,10 +210,11 @@ fn typecheck_expr_inner(
                 ScopeArrowSink::LoopContinue,
                 "loop fallthrough",
             )?;
-            env.pop_scope()?;
+            env.pop_scope()
+                .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
             TypecheckResult::from(MIRExpression {
-                token_range: None,
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::While {
                     condition: Box::new(condition_result),
                     body: Box::new(body_result),
@@ -260,10 +262,11 @@ fn typecheck_expr_inner(
             env.function
                 .restore_snapshot(&env.function.loop_entry_snapshot(loop_scope_idx));
             env.function.set_scope_reachable(loop_scope_idx, true);
-            env.pop_scope()?;
+            env.pop_scope()
+                .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
             TypecheckResult::from(MIRExpression {
-                token_range: None,
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::For {
                     init: Box::new(init_result),
                     condition: Box::new(condition_result),
@@ -276,10 +279,9 @@ fn typecheck_expr_inner(
 
         CXExprKind::Break => {
             let Some(scope_idx) = env.function.nearest_break_scope() else {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "'break' used outside of a loop or switch context"
+                return env.log_error(
+                    expr.token_range(),
+                    "'break' used outside of a loop or switch context".to_string(),
                 );
             };
             enqueue_jump_arrow(
@@ -292,7 +294,7 @@ fn typecheck_expr_inner(
             );
 
             TypecheckResult::from(MIRExpression {
-                token_range: None,
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Break {
                     scope_depth: scope_idx.index(),
                 },
@@ -302,10 +304,9 @@ fn typecheck_expr_inner(
 
         CXExprKind::Continue => {
             let Some(scope_idx) = env.function.nearest_continue_scope() else {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "'continue' used outside of a loop context"
+                return env.log_error(
+                    expr.token_range(),
+                    "'continue' used outside of a loop context".to_string(),
                 );
             };
             enqueue_jump_arrow(
@@ -318,7 +319,7 @@ fn typecheck_expr_inner(
             );
 
             TypecheckResult::from(MIRExpression {
-                token_range: None,
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Continue {
                     scope_depth: scope_idx.index(),
                 },
@@ -335,7 +336,31 @@ fn typecheck_expr_inner(
                         .standard_ready_coerce(env, expr.token_range())
                 })
                 .transpose()?;
-            typecheck_return(env, namespace, value)?
+            typecheck_return(env, namespace, expr.token_range(), value)?
+        }
+
+        CXExprKind::Yield { value } => typecheck_yield(
+            env,
+            namespace,
+            expr.token_range(),
+            value.as_ref().map(Box::as_ref),
+        )?,
+
+        CXExprKind::Emit { expr: inner } => {
+            if !env.in_comptime_context() {
+                return env.log_error(
+                    expr.token_range(),
+                    "'emit' may only be used in a comptime context".to_string(),
+                );
+            }
+
+            let inner = typecheck_expr(env, namespace, inner, expected_type)?
+                .standard_ready_coerce(env, inner.token_range())?;
+            TypecheckResult::from(MIRExpression {
+                token_range: TokenRange::internal(),
+                _type: inner._type.clone(),
+                kind: MIRExpressionKind::Emit(Box::new(inner)),
+            })
         }
 
         CXExprKind::Unsafe { expr: inner } => {
@@ -381,10 +406,12 @@ fn typecheck_expr_inner(
             op: CXBinOp::MethodCall,
             lhs,
             rhs,
-        } => typecheck_method_call(env, namespace, lhs, rhs, expr)?,
+        } => typecheck_method_call(env, namespace, lhs, rhs, expr, expected_type)?,
 
         CXExprKind::BinOp { op, lhs, rhs } => {
-            if let Some(expr) = try_typecheck_special_binop(env, namespace, op, expr, lhs, rhs)? {
+            if let Some(expr) =
+                try_typecheck_special_binop(env, namespace, op, expr, lhs, rhs, expected_type)?
+            {
                 expr
             } else {
                 let lhs = typecheck_expr(env, namespace, lhs, None)
@@ -430,6 +457,7 @@ fn typecheck_expr_inner(
             condition,
             arms,
             default.as_ref().map(Box::as_ref),
+            expected_type,
         )?,
 
         CXExprKind::Taken => unreachable!("Taken expressions should not be typechecked"),
@@ -453,7 +481,7 @@ pub fn add_implicit_return(
 
     let implicit_value = if func.name() == "main" {
         Some(Box::new(MIRExpression {
-            token_range: None,
+            token_range: TokenRange::internal(),
             kind: MIRExpressionKind::IntLiteral(0),
             _type: MIRType::from(MIRTypeKind::Integer {
                 _type: MIRIntegerType::I32,
@@ -463,19 +491,25 @@ pub fn add_implicit_return(
     } else if func.signature().return_type.is_unit() {
         None
     } else {
-        return log_typecheck_error!(
-            env,
-            expr.token_range.as_ref(),
-            "Function '{}' with non-void return type must have an explicit return statement",
-            func.name()
+        return env.log_error(
+            expr.token_range,
+            format!(
+                "Function '{}' with non-void return type must have an explicit return statement",
+                func.name()
+            ),
         );
     };
 
-    let ret =
-        typecheck_return(env, namespace, implicit_value.map(|v| *v))?.internal_ready_assertion();
+    let ret = typecheck_return(
+        env,
+        namespace,
+        &expr.token_range,
+        implicit_value.map(|v| *v),
+    )?
+    .internal_ready_assertion();
 
     Ok(MIRExpression {
-        token_range: None,
+        token_range: TokenRange::internal(),
         kind: MIRExpressionKind::Block {
             statements: vec![expr, ret],
         },

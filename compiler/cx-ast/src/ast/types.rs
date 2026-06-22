@@ -10,7 +10,7 @@ use crate::ast::{
 pub struct CXType {
     pub kind: CXTypeKind,
     pub specifiers: CXTypeQualifiers,
-    pub range: Option<TokenRange>,
+    pub range: TokenRange,
 }
 
 #[derive(Debug, Default, Hash, Clone, Copy, PartialEq, Eq)]
@@ -23,10 +23,17 @@ pub enum PredeclarationType {
 }
 
 #[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
-pub struct CXStructAttributes {
-    pub nocopy: bool,
-    pub nodrop: bool,
+pub struct CXAggregateAttributes {
+    pub semantics: CXMoveSemantics,
     pub copy_traits: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
+pub enum CXMoveSemantics {
+    #[default]
+    POD,
+    Nocopy,
+    Nodrop,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -62,7 +69,7 @@ pub enum CXTypeKind {
 
     Structured {
         name: Option<CXIdent>,
-        attributes: CXStructAttributes,
+        attributes: CXAggregateAttributes,
         fields: Vec<CXField>,
     },
     Union {
@@ -71,7 +78,7 @@ pub enum CXTypeKind {
     },
     TaggedUnion {
         name: CXIdent,
-        attributes: CXStructAttributes,
+        attributes: CXAggregateAttributes,
         variants: Vec<CXField>,
     },
 
@@ -98,7 +105,7 @@ impl CXType {
         Self {
             kind,
             specifiers,
-            range: None,
+            range: TokenRange::Internal,
         }
     }
 
@@ -120,12 +127,12 @@ impl CXType {
     }
 
     pub fn with_range(mut self, range: TokenRange) -> Self {
-        self.range = Some(range);
+        self.range = range;
         self
     }
 
-    pub fn range(&self) -> Option<&TokenRange> {
-        self.range.as_ref()
+    pub fn range(&self) -> &TokenRange {
+        &self.range
     }
 
     pub fn get_name(&self) -> Option<&CXIdent> {

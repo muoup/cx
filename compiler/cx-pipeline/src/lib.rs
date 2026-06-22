@@ -8,8 +8,10 @@ use crate::progress::ProgressReporter;
 use crate::scheduler::scheduling_loop;
 use crate::scheduler::scheduling_loop_collect_errors;
 use cx_ast::registry::ExportNameMode;
-use cx_log::CXError;
-use cx_log::CXResult;
+use cx_log::{
+    error::{context::CXInternalContext, message::CXStdErrMessage, CXErr},
+    CXResult,
+};
 use cx_pipeline_data::config::{CXProjectConfig, TargetConfig};
 use cx_pipeline_data::db::ModuleData;
 use cx_pipeline_data::internal_storage::resource_path;
@@ -19,11 +21,18 @@ use cx_pipeline_data::{
 };
 use cx_util::format::with_dump_directory;
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 // Re-export LSP diagnostic types for use by cx-lsp
-pub use crate::scheduler::{LSPErrorSpan, LSPErrors};
+pub use crate::scheduler::LSPErrors;
+
+pub(crate) fn pipeline_error(code: impl Into<String>, message: impl Into<String>) -> CXErr {
+    CXErr::new(
+        CXStdErrMessage::error(code, message),
+        CXInternalContext::error("pipeline operation failed outside source context"),
+    )
+}
 
 pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResult<()> {
     let verbose = config.verbose;
@@ -34,9 +43,10 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
         linking_files: Mutex::new(HashSet::new()),
     };
 
-    let base_file_str = base_file
-        .to_str()
-        .ok_or(CXError::create_boxed("Base file path is not valid UTF-8"))?;
+    let base_file_str = base_file.to_str().ok_or(pipeline_error(
+        "COMPILATION ERROR",
+        "Base file path is not valid UTF-8",
+    ))?;
     let entry_unit =
         CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory);
     compiler_context
@@ -57,19 +67,25 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
                 let object_path = resource_path(&compiler_context, &entry_unit, ".o");
                 if let Some(parent) = compiler_context.config.output.parent() {
                     std::fs::create_dir_all(parent).map_err(|e| {
-                        CXError::create_boxed(format!(
-                            "Failed to create object output directory {}: {}",
-                            parent.display(),
-                            e
-                        ))
+                        pipeline_error(
+                            "COMPILATION ERROR",
+                            format!(
+                                "Failed to create object output directory {}: {}",
+                                parent.display(),
+                                e
+                            ),
+                        )
                     })?;
                 }
                 std::fs::copy(&object_path, &compiler_context.config.output).map_err(|e| {
-                    CXError::create_boxed(format!(
-                        "Failed to write object file {}: {}",
-                        compiler_context.config.output.display(),
-                        e
-                    ))
+                    pipeline_error(
+                        "COMPILATION ERROR",
+                        format!(
+                            "Failed to write object file {}: {}",
+                            compiler_context.config.output.display(),
+                            e
+                        ),
+                    )
                 })?;
                 Ok(())
             }
@@ -101,9 +117,10 @@ pub fn library_compilation(
         linking_files: Mutex::new(HashSet::new()),
     };
 
-    let base_file_str = base_file
-        .to_str()
-        .ok_or(CXError::create_boxed("Base file path is not valid UTF-8"))?;
+    let base_file_str = base_file.to_str().ok_or(pipeline_error(
+        "COMPILATION ERROR",
+        "Base file path is not valid UTF-8",
+    ))?;
 
     let entry_unit =
         CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory);
@@ -151,26 +168,25 @@ pub fn project_compilation(
     base_config: CompilerConfig,
     project_config: &CXProjectConfig,
     target_filter: Option<&str>,
-) -> CXResult<()> {
-    let workspace = project_config
-        .workspace
-        .as_ref()
-        .ok_or(CXError::create_boxed("cx.toml has no [workspace] section"))?;
+) -> CXResult<Vec<PathBuf>> {
+    let workspace = project_config.workspace.as_ref().ok_or(pipeline_error(
+        "COMPILATION ERROR",
+        "cx.toml has no [workspace] section",
+    ))?;
 
     let filter_name;
     let targets: Vec<(&String, &TargetConfig)> = if let Some(filter) = target_filter {
-        let target = workspace
-            .targets
-            .get(filter)
-            .ok_or(CXError::create_boxed(format!(
-                "Target '{}' not found in cx.toml",
-                filter
-            )))?;
+        let target = workspace.targets.get(filter).ok_or(pipeline_error(
+            "COMPILATION ERROR",
+            format!("Target '{}' not found in cx.toml", filter),
+        ))?;
         filter_name = filter.to_string();
         vec![(&filter_name, target)]
     } else {
         workspace.targets.iter().collect()
     };
+
+    let mut binaries_built = Vec::new();
 
     for (target_name, target_config) in targets {
         let link_entries = target_config.link.clone().unwrap_or_default();
@@ -208,11 +224,14 @@ pub fn project_compilation(
             .join("output")
             .join(target_name);
         std::fs::create_dir_all(&output_dir).map_err(|e| {
-            CXError::create_boxed(format!(
-                "Failed to create output directory {}: {}",
-                output_dir.display(),
-                e
-            ))
+            pipeline_error(
+                "COMPILATION ERROR",
+                format!(
+                    "Failed to create output directory {}: {}",
+                    output_dir.display(),
+                    e
+                ),
+            )
         })?;
 
         // Build binaries
@@ -220,7 +239,7 @@ pub fn project_compilation(
             for binary in binaries {
                 let output = output_dir.join(&binary.name);
                 let mut config = base_config.clone();
-                config.output = output;
+                config.output = output.clone();
                 config.compilation_mode = CompilationMode::Executable;
                 config.link_entries = link_entries.clone();
                 config.native_objects = native_objects.clone();
@@ -231,6 +250,7 @@ pub fn project_compilation(
                     binary.name, target_name
                 );
                 standard_compilation(config, Path::new(&binary.entry))?;
+                binaries_built.push(output);
             }
         }
 
@@ -254,9 +274,7 @@ pub fn project_compilation(
                 eprintln!("  Linked {}", config.output.display());
 
                 // Generate .h header from LMIR
-                let Ok(header) =
-                    cx_c_header::generate_header(&library.name, &entry_lmir, &link_entries)
-                else {
+                let Ok(header) = cx_c_header::generate_header(&entry_lmir, &link_entries) else {
                     eprintln!(
                         "Warning: Failed to generate header for library '{}': Header generation is best-effort and will not fail the build",
                         library.name
@@ -266,11 +284,10 @@ pub fn project_compilation(
 
                 let header_path = output_dir.join(format!("{}.h", library.name));
                 std::fs::write(&header_path, header).map_err(|e| {
-                    CXError::create_boxed(format!(
-                        "Failed to write header {}: {}",
-                        header_path.display(),
-                        e
-                    ))
+                    pipeline_error(
+                        "COMPILATION ERROR",
+                        format!("Failed to write header {}: {}", header_path.display(), e),
+                    )
                 })?;
 
                 eprintln!("  Generated {}", header_path.display());
@@ -278,7 +295,7 @@ pub fn project_compilation(
         }
     }
 
-    Ok(())
+    Ok(binaries_built)
 }
 
 /// Typecheck-only compilation for LSP integration.

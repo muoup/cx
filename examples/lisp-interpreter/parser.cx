@@ -5,6 +5,8 @@ import std::io as std;
 
 import ast as _;
 
+extern "C":
+
 #include <stdlib.h>
 #include <ctype.h>
 #undef isdigit
@@ -12,7 +14,7 @@ import ast as _;
 
 public:
 
-lisp_node parse(const char* source) {
+lisp_node parse(const _str& source) {
     parser p = {
         .source = source,
         .pos = 0
@@ -24,7 +26,7 @@ lisp_node parse(const char* source) {
 private:
 
 struct parser {
-    const char* source;
+    const _str& source;
     usize pos;
 };
 
@@ -38,7 +40,7 @@ bool is_delimiter(char c) {
     return 1 == 0;
 }
 
-bool is_number_token(char* token) {
+bool is_number_token(_str& token) {
     if (isdigit(token[0]) != 0) {
         return 1 == 1;
     }
@@ -46,7 +48,7 @@ bool is_number_token(char* token) {
     return token[0] == '-' && isdigit(token[1]) != 0;
 }
 
-bool token_eq(char* left, char* right) {
+bool token_eq(const _str& left, const _str& right) {
     usize i = 0;
     while (left[i] == right[i]) {
         if (left[i] == '\0') {
@@ -59,21 +61,9 @@ bool token_eq(char* left, char* right) {
     return 1 == 0;
 }
 
-char* copy_range(const char* source, usize start, usize end) {
-    usize length = end - start;
-    char* result = malloc(length + 1);
-
-    for (usize i = 0; i < length; i++) {
-        result[i] = source[start + i];
-    }
-
-    result[length] = '\0';
-    return result;
-}
-
-std::string string_from_owned_token(char* token) {
+std::string string_from_owned_token(_str& token) {
     std::string result = std::string::new();
-    result |> std::string::append((const char*) token);
+    result |> std::string::append(token);
     result.data[result.length] = '\0';
     free(token);
     return move result;
@@ -111,7 +101,7 @@ void parser::expect_progress(parser& this, usize previous_pos) {
     }
 }
 
-char* parser::parse_token(parser& this) {
+std::string parser::parse_token(parser& this) {
     this |> parser::skip_ws();
     usize start = this.pos;
 
@@ -124,14 +114,15 @@ char* parser::parse_token(parser& this) {
         exit(1);
     }
 
-    return copy_range(this.source, start, this.pos);
+    return std::string::substr(this.source, start, this.pos);
 }
 
 std::string parser::parse_name(parser& this) {
-    return this |> parser::parse_token() |> string_from_owned_token();
+    return this
+        |> parser::parse_token();
 }
 
-char* parser::parse_string_literal(parser& this) {
+std::string parser::parse_string_literal(parser& this) {
     this |> parser::skip_ws();
     this |> parser::expect('"');
 
@@ -140,20 +131,20 @@ char* parser::parse_string_literal(parser& this) {
         this |> parser::advance();
     }
 
-    char* result = copy_range(this.source, start, this.pos);
+    std::string result = std::string::substr(this.source, start, this.pos);
     this |> parser::expect('"');
-    return result;
+    return move result;
 }
 
 lisp_node parser::parse_program(parser& this) {
     std::vector<lisp_node> body = std::vector::new<lisp_node>();
 
     this |> parser::skip_ws();
-    while ((this |> parser::peek) != '\0') {
+    while ((this |> parser::peek()) != '\0') {
         usize previous_pos = this.pos;
-        lisp_node expr = this |> parser::parse_expr();
+        lisp_node node = this |> parser::parse_expr();
         this |> parser::expect_progress(previous_pos);
-        body |> std::vector::push<lisp_node>(move expr);
+        body |> std::vector::push<lisp_node>(move node);
         this |> parser::skip_ws();
     }
 
@@ -168,28 +159,29 @@ lisp_node parser::parse_expr(parser& this) {
     }
 
     if ((this |> parser::peek()) == '"') {
-        return lisp_node::PrintStr(this |> parser::parse_string_literal);
+        return lisp_node::PrintStr(this |> parser::parse_string_literal());
     }
 
-    char* token = this |> parser::parse_token();
-    if (is_number_token(token)) {
-        f64 value = atof(token);
-        free(token);
+    std::string token = this |> parser::parse_token();
+    if (is_number_token(token |> std::string::as_str())) {
+        f64 value = atof(token |> std::string::as_str());
+        move token |> std::string::drop();
+        
         return lisp_node::Number(value);
     }
 
-    return lisp_node::Symbol(string_from_owned_token(token));
+    return lisp_node::Symbol(move token);
 }
 
 std::vector<lisp_node> parser::parse_expr_list_until_close(parser& this) {
     std::vector<lisp_node> exprs = std::vector::new<lisp_node>();
 
-    this |> parser::skip_ws;
-    while ((this |> parser::peek) != ')' && (this |> parser::peek()) != '\0') {
+    this |> parser::skip_ws();
+    while ((this |> parser::peek()) != ')' && (this |> parser::peek()) != '\0') {
         usize previous_pos = this.pos;
-        lisp_node expr = this |> parser::parse_expr();
+        lisp_node node = this |> parser::parse_expr();
         this |> parser::expect_progress(previous_pos);
-        exprs |> std::vector::push<lisp_node>(move expr);
+        exprs |> std::vector::push<lisp_node>(move node);
         this |> parser::skip_ws();
     }
 
@@ -202,7 +194,7 @@ std::vector<std::string> parser::parse_params(parser& this) {
 
     this |> parser::expect('(');
     this |> parser::skip_ws();
-    while ((this |> parser::peek) != ')' && (this |> parser::peek()) != '\0') {
+    while ((this |> parser::peek()) != ')' && (this |> parser::peek()) != '\0') {
         usize previous_pos = this.pos;
         std::string param = this |> parser::parse_name();
         this |> parser::expect_progress(previous_pos);
@@ -216,14 +208,14 @@ std::vector<std::string> parser::parse_params(parser& this) {
 
 lisp_node parser::parse_list(parser& this) {
     this |> parser::expect('(');
-    char* op = this |> parser::parse_token();
+    std::string op = this |> parser::parse_token();
 
-    if (token_eq(op, "fndef")) {
-        free(op);
+    if (token_eq(op |> std::string::as_str(), "fndef")) {
         std::string name = this |> parser::parse_name();
         std::vector<std::string> params = this |> parser::parse_params();
         std::vector<lisp_node> body = this |> parser::parse_expr_list_until_close();
 
+        move op |> std::string::drop();
         return lisp_node::FnDef({
             .name = move name,
             .params = move params,
@@ -231,12 +223,12 @@ lisp_node parser::parse_list(parser& this) {
         });
     }
 
-    if (token_eq(op, "+")) {
-        free(op);
+    if (token_eq(op |> std::string::as_str(), "+")) {
         lisp_node left_node = this |> parser::parse_expr();
         lisp_node right_node = this |> parser::parse_expr();
         this |> parser::expect(')');
 
+        move op |> std::string::drop();
         std::box<lisp_node> left = std::box::new(move left_node);
         std::box<lisp_node> right = std::box::new(move right_node);
 
@@ -246,12 +238,12 @@ lisp_node parser::parse_list(parser& this) {
         });
     }
 
-    if (token_eq(op, "-")) {
-        free(op);
+    if (token_eq(op |> std::string::as_str(), "-")) {
         lisp_node left_node = this |> parser::parse_expr();
         lisp_node right_node = this |> parser::parse_expr();
         this |> parser::expect(')');
 
+        move op |> std::string::drop();
         std::box<lisp_node> left = std::box::new(move left_node);
         std::box<lisp_node> right = std::box::new(move right_node);
 
@@ -261,23 +253,24 @@ lisp_node parser::parse_list(parser& this) {
         });
     }
 
-    if (token_eq(op, "print-num")) {
-        free(op);
+    if (token_eq(op |> std::string::as_str(), "print-num")) {
         lisp_node value_node = this |> parser::parse_expr();
         this |> parser::expect(')');
-
+ 
+        move op |> std::string::drop();
         std::box<lisp_node> value = std::box::new(move value_node);
         return lisp_node::PrintNum(move value);
     }
 
-    if (token_eq(op, "print-str")) {
-        free(op);
-        char* value = this |> parser::parse_string_literal();
+    if (token_eq(op |> std::string::as_str(), "print-str")) {
+        std::string value = this |> parser::parse_string_literal();
         this |> parser::expect(')');
-        return lisp_node::PrintStr(value);
+        
+        move op |> std::string::drop();
+        return lisp_node::PrintStr(move value);
     }
 
-    std::string name = string_from_owned_token(op);
+    std::string name = move op;
     std::vector<lisp_node> args = this |> parser::parse_expr_list_until_close();
 
     return lisp_node::FnCall({

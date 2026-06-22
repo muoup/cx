@@ -36,7 +36,7 @@ pub trait MIRQualifiedLookup {
                 value,
             };
         }
-        
+
         if let Some(value) = self.lookup_exact(lexical_namespace, name) {
             return QualifiedLookupResult::Found {
                 resolved_name: name.clone(),
@@ -58,17 +58,17 @@ pub trait MIRQualifiedLookup {
             }
         }
 
-        let mut aliases = self.resolve_aliases(lexical_namespace, &name.namespace)
+        let mut aliases = self
+            .resolve_aliases(lexical_namespace, &name.namespace)
             .into_iter()
             .map(|alias_namespace| QualifiedName {
                 namespace: alias_namespace,
                 name: name.name.clone(),
             })
             .collect::<Vec<_>>();
-        
+
         if !name.namespace.is_root() {
-            let (parent, child) = name.namespace.parent_and_name()
-                .unwrap();
+            let (parent, child) = name.namespace.parent_and_name().unwrap();
 
             aliases.extend(
                 self.resolve_aliases(lexical_namespace, &parent)
@@ -76,7 +76,7 @@ pub trait MIRQualifiedLookup {
                     .map(|alias| QualifiedName {
                         namespace: alias.child(child.clone()),
                         name: name.name.clone(),
-                    })
+                    }),
             );
         }
 
@@ -107,13 +107,16 @@ pub trait MIRQualifiedLookup {
                         };
                     }
                 }
-                
+
                 resolved
                     .into_iter()
-                    .map(|(name, value)| QualifiedLookupResult::Found { resolved_name: name, value })
+                    .map(|(name, value)| QualifiedLookupResult::Found {
+                        resolved_name: name,
+                        value,
+                    })
                     .next()
                     .expect("length checked above")
-            },
+            }
         }
     }
 }

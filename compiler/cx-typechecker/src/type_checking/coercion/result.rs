@@ -17,6 +17,7 @@ pub enum CoercionResult {
 }
 
 impl CoercionResult {
+    #[allow(dead_code)]
     pub fn and_then<F>(self, f: F) -> CXResult<Self>
     where
         F: FnOnce(MIRExpression) -> CXResult<Self>,

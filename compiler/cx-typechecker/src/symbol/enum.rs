@@ -5,12 +5,12 @@ use cx_mir::{
     mir::expression::{MIRExpression, MIRExpressionKind},
     symbol::MIRSymbol,
 };
+use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 
 use crate::{
-    environment::TypeEnvironment,
-    type_checking::{constexpr::constexpr_evaluate, typechecker::typecheck_expr},
-    typecheck_error,
+    comptime::evaluate_comptime_expression, environment::TypeEnvironment,
+    type_checking::typechecker::typecheck_expr,
 };
 
 pub struct EnumBlockResolution<'a> {
@@ -59,13 +59,12 @@ pub(crate) fn resolve_enum_block<'a, 'b>(
             .map(|expr| {
                 typecheck_expr(env, namespace, expr, None)
                     .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
-                    .and_then(|v| constexpr_evaluate(env, v))
+                    .and_then(|v| evaluate_comptime_expression(env, v))
                     .and_then(|v| {
-                        v.get_integer().ok_or_else(|| {
-                            typecheck_error!(
-                                env,
-                                expr.token_range(),
-                                "Expected enum variant value to be an integer"
+                        v.as_integer().ok_or_else(|| {
+                            env.error(
+                                v.token_range,
+                                "Expected enum variant value to be an integer".to_string(),
                             )
                         })
                     })
@@ -81,7 +80,7 @@ pub(crate) fn resolve_enum_block<'a, 'b>(
         env.symbols.insert_value(
             symbol,
             MIRExpression {
-                token_range: None,
+                token_range: TokenRange::internal(),
                 _type: env.get_intrinsic_type("int"),
                 kind: MIRExpressionKind::IntLiteral(value),
             },

@@ -9,7 +9,7 @@ use crate::{
 pub(crate) fn handle_define(
     context: &mut LexingContext,
     directive_start: usize,
-    directive_end: usize,
+    _directive_end: usize,
 ) -> CXResult<LexTransition> {
     if !context.current_frame().is_active() {
         context.skip_tail();
@@ -19,13 +19,9 @@ pub(crate) fn handle_define(
     context.current_frame_mut().skip_whitespace();
     let Some((name, params)) = read_macro_head(context.current_frame_mut()) else {
         let frame = context.current_frame();
-        return log_lexer_error!(
-            frame.file_path.as_path(),
-            &frame.source,
-            directive_start,
-            directive_end,
-            "#define requires a macro name"
-        );
+        return frame
+            .cursor_view()
+            .log_error(directive_start, "#define requires a macro name");
     };
 
     let rest_of_line = rest_of_logical_directive(context.current_frame_mut());

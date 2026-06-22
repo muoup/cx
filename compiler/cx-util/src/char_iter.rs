@@ -1,5 +1,7 @@
 pub struct CharIter<'a> {
     pub source: &'a str,
+
+    // TODO: For better performance we should use byte-aware iteration to avoid UTF-8 decoding overhead. This will require some adjustments to the API, but it will be more efficient for ASCII-heavy sources.
     pub current_iter: usize,
     pub line: u32,
 }

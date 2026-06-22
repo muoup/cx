@@ -26,12 +26,9 @@ pub(crate) fn eval(
 
     match parser.parse_expression() {
         Some(value) => Ok(value != 0),
-        None => log_lexer_error!(
-            frame.file_path.as_path(),
-            &frame.source,
+        None => frame.cursor_view().log_error(
             directive_start,
-            frame.cursor,
-            "Failed to evaluate preprocessor expression"
+            "Failed to evaluate preprocessor expression",
         ),
     }
 }

@@ -2,8 +2,12 @@ use cx_preparse_data::NamespaceAliases;
 use cx_util::{identifier::CXIdent, module_path::ModulePath, namespace::NamespacePath};
 
 use crate::ast::{
-    expression::CXExpression, function::CXFunctionPrototype, global_var::CXGlobalVariable,
-    modifiers::VisibilityMode, template::CXTemplatePrototype, types::CXType,
+    expression::CXExpression,
+    function::{CXComptimeFnPrototype, CXFunctionPrototype},
+    global_var::CXGlobalVariable,
+    modifiers::VisibilityMode,
+    template::CXTemplatePrototype,
+    types::CXType,
 };
 
 pub mod expression;
@@ -42,6 +46,13 @@ pub enum CXASTStmt {
         visibility: VisibilityMode,
         template_prototype: Option<CXTemplatePrototype>,
         body: Option<Box<CXExpression>>,
+    },
+
+    ComptimeFunctionDefinition {
+        prototype: CXComptimeFnPrototype,
+        visibility: VisibilityMode,
+        template_prototype: Option<CXTemplatePrototype>,
+        body: Box<CXExpression>,
     },
 
     GlobalVariableDefinition {

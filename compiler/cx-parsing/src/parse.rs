@@ -17,7 +17,9 @@ use cx_tokens::{
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    assert_token_matches, next_kind,
+    assert_token_matches,
+    log::{ParserLogExt, TokenIterLogExt},
+    next_kind,
     parse::{
         expressions::parse_expr,
         functions::try_function_parse,
@@ -49,8 +51,11 @@ pub fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
     };
 
     match &token.kind {
-        keyword!(Import) => data.tokens.goto_statement_end()?,
+        keyword!(Import) => {
+            data.tokens.goto_statement_end();
+        }
         keyword!(Typedef) => parse_typedef(data)?,
+        keyword!(Comptime) => parse_comptime_fn_merge(data)?,
         punctuator!(Semicolon) => {
             data.tokens.next();
         }
@@ -81,9 +86,10 @@ fn is_extern_c_section(data: &ParserData) -> bool {
 fn parse_extern_c_mod(data: &mut ParserData) -> CXResult<()> {
     assert_token_matches!(data.tokens, specifier!(Extern), "'extern'");
     assert_token_matches!(data.tokens, TokenKind::StringLiteral(abi), "\"C\"");
+    let abi = abi.clone();
 
     if abi != "C" {
-        return log_parse_error!(data, "Unsupported extern ABI '{}'", abi);
+        return data.log_error(format!("Unsupported extern ABI '{}'", abi));
     }
 
     assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
@@ -107,10 +113,32 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
             data.extern_c_mode = false;
         }
 
-        _ => return log_parse_error!(data, "Unexpected specifier in global scope"),
+        _ => return data.log_error("Unexpected specifier in global scope".to_string()),
     };
 
     try_next!(data.tokens, punctuator!(Colon));
+
+    Ok(())
+}
+
+fn parse_comptime_fn_merge(data: &mut ParserData) -> CXResult<()> {
+    let func = functions::parse_comptime_function(data)?;
+
+    let body = if let Some(template_prototype) = func.template_prototype.as_ref() {
+        note_templated_types(data, template_prototype)?;
+        let body = parse_body(data);
+        unnote_templated_types(data, template_prototype);
+        body
+    } else {
+        parse_body(data)
+    }?;
+
+    data.add_stmt(CXASTStmt::ComptimeFunctionDefinition {
+        prototype: func.prototype,
+        visibility: data.visibility,
+        template_prototype: func.template_prototype,
+        body: Box::new(body),
+    });
 
     Ok(())
 }
@@ -128,10 +156,10 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
     let (name, _type) = parse_typedef_initializer(data)?;
 
     let Some(name) = name else {
-        return log_preparse_error!(
-            data.tokens.with_index(start_index),
-            "Typedef must have a name!"
-        );
+        return data
+            .tokens
+            .with_index(start_index)
+            .log_error("Typedef must have a name!".to_string());
     };
 
     assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
@@ -164,7 +192,7 @@ fn parse_fn_merge(
 ) -> CXResult<()> {
     if try_next!(data.tokens, punctuator!(Semicolon)) {
         if template_prototype.is_some() {
-            return log_parse_error!(data, "Templated functions must be defined in place.");
+            return data.log_error("Templated functions must be defined in place.".to_string());
         }
 
         data.add_stmt(CXASTStmt::FunctionDefinition {
@@ -210,10 +238,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
     };
 
     if !data.tokens.has_next() {
-        return log_parse_error!(
-            data,
-            "Reached end of token stream when parsing global expression!"
-        );
+        return data.log_error("Reached end of token stream when parsing global expression!".to_string());
     }
 
     if let Some(func) = try_function_parse(data, return_type.clone(), name.clone(), linkage)? {
@@ -250,31 +275,37 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
         }
 
         _ => {
-            return log_parse_error!(
-                data,
+            return data.log_error(format!(
                 "Unexpected token in global expression: {:#?}",
                 data.tokens.peek()
-            );
+            ));
         }
     }
 
     Ok(())
 }
 
-fn parse_body(data: &mut ParserData) -> CXResult<CXExpression> {
+pub(crate) fn parse_block(data: &mut ParserData) -> CXResult<CXExpression> {
+    assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
+
+    let start_index = data.tokens.index - 1;
+    let mut body = Vec::new();
+
+    while !try_next!(data.tokens, punctuator!(CloseBrace)) {
+        body.push(parse_stmt(data)?);
+    }
+
+    Ok(CXExprKind::Block { exprs: body }.into_expr(
+        start_index,
+        data.tokens.index,
+        data.file_origin_for_range(start_index, data.tokens.index),
+    ))
+}
+
+pub(crate) fn parse_body(data: &mut ParserData) -> CXResult<CXExpression> {
     if try_next!(data.tokens, punctuator!(OpenBrace)) {
-        let start_index = data.tokens.index - 1;
-        let mut body = Vec::new();
-
-        while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-            body.push(parse_stmt(data)?);
-        }
-
-        Ok(CXExprKind::Block { exprs: body }.into_expr(
-            start_index,
-            data.tokens.index,
-            data.file_origin_for_range(start_index, data.tokens.index),
-        ))
+        data.tokens.back();
+        parse_block(data)
     } else {
         Ok(parse_stmt(data)?)
     }
@@ -290,7 +321,7 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     }
 
     if ss.is_empty() {
-        return log_preparse_error!(tokens, "Expected intrinsic identifier");
+        return tokens.log_error("Expected intrinsic identifier".to_string());
     }
 
     ss.pop();

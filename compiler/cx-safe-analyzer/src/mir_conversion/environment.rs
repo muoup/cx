@@ -1,6 +1,7 @@
-use std::path::PathBuf;
-
-use cx_mir::{mir::data::MIRFunctionPrototype, registry::MIRDecomposedRegistry};
+use cx_mir::{
+    EnvironmentNamespace, mir::data::MIRFunctionPrototype, registry::MIRDecomposedRegistry,
+};
+use cx_pipeline_data::db::ModuleData;
 use cx_safe_ir::ast::{FMIRNode, FMIRType, MemoryLocation};
 use cx_util::{identifier::CXIdent, scoped_map::ScopedMap};
 
@@ -22,16 +23,22 @@ pub struct VariableIdentifier {
 pub(crate) struct FMIREnvironment<'a> {
     current_mir_prototype: Option<MIRFunctionPrototype>,
     region_table: ScopedMap<String, VariableIdentifier>,
-    pub compilation_unit: PathBuf,
+    pub current_namespace: EnvironmentNamespace,
+    pub module_data: &'a ModuleData,
     pub type_definitions: &'a MIRDecomposedRegistry,
 }
 
 impl<'a> FMIREnvironment<'a> {
-    pub fn new(compilation_unit: PathBuf, type_definitions: &'a MIRDecomposedRegistry) -> Self {
+    pub fn new(
+        current_namespace: EnvironmentNamespace,
+        module_data: &'a ModuleData,
+        type_definitions: &'a MIRDecomposedRegistry,
+    ) -> Self {
         Self {
             current_mir_prototype: None,
             region_table: ScopedMap::new_with_starting_scope(),
-            compilation_unit,
+            current_namespace,
+            module_data,
             type_definitions,
         }
     }

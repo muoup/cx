@@ -44,6 +44,10 @@ const KEYWORDS = [
     "weak",
     "where",
     "while",
+    "comptime",
+    "yield",
+    "emit",
+    "expr"
 ];
 
 const BUILTIN_TYPES = [

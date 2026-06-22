@@ -1,5 +1,5 @@
-use crate::next_kind;
 use crate::parse::ParserData;
+use crate::{log::ParserLogExt, next_kind};
 use cx_ast::ast::expression::{CXBinOp, CXUnOp};
 use cx_log::CXResult;
 use cx_tokens::token::{OperatorType, PunctuatorType, TokenKind};
@@ -63,7 +63,6 @@ pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
 
         CXUnOp::Is(_) => 3,
         CXUnOp::ExplicitCast(_) => 3,
-
     }
 }
 
@@ -172,7 +171,7 @@ fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<CXBinOp> {
 
         OperatorType::Pipe => CXBinOp::Pipe,
 
-        _ => return log_parse_error!(data, "Invalid binary operator: {:?}", op),
+        _ => return data.log_error(format!("Invalid binary operator: {:?}", op)),
     })
 }
 
@@ -183,10 +182,7 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<CXBinOp> {
                 op_to_binop(data, OperatorType::Comma)?
             } else {
                 data.tokens.back();
-                return log_parse_error!(
-                    data,
-                    "Invalid token: expected binary operator, found comma"
-                );
+                return data.log_error("Invalid token: expected binary operator, found comma".to_string());
             }
         }
         // Handle >> as shift operator (two consecutive Greater tokens)
@@ -222,7 +218,7 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<CXBinOp> {
                 PunctuatorType::OpenBracket => CXBinOp::ArrayIndex,
                 PunctuatorType::OpenParen => CXBinOp::MethodCall,
 
-                _ => return log_parse_error!(data, "Invalid binary operator: {:?}", punc),
+                _ => return data.log_error(format!("Invalid binary operator: {:?}", punc)),
             }
         }
         Ok(TokenKind::Assignment(op)) => {
@@ -236,7 +232,7 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<CXBinOp> {
 
         _ => {
             data.tokens.back();
-            return log_parse_error!(data, "Expected binary operator");
+            return data.log_error("Expected binary operator".to_string());
         }
     })
 }

@@ -1,0 +1,21 @@
+#include <stdio.h>
+
+import std::optional as std;
+
+std::opt<int> make_none() {
+    return std::opt::none();
+}
+
+void print_result(const char* label, std::opt<int> value) {
+    match (value) {
+        std::opt::some<int>(inner) => printf("%s some %d\n", label, inner);
+        std::opt::none<int>() => printf("%s none\n", label);
+    }
+}
+
+int main() {
+    std::opt<int> initialized = std::opt::none();
+
+    print_result("initialized", initialized);
+    print_result("returned", make_none());
+}

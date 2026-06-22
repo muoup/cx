@@ -229,7 +229,9 @@ fn lower_region_duplicate(
     let lmir_type = builder.convert_cx_type(result_type);
     let source_value = lower_expression(builder, source)?;
 
-    if lmir_type.is_memory_resident() {
+    if lmir_type.is_void() {
+        Ok(LMIRValue::NULL)
+    } else if lmir_type.is_memory_resident() {
         let new_region = builder.add_new_instruction(
             LMIRInstructionKind::Allocate {
                 alignment: lmir_type.alignment(),
@@ -519,11 +521,6 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
 
         MIRExpressionKind::FunctionReference { name } => Ok(LMIRValue::FunctionRef(name.clone())),
 
-        MIRExpressionKind::SizeOf { _type } => Ok(LMIRValue::IntImmediate {
-            val: usize::from(builder.convert_cx_type(_type).size()) as i64,
-            _type: LMIRIntegerType::I64,
-        }),
-
         // ===== Arithmetic & Logic =====
         MIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
             lower_binary_op(builder, lhs, rhs, op, &expr._type)
@@ -721,6 +718,31 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             } else {
                 lower_return(builder, val, None)
             }
+        }
+
+        MIRExpressionKind::Yield { value, .. } => {
+            let Some(target) = builder.current_yield_target() else {
+                panic!("Yield expression lowered outside of an active yield target");
+            };
+            let target_block = target.target_block.clone();
+            let value = value
+                .as_ref()
+                .map(|value| lower_expression(builder, value))
+                .transpose()?
+                .unwrap_or(LMIRValue::NULL);
+
+            builder.record_yield(value);
+            builder.add_new_instruction(
+                LMIRInstructionKind::Jump {
+                    target: target_block,
+                },
+                LMIRType::unit(),
+                false,
+            )
+        }
+
+        MIRExpressionKind::Emit(_) => {
+            panic!("emit expression reached runtime lowering");
         }
 
         MIRExpressionKind::Block { statements } => {
@@ -926,10 +948,19 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
 
         MIRExpressionKind::Match {
             condition,
+            subject_name,
             arms,
             default,
             exhaustive,
-        } => lower_match(builder, condition, arms, default.as_deref(), *exhaustive),
+        } => lower_match(
+            builder,
+            condition,
+            subject_name.as_ref(),
+            arms,
+            default.as_deref(),
+            *exhaustive,
+            &expr._type,
+        ),
     }
 }
 

@@ -1,7 +1,5 @@
 use cx_log::CXResult;
-use cx_mir::mir::{
-    expression::{MIRCoercion, MIRExpression, MIRExpressionKind}
-};
+use cx_mir::mir::expression::{MIRCoercion, MIRExpression, MIRExpressionKind};
 
 use crate::{environment::TypeEnvironment, type_checking::coercion::CoercionResult};
 

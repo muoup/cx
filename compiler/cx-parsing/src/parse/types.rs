@@ -1,16 +1,19 @@
-use std::sync::Arc;
-
 use crate::parse::expressions::parse_expr;
 use crate::parse::{try_parse_simple_identifier, ParserData};
-use crate::{assert_token_matches, next_kind, peek_kind, try_next};
+use crate::{
+    assert_token_matches,
+    log::{ParserLogExt, TokenIterLogExt},
+    next_kind, peek_kind, try_next,
+};
 use cx_ast::ast::global_var::CXEnumDefinition;
+use cx_ast::ast::types::CXMoveSemantics;
 use cx_ast::ast::CXASTStmt;
 use cx_ast::ast::{
     function::{CXFunctionKind, CXFunctionPrototype},
     global_var::{CXEnumVariant, CXGlobalVariable},
     modifiers::{CXLinkageMode, CXTypeQualifiers, CX_CONST, CX_RESTRICT, CX_VOLATILE},
     template::CXTemplatePrototype,
-    types::{CXField, CXStructAttributes, CXType, CXTypeKind, PredeclarationType},
+    types::{CXAggregateAttributes, CXField, CXType, CXTypeKind, PredeclarationType},
 };
 use cx_log::CXResult;
 use cx_mir::intrinsic_types::is_intrinsic_type;
@@ -51,29 +54,28 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
     })
 }
 
-fn token_range(start: usize, end: usize) -> TokenRange {
-    TokenRange::new(start, end.max(start.saturating_add(1)), Arc::from(""))
+fn token_range(data: &ParserData, start: usize, end: usize) -> TokenRange {
+    TokenRange::new(
+        start,
+        end.max(start.saturating_add(1)),
+        data.file_origin_for_range(start, end),
+    )
 }
 
-fn with_type_end_range(mut ty: CXType, end: usize) -> CXType {
-    let start = ty
-        .range()
-        .map(|range| range.start_token)
-        .unwrap_or(end.saturating_sub(1));
-    ty.range = Some(token_range(start, end));
-    ty
-}
-
-fn parse_type_attributes(data: &mut ParserData, kind_name: &str) -> CXResult<CXStructAttributes> {
-    let mut attributes = CXStructAttributes::default();
+fn parse_type_attributes(
+    data: &mut ParserData,
+    kind_name: &str,
+) -> CXResult<CXAggregateAttributes> {
+    let mut attributes = CXAggregateAttributes::default();
 
     if try_next!(data.tokens, punctuator!(Colon)) {
         loop {
             assert_token_matches!(data.tokens, TokenKind::CompilerIdentifier(attr));
+            let attr = attr.clone();
 
             match attr.as_str() {
-                "nocopy" => attributes.nocopy = true,
-                "nodrop" => attributes.nodrop = true,
+                "nocopy" => attributes.semantics = CXMoveSemantics::Nocopy,
+                "nodrop" => attributes.semantics = CXMoveSemantics::Nodrop,
                 "copy_traits" => {
                     assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
                     assert_token_matches!(data.tokens, identifier!(type_param));
@@ -81,7 +83,7 @@ fn parse_type_attributes(data: &mut ParserData, kind_name: &str) -> CXResult<CXS
                     assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
                     attributes.copy_traits = Some(type_param);
                 }
-                _ => return log_parse_error!(data, "Unknown {kind_name} attribute '@{}'", attr),
+                _ => return data.log_error(format!("Unknown {kind_name} attribute '@{}'", attr)),
             }
 
             if !try_next!(data.tokens, operator!(Comma)) {
@@ -102,10 +104,7 @@ fn aggregate_field_from_decl(
         let width = match next_kind!(data.tokens)? {
             TokenKind::IntLiteral(width) if *width >= 0 => *width as usize,
             _ => {
-                return log_preparse_error!(
-                    data.tokens,
-                    "Expected non-negative integer literal bitfield width"
-                );
+                return data.tokens.log_error("Expected non-negative integer literal bitfield width".to_string());
             }
         };
 
@@ -117,11 +116,10 @@ fn aggregate_field_from_decl(
     }
 
     let Some(name) = name else {
-        return log_preparse_error!(
-            data.tokens,
+        return data.tokens.log_error(format!(
             "UNSUPPORTED: Nameless aggregate member of type {}",
             _type
-        );
+        ));
     };
 
     Ok(CXField::standard(name.to_string(), _type))
@@ -150,7 +148,7 @@ fn predeclaration_type(
     predeclaration: PredeclarationType,
 ) -> CXResult<CXType> {
     let Some(name) = name else {
-        return log_parse_error!(data, "Predeclaration must have a name");
+        return data.log_error("Predeclaration must have a name".to_string());
     };
 
     Ok(CXTypeKind::Identifier {
@@ -219,7 +217,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
         None => None,
         Some(name) => match name.root_name() {
             Some(name) => Some(name),
-            None => return log_parse_error!(data, "Struct name must be a simple identifier"),
+            None => return data.log_error("Struct name must be a simple identifier".to_string()),
         },
     };
 
@@ -259,7 +257,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
         let Some(variant_name) = try_parse_simple_identifier(&mut data.tokens) else {
-            return log_preparse_error!(data.tokens, "Expected enum variant name");
+            return data.tokens.log_error("Expected enum variant name".to_string());
         };
 
         let value = if try_next!(data.tokens, TokenKind::Assignment(None)) {
@@ -286,7 +284,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
         None => None,
         Some(name) => match name.root_name() {
             Some(name) => Some(name),
-            None => return log_parse_error!(data, "Expected name found qualified identifier"),
+            None => return data.log_error("Expected name found qualified identifier".to_string()),
         },
     };
 
@@ -317,7 +315,9 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
     assert_token_matches!(data.tokens, keyword!(Union), "'union'");
 
     let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
-        return log_preparse_error!(data.tokens, "Tagged unions must have a name");
+        return data
+            .tokens
+            .log_error("Tagged unions must have a name".to_string());
     };
 
     let template_prototype = try_parse_template(&mut data.tokens)?;
@@ -329,7 +329,9 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
         let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
-            return log_preparse_error!(data.tokens, "Expected variant name in tagged union");
+            return data
+                .tokens
+                .log_error("Expected variant name in tagged union".to_string());
         };
 
         assert_token_matches!(data.tokens, operator!(ScopeRes), "'::'");
@@ -339,17 +341,15 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
             Ok((None, _type, _)) => variants.push(CXField::standard(name.to_string(), _type)),
 
             Ok((Some(_), _, _)) => {
-                return log_preparse_error!(
-                    data.tokens,
-                    "Tagged union variant may not have a named type"
-                );
+                return data
+                    .tokens
+                    .log_error("Tagged union variant may not have a named type".to_string());
             }
 
             _ => {
-                return log_preparse_error!(
-                    data.tokens,
-                    "Failed to parse tagged union variant type"
-                );
+                return data
+                    .tokens
+                    .log_error("Failed to parse tagged union variant type".to_string());
             }
         }
 
@@ -394,7 +394,7 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXType> {
         None => None,
         Some(name) => match name.root_name() {
             Some(name) => Some(name),
-            None => return log_parse_error!(data, "Union name must be a simple identifier"),
+            None => return data.log_error("Union name must be a simple identifier".to_string()),
         },
     };
 
@@ -515,7 +515,7 @@ pub(crate) fn parse_type_mods(
                 var_args,
                 contract,
                 linkage: CXLinkageMode::Standard,
-                range: TokenRange::default(),
+                range: TokenRange::internal(),
             };
 
             let fn_ptr_type = CXTypeKind::FunctionPointer {
@@ -524,7 +524,7 @@ pub(crate) fn parse_type_mods(
             .to_type()
             .pointer_to(0);
 
-            Ok((name, with_type_end_range(fn_ptr_type, data.tokens.index)))
+            Ok((name, fn_ptr_type))
         }
 
         identifier!() => {
@@ -588,7 +588,7 @@ pub(crate) fn parse_type_suffix_mod(
 pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<CXType> {
     let start_index = data.tokens.index;
     let Some(next_token) = data.tokens.peek() else {
-        return log_parse_error!(data, "Expected type base, found end of tokens.");
+        return data.log_error("Expected type base, found end of tokens.".to_string());
     };
 
     let _type = match &next_token.kind {
@@ -612,18 +612,19 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<CXType> {
         keyword!(Union) => parse_union_def(data),
 
         tok => {
-            return log_parse_error!(
-                data,
+            return data.log_error(format!(
                 "Expected type base (identifier, struct, enum, union, or intrinsic), found: {tok}"
-            );
+            ));
         }
     };
 
     let specifiers = parse_specifier(&mut data.tokens);
 
-    Ok(_type?
-        .add_specifier(specifiers)
-        .with_range(token_range(start_index, data.tokens.index)))
+    Ok(_type?.add_specifier(specifiers).with_range(token_range(
+        data,
+        start_index,
+        data.tokens.index,
+    )))
 }
 
 pub(crate) fn parse_base_mods(
@@ -634,7 +635,7 @@ pub(crate) fn parse_base_mods(
 
     let modified_type = parse_type_suffix_mod(data, modified_type)?;
 
-    Ok((name, with_type_end_range(modified_type, data.tokens.index)))
+    Ok((name, modified_type))
 }
 
 pub(crate) fn parse_initializer(
@@ -670,7 +671,7 @@ pub(crate) fn parse_typedef_initializer(
         var_args,
         contract,
         linkage: CXLinkageMode::Standard,
-        range: TokenRange::default(),
+        range: TokenRange::internal(),
     };
 
     Ok((

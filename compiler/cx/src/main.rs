@@ -5,11 +5,13 @@ mod init;
 use args::Command;
 use cx_pipeline::standard_compilation;
 use cx_pipeline_data::{CompilationMode, CompilerConfig};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 
-use crate::{build::run_build_mode, init::run_init_mode};
+use crate::{
+    build::{run_build_mode, run_run_mode},
+    init::run_init_mode,
+};
 
 fn setup_internal_directory(working_directory: &Path) -> PathBuf {
     let internal_directory = working_directory.join(".internal");
@@ -87,14 +89,9 @@ fn compiler_config_with_dirs(
 }
 
 fn run_standard_compilation(config: CompilerConfig, path: &Path) {
-    match standard_compilation(config, path) {
-        Ok(_) => {}
-        Err(err) => {
-            err.pretty_print();
-            let _ = std::io::stdout().flush();
-            std::process::exit(1);
-        }
-    }
+    standard_compilation(config, path).unwrap_or_else(|err| {
+        err.print().expect("Failed to write error message");
+    });
 }
 
 fn link_objects(output: &Path, objects: &[PathBuf]) {
@@ -179,6 +176,7 @@ fn main() {
     match command {
         Command::CompileFile(args) => run_file_mode(args),
         Command::Build(args) => run_build_mode(args),
+        Command::Run(args) => run_run_mode(args),
         Command::Init(args) => run_init_mode(args),
     }
 }

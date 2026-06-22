@@ -1,8 +1,12 @@
 use crate::{
-    assert_token_matches, next_kind, parse::try_parse_qualified_name, peek_next_kind, try_next,
+    assert_token_matches, log::ParserLogExt, next_kind, parse::try_parse_qualified_name,
+    peek_next_kind, try_next,
 };
 use cx_ast::ast::{
-    function::{CXFunctionContract, CXFunctionKind, CXFunctionPrototype, CXParameter},
+    function::{
+        CXComptimeFnPrototype, CXComptimeParameter, CXComptimeValueType, CXFunctionContract,
+        CXFunctionKind, CXFunctionPrototype, CXParameter,
+    },
     modifiers::CXLinkageMode,
     template::CXTemplatePrototype,
     types::CXType,
@@ -22,6 +26,11 @@ use crate::parse::{
 
 pub struct FunctionDeclaration {
     pub prototype: CXFunctionPrototype,
+    pub template_prototype: Option<CXTemplatePrototype>,
+}
+
+pub struct ComptimeFunctionDeclaration {
+    pub prototype: CXComptimeFnPrototype,
     pub template_prototype: Option<CXTemplatePrototype>,
 }
 
@@ -47,10 +56,7 @@ pub fn try_function_parse(
         CXFunctionKind::Standard(name.name)
     } else {
         if name.namespace.segments().len() != 1 {
-            return log_parse_error!(
-                data,
-                "Associated function declarations must have exactly two segments"
-            );
+            return data.log_error("Associated function declarations must have exactly two segments".to_string());
         }
 
         CXFunctionKind::AssociatedFunction {
@@ -85,6 +91,110 @@ pub fn try_function_parse(
     }))
 }
 
+pub fn parse_comptime_function(data: &mut ParserData) -> CXResult<ComptimeFunctionDeclaration> {
+    assert_token_matches!(data.tokens, keyword!(Comptime), "'comptime'");
+    let return_type = parse_comptime_initializer(data)?;
+    let Some(name) = return_type.name else {
+        return data.log_error("Expected comptime function name".to_string());
+    };
+
+    let Some(declaration) = try_comptime_function_parse(data, return_type.value_type, name)? else {
+        return data.log_error("Expected comptime function parameter list".to_string());
+    };
+
+    Ok(declaration)
+}
+
+fn try_comptime_function_parse(
+    data: &mut ParserData,
+    return_type: CXComptimeValueType,
+    name: CXIdent,
+) -> CXResult<Option<ComptimeFunctionDeclaration>> {
+    let range_start = data.tokens.index;
+
+    let name = if try_next!(data.tokens, operator!(ScopeRes)) {
+        data.tokens.index = range_start - 1;
+
+        try_parse_qualified_name(&mut data.tokens)?.unwrap()
+    } else {
+        QualifiedName::root(name)
+    };
+
+    let template_prototype = try_parse_template(&mut data.tokens)?;
+
+    let kind = if name.namespace.is_root() {
+        CXFunctionKind::Standard(name.name)
+    } else {
+        if name.namespace.segments().len() != 1 {
+            return data.log_error("Associated comptime function declarations must have exactly two segments".to_string());
+        }
+
+        CXFunctionKind::AssociatedFunction {
+            namespace: name.namespace.segments()[0].clone(),
+            name: name.name,
+        }
+    };
+
+    if !matches!(peek_next_kind!(data.tokens)?, punctuator!(OpenParen)) {
+        data.tokens.index = range_start;
+        return Ok(None);
+    };
+
+    let args = parse_comptime_params(data)?;
+    let prototype = CXComptimeFnPrototype {
+        return_type,
+        kind,
+        params: args,
+        range: TokenRange::new(
+            range_start,
+            data.tokens.index,
+            data.file_origin_for_range(range_start, data.tokens.index),
+        ),
+    };
+
+    Ok(Some(ComptimeFunctionDeclaration {
+        prototype,
+        template_prototype,
+    }))
+}
+
+struct ComptimeValueInitializer {
+    name: Option<CXIdent>,
+    value_type: CXComptimeValueType,
+}
+
+fn parse_comptime_initializer(data: &mut ParserData) -> CXResult<ComptimeValueInitializer> {
+    let expr = try_next!(data.tokens, keyword!(Expr));
+    let (name, _type, _) = parse_initializer(data)?;
+
+    Ok(ComptimeValueInitializer {
+        name,
+        value_type: CXComptimeValueType { expr, _type },
+    })
+}
+
+fn parse_comptime_params(data: &mut ParserData) -> CXResult<Vec<CXComptimeParameter>> {
+    assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+
+    let mut params = Vec::new();
+
+    while !try_next!(data.tokens, punctuator!(CloseParen)) {
+        let parsed = parse_comptime_initializer(data)?;
+
+        params.push(CXComptimeParameter {
+            name: parsed.name,
+            value_type: parsed.value_type,
+        });
+
+        if !try_next!(data.tokens, operator!(Comma)) {
+            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+            break;
+        }
+    }
+
+    Ok(params)
+}
+
 pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunctionContract> {
     skip_c_declaration_suffixes(data)?;
 
@@ -104,10 +214,7 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
         match next {
             keyword!(Precondition) => {
                 if contract.precondition.is_some() {
-                    return log_parse_error!(
-                        data,
-                        "Precondition already defined in function contract."
-                    );
+                    return data.log_error("Precondition already defined in function contract.".to_string());
                 }
 
                 data.tokens.next();
@@ -120,10 +227,7 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
             }
             keyword!(Postcondition) => {
                 if contract.postcondition.is_some() {
-                    return log_parse_error!(
-                        data,
-                        "Postcondition already defined in function contract."
-                    );
+                    return data.log_error("Postcondition already defined in function contract.".to_string());
                 }
 
                 data.tokens.next();
@@ -211,7 +315,7 @@ fn skip_optional_parenthesized_tokens(data: &mut ParserData) -> CXResult<()> {
         }
     }
 
-    log_parse_error!(data, "Unclosed parenthesized declaration suffix")
+    data.log_error("Unclosed parenthesized declaration suffix".to_string())
 }
 
 pub(crate) struct ParseParamsResult {

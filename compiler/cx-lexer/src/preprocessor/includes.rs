@@ -1,6 +1,12 @@
 use std::path::PathBuf;
 
-use cx_log::{CXError, CXResult};
+#[cfg(not(feature = "ignore-system-headers"))]
+use std::sync::OnceLock;
+
+use cx_log::{
+    CXResult,
+    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+};
 use cx_util::module_path::cx_library_directory;
 
 use crate::{
@@ -12,7 +18,7 @@ use crate::{
 pub(crate) fn handle_include(
     context: &mut LexingContext,
     directive_start: usize,
-    directive_end: usize,
+    _directive_end: usize,
 ) -> CXResult<LexTransition> {
     if !context.current_frame().is_active() {
         context.skip_tail();
@@ -25,27 +31,22 @@ pub(crate) fn handle_include(
     let Some(file_name) = context.current_frame_mut().next_word() else {
         let frame = context.current_frame();
 
-        return log_lexer_error!(
-            frame.file_path.as_path(),
-            &frame.source,
-            directive_start,
-            directive_end,
-            "#include requires a file path"
-        );
+        return frame
+            .cursor_view()
+            .log_error(directive_start, "#include requires a file path");
     };
-    let file_name_end = context.current_frame().cursor;
+    let _file_name_end = context.current_frame().cursor;
 
     if !(file_name.starts_with('"') && file_name.ends_with('"'))
         && !(file_name.starts_with('<') && file_name.ends_with('>'))
     {
         let frame = context.current_frame();
-        return log_lexer_error!(
-            frame.file_path.as_path(),
-            &frame.source,
+        return frame.cursor_view().log_error(
             file_name_start,
-            file_name_end,
-            "Invalid include path '{}': expected \"...\" or <...>",
-            file_name
+            format!(
+                "Invalid include path '{}': expected \"...\" or <...>",
+                file_name
+            ),
         );
     }
 
@@ -54,12 +55,9 @@ pub(crate) fn handle_include(
         Some(path) => path,
         None => {
             let frame = context.current_frame();
-            return log_lexer_error!(
-                frame.file_path.as_path(),
-                &frame.source,
+            return frame.cursor_view().log_error(
                 file_name_start,
-                file_name_end,
-                "Included file not found: {file_name}"
+                format!("Included file not found: {file_name}"),
             );
         }
     };
@@ -70,11 +68,13 @@ pub(crate) fn handle_include(
     }
 
     let source = std::fs::read_to_string(path.as_path()).map_err(|e| {
-        CXError::create_boxed(format!(
-            "Failed to read included file {}: {}",
-            path.display(),
-            e
-        ))
+        CXErr::new(
+            CXStdErrMessage::error(
+                "LEXER ERROR",
+                format!("Failed to read included file {}: {}", path.display(), e),
+            ),
+            CXInternalContext::error("failed to read included source file"),
+        )
     })?;
 
     Ok(LexTransition::PushSource(SourceInput { source, path }))
@@ -120,39 +120,46 @@ pub(crate) fn resolve_path(
     }
 
     let bundled = PathBuf::from(cx_library_directory(&format!("libc/{inner}")));
-    let system = system_include_dirs()
-        .into_iter()
-        .map(|dir| dir.join(inner))
-        .collect::<Vec<_>>();
 
     let search = candidates
         .into_iter()
         .chain(include_dirs.iter().map(|dir| dir.join(inner)))
         .collect::<Vec<_>>();
 
-    search
+    #[cfg(not(feature = "ignore-system-headers"))]
+    let search = search
         .into_iter()
+        .chain(system_include_dirs().iter().map(|dir| dir.join(inner)));
+
+    #[cfg(feature = "ignore-system-headers")]
+    let search = search.into_iter();
+
+    search
         .chain(std::iter::once(bundled))
-        .chain(system)
         .find(|path| path.is_file())
 }
 
-fn system_include_dirs() -> Vec<PathBuf> {
-    #[cfg(unix)]
-    {
-        let mut dirs = vec![PathBuf::from("/usr/include")];
-        dirs.extend(multiarch_include_dirs());
-        dirs.extend(gcc_include_dirs());
-        dirs
-    }
+#[cfg(not(feature = "ignore-system-headers"))]
+fn system_include_dirs() -> &'static [PathBuf] {
+    static SYSTEM_INCLUDE_DIRS: OnceLock<Vec<PathBuf>> = OnceLock::new();
 
-    #[cfg(not(unix))]
-    {
-        vec![]
-    }
+    SYSTEM_INCLUDE_DIRS.get_or_init(discover_system_include_dirs)
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(feature = "ignore-system-headers")))]
+fn discover_system_include_dirs() -> Vec<PathBuf> {
+    let mut dirs = vec![PathBuf::from("/usr/include")];
+    dirs.extend(multiarch_include_dirs());
+    dirs.extend(gcc_include_dirs());
+    dirs
+}
+
+#[cfg(all(not(unix), not(feature = "ignore-system-headers")))]
+fn discover_system_include_dirs() -> Vec<PathBuf> {
+    vec![]
+}
+
+#[cfg(all(unix, not(feature = "ignore-system-headers")))]
 fn multiarch_include_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
@@ -171,7 +178,7 @@ fn multiarch_include_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(feature = "ignore-system-headers")))]
 fn gcc_include_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     let Ok(targets) = std::fs::read_dir("/usr/lib/gcc") else {

@@ -21,11 +21,21 @@ pub struct MIRPostcondition {
     pub assertion_prototype: Box<MIRFunctionPrototype>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct MIRExpression {
     pub kind: MIRExpressionKind,
     pub _type: MIRType,
-    pub token_range: Option<TokenRange>,
+    pub token_range: TokenRange,
+}
+
+impl Default for MIRExpression {
+    fn default() -> Self {
+        Self {
+            kind: MIRExpressionKind::default(),
+            _type: MIRType::default(),
+            token_range: TokenRange::internal(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -37,7 +47,7 @@ impl MIRPureExpression {
     pub fn as_value(&self) -> MIRExpression {
         match self {
             Self::IntegerLiteral(value, integer_type, signed) => MIRExpression {
-                token_range: None,
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::IntLiteral(*value),
                 _type: MIRType::from(MIRTypeKind::Integer {
                     _type: *integer_type,
@@ -84,10 +94,6 @@ pub enum MIRExpressionKind {
     // The callable signature is stored in the expression's type
     FunctionReference {
         name: CXIdent,
-    },
-
-    SizeOf {
-        _type: MIRType,
     },
 
     // Arithmetic & Logic
@@ -207,6 +213,7 @@ pub enum MIRExpressionKind {
 
     Match {
         condition: Box<MIRExpression>,
+        subject_name: Option<CXIdent>,
         arms: Vec<(MIRPattern, Box<MIRExpression>)>,
         default: Option<Box<MIRExpression>>,
         exhaustive: bool,
@@ -216,6 +223,11 @@ pub enum MIRExpressionKind {
         postcondition: Option<MIRPostcondition>,
         value: Option<Box<MIRExpression>>,
     },
+    Yield {
+        value: Option<Box<MIRExpression>>,
+        target_scope: usize,
+    },
+    Emit(Box<MIRExpression>),
 
     // Sequential Statements
     Block {
@@ -433,7 +445,7 @@ impl MIRExpression {
 
                 ..Default::default()
             },
-            token_range: None,
+            token_range: TokenRange::internal(),
         }
     }
 }

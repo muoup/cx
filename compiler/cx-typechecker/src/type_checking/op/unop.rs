@@ -11,10 +11,10 @@ use cx_mir::{
     },
     type_context::MIRTypeContext,
 };
+use cx_tokens::TokenRange;
 
 use crate::{
-    environment::TypeEnvironment,
-    log_typecheck_error,
+    environment::{TypeEnvironment, types::sizeof_type_size},
     symbol::completion::complete_type,
     type_checking::{
         coercion::{
@@ -43,11 +43,12 @@ pub fn typecheck_unop(
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))?;
 
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
-                return log_typecheck_error!(
-                    env,
-                    operand.token_range.as_ref(),
-                    "Cannot apply pre-increment to non-reference type {}",
-                    operand._type.display_with(&env.symbols)
+                return env.log_error(
+                    &operand.token_range,
+                    format!(
+                        "Cannot apply pre-increment to non-reference type {}",
+                        operand._type.display_with(&env.symbols)
+                    ),
                 );
             };
 
@@ -71,11 +72,12 @@ pub fn typecheck_unop(
                 },
 
                 _ => {
-                    return log_typecheck_error!(
-                        env,
-                        operand.token_range.as_ref(),
-                        "Pre-increment operator requires an integer or pointer type, found {}",
-                        inner.display_with(&env.symbols)
+                    return env.log_error(
+                        &operand.token_range,
+                        format!(
+                            "Pre-increment operator requires an integer or pointer type, found {}",
+                            inner.display_with(&env.symbols)
+                        ),
                     );
                 }
             }
@@ -106,11 +108,12 @@ pub fn typecheck_unop(
                 .and_then(|v| std_rval_promotion(env, v))?;
 
             if !operand._type.is_integer() {
-                return log_typecheck_error!(
-                    env,
-                    operand.token_range.as_ref(),
-                    "Bitwise NOT operator requires an integer type, found {}",
-                    operand._type.display_with(&env.symbols)
+                return env.log_error(
+                    &operand.token_range,
+                    format!(
+                        "Bitwise NOT operator requires an integer type, found {}",
+                        operand._type.display_with(&env.symbols)
+                    ),
                 );
             }
 
@@ -133,11 +136,12 @@ pub fn typecheck_unop(
                 MIRTypeKind::Float { .. } => MIRUnOp::FNEG,
 
                 _ => {
-                    return log_typecheck_error!(
-                        env,
-                        operand.token_range.as_ref(),
-                        "Negation operator requires an integer or float type, found {}",
-                        operand.display_with(&env.symbols)
+                    return env.log_error(
+                        &operand.token_range,
+                        format!(
+                            "Negation operator requires an integer or float type, found {}",
+                            operand.display_with(&env.symbols)
+                        ),
                     );
                 }
             };
@@ -156,10 +160,9 @@ pub fn typecheck_unop(
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))?;
 
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
-                return log_typecheck_error!(
-                    env,
-                    operand.token_range.as_ref(),
-                    "Cannot take the address of a non-reference type"
+                return env.log_error(
+                    &operand.token_range,
+                    "Cannot take the address of a non-reference type".to_string(),
                 );
             };
 
@@ -180,17 +183,18 @@ pub fn typecheck_unop(
                 .and_then(|v| std_rval_promotion(env, v))?;
 
             let Some(inner) = env.symbols.ptr_inner(&operand._type).cloned() else {
-                return log_typecheck_error!(
-                    env,
-                    operand.token_range.as_ref(),
-                    "Cannot dereference non-pointer type {}",
-                    operand._type.display_with(&env.symbols)
+                return env.log_error(
+                    &operand.token_range,
+                    format!(
+                        "Cannot dereference non-pointer type {}",
+                        operand._type.display_with(&env.symbols)
+                    ),
                 );
             };
 
             // Dereference returns a memory reference to the inner type
             TypecheckResult::from(MIRExpression {
-                token_range: None,
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Typechange(Box::new(operand)),
                 _type: env.symbols.mem_ref_to(inner),
             })
@@ -217,7 +221,8 @@ pub(crate) fn typecheck_sizeof_type(
     ty: &CXType,
 ) -> CXResult<TypecheckResult> {
     let tc_type = complete_type(env, namespace, ty)?;
-    Ok(sizeof_result(tc_type))
+
+    sizeof_result(env, _expr.range.clone(), tc_type)
 }
 
 pub(crate) fn typecheck_sizeof_expr(
@@ -228,16 +233,24 @@ pub(crate) fn typecheck_sizeof_expr(
     let tc_expr = typecheck_expr(env, namespace, expr, None)
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
 
-    Ok(sizeof_result(tc_expr._type))
+    sizeof_result(env, tc_expr.token_range, tc_expr._type)
 }
 
-fn sizeof_result(_type: MIRType) -> TypecheckResult {
-    TypecheckResult::from(MIRExpression {
-        token_range: None,
-        kind: MIRExpressionKind::SizeOf { _type },
-        _type: MIRType::from(MIRTypeKind::Integer {
-            _type: MIRIntegerType::I64,
-            signed: false,
-        }),
-    })
+fn sizeof_result(
+    env: &mut TypeEnvironment,
+    range: TokenRange,
+    _type: MIRType,
+) -> CXResult<TypecheckResult> {
+    sizeof_type_size(env, &_type)
+        .map_err(|err| env.complete_err(err, &range))
+        .map(|size| {
+            TypecheckResult::from(MIRExpression {
+                token_range: range,
+                kind: MIRExpressionKind::IntLiteral(size as i64),
+                _type: MIRType::from(MIRTypeKind::Integer {
+                    _type: MIRIntegerType::I64,
+                    signed: false,
+                }),
+            })
+        })
 }

@@ -12,7 +12,6 @@ use cx_util::namespace::QualifiedName;
 
 use crate::{
     environment::{ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment},
-    log_typecheck_error,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
         contracts::resolve_assertion_prototype,
@@ -32,6 +31,7 @@ fn typechange_can_forward_region(return_type: &MIRType) -> bool {
 pub fn typecheck_return(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
+    return_range: &cx_tokens::TokenRange,
     value: Option<MIRExpression>,
 ) -> CXResult<TypecheckResult> {
     let return_type = env.current_function().signature().return_type.clone();
@@ -63,20 +63,22 @@ pub fn typecheck_return(
         (None, _) if return_type.is_unit() => None,
 
         (Some(value), _) => {
-            return log_typecheck_error!(
-                env,
-                value.token_range.as_ref(),
-                "Cannot return from function {} with a void return type",
-                env.current_function().display_with(&env.symbols)
+            return env.log_error(
+                value.token_range,
+                format!(
+                    "Cannot return from function {} with a void return type",
+                    env.current_function().display_with(&env.symbols)
+                ),
             );
         }
 
         (None, _) => {
-            return log_typecheck_error!(
-                env,
-                Option::<TokenRange>::None,
-                "Function {} expects a return value, but none was provided",
-                env.current_function().display_with(&env.symbols)
+            return env.log_error(
+                return_range,
+                format!(
+                    "Function {} expects a return value, but none was provided",
+                    env.current_function().display_with(&env.symbols)
+                ),
             );
         }
     };
@@ -98,10 +100,9 @@ pub fn typecheck_return(
         .clone()
     {
         if ret_name.is_some() && return_type.is_unit() {
-            return log_typecheck_error!(
-                env,
-                Option::<TokenRange>::None,
-                "Cannot have a named return variable in a function with void return type"
+            return env.log_error(
+                return_range,
+                "Cannot have a named return variable in a function with void return type".to_string(),
             );
         }
 
@@ -119,7 +120,7 @@ pub fn typecheck_return(
                         name: name.clone(),
                         force_param: true,
                     },
-                    token_range: None,
+                    token_range: TokenRange::internal(),
                     _type: param._type.clone(),
                 },
             );
@@ -133,7 +134,7 @@ pub fn typecheck_return(
                         name: ret_name.clone(),
                         force_param: false,
                     },
-                    token_range: None,
+                    token_range: TokenRange::internal(),
                     _type: return_type.clone(),
                 },
             );
@@ -144,7 +145,8 @@ pub fn typecheck_return(
             .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
         let assertion_prototype = Box::new(resolve_assertion_prototype(env, namespace)?);
 
-        env.pop_scope()?;
+        env.pop_scope()
+            .map_err(|err| env.complete_err(err, ret_contract.token_range()))?;
 
         Ok(TypecheckResult::new(
             MIRType::unit(),

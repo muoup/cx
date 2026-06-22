@@ -1,7 +1,8 @@
-use std::{collections::HashMap, path::Path};
+use std::collections::HashMap;
 
 use cx_log::CXResult;
-use cx_mir::mir::data::MIRFunctionPrototype;
+use cx_mir::{EnvironmentNamespace, mir::data::MIRFunctionPrototype};
+use cx_pipeline_data::db::ModuleData;
 use cx_safe_ir::{
     ast::{FMIRNode, FMIRNodeBody},
     intrinsic::FMIRIntrinsicKind,
@@ -104,9 +105,11 @@ pub fn evaluate_const(
 pub fn assert_proven_conditions(
     function_prototype: &MIRFunctionPrototype,
     root: &FMIRNode,
-    compilation_unit: &Path,
+    current_namespace: EnvironmentNamespace,
+    module_data: &ModuleData,
 ) -> CXResult<()> {
-    let diagnostics = AnalysisDiagnosticContext::new(function_prototype, compilation_unit);
+    let diagnostics =
+        AnalysisDiagnosticContext::new(function_prototype, current_namespace, module_data);
     let mut visit = |node: &FMIRNode| -> CXResult<VisitControl> {
         let FMIRNodeBody::CompilerAssert { condition, message } = &node.body else {
             return Ok(VisitControl::Continue);

@@ -10,7 +10,6 @@ use cx_mir::{
 
 use crate::{
     environment::{BindingMoveState, TypeEnvironment},
-    log_typecheck_error,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
         op::typecheck_binop,
@@ -31,11 +30,12 @@ pub fn typecheck_assignment(
     let lhs_type = lhs_expr._type.clone();
 
     let Some(inner) = env.symbols.mem_ref_inner(&lhs_type).cloned() else {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "Cannot assign to non-reference type {}",
-            lhs_type.display_with(&env.symbols)
+            format!(
+                "Cannot assign to non-reference type {}",
+                lhs_type.display_with(&env.symbols)
+            ),
         );
     };
 
@@ -43,7 +43,7 @@ pub fn typecheck_assignment(
 
     if let Some(op) = op {
         if let Some(binding) = binding.as_ref() {
-            ensure_binding_available(env, lhs_expr.token_range.as_ref(), Some(binding))?;
+            ensure_binding_available(env, expr.token_range(), Some(binding))?;
         }
 
         let loaded_lhs = std_rval_promotion(env, lhs_expr.clone())?;
@@ -58,15 +58,11 @@ pub fn typecheck_assignment(
             .tracked_binding(binding.root.as_str())
             .is_some_and(|tracked| tracked.state != crate::environment::BindingMoveState::Available)
     {
-        return log_typecheck_error!(
-            env,
-            expr.token_range(),
-            "Assignment to a field or projection of a moved aggregate binding is not implemented"
-        );
+        return env.log_error(expr.token_range(), "Assignment to a field or projection of a moved aggregate binding is not implemented".to_string());
     }
 
     if inner.get_specifier(CX_CONST) {
-        return log_typecheck_error!(env, expr.token_range(), "Cannot assign to a const type");
+        return env.log_error(expr.token_range(), "Cannot assign to a const type".to_string());
     }
 
     rhs = implicit_cast(env, rhs, &inner)?;

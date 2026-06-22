@@ -6,7 +6,7 @@ pub mod jobs;
 
 use crate::db::ModuleData;
 use cx_util::module_path::ModulePath;
-use cx_util::namespace::NamespacePath;
+use cx_util::namespace::{EnvironmentNamespace, NamespacePath};
 use speedy::{Context, Readable, Writable};
 use std::collections::HashSet;
 use std::fmt::Display;
@@ -89,19 +89,19 @@ pub enum CompilerBackend {
     LLVM,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompilationUnit {
-    module_path: Rc<ModulePath>,
+    namespace: EnvironmentNamespace,
     path: Rc<Path>,
 }
 
 impl<'a, C: Context> Readable<'a, C> for CompilationUnit {
     fn read_from<R: speedy::Reader<'a, C>>(reader: &mut R) -> Result<Self, C::Error> {
-        let module_path = ModulePath::new(String::read_from(reader)?);
+        let namespace = EnvironmentNamespace::read_from(reader)?;
         let path: PathBuf = PathBuf::from(String::read_from(reader)?);
 
         Ok(Self {
-            module_path: module_path.into(),
+            namespace,
             path: path.into_boxed_path().into(),
         })
     }
@@ -112,7 +112,7 @@ impl<C: Context> Writable<C> for CompilationUnit {
     where
         W: ?Sized + speedy::Writer<C>,
     {
-        self.module_path.as_str().write_to(writer)?;
+        self.namespace.write_to(writer)?;
         self.path.to_str().unwrap().write_to(writer)?;
         Ok(())
     }
@@ -120,6 +120,7 @@ impl<C: Context> Writable<C> for CompilationUnit {
 
 impl Hash for CompilationUnit {
     fn hash<H: Hasher>(&self, state: &mut H) {
+        self.namespace.hash(state);
         self.path.hash(state);
     }
 }
@@ -153,25 +154,25 @@ impl CompilationUnit {
         let path_buf = module_path.with_extension(working_directory, extension);
 
         Self {
-            module_path: Rc::new(module_path),
+            namespace: EnvironmentNamespace::from(module_path),
             path: path_buf.into_boxed_path().into(),
         }
     }
 
-    pub fn module_path(&self) -> &ModulePath {
-        self.module_path.as_ref()
+    pub fn namespace(&self) -> &EnvironmentNamespace {
+        &self.namespace
     }
 
-    pub fn identifier(&self) -> &str {
-        self.module_path.as_str()
+    pub fn identifier(&self) -> String {
+        self.namespace.identifier()
     }
 
     pub fn to_string(&self) -> String {
         self.path.to_str().unwrap().to_string()
     }
 
-    pub fn to_namespace_path(&self) -> cx_util::namespace::NamespacePath {
-        NamespacePath::from_slash_path(self.identifier())
+    pub fn to_namespace_path(&self) -> NamespacePath {
+        self.namespace.as_namespace_path().clone()
     }
 
     pub fn as_str(&self) -> &str {
@@ -187,6 +188,19 @@ impl CompilationUnit {
     }
 
     pub fn is_std_lib(&self) -> bool {
-        self.module_path.is_std()
+        let identifier = self.identifier();
+        identifier == "std" || identifier.starts_with("std/")
+    }
+}
+
+impl From<&CompilationUnit> for EnvironmentNamespace {
+    fn from(value: &CompilationUnit) -> Self {
+        value.namespace.clone()
+    }
+}
+
+impl From<CompilationUnit> for EnvironmentNamespace {
+    fn from(value: CompilationUnit) -> Self {
+        value.namespace
     }
 }

@@ -1,11 +1,12 @@
-use std::sync::Arc;
-
 use cx_ast::ast::{
     expression::{CXExprKind, CXExpression},
     template::CXTemplateInput,
     types::{CXType, CXTypeKind, PredeclarationType},
 };
-use cx_log::{CXError, CXResult};
+use cx_log::{
+    error::{context::CXInternalContext, message::CXStdErrMessage, CXErr},
+    CXResult,
+};
 use cx_tokens::{
     operator,
     token::{OperatorType, TokenKind},
@@ -13,10 +14,10 @@ use cx_tokens::{
 };
 use cx_util::{
     identifier::CXIdent,
-    namespace::{NamespacePath, QualifiedName},
+    namespace::{EnvironmentNamespace, NamespacePath, QualifiedName},
 };
 
-use crate::{next_kind, try_next};
+use crate::{log::TokenIterLogExt, next_kind, try_next};
 
 use super::{parser::ParserData, templates::parse_template_args, types::is_type_decl};
 
@@ -47,7 +48,7 @@ impl ParsedIdentifier {
         self,
         start_index: usize,
         end_index: usize,
-        file_origin: Arc<str>,
+        file_origin: EnvironmentNamespace,
     ) -> CXExpression {
         CXExprKind::Identifier {
             name: self.name,
@@ -59,9 +60,11 @@ impl ParsedIdentifier {
     #[allow(dead_code)]
     pub(crate) fn into_qualified_name(self) -> CXResult<QualifiedName> {
         if self.template_input.is_some() {
-            return CXError::create_result(format!(
-                "Expected non-templated identifier, found '{}<...>'",
-                self.name
+            return Err(CXErr::new(
+                CXStdErrMessage::error("PARSER ERROR", "Expected non-templated identifier"),
+                CXInternalContext::error(
+                    "non-templated identifier conversion has no active parser token context",
+                ),
             ));
         }
 
@@ -125,7 +128,7 @@ pub(crate) fn try_parse_qualified_name(tokens: &mut TokenIter) -> CXResult<Optio
 
     loop {
         let TokenKind::Identifier(ident) = next_kind!(tokens)? else {
-            return log_preparse_error!(tokens, "Expected identifier after '::' in qualified name");
+            return tokens.log_error("Expected identifier after '::' in qualified name".to_string());
         };
 
         segments.push(CXIdent::new(ident.clone()));

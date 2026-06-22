@@ -3,7 +3,7 @@ use cx_log::CXResult;
 use cx_mir::EnvironmentNamespace;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
-use crate::{environment::TypeEnvironment, log_typecheck_error, typecheck_error};
+use crate::environment::TypeEnvironment;
 
 pub struct TypeConstructor {
     pub union_name: QualifiedName,
@@ -24,18 +24,16 @@ pub fn resolve_type_constructor_pattern(
         inner,
     } = pattern
     else {
-        return log_typecheck_error!(
-            env,
-            Some(expr.token_range()),
-            "Expected qualified tagged union variant pattern"
+        return env.log_error(
+            expr.token_range(),
+            "Expected qualified tagged union variant pattern".to_string(),
         );
     };
 
     let Some((union_namespace, union_name)) = constructor.namespace.parent_and_name() else {
-        return log_typecheck_error!(
-            env,
-            Some(expr.token_range()),
-            "Expected tagged union variant pattern to name a type member constructor"
+        return env.log_error(
+            expr.token_range(),
+            "Expected tagged union variant pattern to name a type member constructor".to_string(),
         );
     };
 
@@ -43,10 +41,9 @@ pub fn resolve_type_constructor_pattern(
         None => None,
         Some(CXPattern::Binding(name)) => Some(name.clone()),
         Some(_) => {
-            return log_typecheck_error!(
-                env,
-                Some(expr.token_range()),
-                "Tagged union variant payload pattern must be a binding"
+            return env.log_error(
+                expr.token_range(),
+                "Tagged union variant payload pattern must be a binding".to_string(),
             );
         }
     };
@@ -54,14 +51,12 @@ pub fn resolve_type_constructor_pattern(
     let union_name = QualifiedName::new(union_namespace, union_name);
 
     let union_name = env
-        .get_symbol(namespace, &union_name, Some(expr.token_range()))?
+        .get_symbol(namespace, &union_name)?
         .and_then(|symbol| symbol.as_pattern_target(&env.symbols))
         .ok_or_else(|| {
-            typecheck_error!(
-                env,
-                Some(expr.token_range()),
-                "Could not resolve pattern target '{}'",
-                union_name
+            env.error(
+                expr.token_range(),
+                format!("Could not resolve pattern target '{}'", union_name),
             )
         })?;
 

@@ -1,5 +1,6 @@
 import std::optional as std;
 import std::span as std;
+import std::io as std;
 
 extern "C":
 
@@ -66,6 +67,8 @@ std::opt<endpoint> endpoint::ipv4(const char* address, u16 port) {
 std::opt<udp_socket> udp_socket::open() {
     i32 fd = socket(LINUX_AF_INET, LINUX_SOCK_DGRAM, 0);
 
+    printf("Opened socket with fd %d\n", fd);
+
     if (fd < 0) {
         return std::opt::none<udp_socket>();
     }
@@ -73,12 +76,12 @@ std::opt<udp_socket> udp_socket::open() {
     return std::opt::some<udp_socket>((udp_socket) { .fd = fd });
 }
 
-std::opt<udp_socket> udp_socket::bind(udp_socket this, endpoint addr) {
+std::opt<void> udp_socket::bind(udp_socket& this, endpoint addr) {
     if (bind(this.fd, &addr.address, addr.length) < 0) {
-        return std::opt::none<udp_socket>();
+        return std::opt::none();
     }
 
-    return move this |> std::opt::some<udp_socket>();
+    return std::opt::some();
 }
 
 std::opt<u64> udp_socket::send_to(udp_socket& this, const std::span<const u8> buffer, endpoint& remote) {

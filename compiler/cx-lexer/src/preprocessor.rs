@@ -26,13 +26,9 @@ impl Preprocessor {
         let Some(directive) = context.current_frame_mut().next_word() else {
             let frame = context.current_frame();
 
-            return log_lexer_error!(
-                frame.file_path.as_path(),
-                &frame.source,
-                directive_start,
-                frame.cursor,
-                "Expected preprocessor directive"
-            );
+            return frame
+                .cursor_view()
+                .log_error(directive_start, "Expected preprocessor directive");
         };
 
         let mut directive = directive;
@@ -40,13 +36,9 @@ impl Preprocessor {
             let Some(name) = context.current_frame_mut().next_word() else {
                 let frame = context.current_frame();
 
-                return log_lexer_error!(
-                    frame.file_path.as_path(),
-                    &frame.source,
-                    directive_start,
-                    frame.cursor,
-                    "Expected preprocessor directive after '#'"
-                );
+                return frame
+                    .cursor_view()
+                    .log_error(directive_start, "Expected preprocessor directive after '#'");
             };
             directive.push_str(&name);
         }
@@ -77,13 +69,9 @@ impl Preprocessor {
 
                 let frame = context.current_frame();
 
-                log_lexer_error!(
-                    frame.file_path.as_path(),
-                    &frame.source,
+                frame.cursor_view().log_error(
                     directive_start,
-                    directive_end,
-                    "Preprocessor directive '{}' is not yet implemented",
-                    dir
+                    format!("Preprocessor directive '{}' is not yet implemented", dir),
                 )
             }
         }

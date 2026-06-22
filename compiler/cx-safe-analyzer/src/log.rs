@@ -1,53 +1,105 @@
-use std::path::Path;
+use cx_log::{
+    CXResult,
+    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+};
+use cx_mir::{EnvironmentNamespace, mir::expression::MIRExpression};
+use cx_pipeline_data::db::ModuleData;
+use cx_safe_ir::ast::FMIRNode;
+use cx_tokens::TokenRange;
 
-use cx_tokens::byte_range_for_tokens;
+use crate::{AnalysisDiagnosticContext, mir_conversion::environment::FMIREnvironment};
 
-pub fn byte_range_for_source_tokens(
-    file_path: &Path,
-    start_token: usize,
-    end_token: usize,
-) -> (usize, usize) {
-    let Ok(source) = std::fs::read_to_string(file_path) else {
-        return (0, 1);
-    };
-    let Ok(tokens) = cx_lexer::lex(&source) else {
-        return (0, 1);
-    };
+pub(crate) trait AnalysisDiagnosticSource {
+    fn module_data(&self) -> &ModuleData;
+    fn current_namespace(&self) -> &EnvironmentNamespace;
 
-    byte_range_for_tokens(&tokens, start_token, end_token)
+    fn error(&self, range_source: impl AnalysisRange, message: impl Into<String>) -> CXErr {
+        let message = format!(
+            "{}\nnote: current analysis namespace: {}",
+            message.into(),
+            self.current_namespace()
+        );
+        CXErr::new(
+            CXStdErrMessage::error("ANALYSIS ERROR", message),
+            self.module_data()
+                .convert_token_range(range_source.token_range()),
+        )
+    }
+
+    fn log_error<T>(
+        &self,
+        range_source: impl AnalysisRange,
+        message: impl Into<String>,
+    ) -> CXResult<T> {
+        Err(self.error(range_source, message))
+    }
 }
 
-#[macro_export]
-macro_rules! log_analysis_error {
-    ($env:expr, $expr:expr, $($arg:tt)*) => {
-        {
-            let message = format!("{}", format!($($arg)*));
+impl AnalysisDiagnosticSource for FMIREnvironment<'_> {
+    fn module_data(&self) -> &ModuleData {
+        self.module_data
+    }
 
-            let (token_start, token_end) = if let Some(token) = $expr.token_range.as_ref() {
-                (token.start_token, token.end_token)
-            } else {
-                (0, 0) // Default to 0 if no token information is available
-            };
-            let range_file = $expr.token_range.as_ref().and_then(|range| {
-                (!range.file_origin.is_empty()).then_some(std::path::PathBuf::from(range.file_origin.as_ref()))
-            });
-            let compilation_unit = range_file
-                .as_ref()
-                .unwrap_or(&$env.compilation_unit)
-                .to_owned();
-            let (byte_start, byte_end) =
-                $crate::log::byte_range_for_source_tokens(compilation_unit.as_path(), token_start, token_end);
+    fn current_namespace(&self) -> &EnvironmentNamespace {
+        &self.current_namespace
+    }
+}
 
-            Err(Box::new(
-                cx_log::UnderlineError::new(
-                    "ANALYSIS ERROR",
-                    message,
-                    compilation_unit,
-                    byte_start,
-                    byte_end,
-                )
-                .with_token_range(token_start, token_end),
-            ) as Box<dyn cx_log::CXErrorTrait>)
-        }
-    };
+impl AnalysisDiagnosticSource for AnalysisDiagnosticContext<'_> {
+    fn module_data(&self) -> &ModuleData {
+        self.module_data()
+    }
+
+    fn current_namespace(&self) -> &EnvironmentNamespace {
+        self.current_namespace()
+    }
+}
+
+impl<T: AnalysisDiagnosticSource + ?Sized> AnalysisDiagnosticSource for &T {
+    fn module_data(&self) -> &ModuleData {
+        (*self).module_data()
+    }
+
+    fn current_namespace(&self) -> &EnvironmentNamespace {
+        (*self).current_namespace()
+    }
+}
+
+impl<T: AnalysisDiagnosticSource + ?Sized> AnalysisDiagnosticSource for &mut T {
+    fn module_data(&self) -> &ModuleData {
+        (**self).module_data()
+    }
+
+    fn current_namespace(&self) -> &EnvironmentNamespace {
+        (**self).current_namespace()
+    }
+}
+
+pub(crate) trait AnalysisRange {
+    fn token_range(&self) -> &TokenRange;
+}
+
+impl AnalysisRange for MIRExpression {
+    fn token_range(&self) -> &TokenRange {
+        &self.token_range
+    }
+}
+
+impl AnalysisRange for FMIRNode {
+    fn token_range(&self) -> &TokenRange {
+        &self.token_range
+    }
+}
+
+impl<T: AnalysisRange + ?Sized> AnalysisRange for &T {
+    fn token_range(&self) -> &TokenRange {
+        (*self).token_range()
+    }
+}
+
+pub(crate) fn internal_analysis_error<T>(message: impl Into<String>) -> CXResult<T> {
+    Err(CXErr::new(
+        CXStdErrMessage::error("ANALYSIS ERROR", message.into()),
+        CXInternalContext::error("analysis diagnostic has no source range"),
+    ))
 }

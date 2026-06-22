@@ -10,10 +10,8 @@ use crate::{
     preparse::{iterate_tokens, PreparseConfig, PreparseData},
 };
 
-#[macro_use]
-mod log;
-
 pub(crate) mod decomposition;
+pub(crate) mod log;
 pub(crate) mod macros;
 
 pub mod parse;

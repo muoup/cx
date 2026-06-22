@@ -1,6 +1,5 @@
 use crate::{
     environment::{BindingMoveState, TypeEnvironment},
-    log_typecheck_error,
     symbol::completion::complete_type,
     type_checking::{
         coercion::implicit::implicit_cast,
@@ -20,7 +19,7 @@ use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 pub(crate) fn ensure_binding_available(
     env: &mut TypeEnvironment,
-    range: Option<&TokenRange>,
+    range: &TokenRange,
     expr: Option<&TypecheckedBinding>,
 ) -> CXResult<()> {
     let Some(name) = expr.map(|b| &b.root) else {
@@ -34,13 +33,14 @@ pub(crate) fn ensure_binding_available(
     match binding.state {
         BindingMoveState::Available => Ok(()),
         BindingMoveState::Moved => {
-            log_typecheck_error!(env, range, "Identifier '{}' has been moved", name)
+            env.log_error(range, format!("Identifier '{}' has been moved", name))
         }
-        BindingMoveState::ConditionallyMoved => log_typecheck_error!(
-            env,
+        BindingMoveState::ConditionallyMoved => env.log_error(
             range,
-            "Identifier '{}' was conditionally moved across a control-flow join",
-            name
+            format!(
+                "Identifier '{}' was conditionally moved across a control-flow join",
+                name
+            ),
         ),
     }
 }
@@ -71,7 +71,7 @@ pub(crate) fn typecheck_var_declaration(
 ) -> CXResult<TypecheckResult> {
     let ty = complete_type(env, namespace, ty)?;
 
-    ensure_valid_allocation_type(env, Some(expr.token_range().clone()), "a variable", &ty)?;
+    ensure_valid_allocation_type(env, expr.token_range().clone(), "a variable", &ty)?;
 
     let mem_type = env.symbols.mem_ref_to(ty.clone());
     let (initial_region, adopting) = match initial_value {
@@ -85,7 +85,7 @@ pub(crate) fn typecheck_var_declaration(
         }
         None => (
             Box::new(MIRExpression {
-                token_range: None,
+                token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::RegionCreate {
                     _type: ty.clone(),
                     initial_value: None,
@@ -97,7 +97,7 @@ pub(crate) fn typecheck_var_declaration(
     };
 
     let binding = MIRExpression {
-        token_range: None,
+        token_range: TokenRange::internal(),
         kind: MIRExpressionKind::BindRegion {
             name: name.clone(),
             _type: ty.clone(),
@@ -110,7 +110,7 @@ pub(crate) fn typecheck_var_declaration(
     env.symbols.insert_local_value(
         QualifiedName::new_raw(name.clone()),
         MIRExpression {
-            token_range: None,
+            token_range: TokenRange::internal(),
             kind: MIRExpressionKind::Variable {
                 name: name.clone(),
                 location: SymbolValueOrigin::Local,

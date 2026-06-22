@@ -1,7 +1,9 @@
-use std::sync::Arc;
-
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, namespace::QualifiedName, unsafe_float::FloatWrapper};
+use cx_util::{
+    identifier::CXIdent,
+    namespace::{EnvironmentNamespace, QualifiedName},
+    unsafe_float::FloatWrapper,
+};
 use speedy::{Readable, Writable};
 
 use crate::ast::{pattern::CXPattern, template::CXTemplateInput, types::CXType};
@@ -25,7 +27,7 @@ impl Default for CXExpression {
     fn default() -> Self {
         CXExpression {
             kind: CXExprKind::Taken,
-            range: TokenRange::default(),
+            range: TokenRange::internal(),
         }
     }
 }
@@ -125,6 +127,12 @@ pub enum CXExprKind {
     Return {
         value: Option<Box<CXExpression>>,
     },
+    Yield {
+        value: Option<Box<CXExpression>>,
+    },
+    Emit {
+        expr: Box<CXExpression>,
+    },
 
     Unsafe {
         expr: Box<CXExpression>,
@@ -212,17 +220,20 @@ impl CXExprKind {
         self,
         start_index: usize,
         end_index: usize,
-        file_origin: Arc<str>,
+        namespace: EnvironmentNamespace,
     ) -> CXExpression {
         let (start_index, end_index) = if start_index > end_index {
-            (0, 0)
+            return CXExpression {
+                kind: self,
+                range: TokenRange::error("Expression range start is after range end"),
+            };
         } else {
             (start_index, end_index)
         };
 
         CXExpression {
             kind: self,
-            range: TokenRange::new(start_index, end_index, file_origin),
+            range: TokenRange::new(start_index, end_index, namespace),
         }
     }
 
@@ -230,6 +241,7 @@ impl CXExprKind {
         matches!(
             self,
             CXExprKind::Return { .. }
+                | CXExprKind::Yield { .. }
                 | CXExprKind::Break
                 | CXExprKind::Continue
                 | CXExprKind::Taken

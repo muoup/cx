@@ -1,7 +1,5 @@
-use std::path::PathBuf;
-
 use cx_ast::ast::function::CXFunctionKind;
-use cx_util::namespace::NamespacePath;
+pub use cx_util::namespace::EnvironmentNamespace;
 
 use crate::{
     mir::{
@@ -27,10 +25,8 @@ pub struct MIRGenerationRequest {
 
 #[derive(Debug, Clone)]
 pub struct MIRUnit {
+    pub source_namespace: EnvironmentNamespace,
     pub functions: Vec<MIRFunction>,
     pub global_variables: Vec<MIRGlobalVariable>,
     pub registry: MIRDecomposedRegistry,
-    pub source_path: PathBuf,
 }
-
-pub type EnvironmentNamespace = NamespacePath;

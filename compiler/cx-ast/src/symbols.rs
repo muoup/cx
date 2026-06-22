@@ -5,8 +5,12 @@ use cx_util::identifier::CXIdent;
 use cx_util::namespace::NamespacePath;
 
 use crate::ast::{
-    expression::CXExpression, function::CXFunctionPrototype, global_var::CXEnumDefinition,
-    modifiers::VisibilityMode, template::CXTemplatePrototype, types::CXType,
+    expression::CXExpression,
+    function::{CXComptimeFnPrototype, CXFunctionPrototype},
+    global_var::CXEnumDefinition,
+    modifiers::VisibilityMode,
+    template::CXTemplatePrototype,
+    types::CXType,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -57,6 +61,15 @@ pub enum CXSymbolKind {
     FunctionTemplate {
         template: CXTemplatePrototype,
         definition: CXFunctionPrototype,
+        body: Box<CXExpression>,
+    },
+    ComptimeFunction {
+        definition: CXComptimeFnPrototype,
+        body: Box<CXExpression>,
+    },
+    ComptimeFunctionTemplate {
+        template: CXTemplatePrototype,
+        definition: CXComptimeFnPrototype,
         body: Box<CXExpression>,
     },
     DuplicateDefinition(Vec<CXSymbolKind>),
@@ -130,7 +143,7 @@ impl SymbolNamespaceData {
         namespace: &NamespacePath,
     ) -> impl Iterator<Item = &NamespacePath> {
         self.namespace_aliases
-            .get(&namespace)
+            .get(namespace)
             .map(|t| t.as_slice().iter())
             .unwrap_or_else(|| [].iter())
     }

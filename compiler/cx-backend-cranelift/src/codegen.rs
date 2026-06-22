@@ -9,13 +9,15 @@ use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Module};
 use cx_lmir::{LMIRBasicBlock, LMIRFunction, LMIRFunctionPrototype};
-use cx_log::{CXError, CXResult};
+use cx_log::error::context::CXInternalContext;
+use cx_log::error::{CXErr, CXResult};
+use cx_log::CXRawResult;
 use cx_util::format::dump_data;
 
 pub(crate) fn codegen_fn_prototype(
     global_state: &mut GlobalState,
     prototype: &LMIRFunctionPrototype,
-) -> CXResult<FuncId> {
+) -> CXRawResult<FuncId> {
     let sig = prepare_function_sig(&mut global_state.object_module, prototype.signature())?;
     let linkage = convert_linkage(prototype.linkage);
 
@@ -41,10 +43,10 @@ pub(crate) fn codegen_block(
 
     for instr in fn_block.body.iter() {
         let ret = codegen_instruction(context, instr).map_err(|err| {
-            CXError::create_boxed(format!(
-                "Failed to codegen instruction: {instr:#?}\nError: {}",
-                err.error_message()
-            ))
+            CXErr::new(
+                err,
+                CXInternalContext::error(format!("Failed to codegen instruction: {instr}")),
+            )
         })?;
 
         if let Some(result) = instr.result.as_ref() {
@@ -104,7 +106,14 @@ pub(crate) fn codegen_function(
                 .signature
                 .expanded_param_type(index)
                 .unwrap(),
-        )?;
+        )
+        .map_err(|err| {
+            CXErr::new(
+                err,
+                CXInternalContext::error("Failed to get Cranelift type for function parameter"),
+            )
+        })?;
+
         let arg = context
             .builder
             .append_block_param(first_block, cranelift_type);

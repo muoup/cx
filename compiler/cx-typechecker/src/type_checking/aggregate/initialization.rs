@@ -12,12 +12,9 @@ use cx_tokens::TokenRange;
 
 use crate::{
     environment::TypeEnvironment,
-    log_typecheck_error,
     type_checking::{
-        aggregate::fields::struct_field,
-        coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
-        result::TypecheckResult,
-        typechecker::typecheck_expr,
+        aggregate::fields::struct_field, coercion::implicit::implicit_cast,
+        result::TypecheckResult, typechecker::typecheck_expr,
     },
 };
 
@@ -44,8 +41,8 @@ pub fn typecheck_initializer_list(
                 )
                 .and_then(|v| v.standard_ready_coerce(env, &token_range))?;
 
-                if expression.token_range.is_none() {
-                    expression.token_range = Some(token_range.clone());
+                if !matches!(expression.token_range, TokenRange::Source { .. }) {
+                    expression.token_range = token_range.clone();
                 }
 
                 Ok(expression)
@@ -83,11 +80,12 @@ pub fn typecheck_initializer_list(
             typecheck_structured_initializer(env, namespace, expr, indices, &to_type)
         }
 
-        _ => log_typecheck_error!(
-            env,
-            Some(expr.token_range()),
-            "Cannot coerce initializer to type {}",
-            to_type.display_with(&env.symbols)
+        _ => env.log_error(
+            expr.token_range(),
+            format!(
+                "Cannot coerce initializer to type {}",
+                to_type.display_with(&env.symbols)
+            ),
         ),
     }
 }
@@ -102,10 +100,9 @@ fn typecheck_array_initializer(
 ) -> CXResult<TypecheckResult> {
     for index in indices {
         if let Some(name) = &index.name {
-            return log_typecheck_error!(
-                env,
-                Some(&TokenRange::default()),
-                "Array initializer cannot have named indices, found: {name}"
+            return env.log_error(
+                TokenRange::internal(),
+                format!("Array initializer cannot have named indices, found: {name}"),
             );
         }
     }
@@ -113,12 +110,13 @@ fn typecheck_array_initializer(
     if let Some(size) = size
         && indices.len() > size
     {
-        return log_typecheck_error!(
-            env,
-            Some(&TokenRange::default()),
-            "Too many elements in array initializer (expected {}, found {})",
-            size,
-            indices.len()
+        return env.log_error(
+            TokenRange::internal(),
+            format!(
+                "Too many elements in array initializer (expected {}, found {})",
+                size,
+                indices.len()
+            ),
         );
     }
 
@@ -153,11 +151,12 @@ fn typecheck_structured_initializer(
     to_type: &MIRType,
 ) -> CXResult<TypecheckResult> {
     let Some(fields) = to_type.aggregate_fields(&env.symbols) else {
-        return log_typecheck_error!(
-            env,
-            Some(expr.token_range()),
-            "Expected a structured type for initializer, found {}",
-            to_type.display_with(&env.symbols)
+        return env.log_error(
+            expr.token_range(),
+            format!(
+                "Expected a structured type for initializer, found {}",
+                to_type.display_with(&env.symbols)
+            ),
         );
     };
     let fields = fields.clone();
@@ -173,46 +172,42 @@ fn typecheck_structured_initializer(
                 .iter()
                 .position(|(field_name, _)| name.as_str() == field_name.as_str())
             else {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "Structured initializer has unexpected field: {name}"
+                return env.log_error(
+                    expr.token_range(),
+                    format!("Structured initializer has unexpected field: {name}"),
                 );
             };
             counter = found_index;
         }
 
         if counter >= fields.len() {
-            return log_typecheck_error!(
-                env,
-                Some(expr.token_range()),
-                "Too many elements in struct initializer"
+            return env.log_error(
+                expr.token_range(),
+                "Too many elements in struct initializer".to_string(),
             );
         }
 
         if initialized_fields[counter] {
-            return log_typecheck_error!(
-                env,
-                Some(expr.token_range()),
-                "Field '{}' initialized more than once",
-                fields[counter].0
+            return env.log_error(
+                expr.token_range(),
+                format!("Field '{}' initialized more than once", fields[counter].0),
             );
         }
 
         let (field_name, field_type) = &fields[counter];
         let value = typecheck_expr(env, namespace, &index.value, Some(field_type))
             .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
-            .and_then(|v| std_rval_promotion(env, v))
             .and_then(|v| implicit_cast(env, v, field_type))?;
 
         let Some(struct_field_info) = struct_field(&env.symbols, to_type, field_name.as_str())
         else {
-            return log_typecheck_error!(
-                env,
-                value.token_range.as_ref(),
-                "Could not find field '{}' in type {}",
-                field_name,
-                to_type.display_with(&env.symbols)
+            return env.log_error(
+                value.token_range,
+                format!(
+                    "Could not find field '{}' in type {}",
+                    field_name,
+                    to_type.display_with(&env.symbols)
+                ),
             );
         };
 

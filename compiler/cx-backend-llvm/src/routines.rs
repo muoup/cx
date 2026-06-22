@@ -1,7 +1,6 @@
 use crate::GlobalState;
 use crate::typing::bc_llvm_signature;
 use cx_lmir::LMIRFunctionSignature;
-use cx_log::log_error;
 use inkwell::values::FunctionValue;
 
 pub(crate) fn get_function<'a>(
@@ -14,7 +13,7 @@ pub(crate) fn get_function<'a>(
     };
 
     let Some(llvm_prototype) = bc_llvm_signature(global_state, signature) else {
-        log_error!("Failed to get LLVM prototype for function: {}", name);
+        return None;
     };
 
     global_state

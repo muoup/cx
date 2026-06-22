@@ -9,6 +9,7 @@ use cx_mir::mir::expression::{
     MIRExpression, MIRExpressionKind, MIRFunctionContract, MIRPostcondition,
 };
 use cx_mir::symbol::MIRSymbol;
+use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::{NamespacePath, QualifiedName};
 
@@ -35,7 +36,7 @@ pub(crate) fn typecheck_contract(
             env.symbols.insert_local_value(
                 QualifiedName::new_raw(name.clone()),
                 MIRExpression {
-                    token_range: None,
+                    token_range: TokenRange::internal(),
                     kind: MIRExpressionKind::ContractVariable {
                         name: name.clone(),
                         force_param: false,
@@ -63,7 +64,7 @@ pub(crate) fn typecheck_contract(
             env.symbols.insert_local_value(
                 QualifiedName::new_raw(ret_name.clone()),
                 MIRExpression {
-                    token_range: None,
+                    token_range: TokenRange::internal(),
                     kind: MIRExpressionKind::ContractVariable {
                         name: ret_name.clone(),
                         force_param: false,
@@ -88,7 +89,8 @@ pub(crate) fn typecheck_contract(
         None
     };
 
-    env.pop_scope()?;
+    env.pop_scope()
+        .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
     env.restore_function_mode(previous_mode);
 
     Ok(MIRFunctionContract {
@@ -108,14 +110,14 @@ pub(crate) fn resolve_assertion_prototype(
         CXIdent::new("__compiler_assert"),
     );
 
-    let Some(symbol) = env.get_symbol(namespace, &name, None)? else {
-        return cx_log::CXError::create_result(
+    let Some(symbol) = env.get_symbol(namespace, &name)? else {
+        return crate::log::internal_type_error(
             "Function contract used but std::intrinsic::assertion::__compiler_assert was not found",
         );
     };
 
     let MIRSymbol::FunctionReference(prototype) = symbol else {
-        return cx_log::CXError::create_result(
+        return crate::log::internal_type_error(
             "std::intrinsic::assertion::__compiler_assert is not a function",
         );
     };

@@ -1,5 +1,7 @@
-use crate::{assert_token_matches, next_kind, parse::try_parse_qualified_name};
-use cx_log::{log_error, CXResult};
+use crate::{
+    assert_token_matches, log::TokenIterLogExt, next_kind, parse::try_parse_qualified_name,
+};
+use cx_log::CXResult;
 use cx_pipeline_data::CompilerConfig;
 use cx_preparse_data::{symbol_data::PreparseModuleSymbols, PreparseContents};
 use cx_tokens::{identifier, keyword, operator, punctuator, specifier, TokenIter};
@@ -97,7 +99,9 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
             let import_namespace = NamespacePath::from(path.clone());
 
             if import_namespace == data.contents.module_symbols.namespace {
-                return log_preparse_error!(data.tokens, "Cannot import current module '{}'", path);
+                return data
+                    .tokens
+                    .log_error(format!("Cannot import current module '{}'", path));
             }
 
             if let Some(alias) = alias {
@@ -154,9 +158,12 @@ fn parse_extern_c_mod(data: &mut PreparseData) -> CXResult<()> {
         cx_tokens::token::TokenKind::StringLiteral(abi),
         "\"C\""
     );
+    let abi = abi.clone();
 
     if abi != "C" {
-        return log_preparse_error!(data.tokens, "Unsupported extern ABI '{}'", abi);
+        return data
+            .tokens
+            .log_error(format!("Unsupported extern ABI '{}'", abi));
     }
 
     assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
@@ -179,8 +186,8 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<ParsedImport> {
     let mut alias = None;
 
     loop {
-        let Some(tok) = tokens.next() else {
-            return log_preparse_error!(tokens, "Reached end of token stream when parsing import!");
+        let Some(tok) = tokens.next().cloned() else {
+            return tokens.log_error("Reached end of token stream when parsing import!".to_string());
         };
 
         match &tok.kind {
@@ -193,12 +200,15 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<ParsedImport> {
             operator!(ScopeRes) => import_path.push('/'),
             identifier!(ident) => import_path.push_str(ident),
 
-            _ => log_error!("Reached invalid token in import path: {:?}", tok),
+            _ => {
+                return tokens
+                    .log_error(format!("Reached invalid token in import path: {:?}", tok));
+            }
         }
     }
 
     if import_path.is_empty() {
-        return log_preparse_error!(tokens, "Import path cannot be empty");
+        return tokens.log_error("Import path cannot be empty".to_string());
     }
 
     Ok(ParsedImport {
@@ -209,10 +219,7 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<ParsedImport> {
 
 fn parse_import_alias(tokens: &mut TokenIter) -> CXResult<NamespacePath> {
     let Some(ident) = try_parse_qualified_name(tokens)? else {
-        return log_preparse_error!(
-            tokens,
-            "Expected identifier for import alias"
-        );
+        return tokens.log_error("Expected identifier for import alias".to_string());
     };
 
     if ident.namespace.is_root() && ident.name.as_str() == "_" {

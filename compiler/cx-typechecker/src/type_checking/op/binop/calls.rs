@@ -1,11 +1,11 @@
+use crate::comptime::{ComptimeCallArg, evaluate_comptime_call};
 use crate::environment::TypeEnvironment;
-use crate::log_typecheck_error;
-use crate::symbol::deduction::complete_templated_callee;
+use crate::symbol::deduction::complete_templated_callee_maybe;
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::lvalue;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::contracts::typecheck_contract;
-use crate::type_checking::result::{TypecheckExtract, TypecheckResult};
+use crate::type_checking::result::{ComptimeTypecheckValue, TypecheckExtract, TypecheckResult};
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
 use cx_log::CXResult;
@@ -20,10 +20,11 @@ pub(crate) fn typecheck_method_call(
     lhs: &CXExpression,
     rhs: &CXExpression,
     expr: &CXExpression,
+    expected_type: Option<&MIRType>,
 ) -> CXResult<TypecheckResult> {
     let function = typecheck_expr(env, namespace, lhs, None)?;
 
-    typecheck_callee_method_call(env, namespace, function, vec![], rhs, expr)
+    typecheck_callee_method_call(env, namespace, function, vec![], rhs, expr, expected_type)
 }
 
 pub(crate) fn typecheck_callee_method_call(
@@ -33,15 +34,56 @@ pub(crate) fn typecheck_callee_method_call(
     implicit_args: Vec<MIRExpression>,
     rhs: &CXExpression,
     expr: &CXExpression,
+    expected_type: Option<&MIRType>,
 ) -> CXResult<TypecheckResult> {
-    let tc_args = comma_separated(env, namespace, rhs)?;
-    let callee = complete_callee(env, namespace, expr, callee, &implicit_args, &tc_args)?;
+    let raw_args = comma_separated_exprs(rhs);
+
+    let scope = env.function.current_scope_index();
+    let reachable = env.function.is_current_scope_reachable();
+    let snapshot = env.function.current_snapshot();
+
+    let tc_args = typecheck_args(env, namespace, raw_args.as_slice())?;
+
+    env.function.restore_snapshot(&snapshot);
+    env.function.set_scope_reachable(scope, reachable);
+
+    let callee = complete_callee(
+        env,
+        namespace,
+        expr,
+        callee,
+        &implicit_args,
+        &tc_args,
+        expected_type,
+    )?;
+
+    let CompletedCallee::Runtime(callee) = callee else {
+        let CompletedCallee::Comptime(function) = callee else {
+            unreachable!()
+        };
+        let all_args = implicit_args
+            .into_iter()
+            .map(ComptimeCallArg::Mir)
+            .chain(raw_args.into_iter().map(|arg| ComptimeCallArg::Source {
+                namespace,
+                expr: arg,
+            }))
+            .collect::<Vec<_>>();
+        return evaluate_comptime_call(env, expr.token_range(), function, all_args);
+    };
+
     let (loaded_function, signature) = load_callable(env, expr, callee)?;
 
-    check_argument_count(env, expr, &signature, tc_args.len() + implicit_args.len())?;
+    check_argument_count(env, expr, &signature, implicit_args.len() + raw_args.len())?;
 
-    let argument_results =
-        complete_call_arguments(env, namespace, &signature, implicit_args, tc_args)?;
+    let explicit_args = typecheck_args(env, namespace, &raw_args)?;
+    let all_args = implicit_args
+        .into_iter()
+        .map(TypecheckResult::from)
+        .chain(explicit_args.into_iter().map(|(_, arg)| arg))
+        .collect::<Vec<_>>();
+
+    let argument_results = complete_call_arguments(env, namespace, &signature, all_args)?;
     let arguments = complete_call_argument_expressions(env, expr, &signature, argument_results)?;
     let contract = typecheck_contract(env, namespace, &signature)?;
 
@@ -53,6 +95,16 @@ pub(crate) fn typecheck_callee_method_call(
             contract,
         },
     ))
+}
+
+fn typecheck_args<'a>(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    args: &[&'a CXExpression],
+) -> CXResult<Vec<(&'a CXExpression, TypecheckResult)>> {
+    args.iter()
+        .map(|arg| typecheck_expr(env, namespace, arg, None).map(|result| (*arg, result)))
+        .collect()
 }
 
 fn load_callable(
@@ -68,11 +120,12 @@ fn load_callable(
         .intern_signature(loaded_function.get_type_ref())
         .cloned()
     else {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "Attempted to call value of non-function type {}",
-            function_type.display_with(&env.symbols)
+            format!(
+                "Attempted to call value of non-function type {}",
+                function_type.display_with(&env.symbols)
+            ),
         );
     };
 
@@ -86,24 +139,26 @@ fn check_argument_count(
     arg_count: usize,
 ) -> CXResult<()> {
     if arg_count != signature.params.len() && !signature.var_args {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "Call to {} expects {} arguments, found {}",
-            signature.display_with(&env.symbols),
-            signature.params.len(),
-            arg_count
+            format!(
+                "Call to {} expects {} arguments, found {}",
+                signature.display_with(&env.symbols),
+                signature.params.len(),
+                arg_count
+            ),
         );
     }
 
     if arg_count < signature.params.len() {
-        return log_typecheck_error!(
-            env,
+        return env.log_error(
             expr.token_range(),
-            "Call to {} expects at least {} arguments, found {}",
-            signature.display_with(&env.symbols),
-            signature.params.len(),
-            arg_count
+            format!(
+                "Call to {} expects at least {} arguments, found {}",
+                signature.display_with(&env.symbols),
+                signature.params.len(),
+                arg_count
+            ),
         );
     }
 
@@ -164,11 +219,12 @@ fn complete_vararg_argument(
             _type: MIRFloatType::F64,
         } => {}
         _ => {
-            return log_typecheck_error!(
-                env,
-                Some(expr.token_range()),
-                "Cannot pass {} to varargs: expected an intrinsic type or pointer",
-                arg_type.display_with(&env.symbols)
+            return env.log_error(
+                expr.token_range(),
+                format!(
+                    "Cannot pass {} to varargs: expected an intrinsic type or pointer",
+                    arg_type.display_with(&env.symbols)
+                ),
             );
         }
     }
@@ -180,15 +236,9 @@ fn complete_call_arguments(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     signature: &MIRFunctionSignature,
-    implicit_args: Vec<MIRExpression>,
-    explicit_args: Vec<(&CXExpression, TypecheckResult)>,
+    args: Vec<TypecheckResult>,
 ) -> CXResult<Vec<TypecheckResult>> {
-    let tc_args = implicit_args
-        .into_iter()
-        .map(TypecheckResult::from)
-        .chain(explicit_args.into_iter().map(|(_, val)| val));
-
-    tc_args
+    args.into_iter()
         .enumerate()
         .map(|(i, val)| {
             if let Some(param) = signature.params.get(i) {
@@ -248,55 +298,78 @@ fn complete_callee(
     function: TypecheckResult,
     implicit_args: &[MIRExpression],
     args: &[(&CXExpression, TypecheckResult)],
-) -> CXResult<MIRExpression> {
+    expected_type: Option<&MIRType>,
+) -> CXResult<CompletedCallee> {
     match function.try_into_expression() {
-        TypecheckExtract::Succ(callee) => Ok(callee),
+        TypecheckExtract::Succ(callee) => Ok(CompletedCallee::Runtime(callee)),
 
         TypecheckExtract::Fail(function) => {
+            let function = match function.try_into_comptime_value() {
+                TypecheckExtract::Succ(ComptimeTypecheckValue::Function(function)) => {
+                    return Ok(CompletedCallee::Comptime(function));
+                }
+                TypecheckExtract::Succ(_) => {
+                    return env.log_error(
+                        expr.token_range(),
+                        "Comptime value is not callable".to_string(),
+                    );
+                }
+                TypecheckExtract::Fail(function) => function,
+            };
+
             let Some(parts) = function.into_incomplete_callee_parts() else {
-                return log_typecheck_error!(env, expr.token_range(), "Could not deduce callee");
+                return env.log_error(expr.token_range(), "Could not deduce callee".to_string());
             };
 
             let deduction_arg_types = deduction_arg_types(implicit_args, args);
 
-            let symbol = match complete_templated_callee(
+            let symbol = match complete_templated_callee_maybe(
                 env,
                 namespace,
                 &parts.name,
                 parts.template_input.as_ref(),
                 &deduction_arg_types,
+                expected_type,
             ) {
                 Ok(symbol) => symbol,
                 Err(err) => {
-                    return log_typecheck_error!(
-                        env,
-                        expr.token_range(),
-                        "{}",
-                        err.error_content()
-                    );
+                    return Err(env.complete_maybe_err(err, expr.token_range()));
                 }
             };
 
-            match symbol.as_expression() {
-                Ok(function) => Ok(function),
-                Err(err) => {
-                    log_typecheck_error!(env, expr.token_range(), "{}", err.error_content())
-                }
+            match TypecheckResult::from_symbol(symbol, parts.name, parts.template_input) {
+                Ok(result) => match result.try_into_comptime_value() {
+                    TypecheckExtract::Succ(ComptimeTypecheckValue::Function(function)) => {
+                        Ok(CompletedCallee::Comptime(function))
+                    }
+                    TypecheckExtract::Succ(_) => env.log_error(
+                        expr.token_range(),
+                        "Comptime value is not callable".to_string(),
+                    ),
+                    TypecheckExtract::Fail(result) => match result.try_into_expression() {
+                        TypecheckExtract::Succ(function) => Ok(CompletedCallee::Runtime(function)),
+                        TypecheckExtract::Fail(_) => {
+                            env.log_error(expr.token_range(), "Could not deduce callee".to_string())
+                        }
+                    },
+                },
+                Err(err) => env.log_error(expr.token_range(), err.message().to_string()),
             }
         }
     }
 }
 
-pub(crate) fn comma_separated<'a>(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    expr: &'a CXExpression,
-) -> CXResult<Vec<(&'a CXExpression, TypecheckResult)>> {
+enum CompletedCallee {
+    Runtime(MIRExpression),
+    Comptime(crate::type_checking::result::ComptimeFunctionValue),
+}
+
+pub(crate) fn comma_separated_exprs(expr: &CXExpression) -> Vec<&CXExpression> {
     let mut expr_iter = expr;
     let mut exprs = Vec::new();
 
     if matches!(expr.kind, CXExprKind::Unit) {
-        return Ok(exprs);
+        return exprs;
     }
 
     while let CXExprKind::BinOp {
@@ -305,14 +378,12 @@ pub(crate) fn comma_separated<'a>(
         op: CXBinOp::Comma,
     } = &expr_iter.kind
     {
-        let tc_result = typecheck_expr(env, namespace, rhs, None)?;
-        exprs.push((rhs, tc_result));
+        exprs.push(rhs.as_ref());
         expr_iter = lhs;
     }
 
-    let tc_result = typecheck_expr(env, namespace, expr_iter, None)?;
-    exprs.push((expr_iter, tc_result));
+    exprs.push(expr_iter);
     exprs.reverse();
 
-    Ok(exprs)
+    exprs
 }

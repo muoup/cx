@@ -1,11 +1,17 @@
-use cx_ast::{ast::template::CXTemplatePrototype, symbols::CXSymbol};
-use cx_log::{CXError, CXResult};
+use cx_ast::{
+    ast::{expression::CXExpression, template::CXTemplatePrototype},
+    symbols::CXSymbol,
+};
+use cx_log::error::{CXRawResult, message::CXStdErrMessage};
+use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::{
     EnvironmentNamespace,
     mir::{
-        data::{MIRFunctionPrototype, MIRTypeId, MIRTypeKind},
+        data::{
+            MIRComptimeFunctionPrototype, MIRFunctionPrototype, MIRType, MIRTypeId, MIRTypeKind,
+        },
         expression::{MIRExpression, MIRExpressionKind},
     },
     type_context::MIRTypeContext,
@@ -15,6 +21,17 @@ use crate::{
 pub enum MIRSymbol {
     Type(MIRTypeId),
     FunctionReference(MIRFunctionPrototype),
+    ComptimeFunctionReference {
+        prototype: MIRComptimeFunctionPrototype,
+        namespace: EnvironmentNamespace,
+        body: Box<CXExpression>,
+        template_bindings: Vec<(CXIdent, MIRTypeId)>,
+    },
+    StagedExpression {
+        namespace: EnvironmentNamespace,
+        expr: Box<CXExpression>,
+        expected_type: MIRType,
+    },
     Expression(MIRExpression),
     Template {
         template_prototype: CXTemplatePrototype,
@@ -43,7 +60,10 @@ impl MIRSymbol {
                 ..
             } => {
                 if source.is_type() {
-                    Some(QualifiedName::new(namespace.clone(), name.clone()))
+                    Some(QualifiedName::new(
+                        namespace.as_namespace_path().clone(),
+                        name.clone(),
+                    ))
                 } else {
                     None
                 }
@@ -53,10 +73,10 @@ impl MIRSymbol {
         }
     }
 
-    pub fn as_expression(&self) -> CXResult<MIRExpression> {
+    pub fn as_expression(&self) -> CXRawResult<MIRExpression> {
         match self {
-            MIRSymbol::FunctionReference(prototype) => Ok(MIRExpression {
-                token_range: None,
+            MIRSymbol::FunctionReference(prototype) => CXRawResult::Ok(MIRExpression {
+                token_range: TokenRange::internal(),
                 _type: MIRTypeKind::Function {
                     signature: Box::new(prototype.signature().clone()),
                 }
@@ -66,13 +86,23 @@ impl MIRSymbol {
                 },
             }),
 
-            MIRSymbol::Expression(expr) => Ok(expr.clone()),
+            MIRSymbol::Expression(expr) => CXRawResult::Ok(expr.clone()),
+
+            MIRSymbol::ComptimeFunctionReference { .. } => CXStdErrMessage::result(
+                "TYPE ERROR",
+                "Comptime function cannot be used in runtime contexts",
+            ),
+
+            MIRSymbol::StagedExpression { .. } => CXStdErrMessage::result(
+                "TYPE ERROR",
+                "Staged expression cannot be used in runtime contexts",
+            ),
 
             MIRSymbol::Template { .. } => {
-                CXError::create_result("Could not deduce arguments to template")
+                CXStdErrMessage::result("TYPE ERROR", "Could not deduce arguments to template")
             }
 
-            _ => CXError::create_result("Symbol does not refer to a value"),
+            _ => CXStdErrMessage::result("TYPE ERROR", "Symbol does not refer to a value"),
         }
     }
 }

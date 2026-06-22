@@ -4,7 +4,7 @@ use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 use crate::mir::contextual_eq::{TypeComparisonState, TypeContextEqual, compare_ordered};
 use crate::mir::expression::MIRExpression;
 pub use crate::mir::r#type::{
-    MIRFloatType, MIRIntegerType, MIRMoveAttributes, MIRType, MIRTypeId, MIRTypeKind,
+    MIRAggregateAttributes, MIRFloatType, MIRIntegerType, MIRType, MIRTypeId, MIRTypeKind,
 };
 use crate::type_context::MIRTypeContext;
 
@@ -18,6 +18,63 @@ pub struct MIRFunction {
 pub struct MIRParameter {
     pub name: Option<CXIdent>,
     pub _type: MIRType,
+}
+
+#[derive(Debug, Clone)]
+pub struct MIRComptimeValueType {
+    pub expr: bool,
+    pub _type: MIRType,
+}
+
+#[derive(Debug, Clone)]
+pub struct MIRComptimeParameter {
+    pub name: Option<CXIdent>,
+    pub value_type: MIRComptimeValueType,
+}
+
+#[derive(Debug, Clone)]
+pub struct MIRComptimeFunctionPrototype {
+    lookup_identifier: Option<QualifiedName>,
+    debug_name: Option<CXIdent>,
+    return_type: MIRComptimeValueType,
+    params: Vec<MIRComptimeParameter>,
+}
+
+impl MIRComptimeFunctionPrototype {
+    pub fn new(return_type: MIRComptimeValueType, params: Vec<MIRComptimeParameter>) -> Self {
+        Self {
+            lookup_identifier: None,
+            debug_name: None,
+            return_type,
+            params,
+        }
+    }
+
+    pub fn lookup_identifier(&self) -> Option<&QualifiedName> {
+        self.lookup_identifier.as_ref()
+    }
+
+    pub fn debug_name(&self) -> Option<&CXIdent> {
+        self.debug_name.as_ref()
+    }
+
+    pub fn return_type(&self) -> &MIRComptimeValueType {
+        &self.return_type
+    }
+
+    pub fn params(&self) -> &[MIRComptimeParameter] {
+        &self.params
+    }
+
+    pub fn with_lookup_identifier(mut self, lookup_identifier: QualifiedName) -> Self {
+        self.lookup_identifier = Some(lookup_identifier);
+        self
+    }
+
+    pub fn with_debug_name(mut self, debug_name: CXIdent) -> Self {
+        self.debug_name = Some(debug_name);
+        self
+    }
 }
 
 impl<Context: MIRTypeContext + ?Sized> TypeContextEqual<Context> for MIRParameter {

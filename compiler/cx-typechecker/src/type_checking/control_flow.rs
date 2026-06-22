@@ -8,10 +8,12 @@ use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 pub(crate) mod r#match;
 pub(crate) mod r#return;
 pub(crate) mod switch;
+pub(crate) mod r#yield;
 
 pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
     match &expr.kind {
         MIRExpressionKind::Return { .. }
+        | MIRExpressionKind::Yield { .. }
         | MIRExpressionKind::Break { .. }
         | MIRExpressionKind::Continue { .. } => false,
         MIRExpressionKind::Unsafe { expression, .. } => expr_may_fall_through(expression),
@@ -86,7 +88,8 @@ pub(crate) fn typecheck_fallthrough_scope(
     });
     let result = typecheck_expr(env, namespace, expr, None)
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
-    env.pop_scope()?;
+    env.pop_scope()
+        .map_err(|err| env.complete_err(err, expr.token_range()))?;
     Ok(result)
 }
 

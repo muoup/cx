@@ -1,6 +1,6 @@
-use cx_util::char_iter::CharIter;
+use crate::lexer::source::LexCursor;
 
-pub(crate) fn handle_comment(iter: &mut CharIter) -> bool {
+pub(crate) fn handle_comment(iter: &mut LexCursor<'_>) -> bool {
     assert_eq!(iter.peek(), Some('/'));
     iter.next();
 
@@ -32,7 +32,7 @@ pub(crate) fn handle_comment(iter: &mut CharIter) -> bool {
     }
 }
 
-pub(crate) fn skip_directive_tail(iter: &mut CharIter) {
+pub(crate) fn skip_directive_tail(iter: &mut LexCursor<'_>) {
     while let Some(c) = iter.peek() {
         if c == '\n' {
             iter.next();

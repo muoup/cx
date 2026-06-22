@@ -44,6 +44,25 @@ pub fn try_implicit_coercion(
         });
     }
 
+    match internal(env, expr, from_type, target_type)? {
+        CoercionResult::Success { expr } => {
+            if env.type_eq(expr.get_type_ref(), target_type) {
+                CoercionResult::success(expr)
+            } else {
+                try_implicit_coercion(env, expr, target_type)
+            }
+        }
+     
+        other => Ok(other)
+    }
+}
+
+fn internal(
+    env: &mut TypeEnvironment,
+    expr: MIRExpression,
+    from_type: MIRType,
+    target_type: &MIRType,
+) -> CXResult<CoercionResult> {
     if expr._type.is_integer() {
         if let MIRTypeKind::Float { _type } = &target_type.kind {
             let MIRTypeKind::Integer { signed, .. } = &expr._type.kind else {
@@ -151,19 +170,43 @@ pub fn try_implicit_coercion(
             )
         }
 
-        (MIRTypeKind::MemoryReference { inner_type, .. }, _)
-            if target_type.is_memory_reference()
-                && env.type_eq(env.symbols.resolve_type_id(*inner_type), target_type) =>
-        {
-            lvalue::try_conversion(env, expr)
+        (
+            MIRTypeKind::MemoryReference { inner_type: i1, .. },
+            MIRTypeKind::MemoryReference { inner_type: i2, .. },
+        ) => {
+            let i1 = env.symbols.resolve_type_id(*i1);
+            let i2 = env.symbols.resolve_type_id(*i2);
+
+            if i1.is_memory_reference() {
+                return lvalue::try_conversion(env, expr);
+            }
+
+            if compatible::compatible_types(env, i1, i2)? {
+                return implicit::coercion_expr(
+                    expr,
+                    target_type.clone(),
+                    MIRCoercion::ReinterpretBits,
+                );
+            }
+
+            if env.symbols.cvr_compatible(i1, i2)
+                && env.type_eq(
+                    &i1.clone().without_specifiers(),
+                    &i2.clone().without_specifiers(),
+                )
+            {
+                return implicit::coercion_expr(
+                    expr,
+                    target_type.clone(),
+                    MIRCoercion::ReinterpretBits,
+                );
+            }
+
+            CoercionResult::unapplied(expr)
         }
 
-        (MIRTypeKind::MemoryReference { inner_type, .. }, _)
-            if !target_type.is_memory_reference() =>
-        {
-            lvalue::try_conversion(env, expr)?
-                .and_then(|expr| try_implicit_coercion(env, expr, target_type))
-        }
+        (MIRTypeKind::MemoryReference { .. }, _) =>
+            lvalue::try_conversion(env, expr),
 
         (_, MIRTypeKind::PointerTo { inner_type })
             if env.type_eq(&from_type, env.symbols.resolve_type_id(*inner_type)) =>
@@ -179,6 +222,16 @@ pub fn try_implicit_coercion(
         ) => {
             let from_inner = env.symbols.resolve_type_id(*from_ptr);
             let to_inner = env.symbols.resolve_type_id(*to_ptr);
+
+            if env.symbols.resolve_type_id(*from_ptr).is_unit()
+                || env.symbols.resolve_type_id(*to_ptr).is_unit()
+            {
+                return implicit::coercion_expr(
+                    expr,
+                    target_type.clone(),
+                    MIRCoercion::ReinterpretBits,
+                );
+            }
 
             // If we are coercing T1* -> T2* and they are compatible as unqualified types, and we only
             // add cvr-specifiers to coerce, than this is a valid implicit cast

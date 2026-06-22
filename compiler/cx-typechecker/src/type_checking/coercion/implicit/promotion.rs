@@ -7,12 +7,14 @@ pub mod array_to_ptr;
 pub mod fn_to_ptr;
 pub mod integer;
 pub mod lvalue;
+pub mod str_to_char_ptr;
 
 pub fn std_rval_promotion_coercion(
     env: &mut TypeEnvironment,
     expr: MIRExpression,
 ) -> CXResult<CoercionResult> {
     array_to_ptr::try_conversion(env, expr)?
+        .or_else(|expr| str_to_char_ptr::try_conversion(env, expr))?
         .or_else(|expr| fn_to_ptr::try_conversion(env, expr))?
         .or_else(|expr| integer::try_promotion(env, expr))?
         .or_else(|expr| lvalue::try_conversion(env, expr))

@@ -21,7 +21,8 @@ i32 main(i32 argc, char** argv) {
     std::file f = std::opt::unwrap<std::file>(move o);
     std::string s = f |> std::file::read_to_string();
 
-    s |> std::string::as_str() |> run;
+    s   |> std::string::as_str() 
+        |> run();
 
     std::file::close(move f);
     std::string::drop(move s);

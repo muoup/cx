@@ -1,12 +1,15 @@
 use std::collections::HashMap;
 
 use cx_ast::ast::{
-    function::CXFunctionPrototype,
+    function::{CXComptimeFnPrototype, CXFunctionPrototype},
     template::{CXTemplateInput, CXTemplatePrototype},
     types::{CXType, CXTypeKind},
 };
 use cx_ast::symbols::CXSymbolKind;
-use cx_log::{CXError, CXResult};
+use cx_log::{
+    CXRawResult, CXResult,
+    error::{CXMaybeRawErr, CXMaybeRawResult},
+};
 use cx_mir::{
     EnvironmentNamespace,
     mir::data::{MIRFunctionSignature, MIRTemplateInput, MIRType, MIRTypeKind},
@@ -25,29 +28,40 @@ use crate::{
 
 type TemplateBindings = HashMap<String, MIRType>;
 
-pub(crate) fn complete_templated_callee(
+pub(crate) fn complete_templated_callee_maybe(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     name: &QualifiedName,
     template_input: Option<&CXTemplateInput>,
     arg_types: &[MIRType],
-) -> CXResult<MIRSymbol> {
-    let Some(symbol) = env.get_symbol(namespace, name, None)? else {
-        return CXError::create_result(format!("Templated function '{}' not found", name));
+    expected_return_type: Option<&MIRType>,
+) -> CXMaybeRawResult<MIRSymbol> {
+    let Some(symbol) = env
+        .get_symbol(namespace, name)
+        .map_err(CXMaybeRawErr::from)?
+    else {
+        return crate::log::internal_type_error(format!("Templated function '{}' not found", name))
+            .map_err(CXMaybeRawErr::from);
     };
 
     if let Some(input) = template_input {
         let completed_input = complete_template_input(env, namespace, input)?;
         return apply_template(env, &symbol, completed_input)?.ok_or_else(|| {
-            CXError::create_boxed(format!(
+            CXMaybeRawErr::from(crate::log::type_error_msg(format!(
                 "Symbol '{}' does not accept template arguments",
                 name
-            ))
+            )))
         });
     }
 
-    deduce_template_symbol(env, namespace, &symbol, arg_types)?
-        .ok_or_else(|| CXError::create_boxed(format!("Symbol '{}' is not a template", name)))
+    deduce_template_symbol(env, namespace, &symbol, arg_types, expected_return_type)?.ok_or_else(
+        || {
+            CXMaybeRawErr::from(crate::log::type_error_msg(format!(
+                "Symbol '{}' is not a template",
+                name
+            )))
+        },
+    )
 }
 
 pub(crate) fn deduce_template_symbol(
@@ -55,7 +69,8 @@ pub(crate) fn deduce_template_symbol(
     _namespace: &EnvironmentNamespace,
     symbol: &MIRSymbol,
     arg_types: &[MIRType],
-) -> CXResult<Option<MIRSymbol>> {
+    expected_return_type: Option<&MIRType>,
+) -> CXMaybeRawResult<Option<MIRSymbol>> {
     let MIRSymbol::Template {
         template_prototype,
         source,
@@ -66,8 +81,14 @@ pub(crate) fn deduce_template_symbol(
         return Ok(None);
     };
 
-    let completed_input =
-        deduce_template_input(env, namespace, template_prototype, source, arg_types)?;
+    let completed_input = deduce_template_input(
+        env,
+        namespace,
+        template_prototype,
+        source,
+        arg_types,
+        expected_return_type,
+    )?;
     apply_template(env, symbol, completed_input)
 }
 
@@ -77,28 +98,53 @@ fn deduce_template_input(
     template_prototype: &CXTemplatePrototype,
     source: &cx_ast::symbols::CXSymbol,
     arg_types: &[MIRType],
-) -> CXResult<MIRTemplateInput> {
-    let CXSymbolKind::FunctionReference(shell) = &source.kind else {
-        return CXError::create_result("Only function template deduction is implemented");
+    expected_return_type: Option<&MIRType>,
+) -> CXMaybeRawResult<MIRTemplateInput> {
+    let shell = match &source.kind {
+        CXSymbolKind::FunctionReference(shell) => TemplateDeductionShell::Runtime(shell),
+        CXSymbolKind::ComptimeFunction { definition, .. } => {
+            TemplateDeductionShell::Comptime(definition)
+        }
+        CXSymbolKind::TypeConstructor { union_type, .. } => {
+            TemplateDeductionShell::TypeConstructor(union_type)
+        }
+        _ => {
+            return crate::log::internal_type_error(
+                "Only function template deduction is implemented",
+            )
+            .map_err(CXMaybeRawErr::from);
+        }
     };
 
     let mut bindings = TemplateBindings::new();
-    if arg_types.len() > shell.params.len() && !shell.var_args {
-        return CXError::create_result(format!(
+    if arg_types.len() > shell.params_len() && !shell.var_args() {
+        return crate::log::internal_type_error(format!(
             "Function template expects {} arguments, found {}",
-            shell.params.len(),
+            shell.params_len(),
             arg_types.len()
-        ));
+        ))
+        .map_err(CXMaybeRawErr::from);
     }
 
-    for (param, actual_type) in shell.params.iter().zip(arg_types.iter()) {
+    for (formal_type, actual_type) in shell.formal_types().into_iter().zip(arg_types.iter()) {
         deduce_from_cx_type(
             env,
             namespace,
             template_prototype,
             &mut bindings,
-            &param._type,
+            formal_type,
             actual_type,
+        )?;
+    }
+
+    if let Some(expected_return_type) = expected_return_type {
+        deduce_from_cx_type(
+            env,
+            namespace,
+            template_prototype,
+            &mut bindings,
+            shell.return_type(),
+            expected_return_type,
         )?;
     }
 
@@ -107,17 +153,70 @@ fn deduce_template_input(
         .iter()
         .map(|name| {
             let ty = bindings.remove(name.as_str()).ok_or_else(|| {
-                CXError::create_boxed(format!(
+                CXMaybeRawErr::from(crate::log::type_error_msg(format!(
                     "Could not deduce template argument '{}' for function {}",
-                    name, shell.kind
-                ))
+                    name,
+                    shell.name()
+                )))
             })?;
 
             Ok(env.symbols.generate_type_id(ty))
         })
-        .collect::<CXResult<Vec<_>>>()?;
+        .collect::<CXMaybeRawResult<Vec<_>>>()?;
 
     Ok(MIRTemplateInput { args })
+}
+
+enum TemplateDeductionShell<'a> {
+    Runtime(&'a CXFunctionPrototype),
+    Comptime(&'a CXComptimeFnPrototype),
+    TypeConstructor(&'a CXType),
+}
+
+impl<'a> TemplateDeductionShell<'a> {
+    fn params_len(&self) -> usize {
+        match self {
+            Self::Runtime(shell) => shell.params.len(),
+            Self::Comptime(shell) => shell.params.len(),
+            Self::TypeConstructor(_) => 0,
+        }
+    }
+
+    fn var_args(&self) -> bool {
+        match self {
+            Self::Runtime(shell) => shell.var_args,
+            Self::Comptime(_) => false,
+            Self::TypeConstructor(_) => true,
+        }
+    }
+
+    fn formal_types(&self) -> Vec<&'a CXType> {
+        match self {
+            Self::Runtime(shell) => shell.params.iter().map(|param| &param._type).collect(),
+            Self::Comptime(shell) => shell
+                .params
+                .iter()
+                .map(|param| &param.value_type._type)
+                .collect(),
+            Self::TypeConstructor(_) => Vec::new(),
+        }
+    }
+
+    fn return_type(&self) -> &'a CXType {
+        match self {
+            Self::Runtime(shell) => &shell.return_type,
+            Self::Comptime(shell) => &shell.return_type._type,
+            Self::TypeConstructor(union_type) => union_type,
+        }
+    }
+
+    fn name(&self) -> String {
+        match self {
+            Self::Runtime(shell) => shell.kind.to_string(),
+            Self::Comptime(shell) => shell.kind.to_string(),
+            Self::TypeConstructor(_) => "type constructor".to_string(),
+        }
+    }
 }
 
 fn deduce_from_cx_type(
@@ -153,6 +252,7 @@ fn deduce_from_cx_type(
             .any(|param| param.as_str() == name.name.as_str()) =>
         {
             bind_template_argument(env, bindings, name.name.as_str(), actual)
+                .map_err(|err| env.complete_err(err, formal.range()))
         }
 
         CXTypeKind::Identifier {
@@ -161,7 +261,7 @@ fn deduce_from_cx_type(
             ..
         } => {
             let Some(template_info) = actual.get_template_data() else {
-                return CXError::create_result(format!(
+                return crate::log::internal_type_error(format!(
                     "Expected realized template type '{}' while deducing, found {}",
                     name,
                     actual.display_with(&env.symbols)
@@ -169,7 +269,7 @@ fn deduce_from_cx_type(
             };
 
             if !template_base_matches(name, template_info.base_name.as_ref()) {
-                return CXError::create_result(format!(
+                return crate::log::internal_type_error(format!(
                     "Expected template type '{}', found '{}'",
                     name,
                     template_info
@@ -181,7 +281,7 @@ fn deduce_from_cx_type(
             }
 
             if input.params.len() != template_info.template_input.args.len() {
-                return CXError::create_result(format!(
+                return crate::log::internal_type_error(format!(
                     "Template arity mismatch for '{}': expected {}, found {}",
                     name,
                     input.params.len(),
@@ -310,14 +410,14 @@ fn deduce_from_function_signature(
     actual: &MIRFunctionSignature,
 ) -> CXResult<()> {
     if formal.var_args != actual.var_args {
-        return CXError::create_result(format!(
+        return crate::log::internal_type_error(format!(
             "Function pointer varargs mismatch during template deduction: expected {}, found {}",
             formal.var_args, actual.var_args
         ));
     }
 
     if formal.params.len() != actual.params.len() {
-        return CXError::create_result(format!(
+        return crate::log::internal_type_error(format!(
             "Function pointer arity mismatch during template deduction: expected {}, found {}",
             formal.params.len(),
             actual.params.len()
@@ -352,13 +452,13 @@ fn bind_template_argument(
     bindings: &mut TemplateBindings,
     name: &str,
     actual: &MIRType,
-) -> CXResult<()> {
+) -> CXRawResult<()> {
     if let Some(existing) = bindings.get(name) {
         if env.type_eq(existing, actual) {
             return Ok(());
         }
 
-        return CXError::create_result(format!(
+        return env.log_error_base(format!(
             "Conflicting deductions for template argument '{}': {} vs {}",
             name,
             existing.display_with(&env.symbols),
@@ -383,7 +483,7 @@ fn concrete_type_mismatch(
     formal: &CXType,
     actual: &MIRType,
 ) -> CXResult<()> {
-    CXError::create_result(format!(
+    crate::log::internal_type_error(format!(
         "Template deduction mismatch: expected {}, found {}",
         formal,
         actual.display_with(&env.symbols)
