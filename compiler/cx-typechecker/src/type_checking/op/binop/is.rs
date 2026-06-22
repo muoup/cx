@@ -108,14 +108,14 @@ fn validate_variant_template_input(
     let Some(template_data) = union_type.get_template_data() else {
         return env.log_error(
             expr.token_range(),
-            format!("Non-templated tagged union pattern may not have template arguments"),
+            "Non-templated tagged union pattern may not have template arguments".to_string(),
         );
     };
 
     if !completed_input.contextual_eq(&template_data.template_input, &env.symbols) {
         return env.log_error(
             expr.token_range(),
-            format!("Tagged union pattern template arguments do not match the left-hand side type"),
+            "Tagged union pattern template arguments do not match the left-hand side type".to_string(),
         );
     }
 

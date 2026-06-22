@@ -68,7 +68,7 @@ pub fn typecheck_match(
                 let CXPattern::Integer(pattern_value) = pattern else {
                     return env.log_error(
                         condition.token_range(),
-                        format!("Match pattern must be an integer literal"),
+                        "Match pattern must be an integer literal".to_string(),
                     );
                 };
 
@@ -350,7 +350,7 @@ pub fn typecheck_match(
         if default.is_none() && !match_is_exhaustive {
             return env.log_error(
                 condition.token_range(),
-                format!("Value-producing match must be exhaustive or provide a default arm"),
+                "Value-producing match must be exhaustive or provide a default arm".to_string(),
             );
         }
     }
@@ -418,14 +418,14 @@ fn validate_variant_template_input(
     let Some(template_data) = union_type.get_template_data() else {
         return env.log_error(
             condition.token_range(),
-            format!("Non-templated tagged union pattern may not have template arguments"),
+            "Non-templated tagged union pattern may not have template arguments".to_string(),
         );
     };
 
     if !completed_input.contextual_eq(&template_data.template_input, &env.symbols) {
         return env.log_error(
             condition.token_range(),
-            format!("Tagged union pattern template arguments do not match the matched type"),
+            "Tagged union pattern template arguments do not match the matched type".to_string(),
         );
     }
 

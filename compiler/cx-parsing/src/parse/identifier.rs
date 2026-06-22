@@ -128,7 +128,7 @@ pub(crate) fn try_parse_qualified_name(tokens: &mut TokenIter) -> CXResult<Optio
 
     loop {
         let TokenKind::Identifier(ident) = next_kind!(tokens)? else {
-            return tokens.log_error(format!("Expected identifier after '::' in qualified name"));
+            return tokens.log_error("Expected identifier after '::' in qualified name".to_string());
         };
 
         segments.push(CXIdent::new(ident.clone()));

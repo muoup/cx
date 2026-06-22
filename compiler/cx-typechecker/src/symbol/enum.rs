@@ -64,7 +64,7 @@ pub(crate) fn resolve_enum_block<'a, 'b>(
                         v.as_integer().ok_or_else(|| {
                             env.error(
                                 v.token_range,
-                                format!("Expected enum variant value to be an integer"),
+                                "Expected enum variant value to be an integer".to_string(),
                             )
                         })
                     })

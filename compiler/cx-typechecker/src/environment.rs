@@ -180,7 +180,7 @@ impl TypeEnvironment<'_> {
                         .join(", ")
                 );
 
-                return CXStdErrMessage::result("TYPE ERROR", message);
+                CXStdErrMessage::result("TYPE ERROR", message)
             }
         }
     }

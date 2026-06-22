@@ -56,9 +56,7 @@ pub fn try_function_parse(
         CXFunctionKind::Standard(name.name)
     } else {
         if name.namespace.segments().len() != 1 {
-            return data.log_error(format!(
-                "Associated function declarations must have exactly two segments"
-            ));
+            return data.log_error("Associated function declarations must have exactly two segments".to_string());
         }
 
         CXFunctionKind::AssociatedFunction {
@@ -97,11 +95,11 @@ pub fn parse_comptime_function(data: &mut ParserData) -> CXResult<ComptimeFuncti
     assert_token_matches!(data.tokens, keyword!(Comptime), "'comptime'");
     let return_type = parse_comptime_initializer(data)?;
     let Some(name) = return_type.name else {
-        return data.log_error(format!("Expected comptime function name"));
+        return data.log_error("Expected comptime function name".to_string());
     };
 
     let Some(declaration) = try_comptime_function_parse(data, return_type.value_type, name)? else {
-        return data.log_error(format!("Expected comptime function parameter list"));
+        return data.log_error("Expected comptime function parameter list".to_string());
     };
 
     Ok(declaration)
@@ -128,9 +126,7 @@ fn try_comptime_function_parse(
         CXFunctionKind::Standard(name.name)
     } else {
         if name.namespace.segments().len() != 1 {
-            return data.log_error(format!(
-                "Associated comptime function declarations must have exactly two segments"
-            ));
+            return data.log_error("Associated comptime function declarations must have exactly two segments".to_string());
         }
 
         CXFunctionKind::AssociatedFunction {
@@ -218,9 +214,7 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
         match next {
             keyword!(Precondition) => {
                 if contract.precondition.is_some() {
-                    return data.log_error(format!(
-                        "Precondition already defined in function contract."
-                    ));
+                    return data.log_error("Precondition already defined in function contract.".to_string());
                 }
 
                 data.tokens.next();
@@ -233,9 +227,7 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
             }
             keyword!(Postcondition) => {
                 if contract.postcondition.is_some() {
-                    return data.log_error(format!(
-                        "Postcondition already defined in function contract."
-                    ));
+                    return data.log_error("Postcondition already defined in function contract.".to_string());
                 }
 
                 data.tokens.next();
@@ -323,7 +315,7 @@ fn skip_optional_parenthesized_tokens(data: &mut ParserData) -> CXResult<()> {
         }
     }
 
-    data.log_error(format!("Unclosed parenthesized declaration suffix"))
+    data.log_error("Unclosed parenthesized declaration suffix".to_string())
 }
 
 pub(crate) struct ParseParamsResult {

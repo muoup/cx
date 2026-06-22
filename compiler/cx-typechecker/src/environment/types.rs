@@ -30,7 +30,7 @@ pub fn sizeof_type_size(env: &TypeEnvironment, _ty: &MIRType) -> CXRawResult<usi
 
             for field in fields {
                 let ty = env.symbols.resolve_type_id(field.ty());
-                let ty_size = sizeof_type_size(env, &ty)?;
+                let ty_size = sizeof_type_size(env, ty)?;
 
                 size = apply_padding(size, ty_size);
                 size += ty_size;
@@ -44,7 +44,7 @@ pub fn sizeof_type_size(env: &TypeEnvironment, _ty: &MIRType) -> CXRawResult<usi
                 .iter()
                 .map(|variant| variant.ty())
                 .map(|ty| env.symbols.resolve_type_id(ty))
-                .map(|ty| sizeof_type_size(env, &ty))
+                .map(|ty| sizeof_type_size(env, ty))
                 .collect::<CXRawResult<Vec<usize>>>()?
                 .into_iter()
                 .max()
@@ -56,7 +56,7 @@ pub fn sizeof_type_size(env: &TypeEnvironment, _ty: &MIRType) -> CXRawResult<usi
         MIRTypeKind::Array { length, inner_type } => {
             let inner_ty = env.symbols.resolve_type_id(*inner_type);
 
-            sizeof_type_size(env, &inner_ty).map(|s| s * *length)
+            sizeof_type_size(env, inner_ty).map(|s| s * *length)
         }
 
         MIRTypeKind::TaggedUnion { variants } => {
@@ -65,7 +65,7 @@ pub fn sizeof_type_size(env: &TypeEnvironment, _ty: &MIRType) -> CXRawResult<usi
                 .iter()
                 .map(|variant| variant.ty())
                 .map(|ty| env.symbols.resolve_type_id(ty))
-                .map(|ty| sizeof_type_size(env, &ty))
+                .map(|ty| sizeof_type_size(env, ty))
                 .collect::<CXRawResult<Vec<usize>>>()?
                 .into_iter()
                 .max()

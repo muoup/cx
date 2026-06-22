@@ -429,7 +429,7 @@ impl ControlFlow {
         current_snapshot: Option<&ControlFlowSnapshot>,
     ) -> CXRawResult<Option<ControlFlowSnapshot>> {
         match &scope.flow_kind {
-            ScopeFlowKind::Plain => Ok(current_snapshot.cloned()).into(),
+            ScopeFlowKind::Plain => Ok(current_snapshot.cloned()),
             ScopeFlowKind::Merge(state) => {
                 let mut arrows = state.incoming_arrows.clone();
                 if let Some(label) = &state.include_current_snapshot
@@ -471,7 +471,7 @@ impl ControlFlow {
                 }
 
                 self.apply_merged_bindings(&merged_bindings);
-                Ok(Some(self.current_snapshot())).into()
+                Ok(Some(self.current_snapshot()))
             }
             ScopeFlowKind::Loop(state) => {
                 let mut continue_arrows = vec![ControlFlowArrow {
@@ -489,11 +489,11 @@ impl ControlFlow {
                         false,
                     )?
                     else {
-                        return Ok(None).into();
+                        return Ok(None);
                     };
 
                     self.apply_merged_bindings(&exit_bindings);
-                    return Ok(Some(self.current_snapshot())).into();
+                    return Ok(Some(self.current_snapshot()));
                 };
 
                 let mut loop_exit_snapshot = self.current_snapshot();
@@ -512,11 +512,11 @@ impl ControlFlow {
                 let Some(exit_bindings) =
                     Self::merge_binding_states(&state.entry_snapshot, &exit_arrows, false)?
                 else {
-                    return Ok(None).into();
+                    return Ok(None);
                 };
 
                 self.apply_merged_bindings(&exit_bindings);
-                Ok(Some(self.current_snapshot())).into()
+                Ok(Some(self.current_snapshot()))
             }
         }
     }

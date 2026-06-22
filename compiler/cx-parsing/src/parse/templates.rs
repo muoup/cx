@@ -88,7 +88,7 @@ pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<CXTemplateI
 
     loop {
         let (None, _type, _) = parse_initializer(data)? else {
-            return data.log_error(format!("Expected type declaration in template arguments!"));
+            return data.log_error("Expected type declaration in template arguments!".to_string());
         };
 
         inputtype_s.push(_type);

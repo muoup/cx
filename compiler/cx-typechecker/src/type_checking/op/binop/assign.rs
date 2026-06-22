@@ -58,11 +58,11 @@ pub fn typecheck_assignment(
             .tracked_binding(binding.root.as_str())
             .is_some_and(|tracked| tracked.state != crate::environment::BindingMoveState::Available)
     {
-        return env.log_error(expr.token_range(), format!("Assignment to a field or projection of a moved aggregate binding is not implemented"));
+        return env.log_error(expr.token_range(), "Assignment to a field or projection of a moved aggregate binding is not implemented".to_string());
     }
 
     if inner.get_specifier(CX_CONST) {
-        return env.log_error(expr.token_range(), format!("Cannot assign to a const type"));
+        return env.log_error(expr.token_range(), "Cannot assign to a const type".to_string());
     }
 
     rhs = implicit_cast(env, rhs, &inner)?;

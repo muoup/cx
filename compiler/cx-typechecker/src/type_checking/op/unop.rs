@@ -162,7 +162,7 @@ pub fn typecheck_unop(
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
                 return env.log_error(
                     &operand.token_range,
-                    format!("Cannot take the address of a non-reference type"),
+                    "Cannot take the address of a non-reference type".to_string(),
                 );
             };
 

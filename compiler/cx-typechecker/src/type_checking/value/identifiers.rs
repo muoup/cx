@@ -59,7 +59,7 @@ pub(crate) fn typecheck_identifier(
     }
 
     let result = TypecheckResult::from_symbol(symbol, name.clone(), template_input.cloned())
-        .map_err(|err| env.error(expr.token_range(), format!("{}", err.message())))?;
+        .map_err(|err| env.error(expr.token_range(), err.message().to_string()))?;
 
     let binding = match result.ready_expression().map(|expr| &expr.kind) {
         Some(MIRExpressionKind::Variable {

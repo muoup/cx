@@ -113,7 +113,7 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
             data.extern_c_mode = false;
         }
 
-        _ => return data.log_error(format!("Unexpected specifier in global scope")),
+        _ => return data.log_error("Unexpected specifier in global scope".to_string()),
     };
 
     try_next!(data.tokens, punctuator!(Colon));
@@ -159,7 +159,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
         return data
             .tokens
             .with_index(start_index)
-            .log_error(format!("Typedef must have a name!"));
+            .log_error("Typedef must have a name!".to_string());
     };
 
     assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
@@ -192,7 +192,7 @@ fn parse_fn_merge(
 ) -> CXResult<()> {
     if try_next!(data.tokens, punctuator!(Semicolon)) {
         if template_prototype.is_some() {
-            return data.log_error(format!("Templated functions must be defined in place."));
+            return data.log_error("Templated functions must be defined in place.".to_string());
         }
 
         data.add_stmt(CXASTStmt::FunctionDefinition {
@@ -238,9 +238,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
     };
 
     if !data.tokens.has_next() {
-        return data.log_error(format!(
-            "Reached end of token stream when parsing global expression!"
-        ));
+        return data.log_error("Reached end of token stream when parsing global expression!".to_string());
     }
 
     if let Some(func) = try_function_parse(data, return_type.clone(), name.clone(), linkage)? {
@@ -323,7 +321,7 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     }
 
     if ss.is_empty() {
-        return tokens.log_error(format!("Expected intrinsic identifier"));
+        return tokens.log_error("Expected intrinsic identifier".to_string());
     }
 
     ss.pop();

@@ -101,7 +101,7 @@ fn typecheck_array_initializer(
     for index in indices {
         if let Some(name) = &index.name {
             return env.log_error(
-                &TokenRange::internal(),
+                TokenRange::internal(),
                 format!("Array initializer cannot have named indices, found: {name}"),
             );
         }
@@ -111,7 +111,7 @@ fn typecheck_array_initializer(
         && indices.len() > size
     {
         return env.log_error(
-            &TokenRange::internal(),
+            TokenRange::internal(),
             format!(
                 "Too many elements in array initializer (expected {}, found {})",
                 size,
@@ -183,7 +183,7 @@ fn typecheck_structured_initializer(
         if counter >= fields.len() {
             return env.log_error(
                 expr.token_range(),
-                format!("Too many elements in struct initializer"),
+                "Too many elements in struct initializer".to_string(),
             );
         }
 

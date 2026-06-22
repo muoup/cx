@@ -15,7 +15,7 @@ use inkwell::values::{AnyValue, AnyValueEnum, ValueKind};
 use std::cell::Cell;
 
 thread_local! {
-    static NUM: Cell<usize> = Cell::new(0);
+    static NUM: Cell<usize> = const { Cell::new(0) };
 }
 
 pub(crate) fn reset_num() {

@@ -101,7 +101,7 @@ impl<'a> ParserData<'a> {
     }
 
     pub fn is_type_ident(&self, name: &QualifiedName) -> CXResult<bool> {
-        Ok(matches!(self.query_identifier(name.clone())?, true)
+        Ok(self.query_identifier(name.clone())?
             || (name.namespace.is_root() && self.temporary_type_names.contains_key(&name.name)))
     }
 
@@ -138,25 +138,21 @@ impl<'a> ParserData<'a> {
             return;
         }
 
-        match stmt {
-            CXASTStmt::FunctionDefinition { prototype, .. } => {
-                let q_namespace = prototype.kind.into_key().namespace;
+        if let CXASTStmt::FunctionDefinition { prototype, .. } = stmt {
+            let q_namespace = prototype.kind.into_key().namespace;
 
-                if !q_namespace.is_root()
-                    && matches!(&prototype.kind, CXFunctionKind::AssociatedFunction { .. })
-                {
-                    let entry = self
-                        .namespace_aliases
-                        .entry(namespace.clone())
-                        .or_insert(Vec::new());
+            if !q_namespace.is_root()
+                && matches!(&prototype.kind, CXFunctionKind::AssociatedFunction { .. })
+            {
+                let entry = self
+                    .namespace_aliases
+                    .entry(namespace.clone())
+                    .or_default();
 
-                    if !entry.contains(&q_namespace) {
-                        entry.push(q_namespace);
-                    }
+                if !entry.contains(&q_namespace) {
+                    entry.push(q_namespace);
                 }
             }
-
-            _ => {}
         }
     }
 }

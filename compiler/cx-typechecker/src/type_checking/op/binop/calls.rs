@@ -311,14 +311,14 @@ fn complete_callee(
                 TypecheckExtract::Succ(_) => {
                     return env.log_error(
                         expr.token_range(),
-                        format!("Comptime value is not callable"),
+                        "Comptime value is not callable".to_string(),
                     );
                 }
                 TypecheckExtract::Fail(function) => function,
             };
 
             let Some(parts) = function.into_incomplete_callee_parts() else {
-                return env.log_error(expr.token_range(), format!("Could not deduce callee"));
+                return env.log_error(expr.token_range(), "Could not deduce callee".to_string());
             };
 
             let deduction_arg_types = deduction_arg_types(implicit_args, args);
@@ -344,16 +344,16 @@ fn complete_callee(
                     }
                     TypecheckExtract::Succ(_) => env.log_error(
                         expr.token_range(),
-                        format!("Comptime value is not callable"),
+                        "Comptime value is not callable".to_string(),
                     ),
                     TypecheckExtract::Fail(result) => match result.try_into_expression() {
                         TypecheckExtract::Succ(function) => Ok(CompletedCallee::Runtime(function)),
                         TypecheckExtract::Fail(_) => {
-                            env.log_error(expr.token_range(), format!("Could not deduce callee"))
+                            env.log_error(expr.token_range(), "Could not deduce callee".to_string())
                         }
                     },
                 },
-                Err(err) => env.log_error(expr.token_range(), format!("{}", err.message())),
+                Err(err) => env.log_error(expr.token_range(), err.message().to_string()),
             }
         }
     }
@@ -364,7 +364,7 @@ enum CompletedCallee {
     Comptime(crate::type_checking::result::ComptimeFunctionValue),
 }
 
-pub(crate) fn comma_separated_exprs<'a>(expr: &'a CXExpression) -> Vec<&'a CXExpression> {
+pub(crate) fn comma_separated_exprs(expr: &CXExpression) -> Vec<&CXExpression> {
     let mut expr_iter = expr;
     let mut exprs = Vec::new();
 

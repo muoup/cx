@@ -485,7 +485,7 @@ pub fn convert_expression(
             if inner._type.is_pointer() {
                 return env.log_error(
                     mir_expr,
-                    format!("Dereferencing raw pointers is not allowed in safe contexts"),
+                    "Dereferencing raw pointers is not allowed in safe contexts".to_string(),
                 );
             }
 

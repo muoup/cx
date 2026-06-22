@@ -211,7 +211,7 @@ pub fn coercion_intrinsic(
         MIRCoercion::GetFnPtr => {
             return _env.log_error(
                 _expr,
-                format!("Function pointer decay is not supported in safe analysis yet"),
+                "Function pointer decay is not supported in safe analysis yet".to_string(),
             );
         }
     })
@@ -440,7 +440,7 @@ pub(crate) fn unsupported_expression_error(
     env: &FMIREnvironment,
     expr: &MIRExpression,
 ) -> CXResult<FMIRNode> {
-    env.log_error(expr, format!("Expression is not supported in safe context, use `unsafe` block if no safe alternative is available"))
+    env.log_error(expr, "Expression is not supported in safe context, use `unsafe` block if no safe alternative is available".to_string())
 }
 
 pub(crate) fn with_expression_range(mut node: FMIRNode, mir_expr: &MIRExpression) -> FMIRNode {

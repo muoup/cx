@@ -99,8 +99,7 @@ impl<'a> AnalysisDiagnosticContext<'a> {
                 "Failed to read source file for analysis diagnostics: {}",
                 source_path.display()
             ))
-            .err()
-            .expect("internal_analysis_error always returns Err")
+            .expect_err("internal_analysis_error always returns Err")
         })?;
 
         let Some(source_slice) =
@@ -140,7 +139,7 @@ impl<'a> AnalysisDiagnosticContext<'a> {
     ) -> CXResult<VisitControl> {
         let resolved_message = self.failure_message(message, condition);
 
-        self.log_error(node, format!("{}", resolved_message))
+        self.log_error(node, resolved_message.to_string())
     }
 }
 

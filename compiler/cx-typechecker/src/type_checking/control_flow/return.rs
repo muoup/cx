@@ -102,7 +102,7 @@ pub fn typecheck_return(
         if ret_name.is_some() && return_type.is_unit() {
             return env.log_error(
                 return_range,
-                format!("Cannot have a named return variable in a function with void return type"),
+                "Cannot have a named return variable in a function with void return type".to_string(),
             );
         }
 

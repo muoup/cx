@@ -160,15 +160,15 @@ impl TypecheckResult {
             TypecheckState::Ready(_) => Ok(self),
             TypecheckState::Comptime(_) => env.log_error(
                 token_range,
-                format!("Comptime value cannot be used as a runtime expression"),
+                "Comptime value cannot be used as a runtime expression".to_string(),
             ),
             TypecheckState::IncompleteTemplatedCallee { .. } => env.log_error(
                 token_range,
-                format!("Could not deduce templated function parameters",),
+                "Could not deduce templated function parameters".to_string(),
             ),
             TypecheckState::NeedsExpectedType(_) => env.log_error(
                 token_range,
-                format!("Could not resolve expression, expected type required but not provided",),
+                "Could not resolve expression, expected type required but not provided".to_string(),
             ),
         }
     }

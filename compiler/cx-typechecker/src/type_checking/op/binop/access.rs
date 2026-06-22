@@ -54,14 +54,14 @@ pub fn typecheck_access(
     else {
         return env.log_error(
             rhs.token_range(),
-            format!("Invalid right-hand side of access expression: expected an identifier"),
+            "Invalid right-hand side of access expression: expected an identifier".to_string(),
         );
     };
 
     let Some(rhs_name) = name.root_name_ref() else {
         return env.log_error(
             rhs.token_range(),
-            format!("Invalid right-hand side of access expression: expected an identifier"),
+            "Invalid right-hand side of access expression: expected an identifier".to_string(),
         );
     };
 
@@ -69,7 +69,7 @@ pub fn typecheck_access(
     else {
         return env.log_error(
             rhs.token_range(),
-            format!("Invalid right-hand side of access expression: expected an identifier"),
+            "Invalid right-hand side of access expression: expected an identifier".to_string(),
         );
     };
 
@@ -93,5 +93,5 @@ pub fn typecheck_access(
         result = result.with_binding(binding);
     }
 
-    return Ok(result);
+    Ok(result)
 }

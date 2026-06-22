@@ -181,7 +181,7 @@ fn internal(
                 return lvalue::try_conversion(env, expr);
             }
 
-            if compatible::compatible_types(env, &i1, &i2)? {
+            if compatible::compatible_types(env, i1, i2)? {
                 return implicit::coercion_expr(
                     expr,
                     target_type.clone(),
@@ -189,7 +189,7 @@ fn internal(
                 );
             }
 
-            if env.symbols.cvr_compatible(&i1, &i2)
+            if env.symbols.cvr_compatible(i1, i2)
                 && env.type_eq(
                     &i1.clone().without_specifiers(),
                     &i2.clone().without_specifiers(),

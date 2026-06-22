@@ -96,7 +96,7 @@ fn collect_types(
                 collect_types(field_ty, type_defs, forward_decls);
             }
             let mut def = Vec::new();
-            write!(def, "struct {name} {{\n").unwrap();
+            writeln!(def, "struct {name} {{").unwrap();
             for (field_name, field_ty) in fields {
                 let c_type = lmir_type_to_c(field_ty, Some(field_name));
                 writeln!(def, "    {c_type};").unwrap();

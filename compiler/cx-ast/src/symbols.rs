@@ -143,7 +143,7 @@ impl SymbolNamespaceData {
         namespace: &NamespacePath,
     ) -> impl Iterator<Item = &NamespacePath> {
         self.namespace_aliases
-            .get(&namespace)
+            .get(namespace)
             .map(|t| t.as_slice().iter())
             .unwrap_or_else(|| [].iter())
     }

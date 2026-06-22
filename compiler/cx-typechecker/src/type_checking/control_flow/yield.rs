@@ -24,7 +24,7 @@ pub fn typecheck_yield(
     let Some(context) = env.function.current_yield_context().cloned() else {
         return env.log_error(
             yield_range,
-            format!("'yield' used outside of a yielding context"),
+            "'yield' used outside of a yielding context".to_string(),
         );
     };
 

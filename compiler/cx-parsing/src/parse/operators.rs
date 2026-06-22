@@ -182,9 +182,7 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<CXBinOp> {
                 op_to_binop(data, OperatorType::Comma)?
             } else {
                 data.tokens.back();
-                return data.log_error(format!(
-                    "Invalid token: expected binary operator, found comma"
-                ));
+                return data.log_error("Invalid token: expected binary operator, found comma".to_string());
             }
         }
         // Handle >> as shift operator (two consecutive Greater tokens)
@@ -234,7 +232,7 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<CXBinOp> {
 
         _ => {
             data.tokens.back();
-            return data.log_error(format!("Expected binary operator"));
+            return data.log_error("Expected binary operator".to_string());
         }
     })
 }

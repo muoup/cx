@@ -104,9 +104,7 @@ fn aggregate_field_from_decl(
         let width = match next_kind!(data.tokens)? {
             TokenKind::IntLiteral(width) if *width >= 0 => *width as usize,
             _ => {
-                return data.tokens.log_error(format!(
-                    "Expected non-negative integer literal bitfield width"
-                ));
+                return data.tokens.log_error("Expected non-negative integer literal bitfield width".to_string());
             }
         };
 
@@ -150,7 +148,7 @@ fn predeclaration_type(
     predeclaration: PredeclarationType,
 ) -> CXResult<CXType> {
     let Some(name) = name else {
-        return data.log_error(format!("Predeclaration must have a name"));
+        return data.log_error("Predeclaration must have a name".to_string());
     };
 
     Ok(CXTypeKind::Identifier {
@@ -219,7 +217,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
         None => None,
         Some(name) => match name.root_name() {
             Some(name) => Some(name),
-            None => return data.log_error(format!("Struct name must be a simple identifier")),
+            None => return data.log_error("Struct name must be a simple identifier".to_string()),
         },
     };
 
@@ -259,7 +257,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
         let Some(variant_name) = try_parse_simple_identifier(&mut data.tokens) else {
-            return data.tokens.log_error(format!("Expected enum variant name"));
+            return data.tokens.log_error("Expected enum variant name".to_string());
         };
 
         let value = if try_next!(data.tokens, TokenKind::Assignment(None)) {
@@ -286,7 +284,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
         None => None,
         Some(name) => match name.root_name() {
             Some(name) => Some(name),
-            None => return data.log_error(format!("Expected name found qualified identifier")),
+            None => return data.log_error("Expected name found qualified identifier".to_string()),
         },
     };
 
@@ -319,7 +317,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
     let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
         return data
             .tokens
-            .log_error(format!("Tagged unions must have a name"));
+            .log_error("Tagged unions must have a name".to_string());
     };
 
     let template_prototype = try_parse_template(&mut data.tokens)?;
@@ -333,7 +331,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
         let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
             return data
                 .tokens
-                .log_error(format!("Expected variant name in tagged union"));
+                .log_error("Expected variant name in tagged union".to_string());
         };
 
         assert_token_matches!(data.tokens, operator!(ScopeRes), "'::'");
@@ -345,13 +343,13 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
             Ok((Some(_), _, _)) => {
                 return data
                     .tokens
-                    .log_error(format!("Tagged union variant may not have a named type"));
+                    .log_error("Tagged union variant may not have a named type".to_string());
             }
 
             _ => {
                 return data
                     .tokens
-                    .log_error(format!("Failed to parse tagged union variant type"));
+                    .log_error("Failed to parse tagged union variant type".to_string());
             }
         }
 
@@ -396,7 +394,7 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXType> {
         None => None,
         Some(name) => match name.root_name() {
             Some(name) => Some(name),
-            None => return data.log_error(format!("Union name must be a simple identifier")),
+            None => return data.log_error("Union name must be a simple identifier".to_string()),
         },
     };
 
@@ -590,7 +588,7 @@ pub(crate) fn parse_type_suffix_mod(
 pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<CXType> {
     let start_index = data.tokens.index;
     let Some(next_token) = data.tokens.peek() else {
-        return data.log_error(format!("Expected type base, found end of tokens."));
+        return data.log_error("Expected type base, found end of tokens.".to_string());
     };
 
     let _type = match &next_token.kind {

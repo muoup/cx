@@ -58,7 +58,7 @@ pub fn typecheck(
                             .and_then(|tc| tc.standard_ready_coerce(env, init.token_range()))
                             .and_then(|tc| evaluate_comptime_expression(env, tc))
                             .and_then(|ce| ce.as_integer().ok_or_else(|| {
-                                env.error(init.token_range(), format!("Global variable initializer must be a constant integer expression"))
+                                env.error(init.token_range(), "Global variable initializer must be a constant integer expression".to_string())
                             }))
                     })
                     .transpose()?;

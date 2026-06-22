@@ -61,7 +61,7 @@ pub(crate) fn evaluate_comptime_call(
                 .map_err(|err| env.complete_err(err, call_range))?;
         }
 
-        for (param, arg) in function.prototype.params().iter().zip(args.into_iter()) {
+        for (param, arg) in function.prototype.params().iter().zip(args) {
             let Some(name) = param.name.clone() else {
                 continue;
             };
@@ -69,7 +69,7 @@ pub(crate) fn evaluate_comptime_call(
             if !param.value_type.expr {
                 return env.log_error(
                     call_range,
-                    format!("Non-expr comptime parameters are not implemented yet"),
+                    "Non-expr comptime parameters are not implemented yet".to_string(),
                 );
             }
 
@@ -118,7 +118,7 @@ pub(crate) fn evaluate_comptime_call(
             let ComptimeKind::Emit(expr) = value.kind else {
                 return env.log_error(
                     call_range,
-                    format!("Comptime expr function must return an emitted expression"),
+                    "Comptime expr function must return an emitted expression".to_string(),
                 );
             };
 
@@ -181,7 +181,7 @@ fn typecheck_comptime_body(
         CXExprKind::Block { .. } => {
             return env.log_error(
                 body.token_range(),
-                format!("Only single-expression comptime function bodies are implemented"),
+                "Only single-expression comptime function bodies are implemented".to_string(),
             );
         }
         _ => body,
@@ -192,7 +192,7 @@ fn typecheck_comptime_body(
         CXExprKind::Return { value: None } => {
             return env.log_error(
                 expr.token_range(),
-                format!("Comptime function return requires a value"),
+                "Comptime function return requires a value".to_string(),
             );
         }
         _ => expr,

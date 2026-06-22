@@ -76,7 +76,7 @@ pub(crate) fn evaluate_expression(
             let Some(condition) = condition.as_integer() else {
                 return engine.log_error(
                     condition.token_range,
-                    format!("Expected integer condition in comptime conditional expression"),
+                    "Expected integer condition in comptime conditional expression".to_string(),
                 );
             };
 
@@ -87,7 +87,7 @@ pub(crate) fn evaluate_expression(
             } else {
                 return engine.log_error(
                     token_range,
-                    format!("Invalid conditional expression in comptime context"),
+                    "Invalid conditional expression in comptime context".to_string(),
                 );
             }
         }
@@ -95,7 +95,7 @@ pub(crate) fn evaluate_expression(
         _ => {
             return engine.log_error(
                 token_range,
-                format!("Invalid expression in comptime context"),
+                "Invalid expression in comptime context".to_string(),
             );
         }
     })
@@ -116,13 +116,13 @@ fn evaluate_binary_operation(
             let Some(lhs) = lhs.as_integer() else {
                 return engine.log_error(
                     lhs.token_range,
-                    format!("Expected integer left-hand operand in comptime expression"),
+                    "Expected integer left-hand operand in comptime expression".to_string(),
                 );
             };
             let Some(rhs) = rhs.as_integer() else {
                 return engine.log_error(
                     rhs.token_range,
-                    format!("Expected integer right-hand operand in comptime expression"),
+                    "Expected integer right-hand operand in comptime expression".to_string(),
                 );
             };
 
@@ -198,7 +198,7 @@ fn evaluate_binary_operation(
 
         MIRBinOp::PtrDiff { .. } | MIRBinOp::Pointer { .. } => engine.log_error(
             token_range,
-            format!("Invalid pointer operation in comptime context"),
+            "Invalid pointer operation in comptime context".to_string(),
         ),
     }
 }
@@ -217,7 +217,7 @@ fn evaluate_unary_operation(
             let Some(value) = value.as_integer() else {
                 return engine.log_error(
                     value.token_range,
-                    format!("Expected integer operand in comptime negation"),
+                    "Expected integer operand in comptime negation".to_string(),
                 );
             };
 
@@ -242,7 +242,7 @@ fn evaluate_unary_operation(
             let Some(value) = value.as_integer() else {
                 return engine.log_error(
                     value.token_range,
-                    format!("Expected integer operand in comptime bitwise not"),
+                    "Expected integer operand in comptime bitwise not".to_string(),
                 );
             };
 
@@ -258,7 +258,7 @@ fn evaluate_unary_operation(
             let Some(value) = value.as_integer() else {
                 return engine.log_error(
                     value.token_range,
-                    format!("Expected integer operand in comptime logical not"),
+                    "Expected integer operand in comptime logical not".to_string(),
                 );
             };
 
@@ -266,7 +266,7 @@ fn evaluate_unary_operation(
         }
         MIRUnOp::PreIncrement(_) | MIRUnOp::PostIncrement(_) => engine.log_error(
             token_range,
-            format!("Invalid unary expression in comptime context"),
+            "Invalid unary expression in comptime context".to_string(),
         ),
     }
 }
@@ -285,7 +285,7 @@ fn evaluate_type_conversion(
             let Some(value) = value.as_integer() else {
                 return engine.log_error(
                     value.token_range,
-                    format!("Expected integer operand in comptime integral conversion"),
+                    "Expected integer operand in comptime integral conversion".to_string(),
                 );
             };
 
@@ -310,7 +310,7 @@ fn evaluate_type_conversion(
             let Some(value) = value.as_integer() else {
                 return engine.log_error(
                     value.token_range,
-                    format!("Expected integer operand in comptime integer-to-float conversion"),
+                    "Expected integer operand in comptime integer-to-float conversion".to_string(),
                 );
             };
 
@@ -337,7 +337,7 @@ fn evaluate_type_conversion(
         MIRCoercion::PtrToInt { .. } | MIRCoercion::IntToPtr { .. } | MIRCoercion::GetFnPtr => {
             engine.log_error(
                 token_range,
-                format!("Invalid conversion in comptime context"),
+                "Invalid conversion in comptime context".to_string(),
             )
         }
     }
@@ -370,7 +370,7 @@ fn expect_float(engine: &mut ComptimeEngine, value: ComptimeValue) -> CXResult<f
     let ComptimeKind::Float { val, .. } = value.kind else {
         return engine.log_error(
             value.token_range,
-            format!("Expected float operand in comptime expression"),
+            "Expected float operand in comptime expression".to_string(),
         );
     };
 

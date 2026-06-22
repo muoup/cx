@@ -26,14 +26,14 @@ pub fn resolve_type_constructor_pattern(
     else {
         return env.log_error(
             expr.token_range(),
-            format!("Expected qualified tagged union variant pattern"),
+            "Expected qualified tagged union variant pattern".to_string(),
         );
     };
 
     let Some((union_namespace, union_name)) = constructor.namespace.parent_and_name() else {
         return env.log_error(
             expr.token_range(),
-            format!("Expected tagged union variant pattern to name a type member constructor"),
+            "Expected tagged union variant pattern to name a type member constructor".to_string(),
         );
     };
 
@@ -43,7 +43,7 @@ pub fn resolve_type_constructor_pattern(
         Some(_) => {
             return env.log_error(
                 expr.token_range(),
-                format!("Tagged union variant payload pattern must be a binding"),
+                "Tagged union variant payload pattern must be a binding".to_string(),
             );
         }
     };

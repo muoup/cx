@@ -30,7 +30,7 @@ pub trait MIRTypeContext {
         if let MIRTypeKind::Function { signature } = &self
             .ptr_inner(ty)
             .or_else(|| self.mem_ref_inner(ty))
-            .unwrap_or_else(|| ty)
+            .unwrap_or(ty)
             .kind
         {
             return Some(signature.as_ref());

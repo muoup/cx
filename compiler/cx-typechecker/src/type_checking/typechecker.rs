@@ -281,7 +281,7 @@ fn typecheck_expr_inner(
             let Some(scope_idx) = env.function.nearest_break_scope() else {
                 return env.log_error(
                     expr.token_range(),
-                    format!("'break' used outside of a loop or switch context"),
+                    "'break' used outside of a loop or switch context".to_string(),
                 );
             };
             enqueue_jump_arrow(
@@ -306,7 +306,7 @@ fn typecheck_expr_inner(
             let Some(scope_idx) = env.function.nearest_continue_scope() else {
                 return env.log_error(
                     expr.token_range(),
-                    format!("'continue' used outside of a loop context"),
+                    "'continue' used outside of a loop context".to_string(),
                 );
             };
             enqueue_jump_arrow(
@@ -350,7 +350,7 @@ fn typecheck_expr_inner(
             if !env.in_comptime_context() {
                 return env.log_error(
                     expr.token_range(),
-                    format!("'emit' may only be used in a comptime context"),
+                    "'emit' may only be used in a comptime context".to_string(),
                 );
             }
 

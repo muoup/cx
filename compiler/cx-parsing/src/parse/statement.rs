@@ -131,7 +131,7 @@ pub(crate) fn try_parse_keyword_stmt(
                     );
                     if default_case.is_some() {
                         return data
-                            .log_error(format!("Multiple default cases in switch statement"));
+                            .log_error("Multiple default cases in switch statement".to_string());
                     }
                     default_case = Some(index as usize);
                     continue;
@@ -166,7 +166,7 @@ pub(crate) fn try_parse_keyword_stmt(
                     assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
                     if default_arm.is_some() {
                         return data
-                            .log_error(format!("Multiple default cases in match statement"));
+                            .log_error("Multiple default cases in match statement".to_string());
                     }
                     default_arm = Some(Box::new(parse_stmt(data)?));
                     continue;
@@ -307,7 +307,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<CXExpres
                 ),
             );
         } else {
-            return data.log_error(format!("Expected variable name in declaration"));
+            return data.log_error("Expected variable name in declaration".to_string());
         }
 
         if !try_next!(data.tokens, TokenKind::Operator(OperatorType::Comma)) {

@@ -40,19 +40,19 @@ pub(crate) fn typecheck_move(
     let Some(binding) = binding else {
         return env.log_error(
             inner_expr.token_range(),
-            format!("Move expressions can currently only be applied to stack variable identifiers"),
+            "Move expressions can currently only be applied to stack variable identifiers".to_string(),
         );
     };
 
     if binding.kind != BindingPlaceKind::Local {
         return env.log_error(
             inner_expr.token_range(),
-            format!("Moving out of aggregate fields or projections is not implemented"),
+            "Moving out of aggregate fields or projections is not implemented".to_string(),
         );
     };
 
     if !matches!(inner_val.kind, MIRExpressionKind::Variable { .. }) {
-        return env.log_error(inner_expr.token_range(), format!("Move expressions can currently only be applied to stack variable identifiers", ));
+        return env.log_error(inner_expr.token_range(), "Move expressions can currently only be applied to stack variable identifiers".to_string());
     }
 
     let Some(inner_type) = env.symbols.mem_ref_inner(&inner_val._type).cloned() else {
@@ -79,7 +79,7 @@ pub(crate) fn typecheck_adopt(
     if env.function.in_safe_context() {
         return env.log_error(
             expr.token_range(),
-            format!("@adopt is unsafe and must be wrapped in @unsafe in safe functions"),
+            "@adopt is unsafe and must be wrapped in @unsafe in safe functions".to_string(),
         );
     }
 
@@ -89,14 +89,14 @@ pub(crate) fn typecheck_adopt(
     let Some(inner_type) = env.symbols.mem_ref_inner(&value._type).cloned() else {
         return env.log_error(
             expr.token_range(),
-            format!("@adopt requires an addressable memory place"),
+            "@adopt requires an addressable memory place".to_string(),
         );
     };
 
     if value._type.get_specifier(CX_CONST) || inner_type.get_specifier(CX_CONST) {
         return env.log_error(
             expr.token_range(),
-            format!("@adopt cannot adopt from a const memory place"),
+            "@adopt cannot adopt from a const memory place".to_string(),
         );
     }
 
@@ -105,7 +105,7 @@ pub(crate) fn typecheck_adopt(
     {
         return env.log_error(
             expr.token_range(),
-            format!("@adopt of a local binding is not allowed; use move for local bindings"),
+            "@adopt of a local binding is not allowed; use move for local bindings".to_string(),
         );
     }
 
@@ -124,7 +124,7 @@ pub(crate) fn typecheck_leak(
     if env.function.in_safe_context() {
         return env.log_error(
             expr.token_range(),
-            format!("@leak is unsafe and must be wrapped in @unsafe in safe functions"),
+            "@leak is unsafe and must be wrapped in @unsafe in safe functions".to_string(),
         );
     }
 
@@ -133,14 +133,14 @@ pub(crate) fn typecheck_leak(
     let Some(binding) = value.binding().cloned() else {
         return env.log_error(
             expr.token_range(),
-            format!("@leak currently requires a local identifier"),
+            "@leak currently requires a local identifier".to_string(),
         );
     };
 
     if binding.kind != BindingPlaceKind::Local {
         return env.log_error(
             expr.token_range(),
-            format!("@leak on aggregate fields or projections is not implemented"),
+            "@leak on aggregate fields or projections is not implemented".to_string(),
         );
     };
 
@@ -149,7 +149,7 @@ pub(crate) fn typecheck_leak(
     let Some(inner_type) = env.symbols.mem_ref_inner(&value._type).cloned() else {
         return env.log_error(
             expr.token_range(),
-            format!("@leak requires a stack local value"),
+            "@leak requires a stack local value".to_string(),
         );
     };
 
@@ -179,7 +179,7 @@ pub(crate) fn typecheck_unpack(
         .and_then(|v| v.standard_ready_coerce(env, inner.token_range()))?;
 
     let MIRTypeKind::Structured { fields } = &value._type.kind else {
-        return env.log_error(expr.token_range(), format!("@unpack expects a struct type"));
+        return env.log_error(expr.token_range(), "@unpack expects a struct type".to_string());
     };
 
     let field_map = fields

@@ -187,7 +187,7 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<ParsedImport> {
 
     loop {
         let Some(tok) = tokens.next().cloned() else {
-            return tokens.log_error(format!("Reached end of token stream when parsing import!"));
+            return tokens.log_error("Reached end of token stream when parsing import!".to_string());
         };
 
         match &tok.kind {
@@ -208,7 +208,7 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<ParsedImport> {
     }
 
     if import_path.is_empty() {
-        return tokens.log_error(format!("Import path cannot be empty"));
+        return tokens.log_error("Import path cannot be empty".to_string());
     }
 
     Ok(ParsedImport {
@@ -219,7 +219,7 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<ParsedImport> {
 
 fn parse_import_alias(tokens: &mut TokenIter) -> CXResult<NamespacePath> {
     let Some(ident) = try_parse_qualified_name(tokens)? else {
-        return tokens.log_error(format!("Expected identifier for import alias"));
+        return tokens.log_error("Expected identifier for import alias".to_string());
     };
 
     if ident.namespace.is_root() && ident.name.as_str() == "_" {

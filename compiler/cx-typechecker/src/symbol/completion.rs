@@ -122,7 +122,7 @@ fn complete_type_value(
                     v.as_integer().ok_or_else(|| {
                         env.error(
                             v.token_range,
-                            format!("Array size must be an integer literal"),
+                            "Array size must be an integer literal".to_string(),
                         )
                     })
                 })?;
@@ -382,7 +382,7 @@ fn complete_identifier_type(
             )?;
 
             complete_template_type_lookup(env, namespace, name, &mir_symbol, template_input)
-                .map_err(|e| e.into())
+                .map_err(|e| e)
         }
 
         CXSymbolKind::DuplicateDefinition(_) => {
@@ -421,7 +421,7 @@ fn complete_resolved_type_lookup(
         }
         MIRSymbol::Template { .. } => {
             complete_template_type_lookup(env, namespace, name, &symbol, template_input)
-                .map_err(|e| e.into())
+                .map_err(|e| e)
         }
 
         _ => env
@@ -445,7 +445,7 @@ fn complete_template_type_lookup(
     let input = complete_template_input(env, namespace, input)?;
     let Some(symbol) = apply_template(env, mir_symbol, input)? else {
         return env
-            .log_error_base(format!("Failed to apply template arguments"))
+            .log_error_base("Failed to apply template arguments".to_string())
             .map_err(|e| e.into());
     };
 
