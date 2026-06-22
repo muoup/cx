@@ -406,10 +406,12 @@ fn typecheck_expr_inner(
             op: CXBinOp::MethodCall,
             lhs,
             rhs,
-        } => typecheck_method_call(env, namespace, lhs, rhs, expr)?,
+        } => typecheck_method_call(env, namespace, lhs, rhs, expr, expected_type)?,
 
         CXExprKind::BinOp { op, lhs, rhs } => {
-            if let Some(expr) = try_typecheck_special_binop(env, namespace, op, expr, lhs, rhs)? {
+            if let Some(expr) =
+                try_typecheck_special_binop(env, namespace, op, expr, lhs, rhs, expected_type)?
+            {
                 expr
             } else {
                 let lhs = typecheck_expr(env, namespace, lhs, None)

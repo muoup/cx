@@ -373,8 +373,8 @@ pub(crate) fn parse_expr_val(
                 TokenKind::Punctuator(PunctuatorType::CloseParen)
             ) {
                 expr_stack.push(CXExprKind::Unit.into_expr(
-                    0,
-                    0,
+                    start_index,
+                    data.tokens.index,
                     data.file_origin_for_range(start_index, data.tokens.index),
                 ));
                 return Ok(());

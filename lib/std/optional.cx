@@ -14,7 +14,7 @@ enum union opt<T> : @copy_traits(T) {
 comptime expr T opt::try<T>(expr opt<T> self) {
     return emit match (self) {
         opt::some<T>(value) => yield move value;
-        opt::none<T>() => return opt::none<T>();
+        opt::none<T>() => return opt::none();
     };
 }
 

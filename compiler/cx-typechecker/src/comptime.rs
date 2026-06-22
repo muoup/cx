@@ -1,7 +1,6 @@
 use cx_ast::ast::expression::{CXExprKind, CXExpression};
 use cx_log::CXResult;
 use cx_mir::mir::expression::MIRExpression;
-use cx_mir::type_context::MIRTypeContext;
 use cx_util::namespace::QualifiedName;
 
 use crate::{
@@ -109,12 +108,7 @@ fn coerce_staged_argument(
 ) -> CXResult<MIRExpression> {
     let arg = arg.standard_ready_coerce(env, call_range)?;
 
-    if env
-        .symbols
-        .mem_ref_inner(&arg._type)
-        .is_some_and(|inner| env.type_eq(inner, target_type))
-        || env.type_eq(&arg._type, target_type)
-    {
+    if env.type_eq(&arg._type, target_type) {
         return Ok(arg);
     }
 

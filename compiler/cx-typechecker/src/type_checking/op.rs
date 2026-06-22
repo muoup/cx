@@ -7,7 +7,10 @@ use crate::{
 };
 use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
 use cx_log::CXResult;
-use cx_mir::{EnvironmentNamespace, mir::expression::MIRExpression};
+use cx_mir::{
+    EnvironmentNamespace,
+    mir::{data::MIRType, expression::MIRExpression},
+};
 
 pub use unop::typecheck_unop;
 
@@ -21,6 +24,7 @@ pub fn try_typecheck_special_binop(
     expr: &CXExpression,
     lhs: &CXExpression,
     rhs: &CXExpression,
+    expected_type: Option<&MIRType>,
 ) -> CXResult<Option<TypecheckResult>> {
     Ok(match op {
         CXBinOp::Pipe => {
@@ -42,6 +46,7 @@ pub fn try_typecheck_special_binop(
                         vec![implicit_param],
                         rhs,
                         expr,
+                        expected_type,
                     )?)
                 }
 

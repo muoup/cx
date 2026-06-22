@@ -20,10 +20,11 @@ pub(crate) fn typecheck_method_call(
     lhs: &CXExpression,
     rhs: &CXExpression,
     expr: &CXExpression,
+    expected_type: Option<&MIRType>,
 ) -> CXResult<TypecheckResult> {
     let function = typecheck_expr(env, namespace, lhs, None)?;
 
-    typecheck_callee_method_call(env, namespace, function, vec![], rhs, expr)
+    typecheck_callee_method_call(env, namespace, function, vec![], rhs, expr, expected_type)
 }
 
 pub(crate) fn typecheck_callee_method_call(
@@ -33,9 +34,18 @@ pub(crate) fn typecheck_callee_method_call(
     implicit_args: Vec<MIRExpression>,
     rhs: &CXExpression,
     expr: &CXExpression,
+    expected_type: Option<&MIRType>,
 ) -> CXResult<TypecheckResult> {
     let tc_args = comma_separated(env, namespace, rhs)?;
-    let callee = complete_callee(env, namespace, expr, callee, &implicit_args, &tc_args)?;
+    let callee = complete_callee(
+        env,
+        namespace,
+        expr,
+        callee,
+        &implicit_args,
+        &tc_args,
+        expected_type,
+    )?;
     let all_args = implicit_args
         .into_iter()
         .map(TypecheckResult::from)
@@ -258,6 +268,7 @@ fn complete_callee(
     function: TypecheckResult,
     implicit_args: &[MIRExpression],
     args: &[(&CXExpression, TypecheckResult)],
+    expected_type: Option<&MIRType>,
 ) -> CXResult<CompletedCallee> {
     match function.try_into_expression() {
         TypecheckExtract::Succ(callee) => Ok(CompletedCallee::Runtime(callee)),
@@ -288,6 +299,7 @@ fn complete_callee(
                 &parts.name,
                 parts.template_input.as_ref(),
                 &deduction_arg_types,
+                expected_type,
             ) {
                 Ok(symbol) => symbol,
                 Err(err) => {
