@@ -369,8 +369,8 @@ fn write_type_body(
         }
         MIRTypeKind::Unit => write!(f, "()"),
         MIRTypeKind::PointerTo { inner_type } => {
-            write!(f, "*")?;
             write_type_id(f, definitions, *inner_type, state)?;
+            write!(f, "*")?;
             write_type_qualifiers_suffix(f, ty.specifiers)
         }
         MIRTypeKind::MemoryReference {

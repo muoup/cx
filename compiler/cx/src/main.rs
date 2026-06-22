@@ -8,7 +8,10 @@ use cx_pipeline_data::{CompilationMode, CompilerConfig};
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 
-use crate::{build::run_build_mode, init::run_init_mode};
+use crate::{
+    build::{run_build_mode, run_run_mode},
+    init::run_init_mode,
+};
 
 fn setup_internal_directory(working_directory: &Path) -> PathBuf {
     let internal_directory = working_directory.join(".internal");
@@ -173,6 +176,7 @@ fn main() {
     match command {
         Command::CompileFile(args) => run_file_mode(args),
         Command::Build(args) => run_build_mode(args),
+        Command::Run(args) => run_run_mode(args),
         Command::Init(args) => run_init_mode(args),
     }
 }

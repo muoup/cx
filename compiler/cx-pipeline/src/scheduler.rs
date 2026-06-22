@@ -1,7 +1,7 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::pipeline_error;
 use crate::progress::ProgressReporter;
-use cx_log::{CXResult, error::CXErr};
+use cx_log::{error::CXErr, CXResult};
 use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::preparse::PreparseConfig;

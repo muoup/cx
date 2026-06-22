@@ -9,8 +9,8 @@ use crate::scheduler::scheduling_loop;
 use crate::scheduler::scheduling_loop_collect_errors;
 use cx_ast::registry::ExportNameMode;
 use cx_log::{
+    error::{context::CXInternalContext, message::CXStdErrMessage, CXErr},
     CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_pipeline_data::config::{CXProjectConfig, TargetConfig};
 use cx_pipeline_data::db::ModuleData;
@@ -21,7 +21,7 @@ use cx_pipeline_data::{
 };
 use cx_util::format::with_dump_directory;
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 // Re-export LSP diagnostic types for use by cx-lsp
@@ -168,7 +168,7 @@ pub fn project_compilation(
     base_config: CompilerConfig,
     project_config: &CXProjectConfig,
     target_filter: Option<&str>,
-) -> CXResult<()> {
+) -> CXResult<Vec<PathBuf>> {
     let workspace = project_config.workspace.as_ref().ok_or(pipeline_error(
         "COMPILATION ERROR",
         "cx.toml has no [workspace] section",
@@ -185,6 +185,8 @@ pub fn project_compilation(
     } else {
         workspace.targets.iter().collect()
     };
+
+    let mut binaries_built = Vec::new();
 
     for (target_name, target_config) in targets {
         let link_entries = target_config.link.clone().unwrap_or_default();
@@ -237,7 +239,7 @@ pub fn project_compilation(
             for binary in binaries {
                 let output = output_dir.join(&binary.name);
                 let mut config = base_config.clone();
-                config.output = output;
+                config.output = output.clone();
                 config.compilation_mode = CompilationMode::Executable;
                 config.link_entries = link_entries.clone();
                 config.native_objects = native_objects.clone();
@@ -248,6 +250,7 @@ pub fn project_compilation(
                     binary.name, target_name
                 );
                 standard_compilation(config, Path::new(&binary.entry))?;
+                binaries_built.push(output);
             }
         }
 
@@ -292,7 +295,7 @@ pub fn project_compilation(
         }
     }
 
-    Ok(())
+    Ok(binaries_built)
 }
 
 /// Typecheck-only compilation for LSP integration.

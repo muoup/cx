@@ -6,6 +6,8 @@ pub enum Command {
     CompileFile(FileArgs),
     /// Project build mode: cx build [target] [options]
     Build(BuildArgs),
+    /// Project run mode: cx run [target] [options] [-- args...]
+    Run(RunArgs),
     /// Initialize a new project: cx init <project-name>
     Init(InitArgs),
 }
@@ -35,6 +37,12 @@ pub struct BuildArgs {
     pub verbose: bool,
 }
 
+#[derive(Debug)]
+pub struct RunArgs {
+    pub build: BuildArgs,
+    pub executable_args: Vec<String>,
+}
+
 #[derive(Debug, Default)]
 struct CommonArgs {
     backend: Option<CompilerBackend>,
@@ -60,10 +68,12 @@ pub fn print_help() {
     println!("Usage:");
     println!("  cx <file.cx>... [options]");
     println!("  cx build [target] [options]");
+    println!("  cx run [target] [options] [-- args...]");
     println!("  cx init <project-name>");
     println!();
     println!("Commands:");
     println!("  build [target]       Build from cx.toml (all targets or a specific one)");
+    println!("  run [target]         Build and run a project binary");
     println!("  init <project-name>  Create a new CX project");
     println!();
     println!("Legacy single-file mode:");
@@ -160,6 +170,10 @@ pub fn parse_args() -> Result<Command, String> {
         return parse_build_args(args_iter);
     }
 
+    if first_arg == "run" {
+        return parse_run_args(args_iter);
+    }
+
     if first_arg == "init" {
         return parse_init_args(args_iter);
     }
@@ -175,6 +189,10 @@ pub fn parse_args() -> Result<Command, String> {
 }
 
 fn parse_build_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
+    Ok(Command::Build(parse_build_args_inner(args)?))
+}
+
+fn parse_build_args_inner(args: impl IntoIterator<Item = String>) -> Result<BuildArgs, String> {
     let ParsedCommonArgs { common, rest } = parse_common_flags(args);
     let mut target = None;
 
@@ -195,12 +213,36 @@ fn parse_build_args(args: impl IntoIterator<Item = String>) -> Result<Command, S
         target = Some(arg);
     }
 
-    Ok(Command::Build(BuildArgs {
+    Ok(BuildArgs {
         target,
         backend: common.backend,
         optimization_level: common.optimization_level,
         analysis: if common.analysis { Some(true) } else { None },
         verbose: common.verbose,
+    })
+}
+
+fn parse_run_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
+    let mut build_args = Vec::new();
+    let mut executable_args = Vec::new();
+    let mut after_separator = false;
+
+    for arg in args {
+        if after_separator {
+            executable_args.push(arg);
+            continue;
+        }
+
+        if arg == "--" {
+            after_separator = true;
+        } else {
+            build_args.push(arg);
+        }
+    }
+
+    Ok(Command::Run(RunArgs {
+        build: parse_build_args_inner(build_args)?,
+        executable_args,
     }))
 }
 

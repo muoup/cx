@@ -55,7 +55,7 @@ void interpreter::register_program_functions(interpreter& this, lisp_node* body,
 
 f64 find_local(std::span<binding> locals, _str& name) {
     for (usize i = 0; i < locals.length; i++) {
-        if (strcmp(locals.data[i].name, name) == 1) {
+        if (strcmp(locals.data[i].name, name) == 0) {
             return locals.data[i].value;
         }
     }
@@ -69,7 +69,7 @@ lisp_node* interpreter::find_function(interpreter& this, _str& name) {
         lisp_node* node = &this.program_body[i];
         match (node) {
             lisp_node::FnDef(fn_def) => {
-                if (strcmp(fn_def.name |> std::string::as_str(), name)) {
+                if (strcmp(fn_def.name |> std::string::as_str(), name) == 0) {
                     return node;
                 }
             }
@@ -152,7 +152,7 @@ f64 interpreter::eval(interpreter& this, lisp_node& node, std::span<binding> loc
             return 0.0;
         }
         lisp_node::PrintStr(value) => {
-            printf("%s\n", value);
+            printf("%s\n", value |> std::string::as_str());
             return 0.0;
         }
     }
