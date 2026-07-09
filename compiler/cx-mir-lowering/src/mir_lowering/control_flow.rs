@@ -580,7 +580,12 @@ pub fn lower_return(
 
     if has_return_buffer {
         let return_buffer = LMIRValue::ParameterRef(0);
-        let return_type = signature.return_type.clone();
+        let mir_return_type = builder
+            .current_mir_prototype()
+            .signature()
+            .return_type
+            .clone();
+        let return_layout = builder.type_layout(&mir_return_type);
 
         if let Some(src) = bc_value {
             builder.add_new_instruction(
@@ -588,10 +593,10 @@ pub fn lower_return(
                     dest: return_buffer.clone(),
                     src,
                     size: LMIRValue::IntImmediate {
-                        val: usize::from(return_type.size()) as i64,
+                        val: return_layout.size as i64,
                         _type: LMIRIntegerType::I64,
                     },
-                    alignment: return_type.alignment(),
+                    alignment: return_layout.alignment as u8,
                 },
                 LMIRType::unit(),
                 false,

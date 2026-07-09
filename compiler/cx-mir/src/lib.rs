@@ -10,6 +10,7 @@ use crate::{
 };
 
 pub mod intrinsic_types;
+pub mod layout;
 pub mod mir;
 pub mod registry;
 pub mod symbol;

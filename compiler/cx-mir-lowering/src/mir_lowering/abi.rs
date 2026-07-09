@@ -3,15 +3,23 @@ use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRABISlot, LMIRFunctionSignature, LMIRParameter, LMIRParameterABI, LMIRReturnABI};
 use cx_mir::mir::data::{MIRParameter, MIRType};
 use cx_mir::registry::MIRDecomposedRegistry;
+use cx_mir::type_context::MIRTypeContext;
 
 pub(crate) fn classify_signature(
-    return_type: &MIRType,
+    mir_return_type: &MIRType,
     params: &[MIRParameter],
     var_args: bool,
     definitions: &MIRDecomposedRegistry,
 ) -> LMIRFunctionSignature {
-    let return_type = convert_type(return_type, definitions);
-    let return_abi = classify_return(return_type.clone());
+    let return_type = convert_type(mir_return_type, definitions);
+    let return_layout = definitions
+        .type_layout(mir_return_type)
+        .unwrap_or_else(|err| panic!("Failed to calculate return type layout: {}", err.message()));
+    let return_abi = classify_return(
+        return_type.clone(),
+        return_layout.alignment as u8,
+        return_layout.size,
+    );
     let params = params
         .iter()
         .map(|param| classify_param(param, definitions))
@@ -25,7 +33,7 @@ pub(crate) fn classify_signature(
     }
 }
 
-fn classify_return(return_type: LMIRType) -> LMIRReturnABI {
+fn classify_return(return_type: LMIRType, alignment: u8, size: usize) -> LMIRReturnABI {
     if return_type.is_void() {
         return LMIRReturnABI::Void;
     }
@@ -39,17 +47,18 @@ fn classify_return(return_type: LMIRType) -> LMIRReturnABI {
         };
     }
 
-    if let Some(slots) = direct_aggregate_slots(&return_type) {
+    if let Some(slots) = direct_aggregate_slots(&return_type, size) {
         return LMIRReturnABI::Direct { slots };
     }
 
-    LMIRReturnABI::IndirectSret {
-        alignment: return_type.alignment(),
-    }
+    LMIRReturnABI::IndirectSret { alignment }
 }
 
 fn classify_param(param: &MIRParameter, definitions: &MIRDecomposedRegistry) -> LMIRParameter {
     let _type = convert_type(&param._type, definitions);
+    let layout = definitions
+        .type_layout(&param._type)
+        .unwrap_or_else(|err| panic!("Failed to calculate parameter layout: {}", err.message()));
     let abi = if !_type.is_memory_resident() {
         LMIRParameterABI::Direct {
             slots: vec![LMIRABISlot {
@@ -57,11 +66,11 @@ fn classify_param(param: &MIRParameter, definitions: &MIRDecomposedRegistry) -> 
                 _type: _type.clone(),
             }],
         }
-    } else if let Some(slots) = direct_aggregate_slots(&_type) {
+    } else if let Some(slots) = direct_aggregate_slots(&_type, layout.size) {
         LMIRParameterABI::Direct { slots }
     } else {
         LMIRParameterABI::Indirect {
-            alignment: _type.alignment(),
+            alignment: layout.alignment as u8,
         }
     };
 
@@ -82,7 +91,7 @@ fn integer_slot_type(size: usize) -> Option<LMIRType> {
     }
 }
 
-fn direct_aggregate_slots(ty: &LMIRType) -> Option<Vec<LMIRABISlot>> {
+fn direct_aggregate_slots(ty: &LMIRType, size: usize) -> Option<Vec<LMIRABISlot>> {
     if let Some(_type) = direct_sse_aggregate_type(ty) {
         return Some(vec![LMIRABISlot { _type, offset: 0 }]);
     }
@@ -126,15 +135,15 @@ fn direct_aggregate_slots(ty: &LMIRType) -> Option<Vec<LMIRABISlot>> {
         }
     }
 
-    direct_integer_aggregate_slots(ty)
+    direct_integer_aggregate_slots(ty, size)
 }
 
-fn direct_integer_aggregate_slots(ty: &LMIRType) -> Option<Vec<LMIRABISlot>> {
+fn direct_integer_aggregate_slots(ty: &LMIRType, size: usize) -> Option<Vec<LMIRABISlot>> {
     if !ty.is_structure() && !matches!(ty.kind, LMIRTypeKind::Opaque { .. }) {
         return None;
     }
 
-    match usize::from(ty.size()) {
+    match size {
         0 => None,
         size @ 1..=8 => Some(vec![LMIRABISlot {
             _type: integer_slot_type(size)?,

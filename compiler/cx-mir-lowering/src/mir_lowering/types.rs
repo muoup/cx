@@ -171,10 +171,12 @@ pub(crate) fn convert_type_kind(
                 .collect::<Vec<_>>(),
         },
 
-        MIRTypeKind::Union { variants } => lower_union(
-            variants.iter().map(|f| definitions.resolve_type_id(f.ty())),
-            definitions,
-        ),
+        MIRTypeKind::Union { .. } => LMIRTypeKind::Opaque {
+            bytes: definitions
+                .type_layout(cx_type)
+                .unwrap_or_else(|err| panic!("Failed to calculate union layout: {}", err.message()))
+                .size,
+        },
 
         MIRTypeKind::Unit => LMIRTypeKind::Unit,
 
@@ -195,7 +197,12 @@ fn lower_union<'a>(
     definitions: &MIRDecomposedRegistry,
 ) -> LMIRTypeKind {
     let size = variants
-        .map(|f| usize::from(convert_type(f, definitions).size()))
+        .map(|f| {
+            definitions
+                .type_layout(f)
+                .unwrap_or_else(|err| panic!("Failed to calculate union member layout: {}", err.message()))
+                .size
+        })
         .max()
         .unwrap_or(0);
 

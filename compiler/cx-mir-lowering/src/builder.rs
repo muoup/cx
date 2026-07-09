@@ -5,8 +5,10 @@ use crate::{LMIRResult, LMIRUnit};
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::*;
 use cx_log::CXResult;
+use cx_mir::layout::MIRTypeLayout;
 use cx_mir::mir::data::MIRFunctionPrototype;
 use cx_mir::registry::MIRDecomposedRegistry;
+use cx_mir::type_context::MIRTypeContext;
 use cx_mir::MIRUnit;
 use cx_util::format::dump_all;
 use cx_util::identifier::CXIdent;
@@ -64,6 +66,12 @@ impl LMIRBuilder {
             yield_stack: Vec::new(),
             function_context: None,
         }
+    }
+
+    pub(crate) fn type_layout(&self, ty: &cx_mir::mir::data::MIRType) -> MIRTypeLayout {
+        self.registry
+            .type_layout(ty)
+            .unwrap_or_else(|err| panic!("Failed to calculate MIR layout: {}", err.message()))
     }
 
     pub fn new_register(&mut self) -> LMIRRegister {

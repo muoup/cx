@@ -57,6 +57,7 @@ pub fn lower_binary_op(
         }
         MIRBinOp::PtrDiff { op, ptr_inner } => {
             let bc_inner_type = builder.convert_cx_type(ptr_inner);
+            let inner_layout = builder.type_layout(ptr_inner);
             let ptr_op = match op {
                 MIRPtrDiffBinOp::ADD => LMIRPtrBinOp::ADD,
                 MIRPtrDiffBinOp::SUB => LMIRPtrBinOp::SUB,
@@ -65,7 +66,7 @@ pub fn lower_binary_op(
             LMIRInstructionKind::PointerBinOp {
                 op: ptr_op,
                 ptr_type: bc_inner_type.clone(),
-                type_size: bc_inner_type.size(),
+                type_size: TypeSize::from(inner_layout.size),
                 left: bc_lhs,
                 right: bc_rhs,
             }
@@ -271,7 +272,7 @@ pub fn lower_unary_op(
                 MIRTypeKind::PointerTo { inner_type, .. } => {
                     let inner_type = builder.registry.resolve_type_id(*inner_type);
                     let bc_inner_type = builder.convert_cx_type(inner_type);
-                    let type_size = bc_inner_type.size();
+                    let type_size = TypeSize::from(builder.type_layout(inner_type).size);
 
                     LMIRInstructionKind::PointerBinOp {
                         op: LMIRPtrBinOp::ADD,
