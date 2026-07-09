@@ -997,12 +997,14 @@ fn lower_call(
     let returns_indirectly = call_signature.return_abi.has_indirect_return_param();
     let mut args = Vec::new();
     for (i, arg) in arguments.iter().enumerate() {
-        if let Some(abi_param) = call_signature.params.get(i) {
+        if let (Some(abi_param), Some(semantic_param)) =
+            (call_signature.params.get(i), signature.params.get(i))
+        {
             args.extend(lower_call_argument(
                 builder,
                 arg,
                 &abi_param.abi,
-                &abi_param._type,
+                &semantic_param._type,
             )?);
         } else {
             args.push(lower_expression(builder, arg)?);
@@ -1158,11 +1160,13 @@ fn lower_call_argument(
     builder: &mut LMIRBuilder,
     arg: &MIRExpression,
     abi_arg: &LMIRParameterABI,
-    semantic_param_type: &LMIRType,
+    semantic_param_type: &MIRType,
 ) -> CXResult<Vec<LMIRValue>> {
+    let semantic_param_lmir_type = builder.convert_cx_type(semantic_param_type);
+
     match abi_arg {
         LMIRParameterABI::Direct { slots } => {
-            if semantic_param_type.is_memory_resident() {
+            if semantic_param_lmir_type.is_memory_resident() {
                 let source = call_argument_region_source(arg);
                 let source_value = lower_expression(builder, source)?;
                 slots
@@ -1230,20 +1234,21 @@ fn lower_abi_slot_load(
 fn lower_byval_copy_argument(
     builder: &mut LMIRBuilder,
     source: &MIRExpression,
-    pointee: &LMIRType,
+    pointee: &MIRType,
     alignment: u8,
 ) -> CXResult<LMIRValue> {
     let source_value = lower_expression(builder, source)?;
-    let source_layout = builder.type_layout(&source._type);
+    let pointee_layout = builder.type_layout(pointee);
+    let pointee_type = builder.convert_cx_type(pointee);
     let new_region = builder.add_new_instruction(
         LMIRInstructionKind::Allocate {
             alignment,
-            _type: pointee.clone(),
+            _type: pointee_type,
         },
         LMIRType::default_pointer(),
         true,
     )?;
-    let size = builder.int_const(source_layout.size as i32, LMIRIntegerType::I64);
+    let size = builder.int_const(pointee_layout.size as i32, LMIRIntegerType::I64);
 
     builder.add_new_instruction(
         LMIRInstructionKind::Memcpy {
