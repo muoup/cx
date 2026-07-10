@@ -7,7 +7,7 @@ use cx_log::{
     error::{CXErr, CXErrMsg, CXMaybeRawErr, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_mir::{
-    EnvironmentNamespace, MIRUnit,
+    ArchitectureConfig, EnvironmentNamespace, MIRUnit,
     mir::contextual_eq::TypeContextEqual,
     mir::data::{MIRFunctionPrototype, MIRType},
     symbol::MIRSymbol,
@@ -46,12 +46,15 @@ pub struct TypeEnvironment<'a> {
 }
 
 impl TypeEnvironment<'_> {
-    pub fn new<'a>(module_data: &'a ModuleData) -> TypeEnvironment<'a> {
+    pub fn new<'a>(
+        module_data: &'a ModuleData,
+        architecture: ArchitectureConfig,
+    ) -> TypeEnvironment<'a> {
         TypeEnvironment {
-            symbols: MIRSymbolRegistry::new(&module_data.symbol_registry),
+            symbols: MIRSymbolRegistry::new(&module_data.symbol_registry, architecture),
             module_data,
             items: ItemRegistry::new(),
-            function: FunctionContext::default(),
+            function: FunctionContext::default() ,
             comptime_depth: 0,
         }
     }

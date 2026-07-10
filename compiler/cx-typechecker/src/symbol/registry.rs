@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use cx_ast::{ast::expression::CXExpression, registry::GlobalSymbolRegistry};
 use cx_log::{CXRawResult, CXResult};
 use cx_mir::{
+    ArchitectureConfig,
     EnvironmentNamespace,
     intrinsic_types::INTRINSIC_TYPES,
     mir::{
@@ -18,6 +19,7 @@ use cx_util::{identifier::CXIdent, namespace::QualifiedName, scoped_map::ScopedM
 
 /// Module-local symbol definitions
 pub struct MIRSymbolRegistry<'a> {
+    architecture: ArchitectureConfig,
     global_registry: &'a GlobalSymbolRegistry,
     global_cache: HashMap<QualifiedName, MIRSymbol>,
     local_symbols: ScopedMap<QualifiedName, MIRSymbol>,
@@ -27,6 +29,10 @@ pub struct MIRSymbolRegistry<'a> {
 }
 
 impl MIRTypeContext for MIRSymbolRegistry<'_> {
+    fn architecture(&self) -> &ArchitectureConfig {
+        &self.architecture
+    }
+
     fn resolve_type_id(&self, id: MIRTypeId) -> &MIRType {
         self.typeid_defs
             .get(&id)
@@ -49,8 +55,12 @@ impl MIRTypeContext for MIRSymbolRegistry<'_> {
 }
 
 impl<'a> MIRSymbolRegistry<'a> {
-    pub fn new(global_registry: &'a GlobalSymbolRegistry) -> Self {
+    pub fn new(
+        global_registry: &'a GlobalSymbolRegistry,
+        architecture: ArchitectureConfig,
+    ) -> Self {
         let mut registry = Self {
+            architecture,
             global_registry,
             global_cache: HashMap::new(),
             local_symbols: ScopedMap::new_with_starting_scope(),
@@ -70,9 +80,7 @@ impl<'a> MIRSymbolRegistry<'a> {
     }
 
     pub fn decompose(self) -> MIRDecomposedRegistry {
-        MIRDecomposedRegistry {
-            typeid_map: self.typeid_defs,
-        }
+        MIRDecomposedRegistry::new(self.architecture, self.typeid_defs)
     }
 
     pub fn get_global_registry(&self) -> &GlobalSymbolRegistry {

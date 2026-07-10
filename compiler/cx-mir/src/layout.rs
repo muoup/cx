@@ -25,10 +25,13 @@ pub fn layout_of<Context: MIRTypeContext + ?Sized>(
         }),
         MIRTypeKind::Integer { _type, .. } => Ok(scalar_layout(_type.bytes())),
         MIRTypeKind::Float { _type } => Ok(scalar_layout(_type.bytes())),
-        MIRTypeKind::PointerTo { .. } | MIRTypeKind::MemoryReference { .. } => Ok(MIRTypeLayout {
-            size: 8,
-            alignment: 8,
-        }),
+        MIRTypeKind::PointerTo { .. } | MIRTypeKind::MemoryReference { .. } => {
+            let architecture = definitions.architecture();
+            Ok(MIRTypeLayout {
+                size: architecture.pointer_size(),
+                alignment: architecture.pointer_alignment(),
+            })
+        }
         MIRTypeKind::Array { length, inner_type } => {
             let inner = layout_of(definitions, definitions.resolve_type_id(*inner_type))?;
             Ok(MIRTypeLayout {

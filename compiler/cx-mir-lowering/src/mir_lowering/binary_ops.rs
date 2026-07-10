@@ -281,7 +281,8 @@ pub fn lower_unary_op(
                         left: pre_loaded_val.clone(),
                         right: LMIRValue::IntImmediate {
                             val: *amt as i64,
-                            _type: LMIRIntegerType::I64,
+                            _type: builder
+                                .convert_integer_type(&builder.registry.pointer_integer_type()),
                         },
                     }
                 }

@@ -88,6 +88,7 @@ fn build_project(args: BuildArgs) -> Vec<PathBuf> {
     let internal_directory = setup_internal_directory(&project_root);
 
     let base_config = CompilerConfig {
+        architecture: cx_pipeline_data::ArchitectureConfig::default(),
         backend,
         optimization_level,
         output: project_root.clone(), // placeholder, overridden per-target

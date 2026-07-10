@@ -217,7 +217,7 @@ fn coerce_pointer_binop(
     };
 
     let intptr = MIRTypeKind::Integer {
-        _type: MIRIntegerType::I64,
+        _type: env.symbols.pointer_integer_type(),
         signed: true,
     };
 
