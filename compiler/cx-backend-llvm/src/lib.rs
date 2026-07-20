@@ -70,7 +70,7 @@ impl<'a> FunctionState<'a, '_> {
             }
 
             LMIRValue::IntImmediate { val, _type } => {
-                let as_type = LMIRType::from(LMIRTypeKind::Integer(*_type));
+                let as_type = LMIRType::with_implicit_abi(LMIRTypeKind::Integer(*_type));
 
                 let int_type = bc_llvm_type(self.context, &as_type)?;
                 let int_val = int_type

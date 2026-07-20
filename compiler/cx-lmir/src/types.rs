@@ -1,18 +1,35 @@
+use cx_target::ArchitectureConfig;
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct LMIRType {
     pub kind: LMIRTypeKind,
+    pub alignment: u8,
 }
 
 impl LMIRType {
+    pub fn new(kind: LMIRTypeKind, alignment: u8) -> Self {
+        LMIRType { kind, alignment }
+    }
+
+    pub fn with_implicit_abi(target: &ArchitectureConfig, kind: LMIRTypeKind) -> Self {
+        let alignment = usize::from(kind.implicit_size())
+            .next_power_of_two()
+            .min(target.pointer_size()) as u8;
+
+        LMIRType { kind, alignment }
+    }
+
     pub fn unit() -> Self {
         LMIRType {
             kind: LMIRTypeKind::Unit,
+            alignment: 1,
         }
     }
 
     pub fn bool() -> Self {
         LMIRType {
             kind: LMIRTypeKind::Integer(LMIRIntegerType::I1),
+            alignment: 1,
         }
     }
 
@@ -22,6 +39,7 @@ impl LMIRType {
                 nullable: false,
                 dereferenceable: 0,
             },
+            alignment: 8,
         }
     }
 }
@@ -88,15 +106,18 @@ impl From<usize> for TypeSize {
     }
 }
 
-impl From<LMIRTypeKind> for LMIRType {
-    fn from(kind: LMIRTypeKind) -> Self {
-        LMIRType { kind }
-    }
-}
+// impl From<LMIRTypeKind> for LMIRType {
+//     fn from(kind: LMIRTypeKind) -> Self {
+//         LMIRType {
+//             kind,
+//             alignment: None,
+//         }
+//     }
+// }
 
-impl LMIRType {
-    pub fn size(&self) -> TypeSize {
-        TypeSize(match &self.kind {
+impl LMIRTypeKind {
+    pub fn implicit_size(&self) -> TypeSize {
+        TypeSize(match &self {
             LMIRTypeKind::Opaque { bytes } => *bytes,
             LMIRTypeKind::Integer(_type) => _type.bytes() as usize,
             LMIRTypeKind::Float(_type) => _type.bytes() as usize,
@@ -119,33 +140,28 @@ impl LMIRType {
                     current_size += usize::from(field_size);
                 }
 
-                let alignment = self.alignment() as usize;
-                if current_size % alignment != 0 {
-                    current_size += alignment - (current_size % alignment);
-                }
-
                 current_size
             }
 
             LMIRTypeKind::Unit => 0,
         })
     }
+}
+
+impl LMIRType {
+    pub fn size(&self) -> TypeSize {
+        let mut implicit_size = self.kind.implicit_size();
+
+        if implicit_size.0 % self.alignment as usize != 0 {
+            implicit_size.0 +=
+                self.alignment as usize - (implicit_size.0 % self.alignment as usize);
+        }
+
+        return implicit_size;
+    }
 
     pub fn alignment(&self) -> u8 {
-        match &self.kind {
-            LMIRTypeKind::Opaque { bytes } => (*bytes).clamp(1, 8) as u8,
-            LMIRTypeKind::Integer(_type) => _type.bytes().clamp(1, 8),
-            LMIRTypeKind::Float(_type) => _type.bytes().clamp(1, 8),
-            LMIRTypeKind::Pointer { .. } => 8, // TODO: make this configurable
-            LMIRTypeKind::Vector { element, .. } => element.bytes().clamp(1, 16),
-            LMIRTypeKind::Array { element, .. } => element.alignment(),
-            LMIRTypeKind::Struct { fields, .. } => fields
-                .iter()
-                .map(|(_, field)| field.alignment())
-                .max()
-                .unwrap_or(8),
-            LMIRTypeKind::Unit => 1,
-        }
+        self.alignment
     }
 
     #[inline]

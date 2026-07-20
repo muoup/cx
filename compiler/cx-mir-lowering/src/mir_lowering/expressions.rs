@@ -864,9 +864,9 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             let tag_value = builder.add_new_instruction(
                 LMIRInstructionKind::Load {
                     memory: tag_ptr,
-                    _type: LMIRType::from(LMIRTypeKind::Integer(LMIRIntegerType::I8)),
+                    _type: LMIRType::with_implicit_abi(builder.architecture(), LMIRTypeKind::Integer(LMIRIntegerType::I8)),
                 },
-                LMIRType::from(LMIRTypeKind::Integer(LMIRIntegerType::I8)),
+                LMIRType::with_implicit_abi(builder.architecture(), LMIRTypeKind::Integer(LMIRIntegerType::I8)),
                 true,
             )?;
 
@@ -1303,7 +1303,7 @@ fn lower_array_initializer(
     let element_layout = builder.type_layout(element_type);
     let element_size = element_layout.size.into();
 
-    let array_type = LMIRType::from(LMIRTypeKind::Array {
+    let array_type = LMIRType::with_implicit_abi(builder.architecture(), LMIRTypeKind::Array {
         element: Box::new(bc_element_type.clone()),
         size: elements.len(),
     });

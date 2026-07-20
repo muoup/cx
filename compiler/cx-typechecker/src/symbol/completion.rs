@@ -18,9 +18,9 @@ use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 use cx_mir::{
     mir::{
         data::{
-            MIRAggregateAttributes, MIRComptimeFunctionPrototype, MIRComptimeParameter,
-            MIRComptimeValueType, MIRFunctionPrototype, MIRFunctionSignature, MIRParameter,
-            MIRTemplateInput,
+            MIRComptimeFunctionPrototype, MIRComptimeParameter, MIRComptimeValueType,
+            MIRFunctionPrototype, MIRFunctionSignature, MIRParameter, MIRTemplateInput,
+            MIRTypeAttributes,
         },
         name_mangling::{mangle_namespace_symbol, mangle_qualified_name},
         r#type::{MIRField, MIRMoveSemantics, MIRType, MIRTypeId, MIRTypeKind},
@@ -503,7 +503,10 @@ where
     Ok(MIRType {
         visibility: VisibilityMode::Private,
         specifiers: ty.specifiers,
-        move_attributes,
+        attributes: MIRTypeAttributes {
+            semantics: move_attributes,
+            ..Default::default()
+        },
         strong_identifier,
         lookup_identifier,
         template_info: None,
@@ -541,7 +544,7 @@ fn ensure_aggregate_fields_complete(env: &TypeEnvironment, fields: &[MIRField]) 
 
 fn ensure_aggregate_move_restrictions(
     env: &TypeEnvironment,
-    aggregate_attributes: MIRAggregateAttributes,
+    aggregate_attributes: MIRMoveSemantics,
     fields: &[MIRField],
 ) -> CXRawResult<()> {
     for field in fields {
@@ -549,14 +552,14 @@ fn ensure_aggregate_move_restrictions(
         let field_attributes = owned_move_attributes(env, field_type);
         let name = field.name().unwrap_or("<anonymous>");
 
-        if field_attributes.semantics.is_nodrop() && !aggregate_attributes.semantics.is_nodrop() {
+        if field_attributes.is_nodrop() && !aggregate_attributes.is_nodrop() {
             return env.log_error_base(format!(
                 "Aggregate containing nodrop field '{}' must also be marked as @nodrop",
                 name
             ));
         }
 
-        if field_attributes.semantics.is_nocopy() && !aggregate_attributes.semantics.is_nocopy() {
+        if field_attributes.is_nocopy() && !aggregate_attributes.is_nocopy() {
             return env.log_error_base(format!(
                 "Aggregate containing nocopy field '{}' must also be marked as @nodrop",
                 name
@@ -610,17 +613,15 @@ fn resolve_aggregate_move_attributes(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     attributes: Option<&CXAggregateAttributes>,
-) -> CXMaybeRawResult<MIRAggregateAttributes> {
+) -> CXMaybeRawResult<MIRMoveSemantics> {
     let Some(attributes) = attributes else {
-        return Ok(MIRAggregateAttributes::default());
+        return Ok(MIRMoveSemantics::default());
     };
 
-    let mut move_attributes = MIRAggregateAttributes {
-        semantics: match attributes.semantics {
-            CXMoveSemantics::POD => MIRMoveSemantics::POD,
-            CXMoveSemantics::Nocopy => MIRMoveSemantics::Nocopy,
-            CXMoveSemantics::Nodrop => MIRMoveSemantics::Nodrop,
-        },
+    let move_attributes = match attributes.semantics {
+        CXMoveSemantics::POD => MIRMoveSemantics::POD,
+        CXMoveSemantics::Nocopy => MIRMoveSemantics::Nocopy,
+        CXMoveSemantics::Nodrop => MIRMoveSemantics::Nodrop,
     };
 
     if let Some(param_name) = &attributes.copy_traits {
@@ -643,7 +644,7 @@ fn resolve_aggregate_move_attributes(
         };
         let source_attributes = owned_move_attributes(env, env.symbols.resolve_type_id(id));
 
-        move_attributes.semantics = source_attributes.semantics;
+        return Ok(source_attributes);
     }
 
     Ok(move_attributes)
@@ -691,15 +692,15 @@ fn complete_field(
     }
 }
 
-fn owned_move_attributes(env: &TypeEnvironment, ty: &MIRType) -> MIRAggregateAttributes {
+fn owned_move_attributes(env: &TypeEnvironment, ty: &MIRType) -> MIRMoveSemantics {
     match &ty.kind {
         MIRTypeKind::Structured { .. }
         | MIRTypeKind::Union { .. }
-        | MIRTypeKind::TaggedUnion { .. } => ty.move_attributes,
+        | MIRTypeKind::TaggedUnion { .. } => ty.attributes.semantics,
         MIRTypeKind::Array { inner_type, .. } => {
             owned_move_attributes(env, env.symbols.resolve_type_id(*inner_type))
         }
-        _ => MIRAggregateAttributes::default(),
+        _ => MIRMoveSemantics::default(),
     }
 }
 

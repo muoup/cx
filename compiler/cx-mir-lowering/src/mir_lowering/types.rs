@@ -40,8 +40,13 @@ impl LMIRBuilder {
 }
 
 pub(crate) fn convert_type(cx_type: &MIRType, definitions: &MIRDecomposedRegistry) -> LMIRType {
+    let layout = definitions
+        .type_layout(cx_type)
+        .unwrap_or_else(|err| panic!("Failed to calculate type layout: {}", err.message()));
+
     LMIRType {
         kind: convert_type_kind(cx_type, definitions),
+        alignment: layout.alignment as u8,
     }
 }
 
@@ -125,19 +130,23 @@ pub(crate) fn convert_type_kind(
 
         MIRTypeKind::TaggedUnion { variants } => LMIRTypeKind::Struct {
             name: cx_type.strong_identifier().unwrap().to_owned(),
-
             fields: vec![
                 (
                     "data".to_string(),
-                    lower_union(
-                        variants.iter().map(|f| definitions.resolve_type_id(f.ty())),
-                        definitions,
-                    )
-                    .into(),
+                    LMIRType::with_implicit_abi(
+                        definitions.architecture(),
+                        lower_union(
+                            variants.iter().map(|f| definitions.resolve_type_id(f.ty())),
+                            definitions,
+                        ),
+                    ),
                 ),
                 (
                     "tag".to_string(),
-                    LMIRTypeKind::Integer(LMIRIntegerType::I8).into(),
+                    LMIRType::with_implicit_abi(
+                        definitions.architecture(),
+                        LMIRTypeKind::Integer(LMIRIntegerType::I8),
+                    ),
                 ),
             ],
         },
@@ -200,7 +209,9 @@ fn lower_union<'a>(
         .map(|f| {
             definitions
                 .type_layout(f)
-                .unwrap_or_else(|err| panic!("Failed to calculate union member layout: {}", err.message()))
+                .unwrap_or_else(|err| {
+                    panic!("Failed to calculate union member layout: {}", err.message())
+                })
                 .size
         })
         .max()

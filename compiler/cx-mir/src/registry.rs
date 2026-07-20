@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
+use cx_target::ArchitectureConfig;
+
 use crate::{
-    architecture::ArchitectureConfig,
     mir::data::{MIRType, MIRTypeId},
     type_context::MIRTypeContext,
 };
@@ -19,10 +20,7 @@ pub struct MIRDecomposedRegistry {
 }
 
 impl MIRDecomposedRegistry {
-    pub fn new(
-        architecture: ArchitectureConfig,
-        typeid_map: HashMap<MIRTypeId, MIRType>,
-    ) -> Self {
+    pub fn new(architecture: ArchitectureConfig, typeid_map: HashMap<MIRTypeId, MIRType>) -> Self {
         Self {
             architecture,
             typeid_map,

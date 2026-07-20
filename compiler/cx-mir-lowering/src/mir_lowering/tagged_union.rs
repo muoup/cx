@@ -81,7 +81,10 @@ pub fn lower_tagged_union_set(
                 val: variant_index as i64,
                 _type: LMIRIntegerType::I8,
             },
-            _type: LMIRType::from(LMIRTypeKind::Integer(LMIRIntegerType::I8)),
+            _type: LMIRType::with_implicit_abi(
+                builder.architecture(),
+                LMIRTypeKind::Integer(LMIRIntegerType::I8),
+            ),
         },
         LMIRType::unit(),
         false,
@@ -148,7 +151,10 @@ pub fn lower_construct_tagged_union(
                 val: variant_index as i64,
                 _type: LMIRIntegerType::I8,
             },
-            _type: LMIRType::from(LMIRTypeKind::Integer(LMIRIntegerType::I8)),
+            _type: LMIRType::with_implicit_abi(
+                builder.architecture(),
+                LMIRTypeKind::Integer(LMIRIntegerType::I8),
+            ),
         },
         LMIRType::unit(),
         false,

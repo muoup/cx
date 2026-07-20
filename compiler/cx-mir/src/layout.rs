@@ -42,9 +42,9 @@ pub fn layout_of<Context: MIRTypeContext + ?Sized>(
         MIRTypeKind::Structured { fields } => struct_layout(definitions, fields),
         MIRTypeKind::Union { variants } => union_layout(definitions, variants),
         MIRTypeKind::TaggedUnion { variants } => tagged_union_layout(definitions, variants),
-        MIRTypeKind::Opaque { size } => Ok(MIRTypeLayout {
+        MIRTypeKind::Opaque { size, alignment } => Ok(MIRTypeLayout {
             size: *size,
-            alignment: (*size).clamp(1, 8),
+            alignment: *alignment,
         }),
         MIRTypeKind::Function { .. } | MIRTypeKind::Str => Err(CXStdErrMessage::error(
             "MIRLayoutError",
@@ -55,6 +55,16 @@ pub fn layout_of<Context: MIRTypeContext + ?Sized>(
             format!("cannot compute layout of undefined type: {ty:?}"),
         )),
     }
+    .map(|mut layout| {
+        if let Some(alignment) = ty.attributes.minimum_alignment {
+            layout.alignment = layout.alignment.max(alignment);
+        }
+
+        layout.alignment = layout
+            .alignment
+            .clamp(1, definitions.architecture().pointer_size());
+        layout
+    })
 }
 
 fn scalar_layout(size: usize) -> MIRTypeLayout {
@@ -90,15 +100,13 @@ fn struct_layout<Context: MIRTypeContext + ?Sized>(
                     layout_of(definitions, definitions.resolve_type_id(*integer_type_id))?;
                 let storage_bits = storage.size * 8;
                 if *width > storage_bits {
-                    return Err(
-                        CXStdErrMessage::error(
-                            "MIRLayoutError",
-                            format!(
-                                "invalid bitfield width: {} exceeds storage size of {} bits",
-                                width, storage_bits
-                            ),
-                        )
-                    );
+                    return Err(CXStdErrMessage::error(
+                        "MIRLayoutError",
+                        format!(
+                            "invalid bitfield width: {} exceeds storage size of {} bits",
+                            width, storage_bits
+                        ),
+                    ));
                 }
 
                 alignment = alignment.max(storage.alignment);
@@ -184,15 +192,13 @@ fn field_layout<Context: MIRTypeContext + ?Sized>(
             let layout = layout_of(definitions, definitions.resolve_type_id(*integer_type_id))?;
             let storage_bits = layout.size * 8;
             if *width > storage_bits {
-                return Err(
-                    CXStdErrMessage::error(
-                        "MIRLayoutError",
-                        format!(
-                            "invalid bitfield width: {} exceeds storage size of {} bits",
-                            width, storage_bits
-                        ),
-                    )
-                );
+                return Err(CXStdErrMessage::error(
+                    "MIRLayoutError",
+                    format!(
+                        "invalid bitfield width: {} exceeds storage size of {} bits",
+                        width, storage_bits
+                    ),
+                ));
             }
             Ok(if *width == 0 {
                 MIRTypeLayout {

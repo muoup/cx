@@ -263,7 +263,13 @@ pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
     ),
     // C header compatibility shims until MIR has long-double, complex, and
     // target ABI va_list types.
-    ("__builtin_va_list", MIRTypeKind::Opaque { size: 24 }),
+    (
+        "__builtin_va_list",
+        MIRTypeKind::Opaque {
+            size: 24,
+            alignment: 8,
+        },
+    ),
     (
         "long double",
         MIRTypeKind::Float {

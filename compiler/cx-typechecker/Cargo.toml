@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 cx-tokens = { path = "../cx-tokens" }
 cx-mir = { path = "../cx-mir" }
+cx-target = { path = "../cx-target" }
 cx-ast = { path = "../cx-ast" }
 cx-pipeline-data = { path = "../cx-pipeline-data" }
 

@@ -1,8 +1,8 @@
 use cx_log::CXRawResult;
+use cx_target::ArchitectureConfig;
 use cx_util::namespace::QualifiedName;
 
 use crate::{
-    architecture::ArchitectureConfig,
     layout::MIRTypeLayout,
     mir::data::{MIRFunctionSignature, MIRIntegerType, MIRType, MIRTypeId, MIRTypeKind},
 };

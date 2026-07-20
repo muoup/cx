@@ -15,6 +15,12 @@ pub struct LMIRUnit {
     pub global_vars: Vec<LMIRGlobalValue>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct LMIRTargetContext {
+    pub pointer_size: TypeSize,
+    pub pointer_alignment: u8,
+}
+
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum LinkageType {
     ODR,

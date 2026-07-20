@@ -4,7 +4,7 @@ use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 use crate::mir::contextual_eq::{TypeComparisonState, TypeContextEqual, compare_ordered};
 use crate::mir::expression::MIRExpression;
 pub use crate::mir::r#type::{
-    MIRAggregateAttributes, MIRFloatType, MIRIntegerType, MIRType, MIRTypeId, MIRTypeKind,
+    MIRFloatType, MIRIntegerType, MIRType, MIRTypeAttributes, MIRTypeId, MIRTypeKind,
 };
 use crate::type_context::MIRTypeContext;
 

@@ -337,9 +337,15 @@ pub fn lower_match(
         bc_condition = builder.add_new_instruction(
             LMIRInstructionKind::Load {
                 memory: tag_ptr,
-                _type: LMIRType::from(LMIRTypeKind::Integer(LMIRIntegerType::I8)),
+                _type: LMIRType::with_implicit_abi(
+                    builder.architecture(),
+                    LMIRTypeKind::Integer(LMIRIntegerType::I8),
+                ),
             },
-            LMIRType::from(LMIRTypeKind::Integer(LMIRIntegerType::I8)),
+            LMIRType::with_implicit_abi(
+                builder.architecture(),
+                LMIRTypeKind::Integer(LMIRIntegerType::I8),
+            ),
             true,
         )?;
     }

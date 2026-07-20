@@ -7,7 +7,7 @@ use cx_log::{
     error::{CXErr, CXErrMsg, CXMaybeRawErr, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_mir::{
-    ArchitectureConfig, EnvironmentNamespace, MIRUnit,
+    EnvironmentNamespace, MIRUnit,
     mir::contextual_eq::TypeContextEqual,
     mir::data::{MIRFunctionPrototype, MIRType},
     symbol::MIRSymbol,
@@ -15,6 +15,7 @@ use cx_mir::{
 };
 use cx_namespace::{MIRQualifiedLookup, result::QualifiedLookupResult};
 use cx_pipeline_data::db::ModuleData;
+use cx_target::ArchitectureConfig;
 use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 use cx_util::{identifier::CXIdent, namespace::NamespacePath};
@@ -54,7 +55,7 @@ impl TypeEnvironment<'_> {
             symbols: MIRSymbolRegistry::new(&module_data.symbol_registry, architecture),
             module_data,
             items: ItemRegistry::new(),
-            function: FunctionContext::default() ,
+            function: FunctionContext::default(),
             comptime_depth: 0,
         }
     }

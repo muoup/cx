@@ -44,8 +44,9 @@ pub(crate) fn generate_instruction<'a, 'b>(
         LMIRInstructionKind::Alias { value } => function_state.get_value(value)?,
 
         LMIRInstructionKind::Allocate { _type, alignment } => {
-            let ty = bc_llvm_type(global_state.context, _type);
-            let basic_ty = any_to_basic_type(ty?).expect("Failed to convert type to basic type");
+            // let ty = bc_llvm_type(global_state.context, _type);
+            let basic_ty = function_state.context.i8_type()
+                .array_type(usize::from(_type.size()) as u32);
 
             let prev_cursor = function_state.builder.get_insert_block()?;
 

@@ -10,6 +10,7 @@ use cx_mir::mir::data::MIRFunctionPrototype;
 use cx_mir::registry::MIRDecomposedRegistry;
 use cx_mir::type_context::MIRTypeContext;
 use cx_mir::MIRUnit;
+use cx_target::ArchitectureConfig;
 use cx_util::format::dump_all;
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
@@ -72,6 +73,10 @@ impl LMIRBuilder {
         self.registry
             .type_layout(ty)
             .unwrap_or_else(|err| panic!("Failed to calculate MIR layout: {}", err.message()))
+    }
+
+    pub fn architecture(&self) -> &ArchitectureConfig {
+        self.registry.architecture()
     }
 
     pub fn new_register(&mut self) -> LMIRRegister {
@@ -375,8 +380,12 @@ impl LMIRBuilder {
 
             LMIRValue::Register { _type, .. } => _type.clone(),
 
-            LMIRValue::FloatImmediate { _type, .. } => LMIRTypeKind::Float(*_type).into(),
-            LMIRValue::IntImmediate { _type, .. } => LMIRTypeKind::Integer(*_type).into(),
+            LMIRValue::FloatImmediate { _type, .. } => {
+                LMIRType::with_implicit_abi(self.architecture(), LMIRTypeKind::Float(*_type))
+            }
+            LMIRValue::IntImmediate { _type, .. } => {
+                LMIRType::with_implicit_abi(self.architecture(), LMIRTypeKind::Integer(*_type))
+            }
 
             LMIRValue::ParameterRef(param_index) => {
                 let context = self.fun();

@@ -353,6 +353,7 @@ dependencies = [
 name = "cx-lmir"
 version = "0.0.0"
 dependencies = [
+ "cx-target",
  "cx-util",
 ]
 
@@ -385,6 +386,7 @@ version = "0.0.0"
 dependencies = [
  "cx-ast",
  "cx-log",
+ "cx-target",
  "cx-tokens",
  "cx-util",
  "speedy",
@@ -400,6 +402,7 @@ dependencies = [
  "cx-log",
  "cx-mir",
  "cx-parsing",
+ "cx-target",
  "cx-util",
 ]
 
@@ -458,6 +461,7 @@ dependencies = [
  "cx-log",
  "cx-mir",
  "cx-preparse-data",
+ "cx-target",
  "cx-tokens",
  "cx-util",
  "serde",
@@ -497,6 +501,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-target"
+version = "0.0.0"
+
+[[package]]
 name = "cx-tokens"
 version = "0.0.0"
 dependencies = [
@@ -522,6 +530,7 @@ dependencies = [
  "cx-mir",
  "cx-namespace",
  "cx-pipeline-data",
+ "cx-target",
  "cx-tokens",
  "cx-util",
 ]

@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use cx_ast::{ast::expression::CXExpression, registry::GlobalSymbolRegistry};
 use cx_log::{CXRawResult, CXResult};
 use cx_mir::{
-    ArchitectureConfig,
     EnvironmentNamespace,
     intrinsic_types::INTRINSIC_TYPES,
     mir::{
@@ -15,6 +14,7 @@ use cx_mir::{
     symbol::MIRSymbol,
     type_context::MIRTypeContext,
 };
+use cx_target::ArchitectureConfig;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName, scoped_map::ScopedMap};
 
 /// Module-local symbol definitions

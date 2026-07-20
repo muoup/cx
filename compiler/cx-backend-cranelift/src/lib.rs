@@ -7,7 +7,7 @@ use cranelift::prelude::isa::TargetFrontendConfig;
 use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
 use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
+use cx_lmir::types::{LMIRFloatType, LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRABISlot, LMIRFunctionSignature};
 use cx_lmir::{LMIRBlockID, LMIRRegister, LMIRUnit, LMIRValue};
 use cx_log::error::context::CXInternalContext;
@@ -105,7 +105,8 @@ impl FunctionState<'_> {
             }
 
             LMIRValue::IntImmediate { val, _type } => {
-                let int_type = get_cranelift_type(&LMIRTypeKind::Integer(*_type).into());
+                let int_type =
+                    get_cranelift_type(&LMIRType::with_implicit_abi(LMIRTypeKind::Integer(*_type), self.target_frontend_config));
                 let value = self.builder.ins().iconst(int_type?, *val);
 
                 Ok(CodegenValue::Value(value))

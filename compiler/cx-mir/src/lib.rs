@@ -9,15 +9,12 @@ use crate::{
     registry::MIRDecomposedRegistry,
 };
 
-pub mod architecture;
 pub mod intrinsic_types;
 pub mod layout;
 pub mod mir;
 pub mod registry;
 pub mod symbol;
 pub mod type_context;
-
-pub use architecture::ArchitectureConfig;
 
 mod format;
 
