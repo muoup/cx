@@ -2,7 +2,7 @@ use cx_ast::ast::expression::{CXExprKind, CXExpression};
 use cx_log::CXResult;
 use cx_tokens::{
     keyword, punctuator,
-    token::{KeywordType, OperatorType, PunctuatorType, TokenKind},
+    token::{IntegerBase, KeywordType, OperatorType, PunctuatorType, TokenKind},
 };
 
 use crate::{
@@ -115,8 +115,8 @@ pub(crate) fn try_parse_keyword_stmt(
 
             while !try_next!(data.tokens, punctuator!(CloseBrace)) {
                 if try_next!(data.tokens, keyword!(Case)) {
-                    assert_token_matches!(data.tokens, TokenKind::IntLiteral(val));
-                    cases.push((*val as u64, index as usize));
+                    assert_token_matches!(data.tokens, TokenKind::IntLiteral(literal));
+                    cases.push((literal.magnitude, index as usize));
                     assert_token_matches!(
                         data.tokens,
                         TokenKind::Punctuator(PunctuatorType::Colon),
@@ -226,7 +226,12 @@ pub(crate) fn try_parse_keyword_stmt(
                 data.tokens.peek().map(|token| &token.kind),
                 Some(punctuator!(Semicolon))
             ) {
-                CXExprKind::IntLiteral { val: 1, bytes: 4 }.into_expr(
+                CXExprKind::IntLiteral {
+                    magnitude: 1,
+                    base: IntegerBase::Decimal,
+                    suffix: cx_tokens::token::IntegerSuffix::default(),
+                }
+                .into_expr(
                     data.tokens.index,
                     data.tokens.index,
                     data.file_origin_for_range(data.tokens.index, data.tokens.index),

@@ -215,8 +215,97 @@ pub enum TokenKind {
     Identifier(String),
     CompilerIdentifier(String),
     StringLiteral(String),
-    IntLiteral(i64),
-    FloatLiteral(f64, u8),
+    IntLiteral(IntegerLiteral),
+    FloatLiteral(FloatLiteral),
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub enum IntegerBase {
+    Decimal,
+    Octal,
+    Hexadecimal,
+    Binary,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub enum IntegerLength {
+    Default,
+    Long,
+    LongLong,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub struct IntegerSuffix {
+    pub unsigned: bool,
+    pub length: IntegerLength,
+}
+
+impl Default for IntegerSuffix {
+    fn default() -> Self {
+        Self {
+            unsigned: false,
+            length: IntegerLength::Default,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub struct IntegerLiteral {
+    pub magnitude: u64,
+    pub base: IntegerBase,
+    pub suffix: IntegerSuffix,
+}
+
+impl IntegerLiteral {
+    pub const fn decimal(magnitude: u64) -> Self {
+        Self {
+            magnitude,
+            base: IntegerBase::Decimal,
+            suffix: IntegerSuffix {
+                unsigned: false,
+                length: IntegerLength::Default,
+            },
+        }
+    }
+
+    pub fn source_text(self) -> String {
+        let value = match self.base {
+            IntegerBase::Decimal => self.magnitude.to_string(),
+            IntegerBase::Octal => format!("0{:o}", self.magnitude),
+            IntegerBase::Hexadecimal => format!("0x{:x}", self.magnitude),
+            IntegerBase::Binary => format!("0b{:b}", self.magnitude),
+        };
+        let unsigned = if self.suffix.unsigned { "u" } else { "" };
+        let length = match self.suffix.length {
+            IntegerLength::Default => "",
+            IntegerLength::Long => "l",
+            IntegerLength::LongLong => "ll",
+        };
+        format!("{value}{unsigned}{length}")
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub enum FloatSuffix {
+    Default,
+    Float,
+    LongDouble,
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub struct FloatLiteral {
+    pub value: f64,
+    pub suffix: FloatSuffix,
+}
+
+impl FloatLiteral {
+    pub fn source_text(self) -> String {
+        match self.suffix {
+            FloatSuffix::Default => self.value.to_string(),
+            FloatSuffix::Float => format!("{}f", self.value),
+            FloatSuffix::LongDouble => format!("{}l", self.value),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]

@@ -80,6 +80,8 @@ fn define_target_predefines(macros: &mut HashMap<String, Macro>) {
 fn define_int(macros: &mut HashMap<String, Macro>, name: &str, value: i64) {
     macros.insert(
         name.to_string(),
-        Macro::Object(Box::new([Token::new_unknown(TokenKind::IntLiteral(value))])),
+        Macro::Object(Box::new([Token::new_unknown(TokenKind::IntLiteral(
+            cx_tokens::token::IntegerLiteral::decimal(value as u64),
+        ))])),
     );
 }

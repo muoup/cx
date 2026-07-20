@@ -189,14 +189,14 @@ pub(crate) fn parse_expr_op_concat(
 
 pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<CXPattern> {
     match peek_next_kind!(data.tokens)? {
-        TokenKind::IntLiteral(value) => {
-            let value = *value;
+        TokenKind::IntLiteral(literal) => {
+            let value = literal.magnitude as i64;
             data.tokens.next();
             Ok(CXPattern::Integer(value))
         }
 
-        TokenKind::FloatLiteral(f64, _) => {
-            let value = *f64;
+        TokenKind::FloatLiteral(literal) => {
+            let value = literal.value;
             data.tokens.next();
             Ok(CXPattern::Float(FloatWrapper::from(value)))
         }
@@ -322,13 +322,14 @@ pub(crate) fn parse_expr_val(
     }
 
     let acc = match &next_kind!(data.tokens)? {
-        TokenKind::IntLiteral(value) => CXExprKind::IntLiteral {
-            bytes: 4,
-            val: *value,
+        TokenKind::IntLiteral(literal) => CXExprKind::IntLiteral {
+            magnitude: literal.magnitude,
+            base: literal.base,
+            suffix: literal.suffix,
         },
-        TokenKind::FloatLiteral(value, bytes) => CXExprKind::FloatLiteral {
-            bytes: *bytes,
-            val: (*value).into(),
+        TokenKind::FloatLiteral(literal) => CXExprKind::FloatLiteral {
+            suffix: literal.suffix,
+            val: literal.value.into(),
         },
         TokenKind::StringLiteral(value) => CXExprKind::StringLiteral { val: value.clone() },
 

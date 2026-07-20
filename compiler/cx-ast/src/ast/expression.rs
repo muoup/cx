@@ -1,3 +1,4 @@
+use cx_tokens::token::{FloatSuffix, IntegerBase, IntegerSuffix};
 use cx_tokens::TokenRange;
 use cx_util::{
     identifier::CXIdent,
@@ -49,12 +50,13 @@ pub enum CXExprKind {
     },
 
     IntLiteral {
-        val: i64,
-        bytes: u8,
+        magnitude: u64,
+        base: IntegerBase,
+        suffix: IntegerSuffix,
     },
     FloatLiteral {
         val: FloatWrapper,
-        bytes: u8,
+        suffix: FloatSuffix,
     },
     StringLiteral {
         val: String,

@@ -1,7 +1,7 @@
 use cx_log::CXResult;
 use cx_tokens::{
     punctuator,
-    token::{OperatorType, PunctuatorType, TokenKind},
+    token::{IntegerLiteral, OperatorType, PunctuatorType, TokenKind},
 };
 
 use crate::lexer::{number::number, source::LexCursor};
@@ -184,16 +184,18 @@ fn char_literal(iter: &mut LexCursor<'_>) -> CXResult<TokenKind> {
     };
 
     let Some(kind) = (match iter.next() {
-        Some('\'') => Some(TokenKind::IntLiteral(c as i64)),
-        Some('0') if c == '\\' && iter.next() == Some('\'') => Some(TokenKind::IntLiteral(0)),
+        Some('\'') => Some(TokenKind::IntLiteral(IntegerLiteral::decimal(c as u64))),
+        Some('0') if c == '\\' && iter.next() == Some('\'') => {
+            Some(TokenKind::IntLiteral(IntegerLiteral::decimal(0)))
+        }
         Some('n') if c == '\\' && iter.next() == Some('\'') => {
-            Some(TokenKind::IntLiteral('\n' as i64))
+            Some(TokenKind::IntLiteral(IntegerLiteral::decimal('\n' as u64)))
         }
         Some('t') if c == '\\' && iter.next() == Some('\'') => {
-            Some(TokenKind::IntLiteral('\t' as i64))
+            Some(TokenKind::IntLiteral(IntegerLiteral::decimal('\t' as u64)))
         }
         Some('r') if c == '\\' && iter.next() == Some('\'') => {
-            Some(TokenKind::IntLiteral('\r' as i64))
+            Some(TokenKind::IntLiteral(IntegerLiteral::decimal('\r' as u64)))
         }
         _ => None,
     }) else {

@@ -102,7 +102,7 @@ fn aggregate_field_from_decl(
 ) -> CXResult<CXField> {
     if try_next!(data.tokens, punctuator!(Colon)) {
         let width = match next_kind!(data.tokens)? {
-            TokenKind::IntLiteral(width) if *width >= 0 => *width as usize,
+            TokenKind::IntLiteral(literal) => literal.magnitude as usize,
             _ => {
                 return data.tokens.log_error("Expected non-negative integer literal bitfield width".to_string());
             }

@@ -1,5 +1,7 @@
 use cx_log::CXResult;
-use cx_tokens::token::TokenKind;
+use cx_tokens::token::{
+    FloatLiteral, FloatSuffix, IntegerBase, IntegerLength, IntegerLiteral, IntegerSuffix, TokenKind,
+};
 
 use crate::lexer::source::LexCursor;
 
@@ -64,13 +66,20 @@ pub(crate) fn number(iter: &mut LexCursor<'_>) -> CXResult<TokenKind> {
         parse_float_literal(iter, start_index)
     } else {
         let number_end = iter.cursor();
-        consume_integer_suffix(iter);
+        let suffix = consume_integer_suffix(iter);
         if is_identifier_continue(iter.peek()) {
             consume_numeric_tail(iter);
             return invalid_numeric_literal(iter, start_index);
         }
 
-        parse_integer_literal(iter, start_index, number_end, 10)
+        parse_integer_literal(
+            iter,
+            start_index,
+            number_end,
+            10,
+            IntegerBase::Decimal,
+            suffix,
+        )
     }
 }
 
@@ -90,26 +99,36 @@ fn integer_with_radix(
         return invalid_numeric_literal(iter, start_index);
     }
 
-    consume_integer_suffix(iter);
+    let suffix = consume_integer_suffix(iter);
     if is_identifier_continue(iter.peek()) {
         consume_numeric_tail(iter);
         return invalid_numeric_literal(iter, start_index);
     }
 
-    parse_integer_literal(iter, digit_start, number_end, radix)
+    let base = match radix {
+        2 => IntegerBase::Binary,
+        8 => IntegerBase::Octal,
+        16 => IntegerBase::Hexadecimal,
+        _ => unreachable!(),
+    };
+    parse_integer_literal(iter, digit_start, number_end, radix, base, suffix)
 }
 
 fn parse_float_literal(iter: &mut LexCursor<'_>, start_index: usize) -> CXResult<TokenKind> {
     let number_end = iter.cursor();
-    let bytes = consume_float_suffix(iter);
+    let suffix = consume_float_suffix(iter);
     if is_identifier_continue(iter.peek()) {
         consume_numeric_tail(iter);
         return invalid_numeric_literal(iter, start_index);
     }
 
     let num = &iter.source()[start_index..number_end];
-    match num.parse() {
-        Ok(value) => Ok(TokenKind::FloatLiteral(value, bytes)),
+    let value = match suffix {
+        FloatSuffix::Float => num.parse::<f32>().map(|value| value as f64),
+        FloatSuffix::Default | FloatSuffix::LongDouble => num.parse::<f64>(),
+    };
+    match value {
+        Ok(value) => Ok(TokenKind::FloatLiteral(FloatLiteral { value, suffix })),
         Err(_) => iter.log_error(start_index, format!("Invalid numeric literal: {num}")),
     }
 }
@@ -119,10 +138,16 @@ fn parse_integer_literal(
     digits_start: usize,
     digits_end: usize,
     radix: u32,
+    base: IntegerBase,
+    suffix: IntegerSuffix,
 ) -> CXResult<TokenKind> {
     let digits = &iter.source()[digits_start..digits_end];
     match u64::from_str_radix(digits, radix) {
-        Ok(value) => Ok(TokenKind::IntLiteral(value as i64)),
+        Ok(magnitude) => Ok(TokenKind::IntLiteral(IntegerLiteral {
+            magnitude,
+            base,
+            suffix,
+        })),
         Err(_) => iter.log_error(
             digits_start,
             format!(
@@ -147,23 +172,23 @@ fn consume_exponent(iter: &mut LexCursor<'_>) -> bool {
     digit_start != iter.cursor()
 }
 
-fn consume_float_suffix(iter: &mut LexCursor<'_>) -> u8 {
+fn consume_float_suffix(iter: &mut LexCursor<'_>) -> FloatSuffix {
     match iter.peek() {
         Some('f' | 'F') => {
             iter.next();
-            4
+            FloatSuffix::Float
         }
         Some('l' | 'L') => {
             iter.next();
-            8
+            FloatSuffix::LongDouble
         }
-        _ => 8,
+        _ => FloatSuffix::Default,
     }
 }
 
-fn consume_integer_suffix(iter: &mut LexCursor<'_>) {
+fn consume_integer_suffix(iter: &mut LexCursor<'_>) -> IntegerSuffix {
     let mut saw_unsigned = false;
-    let mut saw_long = false;
+    let mut length = IntegerLength::Default;
 
     loop {
         match iter.peek() {
@@ -171,15 +196,22 @@ fn consume_integer_suffix(iter: &mut LexCursor<'_>) {
                 saw_unsigned = true;
                 iter.next();
             }
-            Some('l' | 'L') if !saw_long => {
-                saw_long = true;
+            Some('l' | 'L') if length == IntegerLength::Default => {
                 let first = iter.next();
                 if iter.peek() == first {
                     iter.next();
+                    length = IntegerLength::LongLong;
+                } else {
+                    length = IntegerLength::Long;
                 }
             }
             _ => break,
         }
+    }
+
+    IntegerSuffix {
+        unsigned: saw_unsigned,
+        length,
     }
 }
 

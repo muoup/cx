@@ -191,15 +191,15 @@ impl PreprocessorExprParser<'_> {
 
     fn parse_primary(&mut self) -> Option<i64> {
         match self.tokens.get(self.index).map(|token| &token.kind)? {
-            TokenKind::IntLiteral(value) => {
+            TokenKind::IntLiteral(literal) => {
                 self.index += 1;
-                Some(*value)
+                Some(literal.magnitude as i64)
             }
             TokenKind::Identifier(name) => {
                 self.index += 1;
                 match self.macros.get(name) {
                     Some(Macro::Object(body)) if body.len() == 1 => match body[0].kind {
-                        TokenKind::IntLiteral(value) => Some(value),
+                        TokenKind::IntLiteral(literal) => Some(literal.magnitude as i64),
                         _ => Some(0),
                     },
                     _ => Some(0),
