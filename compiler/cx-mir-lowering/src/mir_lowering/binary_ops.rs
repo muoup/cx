@@ -241,7 +241,7 @@ pub fn lower_unary_op(
             }
         }
 
-        MIRUnOp::PostIncrement(amt) | MIRUnOp::PreIncrement(amt) => {
+        MIRUnOp::PostIncrement(amt) => {
             let pre_loaded_val = builder.add_new_instruction(
                 LMIRInstructionKind::Load {
                     memory: bc_operand.clone(),
@@ -265,8 +265,8 @@ pub fn lower_unary_op(
                     }
                 }
 
-                MIRTypeKind::MemoryReference { inner_type, .. } |
-                MIRTypeKind::PointerTo { inner_type, .. } => {
+                MIRTypeKind::MemoryReference { inner_type, .. }
+                | MIRTypeKind::PointerTo { inner_type, .. } => {
                     let inner_type = builder.registry.resolve_type_id(*inner_type);
                     let bc_inner_type = builder.convert_cx_type(inner_type);
                     let type_size = TypeSize::from(builder.type_layout(inner_type).size);
@@ -300,11 +300,81 @@ pub fn lower_unary_op(
                 false,
             )?;
 
-            return match op {
-                MIRUnOp::PreIncrement(_) => Ok(result),
-                MIRUnOp::PostIncrement(_) => Ok(pre_loaded_val),
-                _ => unreachable!(),
+            return Ok(pre_loaded_val);
+        }
+
+        MIRUnOp::PreIncrement(amt) => {
+            let inner = builder
+                .registry
+                .mem_ref_inner(result_type)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Increment operation requires a memory reference type, found: {:?}",
+                        result_type
+                    )
+                })
+                .clone();
+            let inner_bc = builder.convert_cx_type(&inner);
+
+            let pre_loaded_val = builder.add_new_instruction(
+                LMIRInstructionKind::Load {
+                    memory: bc_operand.clone(),
+                    _type: inner_bc.clone(),
+                },
+                inner_bc.clone(),
+                true,
+            )?;
+
+            let increment_instruction = match &inner.kind {
+                MIRTypeKind::Integer { _type: itype, .. } => {
+                    let bc_itype = builder.convert_integer_type(itype);
+
+                    LMIRInstructionKind::IntegerBinOp {
+                        op: LMIRIntBinOp::ADD,
+                        left: pre_loaded_val.clone(),
+                        right: LMIRValue::IntImmediate {
+                            val: *amt as i64,
+                            _type: bc_itype,
+                        },
+                    }
+                }
+
+                MIRTypeKind::MemoryReference { inner_type, .. }
+                | MIRTypeKind::PointerTo { inner_type, .. } => {
+                    let inner_type = builder.registry.resolve_type_id(*inner_type);
+                    let bc_inner_type = builder.convert_cx_type(inner_type);
+                    let type_size = TypeSize::from(builder.type_layout(inner_type).size);
+
+                    LMIRInstructionKind::PointerBinOp {
+                        op: LMIRPtrBinOp::ADD,
+                        ptr_type: bc_inner_type,
+                        type_size,
+                        left: pre_loaded_val.clone(),
+                        right: LMIRValue::IntImmediate {
+                            val: *amt as i64,
+                            _type: builder
+                                .convert_integer_type(&builder.registry.pointer_integer_type()),
+                        },
+                    }
+                }
+
+                _ => unreachable!("Increment operation requires integer or pointer type"),
             };
+
+            let result =
+                builder.add_new_instruction(increment_instruction, inner_bc.clone(), true)?;
+            
+            builder.add_new_instruction(
+                LMIRInstructionKind::Store {
+                    memory: bc_operand,
+                    value: result.clone(),
+                    _type: inner_bc.clone(),
+                },
+                LMIRType::unit(),
+                false,
+            )?;
+
+            return Ok(result);
         }
     };
 

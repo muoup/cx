@@ -11,10 +11,11 @@ use cx_util::identifier::CXIdent;
 use inkwell::AddressSpace;
 use inkwell::attributes::AttributeLoc;
 use inkwell::types::BasicType;
-use inkwell::values::{BasicValue, InstructionValue};
+use inkwell::values::BasicValue;
 use inkwell::values::{AnyValue, AnyValueEnum, ValueKind};
 use std::cell::Cell;
 
+// Modules are compiled single-threaded, but multiple modules can be compiled in parallel, so having this counter be thread_local will never cause instruction name collision
 thread_local! {
     static NUM: Cell<usize> = const { Cell::new(0) };
 }
@@ -48,14 +49,14 @@ pub(crate) fn generate_instruction<'a, 'b>(
 
             let prev_cursor = function_state.builder.get_insert_block()?;
 
-            let entry = function_state.get_block(&CXIdent::from("entry"))
+            let entry = function_state
+                .get_block(&CXIdent::from("entry"))
                 .expect("Failed to get entry block");
             function_state.builder.position_before(
                 // Since we add a jump to the entry block, there is always a first instruction
-                entry.get_first_instruction().as_ref().unwrap()
+                entry.get_first_instruction().as_ref().unwrap(),
             );
-            
-            
+
             let inst = function_state
                 .builder
                 .build_alloca(basic_ty, inst_num().as_str())
