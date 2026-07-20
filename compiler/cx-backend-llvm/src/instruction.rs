@@ -7,10 +7,11 @@ use cx_lmir::{
     LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind,
     LMIRIntUnOp, LMIRReturnABI,
 };
+use cx_util::identifier::CXIdent;
 use inkwell::AddressSpace;
 use inkwell::attributes::AttributeLoc;
 use inkwell::types::BasicType;
-use inkwell::values::BasicValue;
+use inkwell::values::{BasicValue, InstructionValue};
 use inkwell::values::{AnyValue, AnyValueEnum, ValueKind};
 use std::cell::Cell;
 
@@ -42,22 +43,32 @@ pub(crate) fn generate_instruction<'a, 'b>(
         LMIRInstructionKind::Alias { value } => function_state.get_value(value)?,
 
         LMIRInstructionKind::Allocate { _type, alignment } => {
-            let size = usize::from(_type.size()).max(1);
-            let storage_type = global_state.context.i8_type().array_type(size as u32);
+            let ty = bc_llvm_type(global_state.context, _type);
+            let basic_ty = any_to_basic_type(ty?).expect("Failed to convert type to basic type");
+
+            let prev_cursor = function_state.builder.get_insert_block()?;
+
+            let entry = function_state.get_block(&CXIdent::from("entry"))
+                .expect("Failed to get entry block");
+            function_state.builder.position_before(
+                // Since we add a jump to the entry block, there is always a first instruction
+                entry.get_first_instruction().as_ref().unwrap()
+            );
+            
+            
             let inst = function_state
                 .builder
-                .build_alloca(storage_type, inst_num().as_str())
-                .unwrap()
-                .as_any_value_enum();
-
-            function_state
-                .builder
-                .get_insert_block()?
-                .get_last_instruction()?
-                .set_alignment(*alignment as u32)
+                .build_alloca(basic_ty, inst_num().as_str())
                 .unwrap();
 
-            CodegenValue::Value(inst)
+            inst.clone()
+                .as_instruction()
+                .unwrap()
+                .set_alignment(*alignment as u32)
+                .unwrap();
+            function_state.builder.position_at_end(prev_cursor);
+
+            CodegenValue::Value(inst.as_any_value_enum())
         }
 
         LMIRInstructionKind::DirectCall {

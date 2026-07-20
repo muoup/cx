@@ -15,7 +15,7 @@ use crate::{
         CoercionResult,
         implicit::{
             self, coercion_expr,
-            promotion::{integer, lvalue, std_rval_promotion_coercion},
+            promotion::{integer, lvalue, std_rval_promotion, std_rval_promotion_coercion},
         },
     },
 };
@@ -52,8 +52,8 @@ pub fn try_implicit_coercion(
                 try_implicit_coercion(env, expr, target_type)
             }
         }
-     
-        other => Ok(other)
+
+        other => Ok(other),
     }
 }
 
@@ -205,8 +205,9 @@ fn internal(
             CoercionResult::unapplied(expr)
         }
 
-        (MIRTypeKind::MemoryReference { .. }, _) =>
-            lvalue::try_conversion(env, expr),
+        // Note: type 2 is not a memory reference due to previous case
+        (MIRTypeKind::MemoryReference { .. }, _) => std_rval_promotion(env, expr)
+            .and_then(|transformed| CoercionResult::success(transformed)),
 
         (_, MIRTypeKind::PointerTo { inner_type })
             if env.type_eq(&from_type, env.symbols.resolve_type_id(*inner_type)) =>

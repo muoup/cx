@@ -252,12 +252,26 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> Option
         );
     }
 
+    let entry = global_state.context.append_basic_block(func_val, "entry");
+
     for block in bytecode.blocks.iter() {
         global_state
             .context
             .append_basic_block(func_val, block.id.as_str());
     }
 
+    // Set the entry block as the current block
+    function_state.builder.position_at_end(entry);
+    let Ok(_) = function_state.builder.build_unconditional_branch(
+        function_state.get_block(&bytecode.blocks[0].id)
+            .unwrap()
+    ) else {
+        panic!(
+            "Failed to build unconditional branch to entry block: {}",
+            bytecode.blocks[0].id
+        )
+    };
+    
     for block in bytecode.blocks.iter() {
         codegen_block(global_state, &mut function_state, &block.id, block);
     }

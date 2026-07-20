@@ -102,9 +102,6 @@ fn lower_logical_op(
 ) -> CXResult<LMIRValue> {
     let bc_result_type = builder.convert_cx_type(result_type);
 
-    // Save the entry block (where we evaluate the LHS)
-    let entry_block = builder.current_block();
-
     // Create the continue and merge blocks
     let (continue_name, merge_name) = match op {
         MIRIntegerBinOp::LOR => ("lor_continue", "lor_merge"),
@@ -117,6 +114,7 @@ fn lower_logical_op(
 
     // Evaluate LHS
     let lhs_result = lower_expression(builder, lhs)?;
+    let lhs_block = builder.current_block();
 
     // Branch based on the operation type
     match op {
@@ -152,6 +150,7 @@ fn lower_logical_op(
     // Continue block: evaluate RHS and jump to merge
     builder.set_current_block(continue_block.clone());
     let rhs_result = lower_expression(builder, rhs)?;
+    let rhs_block = builder.current_block();
     builder.add_new_instruction(
         LMIRInstructionKind::Jump {
             target: merge_block.clone(),
@@ -165,8 +164,8 @@ fn lower_logical_op(
     builder.set_current_block(merge_block.clone());
 
     // Create phi node at merge block
-    // For LOR: from entry->true (1), from continue->rhs_result
-    // For LAND: from entry->false (0), from continue->rhs_result
+    // For LOR: from lhs_block->true (1), from rhs_block->rhs_result
+    // For LAND: from lhs_block->false (0), from rhs_block->rhs_result
     let short_circuit_value = match op {
         MIRIntegerBinOp::LOR => LMIRValue::IntImmediate {
             val: 1,
@@ -181,10 +180,7 @@ fn lower_logical_op(
 
     let phi_result = builder.add_new_instruction(
         LMIRInstructionKind::Phi {
-            predecessors: vec![
-                (short_circuit_value, entry_block),
-                (rhs_result, continue_block),
-            ],
+            predecessors: vec![(short_circuit_value, lhs_block), (rhs_result, rhs_block)],
         },
         bc_result_type,
         true,
@@ -269,6 +265,7 @@ pub fn lower_unary_op(
                     }
                 }
 
+                MIRTypeKind::MemoryReference { inner_type, .. } |
                 MIRTypeKind::PointerTo { inner_type, .. } => {
                     let inner_type = builder.registry.resolve_type_id(*inner_type);
                     let bc_inner_type = builder.convert_cx_type(inner_type);
