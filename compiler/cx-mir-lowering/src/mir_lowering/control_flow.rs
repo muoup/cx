@@ -600,7 +600,10 @@ pub fn lower_return(
                     src,
                     size: LMIRValue::IntImmediate {
                         val: return_layout.size as i64,
-                        _type: LMIRIntegerType::I64,
+                        _type: LMIRType::with_implicit_abi(
+                            builder.architecture(),
+                            LMIRTypeKind::Integer(LMIRIntegerType::I64),
+                        ),
                     },
                     alignment: return_layout.alignment as u8,
                 },

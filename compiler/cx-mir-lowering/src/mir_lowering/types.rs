@@ -39,22 +39,11 @@ impl LMIRBuilder {
     }
 }
 
-pub(crate) fn convert_type(cx_type: &MIRType, definitions: &MIRDecomposedRegistry) -> LMIRType {
-    let layout = definitions
-        .type_layout(cx_type)
-        .unwrap_or_else(|err| panic!("Failed to calculate type layout: {}", err.message()));
-
-    LMIRType {
-        kind: convert_type_kind(cx_type, definitions),
-        alignment: layout.alignment as u8,
-    }
-}
-
 fn convert_parameter_type(param_type: &MIRType, definitions: &MIRDecomposedRegistry) -> LMIRType {
     let bc_type = convert_type(param_type, definitions);
 
     if bc_type.is_structure() {
-        LMIRType::default_pointer()
+        LMIRType::default_pointer(definitions.architecture())
     } else {
         bc_type
     }
@@ -104,11 +93,15 @@ fn convert_linkage(linkage: CXLinkageMode) -> LinkageType {
     }
 }
 
-pub(crate) fn convert_type_kind(
+pub(crate) fn convert_type(
     cx_type: &MIRType,
     definitions: &MIRDecomposedRegistry,
-) -> LMIRTypeKind {
-    match &cx_type.kind {
+) -> LMIRType {
+    let layout = definitions
+        .type_layout(cx_type)
+        .unwrap_or_else(|err| panic!("Failed to calculate type layout: {}", err.message()));
+
+    let kind = match &cx_type.kind {
         MIRTypeKind::Opaque { size, .. } => LMIRTypeKind::Opaque { bytes: *size },
 
         MIRTypeKind::Integer {
@@ -121,11 +114,13 @@ pub(crate) fn convert_type_kind(
         MIRTypeKind::Function { .. } => LMIRTypeKind::Pointer {
             nullable: true,
             dereferenceable: 0,
+            bytes: definitions.architecture().pointer_size() as u8,
         },
 
         MIRTypeKind::PointerTo { .. } => LMIRTypeKind::Pointer {
             nullable: false,
             dereferenceable: 0,
+            bytes: definitions.architecture().pointer_size() as u8,
         },
 
         MIRTypeKind::TaggedUnion { variants } => LMIRTypeKind::Struct {
@@ -133,12 +128,9 @@ pub(crate) fn convert_type_kind(
             fields: vec![
                 (
                     "data".to_string(),
-                    LMIRType::with_implicit_abi(
-                        definitions.architecture(),
-                        lower_union(
-                            variants.iter().map(|f| definitions.resolve_type_id(f.ty())),
-                            definitions,
-                        ),
+                    lower_union(
+                        variants.iter().map(|f| definitions.resolve_type_id(f.ty())),
+                        definitions,
                     ),
                 ),
                 (
@@ -165,6 +157,7 @@ pub(crate) fn convert_type_kind(
         MIRTypeKind::MemoryReference { .. } => LMIRTypeKind::Pointer {
             nullable: false,
             dereferenceable: 0,
+            bytes: definitions.architecture().pointer_size() as u8,
         },
 
         MIRTypeKind::Structured { .. } => LMIRTypeKind::Struct {
@@ -180,12 +173,7 @@ pub(crate) fn convert_type_kind(
                 .collect::<Vec<_>>(),
         },
 
-        MIRTypeKind::Union { .. } => LMIRTypeKind::Opaque {
-            bytes: definitions
-                .type_layout(cx_type)
-                .unwrap_or_else(|err| panic!("Failed to calculate union layout: {}", err.message()))
-                .size,
-        },
+        MIRTypeKind::Union { .. } => LMIRTypeKind::Opaque { bytes: layout.size },
 
         MIRTypeKind::Unit => LMIRTypeKind::Unit,
 
@@ -198,24 +186,27 @@ pub(crate) fn convert_type_kind(
         }
 
         MIRTypeKind::Str => LMIRTypeKind::Integer(LMIRIntegerType::I8),
+    };
+
+    LMIRType {
+        kind,
+        alignment: layout.alignment as u8,
     }
 }
 
 fn lower_union<'a>(
     variants: impl Iterator<Item = &'a MIRType>,
     definitions: &MIRDecomposedRegistry,
-) -> LMIRTypeKind {
-    let size = variants
+) -> LMIRType {
+    let (size, alignment) = variants
         .map(|f| {
-            definitions
-                .type_layout(f)
-                .unwrap_or_else(|err| {
-                    panic!("Failed to calculate union member layout: {}", err.message())
-                })
-                .size
+            definitions.type_layout(f).unwrap_or_else(|err| {
+                panic!("Failed to calculate union member layout: {}", err.message())
+            })
         })
-        .max()
-        .unwrap_or(0);
+        .fold((0, 1), |(size, alignment), layout| {
+            (size.max(layout.size), alignment.max(layout.alignment))
+        });
 
-    LMIRTypeKind::Opaque { bytes: size }
+    LMIRType::new(LMIRTypeKind::Opaque { bytes: size }, alignment as u8)
 }

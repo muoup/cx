@@ -316,6 +316,7 @@ dependencies = [
  "cx-ast",
  "cx-lmir",
  "cx-log",
+ "cx-target",
  "cx-util",
 ]
 
@@ -326,6 +327,7 @@ dependencies = [
  "cx-lmir",
  "cx-log",
  "cx-pipeline-data",
+ "cx-target",
  "cx-util",
  "inkwell",
 ]

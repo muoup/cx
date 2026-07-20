@@ -8,6 +8,7 @@ autotests = false
 cx-lmir = { path = "../cx-lmir" }
 cx-log = { path = "../cx-log" }
 cx-pipeline-data = { path = "../cx-pipeline-data" }
+cx-target = { path = "../cx-target" }
 cx-util = { path = "../cx-util" }
 
 inkwell = { version="0.7.1", default-features = false, features=["llvm21-1"] }

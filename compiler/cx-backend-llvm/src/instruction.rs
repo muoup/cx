@@ -1,5 +1,5 @@
 use crate::arithmetic::{generate_int_binop, generate_ptr_binop};
-use crate::attributes::{attr_noundef, attr_sret};
+use crate::attributes::attr_sret;
 use crate::routines::get_function;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_signature, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
@@ -10,7 +10,7 @@ use cx_lmir::{
 use cx_util::identifier::CXIdent;
 use inkwell::AddressSpace;
 use inkwell::attributes::AttributeLoc;
-use inkwell::types::BasicType;
+use inkwell::types::{AnyTypeEnum, BasicType};
 use inkwell::values::BasicValue;
 use inkwell::values::{AnyValue, AnyValueEnum, ValueKind};
 use std::cell::Cell;
@@ -98,12 +98,6 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .build_direct_call(function_val, arg_vals.as_slice(), inst_num().as_str())
                 .unwrap();
 
-            for i in 0..args.len() {
-                val.add_attribute(
-                    AttributeLoc::Param(i as u32),
-                    attr_noundef(global_state.context),
-                )
-            }
             apply_call_abi_attributes(global_state, &val, method_sig);
 
             codegen_call_return(function_state, method_sig, &val)?
@@ -240,7 +234,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
 
             match codegen_value {
                 CodegenValue::AggregateSlots(values) => {
-                    let usize_type = global_state.context.i64_type();
+                    let usize_type = global_state.pointer_int_type;
                     let base = function_state
                         .builder
                         .build_ptr_to_int(memory_val, usize_type, inst_num().as_str())
@@ -259,20 +253,22 @@ pub(crate) fn generate_instruction<'a, 'b>(
                                 inst_num().as_str(),
                             )
                             .unwrap();
-                        function_state
+                        let store = function_state
                             .builder
                             .build_store(field_ptr, value)
                             .unwrap();
+                        store.set_alignment(slot._type.alignment() as u32).unwrap();
                     }
                 }
                 CodegenValue::Value(any_value) => {
                     let basic_val = any_to_basic_val(any_value).unwrap_or_else(|| {
                         panic!("Failed to convert value {any_value:?} to basic value")
                     });
-                    function_state
+                    let store = function_state
                         .builder
                         .build_store(memory_val, basic_val)
                         .unwrap();
+                    store.set_alignment(_type.alignment() as u32).unwrap();
                 }
                 CodegenValue::Null => {}
             }
@@ -284,7 +280,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             dest,
             src,
             size,
-            alignment: _,
+            alignment,
         } => {
             let src_val = function_state
                 .get_value(src)?
@@ -298,7 +294,13 @@ pub(crate) fn generate_instruction<'a, 'b>(
 
             function_state
                 .builder
-                .build_memcpy(dest_val, 1, src_val, 1, size_val)
+                .build_memcpy(
+                    dest_val,
+                    *alignment as u32,
+                    src_val,
+                    *alignment as u32,
+                    size_val,
+                )
                 .unwrap();
 
             CodegenValue::Null
@@ -317,10 +319,14 @@ pub(crate) fn generate_instruction<'a, 'b>(
                     memory_val,
                     inst_num().as_str(),
                 )
+                .unwrap();
+            loaded_value
+                .as_instruction_value()
                 .unwrap()
-                .as_any_value_enum();
+                .set_alignment(_type.alignment() as u32)
+                .unwrap();
 
-            CodegenValue::Value(loaded_value)
+            CodegenValue::Value(loaded_value.as_any_value_enum())
         }
 
         LMIRInstructionKind::ZeroMemory { memory, _type } => {
@@ -332,14 +338,11 @@ pub(crate) fn generate_instruction<'a, 'b>(
             let zero = global_state.context.i8_type().const_zero();
 
             let size = usize::from(_type.size());
-            let size_value = global_state
-                .context
-                .i32_type()
-                .const_int(size as u64, false);
+            let size_value = global_state.pointer_int_type.const_int(size as u64, false);
 
             function_state
                 .builder
-                .build_memset(any_value, 1, zero, size_value)
+                .build_memset(any_value, _type.alignment() as u32, zero, size_value)
                 .unwrap();
             CodegenValue::Null
         }
@@ -628,37 +631,25 @@ pub(crate) fn generate_instruction<'a, 'b>(
 
         LMIRInstructionKind::StructAccess {
             struct_,
-            field_offset,
+            field_index,
+            struct_type,
             ..
         } => {
+            let Some(AnyTypeEnum::StructType(struct_type)) = bc_llvm_type(function_state.context, struct_type) else {
+                unreachable!("Expected struct type for struct access, got: {struct_type:?}");
+            };
+            
             let struct_ptr = function_state
                 .get_value(struct_)?
                 .get_value()
                 .into_pointer_value();
 
-            let usize_type = global_state.context.i64_type();
-            let ptr_int = function_state
+            let gep = function_state
                 .builder
-                .build_ptr_to_int(struct_ptr, usize_type, inst_num().as_str())
-                .unwrap();
-            let offset = usize_type.const_int(*field_offset as u64, false);
-            let field_int = function_state
-                .builder
-                .build_int_add(ptr_int, offset, inst_num().as_str())
+                .build_struct_gep(struct_type, struct_ptr, *field_index as u32, inst_num().as_str())
                 .unwrap();
 
-            let field_ptr = function_state
-                .builder
-                .build_int_to_ptr(
-                    field_int,
-                    global_state
-                        .context
-                        .ptr_type(inkwell::AddressSpace::from(0)),
-                    inst_num().as_str(),
-                )
-                .unwrap();
-
-            CodegenValue::Value(field_ptr.as_any_value_enum())
+            CodegenValue::Value(gep.as_any_value_enum())
         }
 
         LMIRInstructionKind::Coercion {
@@ -855,12 +846,16 @@ fn build_direct_return_from_memory<'a, 'b>(
     let memory = memory.into_pointer_value();
     if slots.len() == 1 {
         let ty = any_to_basic_type(bc_llvm_type(global_state.context, &slots[0]._type)?)?;
-        return Some(
-            function_state
-                .builder
-                .build_load(ty, memory, inst_num().as_str())
-                .unwrap(),
-        );
+        let loaded = function_state
+            .builder
+            .build_load(ty, memory, inst_num().as_str())
+            .unwrap();
+        loaded
+            .as_instruction_value()
+            .unwrap()
+            .set_alignment(slots[0]._type.alignment() as u32)
+            .unwrap();
+        return Some(loaded);
     }
 
     let fields = slots
@@ -872,7 +867,7 @@ fn build_direct_return_from_memory<'a, 'b>(
         .collect::<Option<Vec<_>>>()?;
     let struct_type = global_state.context.struct_type(fields.as_slice(), false);
     let mut aggregate = struct_type.const_zero();
-    let usize_type = global_state.context.i64_type();
+    let usize_type = global_state.pointer_int_type;
     let base = function_state
         .builder
         .build_ptr_to_int(memory, usize_type, inst_num().as_str())
@@ -896,6 +891,11 @@ fn build_direct_return_from_memory<'a, 'b>(
         let field = function_state
             .builder
             .build_load(field_ty, field_ptr, inst_num().as_str())
+            .unwrap();
+        field
+            .as_instruction_value()
+            .unwrap()
+            .set_alignment(slot._type.alignment() as u32)
             .unwrap();
         aggregate = function_state
             .builder

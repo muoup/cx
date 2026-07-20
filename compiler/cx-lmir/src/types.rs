@@ -12,9 +12,19 @@ impl LMIRType {
     }
 
     pub fn with_implicit_abi(target: &ArchitectureConfig, kind: LMIRTypeKind) -> Self {
-        let alignment = usize::from(kind.implicit_size())
-            .next_power_of_two()
-            .min(target.pointer_size()) as u8;
+        let alignment = match &kind {
+            LMIRTypeKind::Pointer { .. } => target.pointer_alignment(),
+            LMIRTypeKind::Array { element, .. } => element.alignment() as usize,
+            LMIRTypeKind::Struct { fields, .. } => fields
+                .iter()
+                .map(|(_, field)| field.alignment() as usize)
+                .max()
+                .unwrap_or(1),
+            LMIRTypeKind::Unit => 1,
+            _ => usize::from(kind.implicit_size())
+                .next_power_of_two()
+                .min(target.pointer_size()),
+        } as u8;
 
         LMIRType { kind, alignment }
     }
@@ -33,13 +43,14 @@ impl LMIRType {
         }
     }
 
-    pub fn default_pointer() -> Self {
+    pub fn default_pointer(target: &ArchitectureConfig) -> Self {
         LMIRType {
             kind: LMIRTypeKind::Pointer {
                 nullable: false,
                 dereferenceable: 0,
+                bytes: target.pointer_size() as u8,
             },
-            alignment: 8,
+            alignment: target.pointer_alignment() as u8,
         }
     }
 }
@@ -72,6 +83,7 @@ pub enum LMIRTypeKind {
     Pointer {
         nullable: bool,
         dereferenceable: u32,
+        bytes: u8,
     },
 
     Vector {
@@ -121,7 +133,7 @@ impl LMIRTypeKind {
             LMIRTypeKind::Opaque { bytes } => *bytes,
             LMIRTypeKind::Integer(_type) => _type.bytes() as usize,
             LMIRTypeKind::Float(_type) => _type.bytes() as usize,
-            LMIRTypeKind::Pointer { .. } => 8, // TODO: make this configurable
+            LMIRTypeKind::Pointer { bytes, .. } => *bytes as usize,
             LMIRTypeKind::Vector { element, count } => element.bytes() as usize * count,
             LMIRTypeKind::Array { element, size } => usize::from(element.size()) * size,
             LMIRTypeKind::Struct { fields, .. } => {

@@ -70,7 +70,18 @@ impl<'a> MIRSymbolRegistry<'a> {
         };
 
         for (name, ty_kind) in INTRINSIC_TYPES {
-            let ty: MIRType = ty_kind.clone().into();
+            let ty_kind = match *name {
+                "usize" => MIRTypeKind::Integer {
+                    signed: false,
+                    _type: registry.pointer_integer_type(),
+                },
+                "isize" => MIRTypeKind::Integer {
+                    signed: true,
+                    _type: registry.pointer_integer_type(),
+                },
+                _ => ty_kind.clone(),
+            };
+            let ty: MIRType = ty_kind.into();
             let id = registry.generate_type_id(ty);
 
             registry.insert_type_symbol(QualifiedName::new_raw(CXIdent::new(*name)), id);

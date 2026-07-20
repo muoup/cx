@@ -8,6 +8,7 @@ impl ArchitectureConfig {
     pub const fn new(pointer_size: usize, pointer_alignment: usize) -> Self {
         assert!(matches!(pointer_size, 1 | 2 | 4 | 8 | 16));
         assert!(pointer_alignment.is_power_of_two());
+        assert!(pointer_alignment <= u8::MAX as usize);
 
         Self {
             pointer_size,

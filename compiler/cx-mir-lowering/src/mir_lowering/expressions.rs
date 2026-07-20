@@ -190,16 +190,9 @@ fn lower_member_storage_address(
             field_index: member_index,
             field_offset: byte_offset,
         },
-        LMIRType::default_pointer(),
+        LMIRType::default_pointer(builder.architecture()),
         true,
     )
-}
-
-fn integer_lmir_type(ty: &LMIRType) -> LMIRIntegerType {
-    let LMIRTypeKind::Integer(integer_type) = ty.kind else {
-        panic!("bitfield storage type must lower to an integer");
-    };
-    integer_type
 }
 
 fn bit_mask(width: usize) -> i64 {
@@ -238,7 +231,7 @@ fn lower_region_duplicate(
                 alignment: layout.alignment as u8,
                 _type: lmir_type.clone(),
             },
-            LMIRType::default_pointer(),
+            LMIRType::default_pointer(builder.architecture()),
             true,
         )?;
         let literal = builder.int_const(layout.size as i32, LMIRIntegerType::I64);
@@ -291,7 +284,6 @@ fn lower_bitfield_read(
         storage_byte_offset,
     )?;
     let storage_lmir_type = builder.convert_cx_type(&storage_type);
-    let storage_int_type = integer_lmir_type(&storage_lmir_type);
     let loaded = builder.add_new_instruction(
         LMIRInstructionKind::Load {
             memory: storage_addr,
@@ -306,7 +298,7 @@ fn lower_bitfield_read(
             left: loaded,
             right: LMIRValue::IntImmediate {
                 val: bit_offset as i64,
-                _type: storage_int_type,
+                _type: storage_lmir_type.clone(),
             },
         },
         storage_lmir_type.clone(),
@@ -319,7 +311,7 @@ fn lower_bitfield_read(
                 left: shifted,
                 right: LMIRValue::IntImmediate {
                     val: bit_mask(bit_width),
-                    _type: storage_int_type,
+                    _type: storage_lmir_type.clone(),
                 },
             },
             storage_lmir_type,
@@ -378,7 +370,6 @@ fn lower_bitfield_write_at_address(
     value: &MIRExpression,
 ) -> CXResult<LMIRValue> {
     let storage_lmir_type = builder.convert_cx_type(storage_type);
-    let storage_int_type = integer_lmir_type(&storage_lmir_type);
     let loaded = builder.add_new_instruction(
         LMIRInstructionKind::Load {
             memory: storage_addr.clone(),
@@ -396,7 +387,7 @@ fn lower_bitfield_write_at_address(
             left: loaded,
             right: LMIRValue::IntImmediate {
                 val: !shifted_mask,
-                _type: storage_int_type,
+                _type: storage_lmir_type.clone(),
             },
         },
         storage_lmir_type.clone(),
@@ -408,7 +399,7 @@ fn lower_bitfield_write_at_address(
             left: value,
             right: LMIRValue::IntImmediate {
                 val: mask,
-                _type: storage_int_type,
+                _type: storage_lmir_type.clone(),
             },
         },
         storage_lmir_type.clone(),
@@ -420,7 +411,7 @@ fn lower_bitfield_write_at_address(
             left: masked_value,
             right: LMIRValue::IntImmediate {
                 val: bit_offset as i64,
-                _type: storage_int_type,
+                _type: storage_lmir_type.clone(),
             },
         },
         storage_lmir_type.clone(),
@@ -450,30 +441,30 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
     match &expr.kind {
         MIRExpressionKind::BoolLiteral(value) => Ok(LMIRValue::IntImmediate {
             val: if *value { 1 } else { 0 },
-            _type: LMIRIntegerType::I1,
+            _type: LMIRType::bool(),
         }),
 
         MIRExpressionKind::IntLiteral(val) => {
             let bc_type = builder.convert_cx_type(&expr._type);
-            let LMIRTypeKind::Integer(i_type) = bc_type.kind else {
+            let LMIRTypeKind::Integer(_) = bc_type.kind else {
                 unreachable!("Integer literal with non-integer type");
             };
 
             Ok(LMIRValue::IntImmediate {
                 val: *val,
-                _type: i_type,
+                _type: bc_type,
             })
         }
 
         MIRExpressionKind::FloatLiteral(val) => {
             let bc_type = builder.convert_cx_type(&expr._type);
-            let LMIRTypeKind::Float(f_type) = bc_type.kind else {
+            let LMIRTypeKind::Float(_) = bc_type.kind else {
                 unreachable!("Float literal with non-float type");
             };
 
             Ok(LMIRValue::FloatImmediate {
                 val: *val,
-                _type: f_type,
+                _type: bc_type,
             })
         }
 
@@ -552,7 +543,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                             alignment: layout.alignment as u8,
                             _type: bc_type.clone(),
                         },
-                        LMIRType::default_pointer(),
+                        LMIRType::default_pointer(builder.architecture()),
                         true,
                     )?;
                     let init_val = lower_expression(builder, initial_value)?;
@@ -574,7 +565,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                         alignment: layout.alignment as u8,
                         _type: bc_type,
                     },
-                    LMIRType::default_pointer(),
+                    LMIRType::default_pointer(builder.architecture()),
                     true,
                 )?
             };
@@ -602,7 +593,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                         alignment: layout.alignment as u8,
                         _type: bc_type.clone(),
                     },
-                    LMIRType::default_pointer(),
+                    LMIRType::default_pointer(builder.architecture()),
                     true,
                 )?;
                 builder.add_new_instruction(
@@ -638,7 +629,10 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                         src: bc_value,
                         size: LMIRValue::IntImmediate {
                             val: layout.size as i64,
-                            _type: LMIRIntegerType::I64,
+                            _type: LMIRType::with_implicit_abi(
+                                builder.architecture(),
+                                LMIRTypeKind::Integer(LMIRIntegerType::I64),
+                            ),
                         },
                         alignment: layout.alignment as u8,
                     },
@@ -809,7 +803,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                     field_index: *member_index,
                     field_offset,
                 },
-                LMIRType::default_pointer(),
+                LMIRType::default_pointer(builder.architecture()),
                 true,
             )
         }
@@ -832,7 +826,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                     left: bc_array,
                     right: bc_index,
                 },
-                LMIRType::default_pointer(),
+                LMIRType::default_pointer(builder.architecture()),
                 true,
             )
         }
@@ -854,7 +848,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                     LMIRInstructionKind::Alias {
                         value: bc_lhs.clone(),
                     },
-                    LMIRType::default_pointer(),
+                    LMIRType::default_pointer(builder.architecture()),
                     true,
                 )?;
 
@@ -876,7 +870,10 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                     left: tag_value,
                     right: LMIRValue::IntImmediate {
                         val: *variant_index as i64,
-                        _type: LMIRIntegerType::I8,
+                        _type: LMIRType::with_implicit_abi(
+                            builder.architecture(),
+                            LMIRTypeKind::Integer(LMIRIntegerType::I8),
+                        ),
                     },
                 },
                 LMIRType::bool(),
@@ -1047,7 +1044,7 @@ fn lower_call(
                 alignment: return_layout.alignment as u8,
                 _type: return_type.clone(),
             },
-            LMIRType::default_pointer(),
+            LMIRType::default_pointer(builder.architecture()),
             true,
         )?;
         args.insert(0, buffer.clone());
@@ -1092,7 +1089,7 @@ fn lower_call(
                 alignment: return_layout.alignment as u8,
                 _type: return_type.clone(),
             },
-            LMIRType::default_pointer(),
+            LMIRType::default_pointer(builder.architecture()),
             true,
         )?;
         builder.add_new_instruction(
@@ -1216,7 +1213,7 @@ fn lower_abi_slot_load(
                 left: source,
                 right: builder.int_const(slot.offset as i32, LMIRIntegerType::I64),
             },
-            LMIRType::default_pointer(),
+            LMIRType::default_pointer(builder.architecture()),
             true,
         )?
     };
@@ -1245,7 +1242,7 @@ fn lower_byval_copy_argument(
             alignment,
             _type: pointee_type,
         },
-        LMIRType::default_pointer(),
+        LMIRType::default_pointer(builder.architecture()),
         true,
     )?;
     let size = builder.int_const(pointee_layout.size as i32, LMIRIntegerType::I64);
@@ -1313,7 +1310,7 @@ fn lower_array_initializer(
             alignment: element_layout.alignment as u8,
             _type: array_type,
         },
-        LMIRType::default_pointer(),
+        LMIRType::default_pointer(builder.architecture()),
         true,
     )?;
 
@@ -1329,10 +1326,13 @@ fn lower_array_initializer(
                 left: allocation.clone(),
                 right: LMIRValue::IntImmediate {
                     val: i as i64,
-                    _type: LMIRIntegerType::I64,
+                    _type: LMIRType::with_implicit_abi(
+                        builder.architecture(),
+                        LMIRTypeKind::Integer(LMIRIntegerType::I64),
+                    ),
                 },
             },
-            LMIRType::default_pointer(),
+            LMIRType::default_pointer(builder.architecture()),
             true,
         )?;
 
@@ -1346,7 +1346,10 @@ fn lower_array_initializer(
                     src: bc_elem,
                     size: LMIRValue::IntImmediate {
                         val: element_layout.size as i64,
-                        _type: LMIRIntegerType::I64,
+                        _type: LMIRType::with_implicit_abi(
+                            builder.architecture(),
+                            LMIRTypeKind::Integer(LMIRIntegerType::I64),
+                        ),
                     },
                     alignment: element_layout.alignment as u8,
                 },
@@ -1382,7 +1385,7 @@ fn lower_struct_initializer(
             alignment: struct_layout.alignment as u8,
             _type: bc_struct_type.clone(),
         },
-        LMIRType::default_pointer(),
+        LMIRType::default_pointer(builder.architecture()),
         true,
     )?;
 
@@ -1405,7 +1408,7 @@ fn lower_struct_initializer(
                         field_index: initialization.field_index,
                         field_offset: storage_byte_offset,
                     },
-                    LMIRType::default_pointer(),
+                    LMIRType::default_pointer(builder.architecture()),
                     true,
                 )?;
                 lower_bitfield_write_at_address(
@@ -1432,7 +1435,7 @@ fn lower_struct_initializer(
                 field_index: initialization.field_index,
                 field_offset,
             },
-            LMIRType::default_pointer(),
+            LMIRType::default_pointer(builder.architecture()),
             true,
         )?;
 
@@ -1443,7 +1446,10 @@ fn lower_struct_initializer(
                     src: bc_value,
                     size: LMIRValue::IntImmediate {
                         val: field_layout.size as i64,
-                        _type: LMIRIntegerType::I64,
+                        _type: LMIRType::with_implicit_abi(
+                            builder.architecture(),
+                            LMIRTypeKind::Integer(LMIRIntegerType::I64),
+                        ),
                     },
                     alignment: field_layout.alignment as u8,
                 },
@@ -1500,7 +1506,7 @@ pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResu
                         alignment: param_layout.alignment as u8,
                         _type: raw_param_type.clone(),
                     },
-                    LMIRType::default_pointer(),
+                    LMIRType::default_pointer(builder.architecture()),
                     true,
                 )?;
                 if let LMIRParameterABI::Direct { slots } = &abi_param.abi {
@@ -1517,7 +1523,7 @@ pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResu
                                     right: builder
                                         .int_const(slot.offset as i32, LMIRIntegerType::I64),
                                 },
-                                LMIRType::default_pointer(),
+                                LMIRType::default_pointer(builder.architecture()),
                                 true,
                             )?
                         };
@@ -1548,7 +1554,7 @@ pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResu
                         alignment: param_layout.alignment as u8,
                         _type: param_type.clone(),
                     },
-                    LMIRType::default_pointer(),
+                    LMIRType::default_pointer(builder.architecture()),
                     true,
                 )?;
                 builder.add_new_instruction(

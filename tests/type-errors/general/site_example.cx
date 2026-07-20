@@ -20,7 +20,7 @@ std::opt<std::net::udp_socket> try_serve(u16 port) {
     std::span<const u8> buffer = std::span::str_as_bytes(hello);
     
     std::opt<u64> result = socket 
-        |> std::net::udp_socket::send_to(buffer, addr);
+        |> std::net::udp_socket::send_to(buffer, addr)
         |> std::opt::try();
         
     return move socket |> std::opt::some<std::net::udp_socket>();

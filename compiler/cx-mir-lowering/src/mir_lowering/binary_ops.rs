@@ -1,7 +1,7 @@
 //! Binary and unary operation lowering
 
 use cx_lmir::{
-    types::{LMIRIntegerType, LMIRType, TypeSize},
+    types::{LMIRType, TypeSize},
     LMIRFloatBinOp, LMIRInstructionKind, LMIRIntBinOp, LMIRPtrBinOp, LMIRValue,
 };
 use cx_log::CXResult;
@@ -82,7 +82,7 @@ pub fn lower_binary_op(
             };
             LMIRInstructionKind::PointerBinOp {
                 op: ptr_op,
-                ptr_type: LMIRType::default_pointer(),
+                ptr_type: LMIRType::default_pointer(builder.architecture()),
                 type_size: TypeSize::from(1),
                 left: bc_lhs,
                 right: bc_rhs,
@@ -169,11 +169,11 @@ fn lower_logical_op(
     let short_circuit_value = match op {
         MIRIntegerBinOp::LOR => LMIRValue::IntImmediate {
             val: 1,
-            _type: LMIRIntegerType::I1,
+            _type: bc_result_type.clone(),
         },
         MIRIntegerBinOp::LAND => LMIRValue::IntImmediate {
             val: 0,
-            _type: LMIRIntegerType::I1,
+            _type: bc_result_type.clone(),
         },
         _ => unreachable!(),
     };
@@ -211,10 +211,7 @@ pub fn lower_unary_op(
         MIRUnOp::NEG => {
             let zero = LMIRValue::IntImmediate {
                 val: 0,
-                _type: match &bc_result_type.kind {
-                    cx_lmir::types::LMIRTypeKind::Integer(itype) => *itype,
-                    _ => panic!("Integer negation requires integer type"),
-                },
+                _type: bc_result_type.clone(),
             };
             LMIRInstructionKind::IntegerBinOp {
                 op: LMIRIntBinOp::SUB,
@@ -229,10 +226,7 @@ pub fn lower_unary_op(
         MIRUnOp::INEG => {
             let zero = LMIRValue::IntImmediate {
                 val: 0,
-                _type: match &bc_result_type.kind {
-                    cx_lmir::types::LMIRTypeKind::Integer(itype) => *itype,
-                    _ => panic!("Integer negation requires integer type"),
-                },
+                _type: bc_result_type.clone(),
             };
             LMIRInstructionKind::IntegerBinOp {
                 op: LMIRIntBinOp::SUB,
@@ -260,7 +254,10 @@ pub fn lower_unary_op(
                         left: pre_loaded_val.clone(),
                         right: LMIRValue::IntImmediate {
                             val: *amt as i64,
-                            _type: bc_itype,
+                            _type: LMIRType::with_implicit_abi(
+                                builder.architecture(),
+                                cx_lmir::types::LMIRTypeKind::Integer(bc_itype),
+                            ),
                         },
                     }
                 }
@@ -278,8 +275,12 @@ pub fn lower_unary_op(
                         left: pre_loaded_val.clone(),
                         right: LMIRValue::IntImmediate {
                             val: *amt as i64,
-                            _type: builder
-                                .convert_integer_type(&builder.registry.pointer_integer_type()),
+                            _type: LMIRType::with_implicit_abi(
+                                builder.architecture(),
+                                cx_lmir::types::LMIRTypeKind::Integer(builder.convert_integer_type(
+                                    &builder.registry.pointer_integer_type(),
+                                )),
+                            ),
                         },
                     }
                 }
@@ -334,7 +335,10 @@ pub fn lower_unary_op(
                         left: pre_loaded_val.clone(),
                         right: LMIRValue::IntImmediate {
                             val: *amt as i64,
-                            _type: bc_itype,
+                            _type: LMIRType::with_implicit_abi(
+                                builder.architecture(),
+                                cx_lmir::types::LMIRTypeKind::Integer(bc_itype),
+                            ),
                         },
                     }
                 }
@@ -352,8 +356,12 @@ pub fn lower_unary_op(
                         left: pre_loaded_val.clone(),
                         right: LMIRValue::IntImmediate {
                             val: *amt as i64,
-                            _type: builder
-                                .convert_integer_type(&builder.registry.pointer_integer_type()),
+                            _type: LMIRType::with_implicit_abi(
+                                builder.architecture(),
+                                cx_lmir::types::LMIRTypeKind::Integer(builder.convert_integer_type(
+                                    &builder.registry.pointer_integer_type(),
+                                )),
+                            ),
                         },
                     }
                 }

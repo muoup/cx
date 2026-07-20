@@ -56,13 +56,15 @@ pub fn layout_of<Context: MIRTypeContext + ?Sized>(
         )),
     }
     .map(|mut layout| {
+        layout.alignment = layout
+            .alignment
+            .clamp(1, definitions.architecture().pointer_size());
+
         if let Some(alignment) = ty.attributes.minimum_alignment {
             layout.alignment = layout.alignment.max(alignment);
         }
 
-        layout.alignment = layout
-            .alignment
-            .clamp(1, definitions.architecture().pointer_size());
+        layout.size = align_to(layout.size, layout.alignment);
         layout
     })
 }

@@ -380,18 +380,14 @@ impl LMIRBuilder {
 
             LMIRValue::Register { _type, .. } => _type.clone(),
 
-            LMIRValue::FloatImmediate { _type, .. } => {
-                LMIRType::with_implicit_abi(self.architecture(), LMIRTypeKind::Float(*_type))
-            }
-            LMIRValue::IntImmediate { _type, .. } => {
-                LMIRType::with_implicit_abi(self.architecture(), LMIRTypeKind::Integer(*_type))
-            }
+            LMIRValue::FloatImmediate { _type, .. }
+            | LMIRValue::IntImmediate { _type, .. } => _type.clone(),
 
             LMIRValue::ParameterRef(param_index) => {
                 let context = self.fun();
                 let signature = context.prototype.signature();
                 signature
-                    .expanded_param_type(*param_index as usize)
+                    .expanded_param_type(self.architecture(), *param_index as usize)
                     .expect("Parameter index out of bounds in function prototype")
             }
             LMIRValue::Global(global_index) => {
@@ -401,12 +397,14 @@ impl LMIRBuilder {
                     .expect("Global variable index out of bounds");
 
                 match &global._type {
-                    LMIRGlobalType::StringLiteral(..) => LMIRType::default_pointer(),
+                    LMIRGlobalType::StringLiteral(..) => {
+                        LMIRType::default_pointer(self.architecture())
+                    }
                     LMIRGlobalType::Variable { _type, .. } => _type.clone(),
                 }
             }
 
-            LMIRValue::FunctionRef(_) => LMIRType::default_pointer(),
+            LMIRValue::FunctionRef(_) => LMIRType::default_pointer(self.architecture()),
         }
     }
 
@@ -423,7 +421,10 @@ impl LMIRBuilder {
     pub fn int_const(&self, value: i32, _type: LMIRIntegerType) -> LMIRValue {
         LMIRValue::IntImmediate {
             val: value as i64,
-            _type,
+            _type: LMIRType::with_implicit_abi(
+                self.architecture(),
+                LMIRTypeKind::Integer(_type),
+            ),
         }
     }
 
@@ -438,7 +439,10 @@ impl LMIRBuilder {
     pub fn float_const(&self, value: f64, _type: LMIRFloatType) -> LMIRValue {
         LMIRValue::FloatImmediate {
             val: FloatWrapper::from(value),
-            _type,
+            _type: LMIRType::with_implicit_abi(
+                self.architecture(),
+                LMIRTypeKind::Float(_type),
+            ),
         }
     }
 
@@ -495,6 +499,7 @@ impl LMIRBuilder {
 
     pub fn finish(self) -> LMIRUnit {
         LMIRUnit {
+            architecture: *self.registry.architecture(),
             fn_map: self.fn_map,
             fn_defs: self.functions,
 

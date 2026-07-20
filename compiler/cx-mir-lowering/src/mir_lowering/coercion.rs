@@ -68,8 +68,8 @@ pub fn lower_type_conversion(
         }
         MIRCoercion::FloatCast { .. } => {
             let from_type = match &bc_operand {
-                LMIRValue::FloatImmediate { _type, .. } => *_type,
-                LMIRValue::Register { _type, .. } => {
+                LMIRValue::FloatImmediate { _type, .. }
+                | LMIRValue::Register { _type, .. } => {
                     if let LMIRTypeKind::Float(ft) = &_type.kind {
                         *ft
                     } else {
@@ -86,8 +86,8 @@ pub fn lower_type_conversion(
         }
         MIRCoercion::IntToFloat { sextend, .. } => {
             let from_type = match &bc_operand {
-                LMIRValue::IntImmediate { _type, .. } => *_type,
-                LMIRValue::Register { _type, .. } => {
+                LMIRValue::IntImmediate { _type, .. }
+                | LMIRValue::Register { _type, .. } => {
                     if let LMIRTypeKind::Integer(it) = &_type.kind {
                         *it
                     } else {
@@ -110,8 +110,8 @@ pub fn lower_type_conversion(
         }
         MIRCoercion::IntToPtr { sextend } => {
             let from_type = match &bc_operand {
-                LMIRValue::IntImmediate { _type, .. } => *_type,
-                LMIRValue::Register { _type, .. } => {
+                LMIRValue::IntImmediate { _type, .. }
+                | LMIRValue::Register { _type, .. } => {
                     if let LMIRTypeKind::Integer(it) = &_type.kind {
                         *it
                     } else {
@@ -131,8 +131,8 @@ pub fn lower_type_conversion(
         }
         MIRCoercion::FloatToInt { sextend, .. } => {
             let from_type = match &bc_operand {
-                LMIRValue::FloatImmediate { _type, .. } => *_type,
-                LMIRValue::Register { _type, .. } => {
+                LMIRValue::FloatImmediate { _type, .. }
+                | LMIRValue::Register { _type, .. } => {
                     if let LMIRTypeKind::Float(ft) = &_type.kind {
                         *ft
                     } else {
@@ -159,7 +159,7 @@ pub fn lower_type_conversion(
                 LMIRInstructionKind::GetFunctionAddr {
                     func: func.to_string(),
                 },
-                LMIRType::default_pointer(),
+                LMIRType::default_pointer(builder.architecture()),
                 true,
             )
         }

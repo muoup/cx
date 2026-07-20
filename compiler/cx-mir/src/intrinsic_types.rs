@@ -87,14 +87,14 @@ pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
         "usize",
         MIRTypeKind::Integer {
             signed: false,
-            _type: MIRIntegerType::from_bytes(std::mem::size_of::<usize>() as u8).unwrap(),
+            _type: MIRIntegerType::I64,
         },
     ),
     (
         "isize",
         MIRTypeKind::Integer {
             signed: true,
-            _type: MIRIntegerType::from_bytes(std::mem::size_of::<isize>() as u8).unwrap(),
+            _type: MIRIntegerType::I64,
         },
     ),
     (
@@ -134,7 +134,7 @@ pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
         "unsigned short",
         MIRTypeKind::Integer {
             signed: false,
-            _type: MIRIntegerType::I32,
+            _type: MIRIntegerType::I16,
         },
     ),
     (

@@ -413,6 +413,7 @@ impl Display for LMIRTypeKind {
             LMIRTypeKind::Pointer {
                 nullable,
                 dereferenceable,
+                ..
             } => {
                 if !*nullable {
                     write!(f, "nonnull ")?;

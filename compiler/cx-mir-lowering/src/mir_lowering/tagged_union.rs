@@ -32,7 +32,7 @@ pub fn get_tagged_union_tag(
             field_index: 1,
             field_offset: usize::from(tag_offset),
         },
-        LMIRType::default_pointer(),
+        LMIRType::default_pointer(builder.architecture()),
         true,
     )
 }
@@ -79,7 +79,10 @@ pub fn lower_tagged_union_set(
             memory: tag_addr,
             value: LMIRValue::IntImmediate {
                 val: variant_index as i64,
-                _type: LMIRIntegerType::I8,
+                _type: LMIRType::with_implicit_abi(
+                    builder.architecture(),
+                    LMIRTypeKind::Integer(LMIRIntegerType::I8),
+                ),
             },
             _type: LMIRType::with_implicit_abi(
                 builder.architecture(),
@@ -102,7 +105,10 @@ pub fn lower_tagged_union_set(
                 src: bc_inner,
                 size: LMIRValue::IntImmediate {
                     val: inner_layout.size as i64,
-                    _type: LMIRIntegerType::I64,
+                    _type: LMIRType::with_implicit_abi(
+                        builder.architecture(),
+                        LMIRTypeKind::Integer(LMIRIntegerType::I64),
+                    ),
                 },
                 alignment: inner_layout.alignment as u8,
             },
@@ -139,7 +145,7 @@ pub fn lower_construct_tagged_union(
             alignment: sum_layout.alignment as u8,
             _type: bc_sum_type.clone(),
         },
-        LMIRType::default_pointer(),
+        LMIRType::default_pointer(builder.architecture()),
         true,
     )?;
 
@@ -149,7 +155,10 @@ pub fn lower_construct_tagged_union(
             memory: tag_addr,
             value: LMIRValue::IntImmediate {
                 val: variant_index as i64,
-                _type: LMIRIntegerType::I8,
+                _type: LMIRType::with_implicit_abi(
+                    builder.architecture(),
+                    LMIRTypeKind::Integer(LMIRIntegerType::I8),
+                ),
             },
             _type: LMIRType::with_implicit_abi(
                 builder.architecture(),
@@ -171,7 +180,10 @@ pub fn lower_construct_tagged_union(
                 src: bc_inner,
                 size: LMIRValue::IntImmediate {
                     val: inner_layout.size as i64,
-                    _type: LMIRIntegerType::I64,
+                    _type: LMIRType::with_implicit_abi(
+                        builder.architecture(),
+                        LMIRTypeKind::Integer(LMIRIntegerType::I64),
+                    ),
                 },
                 alignment: inner_layout.alignment as u8,
             },

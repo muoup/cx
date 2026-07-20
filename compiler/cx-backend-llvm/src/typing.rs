@@ -72,11 +72,11 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &LMIRType) -> Option
         }
         LMIRTypeKind::Pointer { .. } => context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
         LMIRTypeKind::Vector { element, count } => {
-            let element = bc_llvm_type(context, &LMIRTypeKind::Float(*element).into())?;
-            match any_to_basic_type(element)? {
-                BasicTypeEnum::FloatType(ty) => ty.vec_type(*count as u32).as_any_type_enum(),
-                ty => panic!("Unsupported LLVM vector element type: {ty:?}"),
-            }
+            let element = match element {
+                LMIRFloatType::F32 => context.f32_type(),
+                LMIRFloatType::F64 => context.f64_type(),
+            };
+            element.vec_type(*count as u32).as_any_type_enum()
         }
 
         LMIRTypeKind::Struct { name, fields } => {
