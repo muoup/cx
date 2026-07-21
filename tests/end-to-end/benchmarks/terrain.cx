@@ -1,0 +1,703 @@
+#include <stdint.h>
+#include <stdio.h>
+
+#ifndef GRID_W
+#define GRID_W 512
+#endif
+
+#ifndef GRID_H
+#define GRID_H 512
+#endif
+
+#ifndef SMOOTH_STEPS
+#define SMOOTH_STEPS 16
+#endif
+
+#ifndef ROUTE_COUNT
+#define ROUTE_COUNT 192
+#endif
+
+#ifndef ROAD_SPACING
+#define ROAD_SPACING 16
+#endif
+
+#define CELL_COUNT (GRID_W * GRID_H)
+#define INF_DISTANCE 0x3fffffffu
+
+struct HeapEntry {
+    int node;
+    uint32_t key;
+};
+
+struct RouteSummary {
+    uint32_t distance;
+    uint32_t expanded;
+    uint32_t length;
+    uint32_t signature;
+};
+
+struct CellRank {
+    uint32_t height;
+    uint32_t id;
+};
+
+static uint32_t height_a[CELL_COUNT];
+static uint32_t height_b[CELL_COUNT];
+static uint16_t travel_cost[CELL_COUNT];
+static uint8_t blocked[CELL_COUNT];
+static uint32_t traffic[CELL_COUNT];
+
+static int uf_parent[CELL_COUNT];
+static uint32_t uf_size[CELL_COUNT];
+
+static uint32_t search_distance[CELL_COUNT];
+static int search_previous[CELL_COUNT];
+static int heap_position[CELL_COUNT];
+static struct HeapEntry heap_entries[CELL_COUNT];
+static int heap_count;
+
+static struct RouteSummary route_summaries[ROUTE_COUNT];
+static struct CellRank rank_a[CELL_COUNT];
+static struct CellRank rank_b[CELL_COUNT];
+static uint64_t flow[CELL_COUNT];
+
+static uint32_t random_state = 0x9e3779b9u;
+
+static uint32_t next_random(void)
+{
+    uint32_t x = random_state;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    random_state = x;
+    return x;
+}
+
+static uint32_t mix32(uint32_t x)
+{
+    x ^= x >> 16;
+    x *= 0x7feb352du;
+    x ^= x >> 15;
+    x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
+}
+
+static uint32_t unsigned_difference(uint32_t a, uint32_t b)
+{
+    return a >= b ? a - b : b - a;
+}
+
+static uint64_t checksum_mix(uint64_t state, uint64_t value)
+{
+    state ^= value + 0x9e3779b97f4a7c15ull + (state << 6) + (state >> 2);
+    state *= 0xbf58476d1ce4e5b9ull;
+    state ^= state >> 29;
+    return state;
+}
+
+static int cell_index(int x, int y)
+{
+    return y * GRID_W + x;
+}
+
+static void generate_height_field(void)
+{
+    int x;
+    int y;
+    int step;
+
+    for (y = 0; y < GRID_H; ++y) {
+        for (x = 0; x < GRID_W; ++x) {
+            uint32_t r = next_random() & 0xffffu;
+            uint32_t q = (uint32_t)(x * x * 17 + y * y * 31 + x * y * 13);
+            uint32_t wave = mix32(q ^ ((uint32_t)x << 19) ^ ((uint32_t)y << 7)) & 0xffffu;
+            height_a[cell_index(x, y)] = (r * 3u + wave * 2u) / 5u;
+        }
+    }
+
+    for (step = 0; step < SMOOTH_STEPS; ++step) {
+        for (y = 0; y < GRID_H; ++y) {
+            int y0 = y > 0 ? y - 1 : y;
+            int y1 = y + 1 < GRID_H ? y + 1 : y;
+
+            for (x = 0; x < GRID_W; ++x) {
+                int x0 = x > 0 ? x - 1 : x;
+                int x1 = x + 1 < GRID_W ? x + 1 : x;
+                uint32_t center = height_a[cell_index(x, y)];
+                uint32_t sum = center * 4u;
+
+                sum += height_a[cell_index(x0, y)];
+                sum += height_a[cell_index(x1, y)];
+                sum += height_a[cell_index(x, y0)];
+                sum += height_a[cell_index(x, y1)];
+                sum += height_a[cell_index(x0, y0)];
+                sum += height_a[cell_index(x1, y0)];
+                sum += height_a[cell_index(x0, y1)];
+                sum += height_a[cell_index(x1, y1)];
+
+                height_b[cell_index(x, y)] = sum / 12u;
+            }
+        }
+
+        for (y = 0; y < CELL_COUNT; ++y) {
+            height_a[y] = height_b[y];
+        }
+    }
+}
+
+static void classify_terrain(void)
+{
+    int x;
+    int y;
+
+    for (y = 0; y < GRID_H; ++y) {
+        int y0 = y > 0 ? y - 1 : y;
+        int y1 = y + 1 < GRID_H ? y + 1 : y;
+
+        for (x = 0; x < GRID_W; ++x) {
+            int x0 = x > 0 ? x - 1 : x;
+            int x1 = x + 1 < GRID_W ? x + 1 : x;
+            int id = cell_index(x, y);
+            uint32_t h = height_a[id];
+            uint32_t dx = unsigned_difference(height_a[cell_index(x1, y)],
+                                              height_a[cell_index(x0, y)]);
+            uint32_t dy = unsigned_difference(height_a[cell_index(x, y1)],
+                                              height_a[cell_index(x, y0)]);
+            uint32_t roughness = dx + dy;
+            uint32_t noise = mix32((uint32_t)id ^ h ^ 0xa511e9b3u);
+            uint32_t cost = 1u + ((h >> 9) & 31u) + (roughness >> 6);
+            int is_road = (x % ROAD_SPACING == 0) || (y % ROAD_SPACING == 0);
+            int is_blocked = ((noise & 255u) < 42u) || roughness > 3200u;
+
+            if (cost > 250u) {
+                cost = 250u;
+            }
+            if (is_road) {
+                is_blocked = 0;
+                cost = 1u + cost / 4u;
+            }
+
+            travel_cost[id] = (uint16_t)cost;
+            blocked[id] = (uint8_t)is_blocked;
+            traffic[id] = 0u;
+        }
+    }
+}
+
+static int uf_find(int node)
+{
+    int root = node;
+
+    while (uf_parent[root] != root) {
+        root = uf_parent[root];
+    }
+
+    while (uf_parent[node] != node) {
+        int next = uf_parent[node];
+        uf_parent[node] = root;
+        node = next;
+    }
+
+    return root;
+}
+
+static void uf_union(int a, int b)
+{
+    int root_a = uf_find(a);
+    int root_b = uf_find(b);
+
+    if (root_a == root_b) {
+        return;
+    }
+
+    if (uf_size[root_a] < uf_size[root_b]) {
+        int temporary = root_a;
+        root_a = root_b;
+        root_b = temporary;
+    }
+
+    uf_parent[root_b] = root_a;
+    uf_size[root_a] += uf_size[root_b];
+}
+
+static uint32_t build_connected_components(void)
+{
+    int x;
+    int y;
+    uint32_t largest = 0u;
+
+    for (y = 0; y < CELL_COUNT; ++y) {
+        if (blocked[y]) {
+            uf_parent[y] = -1;
+            uf_size[y] = 0u;
+        } else {
+            uf_parent[y] = y;
+            uf_size[y] = 1u;
+        }
+    }
+
+    for (y = 0; y < GRID_H; ++y) {
+        for (x = 0; x < GRID_W; ++x) {
+            int id = cell_index(x, y);
+
+            if (blocked[id]) {
+                continue;
+            }
+            if (x > 0 && !blocked[id - 1]) {
+                uf_union(id, id - 1);
+            }
+            if (y > 0 && !blocked[id - GRID_W]) {
+                uf_union(id, id - GRID_W);
+            }
+        }
+    }
+
+    for (y = 0; y < CELL_COUNT; ++y) {
+        if (uf_parent[y] == y && uf_size[y] > largest) {
+            largest = uf_size[y];
+        }
+    }
+
+    return largest;
+}
+
+static int heap_entry_less(struct HeapEntry a, struct HeapEntry b)
+{
+    if (a.key != b.key) {
+        return a.key < b.key;
+    }
+    return a.node < b.node;
+}
+
+static void heap_swap(int a, int b)
+{
+    struct HeapEntry temporary = heap_entries[a];
+    heap_entries[a] = heap_entries[b];
+    heap_entries[b] = temporary;
+    heap_position[heap_entries[a].node] = a;
+    heap_position[heap_entries[b].node] = b;
+}
+
+static void heap_push_or_decrease(int node, uint32_t key)
+{
+    int position = heap_position[node];
+
+    if (position < 0) {
+        position = heap_count;
+        heap_count += 1;
+        heap_entries[position].node = node;
+        heap_entries[position].key = key;
+        heap_position[node] = position;
+    } else {
+        if (key >= heap_entries[position].key) {
+            return;
+        }
+        heap_entries[position].key = key;
+    }
+
+    while (position > 0) {
+        int parent = (position - 1) / 2;
+        if (!heap_entry_less(heap_entries[position], heap_entries[parent])) {
+            break;
+        }
+        heap_swap(position, parent);
+        position = parent;
+    }
+}
+
+static int heap_pop(void)
+{
+    int result = heap_entries[0].node;
+    heap_position[result] = -1;
+    heap_count -= 1;
+
+    if (heap_count > 0) {
+        int position = 0;
+        heap_entries[0] = heap_entries[heap_count];
+        heap_position[heap_entries[0].node] = 0;
+
+        for (;;) {
+            int left = position * 2 + 1;
+            int right = left + 1;
+            int best = position;
+
+            if (left < heap_count && heap_entry_less(heap_entries[left], heap_entries[best])) {
+                best = left;
+            }
+            if (right < heap_count && heap_entry_less(heap_entries[right], heap_entries[best])) {
+                best = right;
+            }
+            if (best == position) {
+                break;
+            }
+            heap_swap(position, best);
+            position = best;
+        }
+    }
+
+    return result;
+}
+
+static uint32_t route_heuristic(int node, int goal)
+{
+    int x0 = node % GRID_W;
+    int y0 = node / GRID_W;
+    int x1 = goal % GRID_W;
+    int y1 = goal / GRID_W;
+    uint32_t dx = (uint32_t)(x0 >= x1 ? x0 - x1 : x1 - x0);
+    uint32_t dy = (uint32_t)(y0 >= y1 ? y0 - y1 : y1 - y0);
+    return (dx + dy) * 2u;
+}
+
+static void relax_neighbor(int current, int neighbor, int goal)
+{
+    uint32_t slope;
+    uint32_t step_cost;
+    uint32_t candidate;
+
+    if (blocked[neighbor]) {
+        return;
+    }
+
+    slope = unsigned_difference(height_a[current], height_a[neighbor]) >> 7;
+    step_cost = 1u + (uint32_t)travel_cost[neighbor] + slope + (traffic[neighbor] >> 4);
+    candidate = search_distance[current] + step_cost;
+
+    if (candidate < search_distance[neighbor]) {
+        search_distance[neighbor] = candidate;
+        search_previous[neighbor] = current;
+        heap_push_or_decrease(neighbor, candidate + route_heuristic(neighbor, goal));
+    }
+}
+
+static struct RouteSummary run_route(int start, int goal, uint32_t route_number)
+{
+    struct RouteSummary summary;
+    int i;
+    uint32_t expanded = 0u;
+
+    for (i = 0; i < CELL_COUNT; ++i) {
+        search_distance[i] = INF_DISTANCE;
+        search_previous[i] = -1;
+        heap_position[i] = -1;
+    }
+
+    heap_count = 0;
+    search_distance[start] = 0u;
+    heap_push_or_decrease(start, route_heuristic(start, goal));
+
+    while (heap_count > 0) {
+        int current = heap_pop();
+        int x;
+        int y;
+
+        expanded += 1u;
+        if (current == goal) {
+            break;
+        }
+
+        x = current % GRID_W;
+        y = current / GRID_W;
+
+        if (x > 0) {
+            relax_neighbor(current, current - 1, goal);
+        }
+        if (x + 1 < GRID_W) {
+            relax_neighbor(current, current + 1, goal);
+        }
+        if (y > 0) {
+            relax_neighbor(current, current - GRID_W, goal);
+        }
+        if (y + 1 < GRID_H) {
+            relax_neighbor(current, current + GRID_W, goal);
+        }
+    }
+
+    summary.distance = search_distance[goal];
+    summary.expanded = expanded;
+    summary.length = 0u;
+    summary.signature = mix32(route_number ^ (uint32_t)start ^ ((uint32_t)goal << 16));
+
+    if (search_distance[goal] != INF_DISTANCE) {
+        int current = goal;
+
+        while (current >= 0) {
+            int x = current % GRID_W;
+            int y = current / GRID_W;
+
+            summary.length += 1u;
+            summary.signature = mix32(summary.signature ^ (uint32_t)current ^ summary.length);
+            traffic[current] += 3u + (route_number & 1u);
+            if (travel_cost[current] > 1u) {
+                travel_cost[current] -= 1u;
+            }
+
+            if ((summary.length & 3u) == 0u) {
+                if (x > 0) {
+                    traffic[current - 1] += 1u;
+                }
+                if (x + 1 < GRID_W) {
+                    traffic[current + 1] += 1u;
+                }
+                if (y > 0) {
+                    traffic[current - GRID_W] += 1u;
+                }
+                if (y + 1 < GRID_H) {
+                    traffic[current + GRID_W] += 1u;
+                }
+            }
+
+            if (current == start) {
+                break;
+            }
+            current = search_previous[current];
+        }
+    }
+
+    return summary;
+}
+
+static int rank_before(struct CellRank a, struct CellRank b)
+{
+    if (a.height != b.height) {
+        return a.height > b.height;
+    }
+    return a.id < b.id;
+}
+
+static struct CellRank *sort_cells_by_height(void)
+{
+    struct CellRank *source = rank_a;
+    struct CellRank *destination = rank_b;
+    int width;
+    int i;
+
+    for (i = 0; i < CELL_COUNT; ++i) {
+        rank_a[i].height = height_a[i];
+        rank_a[i].id = (uint32_t)i;
+    }
+
+    for (width = 1; width < CELL_COUNT; width *= 2) {
+        int begin;
+
+        for (begin = 0; begin < CELL_COUNT; begin += width * 2) {
+            int left = begin;
+            int middle = begin + width;
+            int right = begin + width * 2;
+            int a;
+            int b;
+            int out;
+
+            if (middle > CELL_COUNT) {
+                middle = CELL_COUNT;
+            }
+            if (right > CELL_COUNT) {
+                right = CELL_COUNT;
+            }
+
+            a = left;
+            b = middle;
+            out = left;
+
+            while (a < middle && b < right) {
+                if (rank_before(source[a], source[b])) {
+                    destination[out++] = source[a++];
+                } else {
+                    destination[out++] = source[b++];
+                }
+            }
+            while (a < middle) {
+                destination[out++] = source[a++];
+            }
+            while (b < right) {
+                destination[out++] = source[b++];
+            }
+        }
+
+        {
+            struct CellRank *temporary = source;
+            source = destination;
+            destination = temporary;
+        }
+    }
+
+    return source;
+}
+
+static void consider_drainage_neighbor(int id, int candidate_id,
+                                        uint32_t current_height, int *best,
+                                        uint32_t *best_height)
+{
+    uint32_t candidate_height;
+
+    if (blocked[candidate_id]) {
+        return;
+    }
+
+    candidate_height = height_a[candidate_id];
+    if (candidate_height < *best_height ||
+        (candidate_height == *best_height &&
+         candidate_height == current_height &&
+         candidate_id > id && (*best < 0 || candidate_id < *best))) {
+        *best = candidate_id;
+        *best_height = candidate_height;
+    }
+}
+
+static uint64_t accumulate_flow(struct CellRank *order, uint32_t *maximum_cell)
+{
+    int i;
+    uint64_t maximum = 0u;
+    uint32_t maximum_id = 0u;
+
+    for (i = 0; i < CELL_COUNT; ++i) {
+        if (blocked[i]) {
+            flow[i] = 0u;
+        } else {
+            flow[i] = 1u + (uint64_t)traffic[i];
+        }
+    }
+
+    for (i = 0; i < CELL_COUNT; ++i) {
+        int id = (int)order[i].id;
+        int x;
+        int y;
+        int best;
+        uint32_t current_height;
+        uint32_t best_height;
+
+        if (blocked[id]) {
+            continue;
+        }
+
+        x = id % GRID_W;
+        y = id / GRID_W;
+        best = -1;
+        current_height = height_a[id];
+        best_height = current_height;
+
+        if (x > 0) {
+            consider_drainage_neighbor(id, id - 1, current_height, &best, &best_height);
+        }
+        if (x + 1 < GRID_W) {
+            consider_drainage_neighbor(id, id + 1, current_height, &best, &best_height);
+        }
+        if (y > 0) {
+            consider_drainage_neighbor(id, id - GRID_W, current_height, &best, &best_height);
+        }
+        if (y + 1 < GRID_H) {
+            consider_drainage_neighbor(id, id + GRID_W, current_height, &best, &best_height);
+        }
+
+        if (best >= 0) {
+            flow[best] += flow[id];
+        }
+    }
+
+    for (i = 0; i < CELL_COUNT; ++i) {
+        if (flow[i] > maximum) {
+            maximum = flow[i];
+            maximum_id = (uint32_t)i;
+        }
+    }
+
+    *maximum_cell = maximum_id;
+    return maximum;
+}
+
+#if GRID_W == 512 && GRID_H == 512 && SMOOTH_STEPS == 16 && \
+    ROUTE_COUNT == 192 && ROAD_SPACING == 16
+#define EXPECTED_CHECKSUM 0x8410afb240a3d8bbull
+#else
+#define EXPECTED_CHECKSUM 0ull
+#endif
+
+int main(void)
+{
+    uint32_t largest_component;
+    uint64_t total_distance = 0u;
+    uint64_t total_expanded = 0u;
+    uint64_t total_length = 0u;
+    uint32_t successful_routes = 0u;
+    struct CellRank *order;
+    uint64_t maximum_flow;
+    uint32_t maximum_flow_cell;
+    uint64_t checksum = 0x243f6a8885a308d3ull;
+    int route;
+    int i;
+
+    generate_height_field();
+    classify_terrain();
+    largest_component = build_connected_components();
+
+    for (route = 0; route < ROUTE_COUNT; ++route) {
+        int span_x = GRID_W / ROAD_SPACING - 1;
+        int span_y = GRID_H / ROAD_SPACING - 1;
+        int start_x = ROAD_SPACING * (1 + ((route * 5 + 1) % span_x));
+        int start_y = ROAD_SPACING * (1 + ((route * 7 + 2) % span_y));
+        int goal_x = ROAD_SPACING * (1 + ((route * 11 + 8) % span_x));
+        int goal_y = ROAD_SPACING * (1 + ((route * 13 + 10) % span_y));
+        int start = cell_index(start_x, start_y);
+        int goal = cell_index(goal_x, goal_y);
+
+        if (start == goal) {
+            goal_x = ROAD_SPACING * (1 + ((goal_x / ROAD_SPACING + 6) % span_x));
+            goal = cell_index(goal_x, goal_y);
+        }
+
+        route_summaries[route] = run_route(start, goal, (uint32_t)route);
+        if (route_summaries[route].distance != INF_DISTANCE) {
+            successful_routes += 1u;
+            total_distance += route_summaries[route].distance;
+            total_length += route_summaries[route].length;
+        }
+        total_expanded += route_summaries[route].expanded;
+    }
+
+    order = sort_cells_by_height();
+    maximum_flow = accumulate_flow(order, &maximum_flow_cell);
+
+    checksum = checksum_mix(checksum, largest_component);
+    checksum = checksum_mix(checksum, successful_routes);
+    checksum = checksum_mix(checksum, total_distance);
+    checksum = checksum_mix(checksum, total_expanded);
+    checksum = checksum_mix(checksum, total_length);
+    checksum = checksum_mix(checksum, maximum_flow);
+    checksum = checksum_mix(checksum, maximum_flow_cell);
+
+    for (i = 0; i < ROUTE_COUNT; ++i) {
+        checksum = checksum_mix(checksum, route_summaries[i].distance);
+        checksum = checksum_mix(checksum, route_summaries[i].expanded);
+        checksum = checksum_mix(checksum, route_summaries[i].length);
+        checksum = checksum_mix(checksum, route_summaries[i].signature);
+    }
+
+    for (i = 0; i < CELL_COUNT; ++i) {
+        uint64_t packed = (uint64_t)height_a[i];
+        packed |= (uint64_t)travel_cost[i] << 16;
+        packed |= (uint64_t)blocked[i] << 32;
+        packed |= (uint64_t)traffic[i] << 40;
+        checksum = checksum_mix(checksum, packed);
+        checksum = checksum_mix(checksum, flow[i]);
+    }
+
+    printf("checksum=%016llx\n", (unsigned long long)checksum);
+    printf("largest_component=%u successful_routes=%u\n",
+           largest_component, successful_routes);
+    printf("total_distance=%llu total_expanded=%llu total_length=%llu\n",
+           (unsigned long long)total_distance,
+           (unsigned long long)total_expanded,
+           (unsigned long long)total_length);
+    printf("maximum_flow=%llu maximum_flow_cell=%u\n",
+           (unsigned long long)maximum_flow, maximum_flow_cell);
+
+    if (EXPECTED_CHECKSUM != 0ull && checksum != EXPECTED_CHECKSUM) {
+        printf("verification=failed expected=%016llx\n",
+               (unsigned long long)EXPECTED_CHECKSUM);
+        return 1;
+    }
+
+    printf("verification=passed\n");
+    return 0;
+}
