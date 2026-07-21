@@ -32,7 +32,7 @@ pub fn get_tagged_union_tag(
             field_index: 1,
             field_offset: usize::from(tag_offset),
         },
-        LMIRType::default_pointer(),
+        LMIRType::default_pointer(builder.architecture()),
         true,
     )
 }
@@ -79,9 +79,15 @@ pub fn lower_tagged_union_set(
             memory: tag_addr,
             value: LMIRValue::IntImmediate {
                 val: variant_index as i64,
-                _type: LMIRIntegerType::I8,
+                _type: LMIRType::with_implicit_abi(
+                    builder.architecture(),
+                    LMIRTypeKind::Integer(LMIRIntegerType::I8),
+                ),
             },
-            _type: LMIRType::from(LMIRTypeKind::Integer(LMIRIntegerType::I8)),
+            _type: LMIRType::with_implicit_abi(
+                builder.architecture(),
+                LMIRTypeKind::Integer(LMIRIntegerType::I8),
+            ),
         },
         LMIRType::unit(),
         false,
@@ -90,6 +96,7 @@ pub fn lower_tagged_union_set(
     let bc_inner = lower_expression(builder, inner_value)?;
     let mir_inner_type = &inner_value._type;
     let inner_bc_type = builder.convert_cx_type(mir_inner_type);
+    let inner_layout = builder.type_layout(mir_inner_type);
 
     if inner_bc_type.is_memory_resident() {
         builder.add_new_instruction(
@@ -97,10 +104,13 @@ pub fn lower_tagged_union_set(
                 dest: bc_target.clone(),
                 src: bc_inner,
                 size: LMIRValue::IntImmediate {
-                    val: usize::from(inner_bc_type.size()) as i64,
-                    _type: LMIRIntegerType::I64,
+                    val: inner_layout.size as i64,
+                    _type: LMIRType::with_implicit_abi(
+                        builder.architecture(),
+                        LMIRTypeKind::Integer(LMIRIntegerType::I64),
+                    ),
                 },
-                alignment: inner_bc_type.alignment(),
+                alignment: inner_layout.alignment as u8,
             },
             LMIRType::unit(),
             false,
@@ -128,13 +138,14 @@ pub fn lower_construct_tagged_union(
     sum_type: &MIRType,
 ) -> CXResult<LMIRValue> {
     let bc_sum_type = builder.convert_cx_type(sum_type);
+    let sum_layout = builder.type_layout(sum_type);
 
     let allocation = builder.add_new_instruction(
         LMIRInstructionKind::Allocate {
-            alignment: bc_sum_type.alignment(),
+            alignment: sum_layout.alignment as u8,
             _type: bc_sum_type.clone(),
         },
-        LMIRType::default_pointer(),
+        LMIRType::default_pointer(builder.architecture()),
         true,
     )?;
 
@@ -144,9 +155,15 @@ pub fn lower_construct_tagged_union(
             memory: tag_addr,
             value: LMIRValue::IntImmediate {
                 val: variant_index as i64,
-                _type: LMIRIntegerType::I8,
+                _type: LMIRType::with_implicit_abi(
+                    builder.architecture(),
+                    LMIRTypeKind::Integer(LMIRIntegerType::I8),
+                ),
             },
-            _type: LMIRType::from(LMIRTypeKind::Integer(LMIRIntegerType::I8)),
+            _type: LMIRType::with_implicit_abi(
+                builder.architecture(),
+                LMIRTypeKind::Integer(LMIRIntegerType::I8),
+            ),
         },
         LMIRType::unit(),
         false,
@@ -154,6 +171,7 @@ pub fn lower_construct_tagged_union(
 
     let bc_inner = lower_expression(builder, value)?;
     let inner_type = builder.convert_cx_type(&value._type);
+    let inner_layout = builder.type_layout(&value._type);
 
     if inner_type.is_memory_resident() {
         builder.add_new_instruction(
@@ -161,10 +179,13 @@ pub fn lower_construct_tagged_union(
                 dest: allocation.clone(),
                 src: bc_inner,
                 size: LMIRValue::IntImmediate {
-                    val: usize::from(inner_type.size()) as i64,
-                    _type: LMIRIntegerType::I64,
+                    val: inner_layout.size as i64,
+                    _type: LMIRType::with_implicit_abi(
+                        builder.architecture(),
+                        LMIRTypeKind::Integer(LMIRIntegerType::I64),
+                    ),
                 },
-                alignment: inner_type.alignment(),
+                alignment: inner_layout.alignment as u8,
             },
             LMIRType::unit(),
             false,

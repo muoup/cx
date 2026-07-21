@@ -5,6 +5,7 @@ pub mod internal_storage;
 pub mod jobs;
 
 use crate::db::ModuleData;
+pub use cx_target::ArchitectureConfig;
 use cx_util::module_path::ModulePath;
 use cx_util::namespace::{EnvironmentNamespace, NamespacePath};
 use speedy::{Context, Readable, Writable};
@@ -57,6 +58,7 @@ pub enum CompilationMode {
 
 #[derive(Debug, Clone)]
 pub struct CompilerConfig {
+    pub architecture: ArchitectureConfig,
     pub backend: CompilerBackend,
     pub optimization_level: OptimizationLevel,
     pub output: PathBuf,

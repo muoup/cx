@@ -71,6 +71,7 @@ fn compiler_config(
     compilation_mode: CompilationMode,
 ) -> CompilerConfig {
     CompilerConfig {
+        architecture: cx_pipeline_data::ArchitectureConfig::default(),
         backend,
         optimization_level: match backend {
             CompilerBackend::Cranelift => OptimizationLevel::O0,

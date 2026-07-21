@@ -15,17 +15,20 @@ pub struct MIRTypeId(pub u64);
 pub struct MIRType {
     pub visibility: VisibilityMode,
     pub specifiers: CXTypeQualifiers,
-    pub move_attributes: MIRAggregateAttributes,
+
+    pub attributes: MIRTypeAttributes,
+
     pub strong_identifier: Option<String>,
     pub lookup_identifier: Option<QualifiedName>,
-
     pub template_info: Option<Box<TemplateInfo>>,
+
     pub kind: MIRTypeKind,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]
-pub struct MIRAggregateAttributes {
+pub struct MIRTypeAttributes {
     pub semantics: MIRMoveSemantics,
+    pub minimum_alignment: Option<usize>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]
@@ -131,6 +134,7 @@ pub enum MIRTypeKind {
     },
     Opaque {
         size: usize,
+        alignment: usize,
     },
     Undefined,
     Str,
@@ -255,7 +259,7 @@ impl Default for MIRType {
         MIRType {
             visibility: VisibilityMode::Private,
             specifiers: CXTypeQualifiers::default(),
-            move_attributes: MIRAggregateAttributes::default(),
+            attributes: MIRTypeAttributes::default(),
             strong_identifier: None,
             lookup_identifier: None,
             template_info: None,
@@ -271,7 +275,7 @@ impl<Context: MIRTypeContext + ?Sized> TypeContextEqual<Context> for MIRType {
         definitions: &Context,
         state: &mut TypeComparisonState,
     ) -> bool {
-        if self.specifiers != other.specifiers || self.move_attributes != other.move_attributes {
+        if self.specifiers != other.specifiers || self.attributes != other.attributes {
             return false;
         }
 
@@ -416,11 +420,11 @@ impl MIRType {
             .unwrap_or(false)
     }
 
-    pub fn struct_attributes(&self) -> Option<MIRAggregateAttributes> {
+    pub fn struct_attributes(&self) -> Option<MIRTypeAttributes> {
         match self.kind {
             MIRTypeKind::Structured { .. }
             | MIRTypeKind::Union { .. }
-            | MIRTypeKind::TaggedUnion { .. } => Some(self.move_attributes),
+            | MIRTypeKind::TaggedUnion { .. } => Some(self.attributes),
             _ => None,
         }
     }
@@ -477,12 +481,12 @@ impl MIRType {
         name: CXIdent,
         _type_id: MIRTypeId,
         template_info: Option<Box<TemplateInfo>>,
-        attributes: MIRAggregateAttributes,
+        attributes: MIRTypeAttributes,
     ) -> Self {
         MIRType {
             strong_identifier: Some(name.as_string()),
             template_info,
-            move_attributes: attributes,
+            attributes,
             kind: MIRTypeKind::Structured { fields: vec![] },
             ..Default::default()
         }
@@ -500,12 +504,12 @@ impl MIRType {
         name: CXIdent,
         _type_id: MIRTypeId,
         template_info: Option<Box<TemplateInfo>>,
-        attributes: MIRAggregateAttributes,
+        attributes: MIRTypeAttributes,
     ) -> Self {
         MIRType {
             strong_identifier: Some(name.as_string()),
             template_info,
-            move_attributes: attributes,
+            attributes,
             kind: MIRTypeKind::TaggedUnion { variants: vec![] },
             ..Default::default()
         }
@@ -640,9 +644,16 @@ impl<Context: MIRTypeContext + ?Sized> TypeContextEqual<Context> for MIRTypeKind
                 MIRTypeKind::Function { signature: left },
                 MIRTypeKind::Function { signature: right },
             ) => left.compare(right, definitions, state),
-            (MIRTypeKind::Opaque { size: left }, MIRTypeKind::Opaque { size: right }) => {
-                left == right
-            }
+            (
+                MIRTypeKind::Opaque {
+                    size: left_size,
+                    alignment: left_alignment,
+                },
+                MIRTypeKind::Opaque {
+                    size: right_size,
+                    alignment: right_alignment,
+                },
+            ) => left_size == right_size && left_alignment == right_alignment,
             _ => false,
         }
     }

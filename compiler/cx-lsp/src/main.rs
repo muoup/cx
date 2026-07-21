@@ -263,7 +263,7 @@ impl LanguageServer for Backend {
                 | TokenKind::Intrinsic(_)
                 | TokenKind::CompilerIdentifier(_) => KEYWORD_IDX,
 
-                TokenKind::IntLiteral(_) | TokenKind::FloatLiteral(_, _) => NUMBER_IDX,
+                TokenKind::IntLiteral(_) | TokenKind::FloatLiteral(_) => NUMBER_IDX,
 
                 TokenKind::StringLiteral(_) => STRING_IDX,
 
@@ -325,6 +325,7 @@ impl Backend {
         // Create fresh compilation context for each typecheck
         let context = cx_pipeline_data::GlobalCompilationContext {
             config: cx_pipeline_data::CompilerConfig {
+                architecture: cx_pipeline_data::ArchitectureConfig::default(),
                 backend: cx_pipeline_data::CompilerBackend::Cranelift,
                 optimization_level: cx_pipeline_data::OptimizationLevel::O0,
                 output: project_root.join("zed-lsp-output"),

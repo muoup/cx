@@ -72,6 +72,7 @@ fn compiler_config_with_dirs(
     internal_directory: PathBuf,
 ) -> CompilerConfig {
     CompilerConfig {
+        architecture: cx_pipeline_data::ArchitectureConfig::default(),
         backend: args.backend,
         optimization_level: args.optimization_level,
         output,

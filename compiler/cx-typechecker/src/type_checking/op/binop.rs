@@ -217,7 +217,7 @@ fn coerce_pointer_binop(
     };
 
     let intptr = MIRTypeKind::Integer {
-        _type: MIRIntegerType::I64,
+        _type: env.symbols.pointer_integer_type(),
         signed: true,
     };
 
@@ -339,7 +339,12 @@ fn coerce_integral_binop(
         }
     };
 
-    let Some(op) = lower_int_binop(op, true) else {
+    let signed = match lhs._type.kind {
+        MIRTypeKind::Integer { signed, .. } => signed,
+        _ => unreachable!(),
+    };
+    
+    let Some(op) = lower_int_binop(op, signed) else {
         return env.log_error(
             &lhs.token_range,
             format!(

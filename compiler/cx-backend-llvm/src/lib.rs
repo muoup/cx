@@ -1,11 +1,14 @@
 use crate::attributes::*;
 use crate::typing::{bc_llvm_prototype, bc_llvm_type, convert_linkage};
-use cx_lmir::types::{LMIRType, LMIRTypeKind};
 use cx_lmir::{
     ElementID, LMIRABISlot, LMIRBasicBlock, LMIRBlockID, LMIRFunction, LMIRFunctionMap,
     LMIRFunctionPrototype, LMIRFunctionSignature, LMIRReturnABI, LMIRUnit, LMIRValue,
 };
-use cx_log::CXResult;
+use cx_log::{
+    CXResult,
+    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+};
+use cx_target::ArchitectureConfig;
 use cx_util::identifier::CXIdent;
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
@@ -13,7 +16,7 @@ use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
-use inkwell::types::FunctionType;
+use inkwell::types::{FunctionType, IntType};
 use inkwell::values::{AnyValue, AnyValueEnum, BasicValueEnum, FunctionValue, GlobalValue};
 
 use crate::globals::generate_global_variable;
@@ -31,8 +34,10 @@ mod routines;
 pub(crate) mod typing;
 
 pub(crate) struct GlobalState<'a> {
+    architecture: &'a ArchitectureConfig,
     module: Module<'a>,
     context: &'a Context,
+    pointer_int_type: IntType<'a>,
 
     globals: Vec<GlobalValue<'a>>,
 
@@ -70,9 +75,7 @@ impl<'a> FunctionState<'a, '_> {
             }
 
             LMIRValue::IntImmediate { val, _type } => {
-                let as_type = LMIRType::from(LMIRTypeKind::Integer(*_type));
-
-                let int_type = bc_llvm_type(self.context, &as_type)?;
+                let int_type = bc_llvm_type(self.context, _type)?;
                 let int_val = int_type
                     .into_int_type()
                     .const_int(*val as u64, true)
@@ -82,9 +85,7 @@ impl<'a> FunctionState<'a, '_> {
             }
 
             LMIRValue::FloatImmediate { val, _type } => {
-                let as_type = LMIRType::from(LMIRTypeKind::Float(*_type));
-
-                let float_type = bc_llvm_type(self.context, &as_type)?;
+                let float_type = bc_llvm_type(self.context, _type)?;
                 let float_val = float_type
                     .into_float_type()
                     .const_float(val.into())
@@ -138,9 +139,58 @@ pub fn lmir_aot_codegen(
     Target::initialize_native(&InitializationConfig::default())
         .expect("Failed to initialize native");
 
+    let triple = TargetMachine::get_default_triple();
+    let target = Target::from_triple(&triple).expect("Failed to get target from triple");
+    let (pass_manager_str, inkwell_optimization_level) = match optimization_level {
+        OptimizationLevel::O0 => ("default<O0>", inkwell::OptimizationLevel::None),
+        OptimizationLevel::O1 => ("default<O1>", inkwell::OptimizationLevel::Less),
+        OptimizationLevel::O2 => ("default<O2>", inkwell::OptimizationLevel::Default),
+        OptimizationLevel::O3 => ("default<O3>", inkwell::OptimizationLevel::Aggressive),
+        OptimizationLevel::Osize => ("default<Os>", inkwell::OptimizationLevel::Default),
+        OptimizationLevel::Ofast => ("default<O3>", inkwell::OptimizationLevel::Aggressive),
+    };
+    let target_machine = target
+        .create_target_machine(
+            &triple,
+            "generic",
+            "",
+            inkwell_optimization_level,
+            RelocMode::PIC,
+            CodeModel::Default,
+        )
+        .expect("Failed to create target machine");
+    let target_data = target_machine.get_target_data();
+    let pointer_size = target_data.get_pointer_byte_size(None) as usize;
+    let pointer_alignment = target_data
+        .get_abi_alignment(&context.ptr_type(inkwell::AddressSpace::from(0)))
+        as usize;
+    if bytecode.architecture.pointer_size() != pointer_size
+        || bytecode.architecture.pointer_alignment() != pointer_alignment
+    {
+        return Err(CXErr::new(
+            CXStdErrMessage::error(
+                "CODEGEN ERROR",
+                format!(
+                    "LMIR target uses pointer size/alignment {}/{}, but LLVM target uses {}/{}",
+                    bytecode.architecture.pointer_size(),
+                    bytecode.architecture.pointer_alignment(),
+                    pointer_size,
+                    pointer_alignment,
+                ),
+            ),
+            CXInternalContext::error("LMIR and LLVM target configurations disagree"),
+        ));
+    }
+
+    let module = context.create_module(output_path);
+    module.set_triple(&triple);
+    module.set_data_layout(&target_data.get_data_layout());
+
     let mut global_state = GlobalState {
-        module: context.create_module(output_path),
+        architecture: &bytecode.architecture,
+        module,
         context: &context,
+        pointer_int_type: context.ptr_sized_int_type(&target_data, None),
 
         globals: Vec::new(),
         functions: HashMap::new(),
@@ -166,37 +216,10 @@ pub fn lmir_aot_codegen(
         });
     }
 
-    let target = Target::from_triple(&TargetMachine::get_default_triple())
-        .expect("Failed to get target from triple");
-
-    let (pass_manager_str, inkwell_optimization_level) = match optimization_level {
-        OptimizationLevel::O0 => ("default<O0>", inkwell::OptimizationLevel::None),
-        OptimizationLevel::O1 => ("default<O1>", inkwell::OptimizationLevel::Less),
-        OptimizationLevel::O2 => ("default<O2>", inkwell::OptimizationLevel::Default),
-        OptimizationLevel::O3 => ("default<O3>", inkwell::OptimizationLevel::Aggressive),
-        OptimizationLevel::Osize => ("default<Os>", inkwell::OptimizationLevel::Default),
-        OptimizationLevel::Ofast => ("default<O3>", inkwell::OptimizationLevel::Aggressive),
-    };
-
-    let target_machine = target
-        .create_target_machine(
-            &TargetMachine::get_default_triple(),
-            "generic",
-            "",
-            inkwell_optimization_level,
-            RelocMode::PIC,
-            CodeModel::Default,
-        )
-        .expect("Failed to create target machine");
-
     global_state.module.verify().unwrap_or_else(|err| {
         dump_data(&global_state.module.print_to_string().to_string_lossy());
         panic!("Module verification failed: {}", err.to_string());
     });
-    global_state
-        .module
-        .set_triple(&TargetMachine::get_default_triple());
-
     global_state
         .module
         .run_passes(
@@ -252,12 +275,26 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> Option
         );
     }
 
+    let entry = global_state.context.append_basic_block(func_val, "entry");
+
     for block in bytecode.blocks.iter() {
         global_state
             .context
             .append_basic_block(func_val, block.id.as_str());
     }
 
+    // Set the entry block as the current block
+    function_state.builder.position_at_end(entry);
+    let Ok(_) = function_state.builder.build_unconditional_branch(
+        function_state.get_block(&bytecode.blocks[0].id)
+            .unwrap()
+    ) else {
+        panic!(
+            "Failed to build unconditional branch to entry block: {}",
+            bytecode.blocks[0].id
+        )
+    };
+    
     for block in bytecode.blocks.iter() {
         codegen_block(global_state, &mut function_state, &block.id, block);
     }
@@ -317,7 +354,9 @@ fn cache_prototype<'a>(
 
     let signature = prototype.signature();
     for i in 0..signature.expanded_param_count() {
-        let param_type = signature.expanded_param_type(i).unwrap();
+        let param_type = signature
+            .expanded_param_type(global_state.architecture, i)
+            .unwrap();
         get_type_attributes(global_state.context, &param_type)
             .into_iter()
             .for_each(|attr| {

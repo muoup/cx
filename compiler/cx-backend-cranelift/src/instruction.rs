@@ -167,7 +167,7 @@ pub(crate) fn codegen_instruction(
             let bytes = usize::from(instruction.value_type.size());
             let val = context.get_value(value)?;
 
-            if bytes < 8 {
+            if bytes < context.pointer_type.bytes() as usize {
                 CodegenValue::Value(
                     context.builder.ins().ireduce(
                         ir::Type::int(bytes as u16 * 8)
@@ -190,13 +190,13 @@ pub(crate) fn codegen_instruction(
         } => {
             let val = context.get_value(value)?;
 
-            if _type.bytes() < 8 {
+            if (_type.bytes() as u32) < context.pointer_type.bytes() {
                 let _ty = get_cranelift_type(&instruction.value_type)?;
 
                 if *sextend {
-                    CodegenValue::Value(context.builder.ins().uextend(_ty, val.as_value()))
-                } else {
                     CodegenValue::Value(context.builder.ins().sextend(_ty, val.as_value()))
+                } else {
+                    CodegenValue::Value(context.builder.ins().uextend(_ty, val.as_value()))
                 }
             } else {
                 val
@@ -541,25 +541,27 @@ pub(crate) fn codegen_instruction(
             let dest = context.get_value(dest)?.as_value();
             let src = context.get_value(src)?.as_value();
             let size = context.get_value(size)?.as_value();
+            let target_config = context.object_module.target_config();
 
             context
                 .builder
-                .call_memcpy(*context.target_frontend_config, dest, src, size);
+                .call_memcpy(target_config, dest, src, size);
 
             CodegenValue::Null
         }
 
         LMIRInstructionKind::ZeroMemory { memory, _type } => {
             let target = context.get_value(memory)?.as_value();
+            let target_config = context.object_module.target_config();
             let size_literal = context
                 .builder
                 .ins()
-                .iconst(ir::Type::int(64).unwrap(), usize::from(_type.size()) as i64);
+                .iconst(target_config.pointer_type(), usize::from(_type.size()) as i64);
 
             let zero = context.builder.ins().iconst(ir::Type::int(8).unwrap(), 0);
 
             context.builder.call_memset(
-                *context.target_frontend_config,
+                target_config,
                 target,
                 zero,
                 size_literal,

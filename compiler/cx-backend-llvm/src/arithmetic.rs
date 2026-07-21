@@ -17,7 +17,10 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                 .builder
                 .build_int_mul(
                     right_value.into_int_value(),
-                    global_state.context.i64_type().const_int(type_size, false),
+                    right_value
+                        .into_int_value()
+                        .get_type()
+                        .const_int(type_size, false),
                     crate::instruction::inst_num().as_str(),
                 )
                 .ok()?
@@ -48,7 +51,10 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                 .builder
                 .build_int_mul(
                     negative.into_int_value(),
-                    global_state.context.i64_type().const_int(type_size, false),
+                    negative
+                        .into_int_value()
+                        .get_type()
+                        .const_int(type_size, false),
                     crate::instruction::inst_num().as_str(),
                 )
                 .ok()?

@@ -19,7 +19,10 @@ pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> CXRawResult<ir::Type> {
         LMIRTypeKind::Float(LMIRFloatType::F32) => ir::types::F32,
         LMIRTypeKind::Float(LMIRFloatType::F64) => ir::types::F64,
         LMIRTypeKind::Vector { element, count } => {
-            let element = get_cranelift_type(&LMIRTypeKind::Float(*element).into())?;
+            let element = match element {
+                LMIRFloatType::F32 => ir::types::F32,
+                LMIRFloatType::F64 => ir::types::F64,
+            };
 
             element.by(*count as u32).ok_or_else(|| {
                 CXStdErrMessage::error(
@@ -30,17 +33,15 @@ pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> CXRawResult<ir::Type> {
         }
         // LMIRTypeKind::Float { bytes: 16 } => ir::types::F128,
         //
-        LMIRTypeKind::Struct { .. } | LMIRTypeKind::Pointer { .. } | LMIRTypeKind::Array { .. } => {
-            ir::Type::int(64).unwrap()
-        }
-
-        // FIXME: This is a bit of a hack, but for opaque types we can just treat them as an integer of the appropriate size.
-        LMIRTypeKind::Opaque { .. } => ir::Type::int(64).unwrap(),
+        LMIRTypeKind::Pointer { bytes, .. } => ir::Type::int(*bytes as u16 * 8).unwrap(),
 
         // Because of the way Cranelift codegen works, there is actually no need for
         // handling arrays, as anywhere where the type is used (i.e. in stack allocations)
         // will implicitly use the size which can be derived from the bc type.
-        _ => {
+        LMIRTypeKind::Struct { .. }
+        | LMIRTypeKind::Array { .. }
+        | LMIRTypeKind::Opaque { .. }
+        | LMIRTypeKind::Unit => {
             return CXStdErrMessage::result(
                 "CODEGEN ERROR",
                 format!("Unsupported type for codegen: {val_type:?}"),

@@ -76,7 +76,6 @@ pub(crate) fn codegen_function(
 
     let mut context = FunctionState {
         object_module: &mut global_state.object_module,
-        target_frontend_config: &global_state.target_frontend_config,
 
         function_ids: &mut global_state.function_ids,
         global_ids: &global_state.global_ids,
@@ -104,7 +103,7 @@ pub(crate) fn codegen_function(
             &bc_func
                 .prototype
                 .signature
-                .expanded_param_type(index)
+                .expanded_param_type(global_state.architecture, index)
                 .unwrap(),
         )
         .map_err(|err| {

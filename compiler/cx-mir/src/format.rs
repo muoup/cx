@@ -397,7 +397,9 @@ fn write_type_body(
             write_type_id(f, definitions, *inner_type, state)?;
             write!(f, "; {size}]")
         }
-        MIRTypeKind::Opaque { size } => write!(f, "opaque({size})"),
+        MIRTypeKind::Opaque { size, alignment } => {
+            write!(f, "opaque(size: {size}, align: {alignment})")
+        }
         MIRTypeKind::Undefined => write_type_reference(f, definitions, ty, id, state),
         MIRTypeKind::Str => write!(f, "_str"),
         MIRTypeKind::Function { signature } => {

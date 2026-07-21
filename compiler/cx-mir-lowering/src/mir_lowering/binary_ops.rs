@@ -1,7 +1,7 @@
 //! Binary and unary operation lowering
 
 use cx_lmir::{
-    types::{LMIRIntegerType, LMIRType, TypeSize},
+    types::{LMIRType, TypeSize},
     LMIRFloatBinOp, LMIRInstructionKind, LMIRIntBinOp, LMIRPtrBinOp, LMIRValue,
 };
 use cx_log::CXResult;
@@ -57,6 +57,7 @@ pub fn lower_binary_op(
         }
         MIRBinOp::PtrDiff { op, ptr_inner } => {
             let bc_inner_type = builder.convert_cx_type(ptr_inner);
+            let inner_layout = builder.type_layout(ptr_inner);
             let ptr_op = match op {
                 MIRPtrDiffBinOp::ADD => LMIRPtrBinOp::ADD,
                 MIRPtrDiffBinOp::SUB => LMIRPtrBinOp::SUB,
@@ -65,7 +66,7 @@ pub fn lower_binary_op(
             LMIRInstructionKind::PointerBinOp {
                 op: ptr_op,
                 ptr_type: bc_inner_type.clone(),
-                type_size: bc_inner_type.size(),
+                type_size: TypeSize::from(inner_layout.size),
                 left: bc_lhs,
                 right: bc_rhs,
             }
@@ -81,7 +82,7 @@ pub fn lower_binary_op(
             };
             LMIRInstructionKind::PointerBinOp {
                 op: ptr_op,
-                ptr_type: LMIRType::default_pointer(),
+                ptr_type: LMIRType::default_pointer(builder.architecture()),
                 type_size: TypeSize::from(1),
                 left: bc_lhs,
                 right: bc_rhs,
@@ -101,9 +102,6 @@ fn lower_logical_op(
 ) -> CXResult<LMIRValue> {
     let bc_result_type = builder.convert_cx_type(result_type);
 
-    // Save the entry block (where we evaluate the LHS)
-    let entry_block = builder.current_block();
-
     // Create the continue and merge blocks
     let (continue_name, merge_name) = match op {
         MIRIntegerBinOp::LOR => ("lor_continue", "lor_merge"),
@@ -116,6 +114,7 @@ fn lower_logical_op(
 
     // Evaluate LHS
     let lhs_result = lower_expression(builder, lhs)?;
+    let lhs_block = builder.current_block();
 
     // Branch based on the operation type
     match op {
@@ -151,6 +150,7 @@ fn lower_logical_op(
     // Continue block: evaluate RHS and jump to merge
     builder.set_current_block(continue_block.clone());
     let rhs_result = lower_expression(builder, rhs)?;
+    let rhs_block = builder.current_block();
     builder.add_new_instruction(
         LMIRInstructionKind::Jump {
             target: merge_block.clone(),
@@ -164,26 +164,23 @@ fn lower_logical_op(
     builder.set_current_block(merge_block.clone());
 
     // Create phi node at merge block
-    // For LOR: from entry->true (1), from continue->rhs_result
-    // For LAND: from entry->false (0), from continue->rhs_result
+    // For LOR: from lhs_block->true (1), from rhs_block->rhs_result
+    // For LAND: from lhs_block->false (0), from rhs_block->rhs_result
     let short_circuit_value = match op {
         MIRIntegerBinOp::LOR => LMIRValue::IntImmediate {
             val: 1,
-            _type: LMIRIntegerType::I1,
+            _type: bc_result_type.clone(),
         },
         MIRIntegerBinOp::LAND => LMIRValue::IntImmediate {
             val: 0,
-            _type: LMIRIntegerType::I1,
+            _type: bc_result_type.clone(),
         },
         _ => unreachable!(),
     };
 
     let phi_result = builder.add_new_instruction(
         LMIRInstructionKind::Phi {
-            predecessors: vec![
-                (short_circuit_value, entry_block),
-                (rhs_result, continue_block),
-            ],
+            predecessors: vec![(short_circuit_value, lhs_block), (rhs_result, rhs_block)],
         },
         bc_result_type,
         true,
@@ -214,10 +211,7 @@ pub fn lower_unary_op(
         MIRUnOp::NEG => {
             let zero = LMIRValue::IntImmediate {
                 val: 0,
-                _type: match &bc_result_type.kind {
-                    cx_lmir::types::LMIRTypeKind::Integer(itype) => *itype,
-                    _ => panic!("Integer negation requires integer type"),
-                },
+                _type: bc_result_type.clone(),
             };
             LMIRInstructionKind::IntegerBinOp {
                 op: LMIRIntBinOp::SUB,
@@ -232,10 +226,7 @@ pub fn lower_unary_op(
         MIRUnOp::INEG => {
             let zero = LMIRValue::IntImmediate {
                 val: 0,
-                _type: match &bc_result_type.kind {
-                    cx_lmir::types::LMIRTypeKind::Integer(itype) => *itype,
-                    _ => panic!("Integer negation requires integer type"),
-                },
+                _type: bc_result_type.clone(),
             };
             LMIRInstructionKind::IntegerBinOp {
                 op: LMIRIntBinOp::SUB,
@@ -244,7 +235,7 @@ pub fn lower_unary_op(
             }
         }
 
-        MIRUnOp::PostIncrement(amt) | MIRUnOp::PreIncrement(amt) => {
+        MIRUnOp::PostIncrement(amt) => {
             let pre_loaded_val = builder.add_new_instruction(
                 LMIRInstructionKind::Load {
                     memory: bc_operand.clone(),
@@ -263,15 +254,19 @@ pub fn lower_unary_op(
                         left: pre_loaded_val.clone(),
                         right: LMIRValue::IntImmediate {
                             val: *amt as i64,
-                            _type: bc_itype,
+                            _type: LMIRType::with_implicit_abi(
+                                builder.architecture(),
+                                cx_lmir::types::LMIRTypeKind::Integer(bc_itype),
+                            ),
                         },
                     }
                 }
 
-                MIRTypeKind::PointerTo { inner_type, .. } => {
+                MIRTypeKind::MemoryReference { inner_type, .. }
+                | MIRTypeKind::PointerTo { inner_type, .. } => {
                     let inner_type = builder.registry.resolve_type_id(*inner_type);
                     let bc_inner_type = builder.convert_cx_type(inner_type);
-                    let type_size = bc_inner_type.size();
+                    let type_size = TypeSize::from(builder.type_layout(inner_type).size);
 
                     LMIRInstructionKind::PointerBinOp {
                         op: LMIRPtrBinOp::ADD,
@@ -280,7 +275,12 @@ pub fn lower_unary_op(
                         left: pre_loaded_val.clone(),
                         right: LMIRValue::IntImmediate {
                             val: *amt as i64,
-                            _type: LMIRIntegerType::I64,
+                            _type: LMIRType::with_implicit_abi(
+                                builder.architecture(),
+                                cx_lmir::types::LMIRTypeKind::Integer(builder.convert_integer_type(
+                                    &builder.registry.pointer_integer_type(),
+                                )),
+                            ),
                         },
                     }
                 }
@@ -301,11 +301,88 @@ pub fn lower_unary_op(
                 false,
             )?;
 
-            return match op {
-                MIRUnOp::PreIncrement(_) => Ok(result),
-                MIRUnOp::PostIncrement(_) => Ok(pre_loaded_val),
-                _ => unreachable!(),
+            return Ok(pre_loaded_val);
+        }
+
+        MIRUnOp::PreIncrement(amt) => {
+            let inner = builder
+                .registry
+                .mem_ref_inner(result_type)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Increment operation requires a memory reference type, found: {:?}",
+                        result_type
+                    )
+                })
+                .clone();
+            let inner_bc = builder.convert_cx_type(&inner);
+
+            let pre_loaded_val = builder.add_new_instruction(
+                LMIRInstructionKind::Load {
+                    memory: bc_operand.clone(),
+                    _type: inner_bc.clone(),
+                },
+                inner_bc.clone(),
+                true,
+            )?;
+
+            let increment_instruction = match &inner.kind {
+                MIRTypeKind::Integer { _type: itype, .. } => {
+                    let bc_itype = builder.convert_integer_type(itype);
+
+                    LMIRInstructionKind::IntegerBinOp {
+                        op: LMIRIntBinOp::ADD,
+                        left: pre_loaded_val.clone(),
+                        right: LMIRValue::IntImmediate {
+                            val: *amt as i64,
+                            _type: LMIRType::with_implicit_abi(
+                                builder.architecture(),
+                                cx_lmir::types::LMIRTypeKind::Integer(bc_itype),
+                            ),
+                        },
+                    }
+                }
+
+                MIRTypeKind::MemoryReference { inner_type, .. }
+                | MIRTypeKind::PointerTo { inner_type, .. } => {
+                    let inner_type = builder.registry.resolve_type_id(*inner_type);
+                    let bc_inner_type = builder.convert_cx_type(inner_type);
+                    let type_size = TypeSize::from(builder.type_layout(inner_type).size);
+
+                    LMIRInstructionKind::PointerBinOp {
+                        op: LMIRPtrBinOp::ADD,
+                        ptr_type: bc_inner_type,
+                        type_size,
+                        left: pre_loaded_val.clone(),
+                        right: LMIRValue::IntImmediate {
+                            val: *amt as i64,
+                            _type: LMIRType::with_implicit_abi(
+                                builder.architecture(),
+                                cx_lmir::types::LMIRTypeKind::Integer(builder.convert_integer_type(
+                                    &builder.registry.pointer_integer_type(),
+                                )),
+                            ),
+                        },
+                    }
+                }
+
+                _ => unreachable!("Increment operation requires integer or pointer type"),
             };
+
+            let result =
+                builder.add_new_instruction(increment_instruction, inner_bc.clone(), true)?;
+            
+            builder.add_new_instruction(
+                LMIRInstructionKind::Store {
+                    memory: bc_operand,
+                    value: result.clone(),
+                    _type: inner_bc.clone(),
+                },
+                LMIRType::unit(),
+                false,
+            )?;
+
+            return Ok(result);
         }
     };
 

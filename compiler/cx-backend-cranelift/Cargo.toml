@@ -8,6 +8,7 @@ autotests = false
 cx-log = { path = "../cx-log" }
 cx-util = { path = "../cx-util" }
 cx-lmir = { path = "../cx-lmir" }
+cx-target = { path = "../cx-target" }
 cx-ast = { path = "../cx-ast" }
 
 cranelift = "0.132.1"

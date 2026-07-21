@@ -83,8 +83,8 @@ pub(crate) fn type_mangle(definitions: &impl MIRTypeContext, ty: &MIRType) -> St
                 type_mangle(definitions, definitions.resolve_type_id(*inner_type))
             )
         }
-        MIRTypeKind::Opaque { size } => {
-            format!("O{}", size)
+        MIRTypeKind::Opaque { size, alignment } => {
+            format!("O{}{}", size, alignment)
         }
         MIRTypeKind::Array {
             length: size,
@@ -131,12 +131,12 @@ pub(crate) fn type_mangle(definitions: &impl MIRTypeContext, ty: &MIRType) -> St
 }
 
 fn push_move_attributes(mangled: &mut String, ty: &MIRType) {
-    mangled.push(if ty.move_attributes.semantics.is_nocopy() {
+    mangled.push(if ty.attributes.semantics.is_nocopy() {
         'C'
     } else {
         'c'
     });
-    mangled.push(if ty.move_attributes.semantics.is_nodrop() {
+    mangled.push(if ty.attributes.semantics.is_nodrop() {
         'D'
     } else {
         'd'

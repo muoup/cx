@@ -14,7 +14,7 @@ use cx_mir::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    environment::{TypeEnvironment, types::sizeof_type_size},
+    environment::TypeEnvironment,
     symbol::completion::complete_type,
     type_checking::{
         coercion::{
@@ -241,12 +241,13 @@ fn sizeof_result(
     range: TokenRange,
     _type: MIRType,
 ) -> CXResult<TypecheckResult> {
-    sizeof_type_size(env, &_type)
+    env.symbols
+        .type_layout(&_type)
         .map_err(|err| env.complete_err(err, &range))
-        .map(|size| {
+        .map(|layout| {
             TypecheckResult::from(MIRExpression {
                 token_range: range,
-                kind: MIRExpressionKind::IntLiteral(size as i64),
+                kind: MIRExpressionKind::IntLiteral(layout.size as i64),
                 _type: MIRType::from(MIRTypeKind::Integer {
                     _type: MIRIntegerType::I64,
                     signed: false,

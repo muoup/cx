@@ -3,7 +3,6 @@ use crate::globals::generate_global;
 use crate::value_type::get_cranelift_type;
 use cranelift::codegen::ir::FuncRef;
 use cranelift::codegen::{ir, Context};
-use cranelift::prelude::isa::TargetFrontendConfig;
 use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
 use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
@@ -14,6 +13,7 @@ use cx_log::error::context::CXInternalContext;
 use cx_log::error::message::CXStdErrMessage;
 use cx_log::error::CXErr;
 use cx_log::{CXRawResult, CXResult};
+use cx_target::ArchitectureConfig;
 use cx_util::identifier::CXIdent;
 use std::collections::HashMap;
 
@@ -51,7 +51,6 @@ pub(crate) type VariableTable = HashMap<LMIRRegister, CodegenValue>;
 
 pub struct FunctionState<'a> {
     pub(crate) object_module: &'a mut ObjectModule,
-    pub(crate) target_frontend_config: &'a TargetFrontendConfig,
 
     pub(crate) function_ids: &'a mut HashMap<String, FuncId>,
     pub(crate) global_ids: &'a [DataId],
@@ -66,10 +65,9 @@ pub struct FunctionState<'a> {
 }
 
 pub(crate) struct GlobalState<'a> {
+    pub(crate) architecture: &'a ArchitectureConfig,
     pub(crate) context: Context,
     pub(crate) object_module: ObjectModule,
-    pub(crate) target_frontend_config: TargetFrontendConfig,
-
     pub(crate) function_ids: HashMap<String, FuncId>,
     pub(crate) global_ids: Vec<DataId>,
     pub(crate) function_sigs: &'a mut HashMap<FuncId, ir::Signature>,
@@ -105,29 +103,28 @@ impl FunctionState<'_> {
             }
 
             LMIRValue::IntImmediate { val, _type } => {
-                let int_type = get_cranelift_type(&LMIRTypeKind::Integer(*_type).into());
+                let int_type = get_cranelift_type(_type);
                 let value = self.builder.ins().iconst(int_type?, *val);
 
                 Ok(CodegenValue::Value(value))
             }
 
-            LMIRValue::FloatImmediate {
-                val,
-                _type: LMIRFloatType::F32,
-            } => {
-                let as_f32: f32 = val.into();
-                let value = self.builder.ins().f32const(as_f32);
-                Ok(CodegenValue::Value(value))
-            }
-
-            LMIRValue::FloatImmediate {
-                val,
-                _type: LMIRFloatType::F64,
-            } => {
-                let as_f64: f64 = val.into();
-                let value = self.builder.ins().f64const(as_f64);
-                Ok(CodegenValue::Value(value))
-            }
+            LMIRValue::FloatImmediate { val, _type } => match _type.kind {
+                LMIRTypeKind::Float(LMIRFloatType::F32) => {
+                    let as_f32: f32 = val.into();
+                    let value = self.builder.ins().f32const(as_f32);
+                    Ok(CodegenValue::Value(value))
+                }
+                LMIRTypeKind::Float(LMIRFloatType::F64) => {
+                    let as_f64: f64 = val.into();
+                    let value = self.builder.ins().f64const(as_f64);
+                    Ok(CodegenValue::Value(value))
+                }
+                _ => CXStdErrMessage::result(
+                    "CODEGEN ERROR",
+                    format!("Float immediate has non-float type: {_type:?}"),
+                ),
+            },
 
             LMIRValue::Global(id) => {
                 let Some(data_id) = self.global_ids.get(*id as usize).cloned() else {
@@ -169,8 +166,23 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
 
     let native_builder = cranelift_native::builder().unwrap();
     let isa = native_builder.finish(flags).unwrap();
+    let target_pointer_size = isa.frontend_config().pointer_type().bytes() as usize;
+    if bc.architecture.pointer_size() != target_pointer_size {
+        return Err(CXErr::new(
+            CXStdErrMessage::error(
+                "CODEGEN ERROR",
+                format!(
+                    "LMIR target uses pointer size {}, but Cranelift target uses {}",
+                    bc.architecture.pointer_size(),
+                    target_pointer_size,
+                ),
+            ),
+            CXInternalContext::error("LMIR and Cranelift target configurations disagree"),
+        ));
+    }
 
     let mut global_state = GlobalState {
+        architecture: &bc.architecture,
         object_module: {
             let mut builder = ObjectBuilder::new(
                 isa.clone(),
@@ -183,7 +195,6 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
         },
 
         context: Context::new(),
-        target_frontend_config: isa.frontend_config(),
         function_ids: HashMap::new(),
         global_ids: Vec::new(),
         function_sigs: &mut HashMap::new(),

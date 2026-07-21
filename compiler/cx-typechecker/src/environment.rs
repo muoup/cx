@@ -15,6 +15,7 @@ use cx_mir::{
 };
 use cx_namespace::{MIRQualifiedLookup, result::QualifiedLookupResult};
 use cx_pipeline_data::db::ModuleData;
+use cx_target::ArchitectureConfig;
 use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 use cx_util::{identifier::CXIdent, namespace::NamespacePath};
@@ -32,7 +33,6 @@ use crate::{
 pub(crate) mod control_flow;
 pub(crate) mod function_context;
 pub(crate) mod items;
-pub(crate) mod types;
 
 pub use items::MIRFunctionGenRequest;
 
@@ -47,9 +47,12 @@ pub struct TypeEnvironment<'a> {
 }
 
 impl TypeEnvironment<'_> {
-    pub fn new<'a>(module_data: &'a ModuleData) -> TypeEnvironment<'a> {
+    pub fn new<'a>(
+        module_data: &'a ModuleData,
+        architecture: ArchitectureConfig,
+    ) -> TypeEnvironment<'a> {
         TypeEnvironment {
-            symbols: MIRSymbolRegistry::new(&module_data.symbol_registry),
+            symbols: MIRSymbolRegistry::new(&module_data.symbol_registry, architecture),
             module_data,
             items: ItemRegistry::new(),
             function: FunctionContext::default(),

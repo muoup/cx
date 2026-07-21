@@ -241,7 +241,9 @@ impl<'a> Display for CXExprFormatter<'a> {
 
                 Ok(())
             }
-            CXExprKind::IntLiteral { val, .. } => writeln!(f, "IntLiteral {}", val),
+            CXExprKind::IntLiteral { magnitude, .. } => {
+                writeln!(f, "IntLiteral {}", magnitude)
+            }
             CXExprKind::FloatLiteral { val, .. } => writeln!(f, "FloatLiteral {}", val),
             CXExprKind::StringLiteral { val, .. } => {
                 writeln!(f, "StringLiteral \"{}\"", val.escape_default())

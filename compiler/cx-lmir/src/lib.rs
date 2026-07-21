@@ -1,4 +1,5 @@
 use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, TypeSize};
+use cx_target::ArchitectureConfig;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use std::collections::HashMap;
 
@@ -9,6 +10,7 @@ pub type LMIRFunctionMap = HashMap<String, LMIRFunctionPrototype>;
 
 #[derive(Debug, Clone)]
 pub struct LMIRUnit {
+    pub architecture: ArchitectureConfig,
     pub fn_map: LMIRFunctionMap,
     pub fn_defs: Vec<LMIRFunction>,
 
@@ -50,11 +52,11 @@ pub enum LMIRValue {
     },
     ParameterRef(u32),
     IntImmediate {
-        _type: LMIRIntegerType,
+        _type: LMIRType,
         val: i64,
     },
     FloatImmediate {
-        _type: LMIRFloatType,
+        _type: LMIRType,
         val: FloatWrapper,
     },
     Global(ElementID),
@@ -141,11 +143,15 @@ impl LMIRFunctionSignature {
             + usize::from(self.has_indirect_return_param())
     }
 
-    pub fn expanded_param_type(&self, index: usize) -> Option<LMIRType> {
+    pub fn expanded_param_type(
+        &self,
+        target: &ArchitectureConfig,
+        index: usize,
+    ) -> Option<LMIRType> {
         let mut index = index;
         if self.has_indirect_return_param() {
             if index == 0 {
-                return Some(LMIRType::default_pointer());
+                return Some(LMIRType::default_pointer(target));
             }
             index -= 1;
         }
@@ -160,7 +166,7 @@ impl LMIRFunctionSignature {
                 }
                 LMIRParameterABI::Indirect { .. } => {
                     if index == 0 {
-                        return Some(LMIRType::default_pointer());
+                        return Some(LMIRType::default_pointer(target));
                     }
                     index -= 1;
                 }

@@ -72,9 +72,15 @@ fn typecheck_expr_inner(
             })
         }
 
-        CXExprKind::IntLiteral { val, bytes } => typecheck_int_literal(*val, *bytes),
+        CXExprKind::IntLiteral {
+            magnitude,
+            base,
+            suffix,
+        } => typecheck_int_literal(env, expr.token_range(), *magnitude, *base, *suffix)?,
 
-        CXExprKind::FloatLiteral { val, bytes } => typecheck_float_literal(*val, *bytes),
+        CXExprKind::FloatLiteral { val, suffix } => {
+            typecheck_float_literal(env, expr.token_range(), *val, *suffix)?
+        }
 
         CXExprKind::StringLiteral { val } => typecheck_string_literal(env, val),
 
