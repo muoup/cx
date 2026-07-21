@@ -25,27 +25,33 @@ const featurePanels = [
 ];
 
 const socketSnippet = [
-    "import std::io;",
-    "import std::optional;",
-    "import std::socket;",
-    "",
-    "opt<c_socket> try_serve(u16 port) {",
-    "    c_socket listener =",
-    "        c_socket::open(AF_INET, SOCK_STREAM, 0)",
-    "        |> std::optional::opt::unwrap<c_socket>();",
-    "",
-    '    socket_addr addr = socket_addr::ipv4("0.0.0.0", port);',
-    "",
-    "    if (listener |> c_socket::bind(&addr) < 0) {",
-    "        return opt<c_socket>::none();",
-    "    }",
-    "",
-    "    if (listener |> c_socket::listen(128) < 0) {",
-    "        return opt<c_socket>::none();",
-    "    }",
-    "",
-    "    return opt<c_socket>::some(move listener);",
-    "}",
+`import std::io as std;
+import std::optional as std;
+import std::span as std;
+import std::string as std;
+import std::functional as std;
+
+import std::net::udp as std::net;
+
+std::opt<std::net::udp_socket> try_serve(u16 port) {
+    std::net::endpoint addr = std::net::endpoint::ipv4("0.0.0.0", port)
+        |> std::opt::try();
+
+    std::net::udp_socket socket = std::net::udp_socket::open()
+        |> std::opt::try();
+
+    socket |> std::net::udp_socket::bind(addr)
+        |> std::opt::try();
+
+    const _str& hello = "Hello, world!";
+    std::span<const u8> buffer = std::span::str_as_bytes(hello);
+    
+    std::opt<u64> result = socket 
+        |> std::net::udp_socket::send_to(buffer, addr)`,
+"        |> std::opt::try();",`
+        
+    return move socket |> std::opt::some<std::net::udp_socket>();
+}`
 ];
 
 const cxTokenPattern =
@@ -168,7 +174,7 @@ function MainLayout() {
                             {socketSnippet.map((line, index) => (
                                 <span
                                     className={
-                                        index === 12
+                                        index === 1
                                             ? styles.errorLine
                                             : undefined
                                     }
@@ -191,6 +197,25 @@ function MainLayout() {
     );
 }
 
+function FoliageBorder() {
+    return (
+        <div className={styles.foliageBorder} aria-hidden="true">
+            <span
+                className={`${styles.foliageCluster} ${styles.foliageTopLeft}`}
+            />
+            <span
+                className={`${styles.foliageCluster} ${styles.foliageTopRight}`}
+            />
+            <span
+                className={`${styles.foliageCluster} ${styles.foliageBottomLeft}`}
+            />
+            <span
+                className={`${styles.foliageCluster} ${styles.foliageBottomRight}`}
+            />
+        </div>
+    );
+}
+
 export default function Home(): ReactNode {
     return (
         <Layout
@@ -199,6 +224,7 @@ export default function Home(): ReactNode {
             noFooter
             wrapperClassName="landing-page"
         >
+            <FoliageBorder />
             <main className={styles.container}>
                 <Hero />
                 <MainLayout />
