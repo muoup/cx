@@ -19,13 +19,18 @@ use cx_pipeline_data::jobs::{CompilationJob, CompilationStep};
 use cx_pipeline_data::{
     CompilationMode, CompilationUnit, CompilerConfig, GlobalCompilationContext,
 };
-use cx_util::format::with_dump_directory;
+use cx_util::format::{with_dump_directory, without_dumps};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 // Re-export LSP diagnostic types for use by cx-lsp
 pub use crate::scheduler::LSPErrors;
+
+pub struct LSPCheckResult {
+    pub errors: Vec<LSPErrors>,
+    pub checked_files: HashSet<PathBuf>,
+}
 
 pub(crate) fn pipeline_error(code: impl Into<String>, message: impl Into<String>) -> CXErr {
     CXErr::new(
@@ -302,11 +307,18 @@ pub fn project_compilation(
 pub fn typecheck_only_lsp(
     context: &GlobalCompilationContext,
     initial_file: &CompilationUnit,
-) -> Vec<LSPErrors> {
+) -> LSPCheckResult {
     let mut errors = Vec::new();
+    let mut checked_files = HashSet::new();
 
     let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, initial_file.clone());
 
-    scheduling_loop_collect_errors(context, initial_job, &mut errors);
-    errors
+    without_dumps(|| {
+        scheduling_loop_collect_errors(context, initial_job, &mut errors, &mut checked_files);
+    });
+
+    LSPCheckResult {
+        errors,
+        checked_files,
+    }
 }

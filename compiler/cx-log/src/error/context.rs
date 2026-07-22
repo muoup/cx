@@ -5,8 +5,19 @@ use crate::{
     format::{pointing::point_error, underline::pretty_underline_error},
 };
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CXSourceSpan {
+    pub file: PathBuf,
+    pub byte_start: usize,
+    pub byte_end: usize,
+}
+
 pub trait CXErrorContext {
     fn dump(&self, f: &mut dyn std::io::Write) -> std::io::Result<()>;
+
+    fn source_span(&self) -> Option<CXSourceSpan> {
+        None
+    }
 }
 
 pub struct CXPointingContext {
@@ -27,6 +38,14 @@ impl CXPointingContext {
 impl CXErrorContext for CXPointingContext {
     fn dump(&self, f: &mut dyn std::io::Write) -> std::io::Result<()> {
         point_error(f, self.file.as_path(), self.str_index)
+    }
+
+    fn source_span(&self) -> Option<CXSourceSpan> {
+        Some(CXSourceSpan {
+            file: self.file.clone(),
+            byte_start: self.str_index,
+            byte_end: self.str_index.saturating_add(1),
+        })
     }
 }
 
@@ -53,6 +72,14 @@ impl CXUnderlineContext {
 impl CXErrorContext for CXUnderlineContext {
     fn dump(&self, f: &mut dyn std::io::Write) -> std::io::Result<()> {
         pretty_underline_error(f, self.file.as_path(), self.str_start, self.str_end)
+    }
+
+    fn source_span(&self) -> Option<CXSourceSpan> {
+        Some(CXSourceSpan {
+            file: self.file.clone(),
+            byte_start: self.str_start,
+            byte_end: self.str_end,
+        })
     }
 }
 

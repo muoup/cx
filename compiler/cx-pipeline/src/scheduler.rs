@@ -23,7 +23,7 @@ use cx_util::format::dump_data;
 use cx_util::module_path::ModulePath;
 use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 
 pub(crate) fn scheduling_loop(
@@ -280,8 +280,12 @@ pub(crate) fn perform_job(
     match job.step {
         CompilationStep::PreParse => {
             let file_path = job.unit.as_path().to_path_buf();
-            let file_contents = std::fs::read_to_string(&file_path)
-                .unwrap_or_else(|_| panic!("File not found: {}", job.unit));
+            let file_contents = std::fs::read_to_string(&file_path).map_err(|error| {
+                pipeline_error(
+                    "COMPILATION ERROR",
+                    format!("Failed to read {}: {error}", file_path.display()),
+                )
+            })?;
 
             // let mut hasher = DefaultHasher::new();
             // file_contents.hash(&mut hasher);
@@ -369,10 +373,12 @@ pub(crate) fn perform_job(
                     .symbol_registry
                     .insert_module(namespace, bucket)
                 {
-                    panic!(
-                        "Duplicate module namespace found during decomposition: {}",
-                        namespace
-                    );
+                    return Err(pipeline_error(
+                        "COMPILATION ERROR",
+                        format!(
+                            "Duplicate module namespace found during decomposition: {namespace}"
+                        ),
+                    ));
                 }
             }
 
@@ -493,14 +499,14 @@ pub enum LSPErrors {
 /// This is similar to `scheduling_loop` but:
 /// 1. Collects LSPErrors (both type errors and fatal errors) instead of panicking
 /// 2. Stops after Typechecking (no LMIRGen or Codegen)
-/// 3. Continues processing other jobs even when errors are found
+/// 3. Stops after the first failed stage so dependents cannot observe missing data
 pub(crate) fn scheduling_loop_collect_errors(
     context: &GlobalCompilationContext,
     initial_job: CompilationJob,
     error_collector: &mut Vec<LSPErrors>,
+    checked_files: &mut HashSet<std::path::PathBuf>,
 ) -> Option<()> {
     let mut queue = JobQueue::new();
-    let mut compilation_exists = HashMap::new();
 
     queue.push_job(initial_job);
 
@@ -508,15 +514,12 @@ pub(crate) fn scheduling_loop_collect_errors(
     while !queue.is_empty() {
         let job = queue.pop_job().unwrap();
 
-        compilation_exists.insert(job.unit.clone(), job.compilation_exists);
-
+        context.module_db.register_unit(&job.unit);
         // Skip incremental compilation logic for LSP - always recompile
         if !queue.requirements_complete(&job, |unit| import_units_for_unit(context, unit)) {
             queue.push_job(job);
             continue;
         }
-
-        queue.complete_job(&job);
 
         // Stop after Typechecking for LSP
         if matches!(
@@ -526,14 +529,18 @@ pub(crate) fn scheduling_loop_collect_errors(
             continue;
         }
 
+        checked_files.insert(job.unit.as_path().to_path_buf());
         match handle_job_collect_errors(context, &job, error_collector)? {
             HandleJobResult::Success(new_jobs) => {
+                queue.complete_job(&job);
                 for new_job in new_jobs {
                     queue.push_new_job(new_job);
                 }
             }
-            HandleJobResult::Continue => {
-                // Job had errors but continue processing other jobs
+            HandleJobResult::Failed => {
+                // Continuing after a failed stage lets dependent jobs observe missing
+                // intermediate data. Stop this check and report the original error.
+                break;
             }
         }
     }
@@ -544,13 +551,12 @@ pub(crate) fn scheduling_loop_collect_errors(
 /// Result type for handle_job_collect_errors
 enum HandleJobResult {
     Success(Box<[CompilationJob]>),
-    Continue,
+    Failed,
 }
 
 /// Handle a single job, collecting errors instead of panicking.
 ///
-/// Returns either new jobs to enqueue or Continue if the job had errors
-/// but we should continue processing other jobs.
+/// Returns either new jobs to enqueue or Failed if the current stage had errors.
 fn handle_job_collect_errors(
     context: &GlobalCompilationContext,
     job: &CompilationJob,
@@ -575,8 +581,15 @@ fn handle_job_collect_errors(
         .into()
     };
 
-    fn spanned_error(_error: &CXErr) -> Option<LSPErrors> {
-        None
+    fn spanned_error(error: &CXErr) -> Option<LSPErrors> {
+        let span = error.source_span()?;
+        Some(LSPErrors::SpannedError {
+            compilation_unit: span.file,
+            message: error.message(),
+            byte_start: span.byte_start,
+            byte_end: span.byte_end,
+            notes: vec![],
+        })
     }
 
     // Perform the job and collect errors
@@ -590,7 +603,7 @@ fn handle_job_collect_errors(
             });
 
             error_collector.push(lsp_error);
-            return Some(HandleJobResult::Continue);
+            return Some(HandleJobResult::Failed);
         }
     }
 
@@ -608,7 +621,7 @@ fn handle_job_collect_errors(
                         line: None,
                     });
                     error_collector.push(lsp_error);
-                    return Some(HandleJobResult::Continue);
+                    return Some(HandleJobResult::Failed);
                 }
             };
 

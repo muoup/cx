@@ -1,4 +1,4 @@
-use crate::error::context::CXErrorContext;
+use crate::error::context::{CXErrorContext, CXSourceSpan};
 use crate::error::message::CXErrorMessage;
 
 pub struct CXErrMsg(pub Box<dyn CXErrorMessage>);
@@ -40,6 +40,14 @@ impl CXErr {
 
     pub fn message(&self) -> String {
         self.error.message()
+    }
+
+    pub fn code(&self) -> String {
+        self.error.code()
+    }
+
+    pub fn source_span(&self) -> Option<CXSourceSpan> {
+        self.context.source_span()
     }
 
     pub fn output<F>(&self, f: &mut F) -> std::io::Result<()>
