@@ -57,7 +57,8 @@ For an overview and documentation on language features, see the
 Basic usage:
 
 ```bash
-cargo run --release -- <file.cx> [options]
+cargo run --bin cx -- build [options]
+cargo run --bin cx -- <file.cx> [options]
 ```
 
 It is also recommended after building to create a symlink to the executable or alias to make invoking the compiler simpler.
@@ -71,6 +72,7 @@ ln -s [PROJECT_DIRECTORY]/target/debug/cx ~/.local/bin
 so that your shell can access your compiler directly from its PATH:
 
 ```bash
+cx build [options]
 cx <file.cx> [options]
 ```
 

@@ -2,7 +2,7 @@
 title: Language Overview
 ---
 
-# Language Ovewview
+# Language Overview
 
 CX is a partially-stable superset of C. That is, most C code will compile as valid CX code with identical semantics, with more supported as the compiler develops. This page will not provide detailed explanations for C syntax unless necessary, so it is highly recommended to learn the syntax of the C programming language if you haven't already.
 

@@ -36,21 +36,19 @@ import std::net::udp as std::net;
 std::opt<std::net::udp_socket> try_serve(u16 port) {
     std::net::endpoint addr = std::net::endpoint::ipv4("0.0.0.0", port)
         |> std::opt::try();
-
     std::net::udp_socket socket = std::net::udp_socket::open()
         |> std::opt::try();
 
     socket |> std::net::udp_socket::bind(addr)
-        |> std::opt::try();
+        |> std::opt::try_or(.{
+            socket |> std::net::udp_socket::drop();
+        });
 
-    const _str& hello = "Hello, world!";
-    std::span<const u8> buffer = std::span::str_as_bytes(hello);
-    
+    std::span<const u8> buffer = std::span::str_as_bytes("Hello, world!");
     std::opt<u64> result = socket 
         |> std::net::udp_socket::send_to(buffer, addr)`,
 "        |> std::opt::try();",`
-        
-    return move socket |> std::opt::some<std::net::udp_socket>();
+    return move socket |> std::opt::some();
 }`
 ];
 
@@ -147,8 +145,8 @@ function MainLayout() {
             <div className={styles.contentColumn}>
                 <p className={styles.introParagraph}>
                     CX is a work-in-progress experimental systems language for writing low-level code with modern convenience and
-                    compiler-ensured correctness. The language is verbose by design: no implicit destructors, no
-                    implicit control-flow, the code you write is the code that runs. 
+                    compiler-assisted correctness. No implicit destructors, no implicit control-flow,
+                    the language is verbose by design to ensure that the code you write is the code that runs.
                 </p>
 
                 <div className={styles.featureGrid}>
@@ -167,7 +165,7 @@ function MainLayout() {
             <div className={styles.codeColumn}>
                 <div className={styles.codeSnippet}>
                     <div className={styles.codeSnippetHeader}>
-                        socket_retry.cx
+                        Example UDP Server
                     </div>
                     <pre>
                         <code>
@@ -188,7 +186,7 @@ function MainLayout() {
                     </pre>
                     <div className={styles.diagnostic}>
                         <div className={styles.diagnosticTitle}>
-                            error: `listener` is marked @nodrop but is leaked without cleanup
+                            error: `socket` is marked @nodrop but is leaked without cleanup
                         </div>
                     </div>
                 </div>

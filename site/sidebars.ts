@@ -13,12 +13,21 @@ import type { SidebarsConfig } from "@docusaurus/plugin-content-docs";
  Create as many sidebars as you want.
  */
 const sidebars: SidebarsConfig = {
-    gettingStartedSidebar: [
+    guidesSidebar: [
         {
-            type: "category",
+            type: "doc",
+            id: "getting-started/getting-started",
             label: "Getting Started",
-            link: { type: "doc", id: "getting-started/getting-started" },
-            items: ["getting-started/getting-started"],
+        },
+        {
+            type: "doc",
+            id: "getting-started/build-system",
+            label: "Build System",
+        },
+        {
+            type: "doc",
+            id: "getting-started/c-interop",
+            label: "Libraries and C Interop",
         },
     ],
     manualSidebar: [
@@ -29,18 +38,18 @@ const sidebars: SidebarsConfig = {
         },
         {
             type: "doc",
-            id: "manual/build-system",
-            label: "1. Build System",
+            id: "manual/base-syntax",
+            label: "1. Language Basics",
         },
         {
             type: "doc",
-            id: "manual/base-syntax",
-            label: "2. Base Syntax",
+            id: "manual/modules",
+            label: "2. Modules and Visibility",
         },
         {
             type: "doc",
             id: "manual/associated-functions",
-            label: "3. Associated Functions",
+            label: "3. Functions and Calls",
         },
         {
             type: "doc",
@@ -49,23 +58,39 @@ const sidebars: SidebarsConfig = {
         },
         {
             type: "doc",
-            id: "manual/move-semantics",
-            label: "5. Move Semantics",
+            id: "manual/pattern-matching",
+            label: "5. Pattern Matching",
         },
         {
             type: "doc",
-            id: "manual/modules",
-            label: "6. Modules",
+            id: "manual/move-semantics",
+            label: "6. Ownership and Moves",
+        },
+        {
+            type: "doc",
+            id: "manual/linear-resources",
+            label: "7. Linear Resources",
+        },
+        // Work-in-progress sections, do not include in manual until they are more complete
+        // {
+        //     type: "doc",
+        //     id: "manual/contracts",
+        //     label: "8. Contracts",
+        // },
+        // {
+        //     type: "doc",
+        //     id: "manual/safe-functions",
+        //     label: "9. Safe Functions and Verification",
+        // },
+        {
+            type: "doc",
+            id: "manual/templates",
+            label: "8. Templates",
         },
         {
             type: "doc",
             id: "manual/comptime",
-            label: "7. Comptime",
-        },
-        {
-            type: "doc",
-            id: "manual/contracts",
-            label: "8. Contracts",
+            label: "9. Comptime and Staged Expressions",
         },
     ],
 };

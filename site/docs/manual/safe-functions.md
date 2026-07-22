@@ -1,10 +1,12 @@
 ---
-title: Safe Functions
+title: Safe Functions and Verification
 ---
 
-# Safe Functions
+# Safe Functions and Verification
 
-`safe` marks a function body for safe-subset checking.
+The `safe` keyword is currently a work-in-progress feature to restrict a function's
+implementation such that it is free of undefined behavior outside of explicitly accepted
+unsafe blocks.
 
 ```c
 int fn() safe
@@ -15,7 +17,7 @@ where
 }
 ```
 
-A `safe` function must use a subset of C and CX semantics that is suitable for
+A `safe` function must use a subset of CX semantics that is suitable for
 formal verification. The feature is still being stabilized, but the current
 rules include:
 

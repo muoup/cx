@@ -1,62 +1,71 @@
 ---
-title: Comptime
+title: Comptime and Staged Expressions
 ---
 
-# Comptime
+# Comptime and Staged Expressions
 
-CX provides support for a few different means for comptime metaprogramming, with some more feature expansion planned for the future. This section will cover traditional templates, and function comptime semantics. 
+CX provides compile-time functions that can compute values and produce typed runtime code. The latter mechanism uses staged expressions: runtime expressions retained in a typed form so a comptime function can compose them and emit the result at its call site.
 
-Functions which are able to be evaluated at compile-time as well as run-time similar to C++'s constexpr keyword are not yet implemented but are planned to be in the future.
+Functions that can be evaluated at compile time as well as runtime, similar to C++ `constexpr`, are not yet implemented but are planned for the future. A `comptime` function is different: it must be evaluated during compilation and is not emitted as a runtime function.
 
-# Templates
+## Comptime Functions
 
-CX supports standard templated functions and types. Note that in contrast with other languages, templates are restricted to one symbol per definition. Therefore, features like partial specialization are strictly prohibited as they pollute the traceability and clarity of code. Additionally, specialization of a template over non-types, i.e. constexpr value specialization, is still a work-in-progress.
-
-*Side Note*: Current template design uses C++ copy-and-paste semantics. There are a few limitations with this approach, including lack of safety, poor compilation speed impact, and overly verbose error reporting. This is a known issue and in the near-ish future, template syntax will be overhauled to require type bounds, and thus code written with this current template system will be broken in coming updates.
-
-Function example:
+A comptime function is declared with `comptime`. Its ordinary parameters are compile-time values, and calling it evaluates the function during compilation:
 
 ```c
-T add<T>(T a, T b) {
-    return a + b;
+comptime int add(int lhs, int rhs) {
+    return lhs + rhs;
 }
 ```
 
-Type example:
+Comptime functions may also be templated or associated with a namespace using the syntax described in the preceding chapters.
+
+## Staged Expressions
+
+The syntax `expr T` denotes a staged expression that will produce a runtime value of type `T`. It is not a compile-time-known `T`, and the comptime function cannot inspect its eventual runtime value. Instead, the function can place the expression inside other runtime code and return the composed expression.
 
 ```c
-struct Box<T> {
-    T value;
-};
-```
-
-`typedef` creates template type aliases:
-
-```c
-typedef<T> T* Ptr;
-```
-
-# Comptime Functions
-
-Functions may also be declared explicitly as 'comptime' which indicates that they **must** be evaluated compilation time. This enables them to, unlike standard functions, take in a special category of type, denoted via the 'expr' keyword, which represents frozen expressions rather than evaluated values. One can conceptualize this as reasoning and evaluating over the AST representation of an expression rather than a value. This enables functions that act as type-safe macros, producing expressions rather than just values.
-
-For instance, if one wanted to recreate Rust's `?` operator for optionals, which act as a shorthand for early-return-if-none, e.g:
-
-```rust
-fn get_option() -> Option<i64> { ... }
-
-fn routine() -> Option<u8> {
-    // The 'get_option' function will either return us Some(i64) or None, the `?` operator 
-    // unwraps the plain i64 if we have a value, otherwise we return None from the function
-    let val : i64 = get_option()?;
-
-    ...
+comptime expr T twice<T>(expr T value) {
+    return emit value * 2;
 }
 ```
 
-This behavior can be replicated with a function that returns a generated 'match' statement. The standard library's implementation looks as follows:
+Here, `value` represents the caller's runtime expression. A call such as `twice(number + 1)` is evaluated at compile time to produce runtime code equivalent to `(number + 1) * 2`.
 
-```cpp
+The `expr` modifier can appear on parameters and the return type. An `expr T` parameter accepts a staged expression of type `T`, while an `expr T` return type requires the comptime function to return an emitted expression producing `T`.
+
+## `emit`
+
+`emit` takes an expression and stages it for use as the result of a comptime function:
+
+```c
+comptime expr T add_ten<T>(expr T value) {
+    return emit value + 10;
+}
+```
+
+The emitted expression is lowered in place at the caller. Its runtime operations, ownership effects, and control flow therefore belong to the caller's context. A `return` inside emitted code returns from the runtime function containing the comptime call, rather than from the comptime function that produced the code.
+
+## Staged Block Expressions
+
+The syntax `.{ ... }` creates a `void` block expression in a position where CX expects an expression:
+
+```c
+.{
+    release(resource);
+    log_cleanup();
+}
+```
+
+This syntax is commonly passed to a parameter of type `expr void`, which retains the block as a staged expression. It is not a closure: it creates no function or captured environment and hides no call. The block remains code from the caller's lexical context and is inserted directly wherever the comptime function emits that parameter.
+
+The leading `.` distinguishes a standalone block expression from a normal scoped body or structured initializer. An empty block is written as `.{}`.
+
+## Optional-Like Control Flow
+
+The standard library uses staged expressions to implement an optional helper similar to Rust's `?` operator. Its definition returns an emitted `match` expression:
+
+```c
 comptime expr T opt::try<T>(expr opt<T> self) {
     return emit match (self) {
         opt::some<T>(value) => yield move value;
@@ -65,72 +74,45 @@ comptime expr T opt::try<T>(expr opt<T> self) {
 }
 ```
 
-Note that 'emit' here takes in an expression and freezes it into an `expr T`, where T indicates the type produced by the expression.
+The pipe call supplies its left operand as the staged `self` argument:
 
-This function then can be used to reproduce the above example as such:
+```c
+opt<i64> get_option() { ... }
 
-```cpp
-import std::opt as std;
-
-std::opt<i64> get_option() { ... }
-
-std::opt<u8> routine() {
-    i64 val = get_option()
-        |> std::opt::try();
-
-    // After constexpr evaluation, we would be left with an expression equivalent to:
-    // 
-    // i64 val = match (get_option()) {
-    //      std::opt::some(val) => yield val;
-    //      std::opt::none => return std::opt::none;
-    // };
-}
-```
-
-One additional unique thing the `expr T` syntax allows is for pseudo-closures. A common issue that arises when trying to use the above opt::try implementation is accidentally leaking undropped resources with the early return. For instance:
-
-```cpp
-import std::opt as std;
-import std::vector as std;
-
-std::opt<i64> find_specific_number(std::vector<i64>& values) { ... }
-
-std::opt<i64> routine() {
-    std::vector<i64> values = ...;
-
-    i64 number = values 
-        |> find_specific_number()
-        |> std::opt::try();
+opt<u8> routine() {
+    i64 value = get_option()
+        |> opt::try();
 
     ...
-
-    values |> std::vector::drop();
-    return ...;
 }
 ```
 
-This code above, with valid implementation details elided in the elipses, will lead to a type error, as the std::opt::try() call will not implicitly clean up the `values` variable in its generated early return path. The standard library exposes a `std::opt::try_or` function for this case. The correct implementation of `routines` as shown above would look like:
+At the use site, the call produces code equivalent to:
 
-```cpp
-import std::opt as std;
-import std::vector as std;
+```c
+i64 value = match (get_option()) {
+    opt::some<i64>(value) => yield move value;
+    opt::none<i64>() => return opt::none<u8>();
+};
+```
 
-std::opt<i64> find_specific_number(std::vector<i64>& values) { ... }
+Because the early return is part of the caller's runtime control flow, it must also satisfy the caller's ownership obligations. `opt::try_or` accepts an additional `expr void` cleanup block for that case:
 
-std::opt<i64> routine() {
-    std::vector<i64> values = ...;
+```c
+opt<i64> routine() {
+    vector<i64> values = ...;
 
-    i64 number = values 
+    i64 number = values
         |> find_specific_number()
-        |> std::opt::try_or(.{
-            values |> std::vector::drop();
+        |> opt::try_or(.{
+            move values |> vector::drop();
         });
 
     ...
 
-    values |> std::vector::drop();
+    move values |> vector::drop();
     return ...;
 }
 ```
 
-Note however that the `.{ ... }` syntax is **not** a closure and hides no hidden behavior, in this example we are passing to std::opt::try_or a block expression that is injected directly into the early-return path. `std::opt::try` would thus be equivalent to invoking this routine with a no-op expression.
+The cleanup block is emitted only into the `none` arm. `opt::try` is equivalent to using `opt::try_or(.{})` when no cleanup is required.

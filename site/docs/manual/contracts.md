@@ -4,7 +4,7 @@ title: Contracts
 
 # Contracts
 
-Contracts are attached with `where` clauses.
+Contracts are a work-in-progress feature attached with `where` clauses.
 
 ```c
 int contract(int a, int b)
@@ -19,4 +19,4 @@ where
 Semantics:
 
 - `pre: (expr)` is the precondition of the function, the caller asserts to the callee that the condition over the parameters provided is true.
-- `post(name): (expr)` is the postcondition, the callee asserts that such value is true of the returned value in regards to the state of the variables provided at call-time. If the contracted function mutates its passed parameters, the condition will refer to their state prior to any mutation.
+- `post(name): (expr)` is the postcondition, the callee asserts that such condition is true of the returned value in regards to the state of the variables provided at call-time. If the contracted function mutates its passed parameters, the condition will refer to their state at call-time. Indirect mutation, i.e. modifying data via a passed pointer or reference however will not be reversed at condition evaluation.
