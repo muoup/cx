@@ -1,10 +1,8 @@
 ---
-title: Base Syntax
+title: Language Basics
 ---
 
-# Base Syntax
-
-
+# Language Basics
 
 ## Primitive Types
 
@@ -18,8 +16,8 @@ behavior across different architectures and operating systems:
 
 ## Reference Types
 
-Reference are declared with a `&` type suffix and represents an alternative to C's pointer type with a stronger invariant. A reference type 
-T& is non-null and thus does not require explicit dereferencing and may be used as a standard value. 
+References are declared with a `&` type suffix and provide an alternative to C's pointer types with a stronger invariant. A reference type
+`T&` is non-null, does not require explicit dereferencing, and may be used as a standard value.
 
 ```c
 void increment(int& x) {
@@ -27,24 +25,7 @@ void increment(int& x) {
 }
 ```
 
-## Match Statements
-
-Match statements are an alternative to C's `switch` statements that forbids fall-throughs. All cases correspond to a single scoped block which
-breaks after completion. Cases are denoted with a pattern on the left and a block to the right. Complex patterns are not currently supported,
-so in its current form, patterns must be direct matches to an int or float, or a tagged union variant with an optional binding variable.
-
-```cpp
-void foo(int i) {
-    match (i) {
-        1 => printf("i = 1\n");
-        5 => printf("i = 5\n");
-        _ => {
-            printf("Other\n");
-            bar(i);
-        }
-    }
-}
-```
+References are non-owning views of values. The [Ownership and Moves](./move-semantics.md) chapter explains the distinction between references and owned values, while [Safe Functions and Verification](./safe-functions.md) describes the narrower rules for references in safe code.
 
 ## Member Access
 
@@ -60,4 +41,23 @@ void print_data(Data* data) {
     printf("%d\n", data->x);
     printf("%d\n", data.x);
 }
+```
+
+## String Literals
+
+In C, a string literal is of type `const char*`; CX instead uses an intermediate type `_str&`. A `_str&` can be implicitly cast to `const char*` and has an identical size, so C code using string literals functions the same. The extra type provides stronger guarantees where desired.
+
+A `_str` is an unsized type representing string data that terminates with a null value. Given its unsized nature, it cannot be directly assigned to a variable; it may only be applied as an assertion over an existing string of data. For string literals, that data is in static storage. This distinction is useful because not all values of type `const char*` in idiomatic C are zero-terminated.
+
+Functions similar to those in C's `string.h` can take `const _str&` instead of `const char*` to document that zero termination is required and prevent accidental use of non-zero-terminated character arrays. A zero-terminated buffer annotated as `const char*`, such as a string created at runtime, can be explicitly cast to `_str&` with a C-style cast. This operation is unsafe, and casting a non-zero-terminated value is undefined behavior.
+
+```c
+usize string_length(const _str& value) {
+    return strlen(value);
+}
+
+usize literal_length = string_length("hello");
+
+const char* runtime_string = create_zero_terminated_string();
+usize runtime_length = string_length((const _str&)runtime_string);
 ```
