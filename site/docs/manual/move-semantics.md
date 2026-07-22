@@ -105,7 +105,7 @@ void good_string_usage2(string s) {
 
 ## 'Adopting' a Value
 
-An interesting edge case that can be found in some complex data types is in handling dropping values which are not allocated individually. For instanc, consider this implementation of vector over some `@nodrop` type Inner:
+An interesting edge case that arises in some complex data types occurs when handling dropping values which do not represent a unique allocation or memory region. For instance, consider this implementation of vector over some `@nodrop` type Inner:
 
 ```cpp
 struct InnerVector : @nodrop {
@@ -114,22 +114,20 @@ struct InnerVector : @nodrop {
     size_t capacity;
 };
 
-// void Inner::drop(Inner this) { ... }
+void Inner::drop(Inner this) { ... }
 
 void InnerVector::drop(InnerVector this) {
     for (usize i = 0; i < length; i++) {
-        Inner& index = data[i];
-
-        // This call is not valid because index is only a reference. Inner::drop consumes its first parameter,
-        // so we must own the value that we pass to it.
-        index |> Inner::drop();
+        // This call is not valid because data[i] only produces a reference. Inner::drop consumes 
+        // its first parameter, so we must own a value of type `Inner`, not `Inner&`.
+        data[i] |> Inner::drop();
     }
 
     @leak(this);
 }
 ```
 
-Since in the above example, data is heap allocated as one large contiguous memory buffer, there isn't a clean way to represent "owning" each part of the buffer. What is needed is some way to pretend to own part of the buffer and assure the compiler that it is understood that this could go wrong. CX allows for the concept of "adopting" a foreign region, where a reference can be transformed into an owning value for edge cases such as this.
+Since in the above example, `data` is heap allocated as one contiguous memory buffer, there isn't a sound way to represent "owning" a part of the buffer. What is needed is some escape hatch that enables unsafely upgrading a reference to an arbitrary owned value. CX allows for the concept of "adopting" a foreign region, where a reference can be transformed into an owning value for edge cases such as this.
 
 ```cpp
 void InnerVector::drop(InnerVector this) {
@@ -143,14 +141,14 @@ void InnerVector::drop(InnerVector this) {
 }
 ```
 
-As "owning" a value does not have directly implications on memory management itself, this can be safe in certain circumstances. Generally speaking, if one adopts a value which already has a living mapping, one is very likely to run into undefined behavior. It is highly recommended that usage of `@leak` and `@adopt` statements are used in abstractions in very well-understood and narrow implementation details.
+As "owning" a value does not have directly implications on memory management itself, this can be safe in certain circumstances. Generally speaking, if one adopts a value which already has a live mapping, one is very likely to run into undefined behavior. It is highly recommended that usage of `@leak` and `@adopt` statements are used in abstractions in very well-understood and narrow implementation details.
 
-## Regions
+## A Note on Regions
 
-CX semantics are handled without the notion of memory, instead in favor of regions. This does not impact much in terms of language semantics, but is very important for why language features are described as they are. A region of type `T` is simply a accessible container of data at least the size of `T` containing the runtime storage of some value of that type. Every integer literal is an owning value over a region of that integer type, just as every structured initializer is a region of that struct type. While a region is often stored in memory, it may also be stored across one or multiple registers.
+CX semantics are handled without a notion of memory, instead opting in favor of regions. This does not impact much in terms of semantics, but is very important for why language features are described as they are. A region of type `T` is simply an accessible container of data at least the size of `T` containing the runtime storage of some valid value of that type. Every integer literal is an owning value over a region of that integer type, just as every structured initializer is a region of that struct type. While a region is often stored in memory, it may also be stored across one or multiple registers.
 
 One important difference from C with these semantics is with string literals. In C, a string literal is of type `const char*`, however CX uses an intermediate type `_str&`. A `_str&` can be implicitly cast to and will have an identical size to `const char*`, thus  C code using string literals will function the same, however the use of this extra type helps ensure safer guarantees where desired. 
 
 A `_str` much like in other languages is an unsized type, it represents a string of data such that it terminates with a null value. Given its unsized nature, it cannot be directly assigned to a variable, it may only be applied via assertion onto an already-existing string of data, where for string literals, said data is static memory. This distinction can prove helpful, as while static memory helps ensure that string literals meet these guarantees, not all values of type `const char*` in idiomatic C use will be zero-terminated.
 
-It is thus recommended that for functions in and similar to C's "string.h" library, one takes in a `const _str&` instead of a `const char*` for better documentation and preventing accidental usage of non-zero-terminated char arrays where zero termination is required. If one owns a zero-terminated char array annotated as a `const char*`, for instance if creating a string at runtime, said buffer can be explicitly cast to a `_str&` via C-style casting, though this operation is unsafe and casting a non-zero-terminated value will lead to undefined behavior.
+It is thus recommended that for functions in and similar to C's "string.h" library, one takes in a `const _str&` instead of a `const char*` for better documentation and preventing accidental usage of non-zero-terminated char arrays where zero termination is required. If one owns a zero-terminated char array annotated as a `const char*`, for instance if creating a string at runtime, said buffer can be explicitly cast to a `_str&` via C-style casting, this operation is however unsafe and casting a non-zero-terminated value is undefined behavior.

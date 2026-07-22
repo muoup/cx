@@ -4,8 +4,6 @@ title: Base Syntax
 
 # Base Syntax
 
-
-
 ## Primitive Types
 
 On top of C's base intrinsic types like `int` and `float`, CX provides a set of fixed-size types for predictable

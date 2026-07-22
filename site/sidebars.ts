@@ -39,7 +39,7 @@ const sidebars: SidebarsConfig = {
         },
         {
             type: "doc",
-            id: "manual/member-functions",
+            id: "manual/associated-functions",
             label: "3. Associated Functions",
         },
         {
@@ -59,8 +59,8 @@ const sidebars: SidebarsConfig = {
         },
         {
             type: "doc",
-            id: "manual/templates",
-            label: "7. Templates",
+            id: "manual/comptime",
+            label: "7. Comptime",
         },
         {
             type: "doc",
