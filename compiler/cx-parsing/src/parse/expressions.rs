@@ -1,5 +1,9 @@
 use crate::parse::{try_parse_simple_identifier, ParserData};
-use crate::{assert_token_matches, log::ParserLogExt, next_kind, peek_next_kind, try_next};
+use crate::{
+    assert_token_matches,
+    log::{parse_point_error, parse_underline_error},
+    next_kind, peek_next_kind, try_next,
+};
 use cx_ast::ast::expression::{CXExprKind, CXExpression, CXInitIndex, CXUnpackBinding};
 use cx_ast::ast::pattern::CXPattern;
 use cx_log::CXResult;
@@ -82,11 +86,17 @@ fn parse_at_intrinsic_expr(
             let mut bindings = Vec::new();
             while !try_next!(data.tokens, punctuator!(CloseBrace)) {
                 let Some(field) = try_parse_simple_identifier(&mut data.tokens) else {
-                    return data.log_error("Expected field name in @unpack binding".to_string());
+                    return parse_point_error(
+                        &data.tokens,
+                        "Expected field name in @unpack binding".to_string(),
+                    );
                 };
                 assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
                 let Some(binding) = try_parse_simple_identifier(&mut data.tokens) else {
-                    return data.log_error("Expected binding name in @unpack binding".to_string());
+                    return parse_point_error(
+                        &data.tokens,
+                        "Expected binding name in @unpack binding".to_string(),
+                    );
                 };
 
                 bindings.push(CXUnpackBinding { field, binding });
@@ -111,7 +121,10 @@ fn parse_at_intrinsic_expr(
         _ => {
             data.tokens.back();
 
-            data.log_error(format!("Unknown intrinsic expression '{}'", ident))
+            parse_point_error(
+                &data.tokens,
+                format!("Unknown intrinsic expression '{}'", ident),
+            )
         }
     }
 }
@@ -126,24 +139,33 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<CXExpression> {
     compress_stack(data, &mut expr_stack, &mut op_stack, 100)?;
 
     let Some(expr) = expr_stack.pop() else {
-        return data.log_error(format!(
-            "Failed to parse expression value after operator: {:#?}",
-            data.tokens.peek()
-        ));
+        return parse_point_error(
+            &data.tokens,
+            format!(
+                "Failed to parse expression value after operator: {:#?}",
+                data.tokens.peek()
+            ),
+        );
     };
 
     if !expr_stack.is_empty() {
-        return data.log_error(format!(
-            "Expression stack is not empty after parsing expression: {:#?} {:#?}",
-            expr_stack, op_stack
-        ));
+        return parse_point_error(
+            &data.tokens,
+            format!(
+                "Expression stack is not empty after parsing expression: {:#?} {:#?}",
+                expr_stack, op_stack
+            ),
+        );
     }
 
     if !op_stack.is_empty() {
-        return data.log_error(format!(
-            "Operator stack is not empty after parsing expression: {:#?} {:#?}",
-            expr_stack, op_stack
-        ));
+        return parse_point_error(
+            &data.tokens,
+            format!(
+                "Operator stack is not empty after parsing expression: {:#?} {:#?}",
+                expr_stack, op_stack
+            ),
+        );
     }
 
     if try_next!(data.tokens, punctuator!(QuestionMark)) {
@@ -208,7 +230,10 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<CXPattern> {
 
             if ident.name.namespace.is_root() {
                 if ident.template_input.is_some() {
-                    return data.log_error("Binding patterns may not have template input".to_string());
+                    return parse_point_error(
+                        &data.tokens,
+                        "Binding patterns may not have template input".to_string(),
+                    );
                 }
 
                 Ok(CXPattern::Binding(ident.name.root_name().unwrap()))
@@ -235,7 +260,7 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<CXPattern> {
             }
         }
 
-        _ => data.log_error("Expected pattern value".to_string()),
+        _ => parse_point_error(&data.tokens, "Expected pattern value".to_string()),
     }
 }
 
@@ -245,7 +270,10 @@ fn compress_one_expr(
     op_stack: &mut Vec<PrecOperator>,
 ) -> CXResult<CXExpression> {
     let Some(op) = op_stack.pop() else {
-        return data.log_error("Operator stack is empty when trying to compress expression".to_string());
+        return parse_point_error(
+            &data.tokens,
+            "Operator stack is empty when trying to compress expression".to_string(),
+        );
     };
 
     match op {
@@ -335,7 +363,10 @@ pub(crate) fn parse_expr_val(
 
         TokenKind::Operator(OperatorType::Access) => {
             if !try_next!(data.tokens, punctuator!(OpenBrace)) {
-                return data.log_error("Expected '{' after '.' in expression".to_string());
+                return parse_point_error(
+                    &data.tokens,
+                    "Expected '{' after '.' in expression".to_string(),
+                );
             }
 
             data.tokens.back();
@@ -361,9 +392,10 @@ pub(crate) fn parse_expr_val(
                 // A common type error is of the form `A b` where A is not a recognized type, this would be picked up
                 // as an "found unknown token identifer" error but can be far more accurately diagnosed as a missing
                 // type error. There is no valid syntax of an identifier followed by another identifier otherwise
-                return data.log_range_error(
-                    expr.token_range(),
+                return parse_underline_error(
+                    &data.tokens,
                     "Could not resolve type for variable declaration".to_string(),
+                    expr.token_range(),
                 );
             }
 
@@ -434,7 +466,7 @@ pub(crate) fn parse_expr_val(
 
         _ => {
             data.back();
-            return data.log_error("Expected expression value".to_string());
+            return parse_point_error(&data.tokens, "Expected expression value".to_string());
         }
     }
     .into_expr(
@@ -458,7 +490,7 @@ pub(crate) fn parse_expr_val(
 pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CXResult<CXExpression> {
     let start_index = data.tokens.index;
     let Some(ident) = try_parse_identifier(data)? else {
-        return data.log_error("Expected identifier".to_string());
+        return parse_point_error(&data.tokens, "Expected identifier".to_string());
     };
 
     Ok(ident.into_expr(
@@ -484,7 +516,10 @@ pub(crate) fn parse_keyword_expr(
 
             let return_type = if is_type_decl(data)? {
                 let (None, _type, _) = parse_initializer(data)? else {
-                    return data.log_error("Failed to parse type declaration for sizeof".to_string());
+                    return parse_point_error(
+                        &data.tokens,
+                        "Failed to parse type declaration for sizeof".to_string(),
+                    );
                 };
 
                 CXExprKind::SizeOfType { _type }
@@ -544,8 +579,10 @@ pub(crate) fn parse_keyword_expr(
                 if try_next!(data.tokens, keyword!(Default)) {
                     assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
                     if default_arm.is_some() {
-                        return data
-                            .log_error("Multiple default cases in match expression".to_string());
+                        return parse_point_error(
+                            &data.tokens,
+                            "Multiple default cases in match expression".to_string(),
+                        );
                     }
                     default_arm = Some(Box::new(parse_body(data)?));
                     continue;
@@ -566,12 +603,14 @@ pub(crate) fn parse_keyword_expr(
             })
         }
 
-        KeywordType::Comptime => {
-            data.log_error("'comptime' is reserved but is not implemented yet".to_string())
-        }
-        KeywordType::Expr => {
-            data.log_error("'expr' is reserved but is not implemented yet".to_string())
-        }
+        KeywordType::Comptime => parse_point_error(
+            &data.tokens,
+            "'comptime' is reserved but is not implemented yet".to_string(),
+        ),
+        KeywordType::Expr => parse_point_error(
+            &data.tokens,
+            "'expr' is reserved but is not implemented yet".to_string(),
+        ),
         KeywordType::Emit => {
             let expr = parse_expr(data)?;
 
@@ -583,7 +622,7 @@ pub(crate) fn parse_keyword_expr(
         _ => {
             data.tokens.back();
 
-            return data.log_error("Unexpected token".to_string());
+            return parse_point_error(&data.tokens, "Unexpected token".to_string());
         }
     }
     .map(|e| {

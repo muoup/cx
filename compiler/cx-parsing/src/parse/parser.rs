@@ -12,7 +12,7 @@ use cx_util::identifier::CXIdent;
 use cx_util::module_path::ModulePath;
 use cx_util::namespace::{EnvironmentNamespace, NamespacePath, QualifiedName};
 
-use crate::log::ParserLogExt;
+use crate::log::parse_point_error;
 
 #[derive(Debug)]
 pub struct ParserData<'a> {
@@ -109,15 +109,18 @@ impl<'a> ParserData<'a> {
         match self.qualified_lookup(&self.namespace_for_current_stmt(), &name) {
             QualifiedLookupResult::Found { .. } => Ok(true),
             QualifiedLookupResult::NotFound => Ok(false),
-            QualifiedLookupResult::Ambiguous { candidates } => self.log_error(format!(
-                "Ambiguous identifier '{}', candidates: {}",
-                name,
-                candidates
-                    .iter()
-                    .map(|n| n.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )),
+            QualifiedLookupResult::Ambiguous { candidates } => parse_point_error(
+                &self.tokens,
+                format!(
+                    "Ambiguous identifier '{}', candidates: {}",
+                    name,
+                    candidates
+                        .iter()
+                        .map(|n| n.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            ),
         }
     }
 
@@ -144,10 +147,7 @@ impl<'a> ParserData<'a> {
             if !q_namespace.is_root()
                 && matches!(&prototype.kind, CXFunctionKind::AssociatedFunction { .. })
             {
-                let entry = self
-                    .namespace_aliases
-                    .entry(namespace.clone())
-                    .or_default();
+                let entry = self.namespace_aliases.entry(namespace.clone()).or_default();
 
                 if !entry.contains(&q_namespace) {
                     entry.push(q_namespace);

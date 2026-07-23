@@ -1,5 +1,5 @@
 use crate::{
-    assert_token_matches, log::ParserLogExt, next_kind, parse::try_parse_qualified_name,
+    assert_token_matches, log::parse_point_error, next_kind, parse::try_parse_qualified_name,
     peek_next_kind, try_next,
 };
 use cx_ast::ast::{
@@ -56,7 +56,10 @@ pub fn try_function_parse(
         CXFunctionKind::Standard(name.name)
     } else {
         if name.namespace.segments().len() != 1 {
-            return data.log_error("Associated function declarations must have exactly two segments".to_string());
+            return parse_point_error(
+                &data.tokens,
+                "Associated function declarations must have exactly two segments".to_string(),
+            );
         }
 
         CXFunctionKind::AssociatedFunction {
@@ -95,11 +98,14 @@ pub fn parse_comptime_function(data: &mut ParserData) -> CXResult<ComptimeFuncti
     assert_token_matches!(data.tokens, keyword!(Comptime), "'comptime'");
     let return_type = parse_comptime_initializer(data)?;
     let Some(name) = return_type.name else {
-        return data.log_error("Expected comptime function name".to_string());
+        return parse_point_error(&data.tokens, "Expected comptime function name".to_string());
     };
 
     let Some(declaration) = try_comptime_function_parse(data, return_type.value_type, name)? else {
-        return data.log_error("Expected comptime function parameter list".to_string());
+        return parse_point_error(
+            &data.tokens,
+            "Expected comptime function parameter list".to_string(),
+        );
     };
 
     Ok(declaration)
@@ -126,7 +132,11 @@ fn try_comptime_function_parse(
         CXFunctionKind::Standard(name.name)
     } else {
         if name.namespace.segments().len() != 1 {
-            return data.log_error("Associated comptime function declarations must have exactly two segments".to_string());
+            return parse_point_error(
+                &data.tokens,
+                "Associated comptime function declarations must have exactly two segments"
+                    .to_string(),
+            );
         }
 
         CXFunctionKind::AssociatedFunction {
@@ -214,7 +224,10 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
         match next {
             keyword!(Precondition) => {
                 if contract.precondition.is_some() {
-                    return data.log_error("Precondition already defined in function contract.".to_string());
+                    return parse_point_error(
+                        &data.tokens,
+                        "Precondition already defined in function contract.".to_string(),
+                    );
                 }
 
                 data.tokens.next();
@@ -227,7 +240,10 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
             }
             keyword!(Postcondition) => {
                 if contract.postcondition.is_some() {
-                    return data.log_error("Postcondition already defined in function contract.".to_string());
+                    return parse_point_error(
+                        &data.tokens,
+                        "Postcondition already defined in function contract.".to_string(),
+                    );
                 }
 
                 data.tokens.next();
@@ -315,7 +331,10 @@ fn skip_optional_parenthesized_tokens(data: &mut ParserData) -> CXResult<()> {
         }
     }
 
-    data.log_error("Unclosed parenthesized declaration suffix".to_string())
+    parse_point_error(
+        &data.tokens,
+        "Unclosed parenthesized declaration suffix".to_string(),
+    )
 }
 
 pub(crate) struct ParseParamsResult {

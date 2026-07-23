@@ -17,7 +17,7 @@ use cx_util::{
     namespace::{EnvironmentNamespace, NamespacePath, QualifiedName},
 };
 
-use crate::{log::TokenIterLogExt, next_kind, try_next};
+use crate::{log::parse_point_error, next_kind, try_next};
 
 use super::{parser::ParserData, templates::parse_template_args, types::is_type_decl};
 
@@ -128,7 +128,10 @@ pub(crate) fn try_parse_qualified_name(tokens: &mut TokenIter) -> CXResult<Optio
 
     loop {
         let TokenKind::Identifier(ident) = next_kind!(tokens)? else {
-            return tokens.log_error("Expected identifier after '::' in qualified name".to_string());
+            return parse_point_error(
+                tokens,
+                "Expected identifier after '::' in qualified name".to_string(),
+            );
         };
 
         segments.push(CXIdent::new(ident.clone()));

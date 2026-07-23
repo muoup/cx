@@ -1,5 +1,5 @@
 use crate::parse::ParserData;
-use crate::{log::ParserLogExt, next_kind};
+use crate::{log::parse_point_error, next_kind};
 use cx_ast::ast::expression::{CXBinOp, CXUnOp};
 use cx_log::CXResult;
 use cx_tokens::token::{OperatorType, PunctuatorType, TokenKind};
@@ -171,7 +171,7 @@ fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<CXBinOp> {
 
         OperatorType::Pipe => CXBinOp::Pipe,
 
-        _ => return data.log_error(format!("Invalid binary operator: {:?}", op)),
+        _ => return parse_point_error(&data.tokens, format!("Invalid binary operator: {:?}", op)),
     })
 }
 
@@ -182,7 +182,10 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<CXBinOp> {
                 op_to_binop(data, OperatorType::Comma)?
             } else {
                 data.tokens.back();
-                return data.log_error("Invalid token: expected binary operator, found comma".to_string());
+                return parse_point_error(
+                    &data.tokens,
+                    "Invalid token: expected binary operator, found comma".to_string(),
+                );
             }
         }
         // Handle >> as shift operator (two consecutive Greater tokens)
@@ -218,7 +221,12 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<CXBinOp> {
                 PunctuatorType::OpenBracket => CXBinOp::ArrayIndex,
                 PunctuatorType::OpenParen => CXBinOp::MethodCall,
 
-                _ => return data.log_error(format!("Invalid binary operator: {:?}", punc)),
+                _ => {
+                    return parse_point_error(
+                        &data.tokens,
+                        format!("Invalid binary operator: {:?}", punc),
+                    )
+                }
             }
         }
         Ok(TokenKind::Assignment(op)) => {
@@ -232,7 +240,7 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<CXBinOp> {
 
         _ => {
             data.tokens.back();
-            return data.log_error("Expected binary operator".to_string());
+            return parse_point_error(&data.tokens, "Expected binary operator".to_string());
         }
     })
 }
