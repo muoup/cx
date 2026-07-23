@@ -197,10 +197,6 @@ impl TypeEnvironment<'_> {
         match symbol.visibility {
             VisibilityMode::Public => true,
             VisibilityMode::Package | VisibilityMode::Private => {
-                if candidate.namespace.is_root() {
-                    return true;
-                }
-
                 if &candidate.namespace == namespace.as_namespace_path() {
                     return true;
                 }

@@ -30,6 +30,7 @@ pub fn preparse(
         config,
         tokens,
         visibility_mode: cx_preparse_data::VisibilityMode::Private,
+        include_states: Vec::new(),
     };
 
     while data.tokens.has_next() {
@@ -63,6 +64,5 @@ pub fn decompose_ast<'a>(
     for stmt in ast.definition_stmts {
         env.decompose_stmt(stmt)?;
     }
-
     Ok(env)
 }

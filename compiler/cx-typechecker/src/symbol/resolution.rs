@@ -258,7 +258,14 @@ fn mir_symbols_equivalent(env: &TypeEnvironment, left: &MIRSymbol, right: &MIRSy
         ),
 
         (MIRSymbol::FunctionReference(left), MIRSymbol::FunctionReference(right)) => {
-            left.linkage() == right.linkage() && left.contextual_eq(right, &env.symbols)
+            let compatible_linkage = left.linkage() == right.linkage()
+                || (left.linkage() != CXLinkageMode::Static
+                    && right.linkage() != CXLinkageMode::Static);
+            compatible_linkage
+                && left.symbol_name() == right.symbol_name()
+                && left
+                    .signature()
+                    .contextual_eq(right.signature(), &env.symbols)
         }
 
         (

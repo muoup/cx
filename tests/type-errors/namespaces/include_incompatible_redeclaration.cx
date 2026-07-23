@@ -1,0 +1,5 @@
+import include::_incompatible_include as ffi;
+
+int main() {
+    return ffi::puts(1);
+}

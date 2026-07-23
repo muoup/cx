@@ -123,11 +123,23 @@ impl LexingContext {
                 self.current_frame_mut().cursor = index;
             }
             LexTransition::PushSource(input) => {
+                self.flush_pending_tokens();
+                self.tokens.push(Token::new(
+                    TokenKind::IncludeBegin,
+                    (0, 0),
+                    input.path.clone().into(),
+                ));
                 self.sources
-                    .push(SourceFrame::new(input.source, &input.path));
+                    .push(SourceFrame::new_include(input.source, &input.path));
             }
             LexTransition::PopSource => {
                 self.finish_current_source()?;
+                if self.current_frame().is_include {
+                    let path = self.current_frame().file_path.clone();
+                    let end = self.current_frame().source.len();
+                    self.tokens
+                        .push(Token::new(TokenKind::IncludeEnd, (end, end), path.into()));
+                }
                 self.sources.pop();
             }
         }

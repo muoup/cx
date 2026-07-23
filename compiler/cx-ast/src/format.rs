@@ -2,6 +2,7 @@ use cx_util::identifier::CXIdent;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 use crate::ast::{
+    CXAST, CXASTDefinition, CXASTStmt,
     expression::{CXBinOp, CXExprKind, CXExpression, CXInitIndex},
     function::{CXComptimeFnPrototype, CXComptimeValueType, CXFunctionKind, CXFunctionPrototype},
     global_var::{CXEnumVariant, CXGlobalVariable},
@@ -9,7 +10,6 @@ use crate::ast::{
     pattern::CXPattern,
     template::CXTemplateInput,
     types::{CXField, CXMoveSemantics, CXType, CXTypeKind},
-    CXASTDefinition, CXASTStmt, CXAST,
 };
 
 // Helper struct for indented formatting of CXExpr
@@ -209,6 +209,7 @@ impl<'a> Display for CXExprFormatter<'a> {
             CXExprKind::Identifier {
                 name,
                 template_input,
+                ..
             } => {
                 if let Some(template_input) = template_input {
                     let arg_string = template_input

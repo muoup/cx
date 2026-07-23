@@ -21,6 +21,7 @@ pub struct ParserData<'a> {
     pub tokens: TokenIter<'a>,
     pub visibility: VisibilityMode,
     pub symbol_naming: CXSymbolNameScheme,
+    include_states: Vec<IncludeParserState>,
     pub expr_commas: Vec<bool>,
     pub pp_contents: &'a PreparseContents,
     pub file_origin: EnvironmentNamespace,
@@ -30,6 +31,12 @@ pub struct ParserData<'a> {
 
     pub registry: &'a GlobalPreparseRegistry,
     pub ast: CXAST,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct IncludeParserState {
+    visibility: VisibilityMode,
+    symbol_naming: CXSymbolNameScheme,
 }
 
 impl<'a> ParserData<'a> {
@@ -44,6 +51,7 @@ impl<'a> ParserData<'a> {
             tokens,
             visibility: VisibilityMode::Package,
             symbol_naming: CXSymbolNameScheme::Namespaced,
+            include_states: Vec::new(),
             expr_commas: vec![true],
             pp_contents,
             file_origin,
@@ -95,6 +103,27 @@ impl<'a> ParserData<'a> {
         self.ast
             .definition_stmts
             .push(CXASTDefinition { namespace, stmt })
+    }
+
+    pub fn begin_include(&mut self) {
+        self.include_states.push(IncludeParserState {
+            visibility: self.visibility,
+            symbol_naming: self.symbol_naming,
+        });
+        self.symbol_naming = CXSymbolNameScheme::Unmangled;
+    }
+
+    pub fn end_include(&mut self) -> CXResult<()> {
+        let Some(state) = self.include_states.pop() else {
+            return parse_point_error(&self.tokens, "Unexpected end of included source");
+        };
+        self.visibility = state.visibility;
+        self.symbol_naming = state.symbol_naming;
+        Ok(())
+    }
+
+    pub fn in_include(&self) -> bool {
+        !self.include_states.is_empty()
     }
 
     pub fn take_ast(mut self) -> CXAST {

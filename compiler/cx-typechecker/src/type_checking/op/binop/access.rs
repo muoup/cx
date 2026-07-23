@@ -50,6 +50,7 @@ pub fn typecheck_access(
     let CXExprKind::Identifier {
         name,
         template_input: None,
+        ..
     } = &rhs.kind
     else {
         return env.log_error(

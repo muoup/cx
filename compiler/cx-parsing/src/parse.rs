@@ -51,6 +51,14 @@ pub fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
     };
 
     match &token.kind {
+        TokenKind::IncludeBegin => {
+            data.tokens.next();
+            data.begin_include();
+        }
+        TokenKind::IncludeEnd => {
+            data.tokens.next();
+            data.end_include()?;
+        }
         keyword!(Import) => {
             data.tokens.goto_statement_end();
         }
@@ -130,18 +138,22 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
     match specifier {
         SpecifierType::Public => {
             data.visibility = VisibilityMode::Public;
-            data.symbol_naming = CXSymbolNameScheme::Namespaced;
+            if !data.in_include() {
+                data.symbol_naming = CXSymbolNameScheme::Namespaced;
+            }
         }
         SpecifierType::Private => {
             data.visibility = VisibilityMode::Private;
-            data.symbol_naming = CXSymbolNameScheme::Namespaced;
+            if !data.in_include() {
+                data.symbol_naming = CXSymbolNameScheme::Namespaced;
+            }
         }
 
         _ => {
             return parse_point_error(
                 &data.tokens,
                 "Unexpected specifier in global scope".to_string(),
-            )
+            );
         }
     };
 

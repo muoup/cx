@@ -37,13 +37,6 @@ pub trait MIRQualifiedLookup {
             };
         }
 
-        if let Some(value) = self.lookup_exact(lexical_namespace, name) {
-            return QualifiedLookupResult::Found {
-                resolved_name: name.clone(),
-                value,
-            };
-        }
-
         if name.namespace.is_root() && !lexical_namespace.is_root() {
             let lexical_name = QualifiedName {
                 namespace: lexical_namespace.clone(),
@@ -56,6 +49,13 @@ pub trait MIRQualifiedLookup {
                     value,
                 };
             }
+        }
+
+        if let Some(value) = self.lookup_exact(lexical_namespace, name) {
+            return QualifiedLookupResult::Found {
+                resolved_name: name.clone(),
+                value,
+            };
         }
 
         let mut aliases = self

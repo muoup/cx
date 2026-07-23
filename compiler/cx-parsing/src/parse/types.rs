@@ -85,7 +85,7 @@ fn parse_type_attributes(
                     return parse_point_error(
                         &data.tokens,
                         format!("Unknown {kind_name} attribute '@{}'", attr),
-                    )
+                    );
                 }
             }
 
@@ -227,7 +227,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
                 return parse_point_error(
                     &data.tokens,
                     "Struct name must be a simple identifier".to_string(),
-                )
+                );
             }
         },
     };
@@ -299,7 +299,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
                 return parse_point_error(
                     &data.tokens,
                     "Expected name found qualified identifier".to_string(),
-                )
+                );
             }
         },
     };
@@ -415,7 +415,7 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXType> {
                 return parse_point_error(
                     &data.tokens,
                     "Union name must be a simple identifier".to_string(),
-                )
+                );
             }
         },
     };
@@ -641,8 +641,8 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<CXType> {
             return parse_point_error(
                 &data.tokens,
                 format!(
-                "Expected type base (identifier, struct, enum, union, or intrinsic), found: {tok}"
-            ),
+                    "Expected type base (identifier, struct, enum, union, or intrinsic), found: {tok}"
+                ),
             );
         }
     };

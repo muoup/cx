@@ -26,6 +26,12 @@ pub(crate) struct PreparseData<'a> {
     pub(crate) contents: &'a mut PreparseContents,
     pub(crate) tokens: TokenIter<'a>,
     pub(crate) visibility_mode: cx_preparse_data::VisibilityMode,
+    pub(crate) include_states: Vec<PreparseIncludeState>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PreparseIncludeState {
+    visibility: cx_preparse_data::VisibilityMode,
 }
 
 pub(crate) fn iterate_tokens(data: &mut PreparseData) -> CXResult<()> {
@@ -43,6 +49,19 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
     let next_kind = next_token.kind.clone();
 
     match &next_kind {
+        cx_tokens::token::TokenKind::IncludeBegin => {
+            data.include_states.push(PreparseIncludeState {
+                visibility: data.visibility_mode,
+            });
+        }
+
+        cx_tokens::token::TokenKind::IncludeEnd => {
+            let Some(state) = data.include_states.pop() else {
+                return parse_point_error(&data.tokens, "Unexpected end of included source");
+            };
+            data.visibility_mode = state.visibility;
+        }
+
         keyword!(Struct) | keyword!(Union) | keyword!(Enum) => {
             let Some(identifier!(ident)) = next_kind!(data.tokens).ok() else {
                 data.tokens.back();

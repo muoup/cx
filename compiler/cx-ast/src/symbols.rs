@@ -135,6 +135,10 @@ impl SymbolNamespaceData {
         self.symbols.get(name)
     }
 
+    pub fn symbol_names(&self) -> impl Iterator<Item = &str> {
+        self.symbols.keys().map(String::as_str)
+    }
+
     pub fn insert_namespace_alias(&mut self, alias: NamespacePath, target: NamespacePath) {
         let targets = self.namespace_aliases.entry(alias).or_default();
         if !targets.contains(&target) {

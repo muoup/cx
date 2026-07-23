@@ -1,0 +1,6 @@
+import _public_include as ffi;
+
+int main() {
+    ffi::puts("public include");
+    return 0;
+}

@@ -19,6 +19,7 @@ pub(crate) struct SourceFrame {
     pub(crate) file_path: PathBuf,
     pub(crate) cursor: usize,
     pub(crate) conditionals: Vec<ConditionalFrame>,
+    pub(crate) is_include: bool,
 }
 
 impl SourceFrame {
@@ -28,7 +29,14 @@ impl SourceFrame {
             file_path: source_path.to_path_buf(),
             cursor: 0,
             conditionals: Vec::new(),
+            is_include: false,
         }
+    }
+
+    pub(crate) fn new_include(source: String, source_path: &Path) -> Self {
+        let mut frame = Self::new(source, source_path);
+        frame.is_include = true;
+        frame
     }
 
     pub(crate) fn is_active(&self) -> bool {

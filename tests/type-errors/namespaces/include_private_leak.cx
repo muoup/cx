@@ -1,0 +1,5 @@
+import include::_private_include as ffi;
+
+int main() {
+    return ffi::private_include_symbol();
+}

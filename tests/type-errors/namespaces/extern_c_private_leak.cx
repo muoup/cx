@@ -1,4 +1,4 @@
-import _extern_c_private;
+import include::_extern_c_private;
 
 i32 main() {
     return hidden_c_symbol();
