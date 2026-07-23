@@ -7,7 +7,9 @@ use cx_ast::ast::CXASTStmt;
 use cx_ast::ast::{
     function::{CXFunctionKind, CXFunctionPrototype},
     global_var::{CXEnumVariant, CXGlobalVariable},
-    modifiers::{CXLinkageMode, CXTypeQualifiers, CX_CONST, CX_RESTRICT, CX_VOLATILE},
+    modifiers::{
+        CXLinkageMode, CXSymbolNameScheme, CXTypeQualifiers, CX_CONST, CX_RESTRICT, CX_VOLATILE,
+    },
     template::CXTemplatePrototype,
     types::{CXAggregateAttributes, CXField, CXType, CXTypeKind, PredeclarationType},
 };
@@ -535,6 +537,7 @@ pub(crate) fn parse_type_mods(
                 var_args,
                 contract,
                 linkage: CXLinkageMode::Standard,
+                symbol_naming: CXSymbolNameScheme::Namespaced,
                 range: TokenRange::internal(),
             };
 
@@ -697,6 +700,7 @@ pub(crate) fn parse_typedef_initializer(
         var_args,
         contract,
         linkage: CXLinkageMode::Standard,
+        symbol_naming: CXSymbolNameScheme::Namespaced,
         range: TokenRange::internal(),
     };
 

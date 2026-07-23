@@ -15,9 +15,10 @@ mod type_checking;
 
 use crate::comptime::evaluate_comptime_expression;
 use crate::requests::fulfill_requests;
-use crate::symbol::completion::{complete_prototype, complete_type};
+use crate::symbol::completion::{complete_prototype, complete_type, completed_symbol_name};
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::{environment::TypeEnvironment, type_checking::functions::typecheck_function};
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 pub fn typecheck(
     env: &mut TypeEnvironment,
@@ -48,9 +49,15 @@ pub fn typecheck(
                 name,
                 _type,
                 linkage,
+                symbol_naming,
                 initializer,
             } => {
                 let _type = complete_type(env, namespace, _type)?;
+                let symbol_name = completed_symbol_name(
+                    env,
+                    QualifiedName::new(namespace.clone(), name.clone()),
+                    *symbol_naming,
+                );
                 let comptime_init = initializer
                     .as_ref()
                     .map(|init| {
@@ -67,7 +74,7 @@ pub fn typecheck(
                     is_mutable: _type.get_specifier(CX_CONST),
                     linkage: *linkage,
                     kind: MIRGlobalVarKind::Variable {
-                        name: name.clone(),
+                        name: CXIdent::new(symbol_name),
                         _type,
                         initializer: comptime_init,
                     },

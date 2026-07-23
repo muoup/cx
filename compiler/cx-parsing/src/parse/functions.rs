@@ -7,7 +7,7 @@ use cx_ast::ast::{
         CXComptimeFnPrototype, CXComptimeParameter, CXComptimeValueType, CXFunctionContract,
         CXFunctionKind, CXFunctionPrototype, CXParameter,
     },
-    modifiers::CXLinkageMode,
+    modifiers::{CXLinkageMode, CXSymbolNameScheme},
     template::CXTemplatePrototype,
     types::CXType,
 };
@@ -39,6 +39,7 @@ pub fn try_function_parse(
     return_type: CXType,
     name: CXIdent,
     linkage: CXLinkageMode,
+    symbol_naming: CXSymbolNameScheme,
 ) -> CXResult<Option<FunctionDeclaration>> {
     let range_start = data.tokens.index;
 
@@ -81,6 +82,7 @@ pub fn try_function_parse(
         var_args: args.var_args,
         contract: args.contract,
         linkage,
+        symbol_naming,
         range: TokenRange::new(
             range_start,
             data.tokens.index,

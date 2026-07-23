@@ -6,6 +6,7 @@ extern "C":
 void exit(int status);
 
 #include <stdio.h>
+#include <string.h>
 
 public:
 

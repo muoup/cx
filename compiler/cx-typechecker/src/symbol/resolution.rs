@@ -61,15 +61,24 @@ pub fn resolve_symbol(
             Ok(MIRSymbol::Type(id))
         }
 
-        CXSymbolKind::AddressableGlobal(name, ty) => {
-            let ty = complete_type(env, symbol_namespace, ty)?;
+        CXSymbolKind::AddressableGlobal {
+            name,
+            _type,
+            symbol_naming,
+        } => {
+            let ty = complete_type(env, symbol_namespace, _type)?;
+            let symbol_name = CXIdent::new(crate::symbol::completion::completed_symbol_name(
+                env,
+                cx_util::namespace::QualifiedName::new(symbol_namespace.clone(), name.clone()),
+                *symbol_naming,
+            ));
 
             if evaluation_namespace != symbol_namespace {
                 env.items.push_generated_global(MIRGlobalVariable {
                     is_mutable: false,
                     linkage: CXLinkageMode::Extern,
                     kind: MIRGlobalVarKind::Variable {
-                        name: name.clone(),
+                        name: symbol_name.clone(),
                         _type: ty.clone(),
                         initializer: None,
                     },
@@ -79,7 +88,7 @@ pub fn resolve_symbol(
             Ok(MIRSymbol::Expression(MIRExpression {
                 token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Variable {
-                    name: name.clone(),
+                    name: symbol_name,
                     location: SymbolValueOrigin::Global,
                 },
                 _type: env.symbols.mem_ref_to(ty),

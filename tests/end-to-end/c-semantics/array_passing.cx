@@ -1,8 +1,8 @@
-import std::io;
+import std::io as std;
 
 void print_all(int arr[], int size) {
     for (int i = 0; i < size; i++) {
-        printf("%d\n", arr[i]);
+        std::printf("%d\n", arr[i]);
     }
 }
 

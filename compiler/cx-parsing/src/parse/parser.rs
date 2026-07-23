@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use cx_ast::ast::{function::CXFunctionKind, CXASTDefinition, CXASTStmt, CXAST};
+use cx_ast::ast::{
+    function::CXFunctionKind, modifiers::CXSymbolNameScheme, CXASTDefinition, CXASTStmt, CXAST,
+};
 use cx_log::CXResult;
 use cx_namespace::result::QualifiedLookupResult;
 use cx_namespace::MIRQualifiedLookup;
@@ -18,7 +20,7 @@ use crate::log::parse_point_error;
 pub struct ParserData<'a> {
     pub tokens: TokenIter<'a>,
     pub visibility: VisibilityMode,
-    pub extern_c_mode: bool,
+    pub symbol_naming: CXSymbolNameScheme,
     pub expr_commas: Vec<bool>,
     pub pp_contents: &'a PreparseContents,
     pub file_origin: EnvironmentNamespace,
@@ -41,7 +43,7 @@ impl<'a> ParserData<'a> {
         Self {
             tokens,
             visibility: VisibilityMode::Package,
-            extern_c_mode: false,
+            symbol_naming: CXSymbolNameScheme::Namespaced,
             expr_commas: vec![true],
             pp_contents,
             file_origin,
@@ -88,7 +90,7 @@ impl<'a> ParserData<'a> {
     }
 
     pub fn add_stmt(&mut self, stmt: CXASTStmt) {
-        let namespace = self.namespace_for_current_stmt();
+        let namespace = self.current_module_namespace();
         self.register_stmt_namespace_aliases(&namespace, &stmt);
         self.ast
             .definition_stmts
@@ -106,7 +108,7 @@ impl<'a> ParserData<'a> {
     }
 
     pub fn query_identifier(&self, name: QualifiedName) -> CXResult<bool> {
-        match self.qualified_lookup(&self.namespace_for_current_stmt(), &name) {
+        match self.qualified_lookup(&self.current_module_namespace(), &name) {
             QualifiedLookupResult::Found { .. } => Ok(true),
             QualifiedLookupResult::NotFound => Ok(false),
             QualifiedLookupResult::Ambiguous { candidates } => parse_point_error(
@@ -121,14 +123,6 @@ impl<'a> ParserData<'a> {
                         .join(", ")
                 ),
             ),
-        }
-    }
-
-    fn namespace_for_current_stmt(&self) -> NamespacePath {
-        if self.extern_c_mode {
-            NamespacePath::root()
-        } else {
-            self.current_module_namespace()
         }
     }
 

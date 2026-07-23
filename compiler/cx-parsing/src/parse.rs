@@ -2,7 +2,7 @@ use cx_ast::ast::{
     expression::{CXExprKind, CXExpression},
     function::CXFunctionPrototype,
     global_var::CXGlobalVariable,
-    modifiers::CXLinkageMode,
+    modifiers::{CXLinkageMode, CXSymbolNameScheme},
     template::CXTemplatePrototype,
     types::CXTypeKind,
     CXASTStmt,
@@ -59,7 +59,11 @@ pub fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
         punctuator!(Semicolon) => {
             data.tokens.next();
         }
-        specifier!(Extern) if is_extern_c_section(data) => parse_extern_c_mod(data)?,
+        specifier!(Extern) | specifier!(Public) | specifier!(Private)
+            if is_extern_c_section(data) =>
+        {
+            parse_extern_c_mod(data)?
+        }
         specifier!(Public) | specifier!(Private) => parse_access_mods(data)?,
         _ => parse_global_expr(data)?,
     };
@@ -68,12 +72,25 @@ pub fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
 }
 
 fn is_extern_c_section(data: &ParserData) -> bool {
+    let access_offset = usize::from(matches!(
+        data.tokens
+            .slice
+            .get(data.tokens.index)
+            .map(|token| &token.kind),
+        Some(TokenKind::Specifier(
+            SpecifierType::Public | SpecifierType::Private
+        ))
+    ));
+
     matches!(
         (
-            data.tokens.slice.get(data.tokens.index).map(|token| &token.kind),
             data.tokens
                 .slice
-                .get(data.tokens.index + 1)
+                .get(data.tokens.index + access_offset)
+                .map(|token| &token.kind),
+            data.tokens
+                .slice
+                .get(data.tokens.index + access_offset + 1)
                 .map(|token| &token.kind),
         ),
         (
@@ -84,6 +101,13 @@ fn is_extern_c_section(data: &ParserData) -> bool {
 }
 
 fn parse_extern_c_mod(data: &mut ParserData) -> CXResult<()> {
+    let visibility = if try_next!(data.tokens, specifier!(Public)) {
+        VisibilityMode::Public
+    } else {
+        try_next!(data.tokens, specifier!(Private));
+        VisibilityMode::Private
+    };
+
     assert_token_matches!(data.tokens, specifier!(Extern), "'extern'");
     assert_token_matches!(data.tokens, TokenKind::StringLiteral(abi), "\"C\"");
     let abi = abi.clone();
@@ -94,8 +118,8 @@ fn parse_extern_c_mod(data: &mut ParserData) -> CXResult<()> {
 
     assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
 
-    data.visibility = VisibilityMode::Private;
-    data.extern_c_mode = true;
+    data.visibility = visibility;
+    data.symbol_naming = CXSymbolNameScheme::Unmangled;
 
     Ok(())
 }
@@ -106,11 +130,11 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
     match specifier {
         SpecifierType::Public => {
             data.visibility = VisibilityMode::Public;
-            data.extern_c_mode = false;
+            data.symbol_naming = CXSymbolNameScheme::Namespaced;
         }
         SpecifierType::Private => {
             data.visibility = VisibilityMode::Private;
-            data.extern_c_mode = false;
+            data.symbol_naming = CXSymbolNameScheme::Namespaced;
         }
 
         _ => {
@@ -192,8 +216,9 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
 
 fn parse_fn_merge(
     data: &mut ParserData,
-    prototype: CXFunctionPrototype,
+    mut prototype: CXFunctionPrototype,
     template_prototype: Option<CXTemplatePrototype>,
+    inherited_external: bool,
 ) -> CXResult<()> {
     if try_next!(data.tokens, punctuator!(Semicolon)) {
         if template_prototype.is_some() {
@@ -201,6 +226,10 @@ fn parse_fn_merge(
                 &data.tokens,
                 "Templated functions must be defined in place.".to_string(),
             );
+        }
+
+        if inherited_external {
+            prototype.linkage = CXLinkageMode::Extern;
         }
 
         data.add_stmt(CXASTStmt::FunctionDefinition {
@@ -232,11 +261,9 @@ fn parse_fn_merge(
 
 fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
     let (name, return_type, linkage) = parse_initializer(data)?;
-    let linkage = if data.extern_c_mode && linkage == CXLinkageMode::Standard {
-        CXLinkageMode::Extern
-    } else {
-        linkage
-    };
+    let symbol_naming = data.symbol_naming;
+    let inherited_external =
+        symbol_naming == CXSymbolNameScheme::Unmangled && linkage == CXLinkageMode::Standard;
 
     let Some(name) = name else {
         // Blank statement consisting on just a type, (i.e. struct [name] { [fields] };)
@@ -252,8 +279,19 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
         );
     }
 
-    if let Some(func) = try_function_parse(data, return_type.clone(), name.clone(), linkage)? {
-        return parse_fn_merge(data, func.prototype, func.template_prototype);
+    if let Some(func) = try_function_parse(
+        data,
+        return_type.clone(),
+        name.clone(),
+        linkage,
+        symbol_naming,
+    )? {
+        return parse_fn_merge(
+            data,
+            func.prototype,
+            func.template_prototype,
+            inherited_external,
+        );
     }
 
     match next_kind!(data.tokens)? {
@@ -267,6 +305,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
                     _type: return_type.clone(),
                     is_mutable: true,
                     linkage,
+                    symbol_name_scheme: symbol_naming,
                     initializer: Some(initial_value.clone()),
                 },
             });
@@ -279,7 +318,12 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
                     name: name.clone(),
                     _type: return_type.clone(),
                     is_mutable: true,
-                    linkage,
+                    linkage: if inherited_external {
+                        CXLinkageMode::Extern
+                    } else {
+                        linkage
+                    },
+                    symbol_name_scheme: symbol_naming,
                     initializer: None,
                 },
             });

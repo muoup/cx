@@ -1,4 +1,4 @@
-import std::io;
+import std::io as std;
 
 struct IntWrapper { int x; };
 
@@ -15,5 +15,5 @@ int main() {
     IntWrapper wrapper = IntWrapper::new(5)
         |> IntWrapper::transform();
 
-    printf("Transformed IntWrapper: %d\n", wrapper.x);
+    std::printf("Transformed IntWrapper: %d\n", wrapper.x);
 }

@@ -1,0 +1,7 @@
+extern "C":
+
+i32 hidden_c_symbol();
+
+public extern "C":
+
+i32 namespaced_c_symbol();

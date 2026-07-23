@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use cx_ast::ast::{
     function::{CXComptimeFnPrototype, CXFunctionKind, CXFunctionPrototype},
-    modifiers::{CXTypeQualifiers, VisibilityMode},
+    modifiers::{CXSymbolNameScheme, CXTypeQualifiers, VisibilityMode},
     template::CXTemplateInput,
     types::{
         CXAggregateAttributes, CXField, CXMoveSemantics, CXType, CXTypeKind, PredeclarationType,
@@ -239,7 +239,8 @@ pub fn complete_prototype(
 
     let lookup_identifier = function_lookup_identifier(namespace, &prototype.kind);
     let debug_name = lookup_identifier.name.clone();
-    let symbol_name = completed_function_name(env, namespace, &prototype.kind)?;
+    let symbol_name =
+        completed_function_name(env, namespace, &prototype.kind, prototype.symbol_naming)?;
 
     Ok(MIRFunctionPrototype::new(
         symbol_name,
@@ -708,7 +709,12 @@ fn completed_function_name(
     env: &TypeEnvironment,
     namespace: &EnvironmentNamespace,
     kind: &CXFunctionKind,
+    symbol_naming: CXSymbolNameScheme,
 ) -> CXResult<String> {
+    if symbol_naming == CXSymbolNameScheme::Unmangled {
+        return Ok(kind.into_key().name.to_string());
+    }
+
     let name = match kind {
         CXFunctionKind::Standard(name) => mangle_qualified_name(
             env.symbols.get_global_registry(),
@@ -724,4 +730,17 @@ fn completed_function_name(
     };
 
     Ok(name)
+}
+
+pub(crate) fn completed_symbol_name(
+    env: &TypeEnvironment,
+    name: QualifiedName,
+    symbol_naming: CXSymbolNameScheme,
+) -> String {
+    match symbol_naming {
+        CXSymbolNameScheme::Namespaced => {
+            mangle_qualified_name(env.symbols.get_global_registry(), &name)
+        }
+        CXSymbolNameScheme::Unmangled => name.name.to_string(),
+    }
 }

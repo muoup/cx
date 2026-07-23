@@ -8,7 +8,7 @@ use crate::ast::{
     expression::CXExpression,
     function::{CXComptimeFnPrototype, CXFunctionPrototype},
     global_var::CXEnumDefinition,
-    modifiers::VisibilityMode,
+    modifiers::{CXSymbolNameScheme, VisibilityMode},
     template::CXTemplatePrototype,
     types::CXType,
 };
@@ -49,7 +49,11 @@ pub enum CXSymbolKind {
         union_type: CXType,
         variant_index: usize,
     },
-    AddressableGlobal(CXIdent, CXType),
+    AddressableGlobal {
+        name: CXIdent,
+        _type: CXType,
+        symbol_naming: CXSymbolNameScheme,
+    },
     EnumIdent {
         enum_block_idx: EnumBlockIdx,
         variant_index: usize,

@@ -17,3 +17,10 @@ pub enum CXLinkageMode {
     Static,
     Extern,
 }
+
+#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Readable, Writable)]
+pub enum CXSymbolNameScheme {
+    #[default]
+    Namespaced,
+    Unmangled,
+}

@@ -5,7 +5,9 @@
 use cx_util::identifier::CXIdent;
 
 use crate::ast::{
-    expression::CXExpression, function::CXFunctionPrototype, modifiers::CXLinkageMode,
+    expression::CXExpression,
+    function::CXFunctionPrototype,
+    modifiers::{CXLinkageMode, CXSymbolNameScheme},
     types::CXType,
 };
 
@@ -26,6 +28,7 @@ pub enum CXGenerationStmt {
         _type: CXType,
         initializer: Option<CXExpression>,
         linkage: CXLinkageMode,
+        symbol_naming: CXSymbolNameScheme,
     },
 
     StringLiteral {

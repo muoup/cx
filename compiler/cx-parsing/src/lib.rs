@@ -30,7 +30,6 @@ pub fn preparse(
         config,
         tokens,
         visibility_mode: cx_preparse_data::VisibilityMode::Private,
-        extern_c_mode: false,
     };
 
     while data.tokens.has_next() {

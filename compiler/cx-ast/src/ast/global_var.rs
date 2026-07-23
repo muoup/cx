@@ -1,6 +1,10 @@
 use cx_util::identifier::CXIdent;
 
-use crate::ast::{expression::CXExpression, modifiers::CXLinkageMode, types::CXType};
+use crate::ast::{
+    expression::CXExpression,
+    modifiers::{CXLinkageMode, CXSymbolNameScheme},
+    types::CXType,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CXGlobalVariable {
@@ -10,8 +14,10 @@ pub enum CXGlobalVariable {
         name: CXIdent,
         _type: CXType,
         is_mutable: bool,
-        linkage: CXLinkageMode,
         initializer: Option<CXExpression>,
+
+        linkage: CXLinkageMode,
+        symbol_name_scheme: CXSymbolNameScheme,
     },
 }
 

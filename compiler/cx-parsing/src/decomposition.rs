@@ -93,6 +93,7 @@ fn insert_symbol(
         .get_symbol(name.as_str())
         .cloned()
     {
+        let visibility = existing.visibility.max(symbol.visibility);
         let mut definitions = match existing.kind {
             CXSymbolKind::DuplicateDefinition(definitions) => definitions,
             kind => vec![kind],
@@ -101,10 +102,7 @@ fn insert_symbol(
 
         env.get_bucket_mut(namespace).insert_symbol(
             name,
-            CXSymbol::new(
-                existing.visibility,
-                CXSymbolKind::DuplicateDefinition(definitions),
-            ),
+            CXSymbol::new(visibility, CXSymbolKind::DuplicateDefinition(definitions)),
         );
         return Ok(());
     }
@@ -277,11 +275,16 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) -> CX
                 _type,
                 is_mutable: _,
                 linkage,
+                symbol_name_scheme: symbol_naming,
                 initializer,
             } => {
                 let symbol = CXSymbol::new(
                     visibility,
-                    CXSymbolKind::AddressableGlobal(name.clone(), _type.clone()),
+                    CXSymbolKind::AddressableGlobal {
+                        name: name.clone(),
+                        _type: _type.clone(),
+                        symbol_naming: *symbol_naming,
+                    },
                 );
 
                 insert_symbol(env, base_namespace, name.to_string(), symbol)?;
@@ -290,6 +293,7 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) -> CX
                     name: name.clone(),
                     _type: _type.clone(),
                     linkage: *linkage,
+                    symbol_naming: *symbol_naming,
                     initializer: initializer.clone(),
                 });
             }

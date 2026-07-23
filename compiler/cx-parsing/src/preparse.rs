@@ -3,7 +3,7 @@ use crate::{
 };
 use cx_log::CXResult;
 use cx_pipeline_data::CompilerConfig;
-use cx_preparse_data::{symbol_data::PreparseModuleSymbols, PreparseContents};
+use cx_preparse_data::PreparseContents;
 use cx_tokens::{identifier, keyword, operator, punctuator, specifier, TokenIter};
 use cx_util::{identifier::CXIdent, module_path::ModulePath, namespace::NamespacePath};
 
@@ -26,17 +26,6 @@ pub(crate) struct PreparseData<'a> {
     pub(crate) contents: &'a mut PreparseContents,
     pub(crate) tokens: TokenIter<'a>,
     pub(crate) visibility_mode: cx_preparse_data::VisibilityMode,
-    pub(crate) extern_c_mode: bool,
-}
-
-impl PreparseData<'_> {
-    fn current_symbols_mut(&mut self) -> &mut PreparseModuleSymbols {
-        if self.extern_c_mode {
-            &mut self.contents.root_symbols
-        } else {
-            &mut self.contents.module_symbols
-        }
-    }
 }
 
 pub(crate) fn iterate_tokens(data: &mut PreparseData) -> CXResult<()> {
@@ -62,7 +51,7 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
             let ident = CXIdent::new(ident.as_str());
             let visibility = data.visibility_mode;
 
-            data.current_symbols_mut().add_type(ident, visibility);
+            data.contents.module_symbols.add_type(ident, visibility);
         }
 
         keyword!(Typedef) => {
@@ -90,7 +79,7 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
             };
 
             let visibility = data.visibility_mode;
-            data.current_symbols_mut().add_type(ident, visibility);
+            data.contents.module_symbols.add_type(ident, visibility);
         }
 
         keyword!(Import) => {
@@ -114,27 +103,54 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
             data.contents.imports.push(import_path);
         }
 
+        specifier!(Public) if is_extern_c_section_after_access(data) => {
+            parse_extern_c_mod(data, cx_preparse_data::VisibilityMode::Public)?;
+        }
+
+        specifier!(Private) if is_extern_c_section_after_access(data) => {
+            parse_extern_c_mod(data, cx_preparse_data::VisibilityMode::Private)?;
+        }
+
         specifier!(Public) => {
             data.visibility_mode = cx_preparse_data::VisibilityMode::Public;
-            data.extern_c_mode = false;
             assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
         }
 
         specifier!(Private) => {
             data.visibility_mode = cx_preparse_data::VisibilityMode::Private;
-            data.extern_c_mode = false;
             assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
         }
 
         specifier!(Extern) if is_extern_c_section(data) => {
             data.tokens.back();
-            parse_extern_c_mod(data)?;
+            parse_extern_c_mod(data, cx_preparse_data::VisibilityMode::Private)?;
         }
 
         _ => (),
     }
 
     Ok(())
+}
+
+fn is_extern_c_section_after_access(data: &PreparseData) -> bool {
+    matches!(
+        (
+            data.tokens
+                .slice
+                .get(data.tokens.index)
+                .map(|token| &token.kind),
+            data.tokens
+                .slice
+                .get(data.tokens.index + 1)
+                .map(|token| &token.kind),
+        ),
+        (
+            Some(cx_tokens::token::TokenKind::Specifier(
+                cx_tokens::token::SpecifierType::Extern
+            )),
+            Some(cx_tokens::token::TokenKind::StringLiteral(abi))
+        ) if abi == "C"
+    )
 }
 
 fn is_extern_c_section(data: &PreparseData) -> bool {
@@ -152,7 +168,10 @@ fn is_extern_c_section(data: &PreparseData) -> bool {
     )
 }
 
-fn parse_extern_c_mod(data: &mut PreparseData) -> CXResult<()> {
+fn parse_extern_c_mod(
+    data: &mut PreparseData,
+    visibility: cx_preparse_data::VisibilityMode,
+) -> CXResult<()> {
     assert_token_matches!(data.tokens, specifier!(Extern), "'extern'");
     assert_token_matches!(
         data.tokens,
@@ -167,8 +186,7 @@ fn parse_extern_c_mod(data: &mut PreparseData) -> CXResult<()> {
 
     assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
 
-    data.visibility_mode = cx_preparse_data::VisibilityMode::Private;
-    data.extern_c_mode = true;
+    data.visibility_mode = visibility;
 
     Ok(())
 }

@@ -1,7 +1,11 @@
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
-use crate::ast::{expression::CXExpression, modifiers::CXLinkageMode, types::CXType};
+use crate::ast::{
+    expression::CXExpression,
+    modifiers::{CXLinkageMode, CXSymbolNameScheme},
+    types::CXType,
+};
 
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq)]
 pub struct CXFunctionContract {
@@ -14,11 +18,14 @@ pub struct CXFunctionContract {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct CXFunctionPrototype {
     pub kind: CXFunctionKind,
-    pub params: Vec<CXParameter>,
+
     pub return_type: CXType,
+    pub params: Vec<CXParameter>,
     pub var_args: bool,
     pub contract: CXFunctionContract,
+
     pub linkage: CXLinkageMode,
+    pub symbol_naming: CXSymbolNameScheme,
     pub range: TokenRange,
 }
 
