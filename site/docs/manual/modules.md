@@ -100,4 +100,79 @@ i32 helper(i32 x) {
 All declarations following a `public:` header are visible to importers. A
 `private:` header switches back to module-internal visibility.
 
+## C Symbol Names
+
+For handwritten declarations, an `extern "C":` section disables namespace-based
+name mangling without moving the declarations out of their CX module.
+`extern "C":` is private by default, while `public extern "C":` makes subsequent
+declarations visible to importers. `private extern "C":` is an explicit spelling
+of the default, and a later `public:` or `private:` header returns to normal CX
+name mangling.
+
+Additionally, declarations produced while processing a `#include` use unmangled C linker names
+for backward compatibility reasons. This mode is scoped to the included file, 
+including its nested includes; after the include ends, the previous CX naming and 
+visibility configuration is For handwritten declarations, an `extern "C":` section disables namespace-based
+name mangling without moving the declarations out of their CX module.
+
+```cpp title="lib/c_stdio.cx"
+#include <stdio.h>
+
+public extern "C":
+
+int puts(const char* text);
+
+public:
+
+void write_message(const char* text) {
+    puts(text);
+}
+```
+
+An include inherits the current visibility, so declarations are private when
+included under the default visibility and public when included after a
+`public:` header:
+
+```cpp title="lib/c_api.cx"
+public:
+
+#include "api.h"
+```
+
+Importers reference public included declarations through the owning module:
+
+```cpp
+import c_api as c;
+
+int main() {
+    c::api_function();
+    return 0;
+}
+```
+
+Included declarations occupy the owning module's ordinary namespace, just like
+handwritten `extern "C"` declarations. They are referenced without qualification
+inside that module and through the module namespace by importers:
+
+```cpp
+#include "api.h" // Declares the C function `status`.
+
+int check_status() {
+    return status();
+}
+```
+
+An include behaves like a scoped `extern "C":` section except that it preserves
+the incoming visibility. An explicit `extern "C"` declaration may redeclare a
+symbol from an included header when its type and linkage-relevant attributes
+match. Visibility may differ, in which case the most permissive declared
+visibility is used.
+
+An ordinary namespace-mangled CX declaration with the same name is not a
+distinct binding. It conflicts with the included declaration because both
+occupy the same module namespace but name different linker symbols. This permits
+a private C header to be included and selected declarations to be published
+through `public extern "C"`, as `puts` is in the first example, without creating
+an additional shadow namespace.
+
 Files with the `.cxh` extension serve as library entry points and use the same syntax as `.cx` files. The [Libraries and C Interop](../getting-started/c-interop.md) guide explains how their public declarations become C-compatible library exports.
