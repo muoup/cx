@@ -23,6 +23,7 @@ impl ModulePath {
         let stripped = path
             .strip_suffix(".cxh")
             .or_else(|| path.strip_suffix(".cx"))
+            .or_else(|| path.strip_suffix(".c"))
             .unwrap_or(path);
         Self(stripped.replace('\\', "/"))
     }
@@ -72,5 +73,17 @@ impl AsRef<str> for ModulePath {
 impl Display for ModulePath {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ModulePath;
+
+    #[test]
+    fn source_paths_strip_supported_source_extensions() {
+        assert_eq!(ModulePath::from_source_path("main.cx").as_str(), "main");
+        assert_eq!(ModulePath::from_source_path("main.c").as_str(), "main");
+        assert_eq!(ModulePath::from_source_path("main.cxh").as_str(), "main");
     }
 }

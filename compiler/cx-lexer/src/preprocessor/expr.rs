@@ -16,7 +16,7 @@ pub(crate) fn eval(
     let expanded = expand_defined_ops(context, expression);
     let frame = context.current_frame();
 
-    let mut tokens = tokenize_text(&expanded, frame.file_path.as_path())?;
+    let mut tokens = tokenize_text(&expanded, frame.file_path.as_path(), frame.language_mode)?;
     tokens = context.expand_macros(tokens);
     let mut parser = PreprocessorExprParser {
         tokens: &tokens,

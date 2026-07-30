@@ -242,6 +242,17 @@ pub fn project_compilation(
         // Build binaries
         if let Some(binaries) = &target_config.binaries {
             for binary in binaries {
+                if Path::new(&binary.entry)
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    == Some("c")
+                {
+                    return Err(pipeline_error(
+                        "COMPILATION ERROR",
+                        "C sources are currently supported only in single-file compilation mode",
+                    ));
+                }
+
                 let output = output_dir.join(&binary.name);
                 let mut config = base_config.clone();
                 config.output = output.clone();
@@ -262,6 +273,17 @@ pub fn project_compilation(
         // Build libraries
         if let Some(libraries) = &target_config.libraries {
             for library in libraries {
+                if Path::new(&library.entry)
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    == Some("c")
+                {
+                    return Err(pipeline_error(
+                        "COMPILATION ERROR",
+                        "C sources are currently supported only in single-file compilation mode",
+                    ));
+                }
+
                 let mut config = base_config.clone();
                 config.compilation_mode = CompilationMode::Library;
                 config.link_entries = link_entries.clone();

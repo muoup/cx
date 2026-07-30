@@ -20,6 +20,7 @@ pub struct InitArgs {
 #[derive(Debug)]
 pub struct FileArgs {
     pub input_files: Vec<String>,
+    pub include_dirs: Vec<String>,
     pub output_file: Option<String>,
     pub compile_only: bool,
     pub backend: CompilerBackend,
@@ -60,13 +61,14 @@ struct ParsedCommonArgs {
 #[derive(Debug, Default)]
 struct FileSpecificArgs {
     input_files: Vec<String>,
+    include_dirs: Vec<String>,
     output_file: Option<String>,
     compile_only: bool,
 }
 
 pub fn print_help() {
     println!("Usage:");
-    println!("  cx <file.cx>... [options]");
+    println!("  cx <file.cx|file.c>... [options]");
     println!("  cx build [target] [options]");
     println!("  cx run [target] [options] [-- args...]");
     println!("  cx init <project-name>");
@@ -77,7 +79,7 @@ pub fn print_help() {
     println!("  init <project-name>  Create a new CX project");
     println!();
     println!("Legacy single-file mode:");
-    println!("  <file.cx>...         Compile one or more .cx files without using cx.toml");
+    println!("  <file.cx|file.c>...  Compile source files without using cx.toml");
     println!();
     println!("Options:");
     #[cfg(feature = "backend-llvm")]
@@ -90,6 +92,7 @@ pub fn print_help() {
         println!("  --backend-cranelift  Use the Cranelift backend for code generation (default).");
     }
     println!("  -c                   Compile only; emit an object file.");
+    println!("  -I <directory>       Add a header search directory (also accepts -Idir).");
     println!("  -o <output_file>     Specify the output file name.");
     println!("  -O0                  No optimization.");
     println!("  -O1                  Basic optimization.");
@@ -250,18 +253,20 @@ fn parse_file_args(args: impl IntoIterator<Item = String>) -> Result<Command, St
     let ParsedCommonArgs { common, rest } = parse_common_flags(args);
     let FileSpecificArgs {
         input_files,
+        include_dirs,
         output_file,
         compile_only,
     } = parse_file_specific_args(rest)?;
 
     if input_files.is_empty() {
-        return Err("Usage: cx <file.cx>... [options]".to_string());
+        return Err("Usage: cx <file.cx|file.c>... [options]".to_string());
     }
 
-    for input_file in &input_files {
-        if !input_file.ends_with(".cx") {
-            return Err("Input files must have a .cx extension".to_string());
-        }
+    if input_files
+        .iter()
+        .any(|file| !file.ends_with(".cx") && !file.ends_with(".c"))
+    {
+        return Err("Input files must have a .cx or .c extension".to_string());
     }
 
     if compile_only && input_files.len() > 1 && output_file.is_some() {
@@ -270,6 +275,7 @@ fn parse_file_args(args: impl IntoIterator<Item = String>) -> Result<Command, St
 
     Ok(Command::CompileFile(FileArgs {
         input_files,
+        include_dirs,
         output_file,
         compile_only,
         backend: common.backend.unwrap_or_else(default_backend),
@@ -298,6 +304,22 @@ fn parse_file_specific_args(
                     .ok_or_else(|| "-o flag requires an output file path".to_string())?,
             );
             continue;
+        }
+
+        if arg == "-I" {
+            parsed.include_dirs.push(
+                args_iter
+                    .next()
+                    .ok_or_else(|| "-I flag requires a directory path".to_string())?,
+            );
+            continue;
+        }
+
+        if let Some(path) = arg.strip_prefix("-I") {
+            if !path.is_empty() {
+                parsed.include_dirs.push(path.to_string());
+                continue;
+            }
         }
 
         if arg.starts_with('-') {

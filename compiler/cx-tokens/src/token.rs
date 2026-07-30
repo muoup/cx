@@ -460,6 +460,41 @@ pub enum SpecifierType {
 }
 
 impl TokenKind {
+    pub fn into_c_mode(self) -> TokenKind {
+        match self {
+            TokenKind::Keyword(keyword) => {
+                let identifier = match keyword {
+                    KeywordType::Import => "import",
+                    KeywordType::As => "as",
+                    KeywordType::Strong => "strong",
+                    KeywordType::Weak => "weak",
+                    KeywordType::Template => "template",
+                    KeywordType::Class => "class",
+                    KeywordType::Match => "match",
+                    KeywordType::Yield => "yield",
+                    KeywordType::Comptime => "comptime",
+                    KeywordType::Expr => "expr",
+                    KeywordType::Emit => "emit",
+                    KeywordType::Where => "where",
+                    KeywordType::Safe => "safe",
+                    KeywordType::Precondition => "pre",
+                    KeywordType::Postcondition => "post",
+                    _ => return TokenKind::Keyword(keyword),
+                };
+                TokenKind::Identifier(identifier.to_string())
+            }
+            TokenKind::Operator(OperatorType::Move) => TokenKind::Identifier("move".to_string()),
+            TokenKind::Operator(OperatorType::Is) => TokenKind::Identifier("is".to_string()),
+            TokenKind::Specifier(SpecifierType::Public) => {
+                TokenKind::Identifier("public".to_string())
+            }
+            TokenKind::Specifier(SpecifierType::Private) => {
+                TokenKind::Identifier("private".to_string())
+            }
+            other => other,
+        }
+    }
+
     pub fn from_str(str: String) -> TokenKind {
         match str.trim() {
             "if" => TokenKind::Keyword(KeywordType::If),

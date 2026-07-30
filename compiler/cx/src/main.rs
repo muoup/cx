@@ -71,6 +71,12 @@ fn compiler_config_with_dirs(
     working_directory: PathBuf,
     internal_directory: PathBuf,
 ) -> CompilerConfig {
+    let include_dirs = args
+        .include_dirs
+        .iter()
+        .map(|path| resolve_invocation_path(&working_directory, path))
+        .collect();
+
     CompilerConfig {
         architecture: cx_pipeline_data::ArchitectureConfig::default(),
         backend: args.backend,
@@ -85,14 +91,14 @@ fn compiler_config_with_dirs(
         project_config: None,
         link_entries: vec![],
         native_objects: vec![],
-        include_dirs: vec![],
+        include_dirs,
     }
 }
 
-fn run_standard_compilation(config: CompilerConfig, path: &Path) {
-    standard_compilation(config, path).unwrap_or_else(|err| {
+fn run_standard_compilation(config: CompilerConfig, path: &Path) -> Result<(), ()> {
+    standard_compilation(config, path).map_err(|err| {
         err.print().expect("Failed to write error message");
-    });
+    })
 }
 
 fn link_objects(output: &Path, objects: &[PathBuf]) {
@@ -116,7 +122,7 @@ fn link_objects(output: &Path, objects: &[PathBuf]) {
     }
 }
 
-fn run_file_mode(args: args::FileArgs) {
+fn run_file_mode(args: args::FileArgs) -> Result<(), ()> {
     let invocation_directory = std::env::current_dir().expect("Failed to get current directory");
 
     if args.compile_only {
@@ -127,9 +133,9 @@ fn run_file_mode(args: args::FileArgs) {
                 .map(|output| resolve_invocation_path(&invocation_directory, output))
                 .unwrap_or_else(|| default_object_output(&invocation_directory, input_file));
             let config = compiler_config(&args, output, CompilationMode::Object);
-            run_standard_compilation(config, Path::new(input_file));
+            run_standard_compilation(config, Path::new(input_file))?;
         }
-        return;
+        return Ok(());
     }
 
     let output = args
@@ -140,8 +146,8 @@ fn run_file_mode(args: args::FileArgs) {
 
     if args.input_files.len() == 1 {
         let config = compiler_config(&args, output, CompilationMode::Executable);
-        run_standard_compilation(config, Path::new(&args.input_files[0]));
-        return;
+        run_standard_compilation(config, Path::new(&args.input_files[0]))?;
+        return Ok(());
     }
 
     let working_directory = invocation_directory.clone();
@@ -158,11 +164,12 @@ fn run_file_mode(args: args::FileArgs) {
             internal_directory.clone(),
         );
 
-        run_standard_compilation(config, Path::new(input_file));
+        run_standard_compilation(config, Path::new(input_file))?;
         objects.push(object);
     }
 
     link_objects(&output, &objects);
+    Ok(())
 }
 
 fn main() {
@@ -175,7 +182,11 @@ fn main() {
     };
 
     match command {
-        Command::CompileFile(args) => run_file_mode(args),
+        Command::CompileFile(args) => {
+            if run_file_mode(args).is_err() {
+                std::process::exit(1);
+            }
+        }
         Command::Build(args) => run_build_mode(args),
         Command::Run(args) => run_run_mode(args),
         Command::Init(args) => run_init_mode(args),

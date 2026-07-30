@@ -80,7 +80,9 @@ fn write_module(
             continue;
         }
 
-        if path.extension().and_then(|ext| ext.to_str()) != Some("cx") {
+        let extension = path.extension().and_then(|ext| ext.to_str());
+        let is_compile_only_c = matches!(kind, TestKind::CompileOnly) && extension == Some("c");
+        if extension != Some("cx") && !is_compile_only_c {
             continue;
         }
 

@@ -14,7 +14,7 @@ use crate::{
     lexer::{
         comments::skip_directive_tail,
         scanner::{LexEvent, LexTransition, Lexer},
-        source::{ConditionalFrame, SourceFrame},
+        source::{ConditionalFrame, LanguageMode, SourceFrame},
     },
     preprocessor::{Preprocessor, builtins::builtin_macros},
 };
@@ -31,6 +31,7 @@ pub(crate) enum Macro {
 pub(crate) struct SourceInput {
     pub(crate) source: String,
     pub(crate) path: PathBuf,
+    pub(crate) language_mode: LanguageMode,
 }
 
 pub(crate) struct LexingContext {
@@ -129,8 +130,11 @@ impl LexingContext {
                     (0, 0),
                     input.path.clone().into(),
                 ));
-                self.sources
-                    .push(SourceFrame::new_include(input.source, &input.path));
+                self.sources.push(SourceFrame::new_include(
+                    input.source,
+                    &input.path,
+                    input.language_mode,
+                ));
             }
             LexTransition::PopSource => {
                 self.finish_current_source()?;
@@ -403,7 +407,12 @@ fn paste_tokens(left: Token, right: Token, expansion_site: &Token) -> Token {
         token_paste_text(&left.kind),
         token_paste_text(&right.kind)
     );
-    let mut token = Token::new_unknown(TokenKind::from_str(pasted_text));
+    let mode = LanguageMode::for_root_path(expansion_site.file_origin.as_ref());
+    let kind = TokenKind::from_str(pasted_text);
+    let mut token = Token::new_unknown(match mode {
+        LanguageMode::C => kind.into_c_mode(),
+        LanguageMode::Cx => kind,
+    });
     token.byte_start_index = expansion_site.byte_start_index;
     token.byte_end_index = expansion_site.byte_end_index;
     token.file_origin = expansion_site.file_origin.clone();
