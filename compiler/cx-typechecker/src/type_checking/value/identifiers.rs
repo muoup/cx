@@ -45,6 +45,8 @@ pub(crate) fn typecheck_identifier(
 
         let staged = if env.type_eq(&staged._type, &expected_type) {
             staged
+        } else if expected_type.is_memory_reference() {
+            implicit_cast(env, staged, &expected_type)?
         } else {
             let staged = std_rval_promotion(env, staged)?;
             implicit_cast(env, staged, &expected_type)?

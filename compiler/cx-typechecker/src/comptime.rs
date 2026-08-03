@@ -258,6 +258,10 @@ fn coerce_staged_argument(
         return Ok(arg);
     }
 
+    if target_type.is_memory_reference() {
+        return implicit_cast(env, arg, target_type);
+    }
+
     let arg = std_rval_promotion(env, arg)?;
     implicit_cast(env, arg, target_type)
 }
