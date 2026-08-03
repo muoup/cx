@@ -6,7 +6,7 @@ use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::*;
 use cx_log::CXResult;
 use cx_mir::layout::MIRTypeLayout;
-use cx_mir::mir::data::MIRFunctionPrototype;
+use cx_mir::mir::{data::MIRFunctionPrototype, expression::MIRLocalId};
 use cx_mir::registry::MIRDecomposedRegistry;
 use cx_mir::type_context::MIRTypeContext;
 use cx_mir::MIRUnit;
@@ -52,6 +52,7 @@ pub struct LMIRFunctionContext {
     register_counter: u32,
 
     blocks: Vec<LMIRBasicBlock>,
+    local_symbols: HashMap<MIRLocalId, LMIRValue>,
 }
 
 impl LMIRBuilder {
@@ -104,6 +105,7 @@ impl LMIRBuilder {
             register_counter: 0,
 
             blocks: Vec::new(),
+            local_symbols: HashMap::new(),
         });
         self.push_scope(None, None);
     }
@@ -166,6 +168,10 @@ impl LMIRBuilder {
 
     pub fn insert_symbol(&mut self, mir_value: CXIdent, bc_value: LMIRValue) {
         self.symbol_table.insert(mir_value.to_string(), bc_value);
+    }
+
+    pub fn insert_local(&mut self, local_id: MIRLocalId, value: LMIRValue) {
+        self.fun_mut().local_symbols.insert(local_id, value);
     }
 
     pub fn insert_fn_prototype(&mut self, prototype: LMIRFunctionPrototype) {
@@ -259,6 +265,10 @@ impl LMIRBuilder {
 
     pub fn get_symbol(&self, name: &CXIdent) -> Option<LMIRValue> {
         self.symbol_table.get(name.as_str()).cloned()
+    }
+
+    pub fn get_local(&self, local_id: MIRLocalId) -> Option<LMIRValue> {
+        self.fun().local_symbols.get(&local_id).cloned()
     }
 
     pub fn get_global_symbol(&self, name: &str) -> Option<LMIRValue> {

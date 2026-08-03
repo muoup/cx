@@ -325,6 +325,10 @@ fn complete_explicit_parameters(
         .map(|param| {
             Ok(MIRParameter {
                 name: param.name.clone(),
+                local_id: param
+                    .name
+                    .as_ref()
+                    .map(|_| cx_mir::mir::expression::MIRLocalId::fresh()),
                 _type: complete_type(env, namespace, &param._type)?,
             })
         })

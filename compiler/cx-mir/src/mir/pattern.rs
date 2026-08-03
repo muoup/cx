@@ -2,7 +2,10 @@ use std::fmt::{Display, Formatter, Result};
 
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 
-use crate::mir::data::{MIRFloatType, MIRType};
+use crate::mir::{
+    data::{MIRFloatType, MIRType},
+    expression::MIRLocalId,
+};
 
 #[derive(Clone, Debug)]
 pub enum MIRPattern {
@@ -12,6 +15,7 @@ pub enum MIRPattern {
         sum_type: MIRType,
         variant_index: usize,
         inner_name: Option<CXIdent>,
+        inner_local_id: Option<MIRLocalId>,
     },
 }
 

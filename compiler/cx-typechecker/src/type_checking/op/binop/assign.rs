@@ -55,7 +55,7 @@ pub fn typecheck_assignment(
         && binding.kind == BindingPlaceKind::Projection
         && env
             .function
-            .tracked_binding(binding.root.as_str())
+            .tracked_binding(binding.local_id)
             .is_some_and(|tracked| tracked.state != crate::environment::BindingMoveState::Available)
     {
         return env.log_error(expr.token_range(), "Assignment to a field or projection of a moved aggregate binding is not implemented".to_string());

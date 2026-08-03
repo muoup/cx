@@ -470,10 +470,15 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
 
         MIRExpressionKind::Unit => Ok(LMIRValue::NULL),
 
-        MIRExpressionKind::Variable { name, location } => {
+        MIRExpressionKind::Variable {
+            name,
+            local_id,
+            location,
+        } => {
             match location {
                 SymbolValueOrigin::Local => {
-                    if let Some(local_value) = builder.get_symbol(name) {
+                    let local_id = local_id.expect("local MIR variable is missing its local id");
+                    if let Some(local_value) = builder.get_local(local_id) {
                         return Ok(local_value);
                     }
                 }
@@ -574,7 +579,8 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
         }
 
         MIRExpressionKind::BindRegion {
-            name,
+            name: _,
+            local_id,
             _type,
             initial_region,
             adopting,
@@ -607,7 +613,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                 )?;
                 alloc
             };
-            builder.insert_symbol(name.clone(), region.clone());
+            builder.insert_local(*local_id, region.clone());
             Ok(region)
         }
 
@@ -849,13 +855,14 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             let MIRPattern::TaggedUnionVariant {
                 sum_type,
                 variant_index,
-                inner_name,
+                inner_local_id,
+                ..
             } = pattern
             else {
                 unreachable!("'is' patterns are only emitted for tagged union variants");
             };
 
-            if let Some(inner_name) = inner_name {
+            if let Some(inner_local_id) = inner_local_id {
                 let alias = builder.add_new_instruction(
                     LMIRInstructionKind::Alias {
                         value: bc_lhs.clone(),
@@ -864,7 +871,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                     true,
                 )?;
 
-                builder.insert_symbol(inner_name.clone(), alias);
+                builder.insert_local(*inner_local_id, alias);
             }
             let tag_ptr = get_tagged_union_tag(builder, bc_lhs, sum_type)?;
             let tag_value = builder.add_new_instruction(
@@ -969,14 +976,14 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
 
         MIRExpressionKind::Match {
             condition,
-            subject_name,
+            subject,
             arms,
             default,
             exhaustive,
         } => lower_match(
             builder,
             condition,
-            subject_name.as_ref(),
+            *subject,
             arms,
             default.as_deref(),
             *exhaustive,
@@ -1554,6 +1561,9 @@ pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResu
         let lowered_param_count = abi_param.abi.slot_count();
 
         if let Some(name) = &param.name {
+            let local_id = param
+                .local_id
+                .expect("named MIR parameter is missing its local id");
             let param_type = builder.convert_cx_parameter_type(&param._type);
             let raw_param_type = builder.convert_cx_type(&param._type);
             let param_layout = builder.type_layout(&param._type);
@@ -1601,12 +1611,12 @@ pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResu
                     }
                     lowered_param_index += slots.len();
                 }
-                builder.insert_symbol(name.clone(), alloc);
+                builder.insert_symbol(name.clone(), alloc.clone());
+                builder.insert_local(local_id, alloc);
             } else if raw_param_type.is_memory_resident() {
-                builder.insert_symbol(
-                    name.clone(),
-                    LMIRValue::ParameterRef(lowered_param_index as u32),
-                );
+                let value = LMIRValue::ParameterRef(lowered_param_index as u32);
+                builder.insert_symbol(name.clone(), value.clone());
+                builder.insert_local(local_id, value);
                 lowered_param_index += 1;
             } else {
                 let alloc = builder.add_new_instruction(
@@ -1626,7 +1636,8 @@ pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResu
                     LMIRType::unit(),
                     false,
                 )?;
-                builder.insert_symbol(name.clone(), alloc);
+                builder.insert_symbol(name.clone(), alloc.clone());
+                builder.insert_local(local_id, alloc);
                 lowered_param_index += 1;
             }
         } else {

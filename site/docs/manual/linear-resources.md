@@ -14,6 +14,33 @@ struct string : @nodrop {
 };
 ```
 
+## Deferred Expressions
+
+`defer expression;` registers a `void` expression to run when the current lexical scope exits:
+
+```c
+file handle = open_file(path);
+defer close_file(&handle);
+
+process_file(&handle);
+```
+
+Deferred expressions run in last-in, first-out order. They run on ordinary fallthrough and when control leaves their scope through `return`, `break`, or `continue`. A return value is evaluated and preserved before the deferred expressions execute.
+
+```c
+int example() {
+    defer log("outer");
+    {
+        defer log("inner");
+        return compute_result();
+    }
+}
+```
+
+Here, `compute_result()` is evaluated first, followed by `log("inner")` and `log("outer")`; the preserved result is then returned. A deferred expression is associated with the scope where the `defer` statement executes, so a defer inside a loop iteration runs when that iteration leaves its scope.
+
+`defer` does not create a runtime closure. Conceptually its operand is staged code retained by the enclosing scope and emitted along each path that exits that scope. Bindings referenced by the deferred expression must therefore remain valid until cleanup executes.
+
 ## Consuming Values
 
 A function taking an `@nodrop` value by value assumes responsibility for it. This makes consuming associated functions a natural convention for cleanup:

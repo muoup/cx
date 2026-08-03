@@ -3,7 +3,7 @@ use cx_ast::ast::template::CXTemplateInput;
 use cx_log::{CXRawResult, CXResult};
 use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::data::{MIRComptimeFunctionPrototype, MIRType, MIRTypeId};
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
+use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRLocalId};
 use cx_mir::symbol::MIRSymbol;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
@@ -18,6 +18,7 @@ use cx_tokens::TokenRange;
 #[derive(Debug, Clone)]
 pub struct TypecheckedBinding {
     pub root: CXIdent,
+    pub local_id: MIRLocalId,
     pub kind: BindingPlaceKind,
 }
 
@@ -28,22 +29,24 @@ pub enum BindingPlaceKind {
 }
 
 impl TypecheckedBinding {
-    pub fn local(root: CXIdent) -> Self {
+    pub fn local(root: CXIdent, local_id: MIRLocalId) -> Self {
         Self {
             root,
+            local_id,
             kind: BindingPlaceKind::Local,
         }
     }
 
-    pub fn projection(root: CXIdent) -> Self {
+    pub fn projection(root: CXIdent, local_id: MIRLocalId) -> Self {
         Self {
             root,
+            local_id,
             kind: BindingPlaceKind::Projection,
         }
     }
 
     pub fn project(&self) -> Self {
-        Self::projection(self.root.clone())
+        Self::projection(self.root.clone(), self.local_id)
     }
 }
 

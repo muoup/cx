@@ -70,8 +70,9 @@ pub(crate) fn typecheck_identifier(
     let binding = match result.ready_expression().map(|expr| &expr.kind) {
         Some(MIRExpressionKind::Variable {
             name,
+            local_id: Some(local_id),
             location: SymbolValueOrigin::Local,
-        }) => Some(TypecheckedBinding::local(name.clone())),
+        }) => Some(TypecheckedBinding::local(name.clone(), *local_id)),
         _ => None,
     };
 

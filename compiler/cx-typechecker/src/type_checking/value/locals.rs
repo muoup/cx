@@ -12,7 +12,7 @@ use cx_ast::ast::{expression::CXExpression, types::CXType};
 use cx_log::CXResult;
 use cx_mir::{
     EnvironmentNamespace,
-    mir::expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
+    mir::expression::{MIRExpression, MIRExpressionKind, MIRLocalId, SymbolValueOrigin},
 };
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
@@ -22,24 +22,24 @@ pub(crate) fn ensure_binding_available(
     range: &TokenRange,
     expr: Option<&TypecheckedBinding>,
 ) -> CXResult<()> {
-    let Some(name) = expr.map(|b| &b.root) else {
+    let Some(binding) = expr else {
         return Ok(());
     };
 
-    let Some(binding) = env.function.tracked_binding(name.as_str()) else {
+    let Some(state) = env.function.tracked_binding(binding.local_id) else {
         return Ok(());
     };
 
-    match binding.state {
+    match state.state {
         BindingMoveState::Available => Ok(()),
         BindingMoveState::Moved => {
-            env.log_error(range, format!("Identifier '{}' has been moved", name))
+            env.log_error(range, format!("Identifier '{}' has been moved", binding.root))
         }
         BindingMoveState::ConditionallyMoved => env.log_error(
             range,
             format!(
                 "Identifier '{}' was conditionally moved across a control-flow join",
-                name
+                binding.root
             ),
         ),
     }
@@ -53,11 +53,11 @@ pub(crate) fn mark_binding(
     if binding.kind == BindingPlaceKind::Local
         && env
             .function
-            .tracked_binding(binding.root.as_str())
+            .tracked_binding(binding.local_id)
             .is_some()
     {
         env.function
-            .set_tracked_binding_state(binding.root.as_str(), state);
+            .set_tracked_binding_state(binding.local_id, state);
     }
 }
 
@@ -74,6 +74,7 @@ pub(crate) fn typecheck_var_declaration(
     ensure_valid_allocation_type(env, expr.token_range().clone(), "a variable", &ty)?;
 
     let mem_type = env.symbols.mem_ref_to(ty.clone());
+    let local_id = MIRLocalId::fresh();
     let (initial_region, adopting) = match initial_value {
         Some(init_expr) => {
             let init_tc = typecheck_expr(env, namespace, init_expr, Some(&ty))?;
@@ -100,6 +101,7 @@ pub(crate) fn typecheck_var_declaration(
         token_range: TokenRange::internal(),
         kind: MIRExpressionKind::BindRegion {
             name: name.clone(),
+            local_id,
             _type: ty.clone(),
             initial_region,
             adopting,
@@ -113,13 +115,15 @@ pub(crate) fn typecheck_var_declaration(
             token_range: TokenRange::internal(),
             kind: MIRExpressionKind::Variable {
                 name: name.clone(),
+                local_id: Some(local_id),
                 location: SymbolValueOrigin::Local,
             },
             _type: mem_type,
         },
     );
 
-    env.function.track_binding(name.as_string(), ty.is_nodrop());
+    env.function
+        .track_binding(local_id, name.clone(), ty.is_nodrop());
 
     Ok(TypecheckResult::from(binding))
 }

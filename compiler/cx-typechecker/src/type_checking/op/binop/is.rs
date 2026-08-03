@@ -11,7 +11,9 @@ use cx_log::CXResult;
 use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::contextual_eq::TypeContextEqual;
 use cx_mir::mir::data::MIRType;
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin};
+use cx_mir::mir::expression::{
+    MIRExpression, MIRExpressionKind, MIRLocalId, SymbolValueOrigin,
+};
 use cx_mir::mir::pattern::MIRPattern;
 use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
@@ -66,7 +68,8 @@ pub(crate) fn typecheck_is(
             ),
         );
     };
-    if let Some(inner_name) = &inner_name {
+    let inner_local_id = inner_name.as_ref().map(|_| MIRLocalId::fresh());
+    if let (Some(inner_name), Some(inner_local_id)) = (&inner_name, inner_local_id) {
         let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
         env.symbols.insert_local_value(
             QualifiedName::new_raw(inner_name.clone()),
@@ -74,6 +77,7 @@ pub(crate) fn typecheck_is(
                 token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Variable {
                     name: inner_name.clone(),
+                    local_id: Some(inner_local_id),
                     location: SymbolValueOrigin::Local,
                 },
                 _type: variant_ref_type,
@@ -89,6 +93,7 @@ pub(crate) fn typecheck_is(
                 sum_type: union_type.clone(),
                 variant_index: expected_tag,
                 inner_name,
+                inner_local_id,
             },
         },
     ))

@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
@@ -5,6 +7,25 @@ use speedy::{Readable, Writable};
 use crate::mir::data::MIRFunctionPrototype;
 use crate::mir::pattern::MIRPattern;
 use crate::mir::r#type::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
+
+thread_local! {
+    static NEXT_LOCAL_ID: Cell<u64> = const { Cell::new(0) };
+}
+
+/// Stable identity for a local binding in typed MIR. Source names remain on MIR nodes for
+/// diagnostics and future debug-info generation, but semantic lookup uses this ID.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MIRLocalId(pub u64);
+
+impl MIRLocalId {
+    pub fn fresh() -> Self {
+        NEXT_LOCAL_ID.with(|next| {
+            let id = next.get();
+            next.set(id.checked_add(1).expect("MIR local id counter overflowed"));
+            Self(id)
+        })
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct MIRFunctionContract {
@@ -83,6 +104,8 @@ pub enum MIRExpressionKind {
     // Variables
     Variable {
         name: CXIdent,
+        /// Present for locals and absent for globals.
+        local_id: Option<MIRLocalId>,
         location: SymbolValueOrigin,
     },
 
@@ -114,6 +137,7 @@ pub enum MIRExpressionKind {
     },
     BindRegion {
         name: CXIdent,
+        local_id: MIRLocalId,
         _type: MIRType,
         initial_region: Box<MIRExpression>,
         adopting: bool,
@@ -215,7 +239,7 @@ pub enum MIRExpressionKind {
 
     Match {
         condition: Box<MIRExpression>,
-        subject_name: Option<CXIdent>,
+        subject: MIRLocalId,
         arms: Vec<(MIRPattern, Box<MIRExpression>)>,
         default: Option<Box<MIRExpression>>,
         exhaustive: bool,

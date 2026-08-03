@@ -8,13 +8,11 @@ use cx_log::CXResult;
 use cx_mir::{
     mir::{
         data::{MIRType, MIRTypeKind},
-        expression::{MIRExpression, MIRExpressionKind, MIRPostcondition},
+        expression::{MIRExpression, MIRExpressionKind, MIRLocalId, MIRPostcondition},
         pattern::MIRPattern,
     },
     type_context::MIRTypeContext,
 };
-use cx_util::identifier::CXIdent;
-
 use super::expressions::lower_expression;
 use crate::{
     builder::LMIRBuilder,
@@ -315,7 +313,7 @@ pub fn lower_cswitch(
 pub fn lower_match(
     builder: &mut LMIRBuilder,
     condition: &MIRExpression,
-    subject_name: Option<&CXIdent>,
+    subject: MIRLocalId,
     arms: &[(MIRPattern, Box<MIRExpression>)],
     default: Option<&MIRExpression>,
     exhaustive: bool,
@@ -358,9 +356,7 @@ pub fn lower_match(
     };
 
     builder.push_scope(None, Some(exit_block_id.clone()));
-    if let Some(subject_name) = subject_name {
-        builder.insert_symbol(subject_name.clone(), match_subject);
-    }
+    builder.insert_local(subject, match_subject);
     let mut exit_has_predecessor = default.is_none() && !exhaustive;
     let mut result_predecessors = Vec::new();
 

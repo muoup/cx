@@ -654,7 +654,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }
-            MIRExpressionKind::Variable { name, location: _ } => {
+            MIRExpressionKind::Variable { name, location: _, .. } => {
                 write!(f, "LocalVariable {} <'", name)?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
@@ -756,6 +756,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 _type,
                 initial_region,
                 adopting,
+                ..
             } => {
                 write!(f, "BindRegion {} adopting={}: ", name, adopting)?;
                 self.write_type(f, _type)?;
@@ -1063,18 +1064,17 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             MIRExpressionKind::Match {
                 condition,
-                subject_name,
+                subject,
                 arms,
                 default,
                 exhaustive,
+                ..
             } => {
                 write!(f, "Match exhaustive={exhaustive} <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
-                if let Some(subject_name) = subject_name {
-                    self.indent(f)?;
-                    writeln!(f, "Subject {subject_name}:")?;
-                }
+                self.indent(f)?;
+                writeln!(f, "Subject #{}:", subject.0)?;
                 MIRExpressionFormatter {
                     expr: condition,
                     depth: self.depth + 1,

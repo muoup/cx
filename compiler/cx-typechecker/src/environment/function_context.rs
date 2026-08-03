@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use cx_ast::ast::expression::CXExpression;
 use cx_log::CXRawResult;
 use cx_mir::mir::data::{MIRFunctionPrototype, MIRType};
+use cx_mir::mir::expression::MIRLocalId;
+use cx_util::identifier::CXIdent;
 
 use crate::environment::control_flow::{
     BindingMoveState, ControlFlow, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind,
@@ -272,19 +274,20 @@ impl FunctionContext {
             .unwrap_or(0)
     }
 
-    pub fn track_binding(&mut self, name: String, nodrop: bool) {
-        self.flow_mut().track_binding(name, nodrop);
+    pub fn track_binding(&mut self, local_id: MIRLocalId, name: CXIdent, nodrop: bool) {
+        self.flow_mut().track_binding(local_id, name, nodrop);
     }
 
-    pub fn tracked_binding(&self, name: &str) -> Option<&TrackedBindingState> {
-        self.flow().tracked_binding(name)
+    pub fn tracked_binding(&self, local_id: MIRLocalId) -> Option<&TrackedBindingState> {
+        self.flow().tracked_binding(local_id)
     }
 
-    pub fn set_tracked_binding_state(&mut self, name: &str, state: BindingMoveState) {
-        self.flow_mut().set_tracked_binding_state(name, state);
+    pub fn set_tracked_binding_state(&mut self, local_id: MIRLocalId, state: BindingMoveState) {
+        self.flow_mut()
+            .set_tracked_binding_state(local_id, state);
     }
 
-    pub fn tracked_bindings_snapshot(&self) -> HashMap<String, TrackedBindingState> {
+    pub fn tracked_bindings_snapshot(&self) -> HashMap<MIRLocalId, TrackedBindingState> {
         self.flow().tracked_bindings_snapshot()
     }
 

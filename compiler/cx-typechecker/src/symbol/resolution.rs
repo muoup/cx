@@ -89,6 +89,7 @@ pub fn resolve_symbol(
                 token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Variable {
                     name: symbol_name,
+                    local_id: None,
                     location: SymbolValueOrigin::Global,
                 },
                 _type: env.symbols.mem_ref_to(ty),
@@ -315,6 +316,7 @@ fn resolve_type_constructor(
             } else {
                 vec![MIRParameter {
                     name: Some(CXIdent::new("value")),
+                    local_id: Some(cx_mir::mir::expression::MIRLocalId::fresh()),
                     _type: variant_type.clone(),
                 }]
             },

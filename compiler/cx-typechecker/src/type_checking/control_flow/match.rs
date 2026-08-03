@@ -20,7 +20,7 @@ use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::{
     contextual_eq::TypeContextEqual,
     data::{MIRType, MIRTypeKind},
-    expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
+    expression::{MIRExpression, MIRExpressionKind, MIRLocalId, SymbolValueOrigin},
     pattern::MIRPattern,
 };
 use cx_mir::type_context::MIRTypeContext;
@@ -55,7 +55,7 @@ pub fn typecheck_match(
         .push_yield_context(join_scope_idx, expected_type.cloned());
 
     let mut match_condition = expr_value.source.clone();
-    let mut match_subject_name = None;
+    let subject = MIRLocalId::fresh();
     let mut match_is_exhaustive = false;
 
     let match_arms = match &expr_type.kind {
@@ -98,13 +98,13 @@ pub fn typecheck_match(
         MIRTypeKind::TaggedUnion { variants, .. } => {
             let expected_union_name = expr_type.member_lookup_identifier().unwrap();
             let subject_name = CXIdent::from("__internal_match_subject");
-            match_subject_name = Some(subject_name.clone());
 
             let subject_expr = MIRExpression {
                 _type: expr_value.source._type.clone(),
                 token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Variable {
                     name: subject_name,
+                    local_id: Some(subject),
                     location: SymbolValueOrigin::Local,
                 },
             };
@@ -175,6 +175,7 @@ pub fn typecheck_match(
 
                 let body_expr = if let Some(inner_name) = &inner_name {
                     let (body_expr, flow) = if condition_owned {
+                        let inner_local_id = MIRLocalId::fresh();
                         let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
                         let variant_region = MIRExpression {
                             token_range: TokenRange::internal(),
@@ -189,6 +190,7 @@ pub fn typecheck_match(
                             _type: variant_ref_type.clone(),
                             kind: MIRExpressionKind::BindRegion {
                                 name: inner_name.clone(),
+                                local_id: inner_local_id,
                                 _type: variant_type.clone(),
                                 initial_region: Box::new(variant_region),
                                 adopting: true,
@@ -203,6 +205,7 @@ pub fn typecheck_match(
                                 token_range: TokenRange::internal(),
                                 kind: MIRExpressionKind::Variable {
                                     name: inner_name.clone(),
+                                    local_id: Some(inner_local_id),
                                     location: SymbolValueOrigin::Local,
                                 },
                                 _type: variant_ref_type,
@@ -210,7 +213,11 @@ pub fn typecheck_match(
                         );
 
                         env.function
-                            .track_binding(inner_name.as_string(), variant_type.is_nodrop());
+                            .track_binding(
+                                inner_local_id,
+                                inner_name.clone(),
+                                variant_type.is_nodrop(),
+                            );
 
                         let (body_expr, flow) =
                             typecheck_match_arm_body(env, namespace, body, "arm")?;
@@ -279,6 +286,7 @@ pub fn typecheck_match(
                         sum_type: expr_type.clone(),
                         variant_index: variant_id,
                         inner_name,
+                        inner_local_id: None,
                     },
                     Box::new(body_expr),
                 ));
@@ -364,7 +372,7 @@ pub fn typecheck_match(
         result_type,
         MIRExpressionKind::Match {
             condition: Box::new(match_condition),
-            subject_name: match_subject_name,
+            subject,
             arms: match_arms,
             default: default_body,
             exhaustive: match_is_exhaustive || default.is_some(),

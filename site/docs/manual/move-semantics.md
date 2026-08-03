@@ -21,6 +21,7 @@ Structs and tagged unions may be marked with the following type restrictions:
 - `@nocopy` forbids implicit copying of the underlying type.
 - `@nodrop` marks a type as linear and prevents its values from dropping out of scope.
 - `@copy_traits(T)` copies the above restrictions from type `T` and applies them to the declared type.
+- `@unsafe_move` requires explicit moves of the type to occur in an unsafe context when the enclosing function is `safe`.
 
 Restrictions follow a type declaration after a colon:
 
@@ -31,6 +32,17 @@ struct Data : @nocopy {
 ```
 
 Restriction application is monotonic: `@nodrop` also applies `@nocopy`, and duplicate applications are silently ignored. The [Linear Resources](./linear-resources.md) chapter covers `@nodrop` and explicit resource cleanup in detail.
+
+`@unsafe_move` is independent of copy and drop restrictions. It is intended for values that may become pinned or otherwise require a runtime condition before relocation:
+
+```c
+struct guarded_cell<T> : @copy_traits(T), @unsafe_move {
+    T value;
+    int borrow_count;
+};
+```
+
+An aggregate containing an `@unsafe_move` field must also be marked `@unsafe_move`. In a `safe` function, moving such a value requires an explicit `@unsafe` block. Functions not marked `safe` are already unsafe contexts, so the attribute adds no further syntax there.
 
 ## Move Expressions
 

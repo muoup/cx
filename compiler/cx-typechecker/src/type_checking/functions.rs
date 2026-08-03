@@ -29,10 +29,16 @@ pub fn typecheck_function(
     env.function
         .configure_merge_scope(body, Some("fallthrough"), true);
 
-    for MIRParameter { name, _type } in prototype.signature().params.iter() {
+    for MIRParameter {
+        name,
+        local_id,
+        _type,
+    } in prototype.signature().params.iter()
+    {
         let Some(name) = name else {
             continue;
         };
+        let local_id = local_id.expect("named MIR parameter is missing a local id");
         ensure_valid_allocation_type(env, body.token_range().clone(), "a parameter", _type)?;
         let ref_type = env.symbols.mem_ref_to(_type.clone());
 
@@ -42,13 +48,14 @@ pub fn typecheck_function(
                 token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Variable {
                     name: name.clone(),
+                    local_id: Some(local_id),
                     location: SymbolValueOrigin::Local,
                 },
                 _type: ref_type,
             },
         );
         env.function
-            .track_binding(name.as_string(), _type.is_nodrop());
+            .track_binding(local_id, name.clone(), _type.is_nodrop());
     }
 
     let body_expr = typecheck_expr(env, namespace, body, None)

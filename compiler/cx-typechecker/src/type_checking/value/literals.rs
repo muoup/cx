@@ -128,6 +128,7 @@ pub(crate) fn typecheck_string_literal(env: &mut TypeEnvironment, val: &str) -> 
         token_range: TokenRange::internal(),
         kind: MIRExpressionKind::Variable {
             name: name_ident,
+            local_id: None,
             location: SymbolValueOrigin::Global,
         },
         _type: str_ref_type,

@@ -55,6 +55,7 @@ fn realize_tagged_union_constructor(
     env.items.mark_request_fulfilled(name.clone());
 
     let param_name = CXIdent::new("value");
+    let param_local_id = cx_mir::mir::expression::MIRLocalId::fresh();
     let prototype = MIRFunctionPrototype::new(
         name,
         CXLinkageMode::Static,
@@ -65,6 +66,7 @@ fn realize_tagged_union_constructor(
             } else {
                 vec![MIRParameter {
                     name: Some(param_name.clone()),
+                    local_id: Some(param_local_id),
                     _type: variant_type.clone(),
                 }]
             },
@@ -85,6 +87,7 @@ fn realize_tagged_union_constructor(
             _type: env.symbols.mem_ref_to(variant_type.clone()),
             kind: MIRExpressionKind::Variable {
                 name: param_name,
+                local_id: Some(param_local_id),
                 location: SymbolValueOrigin::Local,
             },
         };

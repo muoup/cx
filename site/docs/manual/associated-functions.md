@@ -47,3 +47,21 @@ value
 ```
 
 Pipe calls are ordinary function calls, so ownership and type coercion apply to the inserted argument in the same way as an explicitly written first argument. In particular, `move value |> consume()` passes `move value` as the consuming first argument.
+
+## Backward Pipe Calls
+
+The backward pipe operator `<|` appends its right-hand expression to the argument list of the function call on its left. These calls are equivalent:
+
+```c
+combine(first, second, third);
+combine(first, second) <| third;
+```
+
+The operator has one concrete purpose: supplying the final argument after the callee and its earlier arguments have been written. Forward and backward pipes can be combined:
+
+```c
+value |> combine(second) <| third;
+// combine(value, second, third)
+```
+
+This is particularly useful when the final argument is a parameterized [staged expression](./comptime.md#parameterized-staged-expressions), because the operation being applied remains at the beginning of the expression.

@@ -2,7 +2,7 @@ use cx_ast::ast::{function::CXFunctionContract, modifiers::CXLinkageMode};
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::mir::contextual_eq::{TypeComparisonState, TypeContextEqual, compare_ordered};
-use crate::mir::expression::MIRExpression;
+use crate::mir::expression::{MIRExpression, MIRLocalId};
 pub use crate::mir::r#type::{
     MIRFloatType, MIRIntegerType, MIRType, MIRTypeAttributes, MIRTypeId, MIRTypeKind,
 };
@@ -17,6 +17,7 @@ pub struct MIRFunction {
 #[derive(Debug, Clone)]
 pub struct MIRParameter {
     pub name: Option<CXIdent>,
+    pub local_id: Option<MIRLocalId>,
     pub _type: MIRType,
 }
 

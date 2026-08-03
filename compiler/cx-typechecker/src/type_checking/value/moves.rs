@@ -17,7 +17,7 @@ use cx_mir::{
     EnvironmentNamespace,
     mir::{
         data::{MIRType, MIRTypeKind},
-        expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
+        expression::{MIRExpression, MIRExpressionKind, MIRLocalId, SymbolValueOrigin},
     },
     type_context::MIRTypeContext,
 };
@@ -286,6 +286,7 @@ pub(crate) fn typecheck_unpack(
         };
 
         let binding_name = CXIdent::new(unpack_binding.binding.as_str());
+        let local_id = MIRLocalId::fresh();
         let binding_ref_type = env.symbols.mem_ref_to(field_type.clone());
         env.symbols.insert_local_value(
             QualifiedName::new_raw(binding_name.clone()),
@@ -293,19 +294,21 @@ pub(crate) fn typecheck_unpack(
                 token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Variable {
                     name: binding_name.clone(),
+                    local_id: Some(local_id),
                     location: SymbolValueOrigin::Local,
                 },
                 _type: binding_ref_type,
             },
         );
         env.function
-            .track_binding(binding_name.as_string(), field_type.is_nodrop());
+            .track_binding(local_id, binding_name.clone(), field_type.is_nodrop());
 
         statements.push(MIRExpression {
             token_range: TokenRange::internal(),
             _type: env.symbols.mem_ref_to(field_type.clone()),
             kind: MIRExpressionKind::BindRegion {
                 name: binding_name,
+                local_id,
                 _type: field_type.clone(),
                 initial_region: Box::new(MIRExpression {
                     token_range: TokenRange::internal(),
