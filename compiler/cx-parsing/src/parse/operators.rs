@@ -26,7 +26,7 @@ impl PrecOperator {
 pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
     match op {
         CXBinOp::Access | CXBinOp::MethodCall | CXBinOp::ArrayIndex => 1,
-        CXBinOp::Pipe => 2,
+        CXBinOp::Pipe | CXBinOp::BackwardPipe => 2,
 
         CXBinOp::Multiply | CXBinOp::Divide | CXBinOp::Modulus => 4,
         CXBinOp::Add | CXBinOp::Subtract => 5,
@@ -170,6 +170,7 @@ fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<CXBinOp> {
         OperatorType::DoubleAmpersand => CXBinOp::LAnd,
 
         OperatorType::Pipe => CXBinOp::Pipe,
+        OperatorType::BackwardPipe => CXBinOp::BackwardPipe,
 
         _ => return parse_point_error(&data.tokens, format!("Invalid binary operator: {:?}", op)),
     })

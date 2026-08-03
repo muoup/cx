@@ -28,9 +28,16 @@ pub enum MIRSymbol {
         template_bindings: Vec<(CXIdent, MIRTypeId)>,
     },
     StagedExpression {
+        id: u64,
         namespace: EnvironmentNamespace,
         expr: Box<CXExpression>,
         expected_type: MIRType,
+    },
+    StagedExpressionFunction {
+        namespace: EnvironmentNamespace,
+        params: Vec<(CXIdent, MIRType)>,
+        body: Box<CXExpression>,
+        return_type: MIRType,
     },
     Expression(MIRExpression),
     Template {
@@ -93,10 +100,12 @@ impl MIRSymbol {
                 "Comptime function cannot be used in runtime contexts",
             ),
 
-            MIRSymbol::StagedExpression { .. } => CXStdErrMessage::result(
-                "TYPE ERROR",
-                "Staged expression cannot be used in runtime contexts",
-            ),
+            MIRSymbol::StagedExpression { .. } | MIRSymbol::StagedExpressionFunction { .. } => {
+                CXStdErrMessage::result(
+                    "TYPE ERROR",
+                    "Staged expression cannot be used in runtime contexts",
+                )
+            }
 
             MIRSymbol::Template { .. } => {
                 CXStdErrMessage::result("TYPE ERROR", "Could not deduce arguments to template")

@@ -52,6 +52,7 @@ pub struct CXComptimeParameter {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct CXComptimeValueType {
     pub expr: bool,
+    pub params: Vec<CXType>,
     pub _type: CXType,
 }
 

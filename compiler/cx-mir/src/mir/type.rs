@@ -29,6 +29,7 @@ pub struct MIRType {
 pub struct MIRTypeAttributes {
     pub semantics: MIRMoveSemantics,
     pub minimum_alignment: Option<usize>,
+    pub unsafe_move: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]
@@ -417,6 +418,12 @@ impl MIRType {
     pub fn is_nocopy(&self) -> bool {
         self.struct_attributes()
             .map(|a| a.semantics.is_nocopy())
+            .unwrap_or(false)
+    }
+
+    pub fn is_unsafe_move(&self) -> bool {
+        self.struct_attributes()
+            .map(|a| a.unsafe_move)
             .unwrap_or(false)
     }
 

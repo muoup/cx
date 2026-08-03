@@ -373,6 +373,36 @@ pub(crate) fn parse_expr_val(
             parse_block(data)?.kind
         }
 
+        TokenKind::Operator(OperatorType::Bar) => {
+            let mut params = Vec::new();
+            loop {
+                let Some(param) = try_parse_simple_identifier(&mut data.tokens) else {
+                    return parse_point_error(
+                        &data.tokens,
+                        "Expected staged expression parameter name".to_string(),
+                    );
+                };
+                params.push(param);
+
+                if try_next!(data.tokens, operator!(Bar)) {
+                    break;
+                }
+                assert_token_matches!(data.tokens, operator!(Comma), "',' or '|'");
+            }
+
+            let body = if try_next!(data.tokens, punctuator!(OpenBrace)) {
+                data.tokens.back();
+                parse_block(data)?
+            } else {
+                parse_expr(data)?
+            };
+
+            CXExprKind::StagedExpression {
+                params,
+                body: Box::new(body),
+            }
+        }
+
         TokenKind::Intrinsic(_) => CXExprKind::Identifier {
             name: QualifiedName::new_raw(parse_intrinsic(&mut data.back().tokens)?),
             template_input: None,
@@ -618,6 +648,7 @@ pub(crate) fn parse_keyword_expr(
                 expr: Box::new(expr),
             })
         }
+        KeywordType::Then => Ok(CXExprKind::Then),
 
         _ => {
             data.tokens.back();

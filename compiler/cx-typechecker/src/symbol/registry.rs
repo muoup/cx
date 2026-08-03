@@ -159,6 +159,31 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.local_symbols.get(name)
     }
 
+    pub fn get_local_symbol_at_shadow_depth(
+        &self,
+        name: &QualifiedName,
+        depth: usize,
+    ) -> Option<&MIRSymbol> {
+        self.local_symbols.get_at_shadow_depth(name, depth)
+    }
+
+    pub fn get_local_symbol_avoiding_staged_expansions(
+        &self,
+        name: &QualifiedName,
+        active_expansions: &[u64],
+    ) -> Option<&MIRSymbol> {
+        let mut depth = 0;
+        loop {
+            let symbol = self.get_local_symbol_at_shadow_depth(name, depth)?;
+            match symbol {
+                MIRSymbol::StagedExpression { id, .. } if active_expansions.contains(id) => {
+                    depth += 1;
+                }
+                symbol => return Some(symbol),
+            }
+        }
+    }
+
     pub fn insert_symbol(&mut self, name: QualifiedName, symbol: MIRSymbol) {
         self.global_cache.insert(name, symbol);
     }
@@ -177,6 +202,7 @@ impl<'a> MIRSymbolRegistry<'a> {
 
     pub fn insert_local_staged_expression(
         &mut self,
+        id: u64,
         name: QualifiedName,
         namespace: EnvironmentNamespace,
         expr: CXExpression,
@@ -185,9 +211,29 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.local_symbols.insert(
             name,
             MIRSymbol::StagedExpression {
+                id,
                 namespace,
                 expr: Box::new(expr),
                 expected_type,
+            },
+        );
+    }
+
+    pub fn insert_local_staged_expression_function(
+        &mut self,
+        name: QualifiedName,
+        namespace: EnvironmentNamespace,
+        params: Vec<(CXIdent, MIRType)>,
+        body: CXExpression,
+        return_type: MIRType,
+    ) {
+        self.local_symbols.insert(
+            name,
+            MIRSymbol::StagedExpressionFunction {
+                namespace,
+                params,
+                body: Box::new(body),
+                return_type,
             },
         );
     }

@@ -1,6 +1,6 @@
 use cx_ast::ast::expression::{CXExprKind, CXExpression};
 use cx_log::CXResult;
-use cx_mir::mir::expression::MIRExpression;
+use cx_mir::mir::{data::MIRComptimeValueType, expression::MIRExpression};
 use cx_util::namespace::QualifiedName;
 
 use crate::{
@@ -12,7 +12,7 @@ use crate::{
     environment::TypeEnvironment,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
-        result::{ComptimeFunctionValue, TypecheckResult},
+        result::{ComptimeFunctionValue, StagedFunctionValue, TypecheckResult},
         typechecker::typecheck_expr,
     },
 };
@@ -75,6 +75,13 @@ pub(crate) fn evaluate_comptime_call(
 
             match arg {
                 ComptimeCallArg::Mir(arg) => {
+                    if !param.value_type.params.is_empty() {
+                        return env.log_error(
+                            call_range,
+                            "Parameterized staged expressions require |parameters| syntax"
+                                .to_string(),
+                        );
+                    }
                     let staged = coerce_staged_argument(
                         env,
                         call_range,
@@ -90,14 +97,38 @@ pub(crate) fn evaluate_comptime_call(
                         namespace,
                         call_range,
                         expr,
-                        &param.value_type._type,
+                        &param.value_type,
                     )?;
-                    env.symbols.insert_local_staged_expression(
-                        QualifiedName::new_raw(name),
-                        namespace.clone(),
-                        expr.clone(),
-                        param.value_type._type.clone(),
-                    );
+                    if param.value_type.params.is_empty() {
+                        let staged_id = env.next_staged_expression_id();
+                        env.symbols.insert_local_staged_expression(
+                            staged_id,
+                            QualifiedName::new_raw(name),
+                            namespace.clone(),
+                            expr.clone(),
+                            param.value_type._type.clone(),
+                        );
+                    } else {
+                        let CXExprKind::StagedExpression {
+                            params: source_params,
+                            body,
+                        } = &expr.kind
+                        else {
+                            unreachable!("staged expression shape was checked above")
+                        };
+                        let params = source_params
+                            .iter()
+                            .cloned()
+                            .zip(param.value_type.params.iter().cloned())
+                            .collect();
+                        env.symbols.insert_local_staged_expression_function(
+                            QualifiedName::new_raw(name),
+                            namespace.clone(),
+                            params,
+                            body.as_ref().clone(),
+                            param.value_type._type.clone(),
+                        );
+                    }
                 }
             }
         }
@@ -137,20 +168,81 @@ fn check_staged_source_argument(
     namespace: &cx_mir::EnvironmentNamespace,
     call_range: &cx_tokens::TokenRange,
     expr: &CXExpression,
-    target_type: &cx_mir::mir::data::MIRType,
+    target: &MIRComptimeValueType,
 ) -> CXResult<()> {
+    if !target.params.is_empty() {
+        let CXExprKind::StagedExpression { params, .. } = &expr.kind else {
+            return env.log_error(
+                call_range,
+                "Expected a parameterized staged expression written as |parameters| expression"
+                    .to_string(),
+            );
+        };
+        if params.len() != target.params.len() {
+            return env.log_error(
+                call_range,
+                format!(
+                    "Staged expression expects {} parameters, found {}",
+                    target.params.len(),
+                    params.len()
+                ),
+            );
+        }
+        return Ok(());
+    }
+
     let scope = env.function.current_scope_index();
     let reachable = env.function.is_current_scope_reachable();
     let snapshot = env.function.current_snapshot();
 
     let result = (|| {
-        let arg = typecheck_expr(env, namespace, expr, Some(target_type))?;
-        coerce_staged_argument(env, call_range, arg, target_type).map(|_| ())
+        let arg = typecheck_expr(env, namespace, expr, Some(&target._type))?;
+        coerce_staged_argument(env, call_range, arg, &target._type).map(|_| ())
     })();
 
     env.function.restore_snapshot(&snapshot);
     env.function.set_scope_reachable(scope, reachable);
 
+    result
+}
+
+pub(crate) fn evaluate_staged_expression_call(
+    env: &mut TypeEnvironment,
+    call_range: &cx_tokens::TokenRange,
+    function: StagedFunctionValue,
+    argument_namespace: &cx_mir::EnvironmentNamespace,
+    args: Vec<&CXExpression>,
+) -> CXResult<TypecheckResult> {
+    if args.len() != function.params.len() {
+        return env.log_error(
+            call_range,
+            format!(
+                "Staged expression expects {} arguments, found {}",
+                function.params.len(),
+                args.len()
+            ),
+        );
+    }
+
+    env.symbols.push_local_scope();
+    let result = (|| {
+        for ((name, target_type), arg) in function.params.iter().zip(args) {
+            let arg = typecheck_expr(env, argument_namespace, arg, Some(target_type))?;
+            let arg = coerce_staged_argument(env, call_range, arg, target_type)?;
+            env.symbols
+                .insert_local_value(QualifiedName::new_raw(name.clone()), arg);
+        }
+
+        let body = typecheck_expr(
+            env,
+            &function.namespace,
+            &function.body,
+            Some(&function.return_type),
+        )?;
+        let body = coerce_staged_argument(env, call_range, body, &function.return_type)?;
+        Ok(TypecheckResult::from(body))
+    })();
+    env.symbols.pop_local_scope();
     result
 }
 

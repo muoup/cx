@@ -1,0 +1,7 @@
+import std::io;
+
+public:
+
+void panic(const _str& message) {
+    std::io::printf("PANIC: %s\n", message);
+}

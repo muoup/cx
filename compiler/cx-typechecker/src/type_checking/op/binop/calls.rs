@@ -1,4 +1,4 @@
-use crate::comptime::{ComptimeCallArg, evaluate_comptime_call};
+use crate::comptime::{ComptimeCallArg, evaluate_comptime_call, evaluate_staged_expression_call};
 use crate::environment::TypeEnvironment;
 use crate::symbol::deduction::complete_templated_callee_maybe;
 use crate::type_checking::coercion::implicit::implicit_cast;
@@ -56,6 +56,19 @@ pub(crate) fn typecheck_callee_method_call(
         &tc_args,
         expected_type,
     )?;
+
+    let callee = match callee {
+        CompletedCallee::Staged(function) => {
+            return evaluate_staged_expression_call(
+                env,
+                expr.token_range(),
+                function,
+                namespace,
+                raw_args,
+            );
+        }
+        callee => callee,
+    };
 
     let CompletedCallee::Runtime(callee) = callee else {
         let CompletedCallee::Comptime(function) = callee else {
@@ -308,6 +321,9 @@ fn complete_callee(
                 TypecheckExtract::Succ(ComptimeTypecheckValue::Function(function)) => {
                     return Ok(CompletedCallee::Comptime(function));
                 }
+                TypecheckExtract::Succ(ComptimeTypecheckValue::StagedFunction(function)) => {
+                    return Ok(CompletedCallee::Staged(function));
+                }
                 TypecheckExtract::Succ(_) => {
                     return env.log_error(
                         expr.token_range(),
@@ -342,6 +358,9 @@ fn complete_callee(
                     TypecheckExtract::Succ(ComptimeTypecheckValue::Function(function)) => {
                         Ok(CompletedCallee::Comptime(function))
                     }
+                    TypecheckExtract::Succ(ComptimeTypecheckValue::StagedFunction(function)) => {
+                        Ok(CompletedCallee::Staged(function))
+                    }
                     TypecheckExtract::Succ(_) => env.log_error(
                         expr.token_range(),
                         "Comptime value is not callable".to_string(),
@@ -362,6 +381,7 @@ fn complete_callee(
 enum CompletedCallee {
     Runtime(MIRExpression),
     Comptime(crate::type_checking::result::ComptimeFunctionValue),
+    Staged(crate::type_checking::result::StagedFunctionValue),
 }
 
 pub(crate) fn comma_separated_exprs(expr: &CXExpression) -> Vec<&CXExpression> {

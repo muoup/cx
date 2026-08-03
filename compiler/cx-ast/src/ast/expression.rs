@@ -127,6 +127,11 @@ pub enum CXExprKind {
     Defer {
         expr: Box<CXExpression>,
     },
+    StagedExpression {
+        params: Vec<CXIdent>,
+        body: Box<CXExpression>,
+    },
+    Then,
 
     Break,
     Continue,
@@ -207,6 +212,7 @@ pub enum CXBinOp {
     MethodCall,
     ArrayIndex,
     Pipe,
+    BackwardPipe,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

@@ -177,11 +177,35 @@ struct ComptimeValueInitializer {
 
 fn parse_comptime_initializer(data: &mut ParserData) -> CXResult<ComptimeValueInitializer> {
     let expr = try_next!(data.tokens, keyword!(Expr));
+    let mut params = Vec::new();
+
+    if expr && try_next!(data.tokens, punctuator!(OpenParen)) {
+        while !try_next!(data.tokens, punctuator!(CloseParen)) {
+            let (name, _type, _) = parse_initializer(data)?;
+            if name.is_some() {
+                return parse_point_error(
+                    &data.tokens,
+                    "Staged expression parameter types cannot have names".to_string(),
+                );
+            }
+            params.push(_type);
+
+            if !try_next!(data.tokens, operator!(Comma)) {
+                assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+                break;
+            }
+        }
+    }
+
     let (name, _type, _) = parse_initializer(data)?;
 
     Ok(ComptimeValueInitializer {
         name,
-        value_type: CXComptimeValueType { expr, _type },
+        value_type: CXComptimeValueType {
+            expr,
+            params,
+            _type,
+        },
     })
 }
 

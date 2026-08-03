@@ -24,11 +24,18 @@ pub(crate) fn parse_stmt(data: &mut ParserData) -> CXResult<CXExpression> {
     try_parse_stmt(data)?.map(Result::Ok).unwrap_or_else(|| {
         data.tokens.index = start_index;
         let expr = parse_expr(data);
-        assert_token_matches!(
-            data.tokens,
-            punctuator!(Semicolon),
-            "';' after expression statement"
-        );
+        if expr
+            .as_ref()
+            .map(crate::parse::count_capturing_then_markers)
+            .unwrap_or(0)
+            == 0
+        {
+            assert_token_matches!(
+                data.tokens,
+                punctuator!(Semicolon),
+                "';' after expression statement"
+            );
+        }
         expr
     })
 }

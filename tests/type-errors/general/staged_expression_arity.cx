@@ -1,0 +1,12 @@
+comptime expr void invoke(expr(int&, int&) void proc) {
+    return emit .{};
+}
+
+void consume(int& value) {
+    value += 1;
+}
+
+int main() {
+    invoke(|value| consume(value));
+    return 0;
+}

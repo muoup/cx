@@ -266,6 +266,12 @@ pub fn complete_comptime_prototype(
 ) -> CXResult<MIRComptimeFunctionPrototype> {
     let return_type = MIRComptimeValueType {
         expr: prototype.return_type.expr,
+        params: prototype
+            .return_type
+            .params
+            .iter()
+            .map(|param| complete_type(env, namespace, param))
+            .collect::<CXResult<Vec<_>>>()?,
         _type: complete_type(env, namespace, &prototype.return_type._type)?,
     };
     let params = prototype
@@ -276,6 +282,12 @@ pub fn complete_comptime_prototype(
                 name: param.name.clone(),
                 value_type: MIRComptimeValueType {
                     expr: param.value_type.expr,
+                    params: param
+                        .value_type
+                        .params
+                        .iter()
+                        .map(|param| complete_type(env, namespace, param))
+                        .collect::<CXResult<Vec<_>>>()?,
                     _type: complete_type(env, namespace, &param.value_type._type)?,
                 },
             })
@@ -483,7 +495,10 @@ where
         .map_err(|err| env.complete_err(err, ty.range()))?;
     let move_attributes = resolve_aggregate_move_attributes(env, namespace, attributes)
         .map_err(|err| env.complete_maybe_err(err, ty.range()))?;
-    ensure_aggregate_move_restrictions(env, move_attributes, &fields)
+    let unsafe_move = attributes
+        .map(|attributes| attributes.unsafe_move)
+        .unwrap_or(false);
+    ensure_aggregate_move_restrictions(env, move_attributes, unsafe_move, &fields)
         .map_err(|err| env.complete_err(err, ty.range()))?;
 
     let (strong_identifier, lookup_identifier) = name
@@ -506,6 +521,7 @@ where
         specifiers: ty.specifiers,
         attributes: MIRTypeAttributes {
             semantics: move_attributes,
+            unsafe_move,
             ..Default::default()
         },
         strong_identifier,
@@ -546,6 +562,7 @@ fn ensure_aggregate_fields_complete(env: &TypeEnvironment, fields: &[MIRField]) 
 fn ensure_aggregate_move_restrictions(
     env: &TypeEnvironment,
     aggregate_attributes: MIRMoveSemantics,
+    aggregate_unsafe_move: bool,
     fields: &[MIRField],
 ) -> CXRawResult<()> {
     for field in fields {
@@ -563,6 +580,13 @@ fn ensure_aggregate_move_restrictions(
         if field_attributes.is_nocopy() && !aggregate_attributes.is_nocopy() {
             return env.log_error_base(format!(
                 "Aggregate containing nocopy field '{}' must also be marked as @nodrop",
+                name
+            ));
+        }
+
+        if owned_unsafe_move(env, field_type) && !aggregate_unsafe_move {
+            return env.log_error_base(format!(
+                "Aggregate containing unsafe_move field '{}' must also be marked as @unsafe_move",
                 name
             ));
         }
@@ -702,6 +726,18 @@ fn owned_move_attributes(env: &TypeEnvironment, ty: &MIRType) -> MIRMoveSemantic
             owned_move_attributes(env, env.symbols.resolve_type_id(*inner_type))
         }
         _ => MIRMoveSemantics::default(),
+    }
+}
+
+fn owned_unsafe_move(env: &TypeEnvironment, ty: &MIRType) -> bool {
+    match &ty.kind {
+        MIRTypeKind::Structured { .. }
+        | MIRTypeKind::Union { .. }
+        | MIRTypeKind::TaggedUnion { .. } => ty.attributes.unsafe_move,
+        MIRTypeKind::Array { inner_type, .. } => {
+            owned_unsafe_move(env, env.symbols.resolve_type_id(*inner_type))
+        }
+        _ => false,
     }
 }
 

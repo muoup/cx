@@ -43,8 +43,11 @@ pub struct TypeEnvironment<'a> {
     pub symbols: MIRSymbolRegistry<'a>,
     pub items: ItemRegistry,
     pub function: FunctionContext,
-    comptime_depth: usize,
+    comptime_emit_bases: Vec<usize>,
+    runtime_emit_depth: usize,
     defer_depth: usize,
+    staged_expansions: Vec<u64>,
+    next_staged_expression_id: u64,
 }
 
 impl TypeEnvironment<'_> {
@@ -57,8 +60,11 @@ impl TypeEnvironment<'_> {
             module_data,
             items: ItemRegistry::new(),
             function: FunctionContext::default(),
-            comptime_depth: 0,
+            comptime_emit_bases: Vec::new(),
+            runtime_emit_depth: 0,
             defer_depth: 0,
+            staged_expansions: Vec::new(),
+            next_staged_expression_id: 0,
         }
     }
 
@@ -147,18 +153,49 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn enter_comptime_context(&mut self) {
-        self.comptime_depth += 1;
+        self.comptime_emit_bases.push(self.runtime_emit_depth);
     }
 
     pub fn exit_comptime_context(&mut self) {
-        self.comptime_depth = self
-            .comptime_depth
-            .checked_sub(1)
+        self.comptime_emit_bases
+            .pop()
             .expect("Comptime context stack underflow");
     }
 
     pub fn in_comptime_context(&self) -> bool {
-        self.comptime_depth > 0
+        !self.comptime_emit_bases.is_empty()
+    }
+
+    pub fn in_runtime_emit<F, T>(&mut self, f: F) -> CXResult<T>
+    where
+        F: FnOnce(&mut Self) -> CXResult<T>,
+    {
+        self.runtime_emit_depth += 1;
+        let result = f(self);
+        self.runtime_emit_depth -= 1;
+        result
+    }
+
+    pub fn in_runtime_emit_context(&self) -> bool {
+        self.comptime_emit_bases
+            .last()
+            .is_some_and(|base| self.runtime_emit_depth > *base)
+    }
+
+    pub fn next_staged_expression_id(&mut self) -> u64 {
+        let id = self.next_staged_expression_id;
+        self.next_staged_expression_id += 1;
+        id
+    }
+
+    pub fn push_staged_expansion(&mut self, id: u64) {
+        self.staged_expansions.push(id);
+    }
+
+    pub fn pop_staged_expansion(&mut self) {
+        self.staged_expansions
+            .pop()
+            .expect("Staged expression expansion stack underflow");
     }
 
     pub fn get_symbol(
@@ -309,10 +346,12 @@ impl MIRQualifiedLookup for TypeEnvironment<'_> {
         _lexical_namespace: &NamespacePath,
         name: &QualifiedName,
     ) -> Option<Self::Output> {
-        self.symbols.get_local_symbol(name).map(|sym| SymbolLookup {
-            resolved_name: name.clone(),
-            kind: SymbolLookupKind::Resolved(sym.clone()),
-        })
+        self.symbols
+            .get_local_symbol_avoiding_staged_expansions(name, &self.staged_expansions)
+            .map(|sym| SymbolLookup {
+                resolved_name: name.clone(),
+                kind: SymbolLookupKind::Resolved(sym.clone()),
+            })
     }
 
     fn lookup_exact(

@@ -342,6 +342,7 @@ pub enum OperatorType {
     Move,
     Is,
     Pipe,
+    BackwardPipe,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -405,6 +406,7 @@ pub enum KeywordType {
     Expr,
     Emit,
     Defer,
+    Then,
     Where,
     Safe,
 
@@ -477,6 +479,7 @@ impl TokenKind {
                     KeywordType::Expr => "expr",
                     KeywordType::Emit => "emit",
                     KeywordType::Defer => "defer",
+                    KeywordType::Then => "then",
                     KeywordType::Where => "where",
                     KeywordType::Safe => "safe",
                     KeywordType::Precondition => "pre",
@@ -559,6 +562,7 @@ impl TokenKind {
             "expr" => TokenKind::Keyword(KeywordType::Expr),
             "emit" => TokenKind::Keyword(KeywordType::Emit),
             "defer" => TokenKind::Keyword(KeywordType::Defer),
+            "then" => TokenKind::Keyword(KeywordType::Then),
             "is" => TokenKind::Operator(OperatorType::Is),
 
             "safe" => TokenKind::Keyword(KeywordType::Safe),

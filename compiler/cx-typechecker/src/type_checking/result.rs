@@ -61,9 +61,18 @@ pub enum TypecheckState {
 #[derive(Debug, Clone)]
 pub enum ComptimeTypecheckValue {
     Function(ComptimeFunctionValue),
+    StagedFunction(StagedFunctionValue),
     Value(ComptimeValue),
     #[allow(dead_code)]
     StagedExpr(MIRExpression),
+}
+
+#[derive(Debug, Clone)]
+pub struct StagedFunctionValue {
+    pub namespace: EnvironmentNamespace,
+    pub params: Vec<(CXIdent, MIRType)>,
+    pub body: Box<CXExpression>,
+    pub return_type: MIRType,
 }
 
 #[derive(Debug, Clone)]
@@ -215,6 +224,14 @@ impl TypecheckResult {
         }
     }
 
+    pub fn staged_function(value: StagedFunctionValue) -> Self {
+        Self {
+            expression: TypecheckState::Comptime(ComptimeTypecheckValue::StagedFunction(value)),
+            binding: None,
+            adopting: false,
+        }
+    }
+
     pub fn comptime_value(value: ComptimeValue) -> Self {
         Self {
             expression: TypecheckState::Comptime(ComptimeTypecheckValue::Value(value)),
@@ -310,6 +327,7 @@ impl TypecheckResult {
                 None
             }
             TypecheckState::Comptime(ComptimeTypecheckValue::Function(_)) => None,
+            TypecheckState::Comptime(ComptimeTypecheckValue::StagedFunction(_)) => None,
             TypecheckState::NeedsExpectedType(_) => None,
             TypecheckState::IncompleteTemplatedCallee { .. } => None,
         }
@@ -368,6 +386,21 @@ impl TypecheckResult {
                 namespace,
                 body,
                 template_bindings,
+            }));
+        }
+
+        if let MIRSymbol::StagedExpressionFunction {
+            namespace,
+            params,
+            body,
+            return_type,
+        } = symbol
+        {
+            return Ok(Self::staged_function(StagedFunctionValue {
+                namespace,
+                params,
+                body,
+                return_type,
             }));
         }
 

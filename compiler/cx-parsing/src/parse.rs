@@ -359,11 +359,7 @@ pub(crate) fn parse_block(data: &mut ParserData) -> CXResult<CXExpression> {
     assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
 
     let start_index = data.tokens.index - 1;
-    let mut body = Vec::new();
-
-    while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-        body.push(parse_stmt(data)?);
-    }
+    let body = parse_block_statements(data)?;
 
     Ok(CXExprKind::Block {
         exprs: body,
@@ -374,6 +370,116 @@ pub(crate) fn parse_block(data: &mut ParserData) -> CXResult<CXExpression> {
         data.tokens.index,
         data.file_origin_for_range(start_index, data.tokens.index),
     ))
+}
+
+fn parse_block_statements(data: &mut ParserData) -> CXResult<Vec<CXExpression>> {
+    let mut body = Vec::new();
+
+    while !try_next!(data.tokens, punctuator!(CloseBrace)) {
+        let mut statement = parse_stmt(data)?;
+        let then_count = count_then_markers(&statement);
+        let capturing_then_count = count_capturing_then_markers(&statement);
+        if then_count != capturing_then_count {
+            return parse_point_error(
+                &data.tokens,
+                "'then' must be the direct body of a staged expression".to_string(),
+            );
+        }
+        if then_count > 1 {
+            return parse_point_error(
+                &data.tokens,
+                "A statement may contain only one 'then' continuation".to_string(),
+            );
+        }
+
+        if then_count == 1 {
+            let continuation_start = data.tokens.index;
+            let continuation = parse_block_statements(data)?;
+
+            let continuation = CXExprKind::Block {
+                exprs: continuation,
+                creates_scope: false,
+            }
+            .into_expr(
+                continuation_start,
+                data.tokens.index,
+                data.file_origin_for_range(continuation_start, data.tokens.index),
+            );
+            replace_then_marker(&mut statement, continuation);
+            body.push(statement);
+            break;
+        }
+
+        body.push(statement);
+    }
+
+    Ok(body)
+}
+
+pub(crate) fn count_then_markers(expr: &CXExpression) -> usize {
+    match &expr.kind {
+        CXExprKind::Then => 1,
+        CXExprKind::BinOp { lhs, rhs, .. } => count_then_markers(lhs) + count_then_markers(rhs),
+        CXExprKind::UnOp { operand, .. }
+        | CXExprKind::Defer { expr: operand }
+        | CXExprKind::Emit { expr: operand }
+        | CXExprKind::Unsafe { expr: operand }
+        | CXExprKind::Leak { expr: operand }
+        | CXExprKind::Adopt { expr: operand } => count_then_markers(operand),
+        CXExprKind::StagedExpression { body, .. } => count_then_markers(body),
+        CXExprKind::Block { exprs, .. } => exprs.iter().map(count_then_markers).sum(),
+        _ => 0,
+    }
+}
+
+pub(crate) fn count_capturing_then_markers(expr: &CXExpression) -> usize {
+    match &expr.kind {
+        CXExprKind::StagedExpression { body, .. } if matches!(body.kind, CXExprKind::Then) => 1,
+        CXExprKind::StagedExpression { body, .. } => count_capturing_then_markers(body),
+        CXExprKind::BinOp { lhs, rhs, .. } => {
+            count_capturing_then_markers(lhs) + count_capturing_then_markers(rhs)
+        }
+        CXExprKind::UnOp { operand, .. }
+        | CXExprKind::Defer { expr: operand }
+        | CXExprKind::Emit { expr: operand }
+        | CXExprKind::Unsafe { expr: operand }
+        | CXExprKind::Leak { expr: operand }
+        | CXExprKind::Adopt { expr: operand } => count_capturing_then_markers(operand),
+        CXExprKind::Block { exprs, .. } => exprs.iter().map(count_capturing_then_markers).sum(),
+        _ => 0,
+    }
+}
+
+fn replace_then_marker(expr: &mut CXExpression, continuation: CXExpression) {
+    fn replace(expr: &mut CXExpression, continuation: &mut Option<CXExpression>) {
+        match &mut expr.kind {
+            CXExprKind::Then => *expr = continuation.take().unwrap(),
+            CXExprKind::BinOp { lhs, rhs, .. } => {
+                replace(lhs, continuation);
+                if continuation.is_some() {
+                    replace(rhs, continuation);
+                }
+            }
+            CXExprKind::UnOp { operand, .. }
+            | CXExprKind::Defer { expr: operand }
+            | CXExprKind::Emit { expr: operand }
+            | CXExprKind::Unsafe { expr: operand }
+            | CXExprKind::Leak { expr: operand }
+            | CXExprKind::Adopt { expr: operand } => replace(operand, continuation),
+            CXExprKind::StagedExpression { body, .. } => replace(body, continuation),
+            CXExprKind::Block { exprs, .. } => {
+                for expr in exprs {
+                    replace(expr, continuation);
+                    if continuation.is_none() {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    replace(expr, &mut Some(continuation));
 }
 
 pub(crate) fn parse_body(data: &mut ParserData) -> CXResult<CXExpression> {

@@ -11,9 +11,15 @@ IntWrapper IntWrapper::new(int x) {
     return (IntWrapper) { x };
 }
 
+int sum_three(int lhs, int middle, int rhs) {
+    return lhs + middle + rhs;
+}
+
 int main() {
     IntWrapper wrapper = IntWrapper::new(5)
         |> IntWrapper::transform();
 
     std::printf("Transformed IntWrapper: %d\n", wrapper.x);
+    std::printf("Backward pipe: %d\n", sum_three(1, 2) <| 3);
+    std::printf("Combined pipes: %d\n", 4 |> sum_three(5) <| 6);
 }

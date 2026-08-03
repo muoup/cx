@@ -23,6 +23,7 @@ pub struct MIRParameter {
 #[derive(Debug, Clone)]
 pub struct MIRComptimeValueType {
     pub expr: bool,
+    pub params: Vec<MIRType>,
     pub _type: MIRType,
 }
 

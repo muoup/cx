@@ -26,6 +26,7 @@ pub enum PredeclarationType {
 pub struct CXAggregateAttributes {
     pub semantics: CXMoveSemantics,
     pub copy_traits: Option<String>,
+    pub unsafe_move: bool,
 }
 
 #[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]

@@ -31,12 +31,16 @@ pub(crate) fn typecheck_identifier(
     };
 
     if let MIRSymbol::StagedExpression {
+        id,
         namespace,
         expr: staged_expr,
         expected_type,
     } = symbol
     {
-        let staged = typecheck_expr(env, &namespace, &staged_expr, Some(&expected_type))?;
+        env.push_staged_expansion(id);
+        let staged = typecheck_expr(env, &namespace, &staged_expr, Some(&expected_type));
+        env.pop_staged_expansion();
+        let staged = staged?;
         let staged = staged.standard_ready_coerce(env, staged_expr.token_range())?;
 
         let staged = if env.type_eq(&staged._type, &expected_type) {

@@ -74,6 +74,7 @@ fn parse_type_attributes(
             match attr.as_str() {
                 "nocopy" => attributes.semantics = CXMoveSemantics::Nocopy,
                 "nodrop" => attributes.semantics = CXMoveSemantics::Nodrop,
+                "unsafe_move" => attributes.unsafe_move = true,
                 "copy_traits" => {
                     assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
                     assert_token_matches!(data.tokens, identifier!(type_param));

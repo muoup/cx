@@ -1,7 +1,28 @@
-borrow 1
+borrow -1
 read 42
 release 0
 returned 42 sema 0
+borrow -1
+temporary 42
+release 0
+temporary released 0
+borrow -1
+borrow -1
+pair 42 8
+release 0
+release 0
+pair returned 50 semas 0 0
+borrow -1
+sequence lhs 42
+borrow -1
+sequence rhs 8
+release 0
+release 0
+sequence returned 34 semas 0 0
+manual borrow -1
+manual value 42
+release 0
+manual released 0
 mark 2
 mark 1
 nested 7

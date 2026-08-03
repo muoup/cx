@@ -141,6 +141,7 @@ fn push_move_attributes(mangled: &mut String, ty: &MIRType) {
     } else {
         'd'
     });
+    mangled.push(if ty.attributes.unsafe_move { 'M' } else { 'm' });
 }
 
 fn push_aggregate_fields(

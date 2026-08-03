@@ -27,6 +27,15 @@ pub fn try_typecheck_special_binop(
     expected_type: Option<&MIRType>,
 ) -> CXResult<Option<TypecheckResult>> {
     Ok(match op {
+        CXBinOp::BackwardPipe => {
+            let Some(rewritten) = append_call_argument(lhs, rhs, expr) else {
+                return env.log_error(
+                    expr.token_range(),
+                    "The left side of '<|' must be a function call".to_string(),
+                );
+            };
+            Some(typecheck_expr(env, namespace, &rewritten, expected_type)?)
+        }
         CXBinOp::Pipe => {
             let implicit_param = typecheck_expr(env, namespace, lhs, None)?
                 .standard_ready_coerce(env, lhs.token_range())?;
@@ -55,6 +64,56 @@ pub fn try_typecheck_special_binop(
         }
 
         _ => None,
+    })
+}
+
+fn append_call_argument(
+    call: &CXExpression,
+    argument: &CXExpression,
+    whole_expr: &CXExpression,
+) -> Option<CXExpression> {
+    let kind = match &call.kind {
+        CXExprKind::BinOp {
+            op: CXBinOp::MethodCall,
+            lhs,
+            rhs,
+        } => {
+            let arguments = if matches!(rhs.kind, CXExprKind::Unit) {
+                argument.clone()
+            } else {
+                CXExpression {
+                    kind: CXExprKind::BinOp {
+                        lhs: rhs.clone(),
+                        rhs: Box::new(argument.clone()),
+                        op: CXBinOp::Comma,
+                    },
+                    range: whole_expr.range.clone(),
+                }
+            };
+            CXExprKind::BinOp {
+                lhs: lhs.clone(),
+                rhs: Box::new(arguments),
+                op: CXBinOp::MethodCall,
+            }
+        }
+        CXExprKind::BinOp {
+            op: CXBinOp::Pipe,
+            lhs,
+            rhs,
+        } => {
+            let appended = append_call_argument(rhs, argument, whole_expr)?;
+            CXExprKind::BinOp {
+                lhs: lhs.clone(),
+                rhs: Box::new(appended),
+                op: CXBinOp::Pipe,
+            }
+        }
+        _ => return None,
+    };
+
+    Some(CXExpression {
+        kind,
+        range: whole_expr.range.clone(),
     })
 }
 

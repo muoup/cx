@@ -106,6 +106,10 @@ pub(crate) fn operator(iter: &mut LexCursor<'_>) -> Option<TokenKind> {
             _ => Some(TokenKind::Operator(OperatorType::Greater)),
         },
         '<' => match iter.peek() {
+            Some('|') => {
+                iter.next();
+                Some(TokenKind::Operator(OperatorType::BackwardPipe))
+            }
             Some('=') => {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::LessEqual))

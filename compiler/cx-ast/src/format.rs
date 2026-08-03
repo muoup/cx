@@ -217,6 +217,19 @@ impl<'a> Display for CXExprFormatter<'a> {
                 writeln!(f, "Defer")?;
                 CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
+            CXExprKind::StagedExpression { params, body } => {
+                writeln!(
+                    f,
+                    "StagedExpression |{}|",
+                    params
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )?;
+                CXExprFormatter::new(body, self.depth + 1).fmt(f)
+            }
+            CXExprKind::Then => writeln!(f, "Then"),
             CXExprKind::Identifier {
                 name,
                 template_input,
@@ -452,6 +465,7 @@ impl Display for CXBinOp {
             CXBinOp::LShift => write!(f, "<<"),
             CXBinOp::RShift => write!(f, ">>"),
             CXBinOp::Pipe => write!(f, "|>"),
+            CXBinOp::BackwardPipe => write!(f, "<|"),
         }
     }
 }
@@ -545,6 +559,9 @@ impl Display for CXTypeKind {
                     CXMoveSemantics::Nocopy => attrs.push("@nocopy"),
                     CXMoveSemantics::Nodrop => attrs.push("@nodrop"),
                 }
+                if attributes.unsafe_move {
+                    attrs.push("@unsafe_move");
+                }
 
                 let attr_str = if attrs.is_empty() {
                     String::new()
@@ -607,6 +624,9 @@ impl Display for CXTypeKind {
                     CXMoveSemantics::Nocopy => attrs.push("@nocopy"),
                     CXMoveSemantics::Nodrop => attrs.push("@nodrop"),
                 }
+                if attributes.unsafe_move {
+                    attrs.push("@unsafe_move");
+                }
                 write!(
                     f,
                     "union class {name}{} {{ {variants_str} }}",
@@ -645,6 +665,16 @@ impl Display for CXComptimeValueType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.expr {
             write!(f, "expr ")?;
+            if !self.params.is_empty() {
+                write!(f, "(")?;
+                for (index, param) in self.params.iter().enumerate() {
+                    if index != 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{param}")?;
+                }
+                write!(f, ") ")?;
+            }
         }
 
         write!(f, "{}", self._type)

@@ -59,6 +59,14 @@ pub(crate) fn typecheck_move(
         unreachable!()
     };
 
+    if owned_unsafe_move(env, &inner_type) && env.function.in_safe_context() {
+        return env.log_error(
+            inner_expr.token_range(),
+            "Moving a value of an @unsafe_move type must be wrapped in @unsafe in safe functions"
+                .to_string(),
+        );
+    }
+
     ensure_binding_available(env, inner_expr.token_range(), Some(&binding))?;
     mark_binding(env, &binding, BindingMoveState::Moved);
 
@@ -68,6 +76,18 @@ pub(crate) fn typecheck_move(
             source: Box::new(inner_val),
         },
     ))
+}
+
+fn owned_unsafe_move(env: &TypeEnvironment, ty: &MIRType) -> bool {
+    match &ty.kind {
+        MIRTypeKind::Structured { .. }
+        | MIRTypeKind::Union { .. }
+        | MIRTypeKind::TaggedUnion { .. } => ty.is_unsafe_move(),
+        MIRTypeKind::Array { inner_type, .. } => {
+            owned_unsafe_move(env, env.symbols.resolve_type_id(*inner_type))
+        }
+        _ => false,
+    }
 }
 
 pub(crate) fn typecheck_adopt(

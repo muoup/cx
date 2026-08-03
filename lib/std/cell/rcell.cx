@@ -1,0 +1,47 @@
+import std::panic as std;
+
+public:
+
+struct rcell<T> : @copy_traits(T), @unsafe_move {
+    T inner;
+    i16 sema;  
+};
+
+rcell<T> rcell::new<T>(T val) {
+    return (rcell<T>) {
+        .inner = val,
+        .sema = 0
+    };
+}
+
+comptime expr const T& rcell::borrow_const<T>(expr rcell<T>& cell, expr(const T&) void proc) {
+    return emit .{
+        if (cell.sema < 0) {
+            std::panic("Cannot immutably borrow cell while it is currently mutably borrowed");
+        }
+        cell.sema++;
+
+        defer rcell::release(cell);
+        proc(cell.inner);
+    };
+}
+
+comptime expr const T& rcell::borrow<T>(expr rcell<T>& cell, expr(T&) void proc) {
+    return emit .{
+        if (cell.sema != 0) {
+            std::panic("Cannot immutably borrow cell while it is currently mutably borrowed");
+        }
+        cell.sema = -1;
+
+        defer rcell::release(cell);
+        proc(cell.inner);
+    };
+}
+
+void rcell::release<T>(rcell<T>& cell) /* not safe */ {
+    cell.sema = 0;
+}
+
+void rcell::release_const<T>(rcell<T>& cell) /* not safe */ {
+    cell.sema--;
+}

@@ -93,7 +93,7 @@ fn typecheck_expr_inner(
                     "nested defer is not supported".to_string(),
                 );
             }
-            if env.in_comptime_context() {
+            if env.in_comptime_context() && !env.in_runtime_emit_context() {
                 return env.log_error(
                     expr.token_range(),
                     "defer cannot execute while evaluating a comptime function".to_string(),
@@ -122,6 +122,19 @@ fn typecheck_expr_inner(
 
             env.function.register_defer(deferred);
             TypecheckResult::new(MIRType::unit(), MIRExpressionKind::Unit)
+        }
+
+        CXExprKind::StagedExpression { .. } => TypecheckResult::staged_expr(MIRExpression {
+            token_range: expr.token_range().clone(),
+            kind: MIRExpressionKind::Unit,
+            _type: expected_type.cloned().unwrap_or_else(MIRType::unit),
+        }),
+
+        CXExprKind::Then => {
+            return env.log_error(
+                expr.token_range(),
+                "'then' may only capture the remainder of an enclosing block".to_string(),
+            );
         }
 
         CXExprKind::IntLiteral {
@@ -419,15 +432,17 @@ fn typecheck_expr_inner(
         )?,
 
         CXExprKind::Emit { expr: inner } => {
-            if !env.in_comptime_context() {
+            if !env.in_comptime_context() || env.in_runtime_emit_context() {
                 return env.log_error(
                     expr.token_range(),
-                    "'emit' may only be used in a comptime context".to_string(),
+                    "'emit' may only be used directly in a comptime context".to_string(),
                 );
             }
 
-            let inner = typecheck_expr(env, namespace, inner, expected_type)?
-                .standard_ready_coerce(env, inner.token_range())?;
+            let inner = env.in_runtime_emit(|env| {
+                typecheck_expr(env, namespace, inner, expected_type)?
+                    .standard_ready_coerce(env, inner.token_range())
+            })?;
             TypecheckResult::from(MIRExpression {
                 token_range: TokenRange::internal(),
                 _type: inner._type.clone(),
