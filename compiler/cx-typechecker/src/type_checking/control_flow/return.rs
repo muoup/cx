@@ -34,6 +34,13 @@ pub fn typecheck_return(
     return_range: &cx_tokens::TokenRange,
     value: Option<MIRExpression>,
 ) -> CXResult<TypecheckResult> {
+    if env.in_defer_context() {
+        return env.log_error(
+            return_range,
+            "return is not allowed inside a deferred expression".to_string(),
+        );
+    }
+
     let return_type = env.current_function().signature().return_type.clone();
 
     let return_value = match (value, &return_type) {
@@ -157,6 +164,9 @@ pub fn typecheck_return(
                     condition: Box::new(postcondition),
                     assertion_prototype,
                 }),
+                cleanups: env
+                    .function
+                    .cleanups_exiting_to(crate::environment::ScopeId::new(0), true),
             },
         ))
     } else {
@@ -165,6 +175,9 @@ pub fn typecheck_return(
             MIRExpressionKind::Return {
                 value: return_value,
                 postcondition: None,
+                cleanups: env
+                    .function
+                    .cleanups_exiting_to(crate::environment::ScopeId::new(0), true),
             },
         ))
     }

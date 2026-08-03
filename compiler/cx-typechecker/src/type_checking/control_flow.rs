@@ -4,6 +4,8 @@ use cx_ast::ast::expression::CXExpression;
 use cx_log::CXResult;
 use cx_mir::EnvironmentNamespace;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
+use cx_mir::mir::data::MIRType;
+use cx_tokens::TokenRange;
 
 pub(crate) mod r#match;
 pub(crate) mod r#return;
@@ -88,9 +90,33 @@ pub(crate) fn typecheck_fallthrough_scope(
     });
     let result = typecheck_expr(env, namespace, expr, None)
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
+    let result = append_current_scope_cleanups(env, result);
     env.pop_scope()
         .map_err(|err| env.complete_err(err, expr.token_range()))?;
     Ok(result)
+}
+
+pub(crate) fn append_current_scope_cleanups(
+    env: &TypeEnvironment,
+    expression: MIRExpression,
+) -> MIRExpression {
+    if !env.function.is_current_scope_reachable() {
+        return expression;
+    }
+
+    let cleanups = env.function.current_scope_cleanups();
+    if cleanups.is_empty() {
+        return expression;
+    }
+
+    let mut statements = Vec::with_capacity(cleanups.len() + 1);
+    statements.push(expression);
+    statements.extend(cleanups);
+    MIRExpression {
+        token_range: TokenRange::internal(),
+        kind: MIRExpressionKind::Block { statements },
+        _type: MIRType::unit(),
+    }
 }
 
 pub(crate) fn process_for_increment_arrows(

@@ -1,0 +1,21 @@
+borrow 1
+read 42
+release 0
+returned 42 sema 0
+mark 2
+mark 1
+nested 7
+mark 10
+mark 11
+mark 4
+mark 3
+mark 5
+mark 7
+mark 6
+mark 20
+yielded 8
+mark 31
+mark 30
+mark 32
+mark 32
+preserved 5

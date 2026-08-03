@@ -198,13 +198,24 @@ impl<'a> Display for CXExprFormatter<'a> {
         self.indent(f)?;
         match &self.expr.kind {
             CXExprKind::Taken => writeln!(f, "Taken"),
-            CXExprKind::Block { exprs, .. } => {
-                writeln!(f, "Block {{ ")?;
+            CXExprKind::Block {
+                exprs,
+                creates_scope,
+            } => {
+                if *creates_scope {
+                    writeln!(f, "Scoped Block {{ ")?;
+                } else {
+                    writeln!(f, "Block {{ ")?;
+                }
                 for stmt in exprs {
                     CXExprFormatter::new(stmt, self.depth + 1).fmt(f)?;
                 }
                 self.indent(f)?;
                 writeln!(f, "}}")
+            }
+            CXExprKind::Defer { expr } => {
+                writeln!(f, "Defer")?;
+                CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
             CXExprKind::Identifier {
                 name,

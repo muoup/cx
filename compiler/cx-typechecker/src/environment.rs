@@ -44,6 +44,7 @@ pub struct TypeEnvironment<'a> {
     pub items: ItemRegistry,
     pub function: FunctionContext,
     comptime_depth: usize,
+    defer_depth: usize,
 }
 
 impl TypeEnvironment<'_> {
@@ -57,6 +58,7 @@ impl TypeEnvironment<'_> {
             items: ItemRegistry::new(),
             function: FunctionContext::default(),
             comptime_depth: 0,
+            defer_depth: 0,
         }
     }
 
@@ -81,7 +83,14 @@ impl TypeEnvironment<'_> {
     where
         F: FnOnce(&mut Self) -> CXResult<T>,
     {
-        f(self)
+        self.defer_depth += 1;
+        let result = f(self);
+        self.defer_depth -= 1;
+        result
+    }
+
+    pub fn in_defer_context(&self) -> bool {
+        self.defer_depth > 0
     }
 
     pub fn finish_mir_unit(self, source_namespace: EnvironmentNamespace) -> CXResult<MIRUnit> {
@@ -105,6 +114,18 @@ impl TypeEnvironment<'_> {
         self.function.pop_scope()?;
         self.symbols.pop_local_scope();
         CXRawResult::Ok(())
+    }
+
+    pub fn push_defer_scope(&mut self) {
+        self.function.push_defer_scope();
+    }
+
+    pub fn push_child_defer_scope(&mut self) {
+        self.function.push_child_defer_scope();
+    }
+
+    pub fn pop_defer_scope(&mut self) {
+        self.function.pop_defer_scope();
     }
 
     pub fn push_unsafe(&mut self) {

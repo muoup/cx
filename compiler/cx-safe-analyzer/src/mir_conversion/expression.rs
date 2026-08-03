@@ -261,6 +261,7 @@ pub fn convert_expression(
         MIRExpressionKind::Return {
             value,
             postcondition,
+            cleanups: _,
         } => {
             let return_value = value
                 .as_ref()

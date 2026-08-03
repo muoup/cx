@@ -184,9 +184,11 @@ pub enum MIRExpressionKind {
     // Control Flow
     Break {
         scope_depth: usize,
+        cleanups: Vec<MIRExpression>,
     },
     Continue {
         scope_depth: usize,
+        cleanups: Vec<MIRExpression>,
     },
     If {
         condition: Box<MIRExpression>,
@@ -222,10 +224,12 @@ pub enum MIRExpressionKind {
     Return {
         postcondition: Option<MIRPostcondition>,
         value: Option<Box<MIRExpression>>,
+        cleanups: Vec<MIRExpression>,
     },
     Yield {
         value: Option<Box<MIRExpression>>,
         target_scope: usize,
+        cleanups: Vec<MIRExpression>,
     },
     Emit(Box<MIRExpression>),
 

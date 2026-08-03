@@ -696,11 +696,20 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
         MIRExpressionKind::Return {
             value,
             postcondition,
+            cleanups,
         } => {
-            let val = value
+            let mut val = value
                 .as_ref()
                 .map(|v| lower_expression(builder, v))
                 .transpose()?;
+
+            if !cleanups.is_empty() {
+                if let (Some(value_expr), Some(value)) = (value.as_deref(), val.take()) {
+                    val = Some(preserve_return_value(builder, value_expr, value)?);
+                }
+            }
+
+            lower_cleanups(builder, cleanups)?;
 
             if let Some(postcondition) = postcondition {
                 builder.push_scope(None, None);
@@ -718,7 +727,9 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             }
         }
 
-        MIRExpressionKind::Yield { value, .. } => {
+        MIRExpressionKind::Yield {
+            value, cleanups, ..
+        } => {
             let Some(target) = builder.current_yield_target() else {
                 panic!("Yield expression lowered outside of an active yield target");
             };
@@ -729,6 +740,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                 .transpose()?
                 .unwrap_or(LMIRValue::NULL);
 
+            lower_cleanups(builder, cleanups)?;
             builder.record_yield(value);
             builder.add_new_instruction(
                 LMIRInstructionKind::Jump {
@@ -917,11 +929,15 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             struct_type,
         } => lower_struct_initializer(builder, initializations, struct_type),
 
-        MIRExpressionKind::Break { scope_depth: _ } => {
+        MIRExpressionKind::Break {
+            scope_depth: _,
+            cleanups,
+        } => {
             let Some(to) = builder.get_break_target().cloned() else {
                 unreachable!("Break used outside of loop or switch context");
             };
 
+            lower_cleanups(builder, cleanups)?;
             builder.add_new_instruction(
                 LMIRInstructionKind::Jump { target: to },
                 LMIRType::unit(),
@@ -929,11 +945,15 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             )
         }
 
-        MIRExpressionKind::Continue { scope_depth: _ } => {
+        MIRExpressionKind::Continue {
+            scope_depth: _,
+            cleanups,
+        } => {
             let Some(to) = builder.get_continue_block().cloned() else {
                 unreachable!("Continue used outside of loop context");
             };
 
+            lower_cleanups(builder, cleanups)?;
             builder.add_new_instruction(
                 LMIRInstructionKind::Jump { target: to },
                 LMIRType::unit(),
@@ -963,6 +983,46 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             &expr._type,
         ),
     }
+}
+
+fn lower_cleanups(builder: &mut LMIRBuilder, cleanups: &[MIRExpression]) -> CXResult<()> {
+    for cleanup in cleanups {
+        lower_expression(builder, cleanup)?;
+    }
+    Ok(())
+}
+
+fn preserve_return_value(
+    builder: &mut LMIRBuilder,
+    expression: &MIRExpression,
+    value: LMIRValue,
+) -> CXResult<LMIRValue> {
+    let lowered_type = builder.convert_cx_type(&expression._type);
+    if !lowered_type.is_memory_resident() {
+        return Ok(value);
+    }
+
+    let layout = builder.type_layout(&expression._type);
+    let preserved = builder.add_new_instruction(
+        LMIRInstructionKind::Allocate {
+            alignment: layout.alignment as u8,
+            _type: lowered_type,
+        },
+        LMIRType::default_pointer(builder.architecture()),
+        true,
+    )?;
+    builder.add_new_instruction(
+        LMIRInstructionKind::Memcpy {
+            dest: preserved.clone(),
+            src: value,
+            size: builder.int_const(layout.size as i32, LMIRIntegerType::I64),
+            alignment: layout.alignment as u8,
+        },
+        LMIRType::unit(),
+        false,
+    )?;
+
+    Ok(preserved)
 }
 
 fn lower_call(

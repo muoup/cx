@@ -21,6 +21,13 @@ pub fn typecheck_yield(
     yield_range: &TokenRange,
     value: Option<&CXExpression>,
 ) -> CXResult<TypecheckResult> {
+    if env.in_defer_context() {
+        return env.log_error(
+            yield_range,
+            "yield is not allowed inside a deferred expression".to_string(),
+        );
+    }
+
     let Some(context) = env.function.current_yield_context().cloned() else {
         return env.log_error(
             yield_range,
@@ -89,6 +96,7 @@ pub fn typecheck_yield(
         MIRExpressionKind::Yield {
             value: yielded_value,
             target_scope: target_scope.index(),
+            cleanups: env.function.cleanups_exiting_to(target_scope, false),
         },
     ))
 }

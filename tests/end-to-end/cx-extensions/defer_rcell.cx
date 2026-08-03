@@ -1,0 +1,116 @@
+#include <stdio.h>
+
+struct rcell_int {
+    int value;
+    int sema;
+};
+
+struct rcell_guard : @nodrop {
+    rcell_int* cell;
+};
+
+rcell_guard rcell_borrow(rcell_int* cell) {
+    cell->sema += 1;
+    printf("borrow %d\n", cell->sema);
+    return (rcell_guard) { .cell = cell };
+}
+
+void rcell_release(rcell_guard guard) {
+    guard.cell->sema -= 1;
+    printf("release %d\n", guard.cell->sema);
+    @leak(guard);
+}
+
+int rcell_read(rcell_int* cell) {
+    rcell_guard guard = rcell_borrow(cell);
+    defer move guard |> rcell_release();
+
+    printf("read %d\n", cell->value);
+    return cell->value;
+}
+
+void mark(int value) {
+    printf("mark %d\n", value);
+}
+
+struct pair {
+    int value;
+};
+
+void overwrite(pair* value) {
+    value->value = 99;
+}
+
+pair preserved_return() {
+    pair result = (pair) { .value = 5 };
+    defer overwrite(&result);
+    return result;
+}
+
+int nested_return() {
+    defer mark(1);
+    {
+        defer mark(2);
+        return 7;
+    }
+}
+
+void loop_exits() {
+    for (int i = 0; i < 3; i += 1) {
+        defer mark(i + 10);
+        if (i == 0) {
+            continue;
+        }
+        if (i == 1) {
+            break;
+        }
+    }
+}
+
+void scope_fallthrough() {
+    {
+        defer mark(3);
+        mark(4);
+    }
+    mark(5);
+}
+
+void implicit_return() {
+    defer mark(6);
+    mark(7);
+}
+
+int match_yield() {
+    return match (0) {
+        0 => {
+            defer mark(20);
+            yield 8;
+        }
+        default => yield 9;
+    };
+}
+
+void conditional_registration(bool enabled) {
+    if (enabled) {
+        defer mark(30);
+        mark(31);
+    }
+    mark(32);
+}
+
+int main() {
+    rcell_int cell = (rcell_int) { .value = 42, .sema = 0 };
+    int value = rcell_read(&cell);
+    printf("returned %d sema %d\n", value, cell.sema);
+
+    printf("nested %d\n", nested_return());
+    loop_exits();
+    scope_fallthrough();
+    implicit_return();
+    printf("yielded %d\n", match_yield());
+    conditional_registration(1);
+    conditional_registration(0);
+    pair result = preserved_return();
+    printf("preserved %d\n", result.value);
+    return 0;
+}

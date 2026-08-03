@@ -404,6 +404,7 @@ pub enum KeywordType {
     Comptime,
     Expr,
     Emit,
+    Defer,
     Where,
     Safe,
 
@@ -475,6 +476,7 @@ impl TokenKind {
                     KeywordType::Comptime => "comptime",
                     KeywordType::Expr => "expr",
                     KeywordType::Emit => "emit",
+                    KeywordType::Defer => "defer",
                     KeywordType::Where => "where",
                     KeywordType::Safe => "safe",
                     KeywordType::Precondition => "pre",
@@ -556,6 +558,7 @@ impl TokenKind {
             "comptime" => TokenKind::Keyword(KeywordType::Comptime),
             "expr" => TokenKind::Keyword(KeywordType::Expr),
             "emit" => TokenKind::Keyword(KeywordType::Emit),
+            "defer" => TokenKind::Keyword(KeywordType::Defer),
             "is" => TokenKind::Operator(OperatorType::Is),
 
             "safe" => TokenKind::Keyword(KeywordType::Safe),

@@ -121,6 +121,11 @@ pub enum CXExprKind {
 
     Block {
         exprs: Vec<CXExpression>,
+        creates_scope: bool,
+    },
+
+    Defer {
+        expr: Box<CXExpression>,
     },
 
     Break,

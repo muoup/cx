@@ -51,7 +51,14 @@ fn typecheck_expr_inner(
     expected_type: Option<&MIRType>,
 ) -> CXResult<TypecheckResult> {
     let mut result = match &expr.kind {
-        CXExprKind::Block { exprs } => {
+        CXExprKind::Block {
+            exprs,
+            creates_scope,
+        } => {
+            if *creates_scope {
+                env.push_defer_scope();
+            }
+
             let mut block = Vec::new();
 
             for statement in exprs {
@@ -65,11 +72,56 @@ fn typecheck_expr_inner(
                 }
             }
 
+            if *creates_scope {
+                if env.function.is_current_scope_reachable() {
+                    block.extend(env.function.current_scope_cleanups());
+                }
+                env.pop_defer_scope();
+            }
+
             TypecheckResult::from(MIRExpression {
                 token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Block { statements: block },
                 _type: MIRType::unit(),
             })
+        }
+
+        CXExprKind::Defer { expr: deferred } => {
+            if env.in_defer_context() {
+                return env.log_error(
+                    expr.token_range(),
+                    "nested defer is not supported".to_string(),
+                );
+            }
+            if env.in_comptime_context() {
+                return env.log_error(
+                    expr.token_range(),
+                    "defer cannot execute while evaluating a comptime function".to_string(),
+                );
+            }
+
+            let deferred = env.in_defer(|env| {
+                typecheck_expr(env, namespace, deferred, None)?
+                    .standard_ready_coerce(env, deferred.token_range())
+            })?;
+            if !deferred._type.is_unit() {
+                return env.log_error(
+                    expr.token_range(),
+                    format!(
+                        "deferred expression must have type void, found {}",
+                        deferred._type.display_with(&env.symbols)
+                    ),
+                );
+            }
+            if !expr_may_fall_through(&deferred) {
+                return env.log_error(
+                    expr.token_range(),
+                    "deferred expression must fall through normally".to_string(),
+                );
+            }
+
+            env.function.register_defer(deferred);
+            TypecheckResult::new(MIRType::unit(), MIRExpressionKind::Unit)
         }
 
         CXExprKind::IntLiteral {
@@ -284,6 +336,12 @@ fn typecheck_expr_inner(
         }
 
         CXExprKind::Break => {
+            if env.in_defer_context() {
+                return env.log_error(
+                    expr.token_range(),
+                    "break is not allowed inside a deferred expression".to_string(),
+                );
+            }
             let Some(scope_idx) = env.function.nearest_break_scope() else {
                 return env.log_error(
                     expr.token_range(),
@@ -303,12 +361,19 @@ fn typecheck_expr_inner(
                 token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Break {
                     scope_depth: scope_idx.index(),
+                    cleanups: env.function.cleanups_exiting_to(scope_idx, true),
                 },
                 _type: MIRType::unit(),
             })
         }
 
         CXExprKind::Continue => {
+            if env.in_defer_context() {
+                return env.log_error(
+                    expr.token_range(),
+                    "continue is not allowed inside a deferred expression".to_string(),
+                );
+            }
             let Some(scope_idx) = env.function.nearest_continue_scope() else {
                 return env.log_error(
                     expr.token_range(),
@@ -328,6 +393,7 @@ fn typecheck_expr_inner(
                 token_range: TokenRange::internal(),
                 kind: MIRExpressionKind::Continue {
                     scope_depth: scope_idx.index(),
+                    cleanups: env.function.cleanups_exiting_to(scope_idx, false),
                 },
                 _type: MIRType::unit(),
             })

@@ -177,7 +177,7 @@ fn typecheck_comptime_body(
     expected_type: &cx_mir::mir::data::MIRType,
 ) -> CXResult<MIRExpression> {
     let expr = match &body.kind {
-        CXExprKind::Block { exprs } if exprs.len() == 1 => &exprs[0],
+        CXExprKind::Block { exprs, .. } if exprs.len() == 1 => &exprs[0],
         CXExprKind::Block { .. } => {
             return env.log_error(
                 body.token_range(),

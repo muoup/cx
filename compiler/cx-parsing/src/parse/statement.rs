@@ -152,6 +152,19 @@ pub(crate) fn try_parse_keyword_stmt(
             })
         }
 
+        KeywordType::Defer => {
+            let deferred = parse_expr(data)?;
+            assert_token_matches!(
+                data.tokens,
+                punctuator!(Semicolon),
+                "';' after deferred expression"
+            );
+
+            Some(CXExprKind::Defer {
+                expr: Box::new(deferred),
+            })
+        }
+
         KeywordType::Match => {
             assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
             let expr = parse_expr(data)?;
@@ -332,7 +345,11 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<CXExpres
     if decls.len() == 1 {
         Ok(decls.pop().unwrap())
     } else {
-        Ok(CXExprKind::Block { exprs: decls }.into_expr(
+        Ok(CXExprKind::Block {
+            exprs: decls,
+            creates_scope: false,
+        }
+        .into_expr(
             start_index,
             data.tokens.index,
             data.file_origin_for_range(start_index, data.tokens.index),

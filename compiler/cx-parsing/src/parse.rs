@@ -365,7 +365,11 @@ pub(crate) fn parse_block(data: &mut ParserData) -> CXResult<CXExpression> {
         body.push(parse_stmt(data)?);
     }
 
-    Ok(CXExprKind::Block { exprs: body }.into_expr(
+    Ok(CXExprKind::Block {
+        exprs: body,
+        creates_scope: true,
+    }
+    .into_expr(
         start_index,
         data.tokens.index,
         data.file_origin_for_range(start_index, data.tokens.index),
