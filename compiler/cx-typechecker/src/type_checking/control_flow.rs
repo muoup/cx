@@ -2,9 +2,9 @@ use crate::environment::{ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironme
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::expression::CXExpression;
 use cx_log::CXResult;
-use cx_mir::EnvironmentNamespace;
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
-use cx_mir::mir::data::MIRType;
+use cx_thir::EnvironmentNamespace;
+use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
+use cx_thir::thir::data::THIRType;
 use cx_tokens::TokenRange;
 
 pub(crate) mod r#match;
@@ -12,17 +12,17 @@ pub(crate) mod r#return;
 pub(crate) mod switch;
 pub(crate) mod r#yield;
 
-pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
+pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
     match &expr.kind {
-        MIRExpressionKind::Return { .. }
-        | MIRExpressionKind::Yield { .. }
-        | MIRExpressionKind::Break { .. }
-        | MIRExpressionKind::Continue { .. } => false,
-        MIRExpressionKind::Unsafe { expression, .. } => expr_may_fall_through(expression),
-        MIRExpressionKind::Block { statements } => {
+        THIRExpressionKind::Return { .. }
+        | THIRExpressionKind::Yield { .. }
+        | THIRExpressionKind::Break { .. }
+        | THIRExpressionKind::Continue { .. } => false,
+        THIRExpressionKind::Unsafe { expression, .. } => expr_may_fall_through(expression),
+        THIRExpressionKind::Block { statements } => {
             statements.last().map(expr_may_fall_through).unwrap_or(true)
         }
-        MIRExpressionKind::If {
+        THIRExpressionKind::If {
             then_branch,
             else_branch,
             ..
@@ -33,7 +33,7 @@ pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
                     .map(|branch| expr_may_fall_through(branch))
                     .unwrap_or(true)
         }
-        MIRExpressionKind::CSwitch { cases, default, .. } => {
+        THIRExpressionKind::CSwitch { cases, default, .. } => {
             cases
                 .iter()
                 .any(|(_, branch)| expr_may_fall_through(branch))
@@ -42,7 +42,7 @@ pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
                     .map(|branch| expr_may_fall_through(branch))
                     .unwrap_or(true)
         }
-        MIRExpressionKind::Match {
+        THIRExpressionKind::Match {
             arms,
             default,
             exhaustive,
@@ -54,9 +54,9 @@ pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
                     .map(|branch| expr_may_fall_through(branch))
                     .unwrap_or(!exhaustive)
         }
-        MIRExpressionKind::CallFunction { function, .. } => !matches!(
+        THIRExpressionKind::CallFunction { function, .. } => !matches!(
             &function.kind,
-            MIRExpressionKind::FunctionReference { name } if name.as_str() == "exit"
+            THIRExpressionKind::FunctionReference { name } if name.as_str() == "exit"
         ),
         _ => true,
     }
@@ -80,7 +80,7 @@ pub(crate) fn typecheck_fallthrough_scope(
     target_scope: ScopeId,
     sink: ScopeArrowSink,
     label: &str,
-) -> CXResult<MIRExpression> {
+) -> CXResult<THIRExpression> {
     env.push_scope(false, false);
     env.function.set_scope_anchor(expr);
     env.function.set_scope_fallthrough_target(ScopeExitTarget {
@@ -98,8 +98,8 @@ pub(crate) fn typecheck_fallthrough_scope(
 
 pub(crate) fn append_current_scope_cleanups(
     env: &TypeEnvironment,
-    expression: MIRExpression,
-) -> MIRExpression {
+    expression: THIRExpression,
+) -> THIRExpression {
     if !env.function.is_current_scope_reachable() {
         return expression;
     }
@@ -112,10 +112,10 @@ pub(crate) fn append_current_scope_cleanups(
     let mut statements = Vec::with_capacity(cleanups.len() + 1);
     statements.push(expression);
     statements.extend(cleanups);
-    MIRExpression {
+    THIRExpression {
         token_range: TokenRange::internal(),
-        kind: MIRExpressionKind::Block { statements },
-        _type: MIRType::unit(),
+        kind: THIRExpressionKind::Block { statements },
+        _type: THIRType::unit(),
     }
 }
 

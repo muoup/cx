@@ -1,5 +1,5 @@
 use cx_log::CXResult;
-use cx_mir::mir::{data::MIRType, expression::MIRExpression};
+use cx_thir::thir::{data::THIRType, expression::THIRExpression};
 
 use crate::{
     environment::TypeEnvironment,
@@ -8,9 +8,9 @@ use crate::{
 
 pub(crate) fn explicit_cast(
     env: &mut TypeEnvironment,
-    value: MIRExpression,
-    to_type: &MIRType,
-) -> CXResult<MIRExpression> {
+    value: THIRExpression,
+    to_type: &THIRType,
+) -> CXResult<THIRExpression> {
     let from_type = value.get_type();
 
     match try_explicit_cast(env, value, to_type)? {

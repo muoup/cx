@@ -4,7 +4,7 @@ use crate::result::QualifiedLookupResult;
 
 pub mod result;
 
-pub trait MIRQualifiedLookup {
+pub trait THIRQualifiedLookup {
     type Output;
 
     fn lookup_local(

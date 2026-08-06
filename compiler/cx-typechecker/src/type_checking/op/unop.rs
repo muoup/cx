@@ -3,13 +3,13 @@ use cx_ast::ast::{
     types::CXType,
 };
 use cx_log::CXResult;
-use cx_mir::{
+use cx_thir::{
     EnvironmentNamespace,
-    mir::{
-        expression::{MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp},
-        r#type::{MIRIntegerType, MIRType, MIRTypeKind},
+    thir::{
+        expression::{THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp},
+        r#type::{THIRIntType, THIRType, THIRTypeKind},
     },
-    type_context::MIRTypeContext,
+    type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
 
@@ -53,18 +53,18 @@ pub fn typecheck_unop(
             };
 
             match &inner.kind {
-                MIRTypeKind::PointerTo { .. } | MIRTypeKind::Integer { .. } => match op {
+                THIRTypeKind::PointerTo { .. } | THIRTypeKind::Integer { .. } => match op {
                     CXUnOp::PreIncrement(_) => TypecheckResult::new(
                         operand._type.clone(),
-                        MIRExpressionKind::UnaryOperation {
-                            op: MIRUnOp::PreIncrement(*increment_amount),
+                        THIRExpressionKind::UnaryOperation {
+                            op: THIRUnOp::PreIncrement(*increment_amount),
                             operand: Box::new(operand),
                         },
                     ),
                     CXUnOp::PostIncrement(_) => TypecheckResult::new(
                         inner.clone(),
-                        MIRExpressionKind::UnaryOperation {
-                            op: MIRUnOp::PostIncrement(*increment_amount),
+                        THIRExpressionKind::UnaryOperation {
+                            op: THIRUnOp::PostIncrement(*increment_amount),
                             operand: Box::new(operand),
                         },
                     ),
@@ -87,17 +87,17 @@ pub fn typecheck_unop(
             let operand = typecheck_expr(env, namespace, operand, None)
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))
-                .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
+                .and_then(|v| implicit_cast(env, v, &THIRType::bool()))?;
 
             TypecheckResult::new(
-                MIRTypeKind::Integer {
-                    _type: MIRIntegerType::I1,
+                THIRTypeKind::Integer {
+                    _type: THIRIntType::I1,
                     signed: false,
                 }
                 .into(),
-                MIRExpressionKind::UnaryOperation {
+                THIRExpressionKind::UnaryOperation {
                     operand: Box::new(operand),
-                    op: MIRUnOp::LNOT,
+                    op: THIRUnOp::LNOT,
                 },
             )
         }
@@ -119,9 +119,9 @@ pub fn typecheck_unop(
 
             TypecheckResult::new(
                 operand._type.clone(),
-                MIRExpressionKind::UnaryOperation {
+                THIRExpressionKind::UnaryOperation {
                     operand: Box::new(operand),
-                    op: MIRUnOp::BNOT,
+                    op: THIRUnOp::BNOT,
                 },
             )
         }
@@ -132,8 +132,8 @@ pub fn typecheck_unop(
                 .and_then(|v| std_rval_promotion(env, v))?;
 
             let operator = match &operand._type.kind {
-                MIRTypeKind::Integer { .. } => MIRUnOp::NEG,
-                MIRTypeKind::Float { .. } => MIRUnOp::FNEG,
+                THIRTypeKind::Integer { .. } => THIRUnOp::NEG,
+                THIRTypeKind::Float { .. } => THIRUnOp::FNEG,
 
                 _ => {
                     return env.log_error(
@@ -148,7 +148,7 @@ pub fn typecheck_unop(
 
             TypecheckResult::new(
                 operand._type.clone(),
-                MIRExpressionKind::UnaryOperation {
+                THIRExpressionKind::UnaryOperation {
                     operand: Box::new(operand),
                     op: operator,
                 },
@@ -167,12 +167,12 @@ pub fn typecheck_unop(
             };
 
             // AddressOf just returns the operand (which is a reference) as a pointer
-            TypecheckResult::from(MIRExpression {
+            TypecheckResult::from(THIRExpression {
                 token_range: operand.token_range.clone(),
                 _type: env.symbols.pointer_to(inner.clone()),
-                kind: MIRExpressionKind::TypeConversion {
+                kind: THIRExpressionKind::TypeConversion {
                     operand: Box::new(operand),
-                    conversion: MIRCoercion::ReinterpretBits,
+                    conversion: THIRCoercion::ReinterpretBits,
                 },
             })
         }
@@ -193,9 +193,9 @@ pub fn typecheck_unop(
             };
 
             // Dereference returns a memory reference to the inner type
-            TypecheckResult::from(MIRExpression {
+            TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: MIRExpressionKind::Typechange(Box::new(operand)),
+                kind: THIRExpressionKind::Typechange(Box::new(operand)),
                 _type: env.symbols.mem_ref_to(inner),
             })
         }
@@ -239,17 +239,17 @@ pub(crate) fn typecheck_sizeof_expr(
 fn sizeof_result(
     env: &mut TypeEnvironment,
     range: TokenRange,
-    _type: MIRType,
+    _type: THIRType,
 ) -> CXResult<TypecheckResult> {
     env.symbols
         .type_layout(&_type)
         .map_err(|err| env.complete_err(err, &range))
         .map(|layout| {
-            TypecheckResult::from(MIRExpression {
+            TypecheckResult::from(THIRExpression {
                 token_range: range,
-                kind: MIRExpressionKind::IntLiteral(layout.size as i64),
-                _type: MIRType::from(MIRTypeKind::Integer {
-                    _type: MIRIntegerType::I64,
+                kind: THIRExpressionKind::IntLiteral(layout.size as i64),
+                _type: THIRType::from(THIRTypeKind::Integer {
+                    _type: THIRIntType::I64,
                     signed: false,
                 }),
             })

@@ -2,17 +2,17 @@ use std::collections::HashMap;
 
 use cx_ast::{ast::expression::CXExpression, registry::GlobalSymbolRegistry};
 use cx_log::{CXRawResult, CXResult};
-use cx_mir::{
+use cx_thir::{
     EnvironmentNamespace,
     intrinsic_types::INTRINSIC_TYPES,
-    mir::{
-        data::MIRFunctionPrototype,
-        expression::{MIRExpression, MIRPureExpression},
-        r#type::{MIRType, MIRTypeId, MIRTypeKind},
+    thir::{
+        data::THIRFnPrototype,
+        expression::{THIRExpression, THIRPureExpression},
+        r#type::{THIRType, THIRTypeID, THIRTypeKind},
     },
-    registry::MIRDecomposedRegistry,
+    registry::THIRDecomposedRegistry,
     symbol::MIRSymbol,
-    type_context::MIRTypeContext,
+    type_context::THIRTypeContext,
 };
 use cx_target::ArchitectureConfig;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName, scoped_map::ScopedMap};
@@ -24,26 +24,26 @@ pub struct MIRSymbolRegistry<'a> {
     global_cache: HashMap<QualifiedName, MIRSymbol>,
     local_symbols: ScopedMap<QualifiedName, MIRSymbol>,
 
-    typeid_defs: HashMap<MIRTypeId, MIRType>,
+    typeid_defs: HashMap<THIRTypeID, THIRType>,
     next_typeid: u64,
 }
 
-impl MIRTypeContext for MIRSymbolRegistry<'_> {
+impl THIRTypeContext for MIRSymbolRegistry<'_> {
     fn architecture(&self) -> &ArchitectureConfig {
         &self.architecture
     }
 
-    fn resolve_type_id(&self, id: MIRTypeId) -> &MIRType {
+    fn resolve_type_id(&self, id: THIRTypeID) -> &THIRType {
         self.typeid_defs
             .get(&id)
             .unwrap_or_else(|| panic!("Invalid MIRTypeId {} in AST!", id))
     }
 
-    fn try_resolve_type_id(&self, id: MIRTypeId) -> Option<&MIRType> {
+    fn try_resolve_type_id(&self, id: THIRTypeID) -> Option<&THIRType> {
         self.typeid_defs.get(&id)
     }
 
-    fn type_id_lookup_identifier(&self, id: MIRTypeId) -> Option<&QualifiedName> {
+    fn type_id_lookup_identifier(&self, id: THIRTypeID) -> Option<&QualifiedName> {
         self.global_cache
             .iter()
             .find_map(|(name, symbol)| (symbol.as_type_id() == Some(id)).then_some(name))
@@ -71,17 +71,17 @@ impl<'a> MIRSymbolRegistry<'a> {
 
         for (name, ty_kind) in INTRINSIC_TYPES {
             let ty_kind = match *name {
-                "usize" => MIRTypeKind::Integer {
+                "usize" => THIRTypeKind::Integer {
                     signed: false,
                     _type: registry.pointer_integer_type(),
                 },
-                "isize" => MIRTypeKind::Integer {
+                "isize" => THIRTypeKind::Integer {
                     signed: true,
                     _type: registry.pointer_integer_type(),
                 },
                 _ => ty_kind.clone(),
             };
-            let ty: MIRType = ty_kind.into();
+            let ty: THIRType = ty_kind.into();
             let id = registry.generate_type_id(ty);
 
             registry.insert_type_symbol(QualifiedName::new_raw(CXIdent::new(*name)), id);
@@ -90,8 +90,8 @@ impl<'a> MIRSymbolRegistry<'a> {
         registry
     }
 
-    pub fn decompose(self) -> MIRDecomposedRegistry {
-        MIRDecomposedRegistry::new(self.architecture, self.typeid_defs)
+    pub fn decompose(self) -> THIRDecomposedRegistry {
+        THIRDecomposedRegistry::new(self.architecture, self.typeid_defs)
     }
 
     pub fn get_global_registry(&self) -> &GlobalSymbolRegistry {
@@ -102,32 +102,32 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.global_cache.get(name)
     }
 
-    pub fn generate_type_id(&mut self, ty: MIRType) -> MIRTypeId {
+    pub fn generate_type_id(&mut self, ty: THIRType) -> THIRTypeID {
         let id = self.reserve_type_id();
         self.overwrite_type_id(id, ty);
 
         id
     }
 
-    pub fn undo_type_id(&mut self, id: MIRTypeId) -> Option<MIRType> {
+    pub fn undo_type_id(&mut self, id: THIRTypeID) -> Option<THIRType> {
         self.typeid_defs.remove(&id)
     }
 
-    pub fn reserve_type_id(&mut self) -> MIRTypeId {
-        let id = MIRTypeId(self.next_typeid);
+    pub fn reserve_type_id(&mut self) -> THIRTypeID {
+        let id = THIRTypeID(self.next_typeid);
         self.next_typeid += 1;
         id
     }
 
-    pub fn overwrite_type_id(&mut self, id: MIRTypeId, ty: MIRType) {
+    pub fn overwrite_type_id(&mut self, id: THIRTypeID, ty: THIRType) {
         self.typeid_defs.insert(id, ty);
     }
 
-    pub fn try_resolve_type_id(&self, id: MIRTypeId) -> Option<&MIRType> {
+    pub fn try_resolve_type_id(&self, id: THIRTypeID) -> Option<&THIRType> {
         self.typeid_defs.get(&id)
     }
 
-    pub fn insert_local_type(&mut self, name: String, _type: MIRType) -> CXResult<MIRTypeId> {
+    pub fn insert_local_type(&mut self, name: String, _type: THIRType) -> CXResult<THIRTypeID> {
         let type_id = self.generate_type_id(_type);
 
         self.local_symbols.insert(
@@ -138,7 +138,7 @@ impl<'a> MIRSymbolRegistry<'a> {
         Ok(type_id)
     }
 
-    pub fn insert_local_type_id(&mut self, name: String, type_id: MIRTypeId) -> CXRawResult<()> {
+    pub fn insert_local_type_id(&mut self, name: String, type_id: THIRTypeID) -> CXRawResult<()> {
         self.local_symbols.insert(
             QualifiedName::new_raw(CXIdent::new(name)),
             MIRSymbol::Type(type_id),
@@ -188,15 +188,15 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.global_cache.insert(name, symbol);
     }
 
-    pub fn insert_value(&mut self, name: QualifiedName, expr: MIRExpression) {
+    pub fn insert_value(&mut self, name: QualifiedName, expr: THIRExpression) {
         self.insert_symbol(name, MIRSymbol::Expression(expr));
     }
 
-    pub fn insert_type_symbol(&mut self, name: QualifiedName, id: MIRTypeId) {
+    pub fn insert_type_symbol(&mut self, name: QualifiedName, id: THIRTypeID) {
         self.insert_symbol(name, MIRSymbol::Type(id));
     }
 
-    pub fn insert_local_value(&mut self, name: QualifiedName, expr: MIRExpression) {
+    pub fn insert_local_value(&mut self, name: QualifiedName, expr: THIRExpression) {
         self.local_symbols.insert(name, MIRSymbol::Expression(expr));
     }
 
@@ -206,7 +206,7 @@ impl<'a> MIRSymbolRegistry<'a> {
         name: QualifiedName,
         namespace: EnvironmentNamespace,
         expr: CXExpression,
-        expected_type: MIRType,
+        expected_type: THIRType,
     ) {
         self.local_symbols.insert(
             name,
@@ -223,9 +223,9 @@ impl<'a> MIRSymbolRegistry<'a> {
         &mut self,
         name: QualifiedName,
         namespace: EnvironmentNamespace,
-        params: Vec<(CXIdent, MIRType)>,
+        params: Vec<(CXIdent, THIRType)>,
         body: CXExpression,
-        return_type: MIRType,
+        return_type: THIRType,
     ) {
         self.local_symbols.insert(
             name,
@@ -238,31 +238,31 @@ impl<'a> MIRSymbolRegistry<'a> {
         );
     }
 
-    pub fn insert_pure_value(&mut self, name: QualifiedName, expr: MIRPureExpression) {
+    pub fn insert_pure_value(&mut self, name: QualifiedName, expr: THIRPureExpression) {
         self.insert_symbol(name, MIRSymbol::Expression(expr.as_value()));
     }
 
-    pub fn insert_function_symbol(&mut self, name: QualifiedName, prototype: MIRFunctionPrototype) {
+    pub fn insert_function_symbol(&mut self, name: QualifiedName, prototype: THIRFnPrototype) {
         self.insert_symbol(name, MIRSymbol::FunctionReference(prototype));
     }
 
-    pub fn pointer_to(&mut self, ty: MIRType) -> MIRType {
+    pub fn pointer_to(&mut self, ty: THIRType) -> THIRType {
         let id = self.generate_type_id(ty);
 
-        MIRTypeKind::PointerTo { inner_type: id }.into()
+        THIRTypeKind::PointerTo { inner_type: id }.into()
     }
 
-    pub fn mem_ref_to(&mut self, ty: MIRType) -> MIRType {
+    pub fn mem_ref_to(&mut self, ty: THIRType) -> THIRType {
         let id = self.generate_type_id(ty);
 
-        MIRTypeKind::MemoryReference {
+        THIRTypeKind::MemoryReference {
             inner_type: id,
             bitfield: None,
         }
         .into()
     }
 
-    pub fn contains(&self, id: MIRTypeId) -> bool {
+    pub fn contains(&self, id: THIRTypeID) -> bool {
         self.typeid_defs.contains_key(&id)
     }
 }

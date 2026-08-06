@@ -1,10 +1,10 @@
 use cx_ast::ast::expression::CXExpression;
 use cx_ast::ast::template::CXTemplateInput;
 use cx_log::{CXRawResult, CXResult};
-use cx_mir::EnvironmentNamespace;
-use cx_mir::mir::data::{MIRComptimeFunctionPrototype, MIRType, MIRTypeId};
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRLocalId};
-use cx_mir::symbol::MIRSymbol;
+use cx_thir::EnvironmentNamespace;
+use cx_thir::thir::data::{THIRComptimeFnPrototype, THIRType, THIRTypeID};
+use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind, THIRLocalID};
+use cx_thir::symbol::MIRSymbol;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
 
@@ -18,7 +18,7 @@ use cx_tokens::TokenRange;
 #[derive(Debug, Clone)]
 pub struct TypecheckedBinding {
     pub root: CXIdent,
-    pub local_id: MIRLocalId,
+    pub local_id: THIRLocalID,
     pub kind: BindingPlaceKind,
 }
 
@@ -29,7 +29,7 @@ pub enum BindingPlaceKind {
 }
 
 impl TypecheckedBinding {
-    pub fn local(root: CXIdent, local_id: MIRLocalId) -> Self {
+    pub fn local(root: CXIdent, local_id: THIRLocalID) -> Self {
         Self {
             root,
             local_id,
@@ -37,7 +37,7 @@ impl TypecheckedBinding {
         }
     }
 
-    pub fn projection(root: CXIdent, local_id: MIRLocalId) -> Self {
+    pub fn projection(root: CXIdent, local_id: THIRLocalID) -> Self {
         Self {
             root,
             local_id,
@@ -52,7 +52,7 @@ impl TypecheckedBinding {
 
 #[derive(Debug)]
 pub enum TypecheckState {
-    Ready(MIRExpression),
+    Ready(THIRExpression),
     Comptime(ComptimeTypecheckValue),
     IncompleteTemplatedCallee {
         name: QualifiedName,
@@ -67,23 +67,23 @@ pub enum ComptimeTypecheckValue {
     StagedFunction(StagedFunctionValue),
     Value(ComptimeValue),
     #[allow(dead_code)]
-    StagedExpr(MIRExpression),
+    StagedExpr(THIRExpression),
 }
 
 #[derive(Debug, Clone)]
 pub struct StagedFunctionValue {
     pub namespace: EnvironmentNamespace,
-    pub params: Vec<(CXIdent, MIRType)>,
+    pub params: Vec<(CXIdent, THIRType)>,
     pub body: Box<CXExpression>,
-    pub return_type: MIRType,
+    pub return_type: THIRType,
 }
 
 #[derive(Debug, Clone)]
 pub struct ComptimeFunctionValue {
-    pub prototype: MIRComptimeFunctionPrototype,
+    pub prototype: THIRComptimeFnPrototype,
     pub namespace: EnvironmentNamespace,
     pub body: Box<CXExpression>,
-    pub template_bindings: Vec<(CXIdent, MIRTypeId)>,
+    pub template_bindings: Vec<(CXIdent, THIRTypeID)>,
 }
 
 pub struct IncompleteTemplate {
@@ -92,7 +92,7 @@ pub struct IncompleteTemplate {
 }
 
 type ExpectedTypeResolver =
-    dyn FnOnce(&mut TypeEnvironment, &EnvironmentNamespace, &MIRType) -> CXResult<MIRExpression>;
+    dyn FnOnce(&mut TypeEnvironment, &EnvironmentNamespace, &THIRType) -> CXResult<THIRExpression>;
 
 pub struct ExpectedTypeDeferredExpr {
     resolver: Box<ExpectedTypeResolver>,
@@ -101,7 +101,7 @@ pub struct ExpectedTypeDeferredExpr {
 impl ExpectedTypeDeferredExpr {
     pub fn new<F>(resolver: F) -> Self
     where
-        F: FnOnce(&mut TypeEnvironment, &EnvironmentNamespace, &MIRType) -> CXResult<MIRExpression>
+        F: FnOnce(&mut TypeEnvironment, &EnvironmentNamespace, &THIRType) -> CXResult<THIRExpression>
             + 'static,
     {
         Self {
@@ -113,8 +113,8 @@ impl ExpectedTypeDeferredExpr {
         self,
         env: &mut TypeEnvironment,
         namespace: &EnvironmentNamespace,
-        expected_type: &MIRType,
-    ) -> CXResult<MIRExpression> {
+        expected_type: &THIRType,
+    ) -> CXResult<THIRExpression> {
         (self.resolver)(env, namespace, expected_type)
     }
 }
@@ -140,8 +140,8 @@ pub struct TypecheckResult {
     adopting: bool,
 }
 
-impl From<MIRExpression> for TypecheckResult {
-    fn from(expression: MIRExpression) -> Self {
+impl From<THIRExpression> for TypecheckResult {
+    fn from(expression: THIRExpression) -> Self {
         Self {
             expression: TypecheckState::Ready(expression),
             binding: None,
@@ -151,9 +151,9 @@ impl From<MIRExpression> for TypecheckResult {
 }
 
 impl TypecheckResult {
-    pub fn new(_type: MIRType, kind: MIRExpressionKind) -> Self {
+    pub fn new(_type: THIRType, kind: THIRExpressionKind) -> Self {
         Self {
-            expression: TypecheckState::Ready(MIRExpression {
+            expression: TypecheckState::Ready(THIRExpression {
                 token_range: TokenRange::internal(),
                 kind,
                 _type,
@@ -189,12 +189,12 @@ impl TypecheckResult {
         self,
         env: &TypeEnvironment,
         token_range: &TokenRange,
-    ) -> CXResult<MIRExpression> {
+    ) -> CXResult<THIRExpression> {
         self.standard_ready_assure(env, token_range)
             .map(|t| t.internal_ready_assertion())
     }
 
-    pub fn internal_ready_assertion(self) -> MIRExpression {
+    pub fn internal_ready_assertion(self) -> THIRExpression {
         match self.expression {
             TypecheckState::Ready(expr) => expr,
 
@@ -244,7 +244,7 @@ impl TypecheckResult {
     }
 
     #[allow(dead_code)]
-    pub fn staged_expr(expression: MIRExpression) -> Self {
+    pub fn staged_expr(expression: THIRExpression) -> Self {
         Self {
             expression: TypecheckState::Comptime(ComptimeTypecheckValue::StagedExpr(expression)),
             binding: None,
@@ -254,7 +254,7 @@ impl TypecheckResult {
 
     pub fn needs_expected_type<F>(resolver: F) -> Self
     where
-        F: FnOnce(&mut TypeEnvironment, &EnvironmentNamespace, &MIRType) -> CXResult<MIRExpression>
+        F: FnOnce(&mut TypeEnvironment, &EnvironmentNamespace, &THIRType) -> CXResult<THIRExpression>
             + 'static,
     {
         Self {
@@ -282,14 +282,14 @@ impl TypecheckResult {
         self.adopting
     }
 
-    pub fn ready_expression(&self) -> Option<&MIRExpression> {
+    pub fn ready_expression(&self) -> Option<&THIRExpression> {
         match &self.expression {
             TypecheckState::Ready(expression) => Some(expression),
             _ => None,
         }
     }
 
-    pub fn try_into_expression(self) -> TypecheckExtract<MIRExpression> {
+    pub fn try_into_expression(self) -> TypecheckExtract<THIRExpression> {
         match self.expression {
             TypecheckState::Ready(expression) => TypecheckExtract::Succ(expression),
             expression => TypecheckExtract::Fail(Self { expression, ..self }),
@@ -317,7 +317,7 @@ impl TypecheckResult {
     }
 
     /// Get the type of this typecheck result's expression
-    pub fn ready_type(&self) -> Option<&MIRType> {
+    pub fn ready_type(&self) -> Option<&THIRType> {
         match &self.expression {
             TypecheckState::Ready(expression) => Some(&expression._type),
             TypecheckState::Comptime(ComptimeTypecheckValue::StagedExpr(expression)) => {
@@ -355,7 +355,7 @@ impl TypecheckResult {
         self,
         env: &mut TypeEnvironment,
         namespace: &EnvironmentNamespace,
-        expected_type: &MIRType,
+        expected_type: &THIRType,
     ) -> CXResult<Self> {
         match self.expression {
             TypecheckState::NeedsExpectedType(expr) => Ok(Self {

@@ -1,6 +1,6 @@
 use cx_ast::ast::expression::{CXExprKind, CXExpression};
 use cx_log::CXResult;
-use cx_mir::mir::{data::MIRComptimeValueType, expression::MIRExpression};
+use cx_thir::thir::{data::THIRComptimeValueType, expression::THIRExpression};
 use cx_util::namespace::QualifiedName;
 
 use crate::{
@@ -22,16 +22,16 @@ pub(crate) mod evaluation;
 pub(crate) mod value;
 
 pub(crate) enum ComptimeCallArg<'a> {
-    Mir(MIRExpression),
+    Mir(THIRExpression),
     Source {
-        namespace: &'a cx_mir::EnvironmentNamespace,
+        namespace: &'a cx_thir::EnvironmentNamespace,
         expr: &'a CXExpression,
     },
 }
 
 pub fn evaluate_comptime_expression(
     env: &mut TypeEnvironment,
-    expr: MIRExpression,
+    expr: THIRExpression,
 ) -> CXResult<ComptimeValue> {
     evaluate_expression(&mut ComptimeEngine::new(env), expr)
 }
@@ -165,10 +165,10 @@ pub(crate) fn evaluate_comptime_call(
 
 fn check_staged_source_argument(
     env: &mut TypeEnvironment,
-    namespace: &cx_mir::EnvironmentNamespace,
+    namespace: &cx_thir::EnvironmentNamespace,
     call_range: &cx_tokens::TokenRange,
     expr: &CXExpression,
-    target: &MIRComptimeValueType,
+    target: &THIRComptimeValueType,
 ) -> CXResult<()> {
     if !target.params.is_empty() {
         let CXExprKind::StagedExpression { params, .. } = &expr.kind else {
@@ -210,7 +210,7 @@ pub(crate) fn evaluate_staged_expression_call(
     env: &mut TypeEnvironment,
     call_range: &cx_tokens::TokenRange,
     function: StagedFunctionValue,
-    argument_namespace: &cx_mir::EnvironmentNamespace,
+    argument_namespace: &cx_thir::EnvironmentNamespace,
     args: Vec<&CXExpression>,
 ) -> CXResult<TypecheckResult> {
     if args.len() != function.params.len() {
@@ -250,8 +250,8 @@ fn coerce_staged_argument(
     env: &mut TypeEnvironment,
     call_range: &cx_tokens::TokenRange,
     arg: TypecheckResult,
-    target_type: &cx_mir::mir::data::MIRType,
-) -> CXResult<MIRExpression> {
+    target_type: &cx_thir::thir::data::THIRType,
+) -> CXResult<THIRExpression> {
     let arg = arg.standard_ready_coerce(env, call_range)?;
 
     if env.type_eq(&arg._type, target_type) {
@@ -268,10 +268,10 @@ fn coerce_staged_argument(
 
 fn typecheck_comptime_body(
     env: &mut TypeEnvironment,
-    namespace: &cx_mir::EnvironmentNamespace,
+    namespace: &cx_thir::EnvironmentNamespace,
     body: &CXExpression,
-    expected_type: &cx_mir::mir::data::MIRType,
-) -> CXResult<MIRExpression> {
+    expected_type: &cx_thir::thir::data::THIRType,
+) -> CXResult<THIRExpression> {
     let expr = match &body.kind {
         CXExprKind::Block { exprs, .. } if exprs.len() == 1 => &exprs[0],
         CXExprKind::Block { .. } => {

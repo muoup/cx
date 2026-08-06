@@ -10,7 +10,7 @@ cx-namespace = { path = "../cx-namespace" }
 
 cx-ast = { path = "../cx-ast" }
 cx-tokens = { path = "../cx-tokens" }
-cx-mir = { path = "../cx-mir" }
+cx-thir = { path = "../cx-thir" }
 cx-preparse-data = { path = "../cx-preparse-data" }
 
 cx-pipeline-data = { path = "../cx-pipeline-data" }

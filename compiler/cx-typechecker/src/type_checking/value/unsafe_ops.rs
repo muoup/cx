@@ -4,16 +4,16 @@ use crate::{
 };
 use cx_ast::ast::expression::CXExpression;
 use cx_log::CXResult;
-use cx_mir::{
+use cx_thir::{
     EnvironmentNamespace,
-    mir::{data::MIRType, expression::MIRExpressionKind},
+    thir::{data::THIRType, expression::THIRExpressionKind},
 };
 
 pub(crate) fn typecheck_unsafe(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     inner: &CXExpression,
-    expected_type: Option<&MIRType>,
+    expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     env.push_unsafe();
     let inner_result = typecheck_expr(env, namespace, inner, expected_type);
@@ -25,7 +25,7 @@ pub(crate) fn typecheck_unsafe(
 
     let result = TypecheckResult::new(
         inner_expr._type.clone(),
-        MIRExpressionKind::Unsafe {
+        THIRExpressionKind::Unsafe {
             expression: Box::new(inner_expr),
         },
     );

@@ -3,9 +3,9 @@ use cx_ast::ast::{
     modifiers::CX_CONST,
 };
 use cx_log::CXResult;
-use cx_mir::{
-    mir::expression::{MIRExpression, MIRExpressionKind},
-    type_context::MIRTypeContext,
+use cx_thir::{
+    thir::expression::{THIRExpression, THIRExpressionKind},
+    type_context::THIRTypeContext,
 };
 
 use crate::{
@@ -21,7 +21,7 @@ use crate::{
 pub fn typecheck_assignment(
     env: &mut TypeEnvironment,
     lhs: TypecheckResult,
-    rhs: MIRExpression,
+    rhs: THIRExpression,
     op: Option<&CXBinOp>,
     expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
@@ -73,7 +73,7 @@ pub fn typecheck_assignment(
 
     Ok(TypecheckResult::new(
         lhs_type,
-        MIRExpressionKind::RegionWrite {
+        THIRExpressionKind::RegionWrite {
             target: Box::new(lhs_expr),
             value: Box::new(rhs),
         },

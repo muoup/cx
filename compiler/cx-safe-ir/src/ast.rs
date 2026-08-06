@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use cx_mir::mir::data::{MIRFunctionPrototype, MIRType};
+use cx_thir::thir::data::{THIRFnPrototype, THIRType};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
@@ -75,7 +75,7 @@ impl CVMOperation {
 
 #[derive(Clone, Debug)]
 pub struct FMIRFunction {
-    pub prototype: MIRFunctionPrototype,
+    pub prototype: THIRFnPrototype,
     pub body: FMIRNode,
 }
 
@@ -83,7 +83,7 @@ pub struct FMIRFunction {
 pub enum FMIRType {
     /// Leaf/primitive type - represents base types like i32, bool, ()
     /// These are implicitly pure (CMonad::Pure)
-    Pure { mir_type: MIRType },
+    Pure { thir_type: THIRType },
 
     /// All values are wrapped in CMonad - Pure = non-CMonadful
     CMonad {
@@ -224,8 +224,8 @@ pub enum FMIRNodeBody {
 
 impl FMIRType {
     /// Create a leaf type (primitive like i32, bool, etc.)
-    pub fn pure(mir_type: MIRType) -> Self {
-        FMIRType::Pure { mir_type }
+    pub fn pure(thir_type: THIRType) -> Self {
+        FMIRType::Pure { thir_type }
     }
 
     /// Create an unsafe CMonad (black box to analysis)
@@ -286,7 +286,7 @@ impl FMIRNode {
     /// Create a unit value
     pub fn unit() -> Self {
         FMIRNode {
-            _type: FMIRType::pure(MIRType::unit()),
+            _type: FMIRType::pure(THIRType::unit()),
             body: FMIRNodeBody::Unit,
             token_range: TokenRange::internal(),
         }
@@ -295,7 +295,7 @@ impl FMIRNode {
     /// Create a CLoop node
     pub fn cloop(condition: Rc<FMIRNode>, body: Rc<FMIRNode>) -> Self {
         FMIRNode {
-            _type: FMIRType::unsafe_effect(FMIRType::pure(MIRType::unit())),
+            _type: FMIRType::unsafe_effect(FMIRType::pure(THIRType::unit())),
             body: FMIRNodeBody::CLoop { condition, body },
             token_range: TokenRange::internal(),
         }
@@ -308,7 +308,7 @@ impl FMIRNode {
         else_branch: Option<Rc<FMIRNode>>,
     ) -> Self {
         FMIRNode {
-            _type: FMIRType::pure(MIRType::unit()),
+            _type: FMIRType::pure(THIRType::unit()),
             body: FMIRNodeBody::If {
                 condition,
                 then_branch,

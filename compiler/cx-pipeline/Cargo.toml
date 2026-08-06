@@ -16,7 +16,7 @@ cx-lexer = { path = "../cx-lexer", default-features = false }
 cx-parsing = { path = "../cx-parsing" }
 cx-typechecker = { path = "../cx-typechecker" }
 cx-safe-analyzer = { path = "../cx-safe-analyzer" }
-cx-mir-lowering = { path = "../cx-mir-lowering" }
+cx-thir-lowering = { path = "../cx-thir-lowering" }
 cx-backend-llvm = { path = "../cx-backend-llvm", optional = true }
 cx-backend-cranelift = { path = "../cx-backend-cranelift" }
 
@@ -26,7 +26,7 @@ cx-pipeline-data = { path = "../cx-pipeline-data" }
 cx-tokens = { path = "../cx-tokens" }
 cx-preparse-data = { path = "../cx-preparse-data" }
 cx-ast = { path = "../cx-ast" }
-cx-mir = { path = "../cx-mir" }
+cx-thir = { path = "../cx-thir" }
 cx-lmir = { path = "../cx-lmir" }
 cx-safe-ir = { path = "../cx-safe-ir" }
 cx-util = { path = "../cx-util" }

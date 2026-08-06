@@ -3,12 +3,12 @@ use cx_ast::{
     symbols::CXSymbolKind,
 };
 use cx_log::CXResult;
-use cx_mir::mir::{
+use cx_thir::thir::{
     data::{
-        MIRFunction, MIRFunctionPrototype, MIRFunctionSignature, MIRParameter, MIRTemplateInput,
+        THIRFunction, THIRFnPrototype, THIRFnSignature, THIRParameter, MIRTemplateInput,
     },
-    expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
-    r#type::MIRType,
+    expression::{THIRExpression, THIRExpressionKind, SymbolValueOrigin},
+    r#type::THIRType,
 };
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
@@ -45,8 +45,8 @@ pub fn fulfill_requests(env: &mut TypeEnvironment) -> CXResult<()> {
 fn realize_tagged_union_constructor(
     env: &mut TypeEnvironment,
     name: String,
-    union_type: MIRType,
-    variant_type: MIRType,
+    union_type: THIRType,
+    variant_type: THIRType,
     variant_index: usize,
 ) {
     if env.items.request_fulfilled(name.as_str()) {
@@ -55,16 +55,16 @@ fn realize_tagged_union_constructor(
     env.items.mark_request_fulfilled(name.clone());
 
     let param_name = CXIdent::new("value");
-    let param_local_id = cx_mir::mir::expression::MIRLocalId::fresh();
-    let prototype = MIRFunctionPrototype::new(
+    let param_local_id = cx_thir::thir::expression::THIRLocalID::fresh();
+    let prototype = THIRFnPrototype::new(
         name,
         CXLinkageMode::Static,
-        MIRFunctionSignature {
+        THIRFnSignature {
             return_type: union_type.clone(),
             params: if variant_type.is_unit() {
                 Vec::new()
             } else {
-                vec![MIRParameter {
+                vec![THIRParameter {
                     name: Some(param_name.clone()),
                     local_id: Some(param_local_id),
                     _type: variant_type.clone(),
@@ -76,43 +76,43 @@ fn realize_tagged_union_constructor(
     );
 
     let value = if variant_type.is_unit() {
-        MIRExpression {
+        THIRExpression {
             token_range: TokenRange::internal(),
             _type: variant_type.clone(),
-            kind: MIRExpressionKind::Unit,
+            kind: THIRExpressionKind::Unit,
         }
     } else {
-        let param_ref = MIRExpression {
+        let param_ref = THIRExpression {
             token_range: TokenRange::internal(),
             _type: env.symbols.mem_ref_to(variant_type.clone()),
-            kind: MIRExpressionKind::Variable {
+            kind: THIRExpressionKind::Variable {
                 name: param_name,
                 local_id: Some(param_local_id),
                 location: SymbolValueOrigin::Local,
             },
         };
 
-        MIRExpression {
+        THIRExpression {
             token_range: TokenRange::internal(),
             _type: variant_type.clone(),
-            kind: MIRExpressionKind::RegionDuplicate {
+            kind: THIRExpressionKind::RegionDuplicate {
                 source: Box::new(param_ref),
             },
         }
     };
-    let constructed = MIRExpression {
+    let constructed = THIRExpression {
         token_range: TokenRange::internal(),
         _type: union_type.clone(),
-        kind: MIRExpressionKind::ConstructTaggedUnion {
+        kind: THIRExpressionKind::ConstructTaggedUnion {
             variant_index,
             value: Box::new(value),
             sum_type: union_type,
         },
     };
-    let body = MIRExpression {
+    let body = THIRExpression {
         token_range: TokenRange::internal(),
         _type: prototype.signature().return_type.clone(),
-        kind: MIRExpressionKind::Return {
+        kind: THIRExpressionKind::Return {
             value: Some(Box::new(constructed)),
             postcondition: None,
             cleanups: Vec::new(),
@@ -120,13 +120,13 @@ fn realize_tagged_union_constructor(
     };
 
     env.items
-        .push_generated_function(MIRFunction { prototype, body });
+        .push_generated_function(THIRFunction { prototype, body });
 }
 
 fn realize_fn_template(
     env: &mut TypeEnvironment,
     name: &QualifiedName,
-    prototype: MIRFunctionPrototype,
+    prototype: THIRFnPrototype,
     input: &MIRTemplateInput,
 ) -> CXResult<()> {
     let stmt = env

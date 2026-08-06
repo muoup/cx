@@ -374,32 +374,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cx-mir"
-version = "0.0.0"
-dependencies = [
- "cx-ast",
- "cx-log",
- "cx-target",
- "cx-tokens",
- "cx-util",
- "speedy",
- "uuid",
-]
-
-[[package]]
-name = "cx-mir-lowering"
-version = "0.0.0"
-dependencies = [
- "cx-ast",
- "cx-lmir",
- "cx-log",
- "cx-mir",
- "cx-parsing",
- "cx-target",
- "cx-util",
-]
-
-[[package]]
 name = "cx-namespace"
 version = "0.0.0"
 dependencies = [
@@ -412,10 +386,10 @@ version = "0.0.0"
 dependencies = [
  "cx-ast",
  "cx-log",
- "cx-mir",
  "cx-namespace",
  "cx-pipeline-data",
  "cx-preparse-data",
+ "cx-thir",
  "cx-tokens",
  "cx-util",
 ]
@@ -431,13 +405,13 @@ dependencies = [
  "cx-lexer",
  "cx-lmir",
  "cx-log",
- "cx-mir",
- "cx-mir-lowering",
  "cx-parsing",
  "cx-pipeline-data",
  "cx-preparse-data",
  "cx-safe-analyzer",
  "cx-safe-ir",
+ "cx-thir",
+ "cx-thir-lowering",
  "cx-tokens",
  "cx-typechecker",
  "cx-util",
@@ -452,9 +426,9 @@ dependencies = [
  "cx-ast",
  "cx-lmir",
  "cx-log",
- "cx-mir",
  "cx-preparse-data",
  "cx-target",
+ "cx-thir",
  "cx-tokens",
  "cx-util",
  "serde",
@@ -477,9 +451,9 @@ dependencies = [
  "cx-ast",
  "cx-lexer",
  "cx-log",
- "cx-mir",
  "cx-pipeline-data",
  "cx-safe-ir",
+ "cx-thir",
  "cx-tokens",
  "cx-util",
 ]
@@ -488,7 +462,7 @@ dependencies = [
 name = "cx-safe-ir"
 version = "0.1.0"
 dependencies = [
- "cx-mir",
+ "cx-thir",
  "cx-tokens",
  "cx-util",
 ]
@@ -496,6 +470,32 @@ dependencies = [
 [[package]]
 name = "cx-target"
 version = "0.0.0"
+
+[[package]]
+name = "cx-thir"
+version = "0.0.0"
+dependencies = [
+ "cx-ast",
+ "cx-log",
+ "cx-target",
+ "cx-tokens",
+ "cx-util",
+ "speedy",
+ "uuid",
+]
+
+[[package]]
+name = "cx-thir-lowering"
+version = "0.0.0"
+dependencies = [
+ "cx-ast",
+ "cx-lmir",
+ "cx-log",
+ "cx-parsing",
+ "cx-target",
+ "cx-thir",
+ "cx-util",
+]
 
 [[package]]
 name = "cx-tokens"
@@ -511,10 +511,10 @@ version = "0.0.0"
 dependencies = [
  "cx-ast",
  "cx-log",
- "cx-mir",
  "cx-namespace",
  "cx-pipeline-data",
  "cx-target",
+ "cx-thir",
  "cx-tokens",
  "cx-util",
 ]

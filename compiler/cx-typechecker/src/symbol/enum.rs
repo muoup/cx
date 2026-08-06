@@ -1,8 +1,8 @@
 use cx_ast::ast::global_var::CXEnumDefinition;
 use cx_log::CXResult;
-use cx_mir::{
+use cx_thir::{
     EnvironmentNamespace,
-    mir::expression::{MIRExpression, MIRExpressionKind},
+    thir::expression::{THIRExpression, THIRExpressionKind},
     symbol::MIRSymbol,
 };
 use cx_tokens::TokenRange;
@@ -79,10 +79,10 @@ pub(crate) fn resolve_enum_block<'a, 'b>(
 
         env.symbols.insert_value(
             symbol,
-            MIRExpression {
+            THIRExpression {
                 token_range: TokenRange::internal(),
                 _type: env.get_intrinsic_type("int"),
-                kind: MIRExpressionKind::IntLiteral(value),
+                kind: THIRExpressionKind::IntLiteral(value),
             },
         );
     }

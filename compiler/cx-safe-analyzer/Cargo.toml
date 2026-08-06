@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 cx-ast = { path = "../cx-ast" }
-cx-mir = { path = "../cx-mir" }
+cx-thir = { path = "../cx-thir" }
 cx-safe-ir = { path = "../cx-safe-ir" }
 cx-lexer = { path = "../cx-lexer" }
 cx-log = { path = "../cx-log" }

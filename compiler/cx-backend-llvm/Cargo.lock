@@ -71,7 +71,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cx-mir"
+name = "cx-thir"
 version = "0.0.0"
 dependencies = [
  "cx-ast",
@@ -87,7 +87,7 @@ version = "0.0.0"
 dependencies = [
  "cx-ast",
  "cx-lmir",
- "cx-mir",
+ "cx-thir",
  "cx-preparse-data",
  "cx-tokens",
  "cx-util",

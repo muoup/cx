@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use cx_log::CXResult;
-use cx_mir::{EnvironmentNamespace, mir::data::MIRFunctionPrototype};
+use cx_thir::{EnvironmentNamespace, thir::data::THIRFnPrototype};
 use cx_pipeline_data::db::ModuleData;
 use cx_safe_ir::{
     ast::{FMIRNode, FMIRNodeBody},
@@ -103,7 +103,7 @@ pub fn evaluate_const(
 }
 
 pub fn assert_proven_conditions(
-    function_prototype: &MIRFunctionPrototype,
+    function_prototype: &THIRFnPrototype,
     root: &FMIRNode,
     current_namespace: EnvironmentNamespace,
     module_data: &ModuleData,

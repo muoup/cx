@@ -2,12 +2,12 @@ use cx_log::{
     CXResult,
     error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
 };
-use cx_mir::{EnvironmentNamespace, mir::expression::MIRExpression};
+use cx_thir::{EnvironmentNamespace, thir::expression::THIRExpression};
 use cx_pipeline_data::db::ModuleData;
 use cx_safe_ir::ast::FMIRNode;
 use cx_tokens::TokenRange;
 
-use crate::{AnalysisDiagnosticContext, mir_conversion::environment::FMIREnvironment};
+use crate::{AnalysisDiagnosticContext, thir_conversion::environment::FMIREnvironment};
 
 pub(crate) trait AnalysisDiagnosticSource {
     fn module_data(&self) -> &ModuleData;
@@ -79,7 +79,7 @@ pub(crate) trait AnalysisRange {
     fn token_range(&self) -> &TokenRange;
 }
 
-impl AnalysisRange for MIRExpression {
+impl AnalysisRange for THIRExpression {
     fn token_range(&self) -> &TokenRange {
         &self.token_range
     }

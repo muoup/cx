@@ -1,9 +1,9 @@
 use crate::{environment::TypeEnvironment, type_checking::result::TypecheckResult};
 use cx_ast::ast::modifiers::{CX_CONST, CXLinkageMode};
 use cx_log::CXResult;
-use cx_mir::mir::{
-    data::{MIRType, MIRTypeKind},
-    expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
+use cx_thir::thir::{
+    data::{THIRType, THIRTypeKind},
+    expression::{THIRExpression, THIRExpressionKind, SymbolValueOrigin},
     global::{MIRGlobalVarKind, MIRGlobalVariable},
 };
 use cx_tokens::{
@@ -63,16 +63,16 @@ pub(crate) fn typecheck_int_literal(
         );
     };
 
-    Ok(TypecheckResult::from(MIRExpression {
+    Ok(TypecheckResult::from(THIRExpression {
         token_range: token_range.clone(),
         // MIR stores integer literal bits in an i64; signedness lives in the MIR type.
-        kind: MIRExpressionKind::IntLiteral(magnitude as i64),
+        kind: THIRExpressionKind::IntLiteral(magnitude as i64),
         _type: literal_type,
     }))
 }
 
-fn integer_type_can_represent(candidate: &MIRType, magnitude: u64) -> bool {
-    let MIRTypeKind::Integer { _type, signed } = candidate.kind else {
+fn integer_type_can_represent(candidate: &THIRType, magnitude: u64) -> bool {
+    let THIRTypeKind::Integer { _type, signed } = candidate.kind else {
         unreachable!("integer literal candidate was not an integer type")
     };
     let bits = (_type.bytes() * 8) as u32;
@@ -96,9 +96,9 @@ pub(crate) fn typecheck_float_literal(
         );
     }
 
-    Ok(TypecheckResult::from(MIRExpression {
+    Ok(TypecheckResult::from(THIRExpression {
         token_range: token_range.clone(),
-        kind: MIRExpressionKind::FloatLiteral(val),
+        kind: THIRExpressionKind::FloatLiteral(val),
         _type: env.get_intrinsic_type(if suffix == FloatSuffix::Float {
             "float"
         } else {
@@ -122,11 +122,11 @@ pub(crate) fn typecheck_string_literal(env: &mut TypeEnvironment, val: &str) -> 
 
     let str_ref_type = env
         .symbols
-        .mem_ref_to(MIRType::from(MIRTypeKind::Str).add_specifier(CX_CONST));
+        .mem_ref_to(THIRType::from(THIRTypeKind::Str).add_specifier(CX_CONST));
 
-    TypecheckResult::from(MIRExpression {
+    TypecheckResult::from(THIRExpression {
         token_range: TokenRange::internal(),
-        kind: MIRExpressionKind::Variable {
+        kind: THIRExpressionKind::Variable {
             name: name_ident,
             local_id: None,
             location: SymbolValueOrigin::Global,
@@ -136,9 +136,9 @@ pub(crate) fn typecheck_string_literal(env: &mut TypeEnvironment, val: &str) -> 
 }
 
 pub(crate) fn typecheck_unit() -> TypecheckResult {
-    TypecheckResult::from(MIRExpression {
+    TypecheckResult::from(THIRExpression {
         token_range: TokenRange::internal(),
-        kind: MIRExpressionKind::Unit,
-        _type: MIRType::unit(),
+        kind: THIRExpressionKind::Unit,
+        _type: THIRType::unit(),
     })
 }

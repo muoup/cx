@@ -1,10 +1,10 @@
 use cx_log::CXResult;
-use cx_mir::{
-    mir::{
-        expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
-        r#type::{MIRType, MIRTypeKind},
+use cx_thir::{
+    thir::{
+        expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
+        r#type::{THIRType, THIRTypeKind},
     },
-    type_context::MIRTypeContext,
+    type_context::THIRTypeContext,
 };
 
 use crate::{
@@ -20,16 +20,16 @@ pub use result::{CoercionObstacle, CoercionResult};
 
 pub fn try_explicit_cast(
     env: &mut TypeEnvironment,
-    expr: MIRExpression,
-    target_type: &MIRType,
+    expr: THIRExpression,
+    target_type: &THIRType,
 ) -> CXResult<CoercionResult> {
     try_implicit_coercion(env, expr, target_type)?.or_else(|expr| {
         let from_type = expr.get_type();
-        let coerced = |conversion: MIRCoercion| {
-            let coerced = MIRExpression {
+        let coerced = |conversion: THIRCoercion| {
+            let coerced = THIRExpression {
                 token_range: expr.token_range.clone(),
                 _type: target_type.clone(),
-                kind: MIRExpressionKind::TypeConversion {
+                kind: THIRExpressionKind::TypeConversion {
                     operand: Box::new(expr.clone()),
                     conversion,
                 },
@@ -39,22 +39,22 @@ pub fn try_explicit_cast(
         };
 
         match (&from_type.kind, &target_type.kind) {
-            (MIRTypeKind::PointerTo { .. }, MIRTypeKind::PointerTo { .. }) => {
-                coerced(MIRCoercion::ReinterpretBits)
+            (THIRTypeKind::PointerTo { .. }, THIRTypeKind::PointerTo { .. }) => {
+                coerced(THIRCoercion::ReinterpretBits)
             }
 
-            (MIRTypeKind::PointerTo { .. }, MIRTypeKind::MemoryReference { .. })
+            (THIRTypeKind::PointerTo { .. }, THIRTypeKind::MemoryReference { .. })
                 if env.symbols.is_c_str(&from_type) && env.symbols.is_cx_str(target_type) =>
             {
-                coerced(MIRCoercion::ReinterpretBits)
+                coerced(THIRCoercion::ReinterpretBits)
             }
 
-            (MIRTypeKind::PointerTo { .. }, MIRTypeKind::Integer { _type, .. }) => {
-                coerced(MIRCoercion::PtrToInt { to_type: *_type })
+            (THIRTypeKind::PointerTo { .. }, THIRTypeKind::Integer { _type, .. }) => {
+                coerced(THIRCoercion::PtrToInt { to_type: *_type })
             }
 
-            (MIRTypeKind::Integer { signed, .. }, MIRTypeKind::PointerTo { .. }) => {
-                coerced(MIRCoercion::IntToPtr { sextend: *signed })
+            (THIRTypeKind::Integer { signed, .. }, THIRTypeKind::PointerTo { .. }) => {
+                coerced(THIRCoercion::IntToPtr { sextend: *signed })
             }
 
             _ => CoercionResult::unapplied(expr),

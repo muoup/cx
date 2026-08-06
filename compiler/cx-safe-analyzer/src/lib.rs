@@ -3,20 +3,20 @@ use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
 use cx_log::CXResult;
-use cx_mir::mir::data::{MIRFunction, MIRFunctionPrototype};
-use cx_mir::registry::MIRDecomposedRegistry;
-use cx_mir::{EnvironmentNamespace, MIRUnit};
+use cx_thir::thir::data::{THIRFunction, THIRFnPrototype};
+use cx_thir::registry::THIRDecomposedRegistry;
+use cx_thir::{EnvironmentNamespace, THIRUnit};
 use cx_pipeline_data::db::ModuleData;
 use cx_safe_ir::ast::{FMIRFunction, FMIRNode};
 use cx_tokens::TokenRange;
 
 use crate::log::AnalysisDiagnosticSource;
-use crate::mir_conversion::{convert_mir, environment::FMIREnvironment};
+use crate::thir_conversion::{convert_thir, environment::FMIREnvironment};
 use crate::simplify::assert_proven_conditions;
 use crate::traversal::VisitControl;
 
 pub(crate) mod log;
-pub(crate) mod mir_conversion;
+pub(crate) mod thir_conversion;
 pub(crate) mod simplify;
 pub(crate) mod traversal;
 
@@ -35,7 +35,7 @@ pub(crate) struct AnalysisDiagnosticContext<'a> {
 
 impl<'a> AnalysisDiagnosticContext<'a> {
     fn new(
-        function_prototype: &MIRFunctionPrototype,
+        function_prototype: &THIRFnPrototype,
         current_namespace: EnvironmentNamespace,
         module_data: &'a ModuleData,
     ) -> Self {
@@ -147,7 +147,7 @@ impl<'a> FMIRContext<'a> {
     pub fn new(
         current_namespace: EnvironmentNamespace,
         module_data: &'a ModuleData,
-        registry: &'a MIRDecomposedRegistry,
+        registry: &'a THIRDecomposedRegistry,
     ) -> Self {
         FMIRContext {
             env: FMIREnvironment::new(current_namespace, module_data, registry),
@@ -155,26 +155,26 @@ impl<'a> FMIRContext<'a> {
         }
     }
 
-    pub fn new_from(mir: &'a MIRUnit, module_data: &'a ModuleData) -> CXResult<Self> {
+    pub fn new_from(thir: &'a THIRUnit, module_data: &'a ModuleData) -> CXResult<Self> {
         let mut context =
-            FMIRContext::new(mir.source_namespace.clone(), module_data, &mir.registry);
+            FMIRContext::new(thir.source_namespace.clone(), module_data, &thir.registry);
 
-        for function in mir.functions.iter() {
+        for function in thir.functions.iter() {
             if !function.prototype.signature().contract.safe {
                 continue;
             }
 
-            context.consume_mir_function(function)?;
+            context.consume_thir_function(function)?;
         }
 
         Ok(context)
     }
 
-    pub fn consume_mir_function(&mut self, mir_function: &MIRFunction) -> CXResult<()> {
-        let fmir_function = convert_mir(&mut self.env, mir_function)?;
+    pub fn consume_thir_function(&mut self, thir_function: &THIRFunction) -> CXResult<()> {
+        let fmir_function = convert_thir(&mut self.env, thir_function)?;
 
         self.functions
-            .insert(mir_function.prototype.name().to_owned(), fmir_function);
+            .insert(thir_function.prototype.name().to_owned(), fmir_function);
 
         Ok(())
     }

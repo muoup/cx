@@ -13,13 +13,13 @@ use cx_ast::ast::{
     modifiers::CX_CONST,
 };
 use cx_log::CXResult;
-use cx_mir::{
+use cx_thir::{
     EnvironmentNamespace,
-    mir::{
-        data::{MIRType, MIRTypeKind},
-        expression::{MIRExpression, MIRExpressionKind, MIRLocalId, SymbolValueOrigin},
+    thir::{
+        data::{THIRType, THIRTypeKind},
+        expression::{THIRExpression, THIRExpressionKind, THIRLocalID, SymbolValueOrigin},
     },
-    type_context::MIRTypeContext,
+    type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
@@ -51,7 +51,7 @@ pub(crate) fn typecheck_move(
         );
     };
 
-    if !matches!(inner_val.kind, MIRExpressionKind::Variable { .. }) {
+    if !matches!(inner_val.kind, THIRExpressionKind::Variable { .. }) {
         return env.log_error(inner_expr.token_range(), "Move expressions can currently only be applied to stack variable identifiers".to_string());
     }
 
@@ -72,18 +72,18 @@ pub(crate) fn typecheck_move(
 
     Ok(TypecheckResult::new(
         inner_type,
-        MIRExpressionKind::RegionMove {
+        THIRExpressionKind::RegionMove {
             source: Box::new(inner_val),
         },
     ))
 }
 
-fn owned_unsafe_move(env: &TypeEnvironment, ty: &MIRType) -> bool {
+fn owned_unsafe_move(env: &TypeEnvironment, ty: &THIRType) -> bool {
     match &ty.kind {
-        MIRTypeKind::Structured { .. }
-        | MIRTypeKind::Union { .. }
-        | MIRTypeKind::TaggedUnion { .. } => ty.is_unsafe_move(),
-        MIRTypeKind::Array { inner_type, .. } => {
+        THIRTypeKind::Structured { .. }
+        | THIRTypeKind::Union { .. }
+        | THIRTypeKind::TaggedUnion { .. } => ty.is_unsafe_move(),
+        THIRTypeKind::Array { inner_type, .. } => {
             owned_unsafe_move(env, env.symbols.resolve_type_id(*inner_type))
         }
         _ => false,
@@ -130,7 +130,7 @@ pub(crate) fn typecheck_adopt(
     }
 
     Ok(
-        TypecheckResult::new(inner_type, MIRExpressionKind::Typechange(Box::new(value)))
+        TypecheckResult::new(inner_type, THIRExpressionKind::Typechange(Box::new(value)))
             .with_adopting(),
     )
 }
@@ -181,8 +181,8 @@ pub(crate) fn typecheck_leak(
     mark_binding(env, &binding, BindingMoveState::Moved);
 
     Ok(TypecheckResult::new(
-        MIRType::unit(),
-        MIRExpressionKind::LeakLifetime {
+        THIRType::unit(),
+        THIRExpressionKind::LeakLifetime {
             expression: Box::new(value),
         },
     ))
@@ -198,7 +198,7 @@ pub(crate) fn typecheck_unpack(
     let value = typecheck_expr(env, namespace, inner, None)
         .and_then(|v| v.standard_ready_coerce(env, inner.token_range()))?;
 
-    let MIRTypeKind::Structured { fields } = &value._type.kind else {
+    let THIRTypeKind::Structured { fields } = &value._type.kind else {
         return env.log_error(expr.token_range(), "@unpack expects a struct type".to_string());
     };
 
@@ -267,32 +267,32 @@ pub(crate) fn typecheck_unpack(
 
         let field_type = env.symbols.resolve_type_id(*field_ty_id).clone();
 
-        let field_place = MIRExpression {
+        let field_place = THIRExpression {
             token_range: TokenRange::internal(),
             _type: env.symbols.mem_ref_to(field_type.clone()),
-            kind: MIRExpressionKind::MemberAccess {
+            kind: THIRExpressionKind::MemberAccess {
                 base: Box::new(value.clone()),
                 member_index: *member_index,
                 aggregate_type: value._type.clone(),
             },
         };
 
-        let initial_value = MIRExpression {
+        let initial_value = THIRExpression {
             token_range: TokenRange::internal(),
             _type: field_type.clone(),
-            kind: MIRExpressionKind::RegionMove {
+            kind: THIRExpressionKind::RegionMove {
                 source: Box::new(field_place),
             },
         };
 
         let binding_name = CXIdent::new(unpack_binding.binding.as_str());
-        let local_id = MIRLocalId::fresh();
+        let local_id = THIRLocalID::fresh();
         let binding_ref_type = env.symbols.mem_ref_to(field_type.clone());
         env.symbols.insert_local_value(
             QualifiedName::new_raw(binding_name.clone()),
-            MIRExpression {
+            THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: MIRExpressionKind::Variable {
+                kind: THIRExpressionKind::Variable {
                     name: binding_name.clone(),
                     local_id: Some(local_id),
                     location: SymbolValueOrigin::Local,
@@ -303,17 +303,17 @@ pub(crate) fn typecheck_unpack(
         env.function
             .track_binding(local_id, binding_name.clone(), field_type.is_nodrop());
 
-        statements.push(MIRExpression {
+        statements.push(THIRExpression {
             token_range: TokenRange::internal(),
             _type: env.symbols.mem_ref_to(field_type.clone()),
-            kind: MIRExpressionKind::BindRegion {
+            kind: THIRExpressionKind::BindRegion {
                 name: binding_name,
                 local_id,
                 _type: field_type.clone(),
-                initial_region: Box::new(MIRExpression {
+                initial_region: Box::new(THIRExpression {
                     token_range: TokenRange::internal(),
                     _type: env.symbols.mem_ref_to(field_type.clone()),
-                    kind: MIRExpressionKind::RegionCreate {
+                    kind: THIRExpressionKind::RegionCreate {
                         _type: field_type.clone(),
                         initial_value: Some(Box::new(initial_value)),
                     },
@@ -324,7 +324,7 @@ pub(crate) fn typecheck_unpack(
     }
 
     Ok(TypecheckResult::new(
-        MIRType::unit(),
-        MIRExpressionKind::Block { statements },
+        THIRType::unit(),
+        THIRExpressionKind::Block { statements },
     ))
 }

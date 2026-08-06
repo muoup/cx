@@ -5,7 +5,7 @@ use cx_ast::ast::{
 };
 use cx_log::CXResult;
 use cx_namespace::result::QualifiedLookupResult;
-use cx_namespace::MIRQualifiedLookup;
+use cx_namespace::THIRQualifiedLookup;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_preparse_data::symbol_data::PreparseSymbolKind;
 use cx_preparse_data::{NamespaceAliases, PreparseContents, VisibilityMode};
@@ -180,7 +180,7 @@ impl<'a> ParserData<'a> {
     }
 }
 
-impl MIRQualifiedLookup for ParserData<'_> {
+impl THIRQualifiedLookup for ParserData<'_> {
     type Output = PreparseSymbolKind;
 
     fn lookup_local(

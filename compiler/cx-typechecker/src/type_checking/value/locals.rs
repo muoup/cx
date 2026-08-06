@@ -10,9 +10,9 @@ use crate::{
 };
 use cx_ast::ast::{expression::CXExpression, types::CXType};
 use cx_log::CXResult;
-use cx_mir::{
+use cx_thir::{
     EnvironmentNamespace,
-    mir::expression::{MIRExpression, MIRExpressionKind, MIRLocalId, SymbolValueOrigin},
+    thir::expression::{THIRExpression, THIRExpressionKind, THIRLocalID, SymbolValueOrigin},
 };
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
@@ -74,7 +74,7 @@ pub(crate) fn typecheck_var_declaration(
     ensure_valid_allocation_type(env, expr.token_range().clone(), "a variable", &ty)?;
 
     let mem_type = env.symbols.mem_ref_to(ty.clone());
-    let local_id = MIRLocalId::fresh();
+    let local_id = THIRLocalID::fresh();
     let (initial_region, adopting) = match initial_value {
         Some(init_expr) => {
             let init_tc = typecheck_expr(env, namespace, init_expr, Some(&ty))?;
@@ -85,9 +85,9 @@ pub(crate) fn typecheck_var_declaration(
             (Box::new(init_expr), adopting)
         }
         None => (
-            Box::new(MIRExpression {
+            Box::new(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: MIRExpressionKind::RegionCreate {
+                kind: THIRExpressionKind::RegionCreate {
                     _type: ty.clone(),
                     initial_value: None,
                 },
@@ -97,9 +97,9 @@ pub(crate) fn typecheck_var_declaration(
         ),
     };
 
-    let binding = MIRExpression {
+    let binding = THIRExpression {
         token_range: TokenRange::internal(),
-        kind: MIRExpressionKind::BindRegion {
+        kind: THIRExpressionKind::BindRegion {
             name: name.clone(),
             local_id,
             _type: ty.clone(),
@@ -111,9 +111,9 @@ pub(crate) fn typecheck_var_declaration(
 
     env.symbols.insert_local_value(
         QualifiedName::new_raw(name.clone()),
-        MIRExpression {
+        THIRExpression {
             token_range: TokenRange::internal(),
-            kind: MIRExpressionKind::Variable {
+            kind: THIRExpressionKind::Variable {
                 name: name.clone(),
                 local_id: Some(local_id),
                 location: SymbolValueOrigin::Local,

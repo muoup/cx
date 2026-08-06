@@ -5,5 +5,5 @@ edition = "2024"
 
 [dependencies]
 cx-tokens = { path = "../cx-tokens" }
-cx-mir = { path = "../cx-mir" }
+cx-thir = { path = "../cx-thir" }
 cx-util = { path = "../cx-util" }

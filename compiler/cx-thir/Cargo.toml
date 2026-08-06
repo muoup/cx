@@ -1,0 +1,15 @@
+[package]
+name = "cx-thir"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+speedy = "0.8.7"
+
+cx-ast = { path = "../cx-ast" }
+cx-log = { path = "../cx-log" }
+cx-target = { path = "../cx-target" }
+cx-tokens = { path = "../cx-tokens" }
+cx-util = { path = "../cx-util" }
+
+uuid = { version = "1.17.0", features = ["v4"] }

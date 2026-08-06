@@ -1,7 +1,7 @@
 use cx_log::CXResult;
-use cx_mir::{
-    mir::expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
-    type_context::MIRTypeContext,
+use cx_thir::{
+    thir::expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
+    type_context::THIRTypeContext,
 };
 
 use crate::{environment::TypeEnvironment, type_checking::coercion::CoercionResult};
@@ -15,7 +15,7 @@ use crate::{environment::TypeEnvironment, type_checking::coercion::CoercionResul
 /// this coercion invalid as long as the inner types match and the pointer is used in defined ways.
 ///
 
-pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResult<CoercionResult> {
+pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResult<CoercionResult> {
     let Some(mem_inner) = env.symbols.mem_ref_inner(&expr._type).cloned() else {
         return CoercionResult::unapplied(expr);
     };
@@ -27,12 +27,12 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResul
     let array_inner = env.symbols.array_inner(&mem_inner).unwrap().clone();
     let new_type = env.symbols.pointer_to(array_inner);
  
-    let coerced = MIRExpression {
+    let coerced = THIRExpression {
         _type: new_type,
         token_range: expr.token_range.clone(),
-        kind: MIRExpressionKind::TypeConversion {
+        kind: THIRExpressionKind::TypeConversion {
             operand: Box::new(expr),
-            conversion: MIRCoercion::ReinterpretBits,
+            conversion: THIRCoercion::ReinterpretBits,
         },
     };
 

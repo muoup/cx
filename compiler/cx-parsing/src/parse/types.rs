@@ -14,7 +14,7 @@ use cx_ast::ast::{
     types::{CXAggregateAttributes, CXField, CXType, CXTypeKind, PredeclarationType},
 };
 use cx_log::CXResult;
-use cx_mir::intrinsic_types::is_intrinsic_type;
+use cx_thir::intrinsic_types::is_intrinsic_type;
 use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
 use cx_tokens::{
     identifier, intrinsic, keyword, operator, punctuator, specifier, TokenIter, TokenRange,

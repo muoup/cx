@@ -9,9 +9,9 @@ use crate::{
 };
 use cx_ast::ast::expression::CXExpression;
 use cx_log::CXResult;
-use cx_mir::{
+use cx_thir::{
     EnvironmentNamespace,
-    mir::{data::MIRType, expression::MIRExpressionKind},
+    thir::{data::THIRType, expression::THIRExpressionKind},
 };
 use cx_tokens::TokenRange;
 
@@ -70,7 +70,7 @@ pub fn typecheck_yield(
 
         (None, None) => {
             if let Some(context) = env.function.current_yield_context_mut() {
-                context.result_type = Some(MIRType::unit());
+                context.result_type = Some(THIRType::unit());
             }
             None
         }
@@ -92,8 +92,8 @@ pub fn typecheck_yield(
     );
 
     Ok(TypecheckResult::new(
-        MIRType::unit(),
-        MIRExpressionKind::Yield {
+        THIRType::unit(),
+        THIRExpressionKind::Yield {
             value: yielded_value,
             target_scope: target_scope.index(),
             cleanups: env.function.cleanups_exiting_to(target_scope, false),

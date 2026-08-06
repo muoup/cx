@@ -1,7 +1,7 @@
 use cx_log::CXResult;
-use cx_mir::mir::{
-    expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
-    r#type::MIRType,
+use cx_thir::thir::{
+    expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
+    r#type::THIRType,
 };
 
 use crate::{
@@ -13,14 +13,14 @@ pub mod conversion;
 pub mod promotion;
 
 pub fn coercion_expr(
-    expr: MIRExpression,
-    target_type: MIRType,
-    coercion: MIRCoercion,
+    expr: THIRExpression,
+    target_type: THIRType,
+    coercion: THIRCoercion,
 ) -> CXResult<CoercionResult> {
-    let coerced = MIRExpression {
+    let coerced = THIRExpression {
         token_range: expr.token_range.clone(),
         _type: target_type,
-        kind: MIRExpressionKind::TypeConversion {
+        kind: THIRExpressionKind::TypeConversion {
             operand: Box::new(expr),
             conversion: coercion,
         },
@@ -31,9 +31,9 @@ pub fn coercion_expr(
 
 pub fn implicit_cast(
     env: &mut TypeEnvironment,
-    value: MIRExpression,
-    to_type: &MIRType,
-) -> CXResult<MIRExpression> {
+    value: THIRExpression,
+    to_type: &THIRType,
+) -> CXResult<THIRExpression> {
     let from_type = value.get_type();
 
     try_implicit_coercion(env, value, to_type)?.catch_unapplied(|expr, _| {

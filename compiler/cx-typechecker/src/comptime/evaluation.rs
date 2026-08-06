@@ -1,10 +1,10 @@
 use cx_log::CXResult;
-use cx_mir::mir::{
+use cx_thir::thir::{
     expression::{
-        MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp,
-        MIRUnOp,
+        THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRFloatBinOp, THIRIntBinOp,
+        THIRUnOp,
     },
-    r#type::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind},
+    r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeKind},
 };
 use cx_tokens::TokenRange;
 use cx_util::unsafe_float::FloatWrapper;
@@ -16,58 +16,58 @@ use crate::comptime::{
 
 pub(crate) fn evaluate_expression(
     engine: &mut ComptimeEngine,
-    expr: MIRExpression,
+    expr: THIRExpression,
 ) -> CXResult<ComptimeValue> {
     let token_range = expr.token_range.clone();
     let expr_type = expr._type.clone();
 
     Ok(match expr.kind {
-        MIRExpressionKind::BoolLiteral(value) => ComptimeValue {
+        THIRExpressionKind::BoolLiteral(value) => ComptimeValue {
             token_range,
             kind: ComptimeKind::Integer {
                 val: i64::from(value),
-                itype: MIRIntegerType::I1,
+                itype: THIRIntType::I1,
                 signed: false,
             },
         },
 
-        MIRExpressionKind::IntLiteral(value) => {
-            integer_value_from_type(value, &expr_type, MIRIntegerType::I32, true, token_range)
+        THIRExpressionKind::IntLiteral(value) => {
+            integer_value_from_type(value, &expr_type, THIRIntType::I32, true, token_range)
         }
 
-        MIRExpressionKind::FloatLiteral(value) => {
-            float_value_from_type(value, &expr_type, MIRFloatType::F32, token_range)
+        THIRExpressionKind::FloatLiteral(value) => {
+            float_value_from_type(value, &expr_type, THIRFloatType::F32, token_range)
         }
 
-        MIRExpressionKind::Unit => ComptimeValue {
+        THIRExpressionKind::Unit => ComptimeValue {
             token_range,
             kind: ComptimeKind::Unit,
         },
 
-        MIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
+        THIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
             evaluate_binary_operation(engine, *lhs, *rhs, op, &expr_type, token_range)?
         }
 
-        MIRExpressionKind::UnaryOperation { operand, op } => {
+        THIRExpressionKind::UnaryOperation { operand, op } => {
             evaluate_unary_operation(engine, *operand, op, &expr_type, token_range)?
         }
 
-        MIRExpressionKind::Typechange(operand) => {
+        THIRExpressionKind::Typechange(operand) => {
             let value = evaluate_expression(engine, *operand)?;
             retag_value(value, &expr_type, token_range)?
         }
 
-        MIRExpressionKind::TypeConversion {
+        THIRExpressionKind::TypeConversion {
             operand,
             conversion,
         } => evaluate_type_conversion(engine, *operand, conversion, &expr_type, token_range)?,
 
-        MIRExpressionKind::Emit(expr) => ComptimeValue {
+        THIRExpressionKind::Emit(expr) => ComptimeValue {
             token_range,
             kind: ComptimeKind::Emit(*expr),
         },
 
-        MIRExpressionKind::If {
+        THIRExpressionKind::If {
             condition,
             then_branch,
             else_branch,
@@ -103,14 +103,14 @@ pub(crate) fn evaluate_expression(
 
 fn evaluate_binary_operation(
     engine: &mut ComptimeEngine,
-    lhs: MIRExpression,
-    rhs: MIRExpression,
-    op: MIRBinOp,
-    result_type: &MIRType,
+    lhs: THIRExpression,
+    rhs: THIRExpression,
+    op: THIRBinOp,
+    result_type: &THIRType,
     token_range: TokenRange,
 ) -> CXResult<ComptimeValue> {
     match op {
-        MIRBinOp::Integer { itype, op } => {
+        THIRBinOp::Integer { itype, op } => {
             let lhs = evaluate_expression(engine, lhs)?;
             let rhs = evaluate_expression(engine, rhs)?;
             let Some(lhs) = lhs.as_integer() else {
@@ -127,24 +127,24 @@ fn evaluate_binary_operation(
             };
 
             let value = match op {
-                MIRIntegerBinOp::ADD => lhs + rhs,
-                MIRIntegerBinOp::SUB => lhs - rhs,
-                MIRIntegerBinOp::MUL | MIRIntegerBinOp::IMUL => lhs * rhs,
-                MIRIntegerBinOp::DIV | MIRIntegerBinOp::IDIV => lhs / rhs,
-                MIRIntegerBinOp::MOD | MIRIntegerBinOp::IMOD => lhs % rhs,
-                MIRIntegerBinOp::BAND => lhs & rhs,
-                MIRIntegerBinOp::BOR => lhs | rhs,
-                MIRIntegerBinOp::BXOR => lhs ^ rhs,
-                MIRIntegerBinOp::SHL => lhs << rhs,
-                MIRIntegerBinOp::ASHR | MIRIntegerBinOp::LSHR => lhs >> rhs,
-                MIRIntegerBinOp::EQ => i64::from(lhs == rhs),
-                MIRIntegerBinOp::NE => i64::from(lhs != rhs),
-                MIRIntegerBinOp::LT | MIRIntegerBinOp::ILT => i64::from(lhs < rhs),
-                MIRIntegerBinOp::LE | MIRIntegerBinOp::ILE => i64::from(lhs <= rhs),
-                MIRIntegerBinOp::GT | MIRIntegerBinOp::IGT => i64::from(lhs > rhs),
-                MIRIntegerBinOp::GE | MIRIntegerBinOp::IGE => i64::from(lhs >= rhs),
-                MIRIntegerBinOp::LAND => i64::from(lhs != 0 && rhs != 0),
-                MIRIntegerBinOp::LOR => i64::from(lhs != 0 || rhs != 0),
+                THIRIntBinOp::ADD => lhs + rhs,
+                THIRIntBinOp::SUB => lhs - rhs,
+                THIRIntBinOp::MUL | THIRIntBinOp::IMUL => lhs * rhs,
+                THIRIntBinOp::DIV | THIRIntBinOp::IDIV => lhs / rhs,
+                THIRIntBinOp::MOD | THIRIntBinOp::IMOD => lhs % rhs,
+                THIRIntBinOp::BAND => lhs & rhs,
+                THIRIntBinOp::BOR => lhs | rhs,
+                THIRIntBinOp::BXOR => lhs ^ rhs,
+                THIRIntBinOp::SHL => lhs << rhs,
+                THIRIntBinOp::ASHR | THIRIntBinOp::LSHR => lhs >> rhs,
+                THIRIntBinOp::EQ => i64::from(lhs == rhs),
+                THIRIntBinOp::NE => i64::from(lhs != rhs),
+                THIRIntBinOp::LT | THIRIntBinOp::ILT => i64::from(lhs < rhs),
+                THIRIntBinOp::LE | THIRIntBinOp::ILE => i64::from(lhs <= rhs),
+                THIRIntBinOp::GT | THIRIntBinOp::IGT => i64::from(lhs > rhs),
+                THIRIntBinOp::GE | THIRIntBinOp::IGE => i64::from(lhs >= rhs),
+                THIRIntBinOp::LAND => i64::from(lhs != 0 && rhs != 0),
+                THIRIntBinOp::LOR => i64::from(lhs != 0 || rhs != 0),
             };
 
             Ok(integer_value_from_type(
@@ -156,47 +156,47 @@ fn evaluate_binary_operation(
             ))
         }
 
-        MIRBinOp::Float { ftype, op } => {
+        THIRBinOp::Float { ftype, op } => {
             let lhs = evaluate_expression(engine, lhs)?;
             let lhs = expect_float(engine, lhs)?;
             let rhs = evaluate_expression(engine, rhs)?;
             let rhs = expect_float(engine, rhs)?;
 
             match op {
-                MIRFloatBinOp::FADD => Ok(float_value_from_type(
+                THIRFloatBinOp::FADD => Ok(float_value_from_type(
                     FloatWrapper::from(lhs + rhs),
                     result_type,
                     ftype,
                     token_range,
                 )),
-                MIRFloatBinOp::FSUB => Ok(float_value_from_type(
+                THIRFloatBinOp::FSUB => Ok(float_value_from_type(
                     FloatWrapper::from(lhs - rhs),
                     result_type,
                     ftype,
                     token_range,
                 )),
-                MIRFloatBinOp::FMUL => Ok(float_value_from_type(
+                THIRFloatBinOp::FMUL => Ok(float_value_from_type(
                     FloatWrapper::from(lhs * rhs),
                     result_type,
                     ftype,
                     token_range,
                 )),
-                MIRFloatBinOp::FDIV => Ok(float_value_from_type(
+                THIRFloatBinOp::FDIV => Ok(float_value_from_type(
                     FloatWrapper::from(lhs / rhs),
                     result_type,
                     ftype,
                     token_range,
                 )),
-                MIRFloatBinOp::FEQ => Ok(bool_value(lhs == rhs, token_range)),
-                MIRFloatBinOp::FNE => Ok(bool_value(lhs != rhs, token_range)),
-                MIRFloatBinOp::FLT => Ok(bool_value(lhs < rhs, token_range)),
-                MIRFloatBinOp::FLE => Ok(bool_value(lhs <= rhs, token_range)),
-                MIRFloatBinOp::FGT => Ok(bool_value(lhs > rhs, token_range)),
-                MIRFloatBinOp::FGE => Ok(bool_value(lhs >= rhs, token_range)),
+                THIRFloatBinOp::FEQ => Ok(bool_value(lhs == rhs, token_range)),
+                THIRFloatBinOp::FNE => Ok(bool_value(lhs != rhs, token_range)),
+                THIRFloatBinOp::FLT => Ok(bool_value(lhs < rhs, token_range)),
+                THIRFloatBinOp::FLE => Ok(bool_value(lhs <= rhs, token_range)),
+                THIRFloatBinOp::FGT => Ok(bool_value(lhs > rhs, token_range)),
+                THIRFloatBinOp::FGE => Ok(bool_value(lhs >= rhs, token_range)),
             }
         }
 
-        MIRBinOp::PtrDiff { .. } | MIRBinOp::Pointer { .. } => engine.log_error(
+        THIRBinOp::PtrDiff { .. } | THIRBinOp::Pointer { .. } => engine.log_error(
             token_range,
             "Invalid pointer operation in comptime context".to_string(),
         ),
@@ -205,15 +205,15 @@ fn evaluate_binary_operation(
 
 fn evaluate_unary_operation(
     engine: &mut ComptimeEngine,
-    operand: MIRExpression,
-    op: MIRUnOp,
-    result_type: &MIRType,
+    operand: THIRExpression,
+    op: THIRUnOp,
+    result_type: &THIRType,
     token_range: TokenRange,
 ) -> CXResult<ComptimeValue> {
     let value = evaluate_expression(engine, operand)?;
 
     match op {
-        MIRUnOp::NEG | MIRUnOp::INEG => {
+        THIRUnOp::NEG | THIRUnOp::INEG => {
             let Some(value) = value.as_integer() else {
                 return engine.log_error(
                     value.token_range,
@@ -224,21 +224,21 @@ fn evaluate_unary_operation(
             Ok(integer_value_from_type(
                 -value,
                 result_type,
-                MIRIntegerType::I32,
+                THIRIntType::I32,
                 true,
                 token_range,
             ))
         }
-        MIRUnOp::FNEG => {
+        THIRUnOp::FNEG => {
             let value = expect_float(engine, value)?;
             Ok(float_value_from_type(
                 FloatWrapper::from(-value),
                 result_type,
-                MIRFloatType::F32,
+                THIRFloatType::F32,
                 token_range,
             ))
         }
-        MIRUnOp::BNOT => {
+        THIRUnOp::BNOT => {
             let Some(value) = value.as_integer() else {
                 return engine.log_error(
                     value.token_range,
@@ -249,12 +249,12 @@ fn evaluate_unary_operation(
             Ok(integer_value_from_type(
                 !value,
                 result_type,
-                MIRIntegerType::I32,
+                THIRIntType::I32,
                 true,
                 token_range,
             ))
         }
-        MIRUnOp::LNOT => {
+        THIRUnOp::LNOT => {
             let Some(value) = value.as_integer() else {
                 return engine.log_error(
                     value.token_range,
@@ -264,7 +264,7 @@ fn evaluate_unary_operation(
 
             Ok(bool_value(value == 0, token_range))
         }
-        MIRUnOp::PreIncrement(_) | MIRUnOp::PostIncrement(_) => engine.log_error(
+        THIRUnOp::PreIncrement(_) | THIRUnOp::PostIncrement(_) => engine.log_error(
             token_range,
             "Invalid unary expression in comptime context".to_string(),
         ),
@@ -273,15 +273,15 @@ fn evaluate_unary_operation(
 
 fn evaluate_type_conversion(
     engine: &mut ComptimeEngine,
-    operand: MIRExpression,
-    conversion: MIRCoercion,
-    result_type: &MIRType,
+    operand: THIRExpression,
+    conversion: THIRCoercion,
+    result_type: &THIRType,
     token_range: TokenRange,
 ) -> CXResult<ComptimeValue> {
     let value = evaluate_expression(engine, operand)?;
 
     match conversion {
-        MIRCoercion::Integral { to_type, .. } => {
+        THIRCoercion::Integral { to_type, .. } => {
             let Some(value) = value.as_integer() else {
                 return engine.log_error(
                     value.token_range,
@@ -297,7 +297,7 @@ fn evaluate_type_conversion(
                 token_range,
             ))
         }
-        MIRCoercion::FloatCast { to_type } => {
+        THIRCoercion::FloatCast { to_type } => {
             let value = expect_float(engine, value)?;
             Ok(float_value_from_type(
                 FloatWrapper::from(value),
@@ -306,7 +306,7 @@ fn evaluate_type_conversion(
                 token_range,
             ))
         }
-        MIRCoercion::IntToFloat { to_type, .. } => {
+        THIRCoercion::IntToFloat { to_type, .. } => {
             let Some(value) = value.as_integer() else {
                 return engine.log_error(
                     value.token_range,
@@ -321,7 +321,7 @@ fn evaluate_type_conversion(
                 token_range,
             ))
         }
-        MIRCoercion::FloatToInt { to_type, .. } => {
+        THIRCoercion::FloatToInt { to_type, .. } => {
             let value = expect_float(engine, value)?;
             Ok(integer_value_from_type(
                 value as i64,
@@ -331,10 +331,10 @@ fn evaluate_type_conversion(
                 token_range,
             ))
         }
-        MIRCoercion::Typechange | MIRCoercion::ReinterpretBits => {
+        THIRCoercion::Typechange | THIRCoercion::ReinterpretBits => {
             retag_value(value, result_type, token_range)
         }
-        MIRCoercion::PtrToInt { .. } | MIRCoercion::IntToPtr { .. } | MIRCoercion::GetFnPtr => {
+        THIRCoercion::PtrToInt { .. } | THIRCoercion::IntToPtr { .. } | THIRCoercion::GetFnPtr => {
             engine.log_error(
                 token_range,
                 "Invalid conversion in comptime context".to_string(),
@@ -345,7 +345,7 @@ fn evaluate_type_conversion(
 
 fn retag_value(
     value: ComptimeValue,
-    result_type: &MIRType,
+    result_type: &THIRType,
     token_range: TokenRange,
 ) -> CXResult<ComptimeValue> {
     Ok(match value.kind {
@@ -379,13 +379,13 @@ fn expect_float(engine: &mut ComptimeEngine, value: ComptimeValue) -> CXResult<f
 
 fn integer_value_from_type(
     value: i64,
-    ty: &MIRType,
-    fallback_type: MIRIntegerType,
+    ty: &THIRType,
+    fallback_type: THIRIntType,
     fallback_signed: bool,
     token_range: TokenRange,
 ) -> ComptimeValue {
     let (itype, signed) = match &ty.kind {
-        MIRTypeKind::Integer { _type, signed } => (*_type, *signed),
+        THIRTypeKind::Integer { _type, signed } => (*_type, *signed),
         _ => (fallback_type, fallback_signed),
     };
 
@@ -401,12 +401,12 @@ fn integer_value_from_type(
 
 fn float_value_from_type(
     value: FloatWrapper,
-    ty: &MIRType,
-    fallback_type: MIRFloatType,
+    ty: &THIRType,
+    fallback_type: THIRFloatType,
     token_range: TokenRange,
 ) -> ComptimeValue {
     let ftype = match &ty.kind {
-        MIRTypeKind::Float { _type } => *_type,
+        THIRTypeKind::Float { _type } => *_type,
         _ => fallback_type,
     };
 
@@ -421,7 +421,7 @@ fn bool_value(value: bool, token_range: TokenRange) -> ComptimeValue {
         token_range,
         kind: ComptimeKind::Integer {
             val: i64::from(value),
-            itype: MIRIntegerType::I1,
+            itype: THIRIntType::I1,
             signed: false,
         },
     }

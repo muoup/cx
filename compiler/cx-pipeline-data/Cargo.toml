@@ -17,7 +17,7 @@ cx-log = { path = "../cx-log" }
 
 cx-preparse-data = { path = "../cx-preparse-data" }
 cx-ast  = { path = "../cx-ast" }
-cx-mir = { path = "../cx-mir" }
+cx-thir = { path = "../cx-thir" }
 cx-lmir = { path = "../cx-lmir" }
 cx-target = { path = "../cx-target" }
 cx-util = { path = "../cx-util" }

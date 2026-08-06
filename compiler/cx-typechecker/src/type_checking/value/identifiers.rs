@@ -9,9 +9,9 @@ use crate::{
 };
 use cx_ast::ast::{expression::CXExpression, template::CXTemplateInput};
 use cx_log::CXResult;
-use cx_mir::{
+use cx_thir::{
     EnvironmentNamespace,
-    mir::expression::{MIRExpressionKind, SymbolValueOrigin},
+    thir::expression::{THIRExpressionKind, SymbolValueOrigin},
     symbol::MIRSymbol,
 };
 use cx_util::namespace::QualifiedName;
@@ -68,7 +68,7 @@ pub(crate) fn typecheck_identifier(
         .map_err(|err| env.error(expr.token_range(), err.message().to_string()))?;
 
     let binding = match result.ready_expression().map(|expr| &expr.kind) {
-        Some(MIRExpressionKind::Variable {
+        Some(THIRExpressionKind::Variable {
             name,
             local_id: Some(local_id),
             location: SymbolValueOrigin::Local,

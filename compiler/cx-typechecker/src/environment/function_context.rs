@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use cx_ast::ast::expression::CXExpression;
 use cx_log::CXRawResult;
-use cx_mir::mir::data::{MIRFunctionPrototype, MIRType};
-use cx_mir::mir::expression::MIRLocalId;
+use cx_thir::thir::data::{THIRFnPrototype, THIRType};
+use cx_thir::thir::expression::THIRLocalID;
 use cx_util::identifier::CXIdent;
 
 use crate::environment::control_flow::{
@@ -13,7 +13,7 @@ use crate::environment::control_flow::{
 
 #[derive(Default)]
 pub struct FunctionContext {
-    current_function: Option<MIRFunctionPrototype>,
+    current_function: Option<THIRFnPrototype>,
     flow: Option<ControlFlow>,
     require_safe: bool,
     require_pure: bool,
@@ -25,7 +25,7 @@ pub struct FunctionContext {
 #[derive(Default)]
 struct DeferScope {
     control_scope_depth: usize,
-    expressions: Vec<cx_mir::mir::expression::MIRExpression>,
+    expressions: Vec<cx_thir::thir::expression::THIRExpression>,
 }
 
 #[derive(Clone)]
@@ -38,12 +38,12 @@ pub struct FunctionModeSnapshot {
 #[derive(Clone)]
 pub struct YieldContext {
     pub target_scope: ScopeId,
-    pub result_type: Option<MIRType>,
+    pub result_type: Option<THIRType>,
     pub yield_count: usize,
 }
 
 impl FunctionContext {
-    pub fn begin_function(&mut self, prototype: MIRFunctionPrototype) {
+    pub fn begin_function(&mut self, prototype: THIRFnPrototype) {
         self.require_safe = prototype.signature().contract.safe;
         self.require_pure = false;
         self.unsafe_depth = 0;
@@ -63,11 +63,11 @@ impl FunctionContext {
         debug_assert!(self.defer_scopes.is_empty());
     }
 
-    pub fn current_function(&self) -> &MIRFunctionPrototype {
+    pub fn current_function(&self) -> &THIRFnPrototype {
         self.current_function.as_ref().unwrap()
     }
 
-    pub fn try_current_function(&self) -> Option<&MIRFunctionPrototype> {
+    pub fn try_current_function(&self) -> Option<&THIRFnPrototype> {
         self.current_function.as_ref()
     }
 
@@ -95,7 +95,7 @@ impl FunctionContext {
         CXRawResult::Ok(())
     }
 
-    pub fn register_defer(&mut self, expression: cx_mir::mir::expression::MIRExpression) {
+    pub fn register_defer(&mut self, expression: cx_thir::thir::expression::THIRExpression) {
         self.defer_scopes
             .last_mut()
             .expect("defer registered outside of a function scope")
@@ -103,7 +103,7 @@ impl FunctionContext {
             .push(expression);
     }
 
-    pub fn current_scope_cleanups(&self) -> Vec<cx_mir::mir::expression::MIRExpression> {
+    pub fn current_scope_cleanups(&self) -> Vec<cx_thir::thir::expression::THIRExpression> {
         self.defer_scopes
             .last()
             .map(|scope| scope.expressions.iter().rev().cloned().collect())
@@ -114,7 +114,7 @@ impl FunctionContext {
         &self,
         target_scope: ScopeId,
         include_target: bool,
-    ) -> Vec<cx_mir::mir::expression::MIRExpression> {
+    ) -> Vec<cx_thir::thir::expression::THIRExpression> {
         self.defer_scopes
             .iter()
             .rev()
@@ -246,7 +246,7 @@ impl FunctionContext {
         self.flow().is_current_scope_reachable()
     }
 
-    pub fn push_yield_context(&mut self, target_scope: ScopeId, result_type: Option<MIRType>) {
+    pub fn push_yield_context(&mut self, target_scope: ScopeId, result_type: Option<THIRType>) {
         self.yield_stack.push(YieldContext {
             target_scope,
             result_type,
@@ -274,20 +274,20 @@ impl FunctionContext {
             .unwrap_or(0)
     }
 
-    pub fn track_binding(&mut self, local_id: MIRLocalId, name: CXIdent, nodrop: bool) {
+    pub fn track_binding(&mut self, local_id: THIRLocalID, name: CXIdent, nodrop: bool) {
         self.flow_mut().track_binding(local_id, name, nodrop);
     }
 
-    pub fn tracked_binding(&self, local_id: MIRLocalId) -> Option<&TrackedBindingState> {
+    pub fn tracked_binding(&self, local_id: THIRLocalID) -> Option<&TrackedBindingState> {
         self.flow().tracked_binding(local_id)
     }
 
-    pub fn set_tracked_binding_state(&mut self, local_id: MIRLocalId, state: BindingMoveState) {
+    pub fn set_tracked_binding_state(&mut self, local_id: THIRLocalID, state: BindingMoveState) {
         self.flow_mut()
             .set_tracked_binding_state(local_id, state);
     }
 
-    pub fn tracked_bindings_snapshot(&self) -> HashMap<MIRLocalId, TrackedBindingState> {
+    pub fn tracked_bindings_snapshot(&self) -> HashMap<THIRLocalID, TrackedBindingState> {
         self.flow().tracked_bindings_snapshot()
     }
 

@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use cx_ast::ast::expression::CXExpression;
 
 use cx_log::error::{CXRawResult, message::CXStdErrMessage};
-use cx_mir::mir::expression::MIRLocalId;
+use cx_thir::thir::expression::THIRLocalID;
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, scoped_map::ScopedMap};
 
@@ -33,7 +33,7 @@ pub struct TrackedBindingState {
 
 #[derive(Clone)]
 pub struct ControlFlowSnapshot {
-    pub tracked_bindings: ScopedMap<MIRLocalId, TrackedBindingState>,
+    pub tracked_bindings: ScopedMap<THIRLocalID, TrackedBindingState>,
 }
 
 #[derive(Clone)]
@@ -111,7 +111,7 @@ pub struct Scope {
 }
 
 pub struct ControlFlow {
-    tracked_bindings: ScopedMap<MIRLocalId, TrackedBindingState>,
+    tracked_bindings: ScopedMap<THIRLocalID, TrackedBindingState>,
     scope_stack: Vec<Scope>,
 }
 
@@ -373,7 +373,7 @@ impl ControlFlow {
             .unwrap_or(true)
     }
 
-    pub fn track_binding(&mut self, local_id: MIRLocalId, name: CXIdent, nodrop: bool) {
+    pub fn track_binding(&mut self, local_id: THIRLocalID, name: CXIdent, nodrop: bool) {
         self.tracked_bindings.insert(
             local_id,
             TrackedBindingState {
@@ -384,11 +384,11 @@ impl ControlFlow {
         );
     }
 
-    pub fn tracked_binding(&self, local_id: MIRLocalId) -> Option<&TrackedBindingState> {
+    pub fn tracked_binding(&self, local_id: THIRLocalID) -> Option<&TrackedBindingState> {
         self.tracked_bindings.get(&local_id)
     }
 
-    pub fn set_tracked_binding_state(&mut self, local_id: MIRLocalId, state: BindingMoveState) {
+    pub fn set_tracked_binding_state(&mut self, local_id: THIRLocalID, state: BindingMoveState) {
         let Some(binding) = self.tracked_bindings.get(&local_id).cloned() else {
             return;
         };
@@ -399,7 +399,7 @@ impl ControlFlow {
 
     pub fn tracked_bindings_snapshot(
         &self,
-    ) -> std::collections::HashMap<MIRLocalId, TrackedBindingState> {
+    ) -> std::collections::HashMap<THIRLocalID, TrackedBindingState> {
         self.tracked_bindings
             .iter()
             .map(|(local_id, binding)| (*local_id, binding.clone()))
@@ -414,7 +414,7 @@ impl ControlFlow {
             .collect()
     }
 
-    fn current_scope_nodrop_bindings(&self) -> Vec<(MIRLocalId, TrackedBindingState)> {
+    fn current_scope_nodrop_bindings(&self) -> Vec<(THIRLocalID, TrackedBindingState)> {
         if self.scope_stack.is_empty() {
             return Vec::new();
         }
@@ -528,7 +528,7 @@ impl ControlFlow {
         entry_snapshot: &ControlFlowSnapshot,
         arrows: &[ControlFlowArrow],
         discharge_only_nodrop: bool,
-    ) -> CXRawResult<Option<Vec<(MIRLocalId, TrackedBindingState)>>> {
+    ) -> CXRawResult<Option<Vec<(THIRLocalID, TrackedBindingState)>>> {
         if arrows.is_empty() {
             return CXRawResult::Ok(None);
         }
@@ -620,7 +620,7 @@ impl ControlFlow {
         )
     }
 
-    fn apply_merged_bindings(&mut self, merged_bindings: &[(MIRLocalId, TrackedBindingState)]) {
+    fn apply_merged_bindings(&mut self, merged_bindings: &[(THIRLocalID, TrackedBindingState)]) {
         for (local_id, binding) in merged_bindings {
             if let Some(existing) = self.tracked_bindings.get_mut(local_id) {
                 *existing = binding.clone();

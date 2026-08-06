@@ -8,13 +8,13 @@ use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_checking::value::resolve_indirect_base;
 use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
 use cx_log::CXResult;
-use cx_mir::EnvironmentNamespace;
-use cx_mir::mir::contextual_eq::TypeContextEqual;
-use cx_mir::mir::data::MIRType;
-use cx_mir::mir::expression::{
-    MIRExpression, MIRExpressionKind, MIRLocalId, SymbolValueOrigin,
+use cx_thir::EnvironmentNamespace;
+use cx_thir::thir::contextual_eq::TypeContextEqual;
+use cx_thir::thir::data::THIRType;
+use cx_thir::thir::expression::{
+    THIRExpression, THIRExpressionKind, THIRLocalID, SymbolValueOrigin,
 };
-use cx_mir::mir::pattern::MIRPattern;
+use cx_thir::thir::pattern::THIRPattern;
 use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 
@@ -68,14 +68,14 @@ pub(crate) fn typecheck_is(
             ),
         );
     };
-    let inner_local_id = inner_name.as_ref().map(|_| MIRLocalId::fresh());
+    let inner_local_id = inner_name.as_ref().map(|_| THIRLocalID::fresh());
     if let (Some(inner_name), Some(inner_local_id)) = (&inner_name, inner_local_id) {
         let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
         env.symbols.insert_local_value(
             QualifiedName::new_raw(inner_name.clone()),
-            MIRExpression {
+            THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: MIRExpressionKind::Variable {
+                kind: THIRExpressionKind::Variable {
                     name: inner_name.clone(),
                     local_id: Some(inner_local_id),
                     location: SymbolValueOrigin::Local,
@@ -86,10 +86,10 @@ pub(crate) fn typecheck_is(
     }
 
     Ok(TypecheckResult::new(
-        MIRType::bool(),
-        MIRExpressionKind::PatternIs {
+        THIRType::bool(),
+        THIRExpressionKind::PatternIs {
             lhs: Box::new(tc_lhs.source),
-            pattern: MIRPattern::TaggedUnionVariant {
+            pattern: THIRPattern::TaggedUnionVariant {
                 sum_type: union_type.clone(),
                 variant_index: expected_tag,
                 inner_name,
@@ -102,7 +102,7 @@ pub(crate) fn typecheck_is(
 fn validate_variant_template_input(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    union_type: &MIRType,
+    union_type: &THIRType,
     template_input: Option<&cx_ast::ast::template::CXTemplateInput>,
     expr: &CXExpression,
 ) -> CXResult<()> {

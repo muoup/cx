@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter, Result};
 
-use cx_mir::registry::MIRDecomposedRegistry;
+use cx_thir::registry::THIRDecomposedRegistry;
 
 use crate::ast::*;
 use crate::intrinsic::*;
@@ -78,23 +78,23 @@ impl Display for Indent {
 
 pub struct FMIRTypeDisplay<'a> {
     ty: &'a FMIRType,
-    definitions: &'a MIRDecomposedRegistry,
+    definitions: &'a THIRDecomposedRegistry,
 }
 
 pub struct FMIRNodeDisplay<'a> {
     node: &'a FMIRNode,
-    definitions: &'a MIRDecomposedRegistry,
+    definitions: &'a THIRDecomposedRegistry,
 }
 
 pub struct FMIRFunctionDisplay<'a> {
     function: &'a FMIRFunction,
-    definitions: &'a MIRDecomposedRegistry,
+    definitions: &'a THIRDecomposedRegistry,
 }
 
 impl FMIRType {
     pub fn display_with<'a>(
         &'a self,
-        definitions: &'a MIRDecomposedRegistry,
+        definitions: &'a THIRDecomposedRegistry,
     ) -> FMIRTypeDisplay<'a> {
         FMIRTypeDisplay {
             ty: self,
@@ -106,7 +106,7 @@ impl FMIRType {
 impl FMIRNode {
     pub fn display_with<'a>(
         &'a self,
-        definitions: &'a MIRDecomposedRegistry,
+        definitions: &'a THIRDecomposedRegistry,
     ) -> FMIRNodeDisplay<'a> {
         FMIRNodeDisplay {
             node: self,
@@ -118,7 +118,7 @@ impl FMIRNode {
 impl FMIRFunction {
     pub fn display_with<'a>(
         &'a self,
-        definitions: &'a MIRDecomposedRegistry,
+        definitions: &'a THIRDecomposedRegistry,
     ) -> FMIRFunctionDisplay<'a> {
         FMIRFunctionDisplay {
             function: self,
@@ -130,7 +130,7 @@ impl FMIRFunction {
 impl Display for FMIRTypeDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self.ty {
-            FMIRType::Pure { mir_type } => {
+            FMIRType::Pure { thir_type: mir_type } => {
                 write!(f, "{}", mir_type.display_with(self.definitions))
             }
 
@@ -199,7 +199,7 @@ impl FMIRNode {
         &self,
         f: &mut Formatter<'_>,
         indent: &Indent,
-        definitions: &MIRDecomposedRegistry,
+        definitions: &THIRDecomposedRegistry,
     ) -> Result {
         self.body.fmt_with_indent(f, indent, definitions)
     }
@@ -348,7 +348,7 @@ impl FMIRNodeBody {
         &self,
         f: &mut Formatter<'_>,
         indent: &Indent,
-        definitions: &MIRDecomposedRegistry,
+        definitions: &THIRDecomposedRegistry,
     ) -> Result {
         match self {
             FMIRNodeBody::Application { function, argument } => match &function.body {

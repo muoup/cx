@@ -9,10 +9,10 @@ use crate::type_checking::result::{ComptimeTypecheckValue, TypecheckExtract, Typ
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
 use cx_log::CXResult;
-use cx_mir::EnvironmentNamespace;
-use cx_mir::mir::data::{MIRFloatType, MIRFunctionSignature, MIRType, MIRTypeKind};
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
-use cx_mir::type_context::MIRTypeContext;
+use cx_thir::EnvironmentNamespace;
+use cx_thir::thir::data::{THIRFloatType, THIRFnSignature, THIRType, THIRTypeKind};
+use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
+use cx_thir::type_context::THIRTypeContext;
 
 pub(crate) fn typecheck_method_call(
     env: &mut TypeEnvironment,
@@ -20,7 +20,7 @@ pub(crate) fn typecheck_method_call(
     lhs: &CXExpression,
     rhs: &CXExpression,
     expr: &CXExpression,
-    expected_type: Option<&MIRType>,
+    expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     let function = typecheck_expr(env, namespace, lhs, None)?;
 
@@ -31,10 +31,10 @@ pub(crate) fn typecheck_callee_method_call(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     callee: TypecheckResult,
-    implicit_args: Vec<MIRExpression>,
+    implicit_args: Vec<THIRExpression>,
     rhs: &CXExpression,
     expr: &CXExpression,
-    expected_type: Option<&MIRType>,
+    expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     let raw_args = comma_separated_exprs(rhs);
 
@@ -102,7 +102,7 @@ pub(crate) fn typecheck_callee_method_call(
 
     Ok(TypecheckResult::new(
         signature.return_type,
-        MIRExpressionKind::CallFunction {
+        THIRExpressionKind::CallFunction {
             function: Box::new(loaded_function),
             arguments,
             contract,
@@ -123,8 +123,8 @@ fn typecheck_args<'a>(
 fn load_callable(
     env: &mut TypeEnvironment,
     expr: &CXExpression,
-    function: MIRExpression,
-) -> CXResult<(MIRExpression, MIRFunctionSignature)> {
+    function: THIRExpression,
+) -> CXResult<(THIRExpression, THIRFnSignature)> {
     let loaded_function =
         lvalue::try_conversion(env, function)?.catch_unapplied(|expr, _| Ok(expr))?;
     let function_type = loaded_function.get_type();
@@ -148,7 +148,7 @@ fn load_callable(
 fn check_argument_count(
     env: &TypeEnvironment,
     expr: &CXExpression,
-    signature: &MIRFunctionSignature,
+    signature: &THIRFnSignature,
     arg_count: usize,
 ) -> CXResult<()> {
     if arg_count != signature.params.len() && !signature.var_args {
@@ -182,7 +182,7 @@ fn complete_fixed_argument(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     val: TypecheckResult,
-    target_type: &MIRType,
+    target_type: &THIRType,
 ) -> CXResult<TypecheckResult> {
     val.apply_expected_type(env, namespace, target_type)
 }
@@ -191,8 +191,8 @@ fn coerce_fixed_argument(
     env: &mut TypeEnvironment,
     expr: &CXExpression,
     val: TypecheckResult,
-    target_type: &MIRType,
-) -> CXResult<MIRExpression> {
+    target_type: &THIRType,
+) -> CXResult<THIRExpression> {
     let val = val.standard_ready_coerce(env, expr.token_range())?;
     let val = if target_type.is_memory_reference() {
         val
@@ -207,29 +207,29 @@ fn complete_vararg_argument(
     env: &mut TypeEnvironment,
     expr: &CXExpression,
     val: TypecheckResult,
-) -> CXResult<MIRExpression> {
+) -> CXResult<THIRExpression> {
     let mut val = val.standard_ready_coerce(env, expr.token_range())?;
 
     val = std_rval_promotion(env, val)?;
     let arg_type = val._type.clone();
 
     match &arg_type.kind {
-        MIRTypeKind::PointerTo { .. } => {}
-        MIRTypeKind::Integer { .. } => {}
-        MIRTypeKind::Float {
-            _type: MIRFloatType::F32,
+        THIRTypeKind::PointerTo { .. } => {}
+        THIRTypeKind::Integer { .. } => {}
+        THIRTypeKind::Float {
+            _type: THIRFloatType::F32,
         } => {
             val = implicit_cast(
                 env,
                 val,
-                &MIRTypeKind::Float {
-                    _type: MIRFloatType::F64,
+                &THIRTypeKind::Float {
+                    _type: THIRFloatType::F64,
                 }
                 .into(),
             )?;
         }
-        MIRTypeKind::Float {
-            _type: MIRFloatType::F64,
+        THIRTypeKind::Float {
+            _type: THIRFloatType::F64,
         } => {}
         _ => {
             return env.log_error(
@@ -248,7 +248,7 @@ fn complete_vararg_argument(
 fn complete_call_arguments(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    signature: &MIRFunctionSignature,
+    signature: &THIRFnSignature,
     args: Vec<TypecheckResult>,
 ) -> CXResult<Vec<TypecheckResult>> {
     args.into_iter()
@@ -266,9 +266,9 @@ fn complete_call_arguments(
 fn coerce_call_arguments(
     env: &mut TypeEnvironment,
     expr: &CXExpression,
-    signature: &MIRFunctionSignature,
+    signature: &THIRFnSignature,
     args: Vec<TypecheckResult>,
-) -> CXResult<Vec<MIRExpression>> {
+) -> CXResult<Vec<THIRExpression>> {
     let mut coerced_args = Vec::with_capacity(args.len());
 
     for (i, val) in args.into_iter().enumerate() {
@@ -285,12 +285,12 @@ fn coerce_call_arguments(
 }
 
 fn deduction_arg_types(
-    implicit_args: &[MIRExpression],
+    implicit_args: &[THIRExpression],
     args: &[(&CXExpression, TypecheckResult)],
-) -> Vec<MIRType> {
+) -> Vec<THIRType> {
     implicit_args
         .iter()
-        .map(MIRExpression::get_type)
+        .map(THIRExpression::get_type)
         .chain(args.iter().filter_map(|(_, arg)| arg.ready_type().cloned()))
         .collect()
 }
@@ -298,9 +298,9 @@ fn deduction_arg_types(
 fn complete_call_argument_expressions(
     env: &mut TypeEnvironment,
     expr: &CXExpression,
-    signature: &MIRFunctionSignature,
+    signature: &THIRFnSignature,
     args: Vec<TypecheckResult>,
-) -> CXResult<Vec<MIRExpression>> {
+) -> CXResult<Vec<THIRExpression>> {
     coerce_call_arguments(env, expr, signature, args)
 }
 
@@ -309,9 +309,9 @@ fn complete_callee(
     namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     function: TypecheckResult,
-    implicit_args: &[MIRExpression],
+    implicit_args: &[THIRExpression],
     args: &[(&CXExpression, TypecheckResult)],
-    expected_type: Option<&MIRType>,
+    expected_type: Option<&THIRType>,
 ) -> CXResult<CompletedCallee> {
     match function.try_into_expression() {
         TypecheckExtract::Succ(callee) => Ok(CompletedCallee::Runtime(callee)),
@@ -379,7 +379,7 @@ fn complete_callee(
 }
 
 enum CompletedCallee {
-    Runtime(MIRExpression),
+    Runtime(THIRExpression),
     Comptime(crate::type_checking::result::ComptimeFunctionValue),
     Staged(crate::type_checking::result::StagedFunctionValue),
 }

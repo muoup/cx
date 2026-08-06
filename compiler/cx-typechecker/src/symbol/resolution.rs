@@ -14,20 +14,20 @@ use cx_log::{
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use cx_mir::{
+use cx_thir::{
     EnvironmentNamespace,
-    mir::{
+    thir::{
         contextual_eq::TypeContextEqual,
         data::{
-            MIRFunctionPrototype, MIRFunctionSignature, MIRParameter, MIRTemplateInput,
+            THIRFnPrototype, THIRFnSignature, THIRParameter, MIRTemplateInput,
             TemplateInfo,
         },
-        expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
+        expression::{THIRExpression, THIRExpressionKind, SymbolValueOrigin},
         global::{MIRGlobalVarKind, MIRGlobalVariable},
         name_mangling::{base_mangle_member, base_mangle_templated_name},
     },
     symbol::MIRSymbol,
-    type_context::MIRTypeContext,
+    type_context::THIRTypeContext,
 };
 
 use crate::{
@@ -85,9 +85,9 @@ pub fn resolve_symbol(
                 });
             }
 
-            Ok(MIRSymbol::Expression(MIRExpression {
+            Ok(MIRSymbol::Expression(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: MIRExpressionKind::Variable {
+                kind: THIRExpressionKind::Variable {
                     name: symbol_name,
                     local_id: None,
                     location: SymbolValueOrigin::Global,
@@ -306,17 +306,17 @@ fn resolve_type_constructor(
         ));
     };
 
-    let prototype = MIRFunctionPrototype::new(
+    let prototype = THIRFnPrototype::new(
         base_mangle_member(&env.symbols, name.as_str(), &union_type),
         CXLinkageMode::Static,
-        MIRFunctionSignature {
+        THIRFnSignature {
             return_type: union_type.clone(),
             params: if variant_type.is_unit() {
                 Vec::new()
             } else {
-                vec![MIRParameter {
+                vec![THIRParameter {
                     name: Some(CXIdent::new("value")),
-                    local_id: Some(cx_mir::mir::expression::MIRLocalId::fresh()),
+                    local_id: Some(cx_thir::thir::expression::THIRLocalID::fresh()),
                     _type: variant_type.clone(),
                 }]
             },

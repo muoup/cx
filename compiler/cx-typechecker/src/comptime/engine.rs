@@ -1,7 +1,7 @@
 use std::borrow::Borrow;
 
 use cx_log::CXResult;
-use cx_mir::mir::data::MIRFunctionPrototype;
+use cx_thir::thir::data::THIRFnPrototype;
 use cx_tokens::TokenRange;
 
 use crate::environment::TypeEnvironment;
@@ -9,7 +9,7 @@ use crate::environment::TypeEnvironment;
 pub struct ComptimeEngine<'env, 'data> {
     env: &'env mut TypeEnvironment<'data>,
     #[allow(dead_code)]
-    current_prototype: Option<MIRFunctionPrototype>,
+    current_prototype: Option<THIRFnPrototype>,
 }
 
 impl<'env, 'data> ComptimeEngine<'env, 'data> {
@@ -44,7 +44,7 @@ impl<'env, 'data> ComptimeEngine<'env, 'data> {
     }
 
     #[allow(dead_code)]
-    pub fn current_fn_prototype(&self) -> Option<&MIRFunctionPrototype> {
+    pub fn current_fn_prototype(&self) -> Option<&THIRFnPrototype> {
         self.current_prototype.as_ref()
     }
 }

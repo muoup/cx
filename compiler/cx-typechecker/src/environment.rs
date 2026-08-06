@@ -6,14 +6,14 @@ use cx_log::{
     CXRawResult, CXResult,
     error::{CXErr, CXErrMsg, CXMaybeRawErr, context::CXInternalContext, message::CXStdErrMessage},
 };
-use cx_mir::{
-    EnvironmentNamespace, MIRUnit,
-    mir::contextual_eq::TypeContextEqual,
-    mir::data::{MIRFunctionPrototype, MIRType},
+use cx_thir::{
+    EnvironmentNamespace, THIRUnit,
+    thir::contextual_eq::TypeContextEqual,
+    thir::data::{THIRFnPrototype, THIRType},
     symbol::MIRSymbol,
-    type_context::MIRTypeContext,
+    type_context::THIRTypeContext,
 };
-use cx_namespace::{MIRQualifiedLookup, result::QualifiedLookupResult};
+use cx_namespace::{THIRQualifiedLookup, result::QualifiedLookupResult};
 use cx_pipeline_data::db::ModuleData;
 use cx_target::ArchitectureConfig;
 use cx_tokens::TokenRange;
@@ -68,7 +68,7 @@ impl TypeEnvironment<'_> {
         }
     }
 
-    pub fn get_intrinsic_type(&self, name: &str) -> MIRType {
+    pub fn get_intrinsic_type(&self, name: &str) -> THIRType {
         self.symbols
             .get_preresolved_symbol(&QualifiedName::new_raw(CXIdent::from(name)))
             .unwrap_or_else(|| panic!("intrinsic type {} not found", name))
@@ -77,11 +77,11 @@ impl TypeEnvironment<'_> {
             .unwrap()
     }
 
-    pub fn current_function(&self) -> &MIRFunctionPrototype {
+    pub fn current_function(&self) -> &THIRFnPrototype {
         self.function.current_function()
     }
 
-    pub fn try_current_function(&self) -> Option<&MIRFunctionPrototype> {
+    pub fn try_current_function(&self) -> Option<&THIRFnPrototype> {
         self.function.try_current_function()
     }
 
@@ -99,10 +99,10 @@ impl TypeEnvironment<'_> {
         self.defer_depth > 0
     }
 
-    pub fn finish_mir_unit(self, source_namespace: EnvironmentNamespace) -> CXResult<MIRUnit> {
+    pub fn finish_thir_unit(self, source_namespace: EnvironmentNamespace) -> CXResult<THIRUnit> {
         let (functions, globals) = self.items.drain_generated_items();
 
-        Ok(MIRUnit {
+        Ok(THIRUnit {
             source_namespace,
             functions,
             global_variables: globals,
@@ -302,7 +302,7 @@ impl TypeEnvironment<'_> {
         Ok(symbol)
     }
 
-    pub fn type_eq(&self, type1: &MIRType, type2: &MIRType) -> bool {
+    pub fn type_eq(&self, type1: &THIRType, type2: &THIRType) -> bool {
         type1.contextual_eq(type2, &self.symbols)
     }
 
@@ -338,7 +338,7 @@ impl TypeEnvironment<'_> {
     }
 }
 
-impl MIRQualifiedLookup for TypeEnvironment<'_> {
+impl THIRQualifiedLookup for TypeEnvironment<'_> {
     type Output = SymbolLookup;
 
     fn lookup_local(

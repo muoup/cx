@@ -1,12 +1,12 @@
 use cx_ast::ast::expression::{CXExpression, CXInitIndex};
 use cx_log::CXResult;
-use cx_mir::{
+use cx_thir::{
     EnvironmentNamespace,
-    mir::{
-        data::{MIRType, MIRTypeKind},
-        expression::{MIRExpressionKind, StructInitialization},
+    thir::{
+        data::{THIRType, THIRTypeKind},
+        expression::{THIRExpressionKind, StructInitialization},
     },
-    type_context::MIRTypeContext,
+    type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
 
@@ -23,7 +23,7 @@ pub fn typecheck_initializer_list(
     namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     indices: &[CXInitIndex],
-    to_type: Option<&MIRType>,
+    to_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     let Some(to_type) = to_type else {
         let expr = expr.clone();
@@ -57,7 +57,7 @@ pub fn typecheck_initializer_list(
         .clone();
 
     match &to_type.kind {
-        MIRTypeKind::Array { inner_type, length } => {
+        THIRTypeKind::Array { inner_type, length } => {
             let inner_type = env.symbols.resolve_type_id(*inner_type).clone();
             typecheck_array_initializer(
                 env,
@@ -69,14 +69,14 @@ pub fn typecheck_initializer_list(
             )
         }
 
-        MIRTypeKind::PointerTo {
+        THIRTypeKind::PointerTo {
             inner_type: inner, ..
         } => {
             let inner_type = env.symbols.resolve_type_id(*inner).clone();
             typecheck_array_initializer(env, namespace, indices, &inner_type, None, &to_type)
         }
 
-        MIRTypeKind::Structured { .. } => {
+        THIRTypeKind::Structured { .. } => {
             typecheck_structured_initializer(env, namespace, expr, indices, &to_type)
         }
 
@@ -94,9 +94,9 @@ fn typecheck_array_initializer(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     indices: &[CXInitIndex],
-    inner_type: &MIRType,
+    inner_type: &THIRType,
     size: Option<usize>,
-    _to_type: &MIRType,
+    _to_type: &THIRType,
 ) -> CXResult<TypecheckResult> {
     for index in indices {
         if let Some(name) = &index.name {
@@ -121,7 +121,7 @@ fn typecheck_array_initializer(
     }
 
     let array_size = size.unwrap_or(indices.len());
-    let array_type = MIRType::from(MIRTypeKind::Array {
+    let array_type = THIRType::from(THIRTypeKind::Array {
         inner_type: env.symbols.generate_type_id(inner_type.clone()),
         length: array_size,
     });
@@ -136,7 +136,7 @@ fn typecheck_array_initializer(
 
     Ok(TypecheckResult::new(
         array_type,
-        MIRExpressionKind::ArrayInitializer {
+        THIRExpressionKind::ArrayInitializer {
             elements,
             element_type: inner_type.clone(),
         },
@@ -148,7 +148,7 @@ fn typecheck_structured_initializer(
     namespace: &EnvironmentNamespace,
     expr: &CXExpression,
     indices: &[CXInitIndex],
-    to_type: &MIRType,
+    to_type: &THIRType,
 ) -> CXResult<TypecheckResult> {
     let Some(fields) = to_type.aggregate_fields(&env.symbols) else {
         return env.log_error(
@@ -224,7 +224,7 @@ fn typecheck_structured_initializer(
 
     Ok(TypecheckResult::new(
         to_type.clone(),
-        MIRExpressionKind::StructInitializer {
+        THIRExpressionKind::StructInitializer {
             struct_type: to_type.clone(),
             initializations,
         },

@@ -7,9 +7,9 @@ use crate::{
 };
 use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
 use cx_log::CXResult;
-use cx_mir::{
+use cx_thir::{
     EnvironmentNamespace,
-    mir::{data::MIRType, expression::MIRExpression},
+    thir::{data::THIRType, expression::THIRExpression},
 };
 
 pub use unop::typecheck_unop;
@@ -24,7 +24,7 @@ pub fn try_typecheck_special_binop(
     expr: &CXExpression,
     lhs: &CXExpression,
     rhs: &CXExpression,
-    expected_type: Option<&MIRType>,
+    expected_type: Option<&THIRType>,
 ) -> CXResult<Option<TypecheckResult>> {
     Ok(match op {
         CXBinOp::BackwardPipe => {
@@ -120,8 +120,8 @@ fn append_call_argument(
 pub fn typecheck_binop(
     env: &mut TypeEnvironment,
     op: &CXBinOp,
-    lhs: MIRExpression,
-    rhs: MIRExpression,
+    lhs: THIRExpression,
+    rhs: THIRExpression,
 ) -> CXResult<TypecheckResult> {
     binop::dispatch(env, op, lhs, rhs)
 }

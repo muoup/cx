@@ -1,6 +1,6 @@
-use cx_mir::mir::{
-    expression::{MIRExpression, MIRExpressionKind},
-    r#type::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind},
+use cx_thir::thir::{
+    expression::{THIRExpression, THIRExpressionKind},
+    r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeKind},
 };
 use cx_tokens::TokenRange;
 use cx_util::unsafe_float::FloatWrapper;
@@ -15,54 +15,54 @@ pub struct ComptimeValue {
 pub enum ComptimeKind {
     Integer {
         val: i64,
-        itype: MIRIntegerType,
+        itype: THIRIntType,
         signed: bool,
     },
     Float {
         val: FloatWrapper,
-        ftype: MIRFloatType,
+        ftype: THIRFloatType,
     },
     Unit,
 
     #[allow(dead_code)]
-    Emit(MIRExpression),
+    Emit(THIRExpression),
 }
 
 impl ComptimeValue {
     #[allow(dead_code)]
-    pub fn ty(&self) -> MIRType {
+    pub fn ty(&self) -> THIRType {
         match &self.kind {
-            ComptimeKind::Integer { itype, signed, .. } => MIRTypeKind::Integer {
+            ComptimeKind::Integer { itype, signed, .. } => THIRTypeKind::Integer {
                 _type: *itype,
                 signed: *signed,
             }
             .into(),
-            ComptimeKind::Float { ftype, .. } => MIRTypeKind::Float { _type: *ftype }.into(),
-            ComptimeKind::Unit => MIRType::unit(),
+            ComptimeKind::Float { ftype, .. } => THIRTypeKind::Float { _type: *ftype }.into(),
+            ComptimeKind::Unit => THIRType::unit(),
             ComptimeKind::Emit(expr) => expr._type.clone(),
         }
     }
 
     #[allow(dead_code)]
-    pub fn into_expression(self) -> MIRExpression {
+    pub fn into_expression(self) -> THIRExpression {
         match self.kind {
-            ComptimeKind::Integer { val, itype, signed } => MIRExpression {
-                kind: MIRExpressionKind::IntLiteral(val),
-                _type: MIRTypeKind::Integer {
+            ComptimeKind::Integer { val, itype, signed } => THIRExpression {
+                kind: THIRExpressionKind::IntLiteral(val),
+                _type: THIRTypeKind::Integer {
                     _type: itype,
                     signed,
                 }
                 .into(),
                 token_range: self.token_range,
             },
-            ComptimeKind::Float { val, ftype } => MIRExpression {
-                kind: MIRExpressionKind::FloatLiteral(val),
-                _type: MIRTypeKind::Float { _type: ftype }.into(),
+            ComptimeKind::Float { val, ftype } => THIRExpression {
+                kind: THIRExpressionKind::FloatLiteral(val),
+                _type: THIRTypeKind::Float { _type: ftype }.into(),
                 token_range: self.token_range,
             },
-            ComptimeKind::Unit => MIRExpression {
-                kind: MIRExpressionKind::Unit,
-                _type: MIRType::unit(),
+            ComptimeKind::Unit => THIRExpression {
+                kind: THIRExpressionKind::Unit,
+                _type: THIRType::unit(),
                 token_range: self.token_range,
             },
             ComptimeKind::Emit(expr) => expr,

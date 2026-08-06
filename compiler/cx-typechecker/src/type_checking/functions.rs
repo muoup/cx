@@ -7,11 +7,11 @@ use crate::{
 };
 use cx_ast::ast::expression::CXExpression;
 use cx_log::CXResult;
-use cx_mir::{
+use cx_thir::{
     EnvironmentNamespace,
-    mir::{
-        data::{MIRFunction, MIRFunctionPrototype, MIRParameter},
-        expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
+    thir::{
+        data::{THIRFunction, THIRFnPrototype, THIRParameter},
+        expression::{THIRExpression, THIRExpressionKind, SymbolValueOrigin},
     },
 };
 use cx_tokens::TokenRange;
@@ -20,7 +20,7 @@ use cx_util::namespace::QualifiedName;
 pub fn typecheck_function(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    prototype: MIRFunctionPrototype,
+    prototype: THIRFnPrototype,
     body: &CXExpression,
 ) -> CXResult<()> {
     env.function.begin_function(prototype.clone());
@@ -29,7 +29,7 @@ pub fn typecheck_function(
     env.function
         .configure_merge_scope(body, Some("fallthrough"), true);
 
-    for MIRParameter {
+    for THIRParameter {
         name,
         local_id,
         _type,
@@ -44,9 +44,9 @@ pub fn typecheck_function(
 
         env.symbols.insert_local_value(
             QualifiedName::new_raw(name.clone()),
-            MIRExpression {
+            THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: MIRExpressionKind::Variable {
+                kind: THIRExpressionKind::Variable {
                     name: name.clone(),
                     local_id: Some(local_id),
                     location: SymbolValueOrigin::Local,
@@ -66,7 +66,7 @@ pub fn typecheck_function(
         .map_err(|err| env.complete_err(err, body.token_range()))?;
     env.function.end_function();
 
-    env.items.push_generated_function(MIRFunction {
+    env.items.push_generated_function(THIRFunction {
         prototype,
         body: with_implicit_return,
     });

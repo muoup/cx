@@ -1,6 +1,6 @@
 use cx_ast::ast::{expression::CXExpression, pattern::CXPattern, template::CXTemplateInput};
 use cx_log::CXResult;
-use cx_mir::EnvironmentNamespace;
+use cx_thir::EnvironmentNamespace;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::environment::TypeEnvironment;

@@ -3,12 +3,12 @@ use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_log::CXResult;
-use cx_mir::EnvironmentNamespace;
-use cx_mir::mir::data::{MIRFunctionPrototype, MIRFunctionSignature, MIRType};
-use cx_mir::mir::expression::{
-    MIRExpression, MIRExpressionKind, MIRFunctionContract, MIRPostcondition,
+use cx_thir::EnvironmentNamespace;
+use cx_thir::thir::data::{THIRFnPrototype, THIRFnSignature, THIRType};
+use cx_thir::thir::expression::{
+    THIRExpression, THIRExpressionKind, THIRFnContract, THIRPostcondition,
 };
-use cx_mir::symbol::MIRSymbol;
+use cx_thir::symbol::MIRSymbol;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::{NamespacePath, QualifiedName};
@@ -16,8 +16,8 @@ use cx_util::namespace::{NamespacePath, QualifiedName};
 pub(crate) fn typecheck_contract(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    prototype: &MIRFunctionSignature,
-) -> CXResult<MIRFunctionContract> {
+    prototype: &THIRFnSignature,
+) -> CXResult<THIRFnContract> {
     let naive_contract = &prototype.contract;
     let previous_mode = env.push_contract_mode(naive_contract.safe);
     let assertion_prototype =
@@ -35,9 +35,9 @@ pub(crate) fn typecheck_contract(
 
             env.symbols.insert_local_value(
                 QualifiedName::new_raw(name.clone()),
-                MIRExpression {
+                THIRExpression {
                     token_range: TokenRange::internal(),
-                    kind: MIRExpressionKind::ContractVariable {
+                    kind: THIRExpressionKind::ContractVariable {
                         name: name.clone(),
                         force_param: false,
                     },
@@ -51,10 +51,10 @@ pub(crate) fn typecheck_contract(
         .precondition
         .as_ref()
         .map(|pre_expr| {
-            let tc_pre = typecheck_expr(env, namespace, pre_expr, Some(&MIRType::bool()))
+            let tc_pre = typecheck_expr(env, namespace, pre_expr, Some(&THIRType::bool()))
                 .and_then(|v| v.standard_ready_coerce(env, pre_expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))
-                .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
+                .and_then(|v| implicit_cast(env, v, &THIRType::bool()))?;
             Ok(Box::new(tc_pre))
         })
         .transpose()?;
@@ -63,9 +63,9 @@ pub(crate) fn typecheck_contract(
         if let Some(ret_name) = ret_name {
             env.symbols.insert_local_value(
                 QualifiedName::new_raw(ret_name.clone()),
-                MIRExpression {
+                THIRExpression {
                     token_range: TokenRange::internal(),
-                    kind: MIRExpressionKind::ContractVariable {
+                    kind: THIRExpressionKind::ContractVariable {
                         name: ret_name.clone(),
                         force_param: false,
                     },
@@ -74,11 +74,11 @@ pub(crate) fn typecheck_contract(
             );
         }
 
-        let tc_post = typecheck_expr(env, namespace, post_expr, Some(&MIRType::bool()))
+        let tc_post = typecheck_expr(env, namespace, post_expr, Some(&THIRType::bool()))
             .and_then(|v| v.standard_ready_coerce(env, post_expr.token_range()))
             .and_then(|v| std_rval_promotion(env, v))
-            .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
-        Some(MIRPostcondition {
+            .and_then(|v| implicit_cast(env, v, &THIRType::bool()))?;
+        Some(THIRPostcondition {
             binding: ret_name.clone(),
             condition: Box::new(tc_post),
             assertion_prototype: assertion_prototype
@@ -93,7 +93,7 @@ pub(crate) fn typecheck_contract(
         .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
     env.restore_function_mode(previous_mode);
 
-    Ok(MIRFunctionContract {
+    Ok(THIRFnContract {
         safe: naive_contract.safe,
         assertion_prototype,
         precondition,
@@ -104,7 +104,7 @@ pub(crate) fn typecheck_contract(
 pub(crate) fn resolve_assertion_prototype(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-) -> CXResult<MIRFunctionPrototype> {
+) -> CXResult<THIRFnPrototype> {
     let name = QualifiedName::new(
         NamespacePath::from_scoped_path("std::intrinsic::assertion"),
         CXIdent::new("__compiler_assert"),
