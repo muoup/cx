@@ -3,7 +3,7 @@ use cx_target::ArchitectureConfig;
 use cx_util::namespace::QualifiedName;
 
 use crate::{
-    layout::MIRTypeLayout,
+    layout::THIRTypeLayout,
     thir::data::{THIRFnSignature, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
 };
 
@@ -16,7 +16,7 @@ pub trait THIRTypeContext {
         Some(self.resolve_type_id(id))
     }
 
-    fn type_layout(&self, ty: &THIRType) -> CXRawResult<MIRTypeLayout> {
+    fn type_layout(&self, ty: &THIRType) -> CXRawResult<THIRTypeLayout> {
         crate::layout::layout_of(self, ty)
     }
 

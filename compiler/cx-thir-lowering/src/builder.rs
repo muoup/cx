@@ -5,12 +5,12 @@ use crate::{LMIRResult, LMIRUnit};
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::*;
 use cx_log::CXResult;
-use cx_thir::layout::MIRTypeLayout;
-use cx_thir::thir::{data::THIRFnPrototype, expression::THIRLocalID};
+use cx_target::ArchitectureConfig;
+use cx_thir::layout::THIRTypeLayout;
 use cx_thir::registry::THIRDecomposedRegistry;
+use cx_thir::thir::{data::THIRFnPrototype, expression::THIRLocalID};
 use cx_thir::type_context::THIRTypeContext;
 use cx_thir::THIRUnit;
-use cx_target::ArchitectureConfig;
 use cx_util::format::dump_all;
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
@@ -70,7 +70,7 @@ impl LMIRBuilder {
         }
     }
 
-    pub(crate) fn type_layout(&self, ty: &cx_thir::thir::data::THIRType) -> MIRTypeLayout {
+    pub(crate) fn type_layout(&self, ty: &cx_thir::thir::data::THIRType) -> THIRTypeLayout {
         self.registry
             .type_layout(ty)
             .unwrap_or_else(|err| panic!("Failed to calculate MIR layout: {}", err.message()))
@@ -390,8 +390,9 @@ impl LMIRBuilder {
 
             LMIRValue::Register { _type, .. } => _type.clone(),
 
-            LMIRValue::FloatImmediate { _type, .. }
-            | LMIRValue::IntImmediate { _type, .. } => _type.clone(),
+            LMIRValue::FloatImmediate { _type, .. } | LMIRValue::IntImmediate { _type, .. } => {
+                _type.clone()
+            }
 
             LMIRValue::ParameterRef(param_index) => {
                 let context = self.fun();
@@ -431,10 +432,7 @@ impl LMIRBuilder {
     pub fn int_const(&self, value: i32, _type: LMIRIntegerType) -> LMIRValue {
         LMIRValue::IntImmediate {
             val: value as i64,
-            _type: LMIRType::with_implicit_abi(
-                self.architecture(),
-                LMIRTypeKind::Integer(_type),
-            ),
+            _type: LMIRType::with_implicit_abi(self.architecture(), LMIRTypeKind::Integer(_type)),
         }
     }
 
@@ -449,10 +447,7 @@ impl LMIRBuilder {
     pub fn float_const(&self, value: f64, _type: LMIRFloatType) -> LMIRValue {
         LMIRValue::FloatImmediate {
             val: FloatWrapper::from(value),
-            _type: LMIRType::with_implicit_abi(
-                self.architecture(),
-                LMIRTypeKind::Float(_type),
-            ),
+            _type: LMIRType::with_implicit_abi(self.architecture(), LMIRTypeKind::Float(_type)),
         }
     }
 

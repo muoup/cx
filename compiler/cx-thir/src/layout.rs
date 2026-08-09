@@ -2,14 +2,12 @@ use cx_log::{CXRawResult, error::message::CXStdErrMessage};
 
 use crate::{
     thir::{
-        data::{THIRType, THIRTypeKind},
-        r#type::THIRField,
-    },
-    type_context::THIRTypeContext,
+        data::{THIRType, THIRTypeID, THIRTypeKind}, r#type::THIRField,
+    }, type_context::THIRTypeContext,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MIRTypeLayout {
+pub struct THIRTypeLayout {
     pub size: usize,
     pub alignment: usize,
 }
@@ -17,9 +15,9 @@ pub struct MIRTypeLayout {
 pub fn layout_of<Context: THIRTypeContext + ?Sized>(
     definitions: &Context,
     ty: &THIRType,
-) -> CXRawResult<MIRTypeLayout> {
+) -> CXRawResult<THIRTypeLayout> {
     match &ty.kind {
-        THIRTypeKind::Unit => Ok(MIRTypeLayout {
+        THIRTypeKind::Unit => Ok(THIRTypeLayout {
             size: 0,
             alignment: 1,
         }),
@@ -27,14 +25,14 @@ pub fn layout_of<Context: THIRTypeContext + ?Sized>(
         THIRTypeKind::Float { _type } => Ok(scalar_layout(_type.bytes())),
         THIRTypeKind::PointerTo { .. } | THIRTypeKind::MemoryReference { .. } => {
             let architecture = definitions.architecture();
-            Ok(MIRTypeLayout {
+            Ok(THIRTypeLayout {
                 size: architecture.pointer_size(),
                 alignment: architecture.pointer_alignment(),
             })
         }
         THIRTypeKind::Array { length, inner_type } => {
             let inner = layout_of(definitions, definitions.resolve_type_id(*inner_type))?;
-            Ok(MIRTypeLayout {
+            Ok(THIRTypeLayout {
                 size: inner.size * length,
                 alignment: inner.alignment,
             })
@@ -42,7 +40,7 @@ pub fn layout_of<Context: THIRTypeContext + ?Sized>(
         THIRTypeKind::Structured { fields } => struct_layout(definitions, fields),
         THIRTypeKind::Union { variants } => union_layout(definitions, variants),
         THIRTypeKind::TaggedUnion { variants } => tagged_union_layout(definitions, variants),
-        THIRTypeKind::Opaque { size, alignment } => Ok(MIRTypeLayout {
+        THIRTypeKind::Opaque { size, alignment } => Ok(THIRTypeLayout {
             size: *size,
             alignment: *alignment,
         }),
@@ -69,8 +67,8 @@ pub fn layout_of<Context: THIRTypeContext + ?Sized>(
     })
 }
 
-fn scalar_layout(size: usize) -> MIRTypeLayout {
-    MIRTypeLayout {
+fn scalar_layout(size: usize) -> THIRTypeLayout {
+    THIRTypeLayout {
         size,
         alignment: size.clamp(1, 8),
     }
@@ -79,7 +77,7 @@ fn scalar_layout(size: usize) -> MIRTypeLayout {
 fn struct_layout<Context: THIRTypeContext + ?Sized>(
     definitions: &Context,
     fields: &[THIRField],
-) -> CXRawResult<MIRTypeLayout> {
+) -> CXRawResult<THIRTypeLayout> {
     let mut size = 0;
     let mut alignment = 1;
     let mut active_bitfield: Option<ActiveBitfield> = None;
@@ -138,7 +136,7 @@ fn struct_layout<Context: THIRTypeContext + ?Sized>(
     }
 
     flush_bitfield(&mut size, &mut active_bitfield);
-    Ok(MIRTypeLayout {
+    Ok(THIRTypeLayout {
         size: align_to(size, alignment),
         alignment,
     })
@@ -147,7 +145,7 @@ fn struct_layout<Context: THIRTypeContext + ?Sized>(
 fn union_layout<Context: THIRTypeContext + ?Sized>(
     definitions: &Context,
     fields: &[THIRField],
-) -> CXRawResult<MIRTypeLayout> {
+) -> CXRawResult<THIRTypeLayout> {
     let mut size = 0;
     let mut alignment = 1;
 
@@ -157,7 +155,7 @@ fn union_layout<Context: THIRTypeContext + ?Sized>(
         alignment = alignment.max(layout.alignment);
     }
 
-    Ok(MIRTypeLayout {
+    Ok(THIRTypeLayout {
         size: align_to(size, alignment),
         alignment,
     })
@@ -166,13 +164,13 @@ fn union_layout<Context: THIRTypeContext + ?Sized>(
 fn tagged_union_layout<Context: THIRTypeContext + ?Sized>(
     definitions: &Context,
     variants: &[THIRField],
-) -> CXRawResult<MIRTypeLayout> {
+) -> CXRawResult<THIRTypeLayout> {
     let data = union_layout(definitions, variants)?;
     let tag = scalar_layout(1);
     let alignment = data.alignment.max(tag.alignment);
     let tag_offset = align_to(data.size, tag.alignment);
 
-    Ok(MIRTypeLayout {
+    Ok(THIRTypeLayout {
         size: align_to(tag_offset + tag.size, alignment),
         alignment,
     })
@@ -181,7 +179,7 @@ fn tagged_union_layout<Context: THIRTypeContext + ?Sized>(
 fn field_layout<Context: THIRTypeContext + ?Sized>(
     definitions: &Context,
     field: &THIRField,
-) -> CXRawResult<MIRTypeLayout> {
+) -> CXRawResult<THIRTypeLayout> {
     match field {
         THIRField::Standard { type_id, .. } => {
             layout_of(definitions, definitions.resolve_type_id(*type_id))
@@ -203,7 +201,7 @@ fn field_layout<Context: THIRTypeContext + ?Sized>(
                 ));
             }
             Ok(if *width == 0 {
-                MIRTypeLayout {
+                THIRTypeLayout {
                     size: 0,
                     alignment: layout.alignment,
                 }
@@ -219,8 +217,8 @@ fn align_to(size: usize, alignment: usize) -> usize {
 }
 
 struct ActiveBitfield {
-    type_id: crate::thir::r#type::THIRTypeID,
-    layout: MIRTypeLayout,
+    type_id: THIRTypeID,
+    layout: THIRTypeLayout,
     used_bits: usize,
 }
 

@@ -374,6 +374,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-mir"
+version = "0.1.0"
+dependencies = [
+ "cx-ast",
+ "cx-thir",
+ "cx-util",
+]
+
+[[package]]
 name = "cx-namespace"
 version = "0.0.0"
 dependencies = [
