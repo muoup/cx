@@ -1,7 +1,9 @@
 use cx_ast::ast::modifiers::CXLinkageMode;
 use cx_util::identifier::CXIdent;
 
-use crate::expr::{MIRInstr};
+use crate::expr::MIRBasicBlock;
+
+pub struct MIRGlobalVariable;
 
 pub struct MIRFnSignature {
     name: CXIdent,
@@ -14,5 +16,5 @@ pub struct MIRFnPrototype {
 
 pub struct MIRFunction {
     prototype: MIRFnPrototype,
-    instrs: Vec<MIRInstr>,
+    blocks: Vec<MIRBasicBlock>,
 }
