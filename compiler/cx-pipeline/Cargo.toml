@@ -16,7 +16,9 @@ cx-lexer = { path = "../cx-lexer", default-features = false }
 cx-parsing = { path = "../cx-parsing" }
 cx-typechecker = { path = "../cx-typechecker" }
 cx-safe-analyzer = { path = "../cx-safe-analyzer" }
+cx-mir-lowering = { path = "../cx-mir-lowering" }
 cx-thir-lowering = { path = "../cx-thir-lowering" }
+cx-mir-analysis = { path = "../cx-mir-analysis" }
 cx-backend-llvm = { path = "../cx-backend-llvm", optional = true }
 cx-backend-cranelift = { path = "../cx-backend-cranelift" }
 

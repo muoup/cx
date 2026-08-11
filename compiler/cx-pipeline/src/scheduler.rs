@@ -1,9 +1,9 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::pipeline_error;
 use crate::progress::ProgressReporter;
-use cx_log::{error::CXErr, CXResult};
-use cx_thir::intrinsic_types::INTRINSIC_IMPORTS;
-use cx_thir_lowering::generate_lmir;
+use cx_log::{CXResult, error::CXErr};
+use cx_mir_analysis::{MIRAnalysisOptions, analyze};
+use cx_mir_lowering::generate_lmir;
 use cx_parsing::preparse::PreparseConfig;
 use cx_parsing::{decompose_ast, parse_ast, preparse};
 use cx_pipeline_data::db::ModuleMap;
@@ -16,6 +16,8 @@ use cx_pipeline_data::{
     CompilationMode, CompilationUnit, CompilerBackend, GlobalCompilationContext,
 };
 use cx_safe_analyzer::FMIRContext;
+use cx_thir::intrinsic_types::INTRINSIC_IMPORTS;
+use cx_thir_lowering::generate_mir;
 use cx_tokens::TokenIter;
 use cx_typechecker::environment::TypeEnvironment;
 use cx_typechecker::typecheck;
@@ -90,6 +92,7 @@ pub(crate) fn scheduling_loop(
             CompilationStep::PreParse => "Lexing",
             CompilationStep::Parse => "Parsing",
             CompilationStep::Typechecking => "Typechecking",
+            CompilationStep::MIRGen => "MIR generation",
             CompilationStep::LMIRGen => "Lowering",
             CompilationStep::Codegen => "Compiling",
         };
@@ -233,7 +236,8 @@ pub(crate) fn handle_job(
             Ok(new_jobs.into())
         }
         CompilationStep::Parse => map_reqs_new_stage(job, CompilationStep::Typechecking, false),
-        CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::LMIRGen, true),
+        CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::MIRGen, true),
+        CompilationStep::MIRGen => map_reqs_new_stage(job, CompilationStep::LMIRGen, true),
         CompilationStep::LMIRGen => map_reqs_new_stage(job, CompilationStep::Codegen, true),
         CompilationStep::Codegen => Ok([].into()),
     }
@@ -412,16 +416,37 @@ pub(crate) fn perform_job(
                 dump_data(&fmir_context);
             }
 
-            if context.config.analysis {
+            if !context.config.unsafe_mode {
                 fmir_context.apply_standard_analysis_passes()?;
             }
 
             context.module_db.thir.insert(job.unit.clone(), thir);
         }
 
+        CompilationStep::MIRGen => {
+            let thir = context.module_db.thir.get(&job.unit);
+            let mir = generate_mir(thir.as_ref())?;
+            let analysis = analyze(
+                &mir,
+                MIRAnalysisOptions {
+                    validate: !context.config.unsafe_mode,
+                },
+            )
+            .map_err(|error| {
+                pipeline_error("ANALYSIS ERROR", format!("MIR analysis failed: {error}"))
+            })?;
+
+            if !job.unit.is_std_lib() || context.config.verbose {
+                dump_data(&mir);
+                dump_data(&analysis);
+            }
+
+            context.module_db.mir.insert(job.unit.clone(), mir);
+        }
+
         CompilationStep::LMIRGen => {
-            let mir = context.module_db.thir.take(&job.unit);
-            let lmir = generate_lmir(&mir)?;
+            let thir = context.module_db.thir.take(&job.unit);
+            let lmir = generate_lmir(&thir)?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&lmir);
@@ -494,7 +519,7 @@ pub enum LSPErrors {
 ///
 /// This is similar to `scheduling_loop` but:
 /// 1. Collects LSPErrors (both type errors and fatal errors) instead of panicking
-/// 2. Stops after Typechecking (no LMIRGen or Codegen)
+/// 2. Stops after Typechecking (no MIRGen, LMIRGen, or Codegen)
 /// 3. Stops after the first failed stage so dependents cannot observe missing data
 pub(crate) fn scheduling_loop_collect_errors(
     context: &GlobalCompilationContext,
@@ -520,7 +545,7 @@ pub(crate) fn scheduling_loop_collect_errors(
         // Stop after Typechecking for LSP
         if matches!(
             job.step,
-            CompilationStep::LMIRGen | CompilationStep::Codegen
+            CompilationStep::MIRGen | CompilationStep::LMIRGen | CompilationStep::Codegen
         ) {
             continue;
         }
@@ -641,10 +666,10 @@ fn handle_job_collect_errors(
         ))),
 
         CompilationStep::Typechecking => {
-            // Stop here for LSP - no need for bytecode/codegen
+            // Stop here for LSP - no need for IR generation or codegen
             Some(HandleJobResult::Success([].into()))
         }
-        CompilationStep::LMIRGen | CompilationStep::Codegen => {
+        CompilationStep::MIRGen | CompilationStep::LMIRGen | CompilationStep::Codegen => {
             Some(HandleJobResult::Success([].into()))
         }
     }

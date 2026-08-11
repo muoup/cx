@@ -104,11 +104,8 @@ fn write_module(
                 "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_end_to_end_test(std::path::Path::new({path_literal})); }}\n"
             )),
             TestKind::CompileOnly => {
-                let analysis = path
-                    .components()
-                    .any(|component| component.as_os_str() == "analysis");
                 output.push_str(&format!(
-                    "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_compile_only_test(std::path::Path::new({path_literal}), {analysis}); }}\n"
+                    "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_compile_only_test(std::path::Path::new({path_literal})); }}\n"
                 ));
             }
             TestKind::ParseError => output.push_str(&format!(

@@ -383,6 +383,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-mir-analysis"
+version = "0.1.0"
+dependencies = [
+ "cx-ast",
+ "cx-mir",
+ "cx-util",
+]
+
+[[package]]
+name = "cx-mir-lowering"
+version = "0.0.0"
+dependencies = [
+ "cx-ast",
+ "cx-lmir",
+ "cx-log",
+ "cx-parsing",
+ "cx-target",
+ "cx-thir",
+ "cx-util",
+]
+
+[[package]]
 name = "cx-namespace"
 version = "0.0.0"
 dependencies = [
@@ -414,6 +436,8 @@ dependencies = [
  "cx-lexer",
  "cx-lmir",
  "cx-log",
+ "cx-mir-analysis",
+ "cx-mir-lowering",
  "cx-parsing",
  "cx-pipeline-data",
  "cx-preparse-data",
@@ -435,6 +459,7 @@ dependencies = [
  "cx-ast",
  "cx-lmir",
  "cx-log",
+ "cx-mir",
  "cx-preparse-data",
  "cx-target",
  "cx-thir",
@@ -495,13 +520,11 @@ dependencies = [
 
 [[package]]
 name = "cx-thir-lowering"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "cx-ast",
- "cx-lmir",
  "cx-log",
- "cx-parsing",
- "cx-target",
+ "cx-mir",
  "cx-thir",
  "cx-util",
 ]

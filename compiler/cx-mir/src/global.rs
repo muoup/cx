@@ -1,20 +1,193 @@
 use cx_ast::ast::modifiers::CXLinkageMode;
 use cx_util::identifier::CXIdent;
 
-use crate::expr::MIRBasicBlock;
+use crate::{
+    expr::{
+        MIRBasicBlock, MIRBasicBlockID, MIRConstant, MIRInstr, MIRInstrKind, MIRPlace, MIRRegister,
+    },
+    ty::MIRType,
+};
 
-pub struct MIRGlobalVariable;
+macro_rules! dense_id {
+    ($name:ident) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub struct $name(pub usize);
 
+        impl $name {
+            pub const fn new(index: usize) -> Self {
+                Self(index)
+            }
+
+            pub const fn index(self) -> usize {
+                self.0
+            }
+        }
+    };
+}
+
+dense_id!(MIRFunctionID);
+dense_id!(MIRGlobalID);
+
+#[derive(Debug, Clone)]
+pub struct MIRGlobalVariable {
+    pub id: MIRGlobalID,
+    pub name: CXIdent,
+    pub ty: MIRType,
+    pub linkage: CXLinkageMode,
+    /// `None` denotes a declaration or a zero-initialized definition according
+    /// to `is_definition`; it never implies an ABI-specific representation.
+    pub initializer: Option<MIRConstant>,
+    pub is_definition: bool,
+}
+
+impl MIRGlobalVariable {
+    pub fn new(id: MIRGlobalID, name: CXIdent, ty: MIRType, linkage: CXLinkageMode) -> Self {
+        Self {
+            id,
+            name,
+            ty,
+            linkage,
+            initializer: None,
+            is_definition: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MIRFnParam {
+    pub name: Option<CXIdent>,
+    pub ty: MIRType,
+}
+
+impl MIRFnParam {
+    pub fn new(ty: MIRType) -> Self {
+        Self { name: None, ty }
+    }
+
+    pub fn named(name: CXIdent, ty: MIRType) -> Self {
+        Self {
+            name: Some(name),
+            ty,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct MIRFnSignature {
-    name: CXIdent,
+    pub name: CXIdent,
+    pub params: Vec<MIRFnParam>,
+    pub return_type: Option<MIRType>,
+    pub variadic: bool,
 }
 
+impl MIRFnSignature {
+    pub fn new(name: CXIdent, params: Vec<MIRFnParam>, return_type: Option<MIRType>) -> Self {
+        Self {
+            name,
+            params,
+            return_type,
+            variadic: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct MIRFnPrototype {
-    signature: MIRFnSignature,
-    linkage: CXLinkageMode,
+    pub signature: MIRFnSignature,
+    pub linkage: CXLinkageMode,
 }
 
+impl MIRFnPrototype {
+    pub fn new(signature: MIRFnSignature, linkage: CXLinkageMode) -> Self {
+        Self { signature, linkage }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MIRPlaceDecl {
+    pub id: MIRPlace,
+    pub ty: MIRType,
+    pub debug_name: Option<CXIdent>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MIRRegisterDecl {
+    pub id: MIRRegister,
+    pub ty: MIRType,
+    pub debug_name: Option<CXIdent>,
+}
+
+#[derive(Debug, Clone)]
 pub struct MIRFunction {
-    prototype: MIRFnPrototype,
-    blocks: Vec<MIRBasicBlock>,
+    pub id: MIRFunctionID,
+    pub prototype: MIRFnPrototype,
+    /// Declarations have no entry and no blocks. Definitions have both.
+    pub entry: Option<MIRBasicBlockID>,
+    pub blocks: Vec<MIRBasicBlock>,
+    pub places: Vec<MIRPlaceDecl>,
+    pub registers: Vec<MIRRegisterDecl>,
+}
+
+impl MIRFunction {
+    pub fn new(id: MIRFunctionID, prototype: MIRFnPrototype) -> Self {
+        Self {
+            id,
+            prototype,
+            entry: None,
+            blocks: Vec::new(),
+            places: Vec::new(),
+            registers: Vec::new(),
+        }
+    }
+
+    pub fn is_declaration(&self) -> bool {
+        self.blocks.is_empty()
+    }
+
+    pub fn add_place(&mut self, ty: MIRType, debug_name: Option<CXIdent>) -> MIRPlace {
+        let id = MIRPlace::new(self.places.len());
+        self.places.push(MIRPlaceDecl { id, ty, debug_name });
+        id
+    }
+
+    pub fn add_register(&mut self, ty: MIRType, debug_name: Option<CXIdent>) -> MIRRegister {
+        let id = MIRRegister::new(self.registers.len());
+        self.registers.push(MIRRegisterDecl { id, ty, debug_name });
+        id
+    }
+
+    pub fn add_block(&mut self) -> MIRBasicBlockID {
+        let id = MIRBasicBlockID::new(self.blocks.len());
+        self.blocks.push(MIRBasicBlock::new(id));
+        if self.entry.is_none() {
+            self.entry = Some(id);
+        }
+        id
+    }
+
+    pub fn block(&self, id: MIRBasicBlockID) -> Option<&MIRBasicBlock> {
+        self.blocks.get(id.index())
+    }
+
+    pub fn block_mut(&mut self, id: MIRBasicBlockID) -> Option<&mut MIRBasicBlock> {
+        self.blocks.get_mut(id.index())
+    }
+
+    pub fn place(&self, id: MIRPlace) -> Option<&MIRPlaceDecl> {
+        self.places.get(id.index())
+    }
+
+    pub fn register(&self, id: MIRRegister) -> Option<&MIRRegisterDecl> {
+        self.registers.get(id.index())
+    }
+
+    pub fn push_instr(
+        &mut self,
+        block: MIRBasicBlockID,
+        kind: MIRInstrKind,
+    ) -> Option<&mut MIRInstr> {
+        let block = self.block_mut(block)?;
+        block.instrs.push(MIRInstr::new(kind));
+        block.instrs.last_mut()
+    }
 }

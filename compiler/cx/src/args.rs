@@ -25,7 +25,7 @@ pub struct FileArgs {
     pub compile_only: bool,
     pub backend: CompilerBackend,
     pub optimization_level: OptimizationLevel,
-    pub analysis: bool,
+    pub unsafe_mode: bool,
     pub verbose: bool,
 }
 
@@ -34,7 +34,7 @@ pub struct BuildArgs {
     pub target: Option<String>,
     pub backend: Option<CompilerBackend>,
     pub optimization_level: Option<OptimizationLevel>,
-    pub analysis: Option<bool>,
+    pub unsafe_mode: bool,
     pub verbose: bool,
 }
 
@@ -49,6 +49,7 @@ struct CommonArgs {
     backend: Option<CompilerBackend>,
     optimization_level: Option<OptimizationLevel>,
     analysis: bool,
+    unsafe_mode: bool,
     verbose: bool,
 }
 
@@ -101,6 +102,7 @@ pub fn print_help() {
     println!("  -Osize               Optimize for code size.");
     println!("  -Ofast               Allow fast, but imprecise floating-point optimizations.");
     println!("  --analysis           Run FMIR analysis for safe functions.");
+    println!("  --unsafe             Skip MIR invariant validation (liveness still runs).");
     println!("  --verbose            Print each compilation step on its own line.");
     println!("  -h, --help, -help    Display this help message.");
 }
@@ -152,6 +154,7 @@ fn parse_common_flags(args: impl IntoIterator<Item = String>) -> ParsedCommonArg
             "-Osize" => common.optimization_level = Some(OptimizationLevel::Osize),
             "-Ofast" => common.optimization_level = Some(OptimizationLevel::Ofast),
             "--analysis" => common.analysis = true,
+            "--unsafe" => common.unsafe_mode = true,
             "--verbose" => common.verbose = true,
             _ => rest.push(arg),
         }
@@ -220,7 +223,7 @@ fn parse_build_args_inner(args: impl IntoIterator<Item = String>) -> Result<Buil
         target,
         backend: common.backend,
         optimization_level: common.optimization_level,
-        analysis: if common.analysis { Some(true) } else { None },
+        unsafe_mode: common.unsafe_mode,
         verbose: common.verbose,
     })
 }
@@ -280,7 +283,7 @@ fn parse_file_args(args: impl IntoIterator<Item = String>) -> Result<Command, St
         compile_only,
         backend: common.backend.unwrap_or_else(default_backend),
         optimization_level: common.optimization_level.unwrap_or_default(),
-        analysis: common.analysis,
+        unsafe_mode: common.unsafe_mode,
         verbose: common.verbose,
     }))
 }

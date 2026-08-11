@@ -1,7 +1,7 @@
 use cx_pipeline::project_compilation;
 use cx_pipeline_data::{
-    config::find_and_load_config, CompilationMode, CompilerBackend, CompilerConfig,
-    OptimizationLevel,
+    CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel,
+    config::find_and_load_config,
 };
 use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
@@ -81,9 +81,9 @@ fn build_project(args: BuildArgs) -> Vec<PathBuf> {
             .unwrap_or_default()
     });
 
-    let analysis = args
-        .analysis
-        .unwrap_or_else(|| build_section.and_then(|b| b.analysis).unwrap_or(false));
+    // let analysis = args
+    //     .analysis
+    //     .unwrap_or_else(|| build_section.and_then(|b| b.analysis).unwrap_or(false));
 
     let internal_directory = setup_internal_directory(&project_root);
 
@@ -92,7 +92,7 @@ fn build_project(args: BuildArgs) -> Vec<PathBuf> {
         backend,
         optimization_level,
         output: project_root.clone(), // placeholder, overridden per-target
-        analysis,
+        unsafe_mode: args.unsafe_mode,
         verbose: args.verbose,
         working_directory: project_root.clone(),
         internal_directory,

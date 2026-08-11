@@ -75,6 +75,16 @@ pub enum CompilationStep {
     Typechecking = 1 << 2,
 
     /**
+     *  Generates and analyzes MIR from the type-checked AST. MIR liveness analysis always runs;
+     *  invariant validation may be disabled by the compiler configuration.
+     *
+     *  Requires: A fully type-checked AST.
+     *
+     *  Outputs: An analyzed MIR representation.
+     */
+    MIRGen = 1 << 5,
+
+    /**
      *  Generates a custom bytecode / Flat IR representation from the type-checked AST. This, unlike
      *  most codegen backends contains support for higher-level constructs such as deferred logic,
      *  special function types, and templates.
@@ -178,6 +188,7 @@ impl JobQueue {
             CompilationStep::PreParse,
             CompilationStep::Parse,
             CompilationStep::Typechecking,
+            CompilationStep::MIRGen,
             CompilationStep::LMIRGen,
             CompilationStep::Codegen,
         ] {

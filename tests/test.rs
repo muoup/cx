@@ -67,7 +67,6 @@ fn compiler_config(
     output: PathBuf,
     working_directory: &Path,
     internal_directory: &Path,
-    analysis: bool,
     compilation_mode: CompilationMode,
 ) -> CompilerConfig {
     CompilerConfig {
@@ -78,7 +77,7 @@ fn compiler_config(
             CompilerBackend::LLVM => OptimizationLevel::O1,
         },
         output,
-        analysis,
+        unsafe_mode: false,
         compilation_mode,
 
         verbose: false,
@@ -106,7 +105,7 @@ fn classify_failure_stage(message: &str) -> Option<FailureStage> {
     }
 }
 
-fn expect_compile_success(input: &Path, analysis: bool) {
+fn expect_compile_success(input: &Path) {
     let test_label = input
         .strip_prefix(test_root())
         .unwrap_or(input)
@@ -124,7 +123,6 @@ fn expect_compile_success(input: &Path, analysis: bool) {
         temp_dir.path().join("case.out"),
         working_directory,
         &internal_directory,
-        analysis,
         CompilationMode::Object,
     );
 
@@ -135,7 +133,7 @@ fn expect_compile_success(input: &Path, analysis: bool) {
     });
 }
 
-fn expect_failure(input: &Path, analysis: bool, expected_stage: FailureStage) {
+fn expect_failure(input: &Path, expected_stage: FailureStage) {
     let test_label = input
         .strip_prefix(test_root())
         .unwrap_or(input)
@@ -153,7 +151,6 @@ fn expect_failure(input: &Path, analysis: bool, expected_stage: FailureStage) {
         temp_dir.path().join("case.out"),
         working_directory,
         &internal_directory,
-        analysis,
         CompilationMode::Object,
     );
 
@@ -263,7 +260,6 @@ fn run_backend_end_to_end(
         output.clone(),
         working_directory,
         &internal,
-        false,
         CompilationMode::Executable,
     );
 
@@ -287,23 +283,23 @@ fn run_backend_end_to_end(
 }
 
 #[allow(dead_code)]
-fn run_compile_only_test(input: &Path, analysis: bool) {
-    expect_compile_success(input, analysis);
+fn run_compile_only_test(input: &Path) {
+    expect_compile_success(input);
 }
 
 #[allow(dead_code)]
 fn run_parse_error_test(input: &Path) {
-    expect_failure(input, false, FailureStage::Parse);
+    expect_failure(input, FailureStage::Parse);
 }
 
 #[allow(dead_code)]
 fn run_type_error_test(input: &Path) {
-    expect_failure(input, false, FailureStage::Typecheck);
+    expect_failure(input, FailureStage::Typecheck);
 }
 
 #[allow(dead_code)]
 fn run_verifier_error_test(input: &Path) {
-    expect_failure(input, true, FailureStage::Analysis);
+    expect_failure(input, FailureStage::Analysis);
 }
 
 include!(concat!(env!("OUT_DIR"), "/generated_tests.rs"));

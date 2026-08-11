@@ -1,514 +1,491 @@
 use std::collections::HashMap;
 
-use crate::mir_lowering::types::convert_cx_prototype;
-use crate::{LMIRResult, LMIRUnit};
-use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
-use cx_lmir::*;
-use cx_log::CXResult;
-use cx_target::ArchitectureConfig;
-use cx_thir::layout::THIRTypeLayout;
-use cx_thir::registry::THIRDecomposedRegistry;
-use cx_thir::thir::{data::THIRFnPrototype, expression::THIRLocalID};
-use cx_thir::type_context::THIRTypeContext;
-use cx_thir::THIRUnit;
-use cx_util::format::dump_all;
+use cx_ast::ast::modifiers::CXLinkageMode;
+use cx_mir::{
+    MIRBasicBlockID, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID,
+    MIRGlobalID, MIRInstrKind, MIROperand, MIRPlace, MIRRegister, MIRType, MIRUnit,
+};
+use cx_thir::{
+    THIRUnit,
+    registry::THIRDecomposedRegistry,
+    thir::{
+        data::{THIRFnPrototype, THIRFunction},
+        expression::THIRLocalID,
+        global::{MIRGlobalVarKind, MIRGlobalVariable as THIRGlobalVariable},
+        r#type::{THIRIntType, THIRType, THIRTypeKind},
+    },
+    type_context::THIRTypeContext,
+};
 use cx_util::identifier::CXIdent;
-use cx_util::scoped_map::ScopedMap;
-use cx_util::unsafe_float::FloatWrapper;
 
-#[derive(Debug)]
-pub struct LMIRBuilder {
-    pub registry: THIRDecomposedRegistry,
-    pub fn_map: LMIRFunctionMap,
-
-    functions: Vec<LMIRFunction>,
-    global_variables: Vec<LMIRGlobalValue>,
-
-    symbol_table: ScopedMap<String, LMIRValue>,
-    goto_stack: Vec<LMIRGotoContext>,
-    yield_stack: Vec<LMIRYieldContext>,
-    function_context: Option<LMIRFunctionContext>,
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct LoopContext {
+    pub break_target: MIRBasicBlockID,
+    pub continue_target: Option<MIRBasicBlockID>,
 }
 
 #[derive(Debug)]
-pub struct LMIRGotoContext {
-    pub break_block: Option<CXIdent>,
-    pub continue_block: Option<CXIdent>,
+pub(crate) struct YieldContext {
+    pub target: MIRBasicBlockID,
+    pub result_type: MIRType,
+    pub target_scope: Option<usize>,
+    pub incoming: Vec<(MIRBasicBlockID, MIROperand)>,
 }
 
 #[derive(Debug)]
-pub struct LMIRYieldContext {
-    pub target_block: CXIdent,
-    pub result_type: LMIRType,
-    pub yields: Vec<(LMIRValue, CXIdent)>,
+struct FunctionContext {
+    function: MIRFunctionID,
+    current_block: MIRBasicBlockID,
+    local_places: HashMap<THIRLocalID, MIRPlace>,
+    named_values: Vec<HashMap<String, MIROperand>>,
+    loops: Vec<LoopContext>,
+    yields: Vec<YieldContext>,
 }
 
-#[derive(Debug)]
-pub struct LMIRFunctionContext {
-    prototype: LMIRFunctionPrototype,
-    mir_prototype: THIRFnPrototype,
-
-    current_block: usize,
-    register_counter: u32,
-
-    blocks: Vec<LMIRBasicBlock>,
-    local_symbols: HashMap<THIRLocalID, LMIRValue>,
+/// Stateful constructor for one semantic MIR unit.
+///
+/// Functions and globals are predeclared before any body is visited, making
+/// symbol resolution deterministic and allowing forward references. Places,
+/// registers, and blocks are allocated by the dense append-only allocators on
+/// `MIRFunction`.
+pub struct MIRBuilder<'thir> {
+    unit: MIRUnit,
+    registry: &'thir THIRDecomposedRegistry,
+    function_symbols: HashMap<String, MIRFunctionID>,
+    global_symbols: HashMap<String, MIRGlobalID>,
+    definitions: Vec<MIRFunctionID>,
+    current: Option<FunctionContext>,
 }
 
-impl LMIRBuilder {
-    pub fn new(mir: &THIRUnit) -> Self {
-        LMIRBuilder {
-            functions: Vec::new(),
-            global_variables: Vec::new(),
-            registry: mir.registry.clone(),
+impl<'thir> MIRBuilder<'thir> {
+    pub fn new(thir: &'thir THIRUnit) -> Self {
+        let mut builder = Self {
+            unit: MIRUnit::new(),
+            registry: &thir.registry,
+            function_symbols: HashMap::new(),
+            global_symbols: HashMap::new(),
+            definitions: Vec::with_capacity(thir.functions.len()),
+            current: None,
+        };
 
-            fn_map: HashMap::new(),
-            symbol_table: ScopedMap::new_with_starting_scope(),
-            goto_stack: Vec::new(),
-            yield_stack: Vec::new(),
-            function_context: None,
+        for function in &thir.functions {
+            builder.predeclare_function(function);
         }
+        for global in &thir.global_variables {
+            builder.predeclare_global(global);
+        }
+
+        builder
     }
 
-    pub(crate) fn type_layout(&self, ty: &cx_thir::thir::data::THIRType) -> THIRTypeLayout {
+    pub fn registry(&self) -> &THIRDecomposedRegistry {
         self.registry
-            .type_layout(ty)
-            .unwrap_or_else(|err| panic!("Failed to calculate MIR layout: {}", err.message()))
     }
 
-    pub fn architecture(&self) -> &ArchitectureConfig {
-        self.registry.architecture()
+    pub fn unit(&self) -> &MIRUnit {
+        &self.unit
     }
 
-    pub fn new_register(&mut self) -> LMIRRegister {
-        let context = self.fun_mut();
-
-        let reg_id = context.register_counter;
-        context.register_counter += 1;
-
-        LMIRRegister::new(format!("{}", reg_id))
-    }
-
-    pub fn new_function(&mut self, fn_prototype: THIRFnPrototype) {
+    pub fn finish(self) -> MIRUnit {
         assert!(
-            self.function_context.is_none(),
-            "Attempted to start a new function while another function context is active"
+            self.current.is_none(),
+            "attempted to finish MIR while a function is active"
         );
-
-        let bc_prototype = convert_cx_prototype(&fn_prototype, &self.registry);
-
-        self.insert_fn_prototype(bc_prototype.clone());
-        self.function_context = Some(LMIRFunctionContext {
-            prototype: bc_prototype,
-            mir_prototype: fn_prototype,
-            current_block: 0,
-            register_counter: 0,
-
-            blocks: Vec::new(),
-            local_symbols: HashMap::new(),
-        });
-        self.push_scope(None, None);
+        self.unit
     }
 
-    /// Take the current function context, leaving None in its place.
-    /// Used when generating nested helper functions.
-    pub fn take_function_context(&mut self) -> Option<LMIRFunctionContext> {
-        self.function_context.take()
+    fn predeclare_function(&mut self, function: &THIRFunction) {
+        let name = function.prototype.symbol_name().to_string();
+        let id = self
+            .unit
+            .add_function(Self::convert_prototype(&function.prototype));
+        self.function_symbols.entry(name).or_insert(id);
+        self.definitions.push(id);
     }
 
-    /// Set the function context.
-    /// Used to restore a previously saved context.
-    pub fn set_function_context(&mut self, context: LMIRFunctionContext) {
-        self.function_context = Some(context);
+    fn predeclare_global(&mut self, global: &THIRGlobalVariable) {
+        let (name, ty, initializer) = match &global.kind {
+            MIRGlobalVarKind::StringLiteral { name, value } => (
+                name.clone(),
+                MIRType::from_kind(THIRTypeKind::Str),
+                Some(MIRConstant::String(value.clone())),
+            ),
+            MIRGlobalVarKind::Variable {
+                name,
+                _type,
+                initializer,
+            } => {
+                let constant = initializer.and_then(|value| match &_type.kind {
+                    THIRTypeKind::Integer {
+                        _type: integer_type,
+                        signed,
+                    } => Some(MIRConstant::Integer {
+                        value: value as i128,
+                        ty: *integer_type,
+                        signed: *signed,
+                    }),
+                    _ => None,
+                });
+                (name.clone(), MIRType::new(_type.clone()), constant)
+            }
+        };
+
+        let id = self.unit.add_global(name.clone(), ty, global.linkage);
+        let lowered = self
+            .unit
+            .global_mut(id)
+            .expect("a just-created global must exist");
+        lowered.initializer = initializer;
+        lowered.is_definition = true;
+        self.global_symbols.entry(name.as_string()).or_insert(id);
     }
 
-    pub fn finish_function(&mut self) -> CXResult<()> {
-        self.pop_scope()?;
-
-        let context = self.function_context.take().unwrap();
-
-        self.functions.push(LMIRFunction {
-            prototype: context.prototype,
-            blocks: context.blocks,
-        });
-
-        Ok(())
+    pub(crate) fn convert_prototype(prototype: &THIRFnPrototype) -> MIRFnPrototype {
+        Self::prototype_from_signature(
+            CXIdent::new(prototype.symbol_name()),
+            prototype.signature(),
+            prototype.linkage(),
+        )
     }
 
-    pub fn push_scope(&mut self, continue_block: Option<CXIdent>, break_block: Option<CXIdent>) {
-        self.symbol_table.push_scope();
-        self.goto_stack.push(LMIRGotoContext {
-            continue_block,
-            break_block,
-        });
-    }
-
-    pub fn pop_scope(&mut self) -> CXResult<()> {
-        self.symbol_table.pop_scope();
-        self.goto_stack.pop();
-
-        Ok(())
-    }
-
-    pub fn dump_current_fn(&self) {
-        dump_all(self.fun().blocks.iter());
-    }
-
-    fn fun_mut(&mut self) -> &mut LMIRFunctionContext {
-        self.function_context
-            .as_mut()
-            .expect("Attempted to access function context with no current function selected")
-    }
-
-    fn fun(&self) -> &LMIRFunctionContext {
-        self.function_context
-            .as_ref()
-            .expect("Attempted to access function context with no current function selected")
-    }
-
-    pub fn insert_symbol(&mut self, mir_value: CXIdent, bc_value: LMIRValue) {
-        self.symbol_table.insert(mir_value.to_string(), bc_value);
-    }
-
-    pub fn insert_local(&mut self, local_id: THIRLocalID, value: LMIRValue) {
-        self.fun_mut().local_symbols.insert(local_id, value);
-    }
-
-    pub fn insert_fn_prototype(&mut self, prototype: LMIRFunctionPrototype) {
-        self.fn_map.insert(prototype.name.to_string(), prototype);
-    }
-
-    #[allow(dead_code)]
-    pub fn dump_symbols(&self) {
-        dump_all(
-            self.symbol_table
-                .iter()
-                .map(|(name, value)| format!("{name}: {value}")),
-        );
-    }
-
-    pub fn get_continue_block(&self) -> Option<&CXIdent> {
-        self.goto_stack
+    fn prototype_from_signature(
+        name: CXIdent,
+        signature: &cx_thir::thir::data::THIRFnSignature,
+        linkage: CXLinkageMode,
+    ) -> MIRFnPrototype {
+        let params = signature
+            .params
             .iter()
-            .rev()
-            .find_map(|ctx| ctx.continue_block.as_ref())
+            .map(|param| match &param.name {
+                Some(name) => MIRFnParam::named(name.clone(), MIRType::new(param._type.clone())),
+                None => MIRFnParam::new(MIRType::new(param._type.clone())),
+            })
+            .collect();
+        let return_type = (!matches!(signature.return_type.kind, THIRTypeKind::Unit))
+            .then(|| MIRType::new(signature.return_type.clone()));
+        let mut lowered = MIRFnSignature::new(name, params, return_type);
+        lowered.variadic = signature.var_args;
+        MIRFnPrototype::new(lowered, linkage)
     }
 
-    pub fn get_break_target(&self) -> Option<&CXIdent> {
-        self.goto_stack
-            .iter()
-            .rev()
-            .find_map(|ctx| ctx.break_block.as_ref())
-    }
+    pub(crate) fn start_function(&mut self, index: usize, function: &THIRFunction) {
+        assert!(self.current.is_none(), "a MIR function is already active");
+        let function_id = *self
+            .definitions
+            .get(index)
+            .expect("THIR function predeclaration is missing");
+        let entry = self
+            .unit
+            .function_mut(function_id)
+            .expect("predeclared MIR function is missing")
+            .add_block();
 
-    pub fn push_yield_target(&mut self, target_block: CXIdent, result_type: LMIRType) {
-        self.yield_stack.push(LMIRYieldContext {
-            target_block,
-            result_type,
+        self.current = Some(FunctionContext {
+            function: function_id,
+            current_block: entry,
+            local_places: HashMap::new(),
+            named_values: vec![HashMap::new()],
+            loops: Vec::new(),
             yields: Vec::new(),
         });
-    }
+        self.set_block_name(entry, "entry");
 
-    pub fn pop_yield_target(&mut self) -> LMIRYieldContext {
-        self.yield_stack
-            .pop()
-            .expect("Yield target stack has uneven push/pop")
-    }
-
-    pub fn current_yield_target(&self) -> Option<&LMIRYieldContext> {
-        self.yield_stack.last()
-    }
-
-    pub fn record_yield(&mut self, value: LMIRValue) {
-        let block = self.current_block();
-        self.yield_stack
-            .last_mut()
-            .expect("Yield lowered outside of an active yield target")
-            .yields
-            .push((value, block));
-    }
-
-    pub fn move_block_to_end(&mut self, block_id: &CXIdent) {
-        let context = self.fun_mut();
-
-        if let Some(pos) = context.blocks.iter().position(|b| &b.id == block_id) {
-            let block = context.blocks.remove(pos);
-            let new_end_index = context.blocks.len();
-            context.blocks.push(block);
-
-            // Adjust current_block removed block was current, set to new end index
-            // - If pos < current, decrement by 1 to account for left-shift
-            // - Otherwise, keep current_block unchanged
-            if pos == context.current_block {
-                context.current_block = new_end_index;
-            } else if pos < context.current_block {
-                context.current_block -= 1;
+        for (index, parameter) in function.prototype.signature().params.iter().enumerate() {
+            let place = self.create_place(
+                MIRType::new(parameter._type.clone()),
+                parameter.name.clone(),
+            );
+            self.emit(MIRInstrKind::CopyInto {
+                dest: place,
+                src: MIROperand::Parameter(index),
+                ty: MIRType::new(parameter._type.clone()),
+            });
+            if let Some(local_id) = parameter.local_id {
+                self.bind_local(local_id, place);
+            }
+            if let Some(name) = &parameter.name {
+                self.bind_named(name, MIROperand::Place(place));
             }
         }
     }
 
-    pub fn scope_depth(&self) -> usize {
-        self.symbol_table.scope_depth()
-    }
+    pub(crate) fn finish_function(&mut self) {
+        let context = self
+            .current
+            .take()
+            .expect("attempted to finish without an active MIR function");
+        assert!(context.loops.is_empty(), "loop context stack is unbalanced");
+        assert!(
+            context.yields.is_empty(),
+            "yield context stack is unbalanced"
+        );
 
-    pub fn current_mir_prototype(&self) -> &THIRFnPrototype {
-        &self.fun().mir_prototype
-    }
-
-    pub fn current_prototype(&self) -> &LMIRFunctionPrototype {
-        &self.fun().prototype
-    }
-
-    pub fn get_prototype(&self, name: &str) -> Option<&LMIRFunctionPrototype> {
-        self.fn_map.get(name)
-    }
-
-    pub fn get_symbol(&self, name: &CXIdent) -> Option<LMIRValue> {
-        self.symbol_table.get(name.as_str()).cloned()
-    }
-
-    pub fn get_local(&self, local_id: THIRLocalID) -> Option<LMIRValue> {
-        self.fun().local_symbols.get(&local_id).cloned()
-    }
-
-    pub fn get_global_symbol(&self, name: &str) -> Option<LMIRValue> {
-        self.global_variables
-            .iter()
-            .position(|global| global.name.as_str() == name)
-            .map(|index| LMIRValue::Global(index as u32))
-    }
-
-    pub fn add_global_variable(&mut self, value: LMIRGlobalValue) -> u32 {
-        self.global_variables.push(value);
-
-        (self.global_variables.len() - 1) as u32
-    }
-
-    pub fn create_static_string(&mut self, value: String) -> LMIRValue {
-        let global_index = self.global_variables.len() as u32;
-
-        self.global_variables.push(LMIRGlobalValue {
-            name: CXIdent::from(format!("str_{}", global_index)),
-            _type: LMIRGlobalType::StringLiteral(value),
-            linkage: LinkageType::Static,
-        });
-
-        LMIRValue::Global(global_index)
-    }
-
-    pub fn current_block_closed(&self) -> bool {
-        let Some(last_inst) = self.current_block_last_inst() else {
-            return false;
-        };
-
-        last_inst.kind.is_block_terminating()
-    }
-
-    // Creates an instruction without a direct mapping to a MIR instruction
-    // In effect, this just means that the generator will need to create a new register
-    // if a result is expected
-    pub fn add_new_instruction(
-        &mut self,
-        instruction: LMIRInstructionKind,
-        value_type: LMIRType,
-        result_expected: bool,
-    ) -> CXResult<LMIRValue> {
-        if self.current_block_closed() {
-            return Ok(LMIRValue::NULL);
-        }
-
-        let result = if result_expected {
-            Some(self.new_register())
-        } else {
-            None
-        };
-
-        let context = self.fun_mut();
-        let current_block = context.current_block;
-
-        context.blocks[current_block].body.push(LMIRInstruction {
-            kind: instruction,
-            value_type: value_type.clone(),
-            result: result.clone(),
-        });
-
-        match result {
-            Some(reg) => Ok(LMIRValue::Register {
-                register: reg,
-                _type: value_type,
-            }),
-            None => Ok(LMIRValue::NULL),
-        }
-    }
-
-    pub fn add_instruction_translated(
-        &mut self,
-        instruction: LMIRInstructionKind,
-        value_type: LMIRType,
-        result: Option<CXIdent>,
-    ) -> CXResult<LMIRValue> {
-        if self.current_block_closed() {
-            return Ok(LMIRValue::NULL);
-        }
-
-        let (result, result_val) = if let Some(result) = result.clone() {
-            let bc_result = self.new_register();
-            let bc_result_val = LMIRValue::Register {
-                register: bc_result.clone(),
-                _type: value_type.clone(),
+        let function = self
+            .unit
+            .function_mut(context.function)
+            .expect("active MIR function is missing");
+        let returns_value = function.prototype.signature.return_type.is_some();
+        for block in &mut function.blocks {
+            if block.terminator().is_some() {
+                continue;
+            }
+            let terminator = if block.id == context.current_block && !returns_value {
+                MIRInstrKind::Return { value: None }
+            } else {
+                MIRInstrKind::Unreachable
             };
+            block.push(terminator);
+        }
+    }
 
-            self.insert_symbol(result, bc_result_val.clone());
-            (Some(bc_result), bc_result_val)
-        } else {
-            (None, LMIRValue::NULL)
-        };
+    pub(crate) fn current_function_id(&self) -> MIRFunctionID {
+        self.context().function
+    }
 
-        let context = self.fun_mut();
-        let current_block = context.current_block;
+    pub(crate) fn current_block(&self) -> MIRBasicBlockID {
+        self.context().current_block
+    }
 
-        context.blocks[current_block].body.push(LMIRInstruction {
-            kind: instruction,
-            value_type,
-            result: result.clone(),
+    pub(crate) fn set_current_block(&mut self, block: MIRBasicBlockID) {
+        assert!(
+            self.function().block(block).is_some(),
+            "selected block does not belong to the active function"
+        );
+        self.context_mut().current_block = block;
+    }
+
+    pub(crate) fn new_block(&mut self, debug_name: &str) -> MIRBasicBlockID {
+        let id = self.function_mut().add_block();
+        self.set_block_name(id, debug_name);
+        id
+    }
+
+    fn set_block_name(&mut self, block: MIRBasicBlockID, debug_name: &str) {
+        self.function_mut()
+            .block_mut(block)
+            .expect("selected block does not exist")
+            .debug_name = Some(CXIdent::new(debug_name));
+    }
+
+    pub(crate) fn block_terminated(&self, block: MIRBasicBlockID) -> bool {
+        self.function()
+            .block(block)
+            .expect("selected block does not exist")
+            .terminator()
+            .is_some()
+    }
+
+    pub(crate) fn current_block_terminated(&self) -> bool {
+        self.block_terminated(self.current_block())
+    }
+
+    /// Emits an instruction if the active block is open. Returns whether the
+    /// instruction was appended, which lets CFG lowering record real edges.
+    pub(crate) fn emit(&mut self, instruction: MIRInstrKind) -> bool {
+        if self.current_block_terminated() {
+            return false;
+        }
+        let block = self.current_block();
+        self.function_mut()
+            .push_instr(block, instruction)
+            .expect("active MIR block is missing");
+        true
+    }
+
+    pub(crate) fn new_register(&mut self, ty: MIRType, debug_name: Option<CXIdent>) -> MIRRegister {
+        self.function_mut().add_register(ty, debug_name)
+    }
+
+    pub(crate) fn declare_place(&mut self, ty: MIRType, debug_name: Option<CXIdent>) -> MIRPlace {
+        self.function_mut().add_place(ty, debug_name)
+    }
+
+    pub(crate) fn create_place(&mut self, ty: MIRType, debug_name: Option<CXIdent>) -> MIRPlace {
+        let place = self.declare_place(ty.clone(), debug_name);
+        self.emit(MIRInstrKind::CreatePlace { out: place, ty });
+        place
+    }
+
+    pub(crate) fn bind_local(&mut self, local: THIRLocalID, place: MIRPlace) {
+        self.context_mut().local_places.insert(local, place);
+    }
+
+    pub(crate) fn local(&self, local: THIRLocalID) -> Option<MIRPlace> {
+        self.context().local_places.get(&local).copied()
+    }
+
+    pub(crate) fn push_named_scope(&mut self) {
+        self.context_mut().named_values.push(HashMap::new());
+    }
+
+    pub(crate) fn pop_named_scope(&mut self) {
+        let context = self.context_mut();
+        assert!(
+            context.named_values.len() > 1,
+            "attempted to pop the function's base symbol scope"
+        );
+        context.named_values.pop();
+    }
+
+    pub(crate) fn bind_named(&mut self, name: &CXIdent, value: MIROperand) {
+        self.context_mut()
+            .named_values
+            .last_mut()
+            .expect("active function has no symbol scope")
+            .insert(name.as_string(), value);
+    }
+
+    pub(crate) fn named(&self, name: &CXIdent) -> Option<MIROperand> {
+        self.context()
+            .named_values
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(name.as_str()).cloned())
+    }
+
+    pub(crate) fn function_symbol(&self, name: &str) -> Option<MIRFunctionID> {
+        self.function_symbols.get(name).copied()
+    }
+
+    pub(crate) fn ensure_function(
+        &mut self,
+        name: &CXIdent,
+        callable_type: &THIRType,
+    ) -> MIRFunctionID {
+        if let Some(id) = self.function_symbol(name.as_str()) {
+            return id;
+        }
+
+        let signature = self
+            .registry
+            .intern_signature(callable_type)
+            .cloned()
+            .unwrap_or_default();
+        let prototype =
+            Self::prototype_from_signature(name.clone(), &signature, CXLinkageMode::Extern);
+        let id = self.unit.add_function(prototype);
+        self.function_symbols.insert(name.as_string(), id);
+        id
+    }
+
+    pub(crate) fn global_symbol(&self, name: &str) -> Option<MIRGlobalID> {
+        self.global_symbols.get(name).copied()
+    }
+
+    pub(crate) fn ensure_global(&mut self, name: &CXIdent, ty: &THIRType) -> MIRGlobalID {
+        if let Some(id) = self.global_symbol(name.as_str()) {
+            return id;
+        }
+
+        let id = self.unit.add_global(
+            name.clone(),
+            MIRType::new(ty.clone()),
+            CXLinkageMode::Extern,
+        );
+        self.unit
+            .global_mut(id)
+            .expect("a just-created global must exist")
+            .is_definition = false;
+        self.global_symbols.insert(name.as_string(), id);
+        id
+    }
+
+    pub(crate) fn push_loop(
+        &mut self,
+        break_target: MIRBasicBlockID,
+        continue_target: Option<MIRBasicBlockID>,
+    ) {
+        self.context_mut().loops.push(LoopContext {
+            break_target,
+            continue_target,
         });
-
-        Ok(result_val)
     }
 
-    pub fn fn_ref(&mut self, name: &str) -> LMIRResult<String> {
-        if self.fn_map.contains_key(name) {
-            Some(name.to_string())
-        } else {
-            None
-        }
+    pub(crate) fn pop_loop(&mut self) -> LoopContext {
+        self.context_mut()
+            .loops
+            .pop()
+            .expect("loop context stack is unbalanced")
     }
 
-    pub fn get_value_type(&self, value: &LMIRValue) -> LMIRType {
-        match value {
-            LMIRValue::NULL => LMIRType::unit(),
-
-            LMIRValue::Register { _type, .. } => _type.clone(),
-
-            LMIRValue::FloatImmediate { _type, .. } | LMIRValue::IntImmediate { _type, .. } => {
-                _type.clone()
-            }
-
-            LMIRValue::ParameterRef(param_index) => {
-                let context = self.fun();
-                let signature = context.prototype.signature();
-                signature
-                    .expanded_param_type(self.architecture(), *param_index as usize)
-                    .expect("Parameter index out of bounds in function prototype")
-            }
-            LMIRValue::Global(global_index) => {
-                let global = self
-                    .global_variables
-                    .get(*global_index as usize)
-                    .expect("Global variable index out of bounds");
-
-                match &global._type {
-                    LMIRGlobalType::StringLiteral(..) => {
-                        LMIRType::default_pointer(self.architecture())
-                    }
-                    LMIRGlobalType::Variable { _type, .. } => _type.clone(),
-                }
-            }
-
-            LMIRValue::FunctionRef(_) => LMIRType::default_pointer(self.architecture()),
-        }
+    pub(crate) fn break_target(&self) -> Option<MIRBasicBlockID> {
+        self.context()
+            .loops
+            .last()
+            .map(|context| context.break_target)
     }
 
-    pub fn match_int_const(&self, value: i32, _type: &LMIRType) -> LMIRValue {
-        match &_type.kind {
-            LMIRTypeKind::Integer(_type) => self.int_const(value, *_type),
-
-            _ => {
-                panic!("PANIC: Attempted to match integer constant with non-integer type: {_type}")
-            }
-        }
+    pub(crate) fn continue_target(&self) -> Option<MIRBasicBlockID> {
+        self.context()
+            .loops
+            .iter()
+            .rev()
+            .find_map(|context| context.continue_target)
     }
 
-    pub fn int_const(&self, value: i32, _type: LMIRIntegerType) -> LMIRValue {
-        LMIRValue::IntImmediate {
-            val: value as i64,
-            _type: LMIRType::with_implicit_abi(self.architecture(), LMIRTypeKind::Integer(_type)),
-        }
-    }
-
-    pub fn match_float_const(&self, value: f64, _type: &LMIRType) -> LMIRValue {
-        match &_type.kind {
-            LMIRTypeKind::Float(_type) => self.float_const(value, *_type),
-
-            _ => panic!("PANIC: Attempted to match float constant with non-float type: {_type}"),
-        }
-    }
-
-    pub fn float_const(&self, value: f64, _type: LMIRFloatType) -> LMIRValue {
-        LMIRValue::FloatImmediate {
-            val: FloatWrapper::from(value),
-            _type: LMIRType::with_implicit_abi(self.architecture(), LMIRTypeKind::Float(_type)),
-        }
-    }
-
-    pub fn create_block(&mut self, debug_name: Option<&str>) -> CXIdent {
-        let context = self.fun_mut();
-        let name: CXIdent = format!("block_{}", context.blocks.len()).into();
-
-        context.blocks.push(LMIRBasicBlock {
-            id: name.clone(),
-            debug_name: debug_name.map(|s| s.to_string()),
-            body: Vec::new(),
+    pub(crate) fn push_yield(&mut self, target: MIRBasicBlockID, result_type: MIRType) {
+        self.context_mut().yields.push(YieldContext {
+            target,
+            result_type,
+            target_scope: None,
+            incoming: Vec::new(),
         });
-
-        name
     }
 
-    pub fn set_current_block(&mut self, block: LMIRBlockID) {
-        let fun = self.fun();
-
-        let block_id = fun.blocks.iter().position(|b| b.id == block);
-
-        self.fun_mut().current_block = block_id.expect("Block ID not found in function blocks");
+    pub(crate) fn yield_target(&self) -> Option<MIRBasicBlockID> {
+        self.context().yields.last().map(|context| context.target)
     }
 
-    pub fn block_count(&self) -> usize {
-        let fun = self.fun();
-
-        fun.blocks.len()
+    pub(crate) fn record_yield(&mut self, target_scope: usize, value: MIROperand) {
+        let predecessor = self.current_block();
+        let context = self
+            .context_mut()
+            .yields
+            .last_mut()
+            .expect("yield lowered outside an active yield context");
+        match context.target_scope {
+            Some(existing) => debug_assert_eq!(existing, target_scope),
+            None => context.target_scope = Some(target_scope),
+        }
+        context.incoming.push((predecessor, value));
     }
 
-    pub fn current_block(&self) -> LMIRBlockID {
-        let fun = self.fun();
-
-        fun.blocks[fun.current_block].id.clone()
+    pub(crate) fn pop_yield(&mut self) -> YieldContext {
+        self.context_mut()
+            .yields
+            .pop()
+            .expect("yield context stack is unbalanced")
     }
 
-    pub fn last_instruction(&self) -> Option<&LMIRInstruction> {
-        let context = self.fun();
-
-        context.blocks.last()?.body.last()
-    }
-
-    pub fn current_block_last_inst(&self) -> Option<&LMIRInstruction> {
-        let context = self.fun();
-
-        context.blocks.get(context.current_block)?.body.last()
-    }
-
-    pub fn current_function_name(&self) -> Option<&str> {
-        self.function_context
+    fn context(&self) -> &FunctionContext {
+        self.current
             .as_ref()
-            .map(|ctx| ctx.prototype.name.as_str())
+            .expect("no MIR function is currently active")
     }
 
-    pub fn finish(self) -> LMIRUnit {
-        LMIRUnit {
-            architecture: *self.registry.architecture(),
-            fn_map: self.fn_map,
-            fn_defs: self.functions,
+    fn context_mut(&mut self) -> &mut FunctionContext {
+        self.current
+            .as_mut()
+            .expect("no MIR function is currently active")
+    }
 
-            global_vars: self.global_variables,
-        }
+    fn function(&self) -> &cx_mir::MIRFunction {
+        self.unit
+            .function(self.current_function_id())
+            .expect("active MIR function is missing")
+    }
+
+    fn function_mut(&mut self) -> &mut cx_mir::MIRFunction {
+        let id = self.current_function_id();
+        self.unit
+            .function_mut(id)
+            .expect("active MIR function is missing")
+    }
+}
+
+pub(crate) fn integer_type(ty: &THIRType) -> (THIRIntType, bool) {
+    match ty.kind {
+        THIRTypeKind::Integer { _type, signed } => (_type, signed),
+        _ => (THIRIntType::I64, true),
     }
 }

@@ -4,7 +4,7 @@ mod init;
 
 use args::Command;
 use cx_pipeline::standard_compilation;
-use cx_pipeline_data::{CompilationMode, CompilerConfig};
+use cx_pipeline_data::{ArchitectureConfig, CompilationMode, CompilerConfig};
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 
@@ -78,20 +78,21 @@ fn compiler_config_with_dirs(
         .collect();
 
     CompilerConfig {
-        architecture: cx_pipeline_data::ArchitectureConfig::default(),
+        architecture: ArchitectureConfig::default(),
         backend: args.backend,
         optimization_level: args.optimization_level,
         output,
-        analysis: args.analysis,
+        unsafe_mode: args.unsafe_mode,
         verbose: args.verbose,
         working_directory,
         internal_directory,
         compilation_mode: mode,
+        include_dirs,
+        
         module_mode: false,
         project_config: None,
         link_entries: vec![],
         native_objects: vec![],
-        include_dirs,
     }
 }
 

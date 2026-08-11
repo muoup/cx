@@ -5,9 +5,10 @@ use cx_ast::registry::GlobalSymbolRegistry;
 use cx_lmir::LMIRUnit;
 use cx_log::error::CXErrContext;
 use cx_log::error::context::{CXInternalContext, CXUnderlineContext};
-use cx_thir::THIRUnit;
+use cx_mir::MIRUnit;
 use cx_preparse_data::PreparseContents;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
+use cx_thir::THIRUnit;
 use cx_tokens::TokenRange;
 use cx_tokens::token::Token;
 use cx_util::namespace::EnvironmentNamespace;
@@ -32,6 +33,7 @@ pub struct ModuleData {
     pub base_mappings: ModuleMap<EnvironmentNamespace>,
 
     pub thir: ModuleMap<THIRUnit>,
+    pub mir: ModuleMap<MIRUnit>,
     pub lmir: ModuleMap<LMIRUnit>,
 }
 
@@ -55,6 +57,7 @@ impl ModuleData {
 
             base_mappings: ModuleMap::new(".cx-structure-data"),
             thir: ModuleMap::new(".cx-thir"),
+            mir: ModuleMap::new(".cx-mir"),
 
             lmir: ModuleMap::new(".cx-lmir"),
         }

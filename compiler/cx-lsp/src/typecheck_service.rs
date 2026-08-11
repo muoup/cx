@@ -5,6 +5,8 @@
 
 use crate::position::{byte_range, line_range};
 use cx_pipeline::LSPErrors;
+use cx_pipeline_data::{ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, GlobalCompilationContext, OptimizationLevel};
+use cx_pipeline_data::config::CXProjectConfig;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -17,27 +19,18 @@ pub struct CheckReport {
     pub checked_files: HashSet<Url>,
 }
 
-fn load_project_settings(
-    project_root: &Path,
-) -> Result<
-    (
-        Option<cx_pipeline_data::config::CXProjectConfig>,
-        Vec<PathBuf>,
-        bool,
-    ),
-    String,
-> {
+pub struct ProjectSettings {
+    config: Option<CXProjectConfig>,
+    include_dirs: Vec<PathBuf>,
+}
+
+fn load_project_settings(project_root: &Path) -> Result<ProjectSettings, String> {
     let config_path = project_root.join("cx.toml");
     if !config_path.is_file() {
-        return Ok((None, vec![], false));
+        return Ok(ProjectSettings { config: None, include_dirs: vec![] });
     }
 
     let project_config = cx_pipeline_data::config::load_config(&config_path)?;
-    let analysis = project_config
-        .build
-        .as_ref()
-        .and_then(|build| build.analysis)
-        .unwrap_or(false);
     let mut include_dirs = Vec::new();
 
     if let Some(workspace) = &project_config.workspace {
@@ -57,7 +50,7 @@ fn load_project_settings(
         }
     }
 
-    Ok((Some(project_config), include_dirs, analysis))
+    Ok(ProjectSettings { config: Some(project_config), include_dirs })
 }
 
 pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckReport, String> {
@@ -69,24 +62,27 @@ pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckRepo
 
     let unit = cx_pipeline_data::CompilationUnit::from_rooted(&unit_identifier, project_root);
     let internal_directory = project_root.join(".internal").join("cx-lsp");
-    let (project_config, include_dirs, analysis) = load_project_settings(project_root)?;
+    let ProjectSettings { config, include_dirs } = load_project_settings(project_root)?;
 
-    let context = cx_pipeline_data::GlobalCompilationContext {
-        config: cx_pipeline_data::CompilerConfig {
-            architecture: cx_pipeline_data::ArchitectureConfig::default(),
-            backend: cx_pipeline_data::CompilerBackend::Cranelift,
-            optimization_level: cx_pipeline_data::OptimizationLevel::O0,
+    let context = GlobalCompilationContext {
+        config: CompilerConfig {
+            architecture: ArchitectureConfig::default(),
+            backend: CompilerBackend::Cranelift,
+            optimization_level: OptimizationLevel::O0,
             output: project_root.join("cx-lsp-output"),
-            analysis,
-            verbose: false,
             working_directory: project_root.to_path_buf(),
-            internal_directory,
-            compilation_mode: cx_pipeline_data::CompilationMode::Executable,
+ 
             module_mode: true,
-            project_config,
+            unsafe_mode: false,
+            verbose: false,
+ 
+            project_config: config,
+            include_dirs,
+            internal_directory,
+            compilation_mode: CompilationMode::Executable,
+
             link_entries: vec![],
             native_objects: vec![],
-            include_dirs,
         },
         module_mode: true,
         module_db: cx_pipeline_data::db::ModuleData::new(),

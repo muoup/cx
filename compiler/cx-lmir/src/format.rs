@@ -156,7 +156,7 @@ impl Display for LMIRInstruction {
                 value,
                 coercion_type,
             } => {
-                write!(f, "{} coerce {value} ({coercion_type:?})", self.value_type)
+                write!(f, "{coercion_type:?}({value}) -> {}", self.value_type)
             }
             LMIRInstructionKind::Return { value } => {
                 write!(f, "return")?;
