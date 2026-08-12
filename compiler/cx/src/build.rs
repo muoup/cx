@@ -1,7 +1,7 @@
 use cx_pipeline::project_compilation;
 use cx_pipeline_data::{
-    CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel,
-    config::find_and_load_config,
+    config::find_and_load_config, CompilationMode, CompilerBackend, CompilerConfig,
+    OptimizationLevel,
 };
 use std::path::PathBuf;
 use std::process::Command as ProcessCommand;

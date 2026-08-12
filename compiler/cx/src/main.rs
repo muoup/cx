@@ -6,7 +6,6 @@ use args::Command;
 use cx_pipeline::standard_compilation;
 use cx_pipeline_data::{ArchitectureConfig, CompilationMode, CompilerConfig};
 use std::path::{Path, PathBuf};
-use std::process::Command as ProcessCommand;
 
 use crate::{
     build::{run_build_mode, run_run_mode},
@@ -88,7 +87,7 @@ fn compiler_config_with_dirs(
         internal_directory,
         compilation_mode: mode,
         include_dirs,
-        
+
         module_mode: false,
         project_config: None,
         link_entries: vec![],
@@ -100,27 +99,6 @@ fn run_standard_compilation(config: CompilerConfig, path: &Path) -> Result<(), (
     standard_compilation(config, path).map_err(|err| {
         err.print().expect("Failed to write error message");
     })
-}
-
-fn link_objects(output: &Path, objects: &[PathBuf]) {
-    if let Some(parent) = output.parent() {
-        std::fs::create_dir_all(parent).expect("Failed to create output directory");
-    }
-
-    let mut command = ProcessCommand::new("gcc");
-    command.arg("-Wl,--gc-sections").arg("-o").arg(output);
-    command.args(objects);
-
-    let linker_output = command.output().expect("Failed to execute linker");
-
-    if !linker_output.status.success() {
-        eprintln!(
-            "[Linker] Failed to link files: {}",
-            String::from_utf8_lossy(&linker_output.stderr)
-        );
-        eprintln!("[Linker] Command: {command:?}");
-        std::process::exit(1);
-    }
 }
 
 fn run_file_mode(args: args::FileArgs) -> Result<(), ()> {
@@ -153,23 +131,19 @@ fn run_file_mode(args: args::FileArgs) -> Result<(), ()> {
 
     let working_directory = invocation_directory.clone();
     let internal_directory = setup_internal_directory(&working_directory);
-    let mut objects = Vec::new();
 
     for (index, input_file) in args.input_files.iter().enumerate() {
-        let object = intermediate_object_output(&internal_directory, index, input_file);
+        let output = intermediate_object_output(&internal_directory, index, input_file);
         let config = compiler_config_with_dirs(
             &args,
-            object.clone(),
+            output,
             CompilationMode::Object,
             working_directory.clone(),
             internal_directory.clone(),
         );
 
         run_standard_compilation(config, Path::new(input_file))?;
-        objects.push(object);
     }
-
-    link_objects(&output, &objects);
     Ok(())
 }
 

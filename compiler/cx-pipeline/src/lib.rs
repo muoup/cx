@@ -1,20 +1,16 @@
-mod backends;
-mod linker;
 pub mod progress;
 mod scheduler;
 
-use crate::linker::{link, link_relocatable};
 use crate::progress::ProgressReporter;
 use crate::scheduler::scheduling_loop;
 use crate::scheduler::scheduling_loop_collect_errors;
 use cx_ast::registry::ExportNameMode;
 use cx_log::{
-    error::{context::CXInternalContext, message::CXStdErrMessage, CXErr},
     CXResult,
+    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_pipeline_data::config::{CXProjectConfig, TargetConfig};
 use cx_pipeline_data::db::ModuleData;
-use cx_pipeline_data::internal_storage::resource_path;
 use cx_pipeline_data::jobs::{CompilationJob, CompilationStep};
 use cx_pipeline_data::{
     CompilationMode, CompilationUnit, CompilerConfig, GlobalCompilationContext,
@@ -59,45 +55,11 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
         .symbol_registry
         .set_export_name_mode(entry_unit.to_namespace_path(), ExportNameMode::Root);
 
-    let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, entry_unit.clone());
-
+    let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, entry_unit);
     let mut reporter = ProgressReporter::new(verbose);
 
     let result = with_dump_directory(compiler_context.config.internal_directory.clone(), || {
-        scheduling_loop(&compiler_context, initial_job, &mut reporter)?;
-
-        match compiler_context.config.compilation_mode {
-            CompilationMode::Executable => link(&compiler_context, &mut reporter),
-            CompilationMode::Object => {
-                let object_path = resource_path(&compiler_context, &entry_unit, ".o");
-                if let Some(parent) = compiler_context.config.output.parent() {
-                    std::fs::create_dir_all(parent).map_err(|e| {
-                        pipeline_error(
-                            "COMPILATION ERROR",
-                            format!(
-                                "Failed to create object output directory {}: {}",
-                                parent.display(),
-                                e
-                            ),
-                        )
-                    })?;
-                }
-                std::fs::copy(&object_path, &compiler_context.config.output).map_err(|e| {
-                    pipeline_error(
-                        "COMPILATION ERROR",
-                        format!(
-                            "Failed to write object file {}: {}",
-                            compiler_context.config.output.display(),
-                            e
-                        ),
-                    )
-                })?;
-                Ok(())
-            }
-            CompilationMode::Library => {
-                unreachable!("standard_compilation does not support library mode")
-            }
-        }
+        scheduling_loop(&compiler_context, initial_job, &mut reporter)
     });
 
     if result.is_err() {
@@ -106,67 +68,7 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
     }
 
     reporter.finish();
-
     Ok(())
-}
-
-pub fn library_compilation(
-    config: CompilerConfig,
-    base_file: &Path,
-) -> CXResult<cx_lmir::LMIRUnit> {
-    let verbose = config.verbose;
-    let compiler_context = GlobalCompilationContext {
-        module_mode: config.module_mode,
-        config,
-        module_db: ModuleData::new(),
-        linking_files: Mutex::new(HashSet::new()),
-    };
-
-    let base_file_str = base_file.to_str().ok_or(pipeline_error(
-        "COMPILATION ERROR",
-        "Base file path is not valid UTF-8",
-    ))?;
-
-    let entry_unit =
-        CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory);
-    compiler_context
-        .module_db
-        .symbol_registry
-        .set_export_name_mode(entry_unit.to_namespace_path(), ExportNameMode::Root);
-
-    let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, entry_unit.clone());
-
-    let mut reporter = ProgressReporter::new(verbose);
-
-    let result = with_dump_directory(compiler_context.config.internal_directory.clone(), || {
-        scheduling_loop(&compiler_context, initial_job, &mut reporter)?;
-
-        // Extract exported symbol names from the entry file's LMIR to use as GC roots
-        let entry_lmir = compiler_context.module_db.lmir.get(&entry_unit);
-        let exported_symbols: Vec<String> = entry_lmir
-            .fn_defs
-            .iter()
-            .filter(|f| {
-                f.prototype.linkage != cx_lmir::LinkageType::Static
-                    && f.prototype.linkage != cx_lmir::LinkageType::External
-            })
-            .map(|f| f.prototype.name.to_string())
-            .collect();
-
-        link_relocatable(&compiler_context, &exported_symbols, &mut reporter)
-    });
-
-    if let Err(e) = result {
-        reporter.clear_line();
-        return Err(e);
-    }
-
-    reporter.finish();
-
-    // Take only the entry file's LMIR unit (not imports/dependencies)
-    let entry_lmir = compiler_context.module_db.lmir.take(&entry_unit);
-
-    Ok(entry_lmir)
 }
 
 pub fn project_compilation(
@@ -191,31 +93,14 @@ pub fn project_compilation(
         workspace.targets.iter().collect()
     };
 
-    let mut binaries_built = Vec::new();
-
     for (target_name, target_config) in targets {
-        let link_entries = target_config.link.clone().unwrap_or_default();
-        let native_objects = target_config
-            .native_objects
-            .clone()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|path| {
-                let path = std::path::PathBuf::from(path);
-                if path.is_absolute() {
-                    path
-                } else {
-                    base_config.working_directory.join(path)
-                }
-            })
-            .collect::<Vec<_>>();
         let include_dirs = target_config
             .include_dirs
             .clone()
             .unwrap_or_default()
             .into_iter()
             .map(|path| {
-                let path = std::path::PathBuf::from(path);
+                let path = PathBuf::from(path);
                 if path.is_absolute() {
                     path
                 } else {
@@ -224,105 +109,52 @@ pub fn project_compilation(
             })
             .collect::<Vec<_>>();
 
-        let output_dir = base_config
-            .internal_directory
-            .join("output")
-            .join(target_name);
-        std::fs::create_dir_all(&output_dir).map_err(|e| {
-            pipeline_error(
-                "COMPILATION ERROR",
-                format!(
-                    "Failed to create output directory {}: {}",
-                    output_dir.display(),
-                    e
-                ),
-            )
-        })?;
-
-        // Build binaries
         if let Some(binaries) = &target_config.binaries {
             for binary in binaries {
-                if Path::new(&binary.entry)
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    == Some("c")
-                {
-                    return Err(pipeline_error(
-                        "COMPILATION ERROR",
-                        "C sources are currently supported only in single-file compilation mode",
-                    ));
-                }
+                reject_project_c_source(&binary.entry)?;
 
-                let output = output_dir.join(&binary.name);
                 let mut config = base_config.clone();
-                config.output = output.clone();
                 config.compilation_mode = CompilationMode::Executable;
-                config.link_entries = link_entries.clone();
-                config.native_objects = native_objects.clone();
                 config.include_dirs = include_dirs.clone();
 
                 eprintln!(
-                    "Building binary '{}' (target: {})",
+                    "Generating MIR for binary '{}' (target: {})",
                     binary.name, target_name
                 );
                 standard_compilation(config, Path::new(&binary.entry))?;
-                binaries_built.push(output);
             }
         }
 
-        // Build libraries
         if let Some(libraries) = &target_config.libraries {
             for library in libraries {
-                if Path::new(&library.entry)
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    == Some("c")
-                {
-                    return Err(pipeline_error(
-                        "COMPILATION ERROR",
-                        "C sources are currently supported only in single-file compilation mode",
-                    ));
-                }
+                reject_project_c_source(&library.entry)?;
 
                 let mut config = base_config.clone();
                 config.compilation_mode = CompilationMode::Library;
-                config.link_entries = link_entries.clone();
-                config.native_objects = native_objects.clone();
                 config.include_dirs = include_dirs.clone();
-                config.output = output_dir.join(format!("{}.o", library.name));
 
                 eprintln!(
-                    "Building library '{}' (target: {})",
+                    "Generating MIR for library '{}' (target: {})",
                     library.name, target_name
                 );
-
-                let entry_lmir = library_compilation(config.clone(), Path::new(&library.entry))?;
-
-                eprintln!("  Linked {}", config.output.display());
-
-                // Generate .h header from LMIR
-                let Ok(header) = cx_c_header::generate_header(&entry_lmir, &link_entries) else {
-                    eprintln!(
-                        "Warning: Failed to generate header for library '{}': Header generation is best-effort and will not fail the build",
-                        library.name
-                    );
-                    continue;
-                };
-
-                let header_path = output_dir.join(format!("{}.h", library.name));
-                std::fs::write(&header_path, header).map_err(|e| {
-                    pipeline_error(
-                        "COMPILATION ERROR",
-                        format!("Failed to write header {}: {}", header_path.display(), e),
-                    )
-                })?;
-
-                eprintln!("  Generated {}", header_path.display());
+                standard_compilation(config, Path::new(&library.entry))?;
             }
         }
     }
 
-    Ok(binaries_built)
+    // Artifact generation is intentionally disconnected while MIR is refactored.
+    Ok(Vec::new())
+}
+
+fn reject_project_c_source(entry: &str) -> CXResult<()> {
+    if Path::new(entry).extension().and_then(|ext| ext.to_str()) == Some("c") {
+        Err(pipeline_error(
+            "COMPILATION ERROR",
+            "C sources are currently supported only in single-file compilation mode",
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 /// Typecheck-only compilation for LSP integration.
