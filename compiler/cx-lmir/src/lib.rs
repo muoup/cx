@@ -197,9 +197,41 @@ pub struct LMIRFunction {
 }
 
 #[derive(Debug, Clone)]
+pub struct LMIRBlockParameter {
+    pub register: LMIRRegister,
+    pub _type: LMIRType,
+}
+
+#[derive(Debug, Clone)]
+pub struct LMIRBlockTarget {
+    pub block: LMIRBlockID,
+    pub args: Vec<LMIRValue>,
+}
+
+impl LMIRBlockTarget {
+    pub fn new(block: LMIRBlockID) -> Self {
+        Self {
+            block,
+            args: Vec::new(),
+        }
+    }
+
+    pub fn with_args(block: LMIRBlockID, args: Vec<LMIRValue>) -> Self {
+        Self { block, args }
+    }
+}
+
+impl From<LMIRBlockID> for LMIRBlockTarget {
+    fn from(block: LMIRBlockID) -> Self {
+        Self::new(block)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct LMIRBasicBlock {
     pub id: LMIRBlockID,
     pub debug_name: Option<String>,
+    pub params: Vec<LMIRBlockParameter>,
     pub body: Vec<LMIRInstruction>,
 }
 
@@ -256,10 +288,6 @@ pub enum LMIRInstructionKind {
         coercion_type: LMIRCoercionType,
     },
 
-    Phi {
-        predecessors: Vec<(LMIRValue, LMIRBlockID)>,
-    },
-
     PointerBinOp {
         op: LMIRPtrBinOp,
         ptr_type: LMIRType,
@@ -308,18 +336,18 @@ pub enum LMIRInstructionKind {
 
     Branch {
         condition: LMIRValue,
-        true_block: LMIRBlockID,
-        false_block: LMIRBlockID,
+        true_target: LMIRBlockTarget,
+        false_target: LMIRBlockTarget,
     },
 
     Jump {
-        target: LMIRBlockID,
+        target: LMIRBlockTarget,
     },
 
     JumpTable {
         value: LMIRValue,
-        targets: Vec<(u64, LMIRBlockID)>,
-        default: LMIRBlockID,
+        targets: Vec<(u64, LMIRBlockTarget)>,
+        default: LMIRBlockTarget,
     },
 
     Return {
@@ -329,6 +357,8 @@ pub enum LMIRInstructionKind {
     CompilerAssumption {
         condition: LMIRValue,
     },
+
+    Unreachable,
 }
 
 impl LMIRInstructionKind {
@@ -339,6 +369,7 @@ impl LMIRInstructionKind {
                 | LMIRInstructionKind::Branch { .. }
                 | LMIRInstructionKind::Jump { .. }
                 | LMIRInstructionKind::Return { .. }
+                | LMIRInstructionKind::Unreachable
         )
     }
 }

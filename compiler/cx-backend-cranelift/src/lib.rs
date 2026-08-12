@@ -91,7 +91,17 @@ impl FunctionState<'_> {
         match bc_value {
             LMIRValue::NULL => Ok(CodegenValue::Null),
 
-            LMIRValue::ParameterRef(i) => Ok(CodegenValue::Value(Value::from_u32(*i))),
+            LMIRValue::ParameterRef(i) => self
+                .fn_params
+                .get(*i as usize)
+                .copied()
+                .map(CodegenValue::Value)
+                .ok_or_else(|| {
+                    CXStdErrMessage::error(
+                        "CODEGEN ERROR",
+                        format!("Function parameter index out of bounds: {i}"),
+                    )
+                }),
 
             LMIRValue::FunctionRef(name) => {
                 let (_func_id, func_ref) = self.get_function(name.as_str()).ok_or_else(|| {

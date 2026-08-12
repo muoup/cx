@@ -120,6 +120,30 @@ pub(crate) fn codegen_function(
         context.fn_params.push(arg);
     }
 
+    for fn_block in &bc_func.blocks {
+        let block = context.get_block(&fn_block.id);
+        for parameter in &fn_block.params {
+            let parameter_type = if parameter._type.is_memory_resident() {
+                context.pointer_type
+            } else {
+                get_cranelift_type(&parameter._type).map_err(|err| {
+                    CXErr::new(
+                        err,
+                        CXInternalContext::error(format!(
+                            "Failed to lower block parameter {} in {}",
+                            parameter.register, fn_block.id
+                        )),
+                    )
+                })?
+            };
+            let value = context.builder.append_block_param(block, parameter_type);
+            context.variable_table.insert(
+                parameter.register.clone(),
+                crate::CodegenValue::Value(value),
+            );
+        }
+    }
+
     for fn_block in bc_func.blocks.iter() {
         codegen_block(&mut context, fn_block)?;
     }

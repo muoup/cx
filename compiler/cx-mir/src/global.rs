@@ -39,9 +39,11 @@ pub enum MIRGlobalInitializer {
 pub struct MIRGlobalVariable {
     pub id: MIRGlobalID,
     pub name: CXIdent,
+    
     pub ty: MIRType,
     pub linkage: CXLinkageMode,
     pub initializer: Option<MIRGlobalInitializer>,
+ 
     pub is_definition: bool,
     pub is_mutable: bool,
 }

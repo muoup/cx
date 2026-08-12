@@ -4,13 +4,14 @@ use crate::routines::get_function;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_signature, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{
-    LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind,
-    LMIRIntUnOp, LMIRReturnABI,
+    LMIRBlockTarget, LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction,
+    LMIRInstructionKind, LMIRIntUnOp, LMIRReturnABI,
 };
 use cx_util::identifier::CXIdent;
 use inkwell::AddressSpace;
 use inkwell::attributes::AttributeLoc;
-use inkwell::types::{AnyTypeEnum, BasicType};
+use inkwell::basic_block::BasicBlock;
+use inkwell::types::AnyTypeEnum;
 use inkwell::values::BasicValue;
 use inkwell::values::{AnyValue, AnyValueEnum, ValueKind};
 use std::cell::Cell;
@@ -35,6 +36,40 @@ pub(crate) fn inst_num() -> String {
     )
 }
 
+// LLVM phi inputs are keyed by predecessor block rather than logical CFG edge.
+// Split parameterized branch and switch edges so parallel edges can carry distinct values.
+fn edge_destination<'a, 'b>(
+    global_state: &GlobalState<'a>,
+    function_state: &FunctionState<'a, 'b>,
+    target: &LMIRBlockTarget,
+    name: &str,
+) -> Option<(BasicBlock<'a>, bool)> {
+    if target.args.is_empty() {
+        Some((function_state.get_block(&target.block)?, false))
+    } else {
+        Some((
+            global_state
+                .context
+                .append_basic_block(*function_state.function_value, name),
+            true,
+        ))
+    }
+}
+
+fn finish_edge<'a, 'b>(
+    function_state: &FunctionState<'a, 'b>,
+    edge: BasicBlock<'a>,
+    target: &LMIRBlockTarget,
+) -> Option<()> {
+    function_state.builder.position_at_end(edge);
+    function_state.add_block_arguments(target, edge)?;
+    function_state
+        .builder
+        .build_unconditional_branch(function_state.get_block(&target.block)?)
+        .ok()?;
+    Some(())
+}
+
 pub(crate) fn generate_instruction<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &FunctionState<'a, 'b>,
@@ -45,7 +80,9 @@ pub(crate) fn generate_instruction<'a, 'b>(
 
         LMIRInstructionKind::Allocate { _type, alignment } => {
             // let ty = bc_llvm_type(global_state.context, _type);
-            let basic_ty = function_state.context.i8_type()
+            let basic_ty = function_state
+                .context
+                .i8_type()
                 .array_type(usize::from(_type.size()) as u32);
 
             let prev_cursor = function_state.builder.get_insert_block()?;
@@ -175,10 +212,12 @@ pub(crate) fn generate_instruction<'a, 'b>(
         }
 
         LMIRInstructionKind::Jump { target } => {
+            let predecessor = function_state.builder.get_insert_block()?;
+            function_state.add_block_arguments(target, predecessor)?;
             function_state
                 .builder
-                .build_unconditional_branch(function_state.get_block(target).unwrap())
-                .unwrap();
+                .build_unconditional_branch(function_state.get_block(&target.block)?)
+                .ok()?;
 
             CodegenValue::Null
         }
@@ -495,39 +534,10 @@ pub(crate) fn generate_instruction<'a, 'b>(
             })
         }
 
-        LMIRInstructionKind::Phi { predecessors: from } => {
-            let as_basic_type = if block_instruction.value_type.is_memory_resident() {
-                global_state
-                    .context
-                    .ptr_type(AddressSpace::from(0))
-                    .as_basic_type_enum()
-            } else {
-                let val_type = bc_llvm_type(global_state.context, &block_instruction.value_type)?;
-                any_to_basic_type(val_type).expect("Failed to convert value type to basic type")
-            };
-
-            let phi_node = function_state
-                .builder
-                .build_phi(as_basic_type, inst_num().as_str())
-                .unwrap();
-
-            for (value_id, block_id) in from {
-                let value = function_state.get_value(value_id)?.get_value();
-                let value =
-                    any_to_basic_val(value).expect("Failed to convert value to basic value");
-
-                let block = function_state.get_block(block_id).unwrap();
-
-                phi_node.add_incoming(&[(&value, block)]);
-            }
-
-            CodegenValue::Value(phi_node.as_any_value_enum())
-        }
-
         LMIRInstructionKind::Branch {
             condition,
-            true_block,
-            false_block,
+            true_target,
+            false_target,
         } => {
             let mut condition_value = function_state
                 .get_value(condition)?
@@ -545,13 +555,29 @@ pub(crate) fn generate_instruction<'a, 'b>(
                     .unwrap();
             }
 
-            let true_block_val = function_state.get_block(true_block).unwrap();
-            let false_block_val = function_state.get_block(false_block).unwrap();
-
+            let (true_edge, finish_true) = edge_destination(
+                global_state,
+                function_state,
+                true_target,
+                &format!("edge_true_{}", inst_num()),
+            )?;
+            let (false_edge, finish_false) = edge_destination(
+                global_state,
+                function_state,
+                false_target,
+                &format!("edge_false_{}", inst_num()),
+            )?;
             function_state
                 .builder
-                .build_conditional_branch(condition_value, true_block_val, false_block_val)
-                .unwrap();
+                .build_conditional_branch(condition_value, true_edge, false_edge)
+                .ok()?;
+
+            if finish_true {
+                finish_edge(function_state, true_edge, true_target)?;
+            }
+            if finish_false {
+                finish_edge(function_state, false_edge, false_target)?;
+            }
 
             CodegenValue::Null
         }
@@ -567,24 +593,40 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .into_int_value();
             let value_type = value.get_type();
 
-            let targets = targets
+            let mut edges = Vec::with_capacity(targets.len());
+            let llvm_targets = targets
                 .iter()
-                .map(|(value, block)| {
-                    let value = value_type.const_int(*value, false);
-                    let block = function_state.get_block(block).unwrap();
-
-                    (value, block)
+                .map(|(case, target)| {
+                    let (edge, needs_finish) = edge_destination(
+                        global_state,
+                        function_state,
+                        target,
+                        &format!("edge_case_{}", inst_num()),
+                    )?;
+                    if needs_finish {
+                        edges.push((edge, target));
+                    }
+                    Some((value_type.const_int(*case, false), edge))
                 })
-                .collect::<Vec<_>>();
+                .collect::<Option<Vec<_>>>()?;
+            let (default_edge, finish_default) = edge_destination(
+                global_state,
+                function_state,
+                default,
+                &format!("edge_default_{}", inst_num()),
+            )?;
 
             function_state
                 .builder
-                .build_switch(
-                    value,
-                    function_state.get_block(default).unwrap(),
-                    targets.as_slice(),
-                )
-                .unwrap();
+                .build_switch(value, default_edge, llvm_targets.as_slice())
+                .ok()?;
+
+            for (edge, target) in edges {
+                finish_edge(function_state, edge, target)?;
+            }
+            if finish_default {
+                finish_edge(function_state, default_edge, default)?;
+            }
 
             CodegenValue::Null
         }
@@ -635,10 +677,12 @@ pub(crate) fn generate_instruction<'a, 'b>(
             struct_type,
             ..
         } => {
-            let Some(AnyTypeEnum::StructType(struct_type)) = bc_llvm_type(function_state.context, struct_type) else {
+            let Some(AnyTypeEnum::StructType(struct_type)) =
+                bc_llvm_type(function_state.context, struct_type)
+            else {
                 unreachable!("Expected struct type for struct access, got: {struct_type:?}");
             };
-            
+
             let struct_ptr = function_state
                 .get_value(struct_)?
                 .get_value()
@@ -646,7 +690,12 @@ pub(crate) fn generate_instruction<'a, 'b>(
 
             let gep = function_state
                 .builder
-                .build_struct_gep(struct_type, struct_ptr, *field_index as u32, inst_num().as_str())
+                .build_struct_gep(
+                    struct_type,
+                    struct_ptr,
+                    *field_index as u32,
+                    inst_num().as_str(),
+                )
                 .unwrap();
 
             CodegenValue::Value(gep.as_any_value_enum())
@@ -787,6 +836,11 @@ pub(crate) fn generate_instruction<'a, 'b>(
         LMIRInstructionKind::CompilerAssumption { condition: _ } => {
             // TODO: Implement assumptions in LLVM
 
+            CodegenValue::Null
+        }
+
+        LMIRInstructionKind::Unreachable => {
+            function_state.builder.build_unreachable().ok()?;
             CodegenValue::Null
         }
     })

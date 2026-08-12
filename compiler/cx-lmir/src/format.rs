@@ -1,8 +1,9 @@
 use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind, TypeSize};
 use crate::{
-    LMIRBasicBlock, LMIRFloatBinOp, LMIRFloatUnOp, LMIRFunction, LMIRFunctionPrototype,
-    LMIRFunctionSignature, LMIRGlobalType, LMIRInstruction, LMIRInstructionKind, LMIRIntBinOp,
-    LMIRIntUnOp, LMIRPtrBinOp, LMIRRegister, LMIRUnit, LMIRValue,
+    LMIRBasicBlock, LMIRBlockTarget, LMIRFloatBinOp, LMIRFloatUnOp, LMIRFunction,
+    LMIRFunctionPrototype, LMIRFunctionSignature, LMIRGlobalType, LMIRInstruction,
+    LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRRegister, LMIRUnit,
+    LMIRValue,
 };
 use std::fmt::{Display, Formatter};
 
@@ -36,11 +37,21 @@ impl Display for LMIRFunction {
 
 impl Display for LMIRBasicBlock {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, ".{}", self.id)?;
+        if !self.params.is_empty() {
+            f.write_str("(")?;
+            for (index, param) in self.params.iter().enumerate() {
+                if index != 0 {
+                    f.write_str(", ")?;
+                }
+                write!(f, "{}: {}", param.register, param._type)?;
+            }
+            f.write_str(")")?;
+        }
         writeln!(
             f,
-            ".{}:   ({})",
-            self.id,
-            self.debug_name.as_ref().unwrap_or(&String::new())
+            ":   ({})",
+            self.debug_name.as_deref().unwrap_or_default()
         )?;
 
         for instruction in self.body.iter() {
@@ -89,6 +100,24 @@ impl Display for LMIRGlobalType {
                 }
             }
         }
+    }
+}
+
+impl Display for LMIRBlockTarget {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.block)?;
+        if self.args.is_empty() {
+            return Ok(());
+        }
+
+        f.write_str("(")?;
+        for (index, argument) in self.args.iter().enumerate() {
+            if index != 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{argument}")?;
+        }
+        f.write_str(")")
     }
 }
 
@@ -169,24 +198,10 @@ impl Display for LMIRInstruction {
             }
             LMIRInstructionKind::Branch {
                 condition,
-                true_block,
-                false_block,
+                true_target,
+                false_target,
             } => {
-                write!(f, "if {condition} goto {true_block} else {false_block}")
-            }
-            LMIRInstructionKind::Phi { predecessors: from } => {
-                write!(f, "phi")?;
-                if !from.is_empty() {
-                    write!(f, " [")?;
-                    for (i, (value, block_id)) in from.iter().enumerate() {
-                        if i > 0 {
-                            write!(f, ", ")?;
-                        }
-                        write!(f, "{value} @ b{block_id}")?;
-                    }
-                    write!(f, "]")?;
-                }
-                Ok(())
+                write!(f, "if {condition} goto {true_target} else {false_target}")
             }
             LMIRInstructionKind::Jump { target } => {
                 write!(f, "jump {target}")
@@ -197,11 +212,11 @@ impl Display for LMIRInstruction {
                 default,
             } => {
                 write!(f, "jump_table {value} -> [")?;
-                for (i, (key, block_id)) in targets.iter().enumerate() {
+                for (i, (key, target)) in targets.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{key} -> {block_id}")?;
+                    write!(f, "{key} -> {target}")?;
                 }
                 write!(f, "] else {default}")
             }
@@ -252,6 +267,7 @@ impl Display for LMIRInstruction {
             LMIRInstructionKind::CompilerAssumption { condition } => {
                 write!(f, "compiler_assumption {condition}")
             }
+            LMIRInstructionKind::Unreachable => f.write_str("unreachable"),
         }
     }
 }
