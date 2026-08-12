@@ -6,12 +6,12 @@ pub mod op;
 pub mod ty;
 
 pub use expr::{
-    MIRAggregateKind, MIRBasicBlock, MIRBasicBlockID, MIRConstant, MIRDestination, MIRInstr,
-    MIRInstrKind, MIROperand, MIRPlace, MIRRegister, MIRSuccessors,
+    MIRAggregateKind, MIRBasicBlock, MIRBasicBlockID, MIRConstant, MIRInstr, MIRInstrKind,
+    MIRParameterID, MIRPlace, MIRPlaceID, MIRRegister, MIRSuccessors, MIRValue,
 };
 pub use global::{
     MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRGlobalID,
-    MIRGlobalVariable, MIRPlaceDecl, MIRRegisterDecl,
+    MIRGlobalInitializer, MIRGlobalVariable, MIRPlaceDecl, MIRRegisterDecl,
 };
 pub use module::{MIRUnit, MIRValidationError};
 pub use op::{

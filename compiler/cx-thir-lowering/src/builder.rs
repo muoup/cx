@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use cx_ast::ast::modifiers::CXLinkageMode;
 use cx_mir::{
     MIRBasicBlockID, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID,
-    MIRGlobalID, MIRInstrKind, MIROperand, MIRPlace, MIRRegister, MIRType, MIRUnit,
+    MIRGlobalID, MIRGlobalInitializer, MIRInstrKind, MIRParameterID, MIRPlace, MIRRegister,
+    MIRType, MIRUnit, MIRValue,
 };
 use cx_thir::{
     THIRUnit,
@@ -29,7 +30,7 @@ pub(crate) struct YieldContext {
     pub target: MIRBasicBlockID,
     pub result_type: MIRType,
     pub target_scope: Option<usize>,
-    pub incoming: Vec<(MIRBasicBlockID, MIROperand)>,
+    pub incoming: Vec<(MIRBasicBlockID, MIRValue)>,
 }
 
 #[derive(Debug)]
@@ -37,7 +38,7 @@ struct FunctionContext {
     function: MIRFunctionID,
     current_block: MIRBasicBlockID,
     local_places: HashMap<THIRLocalID, MIRPlace>,
-    named_values: Vec<HashMap<String, MIROperand>>,
+    named_values: Vec<HashMap<String, MIRValue>>,
     loops: Vec<LoopContext>,
     yields: Vec<YieldContext>,
 }
@@ -108,7 +109,9 @@ impl<'thir> MIRBuilder<'thir> {
             MIRGlobalVarKind::StringLiteral { name, value } => (
                 name.clone(),
                 MIRType::from_kind(THIRTypeKind::Str),
-                Some(MIRConstant::String(value.clone())),
+                Some(MIRGlobalInitializer::Bytes(
+                    value.as_bytes().to_vec().into_boxed_slice(),
+                )),
             ),
             MIRGlobalVarKind::Variable {
                 name,
@@ -119,18 +122,20 @@ impl<'thir> MIRBuilder<'thir> {
                     THIRTypeKind::Integer {
                         _type: integer_type,
                         signed,
-                    } => Some(MIRConstant::Integer {
+                    } => Some(MIRGlobalInitializer::Scalar(MIRConstant::Integer {
                         value: value as i128,
                         ty: *integer_type,
                         signed: *signed,
-                    }),
+                    })),
                     _ => None,
                 });
                 (name.clone(), MIRType::new(_type.clone()), constant)
             }
         };
 
-        let id = self.unit.add_global(name.clone(), ty, global.linkage);
+        let id = self
+            .unit
+            .add_global(name.clone(), ty, global.linkage, global.is_mutable);
         let lowered = self
             .unit
             .global_mut(id)
@@ -191,20 +196,12 @@ impl<'thir> MIRBuilder<'thir> {
         self.set_block_name(entry, "entry");
 
         for (index, parameter) in function.prototype.signature().params.iter().enumerate() {
-            let place = self.create_place(
-                MIRType::new(parameter._type.clone()),
-                parameter.name.clone(),
-            );
-            self.emit(MIRInstrKind::CopyInto {
-                dest: place,
-                src: MIROperand::Parameter(index),
-                ty: MIRType::new(parameter._type.clone()),
-            });
+            let place = MIRPlace::Parameter(MIRParameterID::new(index));
             if let Some(local_id) = parameter.local_id {
                 self.bind_local(local_id, place);
             }
             if let Some(name) = &parameter.name {
-                self.bind_named(name, MIROperand::Place(place));
+                self.bind_named(name, MIRValue::Place(place));
             }
         }
     }
@@ -302,7 +299,7 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub(crate) fn create_place(&mut self, ty: MIRType, debug_name: Option<CXIdent>) -> MIRPlace {
         let place = self.declare_place(ty.clone(), debug_name);
-        self.emit(MIRInstrKind::CreatePlace { out: place, ty });
+        self.emit(MIRInstrKind::Create { out: place, ty });
         place
     }
 
@@ -327,7 +324,7 @@ impl<'thir> MIRBuilder<'thir> {
         context.named_values.pop();
     }
 
-    pub(crate) fn bind_named(&mut self, name: &CXIdent, value: MIROperand) {
+    pub(crate) fn bind_named(&mut self, name: &CXIdent, value: MIRValue) {
         self.context_mut()
             .named_values
             .last_mut()
@@ -335,7 +332,7 @@ impl<'thir> MIRBuilder<'thir> {
             .insert(name.as_string(), value);
     }
 
-    pub(crate) fn named(&self, name: &CXIdent) -> Option<MIROperand> {
+    pub(crate) fn named(&self, name: &CXIdent) -> Option<MIRValue> {
         self.context()
             .named_values
             .iter()
@@ -381,6 +378,7 @@ impl<'thir> MIRBuilder<'thir> {
             name.clone(),
             MIRType::new(ty.clone()),
             CXLinkageMode::Extern,
+            true,
         );
         self.unit
             .global_mut(id)
@@ -436,7 +434,7 @@ impl<'thir> MIRBuilder<'thir> {
         self.context().yields.last().map(|context| context.target)
     }
 
-    pub(crate) fn record_yield(&mut self, target_scope: usize, value: MIROperand) {
+    pub(crate) fn record_yield(&mut self, target_scope: usize, value: MIRValue) {
         let predecessor = self.current_block();
         let context = self
             .context_mut()

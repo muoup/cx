@@ -3,7 +3,8 @@ use cx_util::identifier::CXIdent;
 
 use crate::{
     expr::{
-        MIRBasicBlock, MIRBasicBlockID, MIRConstant, MIRInstr, MIRInstrKind, MIRPlace, MIRRegister,
+        MIRBasicBlock, MIRBasicBlockID, MIRConstant, MIRInstr, MIRInstrKind, MIRPlace, MIRPlaceID,
+        MIRRegister,
     },
     ty::MIRType,
 };
@@ -28,20 +29,31 @@ macro_rules! dense_id {
 dense_id!(MIRFunctionID);
 dense_id!(MIRGlobalID);
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MIRGlobalInitializer {
+    Scalar(MIRConstant),
+    Bytes(Box<[u8]>),
+}
+
 #[derive(Debug, Clone)]
 pub struct MIRGlobalVariable {
     pub id: MIRGlobalID,
     pub name: CXIdent,
     pub ty: MIRType,
     pub linkage: CXLinkageMode,
-    /// `None` denotes a declaration or a zero-initialized definition according
-    /// to `is_definition`; it never implies an ABI-specific representation.
-    pub initializer: Option<MIRConstant>,
+    pub initializer: Option<MIRGlobalInitializer>,
     pub is_definition: bool,
+    pub is_mutable: bool,
 }
 
 impl MIRGlobalVariable {
-    pub fn new(id: MIRGlobalID, name: CXIdent, ty: MIRType, linkage: CXLinkageMode) -> Self {
+    pub fn new(
+        id: MIRGlobalID,
+        name: CXIdent,
+        ty: MIRType,
+        linkage: CXLinkageMode,
+        is_mutable: bool,
+    ) -> Self {
         Self {
             id,
             name,
@@ -49,6 +61,7 @@ impl MIRGlobalVariable {
             linkage,
             initializer: None,
             is_definition: true,
+            is_mutable,
         }
     }
 }
@@ -105,7 +118,7 @@ impl MIRFnPrototype {
 
 #[derive(Debug, Clone)]
 pub struct MIRPlaceDecl {
-    pub id: MIRPlace,
+    pub id: MIRPlaceID,
     pub ty: MIRType,
     pub debug_name: Option<CXIdent>,
 }
@@ -145,9 +158,9 @@ impl MIRFunction {
     }
 
     pub fn add_place(&mut self, ty: MIRType, debug_name: Option<CXIdent>) -> MIRPlace {
-        let id = MIRPlace::new(self.places.len());
+        let id = MIRPlaceID::new(self.places.len());
         self.places.push(MIRPlaceDecl { id, ty, debug_name });
-        id
+        MIRPlace::FunctionLocal(id)
     }
 
     pub fn add_register(&mut self, ty: MIRType, debug_name: Option<CXIdent>) -> MIRRegister {
@@ -173,7 +186,7 @@ impl MIRFunction {
         self.blocks.get_mut(id.index())
     }
 
-    pub fn place(&self, id: MIRPlace) -> Option<&MIRPlaceDecl> {
+    pub fn place(&self, id: MIRPlaceID) -> Option<&MIRPlaceDecl> {
         self.places.get(id.index())
     }
 

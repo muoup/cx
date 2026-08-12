@@ -26,9 +26,19 @@ macro_rules! dense_id {
     };
 }
 
-dense_id!(MIRPlace);
+dense_id!(MIRPlaceID);
+dense_id!(MIRParameterID);
 dense_id!(MIRRegister);
 dense_id!(MIRBasicBlockID);
+
+/// An abstract lvalue. Function-local places include source locals, anonymous
+/// storage, dereference results, and aggregate projections.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MIRPlace {
+    FunctionLocal(MIRPlaceID),
+    Parameter(MIRParameterID),
+    Global(MIRGlobalID),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRConstant {
@@ -43,26 +53,16 @@ pub enum MIRConstant {
         value: FloatWrapper,
         ty: THIRFloatType,
     },
-    String(String),
     Null,
+    Function(MIRFunctionID),
     Undefined,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum MIROperand {
-    Place(MIRPlace),
+pub enum MIRValue {
     Register(MIRRegister),
-
-    Parameter(usize),
+    Place(MIRPlace),
     Constant(MIRConstant),
-    Function(MIRFunctionID),
-    Global(MIRGlobalID),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MIRDestination {
-    Place(MIRPlace),
-    Register(MIRRegister),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -138,156 +138,141 @@ impl MIRInstr {
 
 #[derive(Debug, Clone)]
 pub enum MIRInstrKind {
-    LivenessStart(MIRPlace),
-    LivenessEnd(MIRPlace),
-    LeakPlace(MIRPlace),
+    // Transitional lifetime kernels. Their abstract semantics will move into
+    // the operations that create, consume, drop, or leak places.
+    LifetimeStart(MIRPlace),
+    LifetimeEnd(MIRPlace),
+    Leak(MIRPlace),
 
-    CreatePlace {
+    Create {
         out: MIRPlace,
         ty: MIRType,
     },
-    CopyInto {
+    Copy {
         dest: MIRPlace,
-        src: MIROperand,
+        src: MIRValue,
         ty: MIRType,
     },
-    MoveInto {
+    Move {
         dest: MIRPlace,
         src: MIRPlace,
         ty: MIRType,
     },
-    Assign {
-        out: MIRDestination,
-        value: MIROperand,
-    },
-    Load {
-        out: MIRDestination,
-        source: MIRPlace,
-    },
-    Store {
-        dest: MIRPlace,
-        value: MIROperand,
-    },
     AddressOf {
-        out: MIRDestination,
+        out: MIRRegister,
         place: MIRPlace,
     },
-    Dereference {
+
+    // Place-producing projection kernels. They preserve an abstract lvalue;
+    // physical addresses and offsets are selected during MIR -> LMIR lowering.
+    ProjectDeref {
         out: MIRPlace,
-        pointer: MIROperand,
+        pointer: MIRValue,
         pointee_type: MIRType,
     },
-
-    MemberAccess {
+    ProjectField {
         out: MIRPlace,
         base: MIRPlace,
-        member_index: usize,
+        field: usize,
         aggregate_type: MIRType,
     },
-    ArrayAccess {
+    ProjectIndex {
         out: MIRPlace,
         base: MIRPlace,
-        index: MIROperand,
+        index: MIRValue,
         element_type: MIRType,
     },
-    SumTag {
-        out: MIRDestination,
-        base: MIROperand,
+    Discriminant {
+        out: MIRRegister,
+        value: MIRValue,
         sum_type: MIRType,
     },
-    SumVariant {
+    ProjectVariant {
         out: MIRPlace,
         base: MIRPlace,
-        variant_index: usize,
+        variant: usize,
         sum_type: MIRType,
     },
     ConstructAggregate {
-        out: MIRDestination,
+        out: MIRRegister,
         kind: MIRAggregateKind,
         ty: MIRType,
-        fields: Vec<(usize, MIROperand)>,
+        fields: Vec<(usize, MIRValue)>,
     },
-    UpdateAggregate {
-        out: MIRDestination,
-        base: MIROperand,
-        ty: MIRType,
-        fields: Vec<(usize, MIROperand)>,
-    },
-    ConstructSum {
-        out: MIRDestination,
-        variant_index: usize,
-        value: MIROperand,
+    ConstructVariant {
+        out: MIRRegister,
+        variant: usize,
+        value: MIRValue,
         sum_type: MIRType,
     },
-    SetSumVariant {
+    SetVariant {
         target: MIRPlace,
-        variant_index: usize,
-        value: MIROperand,
+        variant: usize,
+        value: MIRValue,
         sum_type: MIRType,
     },
 
     DirectCall {
-        out: Option<MIRDestination>,
+        out: Option<MIRRegister>,
         function: MIRFunctionID,
-        args: Vec<MIROperand>,
+        args: Vec<MIRValue>,
     },
     IndirectCall {
-        out: Option<MIRDestination>,
-        callee: MIROperand,
-        args: Vec<MIROperand>,
+        out: Option<MIRRegister>,
+        callee: MIRValue,
+        args: Vec<MIRValue>,
     },
 
     BinOp {
-        out: MIRDestination,
+        out: MIRRegister,
         op: MIRBinaryOp,
-        lhs: MIROperand,
-        rhs: MIROperand,
+        lhs: MIRValue,
+        rhs: MIRValue,
     },
     UnOp {
-        out: MIRDestination,
+        out: MIRRegister,
         op: MIRUnaryOp,
-        operand: MIROperand,
+        operand: MIRValue,
     },
     Coerce {
-        out: MIRDestination,
-        operand: MIROperand,
+        out: MIRRegister,
+        operand: MIRValue,
         coercion: MIRCoercion,
         to_type: MIRType,
     },
     Phi {
         out: MIRRegister,
-        incoming: Vec<(MIRBasicBlockID, MIROperand)>,
+        incoming: Vec<(MIRBasicBlockID, MIRValue)>,
     },
     Assert {
-        condition: MIROperand,
+        condition: MIRValue,
         message: Option<String>,
     },
     Assume {
-        condition: MIROperand,
+        condition: MIRValue,
     },
 
     Return {
-        value: Option<MIROperand>,
+        value: Option<MIRValue>,
     },
     Jump {
         target: MIRBasicBlockID,
     },
     Branch {
-        cond: MIROperand,
+        cond: MIRValue,
         true_target: MIRBasicBlockID,
         false_target: MIRBasicBlockID,
     },
     IntSwitch {
-        value: MIROperand,
+        value: MIRValue,
         cases: Vec<(MIRConstant, MIRBasicBlockID)>,
         default: Option<MIRBasicBlockID>,
     },
     Unreachable,
 
     // Comptime-only nodes
-    
     Emit {
-        value: MIROperand,
+        value: MIRValue,
     },
 }
 
@@ -323,80 +308,73 @@ impl MIRInstrKind {
     }
 
     pub fn for_each_referenced_place(&self, mut f: impl FnMut(MIRPlace)) {
-        self.for_each_operand(|operand| {
-            if let MIROperand::Place(place) = operand {
+        self.for_each_value(|value| {
+            if let MIRValue::Place(place) = value {
                 f(*place);
             }
         });
 
         match self {
-            Self::LivenessStart(place)
-            | Self::LivenessEnd(place)
-            | Self::LeakPlace(place)
-            | Self::Load { source: place, .. }
+            Self::LifetimeStart(place)
+            | Self::LifetimeEnd(place)
+            | Self::Leak(place)
             | Self::AddressOf { place, .. } => f(*place),
-            Self::MoveInto { src, .. } => f(*src),
-            Self::MemberAccess { base, .. }
-            | Self::ArrayAccess { base, .. }
-            | Self::SumVariant { base, .. } => f(*base),
+            Self::Move { src, .. } => f(*src),
+            Self::ProjectField { base, .. }
+            | Self::ProjectIndex { base, .. }
+            | Self::ProjectVariant { base, .. } => f(*base),
             _ => {}
         }
     }
 
     pub fn for_each_defined_place(&self, mut f: impl FnMut(MIRPlace)) {
         match self {
-            Self::CreatePlace { out, .. }
-            | Self::CopyInto { dest: out, .. }
-            | Self::MoveInto { dest: out, .. }
-            | Self::Store { dest: out, .. }
-            | Self::Dereference { out, .. }
-            | Self::MemberAccess { out, .. }
-            | Self::ArrayAccess { out, .. }
-            | Self::SumVariant { out, .. }
-            | Self::SetSumVariant { target: out, .. } => f(*out),
-            _ => self.for_each_destination(|destination| {
-                if let MIRDestination::Place(place) = destination {
-                    f(place);
-                }
-            }),
+            Self::Create { out, .. }
+            | Self::Copy { dest: out, .. }
+            | Self::Move { dest: out, .. }
+            | Self::ProjectDeref { out, .. }
+            | Self::ProjectField { out, .. }
+            | Self::ProjectIndex { out, .. }
+            | Self::ProjectVariant { out, .. }
+            | Self::SetVariant { target: out, .. } => f(*out),
+            _ => {}
         }
     }
 
     pub fn for_each_referenced_register(&self, mut f: impl FnMut(MIRRegister)) {
-        self.for_each_operand(|operand| {
-            if let MIROperand::Register(register) = operand {
+        self.for_each_value(|value| {
+            if let MIRValue::Register(register) = value {
                 f(*register);
             }
         });
     }
 
     pub fn for_each_defined_register(&self, mut f: impl FnMut(MIRRegister)) {
-        if let Self::Phi { out, .. } = self {
-            f(*out);
-            return;
-        }
-        self.for_each_destination(|destination| {
-            if let MIRDestination::Register(register) = destination {
-                f(register);
+        match self {
+            Self::AddressOf { out, .. }
+            | Self::Discriminant { out, .. }
+            | Self::ConstructAggregate { out, .. }
+            | Self::ConstructVariant { out, .. }
+            | Self::BinOp { out, .. }
+            | Self::UnOp { out, .. }
+            | Self::Coerce { out, .. }
+            | Self::Phi { out, .. } => f(*out),
+            Self::DirectCall { out, .. } | Self::IndirectCall { out, .. } => {
+                if let Some(out) = out {
+                    f(*out);
+                }
             }
-        });
+            _ => {}
+        }
     }
 
     pub fn for_each_referenced_function(&self, mut f: impl FnMut(MIRFunctionID)) {
         if let Self::DirectCall { function, .. } = self {
             f(*function);
         }
-        self.for_each_operand(|operand| {
-            if let MIROperand::Function(function) = operand {
+        self.for_each_value(|value| {
+            if let MIRValue::Constant(MIRConstant::Function(function)) = value {
                 f(*function);
-            }
-        });
-    }
-
-    pub fn for_each_referenced_global(&self, mut f: impl FnMut(MIRGlobalID)) {
-        self.for_each_operand(|operand| {
-            if let MIROperand::Global(global) = operand {
-                f(*global);
             }
         });
     }
@@ -409,15 +387,13 @@ impl MIRInstrKind {
         }
     }
 
-    fn for_each_operand(&self, mut f: impl FnMut(&MIROperand)) {
+    fn for_each_value(&self, mut f: impl FnMut(&MIRValue)) {
         match self {
-            Self::CopyInto { src, .. }
-            | Self::Assign { value: src, .. }
-            | Self::Store { value: src, .. }
-            | Self::Dereference { pointer: src, .. }
-            | Self::SumTag { base: src, .. }
-            | Self::ConstructSum { value: src, .. }
-            | Self::SetSumVariant { value: src, .. }
+            Self::Copy { src, .. }
+            | Self::ProjectDeref { pointer: src, .. }
+            | Self::Discriminant { value: src, .. }
+            | Self::ConstructVariant { value: src, .. }
+            | Self::SetVariant { value: src, .. }
             | Self::Emit { value: src }
             | Self::UnOp { operand: src, .. }
             | Self::Coerce { operand: src, .. }
@@ -425,14 +401,8 @@ impl MIRInstrKind {
             | Self::Assume { condition: src }
             | Self::Branch { cond: src, .. }
             | Self::IntSwitch { value: src, .. } => f(src),
-            Self::ArrayAccess { index, .. } => f(index),
+            Self::ProjectIndex { index, .. } => f(index),
             Self::ConstructAggregate { fields, .. } => {
-                for (_, value) in fields {
-                    f(value);
-                }
-            }
-            Self::UpdateAggregate { base, fields, .. } => {
-                f(base);
                 for (_, value) in fields {
                     f(value);
                 }
@@ -460,27 +430,6 @@ impl MIRInstrKind {
             Self::Return { value } => {
                 if let Some(value) = value {
                     f(value);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn for_each_destination(&self, mut f: impl FnMut(MIRDestination)) {
-        match self {
-            Self::Assign { out, .. }
-            | Self::Load { out, .. }
-            | Self::AddressOf { out, .. }
-            | Self::SumTag { out, .. }
-            | Self::ConstructAggregate { out, .. }
-            | Self::UpdateAggregate { out, .. }
-            | Self::ConstructSum { out, .. }
-            | Self::BinOp { out, .. }
-            | Self::UnOp { out, .. }
-            | Self::Coerce { out, .. } => f(*out),
-            Self::DirectCall { out, .. } | Self::IndirectCall { out, .. } => {
-                if let Some(out) = out {
-                    f(*out);
                 }
             }
             _ => {}

@@ -4,7 +4,7 @@ use cx_ast::ast::modifiers::CXLinkageMode;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    expr::MIRBasicBlockID,
+    expr::{MIRBasicBlockID, MIRPlace},
     global::{MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalVariable},
     ty::MIRType,
 };
@@ -39,10 +39,11 @@ impl MIRUnit {
         name: CXIdent,
         ty: MIRType,
         linkage: CXLinkageMode,
+        is_mutable: bool,
     ) -> MIRGlobalID {
         let id = MIRGlobalID::new(self.globals.len());
         self.globals
-            .push(MIRGlobalVariable::new(id, name, ty, linkage));
+            .push(MIRGlobalVariable::new(id, name, ty, linkage, is_mutable));
         id
     }
 
@@ -228,17 +229,31 @@ impl MIRUnit {
     ) -> Result<(), MIRValidationError> {
         let function_id = function.id;
         let mut bad_id = None;
-
-        instruction.for_each_referenced_place(|place| {
-            if bad_id.is_none() && place.index() >= function.places.len() {
-                bad_id = Some(("place", place.index(), function.places.len()));
+        let mut check_place = |place| {
+            if bad_id.is_some() {
+                return;
             }
-        });
-        instruction.for_each_defined_place(|place| {
-            if bad_id.is_none() && place.index() >= function.places.len() {
-                bad_id = Some(("place", place.index(), function.places.len()));
+            match place {
+                MIRPlace::FunctionLocal(id) if id.index() >= function.places.len() => {
+                    bad_id = Some(("place", id.index(), function.places.len()));
+                }
+                MIRPlace::Parameter(id)
+                    if id.index() >= function.prototype.signature.params.len() =>
+                {
+                    bad_id = Some((
+                        "parameter",
+                        id.index(),
+                        function.prototype.signature.params.len(),
+                    ));
+                }
+                MIRPlace::Global(id) if id.index() >= self.globals.len() => {
+                    bad_id = Some(("global", id.index(), self.globals.len()));
+                }
+                _ => {}
             }
-        });
+        };
+        instruction.for_each_referenced_place(&mut check_place);
+        instruction.for_each_defined_place(&mut check_place);
         instruction.for_each_referenced_register(|register| {
             if bad_id.is_none() && register.index() >= function.registers.len() {
                 bad_id = Some(("register", register.index(), function.registers.len()));
@@ -252,11 +267,6 @@ impl MIRUnit {
         instruction.kind.for_each_referenced_function(|referenced| {
             if bad_id.is_none() && referenced.index() >= self.functions.len() {
                 bad_id = Some(("function", referenced.index(), self.functions.len()));
-            }
-        });
-        instruction.kind.for_each_referenced_global(|global| {
-            if bad_id.is_none() && global.index() >= self.globals.len() {
-                bad_id = Some(("global", global.index(), self.globals.len()));
             }
         });
         instruction.kind.for_each_phi_predecessor(|predecessor| {

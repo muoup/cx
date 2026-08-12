@@ -10,8 +10,8 @@ use std::{
 };
 
 use cx_mir::{
-    MIRBasicBlockID, MIRFunction, MIRFunctionID, MIRInstrKind, MIROperand, MIRPlace, MIRUnit,
-    MIRValidationError,
+    MIRBasicBlockID, MIRFunction, MIRFunctionID, MIRInstrKind, MIRPlace, MIRUnit,
+    MIRValidationError, MIRValue,
 };
 
 /// Controls optional checks performed before the independent dataflow analysis.
@@ -147,7 +147,7 @@ fn analyze_function(function: &MIRFunction) -> MIRFunctionAnalysis {
             if let MIRInstrKind::Phi { incoming, .. } = &instruction.kind {
                 for (predecessor, operand) in incoming {
                     if predecessor.index() < block_count {
-                        if let MIROperand::Place(place) = operand {
+                        if let MIRValue::Place(place) = operand {
                             phi_edge_uses[block.id.index()]
                                 .entry(predecessor.index())
                                 .or_default()
@@ -286,8 +286,8 @@ mod tests {
 
     use cx_ast::ast::modifiers::CXLinkageMode;
     use cx_mir::{
-        MIRBasicBlockID, MIRConstant, MIRFnPrototype, MIRFnSignature, MIRInstrKind, MIROperand,
-        MIRPlace, MIRType, MIRUnit,
+        MIRBasicBlockID, MIRConstant, MIRFnPrototype, MIRFnSignature, MIRInstrKind, MIRPlace,
+        MIRType, MIRUnit, MIRValue,
     };
     use cx_util::identifier::CXIdent;
 
@@ -321,16 +321,16 @@ mod tests {
         function.push_instr(
             entry,
             MIRInstrKind::Branch {
-                cond: MIROperand::Place(condition),
+                cond: MIRValue::Place(condition),
                 true_target: loop_body,
                 false_target: exit,
             },
         );
         function.push_instr(
             loop_body,
-            MIRInstrKind::CopyInto {
+            MIRInstrKind::Copy {
                 dest: result,
-                src: MIROperand::Place(carried),
+                src: MIRValue::Place(carried),
                 ty: MIRType::default(),
             },
         );
@@ -338,7 +338,7 @@ mod tests {
         function.push_instr(
             exit,
             MIRInstrKind::Return {
-                value: Some(MIROperand::Place(result)),
+                value: Some(MIRValue::Place(result)),
             },
         );
 
@@ -392,7 +392,7 @@ mod tests {
         function.push_instr(
             entry,
             MIRInstrKind::Branch {
-                cond: MIROperand::Constant(MIRConstant::Bool(true)),
+                cond: MIRValue::Constant(MIRConstant::Bool(true)),
                 true_target: left,
                 false_target: right,
             },
@@ -404,15 +404,15 @@ mod tests {
             MIRInstrKind::Phi {
                 out: result,
                 incoming: vec![
-                    (left, MIROperand::Place(left_value)),
-                    (right, MIROperand::Place(right_value)),
+                    (left, MIRValue::Place(left_value)),
+                    (right, MIRValue::Place(right_value)),
                 ],
             },
         );
         function.push_instr(
             merge,
             MIRInstrKind::Return {
-                value: Some(MIROperand::Register(result)),
+                value: Some(MIRValue::Register(result)),
             },
         );
 

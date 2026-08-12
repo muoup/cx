@@ -4,18 +4,37 @@ use cx_thir::thir::r#type::{THIRField, THIRIntType, THIRTypeKind};
 
 use crate::{
     expr::{
-        MIRAggregateKind, MIRBasicBlock, MIRBasicBlockID, MIRConstant, MIRDestination, MIRInstr,
-        MIRInstrKind, MIROperand, MIRPlace, MIRRegister,
+        MIRAggregateKind, MIRBasicBlock, MIRBasicBlockID, MIRConstant, MIRInstr, MIRInstrKind,
+        MIRParameterID, MIRPlace, MIRPlaceID, MIRRegister, MIRValue,
     },
-    global::{MIRFnSignature, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalVariable},
+    global::{
+        MIRFnSignature, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalInitializer,
+        MIRGlobalVariable,
+    },
     module::MIRUnit,
     op::{MIRBinaryOp, MIRCoercion, MIRUnaryOp},
     ty::MIRType,
 };
 
-impl Display for MIRPlace {
+impl Display for MIRPlaceID {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "%p{}", self.index())
+    }
+}
+
+impl Display for MIRParameterID {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "%arg{}", self.index())
+    }
+}
+
+impl Display for MIRPlace {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::FunctionLocal(id) => Display::fmt(id, f),
+            Self::Parameter(id) => Display::fmt(id, f),
+            Self::Global(id) => Display::fmt(id, f),
+        }
     }
 }
 
@@ -150,31 +169,19 @@ impl Display for MIRConstant {
                 int_width(*ty)
             ),
             Self::Float { value, ty } => write!(f, "{value}:{ty:?}"),
-            Self::String(value) => write!(f, "{value:?}"),
             Self::Null => f.write_str("null"),
+            Self::Function(function) => write!(f, "fn {function}"),
             Self::Undefined => f.write_str("undef"),
         }
     }
 }
 
-impl Display for MIROperand {
+impl Display for MIRValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Place(value) => Display::fmt(value, f),
-            Self::Parameter(index) => write!(f, "arg{index}"),
             Self::Register(value) => Display::fmt(value, f),
+            Self::Place(value) => Display::fmt(value, f),
             Self::Constant(value) => Display::fmt(value, f),
-            Self::Function(value) => write!(f, "fn {value}"),
-            Self::Global(value) => write!(f, "global {value}"),
-        }
-    }
-}
-
-impl Display for MIRDestination {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Place(value) => Display::fmt(value, f),
-            Self::Register(value) => Display::fmt(value, f),
         }
     }
 }
@@ -231,44 +238,41 @@ impl Display for MIRInstr {
 impl Display for MIRInstrKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::LivenessStart(p) => write!(f, "storage.live {p}"),
-            Self::LivenessEnd(p) => write!(f, "storage.dead {p}"),
-            Self::LeakPlace(p) => write!(f, "storage.leak {p}"),
-            Self::CreatePlace { out, ty } => write!(f, "create {out}: {ty}"),
-            Self::CopyInto { dest, src, ty } => write!(f, "copy {src} -> {dest}: {ty}"),
-            Self::MoveInto { dest, src, ty } => write!(f, "move {src} -> {dest}: {ty}"),
-            Self::Assign { out, value } => write!(f, "{out} = {value}"),
-            Self::Load { out, source } => write!(f, "{out} = load {source}"),
-            Self::Store { dest, value } => write!(f, "store {value} -> {dest}"),
+            Self::LifetimeStart(place) => write!(f, "lifetime.start {place}"),
+            Self::LifetimeEnd(place) => write!(f, "lifetime.end {place}"),
+            Self::Leak(place) => write!(f, "leak {place}"),
+            Self::Create { out, ty } => write!(f, "create {out}: {ty}"),
+            Self::Copy { dest, src, ty } => write!(f, "copy {src} -> {dest}: {ty}"),
+            Self::Move { dest, src, ty } => write!(f, "move {src} -> {dest}: {ty}"),
             Self::AddressOf { out, place } => write!(f, "{out} = address_of {place}"),
-            Self::Dereference {
+            Self::ProjectDeref {
                 out,
                 pointer,
                 pointee_type,
-            } => write!(f, "{out} = deref {pointer}: {pointee_type}"),
-            Self::MemberAccess {
+            } => write!(f, "{out} = project.deref {pointer}: {pointee_type}"),
+            Self::ProjectField {
                 out,
                 base,
-                member_index,
+                field,
                 aggregate_type,
-            } => write!(f, "{out} = member {base}.{member_index}: {aggregate_type}"),
-            Self::ArrayAccess {
+            } => write!(f, "{out} = project.field {base}.{field}: {aggregate_type}"),
+            Self::ProjectIndex {
                 out,
                 base,
                 index,
                 element_type,
-            } => write!(f, "{out} = index {base}[{index}]: {element_type}"),
-            Self::SumTag {
+            } => write!(f, "{out} = project.index {base}[{index}]: {element_type}"),
+            Self::Discriminant {
+                out,
+                value,
+                sum_type,
+            } => write!(f, "{out} = discriminant {value}: {sum_type}"),
+            Self::ProjectVariant {
                 out,
                 base,
+                variant,
                 sum_type,
-            } => write!(f, "{out} = sum.tag {base}: {sum_type}"),
-            Self::SumVariant {
-                out,
-                base,
-                variant_index,
-                sum_type,
-            } => write!(f, "{out} = sum.variant {base}.{variant_index}: {sum_type}"),
+            } => write!(f, "{out} = project.variant {base}.{variant}: {sum_type}"),
             Self::ConstructAggregate {
                 out,
                 kind,
@@ -278,44 +282,32 @@ impl Display for MIRInstrKind {
                 write!(f, "{out} = {} {ty} ", aggregate_name(*kind))?;
                 write_fields(f, fields)
             }
-            Self::UpdateAggregate {
+            Self::ConstructVariant {
                 out,
-                base,
-                ty,
-                fields,
-            } => {
-                write!(f, "{out} = update {base}: {ty} ")?;
-                write_fields(f, fields)
-            }
-            Self::ConstructSum {
-                out,
-                variant_index,
+                variant,
                 value,
                 sum_type,
-            } => write!(f, "{out} = sum {sum_type} variant {variant_index}({value})"),
-            Self::SetSumVariant {
+            } => write!(f, "{out} = variant {sum_type}.{variant}({value})"),
+            Self::SetVariant {
                 target,
-                variant_index,
+                variant,
                 value,
                 sum_type,
-            } => write!(
-                f,
-                "sum.set {target}: {sum_type} variant {variant_index}({value})"
-            ),
+            } => write!(f, "set.variant {target}: {sum_type}.{variant}({value})"),
             Self::DirectCall {
                 out,
                 function,
                 args,
             } => {
-                write_optional_destination(f, *out)?;
+                write_optional_register(f, *out)?;
                 write!(f, "call {function}(")?;
-                write_operands(f, args)?;
+                write_values(f, args)?;
                 f.write_str(")")
             }
             Self::IndirectCall { out, callee, args } => {
-                write_optional_destination(f, *out)?;
+                write_optional_register(f, *out)?;
                 write!(f, "call_indirect {callee}(")?;
-                write_operands(f, args)?;
+                write_values(f, args)?;
                 f.write_str(")")
             }
             Self::Emit { value } => write!(f, "emit {value}"),
@@ -329,11 +321,11 @@ impl Display for MIRInstrKind {
             } => write!(f, "{out} = coerce {operand} via {coercion} to {to_type}"),
             Self::Phi { out, incoming } => {
                 write!(f, "{out} = phi ")?;
-                for (i, (b, v)) in incoming.iter().enumerate() {
-                    if i != 0 {
+                for (index, (block, value)) in incoming.iter().enumerate() {
+                    if index != 0 {
                         f.write_str(", ")?;
                     }
-                    write!(f, "[{b}: {v}]")?;
+                    write!(f, "[{block}: {value}]")?;
                 }
                 Ok(())
             }
@@ -364,8 +356,8 @@ impl Display for MIRInstrKind {
                 default,
             } => {
                 write!(f, "switch {value} [")?;
-                for (i, (case, target)) in cases.iter().enumerate() {
-                    if i != 0 {
+                for (index, (case, target)) in cases.iter().enumerate() {
+                    if index != 0 {
                         f.write_str(", ")?;
                     }
                     write!(f, "{case} => {target}")?;
@@ -389,26 +381,28 @@ fn aggregate_name(kind: MIRAggregateKind) -> &'static str {
         MIRAggregateKind::Struct => "struct",
     }
 }
-fn write_fields(f: &mut Formatter<'_>, fields: &[(usize, MIROperand)]) -> fmt::Result {
+fn write_fields(f: &mut Formatter<'_>, fields: &[(usize, MIRValue)]) -> fmt::Result {
     f.write_str("{")?;
-    for (i, (index, value)) in fields.iter().enumerate() {
-        if i != 0 {
+    for (index, (field, value)) in fields.iter().enumerate() {
+        if index != 0 {
             f.write_str(", ")?;
         }
-        write!(f, "{index}: {value}")?;
+        write!(f, "{field}: {value}")?;
     }
     f.write_str("}")
 }
-fn write_operands(f: &mut Formatter<'_>, values: &[MIROperand]) -> fmt::Result {
-    for (i, value) in values.iter().enumerate() {
-        if i != 0 {
+
+fn write_values(f: &mut Formatter<'_>, values: &[MIRValue]) -> fmt::Result {
+    for (index, value) in values.iter().enumerate() {
+        if index != 0 {
             f.write_str(", ")?;
         }
         Display::fmt(value, f)?;
     }
     Ok(())
 }
-fn write_optional_destination(f: &mut Formatter<'_>, out: Option<MIRDestination>) -> fmt::Result {
+
+fn write_optional_register(f: &mut Formatter<'_>, out: Option<MIRRegister>) -> fmt::Result {
     if let Some(out) = out {
         write!(f, "{out} = ")?;
     }
@@ -441,12 +435,29 @@ impl Display for MIRFnSignature {
     }
 }
 
+impl Display for MIRGlobalInitializer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Scalar(value) => Display::fmt(value, f),
+            Self::Bytes(value) => write!(f, "bytes {value:?}"),
+        }
+    }
+}
+
 impl Display for MIRGlobalVariable {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "global {} {}: {} [{:?}]",
-            self.id, self.name, self.ty, self.linkage
+            "global {} {}: {} [{:?}, {}]",
+            self.id,
+            self.name,
+            self.ty,
+            self.linkage,
+            if self.is_mutable {
+                "mutable"
+            } else {
+                "readonly"
+            }
         )?;
         if self.is_definition {
             f.write_str(" = ")?;
