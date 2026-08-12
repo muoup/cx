@@ -6,8 +6,9 @@ pub mod op;
 pub mod ty;
 
 pub use expr::{
-    MIRAggregateKind, MIRBasicBlock, MIRBasicBlockID, MIRConstant, MIRInstr, MIRInstrKind,
-    MIRParameterID, MIRPlace, MIRPlaceID, MIRRegister, MIRSuccessors, MIRValue,
+    MIRAggregateKind, MIRAggregateOp, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget, MIRConstant,
+    MIRInstr, MIRInstrKind, MIRParameterID, MIRPlace, MIRPlaceAggregateOp, MIRPlaceID, MIRRegister,
+    MIRValue, MIRValueAggregateOp,
 };
 pub use global::{
     MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRGlobalID,

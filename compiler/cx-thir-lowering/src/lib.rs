@@ -10,8 +10,9 @@ pub use builder::MIRBuilder;
 /// Lowers target-independent THIR into semantic MIR.
 ///
 /// This pass deliberately does not classify ABI values, calculate target
-/// layouts, or compute liveness. THIR lifetime markers and resolved cleanup
-/// expressions are preserved as explicit MIR instructions instead.
+/// layouts, or compute liveness. Resolved cleanup expressions and semantic
+/// ownership effects such as initialization, moves, and leaks are preserved in
+/// MIR, while lexical lifetime-end markers lower to no operation.
 pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
     let mut builder = MIRBuilder::new(thir);
     lowering::lower_unit(&mut builder, thir)?;
@@ -170,6 +171,67 @@ mod tests {
             mir.functions[0].blocks[0].instrs[0].kind,
             MIRInstrKind::Return {
                 value: Some(MIRValue::Place(MIRPlace::Parameter(id)))
+            } if id == MIRParameterID::new(0)
+        ));
+    }
+
+    #[test]
+    fn region_move_stays_attached_to_its_consumer() {
+        let int_type = THIRType::from(THIRTypeKind::Integer {
+            _type: THIRIntType::I32,
+            signed: true,
+        });
+        let local_id = THIRLocalID(0);
+        let name = CXIdent::from("value");
+        let source = expression(
+            THIRExpressionKind::Variable {
+                name: name.clone(),
+                local_id: Some(local_id),
+                location: SymbolValueOrigin::Local,
+            },
+            int_type.clone(),
+        );
+        let moved = expression(
+            THIRExpressionKind::RegionMove {
+                source: Box::new(source),
+            },
+            int_type.clone(),
+        );
+        let body = expression(
+            THIRExpressionKind::Return {
+                postcondition: None,
+                value: Some(Box::new(moved)),
+                cleanups: Vec::new(),
+            },
+            THIRType::unit(),
+        );
+        let prototype = THIRFnPrototype::new(
+            "inline_move",
+            CXLinkageMode::Standard,
+            THIRFnSignature {
+                return_type: int_type.clone(),
+                params: vec![THIRParameter {
+                    name: Some(name),
+                    local_id: Some(local_id),
+                    _type: int_type,
+                }],
+                ..THIRFnSignature::default()
+            },
+        );
+        let unit = THIRUnit {
+            source_namespace: EnvironmentNamespace::root(),
+            functions: vec![THIRFunction { prototype, body }],
+            global_variables: Vec::new(),
+            registry: THIRDecomposedRegistry::new(Default::default(), HashMap::new()),
+        };
+
+        let mir = generate_mir(&unit).unwrap_or_else(|error| panic!("{}", error.message()));
+        mir.validate().unwrap();
+        assert!(mir.functions[0].places.is_empty());
+        assert!(matches!(
+            mir.functions[0].blocks[0].instrs[0].kind,
+            MIRInstrKind::Return {
+                value: Some(MIRValue::Move(MIRPlace::Parameter(id)))
             } if id == MIRParameterID::new(0)
         ));
     }

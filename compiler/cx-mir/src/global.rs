@@ -169,6 +169,20 @@ impl MIRFunction {
         id
     }
 
+    pub fn add_block_param(
+        &mut self,
+        block: MIRBasicBlockID,
+        ty: MIRType,
+        debug_name: Option<CXIdent>,
+    ) -> Option<MIRRegister> {
+        if self.block(block).is_none() {
+            return None;
+        }
+        let register = self.add_register(ty, debug_name);
+        self.block_mut(block)?.params.push(register);
+        Some(register)
+    }
+
     pub fn add_block(&mut self) -> MIRBasicBlockID {
         let id = MIRBasicBlockID::new(self.blocks.len());
         self.blocks.push(MIRBasicBlock::new(id));

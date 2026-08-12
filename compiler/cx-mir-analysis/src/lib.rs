@@ -9,10 +9,7 @@ use std::{
     fmt::{self, Display, Formatter},
 };
 
-use cx_mir::{
-    MIRBasicBlockID, MIRFunction, MIRFunctionID, MIRInstrKind, MIRPlace, MIRUnit,
-    MIRValidationError, MIRValue,
-};
+use cx_mir::{MIRBasicBlockID, MIRFunction, MIRFunctionID, MIRPlace, MIRUnit, MIRValidationError};
 
 /// Controls optional checks performed before the independent dataflow analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,38 +121,20 @@ fn analyze_function(function: &MIRFunction) -> MIRFunctionAnalysis {
     let mut block_uses = Vec::with_capacity(block_count);
     let mut block_defs = Vec::with_capacity(block_count);
     let mut successors = Vec::with_capacity(block_count);
-    let mut phi_edge_uses = vec![BTreeMap::<usize, BTreeSet<MIRPlace>>::new(); block_count];
 
     for block in &function.blocks {
         let mut uses = BTreeSet::new();
         let mut defs = BTreeSet::new();
 
         for instruction in &block.instrs {
-            if !matches!(&instruction.kind, MIRInstrKind::Phi { .. }) {
-                instruction.for_each_referenced_place(|place| {
-                    if !defs.contains(&place) {
-                        uses.insert(place);
-                    }
-                });
-            }
+            instruction.for_each_referenced_place(|place| {
+                if !defs.contains(&place) {
+                    uses.insert(place);
+                }
+            });
             instruction.for_each_defined_place(|place| {
                 defs.insert(place);
             });
-        }
-
-        for instruction in &block.instrs {
-            if let MIRInstrKind::Phi { incoming, .. } = &instruction.kind {
-                for (predecessor, operand) in incoming {
-                    if predecessor.index() < block_count {
-                        if let MIRValue::Place(place) = operand {
-                            phi_edge_uses[block.id.index()]
-                                .entry(predecessor.index())
-                                .or_default()
-                                .insert(*place);
-                        }
-                    }
-                }
-            }
         }
 
         let block_successors = block
@@ -182,9 +161,6 @@ fn analyze_function(function: &MIRFunction) -> MIRFunctionAnalysis {
             let mut new_live_out = BTreeSet::new();
             for successor in &successors[block_index] {
                 new_live_out.extend(live_in[*successor].iter().copied());
-                if let Some(phi_uses) = phi_edge_uses[*successor].get(&block_index) {
-                    new_live_out.extend(phi_uses.iter().copied());
-                }
             }
 
             let mut new_live_in = block_uses[block_index].clone();
@@ -218,11 +194,9 @@ fn analyze_function(function: &MIRFunction) -> MIRFunctionAnalysis {
                 instruction.for_each_defined_place(|place| {
                     live.remove(&place);
                 });
-                if !matches!(&instruction.kind, MIRInstrKind::Phi { .. }) {
-                    instruction.for_each_referenced_place(|place| {
-                        live.insert(place);
-                    });
-                }
+                instruction.for_each_referenced_place(|place| {
+                    live.insert(place);
+                });
                 instruction_liveness.push(MIRInstructionLiveness {
                     live_before: live.clone(),
                     live_after,
@@ -286,8 +260,8 @@ mod tests {
 
     use cx_ast::ast::modifiers::CXLinkageMode;
     use cx_mir::{
-        MIRBasicBlockID, MIRConstant, MIRFnPrototype, MIRFnSignature, MIRInstrKind, MIRPlace,
-        MIRType, MIRUnit, MIRValue,
+        MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRFnPrototype, MIRFnSignature, MIRInstrKind,
+        MIRPlace, MIRType, MIRUnit, MIRValue,
     };
     use cx_util::identifier::CXIdent;
 
@@ -322,19 +296,24 @@ mod tests {
             entry,
             MIRInstrKind::Branch {
                 cond: MIRValue::Place(condition),
-                true_target: loop_body,
-                false_target: exit,
+                true_target: loop_body.into(),
+                false_target: exit.into(),
             },
         );
         function.push_instr(
             loop_body,
-            MIRInstrKind::Copy {
+            MIRInstrKind::Assign {
                 dest: result,
-                src: MIRValue::Place(carried),
+                value: MIRValue::Place(carried),
                 ty: MIRType::default(),
             },
         );
-        function.push_instr(loop_body, MIRInstrKind::Jump { target: entry });
+        function.push_instr(
+            loop_body,
+            MIRInstrKind::Jump {
+                target: entry.into(),
+            },
+        );
         function.push_instr(
             exit,
             MIRInstrKind::Return {
@@ -378,35 +357,38 @@ mod tests {
     }
 
     #[test]
-    fn phi_operands_are_live_only_on_their_predecessor_edges() {
+    fn block_arguments_are_live_only_on_their_predecessor_edges() {
         let (mut unit, function_id) = unit_with_function("phi_edges");
         let function = unit.function_mut(function_id).unwrap();
         let left_value = function.add_place(MIRType::default(), None);
         let right_value = function.add_place(MIRType::default(), None);
-        let result = function.add_register(MIRType::default(), None);
+        let result_type = MIRType::default();
         let entry = function.add_block();
         let left = function.add_block();
         let right = function.add_block();
         let merge = function.add_block();
+        let result = function
+            .add_block_param(merge, result_type, None)
+            .expect("merge block exists");
 
         function.push_instr(
             entry,
             MIRInstrKind::Branch {
                 cond: MIRValue::Constant(MIRConstant::Bool(true)),
-                true_target: left,
-                false_target: right,
+                true_target: left.into(),
+                false_target: right.into(),
             },
         );
-        function.push_instr(left, MIRInstrKind::Jump { target: merge });
-        function.push_instr(right, MIRInstrKind::Jump { target: merge });
         function.push_instr(
-            merge,
-            MIRInstrKind::Phi {
-                out: result,
-                incoming: vec![
-                    (left, MIRValue::Place(left_value)),
-                    (right, MIRValue::Place(right_value)),
-                ],
+            left,
+            MIRInstrKind::Jump {
+                target: MIRBlockTarget::with_args(merge, vec![MIRValue::Place(left_value)]),
+            },
+        );
+        function.push_instr(
+            right,
+            MIRInstrKind::Jump {
+                target: MIRBlockTarget::with_args(merge, vec![MIRValue::Place(right_value)]),
             },
         );
         function.push_instr(
@@ -418,9 +400,78 @@ mod tests {
 
         let analysis = analyze(&unit, MIRAnalysisOptions::default()).unwrap();
         let function = analysis.function(function_id).unwrap();
-        assert_eq!(function.block(left).unwrap().live_out, set(&[left_value]));
-        assert_eq!(function.block(right).unwrap().live_out, set(&[right_value]));
+        let left_liveness = function.block(left).unwrap();
+        let right_liveness = function.block(right).unwrap();
+        assert_eq!(left_liveness.live_in, set(&[left_value]));
+        assert!(left_liveness.live_out.is_empty());
+        assert_eq!(
+            left_liveness.instructions[0].live_before,
+            set(&[left_value])
+        );
+        assert!(left_liveness.instructions[0].live_after.is_empty());
+        assert_eq!(right_liveness.live_in, set(&[right_value]));
+        assert!(right_liveness.live_out.is_empty());
+        assert_eq!(
+            right_liveness.instructions[0].live_before,
+            set(&[right_value])
+        );
+        assert!(right_liveness.instructions[0].live_after.is_empty());
         assert!(function.block(merge).unwrap().live_in.is_empty());
+    }
+
+    #[test]
+    fn moved_operand_is_live_before_its_consuming_assignment() {
+        let (mut unit, function_id) = unit_with_function("inline_move");
+        let function = unit.function_mut(function_id).unwrap();
+        let source = function.add_place(MIRType::default(), None);
+        let destination = function.add_place(MIRType::default(), None);
+        let entry = function.add_block();
+        let assignment = MIRInstrKind::Assign {
+            dest: destination,
+            value: MIRValue::Move(source),
+            ty: MIRType::default(),
+        };
+        let mut moved = Vec::new();
+        assignment.for_each_moved_place(|place| moved.push(place));
+        assert_eq!(moved, vec![source]);
+        function.push_instr(entry, assignment);
+        function.push_instr(
+            entry,
+            MIRInstrKind::Return {
+                value: Some(MIRValue::Place(destination)),
+            },
+        );
+
+        let analysis = analyze(&unit, MIRAnalysisOptions::default()).unwrap();
+        let block = analysis
+            .function(function_id)
+            .unwrap()
+            .block(entry)
+            .unwrap();
+        assert_eq!(block.instructions[0].live_before, set(&[source]));
+        assert_eq!(block.instructions[0].live_after, set(&[destination]));
+    }
+
+    #[test]
+    fn initialization_defines_place_availability() {
+        let (mut unit, function_id) = unit_with_function("initialize");
+        let function = unit.function_mut(function_id).unwrap();
+        let place = function.add_place(MIRType::default(), None);
+        let entry = function.add_block();
+        function.push_instr(entry, MIRInstrKind::Initialize { place });
+        function.push_instr(entry, MIRInstrKind::Leak { place });
+        function.push_instr(entry, MIRInstrKind::Return { value: None });
+
+        let analysis = analyze(&unit, MIRAnalysisOptions::default()).unwrap();
+        let block = analysis
+            .function(function_id)
+            .unwrap()
+            .block(entry)
+            .unwrap();
+        assert!(block.instructions[0].live_before.is_empty());
+        assert_eq!(block.instructions[0].live_after, set(&[place]));
+        assert_eq!(block.instructions[1].live_before, set(&[place]));
+        assert!(block.instructions[1].live_after.is_empty());
     }
 
     #[test]
@@ -431,7 +482,7 @@ mod tests {
         function.push_instr(
             entry,
             MIRInstrKind::Jump {
-                target: MIRBasicBlockID::new(99),
+                target: MIRBasicBlockID::new(99).into(),
             },
         );
 

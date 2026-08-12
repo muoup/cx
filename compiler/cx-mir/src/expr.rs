@@ -1,5 +1,3 @@
-use std::slice;
-
 use cx_thir::thir::r#type::{THIRFloatType, THIRIntType};
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 
@@ -62,6 +60,9 @@ pub enum MIRConstant {
 pub enum MIRValue {
     Register(MIRRegister),
     Place(MIRPlace),
+    /// A consuming read from a place. Keeping the move on the operand makes the
+    /// source transition inseparable from the instruction that consumes it.
+    Move(MIRPlace),
     Constant(MIRConstant),
 }
 
@@ -72,9 +73,88 @@ pub enum MIRAggregateKind {
 }
 
 #[derive(Debug, Clone)]
+pub struct MIRBlockTarget {
+    pub block: MIRBasicBlockID,
+    pub args: Vec<MIRValue>,
+}
+
+impl MIRBlockTarget {
+    pub fn new(block: MIRBasicBlockID) -> Self {
+        Self {
+            block,
+            args: Vec::new(),
+        }
+    }
+
+    pub fn with_args(block: MIRBasicBlockID, args: Vec<MIRValue>) -> Self {
+        Self { block, args }
+    }
+}
+
+impl From<MIRBasicBlockID> for MIRBlockTarget {
+    fn from(block: MIRBasicBlockID) -> Self {
+        Self::new(block)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum MIRAggregateOp {
+    Place {
+        out: MIRPlace,
+        op: MIRPlaceAggregateOp,
+    },
+    Value {
+        out: MIRRegister,
+        op: MIRValueAggregateOp,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum MIRPlaceAggregateOp {
+    Dereference {
+        pointer: MIRValue,
+        pointee_type: MIRType,
+    },
+    Field {
+        base: MIRPlace,
+        field: usize,
+        aggregate_type: MIRType,
+    },
+    Index {
+        base: MIRPlace,
+        index: MIRValue,
+        element_type: MIRType,
+    },
+    Variant {
+        base: MIRPlace,
+        variant: usize,
+        sum_type: MIRType,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum MIRValueAggregateOp {
+    Discriminant {
+        value: MIRValue,
+        sum_type: MIRType,
+    },
+    Construct {
+        kind: MIRAggregateKind,
+        ty: MIRType,
+        fields: Vec<(usize, MIRValue)>,
+    },
+    Variant {
+        variant: usize,
+        value: MIRValue,
+        sum_type: MIRType,
+    },
+}
+
+#[derive(Debug, Clone)]
 pub struct MIRBasicBlock {
     pub id: MIRBasicBlockID,
     pub debug_name: Option<CXIdent>,
+    pub params: Vec<MIRRegister>,
     pub instrs: Vec<MIRInstr>,
 }
 
@@ -82,6 +162,7 @@ impl MIRBasicBlock {
     pub fn new(id: MIRBasicBlockID) -> Self {
         Self {
             id,
+            params: Vec::new(),
             debug_name: None,
             instrs: Vec::new(),
         }
@@ -115,12 +196,20 @@ impl MIRInstr {
         self.kind.is_terminator()
     }
 
-    pub fn successors(&self) -> MIRSuccessors<'_> {
+    pub fn successors(&self) -> impl ExactSizeIterator<Item = MIRBasicBlockID> + '_ {
         self.kind.successors()
+    }
+
+    pub fn for_each_target(&self, f: impl FnMut(&MIRBlockTarget)) {
+        self.kind.for_each_target(f);
     }
 
     pub fn for_each_referenced_place(&self, f: impl FnMut(MIRPlace)) {
         self.kind.for_each_referenced_place(f);
+    }
+
+    pub fn for_each_moved_place(&self, f: impl FnMut(MIRPlace)) {
+        self.kind.for_each_moved_place(f);
     }
 
     pub fn for_each_defined_place(&self, f: impl FnMut(MIRPlace)) {
@@ -138,24 +227,22 @@ impl MIRInstr {
 
 #[derive(Debug, Clone)]
 pub enum MIRInstrKind {
-    // Transitional lifetime kernels. Their abstract semantics will move into
-    // the operations that create, consume, drop, or leak places.
-    LifetimeStart(MIRPlace),
-    LifetimeEnd(MIRPlace),
-    Leak(MIRPlace),
+    // Explicit storage effects. Create allocates abstract storage, while
+    // Initialize and Leak describe semantic transitions over that storage.
+    Initialize {
+        place: MIRPlace,
+    },
+    Leak {
+        place: MIRPlace,
+    },
 
     Create {
         out: MIRPlace,
         ty: MIRType,
     },
-    Copy {
+    Assign {
         dest: MIRPlace,
-        src: MIRValue,
-        ty: MIRType,
-    },
-    Move {
-        dest: MIRPlace,
-        src: MIRPlace,
+        value: MIRValue,
         ty: MIRType,
     },
     AddressOf {
@@ -163,61 +250,9 @@ pub enum MIRInstrKind {
         place: MIRPlace,
     },
 
-    // Place-producing projection kernels. They preserve an abstract lvalue;
-    // physical addresses and offsets are selected during MIR -> LMIR lowering.
-    ProjectDeref {
-        out: MIRPlace,
-        pointer: MIRValue,
-        pointee_type: MIRType,
-    },
-    ProjectField {
-        out: MIRPlace,
-        base: MIRPlace,
-        field: usize,
-        aggregate_type: MIRType,
-    },
-    ProjectIndex {
-        out: MIRPlace,
-        base: MIRPlace,
-        index: MIRValue,
-        element_type: MIRType,
-    },
-    Discriminant {
-        out: MIRRegister,
-        value: MIRValue,
-        sum_type: MIRType,
-    },
-    ProjectVariant {
-        out: MIRPlace,
-        base: MIRPlace,
-        variant: usize,
-        sum_type: MIRType,
-    },
-    ConstructAggregate {
-        out: MIRRegister,
-        kind: MIRAggregateKind,
-        ty: MIRType,
-        fields: Vec<(usize, MIRValue)>,
-    },
-    ConstructVariant {
-        out: MIRRegister,
-        variant: usize,
-        value: MIRValue,
-        sum_type: MIRType,
-    },
-    SetVariant {
-        target: MIRPlace,
-        variant: usize,
-        value: MIRValue,
-        sum_type: MIRType,
-    },
+    AggregateOp(MIRAggregateOp),
 
-    DirectCall {
-        out: Option<MIRRegister>,
-        function: MIRFunctionID,
-        args: Vec<MIRValue>,
-    },
-    IndirectCall {
+    Call {
         out: Option<MIRRegister>,
         callee: MIRValue,
         args: Vec<MIRValue>,
@@ -240,10 +275,6 @@ pub enum MIRInstrKind {
         coercion: MIRCoercion,
         to_type: MIRType,
     },
-    Phi {
-        out: MIRRegister,
-        incoming: Vec<(MIRBasicBlockID, MIRValue)>,
-    },
     Assert {
         condition: MIRValue,
         message: Option<String>,
@@ -256,17 +287,23 @@ pub enum MIRInstrKind {
         value: Option<MIRValue>,
     },
     Jump {
-        target: MIRBasicBlockID,
+        target: MIRBlockTarget,
     },
     Branch {
         cond: MIRValue,
-        true_target: MIRBasicBlockID,
-        false_target: MIRBasicBlockID,
+        true_target: MIRBlockTarget,
+        false_target: MIRBlockTarget,
     },
     IntSwitch {
         value: MIRValue,
-        cases: Vec<(MIRConstant, MIRBasicBlockID)>,
-        default: Option<MIRBasicBlockID>,
+        cases: Vec<(MIRConstant, MIRBlockTarget)>,
+        default: Option<MIRBlockTarget>,
+    },
+    VariantSwitch {
+        subject: MIRPlace,
+        sum_type: MIRType,
+        cases: Vec<(usize, MIRBlockTarget)>,
+        default: Option<MIRBlockTarget>,
     },
     Unreachable,
 
@@ -284,59 +321,79 @@ impl MIRInstrKind {
                 | Self::Jump { .. }
                 | Self::Branch { .. }
                 | Self::IntSwitch { .. }
+                | Self::VariantSwitch { .. }
                 | Self::Unreachable
         )
     }
 
-    pub fn successors(&self) -> MIRSuccessors<'_> {
+    pub fn successors(&self) -> impl ExactSizeIterator<Item = MIRBasicBlockID> + '_ {
+        let mut successors = Vec::new();
+        self.for_each_target(|target| successors.push(target.block));
+        successors.into_iter()
+    }
+
+    pub fn for_each_target(&self, mut f: impl FnMut(&MIRBlockTarget)) {
         match self {
-            Self::Jump { target } => MIRSuccessors::One(Some(*target)),
+            Self::Jump { target } => f(target),
             Self::Branch {
                 true_target,
                 false_target,
                 ..
-            } => MIRSuccessors::Two {
-                values: [*true_target, *false_target],
-                index: 0,
-            },
-            Self::IntSwitch { cases, default, .. } => MIRSuccessors::Switch {
-                cases: cases.iter(),
-                default: *default,
-            },
-            _ => MIRSuccessors::Empty,
-        }
-    }
-
-    pub fn for_each_referenced_place(&self, mut f: impl FnMut(MIRPlace)) {
-        self.for_each_value(|value| {
-            if let MIRValue::Place(place) = value {
-                f(*place);
+            } => {
+                f(true_target);
+                f(false_target);
             }
-        });
-
-        match self {
-            Self::LifetimeStart(place)
-            | Self::LifetimeEnd(place)
-            | Self::Leak(place)
-            | Self::AddressOf { place, .. } => f(*place),
-            Self::Move { src, .. } => f(*src),
-            Self::ProjectField { base, .. }
-            | Self::ProjectIndex { base, .. }
-            | Self::ProjectVariant { base, .. } => f(*base),
+            Self::IntSwitch { cases, default, .. } => {
+                for (_, target) in cases {
+                    f(target);
+                }
+                if let Some(default) = default {
+                    f(default);
+                }
+            }
+            Self::VariantSwitch { cases, default, .. } => {
+                for (_, target) in cases {
+                    f(target);
+                }
+                if let Some(default) = default {
+                    f(default);
+                }
+            }
             _ => {}
         }
     }
 
+    pub fn for_each_referenced_place(&self, mut f: impl FnMut(MIRPlace)) {
+        self.for_each_value(|value| match value {
+            MIRValue::Place(place) | MIRValue::Move(place) => f(*place),
+            _ => {}
+        });
+
+        match self {
+            Self::Leak { place }
+            | Self::AddressOf { place, .. }
+            | Self::VariantSwitch { subject: place, .. } => f(*place),
+            Self::AggregateOp(op) => op.for_each_referenced_place(f),
+            _ => {}
+        }
+    }
+
+    pub fn for_each_moved_place(&self, mut f: impl FnMut(MIRPlace)) {
+        self.for_each_value(|value| {
+            if let MIRValue::Move(place) = value {
+                f(*place);
+            }
+        });
+    }
+
     pub fn for_each_defined_place(&self, mut f: impl FnMut(MIRPlace)) {
         match self {
-            Self::Create { out, .. }
-            | Self::Copy { dest: out, .. }
-            | Self::Move { dest: out, .. }
-            | Self::ProjectDeref { out, .. }
-            | Self::ProjectField { out, .. }
-            | Self::ProjectIndex { out, .. }
-            | Self::ProjectVariant { out, .. }
-            | Self::SetVariant { target: out, .. } => f(*out),
+            Self::Initialize { place: out }
+            | Self::Create { out, .. }
+            | Self::Assign { dest: out, .. } => {
+                f(*out);
+            }
+            Self::AggregateOp(MIRAggregateOp::Place { out, .. }) => f(*out),
             _ => {}
         }
     }
@@ -352,14 +409,11 @@ impl MIRInstrKind {
     pub fn for_each_defined_register(&self, mut f: impl FnMut(MIRRegister)) {
         match self {
             Self::AddressOf { out, .. }
-            | Self::Discriminant { out, .. }
-            | Self::ConstructAggregate { out, .. }
-            | Self::ConstructVariant { out, .. }
             | Self::BinOp { out, .. }
             | Self::UnOp { out, .. }
-            | Self::Coerce { out, .. }
-            | Self::Phi { out, .. } => f(*out),
-            Self::DirectCall { out, .. } | Self::IndirectCall { out, .. } => {
+            | Self::Coerce { out, .. } => f(*out),
+            Self::AggregateOp(MIRAggregateOp::Value { out, .. }) => f(*out),
+            Self::Call { out, .. } => {
                 if let Some(out) = out {
                     f(*out);
                 }
@@ -369,9 +423,6 @@ impl MIRInstrKind {
     }
 
     pub fn for_each_referenced_function(&self, mut f: impl FnMut(MIRFunctionID)) {
-        if let Self::DirectCall { function, .. } = self {
-            f(*function);
-        }
         self.for_each_value(|value| {
             if let MIRValue::Constant(MIRConstant::Function(function)) = value {
                 f(*function);
@@ -379,40 +430,16 @@ impl MIRInstrKind {
         });
     }
 
-    pub fn for_each_phi_predecessor(&self, mut f: impl FnMut(MIRBasicBlockID)) {
-        if let Self::Phi { incoming, .. } = self {
-            for (block, _) in incoming {
-                f(*block);
-            }
-        }
-    }
-
     fn for_each_value(&self, mut f: impl FnMut(&MIRValue)) {
         match self {
-            Self::Copy { src, .. }
-            | Self::ProjectDeref { pointer: src, .. }
-            | Self::Discriminant { value: src, .. }
-            | Self::ConstructVariant { value: src, .. }
-            | Self::SetVariant { value: src, .. }
+            Self::Assign { value: src, .. }
             | Self::Emit { value: src }
             | Self::UnOp { operand: src, .. }
             | Self::Coerce { operand: src, .. }
             | Self::Assert { condition: src, .. }
-            | Self::Assume { condition: src }
-            | Self::Branch { cond: src, .. }
-            | Self::IntSwitch { value: src, .. } => f(src),
-            Self::ProjectIndex { index, .. } => f(index),
-            Self::ConstructAggregate { fields, .. } => {
-                for (_, value) in fields {
-                    f(value);
-                }
-            }
-            Self::DirectCall { args, .. } => {
-                for argument in args {
-                    f(argument);
-                }
-            }
-            Self::IndirectCall { callee, args, .. } => {
+            | Self::Assume { condition: src } => f(src),
+            Self::AggregateOp(op) => op.for_each_value(f),
+            Self::Call { callee, args, .. } => {
                 f(callee);
                 for argument in args {
                     f(argument);
@@ -422,13 +449,90 @@ impl MIRInstrKind {
                 f(lhs);
                 f(rhs);
             }
-            Self::Phi { incoming, .. } => {
-                for (_, value) in incoming {
+            Self::Return { value } => {
+                if let Some(value) = value {
                     f(value);
                 }
             }
-            Self::Return { value } => {
-                if let Some(value) = value {
+            Self::Branch {
+                cond,
+                true_target,
+                false_target,
+            } => {
+                f(cond);
+                true_target.for_each_value(&mut f);
+                false_target.for_each_value(&mut f);
+            }
+            Self::IntSwitch {
+                value,
+                cases,
+                default,
+            } => {
+                f(value);
+                for (_, target) in cases {
+                    target.for_each_value(&mut f);
+                }
+                if let Some(default) = default {
+                    default.for_each_value(&mut f);
+                }
+            }
+            Self::VariantSwitch { cases, default, .. } => {
+                for (_, target) in cases {
+                    target.for_each_value(&mut f);
+                }
+                if let Some(default) = default {
+                    default.for_each_value(&mut f);
+                }
+            }
+            Self::Jump { target } => target.for_each_value(f),
+            _ => {}
+        }
+    }
+}
+
+impl MIRBlockTarget {
+    fn for_each_value(&self, mut f: impl FnMut(&MIRValue)) {
+        for argument in &self.args {
+            f(argument);
+        }
+    }
+}
+
+impl MIRAggregateOp {
+    fn for_each_referenced_place(&self, mut f: impl FnMut(MIRPlace)) {
+        match self {
+            Self::Place {
+                op:
+                    MIRPlaceAggregateOp::Field { base, .. }
+                    | MIRPlaceAggregateOp::Index { base, .. }
+                    | MIRPlaceAggregateOp::Variant { base, .. },
+                ..
+            } => f(*base),
+            _ => {}
+        }
+    }
+
+    fn for_each_value(&self, mut f: impl FnMut(&MIRValue)) {
+        match self {
+            Self::Place {
+                op: MIRPlaceAggregateOp::Dereference { pointer, .. },
+                ..
+            } => f(pointer),
+            Self::Place {
+                op: MIRPlaceAggregateOp::Index { index, .. },
+                ..
+            } => f(index),
+            Self::Value {
+                op:
+                    MIRValueAggregateOp::Discriminant { value, .. }
+                    | MIRValueAggregateOp::Variant { value, .. },
+                ..
+            } => f(value),
+            Self::Value {
+                op: MIRValueAggregateOp::Construct { fields, .. },
+                ..
+            } => {
+                for (_, value) in fields {
                     f(value);
                 }
             }
@@ -436,48 +540,3 @@ impl MIRInstrKind {
         }
     }
 }
-
-pub enum MIRSuccessors<'a> {
-    Empty,
-    One(Option<MIRBasicBlockID>),
-    Two {
-        values: [MIRBasicBlockID; 2],
-        index: usize,
-    },
-    Switch {
-        cases: slice::Iter<'a, (MIRConstant, MIRBasicBlockID)>,
-        default: Option<MIRBasicBlockID>,
-    },
-}
-
-impl Iterator for MIRSuccessors<'_> {
-    type Item = MIRBasicBlockID;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::Empty => None,
-            Self::One(value) => value.take(),
-            Self::Two { values, index } => {
-                let value = values.get(*index).copied();
-                *index += usize::from(value.is_some());
-                value
-            }
-            Self::Switch { cases, default } => cases
-                .next()
-                .map(|(_, target)| *target)
-                .or_else(|| default.take()),
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let remaining = match self {
-            Self::Empty => 0,
-            Self::One(value) => usize::from(value.is_some()),
-            Self::Two { index, .. } => 2usize.saturating_sub(*index),
-            Self::Switch { cases, default } => cases.len() + usize::from(default.is_some()),
-        };
-        (remaining, Some(remaining))
-    }
-}
-
-impl ExactSizeIterator for MIRSuccessors<'_> {}

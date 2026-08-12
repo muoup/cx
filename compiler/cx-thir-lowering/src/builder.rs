@@ -28,9 +28,8 @@ pub(crate) struct LoopContext {
 #[derive(Debug)]
 pub(crate) struct YieldContext {
     pub target: MIRBasicBlockID,
-    pub result_type: MIRType,
-    pub target_scope: Option<usize>,
-    pub incoming: Vec<(MIRBasicBlockID, MIRValue)>,
+    pub result: MIRRegister,
+    pub has_incoming: bool,
 }
 
 #[derive(Debug)]
@@ -293,6 +292,17 @@ impl<'thir> MIRBuilder<'thir> {
         self.function_mut().add_register(ty, debug_name)
     }
 
+    pub(crate) fn add_block_param(
+        &mut self,
+        block: MIRBasicBlockID,
+        ty: MIRType,
+        debug_name: Option<CXIdent>,
+    ) -> MIRRegister {
+        self.function_mut()
+            .add_block_param(block, ty, debug_name)
+            .expect("selected block does not exist")
+    }
+
     pub(crate) fn declare_place(&mut self, ty: MIRType, debug_name: Option<CXIdent>) -> MIRPlace {
         self.function_mut().add_place(ty, debug_name)
     }
@@ -422,11 +432,11 @@ impl<'thir> MIRBuilder<'thir> {
     }
 
     pub(crate) fn push_yield(&mut self, target: MIRBasicBlockID, result_type: MIRType) {
+        let result = self.add_block_param(target, result_type, None);
         self.context_mut().yields.push(YieldContext {
             target,
-            result_type,
-            target_scope: None,
-            incoming: Vec::new(),
+            result,
+            has_incoming: false,
         });
     }
 
@@ -434,18 +444,12 @@ impl<'thir> MIRBuilder<'thir> {
         self.context().yields.last().map(|context| context.target)
     }
 
-    pub(crate) fn record_yield(&mut self, target_scope: usize, value: MIRValue) {
-        let predecessor = self.current_block();
-        let context = self
-            .context_mut()
+    pub(crate) fn record_yield(&mut self) {
+        self.context_mut()
             .yields
             .last_mut()
-            .expect("yield lowered outside an active yield context");
-        match context.target_scope {
-            Some(existing) => debug_assert_eq!(existing, target_scope),
-            None => context.target_scope = Some(target_scope),
-        }
-        context.incoming.push((predecessor, value));
+            .expect("yield lowered outside an active yield context")
+            .has_incoming = true;
     }
 
     pub(crate) fn pop_yield(&mut self) -> YieldContext {
