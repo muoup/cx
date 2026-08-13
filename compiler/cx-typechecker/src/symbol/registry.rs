@@ -2,19 +2,19 @@ use std::collections::HashMap;
 
 use cx_ast::{ast::expression::CXExpression, registry::GlobalSymbolRegistry};
 use cx_log::{CXRawResult, CXResult};
+use cx_target::ArchitectureConfig;
 use cx_thir::{
     EnvironmentNamespace,
     intrinsic_types::INTRINSIC_TYPES,
+    registry::THIRDecomposedRegistry,
+    symbol::MIRSymbol,
     thir::{
         data::THIRFnPrototype,
         expression::{THIRExpression, THIRPureExpression},
         r#type::{THIRType, THIRTypeID, THIRTypeKind},
     },
-    registry::THIRDecomposedRegistry,
-    symbol::MIRSymbol,
     type_context::THIRTypeContext,
 };
-use cx_target::ArchitectureConfig;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName, scoped_map::ScopedMap};
 
 /// Module-local symbol definitions
@@ -81,17 +81,33 @@ impl<'a> MIRSymbolRegistry<'a> {
                 },
                 _ => ty_kind.clone(),
             };
-            let ty: THIRType = ty_kind.into();
+            let name = QualifiedName::new_raw(CXIdent::new(*name));
+            let mut ty: THIRType = ty_kind.into();
+            ty.lookup_identifier = Some(name.clone());
             let id = registry.generate_type_id(ty);
 
-            registry.insert_type_symbol(QualifiedName::new_raw(CXIdent::new(*name)), id);
+            registry.insert_type_symbol(name, id);
         }
 
         registry
     }
 
     pub fn decompose(self) -> THIRDecomposedRegistry {
-        THIRDecomposedRegistry::new(self.architecture, self.typeid_defs)
+        let intrinsic_types = INTRINSIC_TYPES
+            .iter()
+            .filter_map(|(name, _)| {
+                self.global_cache
+                    .get(&QualifiedName::new_raw(CXIdent::new(*name)))
+                    .and_then(MIRSymbol::as_type_id)
+                    .map(|id| ((*name).to_owned(), id))
+            })
+            .collect();
+        THIRDecomposedRegistry::new(
+            self.architecture,
+            self.typeid_defs,
+            intrinsic_types,
+            self.next_typeid,
+        )
     }
 
     pub fn get_global_registry(&self) -> &GlobalSymbolRegistry {
@@ -247,16 +263,14 @@ impl<'a> MIRSymbolRegistry<'a> {
     }
 
     pub fn pointer_to(&mut self, ty: THIRType) -> THIRType {
-        let id = self.generate_type_id(ty);
-
-        THIRTypeKind::PointerTo { inner_type: id }.into()
+        let inner_type = self.generate_type_id(ty);
+        THIRTypeKind::PointerTo { inner_type }.into()
     }
 
     pub fn mem_ref_to(&mut self, ty: THIRType) -> THIRType {
-        let id = self.generate_type_id(ty);
-
+        let inner_type = self.generate_type_id(ty);
         THIRTypeKind::MemoryReference {
-            inner_type: id,
+            inner_type,
             bitfield: None,
         }
         .into()

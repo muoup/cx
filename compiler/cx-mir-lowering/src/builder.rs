@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::mir_lowering::types::convert_cx_prototype;
 use crate::{LMIRResult, LMIRUnit};
-use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
+use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRTypeID, LMIRTypeKind};
 use cx_lmir::*;
 use cx_log::CXResult;
 use cx_target::ArchitectureConfig;
@@ -39,7 +39,7 @@ pub struct LMIRGotoContext {
 #[derive(Debug)]
 pub struct LMIRYieldContext {
     pub target_block: CXIdent,
-    pub result_type: LMIRType,
+    pub result_type: LMIRTypeID,
     pub yields: Vec<(LMIRValue, CXIdent)>,
 }
 
@@ -201,7 +201,7 @@ impl LMIRBuilder {
             .find_map(|ctx| ctx.break_block.as_ref())
     }
 
-    pub fn push_yield_target(&mut self, target_block: CXIdent, result_type: LMIRType) {
+    pub fn push_yield_target(&mut self, target_block: CXIdent, result_type: LMIRTypeID) {
         self.yield_stack.push(LMIRYieldContext {
             target_block,
             result_type,
@@ -310,7 +310,7 @@ impl LMIRBuilder {
     pub fn add_new_instruction(
         &mut self,
         instruction: LMIRInstructionKind,
-        value_type: LMIRType,
+        value_type: LMIRTypeID,
         result_expected: bool,
     ) -> CXResult<LMIRValue> {
         if self.current_block_closed() {
@@ -344,7 +344,7 @@ impl LMIRBuilder {
     pub fn add_instruction_translated(
         &mut self,
         instruction: LMIRInstructionKind,
-        value_type: LMIRType,
+        value_type: LMIRTypeID,
         result: Option<CXIdent>,
     ) -> CXResult<LMIRValue> {
         if self.current_block_closed() {
@@ -384,9 +384,9 @@ impl LMIRBuilder {
         }
     }
 
-    pub fn get_value_type(&self, value: &LMIRValue) -> LMIRType {
+    pub fn get_value_type(&self, value: &LMIRValue) -> LMIRTypeID {
         match value {
-            LMIRValue::NULL => LMIRType::unit(),
+            LMIRValue::NULL => LMIRTypeID::unit(),
 
             LMIRValue::Register { _type, .. } => _type.clone(),
 
@@ -409,17 +409,17 @@ impl LMIRBuilder {
 
                 match &global._type {
                     LMIRGlobalType::StringLiteral(..) => {
-                        LMIRType::default_pointer(self.architecture())
+                        LMIRTypeID::default_pointer(self.architecture())
                     }
                     LMIRGlobalType::Variable { _type, .. } => _type.clone(),
                 }
             }
 
-            LMIRValue::FunctionRef(_) => LMIRType::default_pointer(self.architecture()),
+            LMIRValue::FunctionRef(_) => LMIRTypeID::default_pointer(self.architecture()),
         }
     }
 
-    pub fn match_int_const(&self, value: i32, _type: &LMIRType) -> LMIRValue {
+    pub fn match_int_const(&self, value: i32, _type: &LMIRTypeID) -> LMIRValue {
         match &_type.kind {
             LMIRTypeKind::Integer(_type) => self.int_const(value, *_type),
 
@@ -432,11 +432,11 @@ impl LMIRBuilder {
     pub fn int_const(&self, value: i32, _type: LMIRIntegerType) -> LMIRValue {
         LMIRValue::IntImmediate {
             val: value as i64,
-            _type: LMIRType::with_implicit_abi(self.architecture(), LMIRTypeKind::Integer(_type)),
+            _type: LMIRTypeID::with_implicit_abi(self.architecture(), LMIRTypeKind::Integer(_type)),
         }
     }
 
-    pub fn match_float_const(&self, value: f64, _type: &LMIRType) -> LMIRValue {
+    pub fn match_float_const(&self, value: f64, _type: &LMIRTypeID) -> LMIRValue {
         match &_type.kind {
             LMIRTypeKind::Float(_type) => self.float_const(value, *_type),
 
@@ -447,7 +447,7 @@ impl LMIRBuilder {
     pub fn float_const(&self, value: f64, _type: LMIRFloatType) -> LMIRValue {
         LMIRValue::FloatImmediate {
             val: FloatWrapper::from(value),
-            _type: LMIRType::with_implicit_abi(self.architecture(), LMIRTypeKind::Float(_type)),
+            _type: LMIRTypeID::with_implicit_abi(self.architecture(), LMIRTypeKind::Float(_type)),
         }
     }
 

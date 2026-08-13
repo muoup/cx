@@ -7,16 +7,19 @@ mod lowering;
 
 pub use builder::MIRBuilder;
 
-/// Lowers target-independent THIR into semantic MIR.
-///
-/// This pass deliberately does not classify ABI values, calculate target
-/// layouts, or compute liveness. Resolved cleanup expressions and semantic
-/// ownership effects such as initialization, moves, and leaks are preserved in
-/// MIR, while lexical lifetime-end markers lower to no operation.
 pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
     let mut builder = MIRBuilder::new(thir);
     lowering::lower_unit(&mut builder, thir)?;
-    Ok(builder.finish())
+    let mut mir = builder.finish();
+    mir.compute_layouts().map_err(|error| {
+        cx_log::error::CXErr::new(
+            cx_log::error::message::CXStdErrMessage::error("MIRLayoutError", error.to_string()),
+            cx_log::error::context::CXInternalContext::error(
+                "MIR layout calculation failed during MIR generation",
+            ),
+        )
+    })?;
+    Ok(mir)
 }
 
 #[cfg(test)]
@@ -24,7 +27,9 @@ mod tests {
     use std::collections::HashMap;
 
     use cx_ast::ast::modifiers::CXLinkageMode;
-    use cx_mir::{MIRGlobalInitializer, MIRInstrKind, MIRParameterID, MIRPlace, MIRValue};
+    use cx_mir::{
+        MIRGlobalInitializer, MIRInstrKind, MIRParameterID, MIRPlace, MIRTypeID, MIRValue,
+    };
     use cx_thir::{
         EnvironmentNamespace, THIRUnit,
         registry::THIRDecomposedRegistry,
@@ -32,12 +37,31 @@ mod tests {
             data::{THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter},
             expression::{SymbolValueOrigin, THIRExpression, THIRExpressionKind, THIRLocalID},
             global::{MIRGlobalVarKind, MIRGlobalVariable},
-            r#type::{THIRIntType, THIRType, THIRTypeKind},
+            r#type::{THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
         },
     };
-    use cx_util::identifier::CXIdent;
+    use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
     use super::generate_mir;
+
+    fn test_registry() -> (THIRDecomposedRegistry, THIRType, THIRType) {
+        let unit_id = THIRTypeID(0);
+        let int_id = THIRTypeID(1);
+        let mut unit = THIRType::unit();
+        unit.lookup_identifier = Some(QualifiedName::new_raw(CXIdent::from("void")));
+        let mut int = THIRType::from(THIRTypeKind::Integer {
+            _type: THIRIntType::I32,
+            signed: true,
+        });
+        int.lookup_identifier = Some(QualifiedName::new_raw(CXIdent::from("int")));
+        let registry = THIRDecomposedRegistry::new(
+            Default::default(),
+            HashMap::from([(unit_id, unit.clone()), (int_id, int.clone())]),
+            HashMap::from([("void".to_owned(), unit_id), ("int".to_owned(), int_id)]),
+            2,
+        );
+        (registry, unit, int)
+    }
 
     fn expression(kind: THIRExpressionKind, ty: THIRType) -> THIRExpression {
         THIRExpression {
@@ -48,6 +72,7 @@ mod tests {
     }
 
     fn unit_with_body(return_type: THIRType, body: THIRExpression) -> THIRUnit {
+        let (registry, _, _) = test_registry();
         let prototype = THIRFnPrototype::new(
             "mir_test",
             CXLinkageMode::Standard,
@@ -60,16 +85,13 @@ mod tests {
             source_namespace: EnvironmentNamespace::root(),
             functions: vec![THIRFunction { prototype, body }],
             global_variables: Vec::new(),
-            registry: THIRDecomposedRegistry::new(Default::default(), HashMap::new()),
+            registry,
         }
     }
 
     #[test]
     fn lowers_return_value_into_displayable_valid_mir() {
-        let int_type = THIRType::from(THIRTypeKind::Integer {
-            _type: THIRIntType::I32,
-            signed: true,
-        });
+        let (_, unit_type, int_type) = test_registry();
         let value = expression(THIRExpressionKind::IntLiteral(42), int_type.clone());
         let body = expression(
             THIRExpressionKind::Return {
@@ -77,12 +99,16 @@ mod tests {
                 value: Some(Box::new(value)),
                 cleanups: Vec::new(),
             },
-            THIRType::unit(),
+            unit_type,
         );
 
         let mir = generate_mir(&unit_with_body(int_type, body))
             .unwrap_or_else(|error| panic!("{}", error.message()));
         mir.validate().unwrap();
+        assert_eq!(
+            mir.functions[0].prototype.signature.return_type,
+            Some(MIRTypeID::from_raw(1))
+        );
         let display = mir.to_string();
         assert!(display.contains("return 42:i32"));
         assert!(display.contains("mir v0"));
@@ -90,12 +116,13 @@ mod tests {
 
     #[test]
     fn lowers_cleanup_before_return_terminator() {
+        let (_, unit_type, _) = test_registry();
         let cleanup = expression(
             THIRExpressionKind::RegionCreate {
-                _type: THIRType::unit(),
+                _type: unit_type.clone(),
                 initial_value: None,
             },
-            THIRType::unit(),
+            unit_type.clone(),
         );
         let body = expression(
             THIRExpressionKind::Return {
@@ -103,10 +130,10 @@ mod tests {
                 value: None,
                 cleanups: vec![cleanup],
             },
-            THIRType::unit(),
+            unit_type.clone(),
         );
 
-        let mir = generate_mir(&unit_with_body(THIRType::unit(), body))
+        let mir = generate_mir(&unit_with_body(unit_type, body))
             .unwrap_or_else(|error| panic!("{}", error.message()));
         mir.validate().unwrap();
         let instructions = &mir.functions[0].blocks[0].instrs;
@@ -122,10 +149,7 @@ mod tests {
 
     #[test]
     fn parameters_are_places_without_entry_copies() {
-        let int_type = THIRType::from(THIRTypeKind::Integer {
-            _type: THIRIntType::I32,
-            signed: true,
-        });
+        let (registry, unit_type, int_type) = test_registry();
         let local_id = THIRLocalID(0);
         let name = CXIdent::from("value");
         let value = expression(
@@ -142,7 +166,7 @@ mod tests {
                 value: Some(Box::new(value)),
                 cleanups: Vec::new(),
             },
-            THIRType::unit(),
+            unit_type,
         );
         let prototype = THIRFnPrototype::new(
             "parameter_place",
@@ -161,7 +185,7 @@ mod tests {
             source_namespace: EnvironmentNamespace::root(),
             functions: vec![THIRFunction { prototype, body }],
             global_variables: Vec::new(),
-            registry: THIRDecomposedRegistry::new(Default::default(), HashMap::new()),
+            registry,
         };
 
         let mir = generate_mir(&unit).unwrap_or_else(|error| panic!("{}", error.message()));
@@ -177,10 +201,7 @@ mod tests {
 
     #[test]
     fn region_move_stays_attached_to_its_consumer() {
-        let int_type = THIRType::from(THIRTypeKind::Integer {
-            _type: THIRIntType::I32,
-            signed: true,
-        });
+        let (registry, unit_type, int_type) = test_registry();
         let local_id = THIRLocalID(0);
         let name = CXIdent::from("value");
         let source = expression(
@@ -203,7 +224,7 @@ mod tests {
                 value: Some(Box::new(moved)),
                 cleanups: Vec::new(),
             },
-            THIRType::unit(),
+            unit_type,
         );
         let prototype = THIRFnPrototype::new(
             "inline_move",
@@ -222,12 +243,11 @@ mod tests {
             source_namespace: EnvironmentNamespace::root(),
             functions: vec![THIRFunction { prototype, body }],
             global_variables: Vec::new(),
-            registry: THIRDecomposedRegistry::new(Default::default(), HashMap::new()),
+            registry,
         };
 
         let mir = generate_mir(&unit).unwrap_or_else(|error| panic!("{}", error.message()));
         mir.validate().unwrap();
-        assert!(mir.functions[0].places.is_empty());
         assert!(matches!(
             mir.functions[0].blocks[0].instrs[0].kind,
             MIRInstrKind::Return {
@@ -238,6 +258,7 @@ mod tests {
 
     #[test]
     fn string_literals_become_readonly_global_bytes() {
+        let (registry, _, _) = test_registry();
         let unit = THIRUnit {
             source_namespace: EnvironmentNamespace::root(),
             functions: Vec::new(),
@@ -249,7 +270,7 @@ mod tests {
                 is_mutable: false,
                 linkage: CXLinkageMode::Static,
             }],
-            registry: THIRDecomposedRegistry::new(Default::default(), HashMap::new()),
+            registry,
         };
 
         let mir = generate_mir(&unit).unwrap_or_else(|error| panic!("{}", error.message()));

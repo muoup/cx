@@ -114,6 +114,14 @@ pub enum THIRExpressionKind {
         name: CXIdent,
     },
 
+    // Type/layout queries remain symbolic until MIR owns the target layout.
+    SizeOf {
+        _type: THIRType,
+    },
+    AlignOf {
+        _type: THIRType,
+    },
+
     // Arithmetic & Logic
     BinaryOperation {
         lhs: Box<THIRExpression>,

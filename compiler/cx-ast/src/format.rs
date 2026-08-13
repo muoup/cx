@@ -382,6 +382,13 @@ impl<'a> Display for CXExprFormatter<'a> {
             CXExprKind::SizeOfType { _type } => {
                 writeln!(f, "SizeOfType ({_type})")
             }
+            CXExprKind::AlignOfExpr { expr } => {
+                writeln!(f, "AlignOf")?;
+                CXExprFormatter::new(expr, self.depth + 1).fmt(f)
+            }
+            CXExprKind::AlignOfType { _type } => {
+                writeln!(f, "AlignOfType ({_type})")
+            }
             CXExprKind::Unit => writeln!(f, "Unit"),
             CXExprKind::Match {
                 condition,

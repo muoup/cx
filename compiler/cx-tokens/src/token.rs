@@ -392,6 +392,7 @@ pub enum KeywordType {
     Restrict,
 
     Sizeof,
+    Alignof,
 
     // CX Specific
     Import,
@@ -534,6 +535,7 @@ impl TokenKind {
             "signed" => TokenKind::Intrinsic(IntrinsicType::Signed),
             "register" => TokenKind::Keyword(KeywordType::Register),
             "sizeof" => TokenKind::Keyword(KeywordType::Sizeof),
+            "alignof" => TokenKind::Keyword(KeywordType::Alignof),
 
             "public" => TokenKind::Specifier(SpecifierType::Public),
             "private" => TokenKind::Specifier(SpecifierType::Private),

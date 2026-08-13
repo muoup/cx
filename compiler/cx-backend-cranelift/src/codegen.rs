@@ -151,23 +151,18 @@ pub(crate) fn codegen_function(
     context.builder.seal_all_blocks();
     context.builder.finalize();
 
-    let GlobalState {
-        object_module,
-        context,
-        ..
-    } = global_state;
+    let GlobalState { object_module, .. } = global_state;
 
     dump_data(&func);
 
-    context.func = func;
+    let mut codegen_context = cranelift::codegen::Context::for_function(func);
+    codegen_context.compute_cfg();
+    codegen_context.compute_domtree();
     object_module
-        .define_function(func_id, context)
-        .unwrap_or_else(|err| {
-            // dump_data(&context.func);
-            panic!("Failed to define function: {err:#?}");
-        });
+        .define_function(func_id, &mut codegen_context)
+        .unwrap_or_else(|err| panic!("Failed to define function: {err:#?}"));
 
-    object_module.clear_context(context);
+    object_module.clear_context(&mut codegen_context);
 
     Ok(())
 }

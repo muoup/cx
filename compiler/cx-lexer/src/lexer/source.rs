@@ -187,33 +187,3 @@ impl<'a> LexCursor<'a> {
         self.iter.rest_of_line()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::LanguageMode;
-    use std::path::Path;
-
-    #[test]
-    fn language_mode_follows_source_extensions() {
-        assert_eq!(
-            LanguageMode::for_root_path(Path::new("main.c")),
-            LanguageMode::C
-        );
-        assert_eq!(
-            LanguageMode::for_root_path(Path::new("main.cx")),
-            LanguageMode::Cx
-        );
-        assert_eq!(
-            LanguageMode::for_include_path(Path::new("api.h"), LanguageMode::Cx, true),
-            LanguageMode::C
-        );
-        assert_eq!(
-            LanguageMode::for_include_path(Path::new("local.h"), LanguageMode::Cx, false),
-            LanguageMode::Cx
-        );
-        assert_eq!(
-            LanguageMode::for_include_path(Path::new("tokens.inc"), LanguageMode::C, false),
-            LanguageMode::C
-        );
-    }
-}

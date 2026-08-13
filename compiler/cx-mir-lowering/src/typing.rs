@@ -4,40 +4,35 @@ use cx_lmir::{
     LMIRABISlot, LMIRFunctionPrototype, LMIRFunctionSignature, LMIRParameter, LMIRParameterABI,
     LMIRReturnABI, LinkageType,
 };
-use cx_mir::{MIRFnPrototype, MIRFnSignature, MIRType};
+use cx_mir::{
+    MIRField, MIRFloatType, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRTypeID, MIRTypeKind,
+    MIRTypeRegistry,
+};
 use cx_target::ArchitectureConfig;
-use cx_thir::registry::THIRDecomposedRegistry;
-use cx_thir::thir::r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeKind};
-use cx_thir::type_context::THIRTypeContext;
 
 pub(crate) fn convert_prototype(
     prototype: &MIRFnPrototype,
-    registry: &THIRDecomposedRegistry,
+    types: &MIRTypeRegistry,
 ) -> LMIRFunctionPrototype {
     LMIRFunctionPrototype {
         name: prototype.signature.name.clone(),
         linkage: convert_linkage(prototype.linkage),
-        signature: classify_signature(&prototype.signature, registry),
+        signature: classify_signature(&prototype.signature, types),
     }
 }
 
 pub(crate) fn classify_signature(
     signature: &MIRFnSignature,
-    registry: &THIRDecomposedRegistry,
+    types: &MIRTypeRegistry,
 ) -> LMIRFunctionSignature {
     let return_type = signature
         .return_type
-        .as_ref()
-        .map(|ty| convert_type(ty.as_thir(), registry))
+        .map(|ty| convert_type(ty, types))
         .unwrap_or_else(LMIRType::unit);
-    let return_layout = signature.return_type.as_ref().map(|ty| {
-        registry.type_layout(ty.as_thir()).unwrap_or_else(|err| {
-            panic!("Failed to calculate return type layout: {}", err.message())
-        })
-    });
+    let return_layout = signature.return_type.map(|ty| layout(types, ty));
     let return_abi = match return_layout {
         Some(layout) => classify_return(
-            registry.architecture(),
+            types.architecture(),
             return_type.clone(),
             layout.alignment as u8,
             layout.size,
@@ -47,14 +42,7 @@ pub(crate) fn classify_signature(
     let params = signature
         .params
         .iter()
-        .map(|param| {
-            classify_param(
-                registry.architecture(),
-                param.name.clone(),
-                &param.ty,
-                registry,
-            )
-        })
+        .map(|param| classify_param(types.architecture(), param.name.clone(), param.ty, types))
         .collect();
 
     LMIRFunctionSignature {
@@ -91,13 +79,11 @@ fn classify_return(
 fn classify_param(
     architecture: &ArchitectureConfig,
     name: Option<cx_util::identifier::CXIdent>,
-    ty: &MIRType,
-    registry: &THIRDecomposedRegistry,
+    ty: MIRTypeID,
+    types: &MIRTypeRegistry,
 ) -> LMIRParameter {
-    let lowered = convert_type(ty.as_thir(), registry);
-    let layout = registry
-        .type_layout(ty.as_thir())
-        .unwrap_or_else(|err| panic!("Failed to calculate parameter layout: {}", err.message()));
+    let lowered = convert_type(ty, types);
+    let layout = layout(types, ty);
     let abi = if !lowered.is_memory_resident() {
         LMIRParameterABI::Direct {
             slots: vec![LMIRABISlot {
@@ -127,90 +113,69 @@ pub(crate) fn convert_linkage(linkage: CXLinkageMode) -> LinkageType {
     }
 }
 
-pub(crate) fn convert_integer_type(ty: THIRIntType) -> LMIRIntegerType {
+pub(crate) fn convert_integer_type(ty: MIRIntType) -> LMIRIntegerType {
     match ty {
-        THIRIntType::I1 => LMIRIntegerType::I1,
-        THIRIntType::I8 => LMIRIntegerType::I8,
-        THIRIntType::I16 => LMIRIntegerType::I16,
-        THIRIntType::I32 => LMIRIntegerType::I32,
-        THIRIntType::I64 => LMIRIntegerType::I64,
-        THIRIntType::I128 => LMIRIntegerType::I128,
+        MIRIntType::I1 => LMIRIntegerType::I1,
+        MIRIntType::I8 => LMIRIntegerType::I8,
+        MIRIntType::I16 => LMIRIntegerType::I16,
+        MIRIntType::I32 => LMIRIntegerType::I32,
+        MIRIntType::I64 => LMIRIntegerType::I64,
+        MIRIntType::I128 => LMIRIntegerType::I128,
     }
 }
 
-pub(crate) fn convert_float_type(ty: THIRFloatType) -> LMIRFloatType {
+pub(crate) fn convert_float_type(ty: MIRFloatType) -> LMIRFloatType {
     match ty {
-        THIRFloatType::F32 => LMIRFloatType::F32,
-        THIRFloatType::F64 => LMIRFloatType::F64,
+        MIRFloatType::F32 => LMIRFloatType::F32,
+        MIRFloatType::F64 => LMIRFloatType::F64,
     }
 }
 
-pub(crate) fn convert_type(ty: &THIRType, registry: &THIRDecomposedRegistry) -> LMIRType {
-    let layout = match ty.kind {
-        THIRTypeKind::Function { .. } => cx_thir::layout::THIRTypeLayout {
-            size: registry.architecture().pointer_size(),
-            alignment: registry.architecture().pointer_alignment(),
-        },
-        THIRTypeKind::Str => cx_thir::layout::THIRTypeLayout {
-            size: 1,
-            alignment: 1,
-        },
-        _ => registry
-            .type_layout(ty)
-            .unwrap_or_else(|err| panic!("Failed to calculate type layout: {}", err.message())),
-    };
-    let kind = match &ty.kind {
-        THIRTypeKind::Opaque { size, .. } => LMIRTypeKind::Opaque { bytes: *size },
-        THIRTypeKind::Integer { _type, .. } => LMIRTypeKind::Integer(convert_integer_type(*_type)),
-        THIRTypeKind::Float { _type } => LMIRTypeKind::Float(convert_float_type(*_type)),
-        THIRTypeKind::Function { .. }
-        | THIRTypeKind::PointerTo { .. }
-        | THIRTypeKind::MemoryReference { .. } => LMIRTypeKind::Pointer {
-            nullable: matches!(ty.kind, THIRTypeKind::Function { .. }),
+pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
+    let definition = types
+        .definition(ty)
+        .unwrap_or_else(|| panic!("invalid MIR type {ty}"));
+    let layout = layout(types, ty);
+    let kind = match &definition.kind {
+        MIRTypeKind::Opaque { size, .. } => LMIRTypeKind::Opaque { bytes: *size },
+        MIRTypeKind::Integer { ty, .. } => LMIRTypeKind::Integer(convert_integer_type(*ty)),
+        MIRTypeKind::Float { ty } => LMIRTypeKind::Float(convert_float_type(*ty)),
+        MIRTypeKind::Function { .. }
+        | MIRTypeKind::PointerTo { .. }
+        | MIRTypeKind::MemoryReference { .. } => LMIRTypeKind::Pointer {
+            nullable: matches!(definition.kind, MIRTypeKind::Function { .. }),
             dereferenceable: 0,
-            bytes: registry.architecture().pointer_size() as u8,
+            bytes: types.architecture().pointer_size() as u8,
         },
-        THIRTypeKind::TaggedUnion { variants } => LMIRTypeKind::Struct {
-            name: ty.strong_identifier().unwrap_or_default().to_owned(),
+        MIRTypeKind::TaggedUnion { variants } => LMIRTypeKind::Struct {
+            name: format!("mir_type_{}", ty.index()),
             fields: vec![
-                (
-                    "data".into(),
-                    lower_union(
-                        variants
-                            .iter()
-                            .map(|field| registry.resolve_type_id(field.ty())),
-                        registry,
-                    ),
-                ),
+                ("data".into(), lower_union(variants, types)),
                 (
                     "tag".into(),
                     LMIRType::with_implicit_abi(
-                        registry.architecture(),
+                        types.architecture(),
                         LMIRTypeKind::Integer(LMIRIntegerType::I8),
                     ),
                 ),
             ],
         },
-        THIRTypeKind::Array { inner_type, length } => LMIRTypeKind::Array {
-            element: Box::new(convert_type(
-                registry.resolve_type_id(*inner_type),
-                registry,
-            )),
+        MIRTypeKind::Array { inner, length } => LMIRTypeKind::Array {
+            element: Box::new(convert_type(*inner, types)),
             size: *length,
         },
-        THIRTypeKind::Structured { .. } => LMIRTypeKind::Struct {
-            name: ty.strong_identifier().unwrap_or_default().to_owned(),
-            fields: ty
-                .aggregate_fields(registry)
-                .expect("structured type has invalid fields")
-                .into_iter()
-                .map(|(name, field)| (name, convert_type(&field, registry)))
+        MIRTypeKind::Structured { fields } => LMIRTypeKind::Struct {
+            name: format!("mir_type_{}", ty.index()),
+            fields: fields
+                .iter()
+                .enumerate()
+                .map(|(index, field)| (format!("field_{index}"), convert_type(field.ty(), types)))
                 .collect(),
         },
-        THIRTypeKind::Union { .. } => LMIRTypeKind::Opaque { bytes: layout.size },
-        THIRTypeKind::Unit => LMIRTypeKind::Unit,
-        THIRTypeKind::Str => LMIRTypeKind::Integer(LMIRIntegerType::I8),
-        THIRTypeKind::Undefined => panic!("Cannot lower undefined type"),
+        MIRTypeKind::Union { .. } => LMIRTypeKind::Opaque { bytes: layout.size },
+        MIRTypeKind::Unit => LMIRTypeKind::Unit,
+        MIRTypeKind::Str => LMIRTypeKind::Integer(LMIRIntegerType::I8),
+        MIRTypeKind::Undefined => panic!("cannot lower undefined MIR type {ty}"),
     };
     LMIRType {
         kind,
@@ -218,16 +183,16 @@ pub(crate) fn convert_type(ty: &THIRType, registry: &THIRDecomposedRegistry) -> 
     }
 }
 
-fn lower_union<'a>(
-    variants: impl Iterator<Item = &'a THIRType>,
-    registry: &THIRDecomposedRegistry,
-) -> LMIRType {
+fn layout(types: &MIRTypeRegistry, ty: MIRTypeID) -> cx_mir::MIRTypeLayout {
+    types
+        .layout(ty)
+        .unwrap_or_else(|err| panic!("failed to calculate MIR layout for {ty}: {err}"))
+}
+
+fn lower_union(variants: &[MIRField], types: &MIRTypeRegistry) -> LMIRType {
     let (size, alignment) = variants
-        .map(|variant| {
-            registry
-                .type_layout(variant)
-                .unwrap_or_else(|err| panic!("invalid union member: {}", err.message()))
-        })
+        .iter()
+        .map(|variant| layout(types, variant.ty()))
         .fold((0, 1), |(size, alignment), layout| {
             (size.max(layout.size), alignment.max(layout.alignment))
         });

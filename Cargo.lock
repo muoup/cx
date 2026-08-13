@@ -378,7 +378,8 @@ name = "cx-mir"
 version = "0.1.0"
 dependencies = [
  "cx-ast",
- "cx-thir",
+ "cx-target",
+ "cx-tokens",
  "cx-util",
 ]
 
@@ -400,7 +401,6 @@ dependencies = [
  "cx-log",
  "cx-mir",
  "cx-target",
- "cx-thir",
  "cx-util",
 ]
 
@@ -526,6 +526,7 @@ dependencies = [
  "cx-log",
  "cx-mir",
  "cx-thir",
+ "cx-tokens",
  "cx-util",
 ]
 

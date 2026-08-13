@@ -7,7 +7,6 @@ autotests = false
 [dependencies]
 cx-ast = { path = "../cx-ast" }
 cx-mir = { path = "../cx-mir" }
-cx-thir = { path = "../cx-thir" }
 cx-lmir = { path = "../cx-lmir" }
 cx-target = { path = "../cx-target" }
 

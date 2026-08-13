@@ -2,7 +2,7 @@ use crate::codegen::{codegen_fn_prototype, codegen_function};
 use crate::globals::generate_global;
 use crate::value_type::get_cranelift_type;
 use cranelift::codegen::ir::FuncRef;
-use cranelift::codegen::{ir, Context};
+use cranelift::codegen::ir;
 use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
 use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
@@ -66,7 +66,6 @@ pub struct FunctionState<'a> {
 
 pub(crate) struct GlobalState<'a> {
     pub(crate) architecture: &'a ArchitectureConfig,
-    pub(crate) context: Context,
     pub(crate) object_module: ObjectModule,
     pub(crate) function_ids: HashMap<String, FuncId>,
     pub(crate) global_ids: Vec<DataId>,
@@ -204,7 +203,6 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
             ObjectModule::new(builder)
         },
 
-        context: Context::new(),
         function_ids: HashMap::new(),
         global_ids: Vec::new(),
         function_sigs: &mut HashMap::new(),

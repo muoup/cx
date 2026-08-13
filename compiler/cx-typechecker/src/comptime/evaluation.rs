@@ -6,6 +6,7 @@ use cx_thir::thir::{
     },
     r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeKind},
 };
+use cx_thir::type_context::THIRTypeContext;
 use cx_tokens::TokenRange;
 use cx_util::unsafe_float::FloatWrapper;
 
@@ -43,6 +44,43 @@ pub(crate) fn evaluate_expression(
             token_range,
             kind: ComptimeKind::Unit,
         },
+
+        // SizeOf is normally lowered by MIR. This compatibility path is only
+        // for the pre-MIR comptime interpreter, which still evaluates some
+        // staged expressions during typechecking.
+        THIRExpressionKind::SizeOf { _type } => {
+            let Ok(layout) = engine.env().symbols.type_layout(&_type) else {
+                return engine.log_error(
+                    token_range,
+                    "cannot calculate sizeof in comptime context".to_string(),
+                );
+            };
+            ComptimeValue {
+                token_range,
+                kind: ComptimeKind::Integer {
+                    val: layout.size as i64,
+                    itype: THIRIntType::I64,
+                    signed: false,
+                },
+            }
+        }
+
+        THIRExpressionKind::AlignOf { _type } => {
+            let Ok(layout) = engine.env().symbols.type_layout(&_type) else {
+                return engine.log_error(
+                    token_range,
+                    "cannot calculate alignof in comptime context".to_string(),
+                );
+            };
+            ComptimeValue {
+                token_range,
+                kind: ComptimeKind::Integer {
+                    val: layout.alignment as i64,
+                    itype: THIRIntType::I64,
+                    signed: false,
+                },
+            }
+        }
 
         THIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
             evaluate_binary_operation(engine, *lhs, *rhs, op, &expr_type, token_range)?

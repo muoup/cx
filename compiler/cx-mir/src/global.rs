@@ -1,4 +1,5 @@
 use cx_ast::ast::modifiers::CXLinkageMode;
+use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
@@ -6,7 +7,7 @@ use crate::{
         MIRBasicBlock, MIRBasicBlockID, MIRConstant, MIRInstr, MIRInstrKind, MIRPlace, MIRPlaceID,
         MIRRegister,
     },
-    ty::MIRType,
+    ty::MIRTypeID,
 };
 
 macro_rules! dense_id {
@@ -39,20 +40,19 @@ pub enum MIRGlobalInitializer {
 pub struct MIRGlobalVariable {
     pub id: MIRGlobalID,
     pub name: CXIdent,
-    
-    pub ty: MIRType,
+    pub ty: MIRTypeID,
     pub linkage: CXLinkageMode,
     pub initializer: Option<MIRGlobalInitializer>,
- 
     pub is_definition: bool,
     pub is_mutable: bool,
+    pub nodrop: bool,
 }
 
 impl MIRGlobalVariable {
     pub fn new(
         id: MIRGlobalID,
         name: CXIdent,
-        ty: MIRType,
+        ty: MIRTypeID,
         linkage: CXLinkageMode,
         is_mutable: bool,
     ) -> Self {
@@ -64,6 +64,7 @@ impl MIRGlobalVariable {
             initializer: None,
             is_definition: true,
             is_mutable,
+            nodrop: false,
         }
     }
 }
@@ -71,19 +72,30 @@ impl MIRGlobalVariable {
 #[derive(Debug, Clone)]
 pub struct MIRFnParam {
     pub name: Option<CXIdent>,
-    pub ty: MIRType,
+    pub ty: MIRTypeID,
+    pub nodrop: bool,
 }
 
 impl MIRFnParam {
-    pub fn new(ty: MIRType) -> Self {
-        Self { name: None, ty }
+    pub fn new(ty: MIRTypeID) -> Self {
+        Self {
+            name: None,
+            ty,
+            nodrop: false,
+        }
     }
 
-    pub fn named(name: CXIdent, ty: MIRType) -> Self {
+    pub fn named(name: CXIdent, ty: MIRTypeID) -> Self {
         Self {
             name: Some(name),
             ty,
+            nodrop: false,
         }
+    }
+
+    pub fn with_nodrop(mut self, nodrop: bool) -> Self {
+        self.nodrop = nodrop;
+        self
     }
 }
 
@@ -91,12 +103,12 @@ impl MIRFnParam {
 pub struct MIRFnSignature {
     pub name: CXIdent,
     pub params: Vec<MIRFnParam>,
-    pub return_type: Option<MIRType>,
+    pub return_type: Option<MIRTypeID>,
     pub variadic: bool,
 }
 
 impl MIRFnSignature {
-    pub fn new(name: CXIdent, params: Vec<MIRFnParam>, return_type: Option<MIRType>) -> Self {
+    pub fn new(name: CXIdent, params: Vec<MIRFnParam>, return_type: Option<MIRTypeID>) -> Self {
         Self {
             name,
             params,
@@ -121,14 +133,15 @@ impl MIRFnPrototype {
 #[derive(Debug, Clone)]
 pub struct MIRPlaceDecl {
     pub id: MIRPlaceID,
-    pub ty: MIRType,
+    pub ty: MIRTypeID,
     pub debug_name: Option<CXIdent>,
+    pub nodrop: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct MIRRegisterDecl {
     pub id: MIRRegister,
-    pub ty: MIRType,
+    pub ty: MIRTypeID,
     pub debug_name: Option<CXIdent>,
 }
 
@@ -136,7 +149,6 @@ pub struct MIRRegisterDecl {
 pub struct MIRFunction {
     pub id: MIRFunctionID,
     pub prototype: MIRFnPrototype,
-    /// Declarations have no entry and no blocks. Definitions have both.
     pub entry: Option<MIRBasicBlockID>,
     pub blocks: Vec<MIRBasicBlock>,
     pub places: Vec<MIRPlaceDecl>,
@@ -159,13 +171,27 @@ impl MIRFunction {
         self.blocks.is_empty()
     }
 
-    pub fn add_place(&mut self, ty: MIRType, debug_name: Option<CXIdent>) -> MIRPlace {
+    pub fn add_place(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>) -> MIRPlace {
+        self.add_place_with_nodrop(ty, debug_name, false)
+    }
+
+    pub fn add_place_with_nodrop(
+        &mut self,
+        ty: MIRTypeID,
+        debug_name: Option<CXIdent>,
+        nodrop: bool,
+    ) -> MIRPlace {
         let id = MIRPlaceID::new(self.places.len());
-        self.places.push(MIRPlaceDecl { id, ty, debug_name });
+        self.places.push(MIRPlaceDecl {
+            id,
+            ty,
+            debug_name,
+            nodrop,
+        });
         MIRPlace::FunctionLocal(id)
     }
 
-    pub fn add_register(&mut self, ty: MIRType, debug_name: Option<CXIdent>) -> MIRRegister {
+    pub fn add_register(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>) -> MIRRegister {
         let id = MIRRegister::new(self.registers.len());
         self.registers.push(MIRRegisterDecl { id, ty, debug_name });
         id
@@ -174,7 +200,7 @@ impl MIRFunction {
     pub fn add_block_param(
         &mut self,
         block: MIRBasicBlockID,
-        ty: MIRType,
+        ty: MIRTypeID,
         debug_name: Option<CXIdent>,
     ) -> Option<MIRRegister> {
         if self.block(block).is_none() {
@@ -215,8 +241,17 @@ impl MIRFunction {
         block: MIRBasicBlockID,
         kind: MIRInstrKind,
     ) -> Option<&mut MIRInstr> {
+        self.push_instr_at(block, kind, TokenRange::internal())
+    }
+
+    pub fn push_instr_at(
+        &mut self,
+        block: MIRBasicBlockID,
+        kind: MIRInstrKind,
+        token_range: TokenRange,
+    ) -> Option<&mut MIRInstr> {
         let block = self.block_mut(block)?;
-        block.instrs.push(MIRInstr::new(kind));
+        block.instrs.push(MIRInstr::new_at(kind, token_range));
         block.instrs.last_mut()
     }
 }

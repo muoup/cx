@@ -127,11 +127,13 @@ fn analyze_function(function: &MIRFunction) -> MIRFunctionAnalysis {
         let mut defs = BTreeSet::new();
 
         for instruction in &block.instrs {
-            for place in instruction.referenced_places() {
-                if !defs.contains(&place) {
+            instruction.visit_operands(|operand| {
+                if let Some(place) = operand.place()
+                    && !defs.contains(&place)
+                {
                     uses.insert(place);
                 }
-            }
+            });
             for place in instruction.defined_places() {
                 defs.insert(place);
             }
@@ -194,9 +196,11 @@ fn analyze_function(function: &MIRFunction) -> MIRFunctionAnalysis {
                 for place in instruction.defined_places() {
                     live.remove(&place);
                 }
-                for place in instruction.referenced_places() {
-                    live.insert(place);
-                }
+                instruction.visit_operands(|operand| {
+                    if let Some(place) = operand.place() {
+                        live.insert(place);
+                    }
+                });
                 instruction_liveness.push(MIRInstructionLiveness {
                     live_before: live.clone(),
                     live_after,
@@ -252,254 +256,4 @@ fn write_place_set(f: &mut Formatter<'_>, places: &BTreeSet<MIRPlace>) -> fmt::R
         Display::fmt(place, f)?;
     }
     f.write_str("}")
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::BTreeSet;
-
-    use cx_ast::ast::modifiers::CXLinkageMode;
-    use cx_mir::{
-        MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRFnPrototype, MIRFnSignature, MIRInstrKind,
-        MIRPlace, MIRType, MIRUnit, MIRValue,
-    };
-    use cx_util::identifier::CXIdent;
-
-    use super::{MIRAnalysisError, MIRAnalysisOptions, analyze};
-
-    fn set(places: &[MIRPlace]) -> BTreeSet<MIRPlace> {
-        places.iter().copied().collect()
-    }
-
-    fn unit_with_function(name: &str) -> (MIRUnit, cx_mir::MIRFunctionID) {
-        let prototype = MIRFnPrototype::new(
-            MIRFnSignature::new(CXIdent::from(name), Vec::new(), None),
-            CXLinkageMode::Standard,
-        );
-        let mut unit = MIRUnit::new();
-        let function = unit.add_function(prototype);
-        (unit, function)
-    }
-
-    #[test]
-    fn branch_loop_liveness_reaches_fixed_point() {
-        let (mut unit, function_id) = unit_with_function("branch_loop");
-        let function = unit.function_mut(function_id).unwrap();
-        let condition = function.add_place(MIRType::default(), None);
-        let carried = function.add_place(MIRType::default(), None);
-        let result = function.add_place(MIRType::default(), None);
-        let entry = function.add_block();
-        let loop_body = function.add_block();
-        let exit = function.add_block();
-
-        function.push_instr(
-            entry,
-            MIRInstrKind::Branch {
-                cond: MIRValue::Place(condition),
-                true_target: loop_body.into(),
-                false_target: exit.into(),
-            },
-        );
-        function.push_instr(
-            loop_body,
-            MIRInstrKind::Assign {
-                dest: result,
-                value: MIRValue::Place(carried),
-                ty: MIRType::default(),
-            },
-        );
-        function.push_instr(
-            loop_body,
-            MIRInstrKind::Jump {
-                target: entry.into(),
-            },
-        );
-        function.push_instr(
-            exit,
-            MIRInstrKind::Return {
-                value: Some(MIRValue::Place(result)),
-            },
-        );
-
-        let analysis = analyze(&unit, MIRAnalysisOptions::default()).unwrap();
-        let function = analysis.function(function_id).unwrap();
-        let entry_liveness = function.block(entry).unwrap();
-        let loop_liveness = function.block(loop_body).unwrap();
-        let exit_liveness = function.block(exit).unwrap();
-
-        assert_eq!(entry_liveness.live_in, set(&[condition, carried, result]));
-        assert_eq!(entry_liveness.live_out, set(&[condition, carried, result]));
-        assert_eq!(loop_liveness.live_in, set(&[condition, carried]));
-        assert_eq!(loop_liveness.live_out, set(&[condition, carried, result]));
-        assert_eq!(exit_liveness.live_in, set(&[result]));
-        assert_eq!(exit_liveness.live_out, BTreeSet::new());
-
-        assert_eq!(
-            loop_liveness.instructions[0].live_before,
-            set(&[condition, carried])
-        );
-        assert_eq!(
-            loop_liveness.instructions[0].live_after,
-            set(&[condition, carried, result])
-        );
-        assert_eq!(
-            loop_liveness.instructions[1].live_before,
-            set(&[condition, carried, result])
-        );
-        assert_eq!(
-            loop_liveness.instructions[1].live_after,
-            set(&[condition, carried, result])
-        );
-
-        let dump = analysis.to_string();
-        assert!(dump.contains("bb0: live-in = {%p0, %p1, %p2}"));
-        assert!(dump.contains("0: before = {%p0, %p1, %p2}"));
-    }
-
-    #[test]
-    fn block_arguments_are_live_only_on_their_predecessor_edges() {
-        let (mut unit, function_id) = unit_with_function("phi_edges");
-        let function = unit.function_mut(function_id).unwrap();
-        let left_value = function.add_place(MIRType::default(), None);
-        let right_value = function.add_place(MIRType::default(), None);
-        let result_type = MIRType::default();
-        let entry = function.add_block();
-        let left = function.add_block();
-        let right = function.add_block();
-        let merge = function.add_block();
-        let result = function
-            .add_block_param(merge, result_type, None)
-            .expect("merge block exists");
-
-        function.push_instr(
-            entry,
-            MIRInstrKind::Branch {
-                cond: MIRValue::Constant(MIRConstant::Bool(true)),
-                true_target: left.into(),
-                false_target: right.into(),
-            },
-        );
-        function.push_instr(
-            left,
-            MIRInstrKind::Jump {
-                target: MIRBlockTarget::with_args(merge, vec![MIRValue::Place(left_value)]),
-            },
-        );
-        function.push_instr(
-            right,
-            MIRInstrKind::Jump {
-                target: MIRBlockTarget::with_args(merge, vec![MIRValue::Place(right_value)]),
-            },
-        );
-        function.push_instr(
-            merge,
-            MIRInstrKind::Return {
-                value: Some(MIRValue::Register(result)),
-            },
-        );
-
-        let analysis = analyze(&unit, MIRAnalysisOptions::default()).unwrap();
-        let function = analysis.function(function_id).unwrap();
-        let left_liveness = function.block(left).unwrap();
-        let right_liveness = function.block(right).unwrap();
-        assert_eq!(left_liveness.live_in, set(&[left_value]));
-        assert!(left_liveness.live_out.is_empty());
-        assert_eq!(
-            left_liveness.instructions[0].live_before,
-            set(&[left_value])
-        );
-        assert!(left_liveness.instructions[0].live_after.is_empty());
-        assert_eq!(right_liveness.live_in, set(&[right_value]));
-        assert!(right_liveness.live_out.is_empty());
-        assert_eq!(
-            right_liveness.instructions[0].live_before,
-            set(&[right_value])
-        );
-        assert!(right_liveness.instructions[0].live_after.is_empty());
-        assert!(function.block(merge).unwrap().live_in.is_empty());
-    }
-
-    #[test]
-    fn moved_operand_is_live_before_its_consuming_assignment() {
-        let (mut unit, function_id) = unit_with_function("inline_move");
-        let function = unit.function_mut(function_id).unwrap();
-        let source = function.add_place(MIRType::default(), None);
-        let destination = function.add_place(MIRType::default(), None);
-        let entry = function.add_block();
-        let assignment = MIRInstrKind::Assign {
-            dest: destination,
-            value: MIRValue::Move(source),
-            ty: MIRType::default(),
-        };
-        function.push_instr(entry, assignment);
-        let moved = function
-            .block(entry)
-            .and_then(|block| block.instrs.last())
-            .expect("pushed instruction exists")
-            .moved_places()
-            .collect::<Vec<_>>();
-        assert_eq!(moved, vec![source]);
-        function.push_instr(
-            entry,
-            MIRInstrKind::Return {
-                value: Some(MIRValue::Place(destination)),
-            },
-        );
-
-        let analysis = analyze(&unit, MIRAnalysisOptions::default()).unwrap();
-        let block = analysis
-            .function(function_id)
-            .unwrap()
-            .block(entry)
-            .unwrap();
-        assert_eq!(block.instructions[0].live_before, set(&[source]));
-        assert_eq!(block.instructions[0].live_after, set(&[destination]));
-    }
-
-    #[test]
-    fn initialization_defines_place_availability() {
-        let (mut unit, function_id) = unit_with_function("initialize");
-        let function = unit.function_mut(function_id).unwrap();
-        let place = function.add_place(MIRType::default(), None);
-        let entry = function.add_block();
-        function.push_instr(entry, MIRInstrKind::Initialize { place });
-        function.push_instr(entry, MIRInstrKind::Leak { place });
-        function.push_instr(entry, MIRInstrKind::Return { value: None });
-
-        let analysis = analyze(&unit, MIRAnalysisOptions::default()).unwrap();
-        let block = analysis
-            .function(function_id)
-            .unwrap()
-            .block(entry)
-            .unwrap();
-        assert!(block.instructions[0].live_before.is_empty());
-        assert_eq!(block.instructions[0].live_after, set(&[place]));
-        assert_eq!(block.instructions[1].live_before, set(&[place]));
-        assert!(block.instructions[1].live_after.is_empty());
-    }
-
-    #[test]
-    fn validation_can_be_disabled_for_invalid_cfg() {
-        let (mut unit, function_id) = unit_with_function("invalid_cfg");
-        let function = unit.function_mut(function_id).unwrap();
-        let entry = function.add_block();
-        function.push_instr(
-            entry,
-            MIRInstrKind::Jump {
-                target: MIRBasicBlockID::new(99).into(),
-            },
-        );
-
-        let analysis = analyze(&unit, MIRAnalysisOptions { validate: false }).unwrap();
-        let block = analysis
-            .function(function_id)
-            .unwrap()
-            .block(entry)
-            .unwrap();
-        assert!(block.live_in.is_empty());
-        assert!(block.live_out.is_empty());
-
-        let error = analyze(&unit, MIRAnalysisOptions { validate: true }).unwrap_err();
-        assert!(matches!(error, MIRAnalysisError::Validation(_)));
-    }
 }

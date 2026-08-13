@@ -1,4 +1,4 @@
-use crate::parse::{try_parse_simple_identifier, ParserData};
+use crate::parse::{ParserData, try_parse_simple_identifier};
 use crate::{
     assert_token_matches,
     log::{parse_point_error, parse_underline_error},
@@ -13,7 +13,7 @@ use cx_util::namespace::QualifiedName;
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::parse::operators::{
-    binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
+    PrecOperator, binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec,
 };
 use crate::parse::types::{is_type_decl, parse_initializer};
 use crate::parse::{parse_block, parse_body, parse_intrinsic, try_parse_identifier};
@@ -537,7 +537,7 @@ pub(crate) fn parse_keyword_expr(
     let start_index = data.tokens.index - 1;
 
     match keyword_type {
-        KeywordType::Sizeof => {
+        KeywordType::Sizeof | KeywordType::Alignof => {
             assert_token_matches!(
                 data.tokens,
                 TokenKind::Punctuator(PunctuatorType::OpenParen),
@@ -548,16 +548,33 @@ pub(crate) fn parse_keyword_expr(
                 let (None, _type, _) = parse_initializer(data)? else {
                     return parse_point_error(
                         &data.tokens,
-                        "Failed to parse type declaration for sizeof".to_string(),
+                        format!(
+                            "Failed to parse type declaration for {}",
+                            match keyword_type {
+                                KeywordType::Sizeof => "sizeof",
+                                KeywordType::Alignof => "alignof",
+                                _ => unreachable!(),
+                            }
+                        ),
                     );
                 };
 
-                CXExprKind::SizeOfType { _type }
+                match keyword_type {
+                    KeywordType::Sizeof => CXExprKind::SizeOfType { _type },
+                    KeywordType::Alignof => CXExprKind::AlignOfType { _type },
+                    _ => unreachable!(),
+                }
             } else {
                 let expr = parse_expr(data)?;
 
-                CXExprKind::SizeOfExpr {
-                    expr: Box::new(expr),
+                match keyword_type {
+                    KeywordType::Sizeof => CXExprKind::SizeOfExpr {
+                        expr: Box::new(expr),
+                    },
+                    KeywordType::Alignof => CXExprKind::AlignOfExpr {
+                        expr: Box::new(expr),
+                    },
+                    _ => unreachable!(),
                 }
             };
 

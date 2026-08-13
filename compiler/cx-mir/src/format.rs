@@ -1,12 +1,11 @@
 use std::fmt::{self, Display, Formatter};
 
-use cx_thir::thir::r#type::{THIRField, THIRIntType, THIRTypeKind};
-
 use crate::{
+    MIRLayoutError, MIRTypeID,
     expr::{
-        MIRAggregateOp, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget,
-        MIRConstant, MIRInstr, MIRInstrKind, MIRParameterID, MIRPlace, MIRPlaceAggregateOp,
-        MIRPlaceID, MIRRegister, MIRValue, MIRValueAggregateOp,
+        MIRAggregateOp, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRInstr,
+        MIRInstrKind, MIRParameterID, MIRPlace, MIRPlaceAggregateOp, MIRPlaceID, MIRRegister,
+        MIRValue, MIRValueAggregateOp,
     },
     global::{
         MIRFnSignature, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalInitializer,
@@ -14,7 +13,7 @@ use crate::{
     },
     module::MIRUnit,
     op::{MIRBinaryOp, MIRCoercion, MIRUnaryOp},
-    ty::MIRType,
+    ty::MIRIntType,
 };
 
 impl Display for MIRPlaceID {
@@ -75,99 +74,15 @@ impl Display for MIRGlobalID {
     }
 }
 
-impl Display for MIRType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if let Some(name) = self.0.strong_identifier.as_deref() {
-            return f.write_str(name);
-        }
-        match &self.0.kind {
-            THIRTypeKind::Unit => f.write_str("unit"),
-            THIRTypeKind::Integer { _type, signed } => {
-                write!(
-                    f,
-                    "{}{}",
-                    if *signed { "i" } else { "u" },
-                    int_width(*_type)
-                )
-            }
-            THIRTypeKind::Float { _type } => write!(f, "{_type:?}"),
-            THIRTypeKind::Structured { fields } => {
-                f.write_str("struct{")?;
-                write_thir_fields(f, fields)?;
-                f.write_str("}")
-            }
-            THIRTypeKind::Union { variants } => {
-                f.write_str("union{")?;
-                write_thir_fields(f, variants)?;
-                f.write_str("}")
-            }
-            THIRTypeKind::TaggedUnion { variants } => {
-                f.write_str("sum{")?;
-                write_thir_fields(f, variants)?;
-                f.write_str("}")
-            }
-            THIRTypeKind::PointerTo { inner_type } => write!(f, "ptr<t{}>", inner_type.0),
-            THIRTypeKind::MemoryReference {
-                inner_type,
-                bitfield,
-            } => {
-                write!(f, "ref<t{}", inner_type.0)?;
-                if let Some(bitfield) = bitfield {
-                    write!(
-                        f,
-                        ", bitfield(t{}, {}..{}, signed={})",
-                        bitfield.storage_type.0,
-                        bitfield.bit_offset,
-                        bitfield.bit_offset + bitfield.bit_width,
-                        bitfield.signed
-                    )?;
-                }
-                f.write_str(">")
-            }
-            THIRTypeKind::Array { length, inner_type } => {
-                write!(f, "[t{}; {length}]", inner_type.0)
-            }
-            THIRTypeKind::Function { .. } => f.write_str("fn-type"),
-            THIRTypeKind::Opaque { size, alignment } => {
-                write!(f, "opaque(size={size}, align={alignment})")
-            }
-            THIRTypeKind::Undefined => f.write_str("undefined"),
-            THIRTypeKind::Str => f.write_str("str"),
-        }
-    }
-}
-
-fn int_width(ty: THIRIntType) -> u16 {
+fn int_width(ty: MIRIntType) -> u16 {
     match ty {
-        THIRIntType::I1 => 1,
-        THIRIntType::I8 => 8,
-        THIRIntType::I16 => 16,
-        THIRIntType::I32 => 32,
-        THIRIntType::I64 => 64,
-        THIRIntType::I128 => 128,
+        MIRIntType::I1 => 1,
+        MIRIntType::I8 => 8,
+        MIRIntType::I16 => 16,
+        MIRIntType::I32 => 32,
+        MIRIntType::I64 => 64,
+        MIRIntType::I128 => 128,
     }
-}
-
-fn write_thir_fields(f: &mut Formatter<'_>, fields: &[THIRField]) -> fmt::Result {
-    for (index, field) in fields.iter().enumerate() {
-        if index != 0 {
-            f.write_str(", ")?;
-        }
-        match field {
-            THIRField::Standard { name, type_id } => write!(f, "{name}: t{}", type_id.0)?,
-            THIRField::Bitfield {
-                name,
-                integer_type_id,
-                width,
-            } => write!(
-                f,
-                "{}: t{}:{width}",
-                name.as_deref().unwrap_or("_"),
-                integer_type_id.0
-            )?,
-        }
-    }
-    Ok(())
 }
 
 impl Display for MIRConstant {
@@ -563,5 +478,35 @@ impl Display for MIRUnit {
             }
         }
         f.write_str("}\n")
+    }
+}
+
+impl fmt::Display for MIRTypeID {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "t{}", self.index())
+    }
+}
+
+impl fmt::Display for MIRLayoutError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidType(id) => write!(f, "invalid MIR type {id}"),
+            Self::DuplicateType(id) => write!(f, "MIR type {id} was defined more than once"),
+            Self::RecursiveType(id) => {
+                write!(f, "cannot compute layout of recursive MIR type {id}")
+            }
+            Self::InvalidBitfieldWidth {
+                width,
+                storage_bits,
+            } => write!(
+                f,
+                "invalid bitfield width: {width} exceeds storage size of {storage_bits} bits"
+            ),
+            Self::InvalidAlignment(alignment) => write!(f, "invalid type alignment {alignment}"),
+            Self::InvalidField { ty, field } => {
+                write!(f, "MIR type {ty} has no field at index {field}")
+            }
+            Self::SizeOverflow => f.write_str("MIR type layout size overflowed usize"),
+        }
     }
 }

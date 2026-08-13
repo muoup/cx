@@ -1,172 +1,172 @@
-use cx_thir::thir::r#type::{THIRField, THIRType, THIRTypeKind};
+mod layout;
+mod registry;
 
-/// A semantic type carried into MIR from THIR.
-///
-/// MIR deliberately keeps the THIR type instead of introducing target layout or
-/// calling-convention details. Those belong to later lowering stages.
-#[derive(Debug, Clone)]
-pub struct MIRType(pub THIRType);
+pub use layout::{MIRFieldLayout, MIRLayoutError, MIRTypeLayout};
+pub use registry::MIRTypeRegistry;
 
-impl MIRType {
-    pub fn new(ty: THIRType) -> Self {
-        Self(ty)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MIRTypeID(pub u64);
+
+impl MIRTypeID {
+    pub const fn new(index: usize) -> Self {
+        Self(index as u64)
     }
 
-    pub fn from_kind(kind: THIRTypeKind) -> Self {
-        Self(kind.into())
+    pub const fn from_raw(id: u64) -> Self {
+        Self(id)
     }
 
-    pub fn as_thir(&self) -> &THIRType {
-        &self.0
+    pub const fn index(self) -> usize {
+        self.0 as usize
     }
 
-    pub fn as_thir_mut(&mut self) -> &mut THIRType {
-        &mut self.0
-    }
-
-    pub fn into_thir(self) -> THIRType {
+    pub const fn raw(self) -> u64 {
         self.0
     }
+}
 
-    /// Compares the semantic identity available in ABI-agnostic MIR.
-    ///
-    /// Named types retain nominal identity. Anonymous types compare their
-    /// structure and the THIR type IDs referenced by that structure.
-    pub fn same_as(&self, other: &Self) -> bool {
-        match (
-            self.0.strong_identifier.as_deref(),
-            other.0.strong_identifier.as_deref(),
-        ) {
-            (Some(left), Some(right)) => return left == right,
-            (Some(_), None) | (None, Some(_)) => return false,
-            (None, None) => {}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MIRIntType {
+    I1,
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+}
+
+impl MIRIntType {
+    pub const fn bytes(self) -> usize {
+        match self {
+            Self::I1 | Self::I8 => 1,
+            Self::I16 => 2,
+            Self::I32 => 4,
+            Self::I64 => 8,
+            Self::I128 => 16,
         }
-        same_kind(&self.0.kind, &other.0.kind)
     }
-}
 
-impl Default for MIRType {
-    fn default() -> Self {
-        Self(THIRType::default())
-    }
-}
-
-impl From<THIRType> for MIRType {
-    fn from(value: THIRType) -> Self {
-        Self(value)
-    }
-}
-
-impl From<MIRType> for THIRType {
-    fn from(value: MIRType) -> Self {
-        value.0
-    }
-}
-
-fn same_kind(left: &THIRTypeKind, right: &THIRTypeKind) -> bool {
-    match (left, right) {
-        (THIRTypeKind::Unit, THIRTypeKind::Unit)
-        | (THIRTypeKind::Undefined, THIRTypeKind::Undefined)
-        | (THIRTypeKind::Str, THIRTypeKind::Str) => true,
-        (
-            THIRTypeKind::Integer {
-                _type: left_type,
-                signed: left_signed,
-            },
-            THIRTypeKind::Integer {
-                _type: right_type,
-                signed: right_signed,
-            },
-        ) => left_type == right_type && left_signed == right_signed,
-        (THIRTypeKind::Float { _type: left }, THIRTypeKind::Float { _type: right }) => {
-            left == right
+    pub const fn from_bytes(bytes: u8) -> Option<Self> {
+        match bytes {
+            1 => Some(Self::I8),
+            2 => Some(Self::I16),
+            4 => Some(Self::I32),
+            8 => Some(Self::I64),
+            16 => Some(Self::I128),
+            _ => None,
         }
-        (THIRTypeKind::Structured { fields: left }, THIRTypeKind::Structured { fields: right })
-        | (THIRTypeKind::Union { variants: left }, THIRTypeKind::Union { variants: right })
-        | (
-            THIRTypeKind::TaggedUnion { variants: left },
-            THIRTypeKind::TaggedUnion { variants: right },
-        ) => same_fields(left, right),
-        (
-            THIRTypeKind::PointerTo { inner_type: left },
-            THIRTypeKind::PointerTo { inner_type: right },
-        ) => left == right,
-        (
-            THIRTypeKind::MemoryReference {
-                inner_type: left_type,
-                bitfield: left_bitfield,
-            },
-            THIRTypeKind::MemoryReference {
-                inner_type: right_type,
-                bitfield: right_bitfield,
-            },
-        ) => left_type == right_type && left_bitfield == right_bitfield,
-        (
-            THIRTypeKind::Array {
-                length: left_length,
-                inner_type: left_type,
-            },
-            THIRTypeKind::Array {
-                length: right_length,
-                inner_type: right_type,
-            },
-        ) => left_length == right_length && left_type == right_type,
-        (
-            THIRTypeKind::Function { signature: left },
-            THIRTypeKind::Function { signature: right },
-        ) => {
-            left.var_args == right.var_args
-                && MIRType::new(left.return_type.clone())
-                    .same_as(&MIRType::new(right.return_type.clone()))
-                && left.params.len() == right.params.len()
-                && left.params.iter().zip(&right.params).all(|(left, right)| {
-                    MIRType::new(left._type.clone()).same_as(&MIRType::new(right._type.clone()))
-                })
-        }
-        (
-            THIRTypeKind::Opaque {
-                size: left_size,
-                alignment: left_alignment,
-            },
-            THIRTypeKind::Opaque {
-                size: right_size,
-                alignment: right_alignment,
-            },
-        ) => left_size == right_size && left_alignment == right_alignment,
-        _ => false,
     }
 }
 
-fn same_fields(left: &[THIRField], right: &[THIRField]) -> bool {
-    left.len() == right.len()
-        && left
-            .iter()
-            .zip(right)
-            .all(|(left, right)| match (left, right) {
-                (
-                    THIRField::Standard {
-                        name: left_name,
-                        type_id: left_type,
-                    },
-                    THIRField::Standard {
-                        name: right_name,
-                        type_id: right_type,
-                    },
-                ) => left_name == right_name && left_type == right_type,
-                (
-                    THIRField::Bitfield {
-                        name: left_name,
-                        integer_type_id: left_type,
-                        width: left_width,
-                    },
-                    THIRField::Bitfield {
-                        name: right_name,
-                        integer_type_id: right_type,
-                        width: right_width,
-                    },
-                ) => {
-                    left_name == right_name && left_type == right_type && left_width == right_width
-                }
-                _ => false,
-            })
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MIRFloatType {
+    F32,
+    F64,
+}
+
+impl MIRFloatType {
+    pub const fn bytes(self) -> usize {
+        match self {
+            Self::F32 => 4,
+            Self::F64 => 8,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MIRField {
+    Standard {
+        type_id: MIRTypeID,
+    },
+    Bitfield {
+        integer_type_id: MIRTypeID,
+        width: usize,
+    },
+}
+
+impl MIRField {
+    pub const fn standard(type_id: MIRTypeID) -> Self {
+        Self::Standard { type_id }
+    }
+
+    pub const fn ty(&self) -> MIRTypeID {
+        match self {
+            Self::Standard { type_id }
+            | Self::Bitfield {
+                integer_type_id: type_id,
+                ..
+            } => *type_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MIRBitfieldAccess {
+    pub storage_type: MIRTypeID,
+    pub bit_offset: usize,
+    pub bit_width: usize,
+    pub signed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MIRFunctionType {
+    pub params: Vec<MIRTypeID>,
+    pub return_type: MIRTypeID,
+    pub variadic: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MIRTypeKind {
+    Unit,
+    Integer {
+        ty: MIRIntType,
+        signed: bool,
+    },
+    Float {
+        ty: MIRFloatType,
+    },
+    Structured {
+        fields: Vec<MIRField>,
+    },
+    Union {
+        variants: Vec<MIRField>,
+    },
+    TaggedUnion {
+        variants: Vec<MIRField>,
+    },
+    PointerTo {
+        inner: MIRTypeID,
+    },
+    MemoryReference {
+        inner: MIRTypeID,
+        bitfield: Option<MIRBitfieldAccess>,
+    },
+    Array {
+        length: usize,
+        inner: MIRTypeID,
+    },
+    Function {
+        signature: MIRFunctionType,
+    },
+    Opaque {
+        size: usize,
+        alignment: usize,
+    },
+    Undefined,
+    Str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MIRTypeDefinition {
+    pub kind: MIRTypeKind,
+    pub minimum_alignment: Option<usize>,
+}
+
+impl MIRTypeDefinition {
+    pub fn new(kind: MIRTypeKind) -> Self {
+        Self {
+            kind,
+            minimum_alignment: None,
+        }
+    }
 }

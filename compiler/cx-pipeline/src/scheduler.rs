@@ -1,8 +1,11 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::pipeline_error;
 use crate::progress::ProgressReporter;
-use cx_log::{CXResult, error::CXErr};
-use cx_mir_analysis::{MIRAnalysisOptions, analyze};
+use cx_log::{
+    CXResult,
+    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+};
+use cx_mir_analysis::{MIRAnalysisError, MIRAnalysisOptions, analyze};
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::preparse::PreparseConfig;
 use cx_parsing::{decompose_ast, parse_ast, preparse};
@@ -426,6 +429,11 @@ pub(crate) fn perform_job(
         CompilationStep::MIRGen => {
             let thir = context.module_db.thir.get(&job.unit);
             let mir = generate_mir(thir.as_ref())?;
+
+            if !job.unit.is_std_lib() || context.config.verbose {
+                dump_data(&mir);
+            }
+
             let analysis = analyze(
                 &mir,
                 MIRAnalysisOptions {
@@ -433,11 +441,24 @@ pub(crate) fn perform_job(
                 },
             )
             .map_err(|error| {
-                pipeline_error("ANALYSIS ERROR", format!("MIR analysis failed: {error}"))
+                let diagnostic_context = match &error {
+                    MIRAnalysisError::Validation(validation) => mir
+                        .validation_error_range(validation)
+                        .map(|range| context.module_db.convert_token_range(range)),
+                }
+                .unwrap_or_else(|| {
+                    CXInternalContext::error("MIR analysis failed outside source context")
+                });
+                CXErr::new(
+                    CXStdErrMessage::error(
+                        "ANALYSIS ERROR",
+                        format!("{error}"),
+                    ),
+                    diagnostic_context,
+                )
             })?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
-                dump_data(&mir);
                 dump_data(&analysis);
             }
 
@@ -445,9 +466,8 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::LMIRGen => {
-            let thir = context.module_db.thir.get(&job.unit);
             let mir = context.module_db.mir.get(&job.unit);
-            let lmir = generate_lmir(mir.as_ref(), &thir.registry)?;
+            let lmir = generate_lmir(mir.as_ref())?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&lmir);

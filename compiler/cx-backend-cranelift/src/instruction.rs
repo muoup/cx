@@ -14,7 +14,7 @@ use cx_lmir::{
     LMIRBlockTarget, LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction,
     LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRReturnABI,
 };
-use cx_log::error::CXRawResult;
+use cx_log::error::{message::CXStdErrMessage, CXRawResult};
 
 fn block_arguments(
     context: &mut FunctionState,
@@ -537,6 +537,12 @@ pub(crate) fn codegen_instruction(
                         );
                     }
                 }
+                CodegenValue::Null => {
+                    return CXStdErrMessage::result(
+                        "CODEGEN ERROR",
+                        "LMIR attempted to store a value with no runtime representation",
+                    );
+                }
                 value => {
                     context
                         .builder
@@ -771,7 +777,7 @@ pub(crate) fn codegen_instruction(
 
         LMIRInstructionKind::CompilerAssumption { .. } => CodegenValue::Null,
         LMIRInstructionKind::Unreachable => {
-            context.builder.ins().trap(ir::TrapCode::unwrap_user(0));
+            context.builder.ins().trap(ir::TrapCode::unwrap_user(1));
             CodegenValue::Null
         }
     })

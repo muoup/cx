@@ -12,7 +12,9 @@ use crate::type_checking::control_flow::{
 use crate::type_checking::op::binop::access::typecheck_access;
 use crate::type_checking::op::binop::assign::typecheck_assignment;
 use crate::type_checking::op::binop::calls::typecheck_method_call;
-use crate::type_checking::op::unop::{typecheck_sizeof_expr, typecheck_sizeof_type};
+use crate::type_checking::op::unop::{
+    typecheck_alignof_expr, typecheck_alignof_type, typecheck_sizeof_expr, typecheck_sizeof_type,
+};
 use crate::type_checking::op::{self, try_typecheck_special_binop, typecheck_binop};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::{
@@ -519,6 +521,10 @@ fn typecheck_expr_inner(
         CXExprKind::SizeOfType { _type } => typecheck_sizeof_type(env, namespace, expr, _type)?,
 
         CXExprKind::SizeOfExpr { expr } => typecheck_sizeof_expr(env, namespace, expr)?,
+
+        CXExprKind::AlignOfType { _type } => typecheck_alignof_type(env, namespace, expr, _type)?,
+
+        CXExprKind::AlignOfExpr { expr } => typecheck_alignof_expr(env, namespace, expr)?,
 
         CXExprKind::Switch {
             condition,

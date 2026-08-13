@@ -1,6 +1,4 @@
-use cx_thir::thir::r#type::{THIRFloatType, THIRIntType};
-
-use crate::MIRType;
+use crate::ty::{MIRFloatType, MIRIntType, MIRTypeID};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MIRIntBinaryOp {
@@ -65,26 +63,26 @@ pub enum MIRPointerBinaryOp {
 #[derive(Debug, Clone)]
 pub enum MIRBinaryOp {
     Integer {
-        ty: THIRIntType,
+        ty: MIRIntType,
         signed: bool,
         op: MIRIntBinaryOp,
     },
     Float {
-        ty: THIRFloatType,
+        ty: MIRFloatType,
         op: MIRFloatBinaryOp,
     },
     PointerOffset {
         op: MIRPointerOffsetOp,
-        pointee: Box<MIRType>,
+        pointee: MIRTypeID,
     },
     Pointer(MIRPointerBinaryOp),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MIRUnaryOp {
-    IntegerNeg { ty: THIRIntType, signed: bool },
-    FloatNeg(THIRFloatType),
-    BitNot(THIRIntType),
+    IntegerNeg { ty: MIRIntType, signed: bool },
+    FloatNeg(MIRFloatType),
+    BitNot(MIRIntType),
     LogicalNot,
     Increment { amount: i8, post: bool },
 }
@@ -93,28 +91,28 @@ pub enum MIRUnaryOp {
 pub enum MIRCoercion {
     Integral {
         sign_extend: bool,
-        from: THIRIntType,
-        to: THIRIntType,
+        from: MIRIntType,
+        to: MIRIntType,
     },
     FloatCast {
-        from: THIRFloatType,
-        to: THIRFloatType,
+        from: MIRFloatType,
+        to: MIRFloatType,
     },
     IntToFloat {
-        from: THIRIntType,
-        to: THIRFloatType,
+        from: MIRIntType,
+        to: MIRFloatType,
         signed: bool,
     },
     FloatToInt {
-        from: THIRFloatType,
-        to: THIRIntType,
+        from: MIRFloatType,
+        to: MIRIntType,
         signed: bool,
     },
     PointerToInt {
-        to: THIRIntType,
+        to: MIRIntType,
     },
     IntToPointer {
-        from: THIRIntType,
+        from: MIRIntType,
         sign_extend: bool,
     },
     FunctionToPointer,

@@ -1,28 +1,11 @@
-use cx_thir::thir::r#type::{THIRFloatType, THIRIntType};
-use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
+use cx_tokens::TokenRange;
+use cx_util::{dense_id, identifier::CXIdent, unsafe_float::FloatWrapper};
 
 use crate::{
     global::{MIRFunctionID, MIRGlobalID},
     op::{MIRBinaryOp, MIRCoercion, MIRUnaryOp},
-    ty::MIRType,
+    ty::{MIRFloatType, MIRIntType, MIRTypeID},
 };
-
-macro_rules! dense_id {
-    ($name:ident) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct $name(pub usize);
-
-        impl $name {
-            pub const fn new(index: usize) -> Self {
-                Self(index)
-            }
-
-            pub const fn index(self) -> usize {
-                self.0
-            }
-        }
-    };
-}
 
 dense_id!(MIRPlaceID);
 dense_id!(MIRParameterID);
@@ -42,12 +25,12 @@ pub enum MIRConstant {
     Bool(bool),
     Integer {
         value: i128,
-        ty: THIRIntType,
+        ty: MIRIntType,
         signed: bool,
     },
     Float {
         value: FloatWrapper,
-        ty: THIRFloatType,
+        ty: MIRFloatType,
     },
     Null,
     Function(MIRFunctionID),
@@ -62,9 +45,34 @@ pub enum MIRValue {
     Constant(MIRConstant),
 }
 
-enum InstrOperand<'a> {
+#[derive(Debug, Clone, Copy)]
+pub enum MIRInstrOperand<'a> {
     Value(&'a MIRValue),
     Place(MIRPlace),
+}
+
+impl MIRInstrOperand<'_> {
+    pub const fn place(self) -> Option<MIRPlace> {
+        match self {
+            Self::Value(MIRValue::Place(place) | MIRValue::Move(place)) => Some(*place),
+            Self::Place(place) => Some(place),
+            _ => None,
+        }
+    }
+
+    pub const fn register(self) -> Option<MIRRegister> {
+        match self {
+            Self::Value(MIRValue::Register(register)) => Some(*register),
+            _ => None,
+        }
+    }
+
+    pub const fn function(self) -> Option<MIRFunctionID> {
+        match self {
+            Self::Value(MIRValue::Constant(MIRConstant::Function(function))) => Some(*function),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -108,22 +116,22 @@ pub enum MIRAggregateOp {
 pub enum MIRPlaceAggregateOp {
     Dereference {
         pointer: MIRValue,
-        pointee_type: MIRType,
+        pointee_type: MIRTypeID,
     },
     Field {
         base: MIRPlace,
         field: usize,
-        aggregate_type: MIRType,
+        aggregate_type: MIRTypeID,
     },
     Index {
         base: MIRPlace,
         index: MIRValue,
-        element_type: MIRType,
+        element_type: MIRTypeID,
     },
     Variant {
         base: MIRPlace,
         variant: usize,
-        sum_type: MIRType,
+        sum_type: MIRTypeID,
     },
 }
 
@@ -131,16 +139,16 @@ pub enum MIRPlaceAggregateOp {
 pub enum MIRValueAggregateOp {
     Discriminant {
         value: MIRValue,
-        sum_type: MIRType,
+        sum_type: MIRTypeID,
     },
     Construct {
-        ty: MIRType,
+        ty: MIRTypeID,
         fields: Vec<(usize, MIRValue)>,
     },
     Variant {
         variant: usize,
         value: MIRValue,
-        sum_type: MIRType,
+        sum_type: MIRTypeID,
     },
 }
 
@@ -179,18 +187,22 @@ impl MIRBasicBlock {
 #[derive(Debug, Clone)]
 pub struct MIRInstr {
     pub kind: MIRInstrKind,
+    pub token_range: TokenRange,
 }
 
 impl MIRInstr {
     pub fn new(kind: MIRInstrKind) -> Self {
-        Self { kind }
+        Self::new_at(kind, TokenRange::internal())
+    }
+
+    pub fn new_at(kind: MIRInstrKind, token_range: TokenRange) -> Self {
+        Self { kind, token_range }
     }
 
     pub fn is_terminator(&self) -> bool {
         self.kind.is_terminator()
     }
 
-    /// Iterates over the successor blocks of this instruction's targets.
     pub fn successors(&self) -> impl ExactSizeIterator<Item = MIRBasicBlockID> + '_ {
         let mut successors = Vec::new();
         match &self.kind {
@@ -216,30 +228,6 @@ impl MIRInstr {
         successors.into_iter()
     }
 
-    /// Iterates over the places this instruction reads, including move
-    /// sources and non-value place operands such as leak subjects and
-    /// aggregate projection bases.
-    pub fn referenced_places(&self) -> impl Iterator<Item = MIRPlace> + '_ {
-        self.operands()
-            .into_iter()
-            .filter_map(|operand| match operand {
-                InstrOperand::Value(MIRValue::Place(place) | MIRValue::Move(place)) => Some(*place),
-                InstrOperand::Place(place) => Some(place),
-                _ => None,
-            })
-    }
-
-    /// Iterates over the places this instruction moves out of.
-    pub fn moved_places(&self) -> impl Iterator<Item = MIRPlace> + '_ {
-        self.operands()
-            .into_iter()
-            .filter_map(|operand| match operand {
-                InstrOperand::Value(MIRValue::Move(place)) => Some(*place),
-                _ => None,
-            })
-    }
-
-    /// Iterates over the places this instruction defines.
     pub fn defined_places(&self) -> impl Iterator<Item = MIRPlace> + '_ {
         let place = match &self.kind {
             MIRInstrKind::Initialize { place }
@@ -251,17 +239,6 @@ impl MIRInstr {
         place.into_iter()
     }
 
-    /// Iterates over the registers this instruction reads.
-    pub fn referenced_registers(&self) -> impl Iterator<Item = MIRRegister> + '_ {
-        self.operands()
-            .into_iter()
-            .filter_map(|operand| match operand {
-                InstrOperand::Value(MIRValue::Register(register)) => Some(*register),
-                _ => None,
-            })
-    }
-
-    /// Iterates over the registers this instruction defines.
     pub fn defined_registers(&self) -> impl Iterator<Item = MIRRegister> + '_ {
         let register = match &self.kind {
             MIRInstrKind::AddressOf { out, .. }
@@ -275,22 +252,7 @@ impl MIRInstr {
         register.into_iter()
     }
 
-    /// Iterates over the functions referenced by this instruction's values.
-    pub fn referenced_functions(&self) -> impl Iterator<Item = MIRFunctionID> + '_ {
-        self.operands()
-            .into_iter()
-            .filter_map(|operand| match operand {
-                InstrOperand::Value(MIRValue::Constant(MIRConstant::Function(function))) => {
-                    Some(*function)
-                }
-                _ => None,
-            })
-    }
-
-    /// Collects this instruction's value operands in read order, followed by
-    /// directly referenced places that are not value operands, such as leak
-    /// subjects and aggregate projection bases.
-    fn operands(&self) -> Vec<InstrOperand<'_>> {
+    pub fn visit_operands(&self, mut visit: impl FnMut(MIRInstrOperand<'_>)) {
         match &self.kind {
             MIRInstrKind::Assign { value, .. }
             | MIRInstrKind::Emit { value }
@@ -299,13 +261,15 @@ impl MIRInstr {
             | MIRInstrKind::Assert {
                 condition: value, ..
             }
-            | MIRInstrKind::Assume { condition: value } => vec![InstrOperand::Value(value)],
+            | MIRInstrKind::Assume { condition: value } => {
+                visit(MIRInstrOperand::Value(value));
+            }
 
             MIRInstrKind::AggregateOp(operation) => match operation {
                 MIRAggregateOp::Place {
                     op: MIRPlaceAggregateOp::Dereference { pointer, .. },
                     ..
-                } => vec![InstrOperand::Value(pointer)],
+                } => visit(MIRInstrOperand::Value(pointer)),
                 MIRAggregateOp::Place {
                     op: MIRPlaceAggregateOp::Field { base, .. },
                     ..
@@ -313,15 +277,13 @@ impl MIRInstr {
                 | MIRAggregateOp::Place {
                     op: MIRPlaceAggregateOp::Variant { base, .. },
                     ..
-                } => vec![InstrOperand::Place(*base)],
+                } => visit(MIRInstrOperand::Place(*base)),
                 MIRAggregateOp::Place {
                     op: MIRPlaceAggregateOp::Index { base, index, .. },
                     ..
                 } => {
-                    vec![
-                        InstrOperand::Value(index),
-                        InstrOperand::Place(*base),
-                    ]
+                    visit(MIRInstrOperand::Value(index));
+                    visit(MIRInstrOperand::Place(*base));
                 }
                 MIRAggregateOp::Value {
                     op: MIRValueAggregateOp::Discriminant { value, .. },
@@ -330,55 +292,53 @@ impl MIRInstr {
                 | MIRAggregateOp::Value {
                     op: MIRValueAggregateOp::Variant { value, .. },
                     ..
-                } => vec![InstrOperand::Value(value)]
+                } => visit(MIRInstrOperand::Value(value)),
                 MIRAggregateOp::Value {
                     op: MIRValueAggregateOp::Construct { fields, .. },
                     ..
-                } => fields.iter().map(|(_, value)| InstrOperand::Value(value)).collect()
+                } => {
+                    for (_, value) in fields {
+                        visit(MIRInstrOperand::Value(value));
+                    }
+                }
             },
 
             MIRInstrKind::Call { callee, args, .. } => {
-                let mut operands = vec![];
-                operands.push(InstrOperand::Value(callee));
-                operands.extend(args.iter().map(InstrOperand::Value));
-                operands
+                visit(MIRInstrOperand::Value(callee));
+                for arg in args {
+                    visit(MIRInstrOperand::Value(arg));
+                }
             }
             MIRInstrKind::BinOp { lhs, rhs, .. } => {
-                vec![InstrOperand::Value(lhs), InstrOperand::Value(rhs)]
+                visit(MIRInstrOperand::Value(lhs));
+                visit(MIRInstrOperand::Value(rhs));
             }
-            MIRInstrKind::Return { value: Some(value) } => {
-                vec![InstrOperand::Value(value)]
+            MIRInstrKind::Return { value: Some(value) } => visit(MIRInstrOperand::Value(value)),
+            MIRInstrKind::Return { value: None } => {}
+            MIRInstrKind::Jump { target } => {
+                visit_target_operands(target, &mut visit);
             }
-            MIRInstrKind::Return { value: None } => vec![],
-            MIRInstrKind::Jump { target } => target.args.iter().map(InstrOperand::Value).collect(),
             MIRInstrKind::Branch {
                 cond,
                 true_target,
                 false_target,
             } => {
-                let mut operands = vec![];
-
-                operands.push(InstrOperand::Value(cond));
-                operands.extend(true_target.args.iter().map(InstrOperand::Value));
-                operands.extend(false_target.args.iter().map(InstrOperand::Value));
-
-                operands
+                visit(MIRInstrOperand::Value(cond));
+                visit_target_operands(true_target, &mut visit);
+                visit_target_operands(false_target, &mut visit);
             }
             MIRInstrKind::IntSwitch {
                 value,
                 cases,
                 default,
             } => {
-                let mut operands = vec![];
-                operands.push(InstrOperand::Value(value));
-                operands.push(InstrOperand::Value(value));
+                visit(MIRInstrOperand::Value(value));
                 for (_, target) in cases {
-                    operands.extend(target.args.iter().map(InstrOperand::Value));
+                    visit_target_operands(target, &mut visit);
                 }
                 if let Some(default) = default {
-                    operands.extend(default.args.iter().map(InstrOperand::Value));
+                    visit_target_operands(default, &mut visit);
                 }
-                operands
             }
             MIRInstrKind::VariantSwitch {
                 subject,
@@ -386,30 +346,35 @@ impl MIRInstr {
                 default,
                 ..
             } => {
-                let mut operands = vec![];
                 for (_, target) in cases {
-                    operands.extend(target.args.iter().map(InstrOperand::Value));
+                    visit_target_operands(target, &mut visit);
                 }
                 if let Some(default) = default {
-                    operands.extend(default.args.iter().map(InstrOperand::Value));
+                    visit_target_operands(default, &mut visit);
                 }
-                operands.push(InstrOperand::Place(*subject));
-                operands
+                visit(MIRInstrOperand::Place(*subject));
             }
             MIRInstrKind::Leak { place } | MIRInstrKind::AddressOf { place, .. } => {
-                vec![InstrOperand::Place(*place)]
+                visit(MIRInstrOperand::Place(*place));
             }
             MIRInstrKind::Initialize { .. }
             | MIRInstrKind::Create { .. }
-            | MIRInstrKind::Unreachable => vec![],
+            | MIRInstrKind::Unreachable => {}
         }
+    }
+}
+
+fn visit_target_operands<'a>(
+    target: &'a MIRBlockTarget,
+    visit: &mut impl FnMut(MIRInstrOperand<'a>),
+) {
+    for arg in &target.args {
+        visit(MIRInstrOperand::Value(arg));
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum MIRInstrKind {
-    // Explicit storage effects. Create allocates abstract storage, while
-    // Initialize and Leak describe semantic transitions over that storage.
     Initialize {
         place: MIRPlace,
     },
@@ -419,12 +384,12 @@ pub enum MIRInstrKind {
 
     Create {
         out: MIRPlace,
-        ty: MIRType,
+        ty: MIRTypeID,
     },
     Assign {
         dest: MIRPlace,
         value: MIRValue,
-        ty: MIRType,
+        ty: MIRTypeID,
     },
     AddressOf {
         out: MIRRegister,
@@ -454,7 +419,7 @@ pub enum MIRInstrKind {
         out: MIRRegister,
         operand: MIRValue,
         coercion: MIRCoercion,
-        to_type: MIRType,
+        to_type: MIRTypeID,
     },
     Assert {
         condition: MIRValue,
@@ -482,7 +447,7 @@ pub enum MIRInstrKind {
     },
     VariantSwitch {
         subject: MIRPlace,
-        sum_type: MIRType,
+        sum_type: MIRTypeID,
         cases: Vec<(usize, MIRBlockTarget)>,
         default: Option<MIRBlockTarget>,
     },

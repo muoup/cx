@@ -682,6 +682,20 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }
+            THIRExpressionKind::SizeOf { _type } => {
+                write!(f, "SizeOf ")?;
+                self.write_type(f, _type)?;
+                writeln!(f, " <'")?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, ">")
+            }
+            THIRExpressionKind::AlignOf { _type } => {
+                write!(f, "AlignOf ")?;
+                self.write_type(f, _type)?;
+                writeln!(f, " <'")?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, ">")
+            }
             THIRExpressionKind::Variable {
                 name, location: _, ..
             } => {

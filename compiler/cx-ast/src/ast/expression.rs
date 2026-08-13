@@ -1,5 +1,5 @@
-use cx_tokens::token::{FloatSuffix, IntegerBase, IntegerSuffix};
 use cx_tokens::TokenRange;
+use cx_tokens::token::{FloatSuffix, IntegerBase, IntegerSuffix};
 use cx_util::{
     identifier::CXIdent,
     namespace::{EnvironmentNamespace, QualifiedName},
@@ -101,6 +101,12 @@ pub enum CXExprKind {
         expr: Box<CXExpression>,
     },
     SizeOfType {
+        _type: CXType,
+    },
+    AlignOfExpr {
+        expr: Box<CXExpression>,
+    },
+    AlignOfType {
         _type: CXType,
     },
 

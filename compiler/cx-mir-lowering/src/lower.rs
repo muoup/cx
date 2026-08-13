@@ -11,14 +11,12 @@ use cx_lmir::{
 };
 use cx_log::CXResult;
 use cx_mir::{
-    MIRAggregateOp, MIRBasicBlockID, MIRBinaryOp, MIRBlockTarget, MIRCoercion,
-    MIRConstant, MIRFloatBinaryOp, MIRFunction, MIRGlobalInitializer, MIRInstrKind, MIRIntBinaryOp,
-    MIRPlace, MIRPlaceAggregateOp, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister, MIRType,
+    MIRAggregateOp, MIRBasicBlockID, MIRBinaryOp, MIRBlockTarget, MIRCoercion, MIRConstant,
+    MIRFieldLayout, MIRFloatBinaryOp, MIRFnParam, MIRFnSignature, MIRFunction, MIRFunctionType,
+    MIRGlobalInitializer, MIRInstrKind, MIRIntBinaryOp, MIRIntType, MIRPlace, MIRPlaceAggregateOp,
+    MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister, MIRTypeID, MIRTypeKind, MIRTypeRegistry,
     MIRUnaryOp, MIRUnit, MIRValue, MIRValueAggregateOp,
 };
-use cx_thir::registry::THIRDecomposedRegistry;
-use cx_thir::thir::r#type::{THIRField, THIRType, THIRTypeKind};
-use cx_thir::type_context::THIRTypeContext;
 use cx_util::identifier::CXIdent;
 
 use crate::typing::{
@@ -26,15 +24,15 @@ use crate::typing::{
     convert_prototype, convert_type,
 };
 
-pub(crate) fn lower_unit(mir: &MIRUnit, registry: &THIRDecomposedRegistry) -> CXResult<LMIRUnit> {
+pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistry) -> CXResult<LMIRUnit> {
     let mut prototypes = LMIRFunctionMap::new();
     for function in &mir.functions {
-        let prototype = convert_prototype(&function.prototype, registry);
+        let prototype = convert_prototype(&function.prototype, types);
         prototypes.insert(prototype.name.to_string(), prototype);
     }
     prototypes
         .entry(ASSERTION.symbol_name())
-        .or_insert_with(|| assertion_prototype(registry));
+        .or_insert_with(|| assertion_prototype(types));
 
     let mut globals = mir
         .globals
@@ -62,7 +60,7 @@ pub(crate) fn lower_unit(mir: &MIRUnit, registry: &THIRDecomposedRegistry) -> CX
                         Some(other) => panic!("unsupported MIR global initializer: {other:?}"),
                     };
                     LMIRGlobalType::Variable {
-                        _type: convert_type(global.ty.as_thir(), registry),
+                        _type: convert_type(global.ty, types),
                         initial_value,
                     }
                 }
@@ -80,20 +78,20 @@ pub(crate) fn lower_unit(mir: &MIRUnit, registry: &THIRDecomposedRegistry) -> CX
         if function.is_declaration() {
             continue;
         }
-        let lowerer = FunctionLowerer::new(mir, function, registry, &prototypes, &mut globals);
+        let lowerer = FunctionLowerer::new(mir, function, types, &prototypes, &mut globals);
         functions.push(lowerer.lower()?);
     }
 
     Ok(LMIRUnit {
-        architecture: *registry.architecture(),
+        architecture: *types.architecture(),
         fn_map: prototypes,
         fn_defs: functions,
         global_vars: globals,
     })
 }
 
-fn assertion_prototype(registry: &THIRDecomposedRegistry) -> LMIRFunctionPrototype {
-    let pointer = LMIRType::default_pointer(registry.architecture());
+fn assertion_prototype(types: &MIRTypeRegistry) -> LMIRFunctionPrototype {
+    let pointer = LMIRType::default_pointer(types.architecture());
     LMIRFunctionPrototype {
         name: CXIdent::new(ASSERTION.symbol_name()),
         linkage: LinkageType::External,
@@ -131,12 +129,12 @@ fn assertion_prototype(registry: &THIRDecomposedRegistry) -> LMIRFunctionPrototy
 enum PlaceBinding {
     Address {
         value: LMIRValue,
-        ty: MIRType,
+        ty: MIRTypeID,
     },
     Bitfield {
         address: LMIRValue,
-        storage_type: MIRType,
-        value_type: MIRType,
+        storage_type: MIRTypeID,
+        value_type: MIRTypeID,
         bit_offset: usize,
         bit_width: usize,
     },
@@ -145,7 +143,7 @@ enum PlaceBinding {
 struct FunctionLowerer<'a> {
     unit: &'a MIRUnit,
     function: &'a MIRFunction,
-    registry: &'a THIRDecomposedRegistry,
+    types: &'a MIRTypeRegistry,
     prototypes: &'a LMIRFunctionMap,
     globals: &'a mut Vec<LMIRGlobalValue>,
     prototype: LMIRFunctionPrototype,
@@ -160,7 +158,7 @@ impl<'a> FunctionLowerer<'a> {
     fn new(
         unit: &'a MIRUnit,
         function: &'a MIRFunction,
-        registry: &'a THIRDecomposedRegistry,
+        types: &'a MIRTypeRegistry,
         prototypes: &'a LMIRFunctionMap,
         globals: &'a mut Vec<LMIRGlobalValue>,
     ) -> Self {
@@ -190,9 +188,8 @@ impl<'a> FunctionLowerer<'a> {
                             function
                                 .register(*register)
                                 .expect("invalid block parameter")
-                                .ty
-                                .as_thir(),
-                            registry,
+                                .ty,
+                            types,
                         ),
                     })
                     .collect(),
@@ -202,10 +199,10 @@ impl<'a> FunctionLowerer<'a> {
         Self {
             unit,
             function,
-            registry,
+            types,
             prototypes,
             globals,
-            prototype: convert_prototype(&function.prototype, registry),
+            prototype: convert_prototype(&function.prototype, types),
             blocks,
             block_indices,
             places: HashMap::new(),
@@ -277,6 +274,22 @@ impl<'a> FunctionLowerer<'a> {
                         },
                     );
                     abi_index += 1;
+                }
+                LMIRParameterABI::Direct { slots }
+                    if matches!(
+                        self.types.kind(parameter.ty),
+                        Some(MIRTypeKind::MemoryReference { .. })
+                    ) =>
+                {
+                    debug_assert_eq!(slots.len(), 1);
+                    self.places.insert(
+                        place,
+                        PlaceBinding::Address {
+                            value: LMIRValue::ParameterRef(abi_index as u32),
+                            ty: parameter.ty,
+                        },
+                    );
+                    abi_index += slots.len();
                 }
                 LMIRParameterABI::Direct { slots } => {
                     debug_assert_eq!(slots.len(), 1);
@@ -442,7 +455,7 @@ impl<'a> FunctionLowerer<'a> {
                                 left: base,
                                 right: index,
                             },
-                            LMIRType::default_pointer(self.registry.architecture()),
+                            LMIRType::default_pointer(self.types.architecture()),
                         );
                         PlaceBinding::Address {
                             value: address,
@@ -475,12 +488,7 @@ impl<'a> FunctionLowerer<'a> {
         }
     }
 
-    fn lower_construct(
-        &mut self,
-        out: MIRRegister,
-        ty: &MIRType,
-        fields: &[(usize, MIRValue)],
-    ) {
+    fn lower_construct(&mut self, out: MIRRegister, ty: &MIRTypeID, fields: &[(usize, MIRValue)]) {
         let lowered = self.ty(ty);
         let layout = self.layout(ty);
         self.emit_kind_to(
@@ -493,45 +501,43 @@ impl<'a> FunctionLowerer<'a> {
         );
         let base = self.register(out);
         for (index, value) in fields {
-            let (address, field_ty) = match &ty.0.kind {
-                THIRTypeKind::Structured { .. } => {
-                    let binding = self.field_binding(
-                        PlaceBinding::Address {
-                            value: base.clone(),
-                            ty: ty.clone(),
-                        },
-                        ty,
-                        *index,
-                    );
-                    
-                    match binding {
-                        PlaceBinding::Address { value, ty } => (value, ty),
-                        bitfield @ PlaceBinding::Bitfield { .. } => {
-                            let value = self.lower_value(value, None);
-                            self.store_binding(bitfield, value, &self.register_decl_type(out));
-                            continue;
+            let (address, field_ty) =
+                match self.types.kind(*ty).expect("invalid MIR aggregate type") {
+                    MIRTypeKind::Structured { .. } => {
+                        let binding = self.field_binding(
+                            PlaceBinding::Address {
+                                value: base.clone(),
+                                ty: *ty,
+                            },
+                            ty,
+                            *index,
+                        );
+
+                        match binding {
+                            PlaceBinding::Address { value, ty } => (value, ty),
+                            bitfield @ PlaceBinding::Bitfield { .. } => {
+                                let value = self.lower_value(value, None);
+                                self.store_binding(bitfield, value, &self.register_decl_type(out));
+                                continue;
+                            }
                         }
                     }
-                }
-                
-                THIRTypeKind::Array { .. } => {
-                    let THIRTypeKind::Array { inner_type, .. } = ty.as_thir().kind else {
-                        panic!("array aggregate has non-array type")
-                    };
-                    let field_ty = MIRType::new(self.registry.resolve_type_id(inner_type).clone());
-                    let element = self.ty(&field_ty);
-                    (
-                        self.offset_address(
-                            base.clone(),
-                            index * self.layout(&field_ty).size,
-                            &element,
-                        ),
-                        field_ty,
-                    )
-                },
 
-                _ => unreachable!("construct aggregate has non-structured, non-array type"),
-            };
+                    MIRTypeKind::Array { inner, .. } => {
+                        let field_ty = *inner;
+                        let element = self.ty(&field_ty);
+                        (
+                            self.offset_address(
+                                base.clone(),
+                                index * self.layout(&field_ty).size,
+                                &element,
+                            ),
+                            field_ty,
+                        )
+                    }
+
+                    _ => unreachable!("construct aggregate has non-structured, non-array type"),
+                };
             let value = self.lower_value(value, Some(&field_ty));
             self.store_address(address, value, &field_ty);
         }
@@ -542,7 +548,7 @@ impl<'a> FunctionLowerer<'a> {
         out: MIRRegister,
         variant: usize,
         value: &MIRValue,
-        sum_type: &MIRType,
+        sum_type: &MIRTypeID,
     ) {
         let lowered = self.ty(sum_type);
         let layout = self.layout(sum_type);
@@ -559,7 +565,7 @@ impl<'a> FunctionLowerer<'a> {
         let value = self.lower_value(value, Some(&variant_ty));
         self.store_address(base.clone(), value, &variant_ty);
         let tag_ty = LMIRType::with_implicit_abi(
-            self.registry.architecture(),
+            self.types.architecture(),
             LMIRTypeKind::Integer(LMIRIntegerType::I8),
         );
         let tag_address = self.offset_address(base, self.tag_offset(sum_type), &tag_ty);
@@ -603,7 +609,7 @@ impl<'a> FunctionLowerer<'a> {
                     MIRPointerBinaryOp::Gt => LMIRPtrBinOp::GT,
                     MIRPointerBinaryOp::Ge => LMIRPtrBinOp::GE,
                 },
-                ptr_type: LMIRType::default_pointer(self.registry.architecture()),
+                ptr_type: LMIRType::default_pointer(self.types.architecture()),
                 type_size: TypeSize::from(1),
                 left: lhs,
                 right: rhs,
@@ -666,7 +672,7 @@ impl<'a> FunctionLowerer<'a> {
         out: MIRRegister,
         operand: &MIRValue,
         coercion: &MIRCoercion,
-        to_type: &MIRType,
+        to_type: &MIRTypeID,
     ) {
         let value = self.lower_value(operand, None);
         let kind = match coercion {
@@ -680,7 +686,7 @@ impl<'a> FunctionLowerer<'a> {
                 from,
                 to,
             } => {
-                if matches!(to, cx_thir::thir::r#type::THIRIntType::I1) {
+                if matches!(to, MIRIntType::I1) {
                     LMIRInstructionKind::IntegerBinOp {
                         op: LMIRIntBinOp::NE,
                         left: value,
@@ -745,7 +751,12 @@ impl<'a> FunctionLowerer<'a> {
         let mut lowered_args = Vec::new();
         for (index, argument) in args.iter().enumerate() {
             if let Some(parameter) = signature.params.get(index) {
-                lowered_args.extend(self.lower_call_argument(argument, parameter));
+                let parameter_type = self.call_parameter_type(callee, index);
+                lowered_args.extend(self.lower_call_argument(
+                    argument,
+                    parameter,
+                    parameter_type.as_ref(),
+                ));
             } else {
                 lowered_args.push(self.lower_value(argument, None));
             }
@@ -810,10 +821,11 @@ impl<'a> FunctionLowerer<'a> {
         &mut self,
         argument: &MIRValue,
         parameter: &LMIRParameter,
+        parameter_type: Option<&MIRTypeID>,
     ) -> Vec<LMIRValue> {
         match &parameter.abi {
             LMIRParameterABI::Direct { slots } if parameter._type.is_memory_resident() => {
-                let source = self.lower_value(argument, None);
+                let source = self.lower_value(argument, parameter_type);
                 slots
                     .iter()
                     .map(|slot| {
@@ -829,7 +841,7 @@ impl<'a> FunctionLowerer<'a> {
                     .collect()
             }
             LMIRParameterABI::Indirect { alignment } => {
-                let source = self.lower_value(argument, None);
+                let source = self.lower_value(argument, parameter_type);
                 if matches!(argument, MIRValue::Place(_)) {
                     let copy = self.emit_temp(
                         LMIRInstructionKind::Allocate {
@@ -853,7 +865,9 @@ impl<'a> FunctionLowerer<'a> {
                     vec![source]
                 }
             }
-            LMIRParameterABI::Direct { .. } => vec![self.lower_value(argument, None)],
+            LMIRParameterABI::Direct { .. } => {
+                vec![self.lower_value(argument, parameter_type)]
+            }
         }
     }
 
@@ -917,30 +931,51 @@ impl<'a> FunctionLowerer<'a> {
         });
     }
 
-    fn lower_value(&mut self, value: &MIRValue, expected: Option<&MIRType>) -> LMIRValue {
+    fn lower_value(&mut self, value: &MIRValue, expected: Option<&MIRTypeID>) -> LMIRValue {
         match value {
             MIRValue::Register(register) => self.register(*register),
             MIRValue::Place(place) | MIRValue::Move(place) => {
                 let binding = self.place(*place);
                 let ty = self.binding_type(&binding);
+                if expected.is_some_and(|expected| {
+                    matches!(
+                        self.types.kind(*expected),
+                        Some(MIRTypeKind::MemoryReference { .. })
+                    )
+                }) {
+                    return self.address(binding);
+                }
                 if matches!(place, MIRPlace::Global(id) if matches!(
                     self.unit.global(*id).and_then(|global| global.initializer.as_ref()),
                     Some(MIRGlobalInitializer::Bytes(_))
                 )) {
                     return self.address(binding);
                 }
-                let lowered = self.ty(&ty);
+                if self.ty(&ty).is_memory_resident()
+                    || matches!(
+                        self.types.kind(ty),
+                        Some(MIRTypeKind::MemoryReference { .. })
+                    )
+                {
+                    return self.address(binding);
+                }
+                let load_type = expected.unwrap_or(&ty);
+                let lowered = self.ty(load_type);
                 if lowered.is_memory_resident() {
                     self.address(binding)
                 } else {
-                    self.load_binding(binding, Some(&ty), None)
+                    self.load_binding(binding, Some(load_type), None)
                 }
             }
             MIRValue::Constant(constant) => self.lower_constant(constant, expected),
         }
     }
 
-    fn lower_constant(&mut self, constant: &MIRConstant, expected: Option<&MIRType>) -> LMIRValue {
+    fn lower_constant(
+        &mut self,
+        constant: &MIRConstant,
+        expected: Option<&MIRTypeID>,
+    ) -> LMIRValue {
         match constant {
             MIRConstant::Unit => LMIRValue::NULL,
             MIRConstant::Bool(value) => self.int_constant(i128::from(*value), LMIRIntegerType::I1),
@@ -950,7 +985,7 @@ impl<'a> FunctionLowerer<'a> {
             MIRConstant::Float { value, ty } => LMIRValue::FloatImmediate {
                 val: *value,
                 _type: LMIRType::with_implicit_abi(
-                    self.registry.architecture(),
+                    self.types.architecture(),
                     LMIRTypeKind::Float(convert_float_type(*ty)),
                 ),
             },
@@ -965,7 +1000,7 @@ impl<'a> FunctionLowerer<'a> {
             ),
             MIRConstant::Null => {
                 let expected = expected.expect("null constant requires an expected type");
-                let pointer_integer = convert_integer_type(self.registry.pointer_integer_type());
+                let pointer_integer = convert_integer_type(self.types.pointer_integer_type());
                 let zero = self.int_constant(0, pointer_integer);
                 self.emit_temp(
                     LMIRInstructionKind::Coercion {
@@ -985,7 +1020,7 @@ impl<'a> FunctionLowerer<'a> {
     fn load_binding(
         &mut self,
         binding: PlaceBinding,
-        expected: Option<&MIRType>,
+        expected: Option<&MIRTypeID>,
         result: Option<MIRRegister>,
     ) -> LMIRValue {
         match binding {
@@ -1076,7 +1111,7 @@ impl<'a> FunctionLowerer<'a> {
         }
     }
 
-    fn store_binding(&mut self, binding: PlaceBinding, value: LMIRValue, ty: &MIRType) {
+    fn store_binding(&mut self, binding: PlaceBinding, value: LMIRValue, ty: &MIRTypeID) {
         match binding {
             PlaceBinding::Address { value: address, .. } => self.store_address(address, value, ty),
             PlaceBinding::Bitfield {
@@ -1154,8 +1189,11 @@ impl<'a> FunctionLowerer<'a> {
         }
     }
 
-    fn store_address(&mut self, address: LMIRValue, value: LMIRValue, ty: &MIRType) {
+    fn store_address(&mut self, address: LMIRValue, value: LMIRValue, ty: &MIRTypeID) {
         let lowered = self.ty(ty);
+        if lowered.is_void() {
+            return;
+        }
         if lowered.is_memory_resident() {
             let layout = self.layout(ty);
             let size = self.int_constant(layout.size as i128, LMIRIntegerType::I64);
@@ -1174,7 +1212,7 @@ impl<'a> FunctionLowerer<'a> {
         }
     }
 
-    fn value_as_binding(&mut self, value: &MIRValue, ty: &MIRType) -> PlaceBinding {
+    fn value_as_binding(&mut self, value: &MIRValue, ty: &MIRTypeID) -> PlaceBinding {
         match value {
             MIRValue::Place(place) | MIRValue::Move(place) => self.place(*place),
             _ => PlaceBinding::Address {
@@ -1187,12 +1225,12 @@ impl<'a> FunctionLowerer<'a> {
     fn load_discriminant(
         &mut self,
         binding: PlaceBinding,
-        sum_type: &MIRType,
+        sum_type: &MIRTypeID,
         result: Option<MIRRegister>,
     ) -> LMIRValue {
         let base = self.address(binding);
         let tag_ty = LMIRType::with_implicit_abi(
-            self.registry.architecture(),
+            self.types.architecture(),
             LMIRTypeKind::Integer(LMIRIntegerType::I8),
         );
         let address = self.offset_address(base, self.tag_offset(sum_type), &tag_ty);
@@ -1221,12 +1259,16 @@ impl<'a> FunctionLowerer<'a> {
     fn field_binding(
         &mut self,
         base: PlaceBinding,
-        aggregate: &MIRType,
+        aggregate: &MIRTypeID,
         index: usize,
     ) -> PlaceBinding {
         let base = self.address(base);
-        match aggregate_member_layout(aggregate.as_thir(), self.registry, index) {
-            MemberLayout::Standard { offset, ty } => PlaceBinding::Address {
+        let layout = self
+            .types
+            .field_layout(*aggregate, index)
+            .unwrap_or_else(|error| panic!("invalid MIR field projection: {error}"));
+        match layout {
+            MIRFieldLayout::Standard { offset, ty } => PlaceBinding::Address {
                 value: if offset == 0 {
                     base
                 } else {
@@ -1237,24 +1279,23 @@ impl<'a> FunctionLowerer<'a> {
                             field_index: index,
                             field_offset: offset,
                         },
-                        LMIRType::default_pointer(self.registry.architecture()),
+                        LMIRType::default_pointer(self.types.architecture()),
                     )
                 },
                 ty,
             },
-            MemberLayout::Bitfield {
+            MIRFieldLayout::Bitfield {
                 offset,
                 bit_offset,
                 bit_width,
                 storage_type,
-                value_type,
             } => {
                 let storage = self.ty(&storage_type);
                 let address = self.offset_address(base, offset, &storage);
                 PlaceBinding::Bitfield {
                     address,
                     storage_type,
-                    value_type,
+                    value_type: storage_type,
                     bit_offset,
                     bit_width,
                 }
@@ -1313,57 +1354,79 @@ impl<'a> FunctionLowerer<'a> {
             .value_type(callee)
             .expect("indirect callee has no type");
         let signature = self
-            .registry
-            .intern_signature(ty.as_thir())
+            .callable_type(ty)
             .expect("indirect callee is not callable");
-        let mir_signature = cx_mir::MIRFnSignature {
+        let return_type = if self
+            .types
+            .same_type(signature.return_type, self.types.unit())
+        {
+            None
+        } else {
+            Some(signature.return_type)
+        };
+        let mir_signature = MIRFnSignature {
             name: CXIdent::new("<indirect>"),
             params: signature
                 .params
                 .iter()
-                .map(|parameter| cx_mir::MIRFnParam {
-                    name: parameter.name.clone(),
-                    ty: MIRType::new(parameter._type.clone()),
-                })
+                .copied()
+                .map(MIRFnParam::new)
                 .collect(),
-            return_type: (!matches!(signature.return_type.kind, THIRTypeKind::Unit))
-                .then(|| MIRType::new(signature.return_type.clone())),
-            variadic: signature.var_args,
+            return_type,
+            variadic: signature.variadic,
         };
-        classify_signature(&mir_signature, self.registry)
+        classify_signature(&mir_signature, self.types)
     }
 
-    fn value_type(&self, value: &MIRValue) -> Option<MIRType> {
+    fn call_parameter_type(&self, callee: &MIRValue, index: usize) -> Option<MIRTypeID> {
+        match callee {
+            MIRValue::Constant(MIRConstant::Function(id)) => self
+                .unit
+                .function(*id)
+                .and_then(|function| function.prototype.signature.params.get(index))
+                .map(|parameter| parameter.ty),
+            _ => self
+                .value_type(callee)
+                .and_then(|ty| self.callable_type(ty))
+                .and_then(|signature| signature.params.get(index).copied()),
+        }
+    }
+
+    fn callable_type(&self, ty: MIRTypeID) -> Option<&MIRFunctionType> {
+        match self.types.kind(ty)? {
+            MIRTypeKind::Function { signature } => Some(signature),
+            MIRTypeKind::PointerTo { inner } | MIRTypeKind::MemoryReference { inner, .. } => {
+                self.callable_type(*inner)
+            }
+            _ => None,
+        }
+    }
+
+    fn value_type(&self, value: &MIRValue) -> Option<MIRTypeID> {
         match value {
             MIRValue::Register(register) => Some(self.register_decl_type(*register)),
             MIRValue::Place(place) | MIRValue::Move(place) => Some(self.place_decl_type(*place)),
             MIRValue::Constant(MIRConstant::Function(id)) => {
-                self.unit.function(*id).map(|function| {
-                    MIRType::from_kind(THIRTypeKind::Function {
-                        signature: Box::new(cx_thir::thir::data::THIRFnSignature {
-                            return_type: function
-                                .prototype
-                                .signature
-                                .return_type
-                                .as_ref()
-                                .map(|ty| ty.as_thir().clone())
-                                .unwrap_or_else(|| THIRTypeKind::Unit.into()),
-                            params: function
-                                .prototype
-                                .signature
-                                .params
-                                .iter()
-                                .map(|param| cx_thir::thir::data::THIRParameter {
-                                    name: param.name.clone(),
-                                    local_id: None,
-                                    _type: param.ty.as_thir().clone(),
-                                })
-                                .collect(),
-                            var_args: function.prototype.signature.variadic,
-                            contract: Default::default(),
-                        }),
-                    })
-                })
+                let function = self.unit.function(*id)?;
+                let signature = MIRFunctionType {
+                    params: function
+                        .prototype
+                        .signature
+                        .params
+                        .iter()
+                        .map(|param| param.ty)
+                        .collect(),
+                    return_type: function
+                        .prototype
+                        .signature
+                        .return_type
+                        .unwrap_or_else(|| self.types.unit()),
+                    variadic: function.prototype.signature.variadic,
+                };
+                self.types
+                    .find(&cx_mir::MIRTypeDefinition::new(MIRTypeKind::Function {
+                        signature,
+                    }))
             }
             _ => None,
         }
@@ -1399,14 +1462,14 @@ impl<'a> FunctionLowerer<'a> {
         }
     }
 
-    fn binding_type(&self, binding: &PlaceBinding) -> MIRType {
+    fn binding_type(&self, binding: &PlaceBinding) -> MIRTypeID {
         match binding {
             PlaceBinding::Address { ty, .. } => ty.clone(),
             PlaceBinding::Bitfield { value_type, .. } => value_type.clone(),
         }
     }
 
-    fn place_decl_type(&self, place: MIRPlace) -> MIRType {
+    fn place_decl_type(&self, place: MIRPlace) -> MIRTypeID {
         match place {
             MIRPlace::FunctionLocal(id) => self.function.place(id).unwrap().ty.clone(),
             MIRPlace::Parameter(id) => self.function.prototype.signature.params[id.index()]
@@ -1416,7 +1479,7 @@ impl<'a> FunctionLowerer<'a> {
         }
     }
 
-    fn register_decl_type(&self, register: MIRRegister) -> MIRType {
+    fn register_decl_type(&self, register: MIRRegister) -> MIRTypeID {
         self.function
             .register(register)
             .expect("invalid register")
@@ -1437,7 +1500,7 @@ impl<'a> FunctionLowerer<'a> {
                 _type: ty.clone(),
                 alignment,
             },
-            LMIRType::default_pointer(self.registry.architecture()),
+            LMIRType::default_pointer(self.types.architecture()),
         )
     }
 
@@ -1453,7 +1516,7 @@ impl<'a> FunctionLowerer<'a> {
                 left: base,
                 right: self.int_constant(offset as i128, LMIRIntegerType::I64),
             },
-            LMIRType::default_pointer(self.registry.architecture()),
+            LMIRType::default_pointer(self.types.architecture()),
         )
     }
 
@@ -1492,30 +1555,30 @@ impl<'a> FunctionLowerer<'a> {
         });
     }
 
-    fn ty(&self, ty: &MIRType) -> LMIRType {
-        convert_type(ty.as_thir(), self.registry)
+    fn ty(&self, ty: &MIRTypeID) -> LMIRType {
+        convert_type(*ty, self.types)
     }
 
-    fn layout(&self, ty: &MIRType) -> cx_thir::layout::THIRTypeLayout {
-        self.registry
-            .type_layout(ty.as_thir())
-            .unwrap_or_else(|err| panic!("invalid MIR type layout: {}", err.message()))
+    fn layout(&self, ty: &MIRTypeID) -> cx_mir::MIRTypeLayout {
+        self.types
+            .layout(*ty)
+            .unwrap_or_else(|err| panic!("invalid MIR type layout: {err}"))
     }
 
     fn int_constant(&self, value: i128, ty: LMIRIntegerType) -> LMIRValue {
         LMIRValue::IntImmediate {
             val: value as i64,
             _type: LMIRType::with_implicit_abi(
-                self.registry.architecture(),
+                self.types.architecture(),
                 LMIRTypeKind::Integer(ty),
             ),
         }
     }
 
-    fn integer_kind(&self, ty: &MIRType) -> LMIRIntegerType {
-        match ty.as_thir().kind {
-            THIRTypeKind::Integer { _type, .. } => convert_integer_type(_type),
-            _ => convert_integer_type(self.registry.pointer_integer_type()),
+    fn integer_kind(&self, ty: &MIRTypeID) -> LMIRIntegerType {
+        match self.types.kind(*ty) {
+            Some(MIRTypeKind::Integer { ty, .. }) => convert_integer_type(*ty),
+            _ => convert_integer_type(self.types.pointer_integer_type()),
         }
     }
 
@@ -1527,27 +1590,17 @@ impl<'a> FunctionLowerer<'a> {
         }
     }
 
-    fn variant_type(&self, sum_type: &MIRType, index: usize) -> MIRType {
-        let THIRTypeKind::TaggedUnion { variants } = &sum_type.as_thir().kind else {
+    fn variant_type(&self, sum_type: &MIRTypeID, index: usize) -> MIRTypeID {
+        let Some(MIRTypeKind::TaggedUnion { variants }) = self.types.kind(*sum_type) else {
             panic!("variant operation on non-tagged union")
         };
-        MIRType::new(self.registry.resolve_type_id(variants[index].ty()).clone())
+        variants[index].ty()
     }
 
-    fn tag_offset(&self, sum_type: &MIRType) -> usize {
-        let THIRTypeKind::TaggedUnion { variants } = &sum_type.as_thir().kind else {
-            panic!("discriminant operation on non-tagged union")
-        };
-        variants
-            .iter()
-            .map(|variant| {
-                self.registry
-                    .type_layout(self.registry.resolve_type_id(variant.ty()))
-                    .unwrap_or_else(|err| panic!("invalid variant layout: {}", err.message()))
-                    .size
-            })
-            .max()
-            .unwrap_or(0)
+    fn tag_offset(&self, sum_type: &MIRTypeID) -> usize {
+        self.types
+            .tagged_union_tag_offset(*sum_type)
+            .unwrap_or_else(|error| panic!("invalid tagged-union layout: {error}"))
     }
 
     fn block_id(block: MIRBasicBlockID) -> CXIdent {
@@ -1557,116 +1610,6 @@ impl<'a> FunctionLowerer<'a> {
     fn register_id(register: MIRRegister) -> LMIRRegister {
         LMIRRegister::new(format!("r{}", register.index()))
     }
-}
-
-enum MemberLayout {
-    Standard {
-        offset: usize,
-        ty: MIRType,
-    },
-    Bitfield {
-        offset: usize,
-        bit_offset: usize,
-        bit_width: usize,
-        storage_type: MIRType,
-        value_type: MIRType,
-    },
-}
-
-fn aggregate_member_layout(
-    aggregate: &THIRType,
-    registry: &THIRDecomposedRegistry,
-    member: usize,
-) -> MemberLayout {
-    let aggregate = registry.mem_ref_inner(aggregate).unwrap_or(aggregate);
-    let fields = match &aggregate.kind {
-        THIRTypeKind::Structured { fields } | THIRTypeKind::Union { variants: fields } => fields,
-        _ => panic!("field projection on non-aggregate type"),
-    };
-    let is_union = matches!(aggregate.kind, THIRTypeKind::Union { .. });
-    let mut offset = 0usize;
-    let mut active: Option<(cx_thir::thir::r#type::THIRTypeID, usize, usize, usize)> = None;
-    for (index, field) in fields.iter().enumerate() {
-        match field {
-            THIRField::Standard { type_id, .. } => {
-                if let Some((_, start, size, _)) = active.take() {
-                    offset = start + size;
-                }
-                let ty = registry.resolve_type_id(*type_id);
-                let layout = registry
-                    .type_layout(ty)
-                    .unwrap_or_else(|err| panic!("invalid field layout: {}", err.message()));
-                if !is_union {
-                    offset = offset.div_ceil(layout.alignment) * layout.alignment;
-                } else {
-                    offset = 0;
-                }
-                if index == member {
-                    return MemberLayout::Standard {
-                        offset,
-                        ty: MIRType::new(ty.clone()),
-                    };
-                }
-                if !is_union {
-                    offset += layout.size;
-                }
-            }
-            THIRField::Bitfield {
-                integer_type_id,
-                width,
-                ..
-            } => {
-                let storage = registry.resolve_type_id(*integer_type_id);
-                let layout = registry
-                    .type_layout(storage)
-                    .unwrap_or_else(|err| panic!("invalid bitfield layout: {}", err.message()));
-                if is_union {
-                    if index == member {
-                        return MemberLayout::Bitfield {
-                            offset: 0,
-                            bit_offset: 0,
-                            bit_width: *width,
-                            storage_type: MIRType::new(storage.clone()),
-                            value_type: MIRType::new(storage.clone()),
-                        };
-                    }
-                    continue;
-                }
-                if *width == 0 {
-                    active = None;
-                    offset = offset.div_ceil(layout.alignment) * layout.alignment;
-                    continue;
-                }
-                let (start, bit_offset) = match active.take() {
-                    Some((id, start, _size, used))
-                        if id == *integer_type_id && used + *width <= layout.size * 8 =>
-                    {
-                        (start, used)
-                    }
-                    Some((_, start, size, _)) => {
-                        offset = start + size;
-                        offset = offset.div_ceil(layout.alignment) * layout.alignment;
-                        (offset, 0)
-                    }
-                    None => {
-                        offset = offset.div_ceil(layout.alignment) * layout.alignment;
-                        (offset, 0)
-                    }
-                };
-                if index == member {
-                    return MemberLayout::Bitfield {
-                        offset: start,
-                        bit_offset,
-                        bit_width: *width,
-                        storage_type: MIRType::new(storage.clone()),
-                        value_type: MIRType::new(storage.clone()),
-                    };
-                }
-                active = Some((*integer_type_id, start, layout.size, bit_offset + *width));
-            }
-        }
-    }
-    panic!("aggregate field index out of bounds")
 }
 
 fn lower_int_binop(op: MIRIntBinaryOp) -> LMIRIntBinOp {

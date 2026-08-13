@@ -222,7 +222,27 @@ pub(crate) fn typecheck_sizeof_type(
 ) -> CXResult<TypecheckResult> {
     let tc_type = complete_type(env, namespace, ty)?;
 
-    sizeof_result(env, _expr.range.clone(), tc_type)
+    Ok(sizeof_result(_expr.range.clone(), tc_type))
+}
+
+pub(crate) fn typecheck_alignof_type(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    expr: &CXExpression,
+    ty: &CXType,
+) -> CXResult<TypecheckResult> {
+    let tc_type = complete_type(env, namespace, ty)?;
+    Ok(alignof_result(expr.range.clone(), tc_type))
+}
+
+pub(crate) fn typecheck_alignof_expr(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    expr: &CXExpression,
+) -> CXResult<TypecheckResult> {
+    let tc_expr = typecheck_expr(env, namespace, expr, None)
+        .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
+    Ok(alignof_result(tc_expr.token_range, tc_expr._type))
 }
 
 pub(crate) fn typecheck_sizeof_expr(
@@ -233,25 +253,27 @@ pub(crate) fn typecheck_sizeof_expr(
     let tc_expr = typecheck_expr(env, namespace, expr, None)
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
 
-    sizeof_result(env, tc_expr.token_range, tc_expr._type)
+    Ok(sizeof_result(tc_expr.token_range, tc_expr._type))
 }
 
-fn sizeof_result(
-    env: &mut TypeEnvironment,
-    range: TokenRange,
-    _type: THIRType,
-) -> CXResult<TypecheckResult> {
-    env.symbols
-        .type_layout(&_type)
-        .map_err(|err| env.complete_err(err, &range))
-        .map(|layout| {
-            TypecheckResult::from(THIRExpression {
-                token_range: range,
-                kind: THIRExpressionKind::IntLiteral(layout.size as i64),
-                _type: THIRType::from(THIRTypeKind::Integer {
-                    _type: THIRIntType::I64,
-                    signed: false,
-                }),
-            })
-        })
+fn alignof_result(range: TokenRange, _type: THIRType) -> TypecheckResult {
+    TypecheckResult::from(THIRExpression {
+        token_range: range,
+        kind: THIRExpressionKind::AlignOf { _type },
+        _type: THIRType::from(THIRTypeKind::Integer {
+            _type: THIRIntType::I64,
+            signed: false,
+        }),
+    })
+}
+
+fn sizeof_result(range: TokenRange, _type: THIRType) -> TypecheckResult {
+    TypecheckResult::from(THIRExpression {
+        token_range: range,
+        kind: THIRExpressionKind::SizeOf { _type },
+        _type: THIRType::from(THIRTypeKind::Integer {
+            _type: THIRIntType::I64,
+            signed: false,
+        }),
+    })
 }

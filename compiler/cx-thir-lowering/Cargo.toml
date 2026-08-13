@@ -9,3 +9,4 @@ cx-log = { path = "../cx-log" }
 cx-mir = { path = "../cx-mir" }
 cx-thir = { path = "../cx-thir" }
 cx-util = { path = "../cx-util" }
+cx-tokens = { path = "../cx-tokens" }
