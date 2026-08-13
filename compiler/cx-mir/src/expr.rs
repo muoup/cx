@@ -62,6 +62,11 @@ pub enum MIRValue {
     Constant(MIRConstant),
 }
 
+enum InstrOperand<'a> {
+    Value(&'a MIRValue),
+    Place(MIRPlace),
+}
+
 #[derive(Debug, Clone)]
 pub struct MIRBlockTarget {
     pub block: MIRBasicBlockID,
@@ -185,32 +190,219 @@ impl MIRInstr {
         self.kind.is_terminator()
     }
 
+    /// Iterates over the successor blocks of this instruction's targets.
     pub fn successors(&self) -> impl ExactSizeIterator<Item = MIRBasicBlockID> + '_ {
-        self.kind.successors()
+        let mut successors = Vec::new();
+        match &self.kind {
+            MIRInstrKind::Jump { target } => successors.push(target.block),
+            MIRInstrKind::Branch {
+                true_target,
+                false_target,
+                ..
+            } => {
+                successors.push(true_target.block);
+                successors.push(false_target.block);
+            }
+            MIRInstrKind::IntSwitch { cases, default, .. } => {
+                successors.extend(cases.iter().map(|(_, target)| target.block));
+                successors.extend(default.iter().map(|target| target.block));
+            }
+            MIRInstrKind::VariantSwitch { cases, default, .. } => {
+                successors.extend(cases.iter().map(|(_, target)| target.block));
+                successors.extend(default.iter().map(|target| target.block));
+            }
+            _ => {}
+        }
+        successors.into_iter()
     }
 
-    pub fn for_each_target(&self, f: impl FnMut(&MIRBlockTarget)) {
-        self.kind.for_each_target(f);
+    /// Iterates over the places this instruction reads, including move
+    /// sources and non-value place operands such as leak subjects and
+    /// aggregate projection bases.
+    pub fn referenced_places(&self) -> impl Iterator<Item = MIRPlace> + '_ {
+        self.operands()
+            .into_iter()
+            .filter_map(|operand| match operand {
+                InstrOperand::Value(MIRValue::Place(place) | MIRValue::Move(place)) => Some(*place),
+                InstrOperand::Place(place) => Some(place),
+                _ => None,
+            })
     }
 
-    pub fn for_each_referenced_place(&self, f: impl FnMut(MIRPlace)) {
-        self.kind.for_each_referenced_place(f);
+    /// Iterates over the places this instruction moves out of.
+    pub fn moved_places(&self) -> impl Iterator<Item = MIRPlace> + '_ {
+        self.operands()
+            .into_iter()
+            .filter_map(|operand| match operand {
+                InstrOperand::Value(MIRValue::Move(place)) => Some(*place),
+                _ => None,
+            })
     }
 
-    pub fn for_each_moved_place(&self, f: impl FnMut(MIRPlace)) {
-        self.kind.for_each_moved_place(f);
+    /// Iterates over the places this instruction defines.
+    pub fn defined_places(&self) -> impl Iterator<Item = MIRPlace> + '_ {
+        let place = match &self.kind {
+            MIRInstrKind::Initialize { place }
+            | MIRInstrKind::Create { out: place, .. }
+            | MIRInstrKind::Assign { dest: place, .. } => Some(*place),
+            MIRInstrKind::AggregateOp(MIRAggregateOp::Place { out, .. }) => Some(*out),
+            _ => None,
+        };
+        place.into_iter()
     }
 
-    pub fn for_each_defined_place(&self, f: impl FnMut(MIRPlace)) {
-        self.kind.for_each_defined_place(f);
+    /// Iterates over the registers this instruction reads.
+    pub fn referenced_registers(&self) -> impl Iterator<Item = MIRRegister> + '_ {
+        self.operands()
+            .into_iter()
+            .filter_map(|operand| match operand {
+                InstrOperand::Value(MIRValue::Register(register)) => Some(*register),
+                _ => None,
+            })
     }
 
-    pub fn for_each_referenced_register(&self, f: impl FnMut(MIRRegister)) {
-        self.kind.for_each_referenced_register(f);
+    /// Iterates over the registers this instruction defines.
+    pub fn defined_registers(&self) -> impl Iterator<Item = MIRRegister> + '_ {
+        let register = match &self.kind {
+            MIRInstrKind::AddressOf { out, .. }
+            | MIRInstrKind::BinOp { out, .. }
+            | MIRInstrKind::UnOp { out, .. }
+            | MIRInstrKind::Coerce { out, .. } => Some(*out),
+            MIRInstrKind::AggregateOp(MIRAggregateOp::Value { out, .. }) => Some(*out),
+            MIRInstrKind::Call { out, .. } => *out,
+            _ => None,
+        };
+        register.into_iter()
     }
 
-    pub fn for_each_defined_register(&self, f: impl FnMut(MIRRegister)) {
-        self.kind.for_each_defined_register(f);
+    /// Iterates over the functions referenced by this instruction's values.
+    pub fn referenced_functions(&self) -> impl Iterator<Item = MIRFunctionID> + '_ {
+        self.operands()
+            .into_iter()
+            .filter_map(|operand| match operand {
+                InstrOperand::Value(MIRValue::Constant(MIRConstant::Function(function))) => {
+                    Some(*function)
+                }
+                _ => None,
+            })
+    }
+
+    /// Collects this instruction's value operands in read order, followed by
+    /// directly referenced places that are not value operands, such as leak
+    /// subjects and aggregate projection bases.
+    fn operands(&self) -> Vec<InstrOperand<'_>> {
+        match &self.kind {
+            MIRInstrKind::Assign { value, .. }
+            | MIRInstrKind::Emit { value }
+            | MIRInstrKind::UnOp { operand: value, .. }
+            | MIRInstrKind::Coerce { operand: value, .. }
+            | MIRInstrKind::Assert {
+                condition: value, ..
+            }
+            | MIRInstrKind::Assume { condition: value } => vec![InstrOperand::Value(value)],
+
+            MIRInstrKind::AggregateOp(operation) => match operation {
+                MIRAggregateOp::Place {
+                    op: MIRPlaceAggregateOp::Dereference { pointer, .. },
+                    ..
+                } => vec![InstrOperand::Value(pointer)],
+                MIRAggregateOp::Place {
+                    op: MIRPlaceAggregateOp::Field { base, .. },
+                    ..
+                }
+                | MIRAggregateOp::Place {
+                    op: MIRPlaceAggregateOp::Variant { base, .. },
+                    ..
+                } => vec![InstrOperand::Place(*base)],
+                MIRAggregateOp::Place {
+                    op: MIRPlaceAggregateOp::Index { base, index, .. },
+                    ..
+                } => {
+                    vec![
+                        InstrOperand::Value(index),
+                        InstrOperand::Place(*base),
+                    ]
+                }
+                MIRAggregateOp::Value {
+                    op: MIRValueAggregateOp::Discriminant { value, .. },
+                    ..
+                }
+                | MIRAggregateOp::Value {
+                    op: MIRValueAggregateOp::Variant { value, .. },
+                    ..
+                } => vec![InstrOperand::Value(value)]
+                MIRAggregateOp::Value {
+                    op: MIRValueAggregateOp::Construct { fields, .. },
+                    ..
+                } => fields.iter().map(|(_, value)| InstrOperand::Value(value)).collect()
+            },
+
+            MIRInstrKind::Call { callee, args, .. } => {
+                let mut operands = vec![];
+                operands.push(InstrOperand::Value(callee));
+                operands.extend(args.iter().map(InstrOperand::Value));
+                operands
+            }
+            MIRInstrKind::BinOp { lhs, rhs, .. } => {
+                vec![InstrOperand::Value(lhs), InstrOperand::Value(rhs)]
+            }
+            MIRInstrKind::Return { value: Some(value) } => {
+                vec![InstrOperand::Value(value)]
+            }
+            MIRInstrKind::Return { value: None } => vec![],
+            MIRInstrKind::Jump { target } => target.args.iter().map(InstrOperand::Value).collect(),
+            MIRInstrKind::Branch {
+                cond,
+                true_target,
+                false_target,
+            } => {
+                let mut operands = vec![];
+
+                operands.push(InstrOperand::Value(cond));
+                operands.extend(true_target.args.iter().map(InstrOperand::Value));
+                operands.extend(false_target.args.iter().map(InstrOperand::Value));
+
+                operands
+            }
+            MIRInstrKind::IntSwitch {
+                value,
+                cases,
+                default,
+            } => {
+                let mut operands = vec![];
+                operands.push(InstrOperand::Value(value));
+                operands.push(InstrOperand::Value(value));
+                for (_, target) in cases {
+                    operands.extend(target.args.iter().map(InstrOperand::Value));
+                }
+                if let Some(default) = default {
+                    operands.extend(default.args.iter().map(InstrOperand::Value));
+                }
+                operands
+            }
+            MIRInstrKind::VariantSwitch {
+                subject,
+                cases,
+                default,
+                ..
+            } => {
+                let mut operands = vec![];
+                for (_, target) in cases {
+                    operands.extend(target.args.iter().map(InstrOperand::Value));
+                }
+                if let Some(default) = default {
+                    operands.extend(default.args.iter().map(InstrOperand::Value));
+                }
+                operands.push(InstrOperand::Place(*subject));
+                operands
+            }
+            MIRInstrKind::Leak { place } | MIRInstrKind::AddressOf { place, .. } => {
+                vec![InstrOperand::Place(*place)]
+            }
+            MIRInstrKind::Initialize { .. }
+            | MIRInstrKind::Create { .. }
+            | MIRInstrKind::Unreachable => vec![],
+        }
     }
 }
 
@@ -313,219 +505,5 @@ impl MIRInstrKind {
                 | Self::VariantSwitch { .. }
                 | Self::Unreachable
         )
-    }
-
-    pub fn successors(&self) -> impl ExactSizeIterator<Item = MIRBasicBlockID> + '_ {
-        let mut successors = Vec::new();
-        self.for_each_target(|target| successors.push(target.block));
-        successors.into_iter()
-    }
-
-    pub fn for_each_target(&self, mut f: impl FnMut(&MIRBlockTarget)) {
-        match self {
-            Self::Jump { target } => f(target),
-            Self::Branch {
-                true_target,
-                false_target,
-                ..
-            } => {
-                f(true_target);
-                f(false_target);
-            }
-            Self::IntSwitch { cases, default, .. } => {
-                for (_, target) in cases {
-                    f(target);
-                }
-                if let Some(default) = default {
-                    f(default);
-                }
-            }
-            Self::VariantSwitch { cases, default, .. } => {
-                for (_, target) in cases {
-                    f(target);
-                }
-                if let Some(default) = default {
-                    f(default);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    pub fn for_each_referenced_place(&self, mut f: impl FnMut(MIRPlace)) {
-        self.for_each_value(|value| match value {
-            MIRValue::Place(place) | MIRValue::Move(place) => f(*place),
-            _ => {}
-        });
-
-        match self {
-            Self::Leak { place }
-            | Self::AddressOf { place, .. }
-            | Self::VariantSwitch { subject: place, .. } => f(*place),
-            Self::AggregateOp(op) => op.for_each_referenced_place(f),
-            _ => {}
-        }
-    }
-
-    pub fn for_each_moved_place(&self, mut f: impl FnMut(MIRPlace)) {
-        self.for_each_value(|value| {
-            if let MIRValue::Move(place) = value {
-                f(*place);
-            }
-        });
-    }
-
-    pub fn for_each_defined_place(&self, mut f: impl FnMut(MIRPlace)) {
-        match self {
-            Self::Initialize { place: out }
-            | Self::Create { out, .. }
-            | Self::Assign { dest: out, .. } => {
-                f(*out);
-            }
-            Self::AggregateOp(MIRAggregateOp::Place { out, .. }) => f(*out),
-            _ => {}
-        }
-    }
-
-    pub fn for_each_referenced_register(&self, mut f: impl FnMut(MIRRegister)) {
-        self.for_each_value(|value| {
-            if let MIRValue::Register(register) = value {
-                f(*register);
-            }
-        });
-    }
-
-    pub fn for_each_defined_register(&self, mut f: impl FnMut(MIRRegister)) {
-        match self {
-            Self::AddressOf { out, .. }
-            | Self::BinOp { out, .. }
-            | Self::UnOp { out, .. }
-            | Self::Coerce { out, .. } => f(*out),
-            Self::AggregateOp(MIRAggregateOp::Value { out, .. }) => f(*out),
-            Self::Call { out, .. } => {
-                if let Some(out) = out {
-                    f(*out);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    pub fn for_each_referenced_function(&self, mut f: impl FnMut(MIRFunctionID)) {
-        self.for_each_value(|value| {
-            if let MIRValue::Constant(MIRConstant::Function(function)) = value {
-                f(*function);
-            }
-        });
-    }
-
-    fn for_each_value(&self, mut f: impl FnMut(&MIRValue)) {
-        match self {
-            Self::Assign { value: src, .. }
-            | Self::Emit { value: src }
-            | Self::UnOp { operand: src, .. }
-            | Self::Coerce { operand: src, .. }
-            | Self::Assert { condition: src, .. }
-            | Self::Assume { condition: src } => f(src),
-            Self::AggregateOp(op) => op.for_each_value(f),
-            Self::Call { callee, args, .. } => {
-                f(callee);
-                for argument in args {
-                    f(argument);
-                }
-            }
-            Self::BinOp { lhs, rhs, .. } => {
-                f(lhs);
-                f(rhs);
-            }
-            Self::Return { value } => {
-                if let Some(value) = value {
-                    f(value);
-                }
-            }
-            Self::Branch {
-                cond,
-                true_target,
-                false_target,
-            } => {
-                f(cond);
-                true_target.for_each_value(&mut f);
-                false_target.for_each_value(&mut f);
-            }
-            Self::IntSwitch {
-                value,
-                cases,
-                default,
-            } => {
-                f(value);
-                for (_, target) in cases {
-                    target.for_each_value(&mut f);
-                }
-                if let Some(default) = default {
-                    default.for_each_value(&mut f);
-                }
-            }
-            Self::VariantSwitch { cases, default, .. } => {
-                for (_, target) in cases {
-                    target.for_each_value(&mut f);
-                }
-                if let Some(default) = default {
-                    default.for_each_value(&mut f);
-                }
-            }
-            Self::Jump { target } => target.for_each_value(f),
-            _ => {}
-        }
-    }
-}
-
-impl MIRBlockTarget {
-    fn for_each_value(&self, mut f: impl FnMut(&MIRValue)) {
-        for argument in &self.args {
-            f(argument);
-        }
-    }
-}
-
-impl MIRAggregateOp {
-    fn for_each_referenced_place(&self, mut f: impl FnMut(MIRPlace)) {
-        match self {
-            Self::Place {
-                op:
-                    MIRPlaceAggregateOp::Field { base, .. }
-                    | MIRPlaceAggregateOp::Index { base, .. }
-                    | MIRPlaceAggregateOp::Variant { base, .. },
-                ..
-            } => f(*base),
-            _ => {}
-        }
-    }
-
-    fn for_each_value(&self, mut f: impl FnMut(&MIRValue)) {
-        match self {
-            Self::Place {
-                op: MIRPlaceAggregateOp::Dereference { pointer, .. },
-                ..
-            } => f(pointer),
-            Self::Place {
-                op: MIRPlaceAggregateOp::Index { index, .. },
-                ..
-            } => f(index),
-            Self::Value {
-                op:
-                    MIRValueAggregateOp::Discriminant { value, .. }
-                    | MIRValueAggregateOp::Variant { value, .. },
-                ..
-            } => f(value),
-            Self::Value {
-                op: MIRValueAggregateOp::Construct { fields, .. },
-                ..
-            } => {
-                for (_, value) in fields {
-                    f(value);
-                }
-            }
-            _ => {}
-        }
     }
 }

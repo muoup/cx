@@ -215,11 +215,11 @@ impl MIRUnit {
 
                 self.validate_instruction(function, block.id, instruction_index, instruction)?;
                 let mut duplicate_register = None;
-                instruction.for_each_defined_register(|register| {
+                for register in instruction.defined_registers() {
                     if !register_definitions.insert(register) && duplicate_register.is_none() {
                         duplicate_register = Some(register);
                     }
-                });
+                }
                 if let Some(register) = duplicate_register {
                     return Err(MIRValidationError::DuplicateRegisterDefinition {
                         function: function_id,
@@ -282,23 +282,27 @@ impl MIRUnit {
                 _ => {}
             }
         };
-        instruction.for_each_referenced_place(&mut check_place);
-        instruction.for_each_defined_place(&mut check_place);
-        instruction.for_each_referenced_register(|register| {
+        for place in instruction.referenced_places() {
+            check_place(place);
+        }
+        for place in instruction.defined_places() {
+            check_place(place);
+        }
+        for register in instruction.referenced_registers() {
             if bad_id.is_none() && register.index() >= function.registers.len() {
                 bad_id = Some(("register", register.index(), function.registers.len()));
             }
-        });
-        instruction.for_each_defined_register(|register| {
+        }
+        for register in instruction.defined_registers() {
             if bad_id.is_none() && register.index() >= function.registers.len() {
                 bad_id = Some(("register", register.index(), function.registers.len()));
             }
-        });
-        instruction.kind.for_each_referenced_function(|referenced| {
+        }
+        for referenced in instruction.referenced_functions() {
             if bad_id.is_none() && referenced.index() >= self.functions.len() {
                 bad_id = Some(("function", referenced.index(), self.functions.len()));
             }
-        });
+        }
         for successor in instruction.successors() {
             if bad_id.is_none() && successor.index() >= function.blocks.len() {
                 bad_id = Some(("block target", successor.index(), function.blocks.len()));
@@ -316,17 +320,7 @@ impl MIRUnit {
             )?;
         }
 
-        let mut target_error = None;
-        instruction.for_each_target(|target| {
-            if target_error.is_none() {
-                target_error = self
-                    .validate_target(function, block, instruction_index, target)
-                    .err();
-            }
-        });
-        if let Some(error) = target_error {
-            return Err(error);
-        }
+        self.validate_targets(function, block, instruction_index, instruction)?;
         self.validate_instruction_types(function, block, instruction_index, &instruction.kind)
     }
 
@@ -555,6 +549,41 @@ impl MIRUnit {
                 actual: actual.to_string(),
             })
         }
+    }
+
+    fn validate_targets(
+        &self,
+        function: &MIRFunction,
+        block: MIRBasicBlockID,
+        instruction_index: usize,
+        instruction: &crate::expr::MIRInstr,
+    ) -> Result<(), MIRValidationError> {
+        let mut targets = Vec::new();
+        match &instruction.kind {
+            MIRInstrKind::Jump { target } => targets.push(target),
+            MIRInstrKind::Branch {
+                true_target,
+                false_target,
+                ..
+            } => {
+                targets.push(true_target);
+                targets.push(false_target);
+            }
+            MIRInstrKind::IntSwitch { cases, default, .. } => {
+                targets.extend(cases.iter().map(|(_, target)| target));
+                targets.extend(default.iter());
+            }
+            MIRInstrKind::VariantSwitch { cases, default, .. } => {
+                targets.extend(cases.iter().map(|(_, target)| target));
+                targets.extend(default.iter());
+            }
+            _ => {}
+        }
+
+        for target in targets {
+            self.validate_target(function, block, instruction_index, target)?;
+        }
+        Ok(())
     }
 
     fn validate_target(

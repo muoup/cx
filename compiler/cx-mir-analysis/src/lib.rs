@@ -127,14 +127,14 @@ fn analyze_function(function: &MIRFunction) -> MIRFunctionAnalysis {
         let mut defs = BTreeSet::new();
 
         for instruction in &block.instrs {
-            instruction.for_each_referenced_place(|place| {
+            for place in instruction.referenced_places() {
                 if !defs.contains(&place) {
                     uses.insert(place);
                 }
-            });
-            instruction.for_each_defined_place(|place| {
+            }
+            for place in instruction.defined_places() {
                 defs.insert(place);
-            });
+            }
         }
 
         let block_successors = block
@@ -191,12 +191,12 @@ fn analyze_function(function: &MIRFunction) -> MIRFunctionAnalysis {
 
             for instruction in block.instrs.iter().rev() {
                 let live_after = live.clone();
-                instruction.for_each_defined_place(|place| {
+                for place in instruction.defined_places() {
                     live.remove(&place);
-                });
-                instruction.for_each_referenced_place(|place| {
+                }
+                for place in instruction.referenced_places() {
                     live.insert(place);
-                });
+                }
                 instruction_liveness.push(MIRInstructionLiveness {
                     live_before: live.clone(),
                     live_after,
@@ -431,10 +431,14 @@ mod tests {
             value: MIRValue::Move(source),
             ty: MIRType::default(),
         };
-        let mut moved = Vec::new();
-        assignment.for_each_moved_place(|place| moved.push(place));
-        assert_eq!(moved, vec![source]);
         function.push_instr(entry, assignment);
+        let moved = function
+            .block(entry)
+            .and_then(|block| block.instrs.last())
+            .expect("pushed instruction exists")
+            .moved_places()
+            .collect::<Vec<_>>();
+        assert_eq!(moved, vec![source]);
         function.push_instr(
             entry,
             MIRInstrKind::Return {
