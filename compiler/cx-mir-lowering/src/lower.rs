@@ -11,7 +11,7 @@ use cx_lmir::{
 };
 use cx_log::CXResult;
 use cx_mir::{
-    MIRAggregateKind, MIRAggregateOp, MIRBasicBlockID, MIRBinaryOp, MIRBlockTarget, MIRCoercion,
+    MIRAggregateOp, MIRBasicBlockID, MIRBinaryOp, MIRBlockTarget, MIRCoercion,
     MIRConstant, MIRFloatBinaryOp, MIRFunction, MIRGlobalInitializer, MIRInstrKind, MIRIntBinaryOp,
     MIRPlace, MIRPlaceAggregateOp, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister, MIRType,
     MIRUnaryOp, MIRUnit, MIRValue, MIRValueAggregateOp,
@@ -463,8 +463,8 @@ impl<'a> FunctionLowerer<'a> {
                     let binding = self.value_as_binding(value, sum_type);
                     self.load_discriminant(binding, sum_type, Some(*out));
                 }
-                MIRValueAggregateOp::Construct { kind, ty, fields } => {
-                    self.lower_construct(*out, *kind, ty, fields)
+                MIRValueAggregateOp::Construct { ty, fields } => {
+                    self.lower_construct(*out, ty, fields)
                 }
                 MIRValueAggregateOp::Variant {
                     variant,
@@ -478,7 +478,6 @@ impl<'a> FunctionLowerer<'a> {
     fn lower_construct(
         &mut self,
         out: MIRRegister,
-        kind: MIRAggregateKind,
         ty: &MIRType,
         fields: &[(usize, MIRValue)],
     ) {
@@ -494,8 +493,8 @@ impl<'a> FunctionLowerer<'a> {
         );
         let base = self.register(out);
         for (index, value) in fields {
-            let (address, field_ty) = match kind {
-                MIRAggregateKind::Struct => {
+            let (address, field_ty) = match &ty.0.kind {
+                THIRTypeKind::Structured { .. } => {
                     let binding = self.field_binding(
                         PlaceBinding::Address {
                             value: base.clone(),
@@ -504,6 +503,7 @@ impl<'a> FunctionLowerer<'a> {
                         ty,
                         *index,
                     );
+                    
                     match binding {
                         PlaceBinding::Address { value, ty } => (value, ty),
                         bitfield @ PlaceBinding::Bitfield { .. } => {
@@ -513,7 +513,8 @@ impl<'a> FunctionLowerer<'a> {
                         }
                     }
                 }
-                MIRAggregateKind::Array => {
+                
+                THIRTypeKind::Array { .. } => {
                     let THIRTypeKind::Array { inner_type, .. } = ty.as_thir().kind else {
                         panic!("array aggregate has non-array type")
                     };
@@ -527,7 +528,9 @@ impl<'a> FunctionLowerer<'a> {
                         ),
                         field_ty,
                     )
-                }
+                },
+
+                _ => unreachable!("construct aggregate has non-structured, non-array type"),
             };
             let value = self.lower_value(value, Some(&field_ty));
             self.store_address(address, value, &field_ty);

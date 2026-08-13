@@ -4,7 +4,7 @@ use cx_thir::thir::r#type::{THIRField, THIRIntType, THIRTypeKind};
 
 use crate::{
     expr::{
-        MIRAggregateKind, MIRAggregateOp, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget,
+        MIRAggregateOp, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget,
         MIRConstant, MIRInstr, MIRInstrKind, MIRParameterID, MIRPlace, MIRPlaceAggregateOp,
         MIRPlaceID, MIRRegister, MIRValue, MIRValueAggregateOp,
     },
@@ -305,9 +305,9 @@ impl Display for MIRInstrKind {
                 } => write!(f, "{out} = aggregate.discriminant {value}: {sum_type}"),
                 MIRAggregateOp::Value {
                     out,
-                    op: MIRValueAggregateOp::Construct { kind, ty, fields },
+                    op: MIRValueAggregateOp::Construct { ty, fields },
                 } => {
-                    write!(f, "{out} = {} {ty} ", aggregate_name(*kind))?;
+                    write!(f, "{out} = aggregate.construct {ty} ")?;
                     write_fields(f, fields)
                 }
                 MIRAggregateOp::Value {
@@ -402,12 +402,6 @@ impl Display for MIRInstrKind {
     }
 }
 
-fn aggregate_name(kind: MIRAggregateKind) -> &'static str {
-    match kind {
-        MIRAggregateKind::Array => "aggregate.array",
-        MIRAggregateKind::Struct => "aggregate.struct",
-    }
-}
 fn write_fields(f: &mut Formatter<'_>, fields: &[(usize, MIRValue)]) -> fmt::Result {
     f.write_str("{")?;
     for (index, (field, value)) in fields.iter().enumerate() {

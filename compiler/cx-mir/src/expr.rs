@@ -29,8 +29,6 @@ dense_id!(MIRParameterID);
 dense_id!(MIRRegister);
 dense_id!(MIRBasicBlockID);
 
-/// An abstract lvalue. Function-local places include source locals, anonymous
-/// storage, dereference results, and aggregate projections.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MIRPlace {
     FunctionLocal(MIRPlaceID),
@@ -60,16 +58,8 @@ pub enum MIRConstant {
 pub enum MIRValue {
     Register(MIRRegister),
     Place(MIRPlace),
-    /// A consuming read from a place. Keeping the move on the operand makes the
-    /// source transition inseparable from the instruction that consumes it.
     Move(MIRPlace),
     Constant(MIRConstant),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MIRAggregateKind {
-    Array,
-    Struct,
 }
 
 #[derive(Debug, Clone)]
@@ -139,7 +129,6 @@ pub enum MIRValueAggregateOp {
         sum_type: MIRType,
     },
     Construct {
-        kind: MIRAggregateKind,
         ty: MIRType,
         fields: Vec<(usize, MIRValue)>,
     },

@@ -1,8 +1,8 @@
 use cx_log::CXResult;
 use cx_mir::{
-    MIRAggregateKind, MIRAggregateOp, MIRBinaryOp, MIRBlockTarget, MIRCoercion, MIRConstant,
-    MIRFloatBinaryOp, MIRInstrKind, MIRIntBinaryOp, MIRPlaceAggregateOp, MIRPointerBinaryOp,
-    MIRPointerOffsetOp, MIRType, MIRUnaryOp, MIRValue, MIRValueAggregateOp,
+    MIRAggregateOp, MIRBinaryOp, MIRBlockTarget, MIRCoercion, MIRConstant, MIRFloatBinaryOp,
+    MIRInstrKind, MIRIntBinaryOp, MIRPlaceAggregateOp, MIRPointerBinaryOp, MIRPointerOffsetOp,
+    MIRType, MIRUnaryOp, MIRValue, MIRValueAggregateOp,
 };
 use cx_thir::{
     THIRUnit,
@@ -293,10 +293,7 @@ fn lower_expression(
             }));
             MIRValue::Register(out)
         }
-        THIRExpressionKind::ArrayInitializer {
-            elements,
-            element_type: _,
-        } => {
+        THIRExpressionKind::ArrayInitializer { elements, .. } => {
             let mut fields = Vec::with_capacity(elements.len());
             for (index, element) in elements.iter().enumerate() {
                 fields.push((index, lower_expression(builder, element)?));
@@ -305,7 +302,6 @@ fn lower_expression(
             builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Value {
                 out,
                 op: MIRValueAggregateOp::Construct {
-                    kind: MIRAggregateKind::Array,
                     ty: MIRType::new(expression._type.clone()),
                     fields,
                 },
@@ -327,7 +323,6 @@ fn lower_expression(
             builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Value {
                 out,
                 op: MIRValueAggregateOp::Construct {
-                    kind: MIRAggregateKind::Struct,
                     ty: MIRType::new(struct_type.clone()),
                     fields,
                 },
