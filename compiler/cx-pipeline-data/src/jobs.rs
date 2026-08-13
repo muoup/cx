@@ -83,6 +83,12 @@ pub enum CompilationStep {
      *  Outputs: An analyzed MIR representation.
      */
     MIRGen = 1 << 5,
+
+    /** Lowers analyzed MIR into ABI- and layout-aware LMIR. */
+    LMIRGen = 1 << 3,
+
+    /** Compiles one LMIR unit into an object file. */
+    Codegen = 1 << 4,
 }
 
 impl CompilationJob {
@@ -162,6 +168,8 @@ impl JobQueue {
             CompilationStep::Parse,
             CompilationStep::Typechecking,
             CompilationStep::MIRGen,
+            CompilationStep::LMIRGen,
+            CompilationStep::Codegen,
         ] {
             self.shallow_progress_map
                 .insert((unit.clone(), step), JobState::Completed);

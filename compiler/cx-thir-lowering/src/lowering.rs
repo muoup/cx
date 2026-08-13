@@ -164,13 +164,14 @@ fn lower_expression(
             value => value,
         },
         THIRExpressionKind::RegionWrite { target, value } => {
+            let assignment_type = MIRType::new(value._type.clone());
             let target = lower_expression(builder, target)?;
             let value = lower_expression(builder, value)?;
             if let MIRValue::Place(place) = target {
                 builder.emit(MIRInstrKind::Assign {
                     dest: place,
                     value,
-                    ty: MIRType::new(expression._type.clone()),
+                    ty: assignment_type,
                 });
                 MIRValue::Place(place)
             } else {
@@ -429,11 +430,7 @@ fn lower_expression(
                 if let (Some(name), Some(value)) = (&postcondition.binding, value.clone()) {
                     builder.bind_named(name, value);
                 }
-                let condition = lower_expression(builder, &postcondition.condition)?;
-                builder.emit(MIRInstrKind::Assert {
-                    condition,
-                    message: Some("postcondition failed".into()),
-                });
+                lower_expression(builder, &postcondition.condition)?;
                 builder.pop_named_scope();
             }
             builder.emit(MIRInstrKind::Return { value });
@@ -466,6 +463,14 @@ fn lower_expression(
                 value: value.clone(),
             });
             value
+        }
+        THIRExpressionKind::Assert { condition, message } => {
+            let condition = lower_expression(builder, condition)?;
+            builder.emit(MIRInstrKind::Assert {
+                condition,
+                message: Some(message.clone()),
+            });
+            MIRValue::Constant(MIRConstant::Unit)
         }
         THIRExpressionKind::Block { statements } => {
             let mut result = MIRValue::Constant(MIRConstant::Unit);
@@ -1021,11 +1026,7 @@ fn lower_call(
                 builder.bind_named(name, argument);
             }
         }
-        let condition = lower_expression(builder, precondition)?;
-        builder.emit(MIRInstrKind::Assert {
-            condition,
-            message: Some("precondition violation".into()),
-        });
+        lower_expression(builder, precondition)?;
         builder.pop_named_scope();
     }
 

@@ -1,20 +1,11 @@
 use cx_lmir::LMIRUnit;
 use cx_log::CXResult;
-use cx_thir::THIRUnit;
+use cx_mir::MIRUnit;
+use cx_thir::registry::THIRDecomposedRegistry;
 
-use crate::{builder::LMIRBuilder, mir_lowering::lower_mir};
+mod lower;
+mod typing;
 
-pub mod builder;
-pub mod mir_lowering;
-
-pub(crate) mod log;
-
-pub type LMIRResult<T> = Option<T>;
-
-pub fn generate_lmir(mir: &THIRUnit) -> CXResult<LMIRUnit> {
-    let mut builder = LMIRBuilder::new(mir);
-
-    lower_mir(&mut builder, mir)?;
-
-    Ok(builder.finish())
+pub fn generate_lmir(mir: &MIRUnit, registry: &THIRDecomposedRegistry) -> CXResult<LMIRUnit> {
+    lower::lower_unit(mir, registry)
 }

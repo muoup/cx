@@ -2,6 +2,7 @@ use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
 use cx_ast::decomposition::CXGenerationAST;
 use cx_ast::registry::GlobalSymbolRegistry;
+use cx_lmir::LMIRUnit;
 use cx_log::error::CXErrContext;
 use cx_log::error::context::{CXInternalContext, CXUnderlineContext};
 use cx_mir::MIRUnit;
@@ -33,6 +34,7 @@ pub struct ModuleData {
 
     pub thir: ModuleMap<THIRUnit>,
     pub mir: ModuleMap<MIRUnit>,
+    pub lmir: ModuleMap<LMIRUnit>,
 }
 
 impl Default for ModuleData {
@@ -56,6 +58,7 @@ impl ModuleData {
             base_mappings: ModuleMap::new(".cx-structure-data"),
             thir: ModuleMap::new(".cx-thir"),
             mir: ModuleMap::new(".cx-mir"),
+            lmir: ModuleMap::new(".cx-lmir"),
         }
     }
 

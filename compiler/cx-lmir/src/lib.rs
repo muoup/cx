@@ -3,6 +3,7 @@ use cx_target::ArchitectureConfig;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use std::collections::HashMap;
 
+pub mod compiler_functions;
 mod format;
 pub mod types;
 

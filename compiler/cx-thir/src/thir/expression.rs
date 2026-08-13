@@ -4,7 +4,6 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 
-use crate::thir::data::THIRFnPrototype;
 use crate::thir::pattern::THIRPattern;
 use crate::thir::r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeKind};
 
@@ -28,7 +27,6 @@ impl THIRLocalID {
 #[derive(Clone, Debug, Default)]
 pub struct THIRFnContract {
     pub safe: bool,
-    pub assertion_prototype: Option<Box<THIRFnPrototype>>,
     pub precondition: Option<Box<THIRExpression>>,
     pub postcondition: Option<THIRPostcondition>,
 }
@@ -37,7 +35,6 @@ pub struct THIRFnContract {
 pub struct THIRPostcondition {
     pub binding: Option<CXIdent>,
     pub condition: Box<THIRExpression>,
-    pub assertion_prototype: Box<THIRFnPrototype>,
 }
 
 #[derive(Clone, Debug)]
@@ -254,6 +251,10 @@ pub enum THIRExpressionKind {
         cleanups: Vec<THIRExpression>,
     },
     Emit(Box<THIRExpression>),
+    Assert {
+        condition: Box<THIRExpression>,
+        message: String,
+    },
 
     // Sequential Statements
     Block {

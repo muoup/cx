@@ -14,7 +14,6 @@ use crate::{
     environment::{ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment},
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
-        contracts::resolve_assertion_prototype,
         control_flow::enqueue_jump_arrow,
         result::TypecheckResult,
         typechecker::typecheck_expr,
@@ -109,7 +108,8 @@ pub fn typecheck_return(
         if ret_name.is_some() && return_type.is_unit() {
             return env.log_error(
                 return_range,
-                "Cannot have a named return variable in a function with void return type".to_string(),
+                "Cannot have a named return variable in a function with void return type"
+                    .to_string(),
             );
         }
 
@@ -150,7 +150,14 @@ pub fn typecheck_return(
         let postcondition = typecheck_expr(env, namespace, &ret_contract, None)
             .and_then(|res| res.standard_ready_coerce(env, ret_contract.token_range()))
             .and_then(|v| implicit_cast(env, v, &THIRType::bool()))?;
-        let assertion_prototype = Box::new(resolve_assertion_prototype(env, namespace)?);
+        let postcondition = THIRExpression {
+            token_range: postcondition.token_range.clone(),
+            kind: THIRExpressionKind::Assert {
+                condition: Box::new(postcondition),
+                message: "Postcondition Failed!".to_string(),
+            },
+            _type: THIRType::unit(),
+        };
 
         env.pop_scope()
             .map_err(|err| env.complete_err(err, ret_contract.token_range()))?;
@@ -162,7 +169,6 @@ pub fn typecheck_return(
                 postcondition: Some(cx_thir::thir::expression::THIRPostcondition {
                     binding: ret_name.clone(),
                     condition: Box::new(postcondition),
-                    assertion_prototype,
                 }),
                 cleanups: env
                     .function

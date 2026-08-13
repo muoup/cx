@@ -1,15 +1,20 @@
+use crate::backends::{cranelift_compile, llvm_compile};
 use crate::pipeline_error;
 use crate::progress::ProgressReporter;
 use cx_log::{CXResult, error::CXErr};
 use cx_mir_analysis::{MIRAnalysisOptions, analyze};
+use cx_mir_lowering::generate_lmir;
 use cx_parsing::preparse::PreparseConfig;
 use cx_parsing::{decompose_ast, parse_ast, preparse};
 use cx_pipeline_data::db::ModuleMap;
-use cx_pipeline_data::internal_storage::retrieve_data;
+use cx_pipeline_data::directories::internal_directory;
+use cx_pipeline_data::internal_storage::{resource_path, retrieve_data};
 use cx_pipeline_data::jobs::{
     CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue,
 };
-use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
+use cx_pipeline_data::{
+    CompilationMode, CompilationUnit, CompilerBackend, GlobalCompilationContext,
+};
 use cx_safe_analyzer::FMIRContext;
 use cx_thir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_thir_lowering::generate_mir;
@@ -18,8 +23,10 @@ use cx_typechecker::environment::TypeEnvironment;
 use cx_typechecker::typecheck;
 use cx_util::format::dump_data;
 use cx_util::module_path::ModulePath;
+use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::{HashMap, HashSet};
+use std::io::Write;
 
 pub(crate) fn scheduling_loop(
     context: &GlobalCompilationContext,
@@ -66,6 +73,11 @@ pub(crate) fn scheduling_loop(
             reporter.complete_step();
             queue.complete_all_unit_jobs(&job.unit);
             context.module_db.set_no_reexport(&job.unit);
+            context
+                .linking_files
+                .lock()
+                .expect("Deadlock on linking files mutex")
+                .insert(resource_path(context, &job.unit, ".o"));
             continue;
         }
 
@@ -81,19 +93,22 @@ pub(crate) fn scheduling_loop(
             CompilationStep::Parse => "Parsing",
             CompilationStep::Typechecking => "Typechecking",
             CompilationStep::MIRGen => "MIR generation",
+            CompilationStep::LMIRGen => "Lowering",
+            CompilationStep::Codegen => "Compiling",
         };
         reporter.start_step(step_name, &job.unit.to_string());
 
-        let is_final = matches!(job.step, CompilationStep::MIRGen);
+        let is_codegen = matches!(job.step, CompilationStep::Codegen);
+        let retain_lmir = context.config.compilation_mode == CompilationMode::Library;
 
-        for new_jobs in handle_job(context, job)?.into_iter() {
+        for new_jobs in handle_job(context, job, retain_lmir)?.into_iter() {
             reporter.add_total(1);
             queue.push_new_job(new_jobs);
         }
 
         reporter.complete_step();
 
-        if is_final {
+        if is_codegen {
             reporter.increment_modules();
         }
     }
@@ -173,6 +188,7 @@ fn import_units_for_unit(
 pub(crate) fn handle_job(
     context: &GlobalCompilationContext,
     mut job: CompilationJob,
+    retain_lmir: bool,
 ) -> CXResult<Box<[CompilationJob]>> {
     let map_reqs_new_stage = |job: CompilationJob, new_step: CompilationStep, shallow: bool| {
         let new_requirements = job
@@ -198,7 +214,7 @@ pub(crate) fn handle_job(
         .into())
     };
 
-    match perform_job(context, &job)? {
+    match perform_job(context, &job, retain_lmir)? {
         JobResult::StandardSuccess => {}
         JobResult::UnchangedSinceLastCompilation => job.compilation_exists = true,
     };
@@ -221,7 +237,9 @@ pub(crate) fn handle_job(
         }
         CompilationStep::Parse => map_reqs_new_stage(job, CompilationStep::Typechecking, false),
         CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::MIRGen, true),
-        CompilationStep::MIRGen => Ok([].into()),
+        CompilationStep::MIRGen => map_reqs_new_stage(job, CompilationStep::LMIRGen, true),
+        CompilationStep::LMIRGen => map_reqs_new_stage(job, CompilationStep::Codegen, true),
+        CompilationStep::Codegen => Ok([].into()),
     }
 }
 
@@ -261,6 +279,7 @@ pub(crate) enum JobResult {
 pub(crate) fn perform_job(
     context: &GlobalCompilationContext,
     job: &CompilationJob,
+    retain_lmir: bool,
 ) -> CXResult<JobResult> {
     match job.step {
         CompilationStep::PreParse => {
@@ -424,6 +443,58 @@ pub(crate) fn perform_job(
 
             context.module_db.mir.insert(job.unit.clone(), mir);
         }
+
+        CompilationStep::LMIRGen => {
+            let thir = context.module_db.thir.get(&job.unit);
+            let mir = context.module_db.mir.get(&job.unit);
+            let lmir = generate_lmir(mir.as_ref(), &thir.registry)?;
+
+            if !job.unit.is_std_lib() || context.config.verbose {
+                dump_data(&lmir);
+            }
+
+            context.module_db.lmir.insert(job.unit.clone(), lmir);
+        }
+
+        CompilationStep::Codegen => {
+            let lmir_arc;
+            let lmir_owned;
+            let lmir: &cx_lmir::LMIRUnit = if retain_lmir {
+                lmir_arc = context.module_db.lmir.get(&job.unit);
+                &lmir_arc
+            } else {
+                lmir_owned = context.module_db.lmir.take(&job.unit);
+                &lmir_owned
+            };
+            let internal_directory = internal_directory(context, &job.unit).with_extension("o");
+            let internal_directory_str = internal_directory.to_str().ok_or(pipeline_error(
+                "COMPILATION ERROR",
+                "Internal directory path is not valid UTF-8",
+            ))?;
+
+            let buffer = match context.config.backend {
+                CompilerBackend::LLVM => llvm_compile(
+                    lmir,
+                    internal_directory_str,
+                    context.config.optimization_level,
+                ),
+                CompilerBackend::Cranelift => cranelift_compile(lmir, internal_directory_str),
+            }?;
+
+            let mut file =
+                std::fs::File::create(&internal_directory).expect("Failed to create object file");
+
+            file.lock_exclusive()
+                .expect("Failed to lock object file for writing");
+            file.write_all(&buffer)
+                .expect("Failed to write object file");
+
+            context
+                .linking_files
+                .lock()
+                .expect("Deadlock on linking files mutex")
+                .insert(internal_directory);
+        }
     }
 
     Ok(JobResult::StandardSuccess)
@@ -448,9 +519,9 @@ pub enum LSPErrors {
 /// Scheduling loop variant for LSP that collects errors instead of panicking.
 ///
 /// This is similar to `scheduling_loop` but:
-/// 1. Collects LSPErrors (both type errors and fatal errors) instead of panicking.
-/// 2. Stops after Typechecking, before MIR generation.
-/// 3. Stops after the first failed stage so dependents cannot observe missing data.
+/// 1. Collects LSPErrors (both type errors and fatal errors) instead of panicking
+/// 2. Stops after Typechecking (no MIRGen, LMIRGen, or Codegen)
+/// 3. Stops after the first failed stage so dependents cannot observe missing data
 pub(crate) fn scheduling_loop_collect_errors(
     context: &GlobalCompilationContext,
     initial_job: CompilationJob,
@@ -472,7 +543,11 @@ pub(crate) fn scheduling_loop_collect_errors(
             continue;
         }
 
-        if matches!(job.step, CompilationStep::MIRGen) {
+        // Stop after Typechecking for LSP
+        if matches!(
+            job.step,
+            CompilationStep::MIRGen | CompilationStep::LMIRGen | CompilationStep::Codegen
+        ) {
             continue;
         }
 
@@ -540,7 +615,7 @@ fn handle_job_collect_errors(
     }
 
     // Perform the job and collect errors
-    match perform_job(context, job) {
+    match perform_job(context, job, false) {
         Ok(_) => {}
         Err(e) => {
             let lsp_error = spanned_error(&e).unwrap_or(LSPErrors::FatalError {
@@ -592,9 +667,11 @@ fn handle_job_collect_errors(
         ))),
 
         CompilationStep::Typechecking => {
-            // Stop here for LSP - no need for MIR generation.
+            // Stop here for LSP - no need for IR generation or codegen
             Some(HandleJobResult::Success([].into()))
         }
-        CompilationStep::MIRGen => Some(HandleJobResult::Success([].into())),
+        CompilationStep::MIRGen | CompilationStep::LMIRGen | CompilationStep::Codegen => {
+            Some(HandleJobResult::Success([].into()))
+        }
     }
 }

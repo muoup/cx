@@ -2,9 +2,13 @@ use cx_ast::ast::modifiers::{CX_CONST, CX_RESTRICT, CX_VOLATILE, CXTypeQualifier
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::thir::data::{THIRFnPrototype, THIRFnSignature, THIRParameter};
-use crate::thir::expression::{THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp};
+use crate::thir::expression::{
+    THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp,
+};
 use crate::thir::global::{MIRGlobalVarKind, MIRGlobalVariable};
-use crate::thir::r#type::{THIRField, THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind};
+use crate::thir::r#type::{
+    THIRField, THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind,
+};
 use crate::type_context::THIRTypeContext;
 use crate::{THIRFunction, THIRUnit};
 use std::fmt::{Display, Formatter};
@@ -59,49 +63,73 @@ impl MIRDisplayable for MIRGlobalVariable {}
 impl MIRDisplayable for MIRGlobalVarKind {}
 
 impl THIRType {
-    pub fn display_with<'a>(&'a self, definitions: &'a dyn THIRTypeContext) -> MIRDisplay<'a, Self> {
+    pub fn display_with<'a>(
+        &'a self,
+        definitions: &'a dyn THIRTypeContext,
+    ) -> MIRDisplay<'a, Self> {
         self.display_with_definitions(definitions)
     }
 }
 
 impl THIRExpression {
-    pub fn display_with<'a>(&'a self, definitions: &'a dyn THIRTypeContext) -> MIRDisplay<'a, Self> {
+    pub fn display_with<'a>(
+        &'a self,
+        definitions: &'a dyn THIRTypeContext,
+    ) -> MIRDisplay<'a, Self> {
         self.display_with_definitions(definitions)
     }
 }
 
 impl THIRFunction {
-    pub fn display_with<'a>(&'a self, definitions: &'a dyn THIRTypeContext) -> MIRDisplay<'a, Self> {
+    pub fn display_with<'a>(
+        &'a self,
+        definitions: &'a dyn THIRTypeContext,
+    ) -> MIRDisplay<'a, Self> {
         self.display_with_definitions(definitions)
     }
 }
 
 impl THIRFnSignature {
-    pub fn display_with<'a>(&'a self, definitions: &'a dyn THIRTypeContext) -> MIRDisplay<'a, Self> {
+    pub fn display_with<'a>(
+        &'a self,
+        definitions: &'a dyn THIRTypeContext,
+    ) -> MIRDisplay<'a, Self> {
         self.display_with_definitions(definitions)
     }
 }
 
 impl THIRFnPrototype {
-    pub fn display_with<'a>(&'a self, definitions: &'a dyn THIRTypeContext) -> MIRDisplay<'a, Self> {
+    pub fn display_with<'a>(
+        &'a self,
+        definitions: &'a dyn THIRTypeContext,
+    ) -> MIRDisplay<'a, Self> {
         self.display_with_definitions(definitions)
     }
 }
 
 impl THIRParameter {
-    pub fn display_with<'a>(&'a self, definitions: &'a dyn THIRTypeContext) -> MIRDisplay<'a, Self> {
+    pub fn display_with<'a>(
+        &'a self,
+        definitions: &'a dyn THIRTypeContext,
+    ) -> MIRDisplay<'a, Self> {
         self.display_with_definitions(definitions)
     }
 }
 
 impl MIRGlobalVariable {
-    pub fn display_with<'a>(&'a self, definitions: &'a dyn THIRTypeContext) -> MIRDisplay<'a, Self> {
+    pub fn display_with<'a>(
+        &'a self,
+        definitions: &'a dyn THIRTypeContext,
+    ) -> MIRDisplay<'a, Self> {
         self.display_with_definitions(definitions)
     }
 }
 
 impl MIRGlobalVarKind {
-    pub fn display_with<'a>(&'a self, definitions: &'a dyn THIRTypeContext) -> MIRDisplay<'a, Self> {
+    pub fn display_with<'a>(
+        &'a self,
+        definitions: &'a dyn THIRTypeContext,
+    ) -> MIRDisplay<'a, Self> {
         self.display_with_definitions(definitions)
     }
 }
@@ -654,7 +682,9 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }
-            THIRExpressionKind::Variable { name, location: _, .. } => {
+            THIRExpressionKind::Variable {
+                name, location: _, ..
+            } => {
                 write!(f, "LocalVariable {} <'", name)?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
@@ -1182,6 +1212,15 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr,
+                    depth: self.depth + 1,
+                    definitions: self.definitions,
+                }
+                .fmt(f)
+            }
+            THIRExpressionKind::Assert { condition, message } => {
+                writeln!(f, "Assert {message:?}")?;
+                MIRExpressionFormatter {
+                    expr: condition,
                     depth: self.depth + 1,
                     definitions: self.definitions,
                 }
