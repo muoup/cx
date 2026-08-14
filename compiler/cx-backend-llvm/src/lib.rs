@@ -309,6 +309,9 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> Option
     }
 
     let entry = global_state.context.append_basic_block(func_val, "entry");
+    function_state
+        .block_map
+        .insert(CXIdent::from("entry"), entry);
 
     for block in &bytecode.blocks {
         let llvm_block = global_state

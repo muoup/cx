@@ -412,6 +412,7 @@ pub fn convert_expression(
         THIRExpressionKind::TaggedUnionGet {
             value,
             variant_type,
+            ..
         } => {
             // FIXME: THIR should output invariant assertions including tagged union accesses, so we are currently flakily
             // assuming that accesses are valid here.

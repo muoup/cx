@@ -495,10 +495,12 @@ impl<'a> FunctionLowerer<'a> {
                         }
                     }
                     MIRPlaceAggregateOp::Variant {
-                        base, sum_type: _, ..
+                        base,
+                        variant,
+                        sum_type,
                     } => PlaceBinding::Address {
                         value: self.address(self.place(*base)),
-                        ty: self.place_decl_type(*out),
+                        ty: self.variant_type(*sum_type, *variant),
                     },
                 };
                 self.places.insert(*out, binding);
@@ -652,11 +654,12 @@ impl<'a> FunctionLowerer<'a> {
 
     fn lower_unary(&mut self, out: MIRRegister, op: &MIRUnaryOp, operand: &MIRValue) {
         if let MIRUnaryOp::Increment { amount, post } = op {
-            let place = match operand {
-                MIRValue::Place(place) | MIRValue::Move(place) => self.place(*place),
+            let place_id = match operand {
+                MIRValue::Place(place) | MIRValue::Move(place) => *place,
                 _ => panic!("increment requires a place operand"),
             };
-            let ty = self.register_decl_type(out);
+            let place = self.place(place_id);
+            let ty = self.binding_type(&place);
             let previous = self.load_binding(place.clone(), Some(ty), None);
             let amount = self.int_constant(*amount as i128, self.integer_kind(ty));
             let result = self.emit_temp(
@@ -668,10 +671,20 @@ impl<'a> FunctionLowerer<'a> {
                 self.ty(ty),
             );
             self.store_binding(place, result.clone(), ty);
+            let value = if matches!(
+                self.types.kind(self.register_decl_type(out)),
+                Some(MIRTypeKind::MemoryReference { .. })
+            ) {
+                self.address(self.place(place_id))
+            } else if *post {
+                previous
+            } else {
+                result
+            };
             self.emit_to(
                 out,
                 LMIRInstructionKind::Alias {
-                    value: if *post { previous } else { result },
+                    value,
                 },
             );
             return;
@@ -952,13 +965,21 @@ impl<'a> FunctionLowerer<'a> {
             MIRValue::Place(place) | MIRValue::Move(place) => {
                 let binding = self.place(*place);
                 let ty = self.binding_type(&binding);
-                if expected.is_some_and(|expected| {
-                    matches!(
+                let raw_ty = self.place_decl_type(*place);
+                if let Some(expected) = expected {
+                    if matches!(
                         self.types.kind(expected),
                         Some(MIRTypeKind::MemoryReference { .. })
-                    )
-                }) {
-                    return self.address(binding);
+                    ) {
+                        let value_is_reference = matches!(
+                            self.types.kind(raw_ty),
+                            Some(MIRTypeKind::MemoryReference { inner, .. })
+                                if self.types.same_type(*inner, expected)
+                        );
+                        if !value_is_reference {
+                            return self.address(binding);
+                        }
+                    }
                 }
                 if matches!(place, MIRPlace::Global(id) if matches!(
                     self.unit.global(*id).map(|global| &global.state),
@@ -967,10 +988,6 @@ impl<'a> FunctionLowerer<'a> {
                     return self.address(binding);
                 }
                 if self.ty(ty).is_memory_resident()
-                    || matches!(
-                        self.types.kind(ty),
-                        Some(MIRTypeKind::MemoryReference { .. })
-                    )
                 {
                     return self.address(binding);
                 }
@@ -1592,6 +1609,7 @@ impl<'a> FunctionLowerer<'a> {
     }
 
     fn variant_type(&self, sum_type: MIRTypeID, index: usize) -> MIRTypeID {
+        let sum_type = self.semantic_sum_type(sum_type);
         let Some(MIRTypeKind::TaggedUnion { variants }) = self.types.kind(sum_type) else {
             panic!("variant operation on non-tagged union")
         };
@@ -1599,9 +1617,17 @@ impl<'a> FunctionLowerer<'a> {
     }
 
     fn tag_offset(&self, sum_type: MIRTypeID) -> usize {
+        let sum_type = self.semantic_sum_type(sum_type);
         self.types
             .tagged_union_tag_offset(sum_type)
             .unwrap_or_else(|error| panic!("invalid tagged-union layout: {error}"))
+    }
+
+    fn semantic_sum_type(&self, sum_type: MIRTypeID) -> MIRTypeID {
+        match self.types.kind(sum_type) {
+            Some(MIRTypeKind::MemoryReference { inner, .. }) => *inner,
+            _ => sum_type,
+        }
     }
 
     fn block_id(block: MIRBasicBlockID) -> CXIdent {

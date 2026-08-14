@@ -192,7 +192,7 @@ fn lower_expression(
                         value => {
                             let pointee = builder.registry().resolve_type_id(*inner_type).clone();
                             let pointee_type = builder.lower_type(&pointee);
-                            let type_id = builder.lower_type(&source._type);
+                            let type_id = builder.lower_type(&expression._type);
                             let out = builder.place(type_id, None, false);
                             builder.emit(MIRInstrKind::Dereference {
                                 out,
@@ -256,15 +256,16 @@ fn lower_expression(
             THIRExpressionKind::Typechange(inner) => {
                 let value = lower_expression(builder, inner)?;
 
-                // A type change involving a memory reference carries an
-                // address, not the pointer bits as a scalar value. Preserve
-                // that address as an explicit MIR place; this covers both
-                // dereference expressions (`*ptr`) and ownership forwarding
-                // such as `@adopt(place)` or returning a structured lvalue.
+                // Keep reference conversions explicit so places, pointer
+                // values, and pointee values remain distinct in MIR.
                 let expression_is_reference =
                     matches!(&expression._type.kind, THIRTypeKind::MemoryReference { .. });
                 let inner_is_reference =
                     matches!(&inner._type.kind, THIRTypeKind::MemoryReference { .. });
+                let expression_is_pointer =
+                    matches!(&expression._type.kind, THIRTypeKind::PointerTo { .. });
+                let inner_is_pointer =
+                    matches!(&inner._type.kind, THIRTypeKind::PointerTo { .. });
                 if expression_is_reference || inner_is_reference {
                     let reference_type = if expression_is_reference {
                         &expression._type
@@ -277,22 +278,22 @@ fn lower_expression(
                     };
                     let pointee = builder.registry().resolve_type_id(*inner_type).clone();
                     let pointee_type = builder.lower_type(&pointee);
-                    if inner_is_reference && !expression_is_reference {
+                    if inner_is_reference && expression_is_pointer {
                         match value {
-                            MIRValue::Place(_) | MIRValue::Move(_) => value,
-                            value => {
-                                let type_id = builder.lower_type(reference_type);
-                                let out = builder.place(type_id, None, false);
-                                builder.emit(MIRInstrKind::Dereference {
-                                    out,
-                                    pointer: value,
-                                    pointee_type,
-                                });
-                                MIRValue::Place(out)
+                            MIRValue::Place(place) | MIRValue::Move(place) => {
+                                let type_id = builder.lower_type(&expression._type);
+                                let out = builder.register(type_id, None);
+                                builder.emit(MIRInstrKind::AddressOf { out, place });
+                                MIRValue::Register(out)
                             }
+                            value => value,
                         }
                     } else {
-                        let type_id = builder.lower_type(reference_type);
+                        let type_id = if expression_is_reference {
+                            builder.lower_type(reference_type)
+                        } else {
+                            builder.lower_type(&expression._type)
+                        };
                         let out = builder.place(type_id, None, false);
                         builder.emit(MIRInstrKind::Dereference {
                             out,
@@ -301,6 +302,20 @@ fn lower_expression(
                         });
                         MIRValue::Place(out)
                     }
+                } else if inner_is_pointer && !expression_is_pointer {
+                    let THIRTypeKind::PointerTo { inner_type } = &inner._type.kind else {
+                        unreachable!("pointer type was checked above")
+                    };
+                    let pointee = builder.registry().resolve_type_id(*inner_type).clone();
+                    let pointee_type = builder.lower_type(&pointee);
+                    let type_id = builder.lower_type(&expression._type);
+                    let out = builder.place(type_id, None, false);
+                    builder.emit(MIRInstrKind::Dereference {
+                        out,
+                        pointer: value,
+                        pointee_type,
+                    });
+                    MIRValue::Place(out)
                 } else {
                     value
                 }
@@ -312,7 +327,7 @@ fn lower_expression(
                 aggregate_type,
             } => {
                 let base_value = lower_expression(builder, base)?;
-                let base = ensure_place(builder, base_value, aggregate_type);
+                let base = ensure_place(builder, base_value, &base._type);
                 let type_id = builder.lower_type(&expression._type);
                 let out = builder.place(type_id, None, false);
                 let aggregate_type_id = builder.lower_type(aggregate_type);
@@ -366,7 +381,8 @@ fn lower_expression(
             }
             THIRExpressionKind::TaggedUnionGet {
                 value,
-                variant_type: _,
+                variant_index,
+                ..
             } => {
                 let base_value = lower_expression(builder, value)?;
                 let base = ensure_place(builder, base_value, &value._type);
@@ -374,14 +390,12 @@ fn lower_expression(
                 let out = builder.place(type_id, None, false);
                 let sum_type_id = builder.lower_type(&value._type);
                 builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Place {
-                    out,
-                    op: MIRPlaceAggregateOp::Variant {
-                        base,
-                        // Tagged-union payload storage is shared. Pattern tests and
-                        // variant switches supply the semantic variant when known.
-                        variant: 0,
-                        sum_type: sum_type_id,
-                    },
+                        out,
+                        op: MIRPlaceAggregateOp::Variant {
+                            base,
+                            variant: *variant_index,
+                            sum_type: sum_type_id,
+                        },
                 }));
                 MIRValue::Place(out)
             }
@@ -392,7 +406,7 @@ fn lower_expression(
                 sum_type,
             } => {
                 let target_value = lower_expression(builder, target)?;
-                let target = ensure_place(builder, target_value, sum_type);
+                let target = ensure_place(builder, target_value, &target._type);
                 let value = lower_expression(builder, inner_value)?;
                 let sum_type_id = builder.lower_type(sum_type);
                 let constructed = builder.register(sum_type_id, None);
@@ -576,6 +590,9 @@ fn lower_expression(
                 target_scope: _,
                 cleanups,
             } => {
+                let yields_value = value
+                    .as_deref()
+                    .is_some_and(|value| !matches!(value._type.kind, THIRTypeKind::Void));
                 let value = value
                     .as_deref()
                     .map(|value| lower_expression(builder, value))
@@ -587,7 +604,7 @@ fn lower_expression(
                     builder.emit(MIRInstrKind::Jump {
                         target: MIRBlockTarget::with_args(target, vec![value]),
                     });
-                } else {
+                } else if yields_value {
                     builder.emit(MIRInstrKind::Unreachable);
                 }
                 MIRValue::Constant(MIRConstant::Unit)
@@ -637,11 +654,15 @@ fn lower_expression(
                     )
                 {
                     let value = lower_expression(builder, operand)?;
-                    let place = ensure_place(builder, value, &operand._type);
                     let type_id = builder.lower_type(&expression._type);
-                    let out = builder.register(type_id, None);
-                    builder.emit(MIRInstrKind::AddressOf { out, place });
-                    return Ok(MIRValue::Register(out));
+                    return Ok(match value {
+                        MIRValue::Place(place) | MIRValue::Move(place) => {
+                            let out = builder.register(type_id, None);
+                            builder.emit(MIRInstrKind::AddressOf { out, place });
+                            MIRValue::Register(out)
+                        }
+                        value => value,
+                    });
                 }
 
                 let value = lower_expression(builder, operand)?;
@@ -1041,7 +1062,7 @@ fn lower_pattern_test(
             inner_local_id,
             inner_name,
         } => {
-            let base = ensure_place(builder, lhs_value.clone(), sum_type);
+            let base = ensure_place(builder, lhs_value.clone(), &lhs._type);
             if let Some(local_id) = inner_local_id {
                 let payload_type = sum_variant_type(builder, sum_type, *variant_index);
                 let payload_type_id = builder.lower_type(&payload_type);
@@ -1265,6 +1286,20 @@ fn assign_operand_to_place(
 fn ensure_place(builder: &mut MIRBuilder<'_>, value: MIRValue, ty: &THIRType) -> cx_mir::MIRPlace {
     match value {
         MIRValue::Place(place) | MIRValue::Move(place) => place,
+        value if ty.is_memory_reference() => {
+            let inner_type = ty
+                .mem_ref_inner()
+                .expect("memory reference is missing its pointee type");
+            let pointee = builder.registry().resolve_type_id(inner_type).clone();
+            let pointee_type = builder.lower_type(&pointee);
+            let out = builder.place(pointee_type, None, false);
+            builder.emit(MIRInstrKind::Dereference {
+                out,
+                pointer: value,
+                pointee_type,
+            });
+            out
+        }
         value => assign_operand_to_place(builder, value, ty, None),
     }
 }

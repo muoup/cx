@@ -907,6 +907,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             THIRExpressionKind::TaggedUnionGet {
                 value,
                 variant_type,
+                ..
             } => {
                 write!(f, "TaggedUnionGet [")?;
                 self.write_type(f, variant_type)?;

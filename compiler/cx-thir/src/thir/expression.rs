@@ -187,6 +187,7 @@ pub enum THIRExpressionKind {
     TaggedUnionGet {
         value: Box<THIRExpression>,
         variant_type: THIRType,
+        variant_index: usize,
     },
     TaggedUnionSet {
         target: Box<THIRExpression>,

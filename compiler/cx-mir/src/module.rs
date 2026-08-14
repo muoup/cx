@@ -735,7 +735,15 @@ impl MIRUnit {
             self.types.kind(expected),
             Some(MIRTypeKind::MemoryReference { .. })
         );
-        if expected_is_reference || self.types.same_type(raw, expected) {
+        if expected_is_reference {
+            if let Some(MIRTypeKind::MemoryReference { inner, .. }) = self.types.kind(raw)
+                && self.types.same_type(*inner, expected)
+            {
+                return Some(*inner);
+            }
+            return Some(raw);
+        }
+        if self.types.same_type(raw, expected) {
             Some(raw)
         } else {
             self.place_value_type(function, place)

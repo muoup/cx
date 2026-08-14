@@ -170,6 +170,7 @@ pub fn typecheck_match(
                     kind: THIRExpressionKind::TaggedUnionGet {
                         value: Box::new(subject_expr.clone()),
                         variant_type: variant_type.clone(),
+                        variant_index: variant_id,
                     },
                 };
 
@@ -183,6 +184,7 @@ pub fn typecheck_match(
                             kind: THIRExpressionKind::TaggedUnionGet {
                                 value: Box::new(subject_expr.clone()),
                                 variant_type: variant_type.clone(),
+                                variant_index: variant_id,
                             },
                         };
                         let bind_region = THIRExpression {
