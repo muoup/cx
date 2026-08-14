@@ -100,6 +100,7 @@ pub enum THIRExpressionKind {
     Variable {
         name: CXIdent,
         /// Present for locals and absent for globals.
+        /// FIXME: Instead of using this workaround, we should have a separate `GlobalVariable` variant for globals.
         local_id: Option<THIRLocalID>,
         location: SymbolValueOrigin,
     },
@@ -109,11 +110,8 @@ pub enum THIRExpressionKind {
         force_param: bool,
     },
 
-    // The callable signature is stored in the expression's type
     FunctionReference {
-        /// The linker-visible name used to resolve the function.
         name: CXIdent,
-        /// The source-facing name used when displaying the expression.
         debug_name: Option<CXIdent>,
     },
 
