@@ -34,7 +34,7 @@ impl MIRTypeRegistry {
     }
 
     pub fn unit(&self) -> MIRTypeID {
-        self.find(&MIRTypeDefinition::new(MIRTypeKind::Unit))
+        self.find(&MIRTypeDefinition::new(MIRTypeKind::Void))
             .expect("MIR unit type was not imported")
     }
 
@@ -173,7 +173,7 @@ fn same_kind(
     mut same_id: impl FnMut(MIRTypeID, MIRTypeID) -> bool,
 ) -> bool {
     match (left, right) {
-        (MIRTypeKind::Unit, MIRTypeKind::Unit)
+        (MIRTypeKind::Void, MIRTypeKind::Void)
         | (MIRTypeKind::Undefined, MIRTypeKind::Undefined)
         | (MIRTypeKind::Str, MIRTypeKind::Str) => true,
         (

@@ -136,7 +136,7 @@ pub struct MIRFunctionType {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRTypeKind {
-    Unit,
+    Void,
     Integer {
         ty: MIRIntType,
         signed: bool,

@@ -102,7 +102,7 @@ pub struct THIRBitfieldAccess {
 
 #[derive(Debug, Clone)]
 pub enum THIRTypeKind {
-    Unit,
+    Void,
     Integer {
         _type: THIRIntType,
         signed: bool,
@@ -264,7 +264,7 @@ impl Default for THIRType {
             strong_identifier: None,
             lookup_identifier: None,
             template_info: None,
-            kind: THIRTypeKind::Unit,
+            kind: THIRTypeKind::Void,
         }
     }
 }
@@ -402,7 +402,7 @@ impl THIRType {
     }
 
     pub fn is_unit(&self) -> bool {
-        matches!(self.kind, THIRTypeKind::Unit)
+        matches!(self.kind, THIRTypeKind::Void)
     }
 
     pub fn is_structure(&self) -> bool {
@@ -598,7 +598,7 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRTypeKi
         state: &mut TypeComparisonState,
     ) -> bool {
         match (self, other) {
-            (THIRTypeKind::Unit, THIRTypeKind::Unit)
+            (THIRTypeKind::Void, THIRTypeKind::Void)
             | (THIRTypeKind::Undefined, THIRTypeKind::Undefined)
             | (THIRTypeKind::Str, THIRTypeKind::Str) => true,
             (

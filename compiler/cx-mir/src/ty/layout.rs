@@ -101,7 +101,7 @@ impl MIRTypeRegistry {
         }
         let definition = self.definition(id).ok_or(MIRLayoutError::InvalidType(id))?;
         let mut layout = match &definition.kind {
-            MIRTypeKind::Unit => MIRTypeLayout {
+            MIRTypeKind::Void => MIRTypeLayout {
                 size: 0,
                 alignment: 1,
             },

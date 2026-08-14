@@ -64,7 +64,7 @@ pub(crate) fn type_mangle(definitions: &impl THIRTypeContext, ty: &THIRType) -> 
         }
         THIRTypeKind::Str => "_str".to_owned(),
         THIRTypeKind::Undefined => "X".to_owned(),
-        THIRTypeKind::Unit => "v".to_owned(),
+        THIRTypeKind::Void => "v".to_owned(),
         THIRTypeKind::PointerTo { inner_type } => {
             let inner_type = definitions.resolve_type_id(*inner_type);
 

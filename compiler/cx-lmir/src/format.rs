@@ -504,7 +504,7 @@ impl Display for LMIRTypeKind {
                 write!(f, "struct {{ {fields} }}")
             }
 
-            LMIRTypeKind::Unit => write!(f, "()"),
+            LMIRTypeKind::Void => write!(f, "()"),
         }
     }
 }

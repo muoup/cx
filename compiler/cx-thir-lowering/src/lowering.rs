@@ -690,7 +690,7 @@ fn lower_if(
     let then_block = builder.new_block("if.then");
     let else_block = builder.new_block("if.else");
     let merge_block = builder.new_block("if.merge");
-    let result = (!matches!(result_type.kind, THIRTypeKind::Unit)).then(|| {
+    let result = (!matches!(result_type.kind, THIRTypeKind::Void)).then(|| {
         let type_id = builder.lower_type(result_type);
         builder.block_param(merge_block, type_id, None)
     });
@@ -929,7 +929,7 @@ fn lower_match(
         .unwrap_or(&condition._type)
         .clone();
     let exit = builder.new_block("match.exit");
-    let value_match = !matches!(result_type.kind, THIRTypeKind::Unit);
+    let value_match = !matches!(result_type.kind, THIRTypeKind::Void);
     if value_match {
         let result_type_id = builder.lower_type(result_type);
         builder.push_yield(exit, result_type_id);
@@ -1189,7 +1189,7 @@ fn lower_call(
         builder.pop_named_scope();
     }
 
-    let returns_value = !matches!(result_type.kind, THIRTypeKind::Unit);
+    let returns_value = !matches!(result_type.kind, THIRTypeKind::Void);
     let out = returns_value.then(|| {
         let result_type_id = builder.lower_type(result_type);
         builder.register(result_type_id, None)

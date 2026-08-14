@@ -629,7 +629,7 @@ fn type_contains_by_value(
         THIRTypeKind::PointerTo { .. }
         | THIRTypeKind::MemoryReference { .. }
         | THIRTypeKind::Function { .. } => false,
-        THIRTypeKind::Unit
+        THIRTypeKind::Void
         | THIRTypeKind::Integer { .. }
         | THIRTypeKind::Float { .. }
         | THIRTypeKind::Opaque { .. }

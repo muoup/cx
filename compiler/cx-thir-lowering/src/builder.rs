@@ -163,7 +163,7 @@ impl<'thir> MIRBuilder<'thir> {
 
     fn lower_type_kind_mut(&mut self, kind: &THIRTypeKind) -> MIRTypeKind {
         match kind {
-            THIRTypeKind::Unit => MIRTypeKind::Unit,
+            THIRTypeKind::Void => MIRTypeKind::Void,
             THIRTypeKind::Integer { _type, signed } => MIRTypeKind::Integer {
                 ty: lower_int_type(*_type),
                 signed: *signed,
@@ -330,7 +330,7 @@ impl<'thir> MIRBuilder<'thir> {
                 .with_nodrop(nodrop)
             })
             .collect();
-        let return_type = (!matches!(signature.return_type.kind, THIRTypeKind::Unit))
+        let return_type = (!matches!(signature.return_type.kind, THIRTypeKind::Void))
             .then(|| self.lower_type(&signature.return_type));
         let mut lowered = MIRFnSignature::new(name, params, return_type);
         lowered.variadic = signature.var_args;

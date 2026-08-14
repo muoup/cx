@@ -87,7 +87,7 @@ impl<'a> TypePrinter<'a> {
 
     fn write_kind(&mut self, f: &mut Formatter<'_>, kind: &MIRTypeKind) -> fmt::Result {
         match kind {
-            MIRTypeKind::Unit => f.write_str("()"),
+            MIRTypeKind::Void => f.write_str("void"),
             MIRTypeKind::Integer { ty, signed } => {
                 write!(
                     f,

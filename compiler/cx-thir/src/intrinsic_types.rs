@@ -12,7 +12,7 @@ pub fn is_intrinsic_type(name: &str) -> bool {
 pub const INTRINSIC_IMPORTS: &[&str] = &["std/intrinsic/assertion.cx"];
 
 pub const INTRINSIC_TYPES: &[(&str, THIRTypeKind)] = &[
-    ("void", THIRTypeKind::Unit),
+    ("void", THIRTypeKind::Void),
     (
         "bool",
         THIRTypeKind::Integer {

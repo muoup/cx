@@ -181,7 +181,7 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
                 .collect(),
         },
         MIRTypeKind::Union { .. } => LMIRTypeKind::Opaque { bytes: layout.size },
-        MIRTypeKind::Unit => LMIRTypeKind::Unit,
+        MIRTypeKind::Void => LMIRTypeKind::Void,
         MIRTypeKind::Str => LMIRTypeKind::Integer(LMIRIntegerType::I8),
         MIRTypeKind::Undefined => panic!("cannot lower undefined MIR type {ty}"),
     };

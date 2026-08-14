@@ -148,7 +148,7 @@ fn lmir_type_to_c(ty: &LMIRType, var_name: Option<&str>) -> String {
                 format!("void* {name}")
             }
         }
-        LMIRTypeKind::Unit => {
+        LMIRTypeKind::Void => {
             if name.is_empty() {
                 "void".to_string()
             } else {

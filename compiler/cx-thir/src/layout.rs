@@ -17,7 +17,7 @@ pub fn layout_of<Context: THIRTypeContext + ?Sized>(
     ty: &THIRType,
 ) -> CXRawResult<THIRTypeLayout> {
     match &ty.kind {
-        THIRTypeKind::Unit => Ok(THIRTypeLayout {
+        THIRTypeKind::Void => Ok(THIRTypeLayout {
             size: 0,
             alignment: 1,
         }),

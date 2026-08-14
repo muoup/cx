@@ -395,7 +395,7 @@ fn write_type_body(
         THIRTypeKind::TaggedUnion { variants } => {
             write_aggregate(f, "tagged_union", ty, variants, definitions, state)
         }
-        THIRTypeKind::Unit => write!(f, "()"),
+        THIRTypeKind::Void => write!(f, "void"),
         THIRTypeKind::PointerTo { inner_type } => {
             write_type_id(f, definitions, *inner_type, state)?;
             write!(f, "*")?;

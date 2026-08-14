@@ -20,7 +20,7 @@ impl LMIRType {
                 .map(|(_, field)| field.alignment() as usize)
                 .max()
                 .unwrap_or(1),
-            LMIRTypeKind::Unit => 1,
+            LMIRTypeKind::Void => 1,
             _ => usize::from(kind.implicit_size())
                 .next_power_of_two()
                 .min(target.pointer_size()),
@@ -31,7 +31,7 @@ impl LMIRType {
 
     pub fn unit() -> Self {
         LMIRType {
-            kind: LMIRTypeKind::Unit,
+            kind: LMIRTypeKind::Void,
             alignment: 1,
         }
     }
@@ -100,7 +100,7 @@ pub enum LMIRTypeKind {
         fields: Vec<(String, LMIRType)>,
     },
 
-    Unit,
+    Void,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -155,7 +155,7 @@ impl LMIRTypeKind {
                 current_size
             }
 
-            LMIRTypeKind::Unit => 0,
+            LMIRTypeKind::Void => 0,
         })
     }
 }
@@ -178,7 +178,7 @@ impl LMIRType {
 
     #[inline]
     pub fn is_void(&self) -> bool {
-        matches!(self.kind, LMIRTypeKind::Unit)
+        matches!(self.kind, LMIRTypeKind::Void)
     }
 
     #[inline]
@@ -195,7 +195,7 @@ impl LMIRType {
             LMIRTypeKind::Vector { .. } => false,
             LMIRTypeKind::Array { .. } => true,
             LMIRTypeKind::Struct { .. } => true,
-            LMIRTypeKind::Unit => false,
+            LMIRTypeKind::Void => false,
         }
     }
 }

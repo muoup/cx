@@ -101,7 +101,7 @@ pub struct THIRFnSignature {
 impl Default for THIRFnSignature {
     fn default() -> Self {
         Self {
-            return_type: THIRTypeKind::Unit.into(),
+            return_type: THIRTypeKind::Void.into(),
             params: Vec::new(),
             var_args: false,
             contract: CXFunctionContract::default(),
