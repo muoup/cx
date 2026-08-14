@@ -104,20 +104,30 @@ impl MIRFnParam {
 
 #[derive(Debug, Clone)]
 pub struct MIRFnSignature {
-    pub name: CXIdent,
+    pub symbol_name: CXIdent,
+    pub debug_name: Option<CXIdent>,
     pub params: Vec<MIRFnParam>,
     pub return_type: Option<MIRTypeID>,
     pub variadic: bool,
 }
 
 impl MIRFnSignature {
-    pub fn new(name: CXIdent, params: Vec<MIRFnParam>, return_type: Option<MIRTypeID>) -> Self {
+    pub fn new(
+        symbol_name: CXIdent,
+        params: Vec<MIRFnParam>,
+        return_type: Option<MIRTypeID>,
+    ) -> Self {
         Self {
-            name,
+            symbol_name,
+            debug_name: None,
             params,
             return_type,
             variadic: false,
         }
+    }
+
+    pub fn display_name(&self) -> &CXIdent {
+        self.debug_name.as_ref().unwrap_or(&self.symbol_name)
     }
 }
 
@@ -174,11 +184,7 @@ impl MIRFunction {
         self.blocks.is_empty()
     }
 
-    pub fn add_place(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>) -> MIRPlace {
-        self.add_place_with_nodrop(ty, debug_name, false)
-    }
-
-    pub fn add_place_with_nodrop(
+    pub fn add_place(
         &mut self,
         ty: MIRTypeID,
         debug_name: Option<CXIdent>,

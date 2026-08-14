@@ -65,42 +65,6 @@ impl MIRUnit {
         ty: MIRTypeID,
         linkage: CXLinkageMode,
         is_mutable: bool,
-    ) -> MIRGlobalID {
-        self.add_global_with_nodrop(name, ty, linkage, is_mutable, false)
-    }
-
-    pub fn add_global_with_nodrop(
-        &mut self,
-        name: CXIdent,
-        ty: MIRTypeID,
-        linkage: CXLinkageMode,
-        is_mutable: bool,
-        nodrop: bool,
-    ) -> MIRGlobalID {
-        let id = MIRGlobalID::new(self.globals.len());
-        let mut global = MIRGlobalVariable::new(id, name, ty, linkage, is_mutable);
-        global.nodrop = nodrop;
-        self.globals.push(global);
-        id
-    }
-
-    pub fn add_global_with_state(
-        &mut self,
-        name: CXIdent,
-        ty: MIRTypeID,
-        linkage: CXLinkageMode,
-        is_mutable: bool,
-        state: MIRGlobalState,
-    ) -> MIRGlobalID {
-        self.add_global_with_nodrop_and_state(name, ty, linkage, is_mutable, false, state)
-    }
-
-    pub fn add_global_with_nodrop_and_state(
-        &mut self,
-        name: CXIdent,
-        ty: MIRTypeID,
-        linkage: CXLinkageMode,
-        is_mutable: bool,
         nodrop: bool,
         state: MIRGlobalState,
     ) -> MIRGlobalID {

@@ -811,7 +811,7 @@ impl<'a> FunctionLowerer<'a> {
             MIRValue::Constant(MIRConstant::Function(id)) => {
                 let function = self.unit.function(*id).expect("invalid direct callee");
                 LMIRInstructionKind::DirectCall {
-                    func: function.prototype.signature.name.clone(),
+                    func: function.prototype.signature.symbol_name.clone(),
                     args: lowered_args,
                     method_sig: signature.clone(),
                 }
@@ -1027,7 +1027,7 @@ impl<'a> FunctionLowerer<'a> {
                     .expect("invalid MIR function constant")
                     .prototype
                     .signature
-                    .name
+                    .symbol_name
                     .clone(),
             ),
             MIRConstant::Null => {
@@ -1379,7 +1379,7 @@ impl<'a> FunctionLowerer<'a> {
                 .unwrap()
                 .prototype
                 .signature
-                .name
+                .symbol_name
                 .as_str();
             return self.prototypes.get(name).unwrap().signature.clone();
         }
@@ -1398,7 +1398,8 @@ impl<'a> FunctionLowerer<'a> {
             Some(signature.return_type)
         };
         let mir_signature = MIRFnSignature {
-            name: CXIdent::new("<indirect>"),
+            symbol_name: CXIdent::new("<indirect>"),
+            debug_name: None,
             params: signature
                 .params
                 .iter()

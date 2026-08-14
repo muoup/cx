@@ -12,6 +12,7 @@ pub struct MIRTypeRegistry {
     pub(super) architecture: ArchitectureConfig,
     pub(super) definitions: Vec<Option<MIRTypeDefinition>>,
     interner: HashMap<MIRTypeDefinition, MIRTypeID>,
+    debug_names: Vec<Option<String>>,
     pub(super) layouts: Vec<Option<MIRTypeLayout>>,
     next_id: u64,
 }
@@ -22,6 +23,7 @@ impl MIRTypeRegistry {
             architecture,
             definitions: Vec::new(),
             interner: HashMap::new(),
+            debug_names: Vec::new(),
             layouts: Vec::new(),
             next_id: 0,
         }
@@ -52,6 +54,15 @@ impl MIRTypeRegistry {
         self.definition(id).map(|definition| &definition.kind)
     }
 
+    pub fn debug_name(&self, id: MIRTypeID) -> Option<&str> {
+        self.debug_names.get(id.index()).and_then(Option::as_deref)
+    }
+
+    pub fn set_debug_name(&mut self, id: MIRTypeID, name: impl Into<String>) {
+        self.ensure_capacity(id.index());
+        self.debug_names[id.index()] = Some(name.into());
+    }
+
     pub fn intern(&mut self, definition: MIRTypeDefinition) -> MIRTypeID {
         if let Some(id) = self.interner.get(&definition).copied() {
             return id;
@@ -59,10 +70,7 @@ impl MIRTypeRegistry {
 
         let id = MIRTypeID::from_raw(self.next_id);
         self.next_id += 1;
-        if self.definitions.len() <= id.index() {
-            self.definitions.resize_with(id.index() + 1, || None);
-            self.layouts.resize(id.index() + 1, None);
-        }
+        self.ensure_capacity(id.index());
         self.definitions[id.index()] = Some(definition.clone());
         self.interner.insert(definition, id);
         id
@@ -73,6 +81,7 @@ impl MIRTypeRegistry {
         let end = end as usize;
         if self.definitions.len() < end {
             self.definitions.resize_with(end, || None);
+            self.debug_names.resize(end, None);
             self.layouts.resize(end, None);
         }
     }
@@ -86,10 +95,7 @@ impl MIRTypeRegistry {
         id: MIRTypeID,
         definition: MIRTypeDefinition,
     ) -> Result<(), MIRLayoutError> {
-        if self.definitions.len() <= id.index() {
-            self.definitions.resize_with(id.index() + 1, || None);
-            self.layouts.resize(id.index() + 1, None);
-        }
+        self.ensure_capacity(id.index());
         self.next_id = self.next_id.max(id.raw() + 1);
         let slot = &mut self.definitions[id.index()];
         if slot.is_some() {
@@ -99,6 +105,15 @@ impl MIRTypeRegistry {
         self.layouts[id.index()] = None;
         self.interner.entry(definition).or_insert(id);
         Ok(())
+    }
+
+    fn ensure_capacity(&mut self, index: usize) {
+        if self.definitions.len() <= index {
+            let len = index + 1;
+            self.definitions.resize_with(len, || None);
+            self.debug_names.resize(len, None);
+            self.layouts.resize(len, None);
+        }
     }
 
     pub fn integer_type(&self, ty: MIRIntType, signed: bool) -> Option<MIRTypeID> {
@@ -267,19 +282,32 @@ fn same_fields(
             .iter()
             .zip(right)
             .all(|(left, right)| match (left, right) {
-                (MIRField::Standard { type_id: left }, MIRField::Standard { type_id: right }) => {
-                    same_id(*left, *right)
-                }
+                (
+                    MIRField::Standard {
+                        name: left_name,
+                        type_id: left,
+                    },
+                    MIRField::Standard {
+                        name: right_name,
+                        type_id: right,
+                    },
+                ) => left_name == right_name && same_id(*left, *right),
                 (
                     MIRField::Bitfield {
+                        name: left_name,
                         integer_type_id: left_type,
                         width: left_width,
                     },
                     MIRField::Bitfield {
+                        name: right_name,
                         integer_type_id: right_type,
                         width: right_width,
                     },
-                ) => left_width == right_width && same_id(*left_type, *right_type),
+                ) => {
+                    left_name == right_name
+                        && left_width == right_width
+                        && same_id(*left_type, *right_type)
+                }
                 _ => false,
             })
 }

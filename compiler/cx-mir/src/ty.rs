@@ -76,9 +76,11 @@ impl MIRFloatType {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRField {
     Standard {
+        name: Option<String>,
         type_id: MIRTypeID,
     },
     Bitfield {
+        name: Option<String>,
         integer_type_id: MIRTypeID,
         width: usize,
     },
@@ -86,12 +88,29 @@ pub enum MIRField {
 
 impl MIRField {
     pub const fn standard(type_id: MIRTypeID) -> Self {
-        Self::Standard { type_id }
+        Self::Standard {
+            name: None,
+            type_id,
+        }
+    }
+
+    pub fn named(name: String, type_id: MIRTypeID) -> Self {
+        Self::Standard {
+            name: Some(name),
+            type_id,
+        }
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            Self::Standard { name, .. } => name.as_deref(),
+            Self::Bitfield { name, .. } => name.as_deref(),
+        }
     }
 
     pub const fn ty(&self) -> MIRTypeID {
         match self {
-            Self::Standard { type_id }
+            Self::Standard { type_id, .. }
             | Self::Bitfield {
                 integer_type_id: type_id,
                 ..

@@ -68,9 +68,16 @@ impl<'a> TypePrinter<'a> {
             return write!(f, "t{}", id.index());
         }
 
-        let Some(kind) = self.registry.kind(id).cloned() else {
+        let Some(definition) = self.registry.definition(id) else {
             return write!(f, "<invalid t{}>", id.index());
         };
+
+        if is_aggregate(&definition.kind) {
+            if let Some(name) = self.registry.debug_name(id) {
+                return f.write_str(name);
+            }
+        }
+        let kind = definition.kind.clone();
 
         self.active.push(id);
         let result = self.write_kind(f, &kind);
@@ -140,13 +147,54 @@ impl<'a> TypePrinter<'a> {
             if index != 0 {
                 f.write_str(", ")?;
             }
-            write!(f, "field_{index}: ")?;
+            if let Some(name) = field.name() {
+                write!(f, "{name}: ")?;
+            } else {
+                write!(f, "field_{index}: ")?;
+            }
             self.write(f, field.ty())?;
             if let MIRField::Bitfield { width, .. } = field {
                 write!(f, ":{width}")?;
             }
         }
         Ok(())
+    }
+
+    fn write_member_name(
+        &self,
+        f: &mut Formatter<'_>,
+        aggregate_type: MIRTypeID,
+        index: usize,
+        prefix: &str,
+    ) -> fmt::Result {
+        if let Some(name) = self
+            .registry
+            .kind(aggregate_type)
+            .and_then(aggregate_fields)
+            .and_then(|fields| fields.get(index))
+            .and_then(MIRField::name)
+        {
+            return f.write_str(name);
+        }
+        write!(f, "{prefix}_{index}")
+    }
+}
+
+fn is_aggregate(kind: &MIRTypeKind) -> bool {
+    matches!(
+        kind,
+        MIRTypeKind::Structured { .. }
+            | MIRTypeKind::Union { .. }
+            | MIRTypeKind::TaggedUnion { .. }
+    )
+}
+
+fn aggregate_fields(kind: &MIRTypeKind) -> Option<&[MIRField]> {
+    match kind {
+        MIRTypeKind::Structured { fields }
+        | MIRTypeKind::Union { variants: fields }
+        | MIRTypeKind::TaggedUnion { variants: fields } => Some(fields),
+        _ => None,
     }
 }
 
@@ -189,7 +237,7 @@ fn write_function(
     } else if function.prototype.linkage == CXLinkageMode::Extern || function.is_declaration() {
         f.write_str("extern ")?;
     }
-    write!(f, "fn {}(", function.prototype.signature.name)?;
+    write!(f, "fn {}(", function.prototype.signature.display_name())?;
     for (index, parameter) in function.prototype.signature.params.iter().enumerate() {
         if index != 0 {
             f.write_str(", ")?;
@@ -430,9 +478,9 @@ fn write_instruction(
         }
         MIRInstrKind::VariantSwitch {
             subject,
+            sum_type,
             cases,
             default,
-            ..
         } => {
             f.write_str("switch ")?;
             write_place_name(f, unit, function, *subject)?;
@@ -441,7 +489,9 @@ fn write_instruction(
                 if index != 0 {
                     f.write_str(",")?;
                 }
-                write!(f, " .{variant} => ")?;
+                f.write_str(" .")?;
+                types.write_member_name(f, *sum_type, *variant, "variant")?;
+                f.write_str(" => ")?;
                 write_target(f, unit, function, target)?;
             }
             if let Some(default) = default {
@@ -473,9 +523,14 @@ fn write_aggregate(
             write_place_name(f, unit, function, *out)?;
             f.write_str(" = &")?;
             match op {
-                MIRPlaceAggregateOp::Field { base, field, .. } => {
+                MIRPlaceAggregateOp::Field {
+                    base,
+                    field,
+                    aggregate_type,
+                } => {
                     write_place_name(f, unit, function, *base)?;
-                    write!(f, ".field_{field}")
+                    f.write_str(".")?;
+                    types.write_member_name(f, *aggregate_type, *field, "field")
                 }
                 MIRPlaceAggregateOp::Index { base, index, .. } => {
                     write_place_name(f, unit, function, *base)?;
@@ -483,9 +538,14 @@ fn write_aggregate(
                     write_value(f, unit, function, index)?;
                     f.write_str("]")
                 }
-                MIRPlaceAggregateOp::Variant { base, variant, .. } => {
+                MIRPlaceAggregateOp::Variant {
+                    base,
+                    variant,
+                    sum_type,
+                } => {
                     write_place_name(f, unit, function, *base)?;
-                    write!(f, ".variant_{variant}")
+                    f.write_str(".")?;
+                    types.write_member_name(f, *sum_type, *variant, "variant")
                 }
             }
         }
@@ -505,13 +565,19 @@ fn write_aggregate(
                         if index != 0 {
                             f.write_str(", ")?;
                         }
-                        write!(f, "field_{field}: ")?;
+                        types.write_member_name(f, *ty, *field, "field")?;
+                        f.write_str(": ")?;
                         write_value(f, unit, function, value)?;
                     }
                     f.write_str(" }")
                 }
-                MIRValueAggregateOp::Variant { variant, value, .. } => {
-                    write!(f, "variant_{variant}(")?;
+                MIRValueAggregateOp::Variant {
+                    variant,
+                    value,
+                    sum_type,
+                } => {
+                    types.write_member_name(f, *sum_type, *variant, "variant")?;
+                    f.write_str("(")?;
                     write_value(f, unit, function, value)?;
                     f.write_str(")")
                 }
@@ -571,7 +637,7 @@ fn write_constant(f: &mut Formatter<'_>, unit: &MIRUnit, constant: &MIRConstant)
     match constant {
         MIRConstant::Function(function_id) => {
             if let Some(function) = unit.function(*function_id) {
-                write!(f, "fn {}", function.prototype.signature.name)
+                write!(f, "fn {}", function.prototype.signature.display_name())
             } else {
                 write!(f, "fn f{}", function_id.index())
             }

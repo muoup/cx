@@ -347,7 +347,7 @@ fn write_optional_register(f: &mut Formatter<'_>, out: Option<MIRRegister>) -> f
 
 impl Display for MIRFnSignature {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}(", self.name)?;
+        write!(f, "{}(", self.display_name())?;
         for (i, param) in self.params.iter().enumerate() {
             if i != 0 {
                 f.write_str(", ")?;

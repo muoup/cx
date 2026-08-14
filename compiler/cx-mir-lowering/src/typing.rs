@@ -15,7 +15,7 @@ pub(crate) fn convert_prototype(
     types: &MIRTypeRegistry,
 ) -> LMIRFunctionPrototype {
     LMIRFunctionPrototype {
-        name: prototype.signature.name.clone(),
+        name: prototype.signature.symbol_name.clone(),
         linkage: convert_linkage(prototype.linkage),
         signature: classify_signature(&prototype.signature, types),
     }
@@ -169,7 +169,15 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
             fields: fields
                 .iter()
                 .enumerate()
-                .map(|(index, field)| (format!("field_{index}"), convert_type(field.ty(), types)))
+                .map(|(index, field)| {
+                    (
+                        field
+                            .name()
+                            .map(str::to_owned)
+                            .unwrap_or_else(|| format!("field_{index}")),
+                        convert_type(field.ty(), types),
+                    )
+                })
                 .collect(),
         },
         MIRTypeKind::Union { .. } => LMIRTypeKind::Opaque { bytes: layout.size },

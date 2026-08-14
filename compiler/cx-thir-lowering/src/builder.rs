@@ -7,6 +7,7 @@ use cx_mir::{
     MIRRegister, MIRTypeDefinition, MIRTypeID, MIRTypeKind, MIRUnit, MIRValue,
 };
 use cx_thir::{
+    THIRUnit,
     registry::THIRDecomposedRegistry,
     thir::{
         data::{THIRFnPrototype, THIRFunction},
@@ -15,7 +16,6 @@ use cx_thir::{
         r#type::{THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
-    THIRUnit,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -114,10 +114,16 @@ impl<'thir> MIRBuilder<'thir> {
             return self.lower_type_id(id);
         }
         let kind = self.lower_type_kind_mut(&ty.kind);
-        self.unit.types.intern(MIRTypeDefinition {
+        let id = self.unit.types.intern(MIRTypeDefinition {
             kind,
             minimum_alignment: ty.attributes.minimum_alignment,
-        })
+        });
+        if self.unit.types.debug_name(id).is_none() {
+            if let Some(name) = ty.strong_identifier() {
+                self.unit.types.set_debug_name(id, name.to_owned());
+            }
+        }
+        id
     }
 
     fn lower_type_id(&mut self, id: THIRTypeID) -> MIRTypeID {
@@ -139,6 +145,7 @@ impl<'thir> MIRBuilder<'thir> {
             self.lowering_types.remove(&id);
             return mir_id;
         };
+        let debug_name = ty.strong_identifier.clone();
         let definition = MIRTypeDefinition {
             kind: self.lower_type_kind_mut(&ty.kind),
             minimum_alignment: ty.attributes.minimum_alignment,
@@ -147,6 +154,9 @@ impl<'thir> MIRBuilder<'thir> {
             .types
             .define(mir_id, definition)
             .expect("THIR type ID must have one MIR definition");
+        if let Some(debug_name) = debug_name {
+            self.unit.types.set_debug_name(mir_id, debug_name);
+        }
         self.lowering_types.remove(&id);
         mir_id
     }
@@ -220,14 +230,15 @@ impl<'thir> MIRBuilder<'thir> {
 
     fn lower_field(&mut self, field: &cx_thir::thir::r#type::THIRField) -> MIRField {
         match field {
-            cx_thir::thir::r#type::THIRField::Standard { type_id, .. } => MIRField::Standard {
-                type_id: self.lower_type_id(*type_id),
-            },
+            cx_thir::thir::r#type::THIRField::Standard { name, type_id } => {
+                MIRField::named(name.clone(), self.lower_type_id(*type_id))
+            }
             cx_thir::thir::r#type::THIRField::Bitfield {
+                name,
                 integer_type_id,
                 width,
-                ..
             } => MIRField::Bitfield {
+                name: name.clone(),
                 integer_type_id: self.lower_type_id(*integer_type_id),
                 width: *width,
             },
@@ -279,7 +290,7 @@ impl<'thir> MIRBuilder<'thir> {
             }
         };
 
-        let id = self.unit.add_global_with_nodrop_and_state(
+        let id = self.unit.add_global(
             name.clone(),
             ty,
             global.linkage,
@@ -291,11 +302,13 @@ impl<'thir> MIRBuilder<'thir> {
     }
 
     pub(crate) fn convert_prototype(&mut self, prototype: &THIRFnPrototype) -> MIRFnPrototype {
-        self.prototype_from_signature(
+        let mut lowered = self.prototype_from_signature(
             CXIdent::new(prototype.symbol_name()),
             prototype.signature(),
             prototype.linkage(),
-        )
+        );
+        lowered.signature.debug_name = prototype.debug_name().cloned();
+        lowered
     }
 
     fn prototype_from_signature(
@@ -447,24 +460,11 @@ impl<'thir> MIRBuilder<'thir> {
         true
     }
 
-    pub(crate) fn new_register(
-        &mut self,
-        ty: MIRTypeID,
-        debug_name: Option<CXIdent>,
-    ) -> MIRRegister {
+    pub(crate) fn register(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>) -> MIRRegister {
         self.function_mut().add_register(ty, debug_name)
     }
 
-    pub(crate) fn new_register_for_type(
-        &mut self,
-        ty: &THIRType,
-        debug_name: Option<CXIdent>,
-    ) -> MIRRegister {
-        let type_id = self.lower_type(ty);
-        self.new_register(type_id, debug_name)
-    }
-
-    pub(crate) fn add_block_param(
+    pub(crate) fn block_param(
         &mut self,
         block: MIRBasicBlockID,
         ty: MIRTypeID,
@@ -475,58 +475,24 @@ impl<'thir> MIRBuilder<'thir> {
             .expect("selected block does not exist")
     }
 
-    pub(crate) fn add_block_param_for_type(
-        &mut self,
-        block: MIRBasicBlockID,
-        ty: &THIRType,
-        debug_name: Option<CXIdent>,
-    ) -> MIRRegister {
-        let type_id = self.lower_type(ty);
-        self.add_block_param(block, type_id, debug_name)
-    }
-
-    pub(crate) fn declare_place(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>) -> MIRPlace {
-        self.function_mut().add_place(ty, debug_name)
-    }
-
-    pub(crate) fn declare_place_for_type(
-        &mut self,
-        ty: &THIRType,
-        debug_name: Option<CXIdent>,
-    ) -> MIRPlace {
-        let type_id = self.lower_type(ty);
-        self.declare_place(type_id, debug_name)
-    }
-
-    pub(crate) fn declare_place_with_nodrop(
+    pub(crate) fn place(
         &mut self,
         ty: MIRTypeID,
         debug_name: Option<CXIdent>,
         nodrop: bool,
     ) -> MIRPlace {
-        self.function_mut()
-            .add_place_with_nodrop(ty, debug_name, nodrop)
+        self.function_mut().add_place(ty, debug_name, nodrop)
     }
 
-    pub(crate) fn create_place_with_nodrop(
+    pub(crate) fn create(
         &mut self,
         ty: MIRTypeID,
         debug_name: Option<CXIdent>,
         nodrop: bool,
     ) -> MIRPlace {
-        let place = self.declare_place_with_nodrop(ty, debug_name, nodrop);
+        let place = self.place(ty, debug_name, nodrop);
         self.emit(MIRInstrKind::Create { out: place, ty });
         place
-    }
-
-    pub(crate) fn create_place_for_type(
-        &mut self,
-        ty: &THIRType,
-        debug_name: Option<CXIdent>,
-        nodrop: bool,
-    ) -> MIRPlace {
-        let type_id = self.lower_type(ty);
-        self.create_place_with_nodrop(type_id, debug_name, nodrop)
     }
 
     pub(crate) fn bind_local(&mut self, local: THIRLocalID, place: MIRPlace) {
@@ -601,17 +567,14 @@ impl<'thir> MIRBuilder<'thir> {
         }
 
         let ty_id = self.lower_type(ty);
-        let id = self.unit.add_global_with_nodrop(
+        let id = self.unit.add_global(
             name.clone(),
             ty_id,
             CXLinkageMode::Extern,
             true,
             ty.is_nodrop(),
+            MIRGlobalState::External,
         );
-        self.unit
-            .global_mut(id)
-            .expect("a just-created global must exist")
-            .state = MIRGlobalState::External;
         self.global_symbols.insert(name.as_string(), id);
         id
     }
@@ -650,17 +613,12 @@ impl<'thir> MIRBuilder<'thir> {
     }
 
     pub(crate) fn push_yield(&mut self, target: MIRBasicBlockID, result_type: MIRTypeID) {
-        let result = self.add_block_param(target, result_type, None);
+        let result = self.block_param(target, result_type, None);
         self.context_mut().yields.push(YieldContext {
             target,
             result,
             has_incoming: false,
         });
-    }
-
-    pub(crate) fn push_yield_for_type(&mut self, target: MIRBasicBlockID, result_type: &THIRType) {
-        let type_id = self.lower_type(result_type);
-        self.push_yield(target, type_id);
     }
 
     pub(crate) fn yield_target(&self) -> Option<MIRBasicBlockID> {

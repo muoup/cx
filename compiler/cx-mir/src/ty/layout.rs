@@ -162,7 +162,7 @@ impl MIRTypeRegistry {
 
         for field in fields {
             match field {
-                MIRField::Standard { type_id } => {
+                MIRField::Standard { type_id, .. } => {
                     flush_bitfield(&mut size, &mut active)?;
                     let field_layout = self.layout_inner(*type_id, visiting)?;
                     size = align_to(size, field_layout.alignment)?;
@@ -174,6 +174,7 @@ impl MIRTypeRegistry {
                 MIRField::Bitfield {
                     integer_type_id,
                     width,
+                    ..
                 } => {
                     let storage = self.layout_inner(*integer_type_id, visiting)?;
                     validate_bitfield(*width, storage)?;
@@ -252,10 +253,11 @@ impl MIRTypeRegistry {
         visiting: &mut HashSet<MIRTypeID>,
     ) -> Result<MIRTypeLayout, MIRLayoutError> {
         match field {
-            MIRField::Standard { type_id } => self.layout_inner(*type_id, visiting),
+            MIRField::Standard { type_id, .. } => self.layout_inner(*type_id, visiting),
             MIRField::Bitfield {
                 integer_type_id,
                 width,
+                ..
             } => {
                 let layout = self.layout_inner(*integer_type_id, visiting)?;
                 validate_bitfield(*width, layout)?;
@@ -282,7 +284,7 @@ impl MIRTypeRegistry {
         let mut active: Option<(MIRTypeID, usize, usize, usize)> = None;
         for (index, field) in fields.iter().enumerate() {
             match field {
-                MIRField::Standard { type_id } => {
+                MIRField::Standard { type_id, .. } => {
                     if let Some((_, start, size, _)) = active.take() {
                         offset = start + size;
                     }
@@ -307,6 +309,7 @@ impl MIRTypeRegistry {
                 MIRField::Bitfield {
                     integer_type_id,
                     width,
+                    ..
                 } => {
                     let layout = self.layout(*integer_type_id)?;
                     validate_bitfield(*width, layout)?;
