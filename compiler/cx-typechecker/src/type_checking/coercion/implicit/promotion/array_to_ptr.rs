@@ -26,7 +26,7 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResu
 
     let array_inner = env.symbols.array_inner(&mem_inner).unwrap().clone();
     let new_type = env.symbols.pointer_to(array_inner);
- 
+
     let coerced = THIRExpression {
         _type: new_type,
         token_range: expr.token_range.clone(),

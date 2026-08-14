@@ -1,4 +1,4 @@
-use cx_ast::ast::expression::{CXExprKind, CXExpression};
+use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
 use cx_log::CXResult;
 use cx_thir::thir::{data::THIRComptimeValueType, expression::THIRExpression};
 use cx_util::namespace::QualifiedName;
@@ -25,7 +25,7 @@ pub(crate) enum ComptimeCallArg<'a> {
     Mir(THIRExpression),
     Source {
         namespace: &'a cx_thir::EnvironmentNamespace,
-        expr: &'a CXExpression,
+        expr: &'a HIRExpression,
     },
 }
 
@@ -109,7 +109,7 @@ pub(crate) fn evaluate_comptime_call(
                             param.value_type._type.clone(),
                         );
                     } else {
-                        let CXExprKind::StagedExpression {
+                        let HIRExprKind::StagedExpression {
                             params: source_params,
                             body,
                         } = &expr.kind
@@ -167,11 +167,11 @@ fn check_staged_source_argument(
     env: &mut TypeEnvironment,
     namespace: &cx_thir::EnvironmentNamespace,
     call_range: &cx_tokens::TokenRange,
-    expr: &CXExpression,
+    expr: &HIRExpression,
     target: &THIRComptimeValueType,
 ) -> CXResult<()> {
     if !target.params.is_empty() {
-        let CXExprKind::StagedExpression { params, .. } = &expr.kind else {
+        let HIRExprKind::StagedExpression { params, .. } = &expr.kind else {
             return env.log_error(
                 call_range,
                 "Expected a parameterized staged expression written as |parameters| expression"
@@ -211,7 +211,7 @@ pub(crate) fn evaluate_staged_expression_call(
     call_range: &cx_tokens::TokenRange,
     function: StagedFunctionValue,
     argument_namespace: &cx_thir::EnvironmentNamespace,
-    args: Vec<&CXExpression>,
+    args: Vec<&HIRExpression>,
 ) -> CXResult<TypecheckResult> {
     if args.len() != function.params.len() {
         return env.log_error(
@@ -269,12 +269,12 @@ fn coerce_staged_argument(
 fn typecheck_comptime_body(
     env: &mut TypeEnvironment,
     namespace: &cx_thir::EnvironmentNamespace,
-    body: &CXExpression,
+    body: &HIRExpression,
     expected_type: &cx_thir::thir::data::THIRType,
 ) -> CXResult<THIRExpression> {
     let expr = match &body.kind {
-        CXExprKind::Block { exprs, .. } if exprs.len() == 1 => &exprs[0],
-        CXExprKind::Block { .. } => {
+        HIRExprKind::Block { exprs, .. } if exprs.len() == 1 => &exprs[0],
+        HIRExprKind::Block { .. } => {
             return env.log_error(
                 body.token_range(),
                 "Only single-expression comptime function bodies are implemented".to_string(),
@@ -284,8 +284,8 @@ fn typecheck_comptime_body(
     };
 
     let expr = match &expr.kind {
-        CXExprKind::Return { value: Some(value) } => value.as_ref(),
-        CXExprKind::Return { value: None } => {
+        HIRExprKind::Return { value: Some(value) } => value.as_ref(),
+        HIRExprKind::Return { value: None } => {
             return env.log_error(
                 expr.token_range(),
                 "Comptime function return requires a value".to_string(),

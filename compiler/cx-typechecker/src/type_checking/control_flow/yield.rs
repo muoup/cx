@@ -7,7 +7,7 @@ use crate::{
         typechecker::typecheck_expr,
     },
 };
-use cx_ast::ast::expression::CXExpression;
+use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
 use cx_thir::{
     EnvironmentNamespace,
@@ -19,7 +19,7 @@ pub fn typecheck_yield(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     yield_range: &TokenRange,
-    value: Option<&CXExpression>,
+    value: Option<&HIRExpression>,
 ) -> CXResult<TypecheckResult> {
     if env.in_defer_context() {
         return env.log_error(

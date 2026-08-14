@@ -1,4 +1,3 @@
-use cx_ast::ast::modifiers::CXLinkageMode;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{
     LMIRABISlot, LMIRFunctionPrototype, LMIRFunctionSignature, LMIRParameter, LMIRParameterABI,
@@ -9,6 +8,7 @@ use cx_mir::{
     MIRTypeRegistry,
 };
 use cx_target::ArchitectureConfig;
+use cx_util::linkage::LinkageMode;
 
 pub(crate) fn convert_prototype(
     prototype: &MIRFnPrototype,
@@ -102,11 +102,11 @@ fn classify_param(
     }
 }
 
-pub(crate) fn convert_linkage(linkage: CXLinkageMode) -> LinkageType {
+pub(crate) fn convert_linkage(linkage: LinkageMode) -> LinkageType {
     match linkage {
-        CXLinkageMode::Standard => LinkageType::Standard,
-        CXLinkageMode::Extern => LinkageType::External,
-        CXLinkageMode::Static => LinkageType::Static,
+        LinkageMode::Standard => LinkageType::Standard,
+        LinkageMode::Extern => LinkageType::External,
+        LinkageMode::Static => LinkageType::Static,
     }
 }
 

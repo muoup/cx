@@ -7,7 +7,7 @@ use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::contracts::typecheck_contract;
 use crate::type_checking::result::{ComptimeTypecheckValue, TypecheckExtract, TypecheckResult};
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
+use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
 use cx_thir::thir::data::{THIRFloatType, THIRFnSignature, THIRType, THIRTypeKind};
@@ -17,9 +17,9 @@ use cx_thir::type_context::THIRTypeContext;
 pub(crate) fn typecheck_method_call(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    lhs: &CXExpression,
-    rhs: &CXExpression,
-    expr: &CXExpression,
+    lhs: &HIRExpression,
+    rhs: &HIRExpression,
+    expr: &HIRExpression,
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     let function = typecheck_expr(env, namespace, lhs, None)?;
@@ -32,8 +32,8 @@ pub(crate) fn typecheck_callee_method_call(
     namespace: &EnvironmentNamespace,
     callee: TypecheckResult,
     implicit_args: Vec<THIRExpression>,
-    rhs: &CXExpression,
-    expr: &CXExpression,
+    rhs: &HIRExpression,
+    expr: &HIRExpression,
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     let raw_args = comma_separated_exprs(rhs);
@@ -113,8 +113,8 @@ pub(crate) fn typecheck_callee_method_call(
 fn typecheck_args<'a>(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    args: &[&'a CXExpression],
-) -> CXResult<Vec<(&'a CXExpression, TypecheckResult)>> {
+    args: &[&'a HIRExpression],
+) -> CXResult<Vec<(&'a HIRExpression, TypecheckResult)>> {
     args.iter()
         .map(|arg| typecheck_expr(env, namespace, arg, None).map(|result| (*arg, result)))
         .collect()
@@ -122,7 +122,7 @@ fn typecheck_args<'a>(
 
 fn load_callable(
     env: &mut TypeEnvironment,
-    expr: &CXExpression,
+    expr: &HIRExpression,
     function: THIRExpression,
 ) -> CXResult<(THIRExpression, THIRFnSignature)> {
     let loaded_function =
@@ -147,7 +147,7 @@ fn load_callable(
 
 fn check_argument_count(
     env: &TypeEnvironment,
-    expr: &CXExpression,
+    expr: &HIRExpression,
     signature: &THIRFnSignature,
     arg_count: usize,
 ) -> CXResult<()> {
@@ -189,7 +189,7 @@ fn complete_fixed_argument(
 
 fn coerce_fixed_argument(
     env: &mut TypeEnvironment,
-    expr: &CXExpression,
+    expr: &HIRExpression,
     val: TypecheckResult,
     target_type: &THIRType,
 ) -> CXResult<THIRExpression> {
@@ -205,7 +205,7 @@ fn coerce_fixed_argument(
 
 fn complete_vararg_argument(
     env: &mut TypeEnvironment,
-    expr: &CXExpression,
+    expr: &HIRExpression,
     val: TypecheckResult,
 ) -> CXResult<THIRExpression> {
     let mut val = val.standard_ready_coerce(env, expr.token_range())?;
@@ -265,7 +265,7 @@ fn complete_call_arguments(
 
 fn coerce_call_arguments(
     env: &mut TypeEnvironment,
-    expr: &CXExpression,
+    expr: &HIRExpression,
     signature: &THIRFnSignature,
     args: Vec<TypecheckResult>,
 ) -> CXResult<Vec<THIRExpression>> {
@@ -286,7 +286,7 @@ fn coerce_call_arguments(
 
 fn deduction_arg_types(
     implicit_args: &[THIRExpression],
-    args: &[(&CXExpression, TypecheckResult)],
+    args: &[(&HIRExpression, TypecheckResult)],
 ) -> Vec<THIRType> {
     implicit_args
         .iter()
@@ -297,7 +297,7 @@ fn deduction_arg_types(
 
 fn complete_call_argument_expressions(
     env: &mut TypeEnvironment,
-    expr: &CXExpression,
+    expr: &HIRExpression,
     signature: &THIRFnSignature,
     args: Vec<TypecheckResult>,
 ) -> CXResult<Vec<THIRExpression>> {
@@ -307,10 +307,10 @@ fn complete_call_argument_expressions(
 fn complete_callee(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
+    expr: &HIRExpression,
     function: TypecheckResult,
     implicit_args: &[THIRExpression],
-    args: &[(&CXExpression, TypecheckResult)],
+    args: &[(&HIRExpression, TypecheckResult)],
     expected_type: Option<&THIRType>,
 ) -> CXResult<CompletedCallee> {
     match function.try_into_expression() {
@@ -384,18 +384,18 @@ enum CompletedCallee {
     Staged(crate::type_checking::result::StagedFunctionValue),
 }
 
-pub(crate) fn comma_separated_exprs(expr: &CXExpression) -> Vec<&CXExpression> {
+pub(crate) fn comma_separated_exprs(expr: &HIRExpression) -> Vec<&HIRExpression> {
     let mut expr_iter = expr;
     let mut exprs = Vec::new();
 
-    if matches!(expr.kind, CXExprKind::Void) {
+    if matches!(expr.kind, HIRExprKind::Void) {
         return exprs;
     }
 
-    while let CXExprKind::BinOp {
+    while let HIRExprKind::BinOp {
         lhs,
         rhs,
-        op: CXBinOp::Comma,
+        op: HIRBinOp::Comma,
     } = &expr_iter.kind
     {
         exprs.push(rhs.as_ref());

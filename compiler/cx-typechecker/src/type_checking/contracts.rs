@@ -47,16 +47,14 @@ pub(crate) fn typecheck_contract(
                 .and_then(|value| value.standard_ready_coerce(env, pre_expr.token_range()))
                 .and_then(|value| std_rval_promotion(env, value))
                 .and_then(|value| implicit_cast(env, value, &THIRType::bool()))?;
-            Ok(Box::new(
-                THIRExpression {
-                    token_range: condition.token_range.clone(),
-                    kind: THIRExpressionKind::Assert {
-                        condition: Box::new(condition),
-                        message: "Precondition failed".to_string(),
-                    },
-                    _type: THIRType::unit(),
-                }
-            ))
+            Ok(Box::new(THIRExpression {
+                token_range: condition.token_range.clone(),
+                kind: THIRExpressionKind::Assert {
+                    condition: Box::new(condition),
+                    message: "Precondition failed".to_string(),
+                },
+                _type: THIRType::unit(),
+            }))
         })
         .transpose()?;
 

@@ -48,7 +48,6 @@ pub struct RunArgs {
 struct CommonArgs {
     backend: Option<CompilerBackend>,
     optimization_level: Option<OptimizationLevel>,
-    analysis: bool,
     unsafe_mode: bool,
     verbose: bool,
 }
@@ -101,7 +100,6 @@ pub fn print_help() {
     println!("  -O3                  Aggressive optimization.");
     println!("  -Osize               Optimize for code size.");
     println!("  -Ofast               Allow fast, but imprecise floating-point optimizations.");
-    println!("  --analysis           Run FMIR analysis for safe functions.");
     println!("  --unsafe             Skip MIR invariant validation (liveness still runs).");
     println!("  --verbose            Print each compilation step on its own line.");
     println!("  -h, --help, -help    Display this help message.");
@@ -153,7 +151,6 @@ fn parse_common_flags(args: impl IntoIterator<Item = String>) -> ParsedCommonArg
             "-O3" => common.optimization_level = Some(OptimizationLevel::O3),
             "-Osize" => common.optimization_level = Some(OptimizationLevel::Osize),
             "-Ofast" => common.optimization_level = Some(OptimizationLevel::Ofast),
-            "--analysis" => common.analysis = true,
             "--unsafe" => common.unsafe_mode = true,
             "--verbose" => common.verbose = true,
             _ => rest.push(arg),

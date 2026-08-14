@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use cx_ast::ast::modifiers::CXLinkageMode;
 use cx_mir::{
     MIRBasicBlockID, MIRConstant, MIRField, MIRFnParam, MIRFnPrototype, MIRFnSignature,
     MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace,
@@ -18,7 +17,7 @@ use cx_thir::{
     type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
-use cx_util::identifier::CXIdent;
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct LoopContext {
@@ -284,7 +283,7 @@ impl<'thir> MIRBuilder<'thir> {
                         }),
                         _ => MIRGlobalState::ZeroInitialized,
                     },
-                    None if global.linkage == CXLinkageMode::Extern => MIRGlobalState::External,
+                    None if global.linkage == LinkageMode::Extern => MIRGlobalState::External,
                     None => MIRGlobalState::ZeroInitialized,
                 };
                 (
@@ -321,7 +320,7 @@ impl<'thir> MIRBuilder<'thir> {
         &mut self,
         name: CXIdent,
         signature: &cx_thir::thir::data::THIRFnSignature,
-        linkage: CXLinkageMode,
+        linkage: LinkageMode,
     ) -> MIRFnPrototype {
         let params = signature
             .params
@@ -343,6 +342,7 @@ impl<'thir> MIRBuilder<'thir> {
         };
         let mut lowered = MIRFnSignature::new(name, params, return_type);
         lowered.variadic = signature.var_args;
+        lowered.safe = signature.contract.safe;
         MIRFnPrototype::new(lowered, linkage)
     }
 
@@ -575,7 +575,7 @@ impl<'thir> MIRBuilder<'thir> {
             .cloned()
             .unwrap_or_default();
         let mut prototype =
-            self.prototype_from_signature(name.clone(), &signature, CXLinkageMode::Extern);
+            self.prototype_from_signature(name.clone(), &signature, LinkageMode::Extern);
         prototype.signature.debug_name = debug_name.cloned();
         let id = self.unit.add_function(prototype);
         self.function_symbols.insert(name.as_string(), id);
@@ -595,7 +595,7 @@ impl<'thir> MIRBuilder<'thir> {
         let id = self.unit.add_global(
             name.clone(),
             ty_id,
-            CXLinkageMode::Extern,
+            LinkageMode::Extern,
             true,
             ty.is_nodrop(),
             MIRGlobalState::External,

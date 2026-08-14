@@ -1,5 +1,4 @@
-use cx_ast::ast::modifiers::CXLinkageMode;
-use cx_util::identifier::CXIdent;
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::thir::r#type::THIRType;
 
@@ -7,7 +6,7 @@ use crate::thir::r#type::THIRType;
 pub struct MIRGlobalVariable {
     pub kind: MIRGlobalVarKind,
     pub is_mutable: bool,
-    pub linkage: CXLinkageMode,
+    pub linkage: LinkageMode,
 }
 
 #[derive(Debug, Clone)]

@@ -5,7 +5,7 @@ use crate::{
         typechecker::typecheck_expr,
     },
 };
-use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
+use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
 use cx_thir::{
     EnvironmentNamespace,
@@ -20,14 +20,14 @@ pub mod unop;
 pub fn try_typecheck_special_binop(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    op: &CXBinOp,
-    expr: &CXExpression,
-    lhs: &CXExpression,
-    rhs: &CXExpression,
+    op: &HIRBinOp,
+    expr: &HIRExpression,
+    lhs: &HIRExpression,
+    rhs: &HIRExpression,
     expected_type: Option<&THIRType>,
 ) -> CXResult<Option<TypecheckResult>> {
     Ok(match op {
-        CXBinOp::BackwardPipe => {
+        HIRBinOp::BackwardPipe => {
             let Some(rewritten) = append_call_argument(lhs, rhs, expr) else {
                 return env.log_error(
                     expr.token_range(),
@@ -36,13 +36,13 @@ pub fn try_typecheck_special_binop(
             };
             Some(typecheck_expr(env, namespace, &rewritten, expected_type)?)
         }
-        CXBinOp::Pipe => {
+        HIRBinOp::Pipe => {
             let implicit_param = typecheck_expr(env, namespace, lhs, None)?
                 .standard_ready_coerce(env, lhs.token_range())?;
 
             match &rhs.kind {
-                CXExprKind::BinOp {
-                    op: CXBinOp::MethodCall,
+                HIRExprKind::BinOp {
+                    op: HIRBinOp::MethodCall,
                     lhs,
                     rhs,
                 } => {
@@ -68,50 +68,50 @@ pub fn try_typecheck_special_binop(
 }
 
 fn append_call_argument(
-    call: &CXExpression,
-    argument: &CXExpression,
-    whole_expr: &CXExpression,
-) -> Option<CXExpression> {
+    call: &HIRExpression,
+    argument: &HIRExpression,
+    whole_expr: &HIRExpression,
+) -> Option<HIRExpression> {
     let kind = match &call.kind {
-        CXExprKind::BinOp {
-            op: CXBinOp::MethodCall,
+        HIRExprKind::BinOp {
+            op: HIRBinOp::MethodCall,
             lhs,
             rhs,
         } => {
-            let arguments = if matches!(rhs.kind, CXExprKind::Void) {
+            let arguments = if matches!(rhs.kind, HIRExprKind::Void) {
                 argument.clone()
             } else {
-                CXExpression {
-                    kind: CXExprKind::BinOp {
+                HIRExpression {
+                    kind: HIRExprKind::BinOp {
                         lhs: rhs.clone(),
                         rhs: Box::new(argument.clone()),
-                        op: CXBinOp::Comma,
+                        op: HIRBinOp::Comma,
                     },
                     range: whole_expr.range.clone(),
                 }
             };
-            CXExprKind::BinOp {
+            HIRExprKind::BinOp {
                 lhs: lhs.clone(),
                 rhs: Box::new(arguments),
-                op: CXBinOp::MethodCall,
+                op: HIRBinOp::MethodCall,
             }
         }
-        CXExprKind::BinOp {
-            op: CXBinOp::Pipe,
+        HIRExprKind::BinOp {
+            op: HIRBinOp::Pipe,
             lhs,
             rhs,
         } => {
             let appended = append_call_argument(rhs, argument, whole_expr)?;
-            CXExprKind::BinOp {
+            HIRExprKind::BinOp {
                 lhs: lhs.clone(),
                 rhs: Box::new(appended),
-                op: CXBinOp::Pipe,
+                op: HIRBinOp::Pipe,
             }
         }
         _ => return None,
     };
 
-    Some(CXExpression {
+    Some(HIRExpression {
         kind,
         range: whole_expr.range.clone(),
     })
@@ -119,7 +119,7 @@ fn append_call_argument(
 
 pub fn typecheck_binop(
     env: &mut TypeEnvironment,
-    op: &CXBinOp,
+    op: &HIRBinOp,
     lhs: THIRExpression,
     rhs: THIRExpression,
 ) -> CXResult<TypecheckResult> {

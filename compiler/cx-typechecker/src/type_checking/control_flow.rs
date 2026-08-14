@@ -1,6 +1,6 @@
 use crate::environment::{ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment};
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::expression::CXExpression;
+use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
 use cx_thir::thir::data::THIRType;
@@ -76,7 +76,7 @@ pub(crate) fn enqueue_jump_arrow(env: &mut TypeEnvironment, target: &ScopeExitTa
 pub(crate) fn typecheck_fallthrough_scope(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
+    expr: &HIRExpression,
     target_scope: ScopeId,
     sink: ScopeArrowSink,
     label: &str,
@@ -123,7 +123,7 @@ pub(crate) fn process_for_increment_arrows(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     loop_scope_idx: ScopeId,
-    increment: &CXExpression,
+    increment: &HIRExpression,
 ) -> CXResult<()> {
     let pending_arrows = env.function.take_pending_increment_arrows(loop_scope_idx);
     if pending_arrows.is_empty() {

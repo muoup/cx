@@ -3,8 +3,8 @@ use crate::type_checking::aggregate::fields::struct_field;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::locals::ensure_binding_available;
 use crate::type_checking::value::{IndirectBase, resolve_indirect_base};
-use cx_ast::ast::expression::{CXExprKind, CXExpression};
-use cx_ast::ast::modifiers::CX_CONST;
+use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
+use cx_hir::ast::modifiers::HIR_CONST;
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
 use cx_thir::thir::data::THIRTypeKind;
@@ -13,7 +13,7 @@ use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
 fn resolve_access_base(
     env: &mut TypeEnvironment,
     _: &EnvironmentNamespace,
-    expr: &CXExpression,
+    expr: &HIRExpression,
     lhs: THIRExpression,
 ) -> CXResult<IndirectBase> {
     let lhs = resolve_indirect_base(env, lhs);
@@ -34,8 +34,8 @@ pub fn typecheck_access(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     lhs: TypecheckResult,
-    rhs: &CXExpression,
-    expr: &CXExpression,
+    rhs: &HIRExpression,
+    expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     ensure_binding_available(env, expr.token_range(), lhs.binding())?;
     let lhs_binding = lhs.binding().cloned();
@@ -47,7 +47,7 @@ pub fn typecheck_access(
         lhs.standard_ready_coerce(env, expr.token_range())?,
     )?;
 
-    let CXExprKind::Identifier {
+    let HIRExprKind::Identifier {
         name,
         template_input: None,
         ..
@@ -77,8 +77,8 @@ pub fn typecheck_access(
     let mut result = TypecheckResult::new(
         env.symbols
             .mem_ref_to(struct_field.field_type.clone().with_specifier(
-                if base.source_type.get_specifier(CX_CONST) {
-                    CX_CONST
+                if base.source_type.get_specifier(HIR_CONST) {
+                    HIR_CONST
                 } else {
                     0
                 },

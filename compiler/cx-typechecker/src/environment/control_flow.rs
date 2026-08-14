@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use cx_ast::ast::expression::CXExpression;
+use cx_hir::ast::expression::HIRExpression;
 
 use cx_log::error::{CXRawResult, message::CXStdErrMessage};
 use cx_thir::thir::expression::THIRLocalID;
@@ -194,7 +194,7 @@ impl ControlFlow {
         ScopeId(self.scope_stack.len() - 1)
     }
 
-    pub fn set_scope_anchor(&mut self, expr: &CXExpression) {
+    pub fn set_scope_anchor(&mut self, expr: &HIRExpression) {
         if let Some(scope) = self.scope_stack.last_mut() {
             scope.anchor_range = Some(expr.token_range().clone());
         }
@@ -202,7 +202,7 @@ impl ControlFlow {
 
     pub fn configure_merge_scope(
         &mut self,
-        expr: &CXExpression,
+        expr: &HIRExpression,
         include_current_snapshot: Option<&str>,
         require_nodrop_discharge: bool,
     ) {
@@ -222,7 +222,7 @@ impl ControlFlow {
         });
     }
 
-    pub fn configure_loop_scope(&mut self, expr: &CXExpression, loop_kind: LoopScopeKind) {
+    pub fn configure_loop_scope(&mut self, expr: &HIRExpression, loop_kind: LoopScopeKind) {
         let entry_snapshot = self.current_snapshot();
         let range = expr.token_range().clone();
 

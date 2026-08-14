@@ -18,7 +18,6 @@ pub struct ProjectSection {
 pub struct BuildSection {
     pub backend: Option<String>,
     pub optimization: Option<String>,
-    pub analysis: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

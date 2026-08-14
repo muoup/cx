@@ -1,6 +1,6 @@
-use cx_ast::ast::{
-    expression::{CXExpression, CXUnOp},
-    types::CXType,
+use cx_hir::ast::{
+    expression::{HIRExpression, HIRUnOp},
+    types::HIRType,
 };
 use cx_log::CXResult;
 use cx_thir::{
@@ -31,14 +31,14 @@ use crate::{
 pub fn typecheck_unop(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    op: &CXUnOp,
-    operand: &CXExpression,
+    op: &HIRUnOp,
+    operand: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     Ok(match op {
-        CXUnOp::Move => typecheck_expr(env, namespace, operand, None)
+        HIRUnOp::Move => typecheck_expr(env, namespace, operand, None)
             .and_then(|v| typecheck_move(env, namespace, v, operand))?,
 
-        CXUnOp::PreIncrement(increment_amount) | CXUnOp::PostIncrement(increment_amount) => {
+        HIRUnOp::PreIncrement(increment_amount) | HIRUnOp::PostIncrement(increment_amount) => {
             let operand = typecheck_expr(env, namespace, operand, None)
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))?;
 
@@ -54,14 +54,14 @@ pub fn typecheck_unop(
 
             match &inner.kind {
                 THIRTypeKind::PointerTo { .. } | THIRTypeKind::Integer { .. } => match op {
-                    CXUnOp::PreIncrement(_) => TypecheckResult::new(
+                    HIRUnOp::PreIncrement(_) => TypecheckResult::new(
                         operand._type.clone(),
                         THIRExpressionKind::UnaryOperation {
                             op: THIRUnOp::PreIncrement(*increment_amount),
                             operand: Box::new(operand),
                         },
                     ),
-                    CXUnOp::PostIncrement(_) => TypecheckResult::new(
+                    HIRUnOp::PostIncrement(_) => TypecheckResult::new(
                         inner.clone(),
                         THIRExpressionKind::UnaryOperation {
                             op: THIRUnOp::PostIncrement(*increment_amount),
@@ -83,7 +83,7 @@ pub fn typecheck_unop(
             }
         }
 
-        CXUnOp::LNot => {
+        HIRUnOp::LNot => {
             let operand = typecheck_expr(env, namespace, operand, None)
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))
@@ -102,7 +102,7 @@ pub fn typecheck_unop(
             )
         }
 
-        CXUnOp::BNot => {
+        HIRUnOp::BNot => {
             let operand = typecheck_expr(env, namespace, operand, None)
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))?;
@@ -126,7 +126,7 @@ pub fn typecheck_unop(
             )
         }
 
-        CXUnOp::Negative => {
+        HIRUnOp::Negative => {
             let operand = typecheck_expr(env, namespace, operand, None)
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))?;
@@ -155,7 +155,7 @@ pub fn typecheck_unop(
             )
         }
 
-        CXUnOp::AddressOf => {
+        HIRUnOp::AddressOf => {
             let operand = typecheck_expr(env, namespace, operand, None)
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))?;
 
@@ -177,10 +177,19 @@ pub fn typecheck_unop(
             })
         }
 
-        CXUnOp::Dereference => {
+        HIRUnOp::Dereference => {
             let operand = typecheck_expr(env, namespace, operand, None)
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))?;
+
+            if env.function.in_safe_context()
+                && matches!(operand._type.kind, THIRTypeKind::PointerTo { .. })
+            {
+                return env.log_error(
+                    &operand.token_range,
+                    "Dereferencing raw pointers is not allowed in safe contexts".to_string(),
+                );
+            }
 
             let Some(inner) = env.symbols.ptr_inner(&operand._type).cloned() else {
                 return env.log_error(
@@ -200,7 +209,7 @@ pub fn typecheck_unop(
             })
         }
 
-        CXUnOp::ExplicitCast(to_type) => {
+        HIRUnOp::ExplicitCast(to_type) => {
             let to_type = complete_type(env, namespace, to_type)?;
 
             let operand = typecheck_expr(env, namespace, operand, Some(&to_type))
@@ -210,15 +219,15 @@ pub fn typecheck_unop(
             TypecheckResult::from(explicit_cast(env, operand, &to_type)?)
         }
 
-        CXUnOp::Is(pattern) => typecheck_is(env, namespace, operand, pattern, operand)?,
+        HIRUnOp::Is(pattern) => typecheck_is(env, namespace, operand, pattern, operand)?,
     })
 }
 
 pub(crate) fn typecheck_sizeof_type(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    _expr: &CXExpression,
-    ty: &CXType,
+    _expr: &HIRExpression,
+    ty: &HIRType,
 ) -> CXResult<TypecheckResult> {
     let tc_type = complete_type(env, namespace, ty)?;
 
@@ -228,8 +237,8 @@ pub(crate) fn typecheck_sizeof_type(
 pub(crate) fn typecheck_alignof_type(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
-    ty: &CXType,
+    expr: &HIRExpression,
+    ty: &HIRType,
 ) -> CXResult<TypecheckResult> {
     let tc_type = complete_type(env, namespace, ty)?;
     Ok(alignof_result(expr.range.clone(), tc_type))
@@ -238,7 +247,7 @@ pub(crate) fn typecheck_alignof_type(
 pub(crate) fn typecheck_alignof_expr(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
+    expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     let tc_expr = typecheck_expr(env, namespace, expr, None)
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
@@ -248,7 +257,7 @@ pub(crate) fn typecheck_alignof_expr(
 pub(crate) fn typecheck_sizeof_expr(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
+    expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     let tc_expr = typecheck_expr(env, namespace, expr, None)
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;

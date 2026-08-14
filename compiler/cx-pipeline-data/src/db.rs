@@ -1,7 +1,7 @@
 use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
-use cx_ast::decomposition::CXGenerationAST;
-use cx_ast::registry::GlobalSymbolRegistry;
+use cx_hir::decomposition::HIRGenerationAST;
+use cx_hir::registry::GlobalSymbolRegistry;
 use cx_lmir::LMIRUnit;
 use cx_log::error::CXErrContext;
 use cx_log::error::context::{CXInternalContext, CXUnderlineContext};
@@ -29,7 +29,7 @@ pub struct ModuleData {
     pub lex_tokens: ModuleMap<Box<[Token]>>,
     pub preparse_base: ModuleMap<PreparseContents>,
 
-    pub generation_ast: ModuleMap<CXGenerationAST>,
+    pub generation_ast: ModuleMap<HIRGenerationAST>,
     pub base_mappings: ModuleMap<EnvironmentNamespace>,
 
     pub thir: ModuleMap<THIRUnit>,

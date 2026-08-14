@@ -1,6 +1,6 @@
-use cx_ast::ast::{
-    expression::{CXBinOp, CXExpression},
-    modifiers::CX_CONST,
+use cx_hir::ast::{
+    expression::{HIRBinOp, HIRExpression},
+    modifiers::HIR_CONST,
 };
 use cx_log::CXResult;
 use cx_thir::{
@@ -22,8 +22,8 @@ pub fn typecheck_assignment(
     env: &mut TypeEnvironment,
     lhs: TypecheckResult,
     rhs: THIRExpression,
-    op: Option<&CXBinOp>,
-    expr: &CXExpression,
+    op: Option<&HIRBinOp>,
+    expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     let binding = lhs.binding().cloned();
     let lhs_expr = lhs.standard_ready_coerce(env, expr.token_range())?;
@@ -58,11 +58,18 @@ pub fn typecheck_assignment(
             .tracked_binding(binding.local_id)
             .is_some_and(|tracked| tracked.state != crate::environment::BindingMoveState::Available)
     {
-        return env.log_error(expr.token_range(), "Assignment to a field or projection of a moved aggregate binding is not implemented".to_string());
+        return env.log_error(
+            expr.token_range(),
+            "Assignment to a field or projection of a moved aggregate binding is not implemented"
+                .to_string(),
+        );
     }
 
-    if inner.get_specifier(CX_CONST) {
-        return env.log_error(expr.token_range(), "Cannot assign to a const type".to_string());
+    if inner.get_specifier(HIR_CONST) {
+        return env.log_error(
+            expr.token_range(),
+            "Cannot assign to a const type".to_string(),
+        );
     }
 
     rhs = implicit_cast(env, rhs, &inner)?;

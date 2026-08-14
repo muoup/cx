@@ -1,4 +1,4 @@
-use cx_ast::ast::{expression::CXExpression, pattern::CXPattern, template::CXTemplateInput};
+use cx_hir::ast::{expression::HIRExpression, pattern::HIRPattern, template::HIRTemplateInput};
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
@@ -8,17 +8,17 @@ use crate::environment::TypeEnvironment;
 pub struct TypeConstructor {
     pub union_name: QualifiedName,
     pub variant_name: CXIdent,
-    pub template_input: Option<CXTemplateInput>,
+    pub template_input: Option<HIRTemplateInput>,
     pub inner_name: Option<CXIdent>,
 }
 
 pub fn resolve_type_constructor_pattern(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
-    pattern: &CXPattern,
+    expr: &HIRExpression,
+    pattern: &HIRPattern,
 ) -> CXResult<TypeConstructor> {
-    let CXPattern::Variant {
+    let HIRPattern::Variant {
         constructor,
         template_input,
         inner,
@@ -39,7 +39,7 @@ pub fn resolve_type_constructor_pattern(
 
     let inner_name = match inner.as_deref() {
         None => None,
-        Some(CXPattern::Binding(name)) => Some(name.clone()),
+        Some(HIRPattern::Binding(name)) => Some(name.clone()),
         Some(_) => {
             return env.log_error(
                 expr.token_range(),

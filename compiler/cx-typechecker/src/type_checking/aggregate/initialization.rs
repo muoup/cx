@@ -1,10 +1,10 @@
-use cx_ast::ast::expression::{CXExpression, CXInitIndex};
+use cx_hir::ast::expression::{HIRExpression, HIRInitIndex};
 use cx_log::CXResult;
 use cx_thir::{
     EnvironmentNamespace,
     thir::{
         data::{THIRType, THIRTypeKind},
-        expression::{THIRExpressionKind, StructInitialization},
+        expression::{StructInitialization, THIRExpressionKind},
     },
     type_context::THIRTypeContext,
 };
@@ -21,8 +21,8 @@ use crate::{
 pub fn typecheck_initializer_list(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
-    indices: &[CXInitIndex],
+    expr: &HIRExpression,
+    indices: &[HIRInitIndex],
     to_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     let Some(to_type) = to_type else {
@@ -93,7 +93,7 @@ pub fn typecheck_initializer_list(
 fn typecheck_array_initializer(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    indices: &[CXInitIndex],
+    indices: &[HIRInitIndex],
     inner_type: &THIRType,
     size: Option<usize>,
     _to_type: &THIRType,
@@ -146,8 +146,8 @@ fn typecheck_array_initializer(
 fn typecheck_structured_initializer(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
-    indices: &[CXInitIndex],
+    expr: &HIRExpression,
+    indices: &[HIRInitIndex],
     to_type: &THIRType,
 ) -> CXResult<TypecheckResult> {
     let Some(fields) = to_type.aggregate_fields(&env.symbols) else {

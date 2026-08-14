@@ -4,7 +4,12 @@ use crate::result::QualifiedLookupResult;
 
 pub mod result;
 
-pub trait THIRQualifiedLookup {
+/// Provides qualified symbol lookup for compiler stages and tooling.
+///
+/// The lookup algorithm is shared by parsing, type checking, and future
+/// language-service consumers; implementations supply only their local symbol
+/// tables and namespace-alias resolution.
+pub trait QualifiedLookup {
     type Output;
 
     fn lookup_local(

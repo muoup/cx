@@ -8,7 +8,7 @@ autotests = false
 cx-util = { path = "../cx-util" }
 cx-namespace = { path = "../cx-namespace" }
 
-cx-ast = { path = "../cx-ast" }
+cx-hir = { path = "../cx-hir" }
 cx-tokens = { path = "../cx-tokens" }
 cx-thir = { path = "../cx-thir" }
 cx-preparse-data = { path = "../cx-preparse-data" }

@@ -1,6 +1,7 @@
-use cx_ast::ast::modifiers::{CX_CONST, CXLinkageMode};
-use cx_ast::decomposition::{CXGenerationAST, CXGenerationStmt};
+use cx_hir::ast::modifiers::HIR_CONST;
+use cx_hir::decomposition::{HIRGenerationAST, HIRGenerationStmt};
 use cx_log::CXResult;
+use cx_util::linkage::LinkageMode;
 use cx_thir::EnvironmentNamespace;
 use cx_thir::thir::global::{MIRGlobalVarKind, MIRGlobalVariable};
 
@@ -23,19 +24,19 @@ use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 pub fn typecheck(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    ast: &CXGenerationAST,
+    ast: &HIRGenerationAST,
 ) -> CXResult<()> {
     for stmt in ast.generation_stmts.iter() {
         match stmt {
-            CXGenerationStmt::Function { prototype, body } => {
+            HIRGenerationStmt::Function { prototype, body } => {
                 let prototype = complete_prototype(env, namespace, prototype)?;
                 typecheck_function(env, namespace, prototype.clone(), body)?;
             }
 
-            CXGenerationStmt::StringLiteral { name, value } => {
+            HIRGenerationStmt::StringLiteral { name, value } => {
                 let global = MIRGlobalVariable {
                     is_mutable: false,
-                    linkage: CXLinkageMode::Static,
+                    linkage: LinkageMode::Static,
                     kind: MIRGlobalVarKind::StringLiteral {
                         name: name.clone(),
                         value: value.clone(),
@@ -45,7 +46,7 @@ pub fn typecheck(
                 env.items.push_generated_global(global);
             }
 
-            CXGenerationStmt::AddressableGlobal {
+            HIRGenerationStmt::AddressableGlobal {
                 name,
                 _type,
                 linkage,
@@ -71,7 +72,7 @@ pub fn typecheck(
                     .transpose()?;
 
                 let global = MIRGlobalVariable {
-                    is_mutable: _type.get_specifier(CX_CONST),
+                    is_mutable: _type.get_specifier(HIR_CONST),
                     linkage: *linkage,
                     kind: MIRGlobalVarKind::Variable {
                         name: CXIdent::new(symbol_name),

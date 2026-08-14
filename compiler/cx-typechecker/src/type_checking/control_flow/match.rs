@@ -5,22 +5,22 @@ use crate::environment::ScopeExitTarget;
 use crate::environment::TypeEnvironment;
 use crate::symbol::completion::complete_template_input;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
-use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::control_flow::append_current_scope_cleanups;
+use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::pattern::tagged_union::{
     TypeConstructor, resolve_type_constructor_pattern,
 };
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_checking::value::resolve_indirect_base;
-use cx_ast::ast::template::CXTemplateInput;
-use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
+use cx_hir::ast::template::HIRTemplateInput;
+use cx_hir::ast::{expression::HIRExpression, pattern::HIRPattern};
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
 use cx_thir::thir::{
     contextual_eq::TypeContextEqual,
     data::{THIRType, THIRTypeKind},
-    expression::{THIRExpression, THIRExpressionKind, THIRLocalID, SymbolValueOrigin},
+    expression::{SymbolValueOrigin, THIRExpression, THIRExpressionKind, THIRLocalID},
     pattern::THIRPattern,
 };
 use cx_thir::type_context::THIRTypeContext;
@@ -31,9 +31,9 @@ use cx_util::namespace::QualifiedName;
 pub fn typecheck_match(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    condition: &CXExpression,
-    arms: &[(CXPattern, CXExpression)],
-    default: Option<&CXExpression>,
+    condition: &HIRExpression,
+    arms: &[(HIRPattern, HIRExpression)],
+    default: Option<&HIRExpression>,
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     let expr_value = typecheck_expr(env, namespace, condition, None)
@@ -66,7 +66,7 @@ pub fn typecheck_match(
             let mut result_arms = Vec::new();
 
             for (pattern, body) in arms.iter() {
-                let CXPattern::Integer(pattern_value) = pattern else {
+                let HIRPattern::Integer(pattern_value) = pattern else {
                     return env.log_error(
                         condition.token_range(),
                         "Match pattern must be an integer literal".to_string(),
@@ -214,12 +214,11 @@ pub fn typecheck_match(
                             },
                         );
 
-                        env.function
-                            .track_binding(
-                                inner_local_id,
-                                inner_name.clone(),
-                                variant_type.is_nodrop(),
-                            );
+                        env.function.track_binding(
+                            inner_local_id,
+                            inner_name.clone(),
+                            variant_type.is_nodrop(),
+                        );
 
                         let (body_expr, flow) =
                             typecheck_match_arm_body(env, namespace, body, "arm")?;
@@ -393,7 +392,7 @@ struct MatchArmFlow {
 fn typecheck_match_arm_body(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    body: &CXExpression,
+    body: &HIRExpression,
     label: &'static str,
 ) -> CXResult<(THIRExpression, MatchArmFlow)> {
     env.push_child_defer_scope();
@@ -422,8 +421,8 @@ fn validate_variant_template_input(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     union_type: &THIRType,
-    template_input: Option<&CXTemplateInput>,
-    condition: &CXExpression,
+    template_input: Option<&HIRTemplateInput>,
+    condition: &HIRExpression,
 ) -> CXResult<()> {
     let Some(template_input) = template_input else {
         return Ok(());

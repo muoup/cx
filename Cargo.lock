@@ -285,18 +285,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cx-ast"
-version = "0.0.0"
-dependencies = [
- "cx-namespace",
- "cx-preparse-data",
- "cx-tokens",
- "cx-util",
- "speedy",
- "uuid",
-]
-
-[[package]]
 name = "cx-backend-cranelift"
 version = "0.0.0"
 dependencies = [
@@ -304,7 +292,7 @@ dependencies = [
  "cranelift-module",
  "cranelift-native",
  "cranelift-object",
- "cx-ast",
+ "cx-hir",
  "cx-lmir",
  "cx-log",
  "cx-target",
@@ -330,6 +318,18 @@ dependencies = [
  "cx-lmir",
  "cx-pipeline-data",
  "cx-util",
+]
+
+[[package]]
+name = "cx-hir"
+version = "0.0.0"
+dependencies = [
+ "cx-namespace",
+ "cx-preparse-data",
+ "cx-tokens",
+ "cx-util",
+ "speedy",
+ "uuid",
 ]
 
 [[package]]
@@ -377,7 +377,7 @@ dependencies = [
 name = "cx-mir"
 version = "0.1.0"
 dependencies = [
- "cx-ast",
+ "cx-hir",
  "cx-target",
  "cx-tokens",
  "cx-util",
@@ -388,7 +388,7 @@ dependencies = [
 name = "cx-mir-analysis"
 version = "0.1.0"
 dependencies = [
- "cx-ast",
+ "cx-hir",
  "cx-mir",
  "cx-util",
 ]
@@ -397,7 +397,7 @@ dependencies = [
 name = "cx-mir-lowering"
 version = "0.0.0"
 dependencies = [
- "cx-ast",
+ "cx-hir",
  "cx-lmir",
  "cx-log",
  "cx-mir",
@@ -416,7 +416,7 @@ dependencies = [
 name = "cx-parsing"
 version = "0.0.0"
 dependencies = [
- "cx-ast",
+ "cx-hir",
  "cx-log",
  "cx-namespace",
  "cx-pipeline-data",
@@ -430,10 +430,10 @@ dependencies = [
 name = "cx-pipeline"
 version = "0.0.0"
 dependencies = [
- "cx-ast",
  "cx-backend-cranelift",
  "cx-backend-llvm",
  "cx-c-header",
+ "cx-hir",
  "cx-lexer",
  "cx-lmir",
  "cx-log",
@@ -442,8 +442,6 @@ dependencies = [
  "cx-parsing",
  "cx-pipeline-data",
  "cx-preparse-data",
- "cx-safe-analyzer",
- "cx-safe-ir",
  "cx-thir",
  "cx-thir-lowering",
  "cx-tokens",
@@ -457,7 +455,7 @@ dependencies = [
 name = "cx-pipeline-data"
 version = "0.0.0"
 dependencies = [
- "cx-ast",
+ "cx-hir",
  "cx-lmir",
  "cx-log",
  "cx-mir",
@@ -480,29 +478,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cx-safe-analyzer"
-version = "0.1.0"
-dependencies = [
- "cx-ast",
- "cx-lexer",
- "cx-log",
- "cx-pipeline-data",
- "cx-safe-ir",
- "cx-thir",
- "cx-tokens",
- "cx-util",
-]
-
-[[package]]
-name = "cx-safe-ir"
-version = "0.1.0"
-dependencies = [
- "cx-thir",
- "cx-tokens",
- "cx-util",
-]
-
-[[package]]
 name = "cx-target"
 version = "0.0.0"
 
@@ -510,7 +485,7 @@ version = "0.0.0"
 name = "cx-thir"
 version = "0.0.0"
 dependencies = [
- "cx-ast",
+ "cx-hir",
  "cx-log",
  "cx-target",
  "cx-tokens",
@@ -523,7 +498,7 @@ dependencies = [
 name = "cx-thir-lowering"
 version = "0.1.0"
 dependencies = [
- "cx-ast",
+ "cx-hir",
  "cx-log",
  "cx-mir",
  "cx-thir",
@@ -543,7 +518,7 @@ dependencies = [
 name = "cx-typechecker"
 version = "0.0.0"
 dependencies = [
- "cx-ast",
+ "cx-hir",
  "cx-log",
  "cx-namespace",
  "cx-pipeline-data",

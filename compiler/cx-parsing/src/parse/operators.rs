@@ -1,6 +1,6 @@
 use crate::parse::ParserData;
 use crate::{log::parse_point_error, next_kind};
-use cx_ast::ast::expression::{CXBinOp, CXUnOp};
+use cx_hir::ast::expression::{HIRBinOp, HIRUnOp};
 use cx_log::CXResult;
 use cx_tokens::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_tokens::{operator, punctuator};
@@ -10,8 +10,8 @@ use crate::parse::types::{is_type_decl, parse_initializer};
 
 #[derive(Debug, Clone)]
 pub(crate) enum PrecOperator {
-    BinOp(CXBinOp),
-    UnOp(CXUnOp),
+    BinOp(HIRBinOp),
+    UnOp(HIRUnOp),
 }
 
 impl PrecOperator {
@@ -23,60 +23,60 @@ impl PrecOperator {
     }
 }
 
-pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
+pub(crate) fn binop_prec(op: HIRBinOp) -> u8 {
     match op {
-        CXBinOp::Access | CXBinOp::MethodCall | CXBinOp::ArrayIndex => 1,
-        CXBinOp::Pipe | CXBinOp::BackwardPipe => 2,
+        HIRBinOp::Access | HIRBinOp::MethodCall | HIRBinOp::ArrayIndex => 1,
+        HIRBinOp::Pipe | HIRBinOp::BackwardPipe => 2,
 
-        CXBinOp::Multiply | CXBinOp::Divide | CXBinOp::Modulus => 4,
-        CXBinOp::Add | CXBinOp::Subtract => 5,
+        HIRBinOp::Multiply | HIRBinOp::Divide | HIRBinOp::Modulus => 4,
+        HIRBinOp::Add | HIRBinOp::Subtract => 5,
 
-        CXBinOp::LShift | CXBinOp::RShift => 6,
-        CXBinOp::Less | CXBinOp::Greater | CXBinOp::LessEqual | CXBinOp::GreaterEqual => 7,
+        HIRBinOp::LShift | HIRBinOp::RShift => 6,
+        HIRBinOp::Less | HIRBinOp::Greater | HIRBinOp::LessEqual | HIRBinOp::GreaterEqual => 7,
 
-        CXBinOp::BitAnd => 8,
-        CXBinOp::BitXor => 9,
-        CXBinOp::BitOr => 10,
+        HIRBinOp::BitAnd => 8,
+        HIRBinOp::BitXor => 9,
+        HIRBinOp::BitOr => 10,
 
-        CXBinOp::Equal | CXBinOp::NotEqual => 10,
+        HIRBinOp::Equal | HIRBinOp::NotEqual => 10,
 
-        CXBinOp::LAnd => 14,
-        CXBinOp::LOr => 15,
+        HIRBinOp::LAnd => 14,
+        HIRBinOp::LOr => 15,
 
-        CXBinOp::Assign(_) => 17,
+        HIRBinOp::Assign(_) => 17,
 
-        CXBinOp::Comma => 18,
+        HIRBinOp::Comma => 18,
     }
 }
 
-pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
+pub(crate) fn unop_prec(op: HIRUnOp) -> u8 {
     match op {
-        CXUnOp::PostIncrement(_) => 1,
-        CXUnOp::Move => 1,
+        HIRUnOp::PostIncrement(_) => 1,
+        HIRUnOp::Move => 1,
 
-        CXUnOp::PreIncrement(_) => 2,
-        CXUnOp::BNot => 2,
-        CXUnOp::LNot => 2,
-        CXUnOp::Negative => 2,
-        CXUnOp::Dereference => 2,
-        CXUnOp::AddressOf => 2,
+        HIRUnOp::PreIncrement(_) => 2,
+        HIRUnOp::BNot => 2,
+        HIRUnOp::LNot => 2,
+        HIRUnOp::Negative => 2,
+        HIRUnOp::Dereference => 2,
+        HIRUnOp::AddressOf => 2,
 
-        CXUnOp::Is(_) => 3,
-        CXUnOp::ExplicitCast(_) => 3,
+        HIRUnOp::Is(_) => 3,
+        HIRUnOp::ExplicitCast(_) => 3,
     }
 }
 
-pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp>> {
+pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<HIRUnOp>> {
     Ok(match &next_kind!(data.tokens)? {
         TokenKind::Operator(op) => match op {
-            OperatorType::Ampersand => Some(CXUnOp::AddressOf),
-            OperatorType::Asterisk => Some(CXUnOp::Dereference),
-            OperatorType::Increment => Some(CXUnOp::PreIncrement(1)),
-            OperatorType::Decrement => Some(CXUnOp::PreIncrement(-1)),
-            OperatorType::Minus => Some(CXUnOp::Negative),
-            OperatorType::Exclamation => Some(CXUnOp::LNot),
-            OperatorType::Tilda => Some(CXUnOp::BNot),
-            OperatorType::Move => Some(CXUnOp::Move),
+            OperatorType::Ampersand => Some(HIRUnOp::AddressOf),
+            OperatorType::Asterisk => Some(HIRUnOp::Dereference),
+            OperatorType::Increment => Some(HIRUnOp::PreIncrement(1)),
+            OperatorType::Decrement => Some(HIRUnOp::PreIncrement(-1)),
+            OperatorType::Minus => Some(HIRUnOp::Negative),
+            OperatorType::Exclamation => Some(HIRUnOp::LNot),
+            OperatorType::Tilda => Some(HIRUnOp::BNot),
+            OperatorType::Move => Some(HIRUnOp::Move),
 
             _ => {
                 data.tokens.back();
@@ -106,7 +106,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
                 return Ok(None);
             }
 
-            Some(CXUnOp::ExplicitCast(_type))
+            Some(HIRUnOp::ExplicitCast(_type))
         }
 
         _ => {
@@ -116,7 +116,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
     })
 }
 
-pub(crate) fn parse_postfix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp>> {
+pub(crate) fn parse_postfix_unop(data: &mut ParserData) -> CXResult<Option<HIRUnOp>> {
     let Some(token) = data.tokens.next() else {
         return Ok(None);
     };
@@ -125,12 +125,12 @@ pub(crate) fn parse_postfix_unop(data: &mut ParserData) -> CXResult<Option<CXUnO
         operator!(Is) => {
             let pattern = parse_pattern(data)?;
 
-            Some(CXUnOp::Is(Box::new(pattern)))
+            Some(HIRUnOp::Is(Box::new(pattern)))
         }
 
         TokenKind::Operator(op) => match op {
-            OperatorType::Increment => Some(CXUnOp::PostIncrement(1)),
-            OperatorType::Decrement => Some(CXUnOp::PostIncrement(-1)),
+            OperatorType::Increment => Some(HIRUnOp::PostIncrement(1)),
+            OperatorType::Decrement => Some(HIRUnOp::PostIncrement(-1)),
 
             _ => {
                 data.tokens.back();
@@ -145,38 +145,38 @@ pub(crate) fn parse_postfix_unop(data: &mut ParserData) -> CXResult<Option<CXUnO
     })
 }
 
-fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<CXBinOp> {
+fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<HIRBinOp> {
     Ok(match op {
-        OperatorType::Plus => CXBinOp::Add,
-        OperatorType::Minus => CXBinOp::Subtract,
-        OperatorType::Asterisk => CXBinOp::Multiply,
-        OperatorType::Slash => CXBinOp::Divide,
-        OperatorType::Percent => CXBinOp::Modulus,
+        OperatorType::Plus => HIRBinOp::Add,
+        OperatorType::Minus => HIRBinOp::Subtract,
+        OperatorType::Asterisk => HIRBinOp::Multiply,
+        OperatorType::Slash => HIRBinOp::Divide,
+        OperatorType::Percent => HIRBinOp::Modulus,
 
-        OperatorType::Access => CXBinOp::Access,
-        OperatorType::Comma => CXBinOp::Comma,
+        OperatorType::Access => HIRBinOp::Access,
+        OperatorType::Comma => HIRBinOp::Comma,
 
-        OperatorType::Equal => CXBinOp::Equal,
-        OperatorType::NotEqual => CXBinOp::NotEqual,
-        OperatorType::Less => CXBinOp::Less,
-        OperatorType::Greater => CXBinOp::Greater,
-        OperatorType::LessEqual => CXBinOp::LessEqual,
-        OperatorType::GreaterEqual => CXBinOp::GreaterEqual,
+        OperatorType::Equal => HIRBinOp::Equal,
+        OperatorType::NotEqual => HIRBinOp::NotEqual,
+        OperatorType::Less => HIRBinOp::Less,
+        OperatorType::Greater => HIRBinOp::Greater,
+        OperatorType::LessEqual => HIRBinOp::LessEqual,
+        OperatorType::GreaterEqual => HIRBinOp::GreaterEqual,
 
-        OperatorType::Ampersand => CXBinOp::BitAnd,
-        OperatorType::Bar => CXBinOp::BitOr,
-        OperatorType::Caret => CXBinOp::BitXor,
-        OperatorType::DoubleBar => CXBinOp::LOr,
-        OperatorType::DoubleAmpersand => CXBinOp::LAnd,
+        OperatorType::Ampersand => HIRBinOp::BitAnd,
+        OperatorType::Bar => HIRBinOp::BitOr,
+        OperatorType::Caret => HIRBinOp::BitXor,
+        OperatorType::DoubleBar => HIRBinOp::LOr,
+        OperatorType::DoubleAmpersand => HIRBinOp::LAnd,
 
-        OperatorType::Pipe => CXBinOp::Pipe,
-        OperatorType::BackwardPipe => CXBinOp::BackwardPipe,
+        OperatorType::Pipe => HIRBinOp::Pipe,
+        OperatorType::BackwardPipe => HIRBinOp::BackwardPipe,
 
         _ => return parse_point_error(&data.tokens, format!("Invalid binary operator: {:?}", op)),
     })
 }
 
-pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<CXBinOp> {
+pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<HIRBinOp> {
     Ok(match next_kind!(data.tokens).cloned() {
         Ok(TokenKind::Operator(OperatorType::Comma)) => {
             if data.get_comma_mode() {
@@ -194,12 +194,12 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<CXBinOp> {
             if let Some(next) = data.tokens.peek() {
                 if matches!(next.kind, TokenKind::Operator(OperatorType::Greater)) {
                     data.tokens.next(); // consume the second Greater
-                    CXBinOp::RShift
+                    HIRBinOp::RShift
                 } else {
-                    CXBinOp::Greater
+                    HIRBinOp::Greater
                 }
             } else {
-                CXBinOp::Greater
+                HIRBinOp::Greater
             }
         }
         // Handle << as shift operator (two consecutive Less tokens)
@@ -207,20 +207,20 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<CXBinOp> {
             if let Some(next) = data.tokens.peek() {
                 if matches!(next.kind, TokenKind::Operator(OperatorType::Less)) {
                     data.tokens.next(); // consume the second Less
-                    CXBinOp::LShift
+                    HIRBinOp::LShift
                 } else {
-                    CXBinOp::Less
+                    HIRBinOp::Less
                 }
             } else {
-                CXBinOp::Less
+                HIRBinOp::Less
             }
         }
         Ok(TokenKind::Operator(op)) => op_to_binop(data, op)?,
         Ok(TokenKind::Punctuator(punc)) => {
             data.tokens.back();
             match punc {
-                PunctuatorType::OpenBracket => CXBinOp::ArrayIndex,
-                PunctuatorType::OpenParen => CXBinOp::MethodCall,
+                PunctuatorType::OpenBracket => HIRBinOp::ArrayIndex,
+                PunctuatorType::OpenParen => HIRBinOp::MethodCall,
 
                 _ => {
                     return parse_point_error(
@@ -236,7 +236,7 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<CXBinOp> {
                 None => None,
             };
 
-            CXBinOp::Assign(op)
+            HIRBinOp::Assign(op)
         }
 
         _ => {

@@ -74,7 +74,6 @@ larger multi-file projects should use project mode.
 - `--backend-llvm`: use the LLVM backend when available
 - `-O0`, `-O1`, `-O2`, `-O3`, `-Osize`, `-Ofast`: choose optimization level
 - `-o <output_file>`: set the output path
-- `--analysis`: run safe-function FMIR verification before code generation
 - `--verbose`: print each compilation step
 
 ## Current Status

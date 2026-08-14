@@ -13,9 +13,9 @@ use crate::{
     global::{
         MIRFnSignature, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable,
     },
-    module::MIRUnit,
     op::{MIRBinaryOp, MIRCoercion, MIRUnaryOp},
     ty::MIRIntType,
+    unit::MIRUnit,
 };
 
 impl Display for MIRPlaceID {

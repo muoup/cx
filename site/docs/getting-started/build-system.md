@@ -64,7 +64,6 @@ i32 main() {
 | --- | --- | --- | --- |
 | `backend` | `"cranelift"` or `"llvm"` | `"cranelift"` | Code generation backend |
 | `optimization` | `"O0"` through `"O3"`, `"Osize"`, `"Ofast"` | `"O0"` | Optimization level |
-| `analysis` | bool | `false` | Run FMIR safe-function analysis |
 
 Each `[workspace.targets.<name>]` target can contain binaries, libraries, and
 link dependencies.
@@ -83,7 +82,6 @@ When building, the compiler will search the working directory and any parent for
 cx build
 cx build <target>
 cx build --backend-llvm -O3
-cx build --analysis
 cx build --verbose
 ```
 

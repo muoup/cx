@@ -25,6 +25,22 @@ pub fn try_explicit_cast(
 ) -> CXResult<CoercionResult> {
     try_implicit_coercion(env, expr, target_type)?.or_else(|expr| {
         let from_type = expr.get_type();
+
+        if env.function.in_safe_context()
+            && matches!(
+                (&from_type.kind, &target_type.kind),
+                (
+                    THIRTypeKind::PointerTo { .. },
+                    THIRTypeKind::MemoryReference { .. }
+                )
+            )
+        {
+            return env.log_error(
+                expr.token_range,
+                "Dereferencing raw pointers is not allowed in safe contexts".to_string(),
+            );
+        }
+
         let coerced = |conversion: THIRCoercion| {
             let coerced = THIRExpression {
                 token_range: expr.token_range.clone(),

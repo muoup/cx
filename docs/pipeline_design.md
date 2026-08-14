@@ -43,7 +43,7 @@ The typechecker resolves identifiers to concrete types, realizes templates, inse
 
 THIR is lowered once into semantic MIR. MIR owns interned semantic types, target-dependent size/alignment layouts, storage ownership metadata such as `@nodrop`, and source ranges for emitted instructions. Symbolic `sizeof` and `alignof` queries are resolved here.
 
-MIR validation and liveness analysis run after lowering. Optional safe-function analysis still consumes the typechecked frontend representation separately and does not define the code-generation IR.
+MIR validation, liveness, and safe-function assertion analysis run after lowering, so the code-generation IR remains the semantic analysis boundary.
 
 - **Input**: THIR
 - **Output**: MIR + analysis data
@@ -88,5 +88,4 @@ After library linking, a C header is generated from the entry file's LMIR unit. 
 
 - **AST**: parsed source structure
 - **MIR**: typed, semantically resolved frontend IR
-- **FMIR**: optional analysis IR for `safe` verification
 - **LMIR**: lowered SSA-style IR for code generation

@@ -1,4 +1,4 @@
-use cx_ast::ast::function::CXFunctionKind;
+use cx_hir::ast::function::HIRFunctionKind;
 pub use cx_util::namespace::EnvironmentNamespace;
 
 use crate::{
@@ -20,7 +20,7 @@ mod format;
 
 pub struct MIRGenerationRequest {
     pub module_origin: Option<String>,
-    pub kind: CXFunctionKind,
+    pub kind: HIRFunctionKind,
     pub input: MIRTemplateInput,
 }
 

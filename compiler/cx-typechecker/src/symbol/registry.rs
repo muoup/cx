@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use cx_ast::{ast::expression::CXExpression, registry::GlobalSymbolRegistry};
+use cx_hir::{ast::expression::HIRExpression, registry::GlobalSymbolRegistry};
 use cx_log::{CXRawResult, CXResult};
 use cx_target::ArchitectureConfig;
 use cx_thir::{
@@ -221,7 +221,7 @@ impl<'a> MIRSymbolRegistry<'a> {
         id: u64,
         name: QualifiedName,
         namespace: EnvironmentNamespace,
-        expr: CXExpression,
+        expr: HIRExpression,
         expected_type: THIRType,
     ) {
         self.local_symbols.insert(
@@ -240,7 +240,7 @@ impl<'a> MIRSymbolRegistry<'a> {
         name: QualifiedName,
         namespace: EnvironmentNamespace,
         params: Vec<(CXIdent, THIRType)>,
-        body: CXExpression,
+        body: HIRExpression,
         return_type: THIRType,
     ) {
         self.local_symbols.insert(

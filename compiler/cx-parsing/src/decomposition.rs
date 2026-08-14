@@ -1,14 +1,14 @@
-use cx_ast::{
+use cx_hir::{
     ast::{
-        global_var::CXGlobalVariable,
-        template::{CXTemplateInput, CXTemplatePrototype},
-        CXASTDefinition, CXASTStmt,
+        global_var::HIRGlobalVariable,
+        template::{HIRTemplateInput, HIRTemplatePrototype},
+        HIRDefinition, HIRStmt,
     },
-    decomposition::{CXGenerationAST, CXGenerationStmt},
-    symbols::{CXSymbol, CXSymbolKind, SymbolNamespaceData},
+    decomposition::{HIRGenerationAST, HIRGenerationStmt},
+    symbols::{HIRSymbol, HIRSymbolKind, SymbolNamespaceData},
 };
 
-use cx_ast::ast::types::{CXType, CXTypeKind, PredeclarationType};
+use cx_hir::ast::types::{HIRType, HIRTypeKind, PredeclarationType};
 use cx_log::CXResult;
 use cx_preparse_data::NamespaceAliases;
 use cx_util::namespace::{NamespacePath, QualifiedName};
@@ -17,7 +17,7 @@ pub struct DecompositionEnv<'a> {
     namespace: &'a NamespacePath,
     symbol_buckets: Vec<(NamespacePath, SymbolNamespaceData)>,
     namespace_friends: Vec<(NamespacePath, NamespacePath)>,
-    stmts: Vec<CXGenerationStmt>,
+    stmts: Vec<HIRGenerationStmt>,
 }
 
 impl<'a> DecompositionEnv<'a> {
@@ -38,9 +38,9 @@ impl<'a> DecompositionEnv<'a> {
     ) -> (
         Vec<(NamespacePath, SymbolNamespaceData)>,
         Vec<(NamespacePath, NamespacePath)>,
-        CXGenerationAST,
+        HIRGenerationAST,
     ) {
-        let ast = CXGenerationAST {
+        let ast = HIRGenerationAST {
             generation_stmts: self.stmts,
         };
 
@@ -75,7 +75,7 @@ impl<'a> DecompositionEnv<'a> {
         &mut self.symbol_buckets.last_mut().unwrap().1
     }
 
-    pub fn decompose_stmt(&mut self, definition: CXASTDefinition) -> CXResult<()> {
+    pub fn decompose_stmt(&mut self, definition: HIRDefinition) -> CXResult<()> {
         decompose_stmt(self, definition)
     }
 }
@@ -84,7 +84,7 @@ fn insert_symbol(
     env: &mut DecompositionEnv,
     namespace: &NamespacePath,
     name: impl Into<String>,
-    symbol: CXSymbol,
+    symbol: HIRSymbol,
 ) -> CXResult<()> {
     let name = name.into();
 
@@ -95,14 +95,14 @@ fn insert_symbol(
     {
         let visibility = existing.visibility.max(symbol.visibility);
         let mut definitions = match existing.kind {
-            CXSymbolKind::DuplicateDefinition(definitions) => definitions,
+            HIRSymbolKind::DuplicateDefinition(definitions) => definitions,
             kind => vec![kind],
         };
         definitions.push(symbol.kind);
 
         env.get_bucket_mut(namespace).insert_symbol(
             name,
-            CXSymbol::new(visibility, CXSymbolKind::DuplicateDefinition(definitions)),
+            HIRSymbol::new(visibility, HIRSymbolKind::DuplicateDefinition(definitions)),
         );
         return Ok(());
     }
@@ -111,7 +111,7 @@ fn insert_symbol(
     Ok(())
 }
 
-fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) -> CXResult<()> {
+fn decompose_stmt(env: &mut DecompositionEnv, definition: HIRDefinition) -> CXResult<()> {
     let stmt_namespace = definition.namespace;
 
     let base_namespace = if stmt_namespace.is_root() {
@@ -121,7 +121,7 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) -> CX
     };
 
     match definition.stmt {
-        CXASTStmt::TypeDefinition {
+        HIRStmt::TypeDefinition {
             name,
             visibility,
             template_prototype,
@@ -132,21 +132,21 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) -> CX
             };
 
             let symbol = match template_prototype.clone() {
-                Some(input) => CXSymbol::new(
+                Some(input) => HIRSymbol::new(
                     visibility,
-                    CXSymbolKind::TypeTemplate {
+                    HIRSymbolKind::TypeTemplate {
                         template: input,
                         definition: _type.clone(),
                     },
                 ),
-                None => CXSymbol::new(visibility, CXSymbolKind::Type(_type.clone())),
+                None => HIRSymbol::new(visibility, HIRSymbolKind::Type(_type.clone())),
             };
 
             insert_symbol(env, base_namespace, name.to_string(), symbol)?;
 
-            if let CXTypeKind::TaggedUnion { variants, .. } = &_type.kind {
+            if let HIRTypeKind::TaggedUnion { variants, .. } = &_type.kind {
                 let union_name = QualifiedName::new(base_namespace.clone(), name.clone());
-                let union_type = CXTypeKind::Identifier {
+                let union_type = HIRTypeKind::Identifier {
                     name: union_name,
                     predeclaration: PredeclarationType::None,
                     template_input: template_prototype
@@ -161,9 +161,9 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) -> CX
                         continue;
                     };
 
-                    let symbol = CXSymbol::new(
+                    let symbol = HIRSymbol::new(
                         visibility,
-                        CXSymbolKind::TypeConstructor {
+                        HIRSymbolKind::TypeConstructor {
                             template: template_prototype.clone(),
                             union_type: union_type.clone(),
                             variant_index,
@@ -175,7 +175,7 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) -> CX
             }
         }
 
-        CXASTStmt::FunctionDefinition {
+        HIRStmt::FunctionDefinition {
             prototype,
             visibility,
             template_prototype,
@@ -193,9 +193,9 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) -> CX
                         return Ok(());
                     };
 
-                    CXSymbol::new(
+                    HIRSymbol::new(
                         visibility,
-                        CXSymbolKind::FunctionTemplate {
+                        HIRSymbolKind::FunctionTemplate {
                             template: input,
                             definition: prototype,
                             body,
@@ -205,7 +205,7 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) -> CX
                 None => {
                     generated_body = body.map(|body| (prototype.clone(), body));
 
-                    CXSymbol::new(visibility, CXSymbolKind::FunctionReference(prototype))
+                    HIRSymbol::new(visibility, HIRSymbolKind::FunctionReference(prototype))
                 }
             };
 
@@ -213,11 +213,11 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) -> CX
 
             if let Some((prototype, body)) = generated_body {
                 env.stmts
-                    .push(CXGenerationStmt::Function { prototype, body });
+                    .push(HIRGenerationStmt::Function { prototype, body });
             }
         }
 
-        CXASTStmt::ComptimeFunctionDefinition {
+        HIRStmt::ComptimeFunctionDefinition {
             prototype,
             visibility,
             template_prototype,
@@ -229,17 +229,17 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) -> CX
             } = prototype.kind.into_key();
             let namespace = base_namespace.join(&q_namespace);
             let symbol = match template_prototype {
-                Some(input) => CXSymbol::new(
+                Some(input) => HIRSymbol::new(
                     visibility,
-                    CXSymbolKind::ComptimeFunctionTemplate {
+                    HIRSymbolKind::ComptimeFunctionTemplate {
                         template: input,
                         definition: prototype,
                         body,
                     },
                 ),
-                None => CXSymbol::new(
+                None => HIRSymbol::new(
                     visibility,
-                    CXSymbolKind::ComptimeFunction {
+                    HIRSymbolKind::ComptimeFunction {
                         definition: prototype,
                         body,
                     },
@@ -249,18 +249,18 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) -> CX
             insert_symbol(env, &namespace, name.to_string(), symbol)?;
         }
 
-        CXASTStmt::GlobalVariableDefinition {
+        HIRStmt::GlobalVariableDefinition {
             visibility,
             variable,
         } => match &variable {
-            CXGlobalVariable::EnumDefinition(def) => {
+            HIRGlobalVariable::EnumDefinition(def) => {
                 let bucket = env.get_bucket_mut(base_namespace);
                 let e_idx = bucket.insert_enum_block(def.clone());
 
                 for (v_idx, variant) in def.variants.iter().enumerate() {
-                    let symbol = CXSymbol::new(
+                    let symbol = HIRSymbol::new(
                         visibility,
-                        CXSymbolKind::EnumIdent {
+                        HIRSymbolKind::EnumIdent {
                             enum_block_idx: e_idx,
                             variant_index: v_idx,
                         },
@@ -270,7 +270,7 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) -> CX
                 }
             }
 
-            CXGlobalVariable::Standard {
+            HIRGlobalVariable::Standard {
                 name,
                 _type,
                 is_mutable: _,
@@ -278,9 +278,9 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) -> CX
                 symbol_name_scheme: symbol_naming,
                 initializer,
             } => {
-                let symbol = CXSymbol::new(
+                let symbol = HIRSymbol::new(
                     visibility,
-                    CXSymbolKind::AddressableGlobal {
+                    HIRSymbolKind::AddressableGlobal {
                         name: name.clone(),
                         _type: _type.clone(),
                         symbol_naming: *symbol_naming,
@@ -289,7 +289,7 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) -> CX
 
                 insert_symbol(env, base_namespace, name.to_string(), symbol)?;
 
-                env.stmts.push(CXGenerationStmt::AddressableGlobal {
+                env.stmts.push(HIRGenerationStmt::AddressableGlobal {
                     name: name.clone(),
                     _type: _type.clone(),
                     linkage: *linkage,
@@ -303,19 +303,19 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: CXASTDefinition) -> CX
     Ok(())
 }
 
-fn convert_template_proto_to_args(prototype: CXTemplatePrototype) -> CXTemplateInput {
+fn convert_template_proto_to_args(prototype: HIRTemplatePrototype) -> HIRTemplateInput {
     let params = prototype
         .types
         .into_iter()
         .map(|name| {
-            CXTypeKind::Identifier {
+            HIRTypeKind::Identifier {
                 name: QualifiedName::new_raw(name),
                 predeclaration: PredeclarationType::None,
                 template_input: None,
             }
             .to_type()
         })
-        .collect::<Vec<CXType>>();
+        .collect::<Vec<HIRType>>();
 
-    CXTemplateInput { params }
+    HIRTemplateInput { params }
 }

@@ -1,4 +1,4 @@
-use cx_ast::ast::modifiers::{CXTypeQualifiers, VisibilityMode};
+use cx_hir::ast::modifiers::{HIRTypeQualifiers, VisibilityMode};
 use cx_util::{dense_id, identifier::CXIdent, namespace::QualifiedName};
 use speedy::{Readable, Writable};
 
@@ -13,7 +13,7 @@ dense_id!(THIRTypeID);
 #[derive(Debug, Clone)]
 pub struct THIRType {
     pub visibility: VisibilityMode,
-    pub specifiers: CXTypeQualifiers,
+    pub specifiers: HIRTypeQualifiers,
 
     pub attributes: THIRTypeAttributes,
 
@@ -234,7 +234,7 @@ impl Default for THIRType {
     fn default() -> Self {
         THIRType {
             visibility: VisibilityMode::Private,
-            specifiers: CXTypeQualifiers::default(),
+            specifiers: HIRTypeQualifiers::default(),
             attributes: THIRTypeAttributes::default(),
             strong_identifier: None,
             lookup_identifier: None,
@@ -307,16 +307,16 @@ impl THIRType {
         self
     }
 
-    pub fn add_specifier(mut self, specifier: CXTypeQualifiers) -> Self {
+    pub fn add_specifier(mut self, specifier: HIRTypeQualifiers) -> Self {
         self.specifiers |= specifier;
         self
     }
 
-    pub fn with_specifier(&self, specifier: CXTypeQualifiers) -> Self {
+    pub fn with_specifier(&self, specifier: HIRTypeQualifiers) -> Self {
         self.clone().add_specifier(specifier)
     }
 
-    pub fn remove_specifier(&mut self, specifier: CXTypeQualifiers) -> &mut Self {
+    pub fn remove_specifier(&mut self, specifier: HIRTypeQualifiers) -> &mut Self {
         self.specifiers &= !specifier;
         self
     }
@@ -326,13 +326,13 @@ impl THIRType {
         self
     }
 
-    pub fn without_specifier(&self, specifier: CXTypeQualifiers) -> Self {
+    pub fn without_specifier(&self, specifier: HIRTypeQualifiers) -> Self {
         let mut clone = self.clone();
         clone.remove_specifier(specifier);
         clone
     }
 
-    pub fn get_specifier(&self, specifier: CXTypeQualifiers) -> bool {
+    pub fn get_specifier(&self, specifier: HIRTypeQualifiers) -> bool {
         self.specifiers & specifier == specifier
     }
 

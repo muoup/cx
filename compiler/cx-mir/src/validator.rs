@@ -1,0 +1,997 @@
+use std::{collections::BTreeSet, error::Error, fmt};
+
+use crate::{
+    expr::{
+        MIRAggregateOp, MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRInstrKind, MIRPlace,
+        MIRPlaceAggregateOp, MIRRegister, MIRValue, MIRValueAggregateOp,
+    },
+    global::{MIRFunction, MIRFunctionID},
+    ty::{MIRTypeDefinition, MIRTypeID, MIRTypeKind},
+    unit::MIRUnit,
+};
+
+impl MIRUnit {
+    fn validate_internal(&self) -> Result<(), MIRValidationError> {
+        for (index, global) in self.globals.iter().enumerate() {
+            if global.id.index() != index {
+                return Err(MIRValidationError::NonDenseId {
+                    entity: "global",
+                    function: None,
+                    position: index,
+                    actual: global.id.index(),
+                });
+            }
+        }
+
+        for (function_index, function) in self.functions.iter().enumerate() {
+            if function.id.index() != function_index {
+                return Err(MIRValidationError::NonDenseId {
+                    entity: "function",
+                    function: None,
+                    position: function_index,
+                    actual: function.id.index(),
+                });
+            }
+            self.validate_function(function)?;
+        }
+
+        Ok(())
+    }
+
+    fn validate_function(&self, function: &MIRFunction) -> Result<(), MIRValidationError> {
+        let function_id = function.id;
+
+        for (position, place) in function.places.iter().enumerate() {
+            if place.id.index() != position {
+                return Err(MIRValidationError::NonDenseId {
+                    entity: "place",
+                    function: Some(function_id),
+                    position,
+                    actual: place.id.index(),
+                });
+            }
+        }
+        for (position, register) in function.registers.iter().enumerate() {
+            if register.id.index() != position {
+                return Err(MIRValidationError::NonDenseId {
+                    entity: "register",
+                    function: Some(function_id),
+                    position,
+                    actual: register.id.index(),
+                });
+            }
+        }
+        for (position, block) in function.blocks.iter().enumerate() {
+            if block.id.index() != position {
+                return Err(MIRValidationError::NonDenseId {
+                    entity: "basic block",
+                    function: Some(function_id),
+                    position,
+                    actual: block.id.index(),
+                });
+            }
+        }
+
+        if function.blocks.is_empty() {
+            if let Some(entry) = function.entry {
+                return Err(MIRValidationError::EntryOnDeclaration {
+                    function: function_id,
+                    entry,
+                });
+            }
+            return Ok(());
+        }
+
+        let entry = function.entry.ok_or(MIRValidationError::MissingEntry {
+            function: function_id,
+        })?;
+        self.check_id(
+            function_id,
+            None,
+            None,
+            "entry block",
+            entry.index(),
+            function.blocks.len(),
+        )?;
+
+        if !function
+            .block(entry)
+            .expect("validated entry block is missing")
+            .params
+            .is_empty()
+        {
+            return Err(MIRValidationError::EntryBlockParameters {
+                function: function_id,
+                entry,
+            });
+        }
+
+        let mut block_params = BTreeSet::new();
+        for block in &function.blocks {
+            for param in &block.params {
+                self.check_id(
+                    function_id,
+                    Some(block.id),
+                    None,
+                    "block parameter register",
+                    param.index(),
+                    function.registers.len(),
+                )?;
+                if !block_params.insert(*param) {
+                    return Err(MIRValidationError::DuplicateBlockParameter {
+                        function: function_id,
+                        block: block.id,
+                        register: *param,
+                    });
+                }
+            }
+        }
+        let mut register_definitions = block_params;
+
+        for block in &function.blocks {
+            if block.instrs.is_empty() {
+                return Err(MIRValidationError::EmptyBlock {
+                    function: function_id,
+                    block: block.id,
+                });
+            }
+
+            let mut terminated_at = None;
+            for (instruction_index, instruction) in block.instrs.iter().enumerate() {
+                if let Some(terminator) = terminated_at {
+                    return Err(MIRValidationError::InstructionAfterTerminator {
+                        function: function_id,
+                        block: block.id,
+                        terminator,
+                        instruction: instruction_index,
+                    });
+                }
+                if instruction.is_terminator() {
+                    terminated_at = Some(instruction_index);
+                }
+
+                self.validate_instruction(function, block.id, instruction_index, instruction)?;
+                let mut duplicate_register = None;
+                for register in instruction.defined_registers() {
+                    if !register_definitions.insert(register) && duplicate_register.is_none() {
+                        duplicate_register = Some(register);
+                    }
+                }
+                if let Some(register) = duplicate_register {
+                    return Err(MIRValidationError::DuplicateRegisterDefinition {
+                        function: function_id,
+                        block: block.id,
+                        instruction: instruction_index,
+                        register,
+                    });
+                }
+            }
+
+            if terminated_at.is_none() {
+                return Err(MIRValidationError::UnterminatedBlock {
+                    function: function_id,
+                    block: block.id,
+                });
+            }
+        }
+
+        for register in &function.registers {
+            if !register_definitions.contains(&register.id) {
+                return Err(MIRValidationError::UndefinedRegister {
+                    function: function_id,
+                    register: register.id,
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_instruction(
+        &self,
+        function: &MIRFunction,
+        block: MIRBasicBlockID,
+        instruction_index: usize,
+        instruction: &crate::expr::MIRInstr,
+    ) -> Result<(), MIRValidationError> {
+        let function_id = function.id;
+        let mut bad_id = None;
+        let check_place = |place| match place {
+            MIRPlace::FunctionLocal(id) if id.index() >= function.places.len() => {
+                Some(("place", id.index(), function.places.len()))
+            }
+            MIRPlace::Parameter(id) if id.index() >= function.prototype.signature.params.len() => {
+                Some((
+                    "parameter",
+                    id.index(),
+                    function.prototype.signature.params.len(),
+                ))
+            }
+            MIRPlace::Global(id) if id.index() >= self.globals.len() => {
+                Some(("global", id.index(), self.globals.len()))
+            }
+            _ => None,
+        };
+        instruction.visit_operands(|operand| {
+            if bad_id.is_none()
+                && let Some(place) = operand.place()
+            {
+                bad_id = check_place(place);
+            }
+            if let Some(register) = operand.register()
+                && bad_id.is_none()
+                && register.index() >= function.registers.len()
+            {
+                bad_id = Some(("register", register.index(), function.registers.len()));
+            }
+            if let Some(referenced) = operand.function()
+                && bad_id.is_none()
+                && referenced.index() >= self.functions.len()
+            {
+                bad_id = Some(("function", referenced.index(), self.functions.len()));
+            }
+        });
+        for place in instruction.defined_places() {
+            if bad_id.is_none() {
+                bad_id = check_place(place);
+            }
+        }
+        for register in instruction.defined_registers() {
+            if bad_id.is_none() && register.index() >= function.registers.len() {
+                bad_id = Some(("register", register.index(), function.registers.len()));
+            }
+        }
+        for successor in instruction.successors() {
+            if bad_id.is_none() && successor.index() >= function.blocks.len() {
+                bad_id = Some(("block target", successor.index(), function.blocks.len()));
+            }
+        }
+
+        if let Some((entity, id, upper_bound)) = bad_id {
+            self.check_id(
+                function_id,
+                Some(block),
+                Some(instruction_index),
+                entity,
+                id,
+                upper_bound,
+            )?;
+        }
+
+        self.validate_targets(function, block, instruction_index, instruction)?;
+        self.validate_instruction_types(function, block, instruction_index, &instruction.kind)
+    }
+
+    fn validate_instruction_types(
+        &self,
+        function: &MIRFunction,
+        block: MIRBasicBlockID,
+        instruction: usize,
+        kind: &MIRInstrKind,
+    ) -> Result<(), MIRValidationError> {
+        match kind {
+            MIRInstrKind::Create { out, ty } => {
+                self.expect_place_type(function, block, instruction, "created place", *out, *ty)?;
+            }
+            MIRInstrKind::Assign { dest, value, ty } => {
+                self.expect_place_value_type(
+                    function,
+                    block,
+                    instruction,
+                    "assignment destination",
+                    *dest,
+                    *ty,
+                )?;
+                if let MIRValue::Move(source) = value {
+                    self.expect_place_value_type(
+                        function,
+                        block,
+                        instruction,
+                        "moved source",
+                        *source,
+                        *ty,
+                    )?;
+                } else {
+                    self.expect_value_type(
+                        function,
+                        block,
+                        instruction,
+                        "assignment value",
+                        value,
+                        *ty,
+                    )?;
+                }
+            }
+            MIRInstrKind::Dereference {
+                out, pointee_type, ..
+            } => {
+                self.expect_place_value_type(
+                    function,
+                    block,
+                    instruction,
+                    "dereference result",
+                    *out,
+                    *pointee_type,
+                )?;
+            }
+            MIRInstrKind::AggregateOp(MIRAggregateOp::Place {
+                out,
+                op: MIRPlaceAggregateOp::Index { element_type, .. },
+            }) => {
+                self.expect_place_value_type(
+                    function,
+                    block,
+                    instruction,
+                    "index result",
+                    *out,
+                    *element_type,
+                )?;
+            }
+            MIRInstrKind::AggregateOp(MIRAggregateOp::Value {
+                out,
+                op: MIRValueAggregateOp::Construct { ty, .. },
+            }) => {
+                self.expect_register_type(
+                    function,
+                    block,
+                    instruction,
+                    "aggregate result",
+                    *out,
+                    *ty,
+                )?;
+            }
+            MIRInstrKind::AggregateOp(MIRAggregateOp::Value {
+                out,
+                op: MIRValueAggregateOp::Variant { sum_type, .. },
+            }) => {
+                self.expect_register_type(
+                    function,
+                    block,
+                    instruction,
+                    "variant result",
+                    *out,
+                    *sum_type,
+                )?;
+            }
+            MIRInstrKind::Coerce { out, to_type, .. } => {
+                self.expect_register_type(
+                    function,
+                    block,
+                    instruction,
+                    "coercion result",
+                    *out,
+                    *to_type,
+                )?;
+            }
+            MIRInstrKind::VariantSwitch {
+                subject,
+                sum_type,
+                cases,
+                ..
+            } => {
+                self.expect_place_value_type(
+                    function,
+                    block,
+                    instruction,
+                    "variant switch subject",
+                    *subject,
+                    *sum_type,
+                )?;
+                if let Some(MIRTypeKind::TaggedUnion { variants }) = self.types.kind(*sum_type) {
+                    let mut seen = BTreeSet::new();
+                    for (variant, _) in cases {
+                        if *variant >= variants.len() {
+                            return Err(MIRValidationError::VariantSwitchCaseOutOfRange {
+                                function: function.id,
+                                block,
+                                instruction,
+                                variant: *variant,
+                                variant_count: variants.len(),
+                            });
+                        }
+                        if !seen.insert(*variant) {
+                            return Err(MIRValidationError::DuplicateVariantSwitchCase {
+                                function: function.id,
+                                block,
+                                instruction,
+                                variant: *variant,
+                            });
+                        }
+                    }
+                }
+            }
+            MIRInstrKind::Return { value: Some(value) } => {
+                let return_type = function.prototype.signature.return_type;
+                if !matches!(self.types.kind(return_type), Some(MIRTypeKind::Void)) {
+                    self.expect_value_type(
+                        function,
+                        block,
+                        instruction,
+                        "return value",
+                        value,
+                        return_type,
+                    )?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn expect_place_type(
+        &self,
+        function: &MIRFunction,
+        block: MIRBasicBlockID,
+        instruction: usize,
+        entity: &'static str,
+        place: MIRPlace,
+        expected: MIRTypeID,
+    ) -> Result<(), MIRValidationError> {
+        let actual = self
+            .place_type(function, place)
+            .expect("validated place is missing");
+        self.expect_type(function.id, block, instruction, entity, actual, expected)
+    }
+
+    fn expect_place_value_type(
+        &self,
+        function: &MIRFunction,
+        block: MIRBasicBlockID,
+        instruction: usize,
+        entity: &'static str,
+        place: MIRPlace,
+        expected: MIRTypeID,
+    ) -> Result<(), MIRValidationError> {
+        let actual = self
+            .place_type_for_expected(function, place, expected)
+            .expect("validated place is missing");
+        self.expect_type(function.id, block, instruction, entity, actual, expected)
+    }
+
+    fn expect_register_type(
+        &self,
+        function: &MIRFunction,
+        block: MIRBasicBlockID,
+        instruction: usize,
+        entity: &'static str,
+        register: MIRRegister,
+        expected: MIRTypeID,
+    ) -> Result<(), MIRValidationError> {
+        let actual = function
+            .register(register)
+            .expect("validated register is missing")
+            .ty;
+        self.expect_type(function.id, block, instruction, entity, actual, expected)
+    }
+
+    fn expect_value_type(
+        &self,
+        function: &MIRFunction,
+        block: MIRBasicBlockID,
+        instruction: usize,
+        entity: &'static str,
+        value: &MIRValue,
+        expected: MIRTypeID,
+    ) -> Result<(), MIRValidationError> {
+        let Some(actual) = self.value_type_for_expected(function, value, expected) else {
+            return Ok(());
+        };
+        self.expect_type(function.id, block, instruction, entity, actual, expected)
+    }
+
+    fn expect_type(
+        &self,
+        function: MIRFunctionID,
+        block: MIRBasicBlockID,
+        instruction: usize,
+        entity: &'static str,
+        actual: MIRTypeID,
+        expected: MIRTypeID,
+    ) -> Result<(), MIRValidationError> {
+        if self.types.same_type(actual, expected) {
+            Ok(())
+        } else {
+            Err(MIRValidationError::TypeMismatch {
+                function,
+                block,
+                instruction,
+                entity,
+                expected: expected.to_string(),
+                actual: actual.to_string(),
+            })
+        }
+    }
+
+    fn validate_targets(
+        &self,
+        function: &MIRFunction,
+        block: MIRBasicBlockID,
+        instruction_index: usize,
+        instruction: &crate::expr::MIRInstr,
+    ) -> Result<(), MIRValidationError> {
+        let mut targets = Vec::new();
+        match &instruction.kind {
+            MIRInstrKind::Jump { target } => targets.push(target),
+            MIRInstrKind::Branch {
+                true_target,
+                false_target,
+                ..
+            } => {
+                targets.push(true_target);
+                targets.push(false_target);
+            }
+            MIRInstrKind::IntSwitch { cases, default, .. } => {
+                targets.extend(cases.iter().map(|(_, target)| target));
+                targets.extend(default.iter());
+            }
+            MIRInstrKind::VariantSwitch { cases, default, .. } => {
+                targets.extend(cases.iter().map(|(_, target)| target));
+                targets.extend(default.iter());
+            }
+            _ => {}
+        }
+
+        for target in targets {
+            self.validate_target(function, block, instruction_index, target)?;
+        }
+        Ok(())
+    }
+
+    fn validate_target(
+        &self,
+        function: &MIRFunction,
+        source: MIRBasicBlockID,
+        instruction: usize,
+        target: &MIRBlockTarget,
+    ) -> Result<(), MIRValidationError> {
+        let Some(block) = function.block(target.block) else {
+            return Ok(());
+        };
+        if target.args.len() != block.params.len() {
+            return Err(MIRValidationError::BlockArgumentCount {
+                function: function.id,
+                source,
+                instruction,
+                target: target.block,
+                expected: block.params.len(),
+                actual: target.args.len(),
+            });
+        }
+        for (index, (argument, parameter)) in target.args.iter().zip(&block.params).enumerate() {
+            let expected = function
+                .register(*parameter)
+                .expect("validated block parameter is missing")
+                .ty;
+            if let Some(actual) = self.value_type_for_expected(function, argument, expected)
+                && !self.types.same_type(actual, expected)
+            {
+                return Err(MIRValidationError::BlockArgumentType {
+                    function: function.id,
+                    source,
+                    instruction,
+                    target: target.block,
+                    argument: index,
+                    expected: expected.to_string(),
+                    actual: actual.to_string(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn value_type_for_expected(
+        &self,
+        function: &MIRFunction,
+        value: &MIRValue,
+        expected: MIRTypeID,
+    ) -> Option<MIRTypeID> {
+        match value {
+            MIRValue::Place(place) | MIRValue::Move(place) => {
+                self.place_type_for_expected(function, *place, expected)
+            }
+            _ => self.value_type(function, value),
+        }
+    }
+
+    fn value_type(&self, function: &MIRFunction, value: &MIRValue) -> Option<MIRTypeID> {
+        match value {
+            MIRValue::Register(register) => {
+                function.register(*register).map(|register| register.ty)
+            }
+            MIRValue::Place(place) | MIRValue::Move(place) => {
+                self.place_value_type(function, *place)
+            }
+            MIRValue::Constant(MIRConstant::Unit) => Some(self.types.unit()),
+            MIRValue::Constant(MIRConstant::Bool(_)) => {
+                self.types
+                    .find(&MIRTypeDefinition::new(MIRTypeKind::Integer {
+                        ty: crate::MIRIntType::I1,
+                        signed: false,
+                    }))
+            }
+            MIRValue::Constant(MIRConstant::Integer { ty, signed, .. }) => {
+                self.types
+                    .find(&MIRTypeDefinition::new(MIRTypeKind::Integer {
+                        ty: *ty,
+                        signed: *signed,
+                    }))
+            }
+            MIRValue::Constant(MIRConstant::Float { ty, .. }) => self
+                .types
+                .find(&MIRTypeDefinition::new(MIRTypeKind::Float { ty: *ty })),
+            MIRValue::Constant(MIRConstant::String(_)) => {
+                self.types.find(&MIRTypeDefinition::new(MIRTypeKind::Str))
+            }
+            MIRValue::Constant(
+                MIRConstant::Null | MIRConstant::Function(_) | MIRConstant::Undefined,
+            ) => None,
+        }
+    }
+
+    fn place_value_type(&self, function: &MIRFunction, place: MIRPlace) -> Option<MIRTypeID> {
+        let raw = self.place_type(function, place)?;
+        match self.types.kind(raw) {
+            Some(MIRTypeKind::MemoryReference { inner, .. }) => Some(*inner),
+            _ => Some(raw),
+        }
+    }
+
+    fn place_type_for_expected(
+        &self,
+        function: &MIRFunction,
+        place: MIRPlace,
+        expected: MIRTypeID,
+    ) -> Option<MIRTypeID> {
+        let raw = self.place_type(function, place)?;
+        let expected_is_reference = matches!(
+            self.types.kind(expected),
+            Some(MIRTypeKind::MemoryReference { .. })
+        );
+        if expected_is_reference {
+            if let Some(MIRTypeKind::MemoryReference { inner, .. }) = self.types.kind(raw)
+                && self.types.same_type(*inner, expected)
+            {
+                return Some(*inner);
+            }
+            return Some(raw);
+        }
+        if self.types.same_type(raw, expected) {
+            Some(raw)
+        } else {
+            self.place_value_type(function, place)
+        }
+    }
+
+    fn place_type(&self, function: &MIRFunction, place: MIRPlace) -> Option<MIRTypeID> {
+        match place {
+            MIRPlace::FunctionLocal(id) => function.place(id).map(|place| place.ty),
+            MIRPlace::Parameter(id) => function
+                .prototype
+                .signature
+                .params
+                .get(id.index())
+                .map(|parameter| parameter.ty),
+            MIRPlace::Global(id) => self.global(id).map(|global| global.ty),
+        }
+    }
+
+    fn check_id(
+        &self,
+        function: MIRFunctionID,
+        block: Option<MIRBasicBlockID>,
+        instruction: Option<usize>,
+        entity: &'static str,
+        id: usize,
+        upper_bound: usize,
+    ) -> Result<(), MIRValidationError> {
+        if id < upper_bound {
+            Ok(())
+        } else {
+            Err(MIRValidationError::IdOutOfRange {
+                function,
+                block,
+                instruction,
+                entity,
+                id,
+                upper_bound,
+            })
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MIRValidationError {
+    NonDenseId {
+        entity: &'static str,
+        function: Option<MIRFunctionID>,
+        position: usize,
+        actual: usize,
+    },
+    MissingEntry {
+        function: MIRFunctionID,
+    },
+    EntryOnDeclaration {
+        function: MIRFunctionID,
+        entry: MIRBasicBlockID,
+    },
+    IdOutOfRange {
+        function: MIRFunctionID,
+        block: Option<MIRBasicBlockID>,
+        instruction: Option<usize>,
+        entity: &'static str,
+        id: usize,
+        upper_bound: usize,
+    },
+    EmptyBlock {
+        function: MIRFunctionID,
+        block: MIRBasicBlockID,
+    },
+    UnterminatedBlock {
+        function: MIRFunctionID,
+        block: MIRBasicBlockID,
+    },
+    InstructionAfterTerminator {
+        function: MIRFunctionID,
+        block: MIRBasicBlockID,
+        terminator: usize,
+        instruction: usize,
+    },
+    EntryBlockParameters {
+        function: MIRFunctionID,
+        entry: MIRBasicBlockID,
+    },
+    DuplicateBlockParameter {
+        function: MIRFunctionID,
+        block: MIRBasicBlockID,
+        register: MIRRegister,
+    },
+    DuplicateRegisterDefinition {
+        function: MIRFunctionID,
+        block: MIRBasicBlockID,
+        instruction: usize,
+        register: MIRRegister,
+    },
+    UndefinedRegister {
+        function: MIRFunctionID,
+        register: MIRRegister,
+    },
+    BlockArgumentCount {
+        function: MIRFunctionID,
+        source: MIRBasicBlockID,
+        instruction: usize,
+        target: MIRBasicBlockID,
+        expected: usize,
+        actual: usize,
+    },
+    BlockArgumentType {
+        function: MIRFunctionID,
+        source: MIRBasicBlockID,
+        instruction: usize,
+        target: MIRBasicBlockID,
+        argument: usize,
+        expected: String,
+        actual: String,
+    },
+    VariantSwitchCaseOutOfRange {
+        function: MIRFunctionID,
+        block: MIRBasicBlockID,
+        instruction: usize,
+        variant: usize,
+        variant_count: usize,
+    },
+    DuplicateVariantSwitchCase {
+        function: MIRFunctionID,
+        block: MIRBasicBlockID,
+        instruction: usize,
+        variant: usize,
+    },
+    TypeMismatch {
+        function: MIRFunctionID,
+        block: MIRBasicBlockID,
+        instruction: usize,
+        entity: &'static str,
+        expected: String,
+        actual: String,
+    },
+}
+
+impl fmt::Display for MIRValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NonDenseId {
+                entity,
+                function,
+                position,
+                actual,
+            } => {
+                write!(f, "non-dense {entity} ID")?;
+                if let Some(function) = function {
+                    write!(f, " in function {function}")?;
+                }
+                write!(f, ": slot {position} contains ID {actual}")
+            }
+            Self::MissingEntry { function } => {
+                write!(f, "function {function} has blocks but no entry block")
+            }
+            Self::EntryOnDeclaration { function, entry } => write!(
+                f,
+                "function declaration {function} has entry block {entry} but no blocks"
+            ),
+            Self::IdOutOfRange {
+                function,
+                block,
+                instruction,
+                entity,
+                id,
+                upper_bound,
+            } => {
+                write!(
+                    f,
+                    "{entity} ID {id} is out of range 0..{upper_bound} in function {function}"
+                )?;
+                if let Some(block) = block {
+                    write!(f, ", block {block}")?;
+                }
+                if let Some(instruction) = instruction {
+                    write!(f, ", instruction {instruction}")?;
+                }
+                Ok(())
+            }
+            Self::EmptyBlock { function, block } => {
+                write!(f, "function {function} contains empty block {block}")
+            }
+            Self::UnterminatedBlock { function, block } => {
+                write!(f, "function {function} block {block} is not terminated")
+            }
+            Self::InstructionAfterTerminator {
+                function,
+                block,
+                terminator,
+                instruction,
+            } => write!(
+                f,
+                "function {function} block {block} has instruction {instruction} after terminator {terminator}"
+            ),
+            Self::EntryBlockParameters { function, entry } => write!(
+                f,
+                "function {function} entry block {entry} cannot declare CFG parameters"
+            ),
+            Self::DuplicateBlockParameter {
+                function,
+                block,
+                register,
+            } => write!(
+                f,
+                "function {function} block {block} reuses block parameter register {register}"
+            ),
+            Self::DuplicateRegisterDefinition {
+                function,
+                block,
+                instruction,
+                register,
+            } => write!(
+                f,
+                "function {function} block {block} instruction {instruction} redefines register {register}"
+            ),
+            Self::UndefinedRegister { function, register } => {
+                write!(f, "function {function} never defines register {register}")
+            }
+            Self::BlockArgumentCount {
+                function,
+                source,
+                instruction,
+                target,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "function {function} block {source} instruction {instruction} passes {actual} arguments to {target}, expected {expected}"
+            ),
+            Self::BlockArgumentType {
+                function,
+                source,
+                instruction,
+                target,
+                argument,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "function {function} block {source} instruction {instruction} passes {actual} as argument {argument} to {target}, expected {expected}"
+            ),
+            Self::VariantSwitchCaseOutOfRange {
+                function,
+                block,
+                instruction,
+                variant,
+                variant_count,
+            } => write!(
+                f,
+                "function {function} block {block} instruction {instruction} switches on variant {variant}, but the sum has {variant_count} variants"
+            ),
+            Self::DuplicateVariantSwitchCase {
+                function,
+                block,
+                instruction,
+                variant,
+            } => write!(
+                f,
+                "function {function} block {block} instruction {instruction} repeats variant case {variant}"
+            ),
+            Self::TypeMismatch {
+                function,
+                block,
+                instruction,
+                entity,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "function {function} block {block} instruction {instruction} has {entity} type {actual}, expected {expected}"
+            ),
+        }
+    }
+}
+
+impl MIRValidationError {
+    pub fn instruction_location(&self) -> Option<(MIRFunctionID, MIRBasicBlockID, usize)> {
+        match self {
+            Self::IdOutOfRange {
+                function,
+                block: Some(block),
+                instruction: Some(instruction),
+                ..
+            } => Some((*function, *block, *instruction)),
+            Self::InstructionAfterTerminator {
+                function,
+                block,
+                instruction,
+                ..
+            }
+            | Self::DuplicateRegisterDefinition {
+                function,
+                block,
+                instruction,
+                ..
+            }
+            | Self::BlockArgumentCount {
+                function,
+                source: block,
+                instruction,
+                ..
+            }
+            | Self::BlockArgumentType {
+                function,
+                source: block,
+                instruction,
+                ..
+            }
+            | Self::VariantSwitchCaseOutOfRange {
+                function,
+                block,
+                instruction,
+                ..
+            }
+            | Self::DuplicateVariantSwitchCase {
+                function,
+                block,
+                instruction,
+                ..
+            }
+            | Self::TypeMismatch {
+                function,
+                block,
+                instruction,
+                ..
+            } => Some((*function, *block, *instruction)),
+            _ => None,
+        }
+    }
+}
+
+/// Validate all structural and type invariants of an MIR unit.
+pub fn validate(unit: &MIRUnit) -> Result<(), MIRValidationError> {
+    unit.validate_internal()
+}
+
+impl Error for MIRValidationError {}

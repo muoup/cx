@@ -1,10 +1,10 @@
-use cx_ast::ast::expression::CXExpression;
-use cx_ast::ast::template::CXTemplateInput;
+use cx_hir::ast::expression::HIRExpression;
+use cx_hir::ast::template::HIRTemplateInput;
 use cx_log::{CXRawResult, CXResult};
 use cx_thir::EnvironmentNamespace;
+use cx_thir::symbol::MIRSymbol;
 use cx_thir::thir::data::{THIRComptimeFnPrototype, THIRType, THIRTypeID};
 use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind, THIRLocalID};
-use cx_thir::symbol::MIRSymbol;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
 
@@ -56,7 +56,7 @@ pub enum TypecheckState {
     Comptime(ComptimeTypecheckValue),
     IncompleteTemplatedCallee {
         name: QualifiedName,
-        template_input: Option<CXTemplateInput>,
+        template_input: Option<HIRTemplateInput>,
     },
     NeedsExpectedType(ExpectedTypeDeferredExpr),
 }
@@ -74,7 +74,7 @@ pub enum ComptimeTypecheckValue {
 pub struct StagedFunctionValue {
     pub namespace: EnvironmentNamespace,
     pub params: Vec<(CXIdent, THIRType)>,
-    pub body: Box<CXExpression>,
+    pub body: Box<HIRExpression>,
     pub return_type: THIRType,
 }
 
@@ -82,13 +82,13 @@ pub struct StagedFunctionValue {
 pub struct ComptimeFunctionValue {
     pub prototype: THIRComptimeFnPrototype,
     pub namespace: EnvironmentNamespace,
-    pub body: Box<CXExpression>,
+    pub body: Box<HIRExpression>,
     pub template_bindings: Vec<(CXIdent, THIRTypeID)>,
 }
 
 pub struct IncompleteTemplate {
     pub name: QualifiedName,
-    pub template_input: Option<CXTemplateInput>,
+    pub template_input: Option<HIRTemplateInput>,
 }
 
 type ExpectedTypeResolver =
@@ -101,7 +101,11 @@ pub struct ExpectedTypeDeferredExpr {
 impl ExpectedTypeDeferredExpr {
     pub fn new<F>(resolver: F) -> Self
     where
-        F: FnOnce(&mut TypeEnvironment, &EnvironmentNamespace, &THIRType) -> CXResult<THIRExpression>
+        F: FnOnce(
+                &mut TypeEnvironment,
+                &EnvironmentNamespace,
+                &THIRType,
+            ) -> CXResult<THIRExpression>
             + 'static,
     {
         Self {
@@ -207,7 +211,7 @@ impl TypecheckResult {
 
     pub fn incomplete_template(
         name: QualifiedName,
-        template_input: Option<CXTemplateInput>,
+        template_input: Option<HIRTemplateInput>,
     ) -> Self {
         Self {
             expression: TypecheckState::IncompleteTemplatedCallee {
@@ -254,7 +258,11 @@ impl TypecheckResult {
 
     pub fn needs_expected_type<F>(resolver: F) -> Self
     where
-        F: FnOnce(&mut TypeEnvironment, &EnvironmentNamespace, &THIRType) -> CXResult<THIRExpression>
+        F: FnOnce(
+                &mut TypeEnvironment,
+                &EnvironmentNamespace,
+                &THIRType,
+            ) -> CXResult<THIRExpression>
             + 'static,
     {
         Self {
@@ -371,7 +379,7 @@ impl TypecheckResult {
     pub fn from_symbol(
         symbol: MIRSymbol,
         name: QualifiedName,
-        template_input: Option<CXTemplateInput>,
+        template_input: Option<HIRTemplateInput>,
     ) -> CXRawResult<Self> {
         if matches!(symbol, MIRSymbol::Template { .. }) {
             return Ok(Self::incomplete_template(name, template_input));

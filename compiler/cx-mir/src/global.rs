@@ -1,6 +1,5 @@
-use cx_ast::ast::modifiers::CXLinkageMode;
 use cx_tokens::TokenRange;
-use cx_util::identifier::CXIdent;
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
     expr::{
@@ -42,7 +41,7 @@ pub struct MIRGlobalVariable {
     pub id: MIRGlobalID,
     pub name: CXIdent,
     pub ty: MIRTypeID,
-    pub linkage: CXLinkageMode,
+    pub linkage: LinkageMode,
     pub state: MIRGlobalState,
     pub is_mutable: bool,
     pub nodrop: bool,
@@ -53,7 +52,7 @@ impl MIRGlobalVariable {
         id: MIRGlobalID,
         name: CXIdent,
         ty: MIRTypeID,
-        linkage: CXLinkageMode,
+        linkage: LinkageMode,
         is_mutable: bool,
     ) -> Self {
         Self {
@@ -61,7 +60,7 @@ impl MIRGlobalVariable {
             name,
             ty,
             linkage,
-            state: if linkage == CXLinkageMode::Extern {
+            state: if linkage == LinkageMode::Extern {
                 MIRGlobalState::External
             } else {
                 MIRGlobalState::ZeroInitialized
@@ -109,20 +108,18 @@ pub struct MIRFnSignature {
     pub params: Vec<MIRFnParam>,
     pub return_type: MIRTypeID,
     pub variadic: bool,
+    pub safe: bool,
 }
 
 impl MIRFnSignature {
-    pub fn new(
-        symbol_name: CXIdent,
-        params: Vec<MIRFnParam>,
-        return_type: MIRTypeID,
-    ) -> Self {
+    pub fn new(symbol_name: CXIdent, params: Vec<MIRFnParam>, return_type: MIRTypeID) -> Self {
         Self {
             symbol_name,
             debug_name: None,
             params,
             return_type,
             variadic: false,
+            safe: false,
         }
     }
 
@@ -134,11 +131,11 @@ impl MIRFnSignature {
 #[derive(Debug, Clone)]
 pub struct MIRFnPrototype {
     pub signature: MIRFnSignature,
-    pub linkage: CXLinkageMode,
+    pub linkage: LinkageMode,
 }
 
 impl MIRFnPrototype {
-    pub fn new(signature: MIRFnSignature, linkage: CXLinkageMode) -> Self {
+    pub fn new(signature: MIRFnSignature, linkage: LinkageMode) -> Self {
         Self { signature, linkage }
     }
 }

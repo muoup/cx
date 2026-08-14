@@ -1,17 +1,17 @@
 use crate::{environment::TypeEnvironment, type_checking::result::TypecheckResult};
-use cx_ast::ast::modifiers::{CX_CONST, CXLinkageMode};
+use cx_hir::ast::modifiers::HIR_CONST;
 use cx_log::CXResult;
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
-    expression::{THIRExpression, THIRExpressionKind, SymbolValueOrigin},
+    expression::{SymbolValueOrigin, THIRExpression, THIRExpressionKind},
     global::{MIRGlobalVarKind, MIRGlobalVariable},
 };
 use cx_tokens::{
     TokenRange,
     token::{FloatSuffix, IntegerBase, IntegerLength, IntegerSuffix},
 };
-use cx_util::identifier::CXIdent;
 use cx_util::unsafe_float::FloatWrapper;
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 fn anonymous_name_gen() -> String {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -117,12 +117,12 @@ pub(crate) fn typecheck_string_literal(env: &mut TypeEnvironment, val: &str) -> 
             value: val.to_string(),
         },
         is_mutable: false,
-        linkage: CXLinkageMode::Static,
+        linkage: LinkageMode::Static,
     });
 
     let str_ref_type = env
         .symbols
-        .mem_ref_to(THIRType::from(THIRTypeKind::Str).add_specifier(CX_CONST));
+        .mem_ref_to(THIRType::from(THIRTypeKind::Str).add_specifier(HIR_CONST));
 
     TypecheckResult::from(THIRExpression {
         token_range: TokenRange::internal(),

@@ -2,7 +2,7 @@ use crate::{
     environment::TypeEnvironment, type_checking::result::TypecheckResult,
     type_checking::typechecker::typecheck_expr,
 };
-use cx_ast::ast::expression::CXExpression;
+use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
 use cx_thir::{
     EnvironmentNamespace,
@@ -12,7 +12,7 @@ use cx_thir::{
 pub(crate) fn typecheck_unsafe(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    inner: &CXExpression,
+    inner: &HIRExpression,
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     env.push_unsafe();

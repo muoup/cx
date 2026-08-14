@@ -1,4 +1,4 @@
-use cx_ast::ast::expression::{CXExprKind, CXExpression};
+use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
 use cx_log::CXResult;
 use cx_tokens::{
     keyword, punctuator,
@@ -18,7 +18,7 @@ use crate::{
     try_next,
 };
 
-pub(crate) fn parse_stmt(data: &mut ParserData) -> CXResult<CXExpression> {
+pub(crate) fn parse_stmt(data: &mut ParserData) -> CXResult<HIRExpression> {
     let start_index = data.tokens.index;
 
     try_parse_stmt(data)?.map(Result::Ok).unwrap_or_else(|| {
@@ -40,7 +40,7 @@ pub(crate) fn parse_stmt(data: &mut ParserData) -> CXResult<CXExpression> {
     })
 }
 
-pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<CXExpression>> {
+pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<HIRExpression>> {
     match next_kind!(data.tokens)? {
         TokenKind::Keyword(keyword) => {
             let keyword = *keyword;
@@ -51,7 +51,7 @@ pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<CXExpress
         }
 
         punctuator!(Semicolon) => {
-            return Ok(Some(CXExprKind::Void.into_expr(
+            return Ok(Some(HIRExprKind::Void.into_expr(
                 data.tokens.index,
                 data.tokens.index,
                 data.file_origin.clone(),
@@ -79,7 +79,7 @@ pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<CXExpress
 pub(crate) fn try_parse_keyword_stmt(
     data: &mut ParserData,
     keyword_type: KeywordType,
-) -> CXResult<Option<CXExpression>> {
+) -> CXResult<Option<HIRExpression>> {
     let start = data.tokens.index - 1;
 
     Ok(match keyword_type {
@@ -102,7 +102,7 @@ pub(crate) fn try_parse_keyword_stmt(
                 None
             };
 
-            Some(CXExprKind::If {
+            Some(HIRExprKind::If {
                 condition: Box::new(expr),
                 then_branch: Box::new(then_body),
                 else_branch: else_body.map(Box::new),
@@ -151,7 +151,7 @@ pub(crate) fn try_parse_keyword_stmt(
                 block.push(expr);
             }
 
-            Some(CXExprKind::Switch {
+            Some(HIRExprKind::Switch {
                 condition: Box::new(expr),
                 block,
                 cases,
@@ -167,7 +167,7 @@ pub(crate) fn try_parse_keyword_stmt(
                 "';' after deferred expression"
             );
 
-            Some(CXExprKind::Defer {
+            Some(HIRExprKind::Defer {
                 expr: Box::new(deferred),
             })
         }
@@ -204,7 +204,7 @@ pub(crate) fn try_parse_keyword_stmt(
 
             data.pop_comma_mode();
 
-            Some(CXExprKind::Match {
+            Some(HIRExprKind::Match {
                 condition: Box::new(expr),
                 arms,
                 default: default_arm,
@@ -219,7 +219,7 @@ pub(crate) fn try_parse_keyword_stmt(
             assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
             assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
 
-            Some(CXExprKind::While {
+            Some(HIRExprKind::While {
                 condition: Box::new(expr),
                 body: Box::new(body),
                 pre_eval: false,
@@ -232,15 +232,15 @@ pub(crate) fn try_parse_keyword_stmt(
             assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
             let body = parse_stmt(data)?;
 
-            Some(CXExprKind::While {
+            Some(HIRExprKind::While {
                 condition: Box::new(expr),
                 body: Box::new(body),
                 pre_eval: true,
             })
         }
 
-        KeywordType::Break => Some(CXExprKind::Break),
-        KeywordType::Continue => Some(CXExprKind::Continue),
+        KeywordType::Break => Some(HIRExprKind::Break),
+        KeywordType::Continue => Some(HIRExprKind::Continue),
         KeywordType::For => {
             assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
 
@@ -250,7 +250,7 @@ pub(crate) fn try_parse_keyword_stmt(
                 data.tokens.peek().map(|token| &token.kind),
                 Some(punctuator!(Semicolon))
             ) {
-                CXExprKind::IntLiteral {
+                HIRExprKind::IntLiteral {
                     magnitude: 1,
                     base: IntegerBase::Decimal,
                     suffix: cx_tokens::token::IntegerSuffix::default(),
@@ -269,7 +269,7 @@ pub(crate) fn try_parse_keyword_stmt(
                 data.tokens.peek().map(|token| &token.kind),
                 Some(punctuator!(CloseParen))
             ) {
-                CXExprKind::Void.into_expr(
+                HIRExprKind::Void.into_expr(
                     data.tokens.index,
                     data.tokens.index,
                     data.file_origin_for_range(data.tokens.index, data.tokens.index),
@@ -281,7 +281,7 @@ pub(crate) fn try_parse_keyword_stmt(
 
             let body = parse_stmt(data)?;
 
-            Some(CXExprKind::For {
+            Some(HIRExprKind::For {
                 init: Box::new(init),
                 condition: Box::new(condition),
                 increment: Box::new(increment),
@@ -300,7 +300,7 @@ pub(crate) fn try_parse_keyword_stmt(
     }))
 }
 
-pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<CXExpression> {
+pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpression> {
     let start_index = data.tokens.index;
 
     let specifiers = parse_specifier(&mut data.tokens);
@@ -324,7 +324,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<CXExpres
             };
 
             decls.push(
-                CXExprKind::VarDeclaration {
+                HIRExprKind::VarDeclaration {
                     _type,
                     name,
                     initial_value,
@@ -352,7 +352,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<CXExpres
     if decls.len() == 1 {
         Ok(decls.pop().unwrap())
     } else {
-        Ok(CXExprKind::Block {
+        Ok(HIRExprKind::Block {
             exprs: decls,
             creates_scope: false,
         }

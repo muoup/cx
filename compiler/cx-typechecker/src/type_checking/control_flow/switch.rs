@@ -1,10 +1,10 @@
 use crate::environment::{ScopeExitTarget, TypeEnvironment};
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
-use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::control_flow::append_current_scope_cleanups;
+use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::expression::CXExpression;
+use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
 use cx_thir::thir::{
@@ -16,8 +16,8 @@ use cx_tokens::TokenRange;
 pub fn typecheck_switch(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    condition: &CXExpression,
-    block: &[CXExpression],
+    condition: &HIRExpression,
+    block: &[HIRExpression],
     cases: &[(u64, usize)],
     default_case: Option<&usize>,
 ) -> CXResult<TypecheckResult> {

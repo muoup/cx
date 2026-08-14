@@ -7,21 +7,24 @@ use crate::{
         typechecker::typecheck_expr,
     },
 };
-use cx_ast::ast::{expression::CXExpression, template::CXTemplateInput};
+use cx_hir::ast::{expression::HIRExpression, template::HIRTemplateInput};
 use cx_log::CXResult;
 use cx_thir::{
     EnvironmentNamespace,
-    thir::expression::{THIRExpressionKind, SymbolValueOrigin},
     symbol::MIRSymbol,
+    thir::{
+        data::THIRTypeKind,
+        expression::{SymbolValueOrigin, THIRExpressionKind},
+    },
 };
 use cx_util::namespace::QualifiedName;
 
 pub(crate) fn typecheck_identifier(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
+    expr: &HIRExpression,
     name: &QualifiedName,
-    template_input: Option<&CXTemplateInput>,
+    template_input: Option<&HIRTemplateInput>,
 ) -> CXResult<TypecheckResult> {
     let Some(mut symbol) = env.get_symbol(namespace, name)? else {
         return env.log_error(
@@ -66,6 +69,24 @@ pub(crate) fn typecheck_identifier(
 
     let result = TypecheckResult::from_symbol(symbol, name.clone(), template_input.cloned())
         .map_err(|err| env.error(expr.token_range(), err.message().to_string()))?;
+
+    if env.function.in_safe_context()
+        && let Some(expression) = result.ready_expression()
+        && let THIRExpressionKind::FunctionReference {
+            name: symbol_name,
+            debug_name,
+        } = &expression.kind
+        && let THIRTypeKind::Function { signature } = &expression._type.kind
+        && !signature.contract.safe
+    {
+        let display_name = debug_name.as_ref().unwrap_or(symbol_name);
+        return env.log_error(
+            expr.token_range(),
+            format!(
+                "References to unsafe function `{display_name}` may not be used in safe contexts"
+            ),
+        );
+    }
 
     let binding = match result.ready_expression().map(|expr| &expr.kind) {
         Some(THIRExpressionKind::Variable {

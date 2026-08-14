@@ -1,11 +1,11 @@
-use cx_ast::ast::{
-    expression::{CXExprKind, CXExpression},
-    function::CXFunctionPrototype,
-    global_var::CXGlobalVariable,
-    modifiers::{CXLinkageMode, CXSymbolNameScheme},
-    template::CXTemplatePrototype,
-    types::CXTypeKind,
-    CXASTStmt,
+use cx_hir::ast::{
+    expression::{HIRExprKind, HIRExpression},
+    function::HIRFunctionPrototype,
+    global_var::HIRGlobalVariable,
+    modifiers::{LinkageMode, HIRSymbolNameScheme},
+    template::HIRTemplatePrototype,
+    types::HIRTypeKind,
+    HIRStmt,
 };
 use cx_log::CXResult;
 use cx_preparse_data::VisibilityMode;
@@ -127,7 +127,7 @@ fn parse_extern_c_mod(data: &mut ParserData) -> CXResult<()> {
     assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
 
     data.visibility = visibility;
-    data.symbol_naming = CXSymbolNameScheme::Unmangled;
+    data.symbol_naming = HIRSymbolNameScheme::Unmangled;
 
     Ok(())
 }
@@ -139,13 +139,13 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
         SpecifierType::Public => {
             data.visibility = VisibilityMode::Public;
             if !data.in_include() {
-                data.symbol_naming = CXSymbolNameScheme::Namespaced;
+                data.symbol_naming = HIRSymbolNameScheme::Namespaced;
             }
         }
         SpecifierType::Private => {
             data.visibility = VisibilityMode::Private;
             if !data.in_include() {
-                data.symbol_naming = CXSymbolNameScheme::Namespaced;
+                data.symbol_naming = HIRSymbolNameScheme::Namespaced;
             }
         }
 
@@ -174,7 +174,7 @@ fn parse_comptime_fn_merge(data: &mut ParserData) -> CXResult<()> {
         parse_body(data)
     }?;
 
-    data.add_stmt(CXASTStmt::ComptimeFunctionDefinition {
+    data.add_stmt(HIRStmt::ComptimeFunctionDefinition {
         prototype: func.prototype,
         visibility: data.visibility,
         template_prototype: func.template_prototype,
@@ -205,7 +205,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
 
     assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
 
-    if let CXTypeKind::Identifier {
+    if let HIRTypeKind::Identifier {
         name: type_name,
         template_input: None,
         ..
@@ -216,7 +216,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
         }
     };
 
-    data.add_stmt(CXASTStmt::TypeDefinition {
+    data.add_stmt(HIRStmt::TypeDefinition {
         name: Some(name),
         visibility: data.visibility,
         _type: _type.clone(),
@@ -228,8 +228,8 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
 
 fn parse_fn_merge(
     data: &mut ParserData,
-    mut prototype: CXFunctionPrototype,
-    template_prototype: Option<CXTemplatePrototype>,
+    mut prototype: HIRFunctionPrototype,
+    template_prototype: Option<HIRTemplatePrototype>,
     inherited_external: bool,
 ) -> CXResult<()> {
     if try_next!(data.tokens, punctuator!(Semicolon)) {
@@ -241,10 +241,10 @@ fn parse_fn_merge(
         }
 
         if inherited_external {
-            prototype.linkage = CXLinkageMode::Extern;
+            prototype.linkage = LinkageMode::Extern;
         }
 
-        data.add_stmt(CXASTStmt::FunctionDefinition {
+        data.add_stmt(HIRStmt::FunctionDefinition {
             prototype,
             visibility: data.visibility,
             template_prototype: None,
@@ -260,7 +260,7 @@ fn parse_fn_merge(
             parse_body(data)
         }?;
 
-        data.add_stmt(CXASTStmt::FunctionDefinition {
+        data.add_stmt(HIRStmt::FunctionDefinition {
             prototype,
             visibility: data.visibility,
             body: Some(Box::new(body)),
@@ -275,7 +275,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
     let (name, return_type, linkage) = parse_initializer(data)?;
     let symbol_naming = data.symbol_naming;
     let inherited_external =
-        symbol_naming == CXSymbolNameScheme::Unmangled && linkage == CXLinkageMode::Standard;
+        symbol_naming == HIRSymbolNameScheme::Unmangled && linkage == LinkageMode::Standard;
 
     let Some(name) = name else {
         // Blank statement consisting on just a type, (i.e. struct [name] { [fields] };)
@@ -310,9 +310,9 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
         TokenKind::Assignment(_) => {
             let initial_value = parse_expr(data)?;
             assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
-            data.add_stmt(CXASTStmt::GlobalVariableDefinition {
+            data.add_stmt(HIRStmt::GlobalVariableDefinition {
                 visibility: data.visibility,
-                variable: CXGlobalVariable::Standard {
+                variable: HIRGlobalVariable::Standard {
                     name: name.clone(),
                     _type: return_type.clone(),
                     is_mutable: true,
@@ -324,14 +324,14 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
         }
 
         punctuator!(Semicolon) => {
-            data.add_stmt(CXASTStmt::GlobalVariableDefinition {
+            data.add_stmt(HIRStmt::GlobalVariableDefinition {
                 visibility: data.visibility,
-                variable: CXGlobalVariable::Standard {
+                variable: HIRGlobalVariable::Standard {
                     name: name.clone(),
                     _type: return_type.clone(),
                     is_mutable: true,
                     linkage: if inherited_external {
-                        CXLinkageMode::Extern
+                        LinkageMode::Extern
                     } else {
                         linkage
                     },
@@ -355,13 +355,13 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
     Ok(())
 }
 
-pub(crate) fn parse_block(data: &mut ParserData) -> CXResult<CXExpression> {
+pub(crate) fn parse_block(data: &mut ParserData) -> CXResult<HIRExpression> {
     assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
 
     let start_index = data.tokens.index - 1;
     let body = parse_block_statements(data)?;
 
-    Ok(CXExprKind::Block {
+    Ok(HIRExprKind::Block {
         exprs: body,
         creates_scope: true,
     }
@@ -372,7 +372,7 @@ pub(crate) fn parse_block(data: &mut ParserData) -> CXResult<CXExpression> {
     ))
 }
 
-fn parse_block_statements(data: &mut ParserData) -> CXResult<Vec<CXExpression>> {
+fn parse_block_statements(data: &mut ParserData) -> CXResult<Vec<HIRExpression>> {
     let mut body = Vec::new();
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
@@ -396,7 +396,7 @@ fn parse_block_statements(data: &mut ParserData) -> CXResult<Vec<CXExpression>> 
             let continuation_start = data.tokens.index;
             let continuation = parse_block_statements(data)?;
 
-            let continuation = CXExprKind::Block {
+            let continuation = HIRExprKind::Block {
                 exprs: continuation,
                 creates_scope: false,
             }
@@ -416,58 +416,58 @@ fn parse_block_statements(data: &mut ParserData) -> CXResult<Vec<CXExpression>> 
     Ok(body)
 }
 
-pub(crate) fn count_then_markers(expr: &CXExpression) -> usize {
+pub(crate) fn count_then_markers(expr: &HIRExpression) -> usize {
     match &expr.kind {
-        CXExprKind::Then => 1,
-        CXExprKind::BinOp { lhs, rhs, .. } => count_then_markers(lhs) + count_then_markers(rhs),
-        CXExprKind::UnOp { operand, .. }
-        | CXExprKind::Defer { expr: operand }
-        | CXExprKind::Emit { expr: operand }
-        | CXExprKind::Unsafe { expr: operand }
-        | CXExprKind::Leak { expr: operand }
-        | CXExprKind::Adopt { expr: operand } => count_then_markers(operand),
-        CXExprKind::StagedExpression { body, .. } => count_then_markers(body),
-        CXExprKind::Block { exprs, .. } => exprs.iter().map(count_then_markers).sum(),
+        HIRExprKind::Then => 1,
+        HIRExprKind::BinOp { lhs, rhs, .. } => count_then_markers(lhs) + count_then_markers(rhs),
+        HIRExprKind::UnOp { operand, .. }
+        | HIRExprKind::Defer { expr: operand }
+        | HIRExprKind::Emit { expr: operand }
+        | HIRExprKind::Unsafe { expr: operand }
+        | HIRExprKind::Leak { expr: operand }
+        | HIRExprKind::Adopt { expr: operand } => count_then_markers(operand),
+        HIRExprKind::StagedExpression { body, .. } => count_then_markers(body),
+        HIRExprKind::Block { exprs, .. } => exprs.iter().map(count_then_markers).sum(),
         _ => 0,
     }
 }
 
-pub(crate) fn count_capturing_then_markers(expr: &CXExpression) -> usize {
+pub(crate) fn count_capturing_then_markers(expr: &HIRExpression) -> usize {
     match &expr.kind {
-        CXExprKind::StagedExpression { body, .. } if matches!(body.kind, CXExprKind::Then) => 1,
-        CXExprKind::StagedExpression { body, .. } => count_capturing_then_markers(body),
-        CXExprKind::BinOp { lhs, rhs, .. } => {
+        HIRExprKind::StagedExpression { body, .. } if matches!(body.kind, HIRExprKind::Then) => 1,
+        HIRExprKind::StagedExpression { body, .. } => count_capturing_then_markers(body),
+        HIRExprKind::BinOp { lhs, rhs, .. } => {
             count_capturing_then_markers(lhs) + count_capturing_then_markers(rhs)
         }
-        CXExprKind::UnOp { operand, .. }
-        | CXExprKind::Defer { expr: operand }
-        | CXExprKind::Emit { expr: operand }
-        | CXExprKind::Unsafe { expr: operand }
-        | CXExprKind::Leak { expr: operand }
-        | CXExprKind::Adopt { expr: operand } => count_capturing_then_markers(operand),
-        CXExprKind::Block { exprs, .. } => exprs.iter().map(count_capturing_then_markers).sum(),
+        HIRExprKind::UnOp { operand, .. }
+        | HIRExprKind::Defer { expr: operand }
+        | HIRExprKind::Emit { expr: operand }
+        | HIRExprKind::Unsafe { expr: operand }
+        | HIRExprKind::Leak { expr: operand }
+        | HIRExprKind::Adopt { expr: operand } => count_capturing_then_markers(operand),
+        HIRExprKind::Block { exprs, .. } => exprs.iter().map(count_capturing_then_markers).sum(),
         _ => 0,
     }
 }
 
-fn replace_then_marker(expr: &mut CXExpression, continuation: CXExpression) {
-    fn replace(expr: &mut CXExpression, continuation: &mut Option<CXExpression>) {
+fn replace_then_marker(expr: &mut HIRExpression, continuation: HIRExpression) {
+    fn replace(expr: &mut HIRExpression, continuation: &mut Option<HIRExpression>) {
         match &mut expr.kind {
-            CXExprKind::Then => *expr = continuation.take().unwrap(),
-            CXExprKind::BinOp { lhs, rhs, .. } => {
+            HIRExprKind::Then => *expr = continuation.take().unwrap(),
+            HIRExprKind::BinOp { lhs, rhs, .. } => {
                 replace(lhs, continuation);
                 if continuation.is_some() {
                     replace(rhs, continuation);
                 }
             }
-            CXExprKind::UnOp { operand, .. }
-            | CXExprKind::Defer { expr: operand }
-            | CXExprKind::Emit { expr: operand }
-            | CXExprKind::Unsafe { expr: operand }
-            | CXExprKind::Leak { expr: operand }
-            | CXExprKind::Adopt { expr: operand } => replace(operand, continuation),
-            CXExprKind::StagedExpression { body, .. } => replace(body, continuation),
-            CXExprKind::Block { exprs, .. } => {
+            HIRExprKind::UnOp { operand, .. }
+            | HIRExprKind::Defer { expr: operand }
+            | HIRExprKind::Emit { expr: operand }
+            | HIRExprKind::Unsafe { expr: operand }
+            | HIRExprKind::Leak { expr: operand }
+            | HIRExprKind::Adopt { expr: operand } => replace(operand, continuation),
+            HIRExprKind::StagedExpression { body, .. } => replace(body, continuation),
+            HIRExprKind::Block { exprs, .. } => {
                 for expr in exprs {
                     replace(expr, continuation);
                     if continuation.is_none() {
@@ -482,7 +482,7 @@ fn replace_then_marker(expr: &mut CXExpression, continuation: CXExpression) {
     replace(expr, &mut Some(continuation));
 }
 
-pub(crate) fn parse_body(data: &mut ParserData) -> CXResult<CXExpression> {
+pub(crate) fn parse_body(data: &mut ParserData) -> CXResult<HIRExpression> {
     if try_next!(data.tokens, punctuator!(OpenBrace)) {
         data.tokens.back();
         parse_block(data)

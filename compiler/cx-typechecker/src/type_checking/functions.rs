@@ -5,13 +5,13 @@ use crate::{
         value::ensure_valid_allocation_type,
     },
 };
-use cx_ast::ast::expression::CXExpression;
+use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
 use cx_thir::{
     EnvironmentNamespace,
     thir::{
-        data::{THIRFunction, THIRFnPrototype, THIRParameter},
-        expression::{THIRExpression, THIRExpressionKind, SymbolValueOrigin},
+        data::{THIRFnPrototype, THIRFunction, THIRParameter},
+        expression::{SymbolValueOrigin, THIRExpression, THIRExpressionKind},
     },
 };
 use cx_tokens::TokenRange;
@@ -21,8 +21,15 @@ pub fn typecheck_function(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     prototype: THIRFnPrototype,
-    body: &CXExpression,
+    body: &HIRExpression,
 ) -> CXResult<()> {
+    if prototype.signature().contract.safe && prototype.signature().var_args {
+        return env.log_error(
+            body.token_range(),
+            format!("Safe function '{}' may not use varargs", prototype.name()),
+        );
+    }
+
     env.function.begin_function(prototype.clone());
     env.push_scope(false, false);
     env.function.set_scope_anchor(body);
@@ -61,6 +68,10 @@ pub fn typecheck_function(
     let body_expr = typecheck_expr(env, namespace, body, None)
         .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
     let with_implicit_return = add_implicit_return(env, namespace, body_expr)?;
+
+    if prototype.signature().contract.safe {
+        crate::type_checking::safety::validate_safe_expression(env, &with_implicit_return)?;
+    }
 
     env.pop_scope()
         .map_err(|err| env.complete_err(err, body.token_range()))?;

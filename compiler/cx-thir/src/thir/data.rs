@@ -1,5 +1,5 @@
-use cx_ast::ast::{function::CXFunctionContract, modifiers::CXLinkageMode};
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_hir::ast::function::HIRFunctionContract;
+use cx_util::{identifier::CXIdent, linkage::LinkageMode, namespace::QualifiedName};
 
 use crate::thir::contextual_eq::{TypeComparisonState, TypeContextEqual, compare_ordered};
 use crate::thir::expression::{THIRExpression, THIRLocalID};
@@ -95,7 +95,7 @@ pub struct THIRFnSignature {
     pub return_type: THIRType,
     pub params: Vec<THIRParameter>,
     pub var_args: bool,
-    pub contract: CXFunctionContract,
+    pub contract: HIRFunctionContract,
 }
 
 impl Default for THIRFnSignature {
@@ -104,7 +104,7 @@ impl Default for THIRFnSignature {
             return_type: THIRTypeKind::Void.into(),
             params: Vec::new(),
             var_args: false,
-            contract: CXFunctionContract::default(),
+            contract: HIRFunctionContract::default(),
         }
     }
 }
@@ -134,14 +134,14 @@ pub struct THIRFnPrototype {
     symbol_name: String,
     lookup_identifier: Option<QualifiedName>,
     debug_name: Option<CXIdent>,
-    linkage: CXLinkageMode,
+    linkage: LinkageMode,
     signature: THIRFnSignature,
 }
 
 impl THIRFnPrototype {
     pub fn new(
         symbol_name: impl Into<String>,
-        linkage: CXLinkageMode,
+        linkage: LinkageMode,
         signature: THIRFnSignature,
     ) -> Self {
         Self {
@@ -173,7 +173,7 @@ impl THIRFnPrototype {
         &self.signature
     }
 
-    pub fn linkage(&self) -> CXLinkageMode {
+    pub fn linkage(&self) -> LinkageMode {
         self.linkage
     }
 

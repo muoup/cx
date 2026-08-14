@@ -6,7 +6,11 @@ use cx_thir::{
 
 use crate::environment::TypeEnvironment;
 
-pub fn compatible_types(env: &TypeEnvironment, type1: &THIRType, type2: &THIRType) -> CXResult<bool> {
+pub fn compatible_types(
+    env: &TypeEnvironment,
+    type1: &THIRType,
+    type2: &THIRType,
+) -> CXResult<bool> {
     if env.type_eq(type1, type2) {
         return Ok(true);
     }

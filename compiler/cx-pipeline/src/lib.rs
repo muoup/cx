@@ -7,7 +7,7 @@ use crate::linker::{link, link_relocatable};
 use crate::progress::ProgressReporter;
 use crate::scheduler::scheduling_loop;
 use crate::scheduler::scheduling_loop_collect_errors;
-use cx_ast::registry::ExportNameMode;
+use cx_hir::registry::ExportNameMode;
 use cx_log::{
     CXResult,
     error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},

@@ -8,11 +8,11 @@ use crate::{
         value::ensure_valid_allocation_type,
     },
 };
-use cx_ast::ast::{expression::CXExpression, types::CXType};
+use cx_hir::ast::{expression::HIRExpression, types::HIRType};
 use cx_log::CXResult;
 use cx_thir::{
     EnvironmentNamespace,
-    thir::expression::{THIRExpression, THIRExpressionKind, THIRLocalID, SymbolValueOrigin},
+    thir::expression::{SymbolValueOrigin, THIRExpression, THIRExpressionKind, THIRLocalID},
 };
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
@@ -32,9 +32,10 @@ pub(crate) fn ensure_binding_available(
 
     match state.state {
         BindingMoveState::Available => Ok(()),
-        BindingMoveState::Moved => {
-            env.log_error(range, format!("Identifier '{}' has been moved", binding.root))
-        }
+        BindingMoveState::Moved => env.log_error(
+            range,
+            format!("Identifier '{}' has been moved", binding.root),
+        ),
         BindingMoveState::ConditionallyMoved => env.log_error(
             range,
             format!(
@@ -51,10 +52,7 @@ pub(crate) fn mark_binding(
     state: BindingMoveState,
 ) {
     if binding.kind == BindingPlaceKind::Local
-        && env
-            .function
-            .tracked_binding(binding.local_id)
-            .is_some()
+        && env.function.tracked_binding(binding.local_id).is_some()
     {
         env.function
             .set_tracked_binding_state(binding.local_id, state);
@@ -64,10 +62,10 @@ pub(crate) fn mark_binding(
 pub(crate) fn typecheck_var_declaration(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
-    ty: &CXType,
+    expr: &HIRExpression,
+    ty: &HIRType,
     name: &CXIdent,
-    initial_value: Option<&CXExpression>,
+    initial_value: Option<&HIRExpression>,
 ) -> CXResult<TypecheckResult> {
     let ty = complete_type(env, namespace, ty)?;
 

@@ -1,4 +1,4 @@
-use cx_ast::ast::modifiers::{CX_CONST, CX_RESTRICT, CX_VOLATILE, CXTypeQualifiers};
+use cx_hir::ast::modifiers::{HIR_CONST, HIR_RESTRICT, HIR_VOLATILE, HIRTypeQualifiers};
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::thir::data::{THIRFnPrototype, THIRFnSignature, THIRParameter};
@@ -282,15 +282,15 @@ fn write_type_id(
 
 fn write_type_qualifiers_prefix(
     f: &mut Formatter<'_>,
-    specifiers: CXTypeQualifiers,
+    specifiers: HIRTypeQualifiers,
 ) -> std::fmt::Result {
-    if specifiers & CX_CONST != 0 {
+    if specifiers & HIR_CONST != 0 {
         write!(f, "const ")?;
     }
-    if specifiers & CX_VOLATILE != 0 {
+    if specifiers & HIR_VOLATILE != 0 {
         write!(f, "volatile ")?;
     }
-    if specifiers & CX_RESTRICT != 0 {
+    if specifiers & HIR_RESTRICT != 0 {
         write!(f, "restrict ")?;
     }
 
@@ -299,15 +299,15 @@ fn write_type_qualifiers_prefix(
 
 fn write_type_qualifiers_suffix(
     f: &mut Formatter<'_>,
-    specifiers: CXTypeQualifiers,
+    specifiers: HIRTypeQualifiers,
 ) -> std::fmt::Result {
-    if specifiers & CX_CONST != 0 {
+    if specifiers & HIR_CONST != 0 {
         write!(f, " const")?;
     }
-    if specifiers & CX_VOLATILE != 0 {
+    if specifiers & HIR_VOLATILE != 0 {
         write!(f, " volatile")?;
     }
-    if specifiers & CX_RESTRICT != 0 {
+    if specifiers & HIR_RESTRICT != 0 {
         write!(f, " restrict")?;
     }
 

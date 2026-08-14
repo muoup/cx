@@ -5,7 +5,7 @@ use cx_log::{
     CXResult,
     error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
 };
-use cx_mir_analysis::{MIRAnalysisError, MIRAnalysisOptions, analyze};
+use cx_mir_analysis::{MIRAnalysisOptions, analyze};
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::preparse::PreparseConfig;
 use cx_parsing::{decompose_ast, parse_ast, preparse};
@@ -18,7 +18,6 @@ use cx_pipeline_data::jobs::{
 use cx_pipeline_data::{
     CompilationMode, CompilationUnit, CompilerBackend, GlobalCompilationContext,
 };
-use cx_safe_analyzer::FMIRContext;
 use cx_thir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_thir_lowering::generate_mir;
 use cx_tokens::TokenIter;
@@ -411,18 +410,6 @@ pub(crate) fn perform_job(
                 dump_data(&thir.display_pretty());
             }
 
-            // There is likely a better way to do this, but for now, we unconditionally generate FMIR no matter if analysis
-            // is enabled to have a central source of truth for auditing safe functions for uncontained unsafe behavior.
-            let mut fmir_context = FMIRContext::new_from(&thir, &context.module_db)?;
-
-            if !job.unit.is_std_lib() || context.config.verbose {
-                dump_data(&fmir_context);
-            }
-
-            if !context.config.unsafe_mode {
-                fmir_context.apply_standard_analysis_passes()?;
-            }
-
             context.module_db.thir.insert(job.unit.clone(), thir);
         }
 
@@ -438,22 +425,21 @@ pub(crate) fn perform_job(
                 &mir,
                 MIRAnalysisOptions {
                     validate: !context.config.unsafe_mode,
+                    check_assertions: !context.config.unsafe_mode,
                 },
             )
             .map_err(|error| {
-                let diagnostic_context = match &error {
-                    MIRAnalysisError::Validation(validation) => mir
-                        .validation_error_range(validation)
-                        .map(|range| context.module_db.convert_token_range(range)),
-                }
-                .unwrap_or_else(|| {
-                    CXInternalContext::error("MIR analysis failed outside source context")
-                });
+                let diagnostic_context = error
+                    .instruction_location()
+                    .and_then(|(function, block, instruction)| {
+                        mir.instruction_range(function, block, instruction)
+                    })
+                    .map(|range| context.module_db.convert_token_range(range))
+                    .unwrap_or_else(|| {
+                        CXInternalContext::error("MIR analysis failed outside source context")
+                    });
                 CXErr::new(
-                    CXStdErrMessage::error(
-                        "ANALYSIS ERROR",
-                        format!("{error}"),
-                    ),
+                    CXStdErrMessage::error("ANALYSIS ERROR", format!("{error}")),
                     diagnostic_context,
                 )
             })?;

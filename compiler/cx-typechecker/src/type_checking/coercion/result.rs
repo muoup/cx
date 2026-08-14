@@ -60,7 +60,10 @@ impl CoercionResult {
         Ok(CoercionResult::Unapplied { expr, cause: None })
     }
 
-    pub fn unapplied_with_obstacle(expr: THIRExpression, cause: CoercionObstacle) -> CXResult<Self> {
+    pub fn unapplied_with_obstacle(
+        expr: THIRExpression,
+        cause: CoercionObstacle,
+    ) -> CXResult<Self> {
         Ok(CoercionResult::Unapplied {
             expr,
             cause: Some(cause),

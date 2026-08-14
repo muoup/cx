@@ -1,7 +1,7 @@
 use crate::thir::data::{THIRType, THIRTypeKind};
 use crate::thir::r#type::THIRField;
 use crate::type_context::THIRTypeContext;
-use cx_ast::registry::{ExportNameMode, GlobalSymbolRegistry};
+use cx_hir::registry::{ExportNameMode, GlobalSymbolRegistry};
 use cx_util::namespace::QualifiedName;
 
 pub fn mangle_qualified_name(

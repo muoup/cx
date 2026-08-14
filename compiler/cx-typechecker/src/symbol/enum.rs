@@ -1,4 +1,4 @@
-use cx_ast::ast::global_var::CXEnumDefinition;
+use cx_hir::ast::global_var::HIREnumDefinition;
 use cx_log::CXResult;
 use cx_thir::{
     EnvironmentNamespace,
@@ -15,7 +15,7 @@ use crate::{
 
 pub struct EnumBlockResolution<'a> {
     env: &'a TypeEnvironment<'a>,
-    block: &'a CXEnumDefinition,
+    block: &'a HIREnumDefinition,
     namespace: &'a EnvironmentNamespace,
 }
 

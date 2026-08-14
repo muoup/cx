@@ -2,7 +2,8 @@ use cx_log::CXResult;
 use cx_thir::{
     thir::{
         expression::{
-            THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRFloatBinOp, THIRPtrBinOp,
+            THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRFloatBinOp,
+            THIRPtrBinOp,
         },
         r#type::{THIRIntType, THIRType, THIRTypeKind},
     },

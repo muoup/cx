@@ -1,7 +1,7 @@
 use std::borrow::Borrow;
 
-use cx_ast::ast::modifiers::VisibilityMode;
-use cx_ast::symbols::CXSymbol;
+use cx_hir::ast::modifiers::VisibilityMode;
+use cx_hir::symbols::HIRSymbol;
 use cx_log::{
     CXRawResult, CXResult,
     error::{CXErr, CXErrMsg, CXMaybeRawErr, context::CXInternalContext, message::CXStdErrMessage},
@@ -13,7 +13,7 @@ use cx_thir::{
     symbol::MIRSymbol,
     type_context::THIRTypeContext,
 };
-use cx_namespace::{THIRQualifiedLookup, result::QualifiedLookupResult};
+use cx_namespace::{result::QualifiedLookupResult, QualifiedLookup};
 use cx_pipeline_data::db::ModuleData;
 use cx_target::ArchitectureConfig;
 use cx_tokens::TokenRange;
@@ -250,7 +250,7 @@ impl TypeEnvironment<'_> {
         &self,
         namespace: &EnvironmentNamespace,
         candidate: &QualifiedName,
-        symbol: &CXSymbol,
+        symbol: &HIRSymbol,
     ) -> bool {
         match symbol.visibility {
             VisibilityMode::Public => true,
@@ -338,7 +338,7 @@ impl TypeEnvironment<'_> {
     }
 }
 
-impl THIRQualifiedLookup for TypeEnvironment<'_> {
+impl QualifiedLookup for TypeEnvironment<'_> {
     type Output = SymbolLookup;
 
     fn lookup_local(
@@ -402,5 +402,5 @@ pub struct SymbolLookup {
 
 pub enum SymbolLookupKind {
     Resolved(MIRSymbol),
-    Untyped(CXSymbol),
+    Untyped(HIRSymbol),
 }

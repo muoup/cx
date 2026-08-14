@@ -1,6 +1,6 @@
-use cx_ast::{
-    ast::{expression::CXExpression, template::CXTemplatePrototype},
-    symbols::CXSymbol,
+use cx_hir::{
+    ast::{expression::HIRExpression, template::HIRTemplatePrototype},
+    symbols::HIRSymbol,
 };
 use cx_log::error::{CXRawResult, message::CXStdErrMessage};
 use cx_tokens::TokenRange;
@@ -22,27 +22,27 @@ pub enum MIRSymbol {
     ComptimeFunctionReference {
         prototype: THIRComptimeFnPrototype,
         namespace: EnvironmentNamespace,
-        body: Box<CXExpression>,
+        body: Box<HIRExpression>,
         template_bindings: Vec<(CXIdent, THIRTypeID)>,
     },
     StagedExpression {
         id: u64,
         namespace: EnvironmentNamespace,
-        expr: Box<CXExpression>,
+        expr: Box<HIRExpression>,
         expected_type: THIRType,
     },
     StagedExpressionFunction {
         namespace: EnvironmentNamespace,
         params: Vec<(CXIdent, THIRType)>,
-        body: Box<CXExpression>,
+        body: Box<HIRExpression>,
         return_type: THIRType,
     },
     Expression(THIRExpression),
     Template {
-        template_prototype: CXTemplatePrototype,
+        template_prototype: HIRTemplatePrototype,
         name: CXIdent,
         namespace: EnvironmentNamespace,
-        source: Box<CXSymbol>,
+        source: Box<HIRSymbol>,
     },
 }
 

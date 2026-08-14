@@ -1,4 +1,4 @@
-use cx_ast::ast::modifiers::CX_CONST;
+use cx_hir::ast::modifiers::HIR_CONST;
 use cx_log::CXResult;
 use cx_thir::{
     thir::expression::{THIRExpression, THIRExpressionKind},
@@ -41,7 +41,7 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResu
     }
 
     let token_range = expr.token_range.clone();
-    let result_type = mem_inner.without_specifier(CX_CONST);
+    let result_type = mem_inner.without_specifier(HIR_CONST);
     let loaded = THIRExpression {
         token_range,
         _type: result_type.clone(),

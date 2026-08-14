@@ -69,10 +69,10 @@ Supported forms:
 
 The unsafe island suppresses safe-subset checks for its enclosed subtree only.
 
-## FMIR Verification
+## MIR Verification
 
-When the compiler is invoked with `--analysis`, safe functions are lowered to
-FMIR and analyzed before ordinary MIR-to-LMIR lowering continues.
+Safe functions are checked during typechecking, and constant-false contract
+assertions are checked from MIR before ordinary MIR-to-LMIR lowering continues.
 
 ```c
 int fn() safe
@@ -84,4 +84,4 @@ where
 }
 ```
 
-Under `--analysis`, this is a compile-time verification error.
+This is a compile-time verification error.

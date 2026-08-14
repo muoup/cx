@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use cx_ast::ast::expression::CXExpression;
+use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXRawResult;
 use cx_thir::thir::data::{THIRFnPrototype, THIRType};
 use cx_thir::thir::expression::THIRLocalID;
@@ -173,13 +173,13 @@ impl FunctionContext {
         self.flow().current_scope_index()
     }
 
-    pub fn set_scope_anchor(&mut self, expr: &CXExpression) {
+    pub fn set_scope_anchor(&mut self, expr: &HIRExpression) {
         self.flow_mut().set_scope_anchor(expr);
     }
 
     pub fn configure_merge_scope(
         &mut self,
-        expr: &CXExpression,
+        expr: &HIRExpression,
         include_current_snapshot: Option<&str>,
         require_nodrop_discharge: bool,
     ) {
@@ -190,7 +190,7 @@ impl FunctionContext {
         );
     }
 
-    pub fn configure_loop_scope(&mut self, expr: &CXExpression, loop_kind: LoopScopeKind) {
+    pub fn configure_loop_scope(&mut self, expr: &HIRExpression, loop_kind: LoopScopeKind) {
         self.flow_mut().configure_loop_scope(expr, loop_kind);
     }
 

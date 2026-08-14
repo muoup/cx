@@ -1,7 +1,7 @@
-use cx_ast::ast::{
-    expression::{CXExprKind, CXExpression},
-    template::CXTemplateInput,
-    types::{CXType, CXTypeKind, PredeclarationType},
+use cx_hir::ast::{
+    expression::{HIRExprKind, HIRExpression},
+    template::HIRTemplateInput,
+    types::{HIRType, HIRTypeKind, PredeclarationType},
 };
 use cx_log::{
     error::{context::CXInternalContext, message::CXStdErrMessage, CXErr},
@@ -24,19 +24,19 @@ use super::{parser::ParserData, templates::parse_template_args, types::is_type_d
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedIdentifier {
     pub name: QualifiedName,
-    pub template_input: Option<CXTemplateInput>,
+    pub template_input: Option<HIRTemplateInput>,
 }
 
 impl ParsedIdentifier {
-    pub(crate) fn new(name: QualifiedName, template_input: Option<CXTemplateInput>) -> Self {
+    pub(crate) fn new(name: QualifiedName, template_input: Option<HIRTemplateInput>) -> Self {
         Self {
             name,
             template_input,
         }
     }
 
-    pub(crate) fn into_type(self, predeclaration: PredeclarationType) -> CXType {
-        CXTypeKind::Identifier {
+    pub(crate) fn into_type(self, predeclaration: PredeclarationType) -> HIRType {
+        HIRTypeKind::Identifier {
             name: self.name,
             predeclaration,
             template_input: self.template_input,
@@ -49,8 +49,8 @@ impl ParsedIdentifier {
         start_index: usize,
         end_index: usize,
         file_origin: EnvironmentNamespace,
-    ) -> CXExpression {
-        CXExprKind::Identifier {
+    ) -> HIRExpression {
+        HIRExprKind::Identifier {
             name: self.name,
             template_input: self.template_input,
         }

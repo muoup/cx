@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-cx-ast = { path = "../cx-ast" }
+cx-hir = { path = "../cx-hir" }
 cx-log = { path = "../cx-log" }
 cx-mir = { path = "../cx-mir" }
 cx-thir = { path = "../cx-thir" }

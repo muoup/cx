@@ -26,7 +26,7 @@ use crate::type_checking::value::{
     moves::{typecheck_adopt, typecheck_leak, typecheck_unpack},
     unsafe_ops::typecheck_unsafe,
 };
-use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
+use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
 use cx_thir::thir::data::{THIRIntType, THIRTypeKind};
@@ -40,7 +40,7 @@ use cx_thir::thir::data::THIRType;
 pub fn typecheck_expr(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
+    expr: &HIRExpression,
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     typecheck_expr_inner(env, namespace, expr, expected_type)
@@ -49,11 +49,11 @@ pub fn typecheck_expr(
 fn typecheck_expr_inner(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
+    expr: &HIRExpression,
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     let mut result = match &expr.kind {
-        CXExprKind::Block {
+        HIRExprKind::Block {
             exprs,
             creates_scope,
         } => {
@@ -88,7 +88,7 @@ fn typecheck_expr_inner(
             })
         }
 
-        CXExprKind::Defer { expr: deferred } => {
+        HIRExprKind::Defer { expr: deferred } => {
             if env.in_defer_context() {
                 return env.log_error(
                     expr.token_range(),
@@ -126,32 +126,32 @@ fn typecheck_expr_inner(
             TypecheckResult::new(THIRType::unit(), THIRExpressionKind::Unit)
         }
 
-        CXExprKind::StagedExpression { .. } => TypecheckResult::staged_expr(THIRExpression {
+        HIRExprKind::StagedExpression { .. } => TypecheckResult::staged_expr(THIRExpression {
             token_range: expr.token_range().clone(),
             kind: THIRExpressionKind::Unit,
             _type: expected_type.cloned().unwrap_or_else(THIRType::unit),
         }),
 
-        CXExprKind::Then => {
+        HIRExprKind::Then => {
             return env.log_error(
                 expr.token_range(),
                 "'then' may only capture the remainder of an enclosing block".to_string(),
             );
         }
 
-        CXExprKind::IntLiteral {
+        HIRExprKind::IntLiteral {
             magnitude,
             base,
             suffix,
         } => typecheck_int_literal(env, expr.token_range(), *magnitude, *base, *suffix)?,
 
-        CXExprKind::FloatLiteral { val, suffix } => {
+        HIRExprKind::FloatLiteral { val, suffix } => {
             typecheck_float_literal(env, expr.token_range(), *val, *suffix)?
         }
 
-        CXExprKind::StringLiteral { val } => typecheck_string_literal(env, val),
+        HIRExprKind::StringLiteral { val } => typecheck_string_literal(env, val),
 
-        CXExprKind::VarDeclaration {
+        HIRExprKind::VarDeclaration {
             _type,
             name,
             initial_value,
@@ -164,12 +164,12 @@ fn typecheck_expr_inner(
             initial_value.as_ref().map(|v| v.as_ref()),
         )?,
 
-        CXExprKind::Identifier {
+        HIRExprKind::Identifier {
             name,
             template_input,
         } => typecheck_identifier(env, namespace, expr, name, template_input.as_ref())?,
 
-        CXExprKind::If {
+        HIRExprKind::If {
             condition,
             then_branch,
             else_branch,
@@ -225,7 +225,7 @@ fn typecheck_expr_inner(
             })
         }
 
-        CXExprKind::Ternary {
+        HIRExprKind::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -253,7 +253,7 @@ fn typecheck_expr_inner(
             })
         }
 
-        CXExprKind::While {
+        HIRExprKind::While {
             condition,
             body,
             pre_eval,
@@ -297,7 +297,7 @@ fn typecheck_expr_inner(
             })
         }
 
-        CXExprKind::For {
+        HIRExprKind::For {
             init,
             condition,
             increment,
@@ -350,7 +350,7 @@ fn typecheck_expr_inner(
             })
         }
 
-        CXExprKind::Break => {
+        HIRExprKind::Break => {
             if env.in_defer_context() {
                 return env.log_error(
                     expr.token_range(),
@@ -382,7 +382,7 @@ fn typecheck_expr_inner(
             })
         }
 
-        CXExprKind::Continue => {
+        HIRExprKind::Continue => {
             if env.in_defer_context() {
                 return env.log_error(
                     expr.token_range(),
@@ -414,7 +414,7 @@ fn typecheck_expr_inner(
             })
         }
 
-        CXExprKind::Return { value } => {
+        HIRExprKind::Return { value } => {
             let return_type = env.current_function().signature().return_type.clone();
             let value = value
                 .as_ref()
@@ -426,14 +426,14 @@ fn typecheck_expr_inner(
             typecheck_return(env, namespace, expr.token_range(), value)?
         }
 
-        CXExprKind::Yield { value } => typecheck_yield(
+        HIRExprKind::Yield { value } => typecheck_yield(
             env,
             namespace,
             expr.token_range(),
             value.as_ref().map(Box::as_ref),
         )?,
 
-        CXExprKind::Emit { expr: inner } => {
+        HIRExprKind::Emit { expr: inner } => {
             if !env.in_comptime_context() || env.in_runtime_emit_context() {
                 return env.log_error(
                     expr.token_range(),
@@ -452,25 +452,25 @@ fn typecheck_expr_inner(
             })
         }
 
-        CXExprKind::Unsafe { expr: inner } => {
+        HIRExprKind::Unsafe { expr: inner } => {
             typecheck_unsafe(env, namespace, inner, expected_type)?
         }
 
-        CXExprKind::Leak { expr: inner } => typecheck_leak(env, namespace, expr, inner)?,
+        HIRExprKind::Leak { expr: inner } => typecheck_leak(env, namespace, expr, inner)?,
 
-        CXExprKind::Adopt { expr: inner } => typecheck_adopt(env, namespace, expr, inner)?,
+        HIRExprKind::Adopt { expr: inner } => typecheck_adopt(env, namespace, expr, inner)?,
 
-        CXExprKind::Unpack {
+        HIRExprKind::Unpack {
             expr: inner,
             bindings,
         } => typecheck_unpack(env, namespace, expr, inner, bindings)?,
 
-        CXExprKind::UnOp { operator, operand } => {
+        HIRExprKind::UnOp { operator, operand } => {
             op::typecheck_unop(env, namespace, operator, operand)?
         }
 
-        CXExprKind::BinOp {
-            op: CXBinOp::Assign(op),
+        HIRExprKind::BinOp {
+            op: HIRBinOp::Assign(op),
             lhs,
             rhs,
         } => {
@@ -481,8 +481,8 @@ fn typecheck_expr_inner(
             typecheck_assignment(env, lhs, rhs, op.as_ref().map(Box::deref), expr)?
         }
 
-        CXExprKind::BinOp {
-            op: CXBinOp::Access,
+        HIRExprKind::BinOp {
+            op: HIRBinOp::Access,
             lhs,
             rhs,
         } => {
@@ -491,13 +491,13 @@ fn typecheck_expr_inner(
             typecheck_access(env, namespace, lhs, rhs, expr)?
         }
 
-        CXExprKind::BinOp {
-            op: CXBinOp::MethodCall,
+        HIRExprKind::BinOp {
+            op: HIRBinOp::MethodCall,
             lhs,
             rhs,
         } => typecheck_method_call(env, namespace, lhs, rhs, expr, expected_type)?,
 
-        CXExprKind::BinOp { op, lhs, rhs } => {
+        HIRExprKind::BinOp { op, lhs, rhs } => {
             if let Some(expr) =
                 try_typecheck_special_binop(env, namespace, op, expr, lhs, rhs, expected_type)?
             {
@@ -512,21 +512,21 @@ fn typecheck_expr_inner(
             }
         }
 
-        CXExprKind::InitializerList { indices } => {
+        HIRExprKind::InitializerList { indices } => {
             typecheck_initializer_list(env, namespace, expr, indices, expected_type)?
         }
 
-        CXExprKind::Void => typecheck_unit(),
+        HIRExprKind::Void => typecheck_unit(),
 
-        CXExprKind::SizeOfType { _type } => typecheck_sizeof_type(env, namespace, expr, _type)?,
+        HIRExprKind::SizeOfType { _type } => typecheck_sizeof_type(env, namespace, expr, _type)?,
 
-        CXExprKind::SizeOfExpr { expr } => typecheck_sizeof_expr(env, namespace, expr)?,
+        HIRExprKind::SizeOfExpr { expr } => typecheck_sizeof_expr(env, namespace, expr)?,
 
-        CXExprKind::AlignOfType { _type } => typecheck_alignof_type(env, namespace, expr, _type)?,
+        HIRExprKind::AlignOfType { _type } => typecheck_alignof_type(env, namespace, expr, _type)?,
 
-        CXExprKind::AlignOfExpr { expr } => typecheck_alignof_expr(env, namespace, expr)?,
+        HIRExprKind::AlignOfExpr { expr } => typecheck_alignof_expr(env, namespace, expr)?,
 
-        CXExprKind::Switch {
+        HIRExprKind::Switch {
             condition,
             block,
             cases,
@@ -540,7 +540,7 @@ fn typecheck_expr_inner(
             default_case.as_ref(),
         )?,
 
-        CXExprKind::Match {
+        HIRExprKind::Match {
             condition,
             arms,
             default,
@@ -553,7 +553,7 @@ fn typecheck_expr_inner(
             expected_type,
         )?,
 
-        CXExprKind::Taken => unreachable!("Taken expressions should not be typechecked"),
+        HIRExprKind::Taken => unreachable!("Taken expressions should not be typechecked"),
     };
 
     result.set_token_range_if_missing(expr.range.clone())?;

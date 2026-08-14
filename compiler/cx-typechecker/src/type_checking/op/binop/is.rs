@@ -6,13 +6,13 @@ use crate::type_checking::pattern::tagged_union::{
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_checking::value::resolve_indirect_base;
-use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
+use cx_hir::ast::{expression::HIRExpression, pattern::HIRPattern};
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
 use cx_thir::thir::contextual_eq::TypeContextEqual;
 use cx_thir::thir::data::THIRType;
 use cx_thir::thir::expression::{
-    THIRExpression, THIRExpressionKind, THIRLocalID, SymbolValueOrigin,
+    SymbolValueOrigin, THIRExpression, THIRExpressionKind, THIRLocalID,
 };
 use cx_thir::thir::pattern::THIRPattern;
 use cx_tokens::TokenRange;
@@ -21,9 +21,9 @@ use cx_util::namespace::QualifiedName;
 pub(crate) fn typecheck_is(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    lhs: &CXExpression,
-    pattern: &CXPattern,
-    expr: &CXExpression,
+    lhs: &HIRExpression,
+    pattern: &HIRPattern,
+    expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     let tc_lhs = typecheck_expr(env, namespace, lhs, None)
         .and_then(|v| v.standard_ready_coerce(env, lhs.token_range()))
@@ -103,8 +103,8 @@ fn validate_variant_template_input(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     union_type: &THIRType,
-    template_input: Option<&cx_ast::ast::template::CXTemplateInput>,
-    expr: &CXExpression,
+    template_input: Option<&cx_hir::ast::template::HIRTemplateInput>,
+    expr: &HIRExpression,
 ) -> CXResult<()> {
     let Some(template_input) = template_input else {
         return Ok(());
@@ -120,7 +120,8 @@ fn validate_variant_template_input(
     if !completed_input.contextual_eq(&template_data.template_input, &env.symbols) {
         return env.log_error(
             expr.token_range(),
-            "Tagged union pattern template arguments do not match the left-hand side type".to_string(),
+            "Tagged union pattern template arguments do not match the left-hand side type"
+                .to_string(),
         );
     }
 

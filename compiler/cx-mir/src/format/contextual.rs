@@ -1,18 +1,18 @@
 use std::fmt::{self, Display, Formatter};
 
-use cx_ast::ast::modifiers::CXLinkageMode;
+use cx_util::linkage::LinkageMode;
 
 use crate::expr::{
     MIRAggregateOp, MIRBasicBlock, MIRConstant, MIRInstrKind, MIRPlace, MIRPlaceAggregateOp,
     MIRValue, MIRValueAggregateOp,
 };
 use crate::global::{MIRFunction, MIRGlobalState};
-use crate::module::MIRUnit;
 use crate::op::{
     MIRBinaryOp, MIRFloatBinaryOp, MIRIntBinaryOp, MIRPointerBinaryOp, MIRPointerOffsetOp,
     MIRUnaryOp,
 };
 use crate::ty::{MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind, MIRTypeRegistry};
+use crate::unit::MIRUnit;
 
 pub struct MIRDisplay<'a> {
     unit: &'a MIRUnit,
@@ -206,7 +206,7 @@ fn write_global(
 ) -> fmt::Result {
     match global.state {
         MIRGlobalState::External => f.write_str("extern ")?,
-        _ if global.linkage == CXLinkageMode::Static => f.write_str("static ")?,
+        _ if global.linkage == LinkageMode::Static => f.write_str("static ")?,
         _ => {}
     }
     if !global.is_mutable {
@@ -232,9 +232,9 @@ fn write_function(
     function: &MIRFunction,
     types: &mut TypePrinter<'_>,
 ) -> fmt::Result {
-    if function.prototype.linkage == CXLinkageMode::Static {
+    if function.prototype.linkage == LinkageMode::Static {
         f.write_str("static ")?;
-    } else if function.prototype.linkage == CXLinkageMode::Extern || function.is_declaration() {
+    } else if function.prototype.linkage == LinkageMode::Extern || function.is_declaration() {
         f.write_str("extern ")?;
     }
     write!(f, "fn {} (", function.prototype.signature.display_name())?;

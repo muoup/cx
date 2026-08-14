@@ -1,9 +1,0 @@
-[package]
-name = "cx-safe-ir"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-cx-tokens = { path = "../cx-tokens" }
-cx-thir = { path = "../cx-thir" }
-cx-util = { path = "../cx-util" }

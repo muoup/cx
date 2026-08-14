@@ -1,6 +1,6 @@
-use cx_ast::{
-    ast::{function::CXFunctionContract, modifiers::CXLinkageMode},
-    symbols::CXSymbolKind,
+use cx_hir::{
+    ast::function::HIRFunctionContract,
+    symbols::HIRSymbolKind,
 };
 use cx_log::CXResult;
 use cx_thir::thir::{
@@ -9,7 +9,7 @@ use cx_thir::thir::{
     r#type::THIRType,
 };
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_util::{identifier::CXIdent, linkage::LinkageMode, namespace::QualifiedName};
 
 use crate::{
     environment::{MIRFunctionGenRequest, TypeEnvironment},
@@ -63,7 +63,7 @@ fn realize_tagged_union_constructor(
     let param_local_id = cx_thir::thir::expression::THIRLocalID::fresh();
     let prototype = THIRFnPrototype::new(
         symbol_name,
-        CXLinkageMode::Static,
+        LinkageMode::Static,
         THIRFnSignature {
             return_type: union_type.clone(),
             params: if variant_type.is_unit() {
@@ -76,7 +76,7 @@ fn realize_tagged_union_constructor(
                 }]
             },
             var_args: false,
-            contract: CXFunctionContract::default(),
+            contract: HIRFunctionContract::default(),
         },
     )
     .with_debug_name(debug_name);
@@ -146,7 +146,7 @@ fn realize_fn_template(
             )
         });
 
-    let CXSymbolKind::FunctionTemplate { template, body, .. } = &stmt.kind else {
+    let HIRSymbolKind::FunctionTemplate { template, body, .. } = &stmt.kind else {
         unreachable!("Expected template to be a function template");
     };
 

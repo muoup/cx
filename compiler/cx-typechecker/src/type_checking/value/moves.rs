@@ -8,16 +8,16 @@ use crate::{
         value::locals::{ensure_binding_available, mark_binding},
     },
 };
-use cx_ast::ast::{
-    expression::{CXExpression, CXUnpackBinding},
-    modifiers::CX_CONST,
+use cx_hir::ast::{
+    expression::{HIRExpression, HIRUnpackBinding},
+    modifiers::HIR_CONST,
 };
 use cx_log::CXResult;
 use cx_thir::{
     EnvironmentNamespace,
     thir::{
         data::{THIRType, THIRTypeKind},
-        expression::{THIRExpression, THIRExpressionKind, THIRLocalID, SymbolValueOrigin},
+        expression::{SymbolValueOrigin, THIRExpression, THIRExpressionKind, THIRLocalID},
     },
     type_context::THIRTypeContext,
 };
@@ -28,7 +28,7 @@ pub(crate) fn typecheck_move(
     env: &mut TypeEnvironment,
     _: &EnvironmentNamespace,
     inner: TypecheckResult,
-    inner_expr: &CXExpression,
+    inner_expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     let binding = inner.binding().cloned();
     let inner_val = inner.standard_ready_coerce(env, inner_expr.token_range())?;
@@ -40,7 +40,8 @@ pub(crate) fn typecheck_move(
     let Some(binding) = binding else {
         return env.log_error(
             inner_expr.token_range(),
-            "Move expressions can currently only be applied to stack variable identifiers".to_string(),
+            "Move expressions can currently only be applied to stack variable identifiers"
+                .to_string(),
         );
     };
 
@@ -52,7 +53,11 @@ pub(crate) fn typecheck_move(
     };
 
     if !matches!(inner_val.kind, THIRExpressionKind::Variable { .. }) {
-        return env.log_error(inner_expr.token_range(), "Move expressions can currently only be applied to stack variable identifiers".to_string());
+        return env.log_error(
+            inner_expr.token_range(),
+            "Move expressions can currently only be applied to stack variable identifiers"
+                .to_string(),
+        );
     }
 
     let Some(inner_type) = env.symbols.mem_ref_inner(&inner_val._type).cloned() else {
@@ -93,8 +98,8 @@ fn owned_unsafe_move(env: &TypeEnvironment, ty: &THIRType) -> bool {
 pub(crate) fn typecheck_adopt(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
-    inner: &CXExpression,
+    expr: &HIRExpression,
+    inner: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     if env.function.in_safe_context() {
         return env.log_error(
@@ -113,7 +118,7 @@ pub(crate) fn typecheck_adopt(
         );
     };
 
-    if value._type.get_specifier(CX_CONST) || inner_type.get_specifier(CX_CONST) {
+    if value._type.get_specifier(HIR_CONST) || inner_type.get_specifier(HIR_CONST) {
         return env.log_error(
             expr.token_range(),
             "@adopt cannot adopt from a const memory place".to_string(),
@@ -138,8 +143,8 @@ pub(crate) fn typecheck_adopt(
 pub(crate) fn typecheck_leak(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
-    inner: &CXExpression,
+    expr: &HIRExpression,
+    inner: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     if env.function.in_safe_context() {
         return env.log_error(
@@ -191,15 +196,18 @@ pub(crate) fn typecheck_leak(
 pub(crate) fn typecheck_unpack(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
-    inner: &CXExpression,
-    bindings: &[CXUnpackBinding],
+    expr: &HIRExpression,
+    inner: &HIRExpression,
+    bindings: &[HIRUnpackBinding],
 ) -> CXResult<TypecheckResult> {
     let value = typecheck_expr(env, namespace, inner, None)
         .and_then(|v| v.standard_ready_coerce(env, inner.token_range()))?;
 
     let THIRTypeKind::Structured { fields } = &value._type.kind else {
-        return env.log_error(expr.token_range(), "@unpack expects a struct type".to_string());
+        return env.log_error(
+            expr.token_range(),
+            "@unpack expects a struct type".to_string(),
+        );
     };
 
     let field_map = fields
