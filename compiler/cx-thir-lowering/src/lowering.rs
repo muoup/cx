@@ -289,15 +289,7 @@ fn lower_expression(
                     let pointee = builder.registry().resolve_type_id(*inner_type).clone();
                     let pointee_type = builder.lower_type(&pointee);
                     if inner_is_reference && expression_is_pointer {
-                        match value {
-                            MIRValue::Place(place) | MIRValue::Move(place) => {
-                                let type_id = builder.lower_type(&expression._type);
-                                let out = builder.register(type_id, None);
-                                builder.emit(MIRInstrKind::AddressOf { out, place });
-                                MIRValue::Register(out)
-                            }
-                            value => value,
-                        }
+                        value
                     } else {
                         let type_id = if expression_is_reference {
                             builder.lower_type(reference_type)
@@ -690,8 +682,9 @@ fn lower_expression(
                 {
                     let value = lower_expression(builder, operand)?;
                     let type_id = builder.lower_type(&expression._type);
+                    let is_str_reference = builder.registry().is_cx_str(&expression._type);
                     return Ok(match value {
-                        MIRValue::Place(place) | MIRValue::Move(place) => {
+                        MIRValue::Place(place) | MIRValue::Move(place) if !is_str_reference => {
                             let out = builder.register(type_id, None);
                             builder.emit(MIRInstrKind::AddressOf { out, place });
                             MIRValue::Register(out)

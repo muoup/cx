@@ -11,14 +11,17 @@ impl<'a> FunctionLowerer<'a> {
             MIRValue::Place(place) | MIRValue::Move(place) => {
                 let binding = self.place(*place);
                 let ty = self.binding_type(&binding);
-                let raw_ty = self.place_decl_type(*place);
+                if matches!(place, MIRPlace::Parameter(_)) && self.is_str_reference(ty) {
+                    return self.address(binding);
+                }
                 if let Some(expected) = expected {
                     if matches!(
                         self.types.kind(expected),
                         Some(MIRTypeKind::MemoryReference { .. })
-                    ) {
+                    ) && !self.is_str_reference(expected)
+                    {
                         let value_is_reference = matches!(
-                            self.types.kind(raw_ty),
+                            self.types.kind(ty),
                             Some(MIRTypeKind::MemoryReference { inner, .. })
                                 if self.types.same_type(*inner, expected)
                         );
@@ -46,6 +49,14 @@ impl<'a> FunctionLowerer<'a> {
             }
             MIRValue::Constant(constant) => self.lower_constant(constant, expected),
         }
+    }
+
+    fn is_str_reference(&self, ty: MIRTypeID) -> bool {
+        matches!(
+            self.types.kind(ty),
+            Some(MIRTypeKind::MemoryReference { inner, .. })
+                if matches!(self.types.kind(*inner), Some(MIRTypeKind::Str))
+        )
     }
 
     pub(super) fn lower_constant(
