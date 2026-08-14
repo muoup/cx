@@ -31,9 +31,10 @@ dense_id!(MIRFunctionID);
 dense_id!(MIRGlobalID);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum MIRGlobalInitializer {
-    Scalar(MIRConstant),
-    Bytes(Box<[u8]>),
+pub enum MIRGlobalState {
+    External,
+    ZeroInitialized,
+    Initialized(MIRConstant),
 }
 
 #[derive(Debug, Clone)]
@@ -42,8 +43,7 @@ pub struct MIRGlobalVariable {
     pub name: CXIdent,
     pub ty: MIRTypeID,
     pub linkage: CXLinkageMode,
-    pub initializer: Option<MIRGlobalInitializer>,
-    pub is_definition: bool,
+    pub state: MIRGlobalState,
     pub is_mutable: bool,
     pub nodrop: bool,
 }
@@ -61,8 +61,11 @@ impl MIRGlobalVariable {
             name,
             ty,
             linkage,
-            initializer: None,
-            is_definition: true,
+            state: if linkage == CXLinkageMode::Extern {
+                MIRGlobalState::External
+            } else {
+                MIRGlobalState::ZeroInitialized
+            },
             is_mutable,
             nodrop: false,
         }

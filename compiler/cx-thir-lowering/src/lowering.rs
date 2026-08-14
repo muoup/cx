@@ -5,7 +5,6 @@ use cx_mir::{
     MIRPointerOffsetOp, MIRUnaryOp, MIRValue, MIRValueAggregateOp,
 };
 use cx_thir::{
-    THIRUnit,
     thir::{
         data::{THIRFloatType, THIRFunction, THIRIntType, THIRType, THIRTypeKind},
         expression::{
@@ -15,9 +14,10 @@ use cx_thir::{
         pattern::THIRPattern,
     },
     type_context::THIRTypeContext,
+    THIRUnit,
 };
 
-use crate::builder::{MIRBuilder, integer_type};
+use crate::builder::{integer_type, MIRBuilder};
 
 pub(crate) fn lower_unit(builder: &mut MIRBuilder<'_>, thir: &THIRUnit) -> CXResult<()> {
     for (index, function) in thir.functions.iter().enumerate() {
@@ -186,13 +186,11 @@ fn lower_expression(
                             let pointee = builder.registry().resolve_type_id(*inner_type).clone();
                             let pointee_type = builder.lower_type(&pointee);
                             let out = builder.declare_place_for_type(&source._type, None);
-                            builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Place {
+                            builder.emit(MIRInstrKind::Dereference {
                                 out,
-                                op: MIRPlaceAggregateOp::Dereference {
-                                    pointer: value,
-                                    pointee_type,
-                                },
-                            }));
+                                pointer: value,
+                                pointee_type,
+                            });
                             MIRValue::Place(out)
                         }
                     }
@@ -231,13 +229,11 @@ fn lower_expression(
                         let pointee = builder.registry().resolve_type_id(*inner_type).clone();
                         let pointee_type = builder.lower_type(&pointee);
                         let place = builder.declare_place_for_type(&target._type, None);
-                        builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Place {
+                        builder.emit(MIRInstrKind::Dereference {
                             out: place,
-                            op: MIRPlaceAggregateOp::Dereference {
-                                pointer,
-                                pointee_type,
-                            },
-                        }));
+                            pointer,
+                            pointee_type,
+                        });
                         place
                     }
                 };
@@ -277,25 +273,21 @@ fn lower_expression(
                             MIRValue::Place(_) | MIRValue::Move(_) => value,
                             value => {
                                 let out = builder.declare_place_for_type(reference_type, None);
-                                builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Place {
+                                builder.emit(MIRInstrKind::Dereference {
                                     out,
-                                    op: MIRPlaceAggregateOp::Dereference {
-                                        pointer: value,
-                                        pointee_type,
-                                    },
-                                }));
+                                    pointer: value,
+                                    pointee_type,
+                                });
                                 MIRValue::Place(out)
                             }
                         }
                     } else {
                         let out = builder.declare_place_for_type(reference_type, None);
-                        builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Place {
+                        builder.emit(MIRInstrKind::Dereference {
                             out,
-                            op: MIRPlaceAggregateOp::Dereference {
-                                pointer: value,
-                                pointee_type,
-                            },
-                        }));
+                            pointer: value,
+                            pointee_type,
+                        });
                         MIRValue::Place(out)
                     }
                 } else {

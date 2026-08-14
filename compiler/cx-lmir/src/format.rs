@@ -1,9 +1,9 @@
 use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind, TypeSize};
 use crate::{
     LMIRBasicBlock, LMIRBlockTarget, LMIRFloatBinOp, LMIRFloatUnOp, LMIRFunction,
-    LMIRFunctionPrototype, LMIRFunctionSignature, LMIRGlobalType, LMIRInstruction,
-    LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRRegister, LMIRUnit,
-    LMIRValue,
+    LMIRFunctionPrototype, LMIRFunctionSignature, LMIRGlobalInitializer, LMIRGlobalState,
+    LMIRGlobalType, LMIRInstruction, LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp,
+    LMIRRegister, LMIRUnit, LMIRValue,
 };
 use std::fmt::{Display, Formatter};
 
@@ -89,17 +89,61 @@ impl Display for LMIRGlobalType {
             LMIRGlobalType::StringLiteral(s) => {
                 write!(f, "string_literal \"{}\"", s.replace('\n', "\\n"))
             }
-            LMIRGlobalType::Variable {
-                _type,
-                initial_value,
-            } => {
-                if let Some(initial_value) = initial_value {
-                    write!(f, "variable {_type} = {initial_value}")
+            LMIRGlobalType::Variable { _type, state } => {
+                if matches!(state, LMIRGlobalState::External) {
+                    write!(f, "variable {_type} external")
                 } else {
-                    write!(f, "variable {_type}")
+                    write!(f, "variable {_type} = {state}")
                 }
             }
         }
+    }
+}
+
+impl Display for LMIRGlobalState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::External => f.write_str("external"),
+            Self::ZeroInitialized => f.write_str("zero"),
+            Self::Initialized(initializer) => Display::fmt(initializer, f),
+        }
+    }
+}
+
+impl Display for LMIRGlobalInitializer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Integer {
+                value,
+                _type,
+                signed,
+            } => write!(
+                f,
+                "{value}:{}{}",
+                if *signed { 'i' } else { 'u' },
+                integer_width(*_type)
+            ),
+            Self::Float { value, _type } => write!(f, "{value}:{}", float_name(*_type)),
+            Self::Null => f.write_str("null"),
+        }
+    }
+}
+
+fn integer_width(ty: LMIRIntegerType) -> u16 {
+    match ty {
+        LMIRIntegerType::I1 => 1,
+        LMIRIntegerType::I8 => 8,
+        LMIRIntegerType::I16 => 16,
+        LMIRIntegerType::I32 => 32,
+        LMIRIntegerType::I64 => 64,
+        LMIRIntegerType::I128 => 128,
+    }
+}
+
+fn float_name(ty: LMIRFloatType) -> &'static str {
+    match ty {
+        LMIRFloatType::F32 => "f32",
+        LMIRFloatType::F64 => "f64",
     }
 }
 

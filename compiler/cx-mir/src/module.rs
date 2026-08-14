@@ -9,7 +9,9 @@ use crate::{
         MIRAggregateOp, MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRInstrKind, MIRPlace,
         MIRPlaceAggregateOp, MIRRegister, MIRValue, MIRValueAggregateOp,
     },
-    global::{MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalVariable},
+    global::{
+        MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable,
+    },
     ty::{MIRTypeDefinition, MIRTypeID, MIRTypeKind, MIRTypeRegistry},
 };
 
@@ -82,7 +84,34 @@ impl MIRUnit {
         id
     }
 
-    /// Inserts an already-built global and assigns its canonical dense ID.
+    pub fn add_global_with_state(
+        &mut self,
+        name: CXIdent,
+        ty: MIRTypeID,
+        linkage: CXLinkageMode,
+        is_mutable: bool,
+        state: MIRGlobalState,
+    ) -> MIRGlobalID {
+        self.add_global_with_nodrop_and_state(name, ty, linkage, is_mutable, false, state)
+    }
+
+    pub fn add_global_with_nodrop_and_state(
+        &mut self,
+        name: CXIdent,
+        ty: MIRTypeID,
+        linkage: CXLinkageMode,
+        is_mutable: bool,
+        nodrop: bool,
+        state: MIRGlobalState,
+    ) -> MIRGlobalID {
+        let id = MIRGlobalID::new(self.globals.len());
+        let mut global = MIRGlobalVariable::new(id, name, ty, linkage, is_mutable);
+        global.nodrop = nodrop;
+        global.state = state;
+        self.globals.push(global);
+        id
+    }
+
     pub fn push_global(&mut self, mut global: MIRGlobalVariable) -> MIRGlobalID {
         let id = MIRGlobalID::new(self.globals.len());
         global.id = id;
@@ -397,10 +426,9 @@ impl MIRUnit {
                     )?;
                 }
             }
-            MIRInstrKind::AggregateOp(MIRAggregateOp::Place {
-                out,
-                op: MIRPlaceAggregateOp::Dereference { pointee_type, .. },
-            }) => {
+            MIRInstrKind::Dereference {
+                out, pointee_type, ..
+            } => {
                 self.expect_place_value_type(
                     function,
                     block,
@@ -714,6 +742,9 @@ impl MIRUnit {
             MIRValue::Constant(MIRConstant::Float { ty, .. }) => self
                 .types
                 .find(&MIRTypeDefinition::new(MIRTypeKind::Float { ty: *ty })),
+            MIRValue::Constant(MIRConstant::String(_)) => {
+                self.types.find(&MIRTypeDefinition::new(MIRTypeKind::Str))
+            }
             MIRValue::Constant(
                 MIRConstant::Null | MIRConstant::Function(_) | MIRConstant::Undefined,
             ) => None,

@@ -6,6 +6,8 @@ pub mod ty;
 
 mod format;
 
+pub use format::MIRDisplay;
+
 pub use expr::{
     MIRAggregateOp, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRInstr,
     MIRInstrKind, MIRInstrOperand, MIRParameterID, MIRPlace, MIRPlaceAggregateOp, MIRPlaceID,
@@ -13,7 +15,7 @@ pub use expr::{
 };
 pub use global::{
     MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRGlobalID,
-    MIRGlobalInitializer, MIRGlobalVariable, MIRPlaceDecl, MIRRegisterDecl,
+    MIRGlobalState, MIRGlobalVariable, MIRPlaceDecl, MIRRegisterDecl,
 };
 pub use module::{MIRUnit, MIRValidationError};
 pub use op::{

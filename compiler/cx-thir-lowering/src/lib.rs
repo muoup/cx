@@ -28,10 +28,9 @@ mod tests {
 
     use cx_ast::ast::modifiers::CXLinkageMode;
     use cx_mir::{
-        MIRGlobalInitializer, MIRInstrKind, MIRParameterID, MIRPlace, MIRTypeID, MIRValue,
+        MIRConstant, MIRGlobalState, MIRInstrKind, MIRParameterID, MIRPlace, MIRTypeID, MIRValue,
     };
     use cx_thir::{
-        EnvironmentNamespace, THIRUnit,
         registry::THIRDecomposedRegistry,
         thir::{
             data::{THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter},
@@ -39,6 +38,7 @@ mod tests {
             global::{MIRGlobalVarKind, MIRGlobalVariable},
             r#type::{THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
         },
+        EnvironmentNamespace, THIRUnit,
     };
     use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
@@ -111,7 +111,7 @@ mod tests {
         );
         let display = mir.to_string();
         assert!(display.contains("return 42:i32"));
-        assert!(display.contains("mir v0"));
+        assert!(display.contains("fn mir_test"));
     }
 
     #[test]
@@ -257,7 +257,7 @@ mod tests {
     }
 
     #[test]
-    fn string_literals_become_readonly_global_bytes() {
+    fn string_literals_become_readonly_global_constants() {
         let (registry, _, _) = test_registry();
         let unit = THIRUnit {
             source_namespace: EnvironmentNamespace::root(),
@@ -277,10 +277,8 @@ mod tests {
         mir.validate().unwrap();
         assert!(!mir.globals[0].is_mutable);
         assert_eq!(
-            mir.globals[0].initializer,
-            Some(MIRGlobalInitializer::Bytes(
-                b"hello".to_vec().into_boxed_slice()
-            ))
+            mir.globals[0].state,
+            MIRGlobalState::Initialized(MIRConstant::String("hello".into()))
         );
     }
 }

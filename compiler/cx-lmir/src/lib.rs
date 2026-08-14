@@ -40,8 +40,29 @@ pub enum LMIRGlobalType {
     StringLiteral(String),
     Variable {
         _type: LMIRType,
-        initial_value: Option<i64>,
+        state: LMIRGlobalState,
     },
+}
+
+#[derive(Debug, Clone)]
+pub enum LMIRGlobalState {
+    External,
+    ZeroInitialized,
+    Initialized(LMIRGlobalInitializer),
+}
+
+#[derive(Debug, Clone)]
+pub enum LMIRGlobalInitializer {
+    Integer {
+        value: i128,
+        _type: LMIRIntegerType,
+        signed: bool,
+    },
+    Float {
+        value: FloatWrapper,
+        _type: LMIRFloatType,
+    },
+    Null,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

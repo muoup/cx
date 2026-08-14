@@ -23,6 +23,7 @@ pub enum MIRPlace {
 pub enum MIRConstant {
     Unit,
     Bool(bool),
+    String(String),
     Integer {
         value: i128,
         ty: MIRIntType,
@@ -114,10 +115,6 @@ pub enum MIRAggregateOp {
 
 #[derive(Debug, Clone)]
 pub enum MIRPlaceAggregateOp {
-    Dereference {
-        pointer: MIRValue,
-        pointee_type: MIRTypeID,
-    },
     Field {
         base: MIRPlace,
         field: usize,
@@ -232,7 +229,8 @@ impl MIRInstr {
         let place = match &self.kind {
             MIRInstrKind::Initialize { place }
             | MIRInstrKind::Create { out: place, .. }
-            | MIRInstrKind::Assign { dest: place, .. } => Some(*place),
+            | MIRInstrKind::Assign { dest: place, .. }
+            | MIRInstrKind::Dereference { out: place, .. } => Some(*place),
             MIRInstrKind::AggregateOp(MIRAggregateOp::Place { out, .. }) => Some(*out),
             _ => None,
         };
@@ -267,10 +265,6 @@ impl MIRInstr {
 
             MIRInstrKind::AggregateOp(operation) => match operation {
                 MIRAggregateOp::Place {
-                    op: MIRPlaceAggregateOp::Dereference { pointer, .. },
-                    ..
-                } => visit(MIRInstrOperand::Value(pointer)),
-                MIRAggregateOp::Place {
                     op: MIRPlaceAggregateOp::Field { base, .. },
                     ..
                 }
@@ -302,6 +296,10 @@ impl MIRInstr {
                     }
                 }
             },
+
+            MIRInstrKind::Dereference { pointer, .. } => {
+                visit(MIRInstrOperand::Value(pointer));
+            }
 
             MIRInstrKind::Call { callee, args, .. } => {
                 visit(MIRInstrOperand::Value(callee));
@@ -394,6 +392,11 @@ pub enum MIRInstrKind {
     AddressOf {
         out: MIRRegister,
         place: MIRPlace,
+    },
+    Dereference {
+        out: MIRPlace,
+        pointer: MIRValue,
+        pointee_type: MIRTypeID,
     },
 
     AggregateOp(MIRAggregateOp),

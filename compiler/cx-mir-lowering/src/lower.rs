@@ -5,15 +5,16 @@ use cx_lmir::types::{LMIRIntegerType, LMIRType, LMIRTypeKind, TypeSize};
 use cx_lmir::{
     LMIRABISlot, LMIRBasicBlock, LMIRBlockParameter, LMIRBlockTarget, LMIRCoercionType,
     LMIRFloatBinOp, LMIRFloatUnOp, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype,
-    LMIRFunctionSignature, LMIRGlobalType, LMIRGlobalValue, LMIRInstruction, LMIRInstructionKind,
-    LMIRIntBinOp, LMIRIntUnOp, LMIRParameter, LMIRParameterABI, LMIRPtrBinOp, LMIRRegister,
-    LMIRReturnABI, LMIRUnit, LMIRValue, LinkageType,
+    LMIRFunctionSignature, LMIRGlobalInitializer, LMIRGlobalState as LoweredGlobalState,
+    LMIRGlobalType, LMIRGlobalValue, LMIRInstruction, LMIRInstructionKind, LMIRIntBinOp,
+    LMIRIntUnOp, LMIRParameter, LMIRParameterABI, LMIRPtrBinOp, LMIRRegister, LMIRReturnABI,
+    LMIRUnit, LMIRValue, LinkageType,
 };
 use cx_log::CXResult;
 use cx_mir::{
     MIRAggregateOp, MIRBasicBlockID, MIRBinaryOp, MIRBlockTarget, MIRCoercion, MIRConstant,
     MIRFieldLayout, MIRFloatBinaryOp, MIRFnParam, MIRFnSignature, MIRFunction, MIRFunctionType,
-    MIRGlobalInitializer, MIRInstrKind, MIRIntBinaryOp, MIRIntType, MIRPlace, MIRPlaceAggregateOp,
+    MIRGlobalState, MIRInstrKind, MIRIntBinaryOp, MIRIntType, MIRPlace, MIRPlaceAggregateOp,
     MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister, MIRTypeID, MIRTypeKind, MIRTypeRegistry,
     MIRUnaryOp, MIRUnit, MIRValue, MIRValueAggregateOp,
 };
@@ -38,32 +39,32 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistry) -> CXResult<LMI
         .globals
         .iter()
         .map(|global| {
-            let linkage = if global.is_definition {
-                convert_linkage(global.linkage)
-            } else {
+            let linkage = if matches!(global.state, MIRGlobalState::External) {
                 LinkageType::External
+            } else {
+                convert_linkage(global.linkage)
             };
-            let lowered = match &global.initializer {
-                Some(MIRGlobalInitializer::Bytes(bytes)) => {
-                    LMIRGlobalType::StringLiteral(String::from_utf8_lossy(bytes).into_owned())
+            let lowered_type = convert_type(global.ty, types);
+            let lowered = match &global.state {
+                MIRGlobalState::External => LMIRGlobalType::Variable {
+                    _type: lowered_type,
+                    state: LoweredGlobalState::External,
+                },
+                MIRGlobalState::ZeroInitialized => LMIRGlobalType::Variable {
+                    _type: lowered_type,
+                    state: LoweredGlobalState::ZeroInitialized,
+                },
+                MIRGlobalState::Initialized(MIRConstant::String(value)) => {
+                    LMIRGlobalType::StringLiteral(value.clone())
                 }
-                initializer => {
-                    let initial_value = match initializer {
-                        Some(MIRGlobalInitializer::Scalar(MIRConstant::Integer {
-                            value, ..
-                        })) => Some(*value as i64),
-                        Some(MIRGlobalInitializer::Scalar(MIRConstant::Bool(value))) => {
-                            Some(i64::from(*value))
-                        }
-                        Some(MIRGlobalInitializer::Scalar(MIRConstant::Null)) => Some(0),
-                        Some(MIRGlobalInitializer::Scalar(MIRConstant::Unit)) | None => None,
-                        Some(other) => panic!("unsupported MIR global initializer: {other:?}"),
-                    };
-                    LMIRGlobalType::Variable {
-                        _type: convert_type(global.ty, types),
-                        initial_value,
-                    }
-                }
+                MIRGlobalState::Initialized(MIRConstant::Unit) => LMIRGlobalType::Variable {
+                    _type: lowered_type,
+                    state: LoweredGlobalState::ZeroInitialized,
+                },
+                MIRGlobalState::Initialized(constant) => LMIRGlobalType::Variable {
+                    _type: lowered_type,
+                    state: LoweredGlobalState::Initialized(lower_global_initializer(constant)),
+                },
             };
             LMIRGlobalValue {
                 name: global.name.clone(),
@@ -88,6 +89,30 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistry) -> CXResult<LMI
         fn_defs: functions,
         global_vars: globals,
     })
+}
+
+fn lower_global_initializer(constant: &MIRConstant) -> LMIRGlobalInitializer {
+    match constant {
+        MIRConstant::Bool(value) => LMIRGlobalInitializer::Integer {
+            value: i128::from(*value),
+            _type: LMIRIntegerType::I1,
+            signed: false,
+        },
+        MIRConstant::Integer { value, ty, signed } => LMIRGlobalInitializer::Integer {
+            value: *value,
+            _type: convert_integer_type(*ty),
+            signed: *signed,
+        },
+        MIRConstant::Float { value, ty } => LMIRGlobalInitializer::Float {
+            value: *value,
+            _type: convert_float_type(*ty),
+        },
+        MIRConstant::Null => LMIRGlobalInitializer::Null,
+        MIRConstant::Unit
+        | MIRConstant::String(_)
+        | MIRConstant::Function(_)
+        | MIRConstant::Undefined => panic!("unsupported MIR global initializer: {constant:?}"),
+    }
 }
 
 fn assertion_prototype(types: &MIRTypeRegistry) -> LMIRFunctionPrototype {
@@ -342,6 +367,20 @@ impl<'a> FunctionLowerer<'a> {
                 };
                 self.emit_to(*out, LMIRInstructionKind::Alias { value: address });
             }
+            MIRInstrKind::Dereference {
+                out,
+                pointer,
+                pointee_type,
+            } => {
+                let value = self.lower_value(pointer, None);
+                self.places.insert(
+                    *out,
+                    PlaceBinding::Address {
+                        value,
+                        ty: *pointee_type,
+                    },
+                );
+            }
             MIRInstrKind::AggregateOp(operation) => self.lower_aggregate(operation),
             MIRInstrKind::Call { out, callee, args } => self.lower_call(*out, callee, args),
             MIRInstrKind::BinOp { out, op, lhs, rhs } => self.lower_binary(*out, op, lhs, rhs),
@@ -427,13 +466,6 @@ impl<'a> FunctionLowerer<'a> {
         match operation {
             MIRAggregateOp::Place { out, op } => {
                 let binding = match op {
-                    MIRPlaceAggregateOp::Dereference {
-                        pointer,
-                        pointee_type,
-                    } => PlaceBinding::Address {
-                        value: self.lower_value(pointer, None),
-                        ty: pointee_type.clone(),
-                    },
                     MIRPlaceAggregateOp::Field {
                         base,
                         field,
@@ -946,8 +978,8 @@ impl<'a> FunctionLowerer<'a> {
                     return self.address(binding);
                 }
                 if matches!(place, MIRPlace::Global(id) if matches!(
-                    self.unit.global(*id).and_then(|global| global.initializer.as_ref()),
-                    Some(MIRGlobalInitializer::Bytes(_))
+                    self.unit.global(*id).map(|global| &global.state),
+                    Some(MIRGlobalState::Initialized(MIRConstant::String(_)))
                 )) {
                     return self.address(binding);
                 }
@@ -1013,6 +1045,7 @@ impl<'a> FunctionLowerer<'a> {
                     self.ty(expected),
                 )
             }
+            MIRConstant::String(_) => panic!("string constants must be lowered as globals"),
             MIRConstant::Undefined => panic!("cannot lower undefined MIR value"),
         }
     }

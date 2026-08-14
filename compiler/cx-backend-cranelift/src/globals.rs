@@ -1,6 +1,6 @@
 use crate::{routines::convert_linkage, GlobalState};
 use cranelift_module::{DataDescription, Linkage, Module};
-use cx_lmir::{LMIRGlobalType, LMIRGlobalValue};
+use cx_lmir::{LMIRGlobalInitializer, LMIRGlobalState, LMIRGlobalType, LMIRGlobalValue};
 use cx_log::CXResult;
 
 pub(crate) fn generate_global(state: &mut GlobalState, variable: &LMIRGlobalValue) -> CXResult<()> {
@@ -24,9 +24,17 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &LMIRGlobalValu
 
         LMIRGlobalType::Variable {
             _type,
-            initial_value,
+            state: global_state,
         } => {
-            let linkage = convert_linkage(variable.linkage);
+            let linkage = match global_state {
+                LMIRGlobalState::External => Linkage::Import,
+                LMIRGlobalState::ZeroInitialized | LMIRGlobalState::Initialized(_) => {
+                    match variable.linkage {
+                        cx_lmir::LinkageType::External => Linkage::Export,
+                        linkage => convert_linkage(linkage),
+                    }
+                }
+            };
             let id = state
                 .object_module
                 .declare_data(variable.name.as_str(), linkage, true, false)
@@ -37,38 +45,16 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &LMIRGlobalValu
             } else {
                 let mut data = DataDescription::new();
 
-                if let Some(initial_value) = initial_value {
-                    let bytes: [u8; 8] = i64::to_ne_bytes(*initial_value);
-                    let type_size = _type.size();
-
-                    // Little Endian:
-                    // 1111 2222 3333 4444
-                    // ~~~~~~~~~ = i16
-                    //
-                    // Big Endian:
-                    // 4444 3333 2222 1111
-                    //     i16 = ~~~~~~~~~
-                    let relevant_data = if cfg!(target_endian = "little") {
-                        bytes
-                            .iter()
-                            .take(usize::from(type_size))
-                            .cloned()
-                            .collect::<Vec<_>>()
-                    } else {
-                        bytes
-                            .iter()
-                            .skip(8 - usize::from(type_size))
-                            .cloned()
-                            .collect::<Vec<_>>()
-                    };
-
-                    data.define(relevant_data.into_boxed_slice());
-                    state.object_module.define_data(id, &data).expect("");
-                } else {
-                    let size = _type.size();
-                    data.define_zeroinit(usize::from(size));
-                    state.object_module.define_data(id, &data).expect("");
+                match global_state {
+                    LMIRGlobalState::ZeroInitialized => {
+                        data.define_zeroinit(usize::from(_type.size()));
+                    }
+                    LMIRGlobalState::Initialized(initializer) => {
+                        data.define(initializer_bytes(initializer, _type).into_boxed_slice());
+                    }
+                    LMIRGlobalState::External => unreachable!(),
                 }
+                state.object_module.define_data(id, &data).expect("");
 
                 id
             }
@@ -78,4 +64,40 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &LMIRGlobalValu
     state.global_ids.push(id);
 
     Ok(())
+}
+
+fn initializer_bytes(
+    initializer: &LMIRGlobalInitializer,
+    ty: &cx_lmir::types::LMIRType,
+) -> Vec<u8> {
+    let bytes = match initializer {
+        LMIRGlobalInitializer::Integer { value, .. } => value.to_ne_bytes().to_vec(),
+        LMIRGlobalInitializer::Float { value, _type } => match _type {
+            cx_lmir::types::LMIRFloatType::F32 => {
+                let value: f32 = value.into();
+                value.to_ne_bytes().to_vec()
+            }
+            cx_lmir::types::LMIRFloatType::F64 => {
+                let value: f64 = value.into();
+                value.to_ne_bytes().to_vec()
+            }
+        },
+        LMIRGlobalInitializer::Null => vec![0; usize::from(ty.size())],
+    };
+    fit_bytes(bytes, usize::from(ty.size()))
+}
+
+fn fit_bytes(mut bytes: Vec<u8>, size: usize) -> Vec<u8> {
+    if bytes.len() < size {
+        bytes.resize(size, 0);
+        return bytes;
+    }
+    if bytes.len() > size {
+        if cfg!(target_endian = "little") {
+            bytes.truncate(size);
+        } else {
+            bytes = bytes.split_off(bytes.len() - size);
+        }
+    }
+    bytes
 }

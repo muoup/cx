@@ -3,11 +3,10 @@ use std::collections::{HashMap, HashSet};
 use cx_ast::ast::modifiers::CXLinkageMode;
 use cx_mir::{
     MIRBasicBlockID, MIRConstant, MIRField, MIRFnParam, MIRFnPrototype, MIRFnSignature,
-    MIRFunctionID, MIRGlobalID, MIRGlobalInitializer, MIRInstrKind, MIRIntType, MIRParameterID,
-    MIRPlace, MIRRegister, MIRTypeDefinition, MIRTypeID, MIRTypeKind, MIRUnit, MIRValue,
+    MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace,
+    MIRRegister, MIRTypeDefinition, MIRTypeID, MIRTypeKind, MIRUnit, MIRValue,
 };
 use cx_thir::{
-    THIRUnit,
     registry::THIRDecomposedRegistry,
     thir::{
         data::{THIRFnPrototype, THIRFunction},
@@ -16,6 +15,7 @@ use cx_thir::{
         r#type::{THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
+    THIRUnit,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -243,13 +243,11 @@ impl<'thir> MIRBuilder<'thir> {
     }
 
     fn predeclare_global(&mut self, global: &THIRGlobalVariable) {
-        let (name, ty, initializer, nodrop) = match &global.kind {
+        let (name, ty, state, nodrop) = match &global.kind {
             MIRGlobalVarKind::StringLiteral { name, value } => (
                 name.clone(),
                 self.lower_type(&THIRType::from(THIRTypeKind::Str)),
-                Some(MIRGlobalInitializer::Bytes(
-                    value.as_bytes().to_vec().into_boxed_slice(),
-                )),
+                MIRGlobalState::Initialized(MIRConstant::String(value.clone())),
                 true,
             ),
             MIRGlobalVarKind::Variable {
@@ -257,39 +255,38 @@ impl<'thir> MIRBuilder<'thir> {
                 _type,
                 initializer,
             } => {
-                let constant = initializer.and_then(|value| match &_type.kind {
-                    THIRTypeKind::Integer {
-                        _type: integer_type,
-                        signed,
-                    } => Some(MIRGlobalInitializer::Scalar(MIRConstant::Integer {
-                        value: value as i128,
-                        ty: lower_int_type(*integer_type),
-                        signed: *signed,
-                    })),
-                    _ => None,
-                });
+                let state = match initializer {
+                    Some(value) => match &_type.kind {
+                        THIRTypeKind::Integer {
+                            _type: integer_type,
+                            signed,
+                        } => MIRGlobalState::Initialized(MIRConstant::Integer {
+                            value: *value as i128,
+                            ty: lower_int_type(*integer_type),
+                            signed: *signed,
+                        }),
+                        _ => MIRGlobalState::ZeroInitialized,
+                    },
+                    None if global.linkage == CXLinkageMode::Extern => MIRGlobalState::External,
+                    None => MIRGlobalState::ZeroInitialized,
+                };
                 (
                     name.clone(),
                     self.lower_type(_type),
-                    constant,
+                    state,
                     _type.is_nodrop(),
                 )
             }
         };
 
-        let id = self.unit.add_global_with_nodrop(
+        let id = self.unit.add_global_with_nodrop_and_state(
             name.clone(),
             ty,
             global.linkage,
             global.is_mutable,
             nodrop,
+            state,
         );
-        let lowered = self
-            .unit
-            .global_mut(id)
-            .expect("a just-created global must exist");
-        lowered.initializer = initializer;
-        lowered.is_definition = true;
         self.global_symbols.entry(name.as_string()).or_insert(id);
     }
 
@@ -438,8 +435,6 @@ impl<'thir> MIRBuilder<'thir> {
         self.source_range = range;
     }
 
-    /// Emits an instruction if the active block is open. Returns whether the
-    /// instruction was appended, which lets CFG lowering record real edges.
     pub(crate) fn emit(&mut self, instruction: MIRInstrKind) -> bool {
         if self.current_block_terminated() {
             return false;
@@ -616,7 +611,7 @@ impl<'thir> MIRBuilder<'thir> {
         self.unit
             .global_mut(id)
             .expect("a just-created global must exist")
-            .is_definition = false;
+            .state = MIRGlobalState::External;
         self.global_symbols.insert(name.as_string(), id);
         id
     }

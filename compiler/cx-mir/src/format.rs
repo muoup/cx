@@ -1,5 +1,8 @@
 use std::fmt::{self, Display, Formatter};
 
+mod contextual;
+pub use contextual::MIRDisplay;
+
 use crate::{
     MIRLayoutError, MIRTypeID,
     expr::{
@@ -8,8 +11,7 @@ use crate::{
         MIRValue, MIRValueAggregateOp,
     },
     global::{
-        MIRFnSignature, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalInitializer,
-        MIRGlobalVariable,
+        MIRFnSignature, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable,
     },
     module::MIRUnit,
     op::{MIRBinaryOp, MIRCoercion, MIRUnaryOp},
@@ -90,6 +92,7 @@ impl Display for MIRConstant {
         match self {
             Self::Unit => f.write_str("()"),
             Self::Bool(value) => Display::fmt(value, f),
+            Self::String(value) => write!(f, "{:?}", value),
             Self::Integer { value, ty, signed } => write!(
                 f,
                 "{value}:{}{}",
@@ -172,15 +175,12 @@ impl Display for MIRInstrKind {
             Self::Create { out, ty } => write!(f, "create {out}: {ty}"),
             Self::Assign { dest, value, ty } => write!(f, "{dest} = {value}: {ty}"),
             Self::AddressOf { out, place } => write!(f, "{out} = address_of {place}"),
+            Self::Dereference {
+                out,
+                pointer,
+                pointee_type,
+            } => write!(f, "{out} = dereference {pointer}: {pointee_type}"),
             Self::AggregateOp(operation) => match operation {
-                MIRAggregateOp::Place {
-                    out,
-                    op:
-                        MIRPlaceAggregateOp::Dereference {
-                            pointer,
-                            pointee_type,
-                        },
-                } => write!(f, "{out} = aggregate.deref {pointer}: {pointee_type}"),
                 MIRAggregateOp::Place {
                     out,
                     op:
@@ -371,11 +371,12 @@ impl Display for MIRFnSignature {
     }
 }
 
-impl Display for MIRGlobalInitializer {
+impl Display for MIRGlobalState {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Scalar(value) => Display::fmt(value, f),
-            Self::Bytes(value) => write!(f, "bytes {value:?}"),
+            Self::External => f.write_str("external"),
+            Self::ZeroInitialized => f.write_str("zero"),
+            Self::Initialized(value) => Display::fmt(value, f),
         }
     }
 }
@@ -395,15 +396,7 @@ impl Display for MIRGlobalVariable {
                 "readonly"
             }
         )?;
-        if self.is_definition {
-            f.write_str(" = ")?;
-            match &self.initializer {
-                Some(v) => Display::fmt(v, f),
-                None => f.write_str("zero"),
-            }
-        } else {
-            f.write_str(" declaration")
-        }
+        write!(f, " = {}", self.state)
     }
 }
 
@@ -468,16 +461,7 @@ impl Display for MIRFunction {
 
 impl Display for MIRUnit {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str("mir v0 {\n")?;
-        for global in &self.globals {
-            writeln!(f, "  {global}")?;
-        }
-        for function in &self.functions {
-            for line in function.to_string().lines() {
-                writeln!(f, "  {line}")?;
-            }
-        }
-        f.write_str("}\n")
+        Display::fmt(&self.display_pretty(), f)
     }
 }
 
