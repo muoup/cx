@@ -43,7 +43,7 @@ pub fn typecheck_match(
 
     env.push_scope(false, false);
     env.function.set_scope_anchor(condition);
-    env.function.configure_merge_scope(condition, None, false);
+    env.function.configure_merge_scope(condition, None);
 
     let join_scope_idx = env.function.current_scope_index();
     let base_snapshot = env.function.current_snapshot();
@@ -214,12 +214,6 @@ pub fn typecheck_match(
                             },
                         );
 
-                        env.function.track_binding(
-                            inner_local_id,
-                            inner_name.clone(),
-                            variant_type.is_nodrop(),
-                        );
-
                         let (body_expr, flow) =
                             typecheck_match_arm_body(env, namespace, body, "arm")?;
                         env.pop_scope()
@@ -231,6 +225,7 @@ pub fn typecheck_match(
                                 _type: THIRType::unit(),
                                 kind: THIRExpressionKind::Block {
                                     statements: vec![bind_region, body_expr],
+                                    creates_scope: false,
                                 },
                             },
                             flow,

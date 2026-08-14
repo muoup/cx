@@ -23,7 +23,7 @@ pub fn typecheck_switch(
 ) -> CXResult<TypecheckResult> {
     env.push_scope(true, false);
     env.function.set_scope_anchor(condition);
-    env.function.configure_merge_scope(condition, None, false);
+    env.function.configure_merge_scope(condition, None);
 
     let join_scope_idx = env.function.current_scope_index();
     let condition_value = typecheck_expr(env, namespace, condition, None)

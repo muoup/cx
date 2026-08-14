@@ -11,6 +11,7 @@ dense_id!(MIRPlaceID);
 dense_id!(MIRParameterID);
 dense_id!(MIRRegister);
 dense_id!(MIRBasicBlockID);
+dense_id!(MIRScopeID);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MIRPlace {
@@ -357,6 +358,8 @@ impl MIRInstr {
             }
             MIRInstrKind::Initialize { .. }
             | MIRInstrKind::Create { .. }
+            | MIRInstrKind::ScopeEnter { .. }
+            | MIRInstrKind::ScopeExit { .. }
             | MIRInstrKind::Unreachable => {}
         }
     }
@@ -373,6 +376,14 @@ fn visit_target_operands<'a>(
 
 #[derive(Debug, Clone)]
 pub enum MIRInstrKind {
+    /// Marks the beginning of a lexical scope for ownership analysis.
+    ScopeEnter {
+        scope: MIRScopeID,
+    },
+    /// Marks the end of a lexical scope for ownership analysis.
+    ScopeExit {
+        scope: MIRScopeID,
+    },
     Initialize {
         place: MIRPlace,
     },
@@ -451,6 +462,7 @@ pub enum MIRInstrKind {
     VariantSwitch {
         subject: MIRPlace,
         sum_type: MIRTypeID,
+        consumes_subject: bool,
         cases: Vec<(usize, MIRBlockTarget)>,
         default: Option<MIRBlockTarget>,
     },

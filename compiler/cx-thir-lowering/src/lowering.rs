@@ -172,6 +172,16 @@ fn lower_expression(
                 adopting,
             } => {
                 let initial = lower_expression(builder, initial_region)?;
+                let initial = if !*adopting
+                    && matches!(initial_region.kind, THIRExpressionKind::RegionCreate { .. })
+                {
+                    match initial {
+                        MIRValue::Place(place) => MIRValue::Move(place),
+                        value => value,
+                    }
+                } else {
+                    initial
+                };
                 let place = if *adopting {
                     if let MIRValue::Place(place) = initial {
                         place
@@ -487,6 +497,9 @@ fn lower_expression(
             THIRExpressionKind::Break { cleanups, .. } => {
                 control_flow::lower_cleanups(builder, cleanups)?;
                 if let Some(target) = builder.break_target() {
+                    if let Some(depth) = builder.break_scope_depth() {
+                        builder.unwind_lexical_scopes_to(depth);
+                    }
                     builder.emit(MIRInstrKind::Jump {
                         target: MIRBlockTarget::new(target),
                     });
@@ -498,6 +511,9 @@ fn lower_expression(
             THIRExpressionKind::Continue { cleanups, .. } => {
                 control_flow::lower_cleanups(builder, cleanups)?;
                 if let Some(target) = builder.continue_target() {
+                    if let Some(depth) = builder.continue_scope_depth() {
+                        builder.unwind_lexical_scopes_to(depth);
+                    }
                     builder.emit(MIRInstrKind::Jump {
                         target: MIRBlockTarget::new(target),
                     });
@@ -600,6 +616,9 @@ fn lower_expression(
                     .unwrap_or(MIRValue::Constant(MIRConstant::Unit));
                 control_flow::lower_cleanups(builder, cleanups)?;
                 if let Some(target) = builder.yield_target() {
+                    if let Some(depth) = builder.yield_scope_depth() {
+                        builder.unwind_lexical_scopes_to(depth);
+                    }
                     builder.record_yield();
                     builder.emit(MIRInstrKind::Jump {
                         target: MIRBlockTarget::with_args(target, vec![value]),
@@ -624,8 +643,14 @@ fn lower_expression(
                 });
                 MIRValue::Constant(MIRConstant::Unit)
             }
-            THIRExpressionKind::Block { statements } => {
+            THIRExpressionKind::Block {
+                statements,
+                creates_scope,
+            } => {
                 let mut result = MIRValue::Constant(MIRConstant::Unit);
+                if *creates_scope {
+                    builder.push_lexical_scope();
+                }
                 builder.push_named_scope();
                 for statement in statements {
                     if builder.current_block_terminated() {
@@ -634,6 +659,9 @@ fn lower_expression(
                     result = lower_expression(builder, statement)?;
                 }
                 builder.pop_named_scope();
+                if *creates_scope {
+                    builder.pop_lexical_scope();
+                }
                 result
             }
 

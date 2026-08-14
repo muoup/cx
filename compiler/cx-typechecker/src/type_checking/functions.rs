@@ -34,7 +34,7 @@ pub fn typecheck_function(
     env.push_scope(false, false);
     env.function.set_scope_anchor(body);
     env.function
-        .configure_merge_scope(body, Some("fallthrough"), true);
+        .configure_merge_scope(body, Some("fallthrough"));
 
     for THIRParameter {
         name,
@@ -61,8 +61,6 @@ pub fn typecheck_function(
                 _type: ref_type,
             },
         );
-        env.function
-            .track_binding(local_id, name.clone(), _type.is_nodrop());
     }
 
     let body_expr = typecheck_expr(env, namespace, body, None)

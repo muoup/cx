@@ -1,7 +1,6 @@
 use crate::environment::TypeEnvironment;
 use crate::type_checking::aggregate::fields::struct_field;
 use crate::type_checking::result::TypecheckResult;
-use crate::type_checking::value::locals::ensure_binding_available;
 use crate::type_checking::value::{IndirectBase, resolve_indirect_base};
 use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
 use cx_hir::ast::modifiers::HIR_CONST;
@@ -37,7 +36,6 @@ pub fn typecheck_access(
     rhs: &HIRExpression,
     expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
-    ensure_binding_available(env, expr.token_range(), lhs.binding())?;
     let lhs_binding = lhs.binding().cloned();
 
     let base = resolve_access_base(

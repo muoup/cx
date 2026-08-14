@@ -3,7 +3,9 @@ use super::*;
 impl<'a> FunctionLowerer<'a> {
     pub(super) fn lower_instruction(&mut self, instruction: &MIRInstrKind) {
         match instruction {
-            MIRInstrKind::Initialize { .. }
+            MIRInstrKind::ScopeEnter { .. }
+            | MIRInstrKind::ScopeExit { .. }
+            | MIRInstrKind::Initialize { .. }
             | MIRInstrKind::Leak { .. }
             | MIRInstrKind::Emit { .. } => {}
             MIRInstrKind::Create { out, ty } => {
@@ -106,6 +108,7 @@ impl<'a> FunctionLowerer<'a> {
                 sum_type,
                 cases,
                 default,
+                ..
             } => {
                 let tag = self.load_discriminant(self.place(*subject), *sum_type, None);
                 let targets = cases

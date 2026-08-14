@@ -9,12 +9,11 @@ use cx_thir::{
 };
 
 use crate::{
-    environment::{BindingMoveState, TypeEnvironment},
+    environment::TypeEnvironment,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
         op::typecheck_binop,
-        result::{BindingPlaceKind, TypecheckResult},
-        value::locals::{ensure_binding_available, mark_binding},
+        result::TypecheckResult,
     },
 };
 
@@ -25,7 +24,6 @@ pub fn typecheck_assignment(
     op: Option<&HIRBinOp>,
     expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
-    let binding = lhs.binding().cloned();
     let lhs_expr = lhs.standard_ready_coerce(env, expr.token_range())?;
     let lhs_type = lhs_expr._type.clone();
 
@@ -42,27 +40,11 @@ pub fn typecheck_assignment(
     let mut rhs = implicit_cast(env, rhs, &inner)?;
 
     if let Some(op) = op {
-        if let Some(binding) = binding.as_ref() {
-            ensure_binding_available(env, expr.token_range(), Some(binding))?;
-        }
-
         let loaded_lhs = std_rval_promotion(env, lhs_expr.clone())?;
 
         rhs = std_rval_promotion(env, rhs)
             .and_then(|v| typecheck_binop(env, op, loaded_lhs, v))
             .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
-    } else if let Some(binding) = binding.as_ref()
-        && binding.kind == BindingPlaceKind::Projection
-        && env
-            .function
-            .tracked_binding(binding.local_id)
-            .is_some_and(|tracked| tracked.state != crate::environment::BindingMoveState::Available)
-    {
-        return env.log_error(
-            expr.token_range(),
-            "Assignment to a field or projection of a moved aggregate binding is not implemented"
-                .to_string(),
-        );
     }
 
     if inner.get_specifier(HIR_CONST) {
@@ -73,10 +55,6 @@ pub fn typecheck_assignment(
     }
 
     rhs = implicit_cast(env, rhs, &inner)?;
-
-    if let Some(binding) = binding.as_ref() {
-        mark_binding(env, binding, BindingMoveState::Available);
-    }
 
     Ok(TypecheckResult::new(
         lhs_type,

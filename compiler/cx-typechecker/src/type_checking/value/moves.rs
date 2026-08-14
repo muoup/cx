@@ -1,11 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    environment::{BindingMoveState, TypeEnvironment},
+    environment::TypeEnvironment,
     type_checking::{
         result::{BindingPlaceKind, TypecheckResult},
         typechecker::typecheck_expr,
-        value::locals::{ensure_binding_available, mark_binding},
     },
 };
 use cx_hir::ast::{
@@ -71,9 +70,6 @@ pub(crate) fn typecheck_move(
                 .to_string(),
         );
     }
-
-    ensure_binding_available(env, inner_expr.token_range(), Some(&binding))?;
-    mark_binding(env, &binding, BindingMoveState::Moved);
 
     Ok(TypecheckResult::new(
         inner_type,
@@ -181,9 +177,6 @@ pub(crate) fn typecheck_leak(
     if !inner_type.is_nodrop() {
         return Ok(TypecheckResult::from(value));
     }
-
-    ensure_binding_available(env, inner.token_range(), Some(&binding))?;
-    mark_binding(env, &binding, BindingMoveState::Moved);
 
     Ok(TypecheckResult::new(
         THIRType::unit(),
@@ -308,9 +301,6 @@ pub(crate) fn typecheck_unpack(
                 _type: binding_ref_type,
             },
         );
-        env.function
-            .track_binding(local_id, binding_name.clone(), field_type.is_nodrop());
-
         statements.push(THIRExpression {
             token_range: TokenRange::internal(),
             _type: env.symbols.mem_ref_to(field_type.clone()),
@@ -333,6 +323,9 @@ pub(crate) fn typecheck_unpack(
 
     Ok(TypecheckResult::new(
         THIRType::unit(),
-        THIRExpressionKind::Block { statements },
+        THIRExpressionKind::Block {
+            statements,
+            creates_scope: false,
+        },
     ))
 }

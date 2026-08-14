@@ -269,6 +269,7 @@ pub enum THIRExpressionKind {
     // Sequential Statements
     Block {
         statements: Vec<THIRExpression>,
+        creates_scope: bool,
     },
 
     // Function Calls

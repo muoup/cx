@@ -1262,8 +1262,15 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::Block { statements } => {
-                write!(f, "Block {{ <'")?;
+            THIRExpressionKind::Block {
+                statements,
+                creates_scope,
+            } => {
+                write!(
+                    f,
+                    "{}Block {{ <'",
+                    if *creates_scope { "Scoped " } else { "" }
+                )?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
                 for stmt in statements {

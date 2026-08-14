@@ -198,7 +198,7 @@ pub(crate) fn validate_safe_expression(
         | THIRExpressionKind::Assert {
             condition: inner, ..
         } => validate_safe_expression(env, inner),
-        THIRExpressionKind::Block { statements } => validate_all(env, statements),
+        THIRExpressionKind::Block { statements, .. } => validate_all(env, statements),
         THIRExpressionKind::CallFunction {
             function,
             arguments,

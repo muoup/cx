@@ -98,7 +98,7 @@ fn realize_tagged_union_constructor(
         THIRExpression {
             token_range: TokenRange::internal(),
             _type: variant_type.clone(),
-            kind: THIRExpressionKind::RegionDuplicate {
+            kind: THIRExpressionKind::RegionMove {
                 source: Box::new(param_ref),
             },
         }

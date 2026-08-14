@@ -19,7 +19,7 @@ pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
         | THIRExpressionKind::Break { .. }
         | THIRExpressionKind::Continue { .. } => false,
         THIRExpressionKind::Unsafe { expression, .. } => expr_may_fall_through(expression),
-        THIRExpressionKind::Block { statements } => {
+        THIRExpressionKind::Block { statements, .. } => {
             statements.last().map(expr_may_fall_through).unwrap_or(true)
         }
         THIRExpressionKind::If {
@@ -114,7 +114,10 @@ pub(crate) fn append_current_scope_cleanups(
     statements.extend(cleanups);
     THIRExpression {
         token_range: TokenRange::internal(),
-        kind: THIRExpressionKind::Block { statements },
+        kind: THIRExpressionKind::Block {
+            statements,
+            creates_scope: false,
+        },
         _type: THIRType::unit(),
     }
 }

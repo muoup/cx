@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use cx_mir::{
     MIRBasicBlockID, MIRConstant, MIRField, MIRFnParam, MIRFnPrototype, MIRFnSignature,
     MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace,
-    MIRRegister, MIRTypeDefinition, MIRTypeID, MIRTypeKind, MIRUnit, MIRValue,
+    MIRRegister, MIRScopeID, MIRTypeDefinition, MIRTypeID, MIRTypeKind, MIRUnit, MIRValue,
 };
 use cx_thir::{
     THIRUnit,
@@ -23,6 +23,7 @@ use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 pub(crate) struct LoopContext {
     pub break_target: MIRBasicBlockID,
     pub continue_target: Option<MIRBasicBlockID>,
+    pub lexical_scope_depth: usize,
 }
 
 #[derive(Debug)]
@@ -30,6 +31,7 @@ pub(crate) struct YieldContext {
     pub target: MIRBasicBlockID,
     pub result: MIRRegister,
     pub has_incoming: bool,
+    pub lexical_scope_depth: usize,
 }
 
 #[derive(Debug)]
@@ -40,6 +42,8 @@ struct FunctionContext {
     named_values: Vec<HashMap<String, MIRValue>>,
     loops: Vec<LoopContext>,
     yields: Vec<YieldContext>,
+    lexical_scopes: Vec<MIRScopeID>,
+    next_scope: usize,
 }
 
 /// Stateful constructor for one semantic MIR unit.
@@ -365,6 +369,8 @@ impl<'thir> MIRBuilder<'thir> {
             named_values: vec![HashMap::new()],
             loops: Vec::new(),
             yields: Vec::new(),
+            lexical_scopes: vec![MIRScopeID::new(0)],
+            next_scope: 1,
         });
         self.set_block_name(entry, "entry");
 
@@ -498,7 +504,20 @@ impl<'thir> MIRBuilder<'thir> {
         debug_name: Option<CXIdent>,
         nodrop: bool,
     ) -> MIRPlace {
-        self.function_mut().add_place(ty, debug_name, nodrop)
+        let scope = if debug_name.is_some() {
+            self.context()
+                .lexical_scopes
+                .last()
+                .copied()
+                .expect("active function has no lexical scope")
+        } else {
+            self.context()
+                .lexical_scopes
+                .first()
+                .copied()
+                .expect("active function has no root lexical scope")
+        };
+        self.function_mut().add_place(ty, debug_name, nodrop, scope)
     }
 
     pub(crate) fn create(
@@ -531,6 +550,54 @@ impl<'thir> MIRBuilder<'thir> {
             "attempted to pop the function's base symbol scope"
         );
         context.named_values.pop();
+    }
+
+    pub(crate) fn push_lexical_scope(&mut self) {
+        let scope = {
+            let context = self.context_mut();
+            let scope = MIRScopeID::new(context.next_scope);
+            context.next_scope += 1;
+            context.lexical_scopes.push(scope);
+            scope
+        };
+        self.emit(MIRInstrKind::ScopeEnter { scope });
+    }
+
+    pub(crate) fn pop_lexical_scope(&mut self) {
+        let scope = {
+            let context = self.context_mut();
+            assert!(
+                context.lexical_scopes.len() > 1,
+                "attempted to pop the function's lexical scope"
+            );
+            context
+                .lexical_scopes
+                .pop()
+                .expect("lexical scope stack is non-empty")
+        };
+        if !self.current_block_terminated() {
+            self.emit(MIRInstrKind::ScopeExit { scope });
+        }
+    }
+
+    pub(crate) fn lexical_scope_depth(&self) -> usize {
+        self.context().lexical_scopes.len()
+    }
+
+    /// Emits exits for scopes abandoned by a terminating control-flow edge.
+    /// The builder stack is left intact so the enclosing structured lowering
+    /// can finish unwinding its own scope context.
+    pub(crate) fn unwind_lexical_scopes_to(&mut self, depth: usize) {
+        assert!(
+            depth > 0 && depth <= self.lexical_scope_depth(),
+            "invalid lexical scope unwind depth"
+        );
+        let scopes = self.context().lexical_scopes[depth..].to_vec();
+        for scope in scopes.into_iter().rev() {
+            if !self.current_block_terminated() {
+                self.emit(MIRInstrKind::ScopeExit { scope });
+            }
+        }
     }
 
     pub(crate) fn bind_named(&mut self, name: &CXIdent, value: MIRValue) {
@@ -609,9 +676,11 @@ impl<'thir> MIRBuilder<'thir> {
         break_target: MIRBasicBlockID,
         continue_target: Option<MIRBasicBlockID>,
     ) {
+        let lexical_scope_depth = self.lexical_scope_depth();
         self.context_mut().loops.push(LoopContext {
             break_target,
             continue_target,
+            lexical_scope_depth,
         });
     }
 
@@ -637,17 +706,41 @@ impl<'thir> MIRBuilder<'thir> {
             .find_map(|context| context.continue_target)
     }
 
+    pub(crate) fn break_scope_depth(&self) -> Option<usize> {
+        self.context()
+            .loops
+            .last()
+            .map(|context| context.lexical_scope_depth)
+    }
+
+    pub(crate) fn continue_scope_depth(&self) -> Option<usize> {
+        self.context()
+            .loops
+            .iter()
+            .rev()
+            .find_map(|context| context.continue_target.map(|_| context.lexical_scope_depth))
+    }
+
     pub(crate) fn push_yield(&mut self, target: MIRBasicBlockID, result_type: MIRTypeID) {
         let result = self.block_param(target, result_type, None);
+        let lexical_scope_depth = self.lexical_scope_depth();
         self.context_mut().yields.push(YieldContext {
             target,
             result,
             has_incoming: false,
+            lexical_scope_depth,
         });
     }
 
     pub(crate) fn yield_target(&self) -> Option<MIRBasicBlockID> {
         self.context().yields.last().map(|context| context.target)
+    }
+
+    pub(crate) fn yield_scope_depth(&self) -> Option<usize> {
+        self.context()
+            .yields
+            .last()
+            .map(|context| context.lexical_scope_depth)
     }
 
     pub(crate) fn record_yield(&mut self) {

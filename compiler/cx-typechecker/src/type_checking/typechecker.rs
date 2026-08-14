@@ -83,7 +83,10 @@ fn typecheck_expr_inner(
 
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: THIRExpressionKind::Block { statements: block },
+                kind: THIRExpressionKind::Block {
+                    statements: block,
+                    creates_scope: *creates_scope,
+                },
                 _type: THIRType::unit(),
             })
         }
@@ -178,7 +181,7 @@ fn typecheck_expr_inner(
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))?;
             env.push_scope(false, false);
-            env.function.configure_merge_scope(expr, None, false);
+            env.function.configure_merge_scope(expr, None);
             let join_scope_idx = env.function.current_scope_index();
 
             let then_result = typecheck_fallthrough_scope(
@@ -605,6 +608,7 @@ pub fn add_implicit_return(
         token_range: TokenRange::internal(),
         kind: THIRExpressionKind::Block {
             statements: vec![expr, ret],
+            creates_scope: false,
         },
         _type: THIRType::unit(),
     })

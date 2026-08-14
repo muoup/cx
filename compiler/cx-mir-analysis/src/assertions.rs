@@ -238,7 +238,9 @@ fn transfer_instruction(environment: &mut ConstEnvironment, kind: &MIRInstrKind)
                 .registers
                 .insert(*out, eval_coercion(coercion, operand));
         }
-        MIRInstrKind::Leak { .. }
+        MIRInstrKind::ScopeEnter { .. }
+        | MIRInstrKind::ScopeExit { .. }
+        | MIRInstrKind::Leak { .. }
         | MIRInstrKind::Assert { .. }
         | MIRInstrKind::Assume { .. }
         | MIRInstrKind::Return { .. }

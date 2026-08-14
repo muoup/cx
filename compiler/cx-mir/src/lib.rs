@@ -12,7 +12,7 @@ pub use format::MIRDisplay;
 pub use expr::{
     MIRAggregateOp, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRInstr,
     MIRInstrKind, MIRInstrOperand, MIRParameterID, MIRPlace, MIRPlaceAggregateOp, MIRPlaceID,
-    MIRRegister, MIRValue, MIRValueAggregateOp,
+    MIRRegister, MIRScopeID, MIRValue, MIRValueAggregateOp,
 };
 pub use global::{
     MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRGlobalID,

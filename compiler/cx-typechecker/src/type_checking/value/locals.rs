@@ -1,10 +1,8 @@
 use crate::{
-    environment::{BindingMoveState, TypeEnvironment},
+    environment::TypeEnvironment,
     symbol::completion::complete_type,
     type_checking::{
-        coercion::implicit::implicit_cast,
-        result::{BindingPlaceKind, TypecheckResult, TypecheckedBinding},
-        typechecker::typecheck_expr,
+        coercion::implicit::implicit_cast, result::TypecheckResult, typechecker::typecheck_expr,
         value::ensure_valid_allocation_type,
     },
 };
@@ -16,48 +14,6 @@ use cx_thir::{
 };
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
-
-pub(crate) fn ensure_binding_available(
-    env: &mut TypeEnvironment,
-    range: &TokenRange,
-    expr: Option<&TypecheckedBinding>,
-) -> CXResult<()> {
-    let Some(binding) = expr else {
-        return Ok(());
-    };
-
-    let Some(state) = env.function.tracked_binding(binding.local_id) else {
-        return Ok(());
-    };
-
-    match state.state {
-        BindingMoveState::Available => Ok(()),
-        BindingMoveState::Moved => env.log_error(
-            range,
-            format!("Identifier '{}' has been moved", binding.root),
-        ),
-        BindingMoveState::ConditionallyMoved => env.log_error(
-            range,
-            format!(
-                "Identifier '{}' was conditionally moved across a control-flow join",
-                binding.root
-            ),
-        ),
-    }
-}
-
-pub(crate) fn mark_binding(
-    env: &mut TypeEnvironment,
-    binding: &TypecheckedBinding,
-    state: BindingMoveState,
-) {
-    if binding.kind == BindingPlaceKind::Local
-        && env.function.tracked_binding(binding.local_id).is_some()
-    {
-        env.function
-            .set_tracked_binding_state(binding.local_id, state);
-    }
-}
 
 pub(crate) fn typecheck_var_declaration(
     env: &mut TypeEnvironment,
@@ -119,9 +75,6 @@ pub(crate) fn typecheck_var_declaration(
             _type: mem_type,
         },
     );
-
-    env.function
-        .track_binding(local_id, name.clone(), ty.is_nodrop());
 
     Ok(TypecheckResult::from(binding))
 }

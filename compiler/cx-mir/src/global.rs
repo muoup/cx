@@ -4,7 +4,7 @@ use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 use crate::{
     expr::{
         MIRBasicBlock, MIRBasicBlockID, MIRConstant, MIRInstr, MIRInstrKind, MIRPlace, MIRPlaceID,
-        MIRRegister,
+        MIRRegister, MIRScopeID,
     },
     ty::MIRTypeID,
 };
@@ -146,6 +146,7 @@ pub struct MIRPlaceDecl {
     pub ty: MIRTypeID,
     pub debug_name: Option<CXIdent>,
     pub nodrop: bool,
+    pub scope: MIRScopeID,
 }
 
 #[derive(Debug, Clone)]
@@ -186,6 +187,7 @@ impl MIRFunction {
         ty: MIRTypeID,
         debug_name: Option<CXIdent>,
         nodrop: bool,
+        scope: MIRScopeID,
     ) -> MIRPlace {
         let id = MIRPlaceID::new(self.places.len());
         self.places.push(MIRPlaceDecl {
@@ -193,6 +195,7 @@ impl MIRFunction {
             ty,
             debug_name,
             nodrop,
+            scope,
         });
         MIRPlace::FunctionLocal(id)
     }

@@ -1,14 +1,10 @@
-use std::collections::HashMap;
-
 use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXRawResult;
 use cx_thir::thir::data::{THIRFnPrototype, THIRType};
-use cx_thir::thir::expression::THIRLocalID;
-use cx_util::identifier::CXIdent;
 
 use crate::environment::control_flow::{
-    BindingMoveState, ControlFlow, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind,
-    ScopeArrowSink, ScopeExitTarget, ScopeId, TrackedBindingState,
+    ControlFlow, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
+    ScopeExitTarget, ScopeId,
 };
 
 #[derive(Default)]
@@ -181,13 +177,9 @@ impl FunctionContext {
         &mut self,
         expr: &HIRExpression,
         include_current_snapshot: Option<&str>,
-        require_nodrop_discharge: bool,
     ) {
-        self.flow_mut().configure_merge_scope(
-            expr,
-            include_current_snapshot,
-            require_nodrop_discharge,
-        );
+        self.flow_mut()
+            .configure_merge_scope(expr, include_current_snapshot);
     }
 
     pub fn configure_loop_scope(&mut self, expr: &HIRExpression, loop_kind: LoopScopeKind) {
@@ -272,26 +264,6 @@ impl FunctionContext {
         self.current_yield_context()
             .map(|context| context.yield_count)
             .unwrap_or(0)
-    }
-
-    pub fn track_binding(&mut self, local_id: THIRLocalID, name: CXIdent, nodrop: bool) {
-        self.flow_mut().track_binding(local_id, name, nodrop);
-    }
-
-    pub fn tracked_binding(&self, local_id: THIRLocalID) -> Option<&TrackedBindingState> {
-        self.flow().tracked_binding(local_id)
-    }
-
-    pub fn set_tracked_binding_state(&mut self, local_id: THIRLocalID, state: BindingMoveState) {
-        self.flow_mut().set_tracked_binding_state(local_id, state);
-    }
-
-    pub fn tracked_bindings_snapshot(&self) -> HashMap<THIRLocalID, TrackedBindingState> {
-        self.flow().tracked_bindings_snapshot()
-    }
-
-    pub fn nodrop_bindings_in_nonfinal_state(&self) -> Vec<String> {
-        self.flow().nodrop_bindings_in_nonfinal_state()
     }
 
     pub fn in_safe_context(&self) -> bool {

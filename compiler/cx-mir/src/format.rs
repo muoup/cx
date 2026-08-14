@@ -170,6 +170,8 @@ impl Display for MIRInstr {
 impl Display for MIRInstrKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ScopeEnter { scope } => write!(f, "scope.enter {scope:?}"),
+            Self::ScopeExit { scope } => write!(f, "scope.exit {scope:?}"),
             Self::Initialize { place } => write!(f, "initialize {place}"),
             Self::Leak { place } => write!(f, "leak {place}"),
             Self::Create { out, ty } => write!(f, "create {out}: {ty}"),
@@ -296,6 +298,7 @@ impl Display for MIRInstrKind {
                 sum_type,
                 cases,
                 default,
+                ..
             } => {
                 write!(f, "variant_switch {subject}: {sum_type} [")?;
                 for (index, (variant, target)) in cases.iter().enumerate() {

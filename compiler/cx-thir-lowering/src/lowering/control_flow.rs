@@ -9,6 +9,13 @@ use cx_thir::type_context::THIRTypeContext;
 
 use crate::builder::MIRBuilder;
 
+fn lower_scoped(builder: &mut MIRBuilder<'_>, expression: &THIRExpression) -> CXResult<MIRValue> {
+    builder.push_lexical_scope();
+    let result = super::lower_expression(builder, expression);
+    builder.pop_lexical_scope();
+    result
+}
+
 pub(super) fn lower_if(
     builder: &mut MIRBuilder<'_>,
     condition: &THIRExpression,
@@ -32,7 +39,7 @@ pub(super) fn lower_if(
 
     let mut has_incoming = false;
     builder.set_current_block(then_block);
-    let then_value = super::lower_expression(builder, then_branch)?;
+    let then_value = lower_scoped(builder, then_branch)?;
     if !builder.current_block_terminated() {
         let args = result.map(|_| vec![then_value]).unwrap_or_default();
         builder.emit(MIRInstrKind::Jump {
@@ -43,7 +50,7 @@ pub(super) fn lower_if(
 
     builder.set_current_block(else_block);
     let else_value = else_branch
-        .map(|branch| super::lower_expression(builder, branch))
+        .map(|branch| lower_scoped(builder, branch))
         .transpose()?
         .unwrap_or(MIRValue::Constant(MIRConstant::Unit));
     if !builder.current_block_terminated() {
@@ -132,7 +139,7 @@ pub(super) fn lower_while(
 
     builder.set_current_block(body_block);
     builder.push_loop(exit_block, Some(condition_block));
-    super::lower_expression(builder, body)?;
+    lower_scoped(builder, body)?;
     builder.pop_loop();
     if !builder.current_block_terminated() {
         builder.emit(MIRInstrKind::Jump {
@@ -169,7 +176,7 @@ pub(super) fn lower_for(
 
     builder.set_current_block(body_block);
     builder.push_loop(exit_block, Some(increment_block));
-    super::lower_expression(builder, body)?;
+    lower_scoped(builder, body)?;
     builder.pop_loop();
     if !builder.current_block_terminated() {
         builder.emit(MIRInstrKind::Jump {
@@ -218,7 +225,7 @@ pub(super) fn lower_switch(
     builder.push_loop(exit, None);
     for ((_, body), block) in cases.iter().zip(bodies) {
         builder.set_current_block(block);
-        super::lower_expression(builder, body)?;
+        lower_scoped(builder, body)?;
         if !builder.current_block_terminated() {
             builder.emit(MIRInstrKind::Jump {
                 target: MIRBlockTarget::new(exit),
@@ -227,7 +234,7 @@ pub(super) fn lower_switch(
     }
     if let Some(default) = default {
         builder.set_current_block(default_block);
-        super::lower_expression(builder, default)?;
+        lower_scoped(builder, default)?;
         if !builder.current_block_terminated() {
             builder.emit(MIRInstrKind::Jump {
                 target: MIRBlockTarget::new(exit),
@@ -249,6 +256,7 @@ pub(super) fn lower_match(
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
     let subject_value = super::lower_expression(builder, condition)?;
+    let consumes_subject = matches!(subject_value, MIRValue::Move(_));
     let subject_place =
         super::memory::ensure_place(builder, subject_value.clone(), &condition._type);
     builder.bind_local(subject, subject_place);
@@ -293,6 +301,7 @@ pub(super) fn lower_match(
         builder.emit(MIRInstrKind::VariantSwitch {
             subject: subject_place,
             sum_type: sum_type_id,
+            consumes_subject,
             cases,
             default: default_target,
         });
@@ -317,8 +326,10 @@ pub(super) fn lower_match(
     builder.push_loop(exit, None);
     for ((pattern, body), block) in arms.iter().zip(blocks) {
         builder.set_current_block(block);
+        builder.push_lexical_scope();
         super::aggregates::bind_pattern_payload(builder, pattern, subject_place, &condition._type);
         let value = super::lower_expression(builder, body)?;
+        builder.pop_lexical_scope();
         if !builder.current_block_terminated() {
             let args = if value_match {
                 builder.record_yield();
@@ -333,7 +344,7 @@ pub(super) fn lower_match(
     }
     if let Some(default) = default {
         builder.set_current_block(default_block);
-        let value = super::lower_expression(builder, default)?;
+        let value = lower_scoped(builder, default)?;
         if !builder.current_block_terminated() {
             let args = if value_match {
                 builder.record_yield();

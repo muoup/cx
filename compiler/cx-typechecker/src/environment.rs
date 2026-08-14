@@ -21,8 +21,7 @@ use cx_util::namespace::QualifiedName;
 use cx_util::{identifier::CXIdent, namespace::NamespacePath};
 
 pub use crate::environment::control_flow::{
-    BindingMoveState, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
-    ScopeExitTarget, ScopeId, TrackedBindingState,
+    ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink, ScopeExitTarget, ScopeId,
 };
 use crate::environment::items::ItemRegistry;
 use crate::{environment::function_context::FunctionContext, symbol::registry::MIRSymbolRegistry};
@@ -35,8 +34,6 @@ pub(crate) mod function_context;
 pub(crate) mod items;
 
 pub use items::MIRFunctionGenRequest;
-
-pub const DEFER_ACCUMULATION_REGISTER: &str = "__defer_accumulation_register";
 
 pub struct TypeEnvironment<'a> {
     pub module_data: &'a ModuleData,

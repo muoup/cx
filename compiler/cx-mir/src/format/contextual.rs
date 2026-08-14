@@ -324,6 +324,8 @@ fn write_instruction(
     types: &mut TypePrinter<'_>,
 ) -> fmt::Result {
     match instruction {
+        MIRInstrKind::ScopeEnter { scope } => write!(f, "scope.enter {scope:?}"),
+        MIRInstrKind::ScopeExit { scope } => write!(f, "scope.exit {scope:?}"),
         MIRInstrKind::Initialize { place } => {
             f.write_str("initialize ")?;
             write_place_name(f, unit, function, *place)
@@ -480,6 +482,7 @@ fn write_instruction(
             sum_type,
             cases,
             default,
+            ..
         } => {
             f.write_str("switch ")?;
             write_place_name(f, unit, function, *subject)?;

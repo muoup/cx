@@ -7,6 +7,7 @@
 mod assertions;
 mod format;
 mod liveness;
+mod ownership;
 mod types;
 
 pub use types::{
@@ -30,6 +31,8 @@ pub fn analyze(
         .iter()
         .map(|function| (function.id, liveness::analyze_function(function)))
         .collect();
+
+    ownership::check(unit)?;
 
     if options.check_assertions {
         assertions::check(unit)?;

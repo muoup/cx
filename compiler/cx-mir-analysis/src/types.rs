@@ -73,6 +73,13 @@ pub enum MIRAnalysisError {
         instruction: usize,
         message: Option<String>,
     },
+    OwnershipViolation {
+        function: MIRFunctionID,
+        block: MIRBasicBlockID,
+        instruction: usize,
+        place: MIRPlace,
+        message: String,
+    },
 }
 
 impl Display for MIRAnalysisError {
@@ -94,6 +101,16 @@ impl Display for MIRAnalysisError {
                 }
                 Ok(())
             }
+            Self::OwnershipViolation {
+                function,
+                block,
+                instruction,
+                message,
+                ..
+            } => write!(
+                f,
+                "MIR ownership error in function {function}, block {block}, instruction {instruction}: {message}"
+            ),
         }
     }
 }
@@ -102,7 +119,7 @@ impl Error for MIRAnalysisError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Validation(error) => Some(error),
-            Self::ProvenFalseAssertion { .. } => None,
+            Self::ProvenFalseAssertion { .. } | Self::OwnershipViolation { .. } => None,
         }
     }
 }
@@ -118,6 +135,12 @@ impl MIRAnalysisError {
         match self {
             Self::Validation(error) => error.instruction_location(),
             Self::ProvenFalseAssertion {
+                function,
+                block,
+                instruction,
+                ..
+            } => Some((*function, *block, *instruction)),
+            Self::OwnershipViolation {
                 function,
                 block,
                 instruction,
