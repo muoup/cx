@@ -148,6 +148,12 @@ fn typecheck_expr_inner(
             suffix,
         } => typecheck_int_literal(env, expr.token_range(), *magnitude, *base, *suffix)?,
 
+        HIRExprKind::BoolLiteral(value) => TypecheckResult::from(THIRExpression {
+            token_range: expr.token_range().clone(),
+            kind: THIRExpressionKind::BoolLiteral(*value),
+            _type: THIRType::bool(),
+        }),
+
         HIRExprKind::FloatLiteral { val, suffix } => {
             typecheck_float_literal(env, expr.token_range(), *val, *suffix)?
         }

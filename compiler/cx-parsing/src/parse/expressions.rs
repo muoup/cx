@@ -537,6 +537,9 @@ pub(crate) fn parse_keyword_expr(
     let start_index = data.tokens.index - 1;
 
     match keyword_type {
+        KeywordType::True => Ok(HIRExprKind::BoolLiteral(true)),
+        KeywordType::False => Ok(HIRExprKind::BoolLiteral(false)),
+
         KeywordType::Sizeof | KeywordType::Alignof => {
             assert_token_matches!(
                 data.tokens,

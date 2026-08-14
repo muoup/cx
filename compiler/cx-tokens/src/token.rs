@@ -376,6 +376,8 @@ pub enum KeywordType {
     Switch,
     Case,
     Default,
+    True,
+    False,
 
     Struct,
     Enum,
@@ -514,6 +516,8 @@ impl TokenKind {
             "switch" => TokenKind::Keyword(KeywordType::Switch),
             "case" => TokenKind::Keyword(KeywordType::Case),
             "default" => TokenKind::Keyword(KeywordType::Default),
+            "true" => TokenKind::Keyword(KeywordType::True),
+            "false" => TokenKind::Keyword(KeywordType::False),
             "struct" => TokenKind::Keyword(KeywordType::Struct),
             "enum" => TokenKind::Keyword(KeywordType::Enum),
             "union" => TokenKind::Keyword(KeywordType::Union),

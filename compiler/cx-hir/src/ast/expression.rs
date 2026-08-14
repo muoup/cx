@@ -54,6 +54,7 @@ pub enum HIRExprKind {
         base: IntegerBase,
         suffix: IntegerSuffix,
     },
+    BoolLiteral(bool),
     FloatLiteral {
         val: FloatWrapper,
         suffix: FloatSuffix,

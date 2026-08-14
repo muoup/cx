@@ -55,12 +55,12 @@ void interpreter::register_program_functions(interpreter& this, lisp_node* body,
 
 f64 find_local(std::span<binding> locals, _str& name) {
     for (usize i = 0; i < locals.length; i++) {
-        if (strcmp(locals.data[i].name, name) == 0) {
+        if (std::str::equals(locals.data[i].name, name)) {
             return locals.data[i].value;
         }
     }
 
-    printf("Unknown symbol: %s\n", name);
+    std::printf("Unknown symbol: %s\n", name);
     return 0.0;
 }
 
@@ -69,7 +69,7 @@ lisp_node* interpreter::find_function(interpreter& this, _str& name) {
         lisp_node* node = &this.program_body[i];
         match (node) {
             lisp_node::FnDef(fn_def) => {
-                if (strcmp(fn_def.name |> std::string::as_str(), name) == 0) {
+                if (std::str::equals(fn_def.name |> std::string::as_str(), name)) {
                     return node;
                 }
             }
@@ -83,7 +83,7 @@ lisp_node* interpreter::find_function(interpreter& this, _str& name) {
 f64 interpreter::call_function(interpreter& this, _str& name, std::span<lisp_node> args, std::span<binding> locals) {
     lisp_node* fn_node = this |> interpreter::find_function(name);
     if (fn_node == NULL) {
-        printf("Unknown function: %s\n", name);
+        std::printf("Unknown function: %s\n", name);
         return 0.0;
     }
 
@@ -148,11 +148,11 @@ f64 interpreter::eval(interpreter& this, lisp_node& node, std::span<binding> loc
         lisp_node::Plus(plus) => return (this |> interpreter::eval(*(plus.left.ptr), locals)) + (this |> interpreter::eval(*(plus.right.ptr), locals));
         lisp_node::Minus(minus) => return (this |> interpreter::eval(*(minus.left.ptr), locals)) - (this |> interpreter::eval(*(minus.right.ptr), locals));
         lisp_node::PrintNum(value) => {
-            printf("%f\n", this |> interpreter::eval(*(value.ptr), locals));
+            std::printf("%f\n", this |> interpreter::eval(*(value.ptr), locals));
             return 0.0;
         }
         lisp_node::PrintStr(value) => {
-            printf("%s\n", value |> std::string::as_str());
+            std::printf("%s\n", value |> std::string::as_str());
             return 0.0;
         }
     }

@@ -260,6 +260,7 @@ impl<'a> Display for HIRExprFormatter<'a> {
             HIRExprKind::IntLiteral { magnitude, .. } => {
                 writeln!(f, "IntLiteral {}", magnitude)
             }
+            HIRExprKind::BoolLiteral(value) => writeln!(f, "BoolLiteral {}", value),
             HIRExprKind::FloatLiteral { val, .. } => writeln!(f, "FloatLiteral {}", val),
             HIRExprKind::StringLiteral { val, .. } => {
                 writeln!(f, "StringLiteral \"{}\"", val.escape_default())
