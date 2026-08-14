@@ -421,31 +421,33 @@ pub(crate) fn perform_job(
                 dump_data(&mir);
             }
 
-            let analysis = analyze(
-                &mir,
-                MIRAnalysisOptions {
-                    validate: !context.config.unsafe_mode,
-                    check_assertions: !context.config.unsafe_mode,
-                },
-            )
-            .map_err(|error| {
-                let diagnostic_context = error
-                    .instruction_location()
-                    .and_then(|(function, block, instruction)| {
-                        mir.instruction_range(function, block, instruction)
-                    })
-                    .map(|range| context.module_db.convert_token_range(range))
-                    .unwrap_or_else(|| {
-                        CXInternalContext::error("MIR analysis failed outside source context")
-                    });
-                CXErr::new(
-                    CXStdErrMessage::error("ANALYSIS ERROR", format!("{error}")),
-                    diagnostic_context,
+            if !context.config.unsafe_mode {
+                let analysis = analyze(
+                    &mir,
+                    MIRAnalysisOptions {
+                        validate: !context.config.unsafe_mode,
+                        check_assertions: !context.config.unsafe_mode,
+                    },
                 )
-            })?;
-
-            if !job.unit.is_std_lib() || context.config.verbose {
-                dump_data(&analysis);
+                .map_err(|error| {
+                    let diagnostic_context = error
+                        .instruction_location()
+                        .and_then(|(function, block, instruction)| {
+                            mir.instruction_range(function, block, instruction)
+                        })
+                        .map(|range| context.module_db.convert_token_range(range))
+                        .unwrap_or_else(|| {
+                            CXInternalContext::error("MIR analysis failed outside source context")
+                        });
+                    CXErr::new(
+                        CXStdErrMessage::error("ANALYSIS ERROR", format!("{error}")),
+                        diagnostic_context,
+                    )
+                })?;
+    
+                if !job.unit.is_std_lib() || context.config.verbose {
+                    dump_data(&analysis);
+                }
             }
 
             context.module_db.mir.insert(job.unit.clone(), mir);

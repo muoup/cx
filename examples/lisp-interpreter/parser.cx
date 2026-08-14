@@ -89,14 +89,14 @@ void parser::expect(parser& this, char expected) {
     this |> parser::skip_ws();
     char got = this |> parser::advance();
     if (got != expected) {
-        printf("Parse error: expected '%c', got '%c'\n", expected, got);
+        std::printf("Parse error: expected '%c', got '%c'\n", expected, got);
         exit(1);
     }
 }
 
 void parser::expect_progress(parser& this, usize previous_pos) {
     if (this.pos == previous_pos) {
-        printf("Parse error: parser made no progress at '%c'\n", this |> parser::peek());
+        std::printf("Parse error: parser made no progress at '%c'\n", this |> parser::peek());
         exit(1);
     }
 }
@@ -110,11 +110,11 @@ std::string parser::parse_token(parser& this) {
     }
 
     if (this.pos == start) {
-        printf("Parse error: expected token, got '%c'\n", this |> parser::peek());
+        std::printf("Parse error: expected token, got '%c'\n", this |> parser::peek());
         exit(1);
     }
 
-    return std::string::substr(this.source, start, this.pos);
+    return std::str::substring(this.source, start, this.pos);
 }
 
 std::string parser::parse_name(parser& this) {
@@ -131,7 +131,7 @@ std::string parser::parse_string_literal(parser& this) {
         this |> parser::advance();
     }
 
-    std::string result = std::string::substr(this.source, start, this.pos);
+    std::string result = std::str::substring(this.source, start, this.pos);
     this |> parser::expect('"');
     return move result;
 }

@@ -8,7 +8,7 @@ enum TestKind {
     CompileOnly,
     ParseError,
     TypeError,
-    VerifierError,
+    AnalysisError,
 }
 
 fn main() {
@@ -18,7 +18,7 @@ fn main() {
         ("compile-only", TestKind::CompileOnly),
         ("parse-errors", TestKind::ParseError),
         ("type-errors", TestKind::TypeError),
-        ("verifier-errors", TestKind::VerifierError),
+        ("analysis-errors", TestKind::AnalysisError),
     ];
 
     let mut output = String::new();
@@ -114,7 +114,7 @@ fn write_module(
             TestKind::TypeError => output.push_str(&format!(
                 "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_type_error_test(std::path::Path::new({path_literal})); }}\n"
             )),
-            TestKind::VerifierError => output.push_str(&format!(
+            TestKind::AnalysisError => output.push_str(&format!(
                 "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_verifier_error_test(std::path::Path::new({path_literal})); }}\n"
             )),
         }
