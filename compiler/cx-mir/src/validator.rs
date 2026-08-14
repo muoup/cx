@@ -1,7 +1,5 @@
 mod error;
-mod instruction;
 mod structure;
-mod targets;
 mod types;
 
 pub use error::MIRValidationError;

@@ -15,10 +15,10 @@ pub(super) fn lower_call(
     contract: &cx_thir::thir::expression::THIRFnContract,
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
-    let callee = super::expression::lower_expression(builder, function)?;
+    let callee = super::lower_expression(builder, function)?;
     let mut args = Vec::with_capacity(arguments.len());
     for argument in arguments {
-        args.push(super::expression::lower_expression(builder, argument)?);
+        args.push(super::lower_expression(builder, argument)?);
     }
 
     if let Some(precondition) = &contract.precondition {
@@ -39,7 +39,7 @@ pub(super) fn lower_call(
                 builder.bind_named(name, argument);
             }
         }
-        super::expression::lower_expression(builder, precondition)?;
+        super::lower_expression(builder, precondition)?;
         builder.pop_named_scope();
     }
 
@@ -78,7 +78,7 @@ pub(super) fn lower_call(
         if let Some(name) = &postcondition.binding {
             builder.bind_named(name, value.clone());
         }
-        let condition = super::expression::lower_expression(builder, &postcondition.condition)?;
+        let condition = super::lower_expression(builder, &postcondition.condition)?;
         builder.emit(MIRInstrKind::Assume { condition });
         builder.pop_named_scope();
     }

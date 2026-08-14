@@ -18,7 +18,7 @@ pub(super) fn lower_pattern_test(
     pattern: &THIRPattern,
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
-    let lhs_value = super::expression::lower_expression(builder, lhs)?;
+    let lhs_value = super::lower_expression(builder, lhs)?;
     let (tested, constant) = match pattern {
         THIRPattern::TaggedUnionVariant {
             sum_type,

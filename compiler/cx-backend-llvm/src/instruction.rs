@@ -1,17 +1,30 @@
 mod calls;
-mod coercions;
 mod control_flow;
 mod memory;
-mod ops;
-mod returns;
-mod support;
-mod terminators;
-mod values;
+mod operations;
 
-pub(crate) use support::{inst_num, reset_num};
+use std::cell::Cell;
 
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{LMIRInstruction, LMIRInstructionKind};
+
+thread_local! {
+    // Modules are compiled single-threaded, but multiple modules can be compiled
+    // in parallel, so this counter is thread-local and cannot collide across modules.
+    static NUM: Cell<usize> = const { Cell::new(0) };
+}
+
+pub(crate) fn reset_num() {
+    NUM.with(|num| num.set(0));
+}
+
+pub(crate) fn inst_num() -> String {
+    NUM.with(|num| {
+        let current = num.get();
+        num.set(current + 1);
+        format!("inst_{current}")
+    })
+}
 
 pub(crate) fn generate_instruction<'a, 'b>(
     global_state: &GlobalState<'a>,
@@ -21,7 +34,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
     match &instruction.kind {
         LMIRInstructionKind::Alias { value } => function_state.get_value(value),
         LMIRInstructionKind::GetFunctionAddr { func } => {
-            values::generate_get_function_addr(global_state, func)
+            calls::generate_get_function_addr(global_state, func)
         }
         LMIRInstructionKind::Allocate { _type, alignment } => {
             memory::generate_allocate(function_state, _type, *alignment)
@@ -65,35 +78,35 @@ pub(crate) fn generate_instruction<'a, 'b>(
             value,
             coercion_type,
         } => match coercion_type {
-            cx_lmir::LMIRCoercionType::BitCast => coercions::generate_bit_cast(
+            cx_lmir::LMIRCoercionType::BitCast => operations::generate_bit_cast(
                 global_state,
                 function_state,
                 value,
                 &instruction.value_type,
             ),
             cx_lmir::LMIRCoercionType::IntToPtr { .. } => {
-                coercions::generate_int_to_ptr(global_state, function_state, value)
+                operations::generate_int_to_ptr(global_state, function_state, value)
             }
-            cx_lmir::LMIRCoercionType::ZExtend => coercions::generate_zextend(
+            cx_lmir::LMIRCoercionType::ZExtend => operations::generate_zextend(
                 global_state,
                 function_state,
                 value,
                 &instruction.value_type,
             ),
-            cx_lmir::LMIRCoercionType::SExtend => coercions::generate_sextend(
+            cx_lmir::LMIRCoercionType::SExtend => operations::generate_sextend(
                 global_state,
                 function_state,
                 value,
                 &instruction.value_type,
             ),
-            cx_lmir::LMIRCoercionType::Trunc => coercions::generate_trunc(
+            cx_lmir::LMIRCoercionType::Trunc => operations::generate_trunc(
                 global_state,
                 function_state,
                 value,
                 &instruction.value_type,
             ),
             cx_lmir::LMIRCoercionType::IntToFloat { sextend, .. } => {
-                coercions::generate_int_to_float(
+                operations::generate_int_to_float(
                     global_state,
                     function_state,
                     value,
@@ -102,7 +115,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 )
             }
             cx_lmir::LMIRCoercionType::FloatToInt { sextend, .. } => {
-                coercions::generate_float_to_int(
+                operations::generate_float_to_int(
                     global_state,
                     function_state,
                     value,
@@ -110,13 +123,13 @@ pub(crate) fn generate_instruction<'a, 'b>(
                     *sextend,
                 )
             }
-            cx_lmir::LMIRCoercionType::PtrToInt => coercions::generate_ptr_to_int(
+            cx_lmir::LMIRCoercionType::PtrToInt => operations::generate_ptr_to_int(
                 global_state,
                 function_state,
                 value,
                 &instruction.value_type,
             ),
-            cx_lmir::LMIRCoercionType::FloatCast { .. } => coercions::generate_float_cast(
+            cx_lmir::LMIRCoercionType::FloatCast { .. } => operations::generate_float_cast(
                 global_state,
                 function_state,
                 value,
@@ -129,20 +142,25 @@ pub(crate) fn generate_instruction<'a, 'b>(
             right,
             op,
             ..
-        } => {
-            ops::generate_pointer_binop(global_state, function_state, left, right, *type_size, *op)
-        }
+        } => operations::generate_pointer_binop(
+            global_state,
+            function_state,
+            left,
+            right,
+            *type_size,
+            *op,
+        ),
         LMIRInstructionKind::IntegerBinOp { left, right, op } => {
-            ops::generate_integer_binop(global_state, function_state, left, right, *op)
+            operations::generate_integer_binop(global_state, function_state, left, right, *op)
         }
         LMIRInstructionKind::IntegerUnOp { value, op } => {
-            ops::generate_integer_unop(function_state, value, *op)
+            operations::generate_integer_unop(function_state, value, *op)
         }
         LMIRInstructionKind::FloatBinOp { left, right, op } => {
-            ops::generate_float_binop(function_state, left, right, *op)
+            operations::generate_float_binop(function_state, left, right, *op)
         }
         LMIRInstructionKind::FloatUnOp { value, op } => {
-            ops::generate_float_unop(function_state, value, *op)
+            operations::generate_float_unop(function_state, value, *op)
         }
         LMIRInstructionKind::Branch {
             condition,
@@ -164,12 +182,12 @@ pub(crate) fn generate_instruction<'a, 'b>(
             control_flow::generate_jump_table(global_state, function_state, value, targets, default)
         }
         LMIRInstructionKind::Return { value } => {
-            terminators::generate_return(global_state, function_state, value.as_ref())
+            control_flow::generate_return(global_state, function_state, value.as_ref())
         }
         LMIRInstructionKind::CompilerAssumption { .. } => {
             // TODO: Implement assumptions in LLVM.
             Some(CodegenValue::Null)
         }
-        LMIRInstructionKind::Unreachable => terminators::generate_unreachable(function_state),
+        LMIRInstructionKind::Unreachable => control_flow::generate_unreachable(function_state),
     }
 }

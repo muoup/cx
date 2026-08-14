@@ -16,7 +16,7 @@ pub(super) fn lower_if(
     else_branch: Option<&THIRExpression>,
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
-    let condition = super::expression::lower_expression(builder, condition)?;
+    let condition = super::lower_expression(builder, condition)?;
     let then_block = builder.new_block("if.then");
     let else_block = builder.new_block("if.else");
     let merge_block = builder.new_block("if.merge");
@@ -32,7 +32,7 @@ pub(super) fn lower_if(
 
     let mut has_incoming = false;
     builder.set_current_block(then_block);
-    let then_value = super::expression::lower_expression(builder, then_branch)?;
+    let then_value = super::lower_expression(builder, then_branch)?;
     if !builder.current_block_terminated() {
         let args = result.map(|_| vec![then_value]).unwrap_or_default();
         builder.emit(MIRInstrKind::Jump {
@@ -43,7 +43,7 @@ pub(super) fn lower_if(
 
     builder.set_current_block(else_block);
     let else_value = else_branch
-        .map(|branch| super::expression::lower_expression(builder, branch))
+        .map(|branch| super::lower_expression(builder, branch))
         .transpose()?
         .unwrap_or(MIRValue::Constant(MIRConstant::Unit));
     if !builder.current_block_terminated() {
@@ -69,7 +69,7 @@ pub(super) fn lower_short_circuit(
     op: &THIRBinOp,
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
-    let lhs_value = super::expression::lower_expression(builder, lhs)?;
+    let lhs_value = super::lower_expression(builder, lhs)?;
     let rhs_block = builder.new_block("logical.rhs");
     let merge_block = builder.new_block("logical.merge");
     let result_type_id = builder.lower_type(result_type);
@@ -94,7 +94,7 @@ pub(super) fn lower_short_circuit(
     });
 
     builder.set_current_block(rhs_block);
-    let rhs_value = super::expression::lower_expression(builder, rhs)?;
+    let rhs_value = super::lower_expression(builder, rhs)?;
     if !builder.current_block_terminated() {
         builder.emit(MIRInstrKind::Jump {
             target: MIRBlockTarget::with_args(merge_block, vec![rhs_value]),
@@ -123,7 +123,7 @@ pub(super) fn lower_while(
     });
 
     builder.set_current_block(condition_block);
-    let condition = super::expression::lower_expression(builder, condition)?;
+    let condition = super::lower_expression(builder, condition)?;
     builder.emit(MIRInstrKind::Branch {
         cond: condition,
         true_target: MIRBlockTarget::new(body_block),
@@ -132,7 +132,7 @@ pub(super) fn lower_while(
 
     builder.set_current_block(body_block);
     builder.push_loop(exit_block, Some(condition_block));
-    super::expression::lower_expression(builder, body)?;
+    super::lower_expression(builder, body)?;
     builder.pop_loop();
     if !builder.current_block_terminated() {
         builder.emit(MIRInstrKind::Jump {
@@ -150,7 +150,7 @@ pub(super) fn lower_for(
     increment: &THIRExpression,
     body: &THIRExpression,
 ) -> CXResult<()> {
-    super::expression::lower_expression(builder, init)?;
+    super::lower_expression(builder, init)?;
     let condition_block = builder.new_block("for.condition");
     let body_block = builder.new_block("for.body");
     let increment_block = builder.new_block("for.increment");
@@ -160,7 +160,7 @@ pub(super) fn lower_for(
     });
 
     builder.set_current_block(condition_block);
-    let condition = super::expression::lower_expression(builder, condition)?;
+    let condition = super::lower_expression(builder, condition)?;
     builder.emit(MIRInstrKind::Branch {
         cond: condition,
         true_target: MIRBlockTarget::new(body_block),
@@ -169,7 +169,7 @@ pub(super) fn lower_for(
 
     builder.set_current_block(body_block);
     builder.push_loop(exit_block, Some(increment_block));
-    super::expression::lower_expression(builder, body)?;
+    super::lower_expression(builder, body)?;
     builder.pop_loop();
     if !builder.current_block_terminated() {
         builder.emit(MIRInstrKind::Jump {
@@ -178,7 +178,7 @@ pub(super) fn lower_for(
     }
 
     builder.set_current_block(increment_block);
-    super::expression::lower_expression(builder, increment)?;
+    super::lower_expression(builder, increment)?;
     if !builder.current_block_terminated() {
         builder.emit(MIRInstrKind::Jump {
             target: MIRBlockTarget::new(condition_block),
@@ -194,7 +194,7 @@ pub(super) fn lower_switch(
     cases: &[(Box<THIRExpression>, Box<THIRExpression>)],
     default: Option<&THIRExpression>,
 ) -> CXResult<()> {
-    let value = super::expression::lower_expression(builder, condition)?;
+    let value = super::lower_expression(builder, condition)?;
     let exit = builder.new_block("switch.exit");
     let default_block = default
         .map(|_| builder.new_block("switch.default"))
@@ -218,7 +218,7 @@ pub(super) fn lower_switch(
     builder.push_loop(exit, None);
     for ((_, body), block) in cases.iter().zip(bodies) {
         builder.set_current_block(block);
-        super::expression::lower_expression(builder, body)?;
+        super::lower_expression(builder, body)?;
         if !builder.current_block_terminated() {
             builder.emit(MIRInstrKind::Jump {
                 target: MIRBlockTarget::new(exit),
@@ -227,7 +227,7 @@ pub(super) fn lower_switch(
     }
     if let Some(default) = default {
         builder.set_current_block(default_block);
-        super::expression::lower_expression(builder, default)?;
+        super::lower_expression(builder, default)?;
         if !builder.current_block_terminated() {
             builder.emit(MIRInstrKind::Jump {
                 target: MIRBlockTarget::new(exit),
@@ -248,7 +248,7 @@ pub(super) fn lower_match(
     exhaustive: bool,
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
-    let subject_value = super::expression::lower_expression(builder, condition)?;
+    let subject_value = super::lower_expression(builder, condition)?;
     let subject_place =
         super::memory::ensure_place(builder, subject_value.clone(), &condition._type);
     builder.bind_local(subject, subject_place);
@@ -318,7 +318,7 @@ pub(super) fn lower_match(
     for ((pattern, body), block) in arms.iter().zip(blocks) {
         builder.set_current_block(block);
         super::aggregates::bind_pattern_payload(builder, pattern, subject_place, &condition._type);
-        let value = super::expression::lower_expression(builder, body)?;
+        let value = super::lower_expression(builder, body)?;
         if !builder.current_block_terminated() {
             let args = if value_match {
                 builder.record_yield();
@@ -333,7 +333,7 @@ pub(super) fn lower_match(
     }
     if let Some(default) = default {
         builder.set_current_block(default_block);
-        let value = super::expression::lower_expression(builder, default)?;
+        let value = super::lower_expression(builder, default)?;
         if !builder.current_block_terminated() {
             let args = if value_match {
                 builder.record_yield();
@@ -368,7 +368,7 @@ pub(super) fn lower_cleanups(
         if builder.current_block_terminated() {
             break;
         }
-        super::expression::lower_expression(builder, cleanup)?;
+        super::lower_expression(builder, cleanup)?;
     }
     Ok(())
 }
