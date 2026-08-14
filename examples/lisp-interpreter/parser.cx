@@ -48,19 +48,6 @@ bool is_number_token(_str& token) {
     return token[0] == '-' && isdigit(token[1]) != 0;
 }
 
-bool token_eq(const _str& left, const _str& right) {
-    usize i = 0;
-    while (left[i] == right[i]) {
-        if (left[i] == '\0') {
-            return 1 == 1;
-        }
-
-        i++;
-    }
-
-    return 1 == 0;
-}
-
 std::string string_from_owned_token(_str& token) {
     std::string result = std::string::new();
     result |> std::string::append(token);
@@ -210,7 +197,7 @@ lisp_node parser::parse_list(parser& this) {
     this |> parser::expect('(');
     std::string op = this |> parser::parse_token();
 
-    if (token_eq(op |> std::string::as_str(), "fndef")) {
+    if (std::str::equals(op |> std::string::as_str(), "fndef")) {
         std::string name = this |> parser::parse_name();
         std::vector<std::string> params = this |> parser::parse_params();
         std::vector<lisp_node> body = this |> parser::parse_expr_list_until_close();
@@ -223,7 +210,7 @@ lisp_node parser::parse_list(parser& this) {
         });
     }
 
-    if (token_eq(op |> std::string::as_str(), "+")) {
+    if (std::str::equals(op |> std::string::as_str(), "+")) {
         lisp_node left_node = this |> parser::parse_expr();
         lisp_node right_node = this |> parser::parse_expr();
         this |> parser::expect(')');
@@ -238,7 +225,7 @@ lisp_node parser::parse_list(parser& this) {
         });
     }
 
-    if (token_eq(op |> std::string::as_str(), "-")) {
+    if (std::str::equals(op |> std::string::as_str(), "-")) {
         lisp_node left_node = this |> parser::parse_expr();
         lisp_node right_node = this |> parser::parse_expr();
         this |> parser::expect(')');
@@ -253,7 +240,7 @@ lisp_node parser::parse_list(parser& this) {
         });
     }
 
-    if (token_eq(op |> std::string::as_str(), "print-num")) {
+    if (std::str::equals(op |> std::string::as_str(), "print-num")) {
         lisp_node value_node = this |> parser::parse_expr();
         this |> parser::expect(')');
  
@@ -262,7 +249,7 @@ lisp_node parser::parse_list(parser& this) {
         return lisp_node::PrintNum(move value);
     }
 
-    if (token_eq(op |> std::string::as_str(), "print-str")) {
+    if (std::str::equals(op |> std::string::as_str(), "print-str")) {
         std::string value = this |> parser::parse_string_literal();
         this |> parser::expect(')');
         

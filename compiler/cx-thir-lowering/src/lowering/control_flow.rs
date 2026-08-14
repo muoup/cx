@@ -10,8 +10,12 @@ use cx_thir::type_context::THIRTypeContext;
 use crate::builder::MIRBuilder;
 
 fn lower_scoped(builder: &mut MIRBuilder<'_>, expression: &THIRExpression) -> CXResult<MIRValue> {
-    builder.push_lexical_scope();
+    let parent_scope = builder.current_lexical_scope();
+    builder.push_lexical_scope(expression.token_range.clone());
     let result = super::lower_expression(builder, expression);
+    if let Ok(value) = &result {
+        builder.promote_value_to_scope(value, parent_scope);
+    }
     builder.pop_lexical_scope();
     result
 }
@@ -326,9 +330,11 @@ pub(super) fn lower_match(
     builder.push_loop(exit, None);
     for ((pattern, body), block) in arms.iter().zip(blocks) {
         builder.set_current_block(block);
-        builder.push_lexical_scope();
+        let parent_scope = builder.current_lexical_scope();
+        builder.push_lexical_scope(body.token_range.clone());
         super::aggregates::bind_pattern_payload(builder, pattern, subject_place, &condition._type);
         let value = super::lower_expression(builder, body)?;
+        builder.promote_value_to_scope(&value, parent_scope);
         builder.pop_lexical_scope();
         if !builder.current_block_terminated() {
             let args = if value_match {

@@ -4,7 +4,7 @@ use std::{
     fmt::{self, Display, Formatter},
 };
 
-use cx_mir::{MIRBasicBlockID, MIRFunctionID, MIRPlace, MIRValidationError};
+use cx_mir::{MIRBasicBlockID, MIRFunctionID, MIRPlace, MIRScopeID, MIRValidationError};
 
 /// Controls optional checks performed before the independent dataflow analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,7 +77,9 @@ pub enum MIRAnalysisError {
         function: MIRFunctionID,
         block: MIRBasicBlockID,
         instruction: usize,
+        scope: Option<MIRScopeID>,
         place: MIRPlace,
+        function_name: String,
         message: String,
     },
 }
@@ -94,7 +96,7 @@ impl Display for MIRAnalysisError {
             } => {
                 write!(
                     f,
-                    "MIR assertion in function {function}, block {block}, instruction {instruction} is provably false"
+                    "Assertion in function {function} is provably false"
                 )?;
                 if let Some(message) = message {
                     write!(f, ": {message}")?;
@@ -102,14 +104,12 @@ impl Display for MIRAnalysisError {
                 Ok(())
             }
             Self::OwnershipViolation {
-                function,
-                block,
-                instruction,
+                function_name,
                 message,
                 ..
             } => write!(
                 f,
-                "MIR ownership error in function {function}, block {block}, instruction {instruction}: {message}"
+                "Ownership error in function '{function_name}': {message}"
             ),
         }
     }
@@ -146,6 +146,19 @@ impl MIRAnalysisError {
                 instruction,
                 ..
             } => Some((*function, *block, *instruction)),
+        }
+    }
+
+    pub fn scope_location(&self) -> Option<(MIRFunctionID, MIRScopeID)> {
+        match self {
+            Self::OwnershipViolation {
+                function,
+                scope: Some(scope),
+                ..
+            } => Some((*function, *scope)),
+            Self::Validation(_)
+            | Self::ProvenFalseAssertion { .. }
+            | Self::OwnershipViolation { scope: None, .. } => None,
         }
     }
 }

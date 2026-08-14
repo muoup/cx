@@ -242,6 +242,7 @@ fn transfer_instruction(
                         function,
                         block,
                         instruction,
+                        Some(*scope),
                         place,
                         format!(
                             "@nodrop place '{}' is not moved or leaked before scope exit",
@@ -578,28 +579,20 @@ fn check_function_exit(
         return Ok(());
     }
 
+    let root_scope = function.scopes.first().map(|scope| scope.id);
+
     for declaration in &function.places {
-        if !declaration.nodrop && declaration.debug_name.is_none() {
+        if !declaration.nodrop {
             continue;
         }
         let place = MIRPlace::FunctionLocal(declaration.id);
         match state.get(&place).copied() {
-            Some(PlaceState::MaybeMoved) if !declaration.nodrop => {
-                ownership_failure(
-                    unit,
-                    function,
-                    block,
-                    instruction,
-                    place,
-                    "may have been moved on another control-flow path",
-                    diagnose,
-                )?;
-            }
-            Some(PlaceState::Available | PlaceState::MaybeMoved) if declaration.nodrop => {
+            Some(PlaceState::Available | PlaceState::MaybeMoved) => {
                 return Err(ownership_error(
                     function,
                     block,
                     instruction,
+                    Some(declaration.scope),
                     place,
                     format!(
                         "@nodrop place '{}' is not moved or leaked before function exit",
@@ -625,6 +618,7 @@ fn check_function_exit(
                 function,
                 block,
                 instruction,
+                root_scope,
                 place,
                 format!(
                     "@nodrop parameter '{}' is not moved or leaked before function exit",
@@ -651,6 +645,7 @@ fn ownership_failure(
             function,
             block,
             instruction,
+            None,
             place,
             format!("place '{}' {reason}", place_name(unit, function, place)),
         ))
@@ -663,6 +658,7 @@ fn ownership_error(
     function: &MIRFunction,
     block: cx_mir::MIRBasicBlockID,
     instruction: usize,
+    scope: Option<cx_mir::MIRScopeID>,
     place: MIRPlace,
     message: String,
 ) -> MIRAnalysisError {
@@ -670,18 +666,20 @@ fn ownership_error(
         function: function.id,
         block,
         instruction,
+        scope,
         place,
+        function_name: function.prototype.signature.display_name().to_string(),
         message,
     }
 }
 
-fn place_name(_unit: &MIRUnit, function: &MIRFunction, place: MIRPlace) -> String {
+fn place_name(unit: &MIRUnit, function: &MIRFunction, place: MIRPlace) -> String {
     match place {
         MIRPlace::FunctionLocal(id) => function
             .place(id)
             .and_then(|declaration| declaration.debug_name.as_ref())
             .map(ToString::to_string)
-            .unwrap_or_else(|| format!("local{}", id.index())),
+            .unwrap_or_else(|| "temporary".to_string()),
         MIRPlace::Parameter(id) => function
             .prototype
             .signature
@@ -689,7 +687,10 @@ fn place_name(_unit: &MIRUnit, function: &MIRFunction, place: MIRPlace) -> Strin
             .get(id.index())
             .and_then(|parameter| parameter.name.as_ref())
             .map(ToString::to_string)
-            .unwrap_or_else(|| format!("parameter{}", id.index())),
-        MIRPlace::Global(id) => format!("global{}", id.index()),
+            .unwrap_or_else(|| "parameter".to_string()),
+        MIRPlace::Global(id) => unit
+            .global(id)
+            .map(|global| global.name.to_string())
+            .unwrap_or_else(|| "global".to_string()),
     }
 }

@@ -3,7 +3,7 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    expr::MIRBasicBlockID,
+    expr::{MIRBasicBlockID, MIRScopeID},
     global::{
         MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable,
     },
@@ -100,5 +100,11 @@ impl MIRUnit {
             .and_then(|function| function.block(block))
             .and_then(|block| block.instrs.get(instruction))
             .map(|instruction| &instruction.token_range)
+    }
+
+    pub fn scope_range(&self, function: MIRFunctionID, scope: MIRScopeID) -> Option<&TokenRange> {
+        self.function(function)
+            .and_then(|function| function.scope(scope))
+            .map(|scope| &scope.token_range)
     }
 }

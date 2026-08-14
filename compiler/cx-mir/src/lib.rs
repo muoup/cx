@@ -16,7 +16,7 @@ pub use expr::{
 };
 pub use global::{
     MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRGlobalID,
-    MIRGlobalState, MIRGlobalVariable, MIRPlaceDecl, MIRRegisterDecl,
+    MIRGlobalState, MIRGlobalVariable, MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl,
 };
 pub use op::{
     MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRIntBinaryOp, MIRPointerBinaryOp,

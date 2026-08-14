@@ -43,7 +43,6 @@ struct FunctionContext {
     loops: Vec<LoopContext>,
     yields: Vec<YieldContext>,
     lexical_scopes: Vec<MIRScopeID>,
-    next_scope: usize,
 }
 
 /// Stateful constructor for one semantic MIR unit.
@@ -361,6 +360,11 @@ impl<'thir> MIRBuilder<'thir> {
             .function_mut(function_id)
             .expect("predeclared MIR function is missing")
             .add_block();
+        let root_scope = self
+            .unit
+            .function_mut(function_id)
+            .expect("predeclared MIR function is missing")
+            .add_scope(function.body.token_range.clone());
 
         self.current = Some(FunctionContext {
             function: function_id,
@@ -369,8 +373,7 @@ impl<'thir> MIRBuilder<'thir> {
             named_values: vec![HashMap::new()],
             loops: Vec::new(),
             yields: Vec::new(),
-            lexical_scopes: vec![MIRScopeID::new(0)],
-            next_scope: 1,
+            lexical_scopes: vec![root_scope],
         });
         self.set_block_name(entry, "entry");
 
@@ -504,19 +507,12 @@ impl<'thir> MIRBuilder<'thir> {
         debug_name: Option<CXIdent>,
         nodrop: bool,
     ) -> MIRPlace {
-        let scope = if debug_name.is_some() {
-            self.context()
-                .lexical_scopes
-                .last()
-                .copied()
-                .expect("active function has no lexical scope")
-        } else {
-            self.context()
-                .lexical_scopes
-                .first()
-                .copied()
-                .expect("active function has no root lexical scope")
-        };
+        let scope = self
+            .context()
+            .lexical_scopes
+            .last()
+            .copied()
+            .expect("active function has no lexical scope");
         self.function_mut().add_place(ty, debug_name, nodrop, scope)
     }
 
@@ -552,14 +548,9 @@ impl<'thir> MIRBuilder<'thir> {
         context.named_values.pop();
     }
 
-    pub(crate) fn push_lexical_scope(&mut self) {
-        let scope = {
-            let context = self.context_mut();
-            let scope = MIRScopeID::new(context.next_scope);
-            context.next_scope += 1;
-            context.lexical_scopes.push(scope);
-            scope
-        };
+    pub(crate) fn push_lexical_scope(&mut self, token_range: TokenRange) {
+        let scope = self.function_mut().add_scope(token_range);
+        self.context_mut().lexical_scopes.push(scope);
         self.emit(MIRInstrKind::ScopeEnter { scope });
     }
 
@@ -582,6 +573,41 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub(crate) fn lexical_scope_depth(&self) -> usize {
         self.context().lexical_scopes.len()
+    }
+
+    pub(crate) fn current_lexical_scope(&self) -> MIRScopeID {
+        self.context()
+            .lexical_scopes
+            .last()
+            .copied()
+            .expect("active function has no lexical scope")
+    }
+
+    pub(crate) fn lexical_scope_at_depth(&self, depth: usize) -> MIRScopeID {
+        assert!(
+            depth > 0 && depth <= self.lexical_scope_depth(),
+            "invalid lexical scope depth"
+        );
+        self.context().lexical_scopes[depth - 1]
+    }
+
+    pub(crate) fn promote_value_to_scope(&mut self, value: &MIRValue, scope: MIRScopeID) {
+        let place = match value {
+            MIRValue::Place(place) | MIRValue::Move(place) => *place,
+            MIRValue::Register(_) | MIRValue::Constant(_) => return,
+        };
+        let MIRPlace::FunctionLocal(place) = place else {
+            return;
+        };
+        let lexical_scopes = self.context().lexical_scopes.clone();
+        let Some(target_index) = lexical_scopes.iter().position(|current| *current == scope) else {
+            return;
+        };
+        if let Some(declaration) = self.function_mut().place_mut(place) {
+            if lexical_scopes[target_index + 1..].contains(&declaration.scope) {
+                declaration.scope = scope;
+            }
+        }
     }
 
     /// Emits exits for scopes abandoned by a terminating control-flow edge.

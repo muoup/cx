@@ -150,6 +150,12 @@ pub struct MIRPlaceDecl {
 }
 
 #[derive(Debug, Clone)]
+pub struct MIRScopeDecl {
+    pub id: MIRScopeID,
+    pub token_range: TokenRange,
+}
+
+#[derive(Debug, Clone)]
 pub struct MIRRegisterDecl {
     pub id: MIRRegister,
     pub ty: MIRTypeID,
@@ -164,6 +170,7 @@ pub struct MIRFunction {
     pub blocks: Vec<MIRBasicBlock>,
     pub places: Vec<MIRPlaceDecl>,
     pub registers: Vec<MIRRegisterDecl>,
+    pub scopes: Vec<MIRScopeDecl>,
 }
 
 impl MIRFunction {
@@ -175,7 +182,14 @@ impl MIRFunction {
             blocks: Vec::new(),
             places: Vec::new(),
             registers: Vec::new(),
+            scopes: Vec::new(),
         }
+    }
+
+    pub fn add_scope(&mut self, token_range: TokenRange) -> MIRScopeID {
+        let id = MIRScopeID::new(self.scopes.len());
+        self.scopes.push(MIRScopeDecl { id, token_range });
+        id
     }
 
     pub fn is_declaration(&self) -> bool {
@@ -239,6 +253,14 @@ impl MIRFunction {
 
     pub fn place(&self, id: MIRPlaceID) -> Option<&MIRPlaceDecl> {
         self.places.get(id.index())
+    }
+
+    pub fn place_mut(&mut self, id: MIRPlaceID) -> Option<&mut MIRPlaceDecl> {
+        self.places.get_mut(id.index())
+    }
+
+    pub fn scope(&self, id: MIRScopeID) -> Option<&MIRScopeDecl> {
+        self.scopes.get(id.index())
     }
 
     pub fn register(&self, id: MIRRegister) -> Option<&MIRRegisterDecl> {

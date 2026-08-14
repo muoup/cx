@@ -617,6 +617,8 @@ fn lower_expression(
                 control_flow::lower_cleanups(builder, cleanups)?;
                 if let Some(target) = builder.yield_target() {
                     if let Some(depth) = builder.yield_scope_depth() {
+                        let target_scope = builder.lexical_scope_at_depth(depth);
+                        builder.promote_value_to_scope(&value, target_scope);
                         builder.unwind_lexical_scopes_to(depth);
                     }
                     builder.record_yield();
@@ -648,8 +650,9 @@ fn lower_expression(
                 creates_scope,
             } => {
                 let mut result = MIRValue::Constant(MIRConstant::Unit);
+                let parent_scope = (*creates_scope).then(|| builder.current_lexical_scope());
                 if *creates_scope {
-                    builder.push_lexical_scope();
+                    builder.push_lexical_scope(expression.token_range.clone());
                 }
                 builder.push_named_scope();
                 for statement in statements {
@@ -660,6 +663,10 @@ fn lower_expression(
                 }
                 builder.pop_named_scope();
                 if *creates_scope {
+                    builder.promote_value_to_scope(
+                        &result,
+                        parent_scope.expect("scoped block is missing its parent scope"),
+                    );
                     builder.pop_lexical_scope();
                 }
                 result
@@ -689,7 +696,20 @@ fn lower_expression(
                             builder.emit(MIRInstrKind::AddressOf { out, place });
                             MIRValue::Register(out)
                         }
-                        value => value,
+                        value => {
+                            let out = builder.register(type_id, None);
+                            builder.emit(MIRInstrKind::Coerce {
+                                out,
+                                operand: value,
+                                coercion: operators::lower_coercion(
+                                    conversion,
+                                    &operand._type,
+                                    &expression._type,
+                                ),
+                                to_type: type_id,
+                            });
+                            MIRValue::Register(out)
+                        }
                     });
                 }
 

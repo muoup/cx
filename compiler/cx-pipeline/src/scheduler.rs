@@ -431,9 +431,14 @@ pub(crate) fn perform_job(
                 )
                 .map_err(|error| {
                     let diagnostic_context = error
-                        .instruction_location()
-                        .and_then(|(function, block, instruction)| {
-                            mir.instruction_range(function, block, instruction)
+                        .scope_location()
+                        .and_then(|(function, scope)| mir.scope_range(function, scope))
+                        .or_else(|| {
+                            error.instruction_location().and_then(
+                                |(function, block, instruction)| {
+                                    mir.instruction_range(function, block, instruction)
+                                },
+                            )
                         })
                         .map(|range| context.module_db.convert_token_range(range))
                         .unwrap_or_else(|| {
@@ -444,7 +449,7 @@ pub(crate) fn perform_job(
                         diagnostic_context,
                     )
                 })?;
-    
+
                 if !job.unit.is_std_lib() || context.config.verbose {
                     dump_data(&analysis);
                 }
