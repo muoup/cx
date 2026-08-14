@@ -73,7 +73,7 @@ pub(crate) fn operator(iter: &mut LexCursor<'_>) -> Option<TokenKind> {
             }
             _ => try_assignment(iter, OperatorType::Ampersand),
         },
-        
+
         '.' => {
             if iter.next() == Some('.') && iter.peek() == Some('.') {
                 iter.next();

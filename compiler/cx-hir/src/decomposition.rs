@@ -7,7 +7,7 @@ use cx_util::identifier::CXIdent;
 use crate::ast::{
     expression::HIRExpression,
     function::HIRFunctionPrototype,
-    modifiers::{LinkageMode, HIRSymbolNameScheme},
+    modifiers::{HIRSymbolNameScheme, LinkageMode},
     types::HIRType,
 };
 

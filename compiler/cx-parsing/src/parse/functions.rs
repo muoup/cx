@@ -7,7 +7,7 @@ use cx_hir::ast::{
         HIRComptimeFnPrototype, HIRComptimeParameter, HIRComptimeValueType, HIRFunctionContract,
         HIRFunctionKind, HIRFunctionPrototype, HIRParameter,
     },
-    modifiers::{LinkageMode, HIRSymbolNameScheme},
+    modifiers::{HIRSymbolNameScheme, LinkageMode},
     template::HIRTemplatePrototype,
     types::HIRType,
 };

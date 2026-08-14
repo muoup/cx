@@ -6,16 +6,16 @@ use cx_log::{
     CXRawResult, CXResult,
     error::{CXErr, CXErrMsg, CXMaybeRawErr, context::CXInternalContext, message::CXStdErrMessage},
 };
-use cx_thir::{
-    EnvironmentNamespace, THIRUnit,
-    thir::contextual_eq::TypeContextEqual,
-    thir::data::{THIRFnPrototype, THIRType},
-    symbol::MIRSymbol,
-    type_context::THIRTypeContext,
-};
-use cx_namespace::{result::QualifiedLookupResult, QualifiedLookup};
+use cx_namespace::{QualifiedLookup, result::QualifiedLookupResult};
 use cx_pipeline_data::db::ModuleData;
 use cx_target::ArchitectureConfig;
+use cx_thir::{
+    EnvironmentNamespace, THIRUnit,
+    symbol::MIRSymbol,
+    thir::contextual_eq::TypeContextEqual,
+    thir::data::{THIRFnPrototype, THIRType},
+    type_context::THIRTypeContext,
+};
 use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 use cx_util::{identifier::CXIdent, namespace::NamespacePath};

@@ -586,9 +586,10 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRTypeKi
                     signed: right_signed,
                 },
             ) => left_type == right_type && left_signed == right_signed,
-            (THIRTypeKind::Float { _type: left_type }, THIRTypeKind::Float { _type: right_type }) => {
-                left_type == right_type
-            }
+            (
+                THIRTypeKind::Float { _type: left_type },
+                THIRTypeKind::Float { _type: right_type },
+            ) => left_type == right_type,
             (
                 THIRTypeKind::Structured { fields: left },
                 THIRTypeKind::Structured { fields: right },

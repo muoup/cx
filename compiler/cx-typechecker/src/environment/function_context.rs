@@ -283,8 +283,7 @@ impl FunctionContext {
     }
 
     pub fn set_tracked_binding_state(&mut self, local_id: THIRLocalID, state: BindingMoveState) {
-        self.flow_mut()
-            .set_tracked_binding_state(local_id, state);
+        self.flow_mut().set_tracked_binding_state(local_id, state);
     }
 
     pub fn tracked_bindings_snapshot(&self) -> HashMap<THIRLocalID, TrackedBindingState> {

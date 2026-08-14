@@ -8,7 +8,7 @@ use cx_hir::ast::{
     function::{HIRFunctionKind, HIRFunctionPrototype},
     global_var::{HIREnumVariant, HIRGlobalVariable},
     modifiers::{
-        LinkageMode, HIRSymbolNameScheme, HIRTypeQualifiers, HIR_CONST, HIR_RESTRICT, HIR_VOLATILE,
+        HIRSymbolNameScheme, HIRTypeQualifiers, LinkageMode, HIR_CONST, HIR_RESTRICT, HIR_VOLATILE,
     },
     template::HIRTemplatePrototype,
     types::{HIRAggregateAttributes, HIRField, HIRType, HIRTypeKind, PredeclarationType},

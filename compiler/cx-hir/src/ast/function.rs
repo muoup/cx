@@ -3,7 +3,7 @@ use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::ast::{
     expression::HIRExpression,
-    modifiers::{LinkageMode, HIRSymbolNameScheme},
+    modifiers::{HIRSymbolNameScheme, LinkageMode},
     types::HIRType,
 };
 

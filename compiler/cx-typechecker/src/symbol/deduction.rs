@@ -12,8 +12,8 @@ use cx_log::{
 };
 use cx_thir::{
     EnvironmentNamespace,
-    thir::data::{THIRFnSignature, MIRTemplateInput, THIRType, THIRTypeKind},
     symbol::MIRSymbol,
+    thir::data::{MIRTemplateInput, THIRFnSignature, THIRType, THIRTypeKind},
     type_context::THIRTypeContext,
 };
 use cx_util::namespace::QualifiedName;

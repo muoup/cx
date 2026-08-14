@@ -5,8 +5,11 @@
 
 use crate::position::{byte_range, line_range};
 use cx_pipeline::LSPErrors;
-use cx_pipeline_data::{ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, GlobalCompilationContext, OptimizationLevel};
 use cx_pipeline_data::config::CXProjectConfig;
+use cx_pipeline_data::{
+    ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, GlobalCompilationContext,
+    OptimizationLevel,
+};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -27,7 +30,10 @@ pub struct ProjectSettings {
 fn load_project_settings(project_root: &Path) -> Result<ProjectSettings, String> {
     let config_path = project_root.join("cx.toml");
     if !config_path.is_file() {
-        return Ok(ProjectSettings { config: None, include_dirs: vec![] });
+        return Ok(ProjectSettings {
+            config: None,
+            include_dirs: vec![],
+        });
     }
 
     let project_config = cx_pipeline_data::config::load_config(&config_path)?;
@@ -50,7 +56,10 @@ fn load_project_settings(project_root: &Path) -> Result<ProjectSettings, String>
         }
     }
 
-    Ok(ProjectSettings { config: Some(project_config), include_dirs })
+    Ok(ProjectSettings {
+        config: Some(project_config),
+        include_dirs,
+    })
 }
 
 pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckReport, String> {
@@ -62,7 +71,10 @@ pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckRepo
 
     let unit = cx_pipeline_data::CompilationUnit::from_rooted(&unit_identifier, project_root);
     let internal_directory = project_root.join(".internal").join("cx-lsp");
-    let ProjectSettings { config, include_dirs } = load_project_settings(project_root)?;
+    let ProjectSettings {
+        config,
+        include_dirs,
+    } = load_project_settings(project_root)?;
 
     let context = GlobalCompilationContext {
         config: CompilerConfig {
@@ -71,11 +83,11 @@ pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckRepo
             optimization_level: OptimizationLevel::O0,
             output: project_root.join("cx-lsp-output"),
             working_directory: project_root.to_path_buf(),
- 
+
             module_mode: true,
             unsafe_mode: false,
             verbose: false,
- 
+
             project_config: config,
             include_dirs,
             internal_directory,

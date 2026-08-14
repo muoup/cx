@@ -2,7 +2,6 @@ use cx_util::identifier::CXIdent;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 use crate::ast::{
-    HIR, HIRDefinition, HIRStmt,
     expression::{HIRBinOp, HIRExprKind, HIRExpression, HIRInitIndex},
     function::{
         HIRComptimeFnPrototype, HIRComptimeValueType, HIRFunctionKind, HIRFunctionPrototype,
@@ -11,6 +10,7 @@ use crate::ast::{
     pattern::HIRPattern,
     template::HIRTemplateInput,
     types::{HIRField, HIRMoveSemantics, HIRType, HIRTypeKind},
+    HIRDefinition, HIRStmt, HIR,
 };
 
 // Helper struct for indented formatting of CXExpr

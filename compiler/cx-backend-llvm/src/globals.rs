@@ -1,5 +1,5 @@
-use crate::typing::{any_to_basic_type, bc_llvm_type};
 use crate::GlobalState;
+use crate::typing::{any_to_basic_type, bc_llvm_type};
 use cx_lmir::{LMIRGlobalInitializer, LMIRGlobalState, LMIRGlobalType, LMIRGlobalValue};
 use inkwell::module::Linkage;
 use std::sync::atomic::AtomicUsize;

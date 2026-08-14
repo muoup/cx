@@ -54,10 +54,7 @@ pub fn parse_ast(
     Ok(data.take_ast())
 }
 
-pub fn decompose_ast<'a>(
-    namespace: &'a NamespacePath,
-    ast: HIR,
-) -> CXResult<DecompositionEnv<'a>> {
+pub fn decompose_ast<'a>(namespace: &'a NamespacePath, ast: HIR) -> CXResult<DecompositionEnv<'a>> {
     let namespace_aliases = ast.namespace_aliases;
     let mut env = DecompositionEnv::new(namespace, namespace_aliases);
 

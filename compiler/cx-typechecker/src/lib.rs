@@ -1,9 +1,9 @@
 use cx_hir::ast::modifiers::HIR_CONST;
 use cx_hir::decomposition::{HIRGenerationAST, HIRGenerationStmt};
 use cx_log::CXResult;
-use cx_util::linkage::LinkageMode;
 use cx_thir::EnvironmentNamespace;
 use cx_thir::thir::global::{MIRGlobalVarKind, MIRGlobalVariable};
+use cx_util::linkage::LinkageMode;
 
 pub mod environment;
 pub mod log;

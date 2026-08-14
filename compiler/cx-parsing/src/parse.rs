@@ -2,7 +2,7 @@ use cx_hir::ast::{
     expression::{HIRExprKind, HIRExpression},
     function::HIRFunctionPrototype,
     global_var::HIRGlobalVariable,
-    modifiers::{LinkageMode, HIRSymbolNameScheme},
+    modifiers::{HIRSymbolNameScheme, LinkageMode},
     template::HIRTemplatePrototype,
     types::HIRTypeKind,
     HIRStmt,

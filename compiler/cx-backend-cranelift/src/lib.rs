@@ -1,8 +1,8 @@
 use crate::codegen::{codegen_fn_prototype, codegen_function};
 use crate::globals::generate_global;
 use crate::value_type::get_cranelift_type;
-use cranelift::codegen::ir::FuncRef;
 use cranelift::codegen::ir;
+use cranelift::codegen::ir::FuncRef;
 use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
 use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};

@@ -1,5 +1,7 @@
 use cx_pipeline::standard_compilation;
-use cx_pipeline_data::{ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel};
+use cx_pipeline_data::{
+    ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel,
+};
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

@@ -5,7 +5,8 @@ use cx_hir::ast::{
     modifiers::{HIRSymbolNameScheme, HIRTypeQualifiers, VisibilityMode},
     template::HIRTemplateInput,
     types::{
-        HIRAggregateAttributes, HIRField, HIRMoveSemantics, HIRType, HIRTypeKind, PredeclarationType,
+        HIRAggregateAttributes, HIRField, HIRMoveSemantics, HIRType, HIRTypeKind,
+        PredeclarationType,
     },
 };
 use cx_hir::symbols::HIRSymbolKind;
@@ -16,16 +17,16 @@ use cx_log::{
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use cx_thir::{
+    symbol::MIRSymbol,
     thir::{
         data::{
-            THIRComptimeFnPrototype, THIRComptimeParameter, THIRComptimeValueType,
-            THIRFnPrototype, THIRFnSignature, THIRParameter, MIRTemplateInput,
+            MIRTemplateInput, THIRComptimeFnPrototype, THIRComptimeParameter,
+            THIRComptimeValueType, THIRFnPrototype, THIRFnSignature, THIRParameter,
             THIRTypeAttributes,
         },
         name_mangling::{mangle_namespace_symbol, mangle_qualified_name},
         r#type::{THIRField, THIRMoveSemantics, THIRType, THIRTypeID, THIRTypeKind},
     },
-    symbol::MIRSymbol,
     type_context::THIRTypeContext,
 };
 
@@ -551,7 +552,10 @@ fn ensure_aggregate_fields_not_recursive(
     Ok(())
 }
 
-fn ensure_aggregate_fields_complete(env: &TypeEnvironment, fields: &[THIRField]) -> CXRawResult<()> {
+fn ensure_aggregate_fields_complete(
+    env: &TypeEnvironment,
+    fields: &[THIRField],
+) -> CXRawResult<()> {
     for field in fields {
         let id = field.ty();
         if !env.symbols.contains(id) {

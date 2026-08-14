@@ -1,7 +1,4 @@
-use cx_hir::{
-    ast::function::HIRFunctionContract,
-    symbols::HIRSymbolKind,
-};
+use cx_hir::{ast::function::HIRFunctionContract, symbols::HIRSymbolKind};
 use cx_log::CXResult;
 use cx_thir::thir::{
     data::{MIRTemplateInput, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter},

@@ -2,8 +2,8 @@ use cx_hir::ast::global_var::HIREnumDefinition;
 use cx_log::CXResult;
 use cx_thir::{
     EnvironmentNamespace,
-    thir::expression::{THIRExpression, THIRExpressionKind},
     symbol::MIRSymbol,
+    thir::expression::{THIRExpression, THIRExpressionKind},
 };
 use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;

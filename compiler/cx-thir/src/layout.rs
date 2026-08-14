@@ -2,8 +2,10 @@ use cx_log::{CXRawResult, error::message::CXStdErrMessage};
 
 use crate::{
     thir::{
-        data::{THIRType, THIRTypeID, THIRTypeKind}, r#type::THIRField,
-    }, type_context::THIRTypeContext,
+        data::{THIRType, THIRTypeID, THIRTypeKind},
+        r#type::THIRField,
+    },
+    type_context::THIRTypeContext,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -2,18 +2,18 @@ use cx_hir::ast::function::HIRFunctionKind;
 pub use cx_util::namespace::EnvironmentNamespace;
 
 use crate::{
+    registry::THIRDecomposedRegistry,
     thir::{
-        data::{THIRFunction, MIRTemplateInput},
+        data::{MIRTemplateInput, THIRFunction},
         global::MIRGlobalVariable,
     },
-    registry::THIRDecomposedRegistry,
 };
 
 pub mod intrinsic_types;
 pub mod layout;
-pub mod thir;
 pub mod registry;
 pub mod symbol;
+pub mod thir;
 pub mod type_context;
 
 mod format;
