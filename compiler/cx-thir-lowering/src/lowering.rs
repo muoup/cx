@@ -102,6 +102,16 @@ fn lower_expression(
             },
             THIRExpressionKind::ContractVariable { name, .. } => builder
                 .named(name)
+                .map(|value| match value {
+                    MIRValue::Place(place) => {
+                        if expression._type.is_memory_reference() {
+                            MIRValue::Place(place)
+                        } else {
+                            MIRValue::Copy(place)
+                        }
+                    }
+                    value => value,
+                })
                 .unwrap_or(MIRValue::Constant(MIRConstant::Undefined)),
             THIRExpressionKind::FunctionReference { name, debug_name } => {
                 MIRValue::Constant(MIRConstant::Function(builder.ensure_function(
@@ -199,7 +209,8 @@ fn lower_expression(
                 let value = lower_expression(builder, source)?;
                 if let THIRTypeKind::MemoryReference { inner_type, .. } = &source._type.kind {
                     match value {
-                        MIRValue::Place(_) | MIRValue::Move(_) => value,
+                        MIRValue::Place(place) | MIRValue::Copy(place) => MIRValue::Copy(place),
+                        MIRValue::Move(place) => MIRValue::Move(place),
                         value => {
                             let pointee = builder.registry().resolve_type_id(*inner_type).clone();
                             let pointee_type = builder.lower_type(&pointee);
@@ -210,11 +221,11 @@ fn lower_expression(
                                 pointer: value,
                                 pointee_type,
                             });
-                            MIRValue::Place(out)
+                            MIRValue::Copy(out)
                         }
                     }
                 } else {
-                    MIRValue::Place(memory::assign_operand_to_place(
+                    MIRValue::Move(memory::assign_operand_to_place(
                         builder,
                         value,
                         &expression._type,
@@ -223,7 +234,7 @@ fn lower_expression(
                 }
             }
             THIRExpressionKind::RegionMove { source } => match lower_expression(builder, source)? {
-                MIRValue::Place(place) => MIRValue::Move(place),
+                MIRValue::Place(place) | MIRValue::Copy(place) => MIRValue::Move(place),
                 value => value,
             },
             THIRExpressionKind::RegionWrite { target, value } => {
@@ -231,7 +242,7 @@ fn lower_expression(
                 let target_value = lower_expression(builder, target)?;
                 let value = lower_expression(builder, value)?;
                 let place = match target_value {
-                    MIRValue::Place(place) | MIRValue::Move(place) => place,
+                    MIRValue::Place(place) => place,
                     pointer => {
                         let THIRTypeKind::MemoryReference { inner_type, .. } = &target._type.kind
                         else {
@@ -578,7 +589,7 @@ fn lower_expression(
                 if !cleanups.is_empty() {
                     if let (Some(current), Some(ty)) = (value.take(), return_type.as_ref()) {
                         let saved = memory::assign_operand_to_place(builder, current, ty, None);
-                        value = Some(MIRValue::Place(saved));
+                        value = Some(MIRValue::Move(saved));
                     }
                 }
                 control_flow::lower_cleanups(builder, cleanups)?;
@@ -684,7 +695,7 @@ fn lower_expression(
                     let type_id = builder.lower_type(&expression._type);
                     let is_str_reference = builder.registry().is_cx_str(&expression._type);
                     return Ok(match value {
-                        MIRValue::Place(place) | MIRValue::Move(place) if !is_str_reference => {
+                        MIRValue::Place(place) if !is_str_reference => {
                             let out = builder.register(type_id, None);
                             builder.emit(MIRInstrKind::AddressOf { out, place });
                             MIRValue::Register(out)

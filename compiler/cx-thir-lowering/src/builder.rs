@@ -593,7 +593,7 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub(crate) fn promote_value_to_scope(&mut self, value: &MIRValue, scope: MIRScopeID) {
         let place = match value {
-            MIRValue::Place(place) | MIRValue::Move(place) => *place,
+            MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place) => *place,
             MIRValue::Register(_) | MIRValue::Constant(_) => return,
         };
         let MIRPlace::FunctionLocal(place) = place else {

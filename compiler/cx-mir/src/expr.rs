@@ -34,7 +34,9 @@ pub enum MIRConstant {
         value: FloatWrapper,
         ty: MIRFloatType,
     },
-    Null,
+    Null {
+        ty: MIRTypeID,
+    },
     Function(MIRFunctionID),
     Undefined,
 }
@@ -43,6 +45,7 @@ pub enum MIRConstant {
 pub enum MIRValue {
     Register(MIRRegister),
     Place(MIRPlace),
+    Copy(MIRPlace),
     Move(MIRPlace),
     Constant(MIRConstant),
 }
@@ -56,7 +59,9 @@ pub enum MIRInstrOperand<'a> {
 impl MIRInstrOperand<'_> {
     pub const fn place(self) -> Option<MIRPlace> {
         match self {
-            Self::Value(MIRValue::Place(place) | MIRValue::Move(place)) => Some(*place),
+            Self::Value(MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place)) => {
+                Some(*place)
+            }
             Self::Place(place) => Some(place),
             _ => None,
         }

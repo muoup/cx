@@ -22,7 +22,7 @@ impl<'a> FunctionLowerer<'a> {
             }
             MIRInstrKind::Assign { dest, value, ty } => {
                 let binding = self.place(*dest);
-                let value = self.lower_value(value, Some(*ty));
+                let value = self.lower_value(value);
                 self.store_binding(binding, value, *ty);
             }
             MIRInstrKind::AddressOf { out, place } => {
@@ -38,7 +38,7 @@ impl<'a> FunctionLowerer<'a> {
                 pointer,
                 pointee_type,
             } => {
-                let value = self.lower_value(pointer, None);
+                let value = self.lower_value(pointer);
                 self.places.insert(
                     *out,
                     PlaceBinding::Address {
@@ -61,7 +61,7 @@ impl<'a> FunctionLowerer<'a> {
                 self.lower_assert(condition, message.as_deref())
             }
             MIRInstrKind::Assume { condition } => {
-                let condition = self.lower_value(condition, None);
+                let condition = self.lower_value(condition);
                 self.emit_void(LMIRInstructionKind::CompilerAssumption { condition });
             }
             MIRInstrKind::Return { value } => self.lower_return(value.as_ref()),
@@ -74,7 +74,7 @@ impl<'a> FunctionLowerer<'a> {
                 true_target,
                 false_target,
             } => {
-                let condition = self.lower_value(cond, None);
+                let condition = self.lower_value(cond);
                 let true_target = self.lower_target(true_target);
                 let false_target = self.lower_target(false_target);
                 self.emit_void(LMIRInstructionKind::Branch {
@@ -88,7 +88,7 @@ impl<'a> FunctionLowerer<'a> {
                 cases,
                 default,
             } => {
-                let value = self.lower_value(value, None);
+                let value = self.lower_value(value);
                 let targets = cases
                     .iter()
                     .map(|(case, target)| (self.switch_constant(case), self.lower_target(target)))
@@ -144,7 +144,7 @@ impl<'a> FunctionLowerer<'a> {
                         element_type,
                     } => {
                         let base = self.address(self.place(*base));
-                        let index = self.lower_value(index, None);
+                        let index = self.lower_value(index);
                         let element = self.ty(*element_type);
                         let address = self.emit_temp(
                             LMIRInstructionKind::PointerBinOp {
@@ -217,7 +217,7 @@ impl<'a> FunctionLowerer<'a> {
                     match binding {
                         PlaceBinding::Address { value, ty } => (value, ty),
                         bitfield @ PlaceBinding::Bitfield { .. } => {
-                            let value = self.lower_value(value, None);
+                            let value = self.lower_value(value);
                             self.store_binding(bitfield, value, self.register_decl_type(out));
                             continue;
                         }
@@ -239,7 +239,7 @@ impl<'a> FunctionLowerer<'a> {
 
                 _ => unreachable!("construct aggregate has non-structured, non-array type"),
             };
-            let value = self.lower_value(value, Some(field_ty));
+            let value = self.lower_value(value);
             self.store_address(address, value, field_ty);
         }
     }
@@ -263,7 +263,7 @@ impl<'a> FunctionLowerer<'a> {
         );
         let base = self.register(out);
         let variant_ty = self.variant_type(sum_type, variant);
-        let value = self.lower_value(value, Some(variant_ty));
+        let value = self.lower_value(value);
         self.store_address(base.clone(), value, variant_ty);
         let tag_ty = LMIRType::with_implicit_abi(
             self.types.architecture(),
@@ -278,8 +278,8 @@ impl<'a> FunctionLowerer<'a> {
     }
 
     fn lower_binary(&mut self, out: MIRRegister, op: &MIRBinaryOp, lhs: &MIRValue, rhs: &MIRValue) {
-        let lhs = self.lower_value(lhs, None);
-        let rhs = self.lower_value(rhs, None);
+        let lhs = self.lower_value(lhs);
+        let rhs = self.lower_value(rhs);
         let kind = match op {
             MIRBinaryOp::Integer { op, .. } => LMIRInstructionKind::IntegerBinOp {
                 op: lower_int_binop(*op),
@@ -322,12 +322,12 @@ impl<'a> FunctionLowerer<'a> {
     fn lower_unary(&mut self, out: MIRRegister, op: &MIRUnaryOp, operand: &MIRValue) {
         if let MIRUnaryOp::Increment { amount, post } = op {
             let place_id = match operand {
-                MIRValue::Place(place) | MIRValue::Move(place) => *place,
+                MIRValue::Place(place) => *place,
                 _ => panic!("increment requires a place operand"),
             };
             let place = self.place(place_id);
             let ty = self.binding_type(&place);
-            let previous = self.load_binding(place.clone(), Some(ty), None);
+            let previous = self.load_binding(place.clone(), ty, None);
             let amount = self.int_constant(*amount as i128, self.integer_kind(ty));
             let result = self.emit_temp(
                 LMIRInstructionKind::IntegerBinOp {
@@ -351,7 +351,7 @@ impl<'a> FunctionLowerer<'a> {
             self.emit_to(out, LMIRInstructionKind::Alias { value });
             return;
         }
-        let value = self.lower_value(operand, None);
+        let value = self.lower_value(operand);
         let kind = match op {
             MIRUnaryOp::IntegerNeg { .. } => LMIRInstructionKind::IntegerUnOp {
                 op: LMIRIntUnOp::NEG,
@@ -381,7 +381,7 @@ impl<'a> FunctionLowerer<'a> {
         coercion: &MIRCoercion,
         to_type: MIRTypeID,
     ) {
-        let value = self.lower_value(operand, None);
+        let value = self.lower_value(operand);
         let kind = match coercion {
             MIRCoercion::TypeChange => LMIRInstructionKind::Alias { value },
             MIRCoercion::ReinterpretBits => LMIRInstructionKind::Coercion {
@@ -458,10 +458,9 @@ impl<'a> FunctionLowerer<'a> {
         let mut lowered_args = Vec::new();
         for (index, argument) in args.iter().enumerate() {
             if let Some(parameter) = signature.params.get(index) {
-                let parameter_type = self.call_parameter_type(callee, index);
-                lowered_args.extend(self.lower_call_argument(argument, parameter, parameter_type));
+                lowered_args.extend(self.lower_call_argument(argument, parameter));
             } else {
-                lowered_args.push(self.lower_value(argument, None));
+                lowered_args.push(self.lower_value(argument));
             }
         }
         let return_type = out
@@ -488,7 +487,7 @@ impl<'a> FunctionLowerer<'a> {
                 }
             }
             _ => LMIRInstructionKind::IndirectCall {
-                func_ptr: self.lower_value(callee, None),
+                func_ptr: self.lower_value(callee),
                 args: lowered_args,
                 method_sig: signature.clone(),
             },
@@ -524,11 +523,10 @@ impl<'a> FunctionLowerer<'a> {
         &mut self,
         argument: &MIRValue,
         parameter: &LMIRParameter,
-        parameter_type: Option<MIRTypeID>,
     ) -> Vec<LMIRValue> {
         match &parameter.abi {
             LMIRParameterABI::Direct { slots } if parameter._type.is_memory_resident() => {
-                let source = self.lower_value(argument, parameter_type);
+                let source = self.lower_value(argument);
                 slots
                     .iter()
                     .map(|slot| {
@@ -544,7 +542,7 @@ impl<'a> FunctionLowerer<'a> {
                     .collect()
             }
             LMIRParameterABI::Indirect { alignment } => {
-                let source = self.lower_value(argument, parameter_type);
+                let source = self.lower_value(argument);
                 if matches!(argument, MIRValue::Place(_)) {
                     let copy = self.emit_temp(
                         LMIRInstructionKind::Allocate {
@@ -569,7 +567,7 @@ impl<'a> FunctionLowerer<'a> {
                 }
             }
             LMIRParameterABI::Direct { .. } => {
-                vec![self.lower_value(argument, parameter_type)]
+                vec![self.lower_value(argument)]
             }
         }
     }
@@ -579,7 +577,7 @@ impl<'a> FunctionLowerer<'a> {
         match (return_abi, value) {
             (LMIRReturnABI::IndirectSret { alignment }, Some(value)) => {
                 let semantic = self.function.prototype.signature.return_type.clone();
-                let source = self.lower_value(value, Some(semantic));
+                let source = self.lower_value(value);
                 let size =
                     self.int_constant(self.layout(semantic).size as i128, LMIRIntegerType::I64);
                 self.emit_void(LMIRInstructionKind::Memcpy {
@@ -591,15 +589,14 @@ impl<'a> FunctionLowerer<'a> {
                 self.emit_void(LMIRInstructionKind::Return { value: None });
             }
             (_, value) => {
-                let expected = self.function.prototype.signature.return_type;
-                let value = value.map(|value| self.lower_value(value, Some(expected)));
+                let value = value.map(|value| self.lower_value(value));
                 self.emit_void(LMIRInstructionKind::Return { value });
             }
         }
     }
 
     fn lower_assert(&mut self, condition: &MIRValue, message: Option<&str>) {
-        let condition = self.lower_value(condition, None);
+        let condition = self.lower_value(condition);
         let message = message.unwrap_or("assertion failed").to_owned();
         let global = self.globals.len() as u32;
         self.globals.push(LMIRGlobalValue {

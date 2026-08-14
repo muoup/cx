@@ -26,7 +26,7 @@ pub(super) fn ensure_place(
     ty: &THIRType,
 ) -> cx_mir::MIRPlace {
     match value {
-        MIRValue::Place(place) | MIRValue::Move(place) => place,
+        MIRValue::Place(place) => place,
         value if ty.is_memory_reference() => {
             let inner_type = ty
                 .mem_ref_inner()

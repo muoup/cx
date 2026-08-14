@@ -260,7 +260,7 @@ impl MIRUnit {
         expected: MIRTypeID,
     ) -> Option<MIRTypeID> {
         match value {
-            MIRValue::Place(place) | MIRValue::Move(place) => {
+            MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place) => {
                 self.place_type_for_expected(function, *place, expected)
             }
             _ => self.value_type(function, value),
@@ -272,7 +272,7 @@ impl MIRUnit {
             MIRValue::Register(register) => {
                 function.register(*register).map(|register| register.ty)
             }
-            MIRValue::Place(place) | MIRValue::Move(place) => {
+            MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place) => {
                 self.place_value_type(function, *place)
             }
             MIRValue::Constant(MIRConstant::Unit) => Some(self.types.unit()),
@@ -296,9 +296,8 @@ impl MIRUnit {
             MIRValue::Constant(MIRConstant::String(_)) => {
                 self.types.find(&MIRTypeDefinition::new(MIRTypeKind::Str))
             }
-            MIRValue::Constant(
-                MIRConstant::Null | MIRConstant::Function(_) | MIRConstant::Undefined,
-            ) => None,
+            MIRValue::Constant(MIRConstant::Null { ty }) => Some(*ty),
+            MIRValue::Constant(MIRConstant::Function(_) | MIRConstant::Undefined) => None,
         }
     }
 

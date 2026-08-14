@@ -112,7 +112,7 @@ fn lower_global_initializer(constant: &MIRConstant) -> LMIRGlobalInitializer {
             value: *value,
             _type: convert_float_type(*ty),
         },
-        MIRConstant::Null => LMIRGlobalInitializer::Null,
+        MIRConstant::Null { .. } => LMIRGlobalInitializer::Null,
         MIRConstant::Unit
         | MIRConstant::String(_)
         | MIRConstant::Function(_)
@@ -316,7 +316,14 @@ impl<'a> FunctionLowerer<'a> {
                         place,
                         PlaceBinding::Address {
                             value: LMIRValue::ParameterRef(abi_index as u32),
-                            ty: parameter.ty,
+                            ty: self
+                                .types
+                                .kind(parameter.ty)
+                                .and_then(|kind| match kind {
+                                    MIRTypeKind::MemoryReference { inner, .. } => Some(*inner),
+                                    _ => None,
+                                })
+                                .expect("reference parameter is missing its pointee type"),
                         },
                     );
                     abi_index += slots.len();
@@ -376,20 +383,6 @@ impl<'a> FunctionLowerer<'a> {
         classify_signature(&mir_signature, self.types)
     }
 
-    fn call_parameter_type(&self, callee: &MIRValue, index: usize) -> Option<MIRTypeID> {
-        match callee {
-            MIRValue::Constant(MIRConstant::Function(id)) => self
-                .unit
-                .function(*id)
-                .and_then(|function| function.prototype.signature.params.get(index))
-                .map(|parameter| parameter.ty),
-            _ => self
-                .value_type(callee)
-                .and_then(|ty| self.callable_type(ty))
-                .and_then(|signature| signature.params.get(index).copied()),
-        }
-    }
-
     fn callable_type(&self, ty: MIRTypeID) -> Option<&MIRFunctionType> {
         match self.types.kind(ty)? {
             MIRTypeKind::Function { signature } => Some(signature),
@@ -403,7 +396,9 @@ impl<'a> FunctionLowerer<'a> {
     fn value_type(&self, value: &MIRValue) -> Option<MIRTypeID> {
         match value {
             MIRValue::Register(register) => Some(self.register_decl_type(*register)),
-            MIRValue::Place(place) | MIRValue::Move(place) => Some(self.place_decl_type(*place)),
+            MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place) => {
+                Some(self.place_decl_type(*place))
+            }
             MIRValue::Constant(MIRConstant::Function(id)) => {
                 let function = self.unit.function(*id)?;
                 let signature = MIRFunctionType {

@@ -627,6 +627,10 @@ fn write_value(
     match value {
         MIRValue::Register(register) => write_register_name(f, function, *register),
         MIRValue::Place(place) => write_place_name(f, unit, function, *place),
+        MIRValue::Copy(place) => {
+            f.write_str("copy ")?;
+            write_place_name(f, unit, function, *place)
+        }
         MIRValue::Move(place) => {
             f.write_str("move ")?;
             write_place_name(f, unit, function, *place)

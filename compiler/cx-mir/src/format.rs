@@ -100,7 +100,7 @@ impl Display for MIRConstant {
                 int_width(*ty)
             ),
             Self::Float { value, ty } => write!(f, "{value}:{ty:?}"),
-            Self::Null => f.write_str("null"),
+            Self::Null { ty } => write!(f, "null:{ty}"),
             Self::Function(function) => write!(f, "fn {function}"),
             Self::Undefined => f.write_str("undef"),
         }
@@ -112,6 +112,7 @@ impl Display for MIRValue {
         match self {
             Self::Register(value) => Display::fmt(value, f),
             Self::Place(value) => Display::fmt(value, f),
+            Self::Copy(place) => write!(f, "copy {place}"),
             Self::Move(place) => write!(f, "move {place}"),
             Self::Constant(value) => Display::fmt(value, f),
         }

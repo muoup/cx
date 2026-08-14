@@ -1,69 +1,76 @@
 use super::*;
 
 impl<'a> FunctionLowerer<'a> {
-    pub(super) fn lower_value(
-        &mut self,
-        value: &MIRValue,
-        expected: Option<MIRTypeID>,
-    ) -> LMIRValue {
+    pub(super) fn lower_value(&mut self, value: &MIRValue) -> LMIRValue {
         match value {
             MIRValue::Register(register) => self.register(*register),
-            MIRValue::Place(place) | MIRValue::Move(place) => {
-                let binding = self.place(*place);
-                let ty = self.binding_type(&binding);
-                if matches!(place, MIRPlace::Parameter(_)) && self.is_str_reference(ty) {
-                    return self.address(binding);
-                }
-                if let Some(expected) = expected {
-                    if matches!(
-                        self.types.kind(expected),
-                        Some(MIRTypeKind::MemoryReference { .. })
-                    ) && !self.is_str_reference(expected)
-                    {
-                        let value_is_reference = matches!(
-                            self.types.kind(ty),
-                            Some(MIRTypeKind::MemoryReference { inner, .. })
-                                if self.types.same_type(*inner, expected)
-                        );
-                        if !value_is_reference {
-                            return self.address(binding);
-                        }
-                    }
-                }
-                if matches!(place, MIRPlace::Global(id) if matches!(
-                    self.unit.global(*id).map(|global| &global.state),
-                    Some(MIRGlobalState::Initialized(MIRConstant::String(_)))
-                )) {
-                    return self.address(binding);
-                }
-                if self.ty(ty).is_memory_resident() {
-                    return self.address(binding);
-                }
-                let load_type = expected.unwrap_or(ty);
-                let lowered = self.ty(load_type);
-                if lowered.is_memory_resident() {
-                    self.address(binding)
-                } else {
-                    self.load_binding(binding, Some(load_type), None)
-                }
-            }
-            MIRValue::Constant(constant) => self.lower_constant(constant, expected),
+            MIRValue::Place(place) => self.lower_reference(*place),
+            MIRValue::Copy(place) => self.copy_place(*place),
+            MIRValue::Move(place) => self.move_place(*place),
+            MIRValue::Constant(constant) => self.lower_constant(constant),
         }
     }
 
-    fn is_str_reference(&self, ty: MIRTypeID) -> bool {
+    fn lower_reference(&self, place: MIRPlace) -> LMIRValue {
+        self.address(self.place(place))
+    }
+
+    fn move_place(&mut self, place: MIRPlace) -> LMIRValue {
+        let binding = self.place(place);
+        let ty = self.binding_type(&binding);
+        if self.is_direct_reference_parameter(place)
+            || self.is_address_valued(ty)
+            || self.ty(ty).is_memory_resident()
+        {
+            self.address(binding)
+        } else {
+            self.load_binding(binding, ty, None)
+        }
+    }
+
+    fn copy_place(&mut self, place: MIRPlace) -> LMIRValue {
+        let binding = self.place(place);
+        let ty = self.binding_type(&binding);
+        if self.is_direct_reference_parameter(place) || self.is_address_valued(ty) {
+            return self.address(binding);
+        }
+        let lowered = self.ty(ty);
+        if lowered.is_memory_resident() {
+            let layout = self.layout(ty);
+            let destination = self.allocate_temp(&lowered, layout.alignment as u8);
+            let size = self.int_constant(layout.size as i128, LMIRIntegerType::I64);
+            self.emit_void(LMIRInstructionKind::Memcpy {
+                dest: destination.clone(),
+                src: self.address(binding),
+                size,
+                alignment: layout.alignment as u8,
+            });
+            destination
+        } else {
+            self.load_binding(binding, ty, None)
+        }
+    }
+
+    fn is_address_valued(&self, ty: MIRTypeID) -> bool {
+        matches!(self.types.kind(ty), Some(MIRTypeKind::Str))
+    }
+
+    fn is_direct_reference_parameter(&self, place: MIRPlace) -> bool {
+        let MIRPlace::Parameter(parameter) = place else {
+            return false;
+        };
         matches!(
-            self.types.kind(ty),
-            Some(MIRTypeKind::MemoryReference { inner, .. })
-                if matches!(self.types.kind(*inner), Some(MIRTypeKind::Str))
+            self.function
+                .prototype
+                .signature
+                .params
+                .get(parameter.index())
+                .and_then(|parameter| self.types.kind(parameter.ty)),
+            Some(MIRTypeKind::MemoryReference { .. })
         )
     }
 
-    pub(super) fn lower_constant(
-        &mut self,
-        constant: &MIRConstant,
-        expected: Option<MIRTypeID>,
-    ) -> LMIRValue {
+    pub(super) fn lower_constant(&mut self, constant: &MIRConstant) -> LMIRValue {
         match constant {
             MIRConstant::Unit => LMIRValue::NULL,
             MIRConstant::Bool(value) => self.int_constant(i128::from(*value), LMIRIntegerType::I1),
@@ -86,8 +93,7 @@ impl<'a> FunctionLowerer<'a> {
                     .symbol_name
                     .clone(),
             ),
-            MIRConstant::Null => {
-                let expected = expected.expect("null constant requires an expected type");
+            MIRConstant::Null { ty } => {
                 let pointer_integer = convert_integer_type(self.types.pointer_integer_type());
                 let zero = self.int_constant(0, pointer_integer);
                 self.emit_temp(
@@ -98,7 +104,7 @@ impl<'a> FunctionLowerer<'a> {
                             sextend: false,
                         },
                     },
-                    self.ty(expected),
+                    self.ty(*ty),
                 )
             }
             MIRConstant::String(_) => panic!("string constants must be lowered as globals"),
@@ -109,12 +115,16 @@ impl<'a> FunctionLowerer<'a> {
     pub(super) fn load_binding(
         &mut self,
         binding: PlaceBinding,
-        expected: Option<MIRTypeID>,
+        ty: MIRTypeID,
         result: Option<MIRRegister>,
     ) -> LMIRValue {
         match binding {
-            PlaceBinding::Address { value, ty } => {
-                let lowered = self.ty(expected.unwrap_or(ty));
+            PlaceBinding::Address {
+                value,
+                ty: binding_type,
+            } => {
+                debug_assert!(self.types.same_type(binding_type, ty));
+                let lowered = self.ty(binding_type);
                 match result {
                     Some(register) => {
                         self.emit_kind_to(
@@ -303,9 +313,9 @@ impl<'a> FunctionLowerer<'a> {
 
     pub(super) fn value_as_binding(&mut self, value: &MIRValue, ty: MIRTypeID) -> PlaceBinding {
         match value {
-            MIRValue::Place(place) | MIRValue::Move(place) => self.place(*place),
+            MIRValue::Place(place) => self.place(*place),
             _ => PlaceBinding::Address {
-                value: self.lower_value(value, Some(ty)),
+                value: self.lower_value(value),
                 ty,
             },
         }
@@ -393,21 +403,12 @@ impl<'a> FunctionLowerer<'a> {
     }
 
     pub(super) fn lower_target(&mut self, target: &MIRBlockTarget) -> LMIRBlockTarget {
-        let parameter_types = self
-            .function
-            .block(target.block)
-            .expect("invalid block target")
-            .params
-            .iter()
-            .map(|register| self.function.register(*register).unwrap().ty.clone())
-            .collect::<Vec<_>>();
         LMIRBlockTarget::with_args(
             Self::block_id(target.block),
             target
                 .args
                 .iter()
-                .zip(parameter_types)
-                .map(|(value, ty)| self.lower_value(value, Some(ty)))
+                .map(|value| self.lower_value(value))
                 .collect(),
         )
     }

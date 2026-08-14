@@ -321,7 +321,7 @@ pub(super) fn lower_match(
             })
             .collect();
         builder.emit(MIRInstrKind::IntSwitch {
-            value: MIRValue::Place(subject_place),
+            value: MIRValue::Copy(subject_place),
             cases,
             default: default_target,
         });
