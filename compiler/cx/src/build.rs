@@ -1,7 +1,6 @@
 use cx_pipeline::project_compilation;
 use cx_pipeline_data::{
-    config::find_and_load_config, CompilationMode, CompilerBackend, CompilerConfig,
-    OptimizationLevel,
+    ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel, config::find_and_load_config
 };
 use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
@@ -88,17 +87,19 @@ fn build_project(args: BuildArgs) -> Vec<PathBuf> {
     let internal_directory = setup_internal_directory(&project_root);
 
     let base_config = CompilerConfig {
-        architecture: cx_pipeline_data::ArchitectureConfig::default(),
-        backend,
-        optimization_level,
+        architecture: ArchitectureConfig::native(),
         output: project_root.clone(), // placeholder, overridden per-target
         unsafe_mode: args.unsafe_mode,
         verbose: args.verbose,
         working_directory: project_root.clone(),
-        internal_directory,
         compilation_mode: CompilationMode::Executable,
         module_mode: true,
         project_config: Some(config.clone()),
+
+        internal_directory,
+        backend,
+        optimization_level,
+
         link_entries: vec![],
         native_objects: vec![],
         include_dirs: vec![],

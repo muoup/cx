@@ -66,7 +66,7 @@ pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckRepo
 
     let context = GlobalCompilationContext {
         config: CompilerConfig {
-            architecture: ArchitectureConfig::default(),
+            architecture: ArchitectureConfig::native(),
             backend: CompilerBackend::Cranelift,
             optimization_level: OptimizationLevel::O0,
             output: project_root.join("cx-lsp-output"),

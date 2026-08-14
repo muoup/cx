@@ -77,7 +77,7 @@ fn compiler_config_with_dirs(
         .collect();
 
     CompilerConfig {
-        architecture: ArchitectureConfig::default(),
+        architecture: ArchitectureConfig::native(),
         backend: args.backend,
         optimization_level: args.optimization_level,
         output,

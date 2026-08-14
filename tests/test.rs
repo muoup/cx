@@ -1,5 +1,5 @@
 use cx_pipeline::standard_compilation;
-use cx_pipeline_data::{CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel};
+use cx_pipeline_data::{ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel};
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -70,7 +70,7 @@ fn compiler_config(
     compilation_mode: CompilationMode,
 ) -> CompilerConfig {
     CompilerConfig {
-        architecture: cx_pipeline_data::ArchitectureConfig::default(),
+        architecture: ArchitectureConfig::native(),
         backend,
         optimization_level: match backend {
             CompilerBackend::Cranelift => OptimizationLevel::O0,

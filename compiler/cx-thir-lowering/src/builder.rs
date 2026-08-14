@@ -63,7 +63,7 @@ pub struct MIRBuilder<'thir> {
 impl<'thir> MIRBuilder<'thir> {
     pub fn new(thir: &'thir THIRUnit) -> Self {
         let mut builder = Self {
-            unit: MIRUnit::with_architecture(*thir.registry.architecture()),
+            unit: MIRUnit::new(*thir.registry.architecture()),
             registry: &thir.registry,
             lowering_types: HashSet::new(),
             function_symbols: HashMap::new(),

@@ -1,6 +1,7 @@
 use std::{collections::BTreeSet, error::Error, fmt};
 
 use cx_ast::ast::modifiers::CXLinkageMode;
+use cx_target::ArchitectureConfig;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
@@ -22,18 +23,8 @@ pub struct MIRUnit {
     pub globals: Vec<MIRGlobalVariable>,
 }
 
-impl Default for MIRUnit {
-    fn default() -> Self {
-        Self::with_architecture(Default::default())
-    }
-}
-
 impl MIRUnit {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_architecture(architecture: cx_target::ArchitectureConfig) -> Self {
+    pub fn new(architecture: ArchitectureConfig) -> Self {
         Self {
             types: MIRTypeRegistry::new(architecture),
             functions: Vec::new(),

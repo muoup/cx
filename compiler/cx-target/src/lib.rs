@@ -16,17 +16,18 @@ impl ArchitectureConfig {
         }
     }
 
+    pub const fn native() -> ArchitectureConfig {
+        Self {
+            pointer_size: std::mem::size_of::<*const ()>(),
+            pointer_alignment: std::mem::align_of::<*const ()>(),
+        }
+    }
+
     pub const fn pointer_size(&self) -> usize {
         self.pointer_size
     }
 
     pub const fn pointer_alignment(&self) -> usize {
         self.pointer_alignment
-    }
-}
-
-impl Default for ArchitectureConfig {
-    fn default() -> Self {
-        Self::new(8, 8)
     }
 }

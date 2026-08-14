@@ -162,12 +162,6 @@ impl MIRTypeRegistry {
     }
 }
 
-impl Default for MIRTypeRegistry {
-    fn default() -> Self {
-        Self::new(ArchitectureConfig::default())
-    }
-}
-
 fn same_kind(
     left: &MIRTypeKind,
     right: &MIRTypeKind,
