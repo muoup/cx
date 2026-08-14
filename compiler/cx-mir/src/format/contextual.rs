@@ -237,7 +237,7 @@ fn write_function(
     } else if function.prototype.linkage == CXLinkageMode::Extern || function.is_declaration() {
         f.write_str("extern ")?;
     }
-    write!(f, "fn {}(", function.prototype.signature.display_name())?;
+    write!(f, "fn {} (", function.prototype.signature.display_name())?;
     for (index, parameter) in function.prototype.signature.params.iter().enumerate() {
         if index != 0 {
             f.write_str(", ")?;
@@ -255,12 +255,11 @@ fn write_function(
         }
         f.write_str("...")?;
     }
-    f.write_str(") -> ")?;
-    if let Some(return_type) = function.prototype.signature.return_type {
-        types.write(f, return_type)?;
-    } else {
-        f.write_str("()")?;
-    }
+    write!(
+        f,
+        ") -> {} /* {} */",
+        function.prototype.signature.return_type, function.prototype.signature.symbol_name
+    )?;
 
     if function.is_declaration() {
         return f.write_str(";");

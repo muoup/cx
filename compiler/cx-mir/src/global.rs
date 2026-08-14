@@ -107,7 +107,7 @@ pub struct MIRFnSignature {
     pub symbol_name: CXIdent,
     pub debug_name: Option<CXIdent>,
     pub params: Vec<MIRFnParam>,
-    pub return_type: Option<MIRTypeID>,
+    pub return_type: MIRTypeID,
     pub variadic: bool,
 }
 
@@ -115,7 +115,7 @@ impl MIRFnSignature {
     pub fn new(
         symbol_name: CXIdent,
         params: Vec<MIRFnParam>,
-        return_type: Option<MIRTypeID>,
+        return_type: MIRTypeID,
     ) -> Self {
         Self {
             symbol_name,

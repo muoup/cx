@@ -8,3 +8,4 @@ cx-util = { path = "../cx-util" }
 cx-target = { path = "../cx-target" }
 cx-tokens = { path = "../cx-tokens" }
 cx-ast = { path = "../cx-ast" }
+speedy = "0.8.7"

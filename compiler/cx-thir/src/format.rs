@@ -474,15 +474,32 @@ impl Display for MIRDisplay<'_, THIRFnSignature> {
 
 impl Display for MIRDisplay<'_, THIRFnPrototype> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write_function_name(f, self.content)?;
         write!(
             f,
-            "{} :: {}",
-            self.content.name(),
+            " :: {}",
             self.content
                 .signature()
                 .display_with_definitions(self.definitions)
         )
     }
+}
+
+fn write_function_name(f: &mut Formatter<'_>, prototype: &THIRFnPrototype) -> std::fmt::Result {
+    let display_name = prototype
+        .debug_name()
+        .map(CXIdent::as_str)
+        .unwrap_or(prototype.symbol_name());
+    write!(f, "{display_name}")?;
+
+    if prototype
+        .debug_name()
+        .is_some_and(|debug_name| debug_name.as_str() != prototype.symbol_name())
+    {
+        write!(f, " {{{}}}", prototype.symbol_name())?;
+    }
+
+    Ok(())
 }
 
 impl Display for MIRDisplay<'_, THIRParameter> {
@@ -708,8 +725,12 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }
-            THIRExpressionKind::FunctionReference { name } => {
-                write!(f, "FunctionReference {name} <'")?;
+            THIRExpressionKind::FunctionReference { name, debug_name } => {
+                write!(
+                    f,
+                    "FunctionReference {} <'",
+                    debug_name.as_ref().unwrap_or(name)
+                )?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }

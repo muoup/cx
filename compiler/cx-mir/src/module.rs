@@ -359,7 +359,7 @@ impl MIRUnit {
     ) -> Result<(), MIRValidationError> {
         match kind {
             MIRInstrKind::Create { out, ty } => {
-                self.expect_place_type(function, block, instruction, "created place", *out, ty)?;
+                self.expect_place_type(function, block, instruction, "created place", *out, *ty)?;
             }
             MIRInstrKind::Assign { dest, value, ty } => {
                 self.expect_place_value_type(
@@ -368,7 +368,7 @@ impl MIRUnit {
                     instruction,
                     "assignment destination",
                     *dest,
-                    ty,
+                    *ty,
                 )?;
                 if let MIRValue::Move(source) = value {
                     self.expect_place_value_type(
@@ -377,7 +377,7 @@ impl MIRUnit {
                         instruction,
                         "moved source",
                         *source,
-                        ty,
+                        *ty,
                     )?;
                 } else {
                     self.expect_value_type(
@@ -386,7 +386,7 @@ impl MIRUnit {
                         instruction,
                         "assignment value",
                         value,
-                        ty,
+                        *ty,
                     )?;
                 }
             }
@@ -399,7 +399,7 @@ impl MIRUnit {
                     instruction,
                     "dereference result",
                     *out,
-                    pointee_type,
+                    *pointee_type,
                 )?;
             }
             MIRInstrKind::AggregateOp(MIRAggregateOp::Place {
@@ -412,7 +412,7 @@ impl MIRUnit {
                     instruction,
                     "index result",
                     *out,
-                    element_type,
+                    *element_type,
                 )?;
             }
             MIRInstrKind::AggregateOp(MIRAggregateOp::Value {
@@ -425,7 +425,7 @@ impl MIRUnit {
                     instruction,
                     "aggregate result",
                     *out,
-                    ty,
+                    *ty,
                 )?;
             }
             MIRInstrKind::AggregateOp(MIRAggregateOp::Value {
@@ -438,7 +438,7 @@ impl MIRUnit {
                     instruction,
                     "variant result",
                     *out,
-                    sum_type,
+                    *sum_type,
                 )?;
             }
             MIRInstrKind::Coerce { out, to_type, .. } => {
@@ -448,7 +448,7 @@ impl MIRUnit {
                     instruction,
                     "coercion result",
                     *out,
-                    to_type,
+                    *to_type,
                 )?;
             }
             MIRInstrKind::VariantSwitch {
@@ -463,7 +463,7 @@ impl MIRUnit {
                     instruction,
                     "variant switch subject",
                     *subject,
-                    sum_type,
+                    *sum_type,
                 )?;
                 if let Some(MIRTypeKind::TaggedUnion { variants }) = self.types.kind(*sum_type) {
                     let mut seen = BTreeSet::new();
@@ -489,7 +489,8 @@ impl MIRUnit {
                 }
             }
             MIRInstrKind::Return { value: Some(value) } => {
-                if let Some(return_type) = &function.prototype.signature.return_type {
+                let return_type = function.prototype.signature.return_type;
+                if !matches!(self.types.kind(return_type), Some(MIRTypeKind::Void)) {
                     self.expect_value_type(
                         function,
                         block,
@@ -512,7 +513,7 @@ impl MIRUnit {
         instruction: usize,
         entity: &'static str,
         place: MIRPlace,
-        expected: &MIRTypeID,
+        expected: MIRTypeID,
     ) -> Result<(), MIRValidationError> {
         let actual = self
             .place_type(function, place)
@@ -527,12 +528,12 @@ impl MIRUnit {
         instruction: usize,
         entity: &'static str,
         place: MIRPlace,
-        expected: &MIRTypeID,
+        expected: MIRTypeID,
     ) -> Result<(), MIRValidationError> {
         let actual = self
             .place_type_for_expected(function, place, expected)
             .expect("validated place is missing");
-        self.expect_type(function.id, block, instruction, entity, &actual, expected)
+        self.expect_type(function.id, block, instruction, entity, actual, expected)
     }
 
     fn expect_register_type(
@@ -542,9 +543,9 @@ impl MIRUnit {
         instruction: usize,
         entity: &'static str,
         register: MIRRegister,
-        expected: &MIRTypeID,
+        expected: MIRTypeID,
     ) -> Result<(), MIRValidationError> {
-        let actual = &function
+        let actual = function
             .register(register)
             .expect("validated register is missing")
             .ty;
@@ -558,12 +559,12 @@ impl MIRUnit {
         instruction: usize,
         entity: &'static str,
         value: &MIRValue,
-        expected: &MIRTypeID,
+        expected: MIRTypeID,
     ) -> Result<(), MIRValidationError> {
         let Some(actual) = self.value_type_for_expected(function, value, expected) else {
             return Ok(());
         };
-        self.expect_type(function.id, block, instruction, entity, &actual, expected)
+        self.expect_type(function.id, block, instruction, entity, actual, expected)
     }
 
     fn expect_type(
@@ -572,10 +573,10 @@ impl MIRUnit {
         block: MIRBasicBlockID,
         instruction: usize,
         entity: &'static str,
-        actual: &MIRTypeID,
-        expected: &MIRTypeID,
+        actual: MIRTypeID,
+        expected: MIRTypeID,
     ) -> Result<(), MIRValidationError> {
-        if self.types.same_type(*actual, *expected) {
+        if self.types.same_type(actual, expected) {
             Ok(())
         } else {
             Err(MIRValidationError::TypeMismatch {
@@ -645,12 +646,12 @@ impl MIRUnit {
             });
         }
         for (index, (argument, parameter)) in target.args.iter().zip(&block.params).enumerate() {
-            let expected = &function
+            let expected = function
                 .register(*parameter)
                 .expect("validated block parameter is missing")
                 .ty;
             if let Some(actual) = self.value_type_for_expected(function, argument, expected)
-                && !self.types.same_type(actual, *expected)
+                && !self.types.same_type(actual, expected)
             {
                 return Err(MIRValidationError::BlockArgumentType {
                     function: function.id,
@@ -670,7 +671,7 @@ impl MIRUnit {
         &self,
         function: &MIRFunction,
         value: &MIRValue,
-        expected: &MIRTypeID,
+        expected: MIRTypeID,
     ) -> Option<MIRTypeID> {
         match value {
             MIRValue::Place(place) | MIRValue::Move(place) => {
@@ -716,7 +717,7 @@ impl MIRUnit {
     }
 
     fn place_value_type(&self, function: &MIRFunction, place: MIRPlace) -> Option<MIRTypeID> {
-        let raw = *self.place_type(function, place)?;
+        let raw = self.place_type(function, place)?;
         match self.types.kind(raw) {
             Some(MIRTypeKind::MemoryReference { inner, .. }) => Some(*inner),
             _ => Some(raw),
@@ -727,34 +728,30 @@ impl MIRUnit {
         &self,
         function: &MIRFunction,
         place: MIRPlace,
-        expected: &MIRTypeID,
+        expected: MIRTypeID,
     ) -> Option<MIRTypeID> {
-        let raw = *self.place_type(function, place)?;
+        let raw = self.place_type(function, place)?;
         let expected_is_reference = matches!(
-            self.types.kind(*expected),
+            self.types.kind(expected),
             Some(MIRTypeKind::MemoryReference { .. })
         );
-        if expected_is_reference || self.types.same_type(raw, *expected) {
+        if expected_is_reference || self.types.same_type(raw, expected) {
             Some(raw)
         } else {
             self.place_value_type(function, place)
         }
     }
 
-    fn place_type<'a>(
-        &'a self,
-        function: &'a MIRFunction,
-        place: MIRPlace,
-    ) -> Option<&'a MIRTypeID> {
+    fn place_type(&self, function: &MIRFunction, place: MIRPlace) -> Option<MIRTypeID> {
         match place {
-            MIRPlace::FunctionLocal(id) => function.place(id).map(|place| &place.ty),
+            MIRPlace::FunctionLocal(id) => function.place(id).map(|place| place.ty),
             MIRPlace::Parameter(id) => function
                 .prototype
                 .signature
                 .params
                 .get(id.index())
-                .map(|parameter| &parameter.ty),
-            MIRPlace::Global(id) => self.global(id).map(|global| &global.ty),
+                .map(|parameter| parameter.ty),
+            MIRPlace::Global(id) => self.global(id).map(|global| global.ty),
         }
     }
 

@@ -49,7 +49,7 @@ pub(crate) fn any_to_basic_val(any_value: AnyValueEnum) -> Option<BasicValueEnum
 
 pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &LMIRType) -> Option<AnyTypeEnum<'a>> {
     Some(match &_type.kind {
-        LMIRTypeKind::Unit => context.void_type().as_any_type_enum(),
+        LMIRTypeKind::Void => context.void_type().as_any_type_enum(),
         LMIRTypeKind::Integer(_type) => match _type {
             LMIRIntegerType::I1 => context.bool_type().as_any_type_enum(),
             LMIRIntegerType::I8 => context.i8_type().as_any_type_enum(),

@@ -9,9 +9,7 @@ use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 use crate::{
     EnvironmentNamespace,
     thir::{
-        data::{
-            THIRComptimeFnPrototype, THIRFnPrototype, THIRType, THIRTypeID, THIRTypeKind,
-        },
+        data::{THIRComptimeFnPrototype, THIRFnPrototype, THIRType, THIRTypeID, THIRTypeKind},
         expression::{THIRExpression, THIRExpressionKind},
     },
     type_context::THIRTypeContext,
@@ -89,7 +87,8 @@ impl MIRSymbol {
                 }
                 .into(),
                 kind: THIRExpressionKind::FunctionReference {
-                    name: CXIdent::new(prototype.name()),
+                    name: CXIdent::new(prototype.symbol_name()),
+                    debug_name: prototype.debug_name().cloned(),
                 },
             }),
 

@@ -1,5 +1,5 @@
 use cx_ast::ast::modifiers::{CXTypeQualifiers, VisibilityMode};
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_util::{dense_id, identifier::CXIdent, namespace::QualifiedName};
 use speedy::{Readable, Writable};
 
 use crate::{
@@ -8,8 +8,7 @@ use crate::{
     type_context::THIRTypeContext,
 };
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Readable, Writable)]
-pub struct THIRTypeID(pub u64);
+dense_id!(THIRTypeID);
 
 #[derive(Debug, Clone)]
 pub struct THIRType {
@@ -230,30 +229,6 @@ impl THIRFloatType {
         }
     }
 }
-
-// pub fn bitfield_ref_to(
-//         &mut self,
-//         inner_type: MIRType,
-//         storage_type: MIRType,
-//         bit_offset: usize,
-//         bit_width: usize,
-//         signed: bool,
-//     ) -> MIRType {
-//         let inner_id = self.intern(inner_type);
-//         let storage_id = self.intern(storage_type);
-//         MIRType {
-//             kind: MIRTypeKind::MemoryReference {
-//                 inner_type: inner_id,
-//                 bitfield: Some(MIRBitfieldAccess {
-//                     storage_type: storage_id,
-//                     bit_offset,
-//                     bit_width,
-//                     signed,
-//                 }),
-//             },
-//             ..Default::default()
-//         }
-//     }
 
 impl Default for THIRType {
     fn default() -> Self {

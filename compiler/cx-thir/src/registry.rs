@@ -22,7 +22,7 @@ pub struct THIRDecomposedRegistry {
     intrinsic_types: HashMap<String, THIRTypeID>,
     identified_types: HashMap<QualifiedName, THIRTypeID>,
     named_types: HashMap<String, THIRTypeID>,
-    type_id_bound: u64,
+    type_id_bound: usize,
 }
 
 impl THIRDecomposedRegistry {
@@ -30,7 +30,7 @@ impl THIRDecomposedRegistry {
         architecture: ArchitectureConfig,
         typeid_map: HashMap<THIRTypeID, THIRType>,
         intrinsic_types: HashMap<String, THIRTypeID>,
-        type_id_bound: u64,
+        type_id_bound: usize,
     ) -> Self {
         let mut identified_types = HashMap::new();
         let mut named_types = HashMap::new();
@@ -88,7 +88,7 @@ impl THIRDecomposedRegistry {
             })
     }
 
-    pub fn type_id_bound(&self) -> u64 {
+    pub fn type_id_bound(&self) -> usize {
         self.type_id_bound
     }
 }

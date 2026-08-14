@@ -1,5 +1,5 @@
-use cx_tokens::TokenRange;
 use cx_tokens::token::{FloatSuffix, IntegerBase, IntegerSuffix};
+use cx_tokens::TokenRange;
 use cx_util::{
     identifier::CXIdent,
     namespace::{EnvironmentNamespace, QualifiedName},
@@ -42,7 +42,7 @@ impl CXExpression {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CXExprKind {
     Taken,
-    Unit,
+    Void,
 
     Identifier {
         name: QualifiedName,

@@ -102,9 +102,13 @@ fn lower_expression(
             THIRExpressionKind::ContractVariable { name, .. } => builder
                 .named(name)
                 .unwrap_or(MIRValue::Constant(MIRConstant::Undefined)),
-            THIRExpressionKind::FunctionReference { name } => MIRValue::Constant(
-                MIRConstant::Function(builder.ensure_function(name, &expression._type)),
-            ),
+            THIRExpressionKind::FunctionReference { name, debug_name } => {
+                MIRValue::Constant(MIRConstant::Function(builder.ensure_function(
+                    name,
+                    &expression._type,
+                    debug_name.as_ref(),
+                )))
+            }
 
             THIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
                 if matches!(

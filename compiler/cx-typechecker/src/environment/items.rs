@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 
-use cx_thir::thir::data::THIRFunction;
-use cx_thir::thir::data::THIRFnPrototype;
 use cx_thir::thir::data::MIRTemplateInput;
+use cx_thir::thir::data::THIRFnPrototype;
+use cx_thir::thir::data::THIRFunction;
 use cx_thir::thir::global::MIRGlobalVariable;
 use cx_thir::thir::r#type::THIRType;
-use cx_util::namespace::QualifiedName;
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 #[derive(Debug)]
 pub enum MIRFunctionGenRequest {
@@ -15,7 +15,8 @@ pub enum MIRFunctionGenRequest {
         input: MIRTemplateInput,
     },
     TypeConstructor {
-        name: String,
+        symbol_name: String,
+        debug_name: CXIdent,
         union_type: THIRType,
         variant_type: THIRType,
         variant_index: usize,

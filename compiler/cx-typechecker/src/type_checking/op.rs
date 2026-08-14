@@ -78,7 +78,7 @@ fn append_call_argument(
             lhs,
             rhs,
         } => {
-            let arguments = if matches!(rhs.kind, CXExprKind::Unit) {
+            let arguments = if matches!(rhs.kind, CXExprKind::Void) {
                 argument.clone()
             } else {
                 CXExpression {

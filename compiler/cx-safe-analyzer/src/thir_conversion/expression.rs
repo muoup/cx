@@ -1,12 +1,12 @@
 use crate::{log::AnalysisDiagnosticSource, thir_conversion::factories::*};
 use cx_log::CXResult;
-use cx_thir::thir::{
-    data::{THIRType, THIRTypeKind},
-    expression::{THIRExpression, THIRExpressionKind, THIRUnOp},
-};
 use cx_safe_ir::{
     ast::{CVMOperation, FMIRNode, FMIRNodeBody, FMIRType, FRc, MemoryLocation},
     intrinsic::FMIRIntrinsicKind,
+};
+use cx_thir::thir::{
+    data::{THIRType, THIRTypeKind},
+    expression::{THIRExpression, THIRExpressionKind, THIRUnOp},
 };
 use cx_tokens::TokenRange;
 
@@ -330,19 +330,21 @@ pub fn convert_expression(
             })
         }
 
-        THIRExpressionKind::FunctionReference { name } => {
+        THIRExpressionKind::FunctionReference { name, debug_name } => {
             let THIRTypeKind::Function { signature } = &thir_expr._type.kind else {
                 unreachable!(
                     "FMIR conversion expected function type in function reference expression"
                 )
             };
 
+            let display_name = debug_name.as_ref().unwrap_or(name);
+
             if !signature.contract.safe {
                 return env.log_error(
                     thir_expr,
                     format!(
                         "References to unsafe function `{}` may not be used in safe contexts",
-                        name
+                        display_name
                     ),
                 );
             }

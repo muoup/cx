@@ -516,7 +516,7 @@ fn typecheck_expr_inner(
             typecheck_initializer_list(env, namespace, expr, indices, expected_type)?
         }
 
-        CXExprKind::Unit => typecheck_unit(),
+        CXExprKind::Void => typecheck_unit(),
 
         CXExprKind::SizeOfType { _type } => typecheck_sizeof_type(env, namespace, expr, _type)?,
 

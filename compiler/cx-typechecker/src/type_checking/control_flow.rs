@@ -3,8 +3,8 @@ use crate::type_checking::typechecker::typecheck_expr;
 use cx_ast::ast::expression::CXExpression;
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
-use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
 use cx_thir::thir::data::THIRType;
+use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
 use cx_tokens::TokenRange;
 
 pub(crate) mod r#match;
@@ -56,7 +56,7 @@ pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
         }
         THIRExpressionKind::CallFunction { function, .. } => !matches!(
             &function.kind,
-            THIRExpressionKind::FunctionReference { name } if name.as_str() == "exit"
+            THIRExpressionKind::FunctionReference { name, .. } if name.as_str() == "exit"
         ),
         _ => true,
     }

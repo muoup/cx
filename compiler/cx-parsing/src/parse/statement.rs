@@ -51,7 +51,7 @@ pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<CXExpress
         }
 
         punctuator!(Semicolon) => {
-            return Ok(Some(CXExprKind::Unit.into_expr(
+            return Ok(Some(CXExprKind::Void.into_expr(
                 data.tokens.index,
                 data.tokens.index,
                 data.file_origin.clone(),
@@ -269,7 +269,7 @@ pub(crate) fn try_parse_keyword_stmt(
                 data.tokens.peek().map(|token| &token.kind),
                 Some(punctuator!(CloseParen))
             ) {
-                CXExprKind::Unit.into_expr(
+                CXExprKind::Void.into_expr(
                     data.tokens.index,
                     data.tokens.index,
                     data.file_origin_for_range(data.tokens.index, data.tokens.index),

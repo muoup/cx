@@ -11,10 +11,11 @@ use super::{
 pub struct MIRTypeRegistry {
     pub(super) architecture: ArchitectureConfig,
     pub(super) definitions: Vec<Option<MIRTypeDefinition>>,
+    pub(super) layouts: Vec<Option<MIRTypeLayout>>,
+
     interner: HashMap<MIRTypeDefinition, MIRTypeID>,
     debug_names: Vec<Option<String>>,
-    pub(super) layouts: Vec<Option<MIRTypeLayout>>,
-    next_id: u64,
+    next_id: usize,
 }
 
 impl MIRTypeRegistry {
@@ -68,7 +69,7 @@ impl MIRTypeRegistry {
             return id;
         }
 
-        let id = MIRTypeID::from_raw(self.next_id);
+        let id = MIRTypeID::new(self.next_id);
         self.next_id += 1;
         self.ensure_capacity(id.index());
         self.definitions[id.index()] = Some(definition.clone());
@@ -76,7 +77,7 @@ impl MIRTypeRegistry {
         id
     }
 
-    pub fn reserve_id_space(&mut self, end: u64) {
+    pub fn reserve_id_space(&mut self, end: usize) {
         self.next_id = self.next_id.max(end);
         let end = end as usize;
         if self.definitions.len() < end {
@@ -96,7 +97,7 @@ impl MIRTypeRegistry {
         definition: MIRTypeDefinition,
     ) -> Result<(), MIRLayoutError> {
         self.ensure_capacity(id.index());
-        self.next_id = self.next_id.max(id.raw() + 1);
+        self.next_id = self.next_id.max(id.index() + 1);
         let slot = &mut self.definitions[id.index()];
         if slot.is_some() {
             return Err(MIRLayoutError::DuplicateType(id));

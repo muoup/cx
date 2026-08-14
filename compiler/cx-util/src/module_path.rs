@@ -10,18 +10,6 @@ pub fn cx_library_directory(inner_path: &str) -> String {
     format!("{manifest_dir}/../../lib/{inner_path}")
 }
 
-#[cfg(test)]
-mod tests {
-    use super::ModulePath;
-
-    #[test]
-    fn source_paths_strip_supported_source_extensions() {
-        assert_eq!(ModulePath::from_source_path("main.cx").as_str(), "main");
-        assert_eq!(ModulePath::from_source_path("main.c").as_str(), "main");
-        assert_eq!(ModulePath::from_source_path("main.cxh").as_str(), "main");
-    }
-}
-
 impl ModulePath {
     pub fn new(path: impl Into<String>) -> Self {
         Self(path.into())

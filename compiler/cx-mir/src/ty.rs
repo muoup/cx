@@ -1,29 +1,12 @@
 mod layout;
 mod registry;
 
+use cx_util::dense_id;
+
 pub use layout::{MIRFieldLayout, MIRLayoutError, MIRTypeLayout};
 pub use registry::MIRTypeRegistry;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MIRTypeID(pub u64);
-
-impl MIRTypeID {
-    pub const fn new(index: usize) -> Self {
-        Self(index as u64)
-    }
-
-    pub const fn from_raw(id: u64) -> Self {
-        Self(id)
-    }
-
-    pub const fn index(self) -> usize {
-        self.0 as usize
-    }
-
-    pub const fn raw(self) -> u64 {
-        self.0
-    }
-}
+dense_id!(MIRTypeID);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MIRIntType {

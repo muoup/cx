@@ -389,7 +389,7 @@ impl<'a> Display for CXExprFormatter<'a> {
             CXExprKind::AlignOfType { _type } => {
                 writeln!(f, "AlignOfType ({_type})")
             }
-            CXExprKind::Unit => writeln!(f, "Unit"),
+            CXExprKind::Void => writeln!(f, "Unit"),
             CXExprKind::Match {
                 condition,
                 arms,

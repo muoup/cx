@@ -16,17 +16,14 @@ use cx_util::identifier::CXIdent;
 
 use cx_thir::{
     EnvironmentNamespace,
+    symbol::MIRSymbol,
     thir::{
         contextual_eq::TypeContextEqual,
-        data::{
-            THIRFnPrototype, THIRFnSignature, THIRParameter, MIRTemplateInput,
-            TemplateInfo,
-        },
-        expression::{THIRExpression, THIRExpressionKind, SymbolValueOrigin},
+        data::{MIRTemplateInput, THIRFnPrototype, THIRFnSignature, THIRParameter, TemplateInfo},
+        expression::{SymbolValueOrigin, THIRExpression, THIRExpressionKind},
         global::{MIRGlobalVarKind, MIRGlobalVariable},
         name_mangling::{base_mangle_member, base_mangle_templated_name},
     },
-    symbol::MIRSymbol,
     type_context::THIRTypeContext,
 };
 
@@ -328,7 +325,8 @@ fn resolve_type_constructor(
 
     env.items
         .push_request(MIRFunctionGenRequest::TypeConstructor {
-            name: prototype.name().to_owned(),
+            symbol_name: prototype.symbol_name().to_owned(),
+            debug_name: name.clone(),
             union_type,
             variant_type,
             variant_index,

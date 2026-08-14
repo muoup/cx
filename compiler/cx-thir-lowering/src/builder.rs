@@ -114,20 +114,21 @@ impl<'thir> MIRBuilder<'thir> {
             return self.lower_type_id(id);
         }
         let kind = self.lower_type_kind_mut(&ty.kind);
+        let debug_name = self.type_debug_name(ty);
         let id = self.unit.types.intern(MIRTypeDefinition {
             kind,
             minimum_alignment: ty.attributes.minimum_alignment,
         });
         if self.unit.types.debug_name(id).is_none() {
-            if let Some(name) = ty.strong_identifier() {
-                self.unit.types.set_debug_name(id, name.to_owned());
+            if let Some(debug_name) = debug_name {
+                self.unit.types.set_debug_name(id, debug_name);
             }
         }
         id
     }
 
     fn lower_type_id(&mut self, id: THIRTypeID) -> MIRTypeID {
-        let mir_id = MIRTypeID::from_raw(id.0);
+        let mir_id = MIRTypeID::new(id.index());
         if self.unit.types.definition(mir_id).is_some() || self.lowering_types.contains(&id) {
             return mir_id;
         }
@@ -145,7 +146,7 @@ impl<'thir> MIRBuilder<'thir> {
             self.lowering_types.remove(&id);
             return mir_id;
         };
-        let debug_name = ty.strong_identifier.clone();
+        let debug_name = self.type_debug_name(&ty);
         let definition = MIRTypeDefinition {
             kind: self.lower_type_kind_mut(&ty.kind),
             minimum_alignment: ty.attributes.minimum_alignment,
@@ -159,6 +160,11 @@ impl<'thir> MIRBuilder<'thir> {
         }
         self.lowering_types.remove(&id);
         mir_id
+    }
+
+    fn type_debug_name(&self, ty: &THIRType) -> Option<String> {
+        ty.strong_identifier()
+            .map(|_| ty.display_with(self.registry).to_string())
     }
 
     fn lower_type_kind_mut(&mut self, kind: &THIRTypeKind) -> MIRTypeKind {
@@ -330,8 +336,11 @@ impl<'thir> MIRBuilder<'thir> {
                 .with_nodrop(nodrop)
             })
             .collect();
-        let return_type = (!matches!(signature.return_type.kind, THIRTypeKind::Void))
-            .then(|| self.lower_type(&signature.return_type));
+        let return_type = if matches!(signature.return_type.kind, THIRTypeKind::Void) {
+            self.unit.types.unit()
+        } else {
+            self.lower_type(&signature.return_type)
+        };
         let mut lowered = MIRFnSignature::new(name, params, return_type);
         lowered.variadic = signature.var_args;
         MIRFnPrototype::new(lowered, linkage)
@@ -381,11 +390,19 @@ impl<'thir> MIRBuilder<'thir> {
             "yield context stack is unbalanced"
         );
 
+        let unit_type = self.unit.types.unit();
+        let returns_value = self
+            .unit
+            .function(context.function)
+            .expect("active MIR function is missing")
+            .prototype
+            .signature
+            .return_type
+            != unit_type;
         let function = self
             .unit
             .function_mut(context.function)
             .expect("active MIR function is missing");
-        let returns_value = function.prototype.signature.return_type.is_some();
         for block in &mut function.blocks {
             if block.terminator().is_some() {
                 continue;
@@ -540,8 +557,15 @@ impl<'thir> MIRBuilder<'thir> {
         &mut self,
         name: &CXIdent,
         callable_type: &THIRType,
+        debug_name: Option<&CXIdent>,
     ) -> MIRFunctionID {
         if let Some(id) = self.function_symbol(name.as_str()) {
+            if let Some(debug_name) = debug_name
+                && let Some(function) = self.unit.function_mut(id)
+                && function.prototype.signature.debug_name.is_none()
+            {
+                function.prototype.signature.debug_name = Some(debug_name.clone());
+            }
             return id;
         }
 
@@ -550,8 +574,9 @@ impl<'thir> MIRBuilder<'thir> {
             .intern_signature(callable_type)
             .cloned()
             .unwrap_or_default();
-        let prototype =
+        let mut prototype =
             self.prototype_from_signature(name.clone(), &signature, CXLinkageMode::Extern);
+        prototype.signature.debug_name = debug_name.cloned();
         let id = self.unit.add_function(prototype);
         self.function_symbols.insert(name.as_string(), id);
         id

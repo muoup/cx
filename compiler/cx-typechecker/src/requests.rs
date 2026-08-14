@@ -4,10 +4,8 @@ use cx_ast::{
 };
 use cx_log::CXResult;
 use cx_thir::thir::{
-    data::{
-        THIRFunction, THIRFnPrototype, THIRFnSignature, THIRParameter, MIRTemplateInput,
-    },
-    expression::{THIRExpression, THIRExpressionKind, SymbolValueOrigin},
+    data::{MIRTemplateInput, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter},
+    expression::{SymbolValueOrigin, THIRExpression, THIRExpressionKind},
     r#type::THIRType,
 };
 use cx_tokens::TokenRange;
@@ -23,13 +21,19 @@ pub fn fulfill_requests(env: &mut TypeEnvironment) -> CXResult<()> {
     while let Some(request) = env.items.pop_request() {
         match request {
             MIRFunctionGenRequest::TypeConstructor {
-                name,
+                symbol_name,
+                debug_name,
                 union_type,
                 variant_type,
                 variant_index,
-            } => {
-                realize_tagged_union_constructor(env, name, union_type, variant_type, variant_index)
-            }
+            } => realize_tagged_union_constructor(
+                env,
+                symbol_name,
+                debug_name,
+                union_type,
+                variant_type,
+                variant_index,
+            ),
 
             MIRFunctionGenRequest::Template {
                 name,
@@ -44,20 +48,21 @@ pub fn fulfill_requests(env: &mut TypeEnvironment) -> CXResult<()> {
 
 fn realize_tagged_union_constructor(
     env: &mut TypeEnvironment,
-    name: String,
+    symbol_name: String,
+    debug_name: CXIdent,
     union_type: THIRType,
     variant_type: THIRType,
     variant_index: usize,
 ) {
-    if env.items.request_fulfilled(name.as_str()) {
+    if env.items.request_fulfilled(symbol_name.as_str()) {
         return;
     }
-    env.items.mark_request_fulfilled(name.clone());
+    env.items.mark_request_fulfilled(symbol_name.clone());
 
     let param_name = CXIdent::new("value");
     let param_local_id = cx_thir::thir::expression::THIRLocalID::fresh();
     let prototype = THIRFnPrototype::new(
-        name,
+        symbol_name,
         CXLinkageMode::Static,
         THIRFnSignature {
             return_type: union_type.clone(),
@@ -73,7 +78,8 @@ fn realize_tagged_union_constructor(
             var_args: false,
             contract: CXFunctionContract::default(),
         },
-    );
+    )
+    .with_debug_name(debug_name);
 
     let value = if variant_type.is_unit() {
         THIRExpression {

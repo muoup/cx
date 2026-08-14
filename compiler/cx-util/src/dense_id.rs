@@ -1,7 +1,18 @@
 #[macro_export]
 macro_rules! dense_id {
     ($name:ident) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        #[derive(
+            Debug,
+            Clone,
+            Copy,
+            speedy::Readable,
+            speedy::Writable,
+            PartialEq,
+            Eq,
+            PartialOrd,
+            Ord,
+            Hash,
+        )]
         pub struct $name(pub usize);
 
         impl $name {

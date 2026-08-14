@@ -381,6 +381,7 @@ dependencies = [
  "cx-target",
  "cx-tokens",
  "cx-util",
+ "speedy",
 ]
 
 [[package]]

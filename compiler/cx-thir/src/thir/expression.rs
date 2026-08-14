@@ -111,7 +111,10 @@ pub enum THIRExpressionKind {
 
     // The callable signature is stored in the expression's type
     FunctionReference {
+        /// The linker-visible name used to resolve the function.
         name: CXIdent,
+        /// The source-facing name used when displaying the expression.
+        debug_name: Option<CXIdent>,
     },
 
     // Type/layout queries remain symbolic until MIR owns the target layout.

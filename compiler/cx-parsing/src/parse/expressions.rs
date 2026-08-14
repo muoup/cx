@@ -442,7 +442,7 @@ pub(crate) fn parse_expr_val(
                 data.tokens,
                 TokenKind::Punctuator(PunctuatorType::CloseParen)
             ) {
-                expr_stack.push(CXExprKind::Unit.into_expr(
+                expr_stack.push(CXExprKind::Void.into_expr(
                     start_index,
                     data.tokens.index,
                     data.file_origin_for_range(start_index, data.tokens.index),
@@ -476,7 +476,7 @@ pub(crate) fn parse_expr_val(
                 data.tokens,
                 TokenKind::Punctuator(PunctuatorType::CloseBracket)
             ) {
-                expr_stack.push(CXExprKind::Unit.into_expr(
+                expr_stack.push(CXExprKind::Void.into_expr(
                     start_index,
                     data.tokens.index,
                     data.file_origin_for_range(start_index, data.tokens.index),

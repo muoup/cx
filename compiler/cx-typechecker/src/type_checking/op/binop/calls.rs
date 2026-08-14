@@ -388,7 +388,7 @@ pub(crate) fn comma_separated_exprs(expr: &CXExpression) -> Vec<&CXExpression> {
     let mut expr_iter = expr;
     let mut exprs = Vec::new();
 
-    if matches!(expr.kind, CXExprKind::Unit) {
+    if matches!(expr.kind, CXExprKind::Void) {
         return exprs;
     }
 

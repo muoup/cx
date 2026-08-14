@@ -25,7 +25,7 @@ pub struct MIRSymbolRegistry<'a> {
     local_symbols: ScopedMap<QualifiedName, MIRSymbol>,
 
     typeid_defs: HashMap<THIRTypeID, THIRType>,
-    next_typeid: u64,
+    next_typeid: usize,
 }
 
 impl THIRTypeContext for MIRSymbolRegistry<'_> {
@@ -130,7 +130,7 @@ impl<'a> MIRSymbolRegistry<'a> {
     }
 
     pub fn reserve_type_id(&mut self) -> THIRTypeID {
-        let id = THIRTypeID(self.next_typeid);
+        let id = THIRTypeID::new(self.next_typeid);
         self.next_typeid += 1;
         id
     }
