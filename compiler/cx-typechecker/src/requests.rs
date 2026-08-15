@@ -152,10 +152,10 @@ fn realize_fn_template(
         apply_template_input(env, template, input)
             .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
 
-        if env.items.request_fulfilled(prototype.name()) {
+        if env.items.request_fulfilled(prototype.symbol_name()) {
             return Ok(());
         }
-        env.items.mark_request_fulfilled(prototype.name().into());
+        env.items.mark_request_fulfilled(prototype.symbol_name().into());
 
         typecheck_function(env, &namespace, prototype, body)?;
 

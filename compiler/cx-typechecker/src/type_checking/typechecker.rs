@@ -568,7 +568,7 @@ pub fn add_implicit_return(
 
     let func = env.current_function().clone();
 
-    let implicit_value = if func.name() == "main" {
+    let implicit_value = if func.symbol_name() == "main" {
         Some(Box::new(THIRExpression {
             token_range: TokenRange::internal(),
             kind: THIRExpressionKind::IntLiteral(0),
@@ -584,7 +584,7 @@ pub fn add_implicit_return(
             expr.token_range,
             format!(
                 "Function '{}' with non-void return type must have an explicit return statement",
-                func.name()
+                func.pretty_name()
             ),
         );
     };

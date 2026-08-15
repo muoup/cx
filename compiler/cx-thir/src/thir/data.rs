@@ -153,16 +153,20 @@ impl THIRFnPrototype {
         }
     }
 
-    pub fn name(&self) -> &str {
-        self.symbol_name()
-    }
-
     pub fn symbol_name(&self) -> &str {
         self.symbol_name.as_str()
     }
 
     pub fn lookup_identifier(&self) -> Option<&QualifiedName> {
         self.lookup_identifier.as_ref()
+    }
+
+    pub fn pretty_name(&self) -> &str {
+        if let Some(debug_name) = &self.debug_name {
+            debug_name.as_str()
+        } else {
+            self.symbol_name.as_str()
+        }
     }
 
     pub fn debug_name(&self) -> Option<&CXIdent> {

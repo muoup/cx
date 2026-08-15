@@ -73,7 +73,7 @@ pub fn typecheck_return(
                 value.token_range,
                 format!(
                     "Cannot return from function {} with a void return type",
-                    env.current_function().display_with(&env.symbols)
+                    env.current_function().pretty_name()
                 ),
             );
         }
@@ -83,7 +83,7 @@ pub fn typecheck_return(
                 return_range,
                 format!(
                     "Function {} expects a return value, but none was provided",
-                    env.current_function().display_with(&env.symbols)
+                    env.current_function().pretty_name()
                 ),
             );
         }

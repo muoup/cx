@@ -26,7 +26,7 @@ pub fn typecheck_function(
     if prototype.signature().contract.safe && prototype.signature().var_args {
         return env.log_error(
             body.token_range(),
-            format!("Safe function '{}' may not use varargs", prototype.name()),
+            format!("Safe function '{}' may not use varargs", prototype.pretty_name()),
         );
     }
 
