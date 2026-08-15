@@ -27,7 +27,7 @@ cargo build --release
 To include the LLVM backend:
 
 ```bash
-cargo build --release --features llvm-backend
+cargo build --release --features backend-llvm
 ```
 
 During development, you can run the compiler directly through Cargo:

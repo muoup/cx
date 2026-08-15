@@ -39,7 +39,7 @@ See the [official LLVM build documentation](https://llvm.org/docs/GettingStarted
    ```
 2. Build the compiler:
    ```bash
-   cargo build --release [--features llvm-backend]
+   cargo build --release [--features backend-llvm]
    ```
 
 ## Usage
