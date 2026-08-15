@@ -246,6 +246,7 @@ impl MIRInstr {
     pub fn defined_registers(&self) -> impl Iterator<Item = MIRRegister> + '_ {
         let register = match &self.kind {
             MIRInstrKind::AddressOf { out, .. }
+            | MIRInstrKind::Load { out, .. }
             | MIRInstrKind::BinOp { out, .. }
             | MIRInstrKind::UnOp { out, .. }
             | MIRInstrKind::Coerce { out, .. } => Some(*out),
@@ -259,6 +260,7 @@ impl MIRInstr {
     pub fn visit_operands(&self, mut visit: impl FnMut(MIRInstrOperand<'_>)) {
         match &self.kind {
             MIRInstrKind::Assign { value, .. }
+            | MIRInstrKind::Load { value, .. }
             | MIRInstrKind::Emit { value }
             | MIRInstrKind::UnOp { operand: value, .. }
             | MIRInstrKind::Coerce { operand: value, .. }
@@ -356,7 +358,7 @@ impl MIRInstr {
                 if let Some(default) = default {
                     visit_target_operands(default, &mut visit);
                 }
-                visit(MIRInstrOperand::Place(*subject));
+                visit(MIRInstrOperand::Value(subject));
             }
             MIRInstrKind::Leak { place } | MIRInstrKind::AddressOf { place, .. } => {
                 visit(MIRInstrOperand::Place(*place));
@@ -404,6 +406,10 @@ pub enum MIRInstrKind {
         dest: MIRPlace,
         value: MIRValue,
         ty: MIRTypeID,
+    },
+    Load {
+        out: MIRRegister,
+        value: MIRValue,
     },
     AddressOf {
         out: MIRRegister,
@@ -465,9 +471,8 @@ pub enum MIRInstrKind {
         default: Option<MIRBlockTarget>,
     },
     VariantSwitch {
-        subject: MIRPlace,
+        subject: MIRValue,
         sum_type: MIRTypeID,
-        consumes_subject: bool,
         cases: Vec<(usize, MIRBlockTarget)>,
         default: Option<MIRBlockTarget>,
     },

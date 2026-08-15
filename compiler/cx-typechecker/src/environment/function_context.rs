@@ -15,13 +15,6 @@ pub struct FunctionContext {
     require_pure: bool,
     unsafe_depth: usize,
     yield_stack: Vec<YieldContext>,
-    defer_scopes: Vec<DeferScope>,
-}
-
-#[derive(Default)]
-struct DeferScope {
-    control_scope_depth: usize,
-    expressions: Vec<cx_thir::thir::expression::THIRExpression>,
 }
 
 #[derive(Clone)]
@@ -35,6 +28,7 @@ pub struct FunctionModeSnapshot {
 pub struct YieldContext {
     pub target_scope: ScopeId,
     pub result_type: Option<THIRType>,
+    pub saw_empty_yield: bool,
     pub yield_count: usize,
 }
 
@@ -46,7 +40,6 @@ impl FunctionContext {
         self.flow = Some(ControlFlow::new());
         self.current_function = Some(prototype);
         self.yield_stack.clear();
-        self.defer_scopes.clear();
     }
 
     pub fn end_function(&mut self) {
@@ -56,7 +49,6 @@ impl FunctionContext {
         self.require_pure = false;
         self.unsafe_depth = 0;
         self.yield_stack.clear();
-        debug_assert!(self.defer_scopes.is_empty());
     }
 
     pub fn current_function(&self) -> &THIRFnPrototype {
@@ -82,79 +74,11 @@ impl FunctionContext {
     pub fn push_scope(&mut self, has_break_merge: bool, has_continue_merge: bool) {
         self.flow_mut()
             .push_scope(has_break_merge, has_continue_merge);
-        self.push_defer_scope();
     }
 
     pub fn pop_scope(&mut self) -> CXRawResult<()> {
         self.flow_mut().pop_scope()?;
-        self.pop_defer_scope();
         CXRawResult::Ok(())
-    }
-
-    pub fn register_defer(&mut self, expression: cx_thir::thir::expression::THIRExpression) {
-        self.defer_scopes
-            .last_mut()
-            .expect("defer registered outside of a function scope")
-            .expressions
-            .push(expression);
-    }
-
-    pub fn current_scope_cleanups(&self) -> Vec<cx_thir::thir::expression::THIRExpression> {
-        self.defer_scopes
-            .last()
-            .map(|scope| scope.expressions.iter().rev().cloned().collect())
-            .unwrap_or_default()
-    }
-
-    pub fn cleanups_exiting_to(
-        &self,
-        target_scope: ScopeId,
-        include_target: bool,
-    ) -> Vec<cx_thir::thir::expression::THIRExpression> {
-        self.defer_scopes
-            .iter()
-            .rev()
-            .filter(|scope| {
-                if include_target {
-                    scope.control_scope_depth >= target_scope.index()
-                } else {
-                    scope.control_scope_depth > target_scope.index()
-                }
-            })
-            .flat_map(|scope| scope.expressions.iter().rev().cloned())
-            .collect()
-    }
-
-    pub fn push_defer_scope(&mut self) {
-        let control_scope_depth = self
-            .defer_scopes
-            .last()
-            .map(|scope| scope.control_scope_depth)
-            .unwrap_or_default()
-            .max(self.current_scope_index().index());
-        self.defer_scopes.push(DeferScope {
-            control_scope_depth,
-            expressions: Vec::new(),
-        });
-    }
-
-    pub fn push_child_defer_scope(&mut self) {
-        let control_scope_depth = self
-            .defer_scopes
-            .last()
-            .map(|scope| scope.control_scope_depth)
-            .unwrap_or_else(|| self.current_scope_index().index())
-            + 1;
-        self.defer_scopes.push(DeferScope {
-            control_scope_depth,
-            expressions: Vec::new(),
-        });
-    }
-
-    pub fn pop_defer_scope(&mut self) {
-        self.defer_scopes
-            .pop()
-            .expect("defer scope stack has uneven push/pop");
     }
 
     pub fn current_snapshot(&self) -> ControlFlowSnapshot {
@@ -242,6 +166,7 @@ impl FunctionContext {
         self.yield_stack.push(YieldContext {
             target_scope,
             result_type,
+            saw_empty_yield: false,
             yield_count: 0,
         });
     }

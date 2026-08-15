@@ -65,6 +65,20 @@ impl MIRUnit {
                     *pointee_type,
                 )?;
             }
+            MIRInstrKind::Load { out, value } => {
+                let expected = function
+                    .register(*out)
+                    .expect("validated load result register is missing")
+                    .ty;
+                self.expect_value_type(
+                    function,
+                    block,
+                    instruction,
+                    "load value",
+                    value,
+                    expected,
+                )?;
+            }
             MIRInstrKind::AggregateOp(MIRAggregateOp::Place {
                 out,
                 op: MIRPlaceAggregateOp::Index { element_type, .. },
@@ -120,12 +134,12 @@ impl MIRUnit {
                 cases,
                 ..
             } => {
-                self.expect_place_value_type(
+                self.expect_value_type(
                     function,
                     block,
                     instruction,
                     "variant switch subject",
-                    *subject,
+                    subject,
                     *sum_type,
                 )?;
                 if let Some(MIRTypeKind::TaggedUnion { variants }) = self.types.kind(*sum_type) {

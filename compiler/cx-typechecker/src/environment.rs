@@ -119,18 +119,6 @@ impl TypeEnvironment<'_> {
         CXRawResult::Ok(())
     }
 
-    pub fn push_defer_scope(&mut self) {
-        self.function.push_defer_scope();
-    }
-
-    pub fn push_child_defer_scope(&mut self) {
-        self.function.push_child_defer_scope();
-    }
-
-    pub fn pop_defer_scope(&mut self) {
-        self.function.pop_defer_scope();
-    }
-
     pub fn push_unsafe(&mut self) {
         self.function.enter_unsafe();
     }

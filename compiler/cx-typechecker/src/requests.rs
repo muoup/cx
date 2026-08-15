@@ -118,7 +118,6 @@ fn realize_tagged_union_constructor(
         kind: THIRExpressionKind::Return {
             value: Some(Box::new(constructed)),
             postcondition: None,
-            cleanups: Vec::new(),
         },
     };
 

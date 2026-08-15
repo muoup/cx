@@ -170,9 +170,6 @@ pub fn typecheck_return(
                     binding: ret_name.clone(),
                     condition: Box::new(postcondition),
                 }),
-                cleanups: env
-                    .function
-                    .cleanups_exiting_to(crate::environment::ScopeId::new(0), true),
             },
         ))
     } else {
@@ -181,9 +178,6 @@ pub fn typecheck_return(
             THIRExpressionKind::Return {
                 value: return_value,
                 postcondition: None,
-                cleanups: env
-                    .function
-                    .cleanups_exiting_to(crate::environment::ScopeId::new(0), true),
             },
         ))
     }

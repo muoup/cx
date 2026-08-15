@@ -5,7 +5,6 @@ use crate::environment::ScopeExitTarget;
 use crate::environment::TypeEnvironment;
 use crate::symbol::completion::complete_template_input;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
-use crate::type_checking::control_flow::append_current_scope_cleanups;
 use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::pattern::tagged_union::{
     TypeConstructor, resolve_type_constructor_pattern,
@@ -390,7 +389,6 @@ fn typecheck_match_arm_body(
     body: &HIRExpression,
     label: &'static str,
 ) -> CXResult<(THIRExpression, MatchArmFlow)> {
-    env.push_child_defer_scope();
     let yield_count_before = env.function.current_yield_count();
     let body_expr = typecheck_expr(env, namespace, body, None)
         .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
@@ -398,8 +396,6 @@ fn typecheck_match_arm_body(
         .function
         .current_yield_count()
         .saturating_sub(yield_count_before);
-    let body_expr = append_current_scope_cleanups(env, body_expr);
-    env.pop_defer_scope();
 
     Ok((
         body_expr.clone(),

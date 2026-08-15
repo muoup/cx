@@ -342,6 +342,11 @@ fn write_instruction(
             f.write_str(" = ")?;
             write_value(f, unit, function, value)
         }
+        MIRInstrKind::Load { out, value } => {
+            write_register_name(f, function, *out)?;
+            f.write_str(" = load ")?;
+            write_value(f, unit, function, value)
+        }
         MIRInstrKind::AddressOf { out, place } => {
             write_register_name(f, function, *out)?;
             f.write_str(" = &")?;
@@ -484,7 +489,7 @@ fn write_instruction(
             ..
         } => {
             f.write_str("switch.variant ")?;
-            write_place_name(f, unit, function, *subject)?;
+            write_value(f, unit, function, subject)?;
             f.write_str(" {")?;
             for (index, (variant, target)) in cases.iter().enumerate() {
                 if index != 0 {

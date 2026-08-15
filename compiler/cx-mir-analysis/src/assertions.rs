@@ -203,6 +203,9 @@ fn transfer_instruction(environment: &mut ConstEnvironment, kind: &MIRInstrKind)
         MIRInstrKind::AddressOf { out, .. } => {
             environment.registers.insert(*out, ConstValue::Unknown);
         }
+        MIRInstrKind::Load { out, .. } => {
+            environment.registers.insert(*out, ConstValue::Unknown);
+        }
         MIRInstrKind::AggregateOp(operation) => match operation {
             MIRAggregateOp::Place { out, .. } => {
                 environment.places.insert(*out, ConstValue::Unknown);

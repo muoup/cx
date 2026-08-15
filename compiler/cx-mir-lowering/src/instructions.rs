@@ -25,6 +25,10 @@ impl<'a> FunctionLowerer<'a> {
                 let value = self.lower_value(value);
                 self.store_binding(binding, value, *ty);
             }
+            MIRInstrKind::Load { out, value } => {
+                let value = self.lower_value(value);
+                self.emit_to(*out, LMIRInstructionKind::Alias { value });
+            }
             MIRInstrKind::AddressOf { out, place } => {
                 let binding = self.place(*place);
                 let address = match binding {
@@ -108,9 +112,9 @@ impl<'a> FunctionLowerer<'a> {
                 sum_type,
                 cases,
                 default,
-                ..
             } => {
-                let tag = self.load_discriminant(self.place(*subject), *sum_type, None);
+                let binding = self.value_as_binding(subject, *sum_type);
+                let tag = self.load_discriminant(binding, *sum_type, None);
                 let targets = cases
                     .iter()
                     .map(|(case, target)| (*case as u64, self.lower_target(target)))

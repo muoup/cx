@@ -34,6 +34,9 @@ fn lower_function(
 ) -> CXResult<()> {
     builder.start_function(index, function);
     lower_expression(builder, &function.body)?;
+    if !builder.current_block_terminated() {
+        control_flow::lower_root_defers(builder)?;
+    }
     builder.finish_function();
     Ok(())
 }
@@ -225,12 +228,11 @@ fn lower_expression(
                         }
                     }
                 } else {
-                    MIRValue::Move(memory::assign_operand_to_place(
-                        builder,
-                        value,
-                        &expression._type,
-                        None,
-                    ))
+                    match value {
+                        MIRValue::Place(place) | MIRValue::Copy(place) => MIRValue::Copy(place),
+                        MIRValue::Move(place) => MIRValue::Move(place),
+                        value => value,
+                    }
                 }
             }
             THIRExpressionKind::RegionMove { source } => match lower_expression(builder, source)? {
@@ -497,11 +499,10 @@ fn lower_expression(
                 MIRValue::Register(out)
             }
 
-            THIRExpressionKind::Break { cleanups, .. } => {
-                control_flow::lower_cleanups(builder, cleanups)?;
+            THIRExpressionKind::Break => {
                 if let Some(target) = builder.break_target() {
                     if let Some(depth) = builder.break_scope_depth() {
-                        builder.unwind_lexical_scopes_to(depth);
+                        control_flow::unwind_lexical_scopes_to(builder, depth)?;
                     }
                     builder.emit(MIRInstrKind::Jump {
                         target: MIRBlockTarget::new(target),
@@ -511,11 +512,10 @@ fn lower_expression(
                 }
                 MIRValue::Constant(MIRConstant::Unit)
             }
-            THIRExpressionKind::Continue { cleanups, .. } => {
-                control_flow::lower_cleanups(builder, cleanups)?;
+            THIRExpressionKind::Continue => {
                 if let Some(target) = builder.continue_target() {
                     if let Some(depth) = builder.continue_scope_depth() {
-                        builder.unwind_lexical_scopes_to(depth);
+                        control_flow::unwind_lexical_scopes_to(builder, depth)?;
                     }
                     builder.emit(MIRInstrKind::Jump {
                         target: MIRBlockTarget::new(target),
@@ -579,19 +579,16 @@ fn lower_expression(
             THIRExpressionKind::Return {
                 postcondition,
                 value,
-                cleanups,
             } => {
-                let return_type = value.as_deref().map(|value| value._type.clone());
-                let mut value = value
+                let value = value
                     .as_deref()
-                    .map(|value| lower_expression(builder, value))
+                    .map(|value| {
+                        let lowered = lower_expression(builder, value)?;
+                        Ok(control_flow::capture_value(builder, lowered, &value._type))
+                    })
                     .transpose()?;
-                if !cleanups.is_empty()
-                    && let (Some(current), Some(ty)) = (value.take(), return_type.as_ref()) {
-                        let saved = memory::assign_operand_to_place(builder, current, ty, None);
-                        value = Some(MIRValue::Move(saved));
-                    }
-                control_flow::lower_cleanups(builder, cleanups)?;
+                control_flow::unwind_lexical_scopes_to(builder, 1)?;
+                control_flow::lower_root_defers(builder)?;
                 if let Some(postcondition) = postcondition {
                     builder.push_named_scope();
                     if let (Some(name), Some(value)) = (&postcondition.binding, value.clone()) {
@@ -603,31 +600,28 @@ fn lower_expression(
                 builder.emit(MIRInstrKind::Return { value });
                 MIRValue::Constant(MIRConstant::Unit)
             }
-            THIRExpressionKind::Yield {
-                value,
-                target_scope: _,
-                cleanups,
-            } => {
-                let yields_value = value
-                    .as_deref()
-                    .is_some_and(|value| !matches!(value._type.kind, THIRTypeKind::Void));
+            THIRExpressionKind::Yield { value } => {
                 let value = value
                     .as_deref()
-                    .map(|value| lower_expression(builder, value))
-                    .transpose()?
-                    .unwrap_or(MIRValue::Constant(MIRConstant::Unit));
-                control_flow::lower_cleanups(builder, cleanups)?;
+                    .map(|value| {
+                        let lowered = lower_expression(builder, value)?;
+                        Ok(control_flow::capture_value(builder, lowered, &value._type))
+                    })
+                    .transpose()?;
                 if let Some(target) = builder.yield_target() {
-                    if let Some(depth) = builder.yield_scope_depth() {
-                        let target_scope = builder.lexical_scope_at_depth(depth);
-                        builder.promote_value_to_scope(&value, target_scope);
-                        builder.unwind_lexical_scopes_to(depth);
-                    }
-                    builder.record_yield();
+                    let depth = builder
+                        .yield_scope_depth()
+                        .expect("yield target is missing its lexical scope depth");
+                    control_flow::unwind_lexical_scopes_to(builder, depth)?;
+                    let args = builder
+                        .yield_result()
+                        .map(|_| value.unwrap_or(MIRValue::Constant(MIRConstant::Unit)))
+                        .into_iter()
+                        .collect();
                     builder.emit(MIRInstrKind::Jump {
-                        target: MIRBlockTarget::with_args(target, vec![value]),
+                        target: MIRBlockTarget::with_args(target, args),
                     });
-                } else if yields_value {
+                } else if value.is_some() {
                     builder.emit(MIRInstrKind::Unreachable);
                 }
                 MIRValue::Constant(MIRConstant::Unit)
@@ -647,12 +641,17 @@ fn lower_expression(
                 });
                 MIRValue::Constant(MIRConstant::Unit)
             }
+            THIRExpressionKind::Defer {
+                expression: deferred,
+            } => {
+                builder.register_defer((**deferred).clone());
+                MIRValue::Constant(MIRConstant::Unit)
+            }
             THIRExpressionKind::Block {
                 statements,
                 creates_scope,
             } => {
                 let mut result = MIRValue::Constant(MIRConstant::Unit);
-                let parent_scope = (*creates_scope).then(|| builder.current_lexical_scope());
                 if *creates_scope {
                     builder.push_lexical_scope(expression.token_range.clone());
                 }
@@ -664,12 +663,14 @@ fn lower_expression(
                     result = lower_expression(builder, statement)?;
                 }
                 builder.pop_named_scope();
+                if *creates_scope
+                    && !expression._type.is_unit()
+                    && !builder.current_block_terminated()
+                {
+                    result = control_flow::capture_value(builder, result, &expression._type);
+                }
                 if *creates_scope {
-                    builder.promote_value_to_scope(
-                        &result,
-                        parent_scope.expect("scoped block is missing its parent scope"),
-                    );
-                    builder.pop_lexical_scope();
+                    control_flow::pop_lexical_scope(builder)?;
                 }
                 result
             }

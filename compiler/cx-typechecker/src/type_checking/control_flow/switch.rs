@@ -1,6 +1,5 @@
 use crate::environment::{ScopeExitTarget, TypeEnvironment};
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
-use crate::type_checking::control_flow::append_current_scope_cleanups;
 use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
@@ -48,11 +47,8 @@ pub fn typecheck_switch(
             );
         };
 
-        env.push_child_defer_scope();
         let case_body_expr = typecheck_expr(env, namespace, case_expr, None)
             .and_then(|v| v.standard_ready_coerce(env, case_expr.token_range()))?;
-        let case_body_expr = append_current_scope_cleanups(env, case_body_expr);
-        env.pop_defer_scope();
         if expr_may_fall_through(&case_body_expr) {
             env.function.enqueue_scope_arrow(
                 &ScopeExitTarget {
@@ -102,11 +98,8 @@ pub fn typecheck_switch(
                     ),
                 );
             };
-            env.push_child_defer_scope();
             let body_expr = typecheck_expr(env, namespace, expr, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
-            let body_expr = append_current_scope_cleanups(env, body_expr);
-            env.pop_defer_scope();
             if expr_may_fall_through(&body_expr) {
                 env.function.enqueue_scope_arrow(
                     &ScopeExitTarget {

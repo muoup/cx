@@ -263,6 +263,9 @@ fn transfer_instruction(
             use_value(unit, function, block, instruction, value, state, diagnose)?;
             set_available(state, *dest);
         }
+        MIRInstrKind::Load { value, .. } => {
+            use_value(unit, function, block, instruction, value, state, diagnose)?;
+        }
         MIRInstrKind::AddressOf { place, .. } => {
             use_place(unit, function, block, instruction, *place, state, diagnose)?;
         }
@@ -368,20 +371,16 @@ fn transfer_instruction(
         }
         MIRInstrKind::VariantSwitch {
             subject,
-            consumes_subject,
             cases,
             default,
             ..
         } => {
-            use_place(
-                unit,
-                function,
-                block,
-                instruction,
-                *subject,
-                state,
-                diagnose,
-            )?;
+            if let MIRValue::Move(place) = subject {
+                consume(unit, function, block, instruction, *place, state, diagnose)?;
+                state.mark_destructured(*place);
+            } else {
+                use_value(unit, function, block, instruction, subject, state, diagnose)?;
+            }
             for (_, target) in cases {
                 for value in &target.args {
                     use_value(unit, function, block, instruction, value, state, diagnose)?;
@@ -391,9 +390,6 @@ fn transfer_instruction(
                 for value in &target.args {
                     use_value(unit, function, block, instruction, value, state, diagnose)?;
                 }
-            }
-            if *consumes_subject {
-                state.mark_destructured(*subject);
             }
         }
         MIRInstrKind::Unreachable | MIRInstrKind::Emit { .. } => {

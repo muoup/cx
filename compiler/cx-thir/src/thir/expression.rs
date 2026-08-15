@@ -211,14 +211,8 @@ pub enum THIRExpressionKind {
     },
 
     // Control Flow
-    Break {
-        scope_depth: usize,
-        cleanups: Vec<THIRExpression>,
-    },
-    Continue {
-        scope_depth: usize,
-        cleanups: Vec<THIRExpression>,
-    },
+    Break,
+    Continue,
     If {
         condition: Box<THIRExpression>,
         then_branch: Box<THIRExpression>,
@@ -253,12 +247,9 @@ pub enum THIRExpressionKind {
     Return {
         postcondition: Option<THIRPostcondition>,
         value: Option<Box<THIRExpression>>,
-        cleanups: Vec<THIRExpression>,
     },
     Yield {
         value: Option<Box<THIRExpression>>,
-        target_scope: usize,
-        cleanups: Vec<THIRExpression>,
     },
     Emit(Box<THIRExpression>),
     Assert {
@@ -267,6 +258,9 @@ pub enum THIRExpressionKind {
     },
 
     // Sequential Statements
+    Defer {
+        expression: Box<THIRExpression>,
+    },
     Block {
         statements: Vec<THIRExpression>,
         creates_scope: bool,

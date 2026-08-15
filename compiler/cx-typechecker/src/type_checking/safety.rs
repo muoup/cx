@@ -107,8 +107,7 @@ pub(crate) fn validate_safe_expression(
             Ok(())
         }
 
-        THIRExpressionKind::Break { cleanups, .. }
-        | THIRExpressionKind::Continue { cleanups, .. } => validate_all(env, cleanups),
+        THIRExpressionKind::Break | THIRExpressionKind::Continue => Ok(()),
         THIRExpressionKind::If {
             condition,
             then_branch,
@@ -174,7 +173,6 @@ pub(crate) fn validate_safe_expression(
         THIRExpressionKind::Return {
             postcondition,
             value,
-            cleanups,
         } => {
             value
                 .as_deref()
@@ -183,17 +181,16 @@ pub(crate) fn validate_safe_expression(
             if let Some(postcondition) = postcondition {
                 validate_postcondition(env, postcondition)?;
             }
-            validate_all(env, cleanups)
+            Ok(())
         }
-        THIRExpressionKind::Yield {
-            value, cleanups, ..
-        } => {
+        THIRExpressionKind::Yield { value } => {
             value
                 .as_deref()
                 .map(|value| validate_safe_expression(env, value))
                 .transpose()?;
-            validate_all(env, cleanups)
+            Ok(())
         }
+        THIRExpressionKind::Defer { expression } => validate_safe_expression(env, expression),
         THIRExpressionKind::Emit(inner)
         | THIRExpressionKind::Assert {
             condition: inner, ..

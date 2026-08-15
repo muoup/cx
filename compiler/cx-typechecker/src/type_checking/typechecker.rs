@@ -57,10 +57,6 @@ fn typecheck_expr_inner(
             exprs,
             creates_scope,
         } => {
-            if *creates_scope {
-                env.push_defer_scope();
-            }
-
             let mut block = Vec::new();
 
             for statement in exprs {
@@ -72,13 +68,6 @@ fn typecheck_expr_inner(
                 if !env.function.is_current_scope_reachable() {
                     break;
                 }
-            }
-
-            if *creates_scope {
-                if env.function.is_current_scope_reachable() {
-                    block.extend(env.function.current_scope_cleanups());
-                }
-                env.pop_defer_scope();
             }
 
             TypecheckResult::from(THIRExpression {
@@ -125,8 +114,12 @@ fn typecheck_expr_inner(
                 );
             }
 
-            env.function.register_defer(deferred);
-            TypecheckResult::new(THIRType::unit(), THIRExpressionKind::Unit)
+            TypecheckResult::new(
+                THIRType::unit(),
+                THIRExpressionKind::Defer {
+                    expression: Box::new(deferred),
+                },
+            )
         }
 
         HIRExprKind::StagedExpression { .. } => TypecheckResult::staged_expr(THIRExpression {
@@ -383,10 +376,7 @@ fn typecheck_expr_inner(
 
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: THIRExpressionKind::Break {
-                    scope_depth: scope_idx.index(),
-                    cleanups: env.function.cleanups_exiting_to(scope_idx, true),
-                },
+                kind: THIRExpressionKind::Break,
                 _type: THIRType::unit(),
             })
         }
@@ -415,10 +405,7 @@ fn typecheck_expr_inner(
 
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: THIRExpressionKind::Continue {
-                    scope_depth: scope_idx.index(),
-                    cleanups: env.function.cleanups_exiting_to(scope_idx, false),
-                },
+                kind: THIRExpressionKind::Continue,
                 _type: THIRType::unit(),
             })
         }

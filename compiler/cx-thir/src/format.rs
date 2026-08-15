@@ -1172,7 +1172,6 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             THIRExpressionKind::Return {
                 value,
                 postcondition,
-                cleanups,
             } => {
                 write!(f, "Return <'")?;
                 self.write_type(f, &self.expr._type)?;
@@ -1181,16 +1180,6 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     MIRExpressionFormatter {
                         expr: value,
                         depth: self.depth + 1,
-                        definitions: self.definitions,
-                    }
-                    .fmt(f)?;
-                }
-                for cleanup in cleanups {
-                    self.indent(f)?;
-                    writeln!(f, " ++ Cleanup:")?;
-                    MIRExpressionFormatter {
-                        expr: cleanup,
-                        depth: self.depth + 2,
                         definitions: self.definitions,
                     }
                     .fmt(f)?;
@@ -1214,28 +1203,14 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 Ok(())
             }
-            THIRExpressionKind::Yield {
-                value,
-                target_scope,
-                cleanups,
-            } => {
-                write!(f, "Yield -> scope {} <'", target_scope)?;
+            THIRExpressionKind::Yield { value } => {
+                write!(f, "Yield <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
                 if let Some(value) = value {
                     MIRExpressionFormatter {
                         expr: value,
                         depth: self.depth + 1,
-                        definitions: self.definitions,
-                    }
-                    .fmt(f)?;
-                }
-                for cleanup in cleanups {
-                    self.indent(f)?;
-                    writeln!(f, " ++ Cleanup:")?;
-                    MIRExpressionFormatter {
-                        expr: cleanup,
-                        depth: self.depth + 2,
                         definitions: self.definitions,
                     }
                     .fmt(f)?;
@@ -1257,6 +1232,17 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 writeln!(f, "Assert {message:?}")?;
                 MIRExpressionFormatter {
                     expr: condition,
+                    depth: self.depth + 1,
+                    definitions: self.definitions,
+                }
+                .fmt(f)
+            }
+            THIRExpressionKind::Defer { expression } => {
+                write!(f, "Defer <'")?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, ">")?;
+                MIRExpressionFormatter {
+                    expr: expression,
                     depth: self.depth + 1,
                     definitions: self.definitions,
                 }
@@ -1401,21 +1387,15 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::Break {
-                scope_depth,
-                cleanups,
-            } => {
-                write!(f, "Break <scope_depth={}, type='", scope_depth)?;
+            THIRExpressionKind::Break => {
+                write!(f, "Break <type='")?;
                 self.write_type(f, &self.expr._type)?;
-                writeln!(f, "', cleanups={}>", cleanups.len())
+                writeln!(f, "'>")
             }
-            THIRExpressionKind::Continue {
-                scope_depth,
-                cleanups,
-            } => {
-                write!(f, "Continue <scope_depth={}, type='", scope_depth)?;
+            THIRExpressionKind::Continue => {
+                write!(f, "Continue <type='")?;
                 self.write_type(f, &self.expr._type)?;
-                writeln!(f, "', cleanups={}>", cleanups.len())
+                writeln!(f, "'>")
             }
         }
     }

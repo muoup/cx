@@ -3,9 +3,7 @@ use crate::type_checking::typechecker::typecheck_expr;
 use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
-use cx_thir::thir::data::THIRType;
 use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
-use cx_tokens::TokenRange;
 
 pub(crate) mod r#match;
 pub(crate) mod r#return;
@@ -16,8 +14,8 @@ pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
     match &expr.kind {
         THIRExpressionKind::Return { .. }
         | THIRExpressionKind::Yield { .. }
-        | THIRExpressionKind::Break { .. }
-        | THIRExpressionKind::Continue { .. } => false,
+        | THIRExpressionKind::Break
+        | THIRExpressionKind::Continue => false,
         THIRExpressionKind::Unsafe { expression, .. } => expr_may_fall_through(expression),
         THIRExpressionKind::Block { statements, .. } => {
             statements.last().map(expr_may_fall_through).unwrap_or(true)
@@ -90,36 +88,9 @@ pub(crate) fn typecheck_fallthrough_scope(
     });
     let result = typecheck_expr(env, namespace, expr, None)
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
-    let result = append_current_scope_cleanups(env, result);
     env.pop_scope()
         .map_err(|err| env.complete_err(err, expr.token_range()))?;
     Ok(result)
-}
-
-pub(crate) fn append_current_scope_cleanups(
-    env: &TypeEnvironment,
-    expression: THIRExpression,
-) -> THIRExpression {
-    if !env.function.is_current_scope_reachable() {
-        return expression;
-    }
-
-    let cleanups = env.function.current_scope_cleanups();
-    if cleanups.is_empty() {
-        return expression;
-    }
-
-    let mut statements = Vec::with_capacity(cleanups.len() + 1);
-    statements.push(expression);
-    statements.extend(cleanups);
-    THIRExpression {
-        token_range: TokenRange::internal(),
-        kind: THIRExpressionKind::Block {
-            statements,
-            creates_scope: false,
-        },
-        _type: THIRType::unit(),
-    }
 }
 
 pub(crate) fn process_for_increment_arrows(

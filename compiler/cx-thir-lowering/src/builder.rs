@@ -10,7 +10,7 @@ use cx_thir::{
     registry::THIRDecomposedRegistry,
     thir::{
         data::{THIRFnPrototype, THIRFunction},
-        expression::THIRLocalID,
+        expression::{THIRExpression, THIRLocalID},
         global::{MIRGlobalVarKind, MIRGlobalVariable as THIRGlobalVariable},
         r#type::{THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
     },
@@ -29,8 +29,7 @@ pub(crate) struct LoopContext {
 #[derive(Debug)]
 pub(crate) struct YieldContext {
     pub target: MIRBasicBlockID,
-    pub result: MIRRegister,
-    pub has_incoming: bool,
+    pub result: Option<MIRRegister>,
     pub lexical_scope_depth: usize,
 }
 
@@ -43,6 +42,7 @@ struct FunctionContext {
     loops: Vec<LoopContext>,
     yields: Vec<YieldContext>,
     lexical_scopes: Vec<MIRScopeID>,
+    defers: Vec<Vec<THIRExpression>>,
 }
 
 /// Stateful constructor for one semantic MIR unit.
@@ -374,6 +374,7 @@ impl<'thir> MIRBuilder<'thir> {
             loops: Vec::new(),
             yields: Vec::new(),
             lexical_scopes: vec![root_scope],
+            defers: vec![Vec::new()],
         });
         self.set_block_name(entry, "entry");
 
@@ -398,6 +399,12 @@ impl<'thir> MIRBuilder<'thir> {
             context.yields.is_empty(),
             "yield context stack is unbalanced"
         );
+        assert_eq!(
+            context.lexical_scopes.len(),
+            1,
+            "lexical scope stack is unbalanced"
+        );
+        assert_eq!(context.defers.len(), 1, "defer stack is unbalanced");
 
         let unit_type = self.unit.types.unit();
         let returns_value = self
@@ -550,80 +557,61 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub(crate) fn push_lexical_scope(&mut self, token_range: TokenRange) {
         let scope = self.function_mut().add_scope(token_range);
-        self.context_mut().lexical_scopes.push(scope);
+        let context = self.context_mut();
+        context.lexical_scopes.push(scope);
+        context.defers.push(Vec::new());
         self.emit(MIRInstrKind::ScopeEnter { scope });
     }
 
-    pub(crate) fn pop_lexical_scope(&mut self) {
-        let scope = {
-            let context = self.context_mut();
-            assert!(
-                context.lexical_scopes.len() > 1,
-                "attempted to pop the function's lexical scope"
-            );
-            context
-                .lexical_scopes
-                .pop()
-                .expect("lexical scope stack is non-empty")
-        };
-        if !self.current_block_terminated() {
-            self.emit(MIRInstrKind::ScopeExit { scope });
-        }
+    pub(crate) fn pop_lexical_scope(&mut self) -> (MIRScopeID, Vec<THIRExpression>) {
+        let context = self.context_mut();
+        assert!(
+            context.lexical_scopes.len() > 1,
+            "attempted to pop the function's lexical scope"
+        );
+        assert_eq!(
+            context.lexical_scopes.len(),
+            context.defers.len(),
+            "lexical scope and defer stacks are unbalanced"
+        );
+        let defers = context
+            .defers
+            .pop()
+            .expect("active lexical scope has a defer list");
+        let scope = context
+            .lexical_scopes
+            .pop()
+            .expect("lexical scope stack is non-empty");
+        (scope, defers)
     }
 
     pub(crate) fn lexical_scope_depth(&self) -> usize {
         self.context().lexical_scopes.len()
     }
 
-    pub(crate) fn current_lexical_scope(&self) -> MIRScopeID {
-        self.context()
-            .lexical_scopes
-            .last()
-            .copied()
-            .expect("active function has no lexical scope")
+    pub(crate) fn register_defer(&mut self, expression: THIRExpression) {
+        self.context_mut()
+            .defers
+            .last_mut()
+            .expect("active function has no defer scope")
+            .push(expression);
     }
 
-    pub(crate) fn lexical_scope_at_depth(&self, depth: usize) -> MIRScopeID {
+    pub(crate) fn lexical_scope_exits_to(
+        &self,
+        depth: usize,
+    ) -> Vec<(MIRScopeID, Vec<THIRExpression>)> {
         assert!(
-            depth > 0 && depth <= self.lexical_scope_depth(),
+            depth <= self.lexical_scope_depth(),
             "invalid lexical scope depth"
         );
-        self.context().lexical_scopes[depth - 1]
-    }
-
-    pub(crate) fn promote_value_to_scope(&mut self, value: &MIRValue, scope: MIRScopeID) {
-        let place = match value {
-            MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place) => *place,
-            MIRValue::Register(_) | MIRValue::Constant(_) => return,
-        };
-        let MIRPlace::FunctionLocal(place) = place else {
-            return;
-        };
-        let lexical_scopes = self.context().lexical_scopes.clone();
-        let Some(target_index) = lexical_scopes.iter().position(|current| *current == scope) else {
-            return;
-        };
-        if let Some(declaration) = self.function_mut().place_mut(place)
-            && lexical_scopes[target_index + 1..].contains(&declaration.scope)
-        {
-            declaration.scope = scope;
-        }
-    }
-
-    /// Emits exits for scopes abandoned by a terminating control-flow edge.
-    /// The builder stack is left intact so the enclosing structured lowering
-    /// can finish unwinding its own scope context.
-    pub(crate) fn unwind_lexical_scopes_to(&mut self, depth: usize) {
-        assert!(
-            depth > 0 && depth <= self.lexical_scope_depth(),
-            "invalid lexical scope unwind depth"
-        );
-        let scopes = self.context().lexical_scopes[depth..].to_vec();
-        for scope in scopes.into_iter().rev() {
-            if !self.current_block_terminated() {
-                self.emit(MIRInstrKind::ScopeExit { scope });
-            }
-        }
+        let context = self.context();
+        context.lexical_scopes[depth..]
+            .iter()
+            .zip(&context.defers[depth..])
+            .rev()
+            .map(|(scope, defers)| (*scope, defers.clone()))
+            .collect()
     }
 
     pub(crate) fn bind_named(&mut self, name: &CXIdent, value: MIRValue) {
@@ -747,13 +735,12 @@ impl<'thir> MIRBuilder<'thir> {
             .find_map(|context| context.continue_target.map(|_| context.lexical_scope_depth))
     }
 
-    pub(crate) fn push_yield(&mut self, target: MIRBasicBlockID, result_type: MIRTypeID) {
-        let result = self.block_param(target, result_type, None);
+    pub(crate) fn push_yield(&mut self, target: MIRBasicBlockID, result_type: Option<MIRTypeID>) {
+        let result = result_type.map(|ty| self.block_param(target, ty, None));
         let lexical_scope_depth = self.lexical_scope_depth();
         self.context_mut().yields.push(YieldContext {
             target,
             result,
-            has_incoming: false,
             lexical_scope_depth,
         });
     }
@@ -769,12 +756,11 @@ impl<'thir> MIRBuilder<'thir> {
             .map(|context| context.lexical_scope_depth)
     }
 
-    pub(crate) fn record_yield(&mut self) {
-        self.context_mut()
+    pub(crate) fn yield_result(&self) -> Option<MIRRegister> {
+        self.context()
             .yields
-            .last_mut()
-            .expect("yield lowered outside an active yield context")
-            .has_incoming = true;
+            .last()
+            .and_then(|context| context.result)
     }
 
     pub(crate) fn pop_yield(&mut self) -> YieldContext {
@@ -782,6 +768,10 @@ impl<'thir> MIRBuilder<'thir> {
             .yields
             .pop()
             .expect("yield context stack is unbalanced")
+    }
+
+    pub(crate) fn root_defers(&self) -> Vec<THIRExpression> {
+        self.context().defers.first().cloned().unwrap_or_default()
     }
 
     fn context(&self) -> &FunctionContext {
