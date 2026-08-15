@@ -4,7 +4,7 @@ use std::{
     fmt::{self, Display, Formatter},
 };
 
-use cx_mir::{MIRBasicBlockID, MIRFunctionID, MIRPlace, MIRScopeID, MIRValidationError};
+use cx_mir::{MIRBasicBlockID, MIRFunctionID, MIRPlace, MIRScopeID, MIRUnit, MIRValidationError};
 
 /// Controls optional checks performed before the independent dataflow analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,6 +130,15 @@ impl From<MIRValidationError> for MIRAnalysisError {
 }
 
 impl MIRAnalysisError {
+    pub fn message_with(&self, unit: &MIRUnit) -> String {
+        match self {
+            Self::Validation(error) => {
+                format!("MIR validation failed: {}", error.display_with(unit))
+            }
+            _ => self.to_string(),
+        }
+    }
+
     pub fn instruction_location(&self) -> Option<(MIRFunctionID, MIRBasicBlockID, usize)> {
         match self {
             Self::Validation(error) => error.instruction_location(),

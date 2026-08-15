@@ -3,6 +3,7 @@ use std::{error::Error, fmt};
 use crate::{
     expr::{MIRBasicBlockID, MIRRegister},
     global::MIRFunctionID,
+    ty::MIRTypeID,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,8 +76,8 @@ pub enum MIRValidationError {
         instruction: usize,
         target: MIRBasicBlockID,
         argument: usize,
-        expected: String,
-        actual: String,
+        expected: MIRTypeID,
+        actual: MIRTypeID,
     },
     VariantSwitchCaseOutOfRange {
         function: MIRFunctionID,
@@ -96,8 +97,8 @@ pub enum MIRValidationError {
         block: MIRBasicBlockID,
         instruction: usize,
         entity: &'static str,
-        expected: String,
-        actual: String,
+        expected: MIRTypeID,
+        actual: MIRTypeID,
     },
 }
 

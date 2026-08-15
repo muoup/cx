@@ -50,20 +50,20 @@ impl Display for MIRDisplay<'_> {
     }
 }
 
-struct TypePrinter<'a> {
+pub(crate) struct TypePrinter<'a> {
     registry: &'a MIRTypeRegistry,
     active: Vec<MIRTypeID>,
 }
 
 impl<'a> TypePrinter<'a> {
-    fn new(registry: &'a MIRTypeRegistry) -> Self {
+    pub(crate) fn new(registry: &'a MIRTypeRegistry) -> Self {
         Self {
             registry,
             active: Vec::new(),
         }
     }
 
-    fn write(&mut self, f: &mut Formatter<'_>, id: MIRTypeID) -> fmt::Result {
+    pub(crate) fn write(&mut self, f: &mut Formatter<'_>, id: MIRTypeID) -> fmt::Result {
         if self.active.contains(&id) {
             return write!(f, "t{}", id.index());
         }

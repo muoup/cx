@@ -5,7 +5,7 @@ pub mod ty;
 pub mod unit;
 pub mod validator;
 
-mod format;
+pub(crate) mod format;
 
 pub use format::MIRDisplay;
 

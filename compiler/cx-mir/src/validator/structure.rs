@@ -355,8 +355,8 @@ impl MIRUnit {
                     instruction,
                     target: target.block,
                     argument: index,
-                    expected: expected.to_string(),
-                    actual: actual.to_string(),
+                    expected,
+                    actual,
                 });
             }
         }

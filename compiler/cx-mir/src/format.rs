@@ -1,6 +1,7 @@
 use std::fmt::{self, Display, Formatter};
 
 mod contextual;
+pub(crate) use contextual::TypePrinter;
 pub use contextual::MIRDisplay;
 
 use crate::{

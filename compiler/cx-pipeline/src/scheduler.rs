@@ -445,7 +445,7 @@ pub(crate) fn perform_job(
                             CXInternalContext::error("MIR analysis failed outside source context")
                         });
                     CXErr::new(
-                        CXStdErrMessage::error("ANALYSIS ERROR", format!("{error}")),
+                        CXStdErrMessage::error("ANALYSIS ERROR", error.message_with(&mir)),
                         diagnostic_context,
                     )
                 })?;

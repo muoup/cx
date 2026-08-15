@@ -286,8 +286,8 @@ impl MIRUnit {
                 block,
                 instruction,
                 entity,
-                expected: expected.to_string(),
-                actual: actual.to_string(),
+                expected,
+                actual,
             })
         }
     }
