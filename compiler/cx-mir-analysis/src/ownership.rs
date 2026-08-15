@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cx_mir::{
-    MIRAggregateOp, MIRFunction, MIRInstrKind, MIRPlace, MIRPlaceAggregateOp, MIRUnit, MIRValue,
-    MIRValueAggregateOp,
+    MIRAggregateOp, MIRAssignTarget, MIRFunction, MIRInstrKind, MIRPlace, MIRPlaceAggregateOp,
+    MIRUnit, MIRValue, MIRValueAggregateOp,
 };
 
 use crate::types::MIRAnalysisError;
@@ -259,12 +259,11 @@ fn transfer_instruction(
         MIRInstrKind::Leak { place } => {
             consume(unit, function, block, instruction, *place, state, diagnose)?;
         }
-        MIRInstrKind::Assign { dest, value, .. } => {
+        MIRInstrKind::Assign { target, value, .. } => {
             use_value(unit, function, block, instruction, value, state, diagnose)?;
-            set_available(state, *dest);
-        }
-        MIRInstrKind::Load { value, .. } => {
-            use_value(unit, function, block, instruction, value, state, diagnose)?;
+            if let MIRAssignTarget::Place(dest) = target {
+                set_available(state, *dest);
+            }
         }
         MIRInstrKind::AddressOf { place, .. } => {
             use_place(unit, function, block, instruction, *place, state, diagnose)?;
@@ -303,7 +302,8 @@ fn transfer_instruction(
             }
             MIRAggregateOp::Value { out: _, op } => match op {
                 MIRValueAggregateOp::Discriminant { value, .. }
-                | MIRValueAggregateOp::Variant { value, .. } => {
+                | MIRValueAggregateOp::Variant { value, .. }
+                | MIRValueAggregateOp::ProjectVariant { value, .. } => {
                     use_value(unit, function, block, instruction, value, state, diagnose)?
                 }
                 MIRValueAggregateOp::Construct { fields, .. } => {

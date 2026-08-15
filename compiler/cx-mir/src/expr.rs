@@ -50,6 +50,12 @@ pub enum MIRValue {
     Constant(MIRConstant),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MIRAssignTarget {
+    Place(MIRPlace),
+    Register(MIRRegister),
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum MIRInstrOperand<'a> {
     Value(&'a MIRValue),
@@ -153,6 +159,11 @@ pub enum MIRValueAggregateOp {
         value: MIRValue,
         sum_type: MIRTypeID,
     },
+    ProjectVariant {
+        variant: usize,
+        value: MIRValue,
+        sum_type: MIRTypeID,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -235,8 +246,11 @@ impl MIRInstr {
         let place = match &self.kind {
             MIRInstrKind::Initialize { place }
             | MIRInstrKind::Create { out: place, .. }
-            | MIRInstrKind::Assign { dest: place, .. }
             | MIRInstrKind::Dereference { out: place, .. } => Some(*place),
+            MIRInstrKind::Assign {
+                target: MIRAssignTarget::Place(place),
+                ..
+            } => Some(*place),
             MIRInstrKind::AggregateOp(MIRAggregateOp::Place { out, .. }) => Some(*out),
             _ => None,
         };
@@ -246,10 +260,13 @@ impl MIRInstr {
     pub fn defined_registers(&self) -> impl Iterator<Item = MIRRegister> + '_ {
         let register = match &self.kind {
             MIRInstrKind::AddressOf { out, .. }
-            | MIRInstrKind::Load { out, .. }
             | MIRInstrKind::BinOp { out, .. }
             | MIRInstrKind::UnOp { out, .. }
             | MIRInstrKind::Coerce { out, .. } => Some(*out),
+            MIRInstrKind::Assign {
+                target: MIRAssignTarget::Register(register),
+                ..
+            } => Some(*register),
             MIRInstrKind::AggregateOp(MIRAggregateOp::Value { out, .. }) => Some(*out),
             MIRInstrKind::Call { out, .. } => *out,
             _ => None,
@@ -260,7 +277,6 @@ impl MIRInstr {
     pub fn visit_operands(&self, mut visit: impl FnMut(MIRInstrOperand<'_>)) {
         match &self.kind {
             MIRInstrKind::Assign { value, .. }
-            | MIRInstrKind::Load { value, .. }
             | MIRInstrKind::Emit { value }
             | MIRInstrKind::UnOp { operand: value, .. }
             | MIRInstrKind::Coerce { operand: value, .. }
@@ -293,6 +309,10 @@ impl MIRInstr {
                 }
                 | MIRAggregateOp::Value {
                     op: MIRValueAggregateOp::Variant { value, .. },
+                    ..
+                }
+                | MIRAggregateOp::Value {
+                    op: MIRValueAggregateOp::ProjectVariant { value, .. },
                     ..
                 } => visit(MIRInstrOperand::Value(value)),
                 MIRAggregateOp::Value {
@@ -403,13 +423,9 @@ pub enum MIRInstrKind {
         ty: MIRTypeID,
     },
     Assign {
-        dest: MIRPlace,
+        target: MIRAssignTarget,
         value: MIRValue,
         ty: MIRTypeID,
-    },
-    Load {
-        out: MIRRegister,
-        value: MIRValue,
     },
     AddressOf {
         out: MIRRegister,

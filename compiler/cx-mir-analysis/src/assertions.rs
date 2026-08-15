@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cx_mir::{
-    MIRAggregateOp, MIRBasicBlock, MIRBinaryOp, MIRBlockTarget, MIRCoercion, MIRConstant,
-    MIRFunction, MIRInstrKind, MIRIntBinaryOp, MIRIntType, MIRPlace, MIRPointerBinaryOp,
-    MIRRegister, MIRUnaryOp, MIRUnit, MIRValue,
+    MIRAggregateOp, MIRAssignTarget, MIRBasicBlock, MIRBinaryOp, MIRBlockTarget, MIRCoercion,
+    MIRConstant, MIRFunction, MIRInstrKind, MIRIntBinaryOp, MIRIntType, MIRPlace,
+    MIRPointerBinaryOp, MIRRegister, MIRUnaryOp, MIRUnit, MIRValue,
 };
 
 use crate::types::MIRAnalysisError;
@@ -196,14 +196,18 @@ fn transfer_instruction(environment: &mut ConstEnvironment, kind: &MIRInstrKind)
         | MIRInstrKind::Dereference { out: place, .. } => {
             environment.places.insert(*place, ConstValue::Unknown);
         }
-        MIRInstrKind::Assign { dest, value, .. } => {
+        MIRInstrKind::Assign { target, value, .. } => {
             let value = environment.value(value);
-            environment.places.insert(*dest, value);
+            match target {
+                MIRAssignTarget::Place(dest) => {
+                    environment.places.insert(*dest, value);
+                }
+                MIRAssignTarget::Register(out) => {
+                    environment.registers.insert(*out, value);
+                }
+            }
         }
         MIRInstrKind::AddressOf { out, .. } => {
-            environment.registers.insert(*out, ConstValue::Unknown);
-        }
-        MIRInstrKind::Load { out, .. } => {
             environment.registers.insert(*out, ConstValue::Unknown);
         }
         MIRInstrKind::AggregateOp(operation) => match operation {

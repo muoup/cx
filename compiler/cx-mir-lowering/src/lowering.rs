@@ -12,11 +12,11 @@ use cx_lmir::{
 };
 use cx_log::CXResult;
 use cx_mir::{
-    MIRAggregateOp, MIRBasicBlockID, MIRBinaryOp, MIRBlockTarget, MIRCoercion, MIRConstant,
-    MIRFieldLayout, MIRFloatBinaryOp, MIRFnParam, MIRFnSignature, MIRFunction, MIRFunctionType,
-    MIRGlobalState, MIRInstrKind, MIRIntBinaryOp, MIRIntType, MIRPlace, MIRPlaceAggregateOp,
-    MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister, MIRTypeID, MIRTypeKind, MIRTypeRegistry,
-    MIRUnaryOp, MIRUnit, MIRValue, MIRValueAggregateOp,
+    MIRAggregateOp, MIRAssignTarget, MIRBasicBlockID, MIRBinaryOp, MIRBlockTarget, MIRCoercion,
+    MIRConstant, MIRFieldLayout, MIRFloatBinaryOp, MIRFnParam, MIRFnSignature, MIRFunction,
+    MIRFunctionType, MIRGlobalState, MIRInstrKind, MIRIntBinaryOp, MIRIntType, MIRPlace,
+    MIRPlaceAggregateOp, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister, MIRTypeID,
+    MIRTypeKind, MIRTypeRegistry, MIRUnaryOp, MIRUnit, MIRValue, MIRValueAggregateOp,
 };
 use cx_util::identifier::CXIdent;
 

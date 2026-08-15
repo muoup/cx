@@ -51,7 +51,7 @@ impl<'a> FunctionLowerer<'a> {
         }
     }
 
-    fn is_address_valued(&self, ty: MIRTypeID) -> bool {
+    pub(super) fn is_address_valued(&self, ty: MIRTypeID) -> bool {
         matches!(self.types.kind(ty), Some(MIRTypeKind::Str))
     }
 

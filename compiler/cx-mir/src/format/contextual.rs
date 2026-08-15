@@ -337,14 +337,16 @@ fn write_instruction(
             f.write_str("create ")?;
             write_place_name(f, unit, function, *out)
         }
-        MIRInstrKind::Assign { dest, value, .. } => {
-            write_place_name(f, unit, function, *dest)?;
+        MIRInstrKind::Assign { target, value, .. } => {
+            match target {
+                crate::MIRAssignTarget::Place(place) => {
+                    write_place_name(f, unit, function, *place)?
+                }
+                crate::MIRAssignTarget::Register(register) => {
+                    write_register_name(f, function, *register)?;
+                }
+            }
             f.write_str(" = ")?;
-            write_value(f, unit, function, value)
-        }
-        MIRInstrKind::Load { out, value } => {
-            write_register_name(f, function, *out)?;
-            f.write_str(" = load ")?;
             write_value(f, unit, function, value)
         }
         MIRInstrKind::AddressOf { out, place } => {
@@ -582,6 +584,17 @@ fn write_aggregate(
                     value,
                     sum_type,
                 } => {
+                    types.write_member_name(f, *sum_type, *variant, "variant")?;
+                    f.write_str("(")?;
+                    write_value(f, unit, function, value)?;
+                    f.write_str(")")
+                }
+                MIRValueAggregateOp::ProjectVariant {
+                    variant,
+                    value,
+                    sum_type,
+                } => {
+                    f.write_str("project ")?;
                     types.write_member_name(f, *sum_type, *variant, "variant")?;
                     f.write_str("(")?;
                     write_value(f, unit, function, value)?;

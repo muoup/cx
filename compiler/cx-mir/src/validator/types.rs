@@ -2,11 +2,11 @@ use std::collections::BTreeSet;
 
 use crate::{
     expr::{
-        MIRAggregateOp, MIRBasicBlockID, MIRConstant, MIRInstrKind, MIRPlace, MIRPlaceAggregateOp,
-        MIRRegister, MIRValue, MIRValueAggregateOp,
+        MIRAggregateOp, MIRAssignTarget, MIRBasicBlockID, MIRConstant, MIRInstrKind, MIRPlace,
+        MIRPlaceAggregateOp, MIRRegister, MIRValue, MIRValueAggregateOp,
     },
     global::{MIRFunction, MIRFunctionID},
-    ty::{MIRTypeDefinition, MIRTypeID, MIRTypeKind},
+    ty::{MIRField, MIRTypeDefinition, MIRTypeID, MIRTypeKind},
     unit::MIRUnit,
 };
 
@@ -24,15 +24,25 @@ impl MIRUnit {
             MIRInstrKind::Create { out, ty } => {
                 self.expect_place_type(function, block, instruction, "created place", *out, *ty)?;
             }
-            MIRInstrKind::Assign { dest, value, ty } => {
-                self.expect_place_value_type(
-                    function,
-                    block,
-                    instruction,
-                    "assignment destination",
-                    *dest,
-                    *ty,
-                )?;
+            MIRInstrKind::Assign { target, value, ty } => {
+                match target {
+                    MIRAssignTarget::Place(dest) => self.expect_place_value_type(
+                        function,
+                        block,
+                        instruction,
+                        "assignment destination",
+                        *dest,
+                        *ty,
+                    )?,
+                    MIRAssignTarget::Register(out) => self.expect_register_type(
+                        function,
+                        block,
+                        instruction,
+                        "assignment result",
+                        *out,
+                        *ty,
+                    )?,
+                }
                 if let MIRValue::Move(source) = value {
                     self.expect_place_value_type(
                         function,
@@ -63,20 +73,6 @@ impl MIRUnit {
                     "dereference result",
                     *out,
                     *pointee_type,
-                )?;
-            }
-            MIRInstrKind::Load { out, value } => {
-                let expected = function
-                    .register(*out)
-                    .expect("validated load result register is missing")
-                    .ty;
-                self.expect_value_type(
-                    function,
-                    block,
-                    instruction,
-                    "load value",
-                    value,
-                    expected,
                 )?;
             }
             MIRInstrKind::AggregateOp(MIRAggregateOp::Place {
@@ -116,6 +112,35 @@ impl MIRUnit {
                     "variant result",
                     *out,
                     *sum_type,
+                )?;
+            }
+            MIRInstrKind::AggregateOp(MIRAggregateOp::Value {
+                out,
+                op:
+                    MIRValueAggregateOp::ProjectVariant {
+                        variant, sum_type, ..
+                    },
+            }) => {
+                let expected = match self.types.kind(*sum_type) {
+                    Some(MIRTypeKind::TaggedUnion { variants }) => variants
+                        .get(*variant)
+                        .map(MIRField::ty)
+                        .ok_or(MIRValidationError::VariantSwitchCaseOutOfRange {
+                            function: function.id,
+                            block,
+                            instruction,
+                            variant: *variant,
+                            variant_count: variants.len(),
+                        })?,
+                    _ => *sum_type,
+                };
+                self.expect_register_type(
+                    function,
+                    block,
+                    instruction,
+                    "variant projection result",
+                    *out,
+                    expected,
                 )?;
             }
             MIRInstrKind::Coerce { out, to_type, .. } => {

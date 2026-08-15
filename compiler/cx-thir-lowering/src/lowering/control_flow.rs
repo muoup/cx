@@ -1,5 +1,5 @@
 use cx_log::CXResult;
-use cx_mir::{MIRBlockTarget, MIRConstant, MIRInstrKind, MIRValue};
+use cx_mir::{MIRBlockTarget, MIRConstant, MIRInstrKind, MIRScopeID, MIRValue};
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
     expression::{THIRBinOp, THIRExpression, THIRIntBinOp, THIRLocalID},
@@ -9,8 +9,16 @@ use cx_thir::type_context::THIRTypeContext;
 
 use crate::{
     builder::MIRBuilder,
-    lowering::{aggregates, lower_expression, memory},
+    lowering::{aggregates, lower_expression},
 };
+
+fn move_value(builder: &mut MIRBuilder<'_>, value: MIRValue, ty: &THIRType) -> MIRValue {
+    let value = match value {
+        MIRValue::Place(place) => MIRValue::Move(place),
+        value => value,
+    };
+    super::materialize_value(builder, value, ty)
+}
 
 fn lower_scoped(builder: &mut MIRBuilder<'_>, expression: &THIRExpression) -> CXResult<MIRValue> {
     builder.push_lexical_scope(expression.token_range.clone());
@@ -29,42 +37,24 @@ fn lower_scoped_value(
 ) -> CXResult<MIRValue> {
     builder.push_lexical_scope(expression.token_range.clone());
     let result = super::lower_expression(builder, expression)?;
-    let result = if builder.current_block_terminated() {
-        result
-    } else {
-        capture_value(builder, result, ty)
-    };
     let (scope, defers) = builder.pop_lexical_scope();
-    if !builder.current_block_terminated() {
-        lower_scope_exit(builder, scope, &defers)?;
+    if builder.current_block_terminated() {
+        return Ok(result);
     }
-    Ok(result)
+    finish_value_cleanup(builder, result, ty, vec![(Some(scope), defers)])
 }
 
-pub(super) fn capture_value(
-    builder: &mut MIRBuilder<'_>,
-    value: MIRValue,
-    ty: &THIRType,
-) -> MIRValue {
+fn rvalue(value: MIRValue, ty: &THIRType) -> MIRValue {
     if ty.is_unit() {
         return MIRValue::Constant(MIRConstant::Unit);
     }
-    if matches!(value, MIRValue::Register(_) | MIRValue::Constant(_)) {
+    if ty.is_memory_reference() {
         return value;
     }
-
-    let value = if ty.is_memory_reference() {
-        value
-    } else {
-        match value {
-            MIRValue::Place(place) => MIRValue::Copy(place),
-            value => value,
-        }
-    };
-    let type_id = builder.lower_type(ty);
-    let out = builder.register(type_id, None);
-    builder.emit(MIRInstrKind::Load { out, value });
-    MIRValue::Register(out)
+    match value {
+        MIRValue::Place(place) => MIRValue::Copy(place),
+        value => value,
+    }
 }
 
 fn lower_defers(builder: &mut MIRBuilder<'_>, defers: &[THIRExpression]) -> CXResult<()> {
@@ -82,24 +72,124 @@ pub(super) fn lower_scope_exit(
     scope: cx_mir::MIRScopeID,
     defers: &[THIRExpression],
 ) -> CXResult<()> {
+    lower_cleanup_step(builder, Some(scope), defers)
+}
+
+fn lower_cleanup_step(
+    builder: &mut MIRBuilder<'_>,
+    scope: Option<MIRScopeID>,
+    defers: &[THIRExpression],
+) -> CXResult<()> {
     lower_defers(builder, defers)?;
-    if !builder.current_block_terminated() {
+    if let Some(scope) = scope
+        && !builder.current_block_terminated()
+    {
         builder.emit(MIRInstrKind::ScopeExit { scope });
     }
     Ok(())
 }
 
+pub(super) fn finish_value_cleanup(
+    builder: &mut MIRBuilder<'_>,
+    value: MIRValue,
+    ty: &THIRType,
+    steps: Vec<(Option<MIRScopeID>, Vec<THIRExpression>)>,
+) -> CXResult<MIRValue> {
+    let value = if !steps.is_empty() && ty.is_memory_reference() {
+        match value {
+            MIRValue::Place(place) => {
+                let type_id = builder.lower_type(ty);
+                let out = builder.register(type_id, None);
+                builder.emit(MIRInstrKind::AddressOf { out, place });
+                MIRValue::Register(out)
+            }
+            value => value,
+        }
+    } else {
+        rvalue(value, ty)
+    };
+    if steps.is_empty() {
+        return Ok(value);
+    }
+
+    if !matches!(value, MIRValue::Copy(_) | MIRValue::Move(_)) {
+        for (scope, defers) in steps {
+            if builder.current_block_terminated() {
+                break;
+            }
+            lower_cleanup_step(builder, scope, &defers)?;
+        }
+        return Ok(value);
+    }
+
+    let type_id = builder.lower_type(ty);
+    let cleanup_blocks = steps
+        .iter()
+        .map(|_| {
+            let block = builder.new_block("cleanup");
+            let parameter = builder.block_param(block, type_id, None);
+            (block, parameter)
+        })
+        .collect::<Vec<_>>();
+    builder.emit(MIRInstrKind::Jump {
+        target: MIRBlockTarget::with_args(cleanup_blocks[0].0, vec![value]),
+    });
+
+    let mut result = None;
+    for (index, ((scope, defers), (block, parameter))) in
+        steps.into_iter().zip(cleanup_blocks.iter()).enumerate()
+    {
+        builder.set_current_block(*block);
+        lower_cleanup_step(builder, scope, &defers)?;
+        if builder.current_block_terminated() {
+            continue;
+        }
+        let value = MIRValue::Register(*parameter);
+        if let Some((next, _)) = cleanup_blocks.get(index + 1) {
+            builder.emit(MIRInstrKind::Jump {
+                target: MIRBlockTarget::with_args(*next, vec![value]),
+            });
+        } else {
+            result = Some(value);
+        }
+    }
+    Ok(result.unwrap_or(MIRValue::Constant(MIRConstant::Undefined)))
+}
+
+pub(super) fn cleanup_value_to(
+    builder: &mut MIRBuilder<'_>,
+    depth: usize,
+    value: MIRValue,
+    ty: &THIRType,
+) -> CXResult<MIRValue> {
+    let steps = builder
+        .lexical_scope_exits_to(depth)
+        .into_iter()
+        .map(|(scope, defers)| (Some(scope), defers))
+        .collect();
+    finish_value_cleanup(builder, value, ty, steps)
+}
+
+pub(super) fn cleanup_value_for_return(
+    builder: &mut MIRBuilder<'_>,
+    value: MIRValue,
+    ty: &THIRType,
+) -> CXResult<MIRValue> {
+    let mut steps = builder
+        .lexical_scope_exits_to(1)
+        .into_iter()
+        .map(|(scope, defers)| (Some(scope), defers))
+        .collect::<Vec<_>>();
+    let root_defers = builder.root_defers();
+    if !root_defers.is_empty() {
+        steps.push((None, root_defers));
+    }
+    finish_value_cleanup(builder, value, ty, steps)
+}
+
 pub(super) fn lower_root_defers(builder: &mut MIRBuilder<'_>) -> CXResult<()> {
     let defers = builder.root_defers();
     lower_defers(builder, &defers)
-}
-
-pub(super) fn pop_lexical_scope(builder: &mut MIRBuilder<'_>) -> CXResult<()> {
-    let (scope, defers) = builder.pop_lexical_scope();
-    if !builder.current_block_terminated() {
-        lower_scope_exit(builder, scope, &defers)?;
-    }
-    Ok(())
 }
 
 pub(super) fn unwind_lexical_scopes_to(builder: &mut MIRBuilder<'_>, depth: usize) -> CXResult<()> {
@@ -363,32 +453,40 @@ pub(super) fn lower_match(
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
     let subject_value = super::lower_expression(builder, condition)?;
-    let subject_value = match subject_value {
-        MIRValue::Place(place) => MIRValue::Place(place),
-        MIRValue::Copy(place) => MIRValue::Copy(place),
-        MIRValue::Move(place) => MIRValue::Move(place),
-        value => MIRValue::Move(memory::assign_operand_to_place(
-            builder,
-            value,
-            &condition._type,
-            None,
-        )),
-    };
     let subject_type =
         if let THIRTypeKind::MemoryReference { inner_type, .. } = &condition._type.kind {
             builder.registry().resolve_type_id(*inner_type).clone()
         } else {
             condition._type.clone()
         };
-    let subject_place = match &subject_value {
-        MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place) => *place,
-        MIRValue::Register(_) | MIRValue::Constant(_) => {
-            unreachable!("match subjects are normalized to places")
+    let variant_match = matches!(subject_type.kind, THIRTypeKind::TaggedUnion { .. });
+    let consuming_subject =
+        variant_match && !matches!(condition._type.kind, THIRTypeKind::MemoryReference { .. });
+    let subject_value = if variant_match {
+        if consuming_subject {
+            move_value(builder, subject_value, &subject_type)
+        } else {
+            match subject_value {
+                MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place) => {
+                    MIRValue::Place(place)
+                }
+                value => value,
+            }
+        }
+    } else {
+        match subject_value {
+            MIRValue::Place(place) => MIRValue::Copy(place),
+            value => value,
         }
     };
-    builder.bind_local(subject, subject_place);
-
-    let variant_match = matches!(subject_type.kind, THIRTypeKind::TaggedUnion { .. });
+    match &subject_value {
+        MIRValue::Place(place) => builder.bind_local(subject, *place),
+        value => builder.bind_local_value(subject, value.clone()),
+    }
+    let subject_place = match &subject_value {
+        MIRValue::Place(place) => Some(*place),
+        _ => None,
+    };
     let value_match = !matches!(result_type.kind, THIRTypeKind::Void);
 
     let exit = builder.new_block("match.exit");
@@ -436,12 +534,8 @@ pub(super) fn lower_match(
                 )
             })
             .collect();
-        let value = match subject_value {
-            MIRValue::Place(place) => MIRValue::Copy(place),
-            value => value,
-        };
         builder.emit(MIRInstrKind::IntSwitch {
-            value,
+            value: subject_value,
             cases,
             default: default_target,
         });
@@ -453,14 +547,24 @@ pub(super) fn lower_match(
         builder.set_current_block(block);
 
         builder.push_lexical_scope(body.token_range.clone());
-        aggregates::bind_pattern_payload(builder, pattern, subject_place, &condition._type);
-        let mut body_value = lower_expression(builder, body)?;
-        if value_match && !builder.current_block_terminated() {
-            body_value = capture_value(builder, body_value, result_type);
+        if let Some(subject_place) = subject_place {
+            aggregates::bind_pattern_payload(builder, pattern, subject_place, &condition._type);
         }
-        pop_lexical_scope(builder)?;
+        let body_value = lower_expression(builder, body)?;
+        let (scope, defers) = builder.pop_lexical_scope();
 
         if !builder.current_block_terminated() {
+            let body_value = if value_match {
+                finish_value_cleanup(
+                    builder,
+                    body_value,
+                    result_type,
+                    vec![(Some(scope), defers)],
+                )?
+            } else {
+                lower_scope_exit(builder, scope, &defers)?;
+                MIRValue::Constant(MIRConstant::Unit)
+            };
             builder.emit(MIRInstrKind::Jump {
                 target: MIRBlockTarget::with_args(
                     exit,

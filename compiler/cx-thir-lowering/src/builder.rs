@@ -38,6 +38,7 @@ struct FunctionContext {
     function: MIRFunctionID,
     current_block: MIRBasicBlockID,
     local_places: HashMap<THIRLocalID, MIRPlace>,
+    local_values: HashMap<THIRLocalID, MIRValue>,
     named_values: Vec<HashMap<String, MIRValue>>,
     loops: Vec<LoopContext>,
     yields: Vec<YieldContext>,
@@ -370,6 +371,7 @@ impl<'thir> MIRBuilder<'thir> {
             function: function_id,
             current_block: entry,
             local_places: HashMap::new(),
+            local_values: HashMap::new(),
             named_values: vec![HashMap::new()],
             loops: Vec::new(),
             yields: Vec::new(),
@@ -538,8 +540,16 @@ impl<'thir> MIRBuilder<'thir> {
         self.context_mut().local_places.insert(local, place);
     }
 
+    pub(crate) fn bind_local_value(&mut self, local: THIRLocalID, value: MIRValue) {
+        self.context_mut().local_values.insert(local, value);
+    }
+
     pub(crate) fn local(&self, local: THIRLocalID) -> Option<MIRPlace> {
         self.context().local_places.get(&local).copied()
+    }
+
+    pub(crate) fn local_value(&self, local: THIRLocalID) -> Option<MIRValue> {
+        self.context().local_values.get(&local).cloned()
     }
 
     pub(crate) fn push_named_scope(&mut self) {

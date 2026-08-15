@@ -20,14 +20,16 @@ impl<'a> FunctionLowerer<'a> {
                     },
                 );
             }
-            MIRInstrKind::Assign { dest, value, ty } => {
-                let binding = self.place(*dest);
+            MIRInstrKind::Assign { target, value, ty } => {
                 let value = self.lower_value(value);
-                self.store_binding(binding, value, *ty);
-            }
-            MIRInstrKind::Load { out, value } => {
-                let value = self.lower_value(value);
-                self.emit_to(*out, LMIRInstructionKind::Alias { value });
+                match target {
+                    MIRAssignTarget::Place(place) => {
+                        self.store_binding(self.place(*place), value, *ty);
+                    }
+                    MIRAssignTarget::Register(register) => {
+                        self.emit_to(*register, LMIRInstructionKind::Alias { value });
+                    }
+                }
             }
             MIRInstrKind::AddressOf { out, place } => {
                 let binding = self.place(*place);
@@ -189,6 +191,11 @@ impl<'a> FunctionLowerer<'a> {
                     value,
                     sum_type,
                 } => self.lower_variant_construct(*out, *variant, value, *sum_type),
+                MIRValueAggregateOp::ProjectVariant {
+                    variant,
+                    value,
+                    sum_type,
+                } => self.lower_variant_project(*out, *variant, value, *sum_type),
             },
         }
     }
@@ -279,6 +286,54 @@ impl<'a> FunctionLowerer<'a> {
             value: self.int_constant(variant as i128, LMIRIntegerType::I8),
             _type: tag_ty,
         });
+    }
+
+    fn lower_variant_project(
+        &mut self,
+        out: MIRRegister,
+        variant: usize,
+        value: &MIRValue,
+        sum_type: MIRTypeID,
+    ) {
+        let variant_type = self.variant_type(sum_type, variant);
+        let lowered = self.ty(variant_type);
+        if lowered.is_void() {
+            self.emit_to(
+                out,
+                LMIRInstructionKind::Alias {
+                    value: LMIRValue::NULL,
+                },
+            );
+            return;
+        }
+        let base = match value {
+            MIRValue::Register(_) => {
+                let aggregate = self.lower_value(value);
+                self.emit_temp(
+                    LMIRInstructionKind::StructAccess {
+                        struct_: aggregate,
+                        struct_type: self.ty(sum_type),
+                        field_index: 0,
+                        field_offset: 0,
+                    },
+                    LMIRType::default_pointer(self.types.architecture()),
+                )
+            }
+            _ => {
+                let binding = self.value_as_binding(value, sum_type);
+                self.address(binding)
+            }
+        };
+        let binding = PlaceBinding::Address {
+            value: base,
+            ty: variant_type,
+        };
+        let value = if lowered.is_memory_resident() || self.is_address_valued(variant_type) {
+            self.address(binding)
+        } else {
+            self.load_binding(binding, variant_type, None)
+        };
+        self.emit_to(out, LMIRInstructionKind::Alias { value });
     }
 
     fn lower_binary(&mut self, out: MIRRegister, op: &MIRBinaryOp, lhs: &MIRValue, rhs: &MIRValue) {
