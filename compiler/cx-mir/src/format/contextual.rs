@@ -457,7 +457,7 @@ fn write_instruction(
             cases,
             default,
         } => {
-            f.write_str("switch ")?;
+            f.write_str("switch.int ")?;
             write_value(f, unit, function, value)?;
             f.write_str(" {")?;
             for (index, (constant, target)) in cases.iter().enumerate() {
@@ -483,7 +483,7 @@ fn write_instruction(
             default,
             ..
         } => {
-            f.write_str("switch ")?;
+            f.write_str("switch.variant ")?;
             write_place_name(f, unit, function, *subject)?;
             f.write_str(" {")?;
             for (index, (variant, target)) in cases.iter().enumerate() {
