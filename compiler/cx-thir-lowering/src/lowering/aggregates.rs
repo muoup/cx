@@ -1,7 +1,6 @@
 use cx_log::CXResult;
 use cx_mir::{
-    MIRAggregateOp, MIRBinaryOp, MIRConstant, MIRInstrKind, MIRIntBinaryOp, MIRIntType,
-    MIRPlaceAggregateOp, MIRValue, MIRValueAggregateOp,
+    MIRAggregateOp, MIRBinaryOp, MIRConstant, MIRInstrKind, MIRIntBinaryOp, MIRIntType, MIRPlace, MIRPlaceAggregateOp, MIRValue, MIRValueAggregateOp
 };
 use cx_thir::thir::{
     data::{THIRIntType, THIRType, THIRTypeKind},
@@ -98,7 +97,7 @@ pub(super) fn lower_pattern_test(
 pub(super) fn bind_pattern_payload(
     builder: &mut MIRBuilder<'_>,
     pattern: &THIRPattern,
-    subject: cx_mir::MIRPlace,
+    subject: MIRPlace,
     sum_type: &THIRType,
 ) {
     if let THIRPattern::TaggedUnionVariant {
@@ -112,6 +111,7 @@ pub(super) fn bind_pattern_payload(
         let payload_type_id = builder.lower_type(&payload_type);
         let payload = builder.place(payload_type_id, inner_name.clone(), false);
         let sum_type_id = builder.lower_type(sum_type);
+        
         builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Place {
             out: payload,
             op: MIRPlaceAggregateOp::Variant {
@@ -127,6 +127,7 @@ pub(super) fn bind_pattern_payload(
         }
     }
 }
+
 pub(super) fn sum_variant_type(
     builder: &MIRBuilder<'_>,
     sum_type: &THIRType,

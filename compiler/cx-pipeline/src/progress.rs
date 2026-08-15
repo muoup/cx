@@ -95,7 +95,7 @@ impl ProgressReporter {
             eprint!("\r{:width$}\r", "", width = self.last_line_len);
         }
         eprintln!(
-            "Generated MIR for {} module{} in {:.2}s",
+            "Compiled {} module{} in {:.2}s",
             self.modules_compiled,
             if self.modules_compiled == 1 { "" } else { "s" },
             elapsed.as_secs_f64()

@@ -122,9 +122,10 @@ impl<'thir> MIRBuilder<'thir> {
             minimum_alignment: ty.attributes.minimum_alignment,
         });
         if self.unit.types.debug_name(id).is_none()
-            && let Some(debug_name) = debug_name {
-                self.unit.types.set_debug_name(id, debug_name);
-            }
+            && let Some(debug_name) = debug_name
+        {
+            self.unit.types.set_debug_name(id, debug_name);
+        }
         id
     }
 
@@ -603,9 +604,10 @@ impl<'thir> MIRBuilder<'thir> {
             return;
         };
         if let Some(declaration) = self.function_mut().place_mut(place)
-            && lexical_scopes[target_index + 1..].contains(&declaration.scope) {
-                declaration.scope = scope;
-            }
+            && lexical_scopes[target_index + 1..].contains(&declaration.scope)
+        {
+            declaration.scope = scope;
+        }
     }
 
     /// Emits exits for scopes abandoned by a terminating control-flow edge.
@@ -695,7 +697,7 @@ impl<'thir> MIRBuilder<'thir> {
         id
     }
 
-    pub(crate) fn push_loop(
+    pub(crate) fn push_contextual_scope(
         &mut self,
         break_target: MIRBasicBlockID,
         continue_target: Option<MIRBasicBlockID>,
