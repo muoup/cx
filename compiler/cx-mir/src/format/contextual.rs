@@ -72,11 +72,10 @@ impl<'a> TypePrinter<'a> {
             return write!(f, "<invalid t{}>", id.index());
         };
 
-        if is_aggregate(&definition.kind) {
-            if let Some(name) = self.registry.debug_name(id) {
+        if is_aggregate(&definition.kind)
+            && let Some(name) = self.registry.debug_name(id) {
                 return f.write_str(name);
             }
-        }
         let kind = definition.kind.clone();
 
         self.active.push(id);
@@ -660,19 +659,17 @@ fn write_place_name(
 ) -> fmt::Result {
     match place {
         MIRPlace::FunctionLocal(id) => {
-            if let Some(place) = function.place(id) {
-                if let Some(name) = &place.debug_name {
+            if let Some(place) = function.place(id)
+                && let Some(name) = &place.debug_name {
                     return Display::fmt(name, f);
                 }
-            }
             write!(f, "local{}", id.index())
         }
         MIRPlace::Parameter(id) => {
-            if let Some(parameter) = function.prototype.signature.params.get(id.index()) {
-                if let Some(name) = &parameter.name {
+            if let Some(parameter) = function.prototype.signature.params.get(id.index())
+                && let Some(name) = &parameter.name {
                     return Display::fmt(name, f);
                 }
-            }
             write!(f, "arg{}", id.index())
         }
         MIRPlace::Global(id) => {
@@ -689,11 +686,10 @@ fn write_register_name(
     function: &MIRFunction,
     register: crate::expr::MIRRegister,
 ) -> fmt::Result {
-    if let Some(register_decl) = function.register(register) {
-        if let Some(name) = &register_decl.debug_name {
+    if let Some(register_decl) = function.register(register)
+        && let Some(name) = &register_decl.debug_name {
             return Display::fmt(name, f);
         }
-    }
     write!(f, "r{}", register.index())
 }
 

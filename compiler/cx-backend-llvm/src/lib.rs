@@ -438,7 +438,7 @@ fn cache_prototype<'a>(
             });
     }
 
-    if let LMIRReturnABI::IndirectSret { alignment: _ } = &signature.return_abi {
+    if matches!(&signature.return_abi, LMIRReturnABI::IndirectSret { .. }) {
         let pointee = bc_llvm_type(global_state.context, &signature.return_type)?;
         func.add_attribute(
             AttributeLoc::Param(0),

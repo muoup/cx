@@ -226,9 +226,7 @@ impl MIRFunction {
         ty: MIRTypeID,
         debug_name: Option<CXIdent>,
     ) -> Option<MIRRegister> {
-        if self.block(block).is_none() {
-            return None;
-        }
+        self.block(block)?;
         let register = self.add_register(ty, debug_name);
         self.block_mut(block)?.params.push(register);
         Some(register)

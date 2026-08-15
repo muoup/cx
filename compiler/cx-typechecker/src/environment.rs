@@ -223,8 +223,8 @@ impl TypeEnvironment<'_> {
 
         match qualified_lookup {
             QualifiedLookupResult::Found {
-                resolved_name: _,
                 value,
+                ..
             } => CXRawResult::Ok(Some(value)),
 
             QualifiedLookupResult::NotFound => CXRawResult::Ok(None),

@@ -400,7 +400,6 @@ fn complete_identifier_type(
             )?;
 
             complete_template_type_lookup(env, namespace, name, &mir_symbol, template_input)
-                .map_err(|e| e)
         }
 
         HIRSymbolKind::DuplicateDefinition(_) => {
@@ -439,7 +438,6 @@ fn complete_resolved_type_lookup(
         }
         MIRSymbol::Template { .. } => {
             complete_template_type_lookup(env, namespace, name, &symbol, template_input)
-                .map_err(|e| e)
         }
 
         _ => env

@@ -90,9 +90,8 @@ impl Display for MIRAnalysisError {
             Self::Validation(error) => write!(f, "MIR validation failed: {error}"),
             Self::ProvenFalseAssertion {
                 function,
-                block,
-                instruction,
                 message,
+                ..
             } => {
                 write!(
                     f,

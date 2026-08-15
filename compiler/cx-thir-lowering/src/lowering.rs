@@ -586,12 +586,11 @@ fn lower_expression(
                     .as_deref()
                     .map(|value| lower_expression(builder, value))
                     .transpose()?;
-                if !cleanups.is_empty() {
-                    if let (Some(current), Some(ty)) = (value.take(), return_type.as_ref()) {
+                if !cleanups.is_empty()
+                    && let (Some(current), Some(ty)) = (value.take(), return_type.as_ref()) {
                         let saved = memory::assign_operand_to_place(builder, current, ty, None);
                         value = Some(MIRValue::Move(saved));
                     }
-                }
                 control_flow::lower_cleanups(builder, cleanups)?;
                 if let Some(postcondition) = postcondition {
                     builder.push_named_scope();

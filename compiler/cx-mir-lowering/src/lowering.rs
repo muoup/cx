@@ -341,7 +341,7 @@ impl<'a> FunctionLowerer<'a> {
                         place,
                         PlaceBinding::Address {
                             value: address,
-                            ty: parameter.ty.clone(),
+                            ty: parameter.ty,
                         },
                     );
                 }
@@ -429,8 +429,7 @@ impl<'a> FunctionLowerer<'a> {
                     .unit
                     .global(global)
                     .expect("invalid global place")
-                    .ty
-                    .clone(),
+                    .ty,
             },
             _ => self
                 .places
@@ -453,18 +452,17 @@ impl<'a> FunctionLowerer<'a> {
 
     fn binding_type(&self, binding: &PlaceBinding) -> MIRTypeID {
         match binding {
-            PlaceBinding::Address { ty, .. } => ty.clone(),
-            PlaceBinding::Bitfield { value_type, .. } => value_type.clone(),
+            PlaceBinding::Address { ty, .. } => *ty,
+            PlaceBinding::Bitfield { value_type, .. } => *value_type,
         }
     }
 
     fn place_decl_type(&self, place: MIRPlace) -> MIRTypeID {
         match place {
-            MIRPlace::FunctionLocal(id) => self.function.place(id).unwrap().ty.clone(),
+            MIRPlace::FunctionLocal(id) => self.function.place(id).unwrap().ty,
             MIRPlace::Parameter(id) => self.function.prototype.signature.params[id.index()]
-                .ty
-                .clone(),
-            MIRPlace::Global(id) => self.unit.global(id).unwrap().ty.clone(),
+                .ty,
+            MIRPlace::Global(id) => self.unit.global(id).unwrap().ty,
         }
     }
 
@@ -473,7 +471,6 @@ impl<'a> FunctionLowerer<'a> {
             .register(register)
             .expect("invalid register")
             .ty
-            .clone()
     }
 
     fn register(&self, register: MIRRegister) -> LMIRValue {

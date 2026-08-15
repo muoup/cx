@@ -121,11 +121,10 @@ impl<'thir> MIRBuilder<'thir> {
             kind,
             minimum_alignment: ty.attributes.minimum_alignment,
         });
-        if self.unit.types.debug_name(id).is_none() {
-            if let Some(debug_name) = debug_name {
+        if self.unit.types.debug_name(id).is_none()
+            && let Some(debug_name) = debug_name {
                 self.unit.types.set_debug_name(id, debug_name);
             }
-        }
         id
     }
 
@@ -603,11 +602,10 @@ impl<'thir> MIRBuilder<'thir> {
         let Some(target_index) = lexical_scopes.iter().position(|current| *current == scope) else {
             return;
         };
-        if let Some(declaration) = self.function_mut().place_mut(place) {
-            if lexical_scopes[target_index + 1..].contains(&declaration.scope) {
+        if let Some(declaration) = self.function_mut().place_mut(place)
+            && lexical_scopes[target_index + 1..].contains(&declaration.scope) {
                 declaration.scope = scope;
             }
-        }
     }
 
     /// Emits exits for scopes abandoned by a terminating control-flow edge.

@@ -164,12 +164,12 @@ impl LMIRType {
     pub fn size(&self) -> TypeSize {
         let mut implicit_size = self.kind.implicit_size();
 
-        if implicit_size.0 % self.alignment as usize != 0 {
+        if !implicit_size.0.is_multiple_of(self.alignment as usize) {
             implicit_size.0 +=
                 self.alignment as usize - (implicit_size.0 % self.alignment as usize);
         }
 
-        return implicit_size;
+        implicit_size
     }
 
     pub fn alignment(&self) -> u8 {

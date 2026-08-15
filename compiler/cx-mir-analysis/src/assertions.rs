@@ -151,10 +151,10 @@ fn check_function(function: &MIRFunction) -> Result<(), MIRAnalysisError> {
     Ok(())
 }
 
-fn transfer_block<'a>(
-    block: &'a MIRBasicBlock,
+fn transfer_block(
+    block: &MIRBasicBlock,
     mut environment: ConstEnvironment,
-) -> (ConstEnvironment, Vec<&'a MIRBlockTarget>) {
+) -> (ConstEnvironment, Vec<&MIRBlockTarget>) {
     for instruction in &block.instrs {
         transfer_instruction(&mut environment, &instruction.kind);
     }

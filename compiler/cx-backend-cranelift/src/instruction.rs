@@ -558,7 +558,7 @@ pub(crate) fn codegen_instruction(
             dest,
             src,
             size,
-            alignment: _,
+            ..
         } => {
             let dest = context.get_value(dest)?.as_value();
             let src = context.get_value(src)?.as_value();
@@ -651,7 +651,7 @@ pub(crate) fn codegen_instruction(
         } => context.get_value(value)?,
 
         LMIRInstructionKind::Coercion {
-            coercion_type: LMIRCoercionType::FloatCast { from: _ },
+            coercion_type: LMIRCoercionType::FloatCast { .. },
             value,
         } => {
             let val = context.get_value(value)?;
@@ -715,7 +715,7 @@ pub(crate) fn codegen_instruction(
         }
 
         LMIRInstructionKind::Coercion {
-            coercion_type: LMIRCoercionType::IntToFloat { from: _, sextend },
+            coercion_type: LMIRCoercionType::IntToFloat { sextend, .. },
             value,
         } => {
             let val = context.get_value(value)?.as_value();

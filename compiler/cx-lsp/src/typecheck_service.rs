@@ -165,9 +165,9 @@ fn lsp_error_to_diagnostic(error: &LSPErrors, file_contents: &str) -> Diagnostic
             }
         }
         LSPErrors::FatalError {
-            compilation_unit: _,
             message,
             line,
+            ..
         } => Diagnostic {
             range: line_range(file_contents, *line),
             severity: Some(DiagnosticSeverity::ERROR),

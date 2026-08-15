@@ -208,7 +208,7 @@ fn internal(
 
         // Note: type 2 is not a memory reference due to previous case
         (THIRTypeKind::MemoryReference { .. }, _) => std_rval_promotion(env, expr)
-            .and_then(|transformed| CoercionResult::success(transformed)),
+            .and_then(CoercionResult::success),
 
         (_, THIRTypeKind::PointerTo { inner_type })
             if env.type_eq(&from_type, env.symbols.resolve_type_id(*inner_type)) =>

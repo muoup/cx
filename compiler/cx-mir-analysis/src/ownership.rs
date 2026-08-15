@@ -586,21 +586,18 @@ fn check_function_exit(
             continue;
         }
         let place = MIRPlace::FunctionLocal(declaration.id);
-        match state.get(&place).copied() {
-            Some(PlaceState::Available | PlaceState::MaybeMoved) => {
-                return Err(ownership_error(
-                    function,
-                    block,
-                    instruction,
-                    Some(declaration.scope),
-                    place,
-                    format!(
-                        "@nodrop place '{}' is not moved or leaked before function exit",
-                        place_name(unit, function, place)
-                    ),
-                ));
-            }
-            _ => {}
+        if let Some(PlaceState::Available | PlaceState::MaybeMoved) = state.get(&place).copied() {
+            return Err(ownership_error(
+                function,
+                block,
+                instruction,
+                Some(declaration.scope),
+                place,
+                format!(
+                    "@nodrop place '{}' is not moved or leaked before function exit",
+                    place_name(unit, function, place)
+                ),
+            ));
         }
     }
 

@@ -576,7 +576,7 @@ impl<'a> FunctionLowerer<'a> {
         let return_abi = self.prototype.signature.return_abi.clone();
         match (return_abi, value) {
             (LMIRReturnABI::IndirectSret { alignment }, Some(value)) => {
-                let semantic = self.function.prototype.signature.return_type.clone();
+                let semantic = self.function.prototype.signature.return_type;
                 let source = self.lower_value(value);
                 let size =
                     self.int_constant(self.layout(semantic).size as i128, LMIRIntegerType::I64);

@@ -79,7 +79,7 @@ impl MIRTypeRegistry {
 
     pub fn reserve_id_space(&mut self, end: usize) {
         self.next_id = self.next_id.max(end);
-        let end = end as usize;
+        let end = end;
         if self.definitions.len() < end {
             self.definitions.resize_with(end, || None);
             self.debug_names.resize(end, None);
