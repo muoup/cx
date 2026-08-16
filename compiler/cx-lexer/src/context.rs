@@ -25,6 +25,7 @@ pub(crate) enum Macro {
     Function {
         params: Box<[String]>,
         body: Box<[Token]>,
+        variadic: bool,
     },
 }
 
@@ -256,7 +257,11 @@ impl LexingContext {
                     expanded.extend(retarget_tokens(body.iter().cloned(), token));
                     index += 1;
                 }
-                Macro::Function { params, body } => {
+                Macro::Function {
+                    params,
+                    body,
+                    variadic,
+                } => {
                     let Some((mut args, next_index)) = parse_macro_args(&base_tokens, index + 1)
                     else {
                         expanded.push(token.clone());
@@ -264,20 +269,25 @@ impl LexingContext {
                         continue;
                     };
 
-                    if args.is_empty() && params.len() == 1 {
+                    if !variadic && args.is_empty() && params.len() == 1 {
                         args.push(Vec::new());
                     }
 
-                    if args.len() != params.len() {
+                    if (!variadic && args.len() != params.len())
+                        || (*variadic && args.len() < params.len())
+                    {
                         expanded.push(token.clone());
                         index += 1;
                         continue;
                     }
 
+                    let variadic_args = macro_variadic_args(&args, params.len(), *variadic);
                     let expanded_args = args
                         .iter()
                         .map(|arg| self.expand_macros(arg.clone()))
                         .collect::<Vec<_>>();
+                    let expanded_variadic_args =
+                        macro_variadic_args(&expanded_args, params.len(), *variadic);
 
                     let mut body_index = 0;
                     while body_index < body.len() {
@@ -297,6 +307,9 @@ impl LexingContext {
                                 params,
                                 &args,
                                 &expanded_args,
+                                &variadic_args,
+                                &expanded_variadic_args,
+                                *variadic,
                                 false,
                             );
                             if right.is_empty() {
@@ -317,12 +330,17 @@ impl LexingContext {
                             TokenKind::Punctuator(PunctuatorType::Hash)
                         ) && let Some(next_token) = body.get(body_index + 1)
                             && let TokenKind::Identifier(identifier) = &next_token.kind
-                            && let Some(param_index) =
-                                params.iter().position(|param| param == identifier)
+                            && let Some(stringified) = stringify_macro_parameter(
+                                identifier,
+                                params,
+                                &args,
+                                &variadic_args,
+                                *variadic,
+                            )
                         {
                             expanded.extend(retarget_tokens(
                                 std::iter::once(Token::new_unknown(TokenKind::StringLiteral(
-                                    stringify_macro_arg(&args[param_index]),
+                                    stringify_macro_arg(&stringified),
                                 ))),
                                 token,
                             ));
@@ -331,13 +349,31 @@ impl LexingContext {
                         }
 
                         if let TokenKind::Identifier(identifier) = &body_token.kind
-                            && let Some(param_index) =
-                                params.iter().position(|param| param == identifier)
+                            && (params.iter().any(|param| param == identifier)
+                                || (*variadic && identifier == "__VA_ARGS__"))
                         {
                             let arg_tokens = if is_hash_hash(body, body_index + 1) {
-                                args[param_index].clone()
+                                replacement_tokens_for_macro_body_token(
+                                    body_token,
+                                    params,
+                                    &args,
+                                    &expanded_args,
+                                    &variadic_args,
+                                    &expanded_variadic_args,
+                                    *variadic,
+                                    false,
+                                )
                             } else {
-                                expanded_args[param_index].clone()
+                                replacement_tokens_for_macro_body_token(
+                                    body_token,
+                                    params,
+                                    &args,
+                                    &expanded_args,
+                                    &variadic_args,
+                                    &expanded_variadic_args,
+                                    *variadic,
+                                    true,
+                                )
                             };
                             expanded.extend(retarget_tokens(arg_tokens, token));
                             body_index += 1;
@@ -394,19 +430,63 @@ fn replacement_tokens_for_macro_body_token(
     params: &[String],
     raw_args: &[Vec<Token>],
     expanded_args: &[Vec<Token>],
+    variadic_args: &[Token],
+    expanded_variadic_args: &[Token],
+    variadic: bool,
     expand_arg: bool,
 ) -> Vec<Token> {
-    if let TokenKind::Identifier(identifier) = &body_token.kind
-        && let Some(param_index) = params.iter().position(|param| param == identifier)
-    {
-        return if expand_arg {
-            expanded_args[param_index].clone()
-        } else {
-            raw_args[param_index].clone()
-        };
+    if let TokenKind::Identifier(identifier) = &body_token.kind {
+        if variadic && identifier == "__VA_ARGS__" {
+            return if expand_arg {
+                expanded_variadic_args.to_vec()
+            } else {
+                variadic_args.to_vec()
+            };
+        }
+
+        if let Some(param_index) = params.iter().position(|param| param == identifier) {
+            return if expand_arg {
+                expanded_args[param_index].clone()
+            } else {
+                raw_args[param_index].clone()
+            };
+        }
     }
 
     vec![body_token.clone()]
+}
+
+fn macro_variadic_args(args: &[Vec<Token>], named_count: usize, variadic: bool) -> Vec<Token> {
+    if !variadic || args.len() <= named_count {
+        return Vec::new();
+    }
+
+    let mut result = Vec::new();
+    for (index, arg) in args[named_count..].iter().enumerate() {
+        if index > 0 {
+            result.push(Token::new_unknown(TokenKind::Operator(
+                cx_tokens::token::OperatorType::Comma,
+            )));
+        }
+        result.extend(arg.iter().cloned());
+    }
+    result
+}
+
+fn stringify_macro_parameter(
+    identifier: &str,
+    params: &[String],
+    raw_args: &[Vec<Token>],
+    variadic_args: &[Token],
+    variadic: bool,
+) -> Option<Vec<Token>> {
+    if let Some(param_index) = params.iter().position(|param| param == identifier) {
+        return Some(raw_args[param_index].clone());
+    }
+    if variadic && identifier == "__VA_ARGS__" {
+        return Some(variadic_args.to_vec());
+    }
+    None
 }
 
 fn paste_tokens(left: Token, right: Token, expansion_site: &Token) -> Token {

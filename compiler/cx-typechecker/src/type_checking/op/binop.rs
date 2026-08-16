@@ -32,9 +32,20 @@ pub(crate) fn dispatch(
 ) -> CXResult<TypecheckResult> {
     match &op {
         HIRBinOp::LOr | HIRBinOp::LAnd => resolve_logical(env, op, lhs, rhs),
+        HIRBinOp::Comma => resolve_comma(lhs, rhs),
 
         _ => resolve_std_arithmetic(env, op, lhs, rhs),
     }
+}
+
+fn resolve_comma(lhs: THIRExpression, rhs: THIRExpression) -> CXResult<TypecheckResult> {
+    Ok(TypecheckResult::new(
+        rhs._type.clone(),
+        THIRExpressionKind::Block {
+            statements: vec![lhs, rhs],
+            creates_scope: false,
+        },
+    ))
 }
 
 pub(crate) fn resolve_logical(

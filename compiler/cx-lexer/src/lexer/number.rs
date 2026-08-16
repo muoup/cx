@@ -27,7 +27,7 @@ pub(crate) fn number(iter: &mut LexCursor<'_>) -> CXResult<TokenKind> {
         match iter.peek() {
             Some('x' | 'X') => {
                 iter.next();
-                return integer_with_radix(iter, start_index, 16);
+                return hexadecimal_literal(iter, start_index);
             }
             Some('b' | 'B') => {
                 iter.next();
@@ -81,6 +81,120 @@ pub(crate) fn number(iter: &mut LexCursor<'_>) -> CXResult<TokenKind> {
             suffix,
         )
     }
+}
+
+fn hexadecimal_literal(iter: &mut LexCursor<'_>, start_index: usize) -> CXResult<TokenKind> {
+    let digit_start = iter.cursor();
+    while iter.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
+        iter.next();
+    }
+
+    if matches!(iter.peek(), Some('.') | Some('p' | 'P')) {
+        return hexadecimal_float_literal(iter, start_index);
+    }
+
+    let number_end = iter.cursor();
+    if digit_start == number_end {
+        consume_numeric_tail(iter);
+        return invalid_numeric_literal(iter, start_index);
+    }
+
+    let suffix = consume_integer_suffix(iter);
+    if is_identifier_continue(iter.peek()) {
+        consume_numeric_tail(iter);
+        return invalid_numeric_literal(iter, start_index);
+    }
+
+    parse_integer_literal(
+        iter,
+        digit_start,
+        number_end,
+        16,
+        IntegerBase::Hexadecimal,
+        suffix,
+    )
+}
+
+fn hexadecimal_float_literal(iter: &mut LexCursor<'_>, start_index: usize) -> CXResult<TokenKind> {
+    if iter.peek() == Some('.') {
+        iter.next();
+        while iter.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
+            iter.next();
+        }
+    }
+
+    if !matches!(iter.peek(), Some('p' | 'P')) {
+        consume_numeric_tail(iter);
+        return invalid_numeric_literal(iter, start_index);
+    }
+    iter.next();
+
+    if matches!(iter.peek(), Some('+' | '-')) {
+        iter.next();
+    }
+
+    let exponent_start = iter.cursor();
+    while matches!(iter.peek(), Some('0'..='9')) {
+        iter.next();
+    }
+    if exponent_start == iter.cursor() {
+        consume_numeric_tail(iter);
+        return invalid_numeric_literal(iter, start_index);
+    }
+
+    let number_end = iter.cursor();
+    let suffix = consume_float_suffix(iter);
+    if is_identifier_continue(iter.peek()) {
+        consume_numeric_tail(iter);
+        return invalid_numeric_literal(iter, start_index);
+    }
+
+    let number = &iter.source()[start_index..number_end];
+    let value = match parse_hexadecimal_float(number) {
+        Ok(value) => value,
+        Err(_) => return iter.log_error(start_index, format!("Invalid numeric literal: {number}")),
+    };
+
+    let value = match suffix {
+        FloatSuffix::Float => value as f32 as f64,
+        FloatSuffix::Default | FloatSuffix::LongDouble => value,
+    };
+
+    Ok(TokenKind::FloatLiteral(FloatLiteral { value, suffix }))
+}
+
+fn parse_hexadecimal_float(number: &str) -> Result<f64, ()> {
+    let number = number
+        .strip_prefix("0x")
+        .or_else(|| number.strip_prefix("0X"))
+        .ok_or(())?;
+    let exponent_index = number.find(['p', 'P']).ok_or(())?;
+    let (mantissa, exponent) = number.split_at(exponent_index);
+    let exponent = exponent[1..].parse::<i32>().map_err(|_| ())?;
+
+    let mut value = 0.0;
+    let mut fraction = false;
+    let mut divisor = 1.0;
+
+    for digit in mantissa.chars() {
+        if digit == '.' {
+            if fraction {
+                return Err(());
+            }
+            fraction = true;
+            continue;
+        }
+
+        let digit = digit.to_digit(16).ok_or(())? as f64;
+        if fraction {
+            divisor *= 16.0;
+            value += digit / divisor;
+        } else {
+            value = value * 16.0 + digit;
+        }
+    }
+
+    Ok(value * 2.0f64.powi(exponent))
 }
 
 fn integer_with_radix(
