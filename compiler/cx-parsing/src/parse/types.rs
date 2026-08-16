@@ -577,19 +577,21 @@ pub(crate) fn parse_type_suffix_mod(
 
             if try_next!(data.tokens, punctuator!(CloseBracket)) {
                 let range = acc_type.range.clone();
-                acc_type = HIRTypeKind::ImplicitSizedArray(Box::new(acc_type)).to_type();
+                let nested = parse_type_suffix_mod(data, acc_type)?;
+                acc_type = HIRTypeKind::ImplicitSizedArray(Box::new(nested)).to_type();
                 acc_type.range = range;
             } else {
                 let inner = parse_expr(data)?;
                 assert_token_matches!(data.tokens, punctuator!(CloseBracket), "']'");
 
                 let range = acc_type.range.clone();
+                let nested = parse_type_suffix_mod(data, acc_type)?;
                 acc_type =
-                    HIRTypeKind::ExplicitSizedArray(Box::new(acc_type), Box::new(inner)).to_type();
+                    HIRTypeKind::ExplicitSizedArray(Box::new(nested), Box::new(inner)).to_type();
                 acc_type.range = range;
             }
 
-            parse_type_suffix_mod(data, acc_type)
+            Ok(acc_type)
         }
 
         operator!(Ampersand) => {

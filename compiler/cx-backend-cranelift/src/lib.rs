@@ -208,10 +208,6 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
         function_sigs: &mut HashMap::new(),
     };
 
-    for global_var in bc.global_vars.iter() {
-        generate_global(&mut global_state, global_var)?;
-    }
-
     for fn_prototype in bc.fn_map.values() {
         codegen_fn_prototype(&mut global_state, fn_prototype).map_err(|e| {
             CXErr::new(
@@ -222,6 +218,10 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
                 )),
             )
         })?;
+    }
+
+    for global_var in bc.global_vars.iter() {
+        generate_global(&mut global_state, global_var)?;
     }
 
     for func in bc.fn_defs.iter() {

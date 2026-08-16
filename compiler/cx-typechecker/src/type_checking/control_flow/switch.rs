@@ -3,6 +3,7 @@ use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
+use crate::comptime::evaluate_comptime_expression;
 use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
@@ -17,7 +18,7 @@ pub fn typecheck_switch(
     namespace: &EnvironmentNamespace,
     condition: &HIRExpression,
     block: &[HIRExpression],
-    cases: &[(u64, usize)],
+    cases: &[(HIRExpression, usize)],
     default_case: Option<&usize>,
 ) -> CXResult<TypecheckResult> {
     env.push_scope(true, false);
@@ -34,9 +35,9 @@ pub fn typecheck_switch(
     // Each case maps a constant value to a range of expressions in the block
     let mut arms = Vec::new();
 
-    for (case_value, case_index) in cases {
+    for (case_expr, case_index) in cases {
         // Find the expression at this case index
-        let Some(case_expr) = block.get(*case_index as usize) else {
+        let Some(case_body) = block.get(*case_index as usize) else {
             return env.log_error(
                 &condition_value.token_range,
                 format!(
@@ -47,8 +48,20 @@ pub fn typecheck_switch(
             );
         };
 
-        let case_body_expr = typecheck_expr(env, namespace, case_expr, None)
-            .and_then(|v| v.standard_ready_coerce(env, case_expr.token_range()))?;
+        let case_value = typecheck_expr(env, namespace, case_expr, None)
+            .and_then(|v| v.standard_ready_coerce(env, case_expr.token_range()))
+            .and_then(|v| evaluate_comptime_expression(env, v))
+            .and_then(|v| {
+                v.as_integer().ok_or_else(|| {
+                    env.error(
+                        case_expr.token_range(),
+                        "Switch case must be an integer constant expression".to_string(),
+                    )
+                })
+            })?;
+
+        let case_body_expr = typecheck_expr(env, namespace, case_body, None)
+            .and_then(|v| v.standard_ready_coerce(env, case_body.token_range()))?;
         if expr_may_fall_through(&case_body_expr) {
             env.function.enqueue_scope_arrow(
                 &ScopeExitTarget {
@@ -75,7 +88,7 @@ pub fn typecheck_switch(
 
         let pattern_expr = THIRExpression {
             token_range: TokenRange::internal(),
-            kind: THIRExpressionKind::IntLiteral(*case_value as i64),
+            kind: THIRExpressionKind::IntLiteral(case_value),
             _type: THIRType::from(THIRTypeKind::Integer {
                 signed: *signed,
                 _type: *_type,

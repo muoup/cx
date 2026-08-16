@@ -82,6 +82,16 @@ fn internal(
         );
     }
 
+    if matches!(expr.kind, THIRExpressionKind::IntLiteral(0))
+        && matches!(target_type.kind, THIRTypeKind::PointerTo { .. })
+    {
+        return coercion_expr(
+            expr,
+            target_type.clone(),
+            THIRCoercion::IntToPtr { sextend: false },
+        );
+    }
+
     if let (
         THIRTypeKind::Array {
             inner_type: from_inner,

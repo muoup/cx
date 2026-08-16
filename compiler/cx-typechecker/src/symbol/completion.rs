@@ -324,13 +324,19 @@ fn complete_explicit_parameters(
         .params
         .iter()
         .map(|param| {
+            let completed = complete_type(env, namespace, &param._type)?;
+            let _type = if let Some(inner) = env.symbols.array_inner(&completed) {
+                env.symbols.pointer_to(inner.clone())
+            } else {
+                completed
+            };
             Ok(THIRParameter {
                 name: param.name.clone(),
                 local_id: param
                     .name
                     .as_ref()
                     .map(|_| cx_thir::thir::expression::THIRLocalID::fresh()),
-                _type: complete_type(env, namespace, &param._type)?,
+                _type,
             })
         })
         .collect::<CXResult<Vec<_>>>()

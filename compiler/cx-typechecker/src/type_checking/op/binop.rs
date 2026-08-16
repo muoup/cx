@@ -195,6 +195,62 @@ fn coerce_pointer_binop(
     mut rhs: THIRExpression,
 ) -> CXResult<TypecheckResult> {
     if lhs._type.is_pointer() && rhs._type.is_pointer() {
+        if *op == HIRBinOp::Subtract {
+            let pointer_integer = env.symbols.pointer_integer_type();
+            let integer_type: THIRType = THIRTypeKind::Integer {
+                _type: pointer_integer,
+                signed: true,
+            }
+            .into();
+            let pointee = env.symbols.ptr_inner(&lhs._type).cloned().unwrap();
+            let Ok(pointee_layout) = env.symbols.type_layout(&pointee) else {
+                return env.log_error(
+                    &lhs.token_range,
+                    "Cannot compute layout for pointer difference".to_string(),
+                );
+            };
+            let difference_range = lhs.token_range.clone();
+            let pointer_to_integer = |operand: THIRExpression| THIRExpression {
+                token_range: operand.token_range.clone(),
+                kind: THIRExpressionKind::TypeConversion {
+                    operand: Box::new(operand),
+                    conversion: cx_thir::thir::expression::THIRCoercion::PtrToInt {
+                        to_type: pointer_integer,
+                    },
+                },
+                _type: integer_type.clone(),
+            };
+            let difference = THIRExpression {
+                token_range: difference_range.clone(),
+                kind: THIRExpressionKind::BinaryOperation {
+                    op: THIRBinOp::Integer {
+                        itype: pointer_integer,
+                        op: THIRIntBinOp::IDIV,
+                    },
+                    lhs: Box::new(THIRExpression {
+                        token_range: difference_range.clone(),
+                        kind: THIRExpressionKind::BinaryOperation {
+                            op: THIRBinOp::Integer {
+                                itype: pointer_integer,
+                                op: THIRIntBinOp::SUB,
+                            },
+                            lhs: Box::new(pointer_to_integer(lhs)),
+                            rhs: Box::new(pointer_to_integer(rhs)),
+                        },
+                        _type: integer_type.clone(),
+                    }),
+                    rhs: Box::new(THIRExpression {
+                        token_range: difference_range.clone(),
+                        kind: THIRExpressionKind::IntLiteral(pointee_layout.size as i64),
+                        _type: integer_type.clone(),
+                    }),
+                },
+                _type: integer_type.clone(),
+            };
+
+            return Ok(TypecheckResult::from(difference));
+        }
+
         let (return_type, op) = match op {
             HIRBinOp::LessEqual => (THIRType::bool(), THIRPtrBinOp::LE),
             HIRBinOp::GreaterEqual => (THIRType::bool(), THIRPtrBinOp::GE),
@@ -227,14 +283,19 @@ fn coerce_pointer_binop(
         (&mut rhs, &mut lhs)
     };
 
-    let intptr = THIRTypeKind::Integer {
-        _type: env.symbols.pointer_integer_type(),
-        signed: true,
-    };
-
-    *non_pointer = implicit_cast(env, std::mem::take(non_pointer), &intptr.into())?;
-
     let ptr_type = pointer._type.clone();
+    if matches!(op, HIRBinOp::Equal | HIRBinOp::NotEqual)
+        && matches!(non_pointer.kind, THIRExpressionKind::IntLiteral(0))
+    {
+        *non_pointer = implicit_cast(env, std::mem::take(non_pointer), &ptr_type)?;
+    } else {
+        let intptr = THIRTypeKind::Integer {
+            _type: env.symbols.pointer_integer_type(),
+            signed: true,
+        };
+        *non_pointer = implicit_cast(env, std::mem::take(non_pointer), &intptr.into())?;
+    }
+
     let ptr_inner = Box::new(env.symbols.ptr_inner(&ptr_type).cloned().unwrap());
 
     let (return_type, op) = match op {

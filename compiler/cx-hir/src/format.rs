@@ -411,7 +411,8 @@ impl<'a> Display for HIRExprFormatter<'a> {
                 HIRExprFormatter::new(condition, self.depth + 1).fmt(f)?;
                 for (case_value, case_expr) in cases {
                     self.indent(f)?;
-                    writeln!(f, "Case: {} -> ID: {}", case_value, case_expr)?;
+                    writeln!(f, "Case -> ID: {}", case_expr)?;
+                    HIRExprFormatter::new(case_value, self.depth + 1).fmt(f)?;
                 }
                 if let Some(default_expr) = default_case {
                     self.indent(f)?;

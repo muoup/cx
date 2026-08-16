@@ -303,6 +303,25 @@ impl<'thir> MIRBuilder<'thir> {
     fn lower_global_constant(&mut self, expression: &THIRExpression) -> MIRConstant {
         match &expression.kind {
             THIRExpressionKind::BoolLiteral(value) => MIRConstant::Bool(*value),
+            THIRExpressionKind::FunctionReference { name, debug_name } => MIRConstant::Function(
+                self.ensure_function(name, &expression._type, debug_name.as_ref()),
+            ),
+            THIRExpressionKind::Typechange(operand)
+                if function_reference_symbol(operand).is_some() => MIRConstant::Function(
+                self.ensure_function(
+                    function_reference_symbol(operand).unwrap(),
+                    &expression._type,
+                    None,
+                ),
+            ),
+            THIRExpressionKind::TypeConversion { operand, .. }
+                if function_reference_symbol(operand).is_some() => MIRConstant::Function(
+                self.ensure_function(
+                    function_reference_symbol(operand).unwrap(),
+                    &expression._type,
+                    None,
+                ),
+            ),
             THIRExpressionKind::IntLiteral(value) => {
                 let (ty, signed) = integer_type(&expression._type);
                 MIRConstant::Integer {
@@ -357,10 +376,9 @@ impl<'thir> MIRBuilder<'thir> {
                     ty: self.lower_type(&expression._type),
                 }
             }
-            THIRExpressionKind::TypeConversion {
-                conversion: THIRCoercion::IntToPtr { .. },
-                operand,
-            } if matches!(operand.kind, THIRExpressionKind::IntLiteral(0)) => {
+            THIRExpressionKind::TypeConversion { .. }
+                if Self::contains_null_pointer_conversion(expression) =>
+            {
                 MIRConstant::Null {
                     ty: self.lower_type(&expression._type),
                 }
@@ -400,6 +418,23 @@ impl<'thir> MIRBuilder<'thir> {
                 }
             }
             _ => panic!("unsupported global initializer: {expression:?}"),
+        }
+    }
+
+    fn contains_null_pointer_conversion(expression: &THIRExpression) -> bool {
+        match &expression.kind {
+            THIRExpressionKind::Typechange(operand) => {
+                Self::contains_null_pointer_conversion(operand)
+            }
+            THIRExpressionKind::TypeConversion {
+                conversion: THIRCoercion::IntToPtr { .. },
+                operand,
+            } => matches!(operand.kind, THIRExpressionKind::IntLiteral(0))
+                || Self::contains_null_pointer_conversion(operand),
+            THIRExpressionKind::TypeConversion { operand, .. } => {
+                Self::contains_null_pointer_conversion(operand)
+            }
+            _ => false,
         }
     }
 
@@ -948,6 +983,17 @@ fn global_reference_symbol(expression: &THIRExpression) -> Option<&CXIdent> {
         THIRExpressionKind::Typechange(operand)
         | THIRExpressionKind::TypeConversion { operand, .. } => {
             global_reference_symbol(operand)
+        }
+        _ => None,
+    }
+}
+
+fn function_reference_symbol(expression: &THIRExpression) -> Option<&CXIdent> {
+    match &expression.kind {
+        THIRExpressionKind::FunctionReference { name, .. } => Some(name),
+        THIRExpressionKind::Typechange(operand)
+        | THIRExpressionKind::TypeConversion { operand, .. } => {
+            function_reference_symbol(operand)
         }
         _ => None,
     }

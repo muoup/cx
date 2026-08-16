@@ -94,7 +94,7 @@ pub enum HIRExprKind {
     Switch {
         condition: Box<HIRExpression>,
         block: Vec<HIRExpression>,
-        cases: Vec<(u64, usize)>, // (block index, value)
+        cases: Vec<(HIRExpression, usize)>, // (constant expression, block index)
         default_case: Option<usize>,
     },
 

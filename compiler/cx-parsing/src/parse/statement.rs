@@ -122,8 +122,8 @@ pub(crate) fn try_parse_keyword_stmt(
 
             while !try_next!(data.tokens, punctuator!(CloseBrace)) {
                 if try_next!(data.tokens, keyword!(Case)) {
-                    assert_token_matches!(data.tokens, TokenKind::IntLiteral(literal));
-                    cases.push((literal.magnitude, index as usize));
+                    let case_value = parse_expr(data)?;
+                    cases.push((case_value, index as usize));
                     assert_token_matches!(
                         data.tokens,
                         TokenKind::Punctuator(PunctuatorType::Colon),

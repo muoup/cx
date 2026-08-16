@@ -123,6 +123,14 @@ fn global_initializer<'ctx>(
                 .as_pointer_value();
             value.const_cast(pointer_type).into()
         }
+        LMIRGlobalInitializer::Function(function) => {
+            let pointer_type = basic_type.into_pointer_type();
+            let value = state
+                .module
+                .get_function(function)
+                .unwrap_or_else(|| panic!("invalid function initializer reference {function}"));
+            value.as_global_value().as_pointer_value().const_cast(pointer_type).into()
+        }
         LMIRGlobalInitializer::Null => match basic_type {
             inkwell::types::BasicTypeEnum::PointerType(pointer) => pointer.const_null().into(),
             _ => basic_type.const_zero(),

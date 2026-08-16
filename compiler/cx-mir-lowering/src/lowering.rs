@@ -68,7 +68,7 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistry) -> CXResult<LMI
                 },
                 MIRGlobalState::Initialized(constant) => LMIRGlobalType::Variable {
                     _type: lowered_type,
-                    state: LoweredGlobalState::Initialized(lower_global_initializer(constant)),
+                    state: LoweredGlobalState::Initialized(lower_global_initializer(mir, constant)),
                 },
             };
             LMIRGlobalValue {
@@ -96,7 +96,7 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistry) -> CXResult<LMI
     })
 }
 
-fn lower_global_initializer(constant: &MIRConstant) -> LMIRGlobalInitializer {
+fn lower_global_initializer(mir: &MIRUnit, constant: &MIRConstant) -> LMIRGlobalInitializer {
     match constant {
         MIRConstant::Bool(value) => LMIRGlobalInitializer::Integer {
             value: i128::from(*value),
@@ -115,16 +115,23 @@ fn lower_global_initializer(constant: &MIRConstant) -> LMIRGlobalInitializer {
         MIRConstant::Aggregate { fields, .. } => LMIRGlobalInitializer::Aggregate {
             fields: fields
                 .iter()
-                .map(|(index, value)| (*index, lower_global_initializer(value)))
+                .map(|(index, value)| (*index, lower_global_initializer(mir, value)))
                 .collect(),
         },
         MIRConstant::Null { .. } => LMIRGlobalInitializer::Null,
         MIRConstant::Global { global, .. } => {
             LMIRGlobalInitializer::Global(global.index() as u32)
         }
+        MIRConstant::Function(function) => LMIRGlobalInitializer::Function(
+            mir.function(*function)
+                .expect("invalid MIR function constant")
+                .prototype
+                .signature
+                .symbol_name
+                .to_string(),
+        ),
         MIRConstant::Unit
         | MIRConstant::String(_)
-        | MIRConstant::Function(_)
         | MIRConstant::Undefined => panic!("unsupported MIR global initializer: {constant:?}"),
     }
 }

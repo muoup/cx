@@ -190,6 +190,15 @@ fn canonicalize_global_initializer(
                 .map(|value| value.into_expression())?
             }
         }
+        kind @ THIRExpressionKind::TypeConversion { .. }
+            if contains_null_pointer_conversion(&kind) =>
+        {
+            THIRExpression {
+                kind,
+                _type,
+                token_range,
+            }
+        }
         kind @ THIRExpressionKind::TypeConversion {
             conversion: THIRCoercion::ReinterpretBits,
             ..
@@ -222,6 +231,29 @@ fn canonicalize_global_initializer(
                 token_range,
             }
         }
+        THIRExpressionKind::FunctionReference { .. } => THIRExpression {
+            kind,
+            _type,
+            token_range,
+        },
+        kind @ THIRExpressionKind::Typechange(_)
+            if contains_function_reference_kind(&kind) =>
+        {
+            THIRExpression {
+                kind,
+                _type,
+                token_range,
+            }
+        }
+        kind @ THIRExpressionKind::TypeConversion { .. }
+            if contains_function_reference_kind(&kind) =>
+        {
+            THIRExpression {
+                kind,
+                _type,
+                token_range,
+            }
+        }
         kind => evaluate_comptime_expression(
             env,
             THIRExpression {
@@ -242,6 +274,34 @@ fn contains_global_reference(expression: &THIRExpression) -> bool {
         THIRExpressionKind::Typechange(operand)
         | THIRExpressionKind::TypeConversion { operand, .. } => {
             contains_global_reference(operand)
+        }
+        _ => false,
+    }
+}
+
+fn contains_null_pointer_conversion(kind: &THIRExpressionKind) -> bool {
+    match kind {
+        THIRExpressionKind::Typechange(operand) => {
+            contains_null_pointer_conversion(&operand.kind)
+        }
+        THIRExpressionKind::TypeConversion {
+            conversion: THIRCoercion::IntToPtr { .. },
+            operand,
+        } => matches!(operand.kind, THIRExpressionKind::IntLiteral(0))
+            || contains_null_pointer_conversion(&operand.kind),
+        THIRExpressionKind::TypeConversion { operand, .. } => {
+            contains_null_pointer_conversion(&operand.kind)
+        }
+        _ => false,
+    }
+}
+
+fn contains_function_reference_kind(kind: &THIRExpressionKind) -> bool {
+    match kind {
+        THIRExpressionKind::FunctionReference { .. } => true,
+        THIRExpressionKind::Typechange(operand)
+        | THIRExpressionKind::TypeConversion { operand, .. } => {
+            contains_function_reference_kind(&operand.kind)
         }
         _ => false,
     }

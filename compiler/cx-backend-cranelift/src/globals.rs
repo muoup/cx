@@ -99,7 +99,9 @@ fn initializer_bytes(
             }
             bytes
         }
-        LMIRGlobalInitializer::Global(_) => vec![0; usize::from(ty.size())],
+        LMIRGlobalInitializer::Global(_) | LMIRGlobalInitializer::Function(_) => {
+            vec![0; usize::from(ty.size())]
+        }
         LMIRGlobalInitializer::Null => vec![0; usize::from(ty.size())],
     };
     fit_bytes(bytes, usize::from(ty.size()))
@@ -120,6 +122,14 @@ fn write_initializer_relocations(
                 .unwrap_or_else(|| panic!("invalid global initializer reference {global}"));
             let target = state.object_module.declare_data_in_data(target, data);
             data.write_data_addr(offset as u32, target, 0);
+        }
+        LMIRGlobalInitializer::Function(function) => {
+            let target = *state
+                .function_ids
+                .get(function)
+                .unwrap_or_else(|| panic!("invalid function initializer reference {function}"));
+            let target = state.object_module.declare_func_in_data(target, data);
+            data.write_function_addr(offset as u32, target);
         }
         LMIRGlobalInitializer::Aggregate { fields } => {
             for (index, field) in fields {
