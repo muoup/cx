@@ -593,6 +593,25 @@ fn lower_expression(
                 }
                 MIRValue::Constant(MIRConstant::Unit)
             }
+            THIRExpressionKind::Goto { name } => {
+                let target = builder.label_block(name);
+                builder.emit(MIRInstrKind::Jump {
+                    target: MIRBlockTarget::new(target),
+                });
+                let dead_block = builder.new_block("after.goto");
+                builder.set_current_block(dead_block);
+                MIRValue::Constant(MIRConstant::Unit)
+            }
+            THIRExpressionKind::Label { name, statement } => {
+                let target = builder.declare_label(name);
+                if !builder.current_block_terminated() && builder.current_block() != target {
+                    builder.emit(MIRInstrKind::Jump {
+                        target: MIRBlockTarget::new(target),
+                    });
+                }
+                builder.set_current_block(target);
+                lower_expression(builder, statement)?
+            }
             THIRExpressionKind::If {
                 condition,
                 then_branch,
@@ -733,7 +752,7 @@ fn lower_expression(
                 }
                 builder.push_named_scope();
                 for statement in statements {
-                    if builder.current_block_terminated() {
+                    if builder.current_block_terminated() && !contains_label(statement) {
                         break;
                     }
                     result = lower_expression(builder, statement)?;
@@ -858,4 +877,32 @@ fn lower_expression(
     })();
     builder.restore_source_range(previous_range);
     result
+}
+
+fn contains_label(expression: &THIRExpression) -> bool {
+    match &expression.kind {
+        THIRExpressionKind::Label { .. } => true,
+        THIRExpressionKind::Block { statements, .. } => statements.iter().any(contains_label),
+        THIRExpressionKind::If {
+            then_branch,
+            else_branch,
+            ..
+        } => contains_label(then_branch)
+            || else_branch
+                .as_deref()
+                .is_some_and(contains_label),
+        THIRExpressionKind::While { body, .. } | THIRExpressionKind::For { body, .. } => {
+            contains_label(body)
+        }
+        THIRExpressionKind::CSwitch { cases, default, .. } => {
+            cases.iter().any(|(_, body)| contains_label(body))
+                || default.as_deref().is_some_and(contains_label)
+        }
+        THIRExpressionKind::Match { arms, default, .. } => {
+            arms.iter().any(|(_, body)| contains_label(body))
+                || default.as_deref().is_some_and(contains_label)
+        }
+        THIRExpressionKind::Unsafe { expression } => contains_label(expression),
+        _ => false,
+    }
 }

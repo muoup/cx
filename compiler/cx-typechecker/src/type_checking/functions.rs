@@ -69,6 +69,10 @@ pub fn typecheck_function(
         .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
     let with_implicit_return = add_implicit_return(env, namespace, body_expr)?;
 
+    if let Some((name, range)) = env.function.unresolved_label() {
+        return env.log_error(range, format!("Undefined label '{name}'"));
+    }
+
     if prototype.signature().contract.safe {
         crate::type_checking::safety::validate_safe_expression(env, &with_implicit_return)?;
     }

@@ -431,6 +431,11 @@ impl<'a> Display for HIRExprFormatter<'a> {
             }
             HIRExprKind::Break => writeln!(f, "Break"),
             HIRExprKind::Continue => writeln!(f, "Continue"),
+            HIRExprKind::Goto { name } => writeln!(f, "Goto {name}"),
+            HIRExprKind::Label { name, statement } => {
+                writeln!(f, "Label {name}")?;
+                HIRExprFormatter::new(statement, self.depth + 1).fmt(f)
+            }
         }
     }
 }

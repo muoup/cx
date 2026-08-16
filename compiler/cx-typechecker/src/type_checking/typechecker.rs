@@ -65,10 +65,6 @@ fn typecheck_expr_inner(
                     .standard_ready_coerce(env, expr.token_range())?;
 
                 block.push(expr);
-
-                if !env.function.is_current_scope_reachable() {
-                    break;
-                }
             }
 
             TypecheckResult::from(THIRExpression {
@@ -419,6 +415,44 @@ fn typecheck_expr_inner(
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
                 kind: THIRExpressionKind::Continue,
+                _type: THIRType::unit(),
+            })
+        }
+
+        HIRExprKind::Goto { name } => {
+            if env.in_defer_context() {
+                return env.log_error(
+                    expr.token_range(),
+                    "goto is not allowed inside a deferred expression".to_string(),
+                );
+            }
+            env.function
+                .record_label_use(name, expr.token_range().clone());
+            TypecheckResult::from(THIRExpression {
+                token_range: TokenRange::internal(),
+                kind: THIRExpressionKind::Goto { name: name.clone() },
+                _type: THIRType::unit(),
+            })
+        }
+
+        HIRExprKind::Label { name, statement } => {
+            if !env
+                .function
+                .declare_label(name, expr.token_range().clone())
+            {
+                return env.log_error(
+                    expr.token_range(),
+                    format!("Duplicate label '{name}'"),
+                );
+            }
+            let statement = typecheck_expr(env, namespace, statement, None)
+                .and_then(|v| v.standard_ready_coerce(env, statement.token_range()))?;
+            TypecheckResult::from(THIRExpression {
+                token_range: TokenRange::internal(),
+                kind: THIRExpressionKind::Label {
+                    name: name.clone(),
+                    statement: Box::new(statement),
+                },
                 _type: THIRType::unit(),
             })
         }

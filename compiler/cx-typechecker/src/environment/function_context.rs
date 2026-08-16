@@ -1,6 +1,10 @@
+use std::collections::HashMap;
+
 use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXRawResult;
 use cx_thir::thir::data::{THIRFnPrototype, THIRType};
+use cx_tokens::TokenRange;
+use cx_util::identifier::CXIdent;
 
 use crate::environment::control_flow::{
     ControlFlow, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
@@ -11,10 +15,16 @@ use crate::environment::control_flow::{
 pub struct FunctionContext {
     current_function: Option<THIRFnPrototype>,
     flow: Option<ControlFlow>,
+    labels: HashMap<String, LabelRecord>,
     require_safe: bool,
     require_pure: bool,
     unsafe_depth: usize,
     yield_stack: Vec<YieldContext>,
+}
+
+struct LabelRecord {
+    declaration: Option<TokenRange>,
+    uses: Vec<TokenRange>,
 }
 
 #[derive(Clone)]
@@ -38,6 +48,7 @@ impl FunctionContext {
         self.require_pure = false;
         self.unsafe_depth = 0;
         self.flow = Some(ControlFlow::new());
+        self.labels.clear();
         self.current_function = Some(prototype);
         self.yield_stack.clear();
     }
@@ -45,6 +56,7 @@ impl FunctionContext {
     pub fn end_function(&mut self) {
         self.current_function = None;
         self.flow = None;
+        self.labels.clear();
         self.require_safe = false;
         self.require_pure = false;
         self.unsafe_depth = 0;
@@ -57,6 +69,42 @@ impl FunctionContext {
 
     pub fn try_current_function(&self) -> Option<&THIRFnPrototype> {
         self.current_function.as_ref()
+    }
+
+    pub fn record_label_use(&mut self, name: &CXIdent, range: TokenRange) {
+        self.labels
+            .entry(name.as_string())
+            .or_insert_with(|| LabelRecord {
+                declaration: None,
+                uses: Vec::new(),
+            })
+            .uses
+            .push(range);
+    }
+
+    pub fn declare_label(&mut self, name: &CXIdent, range: TokenRange) -> bool {
+        let record = self
+            .labels
+            .entry(name.as_string())
+            .or_insert_with(|| LabelRecord {
+                declaration: None,
+                uses: Vec::new(),
+            });
+        if record.declaration.is_some() {
+            return false;
+        }
+        record.declaration = Some(range);
+        true
+    }
+
+    pub fn unresolved_label(&self) -> Option<(&str, &TokenRange)> {
+        self.labels.iter().find_map(|(name, record)| {
+            record
+                .declaration
+                .is_none()
+                .then(|| record.uses.first().map(|range| (name.as_str(), range)))
+                .flatten()
+        })
     }
 
     fn flow(&self) -> &ControlFlow {

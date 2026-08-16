@@ -1433,6 +1433,22 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, "'>")
             }
+            THIRExpressionKind::Goto { name } => {
+                write!(f, "Goto {name} <type='")?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, "'>")
+            }
+            THIRExpressionKind::Label { name, statement } => {
+                write!(f, "Label {name} <type='")?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, "'>")?;
+                MIRExpressionFormatter {
+                    expr: statement,
+                    depth: self.depth + 1,
+                    definitions: self.definitions,
+                }
+                .fmt(f)
+            }
         }
     }
 }

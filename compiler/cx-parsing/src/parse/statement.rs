@@ -13,6 +13,7 @@ use crate::{
         expressions::{parse_expr, parse_pattern},
         parse_block,
         parser::ParserData,
+        try_parse_simple_identifier,
         types::{is_type_decl, parse_base_mods, parse_specifier, parse_type_base},
     },
     try_next,
@@ -41,6 +42,30 @@ pub(crate) fn parse_stmt(data: &mut ParserData) -> CXResult<HIRExpression> {
 }
 
 pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<HIRExpression>> {
+    let label_start = data.tokens.index;
+    if let (
+        Some(TokenKind::Identifier(name)),
+        Some(TokenKind::Punctuator(PunctuatorType::Colon)),
+    ) = (
+        data.tokens.peek().map(|token| &token.kind),
+        data.tokens
+            .slice
+            .get(data.tokens.index + 1)
+            .map(|token| &token.kind),
+    ) {
+        let name = cx_util::identifier::CXIdent::new(name.clone());
+        data.tokens.next();
+        data.tokens.next();
+        let statement = parse_stmt(data)?;
+        return Ok(Some(
+            HIRExprKind::Label {
+                name,
+                statement: Box::new(statement),
+            }
+            .into_expr(label_start, data.tokens.index, data.file_origin.clone()),
+        ));
+    }
+
     match next_kind!(data.tokens)? {
         TokenKind::Keyword(keyword) => {
             let keyword = *keyword;
@@ -241,6 +266,17 @@ pub(crate) fn try_parse_keyword_stmt(
 
         KeywordType::Break => Some(HIRExprKind::Break),
         KeywordType::Continue => Some(HIRExprKind::Continue),
+
+        KeywordType::Goto => {
+            let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
+                return parse_point_error(
+                    &data.tokens,
+                    "Expected label identifier after 'goto'".to_string(),
+                );
+            };
+            assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
+            Some(HIRExprKind::Goto { name })
+        }
         KeywordType::For => {
             assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
 

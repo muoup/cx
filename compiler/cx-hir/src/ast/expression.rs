@@ -142,6 +142,13 @@ pub enum HIRExprKind {
 
     Break,
     Continue,
+    Goto {
+        name: CXIdent,
+    },
+    Label {
+        name: CXIdent,
+        statement: Box<HIRExpression>,
+    },
 
     Return {
         value: Option<Box<HIRExpression>>,

@@ -34,6 +34,12 @@ pub(crate) struct YieldContext {
 }
 
 #[derive(Debug)]
+struct LabelTarget {
+    block: MIRBasicBlockID,
+    declared: bool,
+}
+
+#[derive(Debug)]
 struct FunctionContext {
     function: MIRFunctionID,
     current_block: MIRBasicBlockID,
@@ -42,6 +48,7 @@ struct FunctionContext {
     named_values: Vec<HashMap<String, MIRValue>>,
     loops: Vec<LoopContext>,
     yields: Vec<YieldContext>,
+    labels: HashMap<String, LabelTarget>,
     lexical_scopes: Vec<MIRScopeID>,
     defers: Vec<Vec<THIRExpression>>,
 }
@@ -538,6 +545,7 @@ impl<'thir> MIRBuilder<'thir> {
             named_values: vec![HashMap::new()],
             loops: Vec::new(),
             yields: Vec::new(),
+            labels: HashMap::new(),
             lexical_scopes: vec![root_scope],
             defers: vec![Vec::new()],
         });
@@ -563,6 +571,10 @@ impl<'thir> MIRBuilder<'thir> {
         assert!(
             context.yields.is_empty(),
             "yield context stack is unbalanced"
+        );
+        assert!(
+            context.labels.values().all(|label| label.declared),
+            "MIR function contains an unresolved label"
         );
         assert_eq!(
             context.lexical_scopes.len(),
@@ -636,6 +648,33 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub(crate) fn current_block_terminated(&self) -> bool {
         self.block_terminated(self.current_block())
+    }
+
+    pub(crate) fn label_block(&mut self, name: &CXIdent) -> MIRBasicBlockID {
+        if let Some(label) = self.context().labels.get(name.as_str()) {
+            return label.block;
+        }
+        let block = self.new_block(&format!("label.{}", name.as_str()));
+        self.context_mut().labels.insert(
+            name.as_string(),
+            LabelTarget {
+                block,
+                declared: false,
+            },
+        );
+        block
+    }
+
+    pub(crate) fn declare_label(&mut self, name: &CXIdent) -> MIRBasicBlockID {
+        let block = self.label_block(name);
+        let label = self
+            .context_mut()
+            .labels
+            .get_mut(name.as_str())
+            .expect("label block was just allocated");
+        assert!(!label.declared, "duplicate MIR label declaration");
+        label.declared = true;
+        block
     }
 
     pub(crate) fn set_source_range(&mut self, range: TokenRange) -> TokenRange {

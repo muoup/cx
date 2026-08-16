@@ -209,6 +209,13 @@ pub enum THIRExpressionKind {
     // Control Flow
     Break,
     Continue,
+    Goto {
+        name: CXIdent,
+    },
+    Label {
+        name: CXIdent,
+        statement: Box<THIRExpression>,
+    },
     If {
         condition: Box<THIRExpression>,
         then_branch: Box<THIRExpression>,
