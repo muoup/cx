@@ -37,7 +37,11 @@ pub fn typecheck_assignment(
         );
     };
 
-    let mut rhs = implicit_cast(env, rhs, &inner)?;
+    let mut rhs = if op.is_some() {
+        rhs
+    } else {
+        implicit_cast(env, rhs, &inner)?
+    };
 
     if let Some(op) = op {
         let loaded_lhs = std_rval_promotion(env, lhs_expr.clone())?;
