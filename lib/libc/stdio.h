@@ -24,6 +24,7 @@ int fputc(int c, FILE *stream);
 char* fgets(char *s, int size, FILE *stream);
 int fgetc(FILE *stream);
 int fgetpos(FILE *stream, void *pos);
+long ftell(FILE *stream);
 size_t fread(void *buffer, size_t size, size_t count, FILE *stream);
 
 int putchar(int c);
