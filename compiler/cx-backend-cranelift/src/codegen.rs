@@ -8,12 +8,12 @@ use crate::{FunctionState, GlobalState, VariableTable};
 use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Module};
-use cx_bytecode_data::{BCBasicBlock, BCFunction, BCFunctionPrototype};
+use cx_lmir::{LMIRBasicBlock, LMIRFunction, LMIRFunctionPrototype};
 use cx_util::format::dump_data;
 
 pub(crate) fn codegen_fn_prototype(
     global_state: &mut GlobalState,
-    prototype: &BCFunctionPrototype,
+    prototype: &LMIRFunctionPrototype,
 ) -> Option<()> {
     let sig = prepare_function_sig(&mut global_state.object_module, prototype)?;
     let linkage = convert_linkage(prototype.linkage);
@@ -33,7 +33,7 @@ pub(crate) fn codegen_fn_prototype(
     Some(())
 }
 
-pub(crate) fn codegen_block(context: &mut FunctionState, fn_block: &BCBasicBlock) {
+pub(crate) fn codegen_block(context: &mut FunctionState, fn_block: &LMIRBasicBlock) {
     let block = context.get_block(&fn_block.id);
     context.builder.switch_to_block(block);
 
@@ -54,7 +54,7 @@ pub(crate) fn codegen_function(
     global_state: &mut GlobalState,
     func_id: FuncId,
     func_sig: Signature,
-    bc_func: &BCFunction,
+    bc_func: &LMIRFunction,
 ) -> Option<()> {
     let mut func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), func_sig);
 

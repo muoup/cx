@@ -1,6 +1,6 @@
-use cx_parsing_data::{ast::CXExpr, data::CXFunctionKey};
-use cx_typechecker_data::mir::{
-    name_mangling::{base_mangle_deconstructor, base_mangle_destructor, base_mangle_member, base_mangle_standard, base_mangle_static_member}, program::MIRBaseMappings, types::{CXTemplateInput, MIRFunctionPrototype, MIRType}
+use cx_ast::{ast::CXExpr, data::{CXFunctionKey, CXTemplateInput}};
+use cx_mir::mir::{
+    name_mangling::{base_mangle_member, base_mangle_standard, base_mangle_static_member}, program::MIRBaseMappings, types::{MIRFunctionPrototype, MIRType}
 };
 use cx_util::{CXResult, identifier::CXIdent};
 
@@ -9,7 +9,7 @@ use crate::{
     type_completion::templates::instantiate_function_template,
 };
 
-fn deduce_function(
+pub(crate) fn deduce_function(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     expr: &CXExpr,
@@ -80,14 +80,17 @@ pub fn query_static_member_function(
     expr: &CXExpr,
     member_type: &MIRType,
     name: &CXIdent,
+    template_input: Option<&CXTemplateInput>,
 ) -> CXResult<MIRFunctionPrototype> {
-    let mangled_name = base_mangle_static_member(name.as_str(), member_type);
+    if template_input.is_none() {
+        let mangled_name = base_mangle_static_member(name.as_str(), member_type);
 
-    if let Some(func_proto) = env.get_realized_func(&mangled_name) {
-        return Ok(func_proto);
+        if let Some(func_proto) = env.get_realized_func(&mangled_name) {
+            return Ok(func_proto);
+        }
     }
-    
-    let Some(base_ident) = member_type.get_base_identifier() else {
+
+    let Some(base_name) = member_type.get_base_identifier() else {
         return log_typecheck_error!(
             env,
             expr,
@@ -98,45 +101,11 @@ pub fn query_static_member_function(
     };
 
     let key = CXFunctionKey::StaticMemberFunction {
-        type_base_name: base_ident.clone(),
+        type_base_name: base_name.clone(),
         name: name.clone(),
     };
 
-    let template_input = member_type.get_template_data()
-        .map(|d| &d.template_input);
     deduce_function(env, base_data, expr, &key, template_input)
-}
-
-pub fn query_destructor(
-    env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    member_type: &MIRType,
-) -> Option<MIRFunctionPrototype> {
-    let mangled_name = base_mangle_destructor(member_type);
-    
-    if let Some(func_proto) = env.get_realized_func(&mangled_name) {
-        return Some(func_proto);
-    }
-    
-    let Some(base_name) = member_type.get_base_identifier() else {
-        return None;
-    };
-    
-    let key = CXFunctionKey::Destructor {
-        type_base_name: base_name.clone(),
-    };
-
-    let input = member_type.get_template_data()
-        .map(|d| &d.template_input);
-    deduce_function(env, base_data, &CXExpr::default(), &key, input).ok()
-}
-
-pub fn query_deconstructor(
-    env: &mut TypeEnvironment,
-    member_type: &MIRType,
-) -> Option<MIRFunctionPrototype> {
-    let mangled_name = base_mangle_deconstructor(member_type);
-    env.get_realized_func(&mangled_name)
 }
 
 pub fn query_standard_function(

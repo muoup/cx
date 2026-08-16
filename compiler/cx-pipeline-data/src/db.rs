@@ -1,10 +1,10 @@
 use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
-use cx_parsing_data::ast::CXAST;
-use cx_parsing_data::PreparseContents;
-use cx_lexer_data::token::Token;
-use cx_bytecode_data::BCUnit;
-use cx_typechecker_data::mir::program::{MIRBaseMappings, MIRUnit};
+use cx_ast::ast::CXAST;
+use cx_ast::PreparseContents;
+use cx_tokens::token::Token;
+use cx_lmir::LMIRUnit;
+use cx_mir::mir::program::{MIRBaseMappings, MIRUnit};
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -22,7 +22,7 @@ pub struct ModuleData {
     pub base_mappings: ModuleMap<MIRBaseMappings>,
     
     pub mir: ModuleMap<MIRUnit>,
-    pub bytecode: ModuleMap<BCUnit>,
+    pub lmir: ModuleMap<LMIRUnit>,
 }
 
 impl Default for ModuleData {
@@ -45,7 +45,7 @@ impl ModuleData {
             base_mappings: ModuleMap::new(".cx-structure-data"),
             mir: ModuleMap::new(".cx-typechecked-ast"),
 
-            bytecode: ModuleMap::new(".cx-bytecode"),
+            lmir: ModuleMap::new(".cx-lmir"),
         }
     }
 

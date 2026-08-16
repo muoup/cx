@@ -1,11 +1,11 @@
 use crate::routines::convert_linkage;
 use crate::GlobalState;
 use cranelift_module::{DataDescription, Linkage, Module};
-use cx_bytecode_data::{BCGlobalType, BCGlobalValue};
+use cx_lmir::{LMIRGlobalType, LMIRGlobalValue};
 
-pub(crate) fn generate_global(state: &mut GlobalState, variable: &BCGlobalValue) -> Option<()> {
+pub(crate) fn generate_global(state: &mut GlobalState, variable: &LMIRGlobalValue) -> Option<()> {
     match &variable._type {
-        BCGlobalType::StringLiteral(str) => {
+        LMIRGlobalType::StringLiteral(str) => {
             let id = state
                 .object_module
                 .declare_anonymous_data(false, false)
@@ -21,7 +21,7 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &BCGlobalValue)
             state.object_module.declare_data_in_data(id, &mut data);
         }
 
-        BCGlobalType::Variable {
+        LMIRGlobalType::Variable {
             _type,
             initial_value,
         } => {

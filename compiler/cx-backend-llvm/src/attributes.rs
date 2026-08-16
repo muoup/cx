@@ -1,4 +1,4 @@
-use cx_bytecode_data::types::{BCType, BCTypeKind};
+use cx_lmir::types::{LMIRType, LMIRTypeKind};
 use inkwell::attributes::Attribute;
 use inkwell::context::Context;
 
@@ -14,13 +14,13 @@ pub(crate) fn attr_dereferenceable(context: &Context, bytes: u64) -> Attribute {
     context.create_enum_attribute(Attribute::get_named_enum_kind_id("dereferenceable"), bytes)
 }
 
-pub fn get_type_attributes(context: &Context, _type: &BCType) -> Vec<Attribute> {
+pub fn get_type_attributes(context: &Context, _type: &LMIRType) -> Vec<Attribute> {
     match _type.kind {
-        BCTypeKind::Pointer {
+        LMIRTypeKind::Pointer {
             nullable: false,
             dereferenceable: 0,
         } => vec![attr_nonnull(context), attr_noundef(context)],
-        BCTypeKind::Pointer {
+        LMIRTypeKind::Pointer {
             nullable: false,
             dereferenceable,
         } => vec![

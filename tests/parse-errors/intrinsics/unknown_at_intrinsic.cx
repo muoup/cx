@@ -1,0 +1,4 @@
+int main() {
+    @mystery(1);
+    return 0;
+}

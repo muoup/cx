@@ -1,0 +1,12 @@
+struct Item : @nocopy {
+    int value;
+};
+
+struct Container {
+    Item item;
+};
+
+int main() {
+    Container value;
+    return 0;
+}

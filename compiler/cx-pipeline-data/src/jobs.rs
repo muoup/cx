@@ -99,7 +99,7 @@ pub enum CompilationStep {
      *            implementations of templated functions, types, and potentially in the future small
      *            always-inlined functions.
      */
-    BytecodeGen = 1 << 4,
+    LMIRGen = 1 << 4,
 
     /**
      *  Compiles the full compilation units from the flat IR bytecode representation. In effect, this

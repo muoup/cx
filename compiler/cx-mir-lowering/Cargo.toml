@@ -1,0 +1,14 @@
+[package]
+name = "cx-mir-lowering"
+version = "0.0.0"
+edition = "2021"
+autotests = false
+
+[dependencies]
+cx-parsing = { path = "../cx-parsing" }
+
+cx-ast = { path = "../cx-ast" }
+cx-mir = { path = "../cx-mir" }
+cx-lmir = { path = "../cx-lmir" }
+
+cx-util = { path = "../cx-util" }

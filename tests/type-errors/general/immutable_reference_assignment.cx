@@ -1,0 +1,5 @@
+int write(int* ptr) {
+    const int& value = *ptr;
+    value = 3;
+    return value;
+}

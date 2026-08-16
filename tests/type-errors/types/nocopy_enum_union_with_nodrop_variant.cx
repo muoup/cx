@@ -1,0 +1,13 @@
+struct Resource : @nodrop {
+    int value;
+};
+
+enum union Result : @nocopy {
+    ok :: int,
+    err :: Resource
+};
+
+int main() {
+    Result value;
+    return 0;
+}

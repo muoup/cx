@@ -1,0 +1,9 @@
+int fn() safe 
+where
+    post(ret): (ret == 1)
+{
+    int x = 0;
+    
+    // This should fail because we are returning x which is 0
+    return x;
+}
