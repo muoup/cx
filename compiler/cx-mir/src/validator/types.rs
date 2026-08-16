@@ -345,6 +345,7 @@ impl MIRUnit {
                 self.types.find(&MIRTypeDefinition::new(MIRTypeKind::Str))
             }
             MIRValue::Constant(MIRConstant::Null { ty }) => Some(*ty),
+            MIRValue::Constant(MIRConstant::Aggregate { ty, .. }) => Some(*ty),
             MIRValue::Constant(MIRConstant::Function(_) | MIRConstant::Undefined) => None,
         }
     }

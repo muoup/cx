@@ -101,6 +101,16 @@ impl Display for MIRConstant {
             ),
             Self::Float { value, ty } => write!(f, "{value}:{ty:?}"),
             Self::Null { ty } => write!(f, "null:{ty}"),
+            Self::Aggregate { fields, .. } => {
+                f.write_str("{")?;
+                for (index, value) in fields.iter().enumerate() {
+                    if index != 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{}: {}", value.0, value.1)?;
+                }
+                f.write_str("}")
+            }
             Self::Function(function) => write!(f, "fn {function}"),
             Self::Undefined => f.write_str("undef"),
         }

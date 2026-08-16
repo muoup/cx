@@ -112,6 +112,12 @@ fn lower_global_initializer(constant: &MIRConstant) -> LMIRGlobalInitializer {
             value: *value,
             _type: convert_float_type(*ty),
         },
+        MIRConstant::Aggregate { fields, .. } => LMIRGlobalInitializer::Aggregate {
+            fields: fields
+                .iter()
+                .map(|(index, value)| (*index, lower_global_initializer(value)))
+                .collect(),
+        },
         MIRConstant::Null { .. } => LMIRGlobalInitializer::Null,
         MIRConstant::Unit
         | MIRConstant::String(_)

@@ -62,6 +62,9 @@ pub enum LMIRGlobalInitializer {
         value: FloatWrapper,
         _type: LMIRFloatType,
     },
+    Aggregate {
+        fields: Vec<(usize, LMIRGlobalInitializer)>,
+    },
     Null,
 }
 

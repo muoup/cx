@@ -37,6 +37,10 @@ pub enum MIRConstant {
     Null {
         ty: MIRTypeID,
     },
+    Aggregate {
+        ty: MIRTypeID,
+        fields: Vec<(usize, MIRConstant)>,
+    },
     Function(MIRFunctionID),
     Undefined,
 }

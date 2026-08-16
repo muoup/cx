@@ -108,6 +108,9 @@ impl<'a> FunctionLowerer<'a> {
                 )
             }
             MIRConstant::String(_) => panic!("string constants must be lowered as globals"),
+            MIRConstant::Aggregate { .. } => {
+                panic!("aggregate constants must be lowered as globals")
+            }
             MIRConstant::Undefined => panic!("cannot lower undefined MIR value"),
         }
     }

@@ -10,9 +10,9 @@ use cx_thir::{
     registry::THIRDecomposedRegistry,
     thir::{
         data::{THIRFnPrototype, THIRFunction},
-        expression::{THIRExpression, THIRLocalID},
+        expression::{THIRCoercion, THIRExpression, THIRExpressionKind, THIRLocalID},
         global::{MIRGlobalVarKind, MIRGlobalVariable as THIRGlobalVariable},
-        r#type::{THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
+        r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
 };
@@ -276,22 +276,7 @@ impl<'thir> MIRBuilder<'thir> {
                 initializer,
             } => {
                 let state = match initializer {
-                    Some(value) => match &_type.kind {
-                        THIRTypeKind::PointerTo { .. } if *value == 0 => {
-                            MIRGlobalState::Initialized(MIRConstant::Null {
-                                ty: self.lower_type(_type),
-                            })
-                        }
-                        THIRTypeKind::Integer {
-                            _type: integer_type,
-                            signed,
-                        } => MIRGlobalState::Initialized(MIRConstant::Integer {
-                            value: *value as i128,
-                            ty: lower_int_type(*integer_type),
-                            signed: *signed,
-                        }),
-                        _ => MIRGlobalState::ZeroInitialized,
-                    },
+                    Some(value) => MIRGlobalState::Initialized(self.lower_global_constant(value)),
                     None if global.linkage == LinkageMode::Extern => MIRGlobalState::External,
                     None => MIRGlobalState::ZeroInitialized,
                 };
@@ -313,6 +298,63 @@ impl<'thir> MIRBuilder<'thir> {
             state,
         );
         self.global_symbols.entry(name.as_string()).or_insert(id);
+    }
+
+    fn lower_global_constant(&mut self, expression: &THIRExpression) -> MIRConstant {
+        match &expression.kind {
+            THIRExpressionKind::BoolLiteral(value) => MIRConstant::Bool(*value),
+            THIRExpressionKind::IntLiteral(value) => {
+                let (ty, signed) = integer_type(&expression._type);
+                MIRConstant::Integer {
+                    value: *value as i128,
+                    ty,
+                    signed,
+                }
+            }
+            THIRExpressionKind::FloatLiteral(value) => MIRConstant::Float {
+                value: *value,
+                ty: match expression._type.kind {
+                    THIRTypeKind::Float {
+                        _type: THIRFloatType::F32,
+                    } => cx_mir::MIRFloatType::F32,
+                    THIRTypeKind::Float {
+                        _type: THIRFloatType::F64,
+                    } => cx_mir::MIRFloatType::F64,
+                    _ => cx_mir::MIRFloatType::F64,
+                },
+            },
+            THIRExpressionKind::ArrayInitializer { elements, .. } => MIRConstant::Aggregate {
+                ty: self.lower_type(&expression._type),
+                fields: elements
+                    .iter()
+                    .enumerate()
+                    .map(|(index, element)| (index, self.lower_global_constant(element)))
+                    .collect(),
+            },
+            THIRExpressionKind::StructInitializer { initializations, .. } => {
+                MIRConstant::Aggregate {
+                    ty: self.lower_type(&expression._type),
+                    fields: initializations
+                        .iter()
+                        .map(|initialization| {
+                            (
+                                initialization.field_index,
+                                self.lower_global_constant(&initialization.value),
+                            )
+                        })
+                        .collect(),
+                }
+            }
+            THIRExpressionKind::TypeConversion {
+                conversion: THIRCoercion::IntToPtr { .. },
+                operand,
+            } if matches!(operand.kind, THIRExpressionKind::IntLiteral(0)) => {
+                MIRConstant::Null {
+                    ty: self.lower_type(&expression._type),
+                }
+            }
+            _ => panic!("unsupported global initializer: {expression:?}"),
+        }
     }
 
     pub(crate) fn convert_prototype(&mut self, prototype: &THIRFnPrototype) -> MIRFnPrototype {

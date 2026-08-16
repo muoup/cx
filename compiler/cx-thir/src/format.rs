@@ -568,7 +568,7 @@ impl Display for MIRDisplay<'_, MIRGlobalVarKind> {
                         "{} {} = {}",
                         _type.display_with_definitions(self.definitions),
                         name,
-                        init
+                        init.display_with_definitions(self.definitions)
                     )
                 } else {
                     write!(

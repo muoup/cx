@@ -267,6 +267,7 @@ fn constant_value(constant: &MIRConstant) -> ConstValue {
         MIRConstant::Integer { value, .. } => ConstValue::Int(*value),
         MIRConstant::Float { value, .. } => ConstValue::Float(value.into()),
         MIRConstant::Null { .. } => ConstValue::Int(0),
+        MIRConstant::Aggregate { .. } => ConstValue::Unknown,
         MIRConstant::String(_) | MIRConstant::Function(_) | MIRConstant::Undefined => {
             ConstValue::Unknown
         }

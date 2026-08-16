@@ -1,5 +1,6 @@
 use crate::{routines::convert_linkage, GlobalState};
 use cranelift_module::{DataDescription, Linkage, Module};
+use cx_lmir::types::{LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRGlobalInitializer, LMIRGlobalState, LMIRGlobalType, LMIRGlobalValue};
 use cx_log::CXResult;
 
@@ -82,9 +83,46 @@ fn initializer_bytes(
                 value.to_ne_bytes().to_vec()
             }
         },
+        LMIRGlobalInitializer::Aggregate { fields } => {
+            let mut bytes = vec![0; usize::from(ty.size())];
+            for (index, initializer) in fields {
+                let Some((field_type, offset)) = aggregate_field(ty, *index) else {
+                    panic!("invalid aggregate global initializer field {index} for {ty:?}");
+                };
+                let field_bytes = initializer_bytes(initializer, &field_type);
+                let end = (offset + field_bytes.len()).min(bytes.len());
+                if offset < end {
+                    bytes[offset..end].copy_from_slice(&field_bytes[..end - offset]);
+                }
+            }
+            bytes
+        }
         LMIRGlobalInitializer::Null => vec![0; usize::from(ty.size())],
     };
     fit_bytes(bytes, usize::from(ty.size()))
+}
+
+fn aggregate_field(ty: &LMIRType, index: usize) -> Option<(LMIRType, usize)> {
+    match &ty.kind {
+        LMIRTypeKind::Array { element, size } if index < *size => {
+            Some((element.as_ref().clone(), index * usize::from(element.size())))
+        }
+        LMIRTypeKind::Struct { fields, .. } if index < fields.len() => {
+            let mut offset = 0usize;
+            for (field_index, (_, field_type)) in fields.iter().enumerate() {
+                let alignment = usize::from(field_type.alignment());
+                if !offset.is_multiple_of(alignment) {
+                    offset += alignment - offset % alignment;
+                }
+                if field_index == index {
+                    return Some((field_type.clone(), offset));
+                }
+                offset += usize::from(field_type.size());
+            }
+            None
+        }
+        _ => None,
+    }
 }
 
 fn fit_bytes(mut bytes: Vec<u8>, size: usize) -> Vec<u8> {

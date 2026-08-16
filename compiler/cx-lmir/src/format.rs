@@ -124,6 +124,16 @@ impl Display for LMIRGlobalInitializer {
                 integer_width(*_type)
             ),
             Self::Float { value, _type } => write!(f, "{value}:{}", float_name(*_type)),
+            Self::Aggregate { fields } => {
+                f.write_str("{")?;
+                for (index, value) in fields.iter().enumerate() {
+                    if index != 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{}: {}", value.0, value.1)?;
+                }
+                f.write_str("}")
+            }
             Self::Null => f.write_str("null"),
         }
     }
