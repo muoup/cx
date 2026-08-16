@@ -85,6 +85,8 @@ fn write_module(
             continue;
         }
 
+        println!("cargo:rerun-if-changed={}", path.display());
+
         if matches!(kind, TestKind::EndToEnd) && !path.with_extension("cx-output").exists() {
             continue;
         }

@@ -1,14 +1,15 @@
-int printf(char* fmt, ...);
+#include <stdint.h>
+#include <stdio.h>
 
 struct Flags {
-    u32 low : 3;
-    u32 high : 5;
+    uint32_t low : 3;
+    uint32_t high : 5;
     int value;
 };
 
 union Bits {
-    u32 low : 3;
-    u32 all;
+    uint32_t low : 3;
+    uint32_t all;
 };
 
 int main() {

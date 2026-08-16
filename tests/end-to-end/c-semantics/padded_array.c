@@ -7,7 +7,7 @@ struct UnpackedType {
 };
 
 int main() {
-    UnpackedType arr[3];
+    struct UnpackedType arr[3];
     
     for (int i = 0; i < 3; i = i + 1) {
         char* expected_pointer = (char*)(&arr) + i * 16; // 16 bytes per element due to padding
