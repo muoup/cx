@@ -155,26 +155,10 @@ pub fn typecheck_match(
 
                 matched_variants.insert(variant_id);
 
-                let variant_get_type = if condition_owned {
-                    variant_type.clone()
-                } else {
-                    env.symbols.mem_ref_to(variant_type.clone())
-                };
-
-                // Extract the variant value and bind it
-                let variant_value_expr = THIRExpression {
-                    _type: variant_get_type,
-                    token_range: TokenRange::internal(),
-                    kind: THIRExpressionKind::TaggedUnionGet {
-                        value: Box::new(subject_expr.clone()),
-                        variant_type: variant_type.clone(),
-                        variant_index: variant_id,
-                    },
-                };
-
+                let inner_local_id = inner_name.as_ref().map(|_| THIRLocalID::fresh());
                 let body_expr = if let Some(inner_name) = &inner_name {
+                    let inner_local_id = inner_local_id.expect("match binding local id");
                     let (body_expr, flow) = if condition_owned {
-                        let inner_local_id = THIRLocalID::fresh();
                         let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
                         let variant = THIRExpression {
                             token_range: TokenRange::internal(),
@@ -229,10 +213,18 @@ pub fn typecheck_match(
                         )
                     } else {
                         // Typecheck the body with the borrowed variant value bound.
+                        let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
                         env.push_scope(false, false);
                         env.symbols.insert_local_value(
                             QualifiedName::new_raw(inner_name.clone()),
-                            variant_value_expr,
+                            THIRExpression {
+                                token_range: TokenRange::internal(),
+                                kind: THIRExpressionKind::Variable {
+                                    name: inner_name.clone(),
+                                    local_id: inner_local_id,
+                                },
+                                _type: variant_ref_type,
+                            },
                         );
                         let (body_expr, flow) =
                             typecheck_match_arm_body(env, namespace, body, "arm")?;
@@ -279,7 +271,7 @@ pub fn typecheck_match(
                         sum_type: expr_type.clone(),
                         variant_index: variant_id,
                         inner_name,
-                        inner_local_id: None,
+                        inner_local_id,
                     },
                     Box::new(body_expr),
                 ));
