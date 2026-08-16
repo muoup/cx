@@ -533,6 +533,7 @@ impl TokenKind {
             }
 
             "char" => TokenKind::Intrinsic(IntrinsicType::Char),
+            "_Bool" => TokenKind::Intrinsic(IntrinsicType::Bool),
             "void" => TokenKind::Intrinsic(IntrinsicType::Void),
             "auto" => TokenKind::Intrinsic(IntrinsicType::Auto),
             "unsigned" => TokenKind::Intrinsic(IntrinsicType::Unsigned),

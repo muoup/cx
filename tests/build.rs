@@ -81,8 +81,10 @@ fn write_module(
         }
 
         let extension = path.extension().and_then(|ext| ext.to_str());
-        let is_compile_only_c = matches!(kind, TestKind::CompileOnly) && extension == Some("c");
-        if extension != Some("cx") && !is_compile_only_c {
+        let is_supported_source = extension == Some("cx")
+            || (extension == Some("c")
+                && matches!(kind, TestKind::EndToEnd | TestKind::CompileOnly));
+        if !is_supported_source {
             continue;
         }
 
