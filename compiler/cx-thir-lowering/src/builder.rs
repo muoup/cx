@@ -353,8 +353,52 @@ impl<'thir> MIRBuilder<'thir> {
                     ty: self.lower_type(&expression._type),
                 }
             }
+            THIRExpressionKind::TypeConversion {
+                conversion: THIRCoercion::ReinterpretBits,
+                operand,
+            } if matches!(operand.kind, THIRExpressionKind::GlobalVariable { .. }) => {
+                let THIRExpressionKind::GlobalVariable { symbol } = &operand.kind else {
+                    unreachable!()
+                };
+                self.lower_string_array_constant(&expression._type, symbol)
+            }
             _ => panic!("unsupported global initializer: {expression:?}"),
         }
+    }
+
+    fn lower_string_array_constant(
+        &mut self,
+        expression_type: &THIRType,
+        symbol: &CXIdent,
+    ) -> MIRConstant {
+        let ty = self.lower_type(expression_type);
+        let length = match self.unit.types.kind(ty) {
+            Some(MIRTypeKind::Array { length, .. }) => *length,
+            _ => panic!("string literal initializer target is not an array"),
+        };
+        let global = self
+            .global_symbol(symbol.as_str())
+            .and_then(|id| self.unit.global(id))
+            .unwrap_or_else(|| panic!("string literal global {symbol} is not declared"));
+        let MIRGlobalState::Initialized(MIRConstant::String(value)) = &global.state else {
+            panic!("global {symbol} is not a string literal");
+        };
+        let mut bytes = value.bytes().chain(std::iter::once(0));
+        let fields = (0..length)
+            .filter_map(|index| {
+                bytes.next().map(|value| {
+                    (
+                        index,
+                        MIRConstant::Integer {
+                            value: value as i128,
+                            ty: MIRIntType::I8,
+                            signed: false,
+                        },
+                    )
+                })
+            })
+            .collect();
+        MIRConstant::Aggregate { ty, fields }
     }
 
     pub(crate) fn convert_prototype(&mut self, prototype: &THIRFnPrototype) -> MIRFnPrototype {

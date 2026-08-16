@@ -76,6 +76,13 @@ pub fn typecheck(
                             THIRExpressionKind::ArrayInitializer { .. } => {
                                 (expression._type.clone(), expression)
                             }
+                            THIRExpressionKind::TypeConversion {
+                                conversion: THIRCoercion::ReinterpretBits,
+                                operand,
+                            } if matches!(operand.kind, THIRExpressionKind::GlobalVariable { .. }) =>
+                            {
+                                (_type.clone(), expression)
+                            }
                             _ => (_type.clone(), expression),
                         };
                         Ok((
@@ -183,6 +190,20 @@ fn canonicalize_global_initializer(
                 .map(|value| value.into_expression())?
             }
         }
+        kind @ THIRExpressionKind::TypeConversion {
+            conversion: THIRCoercion::ReinterpretBits,
+            ..
+        } if matches!(
+            &kind,
+            THIRExpressionKind::TypeConversion {
+                operand,
+                ..
+            } if matches!(operand.kind, THIRExpressionKind::GlobalVariable { .. })
+        ) => THIRExpression {
+            kind,
+            _type,
+            token_range,
+        },
         kind => evaluate_comptime_expression(
             env,
             THIRExpression {

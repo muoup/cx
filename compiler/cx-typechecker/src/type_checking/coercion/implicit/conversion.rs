@@ -64,6 +64,36 @@ fn internal(
     from_type: THIRType,
     target_type: &THIRType,
 ) -> CXResult<CoercionResult> {
+    if env.symbols.is_cx_str(&from_type) && is_char_array(env, target_type) {
+        return coercion_expr(
+            expr,
+            target_type.clone(),
+            THIRCoercion::ReinterpretBits,
+        );
+    }
+
+    if let (
+        THIRTypeKind::Array {
+            inner_type: from_inner,
+            ..
+        },
+        THIRTypeKind::PointerTo {
+            inner_type: to_inner,
+        },
+    ) = (&from_type.kind, &target_type.kind)
+        && compatible::compatible_types(
+            env,
+            env.symbols.resolve_type_id(*from_inner),
+            env.symbols.resolve_type_id(*to_inner),
+        )?
+    {
+        return coercion_expr(
+            expr,
+            target_type.clone(),
+            THIRCoercion::ReinterpretBits,
+        );
+    }
+
     if expr._type.is_integer() {
         if let THIRTypeKind::Float { _type } = &target_type.kind {
             let THIRTypeKind::Integer { signed, .. } = &expr._type.kind else {
@@ -255,4 +285,18 @@ fn internal(
 
         _ => CoercionResult::unapplied(expr),
     }
+}
+
+fn is_char_array(env: &TypeEnvironment, ty: &THIRType) -> bool {
+    let ty = env.symbols.mem_ref_inner(ty).unwrap_or(ty);
+    let THIRTypeKind::Array { inner_type, .. } = ty.kind else {
+        return false;
+    };
+    matches!(
+        env.symbols.resolve_type_id(inner_type).kind,
+        THIRTypeKind::Integer {
+            _type: THIRIntType::I8,
+            signed: false,
+        }
+    )
 }
