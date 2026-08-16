@@ -23,6 +23,7 @@ pub struct InitArgs {
 pub struct FileArgs {
     pub input_files: Vec<String>,
     pub include_dirs: Vec<String>,
+    pub predefined_macros: Vec<(String, String)>,
     pub output_file: Option<String>,
     pub compile_only: bool,
     pub backend: CompilerBackend,
@@ -64,6 +65,7 @@ struct ParsedCommonArgs {
 struct FileSpecificArgs {
     input_files: Vec<String>,
     include_dirs: Vec<String>,
+    predefined_macros: Vec<(String, String)>,
     output_file: Option<String>,
     compile_only: bool,
 }
@@ -229,6 +231,7 @@ fn parse_file_args(args: impl IntoIterator<Item = String>) -> Result<Command, St
     let FileSpecificArgs {
         input_files,
         include_dirs,
+        predefined_macros,
         output_file,
         compile_only,
     } = parse_file_specific_args(rest)?;
@@ -251,6 +254,7 @@ fn parse_file_args(args: impl IntoIterator<Item = String>) -> Result<Command, St
     Ok(Command::CompileFile(FileArgs {
         input_files,
         include_dirs,
+        predefined_macros,
         output_file,
         compile_only,
         backend: common.backend.unwrap_or_else(default_backend),
@@ -297,6 +301,25 @@ fn parse_file_specific_args(
             }
         }
 
+        if arg == "-D" {
+            let definition = args_iter
+                .next()
+                .ok_or_else(|| "-D flag requires a macro definition".to_string())?;
+            parsed
+                .predefined_macros
+                .push(parse_macro_definition(&definition)?);
+            continue;
+        }
+
+        if let Some(definition) = arg.strip_prefix("-D") {
+            if !definition.is_empty() {
+                parsed
+                    .predefined_macros
+                    .push(parse_macro_definition(definition)?);
+                continue;
+            }
+        }
+
         if arg.starts_with('-') {
             return Err(format!("Unknown flag: {arg}"));
         }
@@ -305,6 +328,25 @@ fn parse_file_specific_args(
     }
 
     Ok(parsed)
+}
+
+fn parse_macro_definition(definition: &str) -> Result<(String, String), String> {
+    let (name, value) = definition
+        .split_once('=')
+        .map_or((definition, "1"), |(name, value)| (name, value));
+
+    let mut characters = name.chars();
+    let valid_start = characters
+        .next()
+        .is_some_and(|character| character == '_' || character.is_ascii_alphabetic());
+    let valid_rest =
+        characters.all(|character| character == '_' || character.is_ascii_alphanumeric());
+
+    if !valid_start || !valid_rest {
+        return Err(format!("Invalid macro name in -D definition: '{name}'"));
+    }
+
+    Ok((name.to_string(), value.to_string()))
 }
 
 fn parse_init_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
@@ -332,4 +374,47 @@ fn parse_init_args(args: impl IntoIterator<Item = String>) -> Result<Command, St
     }
 
     Ok(Command::Init(InitArgs { project_name }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_file_specific_args;
+
+    #[test]
+    fn parses_command_line_macro_values() {
+        let parsed = parse_file_specific_args([
+            "-DVALUE=42".to_string(),
+            "-D".to_string(),
+            "FLAG=enabled".to_string(),
+            "main.c".to_string(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            parsed.predefined_macros,
+            vec![
+                ("VALUE".to_string(), "42".to_string()),
+                ("FLAG".to_string(), "enabled".to_string()),
+            ]
+        );
+        assert_eq!(parsed.input_files, vec!["main.c".to_string()]);
+    }
+
+    #[test]
+    fn defaults_command_line_macro_without_value_to_one() {
+        let parsed =
+            parse_file_specific_args(["-DDEBUG".to_string(), "main.c".to_string()]).unwrap();
+
+        assert_eq!(
+            parsed.predefined_macros,
+            vec![("DEBUG".to_string(), "1".to_string())]
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_command_line_macro_names() {
+        let error = parse_file_specific_args(["-D1DEBUG=1".to_string()]).unwrap_err();
+
+        assert_eq!(error, "Invalid macro name in -D definition: '1DEBUG'");
+    }
 }

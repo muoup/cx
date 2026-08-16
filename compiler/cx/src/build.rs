@@ -103,6 +103,7 @@ pub fn build_project(args: BuildArgs) -> Vec<PathBuf> {
         link_entries: vec![],
         native_objects: vec![],
         include_dirs: vec![],
+        predefined_macros: vec![],
     };
 
     project_compilation(base_config, &config, args.target.as_deref()).unwrap_or_else(|err| {

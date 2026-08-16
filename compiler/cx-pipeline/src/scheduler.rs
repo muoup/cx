@@ -328,6 +328,7 @@ pub(crate) fn perform_job(
                 file_contents.as_str(),
                 &file_path,
                 &context.config.include_dirs,
+                &context.config.predefined_macros,
             )?;
 
             let preparse_config = PreparseConfig::from_compiler_config(&context.config);

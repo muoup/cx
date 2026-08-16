@@ -13,7 +13,7 @@ use cx_util::module_path::cx_library_directory;
 use crate::{
     lexer::{
         comments::skip_directive_tail,
-        scanner::{LexEvent, LexTransition, Lexer},
+        scanner::{LexEvent, LexTransition, Lexer, tokenize_text},
         source::{ConditionalFrame, LanguageMode, SourceFrame},
     },
     preprocessor::{Preprocessor, builtins::builtin_macros},
@@ -48,6 +48,7 @@ impl LexingContext {
         source: String,
         source_path: &Path,
         include_dirs: &[PathBuf],
+        predefined_macros: &[(String, String)],
     ) -> CXResult<Self> {
         let builtin_path = PathBuf::from(cx_library_directory("libc/internal/__builtins.h"));
         let builtin_source = std::fs::read_to_string(&builtin_path).map_err(|e| {
@@ -64,9 +65,16 @@ impl LexingContext {
             )
         })?;
 
+        let mut macros = builtin_macros();
+        let language_mode = LanguageMode::for_root_path(source_path);
+        for (name, value) in predefined_macros {
+            let tokens = tokenize_text(value, source_path, language_mode)?;
+            macros.insert(name.clone(), Macro::Object(tokens.into_boxed_slice()));
+        }
+
         Ok(Self {
             include_dirs: include_dirs.to_vec(),
-            macros: builtin_macros(),
+            macros,
             once_files: HashSet::new(),
             sources: vec![
                 SourceFrame::new(source, source_path),

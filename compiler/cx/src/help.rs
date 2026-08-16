@@ -47,6 +47,7 @@ fn print_general_help() {
     print_common_options();
     println!("  -c                   Compile only; emit an object file.");
     println!("  -I <directory>       Add a header search directory (also accepts -Idir).");
+    println!("  -D <name>[=value]    Define a preprocessor macro (also accepts -Dname[=value]).");
     println!("  -o <output_file>     Specify the output file name.");
 }
 
@@ -58,6 +59,7 @@ fn print_file_help() {
     print_common_options();
     println!("  -c                   Compile only; emit an object file.");
     println!("  -I <directory>       Add a header search directory (also accepts -Idir).");
+    println!("  -D <name>[=value]    Define a preprocessor macro (also accepts -Dname[=value]).");
     println!("  -o <output_file>     Specify the output file name.");
 }
 

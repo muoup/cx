@@ -66,6 +66,7 @@ pub struct CompilerConfig {
     pub link_entries: Vec<LinkEntry>,
     pub native_objects: Vec<PathBuf>,
     pub include_dirs: Vec<PathBuf>,
+    pub predefined_macros: Vec<(String, String)>,
 
     pub unsafe_mode: bool,
     pub verbose: bool,

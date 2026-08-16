@@ -90,6 +90,7 @@ fn compiler_config(
         link_entries: vec![],
         native_objects: vec![],
         include_dirs: vec![],
+        predefined_macros: vec![],
     }
 }
 
