@@ -324,6 +324,8 @@ pub enum OperatorType {
     Equal,
     LessEqual,
     GreaterEqual,
+    LShift,
+    RShift,
 
     DoubleAmpersand,
     DoubleBar,

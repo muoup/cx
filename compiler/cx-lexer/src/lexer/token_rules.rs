@@ -103,6 +103,15 @@ pub(crate) fn operator(iter: &mut LexCursor<'_>) -> Option<TokenKind> {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::GreaterEqual))
             }
+            Some('>') => {
+                iter.next();
+                if iter.peek() == Some('=') {
+                    iter.next();
+                    Some(TokenKind::Assignment(Some(OperatorType::RShift)))
+                } else {
+                    Some(TokenKind::Operator(OperatorType::RShift))
+                }
+            }
             _ => Some(TokenKind::Operator(OperatorType::Greater)),
         },
         '<' => match iter.peek() {
@@ -113,6 +122,15 @@ pub(crate) fn operator(iter: &mut LexCursor<'_>) -> Option<TokenKind> {
             Some('=') => {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::LessEqual))
+            }
+            Some('<') => {
+                iter.next();
+                if iter.peek() == Some('=') {
+                    iter.next();
+                    Some(TokenKind::Assignment(Some(OperatorType::LShift)))
+                } else {
+                    Some(TokenKind::Operator(OperatorType::LShift))
+                }
             }
             _ => Some(TokenKind::Operator(OperatorType::Less)),
         },
@@ -189,7 +207,15 @@ fn char_literal(iter: &mut LexCursor<'_>) -> CXResult<TokenKind> {
     };
 
     let Some(kind) = (match iter.next() {
-        Some('\'') => Some(TokenKind::IntLiteral(IntegerLiteral::decimal(c as u64))),
+        Some('\'') if c == '\\' && iter.next() == Some('\'') => {
+            Some(TokenKind::IntLiteral(IntegerLiteral::decimal('\'' as u64)))
+        }
+        Some('\\') if c == '\\' && iter.next() == Some('\'') => {
+            Some(TokenKind::IntLiteral(IntegerLiteral::decimal('\\' as u64)))
+        }
+        Some('\'') if c != '\\' => {
+            Some(TokenKind::IntLiteral(IntegerLiteral::decimal(c as u64)))
+        }
         Some('0') if c == '\\' && iter.next() == Some('\'') => {
             Some(TokenKind::IntLiteral(IntegerLiteral::decimal(0)))
         }

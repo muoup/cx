@@ -176,6 +176,8 @@ fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<HIRBinOp> {
         OperatorType::Greater => HIRBinOp::Greater,
         OperatorType::LessEqual => HIRBinOp::LessEqual,
         OperatorType::GreaterEqual => HIRBinOp::GreaterEqual,
+        OperatorType::LShift => HIRBinOp::LShift,
+        OperatorType::RShift => HIRBinOp::RShift,
 
         OperatorType::Ampersand => HIRBinOp::BitAnd,
         OperatorType::Bar => HIRBinOp::BitOr,

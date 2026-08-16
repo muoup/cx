@@ -266,6 +266,8 @@ impl PreprocessorExprParser<'_> {
             OperatorType::LessEqual => Some(binop(1, 7, |lhs, rhs| i64::from(lhs <= rhs))),
             OperatorType::Greater => Some(binop(1, 7, |lhs, rhs| i64::from(lhs > rhs))),
             OperatorType::GreaterEqual => Some(binop(1, 7, |lhs, rhs| i64::from(lhs >= rhs))),
+            OperatorType::LShift => Some(binop(1, 8, |lhs, rhs| lhs << rhs)),
+            OperatorType::RShift => Some(binop(1, 8, |lhs, rhs| lhs >> rhs)),
             OperatorType::Plus => Some(binop(1, 9, |lhs, rhs| lhs + rhs)),
             OperatorType::Minus => Some(binop(1, 9, |lhs, rhs| lhs - rhs)),
             OperatorType::Asterisk => Some(binop(1, 10, |lhs, rhs| lhs * rhs)),
