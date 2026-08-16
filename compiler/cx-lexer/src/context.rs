@@ -108,7 +108,7 @@ impl LexingContext {
             self.apply_transition(transition)?;
         }
 
-        Ok(self.tokens)
+        Ok(concatenate_string_literals(self.tokens))
     }
 
     pub(crate) fn current_frame(&self) -> &SourceFrame {
@@ -410,6 +410,24 @@ impl LexingContext {
     pub fn skip_tail(&mut self) {
         self.current_frame_mut().with_cursor(skip_directive_tail);
     }
+}
+
+fn concatenate_string_literals(tokens: Vec<Token>) -> Vec<Token> {
+    let mut result: Vec<Token> = Vec::with_capacity(tokens.len());
+
+    for token in tokens {
+        if let Some(previous) = result.last_mut()
+            && let TokenKind::StringLiteral(previous_value) = &mut previous.kind
+            && let TokenKind::StringLiteral(value) = &token.kind
+        {
+            previous_value.push_str(value);
+            previous.byte_end_index = token.byte_end_index;
+        } else {
+            result.push(token);
+        }
+    }
+
+    result
 }
 
 fn is_hash_hash(tokens: &[Token], index: usize) -> bool {
