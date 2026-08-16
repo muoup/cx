@@ -108,6 +108,9 @@ impl<'a> FunctionLowerer<'a> {
                 )
             }
             MIRConstant::Global { global, .. } => LMIRValue::Global(global.index() as u32),
+            MIRConstant::GlobalOffset { .. } => {
+                panic!("global offset constants must be lowered as initializers")
+            }
             MIRConstant::String(_) => panic!("string constants must be lowered as globals"),
             MIRConstant::Aggregate { .. } => {
                 panic!("aggregate constants must be lowered as globals")

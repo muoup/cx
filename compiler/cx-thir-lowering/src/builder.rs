@@ -10,7 +10,10 @@ use cx_thir::{
     registry::THIRDecomposedRegistry,
     thir::{
         data::{THIRFnPrototype, THIRFunction},
-        expression::{THIRCoercion, THIRExpression, THIRExpressionKind, THIRLocalID},
+        expression::{
+            THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRLocalID,
+            THIRPtrDiffBinOp,
+        },
         global::{MIRGlobalVarKind, MIRGlobalVariable as THIRGlobalVariable},
         r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
     },
@@ -308,6 +311,14 @@ impl<'thir> MIRBuilder<'thir> {
     }
 
     fn lower_global_constant(&mut self, expression: &THIRExpression) -> MIRConstant {
+        if let Some((global, offset)) = self.global_pointer_offset(expression) {
+            return MIRConstant::GlobalOffset {
+                global,
+                offset,
+                ty: self.lower_type(&expression._type),
+            };
+        }
+
         match &expression.kind {
             THIRExpressionKind::BoolLiteral(value) => MIRConstant::Bool(*value),
             THIRExpressionKind::FunctionReference { name, debug_name } => MIRConstant::Function(
@@ -425,6 +436,31 @@ impl<'thir> MIRBuilder<'thir> {
                 }
             }
             _ => panic!("unsupported global initializer: {expression:?}"),
+        }
+    }
+
+    fn global_pointer_offset(&self, expression: &THIRExpression) -> Option<(MIRGlobalID, i64)> {
+        match &expression.kind {
+            THIRExpressionKind::Typechange(operand)
+            | THIRExpressionKind::TypeConversion { operand, .. } => {
+                self.global_pointer_offset(operand)
+            }
+            THIRExpressionKind::BinaryOperation {
+                lhs,
+                rhs,
+                op: THIRBinOp::PtrDiff { op, ptr_inner },
+            } => {
+                let symbol = global_reference_symbol(lhs)?;
+                let global = self.global_symbol(symbol.as_str())?;
+                let index = integer_literal(rhs)?;
+                let size = self.registry.type_layout(ptr_inner).ok()?.size as i64;
+                let offset = match op {
+                    THIRPtrDiffBinOp::ADD => index,
+                    THIRPtrDiffBinOp::SUB => -index,
+                };
+                Some((global, offset * size))
+            }
+            _ => None,
         }
     }
 
@@ -1023,6 +1059,15 @@ fn global_reference_symbol(expression: &THIRExpression) -> Option<&CXIdent> {
         | THIRExpressionKind::TypeConversion { operand, .. } => {
             global_reference_symbol(operand)
         }
+        _ => None,
+    }
+}
+
+fn integer_literal(expression: &THIRExpression) -> Option<i64> {
+    match &expression.kind {
+        THIRExpressionKind::IntLiteral(value) => i64::try_from(*value).ok(),
+        THIRExpressionKind::Typechange(operand)
+        | THIRExpressionKind::TypeConversion { operand, .. } => integer_literal(operand),
         _ => None,
     }
 }

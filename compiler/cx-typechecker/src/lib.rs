@@ -275,6 +275,9 @@ fn contains_global_reference(expression: &THIRExpression) -> bool {
         | THIRExpressionKind::TypeConversion { operand, .. } => {
             contains_global_reference(operand)
         }
+        THIRExpressionKind::BinaryOperation { lhs, rhs, .. } => {
+            contains_global_reference(lhs) || contains_global_reference(rhs)
+        }
         _ => false,
     }
 }

@@ -347,6 +347,7 @@ impl MIRUnit {
             MIRValue::Constant(MIRConstant::Null { ty }) => Some(*ty),
             MIRValue::Constant(MIRConstant::Aggregate { ty, .. }) => Some(*ty),
             MIRValue::Constant(MIRConstant::Global { ty, .. }) => Some(*ty),
+            MIRValue::Constant(MIRConstant::GlobalOffset { ty, .. }) => Some(*ty),
             MIRValue::Constant(MIRConstant::Function(_) | MIRConstant::Undefined) => None,
         }
     }

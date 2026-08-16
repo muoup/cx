@@ -123,6 +123,17 @@ fn global_initializer<'ctx>(
                 .as_pointer_value();
             value.const_cast(pointer_type).into()
         }
+        LMIRGlobalInitializer::GlobalOffset { global, offset } => {
+            let pointer_type = basic_type.into_pointer_type();
+            let value = state
+                .globals
+                .get(*global as usize)
+                .unwrap_or_else(|| panic!("invalid global initializer reference {global}"))
+                .as_pointer_value();
+            let index = state.context.i64_type().const_int(*offset as u64, true);
+            let value = unsafe { value.const_gep(state.context.i8_type(), &[index]) };
+            value.const_cast(pointer_type).into()
+        }
         LMIRGlobalInitializer::Function(function) => {
             let pointer_type = basic_type.into_pointer_type();
             let value = state

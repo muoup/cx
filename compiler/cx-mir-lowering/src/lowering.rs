@@ -122,6 +122,12 @@ fn lower_global_initializer(mir: &MIRUnit, constant: &MIRConstant) -> LMIRGlobal
         MIRConstant::Global { global, .. } => {
             LMIRGlobalInitializer::Global(global.index() as u32)
         }
+        MIRConstant::GlobalOffset { global, offset, .. } => {
+            LMIRGlobalInitializer::GlobalOffset {
+                global: global.index() as u32,
+                offset: *offset,
+            }
+        }
         MIRConstant::Function(function) => LMIRGlobalInitializer::Function(
             mir.function(*function)
                 .expect("invalid MIR function constant")

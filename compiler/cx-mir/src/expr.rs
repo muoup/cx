@@ -45,6 +45,11 @@ pub enum MIRConstant {
         global: MIRGlobalID,
         ty: MIRTypeID,
     },
+    GlobalOffset {
+        global: MIRGlobalID,
+        offset: i64,
+        ty: MIRTypeID,
+    },
     Function(MIRFunctionID),
     Undefined,
 }

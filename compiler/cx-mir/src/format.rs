@@ -112,6 +112,9 @@ impl Display for MIRConstant {
                 f.write_str("}")
             }
             Self::Global { global, .. } => write!(f, "global {global}"),
+            Self::GlobalOffset { global, offset, .. } => {
+                write!(f, "global {global} + {offset}")
+            }
             Self::Function(function) => write!(f, "fn {function}"),
             Self::Undefined => f.write_str("undef"),
         }

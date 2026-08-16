@@ -99,7 +99,9 @@ fn initializer_bytes(
             }
             bytes
         }
-        LMIRGlobalInitializer::Global(_) | LMIRGlobalInitializer::Function(_) => {
+        LMIRGlobalInitializer::Global(_)
+        | LMIRGlobalInitializer::GlobalOffset { .. }
+        | LMIRGlobalInitializer::Function(_) => {
             vec![0; usize::from(ty.size())]
         }
         LMIRGlobalInitializer::Null => vec![0; usize::from(ty.size())],
@@ -122,6 +124,14 @@ fn write_initializer_relocations(
                 .unwrap_or_else(|| panic!("invalid global initializer reference {global}"));
             let target = state.object_module.declare_data_in_data(target, data);
             data.write_data_addr(offset as u32, target, 0);
+        }
+        LMIRGlobalInitializer::GlobalOffset { global, offset: addend } => {
+            let target = *state
+                .global_ids
+                .get(*global as usize)
+                .unwrap_or_else(|| panic!("invalid global initializer reference {global}"));
+            let target = state.object_module.declare_data_in_data(target, data);
+            data.write_data_addr(offset as u32, target, *addend);
         }
         LMIRGlobalInitializer::Function(function) => {
             let target = *state

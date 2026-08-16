@@ -135,6 +135,9 @@ impl Display for LMIRGlobalInitializer {
                 f.write_str("}")
             }
             Self::Global(global) => write!(f, "global({global})"),
+            Self::GlobalOffset { global, offset } => {
+                write!(f, "global({global}) + {offset}")
+            }
             Self::Function(function) => write!(f, "function({function})"),
             Self::Null => f.write_str("null"),
         }

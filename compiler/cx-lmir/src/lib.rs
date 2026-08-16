@@ -66,6 +66,7 @@ pub enum LMIRGlobalInitializer {
         fields: Vec<(usize, LMIRGlobalInitializer)>,
     },
     Global(u32),
+    GlobalOffset { global: u32, offset: i64 },
     Function(String),
     Null,
 }
