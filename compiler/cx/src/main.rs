@@ -15,8 +15,10 @@ use crate::{
 fn setup_internal_directory(working_directory: &Path) -> PathBuf {
     let internal_directory = working_directory.join(".internal");
     std::fs::create_dir_all(&internal_directory).expect("Failed to create internal directory");
-    std::fs::write(internal_directory.join("compiler-dump.data"), "")
-        .expect("Failed to clear dump file");
+    let legacy_dump = internal_directory.join("compiler-dump.data");
+    if legacy_dump.exists() {
+        std::fs::remove_file(legacy_dump).expect("Failed to remove legacy dump file");
+    }
     internal_directory
 }
 

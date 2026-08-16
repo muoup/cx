@@ -23,7 +23,7 @@ use cx_thir_lowering::generate_mir;
 use cx_tokens::TokenIter;
 use cx_typechecker::environment::TypeEnvironment;
 use cx_typechecker::typecheck;
-use cx_util::format::dump_data;
+use cx_util::format::{dump_data, with_dump_file};
 use cx_util::module_path::ModulePath;
 use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
@@ -216,7 +216,7 @@ pub(crate) fn handle_job(
         .into())
     };
 
-    match perform_job(context, &job, retain_lmir)? {
+    match perform_job_with_dump(context, &job, retain_lmir)? {
         JobResult::StandardSuccess => {}
         JobResult::UnchangedSinceLastCompilation => job.compilation_exists = true,
     };
@@ -276,6 +276,24 @@ pub(crate) enum JobResult {
 
     #[allow(dead_code)]
     UnchangedSinceLastCompilation,
+}
+
+fn perform_job_with_dump(
+    context: &GlobalCompilationContext,
+    job: &CompilationJob,
+    retain_lmir: bool,
+) -> CXResult<JobResult> {
+    let dump_path = resource_path(context, &job.unit, ".dump");
+    if matches!(job.step, CompilationStep::PreParse) {
+        std::fs::File::create(&dump_path).map_err(|error| {
+            pipeline_error(
+                "COMPILATION ERROR",
+                format!("Failed to create dump file {}: {error}", dump_path.display()),
+            )
+        })?;
+    }
+
+    with_dump_file(dump_path, || perform_job(context, job, retain_lmir))
 }
 
 pub(crate) fn perform_job(
@@ -628,7 +646,7 @@ fn handle_job_collect_errors(
     }
 
     // Perform the job and collect errors
-    match perform_job(context, job, false) {
+    match perform_job_with_dump(context, job, false) {
         Ok(_) => {}
         Err(e) => {
             let lsp_error = spanned_error(&e).unwrap_or(LSPErrors::FatalError {
