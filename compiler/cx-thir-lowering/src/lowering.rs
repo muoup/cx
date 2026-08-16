@@ -243,10 +243,15 @@ fn lower_expression(
                             MIRValue::Place(place)
                         }
                         value => {
-                            let value = materialize_value(builder, value, _type);
-                            builder.bind_local_value(*local_id, value.clone());
-                            builder.bind_named(name, value.clone());
-                            value
+                            let place = memory::assign_operand_to_place(
+                                builder,
+                                value,
+                                _type,
+                                Some(name.clone()),
+                            );
+                            builder.bind_local(*local_id, place);
+                            builder.bind_named(name, MIRValue::Place(place));
+                            MIRValue::Place(place)
                         }
                     }
                 } else {

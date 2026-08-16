@@ -8,6 +8,8 @@ enum union MaybePair : @nodrop {
     some :: Pair
 };
 
+void discard(int value) {}
+
 void consume(MaybePair value) {
     match (move value) {
         MaybePair::some(payload) => {
@@ -15,6 +17,9 @@ void consume(MaybePair value) {
                 left: left,
                 right: right
             };
+
+            discard(move left);
+            discard(move right);
         }
         MaybePair::none() => {}
     }
