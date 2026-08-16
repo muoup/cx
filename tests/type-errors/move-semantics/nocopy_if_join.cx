@@ -1,0 +1,18 @@
+struct Data : @nocopy {
+    int data;
+};
+
+void consume(Data data) {}
+
+int bad() {
+    int cond = 0;
+    Data data = (Data) {
+        .data = 1
+    };
+
+    if (cond) {
+        consume(move data);
+    }
+
+    return 0;
+}

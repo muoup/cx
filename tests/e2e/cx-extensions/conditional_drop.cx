@@ -1,0 +1,26 @@
+import std::io;
+
+struct Resource : @nodrop {
+    int data;
+};
+
+void Resource::drop(*this) {
+    printf("drop %d\n", this.data);
+    @leak(this);
+}
+
+int main() {
+    int cond = 1;
+    Resource value = (Resource) {
+        .data = 7
+    };
+
+    if (cond) {
+        value.drop();
+    } else {
+        value.drop();
+    }
+
+    println("done");
+    return 0;
+}

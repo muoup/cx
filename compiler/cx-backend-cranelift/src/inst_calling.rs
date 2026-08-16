@@ -5,11 +5,11 @@ use cranelift::codegen::ir::{FuncRef, Inst};
 use cranelift::prelude::{Signature, Value};
 use cranelift_module::{FuncId, Module};
 use cranelift_object::ObjectModule;
-use cx_bytecode_data::{BCFunctionPrototype, BCParameter, BCValue};
+use cx_lmir::{LMIRFunctionPrototype, LMIRParameter, LMIRValue};
 
 pub(crate) fn prepare_function_sig(
     object_module: &mut ObjectModule,
-    prototype: &BCFunctionPrototype,
+    prototype: &LMIRFunctionPrototype,
 ) -> Option<Signature> {
     let mut sig = Signature::new(object_module.target_config().default_call_conv);
 
@@ -18,7 +18,7 @@ pub(crate) fn prepare_function_sig(
             .push(get_cranelift_abi_type(&prototype.return_type));
     }
 
-    for BCParameter { _type, .. } in prototype.params.iter() {
+    for LMIRParameter { _type, .. } in prototype.params.iter() {
         sig.params.push(get_cranelift_abi_type(_type));
     }
 
@@ -27,8 +27,8 @@ pub(crate) fn prepare_function_sig(
 
 pub(crate) fn prepare_method_call<'a>(
     context: &'a mut FunctionState,
-    func: &BCValue,
-    args: &'a [BCValue],
+    func: &LMIRValue,
+    args: &'a [LMIRValue],
 ) -> Option<(CodegenValue, Vec<Value>)> {
     let val = context.get_value(func).unwrap();
 
@@ -37,7 +37,7 @@ pub(crate) fn prepare_method_call<'a>(
 
 pub(crate) fn prepare_parameters<'a>(
     context: &'a mut FunctionState,
-    args: &'a [BCValue],
+    args: &'a [LMIRValue],
 ) -> Option<Vec<Value>> {
     args.iter()
         .map(|arg| context.get_value(arg)?.as_value().into())
@@ -56,7 +56,7 @@ pub(crate) fn get_method_return(context: &FunctionState, inst: Inst) -> Option<C
 pub(crate) fn get_func_ref(
     context: &mut FunctionState,
     func_id: FuncId,
-    prototype: &BCFunctionPrototype,
+    prototype: &LMIRFunctionPrototype,
     args: &[Value],
 ) -> Option<FuncRef> {
     if !prototype.var_args || args.len() == prototype.params.len() {

@@ -4,7 +4,7 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
-cx-lexer-data = { path = "../cx-lexer-data" }
+cx-tokens = { path = "../cx-tokens" }
 cx-pipeline-data = { path = "../cx-pipeline-data" }
 
 cx-util = { path = "../cx-util" }

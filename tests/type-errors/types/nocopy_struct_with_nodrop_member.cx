@@ -1,0 +1,12 @@
+struct Resource : @nodrop {
+    int value;
+};
+
+struct Container : @nocopy {
+    Resource resource;
+};
+
+int main() {
+    Container value;
+    return 0;
+}

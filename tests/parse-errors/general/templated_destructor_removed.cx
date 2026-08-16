@@ -1,0 +1,3 @@
+struct Lifetime<T> {};
+
+~Lifetime<int>(this) {}

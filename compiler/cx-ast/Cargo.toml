@@ -1,0 +1,12 @@
+[package]
+name = "cx-ast"
+version = "0.0.0"
+edition = "2021"
+autotests = false
+
+[dependencies]
+cx-util = { path = "../cx-util" }
+cx-tokens = { path = "../cx-tokens" }
+
+uuid = { version = "1.16.0", features = ["v4"] }
+speedy = { version = "0.8.7" }
