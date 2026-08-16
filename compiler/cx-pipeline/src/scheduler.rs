@@ -420,7 +420,21 @@ pub(crate) fn perform_job(
             let self_ast = context.module_db.generation_ast.get(&job.unit);
             let namespace = job.unit.namespace().clone();
 
-            let mut env = TypeEnvironment::new(&context.module_db, context.config.architecture);
+            let require_explicit_return = context
+                .config
+                .require_explicit_return
+                .unwrap_or_else(|| {
+                    job.unit
+                        .as_path()
+                        .extension()
+                        .and_then(|extension| extension.to_str())
+                        != Some("c")
+                });
+            let mut env = TypeEnvironment::new(
+                &context.module_db,
+                context.config.architecture,
+                require_explicit_return,
+            );
 
             typecheck(&mut env, &namespace, &self_ast)?;
 

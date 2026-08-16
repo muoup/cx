@@ -81,6 +81,7 @@ pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckRepo
             architecture: ArchitectureConfig::native(),
             backend: CompilerBackend::Cranelift,
             optimization_level: OptimizationLevel::O0,
+            require_explicit_return: None,
             output: project_root.join("cx-lsp-output"),
             working_directory: project_root.to_path_buf(),
 

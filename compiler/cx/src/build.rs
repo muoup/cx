@@ -84,6 +84,10 @@ pub fn build_project(args: BuildArgs) -> Vec<PathBuf> {
             .unwrap_or_default()
     });
 
+    let require_explicit_return = args.require_explicit_return.or_else(|| {
+        build_section.and_then(|build| build.require_explicit_return)
+    });
+
     let internal_directory = setup_internal_directory(&project_root);
 
     let base_config = CompilerConfig {
@@ -99,6 +103,7 @@ pub fn build_project(args: BuildArgs) -> Vec<PathBuf> {
         internal_directory,
         backend,
         optimization_level,
+        require_explicit_return,
 
         link_entries: vec![],
         native_objects: vec![],

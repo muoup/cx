@@ -626,6 +626,8 @@ pub fn add_implicit_return(
         }))
     } else if func.signature().return_type.is_unit() {
         None
+    } else if !env.require_explicit_return() {
+        return Ok(expr);
     } else {
         return env.log_error(
             expr.token_range,

@@ -102,6 +102,8 @@ fn print_common_options() {
     println!("  -Osize               Optimize for code size.");
     println!("  -Ofast               Allow fast, but imprecise floating-point optimizations.");
     println!("  --unsafe             Skip all safety checks for faster builds (use with caution).");
+    println!("  --allow-implicit-return  Permit missing returns in non-void functions.");
+    println!("  --require-explicit-return  Require explicit returns in non-void functions.");
     println!("  --verbose            Print each compilation step on its own line.");
     println!("  --version            Display the compiler version.");
     println!("  -h, --help, -help    Display this help message.");

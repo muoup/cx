@@ -57,6 +57,7 @@ pub struct CompilerConfig {
     pub backend: CompilerBackend,
     pub compilation_mode: CompilationMode,
     pub optimization_level: OptimizationLevel,
+    pub require_explicit_return: Option<bool>,
     pub project_config: Option<CXProjectConfig>,
 
     pub output: PathBuf,

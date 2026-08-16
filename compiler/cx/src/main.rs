@@ -91,6 +91,7 @@ fn compiler_config_with_dirs(
         compilation_mode: mode,
         include_dirs,
         predefined_macros: args.predefined_macros.clone(),
+        require_explicit_return: args.require_explicit_return,
 
         module_mode: false,
         project_config: None,
