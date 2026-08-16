@@ -272,6 +272,14 @@ fn parse_fn_merge(
 }
 
 fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
+    let noreturn = matches!(
+        data.tokens.peek().map(|token| &token.kind),
+        Some(TokenKind::Identifier(name)) if name == "_Noreturn"
+    );
+    if noreturn {
+        data.tokens.next();
+    }
+
     let (name, return_type, linkage) = parse_initializer(data)?;
     let symbol_naming = data.symbol_naming;
     let inherited_external =
@@ -297,6 +305,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
         name.clone(),
         linkage,
         symbol_naming,
+        noreturn,
     )? {
         return parse_fn_merge(
             data,

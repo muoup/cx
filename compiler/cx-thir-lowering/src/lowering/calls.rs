@@ -53,6 +53,9 @@ pub(super) fn lower_call(
         callee,
         args: args.clone(),
     });
+    if contract.noreturn {
+        builder.emit(MIRInstrKind::Unreachable);
+    }
     let value = out
         .map(MIRValue::Register)
         .unwrap_or(MIRValue::Constant(MIRConstant::Unit));

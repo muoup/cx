@@ -54,10 +54,7 @@ pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
                     .map(|branch| expr_may_fall_through(branch))
                     .unwrap_or(!exhaustive)
         }
-        THIRExpressionKind::CallFunction { function, .. } => !matches!(
-            &function.kind,
-            THIRExpressionKind::FunctionReference { name, .. } if name.as_str() == "exit"
-        ),
+        THIRExpressionKind::CallFunction { contract, .. } => !contract.noreturn,
         _ => true,
     }
 }
