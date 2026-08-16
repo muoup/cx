@@ -3,6 +3,7 @@ use crate::parse::{try_parse_simple_identifier, ParserData};
 use crate::{assert_token_matches, log::parse_point_error, next_kind, peek_kind, try_next};
 use cx_hir::ast::global_var::HIREnumDefinition;
 use cx_hir::ast::types::HIRMoveSemantics;
+use cx_hir::ast::expression::HIRExpression;
 use cx_hir::ast::HIRStmt;
 use cx_hir::ast::{
     function::{HIRFunctionKind, HIRFunctionPrototype},
@@ -518,6 +519,18 @@ pub(crate) fn parse_type_mods(
                 return Ok((None, acc_type));
             }
             let name = try_parse_simple_identifier(&mut data.tokens);
+
+            let mut array_suffixes: Vec<Option<HIRExpression>> = Vec::new();
+            while try_next!(data.tokens, punctuator!(OpenBracket)) {
+                if try_next!(data.tokens, punctuator!(CloseBracket)) {
+                    array_suffixes.push(None);
+                } else {
+                    let size = parse_expr(data)?;
+                    assert_token_matches!(data.tokens, punctuator!(CloseBracket), "']'");
+                    array_suffixes.push(Some(size));
+                }
+            }
+
             assert_token_matches!(
                 data.tokens,
                 TokenKind::Punctuator(PunctuatorType::CloseParen),
@@ -547,6 +560,15 @@ pub(crate) fn parse_type_mods(
             }
             .to_type()
             .pointer_to(0);
+
+            let fn_ptr_type = array_suffixes
+                .into_iter()
+                .rev()
+                .fold(fn_ptr_type, |inner, size| match size {
+                    Some(size) => HIRTypeKind::ExplicitSizedArray(Box::new(inner), Box::new(size))
+                        .to_type(),
+                    None => HIRTypeKind::ImplicitSizedArray(Box::new(inner)).to_type(),
+                });
 
             Ok((name, fn_ptr_type))
         }
