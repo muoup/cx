@@ -277,6 +277,11 @@ impl<'thir> MIRBuilder<'thir> {
             } => {
                 let state = match initializer {
                     Some(value) => match &_type.kind {
+                        THIRTypeKind::PointerTo { .. } if *value == 0 => {
+                            MIRGlobalState::Initialized(MIRConstant::Null {
+                                ty: self.lower_type(_type),
+                            })
+                        }
                         THIRTypeKind::Integer {
                             _type: integer_type,
                             signed,

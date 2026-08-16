@@ -2,6 +2,7 @@ use cx_hir::ast::modifiers::HIR_CONST;
 use cx_hir::decomposition::{HIRGenerationAST, HIRGenerationStmt};
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
+use cx_thir::thir::expression::{THIRCoercion, THIRExpressionKind};
 use cx_thir::thir::global::{MIRGlobalVarKind, MIRGlobalVariable};
 use cx_util::linkage::LinkageMode;
 
@@ -62,12 +63,24 @@ pub fn typecheck(
                 let comptime_init = initializer
                     .as_ref()
                     .map(|init| {
-                        typecheck_expr(env, namespace, init, Some(&_type))
-                            .and_then(|tc| tc.standard_ready_coerce(env, init.token_range()))
-                            .and_then(|tc| evaluate_comptime_expression(env, tc))
-                            .and_then(|ce| ce.as_integer().ok_or_else(|| {
-                                env.error(init.token_range(), "Global variable initializer must be a constant integer expression".to_string())
-                            }))
+                        let tc = typecheck_expr(env, namespace, init, Some(&_type))
+                            .and_then(|tc| tc.standard_ready_coerce(env, init.token_range()))?;
+                        if _type.is_pointer()
+                            && matches!(
+                                &tc.kind,
+                                THIRExpressionKind::TypeConversion {
+                                    conversion: THIRCoercion::IntToPtr { .. },
+                                    operand,
+                                } if matches!(operand.kind, THIRExpressionKind::IntLiteral(0))
+                            )
+                        {
+                            Ok(0)
+                        } else {
+                            evaluate_comptime_expression(env, tc)
+                                .and_then(|ce| ce.as_integer().ok_or_else(|| {
+                                    env.error(init.token_range(), "Global variable initializer must be a constant integer expression".to_string())
+                                }))
+                        }
                     })
                     .transpose()?;
 
