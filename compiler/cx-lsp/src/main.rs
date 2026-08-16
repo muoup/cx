@@ -1,16 +1,21 @@
 use cx_lexer::lex;
 use cx_tokens::token::TokenKind;
 use dashmap::DashMap;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::any::Any;
+use std::collections::{HashMap, HashSet};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use tokio::sync::Semaphore;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
+mod position;
 mod typecheck_service;
+
+use position::byte_index_to_position;
 
 /// Find the project root by searching for cx.toml, .internal, or .git directories
 /// in parent directories of the given file path.
@@ -73,52 +78,39 @@ const LEGEND_TYPE: &[SemanticTokenType] = &[
 
 struct Backend {
     client: Client,
-    document_map: DashMap<Url, String>,
-    published_diagnostic_files: Mutex<HashSet<Url>>,
-    project_root: Arc<Mutex<PathBuf>>,
+    document_map: DashMap<Url, DocumentState>,
+    latest_checks: DashMap<Url, u64>,
+    diagnostic_contributions: Mutex<HashMap<Url, HashMap<Url, Vec<Diagnostic>>>>,
+    next_generation: AtomicU64,
+    check_semaphore: Semaphore,
 }
 
-fn byte_index_to_lsp_position(text: &str, index: usize) -> Position {
-    let mut remaining = index.min(text.len());
+#[derive(Clone)]
+struct DocumentState {
+    text: String,
+    version: i32,
+}
 
-    for (line_num, line) in text.lines().enumerate() {
-        let line_len = line.len();
-        if remaining <= line_len {
-            return Position {
-                line: line_num as u32,
-                character: line[..remaining].chars().count() as u32,
-            };
-        }
-
-        remaining = remaining.saturating_sub(line_len + 1);
-    }
-
-    Position {
-        line: text.lines().count().saturating_sub(1) as u32,
-        character: text
-            .lines()
-            .last()
-            .map(|line| line.chars().count() as u32)
-            .unwrap_or(0),
+fn panic_message(payload: Box<dyn Any + Send>) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "unknown compiler panic".to_string()
     }
 }
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
-        // Try to get project root from workspace folder
-        if let Some(root_uri) = &params.root_uri {
-            if let Ok(root_path) = root_uri.to_file_path() {
-                *self.project_root.lock().unwrap() = root_path;
-            }
-        }
-
+    async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
         Ok(InitializeResult {
             server_info: Some(ServerInfo {
                 name: "cx-lsp".to_string(),
                 version: Some("0.0.1".to_string()),
             }),
             capabilities: ServerCapabilities {
+                position_encoding: Some(PositionEncodingKind::UTF16),
                 text_document_sync: Some(TextDocumentSyncCapability::Options(
                     TextDocumentSyncOptions {
                         open_close: Some(true),
@@ -161,24 +153,51 @@ impl LanguageServer for Backend {
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
-        self.client
-            .log_message(MessageType::INFO, "file opened!")
-            .await;
-        self.document_map
-            .insert(params.text_document.uri.clone(), params.text_document.text);
+        let document = params.text_document;
+        self.latest_checks.remove(&document.uri);
+        self.document_map.insert(
+            document.uri,
+            DocumentState {
+                text: document.text,
+                version: document.version,
+            },
+        );
     }
 
-    async fn did_change(&self, mut params: DidChangeTextDocumentParams) {
+    async fn did_change(&self, params: DidChangeTextDocumentParams) {
+        let Some(change) = params.content_changes.into_iter().last() else {
+            return;
+        };
+
+        let uri = params.text_document.uri;
+        self.latest_checks.remove(&uri);
         self.document_map.insert(
-            params.text_document.uri,
-            params.content_changes.remove(0).text,
+            uri,
+            DocumentState {
+                text: change.text,
+                version: params.text_document.version,
+            },
         );
+    }
+
+    async fn did_close(&self, params: DidCloseTextDocumentParams) {
+        let uri = params.text_document.uri;
+        self.document_map.remove(&uri);
+        self.latest_checks.remove(&uri);
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         let uri = params.text_document.uri.clone();
+        if let Some(text) = params.text {
+            if let Some(mut document) = self.document_map.get_mut(&uri) {
+                document.text = text;
+            }
+        }
+        let saved_version = self.document_map.get(&uri).map(|document| document.version);
 
-        // Convert URL to file path - must be valid to continue
+        let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
+        self.latest_checks.insert(uri.clone(), generation);
+
         let file_path = match uri.to_file_path() {
             Ok(p) => p,
             Err(_) => {
@@ -190,58 +209,63 @@ impl LanguageServer for Backend {
             }
         };
 
-        // Detect project root from file location
         let detected_root = find_project_root(&file_path);
-        *self.project_root.lock().unwrap() = detected_root.clone();
-
-        // Log for debugging
         self.client
             .log_message(
                 MessageType::INFO,
-                format!("File: {:?}, Project root: {:?}", file_path, detected_root),
+                format!(
+                    "Typechecking {} from project root {}",
+                    file_path.display(),
+                    detected_root.display()
+                ),
             )
             .await;
 
-        // Perform all synchronous operations before any await
-        let diagnostics_by_file = {
-            let project_root_guard = self.project_root.lock().unwrap();
-            self.typecheck_file_sync(&file_path, &project_root_guard)
+        let permit = match self.check_semaphore.acquire().await {
+            Ok(permit) => permit,
+            Err(_) => return,
         };
 
-        self.client
-            .log_message(MessageType::INFO, format!("Typechecking file: {}", uri))
-            .await;
+        if !self.check_is_current(&uri, generation) {
+            return;
+        }
 
-        // Publish diagnostics for each file
-        for (file_uri, file_diagnostics) in &diagnostics_by_file {
+        let check = tokio::task::spawn_blocking(move || {
+            catch_unwind(AssertUnwindSafe(|| {
+                typecheck_service::typecheck_file(&file_path, &detected_root)
+            }))
+        })
+        .await;
+
+        let report = match check {
+            Ok(Ok(Ok(report))) => report,
+            Ok(Ok(Err(message))) => {
+                self.log_check_failure(&uri, &message).await;
+                return;
+            }
+            Ok(Err(payload)) => {
+                self.log_check_failure(&uri, &panic_message(payload)).await;
+                return;
+            }
+            Err(error) => {
+                self.log_check_failure(&uri, &error.to_string()).await;
+                return;
+            }
+        };
+
+        if !self.check_is_current(&uri, generation) {
+            return;
+        }
+
+        for (file_uri, file_diagnostics, version) in
+            self.apply_check_report(&uri, saved_version, report)
+        {
             self.client
-                .publish_diagnostics(file_uri.clone(), file_diagnostics.clone(), None)
+                .publish_diagnostics(file_uri, file_diagnostics, version)
                 .await;
         }
 
-        let current_files = diagnostics_by_file.keys().cloned().collect::<HashSet<_>>();
-        let stale_files = {
-            let mut published = self
-                .published_diagnostic_files
-                .lock()
-                .expect("published diagnostics mutex poisoned");
-            let stale = published
-                .difference(&current_files)
-                .cloned()
-                .collect::<Vec<_>>();
-            *published = current_files;
-            stale
-        };
-
-        for stale_uri in stale_files {
-            self.client
-                .publish_diagnostics(stale_uri, vec![], None)
-                .await;
-        }
-
-        if !diagnostics_by_file.contains_key(&uri) {
-            self.client.publish_diagnostics(uri, vec![], None).await;
-        }
+        drop(permit);
     }
 
     async fn semantic_tokens_full(
@@ -249,10 +273,18 @@ impl LanguageServer for Backend {
         params: SemanticTokensParams,
     ) -> Result<Option<SemanticTokensResult>> {
         let uri = params.text_document.uri;
-        let Some(text) = self.document_map.get(&uri) else {
+        let Some(document) = self.document_map.get(&uri) else {
             return Ok(None);
         };
-        let tokens = lex(&text).map_err(|_| tower_lsp::jsonrpc::Error::internal_error())?;
+        let text = document.text.clone();
+        drop(document);
+
+        let Ok(tokens) = lex(&text) else {
+            return Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
+                result_id: None,
+                data: vec![],
+            })));
+        };
         let mut semantic_tokens = Vec::new();
         let mut last_line = 0;
         let mut last_start = 0;
@@ -270,16 +302,13 @@ impl LanguageServer for Backend {
                 _ => continue,
             };
 
-            let start = byte_index_to_lsp_position(&text, token.byte_start_index);
-            let end = byte_index_to_lsp_position(&text, token.byte_end_index);
+            let start = byte_index_to_position(&text, token.byte_start_index);
+            let end = byte_index_to_position(&text, token.byte_end_index);
+            if end.line != start.line {
+                continue;
+            }
             let line = start.line;
-            let length = if end.line == start.line {
-                end.character.saturating_sub(start.character)
-            } else {
-                text[token.byte_start_index..token.byte_end_index]
-                    .chars()
-                    .count() as u32
-            };
+            let length = end.character.saturating_sub(start.character);
 
             let delta_line = line - last_line;
             let delta_start = if delta_line == 0 {
@@ -308,48 +337,68 @@ impl LanguageServer for Backend {
 }
 
 impl Backend {
-    fn typecheck_file_sync(
+    fn check_is_current(&self, uri: &Url, generation: u64) -> bool {
+        self.latest_checks
+            .get(uri)
+            .is_some_and(|latest| *latest == generation)
+    }
+
+    async fn log_check_failure(&self, uri: &Url, message: &str) {
+        self.client
+            .log_message(
+                MessageType::ERROR,
+                format!("Typecheck failed for {uri}: {message}"),
+            )
+            .await;
+    }
+
+    fn apply_check_report(
         &self,
-        file_path: &Path,
-        project_root: &Path,
-    ) -> HashMap<Url, Vec<Diagnostic>> {
-        let unit_identifier = file_path
-            .strip_prefix(project_root)
-            .unwrap_or(file_path)
-            .to_string_lossy()
-            .to_string();
+        entry_uri: &Url,
+        entry_version: Option<i32>,
+        report: typecheck_service::CheckReport,
+    ) -> Vec<(Url, Vec<Diagnostic>, Option<i32>)> {
+        let mut contributions = self
+            .diagnostic_contributions
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let previous = contributions.remove(entry_uri).unwrap_or_default();
+        let mut authoritative_files = report.checked_files;
+        authoritative_files.extend(previous.keys().cloned());
+        authoritative_files.extend(report.diagnostics.keys().cloned());
 
-        let unit = cx_pipeline_data::CompilationUnit::from_rooted(&unit_identifier, project_root);
-        let internal_directory = project_root.join(".internal").join("zed-lsp");
+        let mut affected_files = previous.keys().cloned().collect::<HashSet<_>>();
+        affected_files.extend(report.diagnostics.keys().cloned());
+        affected_files.insert(entry_uri.clone());
 
-        // Create fresh compilation context for each typecheck
-        let context = cx_pipeline_data::GlobalCompilationContext {
-            config: cx_pipeline_data::CompilerConfig {
-                architecture: cx_pipeline_data::ArchitectureConfig::default(),
-                backend: cx_pipeline_data::CompilerBackend::Cranelift,
-                optimization_level: cx_pipeline_data::OptimizationLevel::O0,
-                output: project_root.join("zed-lsp-output"),
-                analysis: false,
-                verbose: false,
-                working_directory: project_root.to_path_buf(),
-                internal_directory,
-                compilation_mode: cx_pipeline_data::CompilationMode::Executable,
-                module_mode: true,
-                project_config: None,
-                link_entries: vec![],
-                native_objects: vec![],
-                include_dirs: vec![],
-            },
-            module_mode: true,
-            module_db: cx_pipeline_data::db::ModuleData::new(),
-            linking_files: Mutex::new(HashSet::new()),
-        };
+        for diagnostics in contributions.values_mut() {
+            for file_uri in &authoritative_files {
+                if diagnostics.remove(file_uri).is_some() {
+                    affected_files.insert(file_uri.clone());
+                }
+            }
+        }
 
-        // Run typecheck-only pipeline
-        let type_errors = cx_pipeline::typecheck_only_lsp(&context, &unit);
+        contributions.insert(entry_uri.clone(), report.diagnostics);
 
-        // Group diagnostics by file
-        typecheck_service::group_diagnostics_by_file(&type_errors)
+        let mut publications = Vec::with_capacity(affected_files.len());
+        for file_uri in affected_files {
+            let mut merged = Vec::new();
+            for diagnostics in contributions.values() {
+                if let Some(file_diagnostics) = diagnostics.get(&file_uri) {
+                    for diagnostic in file_diagnostics {
+                        if !merged.contains(diagnostic) {
+                            merged.push(diagnostic.clone());
+                        }
+                    }
+                }
+            }
+
+            let version = (file_uri == *entry_uri).then_some(entry_version).flatten();
+            publications.push((file_uri, merged, version));
+        }
+
+        publications
     }
 }
 
@@ -358,13 +407,13 @@ async fn main() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    let project_root = Arc::new(Mutex::new(std::env::current_dir().unwrap()));
-
     let (service, socket) = LspService::new(|client| Backend {
         client,
         document_map: DashMap::new(),
-        published_diagnostic_files: Mutex::new(HashSet::new()),
-        project_root,
+        latest_checks: DashMap::new(),
+        diagnostic_contributions: Mutex::new(HashMap::new()),
+        next_generation: AtomicU64::new(1),
+        check_semaphore: Semaphore::new(1),
     });
     Server::new(stdin, stdout, socket).serve(service).await;
 }

@@ -1,37 +1,15 @@
-use std::collections::HashSet;
-
-use cx_ast::ast::expression::CXExpression;
-
-use cx_log::error::{CXRawResult, message::CXStdErrMessage};
+use cx_hir::ast::expression::HIRExpression;
+use cx_log::error::CXRawResult;
 use cx_tokens::TokenRange;
-use cx_util::scoped_map::ScopedMap;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BindingMoveState {
-    Available,
-    Moved,
-    ConditionallyMoved,
-}
-
-impl BindingMoveState {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            BindingMoveState::Available => "available",
-            BindingMoveState::Moved => "moved",
-            BindingMoveState::ConditionallyMoved => "conditionally moved",
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct TrackedBindingState {
-    pub state: BindingMoveState,
-    pub nodrop: bool,
-}
-
+/// A snapshot of typechecking reachability at each active control-flow scope.
+///
+/// Ownership state deliberately does not live here. Move validity and
+/// `@nodrop` discharge are checked after lowering, where the complete MIR CFG
+/// and lexical scope markers are available.
 #[derive(Clone)]
 pub struct ControlFlowSnapshot {
-    pub tracked_bindings: ScopedMap<String, TrackedBindingState>,
+    pub reachable: Vec<bool>,
 }
 
 #[derive(Clone)]
@@ -70,10 +48,8 @@ pub struct ScopeExitTarget {
 
 #[derive(Clone)]
 pub struct MergeScopeState {
-    pub entry_snapshot: ControlFlowSnapshot,
     pub incoming_arrows: Vec<ControlFlowArrow>,
     pub include_current_snapshot: Option<String>,
-    pub require_nodrop_discharge: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -109,20 +85,17 @@ pub struct Scope {
 }
 
 pub struct ControlFlow {
-    tracked_bindings: ScopedMap<String, TrackedBindingState>,
     scope_stack: Vec<Scope>,
 }
 
 impl ControlFlow {
     pub fn new() -> Self {
         Self {
-            tracked_bindings: ScopedMap::new(),
             scope_stack: Vec::new(),
         }
     }
 
     pub fn push_scope(&mut self, has_break_merge: bool, has_continue_merge: bool) {
-        self.tracked_bindings.push_scope();
         self.scope_stack.push(Scope {
             has_break_merge,
             has_continue_merge,
@@ -138,38 +111,16 @@ impl ControlFlow {
             panic!("Scope stack has uneven push/pop");
         };
 
-        let current_scope_nodrop = self.current_scope_nodrop_bindings();
         let current_snapshot = scope.reachable.then(|| self.current_snapshot());
-        self.tracked_bindings.pop_scope();
-        self.scope_stack.pop().unwrap();
+        self.scope_stack.pop();
 
-        let outgoing_snapshot = self.resolve_scope_flow(&scope, current_snapshot.as_ref())?;
+        let outgoing_snapshot = self.resolve_scope_flow(&scope, current_snapshot.as_ref());
         let final_reachable = outgoing_snapshot.is_some();
-
-        if final_reachable
-            && !current_scope_nodrop
-                .iter()
-                .all(|(_, binding)| binding.state == BindingMoveState::Moved)
-        {
-            let live = current_scope_nodrop
-                .into_iter()
-                .filter(|(_, binding)| binding.state != BindingMoveState::Moved)
-                .map(|(name, _)| name)
-                .collect::<Vec<_>>();
-
-            return CXStdErrMessage::result(
-                "TYPE ERROR",
-                format!(
-                    "nodrop binding(s) dropped at end of scope: {}",
-                    live.join(", ")
-                ),
-            );
-        }
 
         if let Some(target) = scope.natural_exit_target
             && final_reachable
         {
-            let snapshot = outgoing_snapshot.unwrap_or_else(|| self.current_snapshot());
+            let snapshot = outgoing_snapshot.expect("reachable scope has an outgoing snapshot");
             self.enqueue_scope_arrow(&target, snapshot);
         } else if let Some(parent) = self.scope_stack.last_mut() {
             parent.reachable = final_reachable;
@@ -180,19 +131,25 @@ impl ControlFlow {
 
     pub fn current_snapshot(&self) -> ControlFlowSnapshot {
         ControlFlowSnapshot {
-            tracked_bindings: self.tracked_bindings.clone(),
+            reachable: self
+                .scope_stack
+                .iter()
+                .map(|scope| scope.reachable)
+                .collect(),
         }
     }
 
     pub fn restore_snapshot(&mut self, snapshot: &ControlFlowSnapshot) {
-        self.tracked_bindings = snapshot.tracked_bindings.clone();
+        for (scope, reachable) in self.scope_stack.iter_mut().zip(&snapshot.reachable) {
+            scope.reachable = *reachable;
+        }
     }
 
     pub fn current_scope_index(&self) -> ScopeId {
         ScopeId(self.scope_stack.len() - 1)
     }
 
-    pub fn set_scope_anchor(&mut self, expr: &CXExpression) {
+    pub fn set_scope_anchor(&mut self, expr: &HIRExpression) {
         if let Some(scope) = self.scope_stack.last_mut() {
             scope.anchor_range = Some(expr.token_range().clone());
         }
@@ -200,35 +157,29 @@ impl ControlFlow {
 
     pub fn configure_merge_scope(
         &mut self,
-        expr: &CXExpression,
+        expr: &HIRExpression,
         include_current_snapshot: Option<&str>,
-        require_nodrop_discharge: bool,
     ) {
-        let entry_snapshot = self.current_snapshot();
         let range = expr.token_range().clone();
-
         let scope = self
             .scope_stack
             .last_mut()
             .expect("Missing scope to configure");
-        scope.anchor_range = Some(range.clone());
+        scope.anchor_range = Some(range);
         scope.flow_kind = ScopeFlowKind::Merge(MergeScopeState {
-            entry_snapshot,
             incoming_arrows: Vec::new(),
             include_current_snapshot: include_current_snapshot.map(str::to_string),
-            require_nodrop_discharge,
         });
     }
 
-    pub fn configure_loop_scope(&mut self, expr: &CXExpression, loop_kind: LoopScopeKind) {
+    pub fn configure_loop_scope(&mut self, expr: &HIRExpression, loop_kind: LoopScopeKind) {
         let entry_snapshot = self.current_snapshot();
         let range = expr.token_range().clone();
-
         let scope = self
             .scope_stack
             .last_mut()
             .expect("Missing scope to configure");
-        scope.anchor_range = Some(range.clone());
+        scope.anchor_range = Some(range);
         scope.flow_kind = ScopeFlowKind::Loop(LoopScopeState {
             loop_kind,
             entry_snapshot,
@@ -371,257 +322,33 @@ impl ControlFlow {
             .unwrap_or(true)
     }
 
-    pub fn track_binding(&mut self, name: String, nodrop: bool) {
-        self.tracked_bindings.insert(
-            name,
-            TrackedBindingState {
-                state: BindingMoveState::Available,
-                nodrop,
-            },
-        );
-    }
-
-    pub fn tracked_binding(&self, name: &str) -> Option<&TrackedBindingState> {
-        self.tracked_bindings.get(name)
-    }
-
-    pub fn set_tracked_binding_state(&mut self, name: &str, state: BindingMoveState) {
-        let Some(binding) = self.tracked_bindings.get(name).cloned() else {
-            return;
-        };
-
-        self.tracked_bindings
-            .insert(name.to_string(), TrackedBindingState { state, ..binding });
-    }
-
-    pub fn tracked_bindings_snapshot(
-        &self,
-    ) -> std::collections::HashMap<String, TrackedBindingState> {
-        self.tracked_bindings
-            .iter()
-            .map(|(name, binding)| (name.clone(), binding.clone()))
-            .collect()
-    }
-
-    pub fn nodrop_bindings_in_nonfinal_state(&self) -> Vec<String> {
-        self.tracked_bindings
-            .iter()
-            .filter(|(_, binding)| binding.nodrop && binding.state != BindingMoveState::Moved)
-            .map(|(name, _)| name.clone())
-            .collect()
-    }
-
-    fn current_scope_nodrop_bindings(&self) -> Vec<(String, TrackedBindingState)> {
-        if self.scope_stack.is_empty() {
-            return Vec::new();
-        }
-
-        self.tracked_bindings
-            .get_all_at_level(self.tracked_bindings.scope_depth())
-            .filter(|(_, binding)| binding.nodrop)
-            .map(|(name, binding)| (name.clone(), binding.clone()))
-            .collect()
-    }
-
     fn resolve_scope_flow(
-        &mut self,
+        &self,
         scope: &Scope,
         current_snapshot: Option<&ControlFlowSnapshot>,
-    ) -> CXRawResult<Option<ControlFlowSnapshot>> {
+    ) -> Option<ControlFlowSnapshot> {
         match &scope.flow_kind {
-            ScopeFlowKind::Plain => Ok(current_snapshot.cloned()),
+            ScopeFlowKind::Plain => current_snapshot.cloned(),
             ScopeFlowKind::Merge(state) => {
-                let mut arrows = state.incoming_arrows.clone();
-                if let Some(label) = &state.include_current_snapshot
-                    && let Some(snapshot) = current_snapshot
-                {
-                    arrows.push(ControlFlowArrow {
-                        label: label.clone(),
-                        snapshot: snapshot.clone(),
-                    });
+                if state.include_current_snapshot.is_some() {
+                    current_snapshot.cloned().or_else(|| {
+                        state
+                            .incoming_arrows
+                            .first()
+                            .map(|arrow| arrow.snapshot.clone())
+                    })
+                } else {
+                    state
+                        .incoming_arrows
+                        .first()
+                        .map(|arrow| arrow.snapshot.clone())
+                        .or_else(|| current_snapshot.cloned())
                 }
-
-                let Some(merged_bindings) = Self::merge_binding_states(
-                    &state.entry_snapshot,
-                    &arrows,
-                    state.require_nodrop_discharge,
-                )?
-                else {
-                    return CXRawResult::Ok(None);
-                };
-
-                if state.require_nodrop_discharge {
-                    let live = merged_bindings
-                        .iter()
-                        .filter(|(_, binding)| {
-                            binding.nodrop && binding.state != BindingMoveState::Moved
-                        })
-                        .map(|(name, _)| name.clone())
-                        .collect::<Vec<_>>();
-
-                    if !live.is_empty() {
-                        return CXStdErrMessage::result(
-                            "TYPE ERROR",
-                            format!(
-                                "nodrop binding(s) must be moved or @leak'ed before function exit: {}",
-                                live.join(", ")
-                            ),
-                        );
-                    }
-                }
-
-                self.apply_merged_bindings(&merged_bindings);
-                Ok(Some(self.current_snapshot()))
             }
-            ScopeFlowKind::Loop(state) => {
-                let mut continue_arrows = vec![ControlFlowArrow {
-                    label: "iteration entry".to_string(),
-                    snapshot: state.entry_snapshot.clone(),
-                }];
-                continue_arrows.extend(state.continue_arrows.clone());
-
-                let Some(loop_carried_bindings) =
-                    Self::merge_binding_states(&state.entry_snapshot, &continue_arrows, false)?
-                else {
-                    let Some(exit_bindings) = Self::merge_binding_states(
-                        &state.entry_snapshot,
-                        &state.exit_arrows,
-                        false,
-                    )?
-                    else {
-                        return Ok(None);
-                    };
-
-                    self.apply_merged_bindings(&exit_bindings);
-                    return Ok(Some(self.current_snapshot()));
-                };
-
-                let mut loop_exit_snapshot = self.current_snapshot();
-                for (name, binding) in &loop_carried_bindings {
-                    loop_exit_snapshot
-                        .tracked_bindings
-                        .insert(name.clone(), binding.clone());
-                }
-
-                let mut exit_arrows = state.exit_arrows.clone();
-                exit_arrows.push(ControlFlowArrow {
-                    label: "loop exit".to_string(),
-                    snapshot: loop_exit_snapshot,
-                });
-
-                let Some(exit_bindings) =
-                    Self::merge_binding_states(&state.entry_snapshot, &exit_arrows, false)?
-                else {
-                    return Ok(None);
-                };
-
-                self.apply_merged_bindings(&exit_bindings);
-                Ok(Some(self.current_snapshot()))
-            }
-        }
-    }
-
-    fn merge_binding_states(
-        entry_snapshot: &ControlFlowSnapshot,
-        arrows: &[ControlFlowArrow],
-        discharge_only_nodrop: bool,
-    ) -> CXRawResult<Option<Vec<(String, TrackedBindingState)>>> {
-        if arrows.is_empty() {
-            return CXRawResult::Ok(None);
-        }
-
-        let mut merged_bindings = Vec::new();
-        let mut inconsistent = Vec::new();
-
-        // TODO: This can probably be simplified
-
-        let mut names = entry_snapshot
-            .tracked_bindings
-            .iter()
-            .map(|(name, _)| name.clone())
-            .collect::<HashSet<_>>();
-        for arrow in arrows {
-            names.extend(
-                arrow
-                    .snapshot
-                    .tracked_bindings
-                    .iter()
-                    .map(|(name, _)| name.clone()),
-            );
-        }
-        let mut names = names.into_iter().collect::<Vec<_>>();
-        names.sort();
-
-        for name in names {
-            let base_binding = entry_snapshot
-                .tracked_bindings
-                .get(name.as_str())
-                .or_else(|| {
-                    arrows
-                        .iter()
-                        .find_map(|arrow| arrow.snapshot.tracked_bindings.get(name.as_str()))
-                })
-                .expect("Binding name came from entry or arrow snapshot");
-            let states = arrows
-                .iter()
-                .filter_map(|arrow| {
-                    arrow
-                        .snapshot
-                        .tracked_bindings
-                        .get(name.as_str())
-                        .map(|binding| (arrow.label.as_str(), binding.state))
-                })
-                .collect::<Vec<_>>();
-
-            if states.is_empty() {
-                continue;
-            }
-
-            let first_state = states[0].1;
-            let merged_state = if states.iter().all(|(_, state)| *state == first_state) {
-                first_state
-            } else if discharge_only_nodrop && !base_binding.nodrop {
-                BindingMoveState::ConditionallyMoved
-            } else {
-                let state_summary = states
-                    .iter()
-                    .map(|(label, state)| format!("{label} => {}", state.as_str()))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                inconsistent.push(format!("{name} [{state_summary}]"));
-                BindingMoveState::ConditionallyMoved
-            };
-
-            merged_bindings.push((
-                name,
-                TrackedBindingState {
-                    state: merged_state,
-                    ..base_binding.clone()
-                },
-            ));
-        }
-
-        if inconsistent.is_empty() {
-            return CXRawResult::Ok(Some(merged_bindings));
-        }
-
-        let notes = inconsistent
-            .iter()
-            .map(|note| format!("conflict: {note}"))
-            .collect::<Vec<_>>()
-            .join("; ");
-
-        CXStdErrMessage::result(
-            "TYPE ERROR",
-            format!("inconsistent move state for binding(s): {notes}"),
-        )
-    }
-
-    fn apply_merged_bindings(&mut self, merged_bindings: &[(String, TrackedBindingState)]) {
-        for (name, binding) in merged_bindings {
-            if let Some(existing) = self.tracked_bindings.get_mut(name) {
-                *existing = binding.clone();
-            }
+            ScopeFlowKind::Loop(state) => state
+                .exit_arrows
+                .first()
+                .map(|arrow| arrow.snapshot.clone()),
         }
     }
 }

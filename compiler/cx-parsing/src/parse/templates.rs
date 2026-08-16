@@ -1,7 +1,7 @@
 use crate::parse::ParserData;
-use crate::{assert_token_matches, log::ParserLogExt, peek_kind, try_next};
-use cx_ast::ast::template::{CXTemplateInput, CXTemplatePrototype};
-use cx_ast::ast::types::{CXType, CXTypeKind, PredeclarationType};
+use crate::{assert_token_matches, log::parse_point_error, peek_kind, try_next};
+use cx_hir::ast::template::{HIRTemplateInput, HIRTemplatePrototype};
+use cx_hir::ast::types::{HIRType, HIRTypeKind, PredeclarationType};
 use cx_log::CXResult;
 use cx_tokens::{identifier, operator, TokenIter};
 use cx_util::namespace::NamespacePath;
@@ -11,7 +11,7 @@ use crate::parse::types::parse_initializer;
 
 pub(crate) fn note_templated_types(
     data: &mut ParserData,
-    template_prototype: &CXTemplatePrototype,
+    template_prototype: &HIRTemplatePrototype,
 ) -> CXResult<()> {
     for template_name in &template_prototype.types {
         if data.is_type_ident(&QualifiedName {
@@ -21,7 +21,7 @@ pub(crate) fn note_templated_types(
             continue;
         }
 
-        let _nil_type: CXType = CXTypeKind::Identifier {
+        let _nil_type: HIRType = HIRTypeKind::Identifier {
             name: QualifiedName::new_raw(CXIdent::new("__undefined_template_type")),
             predeclaration: PredeclarationType::None,
             template_input: None,
@@ -39,7 +39,7 @@ pub(crate) fn note_templated_types(
 
 pub(crate) fn unnote_templated_types(
     data: &mut ParserData,
-    template_prototype: &CXTemplatePrototype,
+    template_prototype: &HIRTemplatePrototype,
 ) {
     for template_name in &template_prototype.types {
         let entry = data.temporary_type_names.get_mut(template_name)
@@ -53,7 +53,7 @@ pub(crate) fn unnote_templated_types(
     }
 }
 
-pub(crate) fn try_parse_template(tokens: &mut TokenIter) -> CXResult<Option<CXTemplatePrototype>> {
+pub(crate) fn try_parse_template(tokens: &mut TokenIter) -> CXResult<Option<HIRTemplatePrototype>> {
     if peek_kind!(tokens, operator!(Less)) {
         parse_template_prototype(tokens).map(Some)
     } else {
@@ -61,7 +61,7 @@ pub(crate) fn try_parse_template(tokens: &mut TokenIter) -> CXResult<Option<CXTe
     }
 }
 
-pub(crate) fn parse_template_prototype(tokens: &mut TokenIter) -> CXResult<CXTemplatePrototype> {
+pub(crate) fn parse_template_prototype(tokens: &mut TokenIter) -> CXResult<HIRTemplatePrototype> {
     assert_token_matches!(tokens, operator!(Less), "'<'");
 
     let mut type_decls = Vec::new();
@@ -78,17 +78,20 @@ pub(crate) fn parse_template_prototype(tokens: &mut TokenIter) -> CXResult<CXTem
 
     assert_token_matches!(tokens, operator!(Greater), "'>'");
 
-    Ok(CXTemplatePrototype { types: type_decls })
+    Ok(HIRTemplatePrototype { types: type_decls })
 }
 
-pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<CXTemplateInput> {
+pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<HIRTemplateInput> {
     assert_token_matches!(data.tokens, operator!(Less), "'<'");
 
     let mut inputtype_s = Vec::new();
 
     loop {
         let (None, _type, _) = parse_initializer(data)? else {
-            return data.log_error("Expected type declaration in template arguments!".to_string());
+            return parse_point_error(
+                &data.tokens,
+                "Expected type declaration in template arguments!".to_string(),
+            );
         };
 
         inputtype_s.push(_type);
@@ -100,7 +103,7 @@ pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<CXTemplateI
 
     assert_token_matches!(data.tokens, operator!(Greater), "'>'");
 
-    Ok(CXTemplateInput {
+    Ok(HIRTemplateInput {
         params: inputtype_s,
     })
 }

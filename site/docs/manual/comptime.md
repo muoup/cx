@@ -61,6 +61,62 @@ This syntax is commonly passed to a parameter of type `expr void`, which retains
 
 The leading `.` distinguishes a standalone block expression from a normal scoped body or structured initializer. An empty block is written as `.{}`.
 
+## Parameterized Staged Expressions
+
+A staged expression can accept named parameters supplied by the comptime function that emits it. Its type lists the parameter types between `expr` and the result type:
+
+```c
+comptime expr void with_value(
+    expr int& value,
+    expr(int&) void proc
+) {
+    return emit .{
+        proc(value);
+    };
+}
+```
+
+At the call site, `|parameters| statement` constructs the staged expression. The parameter types come from the comptime function prototype, so the call site supplies only their names:
+
+```c
+with_value(number) <| |ref| print_number(ref);
+```
+
+This is source staging rather than a runtime closure, so it does not allocate a closure object. Names from the caller's lexical context remain available because the source body is typechecked at the expansion site; they are not captured into a runtime object. When the comptime function invokes `proc`, `ref` is bound to its emitted argument.
+
+The body after `|parameters|` is one statement. Use a staged block when its extent should be explicit:
+
+```c
+with_value(number) <| |ref| .{
+    inspect(ref);
+    update(ref);
+};
+```
+
+## Continuations with `then`
+
+When a parameterized staged expression should contain the remainder of the current lexical block, its direct body can be the `then` keyword:
+
+```c
+resource |> with_resource() <| |ref| then
+
+inspect(ref);
+return transform(ref);
+```
+
+The parser replaces `then` with the statements that follow it in that block. The continuation is consequently inserted wherever the comptime function invokes its staged parameter. It can contain ordinary caller control flow, including `return`; that return still exits the caller's runtime function.
+
+Nested continuations allow multiple staged resources without additional indentation:
+
+```c
+first |> with_resource() <| |first_ref|
+second |> with_resource() <| |second_ref| then
+
+consume(first_ref, second_ref);
+```
+
+`then` must be the direct body of a parameterized staged expression, and a statement may contain only one `then` continuation marker.
+
 ## Optional-Like Control Flow
 
 The standard library uses staged expressions to implement an optional helper similar to Rust's `?` operator. Its definition returns an emitted `match` expression:

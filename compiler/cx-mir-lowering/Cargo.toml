@@ -5,9 +5,7 @@ edition = "2021"
 autotests = false
 
 [dependencies]
-cx-parsing = { path = "../cx-parsing" }
-
-cx-ast = { path = "../cx-ast" }
+cx-hir = { path = "../cx-hir" }
 cx-mir = { path = "../cx-mir" }
 cx-lmir = { path = "../cx-lmir" }
 cx-target = { path = "../cx-target" }

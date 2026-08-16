@@ -36,6 +36,12 @@ string string::new() {
     };
 }
 
+string string::clone(const string& this) {
+    string result = string::new();
+    result |> string::append(this |> string::as_str());
+    return move result;
+}
+
 string string::from_str(const _str& s) {
     string result = string::new();
     result |> string::append(s);
@@ -118,7 +124,7 @@ string string::substring(const string& this, usize start, usize end) {
     return move result;
 }
 
-string string::substr(const _str& this, usize start, usize end) {
+string str::substring(const _str& this, usize start, usize end) {
     if (start > end || end > strlen(this)) {
         std::io::println("Invalid substring range");
         @unsafe(exit(1));
@@ -129,6 +135,17 @@ string string::substr(const _str& this, usize start, usize end) {
         result |> string::append_char(this[i]);
     }
     return move result;
+}
+
+bool string::equals(const string& this, const string& other) {
+    if (this.length != other.length) {
+        return false;
+    }
+    return strcmp(this.data, other.data) == 0;
+}
+
+bool str::equals(const _str& this, const _str& other) {
+    return strcmp(this, other) == 0;
 }
 
 private:

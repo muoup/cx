@@ -11,7 +11,7 @@ use cx_util::module_path::cx_library_directory;
 
 use crate::{
     context::{LexingContext, SourceInput},
-    lexer::scanner::LexTransition,
+    lexer::{scanner::LexTransition, source::LanguageMode},
     preprocessor::{conditionals::rest_of_logical_directive, includes},
 };
 
@@ -77,7 +77,15 @@ pub(crate) fn handle_include(
         )
     })?;
 
-    Ok(LexTransition::PushSource(SourceInput { source, path }))
+    let parent_mode = context.current_frame().language_mode;
+    let language_mode =
+        LanguageMode::for_include_path(&path, parent_mode, file_name.starts_with('<'));
+
+    Ok(LexTransition::PushSource(SourceInput {
+        source,
+        path,
+        language_mode,
+    }))
 }
 
 pub(crate) fn handle_pragma(context: &mut LexingContext) -> CXResult<LexTransition> {

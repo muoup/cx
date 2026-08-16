@@ -8,7 +8,7 @@ macro_rules! assert_token_matches {
         let Some($pattern) = &$data.next().map(|t| &t.kind) else {
             $data.back();
 
-            return $crate::log::token_iter_log_error(
+            return $crate::log::parse_point_error(
                 &$data,
                 format!("Expected {}\n Found: {}", $expected, $data.peek().unwrap()),
             );
@@ -52,7 +52,7 @@ macro_rules! next_kind {
             Some(tok) => Ok(tok),
             None => {
                 $data.back();
-                $crate::log::token_iter_log_error(&$data, "Unexpected end of tokens")
+                $crate::log::parse_point_error(&$data, "Unexpected end of tokens")
             }
         }
     }};
@@ -65,7 +65,7 @@ macro_rules! peek_next_kind {
             Some(tok) => Ok(tok),
             None => {
                 $data.back();
-                $crate::log::token_iter_log_error(&$data, "Unexpected end of tokens")
+                $crate::log::parse_point_error(&$data, "Unexpected end of tokens")
             }
         }
     };

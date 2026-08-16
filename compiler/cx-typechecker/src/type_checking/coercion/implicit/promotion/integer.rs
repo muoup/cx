@@ -1,7 +1,7 @@
 use cx_log::CXResult;
-use cx_mir::mir::{
-    expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
-    r#type::{MIRType, MIRTypeKind},
+use cx_thir::thir::{
+    expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
+    r#type::{THIRType, THIRTypeKind},
 };
 
 use crate::{
@@ -9,8 +9,8 @@ use crate::{
     type_checking::coercion::{CoercionResult, implicit::coercion_expr},
 };
 
-pub fn try_promotion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResult<CoercionResult> {
-    let MIRTypeKind::Integer {
+pub fn try_promotion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResult<CoercionResult> {
+    let THIRTypeKind::Integer {
         _type: self_int, ..
     } = expr._type.kind
     else {
@@ -19,7 +19,7 @@ pub fn try_promotion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResult
 
     let integer_type = env.get_intrinsic_type("int");
 
-    let MIRTypeKind::Integer { _type: int, .. } = &integer_type.kind else {
+    let THIRTypeKind::Integer { _type: int, .. } = &integer_type.kind else {
         unreachable!("int type should be an integer");
     };
 
@@ -35,17 +35,17 @@ pub fn try_promotion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResult
 
 pub fn try_conversion(
     _env: &mut TypeEnvironment,
-    expr: MIRExpression,
-    to_type: &MIRType,
+    expr: THIRExpression,
+    to_type: &THIRType,
 ) -> CXResult<CoercionResult> {
-    let MIRTypeKind::Integer {
+    let THIRTypeKind::Integer {
         _type: from_int,
         signed: from_signed,
     } = expr._type.kind
     else {
         return CoercionResult::unapplied(expr);
     };
-    let MIRTypeKind::Integer {
+    let THIRTypeKind::Integer {
         _type: to_int,
         signed: to_signed,
     } = to_type.kind
@@ -55,22 +55,22 @@ pub fn try_conversion(
 
     if from_int == to_int {
         if from_signed == to_signed {
-            let coerced = MIRExpression {
+            let coerced = THIRExpression {
                 token_range: expr.token_range.clone(),
                 _type: to_type.clone(),
-                kind: MIRExpressionKind::Typechange(Box::new(expr)),
+                kind: THIRExpressionKind::Typechange(Box::new(expr)),
             };
 
             return CoercionResult::success(coerced);
         }
 
-        return coercion_expr(expr, to_type.clone(), MIRCoercion::ReinterpretBits);
+        return coercion_expr(expr, to_type.clone(), THIRCoercion::ReinterpretBits);
     }
 
     coercion_expr(
         expr,
         to_type.clone(),
-        MIRCoercion::Integral {
+        THIRCoercion::Integral {
             from_type: from_int,
             to_type: to_int,
             sextend: from_signed,

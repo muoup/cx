@@ -1,33 +1,30 @@
-use cx_ast::ast::function::CXFunctionKind;
-pub use cx_util::namespace::EnvironmentNamespace;
+pub mod expr;
+pub mod global;
+pub mod op;
+pub mod ty;
+pub mod unit;
+pub mod validator;
 
-use crate::{
-    mir::{
-        data::{MIRFunction, MIRTemplateInput},
-        global::MIRGlobalVariable,
-    },
-    registry::MIRDecomposedRegistry,
+pub(crate) mod format;
+
+pub use format::MIRDisplay;
+
+pub use expr::{
+    MIRAggregateOp, MIRAssignTarget, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget, MIRConstant,
+    MIRInstr, MIRInstrKind, MIRInstrOperand, MIRParameterID, MIRPlace, MIRPlaceAggregateOp,
+    MIRPlaceID, MIRRegister, MIRScopeID, MIRValue, MIRValueAggregateOp,
 };
-
-pub mod intrinsic_types;
-pub mod layout;
-pub mod mir;
-pub mod registry;
-pub mod symbol;
-pub mod type_context;
-
-mod format;
-
-pub struct MIRGenerationRequest {
-    pub module_origin: Option<String>,
-    pub kind: CXFunctionKind,
-    pub input: MIRTemplateInput,
-}
-
-#[derive(Debug, Clone)]
-pub struct MIRUnit {
-    pub source_namespace: EnvironmentNamespace,
-    pub functions: Vec<MIRFunction>,
-    pub global_variables: Vec<MIRGlobalVariable>,
-    pub registry: MIRDecomposedRegistry,
-}
+pub use global::{
+    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRGlobalID,
+    MIRGlobalState, MIRGlobalVariable, MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl,
+};
+pub use op::{
+    MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRIntBinaryOp, MIRPointerBinaryOp,
+    MIRPointerOffsetOp, MIRUnaryOp,
+};
+pub use ty::{
+    MIRBitfieldAccess, MIRField, MIRFieldLayout, MIRFloatType, MIRFunctionType, MIRIntType,
+    MIRLayoutError, MIRTypeDefinition, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRTypeRegistry,
+};
+pub use unit::MIRUnit;
+pub use validator::{MIRValidationError, validate};

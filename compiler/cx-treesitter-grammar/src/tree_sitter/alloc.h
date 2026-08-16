@@ -36,7 +36,7 @@ extern void (*ts_current_free)(void *ptr);
 #define ts_malloc  malloc
 #endif
 #ifndef ts_calloc
-#define ts_calloc  calloc
+#define ts_calloc  callointerpreterc
 #endif
 #ifndef ts_realloc
 #define ts_realloc realloc

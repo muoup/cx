@@ -1,8 +1,11 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::pipeline_error;
 use crate::progress::ProgressReporter;
-use cx_log::{error::CXErr, CXResult};
-use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
+use cx_log::{
+    CXResult,
+    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+};
+use cx_mir_analysis::{MIRAnalysisOptions, analyze};
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::preparse::PreparseConfig;
 use cx_parsing::{decompose_ast, parse_ast, preparse};
@@ -15,15 +18,16 @@ use cx_pipeline_data::jobs::{
 use cx_pipeline_data::{
     CompilationMode, CompilationUnit, CompilerBackend, GlobalCompilationContext,
 };
-use cx_safe_analyzer::FMIRContext;
+use cx_thir::intrinsic_types::INTRINSIC_IMPORTS;
+use cx_thir_lowering::generate_mir;
 use cx_tokens::TokenIter;
 use cx_typechecker::environment::TypeEnvironment;
 use cx_typechecker::typecheck;
-use cx_util::format::dump_data;
+use cx_util::format::{dump_data, with_dump_file};
 use cx_util::module_path::ModulePath;
 use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 
 pub(crate) fn scheduling_loop(
@@ -90,6 +94,7 @@ pub(crate) fn scheduling_loop(
             CompilationStep::PreParse => "Lexing",
             CompilationStep::Parse => "Parsing",
             CompilationStep::Typechecking => "Typechecking",
+            CompilationStep::MIRGen => "MIR generation",
             CompilationStep::LMIRGen => "Lowering",
             CompilationStep::Codegen => "Compiling",
         };
@@ -211,7 +216,7 @@ pub(crate) fn handle_job(
         .into())
     };
 
-    match perform_job(context, &job, retain_lmir)? {
+    match perform_job_with_dump(context, &job, retain_lmir)? {
         JobResult::StandardSuccess => {}
         JobResult::UnchangedSinceLastCompilation => job.compilation_exists = true,
     };
@@ -233,7 +238,8 @@ pub(crate) fn handle_job(
             Ok(new_jobs.into())
         }
         CompilationStep::Parse => map_reqs_new_stage(job, CompilationStep::Typechecking, false),
-        CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::LMIRGen, true),
+        CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::MIRGen, true),
+        CompilationStep::MIRGen => map_reqs_new_stage(job, CompilationStep::LMIRGen, true),
         CompilationStep::LMIRGen => map_reqs_new_stage(job, CompilationStep::Codegen, true),
         CompilationStep::Codegen => Ok([].into()),
     }
@@ -272,6 +278,24 @@ pub(crate) enum JobResult {
     UnchangedSinceLastCompilation,
 }
 
+fn perform_job_with_dump(
+    context: &GlobalCompilationContext,
+    job: &CompilationJob,
+    retain_lmir: bool,
+) -> CXResult<JobResult> {
+    let dump_path = resource_path(context, &job.unit, ".dump");
+    if matches!(job.step, CompilationStep::PreParse) {
+        std::fs::File::create(&dump_path).map_err(|error| {
+            pipeline_error(
+                "COMPILATION ERROR",
+                format!("Failed to create dump file {}: {error}", dump_path.display()),
+            )
+        })?;
+    }
+
+    with_dump_file(dump_path, || perform_job(context, job, retain_lmir))
+}
+
 pub(crate) fn perform_job(
     context: &GlobalCompilationContext,
     job: &CompilationJob,
@@ -280,8 +304,12 @@ pub(crate) fn perform_job(
     match job.step {
         CompilationStep::PreParse => {
             let file_path = job.unit.as_path().to_path_buf();
-            let file_contents = std::fs::read_to_string(&file_path)
-                .unwrap_or_else(|_| panic!("File not found: {}", job.unit));
+            let file_contents = std::fs::read_to_string(&file_path).map_err(|error| {
+                pipeline_error(
+                    "COMPILATION ERROR",
+                    format!("Failed to read {}: {error}", file_path.display()),
+                )
+            })?;
 
             // let mut hasher = DefaultHasher::new();
             // file_contents.hash(&mut hasher);
@@ -321,10 +349,6 @@ pub(crate) fn perform_job(
                 .module_db
                 .preparse_registry
                 .insert_module(output.module_symbols.clone());
-            context
-                .module_db
-                .preparse_registry
-                .insert_module(output.root_symbols.clone());
             context
                 .module_db
                 .lex_tokens
@@ -369,10 +393,12 @@ pub(crate) fn perform_job(
                     .symbol_registry
                     .insert_module(namespace, bucket)
                 {
-                    panic!(
-                        "Duplicate module namespace found during decomposition: {}",
-                        namespace
-                    );
+                    return Err(pipeline_error(
+                        "COMPILATION ERROR",
+                        format!(
+                            "Duplicate module namespace found during decomposition: {namespace}"
+                        ),
+                    ));
                 }
             }
 
@@ -397,29 +423,62 @@ pub(crate) fn perform_job(
 
             typecheck(&mut env, &namespace, &self_ast)?;
 
-            let mir = env.finish_mir_unit(namespace)?;
+            let thir = env.finish_thir_unit(namespace)?;
             if !job.unit.is_std_lib() || context.config.verbose {
-                dump_data(&mir.display_pretty());
+                dump_data(&thir.display_pretty());
             }
 
-            // There is likely a better way to do this, but for now, we unconditionally generate FMIR no matter if analysis
-            // is enabled to have a central source of truth for auditing safe functions for uncontained unsafe behavior.
-            let mut fmir_context = FMIRContext::new_from(&mir, &context.module_db)?;
+            context.module_db.thir.insert(job.unit.clone(), thir);
+        }
+
+        CompilationStep::MIRGen => {
+            let thir = context.module_db.thir.get(&job.unit);
+            let mir = generate_mir(thir.as_ref())?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
-                dump_data(&fmir_context);
+                dump_data(&mir);
             }
 
-            if context.config.analysis {
-                fmir_context.apply_standard_analysis_passes()?;
+            if !context.config.unsafe_mode {
+                let analysis = analyze(
+                    &mir,
+                    MIRAnalysisOptions {
+                        validate: !context.config.unsafe_mode,
+                        check_assertions: !context.config.unsafe_mode,
+                    },
+                )
+                .map_err(|error| {
+                    let diagnostic_context = error
+                        .scope_location()
+                        .and_then(|(function, scope)| mir.scope_range(function, scope))
+                        .or_else(|| {
+                            error.instruction_location().and_then(
+                                |(function, block, instruction)| {
+                                    mir.instruction_range(function, block, instruction)
+                                },
+                            )
+                        })
+                        .map(|range| context.module_db.convert_token_range(range))
+                        .unwrap_or_else(|| {
+                            CXInternalContext::error("MIR analysis failed outside source context")
+                        });
+                    CXErr::new(
+                        CXStdErrMessage::error("ANALYSIS ERROR", error.message_with(&mir)),
+                        diagnostic_context,
+                    )
+                })?;
+
+                if !job.unit.is_std_lib() || context.config.verbose {
+                    dump_data(&analysis);
+                }
             }
 
             context.module_db.mir.insert(job.unit.clone(), mir);
         }
 
         CompilationStep::LMIRGen => {
-            let mir = context.module_db.mir.take(&job.unit);
-            let lmir = generate_lmir(&mir)?;
+            let mir = context.module_db.mir.get(&job.unit);
+            let lmir = generate_lmir(mir.as_ref())?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&lmir);
@@ -492,15 +551,15 @@ pub enum LSPErrors {
 ///
 /// This is similar to `scheduling_loop` but:
 /// 1. Collects LSPErrors (both type errors and fatal errors) instead of panicking
-/// 2. Stops after Typechecking (no LMIRGen or Codegen)
-/// 3. Continues processing other jobs even when errors are found
+/// 2. Stops after Typechecking (no MIRGen, LMIRGen, or Codegen)
+/// 3. Stops after the first failed stage so dependents cannot observe missing data
 pub(crate) fn scheduling_loop_collect_errors(
     context: &GlobalCompilationContext,
     initial_job: CompilationJob,
     error_collector: &mut Vec<LSPErrors>,
+    checked_files: &mut HashSet<std::path::PathBuf>,
 ) -> Option<()> {
     let mut queue = JobQueue::new();
-    let mut compilation_exists = HashMap::new();
 
     queue.push_job(initial_job);
 
@@ -508,32 +567,33 @@ pub(crate) fn scheduling_loop_collect_errors(
     while !queue.is_empty() {
         let job = queue.pop_job().unwrap();
 
-        compilation_exists.insert(job.unit.clone(), job.compilation_exists);
-
+        context.module_db.register_unit(&job.unit);
         // Skip incremental compilation logic for LSP - always recompile
         if !queue.requirements_complete(&job, |unit| import_units_for_unit(context, unit)) {
             queue.push_job(job);
             continue;
         }
 
-        queue.complete_job(&job);
-
         // Stop after Typechecking for LSP
         if matches!(
             job.step,
-            CompilationStep::LMIRGen | CompilationStep::Codegen
+            CompilationStep::MIRGen | CompilationStep::LMIRGen | CompilationStep::Codegen
         ) {
             continue;
         }
 
+        checked_files.insert(job.unit.as_path().to_path_buf());
         match handle_job_collect_errors(context, &job, error_collector)? {
             HandleJobResult::Success(new_jobs) => {
+                queue.complete_job(&job);
                 for new_job in new_jobs {
                     queue.push_new_job(new_job);
                 }
             }
-            HandleJobResult::Continue => {
-                // Job had errors but continue processing other jobs
+            HandleJobResult::Failed => {
+                // Continuing after a failed stage lets dependent jobs observe missing
+                // intermediate data. Stop this check and report the original error.
+                break;
             }
         }
     }
@@ -544,13 +604,12 @@ pub(crate) fn scheduling_loop_collect_errors(
 /// Result type for handle_job_collect_errors
 enum HandleJobResult {
     Success(Box<[CompilationJob]>),
-    Continue,
+    Failed,
 }
 
 /// Handle a single job, collecting errors instead of panicking.
 ///
-/// Returns either new jobs to enqueue or Continue if the job had errors
-/// but we should continue processing other jobs.
+/// Returns either new jobs to enqueue or Failed if the current stage had errors.
 fn handle_job_collect_errors(
     context: &GlobalCompilationContext,
     job: &CompilationJob,
@@ -575,12 +634,19 @@ fn handle_job_collect_errors(
         .into()
     };
 
-    fn spanned_error(_error: &CXErr) -> Option<LSPErrors> {
-        None
+    fn spanned_error(error: &CXErr) -> Option<LSPErrors> {
+        let span = error.source_span()?;
+        Some(LSPErrors::SpannedError {
+            compilation_unit: span.file,
+            message: error.message(),
+            byte_start: span.byte_start,
+            byte_end: span.byte_end,
+            notes: vec![],
+        })
     }
 
     // Perform the job and collect errors
-    match perform_job(context, job, false) {
+    match perform_job_with_dump(context, job, false) {
         Ok(_) => {}
         Err(e) => {
             let lsp_error = spanned_error(&e).unwrap_or(LSPErrors::FatalError {
@@ -590,7 +656,7 @@ fn handle_job_collect_errors(
             });
 
             error_collector.push(lsp_error);
-            return Some(HandleJobResult::Continue);
+            return Some(HandleJobResult::Failed);
         }
     }
 
@@ -608,7 +674,7 @@ fn handle_job_collect_errors(
                         line: None,
                     });
                     error_collector.push(lsp_error);
-                    return Some(HandleJobResult::Continue);
+                    return Some(HandleJobResult::Failed);
                 }
             };
 
@@ -632,10 +698,10 @@ fn handle_job_collect_errors(
         ))),
 
         CompilationStep::Typechecking => {
-            // Stop here for LSP - no need for bytecode/codegen
+            // Stop here for LSP - no need for IR generation or codegen
             Some(HandleJobResult::Success([].into()))
         }
-        CompilationStep::LMIRGen | CompilationStep::Codegen => {
+        CompilationStep::MIRGen | CompilationStep::LMIRGen | CompilationStep::Codegen => {
             Some(HandleJobResult::Success([].into()))
         }
     }

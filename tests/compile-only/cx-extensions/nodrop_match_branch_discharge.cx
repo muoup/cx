@@ -1,0 +1,30 @@
+struct Leaf : @nodrop {
+    int value;
+};
+
+enum union Outer : @nodrop {
+    none :: void,
+    leaf :: Leaf
+};
+
+void discard(int value) {}
+
+void consume(Outer value) {
+    match (value) {
+        Outer::leaf(leaf) => {
+            @unpack(move leaf) {
+                value: field_value
+            };
+            discard(move field_value);
+        }
+        Outer::none() => {
+            @leak(value);
+        }
+    }
+}
+
+int main() {
+    Outer value = Outer::leaf((Leaf) { .value = 7 });
+    consume(move value);
+    return 0;
+}

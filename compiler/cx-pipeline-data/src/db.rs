@@ -1,13 +1,14 @@
 use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
-use cx_ast::decomposition::CXGenerationAST;
-use cx_ast::registry::GlobalSymbolRegistry;
+use cx_hir::decomposition::HIRGenerationAST;
+use cx_hir::registry::GlobalSymbolRegistry;
 use cx_lmir::LMIRUnit;
 use cx_log::error::CXErrContext;
 use cx_log::error::context::{CXInternalContext, CXUnderlineContext};
 use cx_mir::MIRUnit;
 use cx_preparse_data::PreparseContents;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
+use cx_thir::THIRUnit;
 use cx_tokens::TokenRange;
 use cx_tokens::token::Token;
 use cx_util::namespace::EnvironmentNamespace;
@@ -28,9 +29,10 @@ pub struct ModuleData {
     pub lex_tokens: ModuleMap<Box<[Token]>>,
     pub preparse_base: ModuleMap<PreparseContents>,
 
-    pub generation_ast: ModuleMap<CXGenerationAST>,
+    pub generation_ast: ModuleMap<HIRGenerationAST>,
     pub base_mappings: ModuleMap<EnvironmentNamespace>,
 
+    pub thir: ModuleMap<THIRUnit>,
     pub mir: ModuleMap<MIRUnit>,
     pub lmir: ModuleMap<LMIRUnit>,
 }
@@ -54,14 +56,10 @@ impl ModuleData {
             generation_ast: ModuleMap::new(".cx-naive-ast"),
 
             base_mappings: ModuleMap::new(".cx-structure-data"),
-            mir: ModuleMap::new(".cx-typechecked-ast"),
-
+            thir: ModuleMap::new(".cx-thir"),
+            mir: ModuleMap::new(".cx-mir"),
             lmir: ModuleMap::new(".cx-lmir"),
         }
-    }
-
-    pub fn store_data(&self, context: &GlobalCompilationContext) {
-        self.preparse_base.store_all_data(context);
     }
 
     pub fn register_unit(&self, unit: &CompilationUnit) {

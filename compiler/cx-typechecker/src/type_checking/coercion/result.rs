@@ -1,5 +1,5 @@
 use cx_log::CXResult;
-use cx_mir::mir::expression::MIRExpression;
+use cx_thir::thir::expression::THIRExpression;
 
 pub enum CoercionObstacle {
     Uncopyable,
@@ -7,11 +7,11 @@ pub enum CoercionObstacle {
 
 pub enum CoercionResult {
     Success {
-        expr: MIRExpression,
+        expr: THIRExpression,
     },
 
     Unapplied {
-        expr: MIRExpression,
+        expr: THIRExpression,
         cause: Option<CoercionObstacle>,
     },
 }
@@ -20,7 +20,7 @@ impl CoercionResult {
     #[allow(dead_code)]
     pub fn and_then<F>(self, f: F) -> CXResult<Self>
     where
-        F: FnOnce(MIRExpression) -> CXResult<Self>,
+        F: FnOnce(THIRExpression) -> CXResult<Self>,
     {
         Ok(match self {
             CoercionResult::Success { expr } => f(expr)?,
@@ -30,7 +30,7 @@ impl CoercionResult {
 
     pub fn or_else<F>(self, f: F) -> CXResult<Self>
     where
-        F: FnOnce(MIRExpression) -> CXResult<Self>,
+        F: FnOnce(THIRExpression) -> CXResult<Self>,
     {
         Ok(match self {
             CoercionResult::Unapplied {
@@ -52,24 +52,27 @@ impl CoercionResult {
         })
     }
 
-    pub fn success(expr: MIRExpression) -> CXResult<Self> {
+    pub fn success(expr: THIRExpression) -> CXResult<Self> {
         Ok(CoercionResult::Success { expr })
     }
 
-    pub fn unapplied(expr: MIRExpression) -> CXResult<Self> {
+    pub fn unapplied(expr: THIRExpression) -> CXResult<Self> {
         Ok(CoercionResult::Unapplied { expr, cause: None })
     }
 
-    pub fn unapplied_with_obstacle(expr: MIRExpression, cause: CoercionObstacle) -> CXResult<Self> {
+    pub fn unapplied_with_obstacle(
+        expr: THIRExpression,
+        cause: CoercionObstacle,
+    ) -> CXResult<Self> {
         Ok(CoercionResult::Unapplied {
             expr,
             cause: Some(cause),
         })
     }
 
-    pub fn catch_unapplied<F>(self, on_unapplied: F) -> CXResult<MIRExpression>
+    pub fn catch_unapplied<F>(self, on_unapplied: F) -> CXResult<THIRExpression>
     where
-        F: FnOnce(MIRExpression, Option<CoercionObstacle>) -> CXResult<MIRExpression>,
+        F: FnOnce(THIRExpression, Option<CoercionObstacle>) -> CXResult<THIRExpression>,
     {
         match self {
             CoercionResult::Success { expr } => Ok(expr),

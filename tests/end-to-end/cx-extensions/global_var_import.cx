@@ -1,8 +1,8 @@
 import includes::global_variables;
-import std::io;
+import std::io as std;
 
 int main() {
     int* y_ptr = &includes::global_variables::y;
 
-    printf("x: %d, y: %d\n", includes::global_variables::x, *y_ptr);
+    std::printf("x: %d, y: %d\n", includes::global_variables::x, *y_ptr);
 }

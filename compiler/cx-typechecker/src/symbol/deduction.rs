@@ -1,20 +1,20 @@
 use std::collections::HashMap;
 
-use cx_ast::ast::{
-    function::{CXComptimeFnPrototype, CXFunctionPrototype},
-    template::{CXTemplateInput, CXTemplatePrototype},
-    types::{CXType, CXTypeKind},
+use cx_hir::ast::{
+    function::{HIRComptimeFnPrototype, HIRFunctionPrototype},
+    template::{HIRTemplateInput, HIRTemplatePrototype},
+    types::{HIRType, HIRTypeKind},
 };
-use cx_ast::symbols::CXSymbolKind;
+use cx_hir::symbols::HIRSymbolKind;
 use cx_log::{
     CXRawResult, CXResult,
     error::{CXMaybeRawErr, CXMaybeRawResult},
 };
-use cx_mir::{
+use cx_thir::{
     EnvironmentNamespace,
-    mir::data::{MIRFunctionSignature, MIRTemplateInput, MIRType, MIRTypeKind},
     symbol::MIRSymbol,
-    type_context::MIRTypeContext,
+    thir::data::{MIRTemplateInput, THIRFnSignature, THIRType, THIRTypeKind},
+    type_context::THIRTypeContext,
 };
 use cx_util::namespace::QualifiedName;
 
@@ -26,15 +26,15 @@ use crate::{
     },
 };
 
-type TemplateBindings = HashMap<String, MIRType>;
+type TemplateBindings = HashMap<String, THIRType>;
 
 pub(crate) fn complete_templated_callee_maybe(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     name: &QualifiedName,
-    template_input: Option<&CXTemplateInput>,
-    arg_types: &[MIRType],
-    expected_return_type: Option<&MIRType>,
+    template_input: Option<&HIRTemplateInput>,
+    arg_types: &[THIRType],
+    expected_return_type: Option<&THIRType>,
 ) -> CXMaybeRawResult<MIRSymbol> {
     let Some(symbol) = env
         .get_symbol(namespace, name)
@@ -68,8 +68,8 @@ pub(crate) fn deduce_template_symbol(
     env: &mut TypeEnvironment,
     _namespace: &EnvironmentNamespace,
     symbol: &MIRSymbol,
-    arg_types: &[MIRType],
-    expected_return_type: Option<&MIRType>,
+    arg_types: &[THIRType],
+    expected_return_type: Option<&THIRType>,
 ) -> CXMaybeRawResult<Option<MIRSymbol>> {
     let MIRSymbol::Template {
         template_prototype,
@@ -95,17 +95,17 @@ pub(crate) fn deduce_template_symbol(
 fn deduce_template_input(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    template_prototype: &CXTemplatePrototype,
-    source: &cx_ast::symbols::CXSymbol,
-    arg_types: &[MIRType],
-    expected_return_type: Option<&MIRType>,
+    template_prototype: &HIRTemplatePrototype,
+    source: &cx_hir::symbols::HIRSymbol,
+    arg_types: &[THIRType],
+    expected_return_type: Option<&THIRType>,
 ) -> CXMaybeRawResult<MIRTemplateInput> {
     let shell = match &source.kind {
-        CXSymbolKind::FunctionReference(shell) => TemplateDeductionShell::Runtime(shell),
-        CXSymbolKind::ComptimeFunction { definition, .. } => {
+        HIRSymbolKind::FunctionReference(shell) => TemplateDeductionShell::Runtime(shell),
+        HIRSymbolKind::ComptimeFunction { definition, .. } => {
             TemplateDeductionShell::Comptime(definition)
         }
-        CXSymbolKind::TypeConstructor { union_type, .. } => {
+        HIRSymbolKind::TypeConstructor { union_type, .. } => {
             TemplateDeductionShell::TypeConstructor(union_type)
         }
         _ => {
@@ -168,9 +168,9 @@ fn deduce_template_input(
 }
 
 enum TemplateDeductionShell<'a> {
-    Runtime(&'a CXFunctionPrototype),
-    Comptime(&'a CXComptimeFnPrototype),
-    TypeConstructor(&'a CXType),
+    Runtime(&'a HIRFunctionPrototype),
+    Comptime(&'a HIRComptimeFnPrototype),
+    TypeConstructor(&'a HIRType),
 }
 
 impl<'a> TemplateDeductionShell<'a> {
@@ -190,7 +190,7 @@ impl<'a> TemplateDeductionShell<'a> {
         }
     }
 
-    fn formal_types(&self) -> Vec<&'a CXType> {
+    fn formal_types(&self) -> Vec<&'a HIRType> {
         match self {
             Self::Runtime(shell) => shell.params.iter().map(|param| &param._type).collect(),
             Self::Comptime(shell) => shell
@@ -202,7 +202,7 @@ impl<'a> TemplateDeductionShell<'a> {
         }
     }
 
-    fn return_type(&self) -> &'a CXType {
+    fn return_type(&self) -> &'a HIRType {
         match self {
             Self::Runtime(shell) => &shell.return_type,
             Self::Comptime(shell) => &shell.return_type._type,
@@ -222,13 +222,13 @@ impl<'a> TemplateDeductionShell<'a> {
 fn deduce_from_cx_type(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    template_prototype: &CXTemplatePrototype,
+    template_prototype: &HIRTemplatePrototype,
     bindings: &mut TemplateBindings,
-    formal: &CXType,
-    actual: &MIRType,
+    formal: &HIRType,
+    actual: &THIRType,
 ) -> CXResult<()> {
-    if let MIRTypeKind::MemoryReference { inner_type, .. } = &actual.kind
-        && !matches!(formal.kind, CXTypeKind::MemoryReference { .. })
+    if let THIRTypeKind::MemoryReference { inner_type, .. } = &actual.kind
+        && !matches!(formal.kind, HIRTypeKind::MemoryReference { .. })
     {
         let inner_type = env.symbols.resolve_type_id(*inner_type).clone();
         return deduce_from_cx_type(
@@ -242,7 +242,7 @@ fn deduce_from_cx_type(
     }
 
     match &formal.kind {
-        CXTypeKind::Identifier {
+        HIRTypeKind::Identifier {
             name,
             template_input: None,
             ..
@@ -255,7 +255,7 @@ fn deduce_from_cx_type(
                 .map_err(|err| env.complete_err(err, formal.range()))
         }
 
-        CXTypeKind::Identifier {
+        HIRTypeKind::Identifier {
             name,
             template_input: Some(input),
             ..
@@ -308,8 +308,8 @@ fn deduce_from_cx_type(
             Ok(())
         }
 
-        CXTypeKind::MemoryReference { inner_type } => {
-            let MIRTypeKind::MemoryReference {
+        HIRTypeKind::MemoryReference { inner_type } => {
+            let THIRTypeKind::MemoryReference {
                 inner_type: actual_inner,
                 ..
             } = &actual.kind
@@ -328,17 +328,17 @@ fn deduce_from_cx_type(
             )
         }
 
-        CXTypeKind::ExplicitSizedArray(inner_type, _)
-        | CXTypeKind::ImplicitSizedArray(inner_type)
-        | CXTypeKind::PointerTo { inner_type, .. } => match &actual.kind {
-            MIRTypeKind::PointerTo {
+        HIRTypeKind::ExplicitSizedArray(inner_type, _)
+        | HIRTypeKind::ImplicitSizedArray(inner_type)
+        | HIRTypeKind::PointerTo { inner_type, .. } => match &actual.kind {
+            THIRTypeKind::PointerTo {
                 inner_type: actual_inner,
             }
-            | MIRTypeKind::MemoryReference {
+            | THIRTypeKind::MemoryReference {
                 inner_type: actual_inner,
                 ..
             }
-            | MIRTypeKind::Array {
+            | THIRTypeKind::Array {
                 inner_type: actual_inner,
                 ..
             } => {
@@ -352,8 +352,8 @@ fn deduce_from_cx_type(
                     &actual_inner,
                 )
             }
-            MIRTypeKind::Function { .. }
-                if matches!(inner_type.kind, CXTypeKind::FunctionPointer { .. }) =>
+            THIRTypeKind::Function { .. }
+                if matches!(inner_type.kind, HIRTypeKind::FunctionPointer { .. }) =>
             {
                 deduce_from_cx_type(
                     env,
@@ -367,12 +367,12 @@ fn deduce_from_cx_type(
             _ => concrete_type_mismatch(env, formal, actual),
         },
 
-        CXTypeKind::FunctionPointer { prototype } => {
+        HIRTypeKind::FunctionPointer { prototype } => {
             let actual_signature = match &actual.kind {
-                MIRTypeKind::Function { signature } => signature.as_ref().clone(),
-                MIRTypeKind::PointerTo { inner_type } => {
+                THIRTypeKind::Function { signature } => signature.as_ref().clone(),
+                THIRTypeKind::PointerTo { inner_type } => {
                     let inner = env.symbols.resolve_type_id(*inner_type);
-                    let MIRTypeKind::Function { signature } = &inner.kind else {
+                    let THIRTypeKind::Function { signature } = &inner.kind else {
                         return concrete_type_mismatch(env, formal, actual);
                     };
                     signature.as_ref().clone()
@@ -404,10 +404,10 @@ fn deduce_from_cx_type(
 fn deduce_from_function_signature(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    template_prototype: &CXTemplatePrototype,
+    template_prototype: &HIRTemplatePrototype,
     bindings: &mut TemplateBindings,
-    formal: &CXFunctionPrototype,
-    actual: &MIRFunctionSignature,
+    formal: &HIRFunctionPrototype,
+    actual: &THIRFnSignature,
 ) -> CXResult<()> {
     if formal.var_args != actual.var_args {
         return crate::log::internal_type_error(format!(
@@ -451,7 +451,7 @@ fn bind_template_argument(
     env: &TypeEnvironment,
     bindings: &mut TemplateBindings,
     name: &str,
-    actual: &MIRType,
+    actual: &THIRType,
 ) -> CXRawResult<()> {
     if let Some(existing) = bindings.get(name) {
         if env.type_eq(existing, actual) {
@@ -480,8 +480,8 @@ fn template_base_matches(formal: &QualifiedName, actual: Option<&QualifiedName>)
 
 fn concrete_type_mismatch(
     env: &TypeEnvironment,
-    formal: &CXType,
-    actual: &MIRType,
+    formal: &HIRType,
+    actual: &THIRType,
 ) -> CXResult<()> {
     crate::log::internal_type_error(format!(
         "Template deduction mismatch: expected {}, found {}",

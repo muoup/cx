@@ -1,5 +1,7 @@
 use cx_pipeline_data::{CompilerBackend, OptimizationLevel};
 
+use crate::help::{self, Topic};
+
 #[derive(Debug)]
 pub enum Command {
     /// Legacy single-file mode: cx <file.cx> [options]
@@ -20,11 +22,12 @@ pub struct InitArgs {
 #[derive(Debug)]
 pub struct FileArgs {
     pub input_files: Vec<String>,
+    pub include_dirs: Vec<String>,
     pub output_file: Option<String>,
     pub compile_only: bool,
     pub backend: CompilerBackend,
     pub optimization_level: OptimizationLevel,
-    pub analysis: bool,
+    pub unsafe_mode: bool,
     pub verbose: bool,
 }
 
@@ -33,7 +36,7 @@ pub struct BuildArgs {
     pub target: Option<String>,
     pub backend: Option<CompilerBackend>,
     pub optimization_level: Option<OptimizationLevel>,
-    pub analysis: Option<bool>,
+    pub unsafe_mode: bool,
     pub verbose: bool,
 }
 
@@ -47,7 +50,7 @@ pub struct RunArgs {
 struct CommonArgs {
     backend: Option<CompilerBackend>,
     optimization_level: Option<OptimizationLevel>,
-    analysis: bool,
+    unsafe_mode: bool,
     verbose: bool,
 }
 
@@ -60,46 +63,9 @@ struct ParsedCommonArgs {
 #[derive(Debug, Default)]
 struct FileSpecificArgs {
     input_files: Vec<String>,
+    include_dirs: Vec<String>,
     output_file: Option<String>,
     compile_only: bool,
-}
-
-pub fn print_help() {
-    println!("Usage:");
-    println!("  cx <file.cx>... [options]");
-    println!("  cx build [target] [options]");
-    println!("  cx run [target] [options] [-- args...]");
-    println!("  cx init <project-name>");
-    println!();
-    println!("Commands:");
-    println!("  build [target]       Build from cx.toml (all targets or a specific one)");
-    println!("  run [target]         Build and run a project binary");
-    println!("  init <project-name>  Create a new CX project");
-    println!();
-    println!("Legacy single-file mode:");
-    println!("  <file.cx>...         Compile one or more .cx files without using cx.toml");
-    println!();
-    println!("Options:");
-    #[cfg(feature = "backend-llvm")]
-    {
-        println!("  --backend-llvm       Use the LLVM backend for code generation. (default)");
-        println!("  --backend-cranelift  Use the Cranelift backend for code generation.");
-    }
-    #[cfg(not(feature = "backend-llvm"))]
-    {
-        println!("  --backend-cranelift  Use the Cranelift backend for code generation (default).");
-    }
-    println!("  -c                   Compile only; emit an object file.");
-    println!("  -o <output_file>     Specify the output file name.");
-    println!("  -O0                  No optimization.");
-    println!("  -O1                  Basic optimization.");
-    println!("  -O2                  More optimization.");
-    println!("  -O3                  Aggressive optimization.");
-    println!("  -Osize               Optimize for code size.");
-    println!("  -Ofast               Allow fast, but imprecise floating-point optimizations.");
-    println!("  --analysis           Run FMIR analysis for safe functions.");
-    println!("  --verbose            Print each compilation step on its own line.");
-    println!("  -h, --help, -help    Display this help message.");
 }
 
 pub(crate) fn default_backend() -> CompilerBackend {
@@ -120,7 +86,7 @@ pub(crate) fn default_backend_name() -> &'static str {
     }
 }
 
-fn parse_common_flags(args: impl IntoIterator<Item = String>) -> ParsedCommonArgs {
+fn parse_common_flags(args: impl IntoIterator<Item = String>, topic: Topic) -> ParsedCommonArgs {
     let mut common = CommonArgs::default();
     let mut rest = Vec::new();
     let mut args_iter = args.into_iter();
@@ -136,7 +102,11 @@ fn parse_common_flags(args: impl IntoIterator<Item = String>) -> ParsedCommonArg
 
         match arg.as_str() {
             "-h" | "--help" | "-help" => {
-                print_help();
+                help::dispatch(topic);
+                std::process::exit(0);
+            }
+            "--version" => {
+                help::print_version();
                 std::process::exit(0);
             }
             #[cfg(feature = "backend-llvm")]
@@ -148,7 +118,7 @@ fn parse_common_flags(args: impl IntoIterator<Item = String>) -> ParsedCommonArg
             "-O3" => common.optimization_level = Some(OptimizationLevel::O3),
             "-Osize" => common.optimization_level = Some(OptimizationLevel::Osize),
             "-Ofast" => common.optimization_level = Some(OptimizationLevel::Ofast),
-            "--analysis" => common.analysis = true,
+            "--unsafe" => common.unsafe_mode = true,
             "--verbose" => common.verbose = true,
             _ => rest.push(arg),
         }
@@ -162,7 +132,7 @@ pub fn parse_args() -> Result<Command, String> {
     let mut args_iter = args.into_iter();
 
     let Some(first_arg) = args_iter.next() else {
-        print_help();
+        help::dispatch(Topic::General);
         std::process::exit(1);
     };
 
@@ -179,8 +149,13 @@ pub fn parse_args() -> Result<Command, String> {
     }
 
     // Check for flags that might come before the file
-    if matches!(first_arg.as_str(), "-h" | "--help" | "-help") {
-        print_help();
+    if help::is_help_flag(&first_arg) {
+        help::dispatch(Topic::General);
+        std::process::exit(0);
+    }
+
+    if help::is_version_flag(&first_arg) {
+        help::print_version();
         std::process::exit(0);
     }
 
@@ -189,11 +164,14 @@ pub fn parse_args() -> Result<Command, String> {
 }
 
 fn parse_build_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
-    Ok(Command::Build(parse_build_args_inner(args)?))
+    Ok(Command::Build(parse_build_args_inner(args, Topic::Build)?))
 }
 
-fn parse_build_args_inner(args: impl IntoIterator<Item = String>) -> Result<BuildArgs, String> {
-    let ParsedCommonArgs { common, rest } = parse_common_flags(args);
+fn parse_build_args_inner(
+    args: impl IntoIterator<Item = String>,
+    topic: Topic,
+) -> Result<BuildArgs, String> {
+    let ParsedCommonArgs { common, rest } = parse_common_flags(args, topic);
     let mut target = None;
 
     for arg in rest {
@@ -217,7 +195,7 @@ fn parse_build_args_inner(args: impl IntoIterator<Item = String>) -> Result<Buil
         target,
         backend: common.backend,
         optimization_level: common.optimization_level,
-        analysis: if common.analysis { Some(true) } else { None },
+        unsafe_mode: common.unsafe_mode,
         verbose: common.verbose,
     })
 }
@@ -241,27 +219,29 @@ fn parse_run_args(args: impl IntoIterator<Item = String>) -> Result<Command, Str
     }
 
     Ok(Command::Run(RunArgs {
-        build: parse_build_args_inner(build_args)?,
+        build: parse_build_args_inner(build_args, Topic::Run)?,
         executable_args,
     }))
 }
 
 fn parse_file_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
-    let ParsedCommonArgs { common, rest } = parse_common_flags(args);
+    let ParsedCommonArgs { common, rest } = parse_common_flags(args, Topic::File);
     let FileSpecificArgs {
         input_files,
+        include_dirs,
         output_file,
         compile_only,
     } = parse_file_specific_args(rest)?;
 
     if input_files.is_empty() {
-        return Err("Usage: cx <file.cx>... [options]".to_string());
+        return Err("Usage: cx <file.cx|file.c>... [options]".to_string());
     }
 
-    for input_file in &input_files {
-        if !input_file.ends_with(".cx") {
-            return Err("Input files must have a .cx extension".to_string());
-        }
+    if input_files
+        .iter()
+        .any(|file| !file.ends_with(".cx") && !file.ends_with(".c"))
+    {
+        return Err("Input files must have a .cx or .c extension".to_string());
     }
 
     if compile_only && input_files.len() > 1 && output_file.is_some() {
@@ -270,11 +250,12 @@ fn parse_file_args(args: impl IntoIterator<Item = String>) -> Result<Command, St
 
     Ok(Command::CompileFile(FileArgs {
         input_files,
+        include_dirs,
         output_file,
         compile_only,
         backend: common.backend.unwrap_or_else(default_backend),
         optimization_level: common.optimization_level.unwrap_or_default(),
-        analysis: common.analysis,
+        unsafe_mode: common.unsafe_mode,
         verbose: common.verbose,
     }))
 }
@@ -300,6 +281,22 @@ fn parse_file_specific_args(
             continue;
         }
 
+        if arg == "-I" {
+            parsed.include_dirs.push(
+                args_iter
+                    .next()
+                    .ok_or_else(|| "-I flag requires a directory path".to_string())?,
+            );
+            continue;
+        }
+
+        if let Some(path) = arg.strip_prefix("-I") {
+            if !path.is_empty() {
+                parsed.include_dirs.push(path.to_string());
+                continue;
+            }
+        }
+
         if arg.starts_with('-') {
             return Err(format!("Unknown flag: {arg}"));
         }
@@ -315,6 +312,16 @@ fn parse_init_args(args: impl IntoIterator<Item = String>) -> Result<Command, St
     let project_name = args_iter
         .next()
         .ok_or_else(|| "Usage: cx init <project-name>".to_string())?;
+
+    if help::is_help_flag(&project_name) {
+        help::dispatch(Topic::Init);
+        std::process::exit(0);
+    }
+
+    if help::is_version_flag(&project_name) {
+        help::print_version();
+        std::process::exit(0);
+    }
 
     if project_name.starts_with('-') {
         return Err(format!("Invalid project name: '{project_name}'"));

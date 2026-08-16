@@ -1,8 +1,11 @@
 use crate::attributes::*;
-use crate::typing::{bc_llvm_prototype, bc_llvm_type, convert_linkage};
+use crate::typing::{
+    any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type, convert_linkage,
+};
 use cx_lmir::{
-    ElementID, LMIRABISlot, LMIRBasicBlock, LMIRBlockID, LMIRFunction, LMIRFunctionMap,
-    LMIRFunctionPrototype, LMIRFunctionSignature, LMIRReturnABI, LMIRUnit, LMIRValue,
+    ElementID, LMIRABISlot, LMIRBasicBlock, LMIRBlockID, LMIRBlockTarget, LMIRFunction,
+    LMIRFunctionMap, LMIRFunctionPrototype, LMIRFunctionSignature, LMIRRegister, LMIRReturnABI,
+    LMIRUnit, LMIRValue,
 };
 use cx_log::{
     CXResult,
@@ -16,8 +19,10 @@ use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
-use inkwell::types::{FunctionType, IntType};
-use inkwell::values::{AnyValue, AnyValueEnum, BasicValueEnum, FunctionValue, GlobalValue};
+use inkwell::types::{BasicType, FunctionType, IntType};
+use inkwell::values::{
+    AnyValue, AnyValueEnum, BasicValueEnum, FunctionValue, GlobalValue, PhiValue,
+};
 
 use crate::globals::generate_global_variable;
 use crate::instruction::reset_num;
@@ -53,7 +58,9 @@ pub(crate) struct FunctionState<'a, 'b> {
     signature: LMIRFunctionSignature,
 
     builder: Builder<'a>,
+    block_map: HashMap<LMIRBlockID, BasicBlock<'a>>,
     value_map: HashMap<LMIRValue, CodegenValue<'a>>,
+    block_params: HashMap<LMIRBlockID, Vec<(LMIRRegister, PhiValue<'a>)>>,
 }
 
 impl<'a> FunctionState<'a, '_> {
@@ -104,12 +111,30 @@ impl<'a> FunctionState<'a, '_> {
         }
     }
 
-    pub(crate) fn get_block(&self, block_id: &LMIRBlockID) -> Option<BasicBlock<'_>> {
-        self.function_value
-            .get_basic_blocks()
-            .iter()
-            .find(|bb| bb.get_name().to_str().unwrap() == block_id.as_str())
-            .cloned()
+    pub(crate) fn get_block(&self, block_id: &LMIRBlockID) -> Option<BasicBlock<'a>> {
+        self.block_map.get(block_id).copied()
+    }
+
+    pub(crate) fn add_block_arguments(
+        &self,
+        target: &LMIRBlockTarget,
+        predecessor: BasicBlock<'a>,
+    ) -> Option<()> {
+        let params = self.block_params.get(&target.block)?;
+        assert_eq!(
+            params.len(),
+            target.args.len(),
+            "LMIR edge to {} has {} arguments for {} parameters",
+            target.block,
+            target.args.len(),
+            params.len(),
+        );
+
+        for ((_, phi), argument) in params.iter().zip(&target.args) {
+            let value = self.get_value(argument)?.as_basic_value()?;
+            phi.add_incoming(&[(&value, predecessor)]);
+        }
+        Some(())
     }
 }
 
@@ -126,6 +151,13 @@ impl<'a> CodegenValue<'a> {
             CodegenValue::Value(value) => *value,
 
             _ => panic!("Expected a value, found: {self:?}"),
+        }
+    }
+
+    pub fn as_basic_value(&self) -> Option<BasicValueEnum<'a>> {
+        match self {
+            CodegenValue::Value(value) => any_to_basic_val(*value),
+            CodegenValue::AggregateSlots(_) | CodegenValue::Null => None,
         }
     }
 }
@@ -161,9 +193,8 @@ pub fn lmir_aot_codegen(
         .expect("Failed to create target machine");
     let target_data = target_machine.get_target_data();
     let pointer_size = target_data.get_pointer_byte_size(None) as usize;
-    let pointer_alignment = target_data
-        .get_abi_alignment(&context.ptr_type(inkwell::AddressSpace::from(0)))
-        as usize;
+    let pointer_alignment =
+        target_data.get_abi_alignment(&context.ptr_type(inkwell::AddressSpace::from(0))) as usize;
     if bytecode.architecture.pointer_size() != pointer_size
         || bytecode.architecture.pointer_alignment() != pointer_alignment
     {
@@ -265,7 +296,9 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> Option
         signature: bytecode.prototype.signature.clone(),
 
         builder,
+        block_map: HashMap::new(),
         value_map: HashMap::new(),
+        block_params: HashMap::new(),
     };
 
     for (i, global) in global_state.globals.iter().enumerate() {
@@ -276,25 +309,66 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> Option
     }
 
     let entry = global_state.context.append_basic_block(func_val, "entry");
+    function_state
+        .block_map
+        .insert(CXIdent::from("entry"), entry);
 
-    for block in bytecode.blocks.iter() {
-        global_state
+    for block in &bytecode.blocks {
+        let llvm_block = global_state
             .context
             .append_basic_block(func_val, block.id.as_str());
+        function_state
+            .block_map
+            .insert(block.id.clone(), llvm_block);
+    }
+
+    for block in &bytecode.blocks {
+        let llvm_block = function_state
+            .get_block(&block.id)
+            .unwrap_or_else(|| panic!("Block with ID {} not found in function", block.id));
+        function_state.builder.position_at_end(llvm_block);
+
+        let mut params = Vec::with_capacity(block.params.len());
+        for parameter in &block.params {
+            let llvm_type = if parameter._type.is_memory_resident() {
+                global_state
+                    .context
+                    .ptr_type(inkwell::AddressSpace::from(0))
+                    .as_basic_type_enum()
+            } else {
+                any_to_basic_type(bc_llvm_type(global_state.context, &parameter._type)?)?
+            };
+            let phi = function_state
+                .builder
+                .build_phi(
+                    llvm_type,
+                    &format!("block_param_{}", parameter.register.name),
+                )
+                .unwrap();
+            function_state.value_map.insert(
+                LMIRValue::Register {
+                    register: parameter.register.clone(),
+                    _type: parameter._type.clone(),
+                },
+                CodegenValue::Value(phi.as_basic_value().as_any_value_enum()),
+            );
+            params.push((parameter.register.clone(), phi));
+        }
+        function_state.block_params.insert(block.id.clone(), params);
     }
 
     // Set the entry block as the current block
     function_state.builder.position_at_end(entry);
-    let Ok(_) = function_state.builder.build_unconditional_branch(
-        function_state.get_block(&bytecode.blocks[0].id)
-            .unwrap()
-    ) else {
+    let Ok(_) = function_state
+        .builder
+        .build_unconditional_branch(function_state.get_block(&bytecode.blocks[0].id).unwrap())
+    else {
         panic!(
             "Failed to build unconditional branch to entry block: {}",
             bytecode.blocks[0].id
         )
     };
-    
+
     for block in bytecode.blocks.iter() {
         codegen_block(global_state, &mut function_state, &block.id, block);
     }
@@ -364,7 +438,7 @@ fn cache_prototype<'a>(
             });
     }
 
-    if let LMIRReturnABI::IndirectSret { alignment: _ } = &signature.return_abi {
+    if matches!(&signature.return_abi, LMIRReturnABI::IndirectSret { .. }) {
         let pointee = bc_llvm_type(global_state.context, &signature.return_type)?;
         func.add_attribute(
             AttributeLoc::Param(0),

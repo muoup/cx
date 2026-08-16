@@ -1,33 +1,29 @@
-use cx_ast::{
+use cx_hir::{
     ast::{
-        function::{CXFunctionContract, CXFunctionKind},
-        modifiers::CXLinkageMode,
-        template::CXTemplatePrototype,
-        types::CXType,
+        function::{HIRFunctionContract, HIRFunctionKind},
+        template::HIRTemplatePrototype,
+        types::HIRType,
     },
-    symbols::{CXSymbol, CXSymbolKind},
+    symbols::{HIRSymbol, HIRSymbolKind},
 };
 use cx_log::{
     CXRawResult, CXResult,
     error::{CXMaybeRawErr, CXMaybeRawResult},
 };
 use cx_tokens::TokenRange;
-use cx_util::identifier::CXIdent;
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
-use cx_mir::{
+use cx_thir::{
     EnvironmentNamespace,
-    mir::{
+    symbol::MIRSymbol,
+    thir::{
         contextual_eq::TypeContextEqual,
-        data::{
-            MIRFunctionPrototype, MIRFunctionSignature, MIRParameter, MIRTemplateInput,
-            TemplateInfo,
-        },
-        expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
+        data::{MIRTemplateInput, THIRFnPrototype, THIRFnSignature, THIRParameter, TemplateInfo},
+        expression::{THIRExpression, THIRExpressionKind},
         global::{MIRGlobalVarKind, MIRGlobalVariable},
         name_mangling::{base_mangle_member, base_mangle_templated_name},
     },
-    symbol::MIRSymbol,
-    type_context::MIRTypeContext,
+    type_context::THIRTypeContext,
 };
 
 use crate::{
@@ -43,10 +39,10 @@ pub fn resolve_symbol(
     evaluation_namespace: &EnvironmentNamespace,
     symbol_namespace: &EnvironmentNamespace,
     name: &CXIdent,
-    symbol: &CXSymbol,
+    symbol: &HIRSymbol,
 ) -> CXResult<MIRSymbol> {
     match &symbol.kind {
-        CXSymbolKind::DuplicateDefinition(definitions) => resolve_duplicate_definition(
+        HIRSymbolKind::DuplicateDefinition(definitions) => resolve_duplicate_definition(
             env,
             evaluation_namespace,
             symbol_namespace,
@@ -55,45 +51,53 @@ pub fn resolve_symbol(
             definitions,
         ),
 
-        CXSymbolKind::Type(ty) => {
+        HIRSymbolKind::Type(ty) => {
             let completed = complete_type(env, symbol_namespace, ty)?;
             let id = env.symbols.generate_type_id(completed);
             Ok(MIRSymbol::Type(id))
         }
 
-        CXSymbolKind::AddressableGlobal(name, ty) => {
-            let ty = complete_type(env, symbol_namespace, ty)?;
+        HIRSymbolKind::AddressableGlobal {
+            name,
+            _type,
+            symbol_naming,
+        } => {
+            let ty = complete_type(env, symbol_namespace, _type)?;
+            let symbol_name = CXIdent::new(crate::symbol::completion::completed_symbol_name(
+                env,
+                cx_util::namespace::QualifiedName::new(symbol_namespace.clone(), name.clone()),
+                *symbol_naming,
+            ));
 
             if evaluation_namespace != symbol_namespace {
                 env.items.push_generated_global(MIRGlobalVariable {
                     is_mutable: false,
-                    linkage: CXLinkageMode::Extern,
+                    linkage: LinkageMode::Extern,
                     kind: MIRGlobalVarKind::Variable {
-                        name: name.clone(),
+                        name: symbol_name.clone(),
                         _type: ty.clone(),
                         initializer: None,
                     },
                 });
             }
 
-            Ok(MIRSymbol::Expression(MIRExpression {
+            Ok(MIRSymbol::Expression(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: MIRExpressionKind::Variable {
-                    name: name.clone(),
-                    location: SymbolValueOrigin::Global,
+                kind: THIRExpressionKind::GlobalVariable {
+                    symbol: symbol_name,
                 },
                 _type: env.symbols.mem_ref_to(ty),
             }))
         }
 
-        CXSymbolKind::FunctionReference(prototype) => {
+        HIRSymbolKind::FunctionReference(prototype) => {
             let prototype_namespace = function_lexical_namespace(symbol_namespace, &prototype.kind);
             let prototype = complete_prototype(env, &prototype_namespace, prototype)?;
 
             Ok(MIRSymbol::FunctionReference(prototype))
         }
 
-        CXSymbolKind::ComptimeFunction { definition, body } => {
+        HIRSymbolKind::ComptimeFunction { definition, body } => {
             let prototype_namespace =
                 function_lexical_namespace(symbol_namespace, &definition.kind);
             let prototype = complete_comptime_prototype(env, &prototype_namespace, definition)?;
@@ -106,14 +110,14 @@ pub fn resolve_symbol(
             })
         }
 
-        CXSymbolKind::TypeConstructor {
+        HIRSymbolKind::TypeConstructor {
             template: Some(template),
             union_type,
             variant_index,
         } => {
-            let source = CXSymbol::new(
+            let source = HIRSymbol::new(
                 symbol.visibility,
-                CXSymbolKind::TypeConstructor {
+                HIRSymbolKind::TypeConstructor {
                     template: None,
                     union_type: union_type.clone(),
                     variant_index: *variant_index,
@@ -128,13 +132,13 @@ pub fn resolve_symbol(
             })
         }
 
-        CXSymbolKind::TypeConstructor {
+        HIRSymbolKind::TypeConstructor {
             template: None,
             union_type,
             variant_index,
         } => resolve_type_constructor(env, symbol_namespace, name, union_type, *variant_index),
 
-        CXSymbolKind::EnumIdent {
+        HIRSymbolKind::EnumIdent {
             enum_block_idx,
             variant_index,
         } => resolve_enum_block(env, symbol_namespace, *enum_block_idx).map(|b| {
@@ -143,11 +147,11 @@ pub fn resolve_symbol(
                 .clone()
         }),
 
-        CXSymbolKind::TypeTemplate {
+        HIRSymbolKind::TypeTemplate {
             template: input,
             definition,
         } => {
-            let source = CXSymbol::new(symbol.visibility, CXSymbolKind::Type(definition.clone()));
+            let source = HIRSymbol::new(symbol.visibility, HIRSymbolKind::Type(definition.clone()));
 
             Ok(MIRSymbol::Template {
                 template_prototype: input.clone(),
@@ -157,14 +161,14 @@ pub fn resolve_symbol(
             })
         }
 
-        CXSymbolKind::FunctionTemplate {
+        HIRSymbolKind::FunctionTemplate {
             template: input,
             definition,
             ..
         } => {
-            let source = CXSymbol::new(
+            let source = HIRSymbol::new(
                 symbol.visibility,
-                CXSymbolKind::FunctionReference(definition.clone()),
+                HIRSymbolKind::FunctionReference(definition.clone()),
             );
 
             Ok(MIRSymbol::Template {
@@ -175,14 +179,14 @@ pub fn resolve_symbol(
             })
         }
 
-        CXSymbolKind::ComptimeFunctionTemplate {
+        HIRSymbolKind::ComptimeFunctionTemplate {
             template: input,
             definition,
             body,
         } => {
-            let source = CXSymbol::new(
+            let source = HIRSymbol::new(
                 symbol.visibility,
-                CXSymbolKind::ComptimeFunction {
+                HIRSymbolKind::ComptimeFunction {
                     definition: definition.clone(),
                     body: body.clone(),
                 },
@@ -203,8 +207,8 @@ fn resolve_duplicate_definition(
     evaluation_namespace: &EnvironmentNamespace,
     symbol_namespace: &EnvironmentNamespace,
     name: &CXIdent,
-    visibility: cx_ast::ast::modifiers::VisibilityMode,
-    definitions: &[CXSymbolKind],
+    visibility: cx_hir::ast::modifiers::VisibilityMode,
+    definitions: &[HIRSymbolKind],
 ) -> CXResult<MIRSymbol> {
     let Some((first, rest)) = definitions.split_first() else {
         return crate::log::internal_type_error(format!(
@@ -218,7 +222,7 @@ fn resolve_duplicate_definition(
         evaluation_namespace,
         symbol_namespace,
         name,
-        &CXSymbol::new(visibility, first.clone()),
+        &HIRSymbol::new(visibility, first.clone()),
     )?;
 
     for definition in rest {
@@ -227,7 +231,7 @@ fn resolve_duplicate_definition(
             evaluation_namespace,
             symbol_namespace,
             name,
-            &CXSymbol::new(visibility, definition.clone()),
+            &HIRSymbol::new(visibility, definition.clone()),
         )?;
 
         if !mir_symbols_equivalent(env, &first, &candidate) {
@@ -249,7 +253,14 @@ fn mir_symbols_equivalent(env: &TypeEnvironment, left: &MIRSymbol, right: &MIRSy
         ),
 
         (MIRSymbol::FunctionReference(left), MIRSymbol::FunctionReference(right)) => {
-            left.linkage() == right.linkage() && left.contextual_eq(right, &env.symbols)
+            let compatible_linkage = left.linkage() == right.linkage()
+                || (left.linkage() != LinkageMode::Static
+                    && right.linkage() != LinkageMode::Static);
+            compatible_linkage
+                && left.symbol_name() == right.symbol_name()
+                && left
+                    .signature()
+                    .contextual_eq(right.signature(), &env.symbols)
         }
 
         (
@@ -274,7 +285,7 @@ fn resolve_type_constructor(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     name: &CXIdent,
-    union_type: &CXType,
+    union_type: &HIRType,
     variant_index: usize,
 ) -> CXResult<MIRSymbol> {
     let range = union_type.range().clone();
@@ -289,28 +300,30 @@ fn resolve_type_constructor(
         ));
     };
 
-    let prototype = MIRFunctionPrototype::new(
+    let prototype = THIRFnPrototype::new(
         base_mangle_member(&env.symbols, name.as_str(), &union_type),
-        CXLinkageMode::Static,
-        MIRFunctionSignature {
+        LinkageMode::Static,
+        THIRFnSignature {
             return_type: union_type.clone(),
             params: if variant_type.is_unit() {
                 Vec::new()
             } else {
-                vec![MIRParameter {
+                vec![THIRParameter {
                     name: Some(CXIdent::new("value")),
+                    local_id: Some(cx_thir::thir::expression::THIRLocalID::fresh()),
                     _type: variant_type.clone(),
                 }]
             },
             var_args: false,
-            contract: CXFunctionContract::default(),
+            contract: HIRFunctionContract::default(),
         },
     )
     .with_debug_name(name.clone());
 
     env.items
         .push_request(MIRFunctionGenRequest::TypeConstructor {
-            name: prototype.name().to_owned(),
+            symbol_name: prototype.symbol_name().to_owned(),
+            debug_name: name.clone(),
             union_type,
             variant_type,
             variant_index,
@@ -381,17 +394,17 @@ pub fn apply_template(
 
 pub fn symbol_lexical_namespace(
     namespace: impl Into<EnvironmentNamespace>,
-    symbol: &CXSymbol,
+    symbol: &HIRSymbol,
 ) -> EnvironmentNamespace {
     let namespace = namespace.into();
     match &symbol.kind {
-        CXSymbolKind::FunctionReference(prototype)
-        | CXSymbolKind::FunctionTemplate {
+        HIRSymbolKind::FunctionReference(prototype)
+        | HIRSymbolKind::FunctionTemplate {
             definition: prototype,
             ..
         } => function_lexical_namespace(&namespace, &prototype.kind),
-        CXSymbolKind::ComptimeFunction { definition, .. }
-        | CXSymbolKind::ComptimeFunctionTemplate { definition, .. } => {
+        HIRSymbolKind::ComptimeFunction { definition, .. }
+        | HIRSymbolKind::ComptimeFunctionTemplate { definition, .. } => {
             function_lexical_namespace(&namespace, &definition.kind)
         }
         _ => namespace.clone(),
@@ -400,21 +413,21 @@ pub fn symbol_lexical_namespace(
 
 fn function_lexical_namespace(
     namespace: &EnvironmentNamespace,
-    kind: &CXFunctionKind,
+    kind: &HIRFunctionKind,
 ) -> EnvironmentNamespace {
     match kind {
-        CXFunctionKind::AssociatedFunction { .. } => namespace
+        HIRFunctionKind::AssociatedFunction { .. } => namespace
             .parent_and_name()
             .map(|(parent, _)| parent)
             .unwrap_or_else(|| namespace.as_namespace_path().clone())
             .into(),
-        CXFunctionKind::Standard(_) => namespace.clone(),
+        HIRFunctionKind::Standard(_) => namespace.clone(),
     }
 }
 
 pub fn apply_template_input(
     env: &mut TypeEnvironment,
-    prototype: &CXTemplatePrototype,
+    prototype: &HIRTemplatePrototype,
     input: &MIRTemplateInput,
 ) -> CXRawResult<()> {
     for (param, arg) in prototype.types.iter().zip(input.args.iter()) {

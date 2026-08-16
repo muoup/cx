@@ -34,44 +34,35 @@ The parser builds the AST using the combined declaration environment from the pr
 
 ## Stage 5: Type Checking and Template Realization
 
-The typechecker resolves identifiers to concrete types, realizes templates, inserts implicit coercions, validates ownership rules, and constructs MIR.
-
-This is the last stage which may hit user errors. After this point, any failures are considered compiler bugs and should be reported.
+The typechecker resolves identifiers to concrete types, realizes templates, inserts implicit coercions, validates ownership rules, and constructs THIR. Staged expressions remain frozen, typechecked THIR fragments.
 
 - **Input**: AST + declaration environment
-- **Output**: MIR
+- **Output**: THIR
 
-## Stage 5.5: Optional Safe-Function Analysis
+## Stage 6: MIR Generation and Analysis
 
-If the compiler is run with `--analysis`, `safe` functions are lowered from MIR to FMIR and analyzed by `cx-safe-analyzer`.
+THIR is lowered once into semantic MIR. MIR owns interned semantic types, target-dependent size/alignment layouts, storage ownership metadata such as `@nodrop`, and source ranges for emitted instructions. Symbolic `sizeof` and `alignof` queries are resolved here.
 
-FMIR is a functional IR used only for analysis. It is not the canonical lowering path for code generation.
+MIR validation, liveness, and safe-function assertion analysis run after lowering, so the code-generation IR remains the semantic analysis boundary.
 
-Current behavior:
+- **Input**: THIR
+- **Output**: MIR + analysis data
 
-- analysis runs only when `--analysis` is present
-- MIR is lowered to FMIR for analysis
-- verification diagnostics may be emitted here
-- if analysis succeeds, the pipeline returns to MIR and continues to LMIR
-
-- **Input**: MIR for `safe` functions and their contracts
-- **Output**: optional verification diagnostics
-
-## Stage 6: LMIR Generation
+## Stage 7: LMIR Generation
 
 MIR is lowered to LMIR, the compiler’s flat SSA-style backend-facing IR.
 
 - **Input**: MIR
 - **Output**: LMIR
 
-## Stage 7: Backend Code Generation
+## Stage 8: Backend Code Generation
 
 LMIR is translated to backend-specific code. The current backends are Cranelift and LLVM.
 
 - **Input**: LMIR
 - **Output**: object code or assembly
 
-## Stage 8: Linking
+## Stage 9: Linking
 
 Object files are linked into either an executable or a relocatable library object. Both Cranelift and LLVM backends emit per-function ELF sections (`.text.<function_name>`) to enable linker-level dead code elimination.
 
@@ -97,5 +88,4 @@ After library linking, a C header is generated from the entry file's LMIR unit. 
 
 - **AST**: parsed source structure
 - **MIR**: typed, semantically resolved frontend IR
-- **FMIR**: optional analysis IR for `safe` verification
 - **LMIR**: lowered SSA-style IR for code generation

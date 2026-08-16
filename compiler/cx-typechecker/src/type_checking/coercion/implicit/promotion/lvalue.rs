@@ -1,8 +1,8 @@
-use cx_ast::ast::modifiers::CX_CONST;
+use cx_hir::ast::modifiers::HIR_CONST;
 use cx_log::CXResult;
-use cx_mir::{
-    mir::expression::{MIRExpression, MIRExpressionKind},
-    type_context::MIRTypeContext,
+use cx_thir::{
+    thir::expression::{THIRExpression, THIRExpressionKind},
+    type_context::THIRTypeContext,
 };
 
 use crate::{
@@ -27,7 +27,7 @@ use crate::{
 /// loses its memory reference wrapper, meaning this conversion will be skipped.
 ///
 
-pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResult<CoercionResult> {
+pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResult<CoercionResult> {
     let Some(mem_inner) = env.symbols.mem_ref_inner(&expr._type).cloned() else {
         return CoercionResult::unapplied(expr);
     };
@@ -41,11 +41,11 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResul
     }
 
     let token_range = expr.token_range.clone();
-    let result_type = mem_inner.without_specifier(CX_CONST);
-    let loaded = MIRExpression {
+    let result_type = mem_inner.without_specifier(HIR_CONST);
+    let loaded = THIRExpression {
         token_range,
         _type: result_type.clone(),
-        kind: MIRExpressionKind::RegionDuplicate {
+        kind: THIRExpressionKind::Copy {
             source: Box::new(expr),
         },
     };

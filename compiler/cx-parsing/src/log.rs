@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use cx_log::{
     error::{
         context::{CXInternalContext, CXPointingContext, CXUnderlineContext},
@@ -8,21 +6,14 @@ use cx_log::{
     },
     CXResult,
 };
-use cx_tokens::{token::Token, TokenIter, TokenRange};
-
-use crate::parse::parser::ParserData;
-
-fn token_file(tokens: &TokenIter<'_>, token: &Token) -> PathBuf {
-    if token.file_origin.as_os_str().is_empty() {
-        tokens.file.clone()
-    } else {
-        token.file_origin.as_ref().to_path_buf()
-    }
-}
+use cx_tokens::{TokenIter, TokenRange};
 
 fn pointing_context(tokens: &TokenIter<'_>) -> cx_log::error::CXErrContext {
     if let Some(token) = tokens.peek().or_else(|| tokens.prev()) {
-        CXPointingContext::error(token_file(tokens, token), token.byte_start_index)
+        CXPointingContext::error(
+            token.file_origin.as_ref().to_path_buf(),
+            token.byte_start_index,
+        )
     } else {
         CXPointingContext::error(tokens.file.clone(), 0)
     }
@@ -52,50 +43,27 @@ fn range_context(tokens: &TokenIter<'_>, range: &TokenRange) -> cx_log::error::C
     };
 
     CXUnderlineContext::error(
-        token_file(tokens, start),
+        start.file_origin.as_ref().to_path_buf(),
         start.byte_start_index,
         end.byte_end_index,
     )
 }
 
-pub(crate) fn parse_error(
-    message: impl Into<String>,
-    context: cx_log::error::CXErrContext,
-) -> CXErr {
+fn parse_error(message: impl Into<String>, context: cx_log::error::CXErrContext) -> CXErr {
     CXErr::new(
         CXStdErrMessage::error("PARSER ERROR", message.into()),
         context,
     )
 }
 
-pub(crate) fn token_iter_log_error<T>(
+pub fn parse_point_error<T>(tokens: &TokenIter<'_>, message: impl Into<String>) -> CXResult<T> {
+    CXResult::Err(parse_error(message, pointing_context(tokens)))
+}
+
+pub fn parse_underline_error<T>(
     tokens: &TokenIter<'_>,
     message: impl Into<String>,
+    range: &TokenRange,
 ) -> CXResult<T> {
-    Err(parse_error(message, pointing_context(tokens)))
-}
-
-pub(crate) trait TokenIterLogExt {
-    fn log_error<T>(&self, message: impl Into<String>) -> CXResult<T>;
-}
-
-impl TokenIterLogExt for TokenIter<'_> {
-    fn log_error<T>(&self, message: impl Into<String>) -> CXResult<T> {
-        token_iter_log_error(self, message)
-    }
-}
-
-pub(crate) trait ParserLogExt {
-    fn log_error<T>(&self, message: impl Into<String>) -> CXResult<T>;
-    fn log_range_error<T>(&self, range: &TokenRange, message: impl Into<String>) -> CXResult<T>;
-}
-
-impl ParserLogExt for ParserData<'_> {
-    fn log_error<T>(&self, message: impl Into<String>) -> CXResult<T> {
-        Err(parse_error(message, pointing_context(&self.tokens)))
-    }
-
-    fn log_range_error<T>(&self, range: &TokenRange, message: impl Into<String>) -> CXResult<T> {
-        Err(parse_error(message, range_context(&self.tokens, range)))
-    }
+    CXResult::Err(parse_error(message, range_context(tokens, range)))
 }

@@ -41,7 +41,7 @@ pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> CXRawResult<ir::Type> {
         LMIRTypeKind::Struct { .. }
         | LMIRTypeKind::Array { .. }
         | LMIRTypeKind::Opaque { .. }
-        | LMIRTypeKind::Unit => {
+        | LMIRTypeKind::Void => {
             return CXStdErrMessage::result(
                 "CODEGEN ERROR",
                 format!("Unsupported type for codegen: {val_type:?}"),

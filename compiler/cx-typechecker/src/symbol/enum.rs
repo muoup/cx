@@ -1,9 +1,9 @@
-use cx_ast::ast::global_var::CXEnumDefinition;
+use cx_hir::ast::global_var::HIREnumDefinition;
 use cx_log::CXResult;
-use cx_mir::{
+use cx_thir::{
     EnvironmentNamespace,
-    mir::expression::{MIRExpression, MIRExpressionKind},
     symbol::MIRSymbol,
+    thir::expression::{THIRExpression, THIRExpressionKind},
 };
 use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
@@ -15,7 +15,7 @@ use crate::{
 
 pub struct EnumBlockResolution<'a> {
     env: &'a TypeEnvironment<'a>,
-    block: &'a CXEnumDefinition,
+    block: &'a HIREnumDefinition,
     namespace: &'a EnvironmentNamespace,
 }
 
@@ -79,10 +79,10 @@ pub(crate) fn resolve_enum_block<'a, 'b>(
 
         env.symbols.insert_value(
             symbol,
-            MIRExpression {
+            THIRExpression {
                 token_range: TokenRange::internal(),
                 _type: env.get_intrinsic_type("int"),
-                kind: MIRExpressionKind::IntLiteral(value),
+                kind: THIRExpressionKind::IntLiteral(value),
             },
         );
     }

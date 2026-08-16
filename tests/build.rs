@@ -8,7 +8,7 @@ enum TestKind {
     CompileOnly,
     ParseError,
     TypeError,
-    VerifierError,
+    AnalysisError,
 }
 
 fn main() {
@@ -18,7 +18,7 @@ fn main() {
         ("compile-only", TestKind::CompileOnly),
         ("parse-errors", TestKind::ParseError),
         ("type-errors", TestKind::TypeError),
-        ("verifier-errors", TestKind::VerifierError),
+        ("analysis-error", TestKind::AnalysisError),
     ];
 
     let mut output = String::new();
@@ -80,7 +80,9 @@ fn write_module(
             continue;
         }
 
-        if path.extension().and_then(|ext| ext.to_str()) != Some("cx") {
+        let extension = path.extension().and_then(|ext| ext.to_str());
+        let is_compile_only_c = matches!(kind, TestKind::CompileOnly) && extension == Some("c");
+        if extension != Some("cx") && !is_compile_only_c {
             continue;
         }
 
@@ -102,11 +104,8 @@ fn write_module(
                 "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_end_to_end_test(std::path::Path::new({path_literal})); }}\n"
             )),
             TestKind::CompileOnly => {
-                let analysis = path
-                    .components()
-                    .any(|component| component.as_os_str() == "analysis");
                 output.push_str(&format!(
-                    "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_compile_only_test(std::path::Path::new({path_literal}), {analysis}); }}\n"
+                    "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_compile_only_test(std::path::Path::new({path_literal})); }}\n"
                 ));
             }
             TestKind::ParseError => output.push_str(&format!(
@@ -115,7 +114,7 @@ fn write_module(
             TestKind::TypeError => output.push_str(&format!(
                 "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_type_error_test(std::path::Path::new({path_literal})); }}\n"
             )),
-            TestKind::VerifierError => output.push_str(&format!(
+            TestKind::AnalysisError => output.push_str(&format!(
                 "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_verifier_error_test(std::path::Path::new({path_literal})); }}\n"
             )),
         }

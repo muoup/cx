@@ -1,8 +1,9 @@
 use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind, TypeSize};
 use crate::{
-    LMIRBasicBlock, LMIRFloatBinOp, LMIRFloatUnOp, LMIRFunction, LMIRFunctionPrototype,
-    LMIRFunctionSignature, LMIRGlobalType, LMIRInstruction, LMIRInstructionKind, LMIRIntBinOp,
-    LMIRIntUnOp, LMIRPtrBinOp, LMIRRegister, LMIRUnit, LMIRValue,
+    LMIRBasicBlock, LMIRBlockTarget, LMIRFloatBinOp, LMIRFloatUnOp, LMIRFunction,
+    LMIRFunctionPrototype, LMIRFunctionSignature, LMIRGlobalInitializer, LMIRGlobalState,
+    LMIRGlobalType, LMIRInstruction, LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp,
+    LMIRRegister, LMIRUnit, LMIRValue,
 };
 use std::fmt::{Display, Formatter};
 
@@ -36,11 +37,21 @@ impl Display for LMIRFunction {
 
 impl Display for LMIRBasicBlock {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, ".{}", self.id)?;
+        if !self.params.is_empty() {
+            f.write_str("(")?;
+            for (index, param) in self.params.iter().enumerate() {
+                if index != 0 {
+                    f.write_str(", ")?;
+                }
+                write!(f, "{}: {}", param.register, param._type)?;
+            }
+            f.write_str(")")?;
+        }
         writeln!(
             f,
-            ".{}:   ({})",
-            self.id,
-            self.debug_name.as_ref().unwrap_or(&String::new())
+            ":   ({})",
+            self.debug_name.as_deref().unwrap_or_default()
         )?;
 
         for instruction in self.body.iter() {
@@ -78,17 +89,79 @@ impl Display for LMIRGlobalType {
             LMIRGlobalType::StringLiteral(s) => {
                 write!(f, "string_literal \"{}\"", s.replace('\n', "\\n"))
             }
-            LMIRGlobalType::Variable {
-                _type,
-                initial_value,
-            } => {
-                if let Some(initial_value) = initial_value {
-                    write!(f, "variable {_type} = {initial_value}")
+            LMIRGlobalType::Variable { _type, state } => {
+                if matches!(state, LMIRGlobalState::External) {
+                    write!(f, "variable {_type} external")
                 } else {
-                    write!(f, "variable {_type}")
+                    write!(f, "variable {_type} = {state}")
                 }
             }
         }
+    }
+}
+
+impl Display for LMIRGlobalState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::External => f.write_str("external"),
+            Self::ZeroInitialized => f.write_str("zero"),
+            Self::Initialized(initializer) => Display::fmt(initializer, f),
+        }
+    }
+}
+
+impl Display for LMIRGlobalInitializer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Integer {
+                value,
+                _type,
+                signed,
+            } => write!(
+                f,
+                "{value}:{}{}",
+                if *signed { 'i' } else { 'u' },
+                integer_width(*_type)
+            ),
+            Self::Float { value, _type } => write!(f, "{value}:{}", float_name(*_type)),
+            Self::Null => f.write_str("null"),
+        }
+    }
+}
+
+fn integer_width(ty: LMIRIntegerType) -> u16 {
+    match ty {
+        LMIRIntegerType::I1 => 1,
+        LMIRIntegerType::I8 => 8,
+        LMIRIntegerType::I16 => 16,
+        LMIRIntegerType::I32 => 32,
+        LMIRIntegerType::I64 => 64,
+        LMIRIntegerType::I128 => 128,
+    }
+}
+
+fn float_name(ty: LMIRFloatType) -> &'static str {
+    match ty {
+        LMIRFloatType::F32 => "f32",
+        LMIRFloatType::F64 => "f64",
+    }
+}
+
+impl Display for LMIRBlockTarget {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.block)?;
+        if self.args.is_empty() {
+            return Ok(());
+        }
+
+        f.write_str("(")?;
+        for (index, argument) in self.args.iter().enumerate() {
+            if index != 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{argument}")?;
+        }
+        f.write_str(")")
     }
 }
 
@@ -156,7 +229,7 @@ impl Display for LMIRInstruction {
                 value,
                 coercion_type,
             } => {
-                write!(f, "{} coerce {value} ({coercion_type:?})", self.value_type)
+                write!(f, "{coercion_type:?}({value}) -> {}", self.value_type)
             }
             LMIRInstructionKind::Return { value } => {
                 write!(f, "return")?;
@@ -169,24 +242,10 @@ impl Display for LMIRInstruction {
             }
             LMIRInstructionKind::Branch {
                 condition,
-                true_block,
-                false_block,
+                true_target,
+                false_target,
             } => {
-                write!(f, "if {condition} goto {true_block} else {false_block}")
-            }
-            LMIRInstructionKind::Phi { predecessors: from } => {
-                write!(f, "phi")?;
-                if !from.is_empty() {
-                    write!(f, " [")?;
-                    for (i, (value, block_id)) in from.iter().enumerate() {
-                        if i > 0 {
-                            write!(f, ", ")?;
-                        }
-                        write!(f, "{value} @ b{block_id}")?;
-                    }
-                    write!(f, "]")?;
-                }
-                Ok(())
+                write!(f, "if {condition} goto {true_target} else {false_target}")
             }
             LMIRInstructionKind::Jump { target } => {
                 write!(f, "jump {target}")
@@ -197,11 +256,11 @@ impl Display for LMIRInstruction {
                 default,
             } => {
                 write!(f, "jump_table {value} -> [")?;
-                for (i, (key, block_id)) in targets.iter().enumerate() {
+                for (i, (key, target)) in targets.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{key} -> {block_id}")?;
+                    write!(f, "{key} -> {target}")?;
                 }
                 write!(f, "] else {default}")
             }
@@ -252,6 +311,7 @@ impl Display for LMIRInstruction {
             LMIRInstructionKind::CompilerAssumption { condition } => {
                 write!(f, "compiler_assumption {condition}")
             }
+            LMIRInstructionKind::Unreachable => f.write_str("unreachable"),
         }
     }
 }
@@ -444,7 +504,7 @@ impl Display for LMIRTypeKind {
                 write!(f, "struct {{ {fields} }}")
             }
 
-            LMIRTypeKind::Unit => write!(f, "()"),
+            LMIRTypeKind::Void => write!(f, "()"),
         }
     }
 }

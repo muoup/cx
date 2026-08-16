@@ -3,26 +3,26 @@ use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::expression::CXExpression;
+use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
-use cx_mir::EnvironmentNamespace;
-use cx_mir::mir::{
-    data::{MIRType, MIRTypeKind},
-    expression::{MIRExpression, MIRExpressionKind},
+use cx_thir::EnvironmentNamespace;
+use cx_thir::thir::{
+    data::{THIRType, THIRTypeKind},
+    expression::{THIRExpression, THIRExpressionKind},
 };
 use cx_tokens::TokenRange;
 
 pub fn typecheck_switch(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    condition: &CXExpression,
-    block: &[CXExpression],
+    condition: &HIRExpression,
+    block: &[HIRExpression],
     cases: &[(u64, usize)],
     default_case: Option<&usize>,
 ) -> CXResult<TypecheckResult> {
     env.push_scope(true, false);
     env.function.set_scope_anchor(condition);
-    env.function.configure_merge_scope(condition, None, false);
+    env.function.configure_merge_scope(condition, None);
 
     let join_scope_idx = env.function.current_scope_index();
     let condition_value = typecheck_expr(env, namespace, condition, None)
@@ -63,7 +63,7 @@ pub fn typecheck_switch(
 
         // Create a pattern expression that matches the constant value
         // Use the condition's integer type for the pattern
-        let MIRTypeKind::Integer { _type, signed } = &condition_value.get_type().kind else {
+        let THIRTypeKind::Integer { _type, signed } = &condition_value.get_type().kind else {
             return env.log_error(
                 &condition_value.token_range,
                 format!(
@@ -73,10 +73,10 @@ pub fn typecheck_switch(
             );
         };
 
-        let pattern_expr = MIRExpression {
+        let pattern_expr = THIRExpression {
             token_range: TokenRange::internal(),
-            kind: MIRExpressionKind::IntLiteral(*case_value as i64),
-            _type: MIRType::from(MIRTypeKind::Integer {
+            kind: THIRExpressionKind::IntLiteral(*case_value as i64),
+            _type: THIRType::from(THIRTypeKind::Integer {
                 signed: *signed,
                 _type: *_type,
             }),
@@ -132,8 +132,8 @@ pub fn typecheck_switch(
 
     // Build the match expression
     Ok(TypecheckResult::new(
-        MIRType::unit(),
-        MIRExpressionKind::CSwitch {
+        THIRType::unit(),
+        THIRExpressionKind::CSwitch {
             condition: Box::new(condition_value),
             cases: arms,
             default: default_body,

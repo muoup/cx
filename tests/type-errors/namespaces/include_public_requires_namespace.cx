@@ -1,0 +1,5 @@
+import include::_public_include_type_error as ffi;
+
+int main() {
+    return puts("module qualification is required");
+}

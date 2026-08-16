@@ -8,8 +8,8 @@ i32 setsockopt(int socket, int level, int option_name, const void* option_value,
 i32 bind(int sockfd, const void* addr, u32 addrlen);
 i32 listen(int sockfd, int backlog);
 i32 accept(int sockfd, void* addr, u32* addrlen);
-i64 read(int fd, void* buffer, size_t length);
-i64 write(int fd, const void* buffer, size_t length);
+i64 read(int fd, void* buffer, usize length);
+i64 write(int fd, const void* buffer, usize length);
 u32 inet_addr(const char* cp);
 u16 htons(u16 hostshort);
 i32 close(int fd);

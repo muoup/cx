@@ -3,19 +3,18 @@ resolver = "2"
 
 members = [
     "compiler/cx",
-    "compiler/cx-namespace",
-    "compiler/cx-lsp",
-    "compiler/cx-treesitter-grammar",
+    "compiler/cx-lsp", "compiler/cx-mir",
     "compiler/cx-zed-extension",
     "tests"
+]
+
+# Keep feature-gated path dependencies out of the workspace's default package set.
+# They are still built when a workspace member enables the corresponding feature.
+exclude = [
+    "compiler/cx-backend-cranelift",
+    "compiler/cx-backend-llvm",
 ]
 
 [profile.release-with-debug]
 inherits = "release"
 debug = true
-
-# For the time being, any optional packages (i.e. ones only compiled when passed a feature flag) should be included here
-# so that cargo won't still attempt to build them in their absence.
-# exclude = [
-#     "compiler/cx-backend-llvm"
-# ]

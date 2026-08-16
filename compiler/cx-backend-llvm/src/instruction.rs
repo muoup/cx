@@ -1,22 +1,16 @@
-use crate::arithmetic::{generate_int_binop, generate_ptr_binop};
-use crate::attributes::attr_sret;
-use crate::routines::get_function;
-use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_signature, bc_llvm_type};
-use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_lmir::{
-    LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind,
-    LMIRIntUnOp, LMIRReturnABI,
-};
-use cx_util::identifier::CXIdent;
-use inkwell::AddressSpace;
-use inkwell::attributes::AttributeLoc;
-use inkwell::types::{AnyTypeEnum, BasicType};
-use inkwell::values::BasicValue;
-use inkwell::values::{AnyValue, AnyValueEnum, ValueKind};
+mod calls;
+mod control_flow;
+mod memory;
+mod operations;
+
 use std::cell::Cell;
 
-// Modules are compiled single-threaded, but multiple modules can be compiled in parallel, so having this counter be thread_local will never cause instruction name collision
+use crate::{CodegenValue, FunctionState, GlobalState};
+use cx_lmir::{LMIRInstruction, LMIRInstructionKind};
+
 thread_local! {
+    // Modules are compiled single-threaded, but multiple modules can be compiled
+    // in parallel, so this counter is thread-local and cannot collide across modules.
     static NUM: Cell<usize> = const { Cell::new(0) };
 }
 
@@ -25,884 +19,175 @@ pub(crate) fn reset_num() {
 }
 
 pub(crate) fn inst_num() -> String {
-    format!(
-        "inst_{}",
-        NUM.with(|num| {
-            let current = num.get();
-            num.set(current + 1);
-            current
-        })
-    )
+    NUM.with(|num| {
+        let current = num.get();
+        num.set(current + 1);
+        format!("inst_{current}")
+    })
 }
 
 pub(crate) fn generate_instruction<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &FunctionState<'a, 'b>,
-    block_instruction: &LMIRInstruction,
+    instruction: &LMIRInstruction,
 ) -> Option<CodegenValue<'a>> {
-    Some(match &block_instruction.kind {
-        LMIRInstructionKind::Alias { value } => function_state.get_value(value)?,
-
+    match &instruction.kind {
+        LMIRInstructionKind::Alias { value } => function_state.get_value(value),
+        LMIRInstructionKind::GetFunctionAddr { func } => {
+            calls::generate_get_function_addr(global_state, func)
+        }
         LMIRInstructionKind::Allocate { _type, alignment } => {
-            // let ty = bc_llvm_type(global_state.context, _type);
-            let basic_ty = function_state.context.i8_type()
-                .array_type(usize::from(_type.size()) as u32);
-
-            let prev_cursor = function_state.builder.get_insert_block()?;
-
-            let entry = function_state
-                .get_block(&CXIdent::from("entry"))
-                .expect("Failed to get entry block");
-            function_state.builder.position_before(
-                // Since we add a jump to the entry block, there is always a first instruction
-                entry.get_first_instruction().as_ref().unwrap(),
-            );
-
-            let inst = function_state
-                .builder
-                .build_alloca(basic_ty, inst_num().as_str())
-                .unwrap();
-
-            inst.clone()
-                .as_instruction()
-                .unwrap()
-                .set_alignment(*alignment as u32)
-                .unwrap();
-            function_state.builder.position_at_end(prev_cursor);
-
-            CodegenValue::Value(inst.as_any_value_enum())
+            memory::generate_allocate(function_state, _type, *alignment)
         }
-
-        LMIRInstructionKind::DirectCall {
-            func,
-            args,
-            method_sig,
-        } => {
-            let Some(function_val) = get_function(global_state, func.as_str(), method_sig) else {
-                return None;
-            };
-
-            let arg_vals = args
-                .iter()
-                .map(|arg| {
-                    let val = function_state.get_value(arg)?.get_value();
-
-                    let basic_val = any_to_basic_val(val)?;
-
-                    Some(basic_val.into())
-                })
-                .collect::<Option<Vec<_>>>()?;
-
-            let val = function_state
-                .builder
-                .build_direct_call(function_val, arg_vals.as_slice(), inst_num().as_str())
-                .unwrap();
-
-            apply_call_abi_attributes(global_state, &val, method_sig);
-
-            codegen_call_return(function_state, method_sig, &val)?
-        }
-
-        LMIRInstructionKind::IndirectCall {
-            func_ptr,
-            args,
-            method_sig,
-        } => {
-            let ptr = function_state.get_value(func_ptr)?.get_value();
-            let fn_type = bc_llvm_signature(global_state, method_sig).unwrap();
-            let args = args
-                .iter()
-                .map(|arg| {
-                    let val = function_state.get_value(arg)?.get_value();
-
-                    let basic_val = any_to_basic_val(val)?;
-
-                    Some(basic_val.into())
-                })
-                .collect::<Option<Vec<_>>>()?;
-
-            let val = function_state
-                .builder
-                .build_indirect_call(
-                    fn_type,
-                    ptr.into_pointer_value(),
-                    args.as_slice(),
-                    inst_num().as_str(),
-                )
-                .unwrap();
-            apply_call_abi_attributes(global_state, &val, method_sig);
-
-            codegen_call_return(function_state, method_sig, &val)?
-        }
-
-        LMIRInstructionKind::Coercion {
-            value,
-            coercion_type: LMIRCoercionType::BitCast,
-        } => {
-            let val = function_state.get_value(value)?.get_value();
-            let basic_val = any_to_basic_val(val)?;
-
-            let bit_cast_type = bc_llvm_type(global_state.context, &block_instruction.value_type)?;
-            let basic_type = any_to_basic_type(bit_cast_type).unwrap();
-
-            CodegenValue::Value(
-                function_state
-                    .builder
-                    .build_bit_cast(basic_val, basic_type, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-            )
-        }
-
-        LMIRInstructionKind::Coercion {
-            value,
-            coercion_type: LMIRCoercionType::IntToPtr { .. },
-        } => {
-            let value = function_state
-                .get_value(value)?
-                .get_value()
-                .into_int_value();
-
-            let to_type = global_state.context.ptr_type(AddressSpace::from(0));
-
-            CodegenValue::Value(
-                function_state
-                    .builder
-                    .build_int_to_ptr(value, to_type, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-            )
-        }
-
-        LMIRInstructionKind::Jump { target } => {
-            function_state
-                .builder
-                .build_unconditional_branch(function_state.get_block(target).unwrap())
-                .unwrap();
-
-            CodegenValue::Null
-        }
-
-        LMIRInstructionKind::Return { value } => {
-            let Some(value) = value else {
-                function_state.builder.build_return(None).unwrap();
-
-                return Some(CodegenValue::Null);
-            };
-
-            let value = function_state.get_value(value).unwrap();
-            if function_state.signature.return_type.is_memory_resident()
-                && matches!(
-                    function_state.signature.return_abi,
-                    LMIRReturnABI::Direct { .. }
-                )
-            {
-                let return_value = build_direct_return_from_memory(
-                    global_state,
-                    function_state,
-                    value.get_value(),
-                )?;
-                function_state
-                    .builder
-                    .build_return(Some(&return_value))
-                    .unwrap();
-
-                return Some(CodegenValue::Null);
-            }
-
-            let basic_val = any_to_basic_val(value.get_value())?;
-
-            function_state
-                .builder
-                .build_return(Some(&basic_val))
-                .unwrap();
-
-            CodegenValue::Null
-        }
-
-        LMIRInstructionKind::Store {
-            value,
-            _type,
-            memory,
-        } => {
-            let codegen_value = function_state.get_value(value).unwrap();
-
-            let memory_val = function_state
-                .get_value(memory)?
-                .get_value()
-                .into_pointer_value();
-
-            match codegen_value {
-                CodegenValue::AggregateSlots(values) => {
-                    let usize_type = global_state.pointer_int_type;
-                    let base = function_state
-                        .builder
-                        .build_ptr_to_int(memory_val, usize_type, inst_num().as_str())
-                        .unwrap();
-                    for (slot, value) in values {
-                        let offset = usize_type.const_int(slot.offset as u64, false);
-                        let ptr_int = function_state
-                            .builder
-                            .build_int_add(base, offset, inst_num().as_str())
-                            .unwrap();
-                        let field_ptr = function_state
-                            .builder
-                            .build_int_to_ptr(
-                                ptr_int,
-                                global_state.context.ptr_type(AddressSpace::from(0)),
-                                inst_num().as_str(),
-                            )
-                            .unwrap();
-                        let store = function_state
-                            .builder
-                            .build_store(field_ptr, value)
-                            .unwrap();
-                        store.set_alignment(slot._type.alignment() as u32).unwrap();
-                    }
-                }
-                CodegenValue::Value(any_value) => {
-                    let basic_val = any_to_basic_val(any_value).unwrap_or_else(|| {
-                        panic!("Failed to convert value {any_value:?} to basic value")
-                    });
-                    let store = function_state
-                        .builder
-                        .build_store(memory_val, basic_val)
-                        .unwrap();
-                    store.set_alignment(_type.alignment() as u32).unwrap();
-                }
-                CodegenValue::Null => {}
-            }
-
-            CodegenValue::Null
-        }
-
-        LMIRInstructionKind::Memcpy {
-            dest,
-            src,
-            size,
-            alignment,
-        } => {
-            let src_val = function_state
-                .get_value(src)?
-                .get_value()
-                .into_pointer_value();
-            let dest_val = function_state
-                .get_value(dest)?
-                .get_value()
-                .into_pointer_value();
-            let size_val = function_state.get_value(size)?.get_value().into_int_value();
-
-            function_state
-                .builder
-                .build_memcpy(
-                    dest_val,
-                    *alignment as u32,
-                    src_val,
-                    *alignment as u32,
-                    size_val,
-                )
-                .unwrap();
-
-            CodegenValue::Null
-        }
-
-        LMIRInstructionKind::Load { memory, _type } => {
-            let memory_val = function_state
-                .get_value(memory)?
-                .get_value()
-                .into_pointer_value();
-
-            let loaded_value = function_state
-                .builder
-                .build_load(
-                    any_to_basic_type(bc_llvm_type(global_state.context, _type)?)?,
-                    memory_val,
-                    inst_num().as_str(),
-                )
-                .unwrap();
-            loaded_value
-                .as_instruction_value()
-                .unwrap()
-                .set_alignment(_type.alignment() as u32)
-                .unwrap();
-
-            CodegenValue::Value(loaded_value.as_any_value_enum())
-        }
-
-        LMIRInstructionKind::ZeroMemory { memory, _type } => {
-            let any_value = function_state
-                .get_value(memory)?
-                .get_value()
-                .into_pointer_value();
-
-            let zero = global_state.context.i8_type().const_zero();
-
-            let size = usize::from(_type.size());
-            let size_value = global_state.pointer_int_type.const_int(size as u64, false);
-
-            function_state
-                .builder
-                .build_memset(any_value, _type.alignment() as u32, zero, size_value)
-                .unwrap();
-            CodegenValue::Null
-        }
-
-        LMIRInstructionKind::PointerBinOp {
-            left,
-            ptr_type: _,
-            type_size,
-            right,
-            op,
-            ..
-        } => {
-            let left_value = function_state.get_value(left).unwrap().get_value();
-            let right_value = function_state.get_value(right).unwrap().get_value();
-
-            generate_ptr_binop(
-                global_state,
-                function_state,
-                usize::from(*type_size) as u64,
-                left_value,
-                right_value,
-                *op,
-            )?
-        }
-
-        LMIRInstructionKind::IntegerUnOp { value, op } => {
-            let value = function_state
-                .get_value(value)?
-                .get_value()
-                .into_int_value();
-
-            CodegenValue::Value(match op {
-                // LMIRIntUnOp::NEG if signed => function_state
-                //     .builder
-                //     .build_int_nsw_neg(value, inst_num().as_str())
-                //     .unwrap()
-                //     .as_any_value_enum(),
-                LMIRIntUnOp::NEG => function_state
-                    .builder
-                    .build_int_neg(value, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-                LMIRIntUnOp::BNOT => function_state
-                    .builder
-                    .build_not(value, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-                LMIRIntUnOp::LNOT => function_state
-                    .builder
-                    .build_int_compare(
-                        inkwell::IntPredicate::EQ,
-                        value,
-                        value.get_type().const_int(0, false),
-                        inst_num().as_str(),
-                    )
-                    .unwrap()
-                    .as_any_value_enum(),
-            })
-        }
-
-        LMIRInstructionKind::IntegerBinOp { left, right, op } => {
-            let left = function_state.get_value(left)?.get_value().into_int_value();
-
-            let right = function_state
-                .get_value(right)?
-                .get_value()
-                .into_int_value();
-
-            generate_int_binop(global_state, function_state, left, right, *op)?
-        }
-
-        LMIRInstructionKind::FloatUnOp { value, op } => {
-            let value = function_state
-                .get_value(value)?
-                .get_value()
-                .into_float_value();
-
-            CodegenValue::Value(match op {
-                LMIRFloatUnOp::NEG => function_state
-                    .builder
-                    .build_float_neg(value, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-            })
-        }
-
-        LMIRInstructionKind::FloatBinOp { left, right, op } => {
-            let left_value = function_state
-                .get_value(left)?
-                .get_value()
-                .into_float_value();
-
-            let right_value = function_state
-                .get_value(right)?
-                .get_value()
-                .into_float_value();
-
-            CodegenValue::Value(match op {
-                LMIRFloatBinOp::ADD => function_state
-                    .builder
-                    .build_float_add(left_value, right_value, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-
-                LMIRFloatBinOp::SUB => function_state
-                    .builder
-                    .build_float_sub(left_value, right_value, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-
-                LMIRFloatBinOp::FMUL => function_state
-                    .builder
-                    .build_float_mul(left_value, right_value, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-
-                LMIRFloatBinOp::FDIV => function_state
-                    .builder
-                    .build_float_div(left_value, right_value, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-
-                LMIRFloatBinOp::EQ
-                | LMIRFloatBinOp::NEQ
-                | LMIRFloatBinOp::FLT
-                | LMIRFloatBinOp::FLE
-                | LMIRFloatBinOp::FGT
-                | LMIRFloatBinOp::FGE => {
-                    let predicate = match op {
-                        LMIRFloatBinOp::EQ => inkwell::FloatPredicate::OEQ,
-                        LMIRFloatBinOp::NEQ => inkwell::FloatPredicate::ONE,
-                        LMIRFloatBinOp::FLT => inkwell::FloatPredicate::OLT,
-                        LMIRFloatBinOp::FLE => inkwell::FloatPredicate::OLE,
-                        LMIRFloatBinOp::FGT => inkwell::FloatPredicate::OGT,
-                        LMIRFloatBinOp::FGE => inkwell::FloatPredicate::OGE,
-                        _ => unreachable!(),
-                    };
-
-                    function_state
-                        .builder
-                        .build_float_compare(
-                            predicate,
-                            left_value,
-                            right_value,
-                            inst_num().as_str(),
-                        )
-                        .unwrap()
-                        .as_any_value_enum()
-                }
-            })
-        }
-
-        LMIRInstructionKind::Phi { predecessors: from } => {
-            let as_basic_type = if block_instruction.value_type.is_memory_resident() {
-                global_state
-                    .context
-                    .ptr_type(AddressSpace::from(0))
-                    .as_basic_type_enum()
-            } else {
-                let val_type = bc_llvm_type(global_state.context, &block_instruction.value_type)?;
-                any_to_basic_type(val_type).expect("Failed to convert value type to basic type")
-            };
-
-            let phi_node = function_state
-                .builder
-                .build_phi(as_basic_type, inst_num().as_str())
-                .unwrap();
-
-            for (value_id, block_id) in from {
-                let value = function_state.get_value(value_id)?.get_value();
-                let value =
-                    any_to_basic_val(value).expect("Failed to convert value to basic value");
-
-                let block = function_state.get_block(block_id).unwrap();
-
-                phi_node.add_incoming(&[(&value, block)]);
-            }
-
-            CodegenValue::Value(phi_node.as_any_value_enum())
-        }
-
-        LMIRInstructionKind::Branch {
-            condition,
-            true_block,
-            false_block,
-        } => {
-            let mut condition_value = function_state
-                .get_value(condition)?
-                .get_value()
-                .into_int_value();
-
-            if condition_value.get_type().get_bit_width() > 1 {
-                condition_value = function_state
-                    .builder
-                    .build_int_truncate(
-                        condition_value,
-                        global_state.context.bool_type(),
-                        inst_num().as_str(),
-                    )
-                    .unwrap();
-            }
-
-            let true_block_val = function_state.get_block(true_block).unwrap();
-            let false_block_val = function_state.get_block(false_block).unwrap();
-
-            function_state
-                .builder
-                .build_conditional_branch(condition_value, true_block_val, false_block_val)
-                .unwrap();
-
-            CodegenValue::Null
-        }
-
-        LMIRInstructionKind::JumpTable {
-            value,
-            targets,
-            default,
-        } => {
-            let value = function_state
-                .get_value(value)?
-                .get_value()
-                .into_int_value();
-            let value_type = value.get_type();
-
-            let targets = targets
-                .iter()
-                .map(|(value, block)| {
-                    let value = value_type.const_int(*value, false);
-                    let block = function_state.get_block(block).unwrap();
-
-                    (value, block)
-                })
-                .collect::<Vec<_>>();
-
-            function_state
-                .builder
-                .build_switch(
-                    value,
-                    function_state.get_block(default).unwrap(),
-                    targets.as_slice(),
-                )
-                .unwrap();
-
-            CodegenValue::Null
-        }
-
-        LMIRInstructionKind::Coercion {
-            value,
-            coercion_type: LMIRCoercionType::ZExtend,
-        } => {
-            let value = function_state
-                .get_value(value)?
-                .get_value()
-                .into_int_value();
-            let to_type =
-                bc_llvm_type(global_state.context, &block_instruction.value_type)?.into_int_type();
-
-            CodegenValue::Value(
-                function_state
-                    .builder
-                    .build_int_z_extend(value, to_type, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-            )
-        }
-
-        LMIRInstructionKind::Coercion {
-            value,
-            coercion_type: LMIRCoercionType::SExtend,
-        } => {
-            let value = function_state
-                .get_value(value)?
-                .get_value()
-                .into_int_value();
-            let to_type =
-                bc_llvm_type(global_state.context, &block_instruction.value_type)?.into_int_type();
-
-            CodegenValue::Value(
-                function_state
-                    .builder
-                    .build_int_s_extend(value, to_type, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-            )
-        }
-
         LMIRInstructionKind::StructAccess {
             struct_,
             field_index,
             struct_type,
             ..
-        } => {
-            let Some(AnyTypeEnum::StructType(struct_type)) = bc_llvm_type(function_state.context, struct_type) else {
-                unreachable!("Expected struct type for struct access, got: {struct_type:?}");
-            };
-            
-            let struct_ptr = function_state
-                .get_value(struct_)?
-                .get_value()
-                .into_pointer_value();
-
-            let gep = function_state
-                .builder
-                .build_struct_gep(struct_type, struct_ptr, *field_index as u32, inst_num().as_str())
-                .unwrap();
-
-            CodegenValue::Value(gep.as_any_value_enum())
+        } => memory::generate_struct_access(function_state, struct_, struct_type, *field_index),
+        LMIRInstructionKind::Store {
+            value,
+            _type,
+            memory,
+        } => memory::generate_store(global_state, function_state, memory, value, _type),
+        LMIRInstructionKind::Memcpy {
+            dest,
+            src,
+            size,
+            alignment,
+        } => memory::generate_memcpy(function_state, dest, src, size, *alignment),
+        LMIRInstructionKind::Load { memory, _type } => {
+            memory::generate_load(global_state, function_state, memory, _type)
         }
-
+        LMIRInstructionKind::ZeroMemory { memory, _type } => {
+            memory::generate_zero_memory(global_state, function_state, memory, _type)
+        }
+        LMIRInstructionKind::DirectCall {
+            func,
+            args,
+            method_sig,
+        } => calls::generate_direct_call(global_state, function_state, func, args, method_sig),
+        LMIRInstructionKind::IndirectCall {
+            func_ptr,
+            args,
+            method_sig,
+        } => {
+            calls::generate_indirect_call(global_state, function_state, func_ptr, args, method_sig)
+        }
         LMIRInstructionKind::Coercion {
             value,
-            coercion_type: LMIRCoercionType::Trunc,
-        } => {
-            let value = function_state
-                .get_value(value)?
-                .get_value()
-                .into_int_value();
-
-            let to_type =
-                bc_llvm_type(global_state.context, &block_instruction.value_type)?.into_int_type();
-
-            CodegenValue::Value(
-                function_state
-                    .builder
-                    .build_int_truncate(value, to_type, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-            )
-        }
-
-        LMIRInstructionKind::GetFunctionAddr { func } => {
-            let function_val = global_state
-                .module
-                .get_function(func)
-                .unwrap()
-                .as_global_value()
-                .as_pointer_value();
-
-            // This might be a bug, but calling as_any_value_enum() on a pointer to
-            // a function returns a FunctionValue instead of a PointerValue.
-            let any_value_enum = AnyValueEnum::PointerValue(function_val);
-
-            CodegenValue::Value(any_value_enum)
-        }
-
-        LMIRInstructionKind::Coercion {
-            value,
-            coercion_type: LMIRCoercionType::IntToFloat { from: _, sextend },
-        } => {
-            let value = function_state
-                .get_value(value)?
-                .get_value()
-                .into_int_value();
-
-            let to_type = bc_llvm_type(global_state.context, &block_instruction.value_type)?
-                .into_float_type();
-
-            CodegenValue::Value(match sextend {
-                true => function_state
-                    .builder
-                    .build_signed_int_to_float(value, to_type, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-
-                false => function_state
-                    .builder
-                    .build_unsigned_int_to_float(value, to_type, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-            })
-        }
-
-        LMIRInstructionKind::Coercion {
-            value,
-            coercion_type: LMIRCoercionType::FloatToInt { from: _, sextend },
-        } => {
-            let value = function_state
-                .get_value(value)?
-                .get_value()
-                .into_float_value();
-
-            let to_type =
-                bc_llvm_type(global_state.context, &block_instruction.value_type)?.into_int_type();
-
-            CodegenValue::Value(match sextend {
-                true => function_state
-                    .builder
-                    .build_float_to_signed_int(value, to_type, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-
-                false => function_state
-                    .builder
-                    .build_float_to_unsigned_int(value, to_type, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-            })
-        }
-
-        LMIRInstructionKind::Coercion {
-            value,
-            coercion_type: LMIRCoercionType::PtrToInt,
-        } => {
-            let value = function_state
-                .get_value(value)?
-                .get_value()
-                .into_pointer_value();
-
-            let to_type =
-                bc_llvm_type(global_state.context, &block_instruction.value_type)?.into_int_type();
-
-            CodegenValue::Value(
-                function_state
-                    .builder
-                    .build_ptr_to_int(value, to_type, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-            )
-        }
-
-        LMIRInstructionKind::Coercion {
-            value,
-            coercion_type: LMIRCoercionType::FloatCast { .. },
-        } => {
-            let value = function_state
-                .get_value(value)?
-                .get_value()
-                .into_float_value();
-
-            let to_type = bc_llvm_type(global_state.context, &block_instruction.value_type)?
-                .into_float_type();
-
-            CodegenValue::Value(
-                function_state
-                    .builder
-                    .build_float_cast(value, to_type, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-            )
-        }
-
-        LMIRInstructionKind::CompilerAssumption { condition: _ } => {
-            // TODO: Implement assumptions in LLVM
-
-            CodegenValue::Null
-        }
-    })
-}
-
-fn codegen_call_return<'a, 'b>(
-    function_state: &FunctionState<'a, 'b>,
-    method_sig: &cx_lmir::LMIRFunctionSignature,
-    call: &inkwell::values::CallSiteValue<'a>,
-) -> Option<CodegenValue<'a>> {
-    let basic = match call.try_as_basic_value() {
-        ValueKind::Basic(val) => val,
-        ValueKind::Instruction(_) => return Some(CodegenValue::Null),
-    };
-
-    match &method_sig.return_abi {
-        LMIRReturnABI::Direct { slots } if slots.len() > 1 => {
-            let aggregate = basic.into_struct_value();
-            let mut values = Vec::new();
-            for (i, slot) in slots.iter().enumerate() {
-                let value = function_state
-                    .builder
-                    .build_extract_value(aggregate, i as u32, inst_num().as_str())
-                    .unwrap();
-                values.push((slot.clone(), value));
+            coercion_type,
+        } => match coercion_type {
+            cx_lmir::LMIRCoercionType::BitCast => operations::generate_bit_cast(
+                global_state,
+                function_state,
+                value,
+                &instruction.value_type,
+            ),
+            cx_lmir::LMIRCoercionType::IntToPtr { .. } => {
+                operations::generate_int_to_ptr(global_state, function_state, value)
             }
-            Some(CodegenValue::AggregateSlots(values))
+            cx_lmir::LMIRCoercionType::ZExtend => operations::generate_zextend(
+                global_state,
+                function_state,
+                value,
+                &instruction.value_type,
+            ),
+            cx_lmir::LMIRCoercionType::SExtend => operations::generate_sextend(
+                global_state,
+                function_state,
+                value,
+                &instruction.value_type,
+            ),
+            cx_lmir::LMIRCoercionType::Trunc => operations::generate_trunc(
+                global_state,
+                function_state,
+                value,
+                &instruction.value_type,
+            ),
+            cx_lmir::LMIRCoercionType::IntToFloat { sextend, .. } => {
+                operations::generate_int_to_float(
+                    global_state,
+                    function_state,
+                    value,
+                    &instruction.value_type,
+                    *sextend,
+                )
+            }
+            cx_lmir::LMIRCoercionType::FloatToInt { sextend, .. } => {
+                operations::generate_float_to_int(
+                    global_state,
+                    function_state,
+                    value,
+                    &instruction.value_type,
+                    *sextend,
+                )
+            }
+            cx_lmir::LMIRCoercionType::PtrToInt => operations::generate_ptr_to_int(
+                global_state,
+                function_state,
+                value,
+                &instruction.value_type,
+            ),
+            cx_lmir::LMIRCoercionType::FloatCast { .. } => operations::generate_float_cast(
+                global_state,
+                function_state,
+                value,
+                &instruction.value_type,
+            ),
+        },
+        LMIRInstructionKind::PointerBinOp {
+            left,
+            type_size,
+            right,
+            op,
+            ..
+        } => operations::generate_pointer_binop(
+            global_state,
+            function_state,
+            left,
+            right,
+            *type_size,
+            *op,
+        ),
+        LMIRInstructionKind::IntegerBinOp { left, right, op } => {
+            operations::generate_integer_binop(global_state, function_state, left, right, *op)
         }
-        _ => Some(CodegenValue::Value(basic.as_any_value_enum())),
+        LMIRInstructionKind::IntegerUnOp { value, op } => {
+            operations::generate_integer_unop(function_state, value, *op)
+        }
+        LMIRInstructionKind::FloatBinOp { left, right, op } => {
+            operations::generate_float_binop(function_state, left, right, *op)
+        }
+        LMIRInstructionKind::FloatUnOp { value, op } => {
+            operations::generate_float_unop(function_state, value, *op)
+        }
+        LMIRInstructionKind::Branch {
+            condition,
+            true_target,
+            false_target,
+        } => control_flow::generate_branch(
+            global_state,
+            function_state,
+            condition,
+            true_target,
+            false_target,
+        ),
+        LMIRInstructionKind::Jump { target } => control_flow::generate_jump(function_state, target),
+        LMIRInstructionKind::JumpTable {
+            value,
+            targets,
+            default,
+        } => {
+            control_flow::generate_jump_table(global_state, function_state, value, targets, default)
+        }
+        LMIRInstructionKind::Return { value } => {
+            control_flow::generate_return(global_state, function_state, value.as_ref())
+        }
+        LMIRInstructionKind::CompilerAssumption { .. } => {
+            // TODO: Implement assumptions in LLVM.
+            Some(CodegenValue::Null)
+        }
+        LMIRInstructionKind::Unreachable => control_flow::generate_unreachable(function_state),
     }
-}
-
-fn apply_call_abi_attributes<'a>(
-    global_state: &GlobalState<'a>,
-    call: &inkwell::values::CallSiteValue<'a>,
-    method_sig: &cx_lmir::LMIRFunctionSignature,
-) -> Option<()> {
-    if let LMIRReturnABI::IndirectSret { alignment: _ } = &method_sig.return_abi {
-        let pointee = bc_llvm_type(global_state.context, &method_sig.return_type)?;
-        call.add_attribute(
-            AttributeLoc::Param(0),
-            attr_sret(global_state.context, pointee),
-        );
-    }
-    Some(())
-}
-
-fn build_direct_return_from_memory<'a, 'b>(
-    global_state: &GlobalState<'a>,
-    function_state: &FunctionState<'a, 'b>,
-    memory: AnyValueEnum<'a>,
-) -> Option<inkwell::values::BasicValueEnum<'a>> {
-    let LMIRReturnABI::Direct { slots } = &function_state.signature.return_abi else {
-        return any_to_basic_val(memory);
-    };
-
-    let memory = memory.into_pointer_value();
-    if slots.len() == 1 {
-        let ty = any_to_basic_type(bc_llvm_type(global_state.context, &slots[0]._type)?)?;
-        let loaded = function_state
-            .builder
-            .build_load(ty, memory, inst_num().as_str())
-            .unwrap();
-        loaded
-            .as_instruction_value()
-            .unwrap()
-            .set_alignment(slots[0]._type.alignment() as u32)
-            .unwrap();
-        return Some(loaded);
-    }
-
-    let fields = slots
-        .iter()
-        .map(|slot| {
-            let field = bc_llvm_type(global_state.context, &slot._type)?;
-            any_to_basic_type(field)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let struct_type = global_state.context.struct_type(fields.as_slice(), false);
-    let mut aggregate = struct_type.const_zero();
-    let usize_type = global_state.pointer_int_type;
-    let base = function_state
-        .builder
-        .build_ptr_to_int(memory, usize_type, inst_num().as_str())
-        .unwrap();
-
-    for (i, slot) in slots.iter().enumerate() {
-        let offset = usize_type.const_int(slot.offset as u64, false);
-        let ptr_int = function_state
-            .builder
-            .build_int_add(base, offset, inst_num().as_str())
-            .unwrap();
-        let field_ptr = function_state
-            .builder
-            .build_int_to_ptr(
-                ptr_int,
-                global_state.context.ptr_type(AddressSpace::from(0)),
-                inst_num().as_str(),
-            )
-            .unwrap();
-        let field_ty = any_to_basic_type(bc_llvm_type(global_state.context, &slot._type)?)?;
-        let field = function_state
-            .builder
-            .build_load(field_ty, field_ptr, inst_num().as_str())
-            .unwrap();
-        field
-            .as_instruction_value()
-            .unwrap()
-            .set_alignment(slot._type.alignment() as u32)
-            .unwrap();
-        aggregate = function_state
-            .builder
-            .build_insert_value(aggregate, field, i as u32, inst_num().as_str())
-            .unwrap()
-            .into_struct_value();
-    }
-
-    Some(aggregate.as_basic_value_enum())
 }

@@ -1,11 +1,11 @@
 use cx_log::CXResult;
-use cx_mir::{
+use cx_thir::{
     EnvironmentNamespace,
-    mir::{
-        expression::{MIRExpression, MIRExpressionKind},
-        r#type::MIRType,
+    thir::{
+        expression::{THIRExpression, THIRExpressionKind},
+        r#type::THIRType,
     },
-    type_context::MIRTypeContext,
+    type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
@@ -14,14 +14,13 @@ use crate::{
     environment::{ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment},
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
-        contracts::resolve_assertion_prototype,
         control_flow::enqueue_jump_arrow,
         result::TypecheckResult,
         typechecker::typecheck_expr,
     },
 };
 
-fn typechange_can_forward_region(return_type: &MIRType) -> bool {
+fn typechange_can_forward_region(return_type: &THIRType) -> bool {
     return_type.is_structure()
         || return_type.is_union()
         || return_type.is_array()
@@ -32,8 +31,15 @@ pub fn typecheck_return(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     return_range: &cx_tokens::TokenRange,
-    value: Option<MIRExpression>,
+    value: Option<THIRExpression>,
 ) -> CXResult<TypecheckResult> {
+    if env.in_defer_context() {
+        return env.log_error(
+            return_range,
+            "return is not allowed inside a deferred expression".to_string(),
+        );
+    }
+
     let return_type = env.current_function().signature().return_type.clone();
 
     let return_value = match (value, &return_type) {
@@ -48,10 +54,10 @@ pub fn typecheck_return(
                 && !inner.is_nocopy()
                 && typechange_can_forward_region(&inner)
             {
-                some_value = MIRExpression {
+                some_value = THIRExpression {
                     _type: inner,
                     token_range: some_value.token_range.clone(),
-                    kind: MIRExpressionKind::Typechange(Box::new(some_value)),
+                    kind: THIRExpressionKind::Typechange(Box::new(some_value)),
                 };
             } else if env.symbols.mem_ref_inner(return_type).is_none() {
                 some_value = std_rval_promotion(env, some_value)?;
@@ -67,7 +73,7 @@ pub fn typecheck_return(
                 value.token_range,
                 format!(
                     "Cannot return from function {} with a void return type",
-                    env.current_function().display_with(&env.symbols)
+                    env.current_function().pretty_name()
                 ),
             );
         }
@@ -77,7 +83,7 @@ pub fn typecheck_return(
                 return_range,
                 format!(
                     "Function {} expects a return value, but none was provided",
-                    env.current_function().display_with(&env.symbols)
+                    env.current_function().pretty_name()
                 ),
             );
         }
@@ -102,7 +108,8 @@ pub fn typecheck_return(
         if ret_name.is_some() && return_type.is_unit() {
             return env.log_error(
                 return_range,
-                "Cannot have a named return variable in a function with void return type".to_string(),
+                "Cannot have a named return variable in a function with void return type"
+                    .to_string(),
             );
         }
 
@@ -115,8 +122,8 @@ pub fn typecheck_return(
 
             env.symbols.insert_local_value(
                 QualifiedName::new_raw(name.clone()),
-                MIRExpression {
-                    kind: MIRExpressionKind::ContractVariable {
+                THIRExpression {
+                    kind: THIRExpressionKind::ContractVariable {
                         name: name.clone(),
                         force_param: true,
                     },
@@ -129,8 +136,8 @@ pub fn typecheck_return(
         if let Some(ret_name) = ret_name.as_ref() {
             env.symbols.insert_local_value(
                 QualifiedName::new_raw(ret_name.clone()),
-                MIRExpression {
-                    kind: MIRExpressionKind::ContractVariable {
+                THIRExpression {
+                    kind: THIRExpressionKind::ContractVariable {
                         name: ret_name.clone(),
                         force_param: false,
                     },
@@ -142,27 +149,33 @@ pub fn typecheck_return(
 
         let postcondition = typecheck_expr(env, namespace, &ret_contract, None)
             .and_then(|res| res.standard_ready_coerce(env, ret_contract.token_range()))
-            .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
-        let assertion_prototype = Box::new(resolve_assertion_prototype(env, namespace)?);
+            .and_then(|v| implicit_cast(env, v, &THIRType::bool()))?;
+        let postcondition = THIRExpression {
+            token_range: postcondition.token_range.clone(),
+            kind: THIRExpressionKind::Assert {
+                condition: Box::new(postcondition),
+                message: "Postcondition Failed!".to_string(),
+            },
+            _type: THIRType::unit(),
+        };
 
         env.pop_scope()
             .map_err(|err| env.complete_err(err, ret_contract.token_range()))?;
 
         Ok(TypecheckResult::new(
-            MIRType::unit(),
-            MIRExpressionKind::Return {
+            THIRType::unit(),
+            THIRExpressionKind::Return {
                 value: return_value,
-                postcondition: Some(cx_mir::mir::expression::MIRPostcondition {
+                postcondition: Some(cx_thir::thir::expression::THIRPostcondition {
                     binding: ret_name.clone(),
                     condition: Box::new(postcondition),
-                    assertion_prototype,
                 }),
             },
         ))
     } else {
         Ok(TypecheckResult::new(
-            MIRType::unit(),
-            MIRExpressionKind::Return {
+            THIRType::unit(),
+            THIRExpressionKind::Return {
                 value: return_value,
                 postcondition: None,
             },

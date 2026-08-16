@@ -1,0 +1,14 @@
+import std::cell::rcell as std;
+import std::io as std;
+
+int main() {
+    std::rcell<int> cell = std::rcell::new(8);
+    std::rcell::borrow_const(cell) <| |shared| then
+
+    std::printf("shared active %d\n", shared);
+    std::rcell::borrow(cell) <| |value| .{
+        std::printf("unreachable mutable %d\n", value);
+    };
+    std::printf("unreachable end\n");
+    return 0;
+}

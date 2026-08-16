@@ -1,17 +1,15 @@
-use std::collections::HashMap;
-
-use cx_ast::ast::expression::CXExpression;
+use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXRawResult;
-use cx_mir::mir::data::{MIRFunctionPrototype, MIRType};
+use cx_thir::thir::data::{THIRFnPrototype, THIRType};
 
 use crate::environment::control_flow::{
-    BindingMoveState, ControlFlow, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind,
-    ScopeArrowSink, ScopeExitTarget, ScopeId, TrackedBindingState,
+    ControlFlow, ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink,
+    ScopeExitTarget, ScopeId,
 };
 
 #[derive(Default)]
 pub struct FunctionContext {
-    current_function: Option<MIRFunctionPrototype>,
+    current_function: Option<THIRFnPrototype>,
     flow: Option<ControlFlow>,
     require_safe: bool,
     require_pure: bool,
@@ -29,12 +27,13 @@ pub struct FunctionModeSnapshot {
 #[derive(Clone)]
 pub struct YieldContext {
     pub target_scope: ScopeId,
-    pub result_type: Option<MIRType>,
+    pub result_type: Option<THIRType>,
+    pub saw_empty_yield: bool,
     pub yield_count: usize,
 }
 
 impl FunctionContext {
-    pub fn begin_function(&mut self, prototype: MIRFunctionPrototype) {
+    pub fn begin_function(&mut self, prototype: THIRFnPrototype) {
         self.require_safe = prototype.signature().contract.safe;
         self.require_pure = false;
         self.unsafe_depth = 0;
@@ -52,11 +51,11 @@ impl FunctionContext {
         self.yield_stack.clear();
     }
 
-    pub fn current_function(&self) -> &MIRFunctionPrototype {
+    pub fn current_function(&self) -> &THIRFnPrototype {
         self.current_function.as_ref().unwrap()
     }
 
-    pub fn try_current_function(&self) -> Option<&MIRFunctionPrototype> {
+    pub fn try_current_function(&self) -> Option<&THIRFnPrototype> {
         self.current_function.as_ref()
     }
 
@@ -78,7 +77,8 @@ impl FunctionContext {
     }
 
     pub fn pop_scope(&mut self) -> CXRawResult<()> {
-        self.flow_mut().pop_scope()
+        self.flow_mut().pop_scope()?;
+        CXRawResult::Ok(())
     }
 
     pub fn current_snapshot(&self) -> ControlFlowSnapshot {
@@ -93,24 +93,20 @@ impl FunctionContext {
         self.flow().current_scope_index()
     }
 
-    pub fn set_scope_anchor(&mut self, expr: &CXExpression) {
+    pub fn set_scope_anchor(&mut self, expr: &HIRExpression) {
         self.flow_mut().set_scope_anchor(expr);
     }
 
     pub fn configure_merge_scope(
         &mut self,
-        expr: &CXExpression,
+        expr: &HIRExpression,
         include_current_snapshot: Option<&str>,
-        require_nodrop_discharge: bool,
     ) {
-        self.flow_mut().configure_merge_scope(
-            expr,
-            include_current_snapshot,
-            require_nodrop_discharge,
-        );
+        self.flow_mut()
+            .configure_merge_scope(expr, include_current_snapshot);
     }
 
-    pub fn configure_loop_scope(&mut self, expr: &CXExpression, loop_kind: LoopScopeKind) {
+    pub fn configure_loop_scope(&mut self, expr: &HIRExpression, loop_kind: LoopScopeKind) {
         self.flow_mut().configure_loop_scope(expr, loop_kind);
     }
 
@@ -166,10 +162,11 @@ impl FunctionContext {
         self.flow().is_current_scope_reachable()
     }
 
-    pub fn push_yield_context(&mut self, target_scope: ScopeId, result_type: Option<MIRType>) {
+    pub fn push_yield_context(&mut self, target_scope: ScopeId, result_type: Option<THIRType>) {
         self.yield_stack.push(YieldContext {
             target_scope,
             result_type,
+            saw_empty_yield: false,
             yield_count: 0,
         });
     }
@@ -192,26 +189,6 @@ impl FunctionContext {
         self.current_yield_context()
             .map(|context| context.yield_count)
             .unwrap_or(0)
-    }
-
-    pub fn track_binding(&mut self, name: String, nodrop: bool) {
-        self.flow_mut().track_binding(name, nodrop);
-    }
-
-    pub fn tracked_binding(&self, name: &str) -> Option<&TrackedBindingState> {
-        self.flow().tracked_binding(name)
-    }
-
-    pub fn set_tracked_binding_state(&mut self, name: &str, state: BindingMoveState) {
-        self.flow_mut().set_tracked_binding_state(name, state);
-    }
-
-    pub fn tracked_bindings_snapshot(&self) -> HashMap<String, TrackedBindingState> {
-        self.flow().tracked_bindings_snapshot()
-    }
-
-    pub fn nodrop_bindings_in_nonfinal_state(&self) -> Vec<String> {
-        self.flow().nodrop_bindings_in_nonfinal_state()
     }
 
     pub fn in_safe_context(&self) -> bool {

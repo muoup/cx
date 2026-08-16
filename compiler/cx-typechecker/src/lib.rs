@@ -1,8 +1,9 @@
-use cx_ast::ast::modifiers::{CX_CONST, CXLinkageMode};
-use cx_ast::decomposition::{CXGenerationAST, CXGenerationStmt};
+use cx_hir::ast::modifiers::HIR_CONST;
+use cx_hir::decomposition::{HIRGenerationAST, HIRGenerationStmt};
 use cx_log::CXResult;
-use cx_mir::EnvironmentNamespace;
-use cx_mir::mir::global::{MIRGlobalVarKind, MIRGlobalVariable};
+use cx_thir::EnvironmentNamespace;
+use cx_thir::thir::global::{MIRGlobalVarKind, MIRGlobalVariable};
+use cx_util::linkage::LinkageMode;
 
 pub mod environment;
 pub mod log;
@@ -15,26 +16,27 @@ mod type_checking;
 
 use crate::comptime::evaluate_comptime_expression;
 use crate::requests::fulfill_requests;
-use crate::symbol::completion::{complete_prototype, complete_type};
+use crate::symbol::completion::{complete_prototype, complete_type, completed_symbol_name};
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::{environment::TypeEnvironment, type_checking::functions::typecheck_function};
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 pub fn typecheck(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    ast: &CXGenerationAST,
+    ast: &HIRGenerationAST,
 ) -> CXResult<()> {
     for stmt in ast.generation_stmts.iter() {
         match stmt {
-            CXGenerationStmt::Function { prototype, body } => {
+            HIRGenerationStmt::Function { prototype, body } => {
                 let prototype = complete_prototype(env, namespace, prototype)?;
                 typecheck_function(env, namespace, prototype.clone(), body)?;
             }
 
-            CXGenerationStmt::StringLiteral { name, value } => {
+            HIRGenerationStmt::StringLiteral { name, value } => {
                 let global = MIRGlobalVariable {
                     is_mutable: false,
-                    linkage: CXLinkageMode::Static,
+                    linkage: LinkageMode::Static,
                     kind: MIRGlobalVarKind::StringLiteral {
                         name: name.clone(),
                         value: value.clone(),
@@ -44,13 +46,19 @@ pub fn typecheck(
                 env.items.push_generated_global(global);
             }
 
-            CXGenerationStmt::AddressableGlobal {
+            HIRGenerationStmt::AddressableGlobal {
                 name,
                 _type,
                 linkage,
+                symbol_naming,
                 initializer,
             } => {
                 let _type = complete_type(env, namespace, _type)?;
+                let symbol_name = completed_symbol_name(
+                    env,
+                    QualifiedName::new(namespace.clone(), name.clone()),
+                    *symbol_naming,
+                );
                 let comptime_init = initializer
                     .as_ref()
                     .map(|init| {
@@ -64,10 +72,10 @@ pub fn typecheck(
                     .transpose()?;
 
                 let global = MIRGlobalVariable {
-                    is_mutable: _type.get_specifier(CX_CONST),
+                    is_mutable: _type.get_specifier(HIR_CONST),
                     linkage: *linkage,
                     kind: MIRGlobalVarKind::Variable {
-                        name: name.clone(),
+                        name: CXIdent::new(symbol_name),
                         _type,
                         initializer: comptime_init,
                     },

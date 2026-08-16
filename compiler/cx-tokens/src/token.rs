@@ -204,6 +204,9 @@ macro_rules! identifier {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenKind {
+    IncludeBegin,
+    IncludeEnd,
+
     Assignment(Option<OperatorType>),
     Operator(OperatorType),
 
@@ -339,6 +342,7 @@ pub enum OperatorType {
     Move,
     Is,
     Pipe,
+    BackwardPipe,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -372,6 +376,8 @@ pub enum KeywordType {
     Switch,
     Case,
     Default,
+    True,
+    False,
 
     Struct,
     Enum,
@@ -388,6 +394,7 @@ pub enum KeywordType {
     Restrict,
 
     Sizeof,
+    Alignof,
 
     // CX Specific
     Import,
@@ -401,6 +408,8 @@ pub enum KeywordType {
     Comptime,
     Expr,
     Emit,
+    Defer,
+    Then,
     Where,
     Safe,
 
@@ -457,6 +466,43 @@ pub enum SpecifierType {
 }
 
 impl TokenKind {
+    pub fn into_c_mode(self) -> TokenKind {
+        match self {
+            TokenKind::Keyword(keyword) => {
+                let identifier = match keyword {
+                    KeywordType::Import => "import",
+                    KeywordType::As => "as",
+                    KeywordType::Strong => "strong",
+                    KeywordType::Weak => "weak",
+                    KeywordType::Template => "template",
+                    KeywordType::Class => "class",
+                    KeywordType::Match => "match",
+                    KeywordType::Yield => "yield",
+                    KeywordType::Comptime => "comptime",
+                    KeywordType::Expr => "expr",
+                    KeywordType::Emit => "emit",
+                    KeywordType::Defer => "defer",
+                    KeywordType::Then => "then",
+                    KeywordType::Where => "where",
+                    KeywordType::Safe => "safe",
+                    KeywordType::Precondition => "pre",
+                    KeywordType::Postcondition => "post",
+                    _ => return TokenKind::Keyword(keyword),
+                };
+                TokenKind::Identifier(identifier.to_string())
+            }
+            TokenKind::Operator(OperatorType::Move) => TokenKind::Identifier("move".to_string()),
+            TokenKind::Operator(OperatorType::Is) => TokenKind::Identifier("is".to_string()),
+            TokenKind::Specifier(SpecifierType::Public) => {
+                TokenKind::Identifier("public".to_string())
+            }
+            TokenKind::Specifier(SpecifierType::Private) => {
+                TokenKind::Identifier("private".to_string())
+            }
+            other => other,
+        }
+    }
+
     pub fn from_str(str: String) -> TokenKind {
         match str.trim() {
             "if" => TokenKind::Keyword(KeywordType::If),
@@ -470,6 +516,8 @@ impl TokenKind {
             "switch" => TokenKind::Keyword(KeywordType::Switch),
             "case" => TokenKind::Keyword(KeywordType::Case),
             "default" => TokenKind::Keyword(KeywordType::Default),
+            "true" => TokenKind::Keyword(KeywordType::True),
+            "false" => TokenKind::Keyword(KeywordType::False),
             "struct" => TokenKind::Keyword(KeywordType::Struct),
             "enum" => TokenKind::Keyword(KeywordType::Enum),
             "union" => TokenKind::Keyword(KeywordType::Union),
@@ -491,6 +539,7 @@ impl TokenKind {
             "signed" => TokenKind::Intrinsic(IntrinsicType::Signed),
             "register" => TokenKind::Keyword(KeywordType::Register),
             "sizeof" => TokenKind::Keyword(KeywordType::Sizeof),
+            "alignof" => TokenKind::Keyword(KeywordType::Alignof),
 
             "public" => TokenKind::Specifier(SpecifierType::Public),
             "private" => TokenKind::Specifier(SpecifierType::Private),
@@ -518,6 +567,8 @@ impl TokenKind {
             "comptime" => TokenKind::Keyword(KeywordType::Comptime),
             "expr" => TokenKind::Keyword(KeywordType::Expr),
             "emit" => TokenKind::Keyword(KeywordType::Emit),
+            "defer" => TokenKind::Keyword(KeywordType::Defer),
+            "then" => TokenKind::Keyword(KeywordType::Then),
             "is" => TokenKind::Operator(OperatorType::Is),
 
             "safe" => TokenKind::Keyword(KeywordType::Safe),

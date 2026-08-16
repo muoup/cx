@@ -1,15 +1,11 @@
 [package]
 name = "cx-mir"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-speedy = "0.8.7"
-
-cx-ast = { path = "../cx-ast" }
-cx-log = { path = "../cx-log" }
+cx-util = { path = "../cx-util" }
 cx-target = { path = "../cx-target" }
 cx-tokens = { path = "../cx-tokens" }
-cx-util = { path = "../cx-util" }
-
-uuid = { version = "1.17.0", features = ["v4"] }
+cx-hir = { path = "../cx-hir" }
+speedy = "0.8.7"

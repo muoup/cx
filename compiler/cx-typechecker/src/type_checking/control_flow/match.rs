@@ -12,17 +12,17 @@ use crate::type_checking::pattern::tagged_union::{
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_checking::value::resolve_indirect_base;
-use cx_ast::ast::template::CXTemplateInput;
-use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
+use cx_hir::ast::template::HIRTemplateInput;
+use cx_hir::ast::{expression::HIRExpression, pattern::HIRPattern};
 use cx_log::CXResult;
-use cx_mir::EnvironmentNamespace;
-use cx_mir::mir::{
+use cx_thir::EnvironmentNamespace;
+use cx_thir::thir::{
     contextual_eq::TypeContextEqual,
-    data::{MIRType, MIRTypeKind},
-    expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
-    pattern::MIRPattern,
+    data::{THIRType, THIRTypeKind},
+    expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
+    pattern::THIRPattern,
 };
-use cx_mir::type_context::MIRTypeContext;
+use cx_thir::type_context::THIRTypeContext;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
@@ -30,10 +30,10 @@ use cx_util::namespace::QualifiedName;
 pub fn typecheck_match(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    condition: &CXExpression,
-    arms: &[(CXPattern, CXExpression)],
-    default: Option<&CXExpression>,
-    expected_type: Option<&MIRType>,
+    condition: &HIRExpression,
+    arms: &[(HIRPattern, HIRExpression)],
+    default: Option<&HIRExpression>,
+    expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     let expr_value = typecheck_expr(env, namespace, condition, None)
         .and_then(|v| v.standard_ready_coerce(env, condition.token_range()))
@@ -42,7 +42,7 @@ pub fn typecheck_match(
 
     env.push_scope(false, false);
     env.function.set_scope_anchor(condition);
-    env.function.configure_merge_scope(condition, None, false);
+    env.function.configure_merge_scope(condition, None);
 
     let join_scope_idx = env.function.current_scope_index();
     let base_snapshot = env.function.current_snapshot();
@@ -54,18 +54,18 @@ pub fn typecheck_match(
         .push_yield_context(join_scope_idx, expected_type.cloned());
 
     let mut match_condition = expr_value.source.clone();
-    let mut match_subject_name = None;
+    let subject = THIRLocalID::fresh();
     let mut match_is_exhaustive = false;
 
     let match_arms = match &expr_type.kind {
-        MIRTypeKind::Integer { .. } => {
+        THIRTypeKind::Integer { .. } => {
             let expr_value = std_rval_promotion(env, expr_value.source.clone())?;
             match_condition = expr_value;
             // Integer matching: each arm has an integer literal pattern
             let mut result_arms = Vec::new();
 
             for (pattern, body) in arms.iter() {
-                let CXPattern::Integer(pattern_value) = pattern else {
+                let HIRPattern::Integer(pattern_value) = pattern else {
                     return env.log_error(
                         condition.token_range(),
                         "Match pattern must be an integer literal".to_string(),
@@ -88,23 +88,22 @@ pub fn typecheck_match(
                     .set_scope_reachable(join_scope_idx, base_reachable);
                 arm_flows.push(flow);
 
-                result_arms.push((MIRPattern::Integer(*pattern_value), Box::new(body_expr)));
+                result_arms.push((THIRPattern::Integer(*pattern_value), Box::new(body_expr)));
             }
 
             result_arms
         }
 
-        MIRTypeKind::TaggedUnion { variants, .. } => {
+        THIRTypeKind::TaggedUnion { variants, .. } => {
             let expected_union_name = expr_type.member_lookup_identifier().unwrap();
             let subject_name = CXIdent::from("__internal_match_subject");
-            match_subject_name = Some(subject_name.clone());
 
-            let subject_expr = MIRExpression {
+            let subject_expr = THIRExpression {
                 _type: expr_value.source._type.clone(),
                 token_range: TokenRange::internal(),
-                kind: MIRExpressionKind::Variable {
+                kind: THIRExpressionKind::Variable {
                     name: subject_name,
-                    location: SymbolValueOrigin::Local,
+                    local_id: subject,
                 },
             };
 
@@ -156,40 +155,28 @@ pub fn typecheck_match(
 
                 matched_variants.insert(variant_id);
 
-                let variant_get_type = if condition_owned {
-                    variant_type.clone()
-                } else {
-                    env.symbols.mem_ref_to(variant_type.clone())
-                };
-
-                // Extract the variant value and bind it
-                let variant_value_expr = MIRExpression {
-                    _type: variant_get_type,
-                    token_range: TokenRange::internal(),
-                    kind: MIRExpressionKind::TaggedUnionGet {
-                        value: Box::new(subject_expr.clone()),
-                        variant_type: variant_type.clone(),
-                    },
-                };
-
+                let inner_local_id = inner_name.as_ref().map(|_| THIRLocalID::fresh());
                 let body_expr = if let Some(inner_name) = &inner_name {
+                    let inner_local_id = inner_local_id.expect("match binding local id");
                     let (body_expr, flow) = if condition_owned {
                         let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
-                        let variant_region = MIRExpression {
+                        let variant = THIRExpression {
                             token_range: TokenRange::internal(),
                             _type: variant_ref_type.clone(),
-                            kind: MIRExpressionKind::TaggedUnionGet {
+                            kind: THIRExpressionKind::TaggedUnionGet {
                                 value: Box::new(subject_expr.clone()),
                                 variant_type: variant_type.clone(),
+                                variant_index: variant_id,
                             },
                         };
-                        let bind_region = MIRExpression {
+                        let bind_region = THIRExpression {
                             token_range: TokenRange::internal(),
                             _type: variant_ref_type.clone(),
-                            kind: MIRExpressionKind::BindRegion {
+                            kind: THIRExpressionKind::CreateLocalVariable {
                                 name: inner_name.clone(),
+                                local_id: inner_local_id,
                                 _type: variant_type.clone(),
-                                initial_region: Box::new(variant_region),
+                                initial_value: Some(Box::new(variant)),
                                 adopting: true,
                             },
                         };
@@ -198,18 +185,15 @@ pub fn typecheck_match(
                         env.function.set_scope_anchor(body);
                         env.symbols.insert_local_value(
                             QualifiedName::root(inner_name.clone()),
-                            MIRExpression {
+                            THIRExpression {
                                 token_range: TokenRange::internal(),
-                                kind: MIRExpressionKind::Variable {
+                                kind: THIRExpressionKind::Variable {
                                     name: inner_name.clone(),
-                                    location: SymbolValueOrigin::Local,
+                                    local_id: inner_local_id,
                                 },
                                 _type: variant_ref_type,
                             },
                         );
-
-                        env.function
-                            .track_binding(inner_name.as_string(), variant_type.is_nodrop());
 
                         let (body_expr, flow) =
                             typecheck_match_arm_body(env, namespace, body, "arm")?;
@@ -217,21 +201,30 @@ pub fn typecheck_match(
                             .map_err(|err| env.complete_err(err, body.token_range()))?;
 
                         (
-                            MIRExpression {
+                            THIRExpression {
                                 token_range: TokenRange::internal(),
-                                _type: MIRType::unit(),
-                                kind: MIRExpressionKind::Block {
+                                _type: THIRType::unit(),
+                                kind: THIRExpressionKind::Block {
                                     statements: vec![bind_region, body_expr],
+                                    creates_scope: false,
                                 },
                             },
                             flow,
                         )
                     } else {
                         // Typecheck the body with the borrowed variant value bound.
+                        let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
                         env.push_scope(false, false);
                         env.symbols.insert_local_value(
                             QualifiedName::new_raw(inner_name.clone()),
-                            variant_value_expr,
+                            THIRExpression {
+                                token_range: TokenRange::internal(),
+                                kind: THIRExpressionKind::Variable {
+                                    name: inner_name.clone(),
+                                    local_id: inner_local_id,
+                                },
+                                _type: variant_ref_type,
+                            },
                         );
                         let (body_expr, flow) =
                             typecheck_match_arm_body(env, namespace, body, "arm")?;
@@ -274,10 +267,11 @@ pub fn typecheck_match(
                 };
 
                 result_arms.push((
-                    MIRPattern::TaggedUnionVariant {
+                    THIRPattern::TaggedUnionVariant {
                         sum_type: expr_type.clone(),
                         variant_index: variant_id,
                         inner_name,
+                        inner_local_id,
                     },
                     Box::new(body_expr),
                 ));
@@ -333,7 +327,7 @@ pub fn typecheck_match(
     }
 
     let yield_context = env.function.pop_yield_context();
-    let result_type = yield_context.result_type.unwrap_or_else(MIRType::unit);
+    let result_type = yield_context.result_type.unwrap_or_else(THIRType::unit);
     if !result_type.is_unit() {
         for flow in &arm_flows {
             if flow.may_fall_through {
@@ -361,9 +355,9 @@ pub fn typecheck_match(
     // Build the match expression
     Ok(TypecheckResult::new(
         result_type,
-        MIRExpressionKind::Match {
+        THIRExpressionKind::Match {
             condition: Box::new(match_condition),
-            subject_name: match_subject_name,
+            subject,
             arms: match_arms,
             default: default_body,
             exhaustive: match_is_exhaustive || default.is_some(),
@@ -382,9 +376,9 @@ struct MatchArmFlow {
 fn typecheck_match_arm_body(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    body: &CXExpression,
+    body: &HIRExpression,
     label: &'static str,
-) -> CXResult<(MIRExpression, MatchArmFlow)> {
+) -> CXResult<(THIRExpression, MatchArmFlow)> {
     let yield_count_before = env.function.current_yield_count();
     let body_expr = typecheck_expr(env, namespace, body, None)
         .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
@@ -407,9 +401,9 @@ fn typecheck_match_arm_body(
 fn validate_variant_template_input(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    union_type: &MIRType,
-    template_input: Option<&CXTemplateInput>,
-    condition: &CXExpression,
+    union_type: &THIRType,
+    template_input: Option<&HIRTemplateInput>,
+    condition: &HIRExpression,
 ) -> CXResult<()> {
     let Some(template_input) = template_input else {
         return Ok(());

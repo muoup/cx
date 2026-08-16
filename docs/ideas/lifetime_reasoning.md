@@ -1,6 +1,6 @@
 ```cpp
 
-struct affine<T> : @copy_traits(T) {
+struct cell<T> : @copy_traits(T) {
     T value;
     
     comptime int _mut_refs;

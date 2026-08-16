@@ -75,31 +75,20 @@ pub enum CompilationStep {
     Typechecking = 1 << 2,
 
     /**
-     *  Generates a custom bytecode / Flat IR representation from the type-checked AST. This, unlike
-     *  most codegen backends contains support for higher-level constructs such as deferred logic,
-     *  special function types, and templates.
+     *  Generates and analyzes MIR from the type-checked AST. MIR liveness analysis always runs;
+     *  invariant validation may be disabled by the compiler configuration.
      *
-     *  Requires: A type-checked AST. Along with the type and function definitions of imports and self.
+     *  Requires: A fully type-checked AST.
      *
-     *  Outputs:  A bytecode representation of the type-checked AST along with publicly accessible
-     *            implementations of templated functions, types, and potentially in the future small
-     *            always-inlined functions.
+     *  Outputs: An analyzed MIR representation.
      */
+    MIRGen = 1 << 5,
+
+    /** Lowers analyzed MIR into ABI- and layout-aware LMIR. */
     LMIRGen = 1 << 3,
 
-    /**
-     *  Compiles the full compilation units from the flat IR bytecode representation. In effect, this
-     *  will consist of combining the bytecode of the current compilation unit along with all needed
-     *  implementations of templates and types from itself and its imports.
-     *
-     *  Requires: Bytecode representation of the type-checked AST, along with the .cx-impl files of imports
-     *            and the current unit.
-     *
-     *  Outputs:  One object file per compilation unit, containing the compiled code for the unit.
-     */
-    Codegen = 1 << 4, // For now, linking is a single step that is done after all compilation above is done. This
-                      // could be abstracted into a CompilationStep, but seeing as it is not a job that occurs
-                      // per-compilation unit, it handled as its own mechanism.
+    /** Compiles one LMIR unit into an object file. */
+    Codegen = 1 << 4,
 }
 
 impl CompilationJob {
@@ -178,6 +167,7 @@ impl JobQueue {
             CompilationStep::PreParse,
             CompilationStep::Parse,
             CompilationStep::Typechecking,
+            CompilationStep::MIRGen,
             CompilationStep::LMIRGen,
             CompilationStep::Codegen,
         ] {

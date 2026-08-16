@@ -1,0 +1,8 @@
+int value() {
+    return 1;
+}
+
+int main() {
+    defer value();
+    return 0;
+}

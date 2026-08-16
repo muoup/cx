@@ -1,12 +1,16 @@
 use cx_log::CXResult;
-use cx_mir::{
-    mir::r#type::{MIRType, MIRTypeKind},
-    type_context::MIRTypeContext,
+use cx_thir::{
+    thir::r#type::{THIRType, THIRTypeKind},
+    type_context::THIRTypeContext,
 };
 
 use crate::environment::TypeEnvironment;
 
-pub fn compatible_types(env: &TypeEnvironment, type1: &MIRType, type2: &MIRType) -> CXResult<bool> {
+pub fn compatible_types(
+    env: &TypeEnvironment,
+    type1: &THIRType,
+    type2: &THIRType,
+) -> CXResult<bool> {
     if env.type_eq(type1, type2) {
         return Ok(true);
     }
@@ -20,18 +24,18 @@ pub fn compatible_types(env: &TypeEnvironment, type1: &MIRType, type2: &MIRType)
     }
 
     match (&type1.kind, &type2.kind) {
-        (MIRTypeKind::MemoryReference { .. }, MIRTypeKind::PointerTo { .. })
+        (THIRTypeKind::MemoryReference { .. }, THIRTypeKind::PointerTo { .. })
             if env.symbols.is_cx_str(type1) && env.symbols.is_c_str(type2) =>
         {
             Ok(true)
         }
 
         (
-            MIRTypeKind::MemoryReference {
+            THIRTypeKind::MemoryReference {
                 inner_type: inner1,
                 bitfield: bitfield1,
             },
-            MIRTypeKind::MemoryReference {
+            THIRTypeKind::MemoryReference {
                 inner_type: inner2,
                 bitfield: bitfield2,
             },
@@ -47,10 +51,10 @@ pub fn compatible_types(env: &TypeEnvironment, type1: &MIRType, type2: &MIRType)
         }
 
         (
-            MIRTypeKind::PointerTo {
+            THIRTypeKind::PointerTo {
                 inner_type: inner1, ..
             },
-            MIRTypeKind::PointerTo {
+            THIRTypeKind::PointerTo {
                 inner_type: inner2, ..
             },
         ) => {
@@ -65,11 +69,11 @@ pub fn compatible_types(env: &TypeEnvironment, type1: &MIRType, type2: &MIRType)
         }
 
         (
-            MIRTypeKind::Array {
+            THIRTypeKind::Array {
                 inner_type: inner1,
                 length: len1,
             },
-            MIRTypeKind::Array {
+            THIRTypeKind::Array {
                 inner_type: inner2,
                 length: len2,
             },
@@ -86,26 +90,26 @@ pub fn compatible_types(env: &TypeEnvironment, type1: &MIRType, type2: &MIRType)
 
         // TODO: Should we have standalone enumeration types instead of decaying them immediately to their underlying integral type?
         (
-            MIRTypeKind::Structured {
+            THIRTypeKind::Structured {
                 fields: fields1, ..
             },
-            MIRTypeKind::Structured {
+            THIRTypeKind::Structured {
                 fields: fields2, ..
             },
         )
         | (
-            MIRTypeKind::TaggedUnion {
+            THIRTypeKind::TaggedUnion {
                 variants: fields1, ..
             },
-            MIRTypeKind::TaggedUnion {
+            THIRTypeKind::TaggedUnion {
                 variants: fields2, ..
             },
         )
         | (
-            MIRTypeKind::Union {
+            THIRTypeKind::Union {
                 variants: fields1, ..
             },
-            MIRTypeKind::Union {
+            THIRTypeKind::Union {
                 variants: fields2, ..
             },
         ) => {

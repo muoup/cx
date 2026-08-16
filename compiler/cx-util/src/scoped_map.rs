@@ -99,6 +99,30 @@ where
         self.data.get(name)
     }
 
+    pub fn get_at_shadow_depth<Q>(&self, name: &Q, depth: usize) -> Option<&V>
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
+        if depth == 0 {
+            return self.data.get(name);
+        }
+
+        let mut remaining = depth;
+        for scope in self.overwrites.iter().rev() {
+            for (key, previous) in scope.iter().rev() {
+                if key.borrow() == name {
+                    remaining -= 1;
+                    if remaining == 0 {
+                        return previous.as_ref();
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn get_mut<Q>(&mut self, name: &Q) -> Option<&mut V>
     where
         K: Borrow<Q>,

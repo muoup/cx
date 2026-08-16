@@ -4,7 +4,12 @@ use crate::result::QualifiedLookupResult;
 
 pub mod result;
 
-pub trait MIRQualifiedLookup {
+/// Provides qualified symbol lookup for compiler stages and tooling.
+///
+/// The lookup algorithm is shared by parsing, type checking, and future
+/// language-service consumers; implementations supply only their local symbol
+/// tables and namespace-alias resolution.
+pub trait QualifiedLookup {
     type Output;
 
     fn lookup_local(
@@ -37,13 +42,6 @@ pub trait MIRQualifiedLookup {
             };
         }
 
-        if let Some(value) = self.lookup_exact(lexical_namespace, name) {
-            return QualifiedLookupResult::Found {
-                resolved_name: name.clone(),
-                value,
-            };
-        }
-
         if name.namespace.is_root() && !lexical_namespace.is_root() {
             let lexical_name = QualifiedName {
                 namespace: lexical_namespace.clone(),
@@ -56,6 +54,13 @@ pub trait MIRQualifiedLookup {
                     value,
                 };
             }
+        }
+
+        if let Some(value) = self.lookup_exact(lexical_namespace, name) {
+            return QualifiedLookupResult::Found {
+                resolved_name: name.clone(),
+                value,
+            };
         }
 
         let mut aliases = self

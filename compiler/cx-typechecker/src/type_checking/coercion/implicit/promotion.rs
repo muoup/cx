@@ -1,5 +1,5 @@
 use cx_log::CXResult;
-use cx_mir::mir::expression::MIRExpression;
+use cx_thir::thir::expression::THIRExpression;
 
 use crate::{environment::TypeEnvironment, type_checking::coercion::CoercionResult};
 
@@ -11,7 +11,7 @@ pub mod str_to_char_ptr;
 
 pub fn std_rval_promotion_coercion(
     env: &mut TypeEnvironment,
-    expr: MIRExpression,
+    expr: THIRExpression,
 ) -> CXResult<CoercionResult> {
     array_to_ptr::try_conversion(env, expr)?
         .or_else(|expr| str_to_char_ptr::try_conversion(env, expr))?
@@ -22,8 +22,8 @@ pub fn std_rval_promotion_coercion(
 
 pub fn std_rval_promotion(
     env: &mut TypeEnvironment,
-    expr: MIRExpression,
-) -> CXResult<MIRExpression> {
+    expr: THIRExpression,
+) -> CXResult<THIRExpression> {
     match std_rval_promotion_coercion(env, expr)? {
         // If we successfully transformed the value, we should try to apply the same transformation again
         CoercionResult::Success {

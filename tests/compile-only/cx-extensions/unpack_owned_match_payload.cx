@@ -1,0 +1,35 @@
+struct Pair : @nodrop {
+    int left;
+    int right;
+};
+
+enum union MaybePair : @nodrop {
+    none :: void,
+    some :: Pair
+};
+
+void discard(int value) {}
+
+void consume(MaybePair value) {
+    match (move value) {
+        MaybePair::some(payload) => {
+            @unpack(move payload) {
+                left: left,
+                right: right
+            };
+
+            discard(move left);
+            discard(move right);
+        }
+        MaybePair::none() => {}
+    }
+}
+
+int main() {
+    MaybePair value = MaybePair::some((Pair) {
+        .left = 1,
+        .right = 2
+    });
+    consume(move value);
+    return 0;
+}

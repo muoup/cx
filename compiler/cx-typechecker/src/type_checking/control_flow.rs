@@ -1,26 +1,26 @@
 use crate::environment::{ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment};
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::expression::CXExpression;
+use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
-use cx_mir::EnvironmentNamespace;
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
+use cx_thir::EnvironmentNamespace;
+use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
 
 pub(crate) mod r#match;
 pub(crate) mod r#return;
 pub(crate) mod switch;
 pub(crate) mod r#yield;
 
-pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
+pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
     match &expr.kind {
-        MIRExpressionKind::Return { .. }
-        | MIRExpressionKind::Yield { .. }
-        | MIRExpressionKind::Break { .. }
-        | MIRExpressionKind::Continue { .. } => false,
-        MIRExpressionKind::Unsafe { expression, .. } => expr_may_fall_through(expression),
-        MIRExpressionKind::Block { statements } => {
+        THIRExpressionKind::Return { .. }
+        | THIRExpressionKind::Yield { .. }
+        | THIRExpressionKind::Break
+        | THIRExpressionKind::Continue => false,
+        THIRExpressionKind::Unsafe { expression, .. } => expr_may_fall_through(expression),
+        THIRExpressionKind::Block { statements, .. } => {
             statements.last().map(expr_may_fall_through).unwrap_or(true)
         }
-        MIRExpressionKind::If {
+        THIRExpressionKind::If {
             then_branch,
             else_branch,
             ..
@@ -31,7 +31,7 @@ pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
                     .map(|branch| expr_may_fall_through(branch))
                     .unwrap_or(true)
         }
-        MIRExpressionKind::CSwitch { cases, default, .. } => {
+        THIRExpressionKind::CSwitch { cases, default, .. } => {
             cases
                 .iter()
                 .any(|(_, branch)| expr_may_fall_through(branch))
@@ -40,7 +40,7 @@ pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
                     .map(|branch| expr_may_fall_through(branch))
                     .unwrap_or(true)
         }
-        MIRExpressionKind::Match {
+        THIRExpressionKind::Match {
             arms,
             default,
             exhaustive,
@@ -52,9 +52,9 @@ pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
                     .map(|branch| expr_may_fall_through(branch))
                     .unwrap_or(!exhaustive)
         }
-        MIRExpressionKind::CallFunction { function, .. } => !matches!(
+        THIRExpressionKind::CallFunction { function, .. } => !matches!(
             &function.kind,
-            MIRExpressionKind::FunctionReference { name } if name.as_str() == "exit"
+            THIRExpressionKind::FunctionReference { name, .. } if name.as_str() == "exit"
         ),
         _ => true,
     }
@@ -74,11 +74,11 @@ pub(crate) fn enqueue_jump_arrow(env: &mut TypeEnvironment, target: &ScopeExitTa
 pub(crate) fn typecheck_fallthrough_scope(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
+    expr: &HIRExpression,
     target_scope: ScopeId,
     sink: ScopeArrowSink,
     label: &str,
-) -> CXResult<MIRExpression> {
+) -> CXResult<THIRExpression> {
     env.push_scope(false, false);
     env.function.set_scope_anchor(expr);
     env.function.set_scope_fallthrough_target(ScopeExitTarget {
@@ -97,7 +97,7 @@ pub(crate) fn process_for_increment_arrows(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     loop_scope_idx: ScopeId,
-    increment: &CXExpression,
+    increment: &HIRExpression,
 ) -> CXResult<()> {
     let pending_arrows = env.function.take_pending_increment_arrows(loop_scope_idx);
     if pending_arrows.is_empty() {

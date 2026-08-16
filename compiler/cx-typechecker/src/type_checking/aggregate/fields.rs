@@ -1,18 +1,18 @@
-use cx_mir::{
-    mir::data::{MIRType, MIRTypeKind},
-    type_context::MIRTypeContext,
+use cx_thir::{
+    thir::data::{THIRType, THIRTypeKind},
+    type_context::THIRTypeContext,
 };
 
 use crate::symbol::registry::MIRSymbolRegistry;
 
 pub struct StructField {
     pub index: usize,
-    pub field_type: MIRType,
+    pub field_type: THIRType,
 }
 
 pub fn struct_field(
     definitions: &MIRSymbolRegistry,
-    struct_type: &MIRType,
+    struct_type: &THIRType,
     field_name: &str,
 ) -> Option<StructField> {
     let struct_type = struct_type
@@ -21,8 +21,8 @@ pub fn struct_field(
         .unwrap_or(struct_type);
 
     let fields = match &struct_type.kind {
-        MIRTypeKind::Structured { fields } => fields,
-        MIRTypeKind::Union { variants } => variants,
+        THIRTypeKind::Structured { fields } => fields,
+        THIRTypeKind::Union { variants } => variants,
 
         _ => return None,
     };

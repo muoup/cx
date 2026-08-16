@@ -26,7 +26,8 @@ pub(crate) fn handle_define(
 
     let rest_of_line = rest_of_logical_directive(context.current_frame_mut());
     let file_path = context.current_frame().file_path.clone();
-    let tokens = tokenize_text(&rest_of_line, file_path.as_path())?;
+    let language_mode = context.current_frame().language_mode;
+    let tokens = tokenize_text(&rest_of_line, file_path.as_path(), language_mode)?;
 
     let macro_ = if let Some(params) = params {
         Macro::Function {

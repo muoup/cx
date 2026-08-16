@@ -1,0 +1,5 @@
+int main() {
+    int value = 4;
+    int& alias = value;
+    return alias - 4;
+}

@@ -120,6 +120,30 @@ pub(crate) fn codegen_function(
         context.fn_params.push(arg);
     }
 
+    for fn_block in &bc_func.blocks {
+        let block = context.get_block(&fn_block.id);
+        for parameter in &fn_block.params {
+            let parameter_type = if parameter._type.is_memory_resident() {
+                context.pointer_type
+            } else {
+                get_cranelift_type(&parameter._type).map_err(|err| {
+                    CXErr::new(
+                        err,
+                        CXInternalContext::error(format!(
+                            "Failed to lower block parameter {} in {}",
+                            parameter.register, fn_block.id
+                        )),
+                    )
+                })?
+            };
+            let value = context.builder.append_block_param(block, parameter_type);
+            context.variable_table.insert(
+                parameter.register.clone(),
+                crate::CodegenValue::Value(value),
+            );
+        }
+    }
+
     for fn_block in bc_func.blocks.iter() {
         codegen_block(&mut context, fn_block)?;
     }
@@ -127,23 +151,18 @@ pub(crate) fn codegen_function(
     context.builder.seal_all_blocks();
     context.builder.finalize();
 
-    let GlobalState {
-        object_module,
-        context,
-        ..
-    } = global_state;
+    let GlobalState { object_module, .. } = global_state;
 
     dump_data(&func);
 
-    context.func = func;
+    let mut codegen_context = cranelift::codegen::Context::for_function(func);
+    codegen_context.compute_cfg();
+    codegen_context.compute_domtree();
     object_module
-        .define_function(func_id, context)
-        .unwrap_or_else(|err| {
-            // dump_data(&context.func);
-            panic!("Failed to define function: {err:#?}");
-        });
+        .define_function(func_id, &mut codegen_context)
+        .unwrap_or_else(|err| panic!("Failed to define function: {err:#?}"));
 
-    object_module.clear_context(context);
+    object_module.clear_context(&mut codegen_context);
 
     Ok(())
 }

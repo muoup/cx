@@ -3,14 +3,14 @@ mod linker;
 pub mod progress;
 mod scheduler;
 
-use crate::linker::{link, link_relocatable};
+use crate::linker::{link, link_objects, link_relocatable};
 use crate::progress::ProgressReporter;
 use crate::scheduler::scheduling_loop;
 use crate::scheduler::scheduling_loop_collect_errors;
-use cx_ast::registry::ExportNameMode;
+use cx_hir::registry::ExportNameMode;
 use cx_log::{
-    error::{context::CXInternalContext, message::CXStdErrMessage, CXErr},
     CXResult,
+    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_pipeline_data::config::{CXProjectConfig, TargetConfig};
 use cx_pipeline_data::db::ModuleData;
@@ -19,13 +19,22 @@ use cx_pipeline_data::jobs::{CompilationJob, CompilationStep};
 use cx_pipeline_data::{
     CompilationMode, CompilationUnit, CompilerConfig, GlobalCompilationContext,
 };
-use cx_util::format::with_dump_directory;
+use cx_util::format::{with_dump_directory, without_dumps};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 // Re-export LSP diagnostic types for use by cx-lsp
 pub use crate::scheduler::LSPErrors;
+
+pub struct LSPCheckResult {
+    pub errors: Vec<LSPErrors>,
+    pub checked_files: HashSet<PathBuf>,
+}
+
+pub fn link_object_files(output: &Path, object_files: &[PathBuf]) -> CXResult<()> {
+    link_objects(output, object_files)
+}
 
 pub(crate) fn pipeline_error(code: impl Into<String>, message: impl Into<String>) -> CXErr {
     CXErr::new(
@@ -237,6 +246,17 @@ pub fn project_compilation(
         // Build binaries
         if let Some(binaries) = &target_config.binaries {
             for binary in binaries {
+                if Path::new(&binary.entry)
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    == Some("c")
+                {
+                    return Err(pipeline_error(
+                        "COMPILATION ERROR",
+                        "C sources are currently supported only in single-file compilation mode",
+                    ));
+                }
+
                 let output = output_dir.join(&binary.name);
                 let mut config = base_config.clone();
                 config.output = output.clone();
@@ -257,6 +277,17 @@ pub fn project_compilation(
         // Build libraries
         if let Some(libraries) = &target_config.libraries {
             for library in libraries {
+                if Path::new(&library.entry)
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    == Some("c")
+                {
+                    return Err(pipeline_error(
+                        "COMPILATION ERROR",
+                        "C sources are currently supported only in single-file compilation mode",
+                    ));
+                }
+
                 let mut config = base_config.clone();
                 config.compilation_mode = CompilationMode::Library;
                 config.link_entries = link_entries.clone();
@@ -302,11 +333,18 @@ pub fn project_compilation(
 pub fn typecheck_only_lsp(
     context: &GlobalCompilationContext,
     initial_file: &CompilationUnit,
-) -> Vec<LSPErrors> {
+) -> LSPCheckResult {
     let mut errors = Vec::new();
+    let mut checked_files = HashSet::new();
 
     let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, initial_file.clone());
 
-    scheduling_loop_collect_errors(context, initial_job, &mut errors);
-    errors
+    without_dumps(|| {
+        scheduling_loop_collect_errors(context, initial_job, &mut errors, &mut checked_files);
+    });
+
+    LSPCheckResult {
+        errors,
+        checked_files,
+    }
 }

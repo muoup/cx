@@ -1,14 +1,14 @@
-use cx_ast::ast::expression::CXBinOp;
+use cx_hir::ast::expression::HIRBinOp;
 use cx_log::CXResult;
-use cx_mir::{
-    mir::{
+use cx_thir::{
+    thir::{
         expression::{
-            MIRBinOp, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp,
-            MIRPtrBinOp, MIRPtrDiffBinOp,
+            THIRBinOp, THIRExpression, THIRExpressionKind, THIRFloatBinOp, THIRIntBinOp,
+            THIRPtrBinOp, THIRPtrDiffBinOp,
         },
-        r#type::{MIRIntegerType, MIRType, MIRTypeKind},
+        r#type::{THIRIntType, THIRType, THIRTypeKind},
     },
-    type_context::MIRTypeContext,
+    type_context::THIRTypeContext,
 };
 
 use crate::{
@@ -26,12 +26,12 @@ pub(crate) mod is;
 
 pub(crate) fn dispatch(
     env: &mut TypeEnvironment,
-    op: &CXBinOp,
-    lhs: MIRExpression,
-    rhs: MIRExpression,
+    op: &HIRBinOp,
+    lhs: THIRExpression,
+    rhs: THIRExpression,
 ) -> CXResult<TypecheckResult> {
     match &op {
-        CXBinOp::LOr | CXBinOp::LAnd => resolve_logical(env, op, lhs, rhs),
+        HIRBinOp::LOr | HIRBinOp::LAnd => resolve_logical(env, op, lhs, rhs),
 
         _ => resolve_std_arithmetic(env, op, lhs, rhs),
     }
@@ -39,14 +39,14 @@ pub(crate) fn dispatch(
 
 pub(crate) fn resolve_logical(
     env: &mut TypeEnvironment,
-    op: &CXBinOp,
-    mut lhs: MIRExpression,
-    mut rhs: MIRExpression,
+    op: &HIRBinOp,
+    mut lhs: THIRExpression,
+    mut rhs: THIRExpression,
 ) -> CXResult<TypecheckResult> {
     lhs = std_rval_promotion(env, lhs)?;
     rhs = std_rval_promotion(env, rhs)?;
 
-    let valid_logical_operand = |expr: &MIRExpression| {
+    let valid_logical_operand = |expr: &THIRExpression| {
         expr._type.is_integer() || expr._type.is_float() || expr._type.is_pointer()
     };
 
@@ -62,21 +62,21 @@ pub(crate) fn resolve_logical(
         );
     }
 
-    let lhs = implicit_cast(env, lhs, &MIRType::bool())?;
-    let rhs = implicit_cast(env, rhs, &MIRType::bool())?;
+    let lhs = implicit_cast(env, lhs, &THIRType::bool())?;
+    let rhs = implicit_cast(env, rhs, &THIRType::bool())?;
 
-    let operator = MIRBinOp::Integer {
-        itype: MIRIntegerType::I1,
+    let operator = THIRBinOp::Integer {
+        itype: THIRIntType::I1,
         op: match op {
-            CXBinOp::LAnd => MIRIntegerBinOp::LAND,
-            CXBinOp::LOr => MIRIntegerBinOp::LOR,
+            HIRBinOp::LAnd => THIRIntBinOp::LAND,
+            HIRBinOp::LOr => THIRIntBinOp::LOR,
             _ => unreachable!(),
         },
     };
 
     Ok(TypecheckResult::new(
-        MIRType::bool(),
-        MIRExpressionKind::BinaryOperation {
+        THIRType::bool(),
+        THIRExpressionKind::BinaryOperation {
             op: operator,
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
@@ -86,9 +86,9 @@ pub(crate) fn resolve_logical(
 
 pub(crate) fn resolve_std_arithmetic(
     env: &mut TypeEnvironment,
-    op: &CXBinOp,
-    mut lhs: MIRExpression,
-    mut rhs: MIRExpression,
+    op: &HIRBinOp,
+    mut lhs: THIRExpression,
+    mut rhs: THIRExpression,
 ) -> CXResult<TypecheckResult> {
     lhs = std_rval_promotion(env, lhs)?;
     rhs = std_rval_promotion(env, rhs)?;
@@ -113,12 +113,12 @@ pub(crate) fn resolve_std_arithmetic(
 
 fn coerce_float_binop(
     env: &mut TypeEnvironment,
-    op: &CXBinOp,
-    mut lhs: MIRExpression,
-    mut rhs: MIRExpression,
+    op: &HIRBinOp,
+    mut lhs: THIRExpression,
+    mut rhs: THIRExpression,
 ) -> CXResult<TypecheckResult> {
-    if let MIRTypeKind::Float { _type: lftype } = lhs._type.kind
-        && let MIRTypeKind::Float { _type: rftype } = rhs._type.kind
+    if let THIRTypeKind::Float { _type: lftype } = lhs._type.kind
+        && let THIRTypeKind::Float { _type: rftype } = rhs._type.kind
         && lftype != rftype
     {
         let common_ftype = if lftype.bytes() > rftype.bytes() {
@@ -137,17 +137,17 @@ fn coerce_float_binop(
     }
 
     let (op, return_type) = match op {
-        CXBinOp::Add => (MIRFloatBinOp::FADD, lhs._type.clone()),
-        CXBinOp::Subtract => (MIRFloatBinOp::FSUB, lhs._type.clone()),
-        CXBinOp::Multiply => (MIRFloatBinOp::FMUL, lhs._type.clone()),
-        CXBinOp::Divide => (MIRFloatBinOp::FDIV, lhs._type.clone()),
+        HIRBinOp::Add => (THIRFloatBinOp::FADD, lhs._type.clone()),
+        HIRBinOp::Subtract => (THIRFloatBinOp::FSUB, lhs._type.clone()),
+        HIRBinOp::Multiply => (THIRFloatBinOp::FMUL, lhs._type.clone()),
+        HIRBinOp::Divide => (THIRFloatBinOp::FDIV, lhs._type.clone()),
 
-        CXBinOp::Equal => (MIRFloatBinOp::FEQ, MIRType::bool()),
-        CXBinOp::NotEqual => (MIRFloatBinOp::FNE, MIRType::bool()),
-        CXBinOp::Less => (MIRFloatBinOp::FLT, MIRType::bool()),
-        CXBinOp::Greater => (MIRFloatBinOp::FGT, MIRType::bool()),
-        CXBinOp::LessEqual => (MIRFloatBinOp::FLE, MIRType::bool()),
-        CXBinOp::GreaterEqual => (MIRFloatBinOp::FGE, MIRType::bool()),
+        HIRBinOp::Equal => (THIRFloatBinOp::FEQ, THIRType::bool()),
+        HIRBinOp::NotEqual => (THIRFloatBinOp::FNE, THIRType::bool()),
+        HIRBinOp::Less => (THIRFloatBinOp::FLT, THIRType::bool()),
+        HIRBinOp::Greater => (THIRFloatBinOp::FGT, THIRType::bool()),
+        HIRBinOp::LessEqual => (THIRFloatBinOp::FLE, THIRType::bool()),
+        HIRBinOp::GreaterEqual => (THIRFloatBinOp::FGE, THIRType::bool()),
 
         _ => {
             return env.log_error(
@@ -163,10 +163,10 @@ fn coerce_float_binop(
 
     Ok(TypecheckResult::new(
         return_type,
-        MIRExpressionKind::BinaryOperation {
-            op: MIRBinOp::Float {
+        THIRExpressionKind::BinaryOperation {
+            op: THIRBinOp::Float {
                 ftype: match lhs._type.kind {
-                    MIRTypeKind::Float { _type } => _type,
+                    THIRTypeKind::Float { _type } => _type,
                     _ => unreachable!(),
                 },
                 op,
@@ -179,18 +179,18 @@ fn coerce_float_binop(
 
 fn coerce_pointer_binop(
     env: &mut TypeEnvironment,
-    op: &CXBinOp,
-    mut lhs: MIRExpression,
-    mut rhs: MIRExpression,
+    op: &HIRBinOp,
+    mut lhs: THIRExpression,
+    mut rhs: THIRExpression,
 ) -> CXResult<TypecheckResult> {
     if lhs._type.is_pointer() && rhs._type.is_pointer() {
         let (return_type, op) = match op {
-            CXBinOp::LessEqual => (MIRType::bool(), MIRPtrBinOp::LE),
-            CXBinOp::GreaterEqual => (MIRType::bool(), MIRPtrBinOp::GE),
-            CXBinOp::Less => (MIRType::bool(), MIRPtrBinOp::LT),
-            CXBinOp::Greater => (MIRType::bool(), MIRPtrBinOp::GT),
-            CXBinOp::Equal => (MIRType::bool(), MIRPtrBinOp::EQ),
-            CXBinOp::NotEqual => (MIRType::bool(), MIRPtrBinOp::NE),
+            HIRBinOp::LessEqual => (THIRType::bool(), THIRPtrBinOp::LE),
+            HIRBinOp::GreaterEqual => (THIRType::bool(), THIRPtrBinOp::GE),
+            HIRBinOp::Less => (THIRType::bool(), THIRPtrBinOp::LT),
+            HIRBinOp::Greater => (THIRType::bool(), THIRPtrBinOp::GT),
+            HIRBinOp::Equal => (THIRType::bool(), THIRPtrBinOp::EQ),
+            HIRBinOp::NotEqual => (THIRType::bool(), THIRPtrBinOp::NE),
 
             _ => {
                 return env.log_error(
@@ -202,8 +202,8 @@ fn coerce_pointer_binop(
 
         return Ok(TypecheckResult::new(
             return_type,
-            MIRExpressionKind::BinaryOperation {
-                op: MIRBinOp::Pointer { op },
+            THIRExpressionKind::BinaryOperation {
+                op: THIRBinOp::Pointer { op },
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
             },
@@ -216,7 +216,7 @@ fn coerce_pointer_binop(
         (&mut rhs, &mut lhs)
     };
 
-    let intptr = MIRTypeKind::Integer {
+    let intptr = THIRTypeKind::Integer {
         _type: env.symbols.pointer_integer_type(),
         signed: true,
     };
@@ -227,45 +227,45 @@ fn coerce_pointer_binop(
     let ptr_inner = Box::new(env.symbols.ptr_inner(&ptr_type).cloned().unwrap());
 
     let (return_type, op) = match op {
-        CXBinOp::Add => (
+        HIRBinOp::Add => (
             ptr_type,
-            MIRBinOp::PtrDiff {
-                op: MIRPtrDiffBinOp::ADD,
+            THIRBinOp::PtrDiff {
+                op: THIRPtrDiffBinOp::ADD,
                 ptr_inner,
             },
         ),
 
-        CXBinOp::ArrayIndex => (
+        HIRBinOp::ArrayIndex => (
             env.symbols.mem_ref_to(ptr_inner.as_ref().clone()),
-            MIRBinOp::PtrDiff {
-                op: MIRPtrDiffBinOp::ADD,
+            THIRBinOp::PtrDiff {
+                op: THIRPtrDiffBinOp::ADD,
                 ptr_inner,
             },
         ),
 
-        CXBinOp::Subtract => (
+        HIRBinOp::Subtract => (
             ptr_type,
-            MIRBinOp::PtrDiff {
-                op: MIRPtrDiffBinOp::SUB,
+            THIRBinOp::PtrDiff {
+                op: THIRPtrDiffBinOp::SUB,
                 ptr_inner,
             },
         ),
 
-        CXBinOp::LessEqual
-        | CXBinOp::GreaterEqual
-        | CXBinOp::Less
-        | CXBinOp::Greater
-        | CXBinOp::Equal
-        | CXBinOp::NotEqual => (
-            MIRType::bool(),
-            MIRBinOp::Pointer {
+        HIRBinOp::LessEqual
+        | HIRBinOp::GreaterEqual
+        | HIRBinOp::Less
+        | HIRBinOp::Greater
+        | HIRBinOp::Equal
+        | HIRBinOp::NotEqual => (
+            THIRType::bool(),
+            THIRBinOp::Pointer {
                 op: match op {
-                    CXBinOp::LessEqual => MIRPtrBinOp::LE,
-                    CXBinOp::GreaterEqual => MIRPtrBinOp::GE,
-                    CXBinOp::Less => MIRPtrBinOp::LT,
-                    CXBinOp::Greater => MIRPtrBinOp::GT,
-                    CXBinOp::Equal => MIRPtrBinOp::EQ,
-                    CXBinOp::NotEqual => MIRPtrBinOp::NE,
+                    HIRBinOp::LessEqual => THIRPtrBinOp::LE,
+                    HIRBinOp::GreaterEqual => THIRPtrBinOp::GE,
+                    HIRBinOp::Less => THIRPtrBinOp::LT,
+                    HIRBinOp::Greater => THIRPtrBinOp::GT,
+                    HIRBinOp::Equal => THIRPtrBinOp::EQ,
+                    HIRBinOp::NotEqual => THIRPtrBinOp::NE,
                     _ => unreachable!(),
                 },
             },
@@ -281,7 +281,7 @@ fn coerce_pointer_binop(
 
     Ok(TypecheckResult::new(
         return_type,
-        MIRExpressionKind::BinaryOperation {
+        THIRExpressionKind::BinaryOperation {
             op,
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
@@ -291,14 +291,14 @@ fn coerce_pointer_binop(
 
 fn coerce_integral_binop(
     env: &mut TypeEnvironment,
-    op: &CXBinOp,
-    mut lhs: MIRExpression,
-    mut rhs: MIRExpression,
+    op: &HIRBinOp,
+    mut lhs: THIRExpression,
+    mut rhs: THIRExpression,
 ) -> CXResult<TypecheckResult> {
-    let MIRTypeKind::Integer { _type: litype, .. } = lhs._type.kind else {
+    let THIRTypeKind::Integer { _type: litype, .. } = lhs._type.kind else {
         unreachable!("Expected integer type for lhs of integral binary operation");
     };
-    let MIRTypeKind::Integer { _type: ritype, .. } = rhs._type.kind else {
+    let THIRTypeKind::Integer { _type: ritype, .. } = rhs._type.kind else {
         unreachable!("Expected integer type for rhs of integral binary operation");
     };
 
@@ -309,23 +309,23 @@ fn coerce_integral_binop(
     }
 
     let return_type = match op {
-        CXBinOp::Add
-        | CXBinOp::Subtract
-        | CXBinOp::Multiply
-        | CXBinOp::Divide
-        | CXBinOp::Modulus
-        | CXBinOp::BitAnd
-        | CXBinOp::BitOr
-        | CXBinOp::BitXor
-        | CXBinOp::LShift
-        | CXBinOp::RShift => lhs._type.clone(),
+        HIRBinOp::Add
+        | HIRBinOp::Subtract
+        | HIRBinOp::Multiply
+        | HIRBinOp::Divide
+        | HIRBinOp::Modulus
+        | HIRBinOp::BitAnd
+        | HIRBinOp::BitOr
+        | HIRBinOp::BitXor
+        | HIRBinOp::LShift
+        | HIRBinOp::RShift => lhs._type.clone(),
 
-        CXBinOp::Less
-        | CXBinOp::Greater
-        | CXBinOp::LessEqual
-        | CXBinOp::GreaterEqual
-        | CXBinOp::Equal
-        | CXBinOp::NotEqual => MIRType::bool(),
+        HIRBinOp::Less
+        | HIRBinOp::Greater
+        | HIRBinOp::LessEqual
+        | HIRBinOp::GreaterEqual
+        | HIRBinOp::Equal
+        | HIRBinOp::NotEqual => THIRType::bool(),
 
         _ => {
             return env.log_error(
@@ -340,10 +340,10 @@ fn coerce_integral_binop(
     };
 
     let signed = match lhs._type.kind {
-        MIRTypeKind::Integer { signed, .. } => signed,
+        THIRTypeKind::Integer { signed, .. } => signed,
         _ => unreachable!(),
     };
-    
+
     let Some(op) = lower_int_binop(op, signed) else {
         return env.log_error(
             &lhs.token_range,
@@ -357,10 +357,10 @@ fn coerce_integral_binop(
 
     Ok(TypecheckResult::new(
         return_type,
-        MIRExpressionKind::BinaryOperation {
-            op: MIRBinOp::Integer {
+        THIRExpressionKind::BinaryOperation {
+            op: THIRBinOp::Integer {
                 itype: match lhs._type.kind {
-                    MIRTypeKind::Integer { _type, .. } => _type,
+                    THIRTypeKind::Integer { _type, .. } => _type,
                     _ => unreachable!(),
                 },
                 op,
@@ -371,35 +371,35 @@ fn coerce_integral_binop(
     ))
 }
 
-fn lower_int_binop(op: &CXBinOp, signed: bool) -> Option<MIRIntegerBinOp> {
+fn lower_int_binop(op: &HIRBinOp, signed: bool) -> Option<THIRIntBinOp> {
     Some(match op {
-        CXBinOp::Add => MIRIntegerBinOp::ADD,
-        CXBinOp::Subtract => MIRIntegerBinOp::SUB,
-        CXBinOp::Multiply => MIRIntegerBinOp::MUL,
-        CXBinOp::Divide => MIRIntegerBinOp::DIV,
-        CXBinOp::Modulus => MIRIntegerBinOp::MOD,
+        HIRBinOp::Add => THIRIntBinOp::ADD,
+        HIRBinOp::Subtract => THIRIntBinOp::SUB,
+        HIRBinOp::Multiply => THIRIntBinOp::MUL,
+        HIRBinOp::Divide => THIRIntBinOp::DIV,
+        HIRBinOp::Modulus => THIRIntBinOp::MOD,
 
-        CXBinOp::Less if !signed => MIRIntegerBinOp::LT,
-        CXBinOp::Less if signed => MIRIntegerBinOp::ILT,
+        HIRBinOp::Less if !signed => THIRIntBinOp::LT,
+        HIRBinOp::Less if signed => THIRIntBinOp::ILT,
 
-        CXBinOp::Greater if !signed => MIRIntegerBinOp::GT,
-        CXBinOp::Greater if signed => MIRIntegerBinOp::IGT,
+        HIRBinOp::Greater if !signed => THIRIntBinOp::GT,
+        HIRBinOp::Greater if signed => THIRIntBinOp::IGT,
 
-        CXBinOp::LessEqual if !signed => MIRIntegerBinOp::LE,
-        CXBinOp::LessEqual if signed => MIRIntegerBinOp::ILE,
+        HIRBinOp::LessEqual if !signed => THIRIntBinOp::LE,
+        HIRBinOp::LessEqual if signed => THIRIntBinOp::ILE,
 
-        CXBinOp::GreaterEqual if !signed => MIRIntegerBinOp::GE,
-        CXBinOp::GreaterEqual if signed => MIRIntegerBinOp::IGE,
+        HIRBinOp::GreaterEqual if !signed => THIRIntBinOp::GE,
+        HIRBinOp::GreaterEqual if signed => THIRIntBinOp::IGE,
 
-        CXBinOp::Equal => MIRIntegerBinOp::EQ,
-        CXBinOp::NotEqual => MIRIntegerBinOp::NE,
+        HIRBinOp::Equal => THIRIntBinOp::EQ,
+        HIRBinOp::NotEqual => THIRIntBinOp::NE,
 
-        CXBinOp::BitAnd => MIRIntegerBinOp::BAND,
-        CXBinOp::BitOr => MIRIntegerBinOp::BOR,
-        CXBinOp::BitXor => MIRIntegerBinOp::BXOR,
-        CXBinOp::LShift => MIRIntegerBinOp::SHL,
-        CXBinOp::RShift if signed => MIRIntegerBinOp::ASHR,
-        CXBinOp::RShift => MIRIntegerBinOp::LSHR,
+        HIRBinOp::BitAnd => THIRIntBinOp::BAND,
+        HIRBinOp::BitOr => THIRIntBinOp::BOR,
+        HIRBinOp::BitXor => THIRIntBinOp::BXOR,
+        HIRBinOp::LShift => THIRIntBinOp::SHL,
+        HIRBinOp::RShift if signed => THIRIntBinOp::ASHR,
+        HIRBinOp::RShift => THIRIntBinOp::LSHR,
 
         _ => return None,
     })

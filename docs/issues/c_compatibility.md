@@ -7,7 +7,7 @@ enough C support to consume system headers directly.
 
 `_Complex` is tokenized as an intrinsic keyword so existing parsing for
 consecutive intrinsic keywords can produce type names such as `_Complex float`.
-Those names are registered in `cx-mir/src/intrinsic_types.rs`.
+Those names are registered in `cx-thir/src/intrinsic_types.rs`.
 
 The current MIR float model only represents `f32` and `f64`, so the following C
 types are temporary compatibility aliases:

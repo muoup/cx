@@ -1,17 +1,12 @@
-use cx_ast::{
-    ast::{function::CXFunctionContract, modifiers::CXLinkageMode},
-    symbols::CXSymbolKind,
-};
+use cx_hir::{ast::function::HIRFunctionContract, symbols::HIRSymbolKind};
 use cx_log::CXResult;
-use cx_mir::mir::{
-    data::{
-        MIRFunction, MIRFunctionPrototype, MIRFunctionSignature, MIRParameter, MIRTemplateInput,
-    },
-    expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin},
-    r#type::MIRType,
+use cx_thir::thir::{
+    data::{MIRTemplateInput, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter},
+    expression::{THIRExpression, THIRExpressionKind},
+    r#type::THIRType,
 };
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_util::{identifier::CXIdent, linkage::LinkageMode, namespace::QualifiedName};
 
 use crate::{
     environment::{MIRFunctionGenRequest, TypeEnvironment},
@@ -23,13 +18,19 @@ pub fn fulfill_requests(env: &mut TypeEnvironment) -> CXResult<()> {
     while let Some(request) = env.items.pop_request() {
         match request {
             MIRFunctionGenRequest::TypeConstructor {
-                name,
+                symbol_name,
+                debug_name,
                 union_type,
                 variant_type,
                 variant_index,
-            } => {
-                realize_tagged_union_constructor(env, name, union_type, variant_type, variant_index)
-            }
+            } => realize_tagged_union_constructor(
+                env,
+                symbol_name,
+                debug_name,
+                union_type,
+                variant_type,
+                variant_index,
+            ),
 
             MIRFunctionGenRequest::Template {
                 name,
@@ -44,85 +45,82 @@ pub fn fulfill_requests(env: &mut TypeEnvironment) -> CXResult<()> {
 
 fn realize_tagged_union_constructor(
     env: &mut TypeEnvironment,
-    name: String,
-    union_type: MIRType,
-    variant_type: MIRType,
+    symbol_name: String,
+    debug_name: CXIdent,
+    union_type: THIRType,
+    variant_type: THIRType,
     variant_index: usize,
 ) {
-    if env.items.request_fulfilled(name.as_str()) {
+    if env.items.request_fulfilled(symbol_name.as_str()) {
         return;
     }
-    env.items.mark_request_fulfilled(name.clone());
+    env.items.mark_request_fulfilled(symbol_name.clone());
 
     let param_name = CXIdent::new("value");
-    let prototype = MIRFunctionPrototype::new(
-        name,
-        CXLinkageMode::Static,
-        MIRFunctionSignature {
+    let param_local_id = cx_thir::thir::expression::THIRLocalID::fresh();
+    let prototype = THIRFnPrototype::new(
+        symbol_name,
+        LinkageMode::Static,
+        THIRFnSignature {
             return_type: union_type.clone(),
             params: if variant_type.is_unit() {
                 Vec::new()
             } else {
-                vec![MIRParameter {
+                vec![THIRParameter {
                     name: Some(param_name.clone()),
+                    local_id: Some(param_local_id),
                     _type: variant_type.clone(),
                 }]
             },
             var_args: false,
-            contract: CXFunctionContract::default(),
+            contract: HIRFunctionContract::default(),
         },
-    );
+    )
+    .with_debug_name(debug_name);
 
     let value = if variant_type.is_unit() {
-        MIRExpression {
+        THIRExpression {
             token_range: TokenRange::internal(),
             _type: variant_type.clone(),
-            kind: MIRExpressionKind::Unit,
+            kind: THIRExpressionKind::Unit,
         }
     } else {
-        let param_ref = MIRExpression {
-            token_range: TokenRange::internal(),
-            _type: env.symbols.mem_ref_to(variant_type.clone()),
-            kind: MIRExpressionKind::Variable {
-                name: param_name,
-                location: SymbolValueOrigin::Local,
-            },
-        };
-
-        MIRExpression {
+        THIRExpression {
             token_range: TokenRange::internal(),
             _type: variant_type.clone(),
-            kind: MIRExpressionKind::RegionDuplicate {
-                source: Box::new(param_ref),
+            kind: THIRExpressionKind::Move {
+                name: param_name,
+                local_id: param_local_id,
             },
         }
     };
-    let constructed = MIRExpression {
+    
+    let constructed = THIRExpression {
         token_range: TokenRange::internal(),
         _type: union_type.clone(),
-        kind: MIRExpressionKind::ConstructTaggedUnion {
+        kind: THIRExpressionKind::TaggedUnionInitializer {
             variant_index,
             value: Box::new(value),
             sum_type: union_type,
         },
     };
-    let body = MIRExpression {
+    let body = THIRExpression {
         token_range: TokenRange::internal(),
         _type: prototype.signature().return_type.clone(),
-        kind: MIRExpressionKind::Return {
+        kind: THIRExpressionKind::Return {
             value: Some(Box::new(constructed)),
             postcondition: None,
         },
     };
 
     env.items
-        .push_generated_function(MIRFunction { prototype, body });
+        .push_generated_function(THIRFunction { prototype, body });
 }
 
 fn realize_fn_template(
     env: &mut TypeEnvironment,
     name: &QualifiedName,
-    prototype: MIRFunctionPrototype,
+    prototype: THIRFnPrototype,
     input: &MIRTemplateInput,
 ) -> CXResult<()> {
     let stmt = env
@@ -136,7 +134,7 @@ fn realize_fn_template(
             )
         });
 
-    let CXSymbolKind::FunctionTemplate { template, body, .. } = &stmt.kind else {
+    let HIRSymbolKind::FunctionTemplate { template, body, .. } = &stmt.kind else {
         unreachable!("Expected template to be a function template");
     };
 
@@ -146,10 +144,10 @@ fn realize_fn_template(
         apply_template_input(env, template, input)
             .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
 
-        if env.items.request_fulfilled(prototype.name()) {
+        if env.items.request_fulfilled(prototype.symbol_name()) {
             return Ok(());
         }
-        env.items.mark_request_fulfilled(prototype.name().into());
+        env.items.mark_request_fulfilled(prototype.symbol_name().into());
 
         typecheck_function(env, &namespace, prototype, body)?;
 

@@ -1,28 +1,27 @@
 use crate::environment::TypeEnvironment;
 use crate::type_checking::aggregate::fields::struct_field;
 use crate::type_checking::result::TypecheckResult;
-use crate::type_checking::value::locals::ensure_binding_available;
 use crate::type_checking::value::{IndirectBase, resolve_indirect_base};
-use cx_ast::ast::expression::{CXExprKind, CXExpression};
-use cx_ast::ast::modifiers::CX_CONST;
+use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
+use cx_hir::ast::modifiers::HIR_CONST;
 use cx_log::CXResult;
-use cx_mir::EnvironmentNamespace;
-use cx_mir::mir::data::MIRTypeKind;
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
+use cx_thir::EnvironmentNamespace;
+use cx_thir::thir::data::THIRTypeKind;
+use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
 
 fn resolve_access_base(
     env: &mut TypeEnvironment,
     _: &EnvironmentNamespace,
-    expr: &CXExpression,
-    lhs: MIRExpression,
+    expr: &HIRExpression,
+    lhs: THIRExpression,
 ) -> CXResult<IndirectBase> {
     let lhs = resolve_indirect_base(env, lhs);
 
     if !matches!(
         lhs.source_type.kind,
-        MIRTypeKind::Structured { .. }
-            | MIRTypeKind::Union { .. }
-            | MIRTypeKind::TaggedUnion { .. }
+        THIRTypeKind::Structured { .. }
+            | THIRTypeKind::Union { .. }
+            | THIRTypeKind::TaggedUnion { .. }
     ) {
         return env.log_error(expr.token_range(), format!("Expected a struct or union type on the left-hand side of an access expression, found {}", lhs.source_type.display_with(&env.symbols)));
     }
@@ -34,10 +33,9 @@ pub fn typecheck_access(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     lhs: TypecheckResult,
-    rhs: &CXExpression,
-    expr: &CXExpression,
+    rhs: &HIRExpression,
+    expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
-    ensure_binding_available(env, expr.token_range(), lhs.binding())?;
     let lhs_binding = lhs.binding().cloned();
 
     let base = resolve_access_base(
@@ -47,9 +45,10 @@ pub fn typecheck_access(
         lhs.standard_ready_coerce(env, expr.token_range())?,
     )?;
 
-    let CXExprKind::Identifier {
+    let HIRExprKind::Identifier {
         name,
         template_input: None,
+        ..
     } = &rhs.kind
     else {
         return env.log_error(
@@ -76,13 +75,13 @@ pub fn typecheck_access(
     let mut result = TypecheckResult::new(
         env.symbols
             .mem_ref_to(struct_field.field_type.clone().with_specifier(
-                if base.source_type.get_specifier(CX_CONST) {
-                    CX_CONST
+                if base.source_type.get_specifier(HIR_CONST) {
+                    HIR_CONST
                 } else {
                     0
                 },
             )),
-        MIRExpressionKind::MemberAccess {
+        THIRExpressionKind::MemberAccess {
             base: Box::new(base.source),
             member_index: struct_field.index,
             aggregate_type: base.source_type.clone(),

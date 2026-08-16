@@ -12,7 +12,9 @@ use crate::type_checking::control_flow::{
 use crate::type_checking::op::binop::access::typecheck_access;
 use crate::type_checking::op::binop::assign::typecheck_assignment;
 use crate::type_checking::op::binop::calls::typecheck_method_call;
-use crate::type_checking::op::unop::{typecheck_sizeof_expr, typecheck_sizeof_type};
+use crate::type_checking::op::unop::{
+    typecheck_alignof_expr, typecheck_alignof_type, typecheck_sizeof_expr, typecheck_sizeof_type,
+};
 use crate::type_checking::op::{self, try_typecheck_special_binop, typecheck_binop};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::{
@@ -24,22 +26,22 @@ use crate::type_checking::value::{
     moves::{typecheck_adopt, typecheck_leak, typecheck_unpack},
     unsafe_ops::typecheck_unsafe,
 };
-use cx_ast::ast::expression::{CXBinOp, CXExprKind, CXExpression};
+use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
-use cx_mir::EnvironmentNamespace;
-use cx_mir::mir::data::{MIRIntegerType, MIRTypeKind};
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
+use cx_thir::EnvironmentNamespace;
+use cx_thir::thir::data::{THIRIntType, THIRTypeKind};
+use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
 use cx_tokens::TokenRange;
 
 use crate::type_checking::control_flow::r#match::typecheck_match;
 use crate::type_checking::control_flow::switch::typecheck_switch;
-use cx_mir::mir::data::MIRType;
+use cx_thir::thir::data::THIRType;
 
 pub fn typecheck_expr(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
-    expected_type: Option<&MIRType>,
+    expr: &HIRExpression,
+    expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     typecheck_expr_inner(env, namespace, expr, expected_type)
 }
@@ -47,11 +49,14 @@ pub fn typecheck_expr(
 fn typecheck_expr_inner(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: &CXExpression,
-    expected_type: Option<&MIRType>,
+    expr: &HIRExpression,
+    expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     let mut result = match &expr.kind {
-        CXExprKind::Block { exprs } => {
+        HIRExprKind::Block {
+            exprs,
+            creates_scope,
+        } => {
             let mut block = Vec::new();
 
             for statement in exprs {
@@ -65,26 +70,90 @@ fn typecheck_expr_inner(
                 }
             }
 
-            TypecheckResult::from(MIRExpression {
+            TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: MIRExpressionKind::Block { statements: block },
-                _type: MIRType::unit(),
+                kind: THIRExpressionKind::Block {
+                    statements: block,
+                    creates_scope: *creates_scope,
+                },
+                _type: THIRType::unit(),
             })
         }
 
-        CXExprKind::IntLiteral {
+        HIRExprKind::Defer { expr: deferred } => {
+            if env.in_defer_context() {
+                return env.log_error(
+                    expr.token_range(),
+                    "nested defer is not supported".to_string(),
+                );
+            }
+            if env.in_comptime_context() && !env.in_runtime_emit_context() {
+                return env.log_error(
+                    expr.token_range(),
+                    "defer cannot execute while evaluating a comptime function".to_string(),
+                );
+            }
+
+            let deferred = env.in_defer(|env| {
+                typecheck_expr(env, namespace, deferred, None)?
+                    .standard_ready_coerce(env, deferred.token_range())
+            })?;
+            if !deferred._type.is_unit() {
+                return env.log_error(
+                    expr.token_range(),
+                    format!(
+                        "deferred expression must have type void, found {}",
+                        deferred._type.display_with(&env.symbols)
+                    ),
+                );
+            }
+            if !expr_may_fall_through(&deferred) {
+                return env.log_error(
+                    expr.token_range(),
+                    "deferred expression must fall through normally".to_string(),
+                );
+            }
+
+            TypecheckResult::new(
+                THIRType::unit(),
+                THIRExpressionKind::Defer {
+                    expression: Box::new(deferred),
+                },
+            )
+        }
+
+        HIRExprKind::StagedExpression { .. } => TypecheckResult::staged_expr(THIRExpression {
+            token_range: expr.token_range().clone(),
+            kind: THIRExpressionKind::Unit,
+            _type: expected_type.cloned().unwrap_or_else(THIRType::unit),
+        }),
+
+        HIRExprKind::Then => {
+            return env.log_error(
+                expr.token_range(),
+                "'then' may only capture the remainder of an enclosing block".to_string(),
+            );
+        }
+
+        HIRExprKind::IntLiteral {
             magnitude,
             base,
             suffix,
         } => typecheck_int_literal(env, expr.token_range(), *magnitude, *base, *suffix)?,
 
-        CXExprKind::FloatLiteral { val, suffix } => {
+        HIRExprKind::BoolLiteral(value) => TypecheckResult::from(THIRExpression {
+            token_range: expr.token_range().clone(),
+            kind: THIRExpressionKind::BoolLiteral(*value),
+            _type: THIRType::bool(),
+        }),
+
+        HIRExprKind::FloatLiteral { val, suffix } => {
             typecheck_float_literal(env, expr.token_range(), *val, *suffix)?
         }
 
-        CXExprKind::StringLiteral { val } => typecheck_string_literal(env, val),
+        HIRExprKind::StringLiteral { val } => typecheck_string_literal(env, val),
 
-        CXExprKind::VarDeclaration {
+        HIRExprKind::VarDeclaration {
             _type,
             name,
             initial_value,
@@ -97,12 +166,12 @@ fn typecheck_expr_inner(
             initial_value.as_ref().map(|v| v.as_ref()),
         )?,
 
-        CXExprKind::Identifier {
+        HIRExprKind::Identifier {
             name,
             template_input,
         } => typecheck_identifier(env, namespace, expr, name, template_input.as_ref())?,
 
-        CXExprKind::If {
+        HIRExprKind::If {
             condition,
             then_branch,
             else_branch,
@@ -111,7 +180,7 @@ fn typecheck_expr_inner(
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))?;
             env.push_scope(false, false);
-            env.function.configure_merge_scope(expr, None, false);
+            env.function.configure_merge_scope(expr, None);
             let join_scope_idx = env.function.current_scope_index();
 
             let then_result = typecheck_fallthrough_scope(
@@ -147,18 +216,18 @@ fn typecheck_expr_inner(
             env.pop_scope()
                 .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
-            TypecheckResult::from(MIRExpression {
+            TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: MIRExpressionKind::If {
+                kind: THIRExpressionKind::If {
                     condition: Box::new(condition_result),
                     then_branch: Box::new(then_result),
                     else_branch: else_result.map(Box::new),
                 },
-                _type: cx_mir::mir::data::MIRType::unit(),
+                _type: cx_thir::thir::data::THIRType::unit(),
             })
         }
 
-        CXExprKind::Ternary {
+        HIRExprKind::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -166,7 +235,7 @@ fn typecheck_expr_inner(
             let condition_result = typecheck_expr(env, namespace, condition, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))
-                .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
+                .and_then(|v| implicit_cast(env, v, &THIRType::bool()))?;
             let then_result = typecheck_expr(env, namespace, then_branch, expected_type)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))?;
@@ -175,9 +244,9 @@ fn typecheck_expr_inner(
                 .and_then(|v| std_rval_promotion(env, v))
                 .and_then(|v| implicit_cast(env, v, &then_result._type))?;
 
-            TypecheckResult::from(MIRExpression {
+            TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: MIRExpressionKind::If {
+                kind: THIRExpressionKind::If {
                     condition: Box::new(condition_result),
                     then_branch: Box::new(then_result.clone()),
                     else_branch: Some(Box::new(else_result)),
@@ -186,7 +255,7 @@ fn typecheck_expr_inner(
             })
         }
 
-        CXExprKind::While {
+        HIRExprKind::While {
             condition,
             body,
             pre_eval,
@@ -219,18 +288,18 @@ fn typecheck_expr_inner(
             env.pop_scope()
                 .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
-            TypecheckResult::from(MIRExpression {
+            TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: MIRExpressionKind::While {
+                kind: THIRExpressionKind::While {
                     condition: Box::new(condition_result),
                     body: Box::new(body_result),
                     pre_eval: *pre_eval,
                 },
-                _type: cx_mir::mir::data::MIRType::unit(),
+                _type: cx_thir::thir::data::THIRType::unit(),
             })
         }
 
-        CXExprKind::For {
+        HIRExprKind::For {
             init,
             condition,
             increment,
@@ -271,19 +340,25 @@ fn typecheck_expr_inner(
             env.pop_scope()
                 .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
-            TypecheckResult::from(MIRExpression {
+            TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: MIRExpressionKind::For {
+                kind: THIRExpressionKind::For {
                     init: Box::new(init_result),
                     condition: Box::new(condition_result),
                     increment: Box::new(increment_result),
                     body: Box::new(body_result),
                 },
-                _type: cx_mir::mir::data::MIRType::unit(),
+                _type: cx_thir::thir::data::THIRType::unit(),
             })
         }
 
-        CXExprKind::Break => {
+        HIRExprKind::Break => {
+            if env.in_defer_context() {
+                return env.log_error(
+                    expr.token_range(),
+                    "break is not allowed inside a deferred expression".to_string(),
+                );
+            }
             let Some(scope_idx) = env.function.nearest_break_scope() else {
                 return env.log_error(
                     expr.token_range(),
@@ -299,16 +374,20 @@ fn typecheck_expr_inner(
                 },
             );
 
-            TypecheckResult::from(MIRExpression {
+            TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: MIRExpressionKind::Break {
-                    scope_depth: scope_idx.index(),
-                },
-                _type: MIRType::unit(),
+                kind: THIRExpressionKind::Break,
+                _type: THIRType::unit(),
             })
         }
 
-        CXExprKind::Continue => {
+        HIRExprKind::Continue => {
+            if env.in_defer_context() {
+                return env.log_error(
+                    expr.token_range(),
+                    "continue is not allowed inside a deferred expression".to_string(),
+                );
+            }
             let Some(scope_idx) = env.function.nearest_continue_scope() else {
                 return env.log_error(
                     expr.token_range(),
@@ -324,16 +403,14 @@ fn typecheck_expr_inner(
                 },
             );
 
-            TypecheckResult::from(MIRExpression {
+            TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: MIRExpressionKind::Continue {
-                    scope_depth: scope_idx.index(),
-                },
-                _type: MIRType::unit(),
+                kind: THIRExpressionKind::Continue,
+                _type: THIRType::unit(),
             })
         }
 
-        CXExprKind::Return { value } => {
+        HIRExprKind::Return { value } => {
             let return_type = env.current_function().signature().return_type.clone();
             let value = value
                 .as_ref()
@@ -345,49 +422,51 @@ fn typecheck_expr_inner(
             typecheck_return(env, namespace, expr.token_range(), value)?
         }
 
-        CXExprKind::Yield { value } => typecheck_yield(
+        HIRExprKind::Yield { value } => typecheck_yield(
             env,
             namespace,
             expr.token_range(),
             value.as_ref().map(Box::as_ref),
         )?,
 
-        CXExprKind::Emit { expr: inner } => {
-            if !env.in_comptime_context() {
+        HIRExprKind::Emit { expr: inner } => {
+            if !env.in_comptime_context() || env.in_runtime_emit_context() {
                 return env.log_error(
                     expr.token_range(),
-                    "'emit' may only be used in a comptime context".to_string(),
+                    "'emit' may only be used directly in a comptime context".to_string(),
                 );
             }
 
-            let inner = typecheck_expr(env, namespace, inner, expected_type)?
-                .standard_ready_coerce(env, inner.token_range())?;
-            TypecheckResult::from(MIRExpression {
+            let inner = env.in_runtime_emit(|env| {
+                typecheck_expr(env, namespace, inner, expected_type)?
+                    .standard_ready_coerce(env, inner.token_range())
+            })?;
+            TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
                 _type: inner._type.clone(),
-                kind: MIRExpressionKind::Emit(Box::new(inner)),
+                kind: THIRExpressionKind::Emit(Box::new(inner)),
             })
         }
 
-        CXExprKind::Unsafe { expr: inner } => {
+        HIRExprKind::Unsafe { expr: inner } => {
             typecheck_unsafe(env, namespace, inner, expected_type)?
         }
 
-        CXExprKind::Leak { expr: inner } => typecheck_leak(env, namespace, expr, inner)?,
+        HIRExprKind::Leak { expr: inner } => typecheck_leak(env, namespace, expr, inner)?,
 
-        CXExprKind::Adopt { expr: inner } => typecheck_adopt(env, namespace, expr, inner)?,
+        HIRExprKind::Adopt { expr: inner } => typecheck_adopt(env, namespace, expr, inner)?,
 
-        CXExprKind::Unpack {
+        HIRExprKind::Unpack {
             expr: inner,
             bindings,
         } => typecheck_unpack(env, namespace, expr, inner, bindings)?,
 
-        CXExprKind::UnOp { operator, operand } => {
+        HIRExprKind::UnOp { operator, operand } => {
             op::typecheck_unop(env, namespace, operator, operand)?
         }
 
-        CXExprKind::BinOp {
-            op: CXBinOp::Assign(op),
+        HIRExprKind::BinOp {
+            op: HIRBinOp::Assign(op),
             lhs,
             rhs,
         } => {
@@ -398,8 +477,8 @@ fn typecheck_expr_inner(
             typecheck_assignment(env, lhs, rhs, op.as_ref().map(Box::deref), expr)?
         }
 
-        CXExprKind::BinOp {
-            op: CXBinOp::Access,
+        HIRExprKind::BinOp {
+            op: HIRBinOp::Access,
             lhs,
             rhs,
         } => {
@@ -408,13 +487,13 @@ fn typecheck_expr_inner(
             typecheck_access(env, namespace, lhs, rhs, expr)?
         }
 
-        CXExprKind::BinOp {
-            op: CXBinOp::MethodCall,
+        HIRExprKind::BinOp {
+            op: HIRBinOp::MethodCall,
             lhs,
             rhs,
         } => typecheck_method_call(env, namespace, lhs, rhs, expr, expected_type)?,
 
-        CXExprKind::BinOp { op, lhs, rhs } => {
+        HIRExprKind::BinOp { op, lhs, rhs } => {
             if let Some(expr) =
                 try_typecheck_special_binop(env, namespace, op, expr, lhs, rhs, expected_type)?
             {
@@ -429,17 +508,21 @@ fn typecheck_expr_inner(
             }
         }
 
-        CXExprKind::InitializerList { indices } => {
+        HIRExprKind::InitializerList { indices } => {
             typecheck_initializer_list(env, namespace, expr, indices, expected_type)?
         }
 
-        CXExprKind::Unit => typecheck_unit(),
+        HIRExprKind::Void => typecheck_unit(),
 
-        CXExprKind::SizeOfType { _type } => typecheck_sizeof_type(env, namespace, expr, _type)?,
+        HIRExprKind::SizeOfType { _type } => typecheck_sizeof_type(env, namespace, expr, _type)?,
 
-        CXExprKind::SizeOfExpr { expr } => typecheck_sizeof_expr(env, namespace, expr)?,
+        HIRExprKind::SizeOfExpr { expr } => typecheck_sizeof_expr(env, namespace, expr)?,
 
-        CXExprKind::Switch {
+        HIRExprKind::AlignOfType { _type } => typecheck_alignof_type(env, namespace, expr, _type)?,
+
+        HIRExprKind::AlignOfExpr { expr } => typecheck_alignof_expr(env, namespace, expr)?,
+
+        HIRExprKind::Switch {
             condition,
             block,
             cases,
@@ -453,7 +536,7 @@ fn typecheck_expr_inner(
             default_case.as_ref(),
         )?,
 
-        CXExprKind::Match {
+        HIRExprKind::Match {
             condition,
             arms,
             default,
@@ -466,7 +549,7 @@ fn typecheck_expr_inner(
             expected_type,
         )?,
 
-        CXExprKind::Taken => unreachable!("Taken expressions should not be typechecked"),
+        HIRExprKind::Taken => unreachable!("Taken expressions should not be typechecked"),
     };
 
     result.set_token_range_if_missing(expr.range.clone())?;
@@ -477,20 +560,20 @@ fn typecheck_expr_inner(
 pub fn add_implicit_return(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    expr: MIRExpression,
-) -> CXResult<MIRExpression> {
+    expr: THIRExpression,
+) -> CXResult<THIRExpression> {
     if !expr_may_fall_through(&expr) {
         return Ok(expr);
     }
 
     let func = env.current_function().clone();
 
-    let implicit_value = if func.name() == "main" {
-        Some(Box::new(MIRExpression {
+    let implicit_value = if func.symbol_name() == "main" {
+        Some(Box::new(THIRExpression {
             token_range: TokenRange::internal(),
-            kind: MIRExpressionKind::IntLiteral(0),
-            _type: MIRType::from(MIRTypeKind::Integer {
-                _type: MIRIntegerType::I32,
+            kind: THIRExpressionKind::IntLiteral(0),
+            _type: THIRType::from(THIRTypeKind::Integer {
+                _type: THIRIntType::I32,
                 signed: true,
             }),
         }))
@@ -501,7 +584,7 @@ pub fn add_implicit_return(
             expr.token_range,
             format!(
                 "Function '{}' with non-void return type must have an explicit return statement",
-                func.name()
+                func.pretty_name()
             ),
         );
     };
@@ -514,11 +597,12 @@ pub fn add_implicit_return(
     )?
     .internal_ready_assertion();
 
-    Ok(MIRExpression {
+    Ok(THIRExpression {
         token_range: TokenRange::internal(),
-        kind: MIRExpressionKind::Block {
+        kind: THIRExpressionKind::Block {
             statements: vec![expr, ret],
+            creates_scope: false,
         },
-        _type: MIRType::unit(),
+        _type: THIRType::unit(),
     })
 }

@@ -16,7 +16,8 @@ cx-tokens = { path = "../cx-tokens" }
 cx-log = { path = "../cx-log" }
 
 cx-preparse-data = { path = "../cx-preparse-data" }
-cx-ast  = { path = "../cx-ast" }
+cx-hir  = { path = "../cx-hir" }
+cx-thir = { path = "../cx-thir" }
 cx-mir = { path = "../cx-mir" }
 cx-lmir = { path = "../cx-lmir" }
 cx-target = { path = "../cx-target" }

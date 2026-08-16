@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 
-use cx_ast::ast::{function::CXFunctionKind, CXASTDefinition, CXASTStmt, CXAST};
+use cx_hir::ast::{
+    function::HIRFunctionKind, modifiers::HIRSymbolNameScheme, HIRDefinition, HIRStmt, HIR,
+};
 use cx_log::CXResult;
 use cx_namespace::result::QualifiedLookupResult;
-use cx_namespace::MIRQualifiedLookup;
+use cx_namespace::QualifiedLookup;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_preparse_data::symbol_data::PreparseSymbolKind;
 use cx_preparse_data::{NamespaceAliases, PreparseContents, VisibilityMode};
@@ -12,13 +14,14 @@ use cx_util::identifier::CXIdent;
 use cx_util::module_path::ModulePath;
 use cx_util::namespace::{EnvironmentNamespace, NamespacePath, QualifiedName};
 
-use crate::log::ParserLogExt;
+use crate::log::parse_point_error;
 
 #[derive(Debug)]
 pub struct ParserData<'a> {
     pub tokens: TokenIter<'a>,
     pub visibility: VisibilityMode,
-    pub extern_c_mode: bool,
+    pub symbol_naming: HIRSymbolNameScheme,
+    include_states: Vec<IncludeParserState>,
     pub expr_commas: Vec<bool>,
     pub pp_contents: &'a PreparseContents,
     pub file_origin: EnvironmentNamespace,
@@ -27,7 +30,13 @@ pub struct ParserData<'a> {
     namespace_aliases: NamespaceAliases,
 
     pub registry: &'a GlobalPreparseRegistry,
-    pub ast: CXAST,
+    pub ast: HIR,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct IncludeParserState {
+    visibility: VisibilityMode,
+    symbol_naming: HIRSymbolNameScheme,
 }
 
 impl<'a> ParserData<'a> {
@@ -41,14 +50,15 @@ impl<'a> ParserData<'a> {
         Self {
             tokens,
             visibility: VisibilityMode::Package,
-            extern_c_mode: false,
+            symbol_naming: HIRSymbolNameScheme::Namespaced,
+            include_states: Vec::new(),
             expr_commas: vec![true],
             pp_contents,
             file_origin,
             registry,
             temporary_type_names: HashMap::new(),
             namespace_aliases: pp_contents.namespace_aliases.clone(),
-            ast: CXAST::new(
+            ast: HIR::new(
                 ModulePath::from_source_path(pp_contents.module.as_str()),
                 pp_contents.imports.clone(),
             ),
@@ -87,15 +97,36 @@ impl<'a> ParserData<'a> {
             .expect("CRITICAL: No comma mode to get!")
     }
 
-    pub fn add_stmt(&mut self, stmt: CXASTStmt) {
-        let namespace = self.namespace_for_current_stmt();
+    pub fn add_stmt(&mut self, stmt: HIRStmt) {
+        let namespace = self.current_module_namespace();
         self.register_stmt_namespace_aliases(&namespace, &stmt);
         self.ast
             .definition_stmts
-            .push(CXASTDefinition { namespace, stmt })
+            .push(HIRDefinition { namespace, stmt })
     }
 
-    pub fn take_ast(mut self) -> CXAST {
+    pub fn begin_include(&mut self) {
+        self.include_states.push(IncludeParserState {
+            visibility: self.visibility,
+            symbol_naming: self.symbol_naming,
+        });
+        self.symbol_naming = HIRSymbolNameScheme::Unmangled;
+    }
+
+    pub fn end_include(&mut self) -> CXResult<()> {
+        let Some(state) = self.include_states.pop() else {
+            return parse_point_error(&self.tokens, "Unexpected end of included source");
+        };
+        self.visibility = state.visibility;
+        self.symbol_naming = state.symbol_naming;
+        Ok(())
+    }
+
+    pub fn in_include(&self) -> bool {
+        !self.include_states.is_empty()
+    }
+
+    pub fn take_ast(mut self) -> HIR {
         self.ast.namespace_aliases = self.namespace_aliases;
         self.ast
     }
@@ -106,26 +137,21 @@ impl<'a> ParserData<'a> {
     }
 
     pub fn query_identifier(&self, name: QualifiedName) -> CXResult<bool> {
-        match self.qualified_lookup(&self.namespace_for_current_stmt(), &name) {
+        match self.qualified_lookup(&self.current_module_namespace(), &name) {
             QualifiedLookupResult::Found { .. } => Ok(true),
             QualifiedLookupResult::NotFound => Ok(false),
-            QualifiedLookupResult::Ambiguous { candidates } => self.log_error(format!(
-                "Ambiguous identifier '{}', candidates: {}",
-                name,
-                candidates
-                    .iter()
-                    .map(|n| n.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )),
-        }
-    }
-
-    fn namespace_for_current_stmt(&self) -> NamespacePath {
-        if self.extern_c_mode {
-            NamespacePath::root()
-        } else {
-            self.current_module_namespace()
+            QualifiedLookupResult::Ambiguous { candidates } => parse_point_error(
+                &self.tokens,
+                format!(
+                    "Ambiguous identifier '{}', candidates: {}",
+                    name,
+                    candidates
+                        .iter()
+                        .map(|n| n.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            ),
         }
     }
 
@@ -133,21 +159,18 @@ impl<'a> ParserData<'a> {
         self.pp_contents.module_symbols.namespace.clone()
     }
 
-    fn register_stmt_namespace_aliases(&mut self, namespace: &NamespacePath, stmt: &CXASTStmt) {
+    fn register_stmt_namespace_aliases(&mut self, namespace: &NamespacePath, stmt: &HIRStmt) {
         if namespace.is_root() {
             return;
         }
 
-        if let CXASTStmt::FunctionDefinition { prototype, .. } = stmt {
+        if let HIRStmt::FunctionDefinition { prototype, .. } = stmt {
             let q_namespace = prototype.kind.into_key().namespace;
 
             if !q_namespace.is_root()
-                && matches!(&prototype.kind, CXFunctionKind::AssociatedFunction { .. })
+                && matches!(&prototype.kind, HIRFunctionKind::AssociatedFunction { .. })
             {
-                let entry = self
-                    .namespace_aliases
-                    .entry(namespace.clone())
-                    .or_default();
+                let entry = self.namespace_aliases.entry(namespace.clone()).or_default();
 
                 if !entry.contains(&q_namespace) {
                     entry.push(q_namespace);
@@ -157,7 +180,7 @@ impl<'a> ParserData<'a> {
     }
 }
 
-impl MIRQualifiedLookup for ParserData<'_> {
+impl QualifiedLookup for ParserData<'_> {
     type Output = PreparseSymbolKind;
 
     fn lookup_local(

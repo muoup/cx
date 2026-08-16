@@ -1,0 +1,7 @@
+public:
+
+#include "_include_state.h"
+
+int restored_public() {
+    return 12;
+}

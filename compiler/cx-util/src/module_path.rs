@@ -23,6 +23,7 @@ impl ModulePath {
         let stripped = path
             .strip_suffix(".cxh")
             .or_else(|| path.strip_suffix(".cx"))
+            .or_else(|| path.strip_suffix(".c"))
             .unwrap_or(path);
         Self(stripped.replace('\\', "/"))
     }

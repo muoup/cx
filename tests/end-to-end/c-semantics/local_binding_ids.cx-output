@@ -1,0 +1,6 @@
+inner local 20
+outer local 10
+inner parameter 30
+outer parameter 10
+drop 50
+drop 40

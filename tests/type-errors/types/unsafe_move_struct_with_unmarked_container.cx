@@ -1,0 +1,12 @@
+struct pinned : @unsafe_move {
+    int value;
+};
+
+struct container {
+    pinned value;
+};
+
+int main() {
+    container value;
+    return 0;
+}

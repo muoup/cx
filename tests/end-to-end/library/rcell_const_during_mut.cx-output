@@ -1,0 +1,2 @@
+mutable active 8
+PANIC: Cannot immutably borrow cell while it is currently mutably borrowed

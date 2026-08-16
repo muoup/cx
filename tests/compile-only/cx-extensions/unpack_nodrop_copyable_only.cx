@@ -1,0 +1,15 @@
+struct Box : @nodrop {
+    int data;
+};
+
+void consume(Box value) {
+    @unpack(move value) {};
+}
+
+int main() {
+    Box value = (Box) {
+        .data = 1
+    };
+    consume(move value);
+    return 0;
+}

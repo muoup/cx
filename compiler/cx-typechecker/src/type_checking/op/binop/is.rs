@@ -6,22 +6,24 @@ use crate::type_checking::pattern::tagged_union::{
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_checking::value::resolve_indirect_base;
-use cx_ast::ast::{expression::CXExpression, pattern::CXPattern};
+use cx_hir::ast::{expression::HIRExpression, pattern::HIRPattern};
 use cx_log::CXResult;
-use cx_mir::EnvironmentNamespace;
-use cx_mir::mir::contextual_eq::TypeContextEqual;
-use cx_mir::mir::data::MIRType;
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, SymbolValueOrigin};
-use cx_mir::mir::pattern::MIRPattern;
+use cx_thir::EnvironmentNamespace;
+use cx_thir::thir::contextual_eq::TypeContextEqual;
+use cx_thir::thir::data::THIRType;
+use cx_thir::thir::expression::{
+    THIRExpression, THIRExpressionKind, THIRLocalID,
+};
+use cx_thir::thir::pattern::THIRPattern;
 use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 
 pub(crate) fn typecheck_is(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    lhs: &CXExpression,
-    pattern: &CXPattern,
-    expr: &CXExpression,
+    lhs: &HIRExpression,
+    pattern: &HIRPattern,
+    expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     let tc_lhs = typecheck_expr(env, namespace, lhs, None)
         .and_then(|v| v.standard_ready_coerce(env, lhs.token_range()))
@@ -66,15 +68,16 @@ pub(crate) fn typecheck_is(
             ),
         );
     };
-    if let Some(inner_name) = &inner_name {
+    let inner_local_id = inner_name.as_ref().map(|_| THIRLocalID::fresh());
+    if let (Some(inner_name), Some(inner_local_id)) = (&inner_name, inner_local_id) {
         let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
         env.symbols.insert_local_value(
             QualifiedName::new_raw(inner_name.clone()),
-            MIRExpression {
+            THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: MIRExpressionKind::Variable {
+                kind: THIRExpressionKind::Variable {
                     name: inner_name.clone(),
-                    location: SymbolValueOrigin::Local,
+                    local_id: inner_local_id,
                 },
                 _type: variant_ref_type,
             },
@@ -82,13 +85,14 @@ pub(crate) fn typecheck_is(
     }
 
     Ok(TypecheckResult::new(
-        MIRType::bool(),
-        MIRExpressionKind::PatternIs {
+        THIRType::bool(),
+        THIRExpressionKind::PatternIs {
             lhs: Box::new(tc_lhs.source),
-            pattern: MIRPattern::TaggedUnionVariant {
+            pattern: THIRPattern::TaggedUnionVariant {
                 sum_type: union_type.clone(),
                 variant_index: expected_tag,
                 inner_name,
+                inner_local_id,
             },
         },
     ))
@@ -97,9 +101,9 @@ pub(crate) fn typecheck_is(
 fn validate_variant_template_input(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    union_type: &MIRType,
-    template_input: Option<&cx_ast::ast::template::CXTemplateInput>,
-    expr: &CXExpression,
+    union_type: &THIRType,
+    template_input: Option<&cx_hir::ast::template::HIRTemplateInput>,
+    expr: &HIRExpression,
 ) -> CXResult<()> {
     let Some(template_input) = template_input else {
         return Ok(());
@@ -115,7 +119,8 @@ fn validate_variant_template_input(
     if !completed_input.contextual_eq(&template_data.template_input, &env.symbols) {
         return env.log_error(
             expr.token_range(),
-            "Tagged union pattern template arguments do not match the left-hand side type".to_string(),
+            "Tagged union pattern template arguments do not match the left-hand side type"
+                .to_string(),
         );
     }
 

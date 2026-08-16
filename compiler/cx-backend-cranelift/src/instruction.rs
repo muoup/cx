@@ -6,17 +6,30 @@ use crate::value_type::get_cranelift_type;
 use crate::{CodegenValue, FunctionState};
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
-use cranelift::codegen::ir::InstructionData;
 use cranelift::frontend::Switch;
 use cranelift::prelude::{InstBuilder, MemFlags, StackSlotData, StackSlotKind};
 use cranelift_module::Module;
 use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
 use cx_lmir::{
-    LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind,
-    LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRReturnABI,
+    LMIRBlockTarget, LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction,
+    LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRReturnABI,
 };
-use cx_log::error::CXRawResult;
-use std::ops::IndexMut;
+use cx_log::error::{message::CXStdErrMessage, CXRawResult};
+
+fn block_arguments(
+    context: &mut FunctionState,
+    target: &LMIRBlockTarget,
+) -> CXRawResult<Vec<ir::BlockArg>> {
+    target
+        .args
+        .iter()
+        .map(|argument| {
+            context
+                .get_value(argument)
+                .map(|value| ir::BlockArg::Value(value.as_value()))
+        })
+        .collect()
+}
 
 fn load_return_slots(
     context: &mut FunctionState,
@@ -463,25 +476,28 @@ pub(crate) fn codegen_instruction(
 
         LMIRInstructionKind::Branch {
             condition,
-            true_block,
-            false_block,
+            true_target,
+            false_target,
         } => {
             let condition = context.get_value(condition)?.as_value();
-            let true_block = context.get_block(true_block);
-            let false_block = context.get_block(false_block);
+            let true_block = context.get_block(&true_target.block);
+            let false_block = context.get_block(&false_target.block);
+            let true_args = block_arguments(context, true_target)?;
+            let false_args = block_arguments(context, false_target)?;
 
             context
                 .builder
                 .ins()
-                .brif(condition, true_block, &[], false_block, &[]);
+                .brif(condition, true_block, &true_args, false_block, &false_args);
 
             CodegenValue::Null
         }
 
         LMIRInstructionKind::Jump { target } => {
-            let target = context.get_block(target);
+            let block = context.get_block(&target.block);
+            let args = block_arguments(context, target)?;
 
-            context.builder.ins().jump(target, &[]);
+            context.builder.ins().jump(block, &args);
 
             CodegenValue::Null
         }
@@ -521,6 +537,12 @@ pub(crate) fn codegen_instruction(
                         );
                     }
                 }
+                CodegenValue::Null => {
+                    return CXStdErrMessage::result(
+                        "CODEGEN ERROR",
+                        "LMIR attempted to store a value with no runtime representation",
+                    );
+                }
                 value => {
                     context
                         .builder
@@ -536,16 +558,14 @@ pub(crate) fn codegen_instruction(
             dest,
             src,
             size,
-            alignment: _,
+            ..
         } => {
             let dest = context.get_value(dest)?.as_value();
             let src = context.get_value(src)?.as_value();
             let size = context.get_value(size)?.as_value();
             let target_config = context.object_module.target_config();
 
-            context
-                .builder
-                .call_memcpy(target_config, dest, src, size);
+            context.builder.call_memcpy(target_config, dest, src, size);
 
             CodegenValue::Null
         }
@@ -553,110 +573,18 @@ pub(crate) fn codegen_instruction(
         LMIRInstructionKind::ZeroMemory { memory, _type } => {
             let target = context.get_value(memory)?.as_value();
             let target_config = context.object_module.target_config();
-            let size_literal = context
-                .builder
-                .ins()
-                .iconst(target_config.pointer_type(), usize::from(_type.size()) as i64);
+            let size_literal = context.builder.ins().iconst(
+                target_config.pointer_type(),
+                usize::from(_type.size()) as i64,
+            );
 
             let zero = context.builder.ins().iconst(ir::Type::int(8).unwrap(), 0);
 
-            context.builder.call_memset(
-                target_config,
-                target,
-                zero,
-                size_literal,
-            );
-
-            CodegenValue::Null
-        }
-
-        LMIRInstructionKind::Phi { predecessors } => {
-            let current_block = context.builder.current_block().unwrap();
-            let current_block_len = context
-                .builder
-                .func
-                .layout
-                .block_insts(current_block)
-                .count();
-
             context
                 .builder
-                .append_block_param(current_block, get_cranelift_type(&instruction.value_type)?);
+                .call_memset(target_config, target, zero, size_literal);
 
-            for (from_value, from_block) in predecessors {
-                let block = context.get_block(from_block);
-
-                // get last instruction in the block
-                let last_inst = context
-                    .builder
-                    .func
-                    .layout
-                    .block_insts(block)
-                    .next_back()
-                    .unwrap();
-
-                // code made with only the worst of intentions
-                context.builder.func.layout.remove_inst(last_inst);
-
-                let value = context.get_value(from_value)?.as_value();
-
-                while context
-                    .builder
-                    .func
-                    .layout
-                    .block_insts(current_block)
-                    .count()
-                    > current_block_len
-                {
-                    let inst = context
-                        .builder
-                        .func
-                        .layout
-                        .block_insts(current_block)
-                        .next_back()
-                        .unwrap();
-                    context.builder.func.layout.remove_inst(inst);
-                    context.builder.func.layout.append_inst(inst, block);
-                }
-
-                context.builder.func.layout.append_inst(last_inst, block);
-
-                unsafe {
-                    let value_pool: *mut _ = &mut context.builder.func.dfg.value_lists;
-
-                    match context.builder.func.dfg.insts.index_mut(last_inst) {
-                        InstructionData::Jump { destination, .. } => {
-                            destination.append_argument(value, &mut *value_pool);
-                        }
-                        InstructionData::Brif { blocks, .. } => {
-                            if blocks.get_mut(0).unwrap().block(&*value_pool) == current_block {
-                                blocks
-                                    .get_mut(0)
-                                    .unwrap()
-                                    .append_argument(value, &mut *value_pool);
-                            }
-                            if blocks.get_mut(1).unwrap().block(&*value_pool) == current_block {
-                                blocks
-                                    .get_mut(1)
-                                    .unwrap()
-                                    .append_argument(value, &mut *value_pool);
-                            }
-                        }
-                        _ => {
-                            panic!("Invalid instruction type for Phi: {last_inst:?}");
-                        }
-                    }
-                }
-            }
-
-            let val = context
-                .builder
-                .block_params(current_block)
-                .last()
-                .cloned()
-                .expect("No block parameter found for Phi instruction");
-
-            CodegenValue::Value(val)
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::Coercion {
@@ -723,7 +651,7 @@ pub(crate) fn codegen_instruction(
         } => context.get_value(value)?,
 
         LMIRInstructionKind::Coercion {
-            coercion_type: LMIRCoercionType::FloatCast { from: _ },
+            coercion_type: LMIRCoercionType::FloatCast { .. },
             value,
         } => {
             let val = context.get_value(value)?;
@@ -787,7 +715,7 @@ pub(crate) fn codegen_instruction(
         }
 
         LMIRInstructionKind::Coercion {
-            coercion_type: LMIRCoercionType::IntToFloat { from: _, sextend },
+            coercion_type: LMIRCoercionType::IntToFloat { sextend, .. },
             value,
         } => {
             let val = context.get_value(value)?.as_value();
@@ -808,19 +736,49 @@ pub(crate) fn codegen_instruction(
             default,
         } => {
             let mut switch = Switch::new();
+            let mut edges = Vec::with_capacity(targets.len());
 
-            for (value, block_id) in targets {
-                switch.set_entry(*value as u128, context.get_block(block_id));
+            // Cranelift's Switch helper cannot attach block arguments. Route only
+            // parameterized cases through small edge blocks that perform the jump.
+            for (case, target) in targets {
+                let destination = if target.args.is_empty() {
+                    context.get_block(&target.block)
+                } else {
+                    let edge = context.builder.create_block();
+                    edges.push((edge, target));
+                    edge
+                };
+                switch.set_entry(*case as u128, destination);
+            }
+            let (default_block, finish_default) = if default.args.is_empty() {
+                (context.get_block(&default.block), false)
+            } else {
+                (context.builder.create_block(), true)
+            };
+            let discriminant = context.get_value(value)?.as_value();
+            switch.emit(&mut context.builder, discriminant, default_block);
+
+            for (edge, target) in edges {
+                context.builder.switch_to_block(edge);
+                let block = context.get_block(&target.block);
+                let args = block_arguments(context, target)?;
+                context.builder.ins().jump(block, &args);
             }
 
-            let default_block = context.get_block(default);
-            let value = context.get_value(value)?;
-
-            switch.emit(&mut context.builder, value.as_value(), default_block);
+            if finish_default {
+                context.builder.switch_to_block(default_block);
+                let target = context.get_block(&default.block);
+                let args = block_arguments(context, default)?;
+                context.builder.ins().jump(target, &args);
+            }
 
             CodegenValue::Null
         }
 
         LMIRInstructionKind::CompilerAssumption { .. } => CodegenValue::Null,
+        LMIRInstructionKind::Unreachable => {
+            context.builder.ins().trap(ir::TrapCode::unwrap_user(1));
+            CodegenValue::Null
+        }
     })
 }

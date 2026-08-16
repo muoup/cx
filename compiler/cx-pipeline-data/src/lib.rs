@@ -4,6 +4,7 @@ pub mod directories;
 pub mod internal_storage;
 pub mod jobs;
 
+use crate::config::{CXProjectConfig, LinkEntry};
 use crate::db::ModuleData;
 pub use cx_target::ArchitectureConfig;
 use cx_util::module_path::ModulePath;
@@ -43,12 +44,6 @@ pub struct GlobalCompilationContext {
     pub linking_files: Mutex<HashSet<PathBuf>>,
 }
 
-impl Drop for GlobalCompilationContext {
-    fn drop(&mut self) {
-        self.module_db.store_data(self);
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompilationMode {
     Executable,
@@ -60,18 +55,21 @@ pub enum CompilationMode {
 pub struct CompilerConfig {
     pub architecture: ArchitectureConfig,
     pub backend: CompilerBackend,
+    pub compilation_mode: CompilationMode,
     pub optimization_level: OptimizationLevel,
+    pub project_config: Option<CXProjectConfig>,
+
     pub output: PathBuf,
-    pub analysis: bool,
-    pub verbose: bool,
     pub working_directory: PathBuf,
     pub internal_directory: PathBuf,
-    pub compilation_mode: CompilationMode,
-    pub module_mode: bool,
-    pub project_config: Option<config::CXProjectConfig>,
-    pub link_entries: Vec<config::LinkEntry>,
+
+    pub link_entries: Vec<LinkEntry>,
     pub native_objects: Vec<PathBuf>,
     pub include_dirs: Vec<PathBuf>,
+
+    pub unsafe_mode: bool,
+    pub verbose: bool,
+    pub module_mode: bool,
 }
 
 #[derive(Default, Debug, Copy, Clone, Hash)]
@@ -140,7 +138,13 @@ impl CompilationUnit {
 
     pub fn from_rooted(path: &str, working_directory: &Path) -> Self {
         let module_path = ModulePath::from_source_path(path);
-        let extension = if path.ends_with(".cxh") { "cxh" } else { "cx" };
+        let extension = if path.ends_with(".cxh") {
+            "cxh"
+        } else if path.ends_with(".c") {
+            "c"
+        } else {
+            "cx"
+        };
         Self::from_module_path_with_extension(module_path, working_directory, extension)
     }
 

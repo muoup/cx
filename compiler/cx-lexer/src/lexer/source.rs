@@ -6,6 +6,30 @@ use cx_log::{
 };
 use cx_util::char_iter::CharIter;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LanguageMode {
+    C,
+    Cx,
+}
+
+impl LanguageMode {
+    pub(crate) fn for_root_path(path: &Path) -> Self {
+        match path.extension().and_then(|extension| extension.to_str()) {
+            Some("c" | "h") => Self::C,
+            _ => Self::Cx,
+        }
+    }
+
+    pub(crate) fn for_include_path(path: &Path, parent: Self, angled: bool) -> Self {
+        match path.extension().and_then(|extension| extension.to_str()) {
+            Some("c") => Self::C,
+            Some("cx" | "cxh") => Self::Cx,
+            Some("h") if angled => Self::C,
+            _ => parent,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct ConditionalFrame {
     pub(crate) parent_active: bool,
@@ -19,16 +43,38 @@ pub(crate) struct SourceFrame {
     pub(crate) file_path: PathBuf,
     pub(crate) cursor: usize,
     pub(crate) conditionals: Vec<ConditionalFrame>,
+    pub(crate) is_include: bool,
+    pub(crate) language_mode: LanguageMode,
 }
 
 impl SourceFrame {
     pub(crate) fn new(source: String, source_path: &Path) -> Self {
+        Self::new_with_mode(
+            source,
+            source_path,
+            LanguageMode::for_root_path(source_path),
+        )
+    }
+
+    fn new_with_mode(source: String, source_path: &Path, language_mode: LanguageMode) -> Self {
         Self {
             source,
             file_path: source_path.to_path_buf(),
             cursor: 0,
             conditionals: Vec::new(),
+            is_include: false,
+            language_mode,
         }
+    }
+
+    pub(crate) fn new_include(
+        source: String,
+        source_path: &Path,
+        language_mode: LanguageMode,
+    ) -> Self {
+        let mut frame = Self::new_with_mode(source, source_path, language_mode);
+        frame.is_include = true;
+        frame
     }
 
     pub(crate) fn is_active(&self) -> bool {

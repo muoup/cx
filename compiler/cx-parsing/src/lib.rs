@@ -1,4 +1,4 @@
-use cx_ast::ast::CXAST;
+use cx_hir::ast::HIR;
 use cx_log::CXResult;
 use cx_preparse_data::{registry::GlobalPreparseRegistry, PreparseContents};
 use cx_tokens::TokenIter;
@@ -30,7 +30,7 @@ pub fn preparse(
         config,
         tokens,
         visibility_mode: cx_preparse_data::VisibilityMode::Private,
-        extern_c_mode: false,
+        include_states: Vec::new(),
     };
 
     while data.tokens.has_next() {
@@ -44,7 +44,7 @@ pub fn parse_ast(
     iter: TokenIter,
     pp_contents: &PreparseContents,
     registry: &GlobalPreparseRegistry,
-) -> CXResult<CXAST> {
+) -> CXResult<HIR> {
     let mut data = ParserData::new(iter, pp_contents, registry);
 
     while data.tokens.has_next() {
@@ -54,16 +54,12 @@ pub fn parse_ast(
     Ok(data.take_ast())
 }
 
-pub fn decompose_ast<'a>(
-    namespace: &'a NamespacePath,
-    ast: CXAST,
-) -> CXResult<DecompositionEnv<'a>> {
+pub fn decompose_ast<'a>(namespace: &'a NamespacePath, ast: HIR) -> CXResult<DecompositionEnv<'a>> {
     let namespace_aliases = ast.namespace_aliases;
     let mut env = DecompositionEnv::new(namespace, namespace_aliases);
 
     for stmt in ast.definition_stmts {
         env.decompose_stmt(stmt)?;
     }
-
     Ok(env)
 }

@@ -7,7 +7,7 @@ use crate::{
     context::SourceInput,
     lexer::{
         comments::handle_comment,
-        source::{LexCursor, SourceFrame},
+        source::{LanguageMode, LexCursor, SourceFrame},
         token_rules,
     },
 };
@@ -68,6 +68,7 @@ impl<'a> Lexer<'a> {
                 start,
                 end,
                 self.frame.file_path.as_path(),
+                self.frame.language_mode,
             )?;
             return Ok(LexEvent::Tokens(tokens));
         }
@@ -98,8 +99,12 @@ impl<'a> Lexer<'a> {
     }
 }
 
-pub(crate) fn tokenize_text(source: &str, file_origin: &Path) -> CXResult<Vec<Token>> {
-    tokenize_range(source, 0, source.len(), file_origin)
+pub(crate) fn tokenize_text(
+    source: &str,
+    file_origin: &Path,
+    language_mode: LanguageMode,
+) -> CXResult<Vec<Token>> {
+    tokenize_range(source, 0, source.len(), file_origin, language_mode)
 }
 
 fn tokenize_range(
@@ -107,9 +112,10 @@ fn tokenize_range(
     start: usize,
     end: usize,
     file_origin: &Path,
+    language_mode: LanguageMode,
 ) -> CXResult<Vec<Token>> {
     let mut cursor = LexCursor::new(&source[..end], file_origin, start);
-    let mut accumulator = TokenAccumulator::new(&mut cursor, file_origin);
+    let mut accumulator = TokenAccumulator::new(&mut cursor, file_origin, language_mode);
     accumulator.generate_tokens()?;
     Ok(accumulator.tokens)
 }
@@ -119,15 +125,17 @@ struct TokenAccumulator<'a> {
     file_origin: Arc<Path>,
     last_consume: usize,
     tokens: Vec<Token>,
+    language_mode: LanguageMode,
 }
 
 impl<'a> TokenAccumulator<'a> {
-    fn new(cursor: &'a mut LexCursor<'a>, file_origin: &Path) -> Self {
+    fn new(cursor: &'a mut LexCursor<'a>, file_origin: &Path, language_mode: LanguageMode) -> Self {
         Self {
             last_consume: cursor.cursor(),
             cursor,
             file_origin: Arc::from(file_origin),
             tokens: Vec::new(),
+            language_mode,
         }
     }
 
@@ -181,7 +189,14 @@ impl<'a> TokenAccumulator<'a> {
 
         let text = self.cursor.source()[self.last_consume..up_to].to_string();
         if text.chars().any(|c| !c.is_whitespace()) {
-            self.add_token(TokenKind::from_str(text), up_to);
+            let kind = TokenKind::from_str(text);
+            self.add_token(
+                match self.language_mode {
+                    LanguageMode::C => kind.into_c_mode(),
+                    LanguageMode::Cx => kind,
+                },
+                up_to,
+            );
         }
 
         self.last_consume = up_to;
