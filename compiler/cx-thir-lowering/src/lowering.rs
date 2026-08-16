@@ -116,6 +116,7 @@ fn lower_expression(
 
             THIRExpressionKind::Variable { local_id, .. } => builder
                 .local_value(*local_id)
+                .or_else(|| builder.local(*local_id).map(MIRValue::Place))
                 .expect("local variable not found"),
 
             THIRExpressionKind::GlobalVariable { symbol } => MIRValue::Place(MIRPlace::Global(
@@ -181,65 +182,104 @@ fn lower_expression(
 
             THIRExpressionKind::Copy { source } => {
                 let value = lower_expression(builder, source)?;
+                if !source._type.is_memory_reference() {
+                    return Ok(match value {
+                        MIRValue::Place(place) => MIRValue::Copy(place),
+                        value => value,
+                    });
+                }
 
+                let inner_type = source
+                    ._type
+                    .mem_ref_inner()
+                    .expect("memory reference is missing its pointee type");
+                let pointee = builder.registry().resolve_type_id(inner_type).clone();
+                let pointee_type = builder.lower_type(&pointee);
                 match value {
                     MIRValue::Place(place) => MIRValue::Copy(place),
-                    value => value,
+                    MIRValue::Register(register)
+                        if builder.register_type(register) == Some(pointee_type) =>
+                    {
+                        MIRValue::Register(register)
+                    }
+                    pointer => {
+                        let out = builder.place(pointee_type, None, false);
+                        builder.emit(MIRInstrKind::Dereference {
+                            out,
+                            pointer,
+                            pointee_type,
+                        });
+                        MIRValue::Copy(out)
+                    }
                 }
             }
 
             THIRExpressionKind::Move { local_id, .. } => {
-                let place = builder.local(*local_id).expect("move target local is missing");
-                MIRValue::Move(place)
-            },
+                builder
+                    .local_value(*local_id)
+                    .or_else(|| builder.local(*local_id).map(MIRValue::Move))
+                    .expect("move target local is missing")
+            }
 
-            THIRExpressionKind::CreateLocalVariable { name, local_id, _type, initial_value, adopting } => {
-                let type_id = builder.lower_type(_type);
-                let place = builder.place(type_id, Some(name.clone()), false);
-                
-                builder.bind_local(*local_id, place);
+            THIRExpressionKind::CreateLocalVariable {
+                name,
+                local_id,
+                _type,
+                initial_value,
+                adopting,
+            } => {
+                let initial_value = initial_value
+                    .as_deref()
+                    .map(|value| lower_expression(builder, value))
+                    .transpose()?;
 
-                if let Some(initial_value) = initial_value {
-                    let value = lower_expression(builder, initial_value)?;
-                    builder.emit(MIRInstrKind::Assign {
-                        target: MIRAssignTarget::Place(place),
-                        value,
-                        ty: type_id,
-                    });
+                if *adopting {
+                    let initial_value = initial_value
+                        .expect("adopting local variable is missing its initial value");
+                    match initial_value {
+                        MIRValue::Place(place) => {
+                            builder.bind_local(*local_id, place);
+                            builder.bind_named(name, MIRValue::Place(place));
+                            MIRValue::Place(place)
+                        }
+                        value => {
+                            let value = materialize_value(builder, value, _type);
+                            builder.bind_local_value(*local_id, value.clone());
+                            builder.bind_named(name, value.clone());
+                            value
+                        }
+                    }
                 } else {
-                    builder.emit(MIRInstrKind::Initialize { place });
-                }
-
-                MIRValue::Place(place)
-            },
-            
-            THIRExpressionKind::Assign { target, value } => {
-                let assignment_type = builder.lower_type(&value._type);
-                
-                let target = lower_expression(builder, target)?;
-                let value = lower_expression(builder, value)?;                
-
-                match target {
-                    MIRValue::Place(place) => {
+                    let type_id = builder.lower_type(_type);
+                    let place = builder.create(type_id, Some(name.clone()), _type.is_nodrop());
+                    if let Some(value) = initial_value {
                         builder.emit(MIRInstrKind::Assign {
                             target: MIRAssignTarget::Place(place),
                             value,
-                            ty: assignment_type,
+                            ty: type_id,
                         });
-                        MIRValue::Place(place)
+                    } else {
+                        builder.emit(MIRInstrKind::Initialize { place });
                     }
-
-                    MIRValue::Register(register) => {
-                        builder.emit(MIRInstrKind::Assign {
-                            target: MIRAssignTarget::Register(register),
-                            value,
-                            ty: assignment_type,
-                        });
-                        MIRValue::Register(register)
-                    }
-
-                    _ => unreachable!("assignment target must be a place, but got {:?}", target),
+                    builder.bind_local(*local_id, place);
+                    builder.bind_named(name, MIRValue::Place(place));
+                    MIRValue::Place(place)
                 }
+            }
+
+            THIRExpressionKind::Assign { target, value } => {
+                let assignment_type = builder.lower_type(&value._type);
+
+                let target_value = lower_expression(builder, target)?;
+                let target = memory::ensure_place(builder, target_value, &target._type);
+                let value = lower_expression(builder, value)?;
+
+                builder.emit(MIRInstrKind::Assign {
+                    target: MIRAssignTarget::Place(target),
+                    value,
+                    ty: assignment_type,
+                });
+                MIRValue::Place(target)
             }
             
             THIRExpressionKind::Typechange(inner) => {

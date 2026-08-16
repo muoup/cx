@@ -31,7 +31,7 @@ pub(crate) fn validate_safe_expression(
         | THIRExpressionKind::LifetimeStart { .. }
         | THIRExpressionKind::LifetimeEnd { .. } => Ok(()),
 
-        THIRExpressionKind::Unpack { .. } |
+        THIRExpressionKind::Unpack { .. } => Ok(()),
         THIRExpressionKind::LeakLifetime { .. } => reject(env, expression),
 
         THIRExpressionKind::FunctionReference { .. } => validate_callable(env, expression),

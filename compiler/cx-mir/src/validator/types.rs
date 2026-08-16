@@ -299,7 +299,16 @@ impl MIRUnit {
         expected: MIRTypeID,
     ) -> Option<MIRTypeID> {
         match value {
-            MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place) => {
+            MIRValue::Place(place) => {
+                let raw = self.place_type(function, *place)?;
+                if let Some(MIRTypeKind::MemoryReference { inner, .. }) = self.types.kind(expected)
+                    && self.types.same_type(raw, *inner)
+                {
+                    return Some(expected);
+                }
+                self.place_type_for_expected(function, *place, expected)
+            }
+            MIRValue::Copy(place) | MIRValue::Move(place) => {
                 self.place_type_for_expected(function, *place, expected)
             }
             _ => self.value_type(function, value),

@@ -499,6 +499,10 @@ impl<'thir> MIRBuilder<'thir> {
         self.function_mut().add_register(ty, debug_name)
     }
 
+    pub(crate) fn register_type(&self, register: MIRRegister) -> Option<MIRTypeID> {
+        self.function().register(register).map(|register| register.ty)
+    }
+
     pub(crate) fn block_param(
         &mut self,
         block: MIRBasicBlockID,

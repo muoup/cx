@@ -77,7 +77,8 @@ pub(crate) fn typecheck_move(
             name: binding.root.clone(),
             local_id: binding.local_id,
         },
-    ))
+    )
+    .with_binding(binding))
 }
 
 fn owned_unsafe_move(env: &TypeEnvironment, ty: &THIRType) -> bool {
