@@ -34,7 +34,7 @@ pub fn typecheck_switch(
     // Each case maps a constant value to a range of expressions in the block
     let mut arms = Vec::new();
 
-    for (case_index, case_value) in cases {
+    for (case_value, case_index) in cases {
         // Find the expression at this case index
         let Some(case_expr) = block.get(*case_index as usize) else {
             return env.log_error(
