@@ -13,6 +13,7 @@ extern FILE *stderr;
 
 FILE *fopen(const char *filename, const char *mode);
 int fclose(FILE *stream);
+int remove(const char *filename);
 void clearerr(FILE *stream);
 
 int feof(FILE *stream);
