@@ -1,15 +1,16 @@
 mod args;
 mod build;
+mod help;
 mod init;
 
 use args::Command;
-use cx_pipeline::standard_compilation;
+use cx_pipeline::{link_object_files, standard_compilation};
 use cx_pipeline_data::{ArchitectureConfig, CompilationMode, CompilerConfig};
 use std::path::{Path, PathBuf};
 
 use crate::{
-    build::{run_build_mode, run_run_mode},
-    init::run_init_mode,
+    build::{build_project, run_project},
+    init::init_project,
 };
 
 fn setup_internal_directory(working_directory: &Path) -> PathBuf {
@@ -133,19 +134,26 @@ fn run_file_mode(args: args::FileArgs) -> Result<(), ()> {
 
     let working_directory = invocation_directory.clone();
     let internal_directory = setup_internal_directory(&working_directory);
+    let mut object_files = Vec::with_capacity(args.input_files.len());
 
     for (index, input_file) in args.input_files.iter().enumerate() {
-        let output = intermediate_object_output(&internal_directory, index, input_file);
+        let object_output = intermediate_object_output(&internal_directory, index, input_file);
         let config = compiler_config_with_dirs(
             &args,
-            output,
+            object_output.clone(),
             CompilationMode::Object,
             working_directory.clone(),
             internal_directory.clone(),
         );
 
         run_standard_compilation(config, Path::new(input_file))?;
+        object_files.push(object_output);
     }
+
+    link_object_files(&output, &object_files).map_err(|err| {
+        err.print().expect("Failed to write error message");
+    })?;
+
     Ok(())
 }
 
@@ -164,8 +172,10 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Command::Build(args) => run_build_mode(args),
-        Command::Run(args) => run_run_mode(args),
-        Command::Init(args) => run_init_mode(args),
+        Command::Build(args) => {
+            build_project(args);
+        }
+        Command::Run(args) => run_project(args),
+        Command::Init(args) => init_project(args),
     }
 }

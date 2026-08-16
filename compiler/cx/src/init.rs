@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::args;
 
-pub(crate) fn run_init_mode(args: args::InitArgs) {
+pub(crate) fn init_project(args: args::InitArgs) {
     let project_dir = Path::new(&args.project_name);
 
     if project_dir.exists() {

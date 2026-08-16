@@ -97,10 +97,7 @@ Build artifacts are placed under `.internal/`:
 │       ├── <library_name>.o
 │       └── <library_name>.h
 └── <profile_hash>/
-    ├── <module>.o
-    ├── <module>.tok
-    ├── <module>.ast
-    └── <module>.lmir
+    └── module artifacts
 ```
 
 Library targets and generated C headers are covered in [Libraries and C Interop](./c-interop.md).

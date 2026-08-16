@@ -62,10 +62,6 @@ impl ModuleData {
         }
     }
 
-    pub fn store_data(&self, context: &GlobalCompilationContext) {
-        self.preparse_base.store_all_data(context);
-    }
-
     pub fn register_unit(&self, unit: &CompilationUnit) {
         self.module_units
             .write()

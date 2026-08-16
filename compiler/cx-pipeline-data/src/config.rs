@@ -54,17 +54,21 @@ pub struct LinkEntry {
 
 /// Search upward from `start_dir` for a `cx.toml` file.
 /// Returns the path to the directory containing `cx.toml` and the parsed config.
-pub fn find_and_load_config(start_dir: &Path) -> Option<(PathBuf, CXProjectConfig)> {
+pub fn find_and_load_config(
+    start_dir: &Path,
+) -> Result<Option<(PathBuf, CXProjectConfig)>, String> {
     let mut current = start_dir.to_path_buf();
     loop {
         let config_path = current.join("cx.toml");
         if config_path.is_file() {
-            let content = std::fs::read_to_string(&config_path).ok()?;
-            let config: CXProjectConfig = toml::from_str(&content).ok()?;
-            return Some((current, config));
+            let content = std::fs::read_to_string(&config_path)
+                .map_err(|error| format!("Failed to read {}: {error}", config_path.display()))?;
+            let config: CXProjectConfig = toml::from_str(&content)
+                .map_err(|error| format!("Failed to parse {}: {error}", config_path.display()))?;
+            return Ok(Some((current, config)));
         }
         if !current.pop() {
-            return None;
+            return Ok(None);
         }
     }
 }

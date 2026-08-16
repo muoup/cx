@@ -44,12 +44,6 @@ pub struct GlobalCompilationContext {
     pub linking_files: Mutex<HashSet<PathBuf>>,
 }
 
-impl Drop for GlobalCompilationContext {
-    fn drop(&mut self) {
-        self.module_db.store_data(self);
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompilationMode {
     Executable,

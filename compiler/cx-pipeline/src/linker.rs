@@ -2,6 +2,7 @@ use crate::pipeline_error;
 use crate::progress::ProgressReporter;
 use cx_log::CXResult;
 use cx_pipeline_data::GlobalCompilationContext;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Relocatable link: combines all .o files into a single .o (ld -r).
@@ -119,6 +120,29 @@ pub(crate) fn link(
             format!(
                 "Linking failed: {}",
                 String::from_utf8_lossy(&output.stderr)
+            ),
+        ))
+    }
+}
+
+pub(crate) fn link_objects(output: &Path, object_files: &[PathBuf]) -> CXResult<()> {
+    let mut cmd = Command::new("gcc");
+    cmd.arg("-Wl,--gc-sections");
+    cmd.arg("-o").arg(output);
+    cmd.args(object_files);
+
+    let command_output = cmd
+        .output()
+        .map_err(|e| pipeline_error("LINK ERROR", format!("Failed to execute linker: {}", e)))?;
+
+    if command_output.status.success() {
+        Ok(())
+    } else {
+        Err(pipeline_error(
+            "LINK ERROR",
+            format!(
+                "Linking failed: {}",
+                String::from_utf8_lossy(&command_output.stderr)
             ),
         ))
     }

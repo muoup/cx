@@ -11,11 +11,7 @@ use crate::{
     setup_internal_directory,
 };
 
-pub(crate) fn run_build_mode(args: BuildArgs) {
-    build_project(args);
-}
-
-pub(crate) fn run_run_mode(args: RunArgs) {
+pub(crate) fn run_project(args: RunArgs) {
     let binaries_built = build_project(args.build);
 
     let executable = match binaries_built.as_slice() {
@@ -46,13 +42,20 @@ pub(crate) fn run_run_mode(args: RunArgs) {
     std::process::exit(status.code().unwrap_or(1));
 }
 
-fn build_project(args: BuildArgs) -> Vec<PathBuf> {
+pub fn build_project(args: BuildArgs) -> Vec<PathBuf> {
     let invocation_directory = std::env::current_dir().expect("Failed to get current directory");
 
-    let (project_root, config) = find_and_load_config(&invocation_directory).unwrap_or_else(|| {
-        eprintln!("Error: No cx.toml found. `cx build` requires a cx.toml project file.");
-        std::process::exit(1);
-    });
+    let (project_root, config) = match find_and_load_config(&invocation_directory) {
+        Ok(Some(config)) => config,
+        Ok(None) => {
+            eprintln!("Error: No cx.toml found. `cx build` requires a cx.toml project file.");
+            std::process::exit(1);
+        }
+        Err(error) => {
+            eprintln!("Error: {error}");
+            std::process::exit(1);
+        }
+    };
 
     // Resolve build settings: CLI overrides cx.toml [build] section
     let build_section = config.build.as_ref();

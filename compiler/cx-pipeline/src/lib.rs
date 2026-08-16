@@ -3,7 +3,7 @@ mod linker;
 pub mod progress;
 mod scheduler;
 
-use crate::linker::{link, link_relocatable};
+use crate::linker::{link, link_objects, link_relocatable};
 use crate::progress::ProgressReporter;
 use crate::scheduler::scheduling_loop;
 use crate::scheduler::scheduling_loop_collect_errors;
@@ -30,6 +30,10 @@ pub use crate::scheduler::LSPErrors;
 pub struct LSPCheckResult {
     pub errors: Vec<LSPErrors>,
     pub checked_files: HashSet<PathBuf>,
+}
+
+pub fn link_object_files(output: &Path, object_files: &[PathBuf]) -> CXResult<()> {
+    link_objects(output, object_files)
 }
 
 pub(crate) fn pipeline_error(code: impl Into<String>, message: impl Into<String>) -> CXErr {
