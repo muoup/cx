@@ -18,7 +18,7 @@ fn main() {
         ("compile-only", TestKind::CompileOnly),
         ("parse-errors", TestKind::ParseError),
         ("type-errors", TestKind::TypeError),
-        ("analysis-errors", TestKind::AnalysisError),
+        ("analysis-error", TestKind::AnalysisError),
     ];
 
     let mut output = String::new();

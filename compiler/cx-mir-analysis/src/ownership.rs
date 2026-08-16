@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cx_mir::{
-    MIRAggregateOp, MIRAssignTarget, MIRFunction, MIRInstrKind, MIRPlace, MIRPlaceAggregateOp,
-    MIRUnit, MIRValue, MIRValueAggregateOp,
+    MIRAggregateOp, MIRAssignTarget, MIRBasicBlockID, MIRFunction, MIRInstrKind, MIRPlace,
+    MIRPlaceAggregateOp, MIRUnit, MIRValue, MIRValueAggregateOp,
 };
 
 use crate::types::MIRAnalysisError;
@@ -12,8 +12,6 @@ enum PlaceState {
     Uninitialized,
     Available,
     Moved,
-    Destructured,
-    MaybeMoved,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,15 +57,11 @@ impl OwnershipState {
         self.places.remove(place);
     }
 
-    fn mark_destructured(&mut self, place: MIRPlace) {
-        self.insert(place, PlaceState::Destructured);
-        self.mark_ancestors_destructured(place);
-    }
-
-    fn mark_ancestors_destructured(&mut self, place: MIRPlace) {
+    fn mark_moved(&mut self, place: MIRPlace) {
+        self.insert(place, PlaceState::Moved);
         let mut current = place;
         while let Some(base) = self.projections.get(&current).copied() {
-            self.insert(base, PlaceState::Destructured);
+            self.insert(base, PlaceState::Moved);
             current = base;
         }
     }
@@ -112,7 +106,14 @@ fn check_function(unit: &MIRUnit, function: &MIRFunction) -> Result<(), MIRAnaly
                 let Some(slot) = entries.get_mut(target.index()) else {
                     continue;
                 };
-                changed |= merge_entry(slot, &state);
+                changed |= merge_entry(
+                    unit,
+                    function,
+                    block.id,
+                    block.instrs.len().saturating_sub(1),
+                    slot,
+                    &state,
+                )?;
             }
         }
 
@@ -142,10 +143,17 @@ fn initial_state(function: &MIRFunction) -> OwnershipState {
     state
 }
 
-fn merge_entry(slot: &mut Option<OwnershipState>, incoming: &OwnershipState) -> bool {
+fn merge_entry(
+    unit: &MIRUnit,
+    function: &MIRFunction,
+    block: MIRBasicBlockID,
+    instruction: usize,
+    slot: &mut Option<OwnershipState>,
+    incoming: &OwnershipState,
+) -> Result<bool, MIRAnalysisError> {
     let Some(existing) = slot else {
         *slot = Some(incoming.clone());
-        return true;
+        return Ok(true);
     };
 
     let keys = existing
@@ -159,16 +167,33 @@ fn merge_entry(slot: &mut Option<OwnershipState>, incoming: &OwnershipState) -> 
         projections: existing.projections.clone(),
     };
     for place in keys {
-        let state = merge_state(
-            existing
-                .get(&place)
-                .copied()
-                .unwrap_or(PlaceState::Uninitialized),
-            incoming
-                .get(&place)
-                .copied()
-                .unwrap_or(PlaceState::Uninitialized),
-        );
+        let existing_state = existing
+            .get(&place)
+            .copied()
+            .unwrap_or(PlaceState::Uninitialized);
+        let incoming_state = incoming
+            .get(&place)
+            .copied()
+            .unwrap_or(PlaceState::Uninitialized);
+
+        if is_nodrop(function, place)
+            && matches!(existing_state, PlaceState::Available)
+                != matches!(incoming_state, PlaceState::Available)
+        {
+            return Err(ownership_error(
+                function,
+                block,
+                instruction,
+                None,
+                place,
+                format!(
+                    "@nodrop place '{}' is moved on only some control-flow paths",
+                    place_name(unit, function, place)
+                ),
+            ));
+        }
+
+        let state = merge_state(existing_state, incoming_state);
         if state != PlaceState::Uninitialized {
             merged.insert(place, state);
         }
@@ -176,9 +201,9 @@ fn merge_entry(slot: &mut Option<OwnershipState>, incoming: &OwnershipState) -> 
 
     if *existing != merged {
         *existing = merged;
-        true
+        Ok(true)
     } else {
-        false
+        Ok(false)
     }
 }
 
@@ -186,10 +211,22 @@ fn merge_state(left: PlaceState, right: PlaceState) -> PlaceState {
     if left == right {
         return left;
     }
-    if matches!(left, PlaceState::MaybeMoved) || matches!(right, PlaceState::MaybeMoved) {
-        return PlaceState::MaybeMoved;
+    PlaceState::Moved
+}
+
+fn is_nodrop(function: &MIRFunction, place: MIRPlace) -> bool {
+    match place {
+        MIRPlace::FunctionLocal(id) => function
+            .place(id)
+            .is_some_and(|declaration| declaration.nodrop),
+        MIRPlace::Parameter(id) => function
+            .prototype
+            .signature
+            .params
+            .get(id.index())
+            .is_some_and(|parameter| parameter.nodrop),
+        MIRPlace::Global(_) => false,
     }
-    PlaceState::MaybeMoved
 }
 
 fn transfer_block(
@@ -232,10 +269,7 @@ fn transfer_instruction(
 
                 let place = MIRPlace::FunctionLocal(declaration.id);
                 if declaration.nodrop
-                    && matches!(
-                        state.get(&place),
-                        Some(PlaceState::Available | PlaceState::MaybeMoved)
-                    )
+                    && matches!(state.get(&place), Some(PlaceState::Available))
                     && diagnose
                 {
                     return Err(ownership_error(
@@ -276,7 +310,7 @@ fn transfer_instruction(
             MIRAggregateOp::Place { out, op } => {
                 match op {
                     MIRPlaceAggregateOp::Field { base, .. }
-                    | MIRPlaceAggregateOp::Variant { base, .. } => use_projection_base(
+                    | MIRPlaceAggregateOp::Variant { base, .. } => use_place(
                         unit,
                         function,
                         block,
@@ -286,7 +320,7 @@ fn transfer_instruction(
                         diagnose,
                     )?,
                     MIRPlaceAggregateOp::Index { base, index, .. } => {
-                        use_projection_base(
+                        use_place(
                             unit,
                             function,
                             block,
@@ -377,7 +411,6 @@ fn transfer_instruction(
         } => {
             if let MIRValue::Move(place) = subject {
                 consume(unit, function, block, instruction, *place, state, diagnose)?;
-                state.mark_destructured(*place);
             } else {
                 use_value(unit, function, block, instruction, subject, state, diagnose)?;
             }
@@ -449,24 +482,6 @@ fn use_place(
             "used after it was moved",
             diagnose,
         ),
-        PlaceState::Destructured => ownership_failure(
-            unit,
-            function,
-            block,
-            instruction,
-            place,
-            "used after it was moved",
-            diagnose,
-        ),
-        PlaceState::MaybeMoved => ownership_failure(
-            unit,
-            function,
-            block,
-            instruction,
-            place,
-            "may have been moved on another control-flow path",
-            diagnose,
-        ),
         PlaceState::Uninitialized => ownership_failure(
             unit,
             function,
@@ -476,22 +491,6 @@ fn use_place(
             "used before it was initialized",
             diagnose,
         ),
-    }
-}
-
-fn use_projection_base(
-    unit: &MIRUnit,
-    function: &MIRFunction,
-    block: cx_mir::MIRBasicBlockID,
-    instruction: usize,
-    place: MIRPlace,
-    state: &mut OwnershipState,
-    diagnose: bool,
-) -> Result<(), MIRAnalysisError> {
-    if matches!(state.get(&place), Some(PlaceState::Destructured)) {
-        Ok(())
-    } else {
-        use_place(unit, function, block, instruction, place, state, diagnose)
     }
 }
 
@@ -523,24 +522,6 @@ fn consume(
             "moved more than once",
             diagnose,
         ),
-        PlaceState::Destructured => ownership_failure(
-            unit,
-            function,
-            block,
-            instruction,
-            place,
-            "moved more than once",
-            diagnose,
-        ),
-        PlaceState::MaybeMoved => ownership_failure(
-            unit,
-            function,
-            block,
-            instruction,
-            place,
-            "may have been moved on another control-flow path",
-            diagnose,
-        ),
         PlaceState::Uninitialized => ownership_failure(
             unit,
             function,
@@ -552,8 +533,7 @@ fn consume(
         ),
     };
 
-    state.insert(place, PlaceState::Moved);
-    state.mark_ancestors_destructured(place);
+    state.mark_moved(place);
     result
 }
 
@@ -582,7 +562,7 @@ fn check_function_exit(
             continue;
         }
         let place = MIRPlace::FunctionLocal(declaration.id);
-        if let Some(PlaceState::Available | PlaceState::MaybeMoved) = state.get(&place).copied() {
+        if let Some(PlaceState::Available) = state.get(&place).copied() {
             return Err(ownership_error(
                 function,
                 block,
@@ -603,10 +583,7 @@ fn check_function_exit(
         }
 
         let place = MIRPlace::Parameter(cx_mir::MIRParameterID::new(index));
-        if matches!(
-            state.get(&place),
-            Some(PlaceState::Available | PlaceState::MaybeMoved)
-        ) {
+        if matches!(state.get(&place), Some(PlaceState::Available)) {
             return Err(ownership_error(
                 function,
                 block,

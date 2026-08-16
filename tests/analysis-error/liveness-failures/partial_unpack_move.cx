@@ -1,0 +1,14 @@
+struct Pair {
+    int left;
+    int right;
+};
+
+void discard(int value) {}
+
+int bad(Pair pair) {
+    @unpack(move pair) {
+        left: left
+    };
+    discard(move left);
+    return pair.right;
+}

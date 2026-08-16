@@ -14,5 +14,6 @@ int bad() {
         consume(move data);
     }
 
+    consume(move data);
     return 0;
 }

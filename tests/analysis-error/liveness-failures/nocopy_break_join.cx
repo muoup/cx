@@ -15,5 +15,6 @@ int bad() {
         break;
     }
 
+    consume(move data);
     return 0;
 }
