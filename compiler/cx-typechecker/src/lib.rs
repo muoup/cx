@@ -231,6 +231,11 @@ fn canonicalize_global_initializer(
                 token_range,
             }
         }
+        THIRExpressionKind::GlobalVariable { symbol } => THIRExpression {
+            kind: THIRExpressionKind::GlobalVariable { symbol },
+            _type,
+            token_range,
+        },
         THIRExpressionKind::FunctionReference { .. } => THIRExpression {
             kind,
             _type,

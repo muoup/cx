@@ -324,6 +324,15 @@ impl<'thir> MIRBuilder<'thir> {
             THIRExpressionKind::FunctionReference { name, debug_name } => MIRConstant::Function(
                 self.ensure_function(name, &expression._type, debug_name.as_ref()),
             ),
+            THIRExpressionKind::GlobalVariable { symbol } => {
+                let global = self
+                    .global_symbol(symbol.as_str())
+                    .unwrap_or_else(|| panic!("global {symbol} is not declared"));
+                MIRConstant::Global {
+                    global,
+                    ty: self.lower_type(&expression._type),
+                }
+            }
             THIRExpressionKind::Typechange(operand)
                 if function_reference_symbol(operand).is_some() => MIRConstant::Function(
                 self.ensure_function(

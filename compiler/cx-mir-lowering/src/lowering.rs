@@ -112,6 +112,12 @@ fn lower_global_initializer(mir: &MIRUnit, constant: &MIRConstant) -> LMIRGlobal
             value: *value,
             _type: convert_float_type(*ty),
         },
+        MIRConstant::Aggregate { ty, fields }
+            if matches!(mir.types.kind(*ty), Some(cx_mir::MIRTypeKind::Union { .. }))
+                && fields.iter().all(|(_, value)| is_zero_constant(value)) =>
+        {
+            LMIRGlobalInitializer::Null
+        }
         MIRConstant::Aggregate { fields, .. } => LMIRGlobalInitializer::Aggregate {
             fields: fields
                 .iter()
@@ -139,6 +145,18 @@ fn lower_global_initializer(mir: &MIRUnit, constant: &MIRConstant) -> LMIRGlobal
         MIRConstant::Unit
         | MIRConstant::String(_)
         | MIRConstant::Undefined => panic!("unsupported MIR global initializer: {constant:?}"),
+    }
+}
+
+fn is_zero_constant(constant: &MIRConstant) -> bool {
+    match constant {
+        MIRConstant::Bool(value) => !value,
+        MIRConstant::Integer { value, .. } => *value == 0,
+        MIRConstant::Null { .. } => true,
+        MIRConstant::Aggregate { fields, .. } => {
+            fields.iter().all(|(_, value)| is_zero_constant(value))
+        }
+        _ => false,
     }
 }
 

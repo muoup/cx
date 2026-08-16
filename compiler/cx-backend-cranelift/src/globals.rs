@@ -178,6 +178,7 @@ fn aggregate_field(ty: &LMIRType, index: usize) -> Option<(LMIRType, usize)> {
             }
             None
         }
+        LMIRTypeKind::Opaque { .. } if index == 0 => Some((ty.clone(), 0)),
         _ => None,
     }
 }

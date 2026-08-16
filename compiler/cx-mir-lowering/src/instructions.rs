@@ -234,7 +234,7 @@ impl<'a> FunctionLowerer<'a> {
         for (index, value) in fields {
             let (address, field_ty) = match self.types.kind(ty).expect("invalid MIR aggregate type")
             {
-                MIRTypeKind::Structured { .. } => {
+                MIRTypeKind::Structured { .. } | MIRTypeKind::Union { .. } => {
                     let binding = self.field_binding(
                         PlaceBinding::Address {
                             value: base.clone(),
