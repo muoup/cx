@@ -12,10 +12,7 @@ use cx_log::CXResult;
 use cx_thir::{
     EnvironmentNamespace,
     symbol::MIRSymbol,
-    thir::{
-        data::THIRTypeKind,
-        expression::{SymbolValueOrigin, THIRExpressionKind},
-    },
+    thir::{data::THIRTypeKind, expression::THIRExpressionKind},
 };
 use cx_util::namespace::QualifiedName;
 
@@ -89,11 +86,9 @@ pub(crate) fn typecheck_identifier(
     }
 
     let binding = match result.ready_expression().map(|expr| &expr.kind) {
-        Some(THIRExpressionKind::Variable {
-            name,
-            local_id: Some(local_id),
-            location: SymbolValueOrigin::Local,
-        }) => Some(TypecheckedBinding::local(name.clone(), *local_id)),
+        Some(THIRExpressionKind::Variable { name, local_id }) => {
+            Some(TypecheckedBinding::local(name.clone(), *local_id))
+        }
         _ => None,
     };
 

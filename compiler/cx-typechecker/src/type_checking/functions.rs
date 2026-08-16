@@ -11,7 +11,7 @@ use cx_thir::{
     EnvironmentNamespace,
     thir::{
         data::{THIRFnPrototype, THIRFunction, THIRParameter},
-        expression::{SymbolValueOrigin, THIRExpression, THIRExpressionKind},
+        expression::{THIRExpression, THIRExpressionKind},
     },
 };
 use cx_tokens::TokenRange;
@@ -26,7 +26,10 @@ pub fn typecheck_function(
     if prototype.signature().contract.safe && prototype.signature().var_args {
         return env.log_error(
             body.token_range(),
-            format!("Safe function '{}' may not use varargs", prototype.pretty_name()),
+            format!(
+                "Safe function '{}' may not use varargs",
+                prototype.pretty_name()
+            ),
         );
     }
 
@@ -55,8 +58,7 @@ pub fn typecheck_function(
                 token_range: TokenRange::internal(),
                 kind: THIRExpressionKind::Variable {
                     name: name.clone(),
-                    local_id: Some(local_id),
-                    location: SymbolValueOrigin::Local,
+                    local_id: local_id,
                 },
                 _type: ref_type,
             },

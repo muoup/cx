@@ -32,7 +32,7 @@ pub(crate) fn resolve_indirect_base(
             if let Some(ptr_inner) = env.symbols.ptr_inner(&inner_type).cloned() {
                 let pointer = THIRExpression {
                     token_range: TokenRange::internal(),
-                    kind: THIRExpressionKind::RegionDuplicate {
+                    kind: THIRExpressionKind::Copy {
                         source: Box::new(source),
                     },
                     _type: env.symbols.pointer_to(ptr_inner.clone()),
@@ -52,7 +52,7 @@ pub(crate) fn resolve_indirect_base(
             if env.symbols.mem_ref_inner(&inner_type).is_some() {
                 source = THIRExpression {
                     token_range: TokenRange::internal(),
-                    kind: THIRExpressionKind::RegionDuplicate {
+                    kind: THIRExpressionKind::Copy {
                         source: Box::new(source),
                     },
                     _type: inner_type,

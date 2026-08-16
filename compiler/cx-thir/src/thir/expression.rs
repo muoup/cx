@@ -80,12 +80,6 @@ pub struct THIRSourceRange {
     pub end_token: usize,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SymbolValueOrigin {
-    Local,
-    Global,
-}
-
 #[derive(Clone, Debug, Default)]
 pub enum THIRExpressionKind {
     // Literals
@@ -97,12 +91,13 @@ pub enum THIRExpressionKind {
     Unit,
 
     // Variables
+    GlobalVariable {
+        symbol: CXIdent,
+    },
+    
     Variable {
         name: CXIdent,
-        /// Present for locals and absent for globals.
-        /// FIXME: Instead of using this workaround, we should have a separate `GlobalVariable` variant for globals.
-        local_id: Option<THIRLocalID>,
-        location: SymbolValueOrigin,
+        local_id: THIRLocalID,
     },
 
     ContractVariable {
@@ -135,24 +130,21 @@ pub enum THIRExpressionKind {
     },
 
     // Memory Operations
-    RegionCreate {
-        _type: THIRType,
-        initial_value: Option<Box<THIRExpression>>,
-    },
-    BindRegion {
+    CreateLocalVariable {
         name: CXIdent,
         local_id: THIRLocalID,
         _type: THIRType,
-        initial_region: Box<THIRExpression>,
+        initial_value: Option<Box<THIRExpression>>,
         adopting: bool,
     },
-    RegionDuplicate {
+    Copy {
         source: Box<THIRExpression>,
     },
-    RegionMove {
-        source: Box<THIRExpression>,
+    Move {
+        name: CXIdent,
+        local_id: THIRLocalID,
     },
-    RegionWrite {
+    Assign {
         target: Box<THIRExpression>,
         value: Box<THIRExpression>,
     },
@@ -171,10 +163,15 @@ pub enum THIRExpressionKind {
         index: Box<THIRExpression>,
         element_type: THIRType,
     },
-
     PatternIs {
         lhs: Box<THIRExpression>,
         pattern: THIRPattern,
+    },
+    Unpack {
+        name: CXIdent,
+        local_id: THIRLocalID,
+        struct_type: THIRType,
+        bindings: Vec<THIRUnpackBinding>
     },
 
     // Tagged Unions
@@ -195,12 +192,11 @@ pub enum THIRExpressionKind {
     },
 
     // Internal node used by generated type-constructor functions.
-    ConstructTaggedUnion {
+    TaggedUnionInitializer {
         variant_index: usize,
         value: Box<THIRExpression>,
         sum_type: THIRType,
     },
-
     ArrayInitializer {
         elements: Vec<THIRExpression>,
         element_type: THIRType,
@@ -251,7 +247,7 @@ pub enum THIRExpressionKind {
     Yield {
         value: Option<Box<THIRExpression>>,
     },
-    Emit(Box<THIRExpression>),
+    
     Assert {
         condition: Box<THIRExpression>,
         message: String,
@@ -295,6 +291,9 @@ pub enum THIRExpressionKind {
     Unsafe {
         expression: Box<THIRExpression>,
     },
+
+    // Comptime
+    Emit(Box<THIRExpression>),
 }
 
 #[derive(Clone, Debug, Readable, Writable)]
@@ -449,6 +448,16 @@ pub enum THIRCoercion {
     // A similar no-op operation like Typechange, but represents conversions that *do* change the semantic
     // meaning of the bits, such as converting from an f32 to an i32
     ReinterpretBits,
+}
+
+#[derive(Clone, Debug)]
+pub struct THIRUnpackBinding {
+    pub field_name: CXIdent,
+    pub field_type: THIRType,
+    pub field_index: usize,
+    
+    pub binding_name: CXIdent,
+    pub binding_local_id: THIRLocalID,
 }
 
 #[derive(Clone, Debug)]

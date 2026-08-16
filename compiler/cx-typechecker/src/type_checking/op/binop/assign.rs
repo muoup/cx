@@ -58,7 +58,7 @@ pub fn typecheck_assignment(
 
     Ok(TypecheckResult::new(
         lhs_type,
-        THIRExpressionKind::RegionWrite {
+        THIRExpressionKind::Assign {
             target: Box::new(lhs_expr),
             value: Box::new(rhs),
         },

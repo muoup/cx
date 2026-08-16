@@ -24,9 +24,15 @@ pub(crate) fn validate_safe_expression(
         | THIRExpressionKind::SizeOf { .. }
         | THIRExpressionKind::AlignOf { .. }
         | THIRExpressionKind::Variable { .. }
+        | THIRExpressionKind::GlobalVariable { .. }
         | THIRExpressionKind::ContractVariable { .. }
+        | THIRExpressionKind::Unsafe { .. }
+        | THIRExpressionKind::Move { .. }
         | THIRExpressionKind::LifetimeStart { .. }
         | THIRExpressionKind::LifetimeEnd { .. } => Ok(()),
+
+        THIRExpressionKind::Unpack { .. } |
+        THIRExpressionKind::LeakLifetime { .. } => reject(env, expression),
 
         THIRExpressionKind::FunctionReference { .. } => validate_callable(env, expression),
 
@@ -35,22 +41,17 @@ pub(crate) fn validate_safe_expression(
             validate_safe_expression(env, rhs)
         }
         THIRExpressionKind::UnaryOperation { operand, .. }
-        | THIRExpressionKind::RegionDuplicate { source: operand }
-        | THIRExpressionKind::RegionMove { source: operand } => {
+        | THIRExpressionKind::Copy { source: operand } => {
             validate_safe_expression(env, operand)
         }
-        THIRExpressionKind::LeakLifetime { .. } => reject(env, expression),
-        THIRExpressionKind::Unsafe { .. } => Ok(()),
 
-        THIRExpressionKind::RegionCreate { initial_value, .. } => initial_value
+        THIRExpressionKind::CreateLocalVariable { initial_value, .. } => initial_value
             .as_deref()
             .map(|value| validate_safe_expression(env, value))
             .transpose()
             .map(|_| ()),
-        THIRExpressionKind::BindRegion { initial_region, .. } => {
-            validate_safe_expression(env, initial_region)
-        }
-        THIRExpressionKind::RegionWrite { target, value } => {
+
+        THIRExpressionKind::Assign { target, value } => {
             validate_safe_expression(env, target)?;
             validate_safe_expression(env, value)
         }
@@ -94,7 +95,7 @@ pub(crate) fn validate_safe_expression(
             validate_safe_expression(env, target)?;
             validate_safe_expression(env, inner_value)
         }
-        THIRExpressionKind::ConstructTaggedUnion { value, .. } => {
+        THIRExpressionKind::TaggedUnionInitializer { value, .. } => {
             validate_safe_expression(env, value)
         }
         THIRExpressionKind::ArrayInitializer { elements, .. } => validate_all(env, elements),

@@ -3,7 +3,7 @@ use cx_hir::ast::modifiers::HIR_CONST;
 use cx_log::CXResult;
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
-    expression::{SymbolValueOrigin, THIRExpression, THIRExpressionKind},
+    expression::{THIRExpression, THIRExpressionKind},
     global::{MIRGlobalVarKind, MIRGlobalVariable},
 };
 use cx_tokens::{
@@ -126,11 +126,7 @@ pub(crate) fn typecheck_string_literal(env: &mut TypeEnvironment, val: &str) -> 
 
     TypecheckResult::from(THIRExpression {
         token_range: TokenRange::internal(),
-        kind: THIRExpressionKind::Variable {
-            name: name_ident,
-            local_id: None,
-            location: SymbolValueOrigin::Global,
-        },
+        kind: THIRExpressionKind::GlobalVariable { symbol: name_ident },
         _type: str_ref_type,
     })
 }

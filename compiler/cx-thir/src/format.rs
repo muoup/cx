@@ -713,9 +713,12 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }
-            THIRExpressionKind::Variable {
-                name, location: _, ..
-            } => {
+            THIRExpressionKind::GlobalVariable { symbol } => {
+                write!(f, "GlobalVariable \"{symbol}\" <'")?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, ">")
+            },
+            THIRExpressionKind::Variable { name, .. } => {
                 write!(f, "LocalVariable {} <'", name)?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
@@ -764,8 +767,19 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::RegionWrite { target, value } => {
-                write!(f, "RegionWrite <'")?;
+            THIRExpressionKind::Typechange(expression) => {
+                write!(f, "Typechange <'")?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, ">")?;
+                MIRExpressionFormatter {
+                    expr: expression,
+                    depth: self.depth + 1,
+                    definitions: self.definitions,
+                }
+                .fmt(f)
+            }
+            THIRExpressionKind::Assign { target, value } => {
+                write!(f, "Assign <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
@@ -781,62 +795,33 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::Typechange(expression) => {
-                write!(f, "Typechange <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")?;
-                MIRExpressionFormatter {
-                    expr: expression,
-                    depth: self.depth + 1,
-                    definitions: self.definitions,
-                }
-                .fmt(f)
-            }
-            THIRExpressionKind::RegionCreate {
+            THIRExpressionKind::CreateLocalVariable {
+                name,
+                local_id,
                 _type,
                 initial_value,
+                adopting
             } => {
-                write!(f, "RegionCreate ")?;
-                self.write_type(f, _type)?;
-                write!(f, " <'")?;
+                write!(
+                    f,
+                    "CreateStackVariable {} (local_id={:?}) <'",
+                    name, local_id
+                )?;
                 self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")?;
-
-                if let Some(init) = initial_value {
+                writeln!(f, ", adopting={adopting}>")?;
+                if let Some(initial_value) = initial_value {
                     MIRExpressionFormatter {
-                        expr: init,
+                        expr: initial_value,
                         depth: self.depth + 1,
                         definitions: self.definitions,
                     }
-                    .fmt(f)?;
+                    .fmt(f)
                 } else {
-                    self.indent(f)?;
-                    writeln!(f, "(no initializer)")?;
+                    Ok(())
                 }
-
-                Ok(())
             }
-            THIRExpressionKind::BindRegion {
-                name,
-                _type,
-                initial_region,
-                adopting,
-                ..
-            } => {
-                write!(f, "BindRegion {} adopting={}: ", name, adopting)?;
-                self.write_type(f, _type)?;
-                write!(f, " <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")?;
-                MIRExpressionFormatter {
-                    expr: initial_region,
-                    depth: self.depth + 1,
-                    definitions: self.definitions,
-                }
-                .fmt(f)
-            }
-            THIRExpressionKind::RegionDuplicate { source } => {
-                write!(f, "RegionDuplicate")?;
+            THIRExpressionKind::Copy { source } => {
+                write!(f, "Copy")?;
                 write!(f, " <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
@@ -847,6 +832,13 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
+            
+            THIRExpressionKind::Move { name, .. } => {
+                write!(f, "Move <'")?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, "> {}", name)
+            }
+            
             THIRExpressionKind::MemberAccess {
                 base,
                 member_index,
@@ -893,6 +885,22 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
+            THIRExpressionKind::Unpack { name, bindings, .. } => {
+                write!(f, "Unpack <'")?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, "> {}", name)?;
+                for binding in bindings {
+                    self.indent(f)?;
+                    writeln!(
+                        f,
+                        ".{} -> {}",
+                        binding.field_name,
+                        binding.binding_name,
+                    )?;
+                }
+                Ok(())
+            },
+            
             THIRExpressionKind::TaggedUnionTag { value, .. } => {
                 write!(f, "TaggedUnionTag <'")?;
                 self.write_type(f, &self.expr._type)?;
@@ -943,7 +951,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::ConstructTaggedUnion {
+            THIRExpressionKind::TaggedUnionInitializer {
                 variant_index,
                 value,
                 ..
@@ -1371,17 +1379,6 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: expression,
-                    depth: self.depth + 1,
-                    definitions: self.definitions,
-                }
-                .fmt(f)
-            }
-            THIRExpressionKind::RegionMove { source } => {
-                write!(f, "Move <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")?;
-                MIRExpressionFormatter {
-                    expr: source,
                     depth: self.depth + 1,
                     definitions: self.definitions,
                 }

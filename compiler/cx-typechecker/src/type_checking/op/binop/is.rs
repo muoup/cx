@@ -12,7 +12,7 @@ use cx_thir::EnvironmentNamespace;
 use cx_thir::thir::contextual_eq::TypeContextEqual;
 use cx_thir::thir::data::THIRType;
 use cx_thir::thir::expression::{
-    SymbolValueOrigin, THIRExpression, THIRExpressionKind, THIRLocalID,
+    THIRExpression, THIRExpressionKind, THIRLocalID,
 };
 use cx_thir::thir::pattern::THIRPattern;
 use cx_tokens::TokenRange;
@@ -77,8 +77,7 @@ pub(crate) fn typecheck_is(
                 token_range: TokenRange::internal(),
                 kind: THIRExpressionKind::Variable {
                     name: inner_name.clone(),
-                    local_id: Some(inner_local_id),
-                    location: SymbolValueOrigin::Local,
+                    local_id: inner_local_id,
                 },
                 _type: variant_ref_type,
             },

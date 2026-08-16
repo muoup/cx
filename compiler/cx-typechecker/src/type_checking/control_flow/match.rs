@@ -19,7 +19,7 @@ use cx_thir::EnvironmentNamespace;
 use cx_thir::thir::{
     contextual_eq::TypeContextEqual,
     data::{THIRType, THIRTypeKind},
-    expression::{SymbolValueOrigin, THIRExpression, THIRExpressionKind, THIRLocalID},
+    expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
     pattern::THIRPattern,
 };
 use cx_thir::type_context::THIRTypeContext;
@@ -103,8 +103,7 @@ pub fn typecheck_match(
                 token_range: TokenRange::internal(),
                 kind: THIRExpressionKind::Variable {
                     name: subject_name,
-                    local_id: Some(subject),
-                    location: SymbolValueOrigin::Local,
+                    local_id: subject,
                 },
             };
 
@@ -177,7 +176,7 @@ pub fn typecheck_match(
                     let (body_expr, flow) = if condition_owned {
                         let inner_local_id = THIRLocalID::fresh();
                         let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
-                        let variant_region = THIRExpression {
+                        let variant = THIRExpression {
                             token_range: TokenRange::internal(),
                             _type: variant_ref_type.clone(),
                             kind: THIRExpressionKind::TaggedUnionGet {
@@ -189,11 +188,11 @@ pub fn typecheck_match(
                         let bind_region = THIRExpression {
                             token_range: TokenRange::internal(),
                             _type: variant_ref_type.clone(),
-                            kind: THIRExpressionKind::BindRegion {
+                            kind: THIRExpressionKind::CreateLocalVariable {
                                 name: inner_name.clone(),
                                 local_id: inner_local_id,
                                 _type: variant_type.clone(),
-                                initial_region: Box::new(variant_region),
+                                initial_value: Some(Box::new(variant)),
                                 adopting: true,
                             },
                         };
@@ -206,8 +205,7 @@ pub fn typecheck_match(
                                 token_range: TokenRange::internal(),
                                 kind: THIRExpressionKind::Variable {
                                     name: inner_name.clone(),
-                                    local_id: Some(inner_local_id),
-                                    location: SymbolValueOrigin::Local,
+                                    local_id: inner_local_id,
                                 },
                                 _type: variant_ref_type,
                             },

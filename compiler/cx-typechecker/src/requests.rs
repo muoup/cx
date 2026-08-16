@@ -2,7 +2,7 @@ use cx_hir::{ast::function::HIRFunctionContract, symbols::HIRSymbolKind};
 use cx_log::CXResult;
 use cx_thir::thir::{
     data::{MIRTemplateInput, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter},
-    expression::{SymbolValueOrigin, THIRExpression, THIRExpressionKind},
+    expression::{THIRExpression, THIRExpressionKind},
     r#type::THIRType,
 };
 use cx_tokens::TokenRange;
@@ -85,28 +85,20 @@ fn realize_tagged_union_constructor(
             kind: THIRExpressionKind::Unit,
         }
     } else {
-        let param_ref = THIRExpression {
-            token_range: TokenRange::internal(),
-            _type: env.symbols.mem_ref_to(variant_type.clone()),
-            kind: THIRExpressionKind::Variable {
-                name: param_name,
-                local_id: Some(param_local_id),
-                location: SymbolValueOrigin::Local,
-            },
-        };
-
         THIRExpression {
             token_range: TokenRange::internal(),
             _type: variant_type.clone(),
-            kind: THIRExpressionKind::RegionMove {
-                source: Box::new(param_ref),
+            kind: THIRExpressionKind::Move {
+                name: param_name,
+                local_id: param_local_id,
             },
         }
     };
+    
     let constructed = THIRExpression {
         token_range: TokenRange::internal(),
         _type: union_type.clone(),
-        kind: THIRExpressionKind::ConstructTaggedUnion {
+        kind: THIRExpressionKind::TaggedUnionInitializer {
             variant_index,
             value: Box::new(value),
             sum_type: union_type,

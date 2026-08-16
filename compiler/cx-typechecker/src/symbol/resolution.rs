@@ -19,7 +19,7 @@ use cx_thir::{
     thir::{
         contextual_eq::TypeContextEqual,
         data::{MIRTemplateInput, THIRFnPrototype, THIRFnSignature, THIRParameter, TemplateInfo},
-        expression::{SymbolValueOrigin, THIRExpression, THIRExpressionKind},
+        expression::{THIRExpression, THIRExpressionKind},
         global::{MIRGlobalVarKind, MIRGlobalVariable},
         name_mangling::{base_mangle_member, base_mangle_templated_name},
     },
@@ -83,10 +83,8 @@ pub fn resolve_symbol(
 
             Ok(MIRSymbol::Expression(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: THIRExpressionKind::Variable {
-                    name: symbol_name,
-                    local_id: None,
-                    location: SymbolValueOrigin::Global,
+                kind: THIRExpressionKind::GlobalVariable {
+                    symbol: symbol_name,
                 },
                 _type: env.symbols.mem_ref_to(ty),
             }))

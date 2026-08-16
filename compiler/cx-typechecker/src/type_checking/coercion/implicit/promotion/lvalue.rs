@@ -45,7 +45,7 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResu
     let loaded = THIRExpression {
         token_range,
         _type: result_type.clone(),
-        kind: THIRExpressionKind::RegionDuplicate {
+        kind: THIRExpressionKind::Copy {
             source: Box::new(expr),
         },
     };

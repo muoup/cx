@@ -7,7 +7,7 @@ mod operators;
 use cx_log::CXResult;
 use cx_mir::{
     MIRAggregateOp, MIRAssignTarget, MIRBlockTarget, MIRConstant, MIRInstrKind, MIRIntType,
-    MIRPlaceAggregateOp, MIRValue, MIRValueAggregateOp,
+    MIRPlace, MIRPlaceAggregateOp, MIRValue, MIRValueAggregateOp,
 };
 use cx_thir::{
     THIRUnit,
@@ -114,24 +114,14 @@ fn lower_expression(
                 })
             }
 
-            THIRExpressionKind::Variable {
-                name,
-                local_id,
-                location,
-            } => match location {
-                cx_thir::thir::expression::SymbolValueOrigin::Local => local_id
-                    .and_then(|id| builder.local_value(id))
-                    .or_else(|| {
-                        local_id
-                            .and_then(|id| builder.local(id))
-                            .map(MIRValue::Place)
-                    })
-                    .or_else(|| builder.named(name))
-                    .unwrap_or(MIRValue::Constant(MIRConstant::Undefined)),
-                cx_thir::thir::expression::SymbolValueOrigin::Global => MIRValue::Place(
-                    cx_mir::MIRPlace::Global(builder.ensure_global(name, &expression._type)),
-                ),
-            },
+            THIRExpressionKind::Variable { local_id, .. } => builder
+                .local_value(*local_id)
+                .expect("local variable not found"),
+
+            THIRExpressionKind::GlobalVariable { symbol } => MIRValue::Place(MIRPlace::Global(
+                builder.ensure_global(symbol, &expression._type),
+            )),
+
             THIRExpressionKind::ContractVariable { name, .. } => builder
                 .named(name)
                 .map(|value| match value {
@@ -189,148 +179,69 @@ fn lower_expression(
                 MIRValue::Register(out)
             }
 
-            THIRExpressionKind::RegionCreate {
-                _type,
-                initial_value,
-            } => {
+            THIRExpressionKind::Copy { source } => {
+                let value = lower_expression(builder, source)?;
+
+                match value {
+                    MIRValue::Place(place) => MIRValue::Copy(place),
+                    value => value,
+                }
+            }
+
+            THIRExpressionKind::Move { local_id, .. } => {
+                let place = builder.local(*local_id).expect("move target local is missing");
+                MIRValue::Move(place)
+            },
+
+            THIRExpressionKind::CreateLocalVariable { name, local_id, _type, initial_value, adopting } => {
                 let type_id = builder.lower_type(_type);
-                let place = builder.create(type_id, None, _type.is_nodrop());
+                let place = builder.place(type_id, Some(name.clone()), false);
+                
+                builder.bind_local(*local_id, place);
+
                 if let Some(initial_value) = initial_value {
                     let value = lower_expression(builder, initial_value)?;
-                    let type_id = builder.lower_type(_type);
                     builder.emit(MIRInstrKind::Assign {
                         target: MIRAssignTarget::Place(place),
                         value,
                         ty: type_id,
                     });
+                } else {
+                    builder.emit(MIRInstrKind::Initialize { place });
                 }
+
                 MIRValue::Place(place)
-            }
-            THIRExpressionKind::BindRegion {
-                name,
-                local_id,
-                _type,
-                initial_region,
-                adopting,
-            } => {
-                let initial = lower_expression(builder, initial_region)?;
-                let initial = if !*adopting
-                    && matches!(initial_region.kind, THIRExpressionKind::RegionCreate { .. })
-                {
-                    match initial {
-                        MIRValue::Place(place) => MIRValue::Move(place),
-                        value => value,
-                    }
-                } else {
-                    initial
-                };
-                if *adopting {
-                    match initial {
-                        MIRValue::Place(place) => {
-                            builder.bind_local(*local_id, place);
-                            builder.bind_named(name, MIRValue::Place(place));
-                            MIRValue::Place(place)
-                        }
-                        value => {
-                            let value = materialize_value(builder, value, _type);
-                            builder.bind_local_value(*local_id, value.clone());
-                            builder.bind_named(name, value.clone());
-                            value
-                        }
-                    }
-                } else {
-                    let place = memory::assign_operand_to_place(
-                        builder,
-                        initial,
-                        _type,
-                        Some(name.clone()),
-                    );
-                    builder.bind_local(*local_id, place);
-                    builder.bind_named(name, MIRValue::Place(place));
-                    MIRValue::Place(place)
-                }
-            }
-            THIRExpressionKind::RegionDuplicate { source } => {
-                let value = lower_expression(builder, source)?;
-                let owned_local = matches!(
-                    &source.kind,
-                    THIRExpressionKind::Variable {
-                        local_id: Some(local_id),
-                        ..
-                    } if builder.local_value(*local_id).is_some()
-                );
-                if let THIRTypeKind::MemoryReference { inner_type, .. } = &source._type.kind {
-                    if owned_local {
-                        value
-                    } else {
-                        match value {
-                            MIRValue::Place(place) | MIRValue::Copy(place) => MIRValue::Copy(place),
-                            MIRValue::Move(place) => MIRValue::Move(place),
-                            value => {
-                                let pointee =
-                                    builder.registry().resolve_type_id(*inner_type).clone();
-                                let pointee_type = builder.lower_type(&pointee);
-                                let type_id = builder.lower_type(&expression._type);
-                                let out = builder.place(type_id, None, false);
-                                builder.emit(MIRInstrKind::Dereference {
-                                    out,
-                                    pointer: value,
-                                    pointee_type,
-                                });
-                                MIRValue::Copy(out)
-                            }
-                        }
-                    }
-                } else {
-                    match value {
-                        MIRValue::Place(place) | MIRValue::Copy(place) => MIRValue::Copy(place),
-                        MIRValue::Move(place) => MIRValue::Move(place),
-                        value => value,
-                    }
-                }
-            }
-            THIRExpressionKind::RegionMove { source } => match lower_expression(builder, source)? {
-                MIRValue::Place(place) | MIRValue::Copy(place) => MIRValue::Move(place),
-                value => value,
             },
-            THIRExpressionKind::RegionWrite { target, value } => {
+            
+            THIRExpressionKind::Assign { target, value } => {
                 let assignment_type = builder.lower_type(&value._type);
-                let target_value = lower_expression(builder, target)?;
-                let value = lower_expression(builder, value)?;
-                let place = match target_value {
-                    MIRValue::Place(place) => place,
-                    pointer => {
-                        let THIRTypeKind::MemoryReference { inner_type, .. } = &target._type.kind
-                        else {
-                            return Err(cx_log::error::CXErr::new(
-                                cx_log::error::message::CXStdErrMessage::error(
-                                    "MIRLoweringError",
-                                    "region write target is not addressable",
-                                ),
-                                cx_log::error::context::CXInternalContext::error(
-                                    "region write target lowered to a non-reference value",
-                                ),
-                            ));
-                        };
-                        let pointee = builder.registry().resolve_type_id(*inner_type).clone();
-                        let pointee_type = builder.lower_type(&pointee);
-                        let type_id = builder.lower_type(&target._type);
-                        let place = builder.place(type_id, None, false);
-                        builder.emit(MIRInstrKind::Dereference {
-                            out: place,
-                            pointer,
-                            pointee_type,
+                
+                let target = lower_expression(builder, target)?;
+                let value = lower_expression(builder, value)?;                
+
+                match target {
+                    MIRValue::Place(place) => {
+                        builder.emit(MIRInstrKind::Assign {
+                            target: MIRAssignTarget::Place(place),
+                            value,
+                            ty: assignment_type,
                         });
-                        place
+                        MIRValue::Place(place)
                     }
-                };
-                builder.emit(MIRInstrKind::Assign {
-                    target: MIRAssignTarget::Place(place),
-                    value,
-                    ty: assignment_type,
-                });
-                MIRValue::Place(place)
+
+                    MIRValue::Register(register) => {
+                        builder.emit(MIRInstrKind::Assign {
+                            target: MIRAssignTarget::Register(register),
+                            value,
+                            ty: assignment_type,
+                        });
+                        MIRValue::Register(register)
+                    }
+
+                    _ => unreachable!("assignment target must be a place, but got {:?}", target),
+                }
             }
+            
             THIRExpressionKind::Typechange(inner) => {
                 let value = lower_expression(builder, inner)?;
 
@@ -410,6 +321,7 @@ fn lower_expression(
                 }));
                 MIRValue::Place(out)
             }
+            
             THIRExpressionKind::ArrayAccess {
                 array,
                 index,
@@ -431,9 +343,37 @@ fn lower_expression(
                 }));
                 MIRValue::Place(out)
             }
+
             THIRExpressionKind::PatternIs { lhs, pattern } => {
                 aggregates::lower_pattern_test(builder, lhs, pattern, &expression._type)?
             }
+
+            THIRExpressionKind::Unpack { local_id, struct_type, bindings, .. } => {
+                let target = builder.local(*local_id).expect("unpack target local is missing");
+                let struct_type = builder.lower_type(struct_type);
+
+                for binding in bindings {
+                    let field_type = builder.lower_type(&binding.field_type);
+                    let field_place = builder.place(
+                        field_type,
+                        Some(binding.field_name.clone()),
+                        false,
+                    );
+
+                    builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Place {
+                        out: field_place,
+                        op: MIRPlaceAggregateOp::Field {
+                            base: target,
+                            field: binding.field_index,
+                            aggregate_type: struct_type
+                        },
+                    }));
+                    builder.bind_local(binding.binding_local_id, field_place);
+                }
+
+                MIRValue::Constant(MIRConstant::Unit)
+            },
+            
             THIRExpressionKind::TaggedUnionTag { value, sum_type } => {
                 let base = lower_expression(builder, value)?;
                 let type_id = builder.lower_type(&expression._type);
@@ -515,7 +455,7 @@ fn lower_expression(
                 });
                 MIRValue::Place(target)
             }
-            THIRExpressionKind::ConstructTaggedUnion {
+            THIRExpressionKind::TaggedUnionInitializer {
                 variant_index,
                 value,
                 sum_type,

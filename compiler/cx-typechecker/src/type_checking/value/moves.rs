@@ -16,12 +16,12 @@ use cx_thir::{
     EnvironmentNamespace,
     thir::{
         data::{THIRType, THIRTypeKind},
-        expression::{SymbolValueOrigin, THIRExpression, THIRExpressionKind, THIRLocalID},
+        expression::{THIRExpression, THIRExpressionKind, THIRLocalID, THIRUnpackBinding},
     },
     type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_util::namespace::QualifiedName;
 
 pub(crate) fn typecheck_move(
     env: &mut TypeEnvironment,
@@ -73,8 +73,9 @@ pub(crate) fn typecheck_move(
 
     Ok(TypecheckResult::new(
         inner_type,
-        THIRExpressionKind::RegionMove {
-            source: Box::new(inner_val),
+        THIRExpressionKind::Move {
+            name: binding.root.clone(),
+            local_id: binding.local_id,
         },
     ))
 }
@@ -193,10 +194,18 @@ pub(crate) fn typecheck_unpack(
     inner: &HIRExpression,
     bindings: &[HIRUnpackBinding],
 ) -> CXResult<TypecheckResult> {
-    let value = typecheck_expr(env, namespace, inner, None)
-        .and_then(|v| v.standard_ready_coerce(env, inner.token_range()))?;
+    let value = typecheck_expr(env, namespace, inner, None)?
+        .standard_ready_assure(env, expr.token_range())?;
 
-    let THIRTypeKind::Structured { fields } = &value._type.kind else {
+    let Some(value_binding) = value.binding().cloned() else {
+        return env.log_error(
+            expr.token_range(),
+            "@unpack requires a local identifier".to_string(),
+        );
+    };
+
+    let thir_expr = value.standard_ready_coerce(env, inner.token_range())?;
+    let THIRTypeKind::Structured { fields } = &thir_expr._type.kind else {
         return env.log_error(
             expr.token_range(),
             "@unpack expects a struct type".to_string(),
@@ -219,7 +228,7 @@ pub(crate) fn typecheck_unpack(
                 format!(
                     "@unpack field '{}' does not exist on {}",
                     unpack_binding.field,
-                    value._type.display_with(&env.symbols)
+                    thir_expr._type.display_with(&env.symbols)
                 ),
             );
         }
@@ -247,85 +256,71 @@ pub(crate) fn typecheck_unpack(
 
     for (field_name, (_, field_ty_id)) in field_map.iter() {
         let _ty = env.symbols.resolve_type_id(*field_ty_id);
-
         if _ty.is_nodrop() && !seen_fields.contains(field_name) {
             return env.log_error(
                 expr.token_range(),
                 format!(
                     "@unpack of {} must bind @nodrop field '{}'",
-                    value._type.display_with(&env.symbols),
+                    thir_expr._type.display_with(&env.symbols),
                     field_name
                 ),
             );
         }
     }
 
-    let mut statements = Vec::new();
+    let mut thir_bindings = Vec::new();
+
     for unpack_binding in bindings {
-        let (member_index, field_ty_id) = field_map
-            .get(unpack_binding.field.as_str())
-            .expect("@unpack field existence checked above");
-
-        let field_type = env.symbols.resolve_type_id(*field_ty_id).clone();
-
-        let field_place = THIRExpression {
-            token_range: TokenRange::internal(),
-            _type: env.symbols.mem_ref_to(field_type.clone()),
-            kind: THIRExpressionKind::MemberAccess {
-                base: Box::new(value.clone()),
-                member_index: *member_index,
-                aggregate_type: value._type.clone(),
-            },
-        };
-
-        let initial_value = THIRExpression {
-            token_range: TokenRange::internal(),
-            _type: field_type.clone(),
-            kind: THIRExpressionKind::RegionMove {
-                source: Box::new(field_place),
-            },
-        };
-
-        let binding_name = CXIdent::new(unpack_binding.binding.as_str());
         let local_id = THIRLocalID::fresh();
-        let binding_ref_type = env.symbols.mem_ref_to(field_type.clone());
+
+        let Some(field_pos) = fields.iter().position(|f| {
+            f.name()
+                .map(|n| n == unpack_binding.field.as_str())
+                .unwrap_or(false)
+        }) else {
+            return env.log_error(
+                expr.token_range(),
+                format!(
+                    "@unpack field '{}' does not exist on {}",
+                    unpack_binding.field,
+                    thir_expr._type.display_with(&env.symbols)
+                ),
+            );
+        };
+
+        let field_type = env.symbols.resolve_type_id(fields[field_pos].ty()).clone();
+        let symbol_type = env.symbols.mem_ref_to(field_type.clone());
+
         env.symbols.insert_local_value(
-            QualifiedName::new_raw(binding_name.clone()),
+            QualifiedName::new_raw(unpack_binding.binding.clone()),
             THIRExpression {
                 token_range: TokenRange::internal(),
+                _type: symbol_type,
                 kind: THIRExpressionKind::Variable {
-                    name: binding_name.clone(),
-                    local_id: Some(local_id),
-                    location: SymbolValueOrigin::Local,
+                    name: unpack_binding.binding.clone(),
+                    local_id: local_id,
                 },
-                _type: binding_ref_type,
             },
         );
-        statements.push(THIRExpression {
-            token_range: TokenRange::internal(),
-            _type: env.symbols.mem_ref_to(field_type.clone()),
-            kind: THIRExpressionKind::BindRegion {
-                name: binding_name,
-                local_id,
-                _type: field_type.clone(),
-                initial_region: Box::new(THIRExpression {
-                    token_range: TokenRange::internal(),
-                    _type: env.symbols.mem_ref_to(field_type.clone()),
-                    kind: THIRExpressionKind::RegionCreate {
-                        _type: field_type.clone(),
-                        initial_value: Some(Box::new(initial_value)),
-                    },
-                }),
-                adopting: false,
-            },
-        });
+
+        thir_bindings.push(THIRUnpackBinding {
+            field_name: unpack_binding.field.clone(),
+            field_index: field_pos,
+            field_type: field_type,
+
+            binding_name: unpack_binding.binding.clone(),
+            binding_local_id: local_id,
+        })
     }
 
     Ok(TypecheckResult::new(
         THIRType::unit(),
-        THIRExpressionKind::Block {
-            statements,
-            creates_scope: false,
+        THIRExpressionKind::Unpack {
+            name: value_binding.root.clone(),
+            local_id: value_binding.local_id,
+
+            struct_type: thir_expr._type.clone(),
+            bindings: thir_bindings,
         },
     ))
 }
