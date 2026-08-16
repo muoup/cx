@@ -70,7 +70,7 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
             let ident = CXIdent::new(ident.as_str());
             let visibility = data.visibility_mode;
 
-            data.contents.module_symbols.add_type(ident, visibility);
+            data.contents.module_symbols.add_tag(ident, visibility);
         }
 
         keyword!(Typedef) => {

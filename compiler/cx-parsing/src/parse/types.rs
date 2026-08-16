@@ -34,7 +34,7 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
     }
 
     Ok(match &tok.unwrap() {
-        intrinsic!() | specifier!() | keyword!(Struct, Union, Enum) => true,
+        intrinsic!() | specifier!() | keyword!(Struct, Union, Enum, Register) => true,
 
         identifier!(name) if is_intrinsic_type(name) => true,
 

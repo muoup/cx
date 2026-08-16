@@ -138,6 +138,34 @@ pub const INTRINSIC_TYPES: &[(&str, THIRTypeKind)] = &[
         },
     ),
     (
+        "short",
+        THIRTypeKind::Integer {
+            signed: true,
+            _type: THIRIntType::I16,
+        },
+    ),
+    (
+        "short int",
+        THIRTypeKind::Integer {
+            signed: true,
+            _type: THIRIntType::I16,
+        },
+    ),
+    (
+        "signed short",
+        THIRTypeKind::Integer {
+            signed: true,
+            _type: THIRIntType::I16,
+        },
+    ),
+    (
+        "signed short int",
+        THIRTypeKind::Integer {
+            signed: true,
+            _type: THIRIntType::I16,
+        },
+    ),
+    (
         "unsigned short int",
         THIRTypeKind::Integer {
             signed: false,

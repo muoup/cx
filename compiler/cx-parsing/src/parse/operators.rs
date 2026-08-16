@@ -106,6 +106,20 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<HIRUnO
                 return Ok(None);
             }
 
+            if matches!(
+                data.tokens.peek().map(|token| &token.kind),
+                Some(
+                    punctuator!(Semicolon)
+                        | punctuator!(CloseParen)
+                        | punctuator!(CloseBracket)
+                        | punctuator!(CloseBrace)
+                        | operator!(Comma)
+                )
+            ) {
+                data.tokens.index = pre_index;
+                return Ok(None);
+            }
+
             Some(HIRUnOp::ExplicitCast(_type))
         }
 

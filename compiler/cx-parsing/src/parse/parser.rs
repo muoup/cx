@@ -31,6 +31,7 @@ pub struct ParserData<'a> {
 
     pub registry: &'a GlobalPreparseRegistry,
     pub ast: HIR,
+    pub c_mode: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -47,6 +48,8 @@ impl<'a> ParserData<'a> {
     ) -> Self {
         let file_origin = EnvironmentNamespace::from(pp_contents.module_symbols.namespace.clone());
 
+        let c_mode = tokens.file.extension().is_some_and(|extension| extension == "c");
+
         Self {
             tokens,
             visibility: VisibilityMode::Package,
@@ -62,6 +65,7 @@ impl<'a> ParserData<'a> {
                 ModulePath::from_source_path(pp_contents.module.as_str()),
                 pp_contents.imports.clone(),
             ),
+            c_mode,
         }
     }
 
@@ -138,7 +142,9 @@ impl<'a> ParserData<'a> {
 
     pub fn query_identifier(&self, name: QualifiedName) -> CXResult<bool> {
         match self.qualified_lookup(&self.current_module_namespace(), &name) {
-            QualifiedLookupResult::Found { .. } => Ok(true),
+            QualifiedLookupResult::Found { value, .. } => {
+                Ok(!(self.c_mode && matches!(value, PreparseSymbolKind::Tag)))
+            }
             QualifiedLookupResult::NotFound => Ok(false),
             QualifiedLookupResult::Ambiguous { candidates } => parse_point_error(
                 &self.tokens,

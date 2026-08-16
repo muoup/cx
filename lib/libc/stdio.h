@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdarg.h>
 
 typedef void FILE;
 
@@ -25,3 +26,7 @@ int putchar(int c);
 int puts(char *s);
 
 int printf(const char *format, ...);
+int fprintf(FILE *stream, const char *format, ...);
+int snprintf(char *buffer, unsigned long size, const char *format, ...);
+int sscanf(const char *input, const char *format, ...);
+int vfprintf(FILE *stream, const char *format, va_list args);

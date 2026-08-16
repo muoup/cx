@@ -303,6 +303,7 @@ pub(crate) fn try_parse_keyword_stmt(
 pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpression> {
     let start_index = data.tokens.index;
 
+    try_next!(data.tokens, keyword!(Register));
     let specifiers = parse_specifier(&mut data.tokens);
     let base_type = parse_type_base(data)?.add_specifier(specifiers);
 
@@ -335,6 +336,12 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                     data.file_origin_for_range(start_index, data.tokens.index),
                 ),
             );
+        } else if decls.is_empty() {
+            return Ok(HIRExprKind::Void.into_expr(
+                start_index,
+                data.tokens.index,
+                data.file_origin_for_range(start_index, data.tokens.index),
+            ));
         } else {
             return parse_point_error(
                 &data.tokens,
