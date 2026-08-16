@@ -406,15 +406,32 @@ impl<'a> FunctionLowerer<'a> {
             let place = self.place(place_id);
             let ty = self.binding_type(&place);
             let previous = self.load_binding(place.clone(), ty, None);
-            let amount = self.int_constant(*amount as i128, self.integer_kind(ty));
-            let result = self.emit_temp(
-                LMIRInstructionKind::IntegerBinOp {
-                    op: LMIRIntBinOp::ADD,
-                    left: previous.clone(),
-                    right: amount,
-                },
-                self.ty(ty),
-            );
+            let amount = i128::from(*amount);
+            let (result_kind, result_type) = match self.types.kind(ty) {
+                Some(MIRTypeKind::PointerTo { inner }) => (
+                    LMIRInstructionKind::PointerBinOp {
+                        op: if amount < 0 {
+                            LMIRPtrBinOp::SUB
+                        } else {
+                            LMIRPtrBinOp::ADD
+                        },
+                        ptr_type: self.ty(*inner),
+                        type_size: TypeSize::from(self.layout(*inner).size),
+                        left: previous.clone(),
+                        right: self.int_constant(amount.abs(), self.integer_kind(ty)),
+                    },
+                    self.ty(ty),
+                ),
+                _ => (
+                    LMIRInstructionKind::IntegerBinOp {
+                        op: LMIRIntBinOp::ADD,
+                        left: previous.clone(),
+                        right: self.int_constant(amount, self.integer_kind(ty)),
+                    },
+                    self.ty(ty),
+                ),
+            };
+            let result = self.emit_temp(result_kind, result_type);
             self.store_binding(place, result.clone(), ty);
             let value = if matches!(
                 self.types.kind(self.register_decl_type(out)),
