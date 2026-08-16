@@ -7,6 +7,10 @@ typedef void FILE;
 
 #define EOF (-1)
 
+extern FILE *stdin;
+extern FILE *stdout;
+extern FILE *stderr;
+
 FILE *fopen(const char *filename, const char *mode);
 int fclose(FILE *stream);
 void clearerr(FILE *stream);
