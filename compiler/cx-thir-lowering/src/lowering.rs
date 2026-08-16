@@ -394,31 +394,39 @@ fn lower_expression(
             }
 
             THIRExpressionKind::Unpack { local_id, struct_type, bindings, .. } => {
-                let target = builder.local(*local_id).expect("unpack target local is missing");
-                let struct_type = builder.lower_type(struct_type);
+                let target = builder
+                    .local(*local_id)
+                    .expect("unpack target local is missing");
+                let struct_type_id = builder.lower_type(struct_type);
+                let base = builder.create(struct_type_id, None, false);
+                builder.emit(MIRInstrKind::Assign {
+                    target: MIRAssignTarget::Place(base),
+                    value: MIRValue::Move(target),
+                    ty: struct_type_id,
+                });
 
                 for binding in bindings {
                     let field_type = builder.lower_type(&binding.field_type);
                     let field_place = builder.place(
                         field_type,
                         Some(binding.field_name.clone()),
-                        false,
+                        binding.field_type.is_nodrop(),
                     );
 
                     builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Place {
                         out: field_place,
                         op: MIRPlaceAggregateOp::Field {
-                            base: target,
+                            base,
                             field: binding.field_index,
-                            aggregate_type: struct_type
+                            aggregate_type: struct_type_id,
                         },
                     }));
                     builder.bind_local(binding.binding_local_id, field_place);
                 }
 
                 MIRValue::Constant(MIRConstant::Unit)
-            },
-            
+            }
+
             THIRExpressionKind::TaggedUnionTag { value, sum_type } => {
                 let base = lower_expression(builder, value)?;
                 let type_id = builder.lower_type(&expression._type);

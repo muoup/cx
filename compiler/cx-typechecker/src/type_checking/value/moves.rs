@@ -205,6 +205,17 @@ pub(crate) fn typecheck_unpack(
         );
     };
 
+    if !matches!(
+        value.ready_expression().map(|expression| &expression.kind),
+        Some(THIRExpressionKind::Move { .. })
+    ) {
+        return env.log_error(
+            expr.token_range(),
+            "@unpack requires a moved value; access struct members directly for non-consuming access"
+                .to_string(),
+        );
+    }
+
     let thir_expr = value.standard_ready_coerce(env, inner.token_range())?;
     let THIRTypeKind::Structured { fields } = &thir_expr._type.kind else {
         return env.log_error(
