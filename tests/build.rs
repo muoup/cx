@@ -81,10 +81,7 @@ fn write_module(
         }
 
         let extension = path.extension().and_then(|ext| ext.to_str());
-        let is_supported_source = extension == Some("cx")
-            || (extension == Some("c")
-                && matches!(kind, TestKind::EndToEnd | TestKind::CompileOnly));
-        if !is_supported_source {
+        if !matches!(extension, Some("cx") | Some("c")) {
             continue;
         }
 

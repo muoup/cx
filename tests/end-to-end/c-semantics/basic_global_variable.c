@@ -1,4 +1,4 @@
-import std::io as std;
+#include <stdio.h>
 
 int x;
 
@@ -9,5 +9,5 @@ void procedure() {
 int main() {
     procedure();
 
-    std::printf("Value of x: %d\n", x);
+    printf("Value of x: %d\n", x);
 }

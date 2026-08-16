@@ -1,8 +1,8 @@
-import std::io;
+#include <stdio.h>
 
 void while_loop(int n) {
     while (n > 0) {
-        std::io::print_char('0' + n);
+        putchar('0' + n);
         n = n - 1;
     }
     return;

@@ -1,4 +1,4 @@
-import std::io as std;
+#include <stdio.h>
 
 // 12 bytes, however requires 8 byte alignment, so any array of this type will have padding.
 struct UnpackedType {
@@ -14,10 +14,10 @@ int main() {
         char* actual_pointer = (char*)(&arr[i]);
         
         if (expected_pointer != actual_pointer) {
-            std::printf("Pointer mismatch at index %d: expected %p, got %p\n", i, expected_pointer, actual_pointer);
+            printf("Pointer mismatch at index %d: expected %p, got %p\n", i, expected_pointer, actual_pointer);
         }
     }
     
-    std::println("All pointers match expected values.");
+    puts("All pointers match expected values.");
     return 0;
 }

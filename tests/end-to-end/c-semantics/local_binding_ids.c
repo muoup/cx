@@ -1,12 +1,11 @@
 #include <stdio.h>
 
-struct Resource : @nodrop {
+struct Resource {
     int data;
 };
 
-void Resource::drop(Resource this) {
-    printf("drop %d\n", this.data);
-    @leak(this);
+void drop(struct Resource resource) {
+    printf("drop %d\n", resource.data);
 }
 
 void shadow_parameter(int value) {
@@ -29,16 +28,16 @@ int main() {
     printf("outer local %d\n", value);
     shadow_parameter(value);
 
-    Resource resource = (Resource) {
+    struct Resource resource = (struct Resource) {
         .data = 40
     };
     if (value > 0) {
-        Resource resource = (Resource) {
+        struct Resource resource = (struct Resource) {
             .data = 50
         };
-        move resource |> Resource::drop();
+        drop(resource);
     }
-    move resource |> Resource::drop();
+    drop(resource);
 
     return 0;
 }
