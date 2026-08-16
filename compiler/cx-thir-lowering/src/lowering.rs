@@ -170,6 +170,11 @@ fn lower_expression(
             }
             THIRExpressionKind::UnaryOperation { operand, op } => {
                 let lowered = lower_expression(builder, operand)?;
+                let lowered = if operand._type.is_memory_reference() {
+                    MIRValue::Place(memory::ensure_place(builder, lowered, &operand._type))
+                } else {
+                    lowered
+                };
                 let type_id = builder.lower_type(&expression._type);
                 let out = builder.register(type_id, None);
                 builder.emit(MIRInstrKind::UnOp {
