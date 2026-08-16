@@ -4,7 +4,7 @@ set -eu
 RAYLIB_VERSION="${RAYLIB_VERSION:-5.5}"
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-RAYLIB_DIR="$ROOT_DIR/raylib"
+RAYLIB_DIR="$ROOT_DIR/artifacts/raylib"
 SRC_DIR="$RAYLIB_DIR/src"
 BUILD_DIR="$RAYLIB_DIR/build"
 INCLUDE_DIR="$RAYLIB_DIR/include"

@@ -1,22 +1,23 @@
 [project]
-name = "raylib-test"
+name = "doomgeneric"
 
 [build]
 backend = "cranelift"
-optimization = "O0"
+optimization = "O2"
 
 [workspace.targets.default]
 binaries = [
-  { name = "raylib-test", entry = "main.cx" },
+  { name = "doomgeneric", compile_all = ["upstream/doomgeneric/*.c", "doomgeneric_raylib.c"] },
 ]
 native_objects = [
   "../artifacts/raylib/lib/raylib.o",
 ]
 include_dirs = [
+  "../../lib/libc",
   "../artifacts/raylib/include",
+  "upstream/doomgeneric",
 ]
 link = [
-  { name = "GL", kind = "system" },
   { name = "m", kind = "system" },
   { name = "pthread", kind = "system" },
   { name = "dl", kind = "system" },
