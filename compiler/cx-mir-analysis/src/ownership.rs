@@ -353,6 +353,16 @@ fn transfer_instruction(
                 use_value(unit, function, block, instruction, arg, state, diagnose)?;
             }
         }
+        MIRInstrKind::VaStart { list, last } => {
+            use_value(unit, function, block, instruction, list, state, diagnose)?;
+            use_value(unit, function, block, instruction, last, state, diagnose)?;
+        }
+        MIRInstrKind::VaEnd { list } => {
+            use_value(unit, function, block, instruction, list, state, diagnose)?;
+        }
+        MIRInstrKind::VaArg { list, .. } => {
+            use_value(unit, function, block, instruction, list, state, diagnose)?;
+        }
         MIRInstrKind::BinOp { lhs, rhs, .. } => {
             use_value(unit, function, block, instruction, lhs, state, diagnose)?;
             use_value(unit, function, block, instruction, rhs, state, diagnose)?;

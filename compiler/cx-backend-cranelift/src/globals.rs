@@ -52,10 +52,12 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &LMIRGlobalValu
                     }
                     LMIRGlobalState::Initialized(initializer) => {
                         data.define(initializer_bytes(initializer, _type).into_boxed_slice());
+                        write_initializer_relocations(state, &mut data, initializer, _type, 0);
                     }
                     LMIRGlobalState::External => unreachable!(),
                 }
                 state.object_module.define_data(id, &data).expect("");
+                state.object_module.declare_data_in_data(id, &mut data);
 
                 id
             }
@@ -97,9 +99,44 @@ fn initializer_bytes(
             }
             bytes
         }
+        LMIRGlobalInitializer::Global(_) => vec![0; usize::from(ty.size())],
         LMIRGlobalInitializer::Null => vec![0; usize::from(ty.size())],
     };
     fit_bytes(bytes, usize::from(ty.size()))
+}
+
+fn write_initializer_relocations(
+    state: &mut GlobalState,
+    data: &mut DataDescription,
+    initializer: &LMIRGlobalInitializer,
+    ty: &LMIRType,
+    offset: usize,
+) {
+    match initializer {
+        LMIRGlobalInitializer::Global(global) => {
+            let target = *state
+                .global_ids
+                .get(*global as usize)
+                .unwrap_or_else(|| panic!("invalid global initializer reference {global}"));
+            let target = state.object_module.declare_data_in_data(target, data);
+            data.write_data_addr(offset as u32, target, 0);
+        }
+        LMIRGlobalInitializer::Aggregate { fields } => {
+            for (index, field) in fields {
+                let Some((field_type, field_offset)) = aggregate_field(ty, *index) else {
+                    panic!("invalid aggregate global initializer field {index} for {ty:?}");
+                };
+                write_initializer_relocations(
+                    state,
+                    data,
+                    field,
+                    &field_type,
+                    offset + field_offset,
+                );
+            }
+        }
+        _ => {}
+    }
 }
 
 fn aggregate_field(ty: &LMIRType, index: usize) -> Option<(LMIRType, usize)> {

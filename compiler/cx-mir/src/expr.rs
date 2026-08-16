@@ -41,6 +41,10 @@ pub enum MIRConstant {
         ty: MIRTypeID,
         fields: Vec<(usize, MIRConstant)>,
     },
+    Global {
+        global: MIRGlobalID,
+        ty: MIRTypeID,
+    },
     Function(MIRFunctionID),
     Undefined,
 }
@@ -273,6 +277,7 @@ impl MIRInstr {
             } => Some(*register),
             MIRInstrKind::AggregateOp(MIRAggregateOp::Value { out, .. }) => Some(*out),
             MIRInstrKind::Call { out, .. } => *out,
+            MIRInstrKind::VaArg { out, .. } => Some(*out),
             _ => None,
         };
         register.into_iter()
@@ -338,6 +343,13 @@ impl MIRInstr {
                 for arg in args {
                     visit(MIRInstrOperand::Value(arg));
                 }
+            }
+            MIRInstrKind::VaStart { list, last } => {
+                visit(MIRInstrOperand::Value(list));
+                visit(MIRInstrOperand::Value(last));
+            }
+            MIRInstrKind::VaEnd { list } | MIRInstrKind::VaArg { list, .. } => {
+                visit(MIRInstrOperand::Value(list));
             }
             MIRInstrKind::BinOp { lhs, rhs, .. } => {
                 visit(MIRInstrOperand::Value(lhs));
@@ -447,6 +459,18 @@ pub enum MIRInstrKind {
         out: Option<MIRRegister>,
         callee: MIRValue,
         args: Vec<MIRValue>,
+    },
+    VaStart {
+        list: MIRValue,
+        last: MIRValue,
+    },
+    VaEnd {
+        list: MIRValue,
+    },
+    VaArg {
+        out: MIRRegister,
+        list: MIRValue,
+        ty: MIRTypeID,
     },
 
     BinOp {

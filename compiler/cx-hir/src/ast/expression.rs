@@ -170,6 +170,11 @@ pub enum HIRExprKind {
     InitializerList {
         indices: Vec<HIRInitIndex>,
     },
+
+    VaArg {
+        list: Box<HIRExpression>,
+        _type: HIRType,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

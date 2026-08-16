@@ -65,6 +65,7 @@ pub enum LMIRGlobalInitializer {
     Aggregate {
         fields: Vec<(usize, LMIRGlobalInitializer)>,
     },
+    Global(u32),
     Null,
 }
 
@@ -353,6 +354,18 @@ pub enum LMIRInstructionKind {
         func_ptr: LMIRValue,
         args: Vec<LMIRValue>,
         method_sig: LMIRFunctionSignature,
+    },
+
+    VaStart {
+        list: LMIRValue,
+        last: LMIRValue,
+    },
+    VaEnd {
+        list: LMIRValue,
+    },
+    VaArg {
+        list: LMIRValue,
+        _type: LMIRType,
     },
 
     GetFunctionAddr {

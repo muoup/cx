@@ -2,6 +2,7 @@ mod calls;
 mod control_flow;
 mod memory;
 mod operations;
+mod variadic;
 
 use std::cell::Cell;
 
@@ -73,6 +74,15 @@ pub(crate) fn generate_instruction<'a, 'b>(
             method_sig,
         } => {
             calls::generate_indirect_call(global_state, function_state, func_ptr, args, method_sig)
+        }
+        LMIRInstructionKind::VaStart { list, .. } => {
+            variadic::generate_va_start(global_state, function_state, list)
+        }
+        LMIRInstructionKind::VaEnd { list } => {
+            variadic::generate_va_end(global_state, function_state, list)
+        }
+        LMIRInstructionKind::VaArg { list, _type } => {
+            variadic::generate_va_arg(global_state, function_state, list, _type)
         }
         LMIRInstructionKind::Coercion {
             value,

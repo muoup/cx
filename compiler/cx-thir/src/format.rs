@@ -1333,6 +1333,45 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
 
                 Ok(())
             }
+            THIRExpressionKind::VaStart { list, last } => {
+                write!(f, "VaStart <'")?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, ">")?;
+                MIRExpressionFormatter {
+                    expr: list,
+                    depth: self.depth + 1,
+                    definitions: self.definitions,
+                }
+                .fmt(f)?;
+                MIRExpressionFormatter {
+                    expr: last,
+                    depth: self.depth + 1,
+                    definitions: self.definitions,
+                }
+                .fmt(f)
+            }
+            THIRExpressionKind::VaEnd { list } => {
+                write!(f, "VaEnd <'")?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, ">")?;
+                MIRExpressionFormatter {
+                    expr: list,
+                    depth: self.depth + 1,
+                    definitions: self.definitions,
+                }
+                .fmt(f)
+            }
+            THIRExpressionKind::VaArg { list, _type } => {
+                write!(f, "VaArg <'")?;
+                self.write_type(f, _type)?;
+                writeln!(f, ">")?;
+                MIRExpressionFormatter {
+                    expr: list,
+                    depth: self.depth + 1,
+                    definitions: self.definitions,
+                }
+                .fmt(f)
+            }
             THIRExpressionKind::TypeConversion {
                 operand,
                 conversion,

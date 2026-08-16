@@ -51,7 +51,7 @@ pub(crate) fn generate_global_variable(
                 let initializer = match global_state {
                     LMIRGlobalState::ZeroInitialized => basic_type.const_zero(),
                     LMIRGlobalState::Initialized(initializer) => {
-                        global_initializer(basic_type, initializer)
+                        global_initializer(state, basic_type, initializer)
                     }
                     LMIRGlobalState::External => unreachable!(),
                 };
@@ -66,6 +66,7 @@ pub(crate) fn generate_global_variable(
 }
 
 fn global_initializer<'ctx>(
+    state: &GlobalState<'ctx>,
     basic_type: inkwell::types::BasicTypeEnum<'ctx>,
     initializer: &LMIRGlobalInitializer,
 ) -> inkwell::values::BasicValueEnum<'ctx> {
@@ -88,7 +89,9 @@ fn global_initializer<'ctx>(
                         fields
                             .iter()
                             .find(|(field_index, _)| *field_index == index as usize)
-                            .map(|(_, initializer)| global_initializer(field_type, initializer))
+                            .map(|(_, initializer)| {
+                                global_initializer(state, field_type, initializer)
+                            })
                             .unwrap_or_else(|| field_type.const_zero())
                     })
                     .collect::<Vec<_>>();
@@ -101,7 +104,9 @@ fn global_initializer<'ctx>(
                         fields
                             .iter()
                             .find(|(field_index, _)| *field_index == index as usize)
-                            .map(|(_, initializer)| global_initializer(element_type, initializer))
+                            .map(|(_, initializer)| {
+                                global_initializer(state, element_type, initializer)
+                            })
                             .unwrap_or_else(|| element_type.const_zero())
                     })
                     .collect::<Vec<_>>();
@@ -109,6 +114,15 @@ fn global_initializer<'ctx>(
             }
             _ => panic!("aggregate initializer used with non-aggregate LLVM type"),
         },
+        LMIRGlobalInitializer::Global(global) => {
+            let pointer_type = basic_type.into_pointer_type();
+            let value = state
+                .globals
+                .get(*global as usize)
+                .unwrap_or_else(|| panic!("invalid global initializer reference {global}"))
+                .as_pointer_value();
+            value.const_cast(pointer_type).into()
+        }
         LMIRGlobalInitializer::Null => match basic_type {
             inkwell::types::BasicTypeEnum::PointerType(pointer) => pointer.const_null().into(),
             _ => basic_type.const_zero(),

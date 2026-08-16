@@ -55,6 +55,25 @@ impl<'a> FunctionLowerer<'a> {
             }
             MIRInstrKind::AggregateOp(operation) => self.lower_aggregate(operation),
             MIRInstrKind::Call { out, callee, args } => self.lower_call(*out, callee, args),
+            MIRInstrKind::VaStart { list, last } => {
+                let list = self.lower_value(list);
+                let last = self.lower_value(last);
+                self.emit_void(LMIRInstructionKind::VaStart { list, last });
+            }
+            MIRInstrKind::VaEnd { list } => {
+                let list = self.lower_value(list);
+                self.emit_void(LMIRInstructionKind::VaEnd { list });
+            }
+            MIRInstrKind::VaArg { out, list, ty } => {
+                let list = self.lower_value(list);
+                self.emit_to(
+                    *out,
+                    LMIRInstructionKind::VaArg {
+                        list,
+                        _type: self.ty(*ty),
+                    },
+                );
+            }
             MIRInstrKind::BinOp { out, op, lhs, rhs } => self.lower_binary(*out, op, lhs, rhs),
             MIRInstrKind::UnOp { out, op, operand } => self.lower_unary(*out, op, operand),
             MIRInstrKind::Coerce {

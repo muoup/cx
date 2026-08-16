@@ -72,6 +72,16 @@ fn internal(
         );
     }
 
+    if env.symbols.is_cx_str(&from_type)
+        && matches!(target_type.kind, THIRTypeKind::PointerTo { .. })
+    {
+        return coercion_expr(
+            expr,
+            target_type.clone(),
+            THIRCoercion::ReinterpretBits,
+        );
+    }
+
     if let (
         THIRTypeKind::Array {
             inner_type: from_inner,

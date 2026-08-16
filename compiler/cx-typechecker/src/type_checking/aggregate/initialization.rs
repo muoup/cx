@@ -131,6 +131,7 @@ fn typecheck_array_initializer(
         .map(|index| {
             typecheck_expr(env, namespace, &index.value, Some(inner_type))
                 .and_then(|v| v.standard_ready_coerce(env, index.value.token_range()))
+                .and_then(|v| implicit_cast(env, v, inner_type))
         })
         .collect::<CXResult<_>>()?;
 

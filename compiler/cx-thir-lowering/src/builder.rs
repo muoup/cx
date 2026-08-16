@@ -345,6 +345,18 @@ impl<'thir> MIRBuilder<'thir> {
                         .collect(),
                 }
             }
+            THIRExpressionKind::Typechange(operand)
+                if global_reference_symbol(operand).is_some() =>
+            {
+                let symbol = global_reference_symbol(operand).unwrap();
+                let global = self
+                    .global_symbol(symbol.as_str())
+                    .unwrap_or_else(|| panic!("string literal global {symbol} is not declared"));
+                MIRConstant::Global {
+                    global,
+                    ty: self.lower_type(&expression._type),
+                }
+            }
             THIRExpressionKind::TypeConversion {
                 conversion: THIRCoercion::IntToPtr { .. },
                 operand,
@@ -356,11 +368,36 @@ impl<'thir> MIRBuilder<'thir> {
             THIRExpressionKind::TypeConversion {
                 conversion: THIRCoercion::ReinterpretBits,
                 operand,
-            } if matches!(operand.kind, THIRExpressionKind::GlobalVariable { .. }) => {
-                let THIRExpressionKind::GlobalVariable { symbol } = &operand.kind else {
-                    unreachable!()
-                };
+            } if global_reference_symbol(operand).is_some()
+                && matches!(expression._type.kind, THIRTypeKind::Array { .. }) =>
+            {
+                let symbol = global_reference_symbol(operand).unwrap();
                 self.lower_string_array_constant(&expression._type, symbol)
+            }
+            THIRExpressionKind::TypeConversion {
+                conversion: THIRCoercion::ReinterpretBits,
+                operand,
+            } if global_reference_symbol(operand).is_some() => {
+                let symbol = global_reference_symbol(operand).unwrap();
+                let global = self
+                    .global_symbol(symbol.as_str())
+                    .unwrap_or_else(|| panic!("string literal global {symbol} is not declared"));
+                MIRConstant::Global {
+                    global,
+                    ty: self.lower_type(&expression._type),
+                }
+            }
+            THIRExpressionKind::TypeConversion { operand, .. }
+                if global_reference_symbol(operand).is_some() =>
+            {
+                let symbol = global_reference_symbol(operand).unwrap();
+                let global = self
+                    .global_symbol(symbol.as_str())
+                    .unwrap_or_else(|| panic!("string literal global {symbol} is not declared"));
+                MIRConstant::Global {
+                    global,
+                    ty: self.lower_type(&expression._type),
+                }
             }
             _ => panic!("unsupported global initializer: {expression:?}"),
         }
@@ -902,6 +939,17 @@ impl<'thir> MIRBuilder<'thir> {
         self.unit
             .function_mut(id)
             .expect("active MIR function is missing")
+    }
+}
+
+fn global_reference_symbol(expression: &THIRExpression) -> Option<&CXIdent> {
+    match &expression.kind {
+        THIRExpressionKind::GlobalVariable { symbol } => Some(symbol),
+        THIRExpressionKind::Typechange(operand)
+        | THIRExpressionKind::TypeConversion { operand, .. } => {
+            global_reference_symbol(operand)
+        }
+        _ => None,
     }
 }
 

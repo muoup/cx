@@ -424,6 +424,10 @@ impl<'a> Display for HIRExprFormatter<'a> {
                 }
                 Ok(())
             }
+            HIRExprKind::VaArg { list, .. } => {
+                writeln!(f, "VaArg")?;
+                HIRExprFormatter::new(list, self.depth + 1).fmt(f)
+            }
             HIRExprKind::Break => writeln!(f, "Break"),
             HIRExprKind::Continue => writeln!(f, "Continue"),
         }

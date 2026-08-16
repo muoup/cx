@@ -209,6 +209,47 @@ pub(crate) fn parse_expr_op_concat(
     Ok(Some(()))
 }
 
+fn is_va_arg_callee(expression: &HIRExpression) -> bool {
+    matches!(
+        &expression.kind,
+        HIRExprKind::Identifier {
+            name,
+            template_input: None,
+        } if name.root_name_ref().is_some_and(|name| matches!(name.as_str(), "va_arg" | "__builtin_va_arg"))
+    )
+}
+
+fn parse_va_arg_call(
+    data: &mut ParserData,
+    expr_stack: &mut Vec<HIRExpression>,
+) -> CXResult<()> {
+    let callee = expr_stack
+        .pop()
+        .expect("va_arg callee missing from expression stack");
+    let start_index = callee.range.start_token().unwrap_or(data.tokens.index);
+
+    assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+    data.change_comma_mode(false);
+    let list = parse_expr(data)?;
+    data.pop_comma_mode();
+    assert_token_matches!(data.tokens, operator!(Comma), "','");
+    let (_, _type, _) = parse_initializer(data)?;
+    assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+
+    expr_stack.push(
+        HIRExprKind::VaArg {
+            list: Box::new(list),
+            _type,
+        }
+        .into_expr(
+            start_index,
+            data.tokens.index,
+            data.file_origin_for_range(start_index, data.tokens.index),
+        ),
+    );
+    Ok(())
+}
+
 pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<HIRPattern> {
     match peek_next_kind!(data.tokens)? {
         TokenKind::IntLiteral(literal) => {
@@ -417,6 +458,19 @@ pub(crate) fn parse_expr_val(
             data.back();
 
             let expr = parse_expr_identifier(data)?;
+
+            if is_va_arg_callee(&expr)
+                && data.tokens.peek().is_some_and(|token| {
+                    matches!(
+                        token.kind,
+                        TokenKind::Punctuator(PunctuatorType::OpenParen)
+                    )
+                })
+            {
+                expr_stack.push(expr);
+                parse_va_arg_call(data, expr_stack)?;
+                return Ok(());
+            }
 
             if try_next!(data.tokens, TokenKind::Identifier(_)) {
                 // A common type error is of the form `A b` where A is not a recognized type, this would be picked up

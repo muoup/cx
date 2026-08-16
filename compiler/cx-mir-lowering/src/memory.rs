@@ -107,6 +107,7 @@ impl<'a> FunctionLowerer<'a> {
                     self.ty(*ty),
                 )
             }
+            MIRConstant::Global { global, .. } => LMIRValue::Global(global.index() as u32),
             MIRConstant::String(_) => panic!("string constants must be lowered as globals"),
             MIRConstant::Aggregate { .. } => {
                 panic!("aggregate constants must be lowered as globals")

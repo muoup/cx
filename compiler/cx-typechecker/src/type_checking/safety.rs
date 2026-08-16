@@ -36,6 +36,14 @@ pub(crate) fn validate_safe_expression(
 
         THIRExpressionKind::FunctionReference { .. } => validate_callable(env, expression),
 
+        THIRExpressionKind::VaStart { list, last } => {
+            validate_safe_expression(env, list)?;
+            validate_safe_expression(env, last)
+        }
+        THIRExpressionKind::VaEnd { list } | THIRExpressionKind::VaArg { list, .. } => {
+            validate_safe_expression(env, list)
+        }
+
         THIRExpressionKind::BinaryOperation { lhs, rhs, .. } => {
             validate_safe_expression(env, lhs)?;
             validate_safe_expression(env, rhs)

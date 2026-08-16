@@ -119,6 +119,9 @@ fn lower_global_initializer(constant: &MIRConstant) -> LMIRGlobalInitializer {
                 .collect(),
         },
         MIRConstant::Null { .. } => LMIRGlobalInitializer::Null,
+        MIRConstant::Global { global, .. } => {
+            LMIRGlobalInitializer::Global(global.index() as u32)
+        }
         MIRConstant::Unit
         | MIRConstant::String(_)
         | MIRConstant::Function(_)

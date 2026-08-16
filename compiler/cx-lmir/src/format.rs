@@ -134,6 +134,7 @@ impl Display for LMIRGlobalInitializer {
                 }
                 f.write_str("}")
             }
+            Self::Global(global) => write!(f, "global({global})"),
             Self::Null => f.write_str("null"),
         }
     }
@@ -293,6 +294,13 @@ impl Display for LMIRInstruction {
                     write!(f, "{arg}")?;
                 }
                 write!(f, ")")
+            }
+            LMIRInstructionKind::VaStart { list, last } => {
+                write!(f, "va_start({list}, {last})")
+            }
+            LMIRInstructionKind::VaEnd { list } => write!(f, "va_end({list})"),
+            LMIRInstructionKind::VaArg { list, _type } => {
+                write!(f, "va_arg({list}, {_type})")
             }
             LMIRInstructionKind::PointerBinOp {
                 left,

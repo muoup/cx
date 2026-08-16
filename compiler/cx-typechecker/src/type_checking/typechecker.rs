@@ -11,7 +11,7 @@ use crate::type_checking::control_flow::{
 };
 use crate::type_checking::op::binop::access::typecheck_access;
 use crate::type_checking::op::binop::assign::typecheck_assignment;
-use crate::type_checking::op::binop::calls::typecheck_method_call;
+use crate::type_checking::op::binop::calls::{typecheck_method_call, typecheck_va_list};
 use crate::type_checking::op::unop::{
     typecheck_alignof_expr, typecheck_alignof_type, typecheck_sizeof_expr, typecheck_sizeof_type,
 };
@@ -26,6 +26,7 @@ use crate::type_checking::value::{
     moves::{typecheck_adopt, typecheck_leak, typecheck_unpack},
     unsafe_ops::typecheck_unsafe,
 };
+use crate::symbol::completion::complete_type;
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
@@ -170,6 +171,18 @@ fn typecheck_expr_inner(
             name,
             template_input,
         } => typecheck_identifier(env, namespace, expr, name, template_input.as_ref())?,
+
+        HIRExprKind::VaArg { list, _type } => {
+            let list = typecheck_va_list(env, namespace, list)?;
+            let _type = complete_type(env, namespace, _type)?;
+            TypecheckResult::new(
+                _type.clone(),
+                THIRExpressionKind::VaArg {
+                    list: Box::new(list),
+                    _type: _type.clone(),
+                },
+            )
+        }
 
         HIRExprKind::If {
             condition,

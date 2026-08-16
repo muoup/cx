@@ -269,6 +269,18 @@ pub enum THIRExpressionKind {
         contract: THIRFnContract,
     },
 
+    VaStart {
+        list: Box<THIRExpression>,
+        last: Box<THIRExpression>,
+    },
+    VaEnd {
+        list: Box<THIRExpression>,
+    },
+    VaArg {
+        list: Box<THIRExpression>,
+        _type: THIRType,
+    },
+
     // Type Conversion
     TypeConversion {
         operand: Box<THIRExpression>,

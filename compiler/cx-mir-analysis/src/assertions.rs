@@ -223,6 +223,9 @@ fn transfer_instruction(environment: &mut ConstEnvironment, kind: &MIRInstrKind)
                 environment.registers.insert(*out, ConstValue::Unknown);
             }
         }
+        MIRInstrKind::VaArg { out, .. } => {
+            environment.registers.insert(*out, ConstValue::Unknown);
+        }
         MIRInstrKind::BinOp { out, op, lhs, rhs } => {
             let lhs = environment.value(lhs);
             let rhs = environment.value(rhs);
@@ -255,6 +258,8 @@ fn transfer_instruction(environment: &mut ConstEnvironment, kind: &MIRInstrKind)
         | MIRInstrKind::Branch { .. }
         | MIRInstrKind::IntSwitch { .. }
         | MIRInstrKind::VariantSwitch { .. }
+        | MIRInstrKind::VaStart { .. }
+        | MIRInstrKind::VaEnd { .. }
         | MIRInstrKind::Unreachable
         | MIRInstrKind::Emit { .. } => {}
     }
@@ -268,7 +273,10 @@ fn constant_value(constant: &MIRConstant) -> ConstValue {
         MIRConstant::Float { value, .. } => ConstValue::Float(value.into()),
         MIRConstant::Null { .. } => ConstValue::Int(0),
         MIRConstant::Aggregate { .. } => ConstValue::Unknown,
-        MIRConstant::String(_) | MIRConstant::Function(_) | MIRConstant::Undefined => {
+        MIRConstant::String(_)
+        | MIRConstant::Global { .. }
+        | MIRConstant::Function(_)
+        | MIRConstant::Undefined => {
             ConstValue::Unknown
         }
     }

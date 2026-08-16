@@ -195,15 +195,33 @@ fn canonicalize_global_initializer(
             ..
         } if matches!(
             &kind,
-            THIRExpressionKind::TypeConversion {
-                operand,
-                ..
-            } if matches!(operand.kind, THIRExpressionKind::GlobalVariable { .. })
+            THIRExpressionKind::TypeConversion { operand, .. }
+                if contains_global_reference(operand)
         ) => THIRExpression {
             kind,
             _type,
             token_range,
         },
+        THIRExpressionKind::TypeConversion {
+            conversion,
+            operand,
+        } if contains_global_reference(&operand) =>
+        {
+            THIRExpression {
+                kind: THIRExpressionKind::TypeConversion { conversion, operand },
+                _type,
+                token_range,
+            }
+        }
+        THIRExpressionKind::Typechange(operand)
+            if matches!(operand.kind, THIRExpressionKind::GlobalVariable { .. }) =>
+        {
+            THIRExpression {
+                kind: THIRExpressionKind::Typechange(operand),
+                _type,
+                token_range,
+            }
+        }
         kind => evaluate_comptime_expression(
             env,
             THIRExpression {
@@ -212,8 +230,19 @@ fn canonicalize_global_initializer(
                 token_range,
             },
         )
-        .map(|value| value.into_expression())?,
+        .map(|value| value.into_expression())?
     };
 
     Ok(Some(expression))
+}
+
+fn contains_global_reference(expression: &THIRExpression) -> bool {
+    match &expression.kind {
+        THIRExpressionKind::GlobalVariable { .. } => true,
+        THIRExpressionKind::Typechange(operand)
+        | THIRExpressionKind::TypeConversion { operand, .. } => {
+            contains_global_reference(operand)
+        }
+        _ => false,
+    }
 }

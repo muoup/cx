@@ -372,6 +372,26 @@ fn write_instruction(
             write_values(f, unit, function, args)?;
             f.write_str(")")
         }
+        MIRInstrKind::VaStart { list, last } => {
+            f.write_str("va_start(")?;
+            write_value(f, unit, function, list)?;
+            f.write_str(", ")?;
+            write_value(f, unit, function, last)?;
+            f.write_str(")")
+        }
+        MIRInstrKind::VaEnd { list } => {
+            f.write_str("va_end(")?;
+            write_value(f, unit, function, list)?;
+            f.write_str(")")
+        }
+        MIRInstrKind::VaArg { out, list, ty } => {
+            write_register_name(f, function, *out)?;
+            f.write_str(" = va_arg(")?;
+            write_value(f, unit, function, list)?;
+            write!(f, ", ")?;
+            types.write(f, *ty)?;
+            f.write_str(")")
+        }
         MIRInstrKind::BinOp { out, op, lhs, rhs } => {
             write_register_name(f, function, *out)?;
             write!(f, " = ")?;
