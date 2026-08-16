@@ -1,0 +1,7 @@
+extern "C":
+
+i32 puts(const char* text);
+
+public extern "C":
+
+i32 puts(const char* text);

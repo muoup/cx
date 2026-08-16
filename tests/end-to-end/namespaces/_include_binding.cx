@@ -1,0 +1,20 @@
+#include "_include_binding.h"
+
+public:
+
+int invoke_header_puts() {
+    return call_header_puts();
+}
+
+int read_header_parameter() {
+    return included_parameter(11);
+}
+
+int read_header_type() {
+    included_int value = 12;
+    return value;
+}
+
+int read_header_template() {
+    return selected(13);
+}

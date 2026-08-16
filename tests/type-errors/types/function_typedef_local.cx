@@ -1,0 +1,6 @@
+typedef int callback_t(int x);
+
+int main() {
+    callback_t callback;
+    return 0;
+}

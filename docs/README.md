@@ -1,0 +1,1 @@
+Internal documentation for compiler development. For documentation for the language itself, please visit the site or the raw markdown information in site/docs/.

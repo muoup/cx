@@ -1,0 +1,21 @@
+struct Resource : @nodrop {
+    int data;
+};
+
+void consume(Resource value) {
+    @leak(value);
+}
+
+int main() {
+    Resource* ptr = malloc(sizeof(Resource));
+    *ptr = (Resource) {
+        .data = 7
+    };
+
+    Resource value = @unsafe(@adopt(*ptr));
+    consume(move value);
+    free(ptr);
+    return 0;
+}
+
+#include <stdlib.h>

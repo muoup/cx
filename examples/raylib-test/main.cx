@@ -1,0 +1,19 @@
+#include <raylib.h>
+
+int main() {
+    InitWindow(800, 450, "CX + Raylib");
+    SetTargetFPS(60);
+
+    Color background = { 245, 245, 245, 255 };
+    Color text = { 30, 30, 30, 255 };
+
+    while (!WindowShouldClose()) {
+        BeginDrawing();
+        ClearBackground(background);
+        DrawText("Hello from CX + Raylib", 220, 200, 24, text);
+        EndDrawing();
+    }
+
+    CloseWindow();
+    return 0;
+}

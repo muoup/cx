@@ -6,7 +6,9 @@ autotests = false
 
 [dependencies]
 cx-lmir = { path = "../cx-lmir" }
+cx-log = { path = "../cx-log" }
 cx-pipeline-data = { path = "../cx-pipeline-data" }
+cx-target = { path = "../cx-target" }
 cx-util = { path = "../cx-util" }
 
-inkwell = { version="0.7.1", default-features = false, features=["llvm21-1"] }
+inkwell = { version = "0.9.0", default-features = false, features=["llvm22-1-prefer-dynamic"] }

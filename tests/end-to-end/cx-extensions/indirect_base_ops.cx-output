@@ -1,0 +1,7 @@
+ref access 42
+ptr access 42
+ref match 42
+ptr match 42
+ptr match none -1
+ptr is 10
+ptr is none -1

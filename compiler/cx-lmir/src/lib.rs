@@ -1,7 +1,9 @@
-use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType};
+use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, TypeSize};
+use cx_target::ArchitectureConfig;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use std::collections::HashMap;
 
+pub mod compiler_functions;
 mod format;
 pub mod types;
 
@@ -9,6 +11,7 @@ pub type LMIRFunctionMap = HashMap<String, LMIRFunctionPrototype>;
 
 #[derive(Debug, Clone)]
 pub struct LMIRUnit {
+    pub architecture: ArchitectureConfig,
     pub fn_map: LMIRFunctionMap,
     pub fn_defs: Vec<LMIRFunction>,
 
@@ -37,8 +40,29 @@ pub enum LMIRGlobalType {
     StringLiteral(String),
     Variable {
         _type: LMIRType,
-        initial_value: Option<i64>,
+        state: LMIRGlobalState,
     },
+}
+
+#[derive(Debug, Clone)]
+pub enum LMIRGlobalState {
+    External,
+    ZeroInitialized,
+    Initialized(LMIRGlobalInitializer),
+}
+
+#[derive(Debug, Clone)]
+pub enum LMIRGlobalInitializer {
+    Integer {
+        value: i128,
+        _type: LMIRIntegerType,
+        signed: bool,
+    },
+    Float {
+        value: FloatWrapper,
+        _type: LMIRFloatType,
+    },
+    Null,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -50,11 +74,11 @@ pub enum LMIRValue {
     },
     ParameterRef(u32),
     IntImmediate {
-        _type: LMIRIntegerType,
+        _type: LMIRType,
         val: i64,
     },
     FloatImmediate {
-        _type: LMIRFloatType,
+        _type: LMIRType,
         val: FloatWrapper,
     },
     Global(ElementID),
@@ -81,18 +105,111 @@ impl From<LMIRRegister> for CXIdent {
 
 #[derive(Debug, Clone)]
 pub struct LMIRParameter {
-    pub name: Option<String>,
+    pub name: Option<CXIdent>,
     pub _type: LMIRType,
+    pub abi: LMIRParameterABI,
+}
+
+#[derive(Debug, Clone)]
+pub enum LMIRParameterABI {
+    Direct { slots: Vec<LMIRABISlot> },
+    Indirect { alignment: u8 },
+}
+
+#[derive(Debug, Clone)]
+pub struct LMIRFunctionSignature {
+    pub return_type: LMIRType,
+    pub return_abi: LMIRReturnABI,
+    pub params: Vec<LMIRParameter>,
+    pub var_args: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum LMIRReturnABI {
+    Void,
+    Direct { slots: Vec<LMIRABISlot> },
+    IndirectSret { alignment: u8 },
+}
+
+#[derive(Debug, Clone)]
+pub struct LMIRABISlot {
+    pub _type: LMIRType,
+    pub offset: usize,
+}
+
+impl LMIRParameterABI {
+    pub fn slot_count(&self) -> usize {
+        match self {
+            LMIRParameterABI::Direct { slots } => slots.len(),
+            LMIRParameterABI::Indirect { .. } => 1,
+        }
+    }
+}
+
+impl LMIRReturnABI {
+    pub fn has_indirect_return_param(&self) -> bool {
+        matches!(self, LMIRReturnABI::IndirectSret { .. })
+    }
+}
+
+impl LMIRFunctionSignature {
+    pub fn has_indirect_return_param(&self) -> bool {
+        self.return_abi.has_indirect_return_param()
+    }
+
+    pub fn expanded_param_count(&self) -> usize {
+        self.params
+            .iter()
+            .map(|param| param.abi.slot_count())
+            .sum::<usize>()
+            + usize::from(self.has_indirect_return_param())
+    }
+
+    pub fn expanded_param_type(
+        &self,
+        target: &ArchitectureConfig,
+        index: usize,
+    ) -> Option<LMIRType> {
+        let mut index = index;
+        if self.has_indirect_return_param() {
+            if index == 0 {
+                return Some(LMIRType::default_pointer(target));
+            }
+            index -= 1;
+        }
+
+        for param in &self.params {
+            match &param.abi {
+                LMIRParameterABI::Direct { slots } => {
+                    if index < slots.len() {
+                        return Some(slots[index]._type.clone());
+                    }
+                    index -= slots.len();
+                }
+                LMIRParameterABI::Indirect { .. } => {
+                    if index == 0 {
+                        return Some(LMIRType::default_pointer(target));
+                    }
+                    index -= 1;
+                }
+            }
+        }
+
+        None
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct LMIRFunctionPrototype {
-    pub name: String,
-    pub return_type: LMIRType,
-    pub params: Vec<LMIRParameter>,
-    pub var_args: bool,
+    pub name: CXIdent,
     pub linkage: LinkageType,
-    pub temp_buffer: Option<LMIRType>
+    pub signature: LMIRFunctionSignature,
+}
+
+impl LMIRFunctionPrototype {
+    pub fn signature(&self) -> &LMIRFunctionSignature {
+        &self.signature
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -102,9 +219,41 @@ pub struct LMIRFunction {
 }
 
 #[derive(Debug, Clone)]
+pub struct LMIRBlockParameter {
+    pub register: LMIRRegister,
+    pub _type: LMIRType,
+}
+
+#[derive(Debug, Clone)]
+pub struct LMIRBlockTarget {
+    pub block: LMIRBlockID,
+    pub args: Vec<LMIRValue>,
+}
+
+impl LMIRBlockTarget {
+    pub fn new(block: LMIRBlockID) -> Self {
+        Self {
+            block,
+            args: Vec::new(),
+        }
+    }
+
+    pub fn with_args(block: LMIRBlockID, args: Vec<LMIRValue>) -> Self {
+        Self { block, args }
+    }
+}
+
+impl From<LMIRBlockID> for LMIRBlockTarget {
+    fn from(block: LMIRBlockID) -> Self {
+        Self::new(block)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct LMIRBasicBlock {
     pub id: LMIRBlockID,
     pub debug_name: Option<String>,
+    pub params: Vec<LMIRBlockParameter>,
     pub body: Vec<LMIRInstruction>,
 }
 
@@ -138,7 +287,7 @@ pub enum LMIRInstructionKind {
         value: LMIRValue,
         _type: LMIRType,
     },
-    
+
     Memcpy {
         dest: LMIRValue,
         src: LMIRValue,
@@ -161,14 +310,10 @@ pub enum LMIRInstructionKind {
         coercion_type: LMIRCoercionType,
     },
 
-    Phi {
-        predecessors: Vec<(LMIRValue, LMIRBlockID)>,
-    },
-
     PointerBinOp {
         op: LMIRPtrBinOp,
         ptr_type: LMIRType,
-        type_padded_size: u64,
+        type_size: TypeSize,
         left: LMIRValue,
         right: LMIRValue,
     },
@@ -196,14 +341,15 @@ pub enum LMIRInstructionKind {
     },
 
     DirectCall {
+        func: CXIdent,
         args: Vec<LMIRValue>,
-        method_sig: LMIRFunctionPrototype,
+        method_sig: LMIRFunctionSignature,
     },
 
     IndirectCall {
         func_ptr: LMIRValue,
         args: Vec<LMIRValue>,
-        method_sig: LMIRFunctionPrototype,
+        method_sig: LMIRFunctionSignature,
     },
 
     GetFunctionAddr {
@@ -212,18 +358,18 @@ pub enum LMIRInstructionKind {
 
     Branch {
         condition: LMIRValue,
-        true_block: LMIRBlockID,
-        false_block: LMIRBlockID,
+        true_target: LMIRBlockTarget,
+        false_target: LMIRBlockTarget,
     },
 
     Jump {
-        target: LMIRBlockID,
+        target: LMIRBlockTarget,
     },
 
     JumpTable {
         value: LMIRValue,
-        targets: Vec<(u64, LMIRBlockID)>,
-        default: LMIRBlockID,
+        targets: Vec<(u64, LMIRBlockTarget)>,
+        default: LMIRBlockTarget,
     },
 
     Return {
@@ -231,8 +377,10 @@ pub enum LMIRInstructionKind {
     },
 
     CompilerAssumption {
-        condition: LMIRValue
+        condition: LMIRValue,
     },
+
+    Unreachable,
 }
 
 impl LMIRInstructionKind {
@@ -243,6 +391,7 @@ impl LMIRInstructionKind {
                 | LMIRInstructionKind::Branch { .. }
                 | LMIRInstructionKind::Jump { .. }
                 | LMIRInstructionKind::Return { .. }
+                | LMIRInstructionKind::Unreachable
         )
     }
 }
@@ -325,10 +474,21 @@ pub enum LMIRCoercionType {
     ZExtend,
     SExtend,
     Trunc,
-    FloatCast { from: LMIRFloatType },
-    IntToPtr { from: LMIRIntegerType, sextend: bool },
-    IntToFloat { from: LMIRIntegerType, sextend: bool },
-    FloatToInt { from: LMIRFloatType, sextend: bool },
+    FloatCast {
+        from: LMIRFloatType,
+    },
+    IntToPtr {
+        from: LMIRIntegerType,
+        sextend: bool,
+    },
+    IntToFloat {
+        from: LMIRIntegerType,
+        sextend: bool,
+    },
+    FloatToInt {
+        from: LMIRFloatType,
+        sextend: bool,
+    },
     PtrToInt,
-    BitCast
+    BitCast,
 }

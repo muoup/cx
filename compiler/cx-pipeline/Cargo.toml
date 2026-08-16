@@ -5,24 +5,27 @@ edition = "2024"
 
 [features]
 default = []
+ignore-system-headers = ["cx-lexer/ignore-system-headers"]
 backend-llvm = ["dep:cx-backend-llvm"]
 
 [dependencies]
 speedy = { version = "0.8.7" }
 fs2 = { version = "0.4.3" }
 
-cx-lexer = { path = "../cx-lexer" }
+cx-lexer = { path = "../cx-lexer", default-features = false }
 cx-parsing = { path = "../cx-parsing" }
 cx-typechecker = { path = "../cx-typechecker" }
-cx-safe-analyzer = { path = "../cx-safe-analyzer" }
+cx-thir-lowering = { path = "../cx-thir-lowering" }
+cx-mir-analysis = { path = "../cx-mir-analysis" }
 cx-mir-lowering = { path = "../cx-mir-lowering" }
 cx-backend-llvm = { path = "../cx-backend-llvm", optional = true }
 cx-backend-cranelift = { path = "../cx-backend-cranelift" }
-
+cx-log = { path = "../cx-log" }
 cx-pipeline-data = { path = "../cx-pipeline-data" }
 cx-tokens = { path = "../cx-tokens" }
-cx-ast = { path = "../cx-ast" }
-cx-mir = { path = "../cx-mir" }
+cx-preparse-data = { path = "../cx-preparse-data" }
+cx-hir = { path = "../cx-hir" }
+cx-thir = { path = "../cx-thir" }
 cx-lmir = { path = "../cx-lmir" }
-cx-safe-ir = { path = "../cx-safe-ir" }
+cx-c-header = { path = "../cx-c-header" }
 cx-util = { path = "../cx-util" }

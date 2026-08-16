@@ -1,4 +1,8 @@
+import std::optional;
+
+extern "C":
 #include <stdlib.h>
+#include <string.h>
 
 public:
 
@@ -8,7 +12,7 @@ struct vector<T> : @nodrop {
     usize capacity;
 };
 
-vector<T> vector<T>::create_vector<T>() {
+vector<T> vector::new<T>() {
     return (vector<T>) {
         .data = malloc(4 * sizeof(T)),
         .length = 0,
@@ -16,14 +20,26 @@ vector<T> vector<T>::create_vector<T>() {
     };
 }
 
-void vector<T>::drop<T>(*this) {
+void vector::drop<T>(vector<T> this) {
     @unsafe {
         free(this.data);
         @leak(this);
     };
 }
 
-vector<T> create_vector_with_capacity<T>(usize capacity) {
+void vector::drop_with<T>(vector<T> this, void (*destructor)(T)) {
+    @unsafe {
+        for (u64 i = 0; i < this.length; i++) {
+            T value = @adopt(this.data[i]);
+            destructor(move value);
+        }
+
+        free(this.data);
+        @leak(this);
+    };
+}
+
+vector<T> vector::with_capacity<T>(usize capacity) {
     return (vector<T>) {
         .data = malloc(capacity * sizeof(T)),
         .length = 0,
@@ -31,20 +47,31 @@ vector<T> create_vector_with_capacity<T>(usize capacity) {
     };
 }
 
-void vector<T>::push<T>(this, T object) {
+void vector::push<T>(vector<T>& this, T object) {
     if (this.length == this.capacity) {
         this.capacity = this.capacity * 2 + 1;
         this.data = realloc(this.data, this.capacity * sizeof(T));
     }
 
-    this.data[this.length] = object;
+    this.data[this.length] = move object;
     this.length++;
 }
 
-T* vector<T>::at<T>(this, usize index) {
+std::optional::opt<T> vector::pop<T>(vector<T>& this) {
+    if (this.length == 0) return std::optional::opt::none<T>();
+
+    T buffer;
+    T* data_ptr = &data[this.length - 1];
+    memcpy(&buffer, data_ptr, sizeof(T));
+ 
+    this.length--;
+    return move buffer;
+}
+
+std::optional::opt<T&> vector::at<T>(vector<T>& this, usize index) {
     if (index >= this.length) {
-        return NULL;
+        return std::optional::opt::none<T&>();
     }
 
-    return &this.data[index];
+    return std::optional::opt::some<T&>(this.data[index]);
 }

@@ -1,0 +1,11 @@
+[package]
+name = "cx-mir-analysis"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cx-mir = { path = "../cx-mir" }
+
+[dev-dependencies]
+cx-hir = { path = "../cx-hir" }
+cx-util = { path = "../cx-util" }

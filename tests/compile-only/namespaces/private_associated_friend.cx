@@ -1,0 +1,12 @@
+public:
+
+int helper_namespace::call(int value) {
+    return helper_namespace::private_helper(value);
+}
+
+private:
+
+int helper_namespace::private_helper(int value) {
+    return value;
+}
+

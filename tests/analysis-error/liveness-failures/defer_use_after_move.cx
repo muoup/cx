@@ -1,0 +1,14 @@
+struct Resource : @nodrop {
+    int value;
+};
+
+void close(Resource resource) {
+    @leak(resource);
+}
+
+int main() {
+    Resource resource = (Resource) { .value = 1 };
+    defer close(move resource);
+    close(move resource);
+    return 0;
+}

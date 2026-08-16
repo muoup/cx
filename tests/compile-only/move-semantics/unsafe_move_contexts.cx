@@ -1,0 +1,19 @@
+struct pinned : @unsafe_move {
+    int value;
+};
+
+struct container : @unsafe_move {
+    pinned value;
+};
+
+void consume(pinned value) safe {}
+
+void safe_move(pinned value) safe {
+    @unsafe {
+        move value |> consume();
+    };
+}
+
+void unsafe_function_move(pinned value) {
+    move value |> consume();
+}

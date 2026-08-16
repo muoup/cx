@@ -1,0 +1,5 @@
+#include "_incompatible_include.h"
+
+public:
+
+int puts(int value);

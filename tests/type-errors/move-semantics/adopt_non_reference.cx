@@ -1,0 +1,17 @@
+struct Resource : @nodrop {
+    int data;
+};
+
+int main() {
+    Resource value = (Resource) {
+        .data = 1
+    };
+
+    Resource adopted = @unsafe(@adopt(move value));
+    move adopted |> Resource::drop();
+    return 0;
+}
+
+void Resource::drop(Resource this) {
+    @leak(this);
+}

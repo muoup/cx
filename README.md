@@ -1,15 +1,8 @@
 # CX Compiler
-CX is an experimental C-like systems language with opt-in type-system and verification features. The compiler is written in Rust and uses a staged pipeline from source text to machine code.
+CX is a systems language taking an alternative angle at modernizing the C programming language, backward compatible both with its syntax and its philosophy. 
 
-## Language Philosophy
-CX is a research vehicle for extending a largely C-shaped language with explicit ownership, contracts, and selective static verification without making those mechanisms implicit or ambient. The current design centers on:
-
-- explicit ownership attributes via `@nocopy` and `@nodrop`
-- function contracts via `where` clauses
-- tagged unions, `match`, and `is`
-- member and static member functions
-- opt-in `safe` functions
-- optional FMIR-based verification under `--analysis`
+## Philosophy 
+CX is built with a strong allegiance to three principles: explicitness, traceability, and gradually defined guarantees. Everything that a routine does, and every safety mechanism enforced is spelled out in the code that's written, no hidden behavior and no confusing error traces. The language is intentionally verbose like its ancestor, rejecting RAII in favor of linear typing, and using a restricted form of namespaces such that every symbol corresponds to exactly one meaning.
 
 ## Getting Started
 
@@ -20,7 +13,7 @@ CX is a research vehicle for extending a largely C-shaped language with explicit
 
 #### Optional Prerequisite: LLVM
 
-LLVM is an optional backend. Cranelift is the default backend unless the project is built with the LLVM feature and explicitly configured otherwise.
+LLVM is the compiler tools framework powering many modern systems language compilers like Rustc and Clang. LLVM will in most cases produce faster, more optimized binaries at the cost of slower compile times, and additionally can prove troublesome to set up if you are building from scratch on Windows. As such, the default code generation backend for this project is Cranelift, a lighterweight alternative that is set up automatically when building the project.
 
 ##### On Ubuntu/Debian
 The [LLVM releases page](https://github.com/llvm/llvm-project/releases) provides prebuilt binaries for common Linux targets.
@@ -42,71 +35,60 @@ See the [official LLVM build documentation](https://llvm.org/docs/GettingStarted
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/cx.git
+   git clone https://github.com/muoup/cx.git
    ```
 2. Build the compiler:
    ```bash
-   cargo build --release [--features llvm-backend]
+   cargo build --release [--features backend-llvm]
    ```
 
 ## Usage
 
-For language syntax and semantics, see [docs/language_spec.md](docs/language_spec.md).
+For an overview and documentation on language features, see the
+[public project site](https://muoup.github.io/cx/).
 
-Basic invocation:
+Basic usage:
 
 ```bash
-cargo run --release -- <file.cx> [options]
+cargo run --bin cx -- build [options]
+cargo run --bin cx -- <file.cx> [options]
 ```
 
-Example symlink on Ubuntu/Debian:
+It is also recommended after building to create a symlink to the executable or alias to make invoking the compiler simpler.
+
+If on Linux or MacOS for instance, you may do:
 
 ```bash
-ln -s target/debug/cx /usr/bin/cx
+ln -s [PROJECT_DIRECTORY]/target/debug/cx ~/.local/bin
+```
+
+so that your shell can access your compiler directly from its PATH:
+
+```bash
+cx build [options]
 cx <file.cx> [options]
 ```
 
 ### Options
 
-- `--backend-cranelift`: use the Cranelift backend
-- `--backend-llvm`: use the LLVM backend when compiled with LLVM support
+- `--backend-cranelift`: use the Cranelift backend (default if not built with the LLVM backend)
+- `--backend-llvm`: use the LLVM backend if compiled with LLVM support (default if built with the LLVM backend)
 - `-O0`, `-O1`, `-O2`, `-O3`, `-Osize`, `-Ofast`: optimization level
 - `-o <output_file>`: output path
-- `--analysis`: run FMIR generation and verification for `safe` functions before continuing to LMIR
+- `--verbose`: print each compilation step
 
-## Compiler Pipeline
+### Project Build System
 
-See [docs/pipeline_design.md](docs/pipeline_design.md) for the full pipeline description.
+CX includes a project-oriented build system. Initialize a new project and build it with:
 
-### Project Structure
+```bash
+cx init my_project
+cd my_project
+cx build
+```
 
-**IR and data crates**
-- `cx-tokens`: token definitions
-- `cx-ast`: parsed AST
-- `cx-mir`: typed MIR and type-system data
-- `cx-lmir`: low-level SSA IR
-- `cx-safe-ir`: FMIR for optional safe-function analysis
-
-**Frontend and analysis crates**
-- `cx-lexer`: lexing
-- `cx-parsing`: preparse + parse
-- `cx-typechecker`: type completion, template realization, MIR construction
-- `cx-safe-analyzer`: FMIR generation and verification
-- `cx-mir-lowering`: MIR to LMIR lowering
-- `cx-pipeline`: compilation orchestration
-
-**Backend crates**
-- `cx-backend-cranelift`: Cranelift code generation
-- `cx-backend-llvm`: LLVM code generation
-
-**Utility crates**
-- `cx-util`
-- `cx-log`
-
-## Backends
-
-- **Cranelift**: default development backend
-- **LLVM**: optional optimizing backend
+See the [build system guide](https://muoup.github.io/cx/docs/build-system) for
+`cx.toml` configuration, library compilation, and C interop.
 
 ## Testing
 
@@ -114,19 +96,24 @@ Run the test suite with:
 
 ```bash
 cargo test
+
+# If the LLVM backend is available 
+cargo test --features backend-llvm
 ```
+
+For a better test runner experience, it is recommended to install the [nextest](https://nexte.st/) for richer and cleaner output. If installed, invoke `cargo nextest run` in place of `cargo test`.
 
 The integration suite is autogenerated from the `tests/` tree. The current top-level categories are:
 
-- `tests/e2e`: compile and run, with expected stdout
+- `tests/end-to-end`: compile and run, with expected stdout
 - `tests/compile-only`: compile-success cases
 - `tests/parse-errors`: expected parse failures
 - `tests/type-errors`: expected typecheck failures
-- `tests/verifier-errors`: expected FMIR analysis failures under `--analysis`
+- `tests/analysis-errors`: expected MIR analysis failures for safe functions
 
 ## Contributing
 
-Contributions are welcome. Keep changes local, explicit, and mechanically justified where possible.
+Any and all contributions are greatly appreciated. Make sure to refer to the `dev` branch to ensure you are working on the most up-to-date version of the codebase. Write your patches in whatever way works best for you, but all changes should be well-understood and taken responsibility by a human contributor. Please note that the compiler is still early in development and major architectural changes are still expected, so for any medium+ scale work, it would be appreciated to check in to make sure your implementation will not conflict with ongoing development.
 
 ## License
 

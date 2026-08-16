@@ -1,6 +1,6 @@
 use crate::CompilationUnit;
 use std::cmp::PartialEq;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -10,7 +10,8 @@ enum JobState {
 }
 
 pub struct JobQueue {
-    progress_map: HashMap<(CompilationUnit, CompilationStep), JobState>,
+    shallow_progress_map: HashMap<(CompilationUnit, CompilationStep), JobState>,
+    deep_progress_map: HashSet<(CompilationUnit, CompilationStep)>,
     data: VecDeque<CompilationJob>,
 }
 
@@ -27,6 +28,7 @@ pub struct CompilationJob {
 pub struct CompilationJobRequirement {
     pub step: CompilationStep,
     pub unit: CompilationUnit,
+    pub shallow: bool,
 }
 
 pub type CompilationStepRepr = u16;
@@ -56,23 +58,7 @@ pub enum CompilationStep {
      *
      *  Outputs:  A naively parsed AST.
      */
-    ASTParse = 1 << 1,
-
-    /**
-     *  Prior to typechecking, the compiler must combine all publically accessible types and functions
-     *  from imports into the current compilation unit's AST. This is similar to ImportCombine, however
-     *  instead of combining preparse data, or the names of types needed for clearing ambiguities during
-     *  parsing, this step combines actual type and function data so that if the current compilation unit
-     *  references a type or function. Note that this does not generate completed type or function definitons,
-     *  but rather a list of incomplete type's and their module origins, so that during typechecking, if a type
-     *  or function is needed, the typechecker can complete the type knowing where relevant information about
-     *  internal types that not be publicly accessible is stored.
-     *
-     *  Requires: A naively parsed AST, along with the type and function definitions of imports.
-     *  Outputs:  A base data structure, containing the publically accessible types and functions of imports
-     *  along with their module origins, along with the same data from the current compilation unit.
-     */
-    InterfaceCombine = 1 << 2,
+    Parse = 1 << 1,
 
     /**
      *  Typechecks all indirectly implemented functions and types to a type-checked
@@ -86,34 +72,23 @@ pub enum CompilationStep {
      *
      *  Outputs:  A fully type-checked AST.
      */
-    Typechecking = 1 << 3,
+    Typechecking = 1 << 2,
 
     /**
-     *  Generates a custom bytecode / Flat IR representation from the type-checked AST. This, unlike
-     *  most codegen backends contains support for higher-level constructs such as deferred logic,
-     *  special function types, and templates.
+     *  Generates and analyzes MIR from the type-checked AST. MIR liveness analysis always runs;
+     *  invariant validation may be disabled by the compiler configuration.
      *
-     *  Requires: A type-checked AST. Along with the type and function definitions of imports and self.
+     *  Requires: A fully type-checked AST.
      *
-     *  Outputs:  A bytecode representation of the type-checked AST along with publicly accessible
-     *            implementations of templated functions, types, and potentially in the future small
-     *            always-inlined functions.
+     *  Outputs: An analyzed MIR representation.
      */
-    LMIRGen = 1 << 4,
+    MIRGen = 1 << 5,
 
-    /**
-     *  Compiles the full compilation units from the flat IR bytecode representation. In effect, this
-     *  will consist of combining the bytecode of the current compilation unit along with all needed
-     *  implementations of templates and types from itself and its imports.
-     *
-     *  Requires: Bytecode representation of the type-checked AST, along with the .cx-impl files of imports
-     *            and the current unit.
-     *
-     *  Outputs:  One object file per compilation unit, containing the compiled code for the unit.
-     */
-    Codegen = 1 << 5, // For now, linking is a single step that is done after all compilation above is done. This
-                      // could be abstracted into a CompilationStep, but seeing as it is not a job that occurs
-                      // per-compilation unit, it handled as its own mechanism.
+    /** Lowers analyzed MIR into ABI- and layout-aware LMIR. */
+    LMIRGen = 1 << 3,
+
+    /** Compiles one LMIR unit into an object file. */
+    Codegen = 1 << 4,
 }
 
 impl CompilationJob {
@@ -135,6 +110,7 @@ impl CompilationJob {
         CompilationJobRequirement {
             step: self.step,
             unit: self.unit.clone(),
+            shallow: true,
         }
     }
 }
@@ -155,7 +131,8 @@ impl Default for JobQueue {
 impl JobQueue {
     pub fn new() -> Self {
         JobQueue {
-            progress_map: HashMap::new(),
+            shallow_progress_map: HashMap::new(),
+            deep_progress_map: HashSet::new(),
             data: VecDeque::new(),
         }
     }
@@ -163,9 +140,9 @@ impl JobQueue {
     pub fn push_new_job(&mut self, job: CompilationJob) {
         let pair = (job.unit.clone(), job.step);
 
-        if !self.progress_map.contains_key(&pair) {
+        if !self.shallow_progress_map.contains_key(&pair) {
             self.data.push_back(job);
-            self.progress_map.insert(pair, JobState::InQueue);
+            self.shallow_progress_map.insert(pair, JobState::InQueue);
         }
     }
 
@@ -173,7 +150,7 @@ impl JobQueue {
         let pair = (job.unit.clone(), job.step);
 
         self.data.push_back(job);
-        self.progress_map.insert(pair, JobState::InQueue);
+        self.shallow_progress_map.insert(pair, JobState::InQueue);
     }
 
     pub fn pop_job(&mut self) -> Option<CompilationJob> {
@@ -181,26 +158,103 @@ impl JobQueue {
     }
 
     pub fn complete_job(&mut self, job: &CompilationJob) {
-        self.progress_map
+        self.shallow_progress_map
             .insert((job.unit.clone(), job.step), JobState::Completed);
     }
 
-    pub fn complete_all_unit_jobs(&mut self, _unita: &CompilationUnit) {
-        todo!()
+    pub fn complete_all_unit_jobs(&mut self, unit: &CompilationUnit) {
+        for step in [
+            CompilationStep::PreParse,
+            CompilationStep::Parse,
+            CompilationStep::Typechecking,
+            CompilationStep::MIRGen,
+            CompilationStep::LMIRGen,
+            CompilationStep::Codegen,
+        ] {
+            self.shallow_progress_map
+                .insert((unit.clone(), step), JobState::Completed);
+        }
     }
 
     pub fn job_complete(&self, job: &CompilationJob) -> bool {
-        self.progress_map.get(&(job.unit.clone(), job.step)) == Some(&JobState::Completed)
+        self.shallow_progress_map.get(&(job.unit.clone(), job.step)) == Some(&JobState::Completed)
     }
 
-    pub fn requirements_complete(&self, job: &CompilationJob) -> bool {
-        job.requirements.iter().all(|req| {
-            self.progress_map.get(&(req.unit.clone(), req.step)) == Some(&JobState::Completed)
-        })
+    pub fn requirements_complete<F>(&mut self, job: &CompilationJob, imports_for_unit: F) -> bool
+    where
+        F: Fn(&CompilationUnit) -> Option<Vec<CompilationUnit>>,
+    {
+        let mut visiting = HashSet::new();
+
+        job.requirements
+            .iter()
+            .all(|req| self.requirement_complete(req, &imports_for_unit, &mut visiting))
+    }
+
+    fn requirement_complete<F>(
+        &mut self,
+        req: &CompilationJobRequirement,
+        imports_for_unit: &F,
+        visiting: &mut HashSet<(CompilationUnit, CompilationStep)>,
+    ) -> bool
+    where
+        F: Fn(&CompilationUnit) -> Option<Vec<CompilationUnit>>,
+    {
+        if req.shallow {
+            return self.shallow_requirement_complete(&req.unit, req.step);
+        }
+
+        self.deep_requirement_complete(&req.unit, req.step, imports_for_unit, visiting)
+    }
+
+    fn shallow_requirement_complete(&self, unit: &CompilationUnit, step: CompilationStep) -> bool {
+        self.shallow_progress_map.get(&(unit.clone(), step)) == Some(&JobState::Completed)
+    }
+
+    fn deep_requirement_complete<F>(
+        &mut self,
+        unit: &CompilationUnit,
+        step: CompilationStep,
+        imports_for_unit: &F,
+        visiting: &mut HashSet<(CompilationUnit, CompilationStep)>,
+    ) -> bool
+    where
+        F: Fn(&CompilationUnit) -> Option<Vec<CompilationUnit>>,
+    {
+        let key = (unit.clone(), step);
+
+        if self.deep_progress_map.contains(&key) {
+            return true;
+        }
+
+        if !self.shallow_requirement_complete(unit, step) {
+            return false;
+        }
+
+        if !visiting.insert(key.clone()) {
+            return true;
+        }
+
+        let Some(imports) = imports_for_unit(unit) else {
+            visiting.remove(&key);
+            return false;
+        };
+
+        let complete = imports
+            .iter()
+            .all(|import| self.deep_requirement_complete(import, step, imports_for_unit, visiting));
+
+        visiting.remove(&key);
+
+        if complete {
+            self.deep_progress_map.insert(key);
+        }
+
+        complete
     }
 
     pub fn finish_job(&mut self, job: &CompilationJob) {
-        self.progress_map
+        self.shallow_progress_map
             .insert((job.unit.clone(), job.step), JobState::Completed);
     }
 

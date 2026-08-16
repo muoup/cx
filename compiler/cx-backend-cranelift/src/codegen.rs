@@ -9,13 +9,16 @@ use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Module};
 use cx_lmir::{LMIRBasicBlock, LMIRFunction, LMIRFunctionPrototype};
+use cx_log::error::context::CXInternalContext;
+use cx_log::error::{CXErr, CXResult};
+use cx_log::CXRawResult;
 use cx_util::format::dump_data;
 
 pub(crate) fn codegen_fn_prototype(
     global_state: &mut GlobalState,
     prototype: &LMIRFunctionPrototype,
-) -> Option<()> {
-    let sig = prepare_function_sig(&mut global_state.object_module, prototype)?;
+) -> CXRawResult<FuncId> {
+    let sig = prepare_function_sig(&mut global_state.object_module, prototype.signature())?;
     let linkage = convert_linkage(prototype.linkage);
 
     let id = global_state
@@ -25,29 +28,37 @@ pub(crate) fn codegen_fn_prototype(
 
     global_state
         .function_ids
-        .insert(prototype.name.to_owned(), id);
-    global_state
-        .function_sigs
-        .insert(prototype.name.to_owned(), sig);
+        .insert(prototype.name.to_string(), id);
+    global_state.function_sigs.insert(id, sig);
 
-    Some(())
+    Ok(id)
 }
 
-pub(crate) fn codegen_block(context: &mut FunctionState, fn_block: &LMIRBasicBlock) {
+pub(crate) fn codegen_block(
+    context: &mut FunctionState,
+    fn_block: &LMIRBasicBlock,
+) -> CXResult<()> {
     let block = context.get_block(&fn_block.id);
     context.builder.switch_to_block(block);
 
     for instr in fn_block.body.iter() {
-        if let Some(val) = codegen_instruction(context, instr) {
-            if let Some(result) = instr.result.as_ref() {
-                context.variable_table.insert(result.clone(), val);
-            }
-        };
+        let ret = codegen_instruction(context, instr).map_err(|err| {
+            CXErr::new(
+                err,
+                CXInternalContext::error(format!("Failed to codegen instruction: {instr}")),
+            )
+        })?;
+
+        if let Some(result) = instr.result.as_ref() {
+            context.variable_table.insert(result.clone(), ret);
+        }
 
         if instr.kind.is_block_terminating() {
             break;
         }
     }
+
+    Ok(())
 }
 
 pub(crate) fn codegen_function(
@@ -55,7 +66,7 @@ pub(crate) fn codegen_function(
     func_id: FuncId,
     func_sig: Signature,
     bc_func: &LMIRFunction,
-) -> Option<()> {
+) -> CXResult<()> {
     let mut func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), func_sig);
 
     let mut binding = FunctionBuilderContext::new();
@@ -65,9 +76,9 @@ pub(crate) fn codegen_function(
 
     let mut context = FunctionState {
         object_module: &mut global_state.object_module,
-        target_frontend_config: &global_state.target_frontend_config,
 
         function_ids: &mut global_state.function_ids,
+        global_ids: &global_state.global_ids,
 
         variable_table: VariableTable::new(),
         block_map: HashMap::new(),
@@ -75,6 +86,7 @@ pub(crate) fn codegen_function(
 
         builder,
         pointer_type,
+        signature: bc_func.prototype.signature.clone(),
     };
 
     for fn_block in bc_func.blocks.iter() {
@@ -86,8 +98,21 @@ pub(crate) fn codegen_function(
     let first_block = bc_func.blocks.first().map(|b| &b.id).unwrap();
     let first_block = context.get_block(first_block);
 
-    for arg in bc_func.prototype.params.iter() {
-        let cranelift_type = get_cranelift_type(&arg._type);
+    for index in 0..bc_func.prototype.signature.expanded_param_count() {
+        let cranelift_type = get_cranelift_type(
+            &bc_func
+                .prototype
+                .signature
+                .expanded_param_type(global_state.architecture, index)
+                .unwrap(),
+        )
+        .map_err(|err| {
+            CXErr::new(
+                err,
+                CXInternalContext::error("Failed to get Cranelift type for function parameter"),
+            )
+        })?;
+
         let arg = context
             .builder
             .append_block_param(first_block, cranelift_type);
@@ -95,30 +120,49 @@ pub(crate) fn codegen_function(
         context.fn_params.push(arg);
     }
 
+    for fn_block in &bc_func.blocks {
+        let block = context.get_block(&fn_block.id);
+        for parameter in &fn_block.params {
+            let parameter_type = if parameter._type.is_memory_resident() {
+                context.pointer_type
+            } else {
+                get_cranelift_type(&parameter._type).map_err(|err| {
+                    CXErr::new(
+                        err,
+                        CXInternalContext::error(format!(
+                            "Failed to lower block parameter {} in {}",
+                            parameter.register, fn_block.id
+                        )),
+                    )
+                })?
+            };
+            let value = context.builder.append_block_param(block, parameter_type);
+            context.variable_table.insert(
+                parameter.register.clone(),
+                crate::CodegenValue::Value(value),
+            );
+        }
+    }
+
     for fn_block in bc_func.blocks.iter() {
-        codegen_block(&mut context, fn_block);
+        codegen_block(&mut context, fn_block)?;
     }
 
     context.builder.seal_all_blocks();
     context.builder.finalize();
 
-    let GlobalState {
-        object_module,
-        context,
-        ..
-    } = global_state;
+    let GlobalState { object_module, .. } = global_state;
 
     dump_data(&func);
 
-    context.func = func;
+    let mut codegen_context = cranelift::codegen::Context::for_function(func);
+    codegen_context.compute_cfg();
+    codegen_context.compute_domtree();
     object_module
-        .define_function(func_id, context)
-        .unwrap_or_else(|err| {
-            // dump_data(&context.func);
-            panic!("Failed to define function: {err:#?}");
-        });
+        .define_function(func_id, &mut codegen_context)
+        .unwrap_or_else(|err| panic!("Failed to define function: {err:#?}"));
 
-    object_module.clear_context(context);
+    object_module.clear_context(&mut codegen_context);
 
-    Some(())
+    Ok(())
 }

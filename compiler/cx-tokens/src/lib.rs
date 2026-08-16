@@ -1,5 +1,4 @@
-use cx_util::CXResult;
-
+pub use crate::token::TokenRange;
 use crate::token::{PunctuatorType, Token, TokenKind};
 use std::path::PathBuf;
 
@@ -32,6 +31,13 @@ impl<'a> TokenIter<'a> {
         self.slice.get(self.index)
     }
 
+    pub fn peek_prev(&self) -> Option<&Token> {
+        if self.index == 0 {
+            return None;
+        }
+        self.slice.get(self.index - 1)
+    }
+
     pub fn back(&mut self) {
         self.index -= 1;
     }
@@ -59,7 +65,7 @@ impl<'a> TokenIter<'a> {
         }
     }
 
-    pub fn goto_statement_end(&mut self) -> CXResult<()> {
+    pub fn goto_statement_end(&mut self) -> Option<()> {
         let mut bracket_stack = 0;
 
         while let Some(token) = self.next() {
@@ -82,6 +88,6 @@ impl<'a> TokenIter<'a> {
             }
         }
 
-        Ok(())
+        Some(())
     }
 }

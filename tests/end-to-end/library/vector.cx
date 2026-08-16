@@ -1,0 +1,21 @@
+import std::vector;
+import std::optional;
+
+#include <stdio.h>
+
+int main() {
+    std::vector::vector<int> vec = std::vector::vector::new<int>();
+    
+    vec |> std::vector::vector::push<int>(1);
+    vec |> std::vector::vector::push<int>(2);
+    vec |> std::vector::vector::push<int>(3);
+
+    printf("Vector length: %zu\n", vec.length);
+    printf("Vector capacity: %zu\n", vec.capacity);
+    
+    std::optional::opt<int&> maybe_value = vec |> std::vector::vector::at<int>(0);
+    int value = move maybe_value |> std::optional::opt::unwrap<int&>();
+    
+    printf("vec[0]: %d\n", value);
+    move vec |> std::vector::vector::drop<int>();
+}

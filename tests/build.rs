@@ -4,21 +4,21 @@ use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy)]
 enum TestKind {
-    E2E,
+    EndToEnd,
     CompileOnly,
     ParseError,
     TypeError,
-    VerifierError,
+    AnalysisError,
 }
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("Missing manifest dir"));
     let tests = [
-        ("e2e", TestKind::E2E),
+        ("end-to-end", TestKind::EndToEnd),
         ("compile-only", TestKind::CompileOnly),
         ("parse-errors", TestKind::ParseError),
         ("type-errors", TestKind::TypeError),
-        ("verifier-errors", TestKind::VerifierError),
+        ("analysis-error", TestKind::AnalysisError),
     ];
 
     let mut output = String::new();
@@ -27,7 +27,14 @@ fn main() {
         let root_path = manifest_dir.join(root);
         println!("cargo:rerun-if-changed={}", root_path.display());
         if root_path.exists() {
-            write_module(&mut output, &sanitize_ident(root), &root_path, &root_path, kind, 0);
+            write_module(
+                &mut output,
+                &sanitize_ident(root),
+                &root_path,
+                &root_path,
+                kind,
+                0,
+            );
         }
     }
 
@@ -73,11 +80,13 @@ fn write_module(
             continue;
         }
 
-        if path.extension().and_then(|ext| ext.to_str()) != Some("cx") {
+        let extension = path.extension().and_then(|ext| ext.to_str());
+        let is_compile_only_c = matches!(kind, TestKind::CompileOnly) && extension == Some("c");
+        if extension != Some("cx") && !is_compile_only_c {
             continue;
         }
 
-        if matches!(kind, TestKind::E2E) && !path.with_extension("cx-output").exists() {
+        if matches!(kind, TestKind::EndToEnd) && !path.with_extension("cx-output").exists() {
             continue;
         }
 
@@ -91,15 +100,12 @@ fn write_module(
         let indent = "    ".repeat(depth + 1);
 
         match kind {
-            TestKind::E2E => output.push_str(&format!(
-                "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_e2e_test(std::path::Path::new({path_literal})); }}\n"
+            TestKind::EndToEnd => output.push_str(&format!(
+                "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_end_to_end_test(std::path::Path::new({path_literal})); }}\n"
             )),
             TestKind::CompileOnly => {
-                let analysis = path
-                    .components()
-                    .any(|component| component.as_os_str() == "analysis");
                 output.push_str(&format!(
-                    "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_compile_only_test(std::path::Path::new({path_literal}), {analysis}); }}\n"
+                    "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_compile_only_test(std::path::Path::new({path_literal})); }}\n"
                 ));
             }
             TestKind::ParseError => output.push_str(&format!(
@@ -108,7 +114,7 @@ fn write_module(
             TestKind::TypeError => output.push_str(&format!(
                 "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_type_error_test(std::path::Path::new({path_literal})); }}\n"
             )),
-            TestKind::VerifierError => output.push_str(&format!(
+            TestKind::AnalysisError => output.push_str(&format!(
                 "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_verifier_error_test(std::path::Path::new({path_literal})); }}\n"
             )),
         }

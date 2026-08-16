@@ -6,8 +6,12 @@ autotests = false
 
 [features]
 default = []
+ignore-system-headers = ["cx-pipeline/ignore-system-headers"]
 backend-llvm = ["cx-pipeline/backend-llvm"]
 
 [dependencies]
-cx-pipeline = { path = "../cx-pipeline" }
+cx-log = { path = "../cx-log" }
+cx-pipeline = { path = "../cx-pipeline", default-features = false }
 cx-pipeline-data = { path = "../cx-pipeline-data" }
+toml = { version = "0.8" }
+serde = { version = "1", features = ["derive"] }

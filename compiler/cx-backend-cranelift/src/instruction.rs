@@ -1,67 +1,89 @@
 use crate::inst_calling::{
-    get_func_ref, get_method_return, prepare_method_call, prepare_parameters,
+    get_func_ref, get_method_return, prepare_function_sig, prepare_method_call, prepare_parameters,
 };
 use crate::routines::get_function;
-use crate::value_type::{get_cranelift_abi_type, get_cranelift_type};
+use crate::value_type::get_cranelift_type;
 use crate::{CodegenValue, FunctionState};
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
-use cranelift::codegen::ir::InstructionData;
 use cranelift::frontend::Switch;
 use cranelift::prelude::{InstBuilder, MemFlags, StackSlotData, StackSlotKind};
 use cranelift_module::Module;
 use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
 use cx_lmir::{
-    LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind, LMIRIntBinOp,
-    LMIRIntUnOp, LMIRPtrBinOp,
+    LMIRBlockTarget, LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction,
+    LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRReturnABI,
 };
-use std::ops::IndexMut;
+use cx_log::error::{message::CXStdErrMessage, CXRawResult};
+
+fn block_arguments(
+    context: &mut FunctionState,
+    target: &LMIRBlockTarget,
+) -> CXRawResult<Vec<ir::BlockArg>> {
+    target
+        .args
+        .iter()
+        .map(|argument| {
+            context
+                .get_value(argument)
+                .map(|value| ir::BlockArg::Value(value.as_value()))
+        })
+        .collect()
+}
+
+fn load_return_slots(
+    context: &mut FunctionState,
+    target: cranelift::prelude::Value,
+) -> CXRawResult<Vec<cranelift::prelude::Value>> {
+    let LMIRReturnABI::Direct { slots } = &context.signature.return_abi else {
+        return Ok(vec![target]);
+    };
+
+    let mut values = Vec::new();
+    for slot in slots.clone() {
+        values.push(context.builder.ins().load(
+            get_cranelift_type(&slot._type)?,
+            MemFlags::new(),
+            target,
+            slot.offset as i32,
+        ));
+    }
+    Ok(values)
+}
 
 pub(crate) fn codegen_instruction(
     context: &mut FunctionState,
     instruction: &LMIRInstruction,
-) -> Option<CodegenValue> {
-    match &instruction.kind {
-        LMIRInstructionKind::Alias { value } => context.get_value(value),
+) -> CXRawResult<CodegenValue> {
+    Ok(match &instruction.kind {
+        LMIRInstructionKind::Alias { value } => context.get_value(value)?,
 
         LMIRInstructionKind::Allocate { _type, alignment } => {
             let slot = context.builder.create_sized_stack_slot(StackSlotData::new(
                 StackSlotKind::ExplicitSlot,
-                StackSize::from(_type.size() as u16),
+                StackSize::from(usize::from(_type.size()) as u16),
                 *alignment,
             ));
 
-            Some(CodegenValue::Value(context.builder.ins().stack_addr(
-                context.pointer_type,
-                slot,
-                0,
-            )))
+            CodegenValue::Value(
+                context
+                    .builder
+                    .ins()
+                    .stack_addr(context.pointer_type, slot, 0),
+            )
         }
 
         LMIRInstructionKind::DirectCall {
-            args, method_sig, ..
+            func,
+            args,
+            method_sig,
         } => {
-            let Some(id) = get_function(context, method_sig) else {
-                panic!("Failed to call function {}", &method_sig.name);
-            };
-
-            let Some(params) = prepare_parameters(context, args) else {
-                panic!(
-                    "Failed to prepare parameters for DirectCall: {}",
-                    method_sig.name
-                );
-            };
-
-            let Some(fn_ref) = get_func_ref(context, id, method_sig, params.as_slice()) else {
-                panic!(
-                    "Failed to get function reference for DirectCall: {}",
-                    method_sig.name
-                );
-            };
-
+            let id = get_function(context, func.as_str(), method_sig)?;
+            let params = prepare_parameters(context, args)?;
+            let fn_ref = get_func_ref(context, id, method_sig, params.as_slice())?;
             let inst = context.builder.ins().call(fn_ref, params.as_slice());
 
-            get_method_return(context, inst)
+            get_method_return(context, method_sig, inst)
         }
 
         LMIRInstructionKind::IndirectCall {
@@ -70,22 +92,9 @@ pub(crate) fn codegen_instruction(
             method_sig,
         } => {
             let (val, params) = prepare_method_call(context, func_ptr, args)?;
+            let mut sig = prepare_function_sig(context.object_module, method_sig)?;
 
-            let mut sig = context.object_module.make_signature();
-            let return_type = &method_sig.return_type;
-
-            sig.returns = if return_type.is_void() {
-                vec![]
-            } else {
-                vec![get_cranelift_abi_type(return_type)]
-            };
-            sig.params = method_sig
-                .params
-                .iter()
-                .map(|arg| get_cranelift_abi_type(&arg._type))
-                .collect();
-
-            for i in method_sig.params.len()..params.len() {
+            for i in method_sig.expanded_param_count()..params.len() {
                 let arg = params[i];
                 let arg_type = context.builder.func.dfg.value_type(arg);
 
@@ -100,32 +109,55 @@ pub(crate) fn codegen_instruction(
                     .ins()
                     .call_indirect(sig_ref, val.as_value(), params.as_slice());
 
-            get_method_return(context, inst)
+            get_method_return(context, method_sig, inst)
         }
 
         LMIRInstructionKind::Return { value } => {
             match value {
                 Some(value) => {
-                    let return_value = context.get_value(value).unwrap();
-                    context.builder.ins().return_(&[return_value.as_value()]);
+                    let return_value = context.get_value(value)?;
+                    match return_value {
+                        CodegenValue::Value(value)
+                            if context.signature.return_type.is_memory_resident()
+                                && matches!(
+                                    context.signature.return_abi,
+                                    cx_lmir::LMIRReturnABI::Direct { .. }
+                                ) =>
+                        {
+                            let values = load_return_slots(context, value)?;
+                            context.builder.ins().return_(values.as_slice())
+                        }
+                        CodegenValue::Value(value) => context.builder.ins().return_(&[value]),
+                        CodegenValue::Aggregate(values) => {
+                            context.builder.ins().return_(values.as_slice())
+                        }
+                        CodegenValue::AggregateSlots(values) => {
+                            let values = values
+                                .into_iter()
+                                .map(|(_, value)| value)
+                                .collect::<Vec<_>>();
+                            context.builder.ins().return_(values.as_slice())
+                        }
+                        CodegenValue::Null => context.builder.ins().return_(&[]),
+                    };
                 }
                 None => {
                     context.builder.ins().return_(&[]);
                 }
             };
 
-            None
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::Load { memory, _type } => {
-            let target = context.get_value(memory).unwrap().as_value();
+            let target = context.get_value(memory)?.as_value();
 
-            Some(CodegenValue::Value(context.builder.ins().load(
-                get_cranelift_type(_type),
+            CodegenValue::Value(context.builder.ins().load(
+                get_cranelift_type(_type)?,
                 MemFlags::new(),
                 target,
                 0,
-            )))
+            ))
         }
 
         LMIRInstructionKind::GetFunctionAddr { func } => {
@@ -138,29 +170,27 @@ pub(crate) fn codegen_instruction(
                 .declare_func_in_func(id, context.builder.func);
 
             let pointer = context.pointer_type;
-            Some(CodegenValue::Value(
-                context.builder.ins().func_addr(pointer, func_ref),
-            ))
+            CodegenValue::Value(context.builder.ins().func_addr(pointer, func_ref))
         }
 
         LMIRInstructionKind::Coercion {
             value,
             coercion_type: LMIRCoercionType::PtrToInt,
         } => {
-            let bytes = instruction.value_type.size();
-            let val = context.get_value(value).unwrap();
+            let bytes = usize::from(instruction.value_type.size());
+            let val = context.get_value(value)?;
 
-            if bytes < 8 {
-                return Some(CodegenValue::Value(
+            if bytes < context.pointer_type.bytes() as usize {
+                CodegenValue::Value(
                     context.builder.ins().ireduce(
                         ir::Type::int(bytes as u16 * 8)
                             .unwrap_or_else(|| panic!("Unsupported integer size: {}", bytes * 8)),
                         val.as_value(),
                     ),
-                ));
-            };
-
-            Some(val)
+                )
+            } else {
+                val
+            }
         }
 
         LMIRInstructionKind::Coercion {
@@ -171,34 +201,30 @@ pub(crate) fn codegen_instruction(
                 },
             value,
         } => {
-            let val = context.get_value(value).unwrap();
+            let val = context.get_value(value)?;
 
-            if _type.bytes() < 8 {
+            if (_type.bytes() as u32) < context.pointer_type.bytes() {
+                let _ty = get_cranelift_type(&instruction.value_type)?;
+
                 if *sextend {
-                    return Some(CodegenValue::Value(context.builder.ins().uextend(
-                        get_cranelift_type(&instruction.value_type),
-                        val.as_value(),
-                    )));
+                    CodegenValue::Value(context.builder.ins().sextend(_ty, val.as_value()))
                 } else {
-                    return Some(CodegenValue::Value(context.builder.ins().sextend(
-                        get_cranelift_type(&instruction.value_type),
-                        val.as_value(),
-                    )));
+                    CodegenValue::Value(context.builder.ins().uextend(_ty, val.as_value()))
                 }
-            };
-
-            Some(val)
+            } else {
+                val
+            }
         }
 
         LMIRInstructionKind::PointerBinOp {
             op,
             left,
             right,
-            type_padded_size,
+            type_size,
             ..
         } => {
-            let left = context.get_value(left).unwrap().as_value();
-            let right = context.get_value(right).unwrap().as_value();
+            let left = context.get_value(left)?.as_value();
+            let right = context.get_value(right)?.as_value();
             let _type = &instruction.value_type;
 
             let inst =
@@ -207,7 +233,7 @@ pub(crate) fn codegen_instruction(
                         let right_scaled = context
                             .builder
                             .ins()
-                            .imul_imm(right, *type_padded_size as i64); // assuming type_padded_size is 1 for simplicity
+                            .imul_imm(right, usize::from(*type_size) as i64);
 
                         context.builder.ins().iadd(left, right_scaled)
                     }
@@ -216,7 +242,7 @@ pub(crate) fn codegen_instruction(
                         let right_scaled = context
                             .builder
                             .ins()
-                            .imul_imm(right, *type_padded_size as i64);
+                            .imul_imm(right, usize::from(*type_size) as i64);
 
                         context.builder.ins().isub(left, right_scaled)
                     }
@@ -256,12 +282,12 @@ pub(crate) fn codegen_instruction(
                     ),
                 };
 
-            Some(CodegenValue::Value(inst))
+            CodegenValue::Value(inst)
         }
 
         LMIRInstructionKind::IntegerBinOp { op, left, right } => {
-            let left = context.get_value(left).unwrap().as_value();
-            let right = context.get_value(right).unwrap().as_value();
+            let left = context.get_value(left)?.as_value();
+            let right = context.get_value(right)?.as_value();
 
             let inst = match op {
                 LMIRIntBinOp::ADD => context.builder.ins().iadd(left, right),
@@ -282,10 +308,11 @@ pub(crate) fn codegen_instruction(
                 LMIRIntBinOp::BXOR => context.builder.ins().bxor(left, right),
 
                 LMIRIntBinOp::LAND => {
-                    let left = context
-                        .builder
-                        .ins()
-                        .icmp_imm(ir::condcodes::IntCC::NotEqual, left, 0);
+                    let left =
+                        context
+                            .builder
+                            .ins()
+                            .icmp_imm(ir::condcodes::IntCC::NotEqual, left, 0);
                     let right =
                         context
                             .builder
@@ -368,11 +395,11 @@ pub(crate) fn codegen_instruction(
                 ),
             };
 
-            Some(CodegenValue::Value(inst))
+            CodegenValue::Value(inst)
         }
 
         LMIRInstructionKind::IntegerUnOp { op, value } => {
-            let val = context.get_value(value).unwrap();
+            let val = context.get_value(value)?;
 
             let inst = match op {
                 LMIRIntUnOp::NEG => context.builder.ins().ineg(val.as_value()),
@@ -385,25 +412,25 @@ pub(crate) fn codegen_instruction(
                 }
             };
 
-            Some(CodegenValue::Value(inst))
+            CodegenValue::Value(inst)
         }
 
         LMIRInstructionKind::FloatUnOp { value, op } => {
-            let val = context.get_value(value).unwrap();
+            let val = context.get_value(value)?;
             let _type = &instruction.value_type;
 
             match op {
-                LMIRFloatUnOp::NEG => Some(CodegenValue::Value(
-                    context.builder.ins().fneg(val.as_value()),
-                )),
+                LMIRFloatUnOp::NEG => {
+                    CodegenValue::Value(context.builder.ins().fneg(val.as_value()))
+                }
             }
         }
 
         LMIRInstructionKind::FloatBinOp { left, right, op } => {
-            let left = context.get_value(left).unwrap().as_value();
-            let right = context.get_value(right).unwrap().as_value();
+            let left = context.get_value(left)?.as_value();
+            let right = context.get_value(right)?.as_value();
 
-            Some(CodegenValue::Value(match op {
+            CodegenValue::Value(match op {
                 LMIRFloatBinOp::ADD => context.builder.ins().fadd(left, right),
                 LMIRFloatBinOp::SUB => context.builder.ins().fsub(left, right),
                 LMIRFloatBinOp::FMUL => context.builder.ins().fmul(left, right),
@@ -444,32 +471,35 @@ pub(crate) fn codegen_instruction(
                     left,
                     right,
                 ),
-            }))
+            })
         }
 
         LMIRInstructionKind::Branch {
             condition,
-            true_block,
-            false_block,
+            true_target,
+            false_target,
         } => {
-            let condition = context.get_value(condition).unwrap().as_value();
-            let true_block = context.get_block(true_block);
-            let false_block = context.get_block(false_block);
+            let condition = context.get_value(condition)?.as_value();
+            let true_block = context.get_block(&true_target.block);
+            let false_block = context.get_block(&false_target.block);
+            let true_args = block_arguments(context, true_target)?;
+            let false_args = block_arguments(context, false_target)?;
 
             context
                 .builder
                 .ins()
-                .brif(condition, true_block, &[], false_block, &[]);
+                .brif(condition, true_block, &true_args, false_block, &false_args);
 
-            Some(CodegenValue::NULL)
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::Jump { target } => {
-            let target = context.get_block(target);
+            let block = context.get_block(&target.block);
+            let args = block_arguments(context, target)?;
 
-            context.builder.ins().jump(target, &[]);
+            context.builder.ins().jump(block, &args);
 
-            Some(CodegenValue::NULL)
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::StructAccess {
@@ -477,15 +507,15 @@ pub(crate) fn codegen_instruction(
             field_offset,
             ..
         } => {
-            let ptr = context.get_value(struct_).unwrap().clone();
+            let ptr = context.get_value(struct_)?.clone();
             let _type = &instruction.value_type;
 
-            Some(CodegenValue::Value(
+            CodegenValue::Value(
                 context
                     .builder
                     .ins()
                     .iadd_imm(ptr.as_value(), *field_offset as i64),
-            ))
+            )
         }
 
         LMIRInstructionKind::Store {
@@ -493,230 +523,154 @@ pub(crate) fn codegen_instruction(
             value,
             _type,
         } => {
-            let target = context.get_value(memory).unwrap().as_value();
-            let value = context.get_value(value).unwrap().as_value();
+            let target = context.get_value(memory)?.as_value();
+            let value = context.get_value(value)?;
 
-            context
-                .builder
-                .ins()
-                .store(MemFlags::new(), value, target, 0);
+            match value {
+                CodegenValue::AggregateSlots(values) => {
+                    for (slot, value) in values {
+                        context.builder.ins().store(
+                            MemFlags::new(),
+                            value,
+                            target,
+                            slot.offset as i32,
+                        );
+                    }
+                }
+                CodegenValue::Null => {
+                    return CXStdErrMessage::result(
+                        "CODEGEN ERROR",
+                        "LMIR attempted to store a value with no runtime representation",
+                    );
+                }
+                value => {
+                    context
+                        .builder
+                        .ins()
+                        .store(MemFlags::new(), value.as_value(), target, 0);
+                }
+            }
 
-            Some(CodegenValue::NULL)
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::Memcpy {
             dest,
             src,
             size,
-            alignment: _,
+            ..
         } => {
-            let dest = context.get_value(dest).unwrap().as_value();
-            let src = context.get_value(src).unwrap().as_value();
-            let size = context.get_value(size).unwrap().as_value();
+            let dest = context.get_value(dest)?.as_value();
+            let src = context.get_value(src)?.as_value();
+            let size = context.get_value(size)?.as_value();
+            let target_config = context.object_module.target_config();
 
-            context
-                .builder
-                .call_memcpy(*context.target_frontend_config, dest, src, size);
+            context.builder.call_memcpy(target_config, dest, src, size);
 
-            Some(CodegenValue::NULL)
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::ZeroMemory { memory, _type } => {
-            let target = context.get_value(memory).unwrap().as_value();
-            let size_literal = context
-                .builder
-                .ins()
-                .iconst(ir::Type::int(64).unwrap(), _type.size() as i64);
+            let target = context.get_value(memory)?.as_value();
+            let target_config = context.object_module.target_config();
+            let size_literal = context.builder.ins().iconst(
+                target_config.pointer_type(),
+                usize::from(_type.size()) as i64,
+            );
 
             let zero = context.builder.ins().iconst(ir::Type::int(8).unwrap(), 0);
 
-            context.builder.call_memset(
-                *context.target_frontend_config,
-                target,
-                zero,
-                size_literal,
-            );
-
-            Some(CodegenValue::NULL)
-        }
-
-        LMIRInstructionKind::Phi { predecessors } => {
-            let current_block = context.builder.current_block()?;
-            let current_block_len = context
-                .builder
-                .func
-                .layout
-                .block_insts(current_block)
-                .count();
-
             context
                 .builder
-                .append_block_param(current_block, get_cranelift_type(&instruction.value_type));
+                .call_memset(target_config, target, zero, size_literal);
 
-            for (from_value, from_block) in predecessors {
-                let block = context.get_block(from_block);
-
-                // get last instruction in the block
-                let last_inst = context
-                    .builder
-                    .func
-                    .layout
-                    .block_insts(block)
-                    .next_back()
-                    .unwrap();
-
-                // code made with only the worst of intentions
-                context.builder.func.layout.remove_inst(last_inst);
-
-                let value = context.get_value(from_value).unwrap().as_value();
-
-                while context
-                    .builder
-                    .func
-                    .layout
-                    .block_insts(current_block)
-                    .count()
-                    > current_block_len
-                {
-                    let inst = context
-                        .builder
-                        .func
-                        .layout
-                        .block_insts(current_block)
-                        .next_back()
-                        .unwrap();
-                    context.builder.func.layout.remove_inst(inst);
-                    context.builder.func.layout.append_inst(inst, block);
-                }
-
-                context.builder.func.layout.append_inst(last_inst, block);
-
-                unsafe {
-                    let value_pool: *mut _ = &mut context.builder.func.dfg.value_lists;
-
-                    match context.builder.func.dfg.insts.index_mut(last_inst) {
-                        InstructionData::Jump { destination, .. } => {
-                            destination.append_argument(value, &mut *value_pool);
-                        }
-                        InstructionData::Brif { blocks, .. } => {
-                            if blocks.get_mut(0)?.block(&*value_pool) == current_block {
-                                blocks.get_mut(0)?.append_argument(value, &mut *value_pool);
-                            }
-                            if blocks.get_mut(1)?.block(&*value_pool) == current_block {
-                                blocks.get_mut(1)?.append_argument(value, &mut *value_pool);
-                            }
-                        }
-                        _ => {
-                            panic!("Invalid instruction type for Phi: {last_inst:?}");
-                        }
-                    }
-                }
-            }
-
-            let val = context
-                .builder
-                .block_params(current_block)
-                .last()
-                .cloned()
-                .expect("No block parameter found for Phi instruction");
-
-            Some(CodegenValue::Value(val))
+            CodegenValue::Null
         }
 
         LMIRInstructionKind::Coercion {
             coercion_type: LMIRCoercionType::ZExtend,
             value,
         } => {
-            let val = context.get_value(value).unwrap().as_value();
+            let val = context.get_value(value)?.as_value();
             let _type = &instruction.value_type;
-            let cranelift_type = get_cranelift_type(_type);
+            let cranelift_type = get_cranelift_type(_type)?;
 
             let val_type = context.builder.func.dfg.value_type(val);
 
             if val_type == cranelift_type {
-                return Some(CodegenValue::Value(val));
+                CodegenValue::Value(val)
+            } else {
+                CodegenValue::Value(context.builder.ins().uextend(cranelift_type, val))
             }
-
-            Some(CodegenValue::Value(
-                context.builder.ins().uextend(cranelift_type, val),
-            ))
         }
 
         LMIRInstructionKind::Coercion {
             coercion_type: LMIRCoercionType::SExtend,
             value,
         } => {
-            let val = context.get_value(value).unwrap().as_value();
+            let val = context.get_value(value)?.as_value();
 
             let _type = &instruction.value_type;
-            let cranelift_type = get_cranelift_type(_type);
+            let cranelift_type = get_cranelift_type(_type)?;
 
             let val_type = context.builder.func.dfg.value_type(val);
 
             if val_type == cranelift_type {
-                return Some(CodegenValue::Value(val));
+                CodegenValue::Value(val)
+            } else {
+                CodegenValue::Value(context.builder.ins().sextend(cranelift_type, val))
             }
-
-            Some(CodegenValue::Value(
-                context.builder.ins().sextend(cranelift_type, val),
-            ))
         }
 
         LMIRInstructionKind::Coercion {
             coercion_type: LMIRCoercionType::Trunc,
             value,
         } => {
-            let val = context.get_value(value).unwrap();
+            let val = context.get_value(value)?;
             let _type = &instruction.value_type;
 
             let value = val.as_value();
-            let cranelift_type = get_cranelift_type(_type);
+            let cranelift_type = get_cranelift_type(_type)?;
             let value_type = context.builder.func.dfg.value_type(value);
 
             if value_type == cranelift_type {
-                return Some(CodegenValue::Value(value));
+                CodegenValue::Value(value)
+            } else {
+                CodegenValue::Value(
+                    context
+                        .builder
+                        .ins()
+                        .ireduce(cranelift_type, val.as_value()),
+                )
             }
-
-            Some(CodegenValue::Value(
-                context
-                    .builder
-                    .ins()
-                    .ireduce(cranelift_type, val.as_value()),
-            ))
         }
 
         LMIRInstructionKind::Coercion {
             coercion_type: LMIRCoercionType::BitCast,
             value,
-        } => {
-            let Some(val) = context.get_value(value) else {
-                panic!("Value not found for BitCast: {value:?}");
-            };
-
-            Some(val)
-        }
+        } => context.get_value(value)?,
 
         LMIRInstructionKind::Coercion {
-            coercion_type: LMIRCoercionType::FloatCast { from: _ },
+            coercion_type: LMIRCoercionType::FloatCast { .. },
             value,
         } => {
-            let val = context.get_value(value).unwrap();
+            let val = context.get_value(value)?;
             let to_type = &instruction.value_type;
-            let cranelift_type = get_cranelift_type(to_type);
+            let cranelift_type = get_cranelift_type(to_type)?;
 
             match &to_type.kind {
-                LMIRTypeKind::Float(LMIRFloatType::F32) => Some(CodegenValue::Value(
+                LMIRTypeKind::Float(LMIRFloatType::F32) => CodegenValue::Value(
                     context
                         .builder
                         .ins()
                         .fdemote(cranelift_type, val.as_value()),
-                )),
-                LMIRTypeKind::Float(LMIRFloatType::F64) => Some(CodegenValue::Value(
+                ),
+                LMIRTypeKind::Float(LMIRFloatType::F64) => CodegenValue::Value(
                     context
                         .builder
                         .ins()
                         .fpromote(cranelift_type, val.as_value()),
-                )),
+                ),
                 _ => unreachable!("Invalid type for float cast"),
             }
         }
@@ -729,10 +683,10 @@ pub(crate) fn codegen_instruction(
                 },
             value,
         } => {
-            let val = context.get_value(value).unwrap().as_value();
+            let val = context.get_value(value)?.as_value();
             let _type = &instruction.value_type;
 
-            let to_cl_type = get_cranelift_type(_type);
+            let to_cl_type = get_cranelift_type(_type)?;
 
             let LMIRTypeKind::Integer(itype) = &_type.kind else {
                 panic!("Invalid type for float to int conversion")
@@ -757,23 +711,23 @@ pub(crate) fn codegen_instruction(
                 ival
             };
 
-            Some(CodegenValue::Value(val))
+            CodegenValue::Value(val)
         }
 
         LMIRInstructionKind::Coercion {
-            coercion_type: LMIRCoercionType::IntToFloat { from: _, sextend },
+            coercion_type: LMIRCoercionType::IntToFloat { sextend, .. },
             value,
         } => {
-            let val = context.get_value(value).unwrap().as_value();
+            let val = context.get_value(value)?.as_value();
             let _type = &instruction.value_type;
 
-            let to_cl_type = get_cranelift_type(_type);
+            let to_cl_type = get_cranelift_type(_type)?;
 
-            Some(CodegenValue::Value(if *sextend {
+            CodegenValue::Value(if *sextend {
                 context.builder.ins().fcvt_from_sint(to_cl_type, val)
             } else {
                 context.builder.ins().fcvt_from_uint(to_cl_type, val)
-            }))
+            })
         }
 
         LMIRInstructionKind::JumpTable {
@@ -782,19 +736,49 @@ pub(crate) fn codegen_instruction(
             default,
         } => {
             let mut switch = Switch::new();
+            let mut edges = Vec::with_capacity(targets.len());
 
-            for (value, block_id) in targets {
-                switch.set_entry(*value as u128, context.get_block(block_id));
+            // Cranelift's Switch helper cannot attach block arguments. Route only
+            // parameterized cases through small edge blocks that perform the jump.
+            for (case, target) in targets {
+                let destination = if target.args.is_empty() {
+                    context.get_block(&target.block)
+                } else {
+                    let edge = context.builder.create_block();
+                    edges.push((edge, target));
+                    edge
+                };
+                switch.set_entry(*case as u128, destination);
+            }
+            let (default_block, finish_default) = if default.args.is_empty() {
+                (context.get_block(&default.block), false)
+            } else {
+                (context.builder.create_block(), true)
+            };
+            let discriminant = context.get_value(value)?.as_value();
+            switch.emit(&mut context.builder, discriminant, default_block);
+
+            for (edge, target) in edges {
+                context.builder.switch_to_block(edge);
+                let block = context.get_block(&target.block);
+                let args = block_arguments(context, target)?;
+                context.builder.ins().jump(block, &args);
             }
 
-            let default_block = context.get_block(default);
-            let value = context.get_value(value).unwrap();
+            if finish_default {
+                context.builder.switch_to_block(default_block);
+                let target = context.get_block(&default.block);
+                let args = block_arguments(context, default)?;
+                context.builder.ins().jump(target, &args);
+            }
 
-            switch.emit(&mut context.builder, value.as_value(), default_block);
-
-            Some(CodegenValue::NULL)
+            CodegenValue::Null
         }
 
-        LMIRInstructionKind::CompilerAssumption { .. } => Some(CodegenValue::NULL),
-    }
+        LMIRInstructionKind::CompilerAssumption { .. } => CodegenValue::Null,
+        LMIRInstructionKind::Unreachable => {
+            context.builder.ins().trap(ir::TrapCode::unwrap_user(1));
+            CodegenValue::Null
+        }
+    })
 }

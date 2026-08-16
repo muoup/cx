@@ -1,0 +1,20 @@
+import std::vector;
+
+struct Resource : @nodrop {
+    int data;
+};
+
+void destroy(Resource value) {
+    @leak(value);
+}
+
+int main() {
+    std::vector::vector<Resource> values = std::vector::vector::new<Resource>();
+    Resource value = (Resource) {
+        .data = 11
+    };
+
+    values |> std::vector::vector::push<Resource>(move value);
+    move values |> std::vector::vector::drop_with<Resource>(destroy);
+    return 0;
+}

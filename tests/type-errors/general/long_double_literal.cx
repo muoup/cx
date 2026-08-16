@@ -1,0 +1,4 @@
+int main(void) {
+    double value = 1.0L;
+    return value == 1.0;
+}

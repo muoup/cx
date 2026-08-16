@@ -1,6 +1,0 @@
-import std::io;
-import includes::template_include;
-
-int main() {
-   printf("Template return value: %d\n", template_return());
-}

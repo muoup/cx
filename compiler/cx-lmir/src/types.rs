@@ -1,27 +1,56 @@
+use cx_target::ArchitectureConfig;
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct LMIRType {
     pub kind: LMIRTypeKind,
+    pub alignment: u8,
 }
 
 impl LMIRType {
+    pub fn new(kind: LMIRTypeKind, alignment: u8) -> Self {
+        LMIRType { kind, alignment }
+    }
+
+    pub fn with_implicit_abi(target: &ArchitectureConfig, kind: LMIRTypeKind) -> Self {
+        let alignment = match &kind {
+            LMIRTypeKind::Pointer { .. } => target.pointer_alignment(),
+            LMIRTypeKind::Array { element, .. } => element.alignment() as usize,
+            LMIRTypeKind::Struct { fields, .. } => fields
+                .iter()
+                .map(|(_, field)| field.alignment() as usize)
+                .max()
+                .unwrap_or(1),
+            LMIRTypeKind::Void => 1,
+            _ => usize::from(kind.implicit_size())
+                .next_power_of_two()
+                .min(target.pointer_size()),
+        } as u8;
+
+        LMIRType { kind, alignment }
+    }
+
     pub fn unit() -> Self {
         LMIRType {
-            kind: LMIRTypeKind::Unit,
-        }
-    }
-    
-    pub fn bool() -> Self {
-        LMIRType {
-            kind: LMIRTypeKind::Integer(LMIRIntegerType::I1),
+            kind: LMIRTypeKind::Void,
+            alignment: 1,
         }
     }
 
-    pub fn default_pointer() -> Self {
+    pub fn bool() -> Self {
+        LMIRType {
+            kind: LMIRTypeKind::Integer(LMIRIntegerType::I1),
+            alignment: 1,
+        }
+    }
+
+    pub fn default_pointer(target: &ArchitectureConfig) -> Self {
         LMIRType {
             kind: LMIRTypeKind::Pointer {
                 nullable: false,
                 dereferenceable: 0,
+                bytes: target.pointer_size() as u8,
             },
+            alignment: target.pointer_alignment() as u8,
         }
     }
 }
@@ -47,13 +76,19 @@ pub enum LMIRTypeKind {
     Opaque {
         bytes: usize,
     },
-    
+
     Integer(LMIRIntegerType),
     Float(LMIRFloatType),
-    
+
     Pointer {
         nullable: bool,
         dereferenceable: u32,
+        bytes: u8,
+    },
+
+    Vector {
+        element: LMIRFloatType,
+        count: usize,
     },
 
     Array {
@@ -64,28 +99,43 @@ pub enum LMIRTypeKind {
         name: String,
         fields: Vec<(String, LMIRType)>,
     },
-    Union {
-        name: String,
-        fields: Vec<(String, LMIRType)>,
-    },
-    
-    Unit,
+
+    Void,
 }
 
-impl From<LMIRTypeKind> for LMIRType {
-    fn from(kind: LMIRTypeKind) -> Self {
-        LMIRType { kind }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TypeSize(usize);
+
+impl From<TypeSize> for usize {
+    fn from(s: TypeSize) -> usize {
+        s.0
     }
 }
 
-impl LMIRType {
-    pub fn size(&self) -> usize {
-        match &self.kind {
+impl From<usize> for TypeSize {
+    fn from(s: usize) -> TypeSize {
+        TypeSize(s)
+    }
+}
+
+// impl From<LMIRTypeKind> for LMIRType {
+//     fn from(kind: LMIRTypeKind) -> Self {
+//         LMIRType {
+//             kind,
+//             alignment: None,
+//         }
+//     }
+// }
+
+impl LMIRTypeKind {
+    pub fn implicit_size(&self) -> TypeSize {
+        TypeSize(match &self {
             LMIRTypeKind::Opaque { bytes } => *bytes,
             LMIRTypeKind::Integer(_type) => _type.bytes() as usize,
             LMIRTypeKind::Float(_type) => _type.bytes() as usize,
-            LMIRTypeKind::Pointer { .. } => 8, // TODO: make this configurable
-            LMIRTypeKind::Array { element, size } => element.size() * size,
+            LMIRTypeKind::Pointer { bytes, .. } => *bytes as usize,
+            LMIRTypeKind::Vector { element, count } => element.bytes() as usize * count,
+            LMIRTypeKind::Array { element, size } => usize::from(element.size()) * size,
             LMIRTypeKind::Struct { fields, .. } => {
                 let mut current_size = 0;
 
@@ -99,50 +149,54 @@ impl LMIRType {
                             field_alignment as usize - (current_size % field_alignment as usize);
                     }
 
-                    current_size += field_size;
+                    current_size += usize::from(field_size);
                 }
 
                 current_size
             }
-            LMIRTypeKind::Union { fields, .. } => fields
-                .iter()
-                .map(|(_, field)| field.size())
-                .max()
-                .unwrap(),
 
-            LMIRTypeKind::Unit => 0,
+            LMIRTypeKind::Void => 0,
+        })
+    }
+}
+
+impl LMIRType {
+    pub fn size(&self) -> TypeSize {
+        let mut implicit_size = self.kind.implicit_size();
+
+        if !implicit_size.0.is_multiple_of(self.alignment as usize) {
+            implicit_size.0 +=
+                self.alignment as usize - (implicit_size.0 % self.alignment as usize);
         }
+
+        implicit_size
     }
 
     pub fn alignment(&self) -> u8 {
-        match &self.kind {
-            LMIRTypeKind::Opaque { bytes } => (*bytes).min(8) as u8,
-            LMIRTypeKind::Integer(_type) => _type.bytes().min(8),
-            LMIRTypeKind::Float(_type) => _type.bytes().min(8),
-            LMIRTypeKind::Pointer { .. } => 8, // TODO: make this configurable
-            LMIRTypeKind::Array { element, .. } => element.alignment(),
-            LMIRTypeKind::Struct { fields, .. } => fields
-                .iter()
-                .map(|(_, field)| field.alignment())
-                .max()
-                .unwrap_or(8),
-            LMIRTypeKind::Union { fields, .. } => fields
-                .iter()
-                .map(|(_, field)| field.alignment())
-                .max()
-                .unwrap_or(8),
-            LMIRTypeKind::Unit => 1,
-        }
+        self.alignment
     }
 
     #[inline]
     pub fn is_void(&self) -> bool {
-        matches!(self.kind, LMIRTypeKind::Unit)
+        matches!(self.kind, LMIRTypeKind::Void)
     }
 
     #[inline]
     pub fn is_structure(&self) -> bool {
         matches!(self.kind, LMIRTypeKind::Struct { .. })
+    }
+
+    pub fn is_memory_resident(&self) -> bool {
+        match self.kind {
+            LMIRTypeKind::Opaque { .. } => true,
+            LMIRTypeKind::Integer(_) => false,
+            LMIRTypeKind::Float(_) => false,
+            LMIRTypeKind::Pointer { .. } => false,
+            LMIRTypeKind::Vector { .. } => false,
+            LMIRTypeKind::Array { .. } => true,
+            LMIRTypeKind::Struct { .. } => true,
+            LMIRTypeKind::Void => false,
+        }
     }
 }
 

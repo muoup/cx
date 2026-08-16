@@ -1,27 +1,6 @@
 use crate::{CompilationUnit, GlobalCompilationContext, compilation_hash};
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::path::{Path, PathBuf};
-
-pub fn stdlib_directory(inner_path: &str) -> String {   
-    // {project_root}/compiler/cx-pipeline-data
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    
-    format!("{manifest_dir}/../../lib/{inner_path}")
-}
-
-pub fn file_path(path: &str, working_directory: &Path) -> PathBuf {
-    if path.starts_with("std") {
-        PathBuf::from(stdlib_directory(&format!("{}/{}.cx", "std", &path[3..])))
-    } else {
-        let path = Path::new(path);
-
-        if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            working_directory.join(path)
-        }
-    }
-}
+use std::path::{Component, Path, PathBuf};
 
 pub fn internal_directory(context: &GlobalCompilationContext, unit: &CompilationUnit) -> PathBuf {
     let mut profile_hash = DefaultHasher::new();
@@ -33,16 +12,21 @@ pub fn internal_directory(context: &GlobalCompilationContext, unit: &Compilation
     let mut complete_path = context.config.internal_directory.clone();
     complete_path.push(profile_hash);
 
-    let mut identifier_string = unit.identifier().to_string();
-    identifier_string.push_str(".cx");
-    complete_path.push(identifier_string);
+    let identifier = unit.identifier();
+    let identifier_path = Path::new(&identifier);
+    for component in identifier_path.components() {
+        match component {
+            Component::Normal(part) => complete_path.push(part),
+            Component::CurDir => {}
+            Component::ParentDir => complete_path.push("__parent__"),
+            Component::RootDir | Component::Prefix(_) => {}
+        }
+    }
+    complete_path.set_extension("cx");
 
-    std::fs::create_dir_all(&complete_path).unwrap_or_else(|_| {
-        panic!(
-            "Failed to create internal directory: {}",
-            complete_path.display()
-        )
-    });
+    let parent = complete_path.parent().unwrap_or(&complete_path);
+    std::fs::create_dir_all(parent)
+        .unwrap_or_else(|_| panic!("Failed to create internal directory: {}", parent.display()));
 
     complete_path
 }

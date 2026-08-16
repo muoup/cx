@@ -1,0 +1,27 @@
+#include <stdio.h>
+
+void leave_generated(int value) {
+    printf("leave %d\n", value);
+}
+
+comptime expr void with_generated_local(expr int initial, expr(int&) void proc) {
+    return emit .{
+        int staged_value = initial;
+        printf("enter %d\n", staged_value);
+        defer leave_generated(staged_value);
+        proc(staged_value);
+    };
+}
+
+int nested_generated_locals() {
+    with_generated_local(20) <| |left|
+    with_generated_local(22) <| |right| then
+
+    printf("sum %d\n", left + right);
+    return left + right;
+}
+
+int main() {
+    printf("returned %d\n", nested_generated_locals());
+    return 0;
+}

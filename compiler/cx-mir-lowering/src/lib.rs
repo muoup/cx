@@ -1,18 +1,10 @@
 use cx_lmir::LMIRUnit;
-use cx_mir::mir::program::MIRUnit;
-use cx_util::CXResult;
+use cx_log::CXResult;
+use cx_mir::MIRUnit;
 
-use crate::{builder::LMIRBuilder, mir_lowering::lower_mir};
-
-pub mod builder;
-pub mod mir_lowering;
-
-pub type LMIRResult<T> = Option<T>;
+mod lowering;
+mod typing;
 
 pub fn generate_lmir(mir: &MIRUnit) -> CXResult<LMIRUnit> {
-    let mut builder = LMIRBuilder::new(mir);
-    
-    lower_mir(&mut builder, mir)?;
-    
-    Ok(builder.finish())
+    lowering::lower_unit(mir, &mir.types)
 }

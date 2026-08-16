@@ -1,0 +1,7 @@
+import includes::template_include_internal;
+
+public:
+
+includes::template_include_internal::TemplateType<int> template_return() {
+    return 10;
+}

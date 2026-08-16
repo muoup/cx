@@ -1,0 +1,6 @@
+enter 20
+enter 22
+sum 42
+leave 22
+leave 20
+returned 42

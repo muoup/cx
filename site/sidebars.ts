@@ -1,0 +1,98 @@
+import type { SidebarsConfig } from "@docusaurus/plugin-content-docs";
+
+// This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
+
+/**
+ * Creating a sidebar enables you to:
+ - create an ordered group of docs
+ - render a sidebar for each doc of that group
+ - provide next/previous navigation
+
+ The sidebars can be generated from the filesystem, or explicitly defined here.
+
+ Create as many sidebars as you want.
+ */
+const sidebars: SidebarsConfig = {
+    guidesSidebar: [
+        {
+            type: "doc",
+            id: "getting-started/getting-started",
+            label: "Getting Started",
+        },
+        {
+            type: "doc",
+            id: "getting-started/build-system",
+            label: "Build System",
+        },
+        {
+            type: "doc",
+            id: "getting-started/c-interop",
+            label: "Libraries and C Interop",
+        },
+    ],
+    manualSidebar: [
+        {
+            type: "doc",
+            id: "manual/overview",
+            label: "Language Overview",
+        },
+        {
+            type: "doc",
+            id: "manual/base-syntax",
+            label: "1. Language Basics",
+        },
+        {
+            type: "doc",
+            id: "manual/modules",
+            label: "2. Modules and Visibility",
+        },
+        {
+            type: "doc",
+            id: "manual/associated-functions",
+            label: "3. Functions and Calls",
+        },
+        {
+            type: "doc",
+            id: "manual/tagged-unions",
+            label: "4. Tagged Unions",
+        },
+        {
+            type: "doc",
+            id: "manual/pattern-matching",
+            label: "5. Pattern Matching",
+        },
+        {
+            type: "doc",
+            id: "manual/move-semantics",
+            label: "6. Ownership and Moves",
+        },
+        {
+            type: "doc",
+            id: "manual/linear-resources",
+            label: "7. Linear Resources",
+        },
+        // Work-in-progress sections, do not include in manual until they are more complete
+        // {
+        //     type: "doc",
+        //     id: "manual/contracts",
+        //     label: "8. Contracts",
+        // },
+        // {
+        //     type: "doc",
+        //     id: "manual/safe-functions",
+        //     label: "9. Safe Functions and Verification",
+        // },
+        {
+            type: "doc",
+            id: "manual/templates",
+            label: "8. Templates",
+        },
+        {
+            type: "doc",
+            id: "manual/comptime",
+            label: "9. Comptime and Staged Expressions",
+        },
+    ],
+};
+
+export default sidebars;

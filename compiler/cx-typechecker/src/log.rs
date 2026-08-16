@@ -1,39 +1,56 @@
-use std::path::PathBuf;
-use cx_util::CXErrorTrait;
+use cx_log::{
+    CXResult,
+    error::{CXErr, CXErrMsg, context::CXInternalContext, message::CXStdErrMessage},
+};
+use cx_pipeline_data::db::ModuleData;
+use cx_tokens::TokenRange;
 
-pub struct TypeError {
-    pub compilation_unit: PathBuf,
-    pub token_start: usize,
-    pub token_end: usize,
-    pub message: String,
-    pub notes: Vec<String>,
-}
-
-impl CXErrorTrait for TypeError {
-    fn pretty_print(&self) {
-        cx_log::pretty_underline_error_with_notes(
-            &self.message,
-            &self.notes,
-            self.compilation_unit.as_path(),
-            self.token_start,
-            self.token_end,
-        );
+fn append_notes(mut message: String, notes: Vec<String>) -> String {
+    for note in notes {
+        message.push_str("\nnote: ");
+        message.push_str(&note);
     }
+    message
 }
 
-#[macro_export]
-macro_rules! log_typecheck_error {
-    ($env:expr, $expr:expr, $($arg:tt)*) => {
-        {
-            let message = format!("TYPE ERROR: {}", format!($($arg)*));
-            
-            Err(Box::new($crate::log::TypeError {
-                message,
-                token_start: $expr.start_index,
-                token_end: $expr.end_index,
-                compilation_unit: $env.compilation_unit.as_path().to_owned(),
-                notes: Vec::new(),
-            }) as Box<dyn cx_util::CXErrorTrait>)
-        }
-    };
+pub fn produce_compile_error(
+    prefix: &'static str,
+    module_data: &ModuleData,
+    range: &TokenRange,
+    message: impl Into<String>,
+    notes: Vec<String>,
+) -> CXErr {
+    CXErr::new(
+        CXStdErrMessage::error(prefix, append_notes(message.into(), notes)),
+        module_data.convert_token_range(range),
+    )
+}
+
+pub fn produce_(
+    module_data: &ModuleData,
+    range: &TokenRange,
+    message: impl Into<String>,
+    notes: Vec<String>,
+) -> CXErr {
+    produce_compile_error("TYPE ERROR", module_data, range, message, notes)
+}
+
+pub fn produce_comptime_error(
+    module_data: &ModuleData,
+    range: &TokenRange,
+    message: impl Into<String>,
+    notes: Vec<String>,
+) -> CXErr {
+    produce_compile_error("COMPTIME ERROR", module_data, range, message, notes)
+}
+
+pub fn type_error_msg(message: impl Into<String>) -> CXErrMsg {
+    CXStdErrMessage::error("TYPE ERROR", message)
+}
+
+pub fn internal_type_error<T>(message: impl Into<String>) -> CXResult<T> {
+    Err(CXErr::new(
+        type_error_msg(message),
+        CXInternalContext::error("typechecker diagnostic has no source range"),
+    ))
 }

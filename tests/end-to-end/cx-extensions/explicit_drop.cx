@@ -1,0 +1,26 @@
+import std::io as std;
+
+struct Resource : @nodrop {
+    int data;
+};
+
+Resource pass_through(Resource resource) {
+    std::println("pass_through");
+    return move resource;
+}
+
+void Resource::drop(Resource this) {
+    std::printf("drop %d\n", this.data);
+    @leak(this);
+}
+
+int main() {
+    Resource resource = (Resource) {
+        .data = 42
+    };
+    Resource forwarded = pass_through(move resource);
+
+    std::println("after pass_through");
+    move forwarded |> Resource::drop();
+    return 0;
+}

@@ -5,4 +5,5 @@ edition = "2021"
 autotests = false
 
 [dependencies]
+cx-target = { path = "../cx-target" }
 cx-util = { path = "../cx-util" }

@@ -1,0 +1,9 @@
+struct Node {
+    Node child;
+};
+
+int main() {
+    Node node;
+    return 0;
+}
+

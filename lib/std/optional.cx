@@ -1,0 +1,70 @@
+import std::io;
+
+extern "C":
+
+#include <stdlib.h>
+
+public:
+
+enum union opt<T> : @copy_traits(T) {
+    none :: void,
+    some :: T
+};
+
+comptime expr T opt::try<T>(expr opt<T> self) {
+    return emit match (self) {
+        opt::some<T>(value) => yield move value;
+        opt::none<T>() => return opt::none();
+    };
+}
+
+comptime expr T opt::try_or<T>(expr opt<T> self, expr void on_none) {
+    return emit match (self) {
+        opt::some<T>(value) => yield move value;
+        opt::none<T>() => {
+            on_none;
+            return opt::none();
+        }
+    };
+}
+
+comptime expr T opt::unwrap_or_else<T>(expr opt<T> self, expr void on_none) {
+    return emit match (self) {
+        opt::some<T>(value) => yield move value;
+        opt::none<T>() => on_none;
+    };
+}
+
+bool opt::is_some<T>(opt<T>& this) {
+    return this is opt::some<T>(_);
+}
+
+bool opt::is_none<T>(opt<T>& this) {
+    return this is opt::none<T>();
+}
+
+opt<U> opt::map<T, U>(opt<T> this, U (*func)(T)) {
+    if (this is opt::some<T>(value)) {
+        return opt::some<U>(func(value));
+    }
+
+    return opt::none<U>();
+}
+
+T opt::unwrap_or<T>(opt<T> this, T otherwise) {
+    if (this is opt::some<T>(value)) {
+        return value;
+    }
+
+    return move otherwise;
+}
+
+T opt::unwrap<T>(opt<T> this) {
+    match (move this) {
+        opt::some<T>(val) => return move val;
+        opt::none<T>() => {
+            std::io::println("Error: called `opt::unwrap()` on a `None` value");
+            exit(1);
+        }
+    }
+}

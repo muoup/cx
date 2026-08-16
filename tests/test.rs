@@ -1,7 +1,8 @@
 use cx_pipeline::standard_compilation;
-use cx_pipeline_data::{CompilerBackend, CompilerConfig, OptimizationLevel};
-use std::any::Any;
-use std::panic::AssertUnwindSafe;
+use cx_pipeline_data::{
+    ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel,
+};
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -13,6 +14,7 @@ enum FailureStage {
     Parse,
     Typecheck,
     Analysis,
+    Linking,
 }
 
 struct TestTempDir {
@@ -23,8 +25,13 @@ impl TestTempDir {
     fn new(test_name: &str) -> Self {
         let unique_id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir()
-            .join("cx-e2e-tests")
-            .join(format!("{}-{}-{}", sanitize_name(test_name), std::process::id(), unique_id));
+            .join("cx-end-to-end-tests")
+            .join(format!(
+                "{}-{}-{}",
+                sanitize_name(test_name),
+                std::process::id(),
+                unique_id
+            ));
 
         std::fs::create_dir_all(&path).expect("Failed to create temp test directory");
         Self { path }
@@ -49,7 +56,8 @@ fn sanitize_name(name: &str) -> String {
 
 fn base_file_name(input: &Path) -> &Path {
     Path::new(
-        input.file_name()
+        input
+            .file_name()
             .expect("Missing file name for test case")
             .to_str()
             .expect("Failed to convert test file name to string"),
@@ -61,49 +69,45 @@ fn compiler_config(
     output: PathBuf,
     working_directory: &Path,
     internal_directory: &Path,
-    analysis: bool,
+    compilation_mode: CompilationMode,
 ) -> CompilerConfig {
     CompilerConfig {
+        architecture: ArchitectureConfig::native(),
         backend,
         optimization_level: match backend {
             CompilerBackend::Cranelift => OptimizationLevel::O0,
             CompilerBackend::LLVM => OptimizationLevel::O1,
         },
         output,
-        analysis,
+        unsafe_mode: false,
+        compilation_mode,
+
+        verbose: false,
         working_directory: working_directory.to_path_buf(),
         internal_directory: internal_directory.to_path_buf(),
-    }
-}
-
-fn panic_message(payload: Box<dyn Any + Send>) -> String {
-    match payload.downcast::<String>() {
-        Ok(message) => *message,
-        Err(payload) => match payload.downcast::<&'static str>() {
-            Ok(message) => (*message).to_string(),
-            Err(_) => "<non-string panic payload>".to_string(),
-        },
+        module_mode: true,
+        project_config: None,
+        link_entries: vec![],
+        native_objects: vec![],
+        include_dirs: vec![],
     }
 }
 
 fn classify_failure_stage(message: &str) -> Option<FailureStage> {
-    if message.contains("Pre-parsing failed for unit:")
-        || message.contains("AST parsing failed for unit:")
-    {
+    if message.starts_with("PARSER ERROR") {
         Some(FailureStage::Parse)
-    } else if message.contains("Typechecking failed for unit:")
-        || message.contains("Completing base globals failed")
-        || message.contains("Completing base functions failed")
-    {
+    } else if message.starts_with("TYPE ERROR") {
         Some(FailureStage::Typecheck)
-    } else if message.contains("FMIR analysis failed for unit:") {
+    } else if message.starts_with("ANALYSIS ERROR") {
         Some(FailureStage::Analysis)
+    } else if message.contains("Linking failed") {
+        Some(FailureStage::Linking)
     } else {
         None
     }
 }
 
-fn expect_compile_success(input: &Path, analysis: bool) {
+fn expect_compile_success(input: &Path) {
     let test_label = input
         .strip_prefix(test_root())
         .unwrap_or(input)
@@ -121,13 +125,17 @@ fn expect_compile_success(input: &Path, analysis: bool) {
         temp_dir.path().join("case.out"),
         working_directory,
         &internal_directory,
-        analysis,
+        CompilationMode::Object,
     );
 
-    standard_compilation(config, base_file_name(input)).expect("Compilation failed");
+    standard_compilation(config, base_file_name(input)).unwrap_or_else(|err| {
+        err.print().unwrap();
+
+        panic!("Expected compilation success but got failure");
+    });
 }
 
-fn expect_failure(input: &Path, analysis: bool, expected_stage: FailureStage) {
+fn expect_failure(input: &Path, expected_stage: FailureStage) {
     let test_label = input
         .strip_prefix(test_root())
         .unwrap_or(input)
@@ -145,40 +153,43 @@ fn expect_failure(input: &Path, analysis: bool, expected_stage: FailureStage) {
         temp_dir.path().join("case.out"),
         working_directory,
         &internal_directory,
-        analysis,
+        CompilationMode::Object,
     );
 
-    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-        standard_compilation(config, base_file_name(input));
-    }));
+    let err = match standard_compilation(config, base_file_name(input)) {
+        Ok(_) => panic!("Expected compilation failure but got success"),
+        Err(err) => err,
+    };
 
-    let panic = result.expect_err("Expected compilation failure, but compilation succeeded");
-    let message = panic_message(panic);
-    let actual_stage = classify_failure_stage(&message);
+    let mut error = Vec::new();
+    err.output(&mut error).unwrap();
+    let message = String::from_utf8(error).expect("Error message was not valid UTF-8");
+    let actual_stage = classify_failure_stage(message.as_str());
 
-    assert_eq!(
-        actual_stage,
-        Some(expected_stage),
-        "Expected {:?} failure for {}, got {:?} with panic message:\n{}",
-        expected_stage,
-        input.display(),
-        actual_stage,
-        message
-    );
+    if actual_stage != Some(expected_stage) {
+        err.print().unwrap();
+        panic!(
+            "\nExpected failure stage: {:?}\nActual failure stage: {:?}\n\n",
+            expected_stage, actual_stage
+        );
+    }
 }
 
-fn run_binary(path: &Path) -> String {
+fn run_binary(path: &Path) -> Result<String, String> {
     let output = Command::new(path)
         .output()
-        .unwrap_or_else(|_| panic!("Failed to run output binary: {}", path.display()));
-    String::from_utf8(output.stdout).expect("Executable output was not valid UTF-8")
+        .map_err(|_| format!("Failed to run output binary: {}", path.display()))?;
+
+    String::from_utf8(output.stdout)
+        .map_err(|_| "Executable output was not valid UTF-8".to_string())
 }
 
 fn test_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
 }
 
-fn run_e2e_test(input: &Path) {
+#[allow(dead_code)]
+fn run_end_to_end_test(input: &Path) {
     let expected_output = input.with_extension("cx-output");
     assert!(
         expected_output.exists(),
@@ -197,64 +208,100 @@ fn run_e2e_test(input: &Path) {
         .display()
         .to_string();
 
-    let cranelift_temp = TestTempDir::new(&format!("{test_label}-cranelift"));
-    let cranelift_internal = cranelift_temp.path().join("internal");
-    std::fs::create_dir_all(&cranelift_internal).expect("Failed to create internal directory");
-    let cranelift_output = cranelift_temp.path().join("case.out");
-    let cranelift_config = compiler_config(
-        CompilerBackend::Cranelift,
-        cranelift_output.clone(),
-        working_directory,
-        &cranelift_internal,
-        false,
-    );
+    let mut failures = Vec::new();
 
-    standard_compilation(cranelift_config, base_file_name(input))
-        .expect("Cranelift compilation failed");
-    assert_eq!(
-        expected_output,
-        run_binary(&cranelift_output),
-        "Cranelift output mismatch for {}",
-        input.display()
-    );
+    if let Err(failure) = run_backend_end_to_end(
+        input,
+        &expected_output,
+        working_directory,
+        &test_label,
+        CompilerBackend::Cranelift,
+    ) {
+        failures.push(failure);
+    }
 
     if cfg!(feature = "backend-llvm") {
-        let llvm_temp = TestTempDir::new(&format!("{test_label}-llvm"));
-        let llvm_internal = llvm_temp.path().join("internal");
-        std::fs::create_dir_all(&llvm_internal).expect("Failed to create internal directory");
-        let llvm_output = llvm_temp.path().join("case.out");
-        let llvm_config = compiler_config(
-            CompilerBackend::LLVM,
-            llvm_output.clone(),
+        if let Err(failure) = run_backend_end_to_end(
+            input,
+            &expected_output,
             working_directory,
-            &llvm_internal,
-            false,
-        );
+            &test_label,
+            CompilerBackend::LLVM,
+        ) {
+            failures.push(failure);
+        }
+    }
 
-        standard_compilation(llvm_config, base_file_name(input)).expect("LLVM compilation failed");
-        assert_eq!(
-            expected_output,
-            run_binary(&llvm_output),
-            "LLVM output mismatch for {}",
-            input.display()
+    if !failures.is_empty() {
+        panic!(
+            "End-to-end backend failures for {}:\n\n{}",
+            input.display(),
+            failures.join("\n\n")
         );
     }
 }
 
-fn run_compile_only_test(input: &Path, analysis: bool) {
-    expect_compile_success(input, analysis);
+fn run_backend_end_to_end(
+    input: &Path,
+    expected_output: &str,
+    working_directory: &Path,
+    test_label: &str,
+    backend: CompilerBackend,
+) -> Result<(), String> {
+    let backend_name = match backend {
+        CompilerBackend::Cranelift => "Cranelift",
+        CompilerBackend::LLVM => "LLVM",
+    };
+
+    let temp = TestTempDir::new(&format!("{test_label}-{backend_name}"));
+    let internal = temp.path().join("internal");
+    std::fs::create_dir_all(&internal).expect("Failed to create internal directory");
+    let output = temp.path().join("case.out");
+    let config = compiler_config(
+        backend,
+        output.clone(),
+        working_directory,
+        &internal,
+        CompilationMode::Executable,
+    );
+
+    if let Err(err) = standard_compilation(config, base_file_name(input)) {
+        return Err(format!(
+            "{backend_name} compilation failed:\n{}",
+            err.message()
+        ));
+    }
+
+    let actual_output =
+        run_binary(&output).map_err(|err| format!("{backend_name} execution failed: {err}"))?;
+
+    if expected_output != actual_output {
+        return Err(format!(
+            "{backend_name} output mismatch:\nexpected:\n{expected_output:?}\nactual:\n{actual_output:?}",
+        ));
+    }
+
+    Ok(())
 }
 
+#[allow(dead_code)]
+fn run_compile_only_test(input: &Path) {
+    expect_compile_success(input);
+}
+
+#[allow(dead_code)]
 fn run_parse_error_test(input: &Path) {
-    expect_failure(input, false, FailureStage::Parse);
+    expect_failure(input, FailureStage::Parse);
 }
 
+#[allow(dead_code)]
 fn run_type_error_test(input: &Path) {
-    expect_failure(input, false, FailureStage::Typecheck);
+    expect_failure(input, FailureStage::Typecheck);
 }
 
+#[allow(dead_code)]
 fn run_verifier_error_test(input: &Path) {
-    expect_failure(input, true, FailureStage::Analysis);
+    expect_failure(input, FailureStage::Analysis);
 }
 
 include!(concat!(env!("OUT_DIR"), "/generated_tests.rs"));

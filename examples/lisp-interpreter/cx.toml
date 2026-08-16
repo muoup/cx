@@ -1,0 +1,11 @@
+[project]
+name = "lisp-interpreter"
+
+[build]
+backend = "llvm"
+optimization = "O0"
+
+[workspace.targets.default]
+binaries = [
+  { name = "lisp-interpreter", entry = "main.cx" },
+]

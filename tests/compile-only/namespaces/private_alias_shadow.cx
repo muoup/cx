@@ -1,0 +1,20 @@
+public:
+
+struct private_alias_shadow {};
+
+int call(private_alias_shadow value) {
+    return 3;
+}
+
+private:
+
+int private_alias_shadow::call(private_alias_shadow& this) {
+    return 4;
+}
+
+public:
+
+int main() {
+    private_alias_shadow value = {};
+    return value |> private_alias_shadow::call();
+}

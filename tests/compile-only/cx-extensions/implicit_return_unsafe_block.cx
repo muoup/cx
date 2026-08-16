@@ -13,7 +13,7 @@ box box::new(int init) safe {
     };
 }
 
-void box::drop(*this) {
+void box::drop(box this) {
     @unsafe {
         free(this.ptr);
         @leak(this);
@@ -22,7 +22,7 @@ void box::drop(*this) {
 
 int main() {
     box value = box::new(3);
-    value.drop();
+    move value |> box::drop();
     return 0;
 }
 

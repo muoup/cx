@@ -1,82 +1,92 @@
-use cx_ast::ast::VisibilityMode;
-use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
-use cx_mir::mir::program::MIRBaseMappings;
-use cx_util::CXResult;
-
-pub(crate) mod log;
+use cx_hir::ast::modifiers::HIR_CONST;
+use cx_hir::decomposition::{HIRGenerationAST, HIRGenerationStmt};
+use cx_log::CXResult;
+use cx_thir::EnvironmentNamespace;
+use cx_thir::thir::global::{MIRGlobalVarKind, MIRGlobalVariable};
+use cx_util::linkage::LinkageMode;
 
 pub mod environment;
-pub mod type_checking;
-pub mod type_completion;
+pub mod log;
+pub mod symbol;
 
-pub use type_checking::{
-    complete_base_functions, complete_base_globals, realize_fn_implementation, typecheck,
-};
+pub(crate) mod requests;
 
-pub fn gather_interface(context: &GlobalCompilationContext, unit: &CompilationUnit) -> CXResult<()> {
-    let ast = context
-        .module_db
-        .naive_ast
-        .get(unit);
-    let mut base_type_map = ast.type_data.clone();
-    let mut base_fn_map = ast.function_data.clone();
-    let mut base_globals = ast.global_variables.clone();
+pub(crate) mod comptime;
+mod type_checking;
 
-    for import in ast.imports.iter() {
-        let unit = CompilationUnit::from_rooted(import.as_str(), &context.config.working_directory);
-        let ast = context.module_db.naive_ast.get(&unit);
+use crate::comptime::evaluate_comptime_expression;
+use crate::requests::fulfill_requests;
+use crate::symbol::completion::{complete_prototype, complete_type, completed_symbol_name};
+use crate::type_checking::typechecker::typecheck_expr;
+use crate::{environment::TypeEnvironment, type_checking::functions::typecheck_function};
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
-        for (type_name, cx_type) in ast.type_data.standard_iter() {
-            if cx_type.visibility != VisibilityMode::Public {
-                continue;
-            };
+pub fn typecheck(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    ast: &HIRGenerationAST,
+) -> CXResult<()> {
+    for stmt in ast.generation_stmts.iter() {
+        match stmt {
+            HIRGenerationStmt::Function { prototype, body } => {
+                let prototype = complete_prototype(env, namespace, prototype)?;
+                typecheck_function(env, namespace, prototype.clone(), body)?;
+            }
 
-            base_type_map.insert_standard(type_name.clone(), cx_type.transfer(import));
-        }
+            HIRGenerationStmt::StringLiteral { name, value } => {
+                let global = MIRGlobalVariable {
+                    is_mutable: false,
+                    linkage: LinkageMode::Static,
+                    kind: MIRGlobalVarKind::StringLiteral {
+                        name: name.clone(),
+                        value: value.clone(),
+                    },
+                };
 
-        for (fn_name, cx_fn) in ast.function_data.standard_iter() {
-            if cx_fn.visibility != VisibilityMode::Public {
-                continue;
-            };
+                env.items.push_generated_global(global);
+            }
 
-            base_fn_map.insert_standard(fn_name.clone(), cx_fn.transfer(import));
-        }
+            HIRGenerationStmt::AddressableGlobal {
+                name,
+                _type,
+                linkage,
+                symbol_naming,
+                initializer,
+            } => {
+                let _type = complete_type(env, namespace, _type)?;
+                let symbol_name = completed_symbol_name(
+                    env,
+                    QualifiedName::new(namespace.clone(), name.clone()),
+                    *symbol_naming,
+                );
+                let comptime_init = initializer
+                    .as_ref()
+                    .map(|init| {
+                        typecheck_expr(env, namespace, init, Some(&_type))
+                            .and_then(|tc| tc.standard_ready_coerce(env, init.token_range()))
+                            .and_then(|tc| evaluate_comptime_expression(env, tc))
+                            .and_then(|ce| ce.as_integer().ok_or_else(|| {
+                                env.error(init.token_range(), "Global variable initializer must be a constant integer expression".to_string())
+                            }))
+                    })
+                    .transpose()?;
 
-        for (type_template_name, type_template) in ast.type_data.template_iter() {
-            if type_template.visibility != VisibilityMode::Public {
-                continue;
-            };
+                let global = MIRGlobalVariable {
+                    is_mutable: _type.get_specifier(HIR_CONST),
+                    linkage: *linkage,
+                    kind: MIRGlobalVarKind::Variable {
+                        name: CXIdent::new(symbol_name),
+                        _type,
+                        initializer: comptime_init,
+                    },
+                };
 
-            base_type_map
-                .insert_template(type_template_name.clone(), type_template.transfer(import));
-        }
-
-        for (fn_template_name, fn_template) in ast.function_data.template_iter() {
-            if fn_template.visibility != VisibilityMode::Public {
-                continue;
-            };
-
-            base_fn_map.insert_template(fn_template_name.clone(), fn_template.transfer(import));
-        }
-        
-        for (global_name, global_var) in ast.global_variables.iter() {
-            if global_var.visibility != VisibilityMode::Public {
-                continue;
-            };
-            
-            base_globals.insert(global_name.clone(), global_var.transfer(import));
+                env.items.push_generated_global(global);
+            }
         }
     }
 
-    context
-        .module_db
-        .base_mappings
-        .insert(unit.clone(), MIRBaseMappings {
-            unit: unit.as_str().to_owned(),
-            type_data: base_type_map,
-            fn_data: base_fn_map,
-            global_variables: base_globals,
-        });
+    fulfill_requests(env)?;
 
     Ok(())
 }

@@ -1,0 +1,18 @@
+struct Resource : @nodrop {
+    int data;
+};
+
+int main() {
+    Resource* ptr = malloc(sizeof(Resource));
+    const Resource& source = *ptr;
+    Resource adopted = @unsafe(@adopt(source));
+    move adopted |> Resource::drop();
+    free(ptr);
+    return 0;
+}
+
+void Resource::drop(Resource this) {
+    @leak(this);
+}
+
+#include <stdlib.h>

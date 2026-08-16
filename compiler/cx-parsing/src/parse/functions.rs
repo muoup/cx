@@ -1,141 +1,247 @@
-use cx_tokens::{identifier, keyword, operator, punctuator};
-use cx_ast::{
-    assert_token_matches,
-    data::{
-        CXFunctionContract, CXFunctionKind, CXFunctionTypeIdent, CXParameter, CXFunctionPrototype,
-        CXReceiverData, CXReceiverMode, CXTemplatePrototype, CXType, CXTypeKind,
-        PredeclarationType,
-    },
+use crate::{
+    assert_token_matches, log::parse_point_error, next_kind, parse::try_parse_qualified_name,
     peek_next_kind, try_next,
 };
-use cx_util::{identifier::CXIdent, CXResult};
+use cx_hir::ast::{
+    function::{
+        HIRComptimeFnPrototype, HIRComptimeParameter, HIRComptimeValueType, HIRFunctionContract,
+        HIRFunctionKind, HIRFunctionPrototype, HIRParameter,
+    },
+    modifiers::{HIRSymbolNameScheme, LinkageMode},
+    template::HIRTemplatePrototype,
+    types::HIRType,
+};
+use cx_log::CXResult;
+use cx_tokens::{
+    identifier, keyword, operator, punctuator,
+    token::{PunctuatorType, TokenKind},
+    TokenRange,
+};
+use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use crate::parse::{
-    expressions::parse_expr,
-    parser::ParserData,
-    templates::{convert_template_proto_to_args, try_parse_template},
-    types::{parse_initializer, parse_specifier},
+    expressions::parse_expr, parser::ParserData, templates::try_parse_template,
+    types::parse_initializer,
 };
 
 pub struct FunctionDeclaration {
-    pub prototype: CXFunctionPrototype,
-    pub template_prototype: Option<CXTemplatePrototype>,
+    pub prototype: HIRFunctionPrototype,
+    pub template_prototype: Option<HIRTemplatePrototype>,
+}
+
+pub struct ComptimeFunctionDeclaration {
+    pub prototype: HIRComptimeFnPrototype,
+    pub template_prototype: Option<HIRTemplatePrototype>,
 }
 
 pub fn try_function_parse(
     data: &mut ParserData,
-    return_type: CXType,
+    return_type: HIRType,
     name: CXIdent,
+    linkage: LinkageMode,
+    symbol_naming: HIRSymbolNameScheme,
 ) -> CXResult<Option<FunctionDeclaration>> {
+    let range_start = data.tokens.index;
+
+    let name = if try_next!(data.tokens, operator!(ScopeRes)) {
+        data.tokens.index = range_start - 1;
+
+        try_parse_qualified_name(&mut data.tokens)?.unwrap()
+    } else {
+        QualifiedName::root(name)
+    };
+
     let template_prototype = try_parse_template(&mut data.tokens)?;
 
-    match peek_next_kind!(data.tokens)? {
-        // e.g:
-        // int main()
-        //         ^
-        // void template_func<int>()
-        //                        ^
-        punctuator!(OpenParen) => {
-            let args = parse_params(data)?;
-            let prototype = CXFunctionPrototype {
-                return_type,
-                kind: CXFunctionKind::Standard(name.clone()),
-                params: args.params,
-                var_args: args.var_args,
-                contract: args.contract,
-            };
-
-            if args.receiver.is_some() {
-                return log_parse_error!(
-                    data,
-                    "Only member functions may declare a 'this' receiver"
-                );
-            }
-
-            data.add_function(prototype.clone(), template_prototype.clone());
-            Ok(Some(FunctionDeclaration {
-                prototype,
-                template_prototype,
-            }))
+    let kind = if name.namespace.is_root() {
+        HIRFunctionKind::Standard(name.name)
+    } else {
+        if name.namespace.segments().len() != 1 {
+            return parse_point_error(
+                &data.tokens,
+                "Associated function declarations must have exactly two segments".to_string(),
+            );
         }
 
-        // e.g:
-        // void renderer::draw()
-        //              ^
-        operator!(ScopeRes) => {
-            data.tokens.next();
-
-            let _type = match template_prototype {
-                // e.g:
-                // void vector<int>::push()
-                //                 ^
-                // We have parsed the `<int>` part as a template prototype rather than
-                // a template argument list, so we need to convert it here.
-                Some(prototype) => CXTypeKind::TemplatedIdentifier {
-                    name,
-                    input: convert_template_proto_to_args(prototype),
-                },
-
-                None => CXTypeKind::Identifier {
-                    name,
-                    predeclaration: PredeclarationType::None,
-                },
-            }
-            .to_type();
-
-            assert_token_matches!(data.tokens, identifier!(name));
-            let method_name = name.clone();
-            let template_prototype = try_parse_template(&mut data.tokens)?;
-
-            let Ok(params) = parse_params(data) else {
-                return log_parse_error!(
-                    data,
-                    "Failed to parse parameters in member function declaration!"
-                );
-            };
-
-            let kind = if let Some(receiver) = params.receiver {
-                CXFunctionKind::MemberFunction {
-                    member_type: CXFunctionTypeIdent::from_type(&_type).unwrap(),
-                    name: CXIdent::new(method_name),
-                    receiver,
-                }
-            } else {
-                CXFunctionKind::StaticMemberFunction {
-                    member_type: CXFunctionTypeIdent::from_type(&_type).unwrap(),
-                    name: CXIdent::new(method_name),
-                }
-            };
-
-            let prototype = CXFunctionPrototype {
-                return_type,
-                kind,
-                params: params.params,
-                var_args: params.var_args,
-                contract: params.contract,
-            };
-
-            data.add_function(prototype.clone(), template_prototype.clone());
-
-            Ok(Some(FunctionDeclaration {
-                prototype,
-                template_prototype,
-            }))
+        HIRFunctionKind::AssociatedFunction {
+            namespace: name.namespace.segments()[0].clone(),
+            name: name.name,
         }
+    };
 
-        _ => Ok(None),
-    }
+    if !matches!(peek_next_kind!(data.tokens)?, punctuator!(OpenParen)) {
+        data.tokens.index = range_start;
+        return Ok(None);
+    };
+
+    let args = parse_params(data)?;
+    let prototype = HIRFunctionPrototype {
+        return_type,
+        kind,
+        params: args.params,
+        var_args: args.var_args,
+        contract: args.contract,
+        linkage,
+        symbol_naming,
+        range: TokenRange::new(
+            range_start,
+            data.tokens.index,
+            data.file_origin_for_range(range_start, data.tokens.index),
+        ),
+    };
+
+    Ok(Some(FunctionDeclaration {
+        prototype,
+        template_prototype,
+    }))
 }
 
-pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunctionContract> {
+pub fn parse_comptime_function(data: &mut ParserData) -> CXResult<ComptimeFunctionDeclaration> {
+    assert_token_matches!(data.tokens, keyword!(Comptime), "'comptime'");
+    let return_type = parse_comptime_initializer(data)?;
+    let Some(name) = return_type.name else {
+        return parse_point_error(&data.tokens, "Expected comptime function name".to_string());
+    };
+
+    let Some(declaration) = try_comptime_function_parse(data, return_type.value_type, name)? else {
+        return parse_point_error(
+            &data.tokens,
+            "Expected comptime function parameter list".to_string(),
+        );
+    };
+
+    Ok(declaration)
+}
+
+fn try_comptime_function_parse(
+    data: &mut ParserData,
+    return_type: HIRComptimeValueType,
+    name: CXIdent,
+) -> CXResult<Option<ComptimeFunctionDeclaration>> {
+    let range_start = data.tokens.index;
+
+    let name = if try_next!(data.tokens, operator!(ScopeRes)) {
+        data.tokens.index = range_start - 1;
+
+        try_parse_qualified_name(&mut data.tokens)?.unwrap()
+    } else {
+        QualifiedName::root(name)
+    };
+
+    let template_prototype = try_parse_template(&mut data.tokens)?;
+
+    let kind = if name.namespace.is_root() {
+        HIRFunctionKind::Standard(name.name)
+    } else {
+        if name.namespace.segments().len() != 1 {
+            return parse_point_error(
+                &data.tokens,
+                "Associated comptime function declarations must have exactly two segments"
+                    .to_string(),
+            );
+        }
+
+        HIRFunctionKind::AssociatedFunction {
+            namespace: name.namespace.segments()[0].clone(),
+            name: name.name,
+        }
+    };
+
+    if !matches!(peek_next_kind!(data.tokens)?, punctuator!(OpenParen)) {
+        data.tokens.index = range_start;
+        return Ok(None);
+    };
+
+    let args = parse_comptime_params(data)?;
+    let prototype = HIRComptimeFnPrototype {
+        return_type,
+        kind,
+        params: args,
+        range: TokenRange::new(
+            range_start,
+            data.tokens.index,
+            data.file_origin_for_range(range_start, data.tokens.index),
+        ),
+    };
+
+    Ok(Some(ComptimeFunctionDeclaration {
+        prototype,
+        template_prototype,
+    }))
+}
+
+struct ComptimeValueInitializer {
+    name: Option<CXIdent>,
+    value_type: HIRComptimeValueType,
+}
+
+fn parse_comptime_initializer(data: &mut ParserData) -> CXResult<ComptimeValueInitializer> {
+    let expr = try_next!(data.tokens, keyword!(Expr));
+    let mut params = Vec::new();
+
+    if expr && try_next!(data.tokens, punctuator!(OpenParen)) {
+        while !try_next!(data.tokens, punctuator!(CloseParen)) {
+            let (name, _type, _) = parse_initializer(data)?;
+            if name.is_some() {
+                return parse_point_error(
+                    &data.tokens,
+                    "Staged expression parameter types cannot have names".to_string(),
+                );
+            }
+            params.push(_type);
+
+            if !try_next!(data.tokens, operator!(Comma)) {
+                assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+                break;
+            }
+        }
+    }
+
+    let (name, _type, _) = parse_initializer(data)?;
+
+    Ok(ComptimeValueInitializer {
+        name,
+        value_type: HIRComptimeValueType {
+            expr,
+            params,
+            _type,
+        },
+    })
+}
+
+fn parse_comptime_params(data: &mut ParserData) -> CXResult<Vec<HIRComptimeParameter>> {
+    assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+
+    let mut params = Vec::new();
+
+    while !try_next!(data.tokens, punctuator!(CloseParen)) {
+        let parsed = parse_comptime_initializer(data)?;
+
+        params.push(HIRComptimeParameter {
+            name: parsed.name,
+            value_type: parsed.value_type,
+        });
+
+        if !try_next!(data.tokens, operator!(Comma)) {
+            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+            break;
+        }
+    }
+
+    Ok(params)
+}
+
+pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<HIRFunctionContract> {
+    skip_c_declaration_suffixes(data)?;
+
     let safe = try_next!(data.tokens, keyword!(Safe));
 
-    let mut contract = CXFunctionContract {
+    let mut contract = HIRFunctionContract {
         safe,
         precondition: None,
         postcondition: None,
     };
-    
+
     if !try_next!(data.tokens, keyword!(Where)) {
         return Ok(contract);
     }
@@ -144,25 +250,25 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
         match next {
             keyword!(Precondition) => {
                 if contract.precondition.is_some() {
-                    return log_parse_error!(
-                        data,
-                        "Precondition already defined in function contract."
+                    return parse_point_error(
+                        &data.tokens,
+                        "Precondition already defined in function contract.".to_string(),
                     );
                 }
 
                 data.tokens.next();
-                assert_token_matches!(data.tokens, punctuator!(Colon));
-                assert_token_matches!(data.tokens, punctuator!(OpenParen));
+                assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
+                assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
                 let expr = parse_expr(data)?;
-                assert_token_matches!(data.tokens, punctuator!(CloseParen));
+                assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
 
                 contract.precondition = Some(expr);
             }
             keyword!(Postcondition) => {
                 if contract.postcondition.is_some() {
-                    return log_parse_error!(
-                        data,
-                        "Postcondition already defined in function contract."
+                    return parse_point_error(
+                        &data.tokens,
+                        "Postcondition already defined in function contract.".to_string(),
                     );
                 }
 
@@ -172,16 +278,16 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
                     assert_token_matches!(data.tokens, identifier!(ret));
                     let name = CXIdent::new(ret.as_str());
 
-                    assert_token_matches!(data.tokens, punctuator!(CloseParen));
+                    assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
                     Some(name)
                 } else {
                     None
                 };
 
-                assert_token_matches!(data.tokens, punctuator!(Colon));
-                assert_token_matches!(data.tokens, punctuator!(OpenParen));
+                assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
+                assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
                 let expr = parse_expr(data)?;
-                assert_token_matches!(data.tokens, punctuator!(CloseParen));
+                assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
 
                 contract.postcondition = Some((return_val_name, expr));
             }
@@ -193,81 +299,100 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
         }
     }
 
+    skip_c_declaration_suffixes(data)?;
     Ok(contract)
 }
 
+// FIXME: Remove this hack and support declaration suffixes
+fn skip_c_declaration_suffixes(data: &mut ParserData) -> CXResult<()> {
+    loop {
+        let Some(token) = data.tokens.peek() else {
+            return Ok(());
+        };
+
+        let TokenKind::Identifier(name) = &token.kind else {
+            return Ok(());
+        };
+
+        if matches!(name.as_str(), "__asm__" | "__asm" | "asm") {
+            data.tokens.next();
+            skip_optional_parenthesized_tokens(data)?;
+            continue;
+        }
+
+        if name.starts_with("__attribute")
+            || matches!(
+                name.as_str(),
+                "__declspec" | "__nonnull" | "__nonnull__" | "__wur"
+            )
+        {
+            data.tokens.next();
+            skip_optional_parenthesized_tokens(data)?;
+            continue;
+        }
+
+        return Ok(());
+    }
+}
+
+fn skip_optional_parenthesized_tokens(data: &mut ParserData) -> CXResult<()> {
+    if !matches!(
+        data.tokens.peek().map(|token| &token.kind),
+        Some(TokenKind::Punctuator(PunctuatorType::OpenParen))
+    ) {
+        return Ok(());
+    }
+
+    let mut depth = 0usize;
+    while data.tokens.has_next() {
+        match next_kind!(data.tokens)? {
+            punctuator!(OpenParen) => depth += 1,
+            punctuator!(CloseParen) => {
+                depth -= 1;
+                if depth == 0 {
+                    return Ok(());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    parse_point_error(
+        &data.tokens,
+        "Unclosed parenthesized declaration suffix".to_string(),
+    )
+}
+
 pub(crate) struct ParseParamsResult {
-    pub(crate) params: Vec<CXParameter>,
+    pub(crate) params: Vec<HIRParameter>,
     pub(crate) var_args: bool,
-    pub(crate) receiver: Option<CXReceiverData>,
-    pub(crate) contract: CXFunctionContract,
+    pub(crate) contract: HIRFunctionContract,
 }
 
 pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult> {
-    assert_token_matches!(data.tokens, punctuator!(OpenParen));
+    assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
 
     let mut params = Vec::new();
-    let mut receiver = None;
-
-    let receiver_start = data.tokens.index;
-    let parsed_receiver_specifiers = parse_specifier(&mut data.tokens);
-
-    if matches!(peek_next_kind!(data.tokens), Ok(identifier!(this)) if this.as_str() == "this") {
-        data.tokens.next();
-        receiver = Some(CXReceiverData {
-            mode: CXReceiverMode::ByRef,
-            specifiers: parsed_receiver_specifiers,
-        });
-    } else if try_next!(data.tokens, operator!(Asterisk)) {
-        assert_token_matches!(data.tokens, identifier!(this));
-        if this.as_str() != "this" {
-            return log_parse_error!(data, "Expected '*this' receiver parameter");
-        }
-        receiver = Some(CXReceiverData {
-            mode: CXReceiverMode::ByMove,
-            specifiers: parsed_receiver_specifiers,
-        });
-    } else {
-        data.tokens.index = receiver_start;
-    }
-
-    if receiver.is_some()
-
-        && !try_next!(data.tokens, operator!(Comma)) {
-            assert_token_matches!(data.tokens, punctuator!(CloseParen));
-            let contract = parse_function_contract(data)?;
-
-            return Ok(ParseParamsResult {
-                params,
-                var_args: false,
-                receiver,
-                contract,
-            });
-        }
 
     while !try_next!(data.tokens, punctuator!(CloseParen)) {
         if try_next!(data.tokens, punctuator!(Ellipsis)) {
-            assert_token_matches!(data.tokens, punctuator!(CloseParen));
+            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
             let contract = parse_function_contract(data)?;
 
             return Ok(ParseParamsResult {
                 params,
                 var_args: true,
-                receiver,
                 contract,
             });
         }
 
-        if let Ok((name, _type)) = parse_initializer(data) {
-            let name = name;
+        let (name, _type, _) = parse_initializer(data)?;
+        let name = name;
 
-            params.push(CXParameter { name, _type });
-        } else {
-            return log_parse_error!(data, "Failed to parse parameter in function call");
-        }
+        params.push(HIRParameter { name, _type });
 
         if !try_next!(data.tokens, operator!(Comma)) {
-            assert_token_matches!(data.tokens, punctuator!(CloseParen));
+            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
             break;
         }
     }
@@ -277,7 +402,6 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
     Ok(ParseParamsResult {
         params,
         var_args: false,
-        receiver,
         contract,
     })
 }

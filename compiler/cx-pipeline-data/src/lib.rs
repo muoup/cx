@@ -1,10 +1,14 @@
+pub mod config;
 pub mod db;
 pub mod directories;
 pub mod internal_storage;
 pub mod jobs;
 
+use crate::config::{CXProjectConfig, LinkEntry};
 use crate::db::ModuleData;
-use crate::directories::file_path;
+pub use cx_target::ArchitectureConfig;
+use cx_util::module_path::ModulePath;
+use cx_util::namespace::{EnvironmentNamespace, NamespacePath};
 use speedy::{Context, Readable, Writable};
 use std::collections::HashSet;
 use std::fmt::Display;
@@ -34,25 +38,38 @@ pub fn compilation_hash() -> u64 {
 #[derive(Debug)]
 pub struct GlobalCompilationContext {
     pub config: CompilerConfig,
+    pub module_mode: bool,
     pub module_db: ModuleData,
 
     pub linking_files: Mutex<HashSet<PathBuf>>,
 }
 
-impl Drop for GlobalCompilationContext {
-    fn drop(&mut self) {
-        self.module_db.store_data(self);
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CompilationMode {
+    Executable,
+    Object,
+    Library,
 }
 
 #[derive(Debug, Clone)]
 pub struct CompilerConfig {
+    pub architecture: ArchitectureConfig,
     pub backend: CompilerBackend,
+    pub compilation_mode: CompilationMode,
     pub optimization_level: OptimizationLevel,
+    pub project_config: Option<CXProjectConfig>,
+
     pub output: PathBuf,
-    pub analysis: bool,
     pub working_directory: PathBuf,
     pub internal_directory: PathBuf,
+
+    pub link_entries: Vec<LinkEntry>,
+    pub native_objects: Vec<PathBuf>,
+    pub include_dirs: Vec<PathBuf>,
+
+    pub unsafe_mode: bool,
+    pub verbose: bool,
+    pub module_mode: bool,
 }
 
 #[derive(Default, Debug, Copy, Clone, Hash)]
@@ -72,19 +89,19 @@ pub enum CompilerBackend {
     LLVM,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompilationUnit {
-    identifier: Rc<String>,
+    namespace: EnvironmentNamespace,
     path: Rc<Path>,
 }
 
 impl<'a, C: Context> Readable<'a, C> for CompilationUnit {
     fn read_from<R: speedy::Reader<'a, C>>(reader: &mut R) -> Result<Self, C::Error> {
-        let identifier: String = String::read_from(reader)?;
+        let namespace = EnvironmentNamespace::read_from(reader)?;
         let path: PathBuf = PathBuf::from(String::read_from(reader)?);
 
         Ok(Self {
-            identifier: identifier.into(),
+            namespace,
             path: path.into_boxed_path().into(),
         })
     }
@@ -95,7 +112,7 @@ impl<C: Context> Writable<C> for CompilationUnit {
     where
         W: ?Sized + speedy::Writer<C>,
     {
-        self.identifier.as_str().write_to(writer)?;
+        self.namespace.write_to(writer)?;
         self.path.to_str().unwrap().write_to(writer)?;
         Ok(())
     }
@@ -103,6 +120,7 @@ impl<C: Context> Writable<C> for CompilationUnit {
 
 impl Hash for CompilationUnit {
     fn hash<H: Hasher>(&self, state: &mut H) {
+        self.namespace.hash(state);
         self.path.hash(state);
     }
 }
@@ -119,26 +137,48 @@ impl CompilationUnit {
     }
 
     pub fn from_rooted(path: &str, working_directory: &Path) -> Self {
-        let path = if path.ends_with(".cx") {
-            &path[..path.len() - 3]
+        let module_path = ModulePath::from_source_path(path);
+        let extension = if path.ends_with(".cxh") {
+            "cxh"
+        } else if path.ends_with(".c") {
+            "c"
         } else {
-            path
+            "cx"
         };
+        Self::from_module_path_with_extension(module_path, working_directory, extension)
+    }
 
-        let path_buf = file_path(path, working_directory).with_extension("cx");
+    pub fn from_module_path(module_path: ModulePath, working_directory: &Path) -> Self {
+        Self::from_module_path_with_extension(module_path, working_directory, "cx")
+    }
+
+    pub fn from_module_path_with_extension(
+        module_path: ModulePath,
+        working_directory: &Path,
+        extension: &str,
+    ) -> Self {
+        let path_buf = module_path.with_extension(working_directory, extension);
 
         Self {
-            identifier: Rc::new(path.to_string()),
+            namespace: EnvironmentNamespace::from(module_path),
             path: path_buf.into_boxed_path().into(),
         }
     }
 
-    pub fn identifier(&self) -> &str {
-        self.identifier.as_str()
+    pub fn namespace(&self) -> &EnvironmentNamespace {
+        &self.namespace
+    }
+
+    pub fn identifier(&self) -> String {
+        self.namespace.identifier()
     }
 
     pub fn to_string(&self) -> String {
         self.path.to_str().unwrap().to_string()
+    }
+
+    pub fn to_namespace_path(&self) -> NamespacePath {
+        self.namespace.as_namespace_path().clone()
     }
 
     pub fn as_str(&self) -> &str {
@@ -154,6 +194,19 @@ impl CompilationUnit {
     }
 
     pub fn is_std_lib(&self) -> bool {
-        self.identifier.starts_with("std/")
+        let identifier = self.identifier();
+        identifier == "std" || identifier.starts_with("std/")
+    }
+}
+
+impl From<&CompilationUnit> for EnvironmentNamespace {
+    fn from(value: &CompilationUnit) -> Self {
+        value.namespace.clone()
+    }
+}
+
+impl From<CompilationUnit> for EnvironmentNamespace {
+    fn from(value: CompilationUnit) -> Self {
+        value.namespace
     }
 }

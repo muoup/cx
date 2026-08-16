@@ -1,5 +1,0 @@
-int bad() safe {
-    int value = 1;
-    int* ptr = &value;
-    return value;
-}

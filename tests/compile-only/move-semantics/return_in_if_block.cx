@@ -2,7 +2,9 @@ struct Data : @nocopy {
     int value;
 };
 
-void consume(Data data) {}
+void consume(Data data) {
+    @leak(data);
+}
 
 int good(int cond) {
     Data data = (Data) {
@@ -15,6 +17,7 @@ int good(int cond) {
         int impossible = data.value;
     }
 
+    consume(move data);
     return 1;
 }
 

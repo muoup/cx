@@ -1,0 +1,7 @@
+import _alias_left as dup;
+import _alias_right as dup;
+
+int main() {
+    dup::thing value = (dup::thing) { .value = 1 };
+    return 0;
+}

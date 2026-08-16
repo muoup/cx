@@ -1,0 +1,267 @@
+import std::box as std;
+import std::vector as std;
+import std::string as std;
+import std::io as std;
+
+import ast as _;
+
+extern "C":
+
+#include <stdlib.h>
+#include <ctype.h>
+#undef isdigit
+#undef isspace
+
+public:
+
+lisp_node parse(const _str& source) {
+    parser p = {
+        .source = source,
+        .pos = 0
+    };
+
+    return p |> parser::parse_program();
+}
+
+private:
+
+struct parser {
+    const _str& source;
+    usize pos;
+};
+
+bool is_delimiter(char c) {
+    if (isspace(c) != 0) return 1 == 1;
+    if (c == '(') return 1 == 1;
+    if (c == ')') return 1 == 1;
+    if (c == '"') return 1 == 1;
+    if (c == '\0') return 1 == 1;
+
+    return 1 == 0;
+}
+
+bool is_number_token(_str& token) {
+    if (isdigit(token[0]) != 0) {
+        return 1 == 1;
+    }
+
+    return token[0] == '-' && isdigit(token[1]) != 0;
+}
+
+std::string string_from_owned_token(_str& token) {
+    std::string result = std::string::new();
+    result |> std::string::append(token);
+    result.data[result.length] = '\0';
+    free(token);
+    return move result;
+}
+
+char parser::peek(parser& this) {
+    return this.source[this.pos];
+}
+
+char parser::advance(parser& this) {
+    char c = this |> parser::peek();
+    this.pos++;
+    return c;
+}
+
+void parser::skip_ws(parser& this) {
+    while (isspace(this |> parser::peek()) != 0) {
+        this |> parser::advance();
+    }
+}
+
+void parser::expect(parser& this, char expected) {
+    this |> parser::skip_ws();
+    char got = this |> parser::advance();
+    if (got != expected) {
+        std::printf("Parse error: expected '%c', got '%c'\n", expected, got);
+        exit(1);
+    }
+}
+
+void parser::expect_progress(parser& this, usize previous_pos) {
+    if (this.pos == previous_pos) {
+        std::printf("Parse error: parser made no progress at '%c'\n", this |> parser::peek());
+        exit(1);
+    }
+}
+
+std::string parser::parse_token(parser& this) {
+    this |> parser::skip_ws();
+    usize start = this.pos;
+
+    while (!is_delimiter(this |> parser::peek())) {
+        this |> parser::advance();
+    }
+
+    if (this.pos == start) {
+        std::printf("Parse error: expected token, got '%c'\n", this |> parser::peek());
+        exit(1);
+    }
+
+    return std::str::substring(this.source, start, this.pos);
+}
+
+std::string parser::parse_name(parser& this) {
+    return this
+        |> parser::parse_token();
+}
+
+std::string parser::parse_string_literal(parser& this) {
+    this |> parser::skip_ws();
+    this |> parser::expect('"');
+
+    usize start = this.pos;
+    while ((this |> parser::peek()) != '"' && (this |> parser::peek()) != '\0') {
+        this |> parser::advance();
+    }
+
+    std::string result = std::str::substring(this.source, start, this.pos);
+    this |> parser::expect('"');
+    return move result;
+}
+
+lisp_node parser::parse_program(parser& this) {
+    std::vector<lisp_node> body = std::vector::new<lisp_node>();
+
+    this |> parser::skip_ws();
+    while ((this |> parser::peek()) != '\0') {
+        usize previous_pos = this.pos;
+        lisp_node node = this |> parser::parse_expr();
+        this |> parser::expect_progress(previous_pos);
+        body |> std::vector::push<lisp_node>(move node);
+        this |> parser::skip_ws();
+    }
+
+    return lisp_node::Program(move body);
+}
+
+lisp_node parser::parse_expr(parser& this) {
+    this |> parser::skip_ws();
+
+    if ((this |> parser::peek()) == '(') {
+        return this |> parser::parse_list();
+    }
+
+    if ((this |> parser::peek()) == '"') {
+        return lisp_node::PrintStr(this |> parser::parse_string_literal());
+    }
+
+    std::string token = this |> parser::parse_token();
+    if (is_number_token(token |> std::string::as_str())) {
+        f64 value = atof(token |> std::string::as_str());
+        move token |> std::string::drop();
+        
+        return lisp_node::Number(value);
+    }
+
+    return lisp_node::Symbol(move token);
+}
+
+std::vector<lisp_node> parser::parse_expr_list_until_close(parser& this) {
+    std::vector<lisp_node> exprs = std::vector::new<lisp_node>();
+
+    this |> parser::skip_ws();
+    while ((this |> parser::peek()) != ')' && (this |> parser::peek()) != '\0') {
+        usize previous_pos = this.pos;
+        lisp_node node = this |> parser::parse_expr();
+        this |> parser::expect_progress(previous_pos);
+        exprs |> std::vector::push<lisp_node>(move node);
+        this |> parser::skip_ws();
+    }
+
+    this |> parser::expect(')');
+    return move exprs;
+}
+
+std::vector<std::string> parser::parse_params(parser& this) {
+    std::vector<std::string> params = std::vector::new<std::string>();
+
+    this |> parser::expect('(');
+    this |> parser::skip_ws();
+    while ((this |> parser::peek()) != ')' && (this |> parser::peek()) != '\0') {
+        usize previous_pos = this.pos;
+        std::string param = this |> parser::parse_name();
+        this |> parser::expect_progress(previous_pos);
+        params |> std::vector::push<std::string>(move param);
+        this |> parser::skip_ws();
+    }
+    this |> parser::expect(')');
+
+    return move params;
+}
+
+lisp_node parser::parse_list(parser& this) {
+    this |> parser::expect('(');
+    std::string op = this |> parser::parse_token();
+
+    if (std::str::equals(op |> std::string::as_str(), "fndef")) {
+        std::string name = this |> parser::parse_name();
+        std::vector<std::string> params = this |> parser::parse_params();
+        std::vector<lisp_node> body = this |> parser::parse_expr_list_until_close();
+
+        move op |> std::string::drop();
+        return lisp_node::FnDef({
+            .name = move name,
+            .params = move params,
+            .body = move body
+        });
+    }
+
+    if (std::str::equals(op |> std::string::as_str(), "+")) {
+        lisp_node left_node = this |> parser::parse_expr();
+        lisp_node right_node = this |> parser::parse_expr();
+        this |> parser::expect(')');
+
+        move op |> std::string::drop();
+        std::box<lisp_node> left = std::box::new(move left_node);
+        std::box<lisp_node> right = std::box::new(move right_node);
+
+        return lisp_node::Plus({
+            .left = move left,
+            .right = move right
+        });
+    }
+
+    if (std::str::equals(op |> std::string::as_str(), "-")) {
+        lisp_node left_node = this |> parser::parse_expr();
+        lisp_node right_node = this |> parser::parse_expr();
+        this |> parser::expect(')');
+
+        move op |> std::string::drop();
+        std::box<lisp_node> left = std::box::new(move left_node);
+        std::box<lisp_node> right = std::box::new(move right_node);
+
+        return lisp_node::Minus({
+            .left = move left,
+            .right = move right
+        });
+    }
+
+    if (std::str::equals(op |> std::string::as_str(), "print-num")) {
+        lisp_node value_node = this |> parser::parse_expr();
+        this |> parser::expect(')');
+ 
+        move op |> std::string::drop();
+        std::box<lisp_node> value = std::box::new(move value_node);
+        return lisp_node::PrintNum(move value);
+    }
+
+    if (std::str::equals(op |> std::string::as_str(), "print-str")) {
+        std::string value = this |> parser::parse_string_literal();
+        this |> parser::expect(')');
+        
+        move op |> std::string::drop();
+        return lisp_node::PrintStr(move value);
+    }
+
+    std::string name = move op;
+    std::vector<lisp_node> args = this |> parser::parse_expr_list_until_close();
+
+    return lisp_node::FnCall({
+        .name = move name,
+        .args = move args
+    });
+}

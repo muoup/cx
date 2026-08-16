@@ -1,8 +1,11 @@
-/target
-**/.internal/*
-.*
+**/target
+**/.*
+
+tmp
 
 *.exe
 *.out
+*.wasm
 
-GEMINI.md
+!.gitignore
+!.github
