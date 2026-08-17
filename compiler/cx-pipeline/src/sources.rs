@@ -42,6 +42,15 @@ pub(crate) fn expand_patterns(
     Ok(matches.into_iter().collect())
 }
 
+pub(crate) fn prepend_entry(sources: &mut Vec<PathBuf>, entry: Option<&str>) {
+    let Some(entry) = entry else {
+        return;
+    };
+    let entry = PathBuf::from(normalize_pattern(entry));
+    sources.retain(|source| source != &entry);
+    sources.insert(0, entry);
+}
+
 fn normalize_pattern(pattern: &str) -> String {
     pattern
         .replace('\\', "/")
@@ -178,5 +187,35 @@ mod tests {
             vec![PathBuf::from("src/main.c"), PathBuf::from("src/other.c")]
         );
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn excludes_matching_sources() {
+        let root = test_directory();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src/main.c"), "").unwrap();
+        fs::write(root.join("src/generated.c"), "").unwrap();
+
+        let result = expand_patterns(
+            &root,
+            &["src/*.c".to_string()],
+            &["src/generated.c".to_string()],
+        )
+        .unwrap();
+
+        assert_eq!(result, vec![PathBuf::from("src/main.c")]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn prepends_and_deduplicates_entry_source() {
+        let mut sources = vec![PathBuf::from("src/main.c"), PathBuf::from("src/other.c")];
+
+        super::prepend_entry(&mut sources, Some("./src/main.c"));
+
+        assert_eq!(
+            sources,
+            vec![PathBuf::from("src/main.c"), PathBuf::from("src/other.c")]
+        );
     }
 }

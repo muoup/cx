@@ -11,4 +11,4 @@ cd doomgeneric
 cx build
 ```
 
-The target uses `compile_all` and its exclusions to compile the same source set selected by the upstream raylib Makefile into one executable, then links the shared raylib artifact. The example is intentionally a C-parity exercise; unsupported compiler/backend features encountered while building it are tracked in the main project rather than patched into the upstream Doom sources.
+The target uses structured `compile_all.match` and `compile_all.exclude` settings to compile the same source set selected by the upstream raylib Makefile into one executable, then links the shared raylib artifact. A binary can also combine `entry = "main.cx"` with `compile_all` when a CX entry module needs to interoperate with matched C sources. The example is intentionally a C-parity exercise; unsupported compiler/backend features encountered while building it are tracked in the main project rather than patched into the upstream Doom sources.

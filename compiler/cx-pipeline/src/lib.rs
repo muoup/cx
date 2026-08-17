@@ -323,13 +323,14 @@ pub fn project_compilation(
                         );
                         standard_compilation(config, Path::new(entry))?;
                     }
-                    (None, Some(patterns)) => {
-                        let sources = sources::expand_patterns(
+                    (_, Some(compile_all)) => {
+                        let mut sources = sources::expand_patterns(
                             &base_config.working_directory,
-                            patterns,
-                            binary.exclude.as_deref().unwrap_or_default(),
+                            &compile_all.matches,
+                            &compile_all.exclude,
                         )
                         .map_err(|error| pipeline_error("COMPILATION ERROR", error))?;
+                        sources::prepend_entry(&mut sources, binary.entry.as_deref());
                         eprintln!(
                             "Building binary '{}' (target: {}, {} sources)",
                             binary.name,
@@ -338,20 +339,11 @@ pub fn project_compilation(
                         );
                         multi_file_compilation(config, &sources)?;
                     }
-                    (Some(_), Some(_)) => {
-                        return Err(pipeline_error(
-                            "COMPILATION ERROR",
-                            format!(
-                                "Binary '{}' must define exactly one of 'entry' or 'compile_all'",
-                                binary.name
-                            ),
-                        ));
-                    }
                     (None, None) => {
                         return Err(pipeline_error(
                             "COMPILATION ERROR",
                             format!(
-                                "Binary '{}' must define one of 'entry' or 'compile_all'",
+                                "Binary '{}' must define 'entry' or 'compile_all'",
                                 binary.name
                             ),
                         ));

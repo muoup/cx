@@ -1,4 +1,4 @@
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -39,29 +39,15 @@ pub struct TargetConfig {
 pub struct BinaryEntry {
     pub name: String,
     pub entry: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_compile_all")]
-    pub compile_all: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "deserialize_compile_all")]
-    pub exclude: Option<Vec<String>>,
+    pub compile_all: Option<CompileAllConfig>,
 }
 
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum CompileAllValue {
-    Single(String),
-    Multiple(Vec<String>),
-}
-
-fn deserialize_compile_all<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Option::<CompileAllValue>::deserialize(deserializer).map(|value| {
-        value.map(|value| match value {
-            CompileAllValue::Single(pattern) => vec![pattern],
-            CompileAllValue::Multiple(patterns) => patterns,
-        })
-    })
+#[derive(Debug, Clone, Deserialize)]
+pub struct CompileAllConfig {
+    #[serde(rename = "match")]
+    pub matches: Vec<String>,
+    #[serde(default)]
+    pub exclude: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -109,34 +95,49 @@ mod tests {
     use super::BinaryEntry;
 
     #[test]
-    fn parses_single_compile_all_pattern() {
+    fn parses_structured_compile_all() {
         let binary: BinaryEntry = toml::from_str(
             r#"
 name = "demo"
-compile_all = "src/*.c"
+compile_all = { match = ["src/*.c"], exclude = ["src/generated.c"] }
 "#,
         )
         .unwrap();
 
         assert_eq!(binary.entry, None);
-        assert_eq!(binary.compile_all, Some(vec!["src/*.c".to_string()]));
-        assert_eq!(binary.exclude, None);
+        let compile_all = binary.compile_all.unwrap();
+        assert_eq!(compile_all.matches, vec!["src/*.c"]);
+        assert_eq!(compile_all.exclude, vec!["src/generated.c"]);
     }
 
     #[test]
-    fn parses_multiple_compile_all_patterns() {
+    fn parses_compile_all_without_excludes() {
         let binary: BinaryEntry = toml::from_str(
             r#"
 name = "demo"
-compile_all = ["src/*.c", "platform.cx"]
+compile_all = { match = ["src/*.c", "platform.cx"] }
 "#,
         )
         .unwrap();
 
         assert_eq!(binary.entry, None);
-        assert_eq!(
-            binary.compile_all,
-            Some(vec!["src/*.c".to_string(), "platform.cx".to_string()])
-        );
+        let compile_all = binary.compile_all.unwrap();
+        assert_eq!(compile_all.matches, vec!["src/*.c", "platform.cx"]);
+        assert!(compile_all.exclude.is_empty());
+    }
+
+    #[test]
+    fn allows_entry_with_compile_all() {
+        let binary: BinaryEntry = toml::from_str(
+            r#"
+name = "demo"
+entry = "src/main.cx"
+compile_all = { match = ["src/*.c"] }
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(binary.entry.as_deref(), Some("src/main.cx"));
+        assert_eq!(binary.compile_all.unwrap().matches, vec!["src/*.c"]);
     }
 }
