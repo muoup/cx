@@ -74,4 +74,21 @@ mod tests {
             matches!(&token.kind, TokenKind::Identifier(name) if name == "value")
         }));
     }
+
+    #[test]
+    fn expands_token_paste_in_c_function_macros() {
+        let source = "#define X(a) hd->h##a\nX(0)\n";
+        let tokens = match lex_with_context(source, Path::new("main.c"), &[], &[]) {
+            Ok(tokens) => tokens,
+            Err(error) => {
+                error.print().unwrap();
+                panic!("C token-paste macro should lex");
+            }
+        };
+        assert!(
+            tokens.iter().any(|token| {
+                matches!(&token.kind, TokenKind::Identifier(name) if name == "h0")
+            })
+        );
+    }
 }

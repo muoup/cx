@@ -22,11 +22,18 @@ use crate::{
 #[derive(Clone)]
 pub(crate) enum Macro {
     Object(Box<[Token]>),
+    Builtin(BuiltinMacro),
     Function {
         params: Box<[String]>,
         body: Box<[Token]>,
         variadic: bool,
     },
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum BuiltinMacro {
+    File,
+    Line,
 }
 
 pub(crate) struct SourceInput {
@@ -39,6 +46,7 @@ pub(crate) struct LexingContext {
     pub(crate) include_dirs: Vec<PathBuf>,
     pub(crate) macros: HashMap<String, Macro>,
     pub(crate) once_files: HashSet<PathBuf>,
+    source_texts: HashMap<PathBuf, String>,
     sources: Vec<SourceFrame>,
     pending_tokens: Vec<Token>,
     tokens: Vec<Token>,
@@ -77,6 +85,10 @@ impl LexingContext {
             include_dirs: include_dirs.to_vec(),
             macros,
             once_files: HashSet::new(),
+            source_texts: HashMap::from([
+                (source_path.to_path_buf(), source.clone()),
+                (builtin_path.clone(), builtin_source.clone()),
+            ]),
             sources: vec![
                 SourceFrame::new(source, source_path),
                 SourceFrame::new(builtin_source, &builtin_path),
@@ -134,6 +146,8 @@ impl LexingContext {
             }
             LexTransition::PushSource(input) => {
                 self.flush_pending_tokens();
+                self.source_texts
+                    .insert(input.path.clone(), input.source.clone());
                 self.tokens.push(Token::new(
                     TokenKind::IncludeBegin,
                     (0, 0),
@@ -255,6 +269,35 @@ impl LexingContext {
             match macro_ {
                 Macro::Object(body) => {
                     expanded.extend(retarget_tokens(body.iter().cloned(), token));
+                    index += 1;
+                }
+                Macro::Builtin(BuiltinMacro::File) => {
+                    expanded.extend(retarget_tokens(
+                        std::iter::once(Token::new_unknown(TokenKind::StringLiteral(
+                            token.file_origin.to_string_lossy().into_owned(),
+                        ))),
+                        token,
+                    ));
+                    index += 1;
+                }
+                Macro::Builtin(BuiltinMacro::Line) => {
+                    let line = self
+                        .source_texts
+                        .get(token.file_origin.as_ref())
+                        .map(|source| {
+                            source[..token.byte_start_index.min(source.len())]
+                                .bytes()
+                                .filter(|byte| *byte == b'\n')
+                                .count()
+                                + 1
+                        })
+                        .unwrap_or(1);
+                    expanded.extend(retarget_tokens(
+                        std::iter::once(Token::new_unknown(TokenKind::IntLiteral(
+                            cx_tokens::token::IntegerLiteral::decimal(line as u64),
+                        ))),
+                        token,
+                    ));
                     index += 1;
                 }
                 Macro::Function {

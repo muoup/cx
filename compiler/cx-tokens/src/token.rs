@@ -274,6 +274,7 @@ impl IntegerLiteral {
     pub fn source_text(self) -> String {
         let value = match self.base {
             IntegerBase::Decimal => self.magnitude.to_string(),
+            IntegerBase::Octal if self.magnitude == 0 => "0".to_string(),
             IntegerBase::Octal => format!("0{:o}", self.magnitude),
             IntegerBase::Hexadecimal => format!("0x{:x}", self.magnitude),
             IntegerBase::Binary => format!("0b{:b}", self.magnitude),
