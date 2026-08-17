@@ -356,6 +356,19 @@ impl<'a> FunctionLowerer<'a> {
     }
 
     fn lower_binary(&mut self, out: MIRRegister, op: &MIRBinaryOp, lhs: &MIRValue, rhs: &MIRValue) {
+        let (lhs, rhs) = if matches!(
+            op,
+            MIRBinaryOp::PointerOffset {
+                op: MIRPointerOffsetOp::Add,
+                ..
+            }
+        ) && !self.value_is_pointer(lhs)
+            && self.value_is_pointer(rhs)
+        {
+            (rhs, lhs)
+        } else {
+            (lhs, rhs)
+        };
         let lhs = self.lower_value(lhs);
         let rhs = self.lower_value(rhs);
         let kind = match op {

@@ -461,6 +461,26 @@ impl<'a> FunctionLowerer<'a> {
         }
     }
 
+    fn value_is_pointer(&self, value: &MIRValue) -> bool {
+        let ty = match value {
+            MIRValue::Constant(
+                MIRConstant::Null { ty }
+                | MIRConstant::Global { ty, .. }
+                | MIRConstant::GlobalOffset { ty, .. },
+            ) => *ty,
+            MIRValue::Constant(_) => return false,
+            _ => match self.value_type(value) {
+                Some(ty) => ty,
+                None => return false,
+            },
+        };
+
+        matches!(
+            self.types.kind(ty),
+            Some(MIRTypeKind::PointerTo { .. } | MIRTypeKind::MemoryReference { .. })
+        )
+    }
+
     fn place(&self, place: MIRPlace) -> PlaceBinding {
         match place {
             MIRPlace::Global(global) => PlaceBinding::Address {
