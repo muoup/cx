@@ -93,6 +93,20 @@ pub fn typecheck(
                     .transpose()?
                     .unwrap_or_else(|| (_type.clone(), None));
 
+                if !env.type_eq(&_type, &global_type) {
+                    let global_value_type = env.symbols.mem_ref_to(global_type.clone());
+                    env.symbols.insert_value(
+                        QualifiedName::new(namespace.clone(), name.clone()),
+                        THIRExpression {
+                            token_range: cx_tokens::TokenRange::internal(),
+                            kind: THIRExpressionKind::GlobalVariable {
+                                symbol: CXIdent::new(symbol_name.clone()),
+                            },
+                            _type: global_value_type,
+                        },
+                    );
+                }
+
                 let global = MIRGlobalVariable {
                     is_mutable: _type.get_specifier(HIR_CONST),
                     linkage: *linkage,
