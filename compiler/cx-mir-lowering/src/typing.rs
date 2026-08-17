@@ -148,7 +148,7 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
         MIRTypeKind::Function { .. }
         | MIRTypeKind::PointerTo { .. }
         | MIRTypeKind::MemoryReference { .. } => LMIRTypeKind::Pointer {
-            nullable: matches!(definition.kind, MIRTypeKind::Function { .. }),
+            nullable: true,
             dereferenceable: 0,
             bytes: types.architecture().pointer_size() as u8,
         },
