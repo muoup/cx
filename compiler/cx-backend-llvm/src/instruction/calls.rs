@@ -16,14 +16,22 @@ pub(super) fn generate_direct_call<'a, 'b>(
     method_sig: &LMIRFunctionSignature,
 ) -> Option<CodegenValue<'a>> {
     let function_val = get_function(global_state, func.as_str(), method_sig)?;
-    let arg_vals = args
+    let Some(arg_vals) = args
         .iter()
         .map(|arg| {
             let val = function_state.get_value(arg)?.get_value();
-            let basic_val = any_to_basic_val(val)?;
+            let basic_val = match val {
+                AnyValueEnum::FunctionValue(value) => {
+                    value.as_global_value().as_pointer_value().into()
+                }
+                value => any_to_basic_val(value)?,
+            };
             Some(basic_val.into())
         })
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Option<Vec<_>>>()
+    else {
+        return None;
+    };
 
     let call = function_state
         .builder

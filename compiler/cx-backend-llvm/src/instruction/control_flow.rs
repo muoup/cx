@@ -4,6 +4,7 @@ use crate::typing::any_to_basic_val;
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{LMIRBlockTarget, LMIRReturnABI, LMIRValue};
 use inkwell::basic_block::BasicBlock;
+use inkwell::values::AnyValueEnum;
 
 fn edge_destination<'a, 'b>(
     global_state: &GlobalState<'a>,
@@ -57,10 +58,14 @@ pub(super) fn generate_branch<'a, 'b>(
     true_target: &LMIRBlockTarget,
     false_target: &LMIRBlockTarget,
 ) -> Option<CodegenValue<'a>> {
-    let mut condition = function_state
-        .get_value(condition)?
-        .get_value()
-        .into_int_value();
+    let mut condition = match function_state.get_value(condition)?.get_value() {
+        AnyValueEnum::IntValue(value) => value,
+        AnyValueEnum::PointerValue(value) => function_state
+            .builder
+            .build_is_not_null(value, inst_num().as_str())
+            .ok()?,
+        _ => return None,
+    };
     if condition.get_type().get_bit_width() > 1 {
         condition = function_state
             .builder
