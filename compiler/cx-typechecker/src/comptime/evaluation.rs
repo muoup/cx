@@ -66,12 +66,11 @@ pub(crate) fn evaluate_expression(
         }
 
         THIRExpressionKind::AlignOf { _type } => {
-            let Ok(layout) = engine.env().symbols.type_layout(&_type) else {
-                return engine.log_error(
-                    token_range,
-                    "cannot calculate alignof in comptime context".to_string(),
-                );
-            };
+            let layout = engine
+                .env()
+                .symbols
+                .type_layout(&_type)
+                .map_err(|err| engine.env().complete_err(err, &token_range))?;
             ComptimeValue {
                 token_range,
                 kind: ComptimeKind::Integer {

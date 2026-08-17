@@ -1,4 +1,5 @@
 use crate::attributes::*;
+use crate::error::{LLVMError, LLVMResult};
 use crate::typing::{
     any_to_basic_type, any_to_basic_val, apply_llvm_parameter_attributes, bc_llvm_prototype,
     bc_llvm_type, convert_linkage,
@@ -34,6 +35,7 @@ use std::collections::HashMap;
 
 mod arithmetic;
 mod attributes;
+mod error;
 mod globals;
 mod instruction;
 mod routines;
@@ -65,21 +67,21 @@ pub(crate) struct FunctionState<'a, 'b> {
 }
 
 impl<'a> FunctionState<'a, '_> {
-    pub(crate) fn get_value(&self, val: &LMIRValue) -> Option<CodegenValue<'a>> {
+    pub(crate) fn get_value(&self, val: &LMIRValue) -> LLVMResult<CodegenValue<'a>> {
         match val {
             LMIRValue::ParameterRef(index) => {
                 let param_val = self
                     .function_value
                     .get_nth_param(*index)
-                    .unwrap_or_else(|| {
-                        panic!(
+                    .ok_or_else(|| {
+                        LLVMError::new(format!(
                             "Parameter index {index} out of bounds for function {}",
                             self.current_function
-                        )
-                    })
+                        ))
+                    })?
                     .as_any_value_enum();
 
-                Some(CodegenValue::Value(param_val))
+                Ok(CodegenValue::Value(param_val))
             }
 
             LMIRValue::IntImmediate { val, _type } => {
@@ -89,7 +91,7 @@ impl<'a> FunctionState<'a, '_> {
                     .const_int(*val as u64, true)
                     .as_any_value_enum();
 
-                Some(CodegenValue::Value(int_val))
+                Ok(CodegenValue::Value(int_val))
             }
 
             LMIRValue::FloatImmediate { val, _type } => {
@@ -99,43 +101,55 @@ impl<'a> FunctionState<'a, '_> {
                     .const_float(val.into())
                     .as_any_value_enum();
 
-                Some(CodegenValue::Value(float_val))
+                Ok(CodegenValue::Value(float_val))
             }
 
-            LMIRValue::FunctionRef(_) => {
-                panic!("Function references should be handled at a higher level")
-            }
+            LMIRValue::FunctionRef(function) => Err(LLVMError::new(format!(
+                "Function reference {function} was used where a generated value was expected"
+            ))),
 
-            LMIRValue::Register { .. } | LMIRValue::Global(..) => self.value_map.get(val).cloned(),
+            LMIRValue::Register { .. } | LMIRValue::Global(..) => self
+                .value_map
+                .get(val)
+                .cloned()
+                .ok_or_else(|| LLVMError::new(format!("Value {val} was not generated"))),
 
-            LMIRValue::NULL => Some(CodegenValue::Null),
+            LMIRValue::NULL => Ok(CodegenValue::Null),
         }
     }
 
-    pub(crate) fn get_block(&self, block_id: &LMIRBlockID) -> Option<BasicBlock<'a>> {
-        self.block_map.get(block_id).copied()
+    pub(crate) fn get_block(&self, block_id: &LMIRBlockID) -> LLVMResult<BasicBlock<'a>> {
+        self.block_map
+            .get(block_id)
+            .copied()
+            .ok_or_else(|| LLVMError::new(format!("Block with ID {block_id} was not generated")))
     }
 
     pub(crate) fn add_block_arguments(
         &self,
         target: &LMIRBlockTarget,
         predecessor: BasicBlock<'a>,
-    ) -> Option<()> {
-        let params = self.block_params.get(&target.block)?;
-        assert_eq!(
-            params.len(),
-            target.args.len(),
-            "LMIR edge to {} has {} arguments for {} parameters",
-            target.block,
-            target.args.len(),
-            params.len(),
-        );
+    ) -> LLVMResult<()> {
+        let params = self.block_params.get(&target.block).ok_or_else(|| {
+            LLVMError::new(format!(
+                "Block parameters for {} were not generated",
+                target.block
+            ))
+        })?;
+        if params.len() != target.args.len() {
+            return Err(LLVMError::new(format!(
+                "LMIR edge to {} has {} arguments for {} parameters",
+                target.block,
+                target.args.len(),
+                params.len(),
+            )));
+        }
 
         for ((_, phi), argument) in params.iter().zip(&target.args) {
             let value = self.get_value(argument)?.as_basic_value()?;
             phi.add_incoming(&[(&value, predecessor)]);
         }
-        Some(())
+        Ok(())
     }
 }
 
@@ -147,18 +161,22 @@ pub(crate) enum CodegenValue<'a> {
 }
 
 impl<'a> CodegenValue<'a> {
-    pub fn get_value(&self) -> AnyValueEnum<'a> {
+    pub fn get_value(&self) -> LLVMResult<AnyValueEnum<'a>> {
         match self {
-            CodegenValue::Value(value) => *value,
+            CodegenValue::Value(value) => Ok(*value),
 
-            _ => panic!("Expected a value, found: {self:?}"),
+            _ => Err(LLVMError::new(format!(
+                "Expected a scalar LLVM value, found: {self:?}"
+            ))),
         }
     }
 
-    pub fn as_basic_value(&self) -> Option<BasicValueEnum<'a>> {
+    pub fn as_basic_value(&self) -> LLVMResult<BasicValueEnum<'a>> {
         match self {
             CodegenValue::Value(value) => any_to_basic_val(*value),
-            CodegenValue::AggregateSlots(_) | CodegenValue::Null => None,
+            CodegenValue::AggregateSlots(_) | CodegenValue::Null => Err(LLVMError::new(format!(
+                "Expected a basic LLVM value, found: {self:?}"
+            ))),
         }
     }
 }
@@ -169,11 +187,10 @@ pub fn lmir_aot_codegen(
     optimization_level: OptimizationLevel,
 ) -> CXResult<Vec<u8>> {
     let context = Context::create();
-    Target::initialize_native(&InitializationConfig::default())
-        .expect("Failed to initialize native");
+    Target::initialize_native(&InitializationConfig::default()).map_err(LLVMError::from_error)?;
 
     let triple = TargetMachine::get_default_triple();
-    let target = Target::from_triple(&triple).expect("Failed to get target from triple");
+    let target = Target::from_triple(&triple).map_err(LLVMError::from_error)?;
     let (pass_manager_str, inkwell_optimization_level) = match optimization_level {
         OptimizationLevel::O0 => ("default<O0>", inkwell::OptimizationLevel::None),
         OptimizationLevel::O1 => ("default<O1>", inkwell::OptimizationLevel::Less),
@@ -191,7 +208,7 @@ pub fn lmir_aot_codegen(
             RelocMode::PIC,
             CodeModel::Default,
         )
-        .expect("Failed to create target machine");
+        .ok_or_else(|| LLVMError::new("Failed to create LLVM target machine"))?;
     let target_data = target_machine.get_target_data();
     let pointer_size = target_data.get_pointer_byte_size(None) as usize;
     let pointer_alignment =
@@ -231,27 +248,21 @@ pub fn lmir_aot_codegen(
     };
 
     for prototypes in global_state.function_map.values() {
-        cache_prototype(&mut global_state, prototypes).unwrap();
+        cache_prototype(&mut global_state, prototypes)?;
     }
 
     for global in bytecode.global_vars.iter() {
-        generate_global_variable(&mut global_state, global)
-            .unwrap_or_else(|| panic!("Failed to generate global variable: {}", global.name));
+        generate_global_variable(&mut global_state, global)?;
     }
 
     for func in bytecode.fn_defs.iter() {
-        fn_aot_codegen(func, &global_state).unwrap_or_else(|| {
-            panic!(
-                "Failed to generate function code for function: {}",
-                func.prototype.name
-            )
-        });
+        fn_aot_codegen(func, &global_state)?;
     }
 
-    global_state.module.verify().unwrap_or_else(|err| {
+    if let Err(error) = global_state.module.verify() {
         dump_data(&global_state.module.print_to_string().to_string_lossy());
-        panic!("Module verification failed: {}", err.to_string());
-    });
+        return Err(LLVMError::from_error(error).into());
+    }
     global_state
         .module
         .run_passes(
@@ -259,7 +270,7 @@ pub fn lmir_aot_codegen(
             &target_machine,
             PassBuilderOptions::create(),
         )
-        .expect("Failed to run passes");
+        .map_err(LLVMError::from_error)?;
 
     if !output_path.contains("std/") {
         dump_data(&format!(
@@ -270,23 +281,23 @@ pub fn lmir_aot_codegen(
 
     let buff = target_machine
         .write_to_memory_buffer(&global_state.module, inkwell::targets::FileType::Object)
-        .expect("Failed to export module to file");
+        .map_err(LLVMError::from_error)?;
 
     Ok(buff.as_slice().to_vec())
 }
 
-fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> Option<()> {
+fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> LLVMResult<()> {
     reset_num();
 
     let func_val = global_state
         .module
         .get_function(bytecode.prototype.name.as_str())
-        .unwrap_or_else(|| {
-            panic!(
-                "Failed to get function from module: {}",
+        .ok_or_else(|| {
+            LLVMError::new(format!(
+                "Function {} was not declared in the LLVM module",
                 bytecode.prototype.name
-            )
-        });
+            ))
+        })?;
     let builder = global_state.context.create_builder();
 
     let mut function_state = FunctionState {
@@ -324,9 +335,7 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> Option
     }
 
     for block in &bytecode.blocks {
-        let llvm_block = function_state
-            .get_block(&block.id)
-            .unwrap_or_else(|| panic!("Block with ID {} not found in function", block.id));
+        let llvm_block = function_state.get_block(&block.id)?;
         function_state.builder.position_at_end(llvm_block);
 
         let mut params = Vec::with_capacity(block.params.len());
@@ -345,7 +354,7 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> Option
                     llvm_type,
                     &format!("block_param_{}", parameter.register.name),
                 )
-                .unwrap();
+                .map_err(LLVMError::from_error)?;
             function_state.value_map.insert(
                 LMIRValue::Register {
                     register: parameter.register.clone(),
@@ -358,23 +367,24 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> Option
         function_state.block_params.insert(block.id.clone(), params);
     }
 
-    // Set the entry block as the current block
+    let first_block = bytecode.blocks.first().ok_or_else(|| {
+        LLVMError::new(format!(
+            "Function {} has no LMIR blocks",
+            bytecode.prototype.name
+        ))
+    })?;
+
     function_state.builder.position_at_end(entry);
-    let Ok(_) = function_state
+    function_state
         .builder
-        .build_unconditional_branch(function_state.get_block(&bytecode.blocks[0].id).unwrap())
-    else {
-        panic!(
-            "Failed to build unconditional branch to entry block: {}",
-            bytecode.blocks[0].id
-        )
-    };
+        .build_unconditional_branch(function_state.get_block(&first_block.id)?)
+        .map_err(LLVMError::from_error)?;
 
     for block in bytecode.blocks.iter() {
-        codegen_block(global_state, &mut function_state, &block.id, block);
+        codegen_block(global_state, &mut function_state, &block.id, block)?;
     }
 
-    Some(())
+    Ok(())
 }
 
 fn codegen_block<'a, 'b>(
@@ -382,20 +392,12 @@ fn codegen_block<'a, 'b>(
     function_state: &mut FunctionState<'a, 'b>,
     block_id: &LMIRBlockID,
     block: &LMIRBasicBlock,
-) {
-    let block_val = function_state
-        .get_block(block_id)
-        .unwrap_or_else(|| panic!("Block with ID {block_id} not found in function"));
+) -> LLVMResult<()> {
+    let block_val = function_state.get_block(block_id)?;
     function_state.builder.position_at_end(block_val);
 
     for inst in block.body.iter() {
-        let Some(value) = instruction::generate_instruction(global_state, function_state, inst)
-        else {
-            panic!(
-                "Failed to generate instruction: {inst} in function: {}",
-                function_state.current_function
-            );
-        };
+        let value = instruction::generate_instruction(global_state, function_state, inst)?;
 
         if let Some(result_reg) = &inst.result {
             let bc_reg = LMIRValue::Register {
@@ -410,13 +412,15 @@ fn codegen_block<'a, 'b>(
             break;
         }
     }
+
+    Ok(())
 }
 
 fn cache_prototype<'a>(
     global_state: &mut GlobalState<'a>,
     prototype: &'a LMIRFunctionPrototype,
-) -> Option<()> {
-    let llvm_prototype = bc_llvm_prototype(global_state, prototype).unwrap();
+) -> LLVMResult<()> {
+    let llvm_prototype = bc_llvm_prototype(global_state, prototype)?;
 
     let func = global_state.module.add_function(
         prototype.name.as_str(),
@@ -446,5 +450,5 @@ fn cache_prototype<'a>(
         .functions
         .insert(prototype.name.to_string(), func.get_type());
 
-    Some(())
+    Ok(())
 }

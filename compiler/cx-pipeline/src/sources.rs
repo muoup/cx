@@ -85,7 +85,7 @@ fn collect_matches(
     matches: &mut BTreeSet<PathBuf>,
 ) -> Result<(), String> {
     if current.is_file() {
-        add_match(base, current, pattern, matches);
+        add_match(base, current, pattern, matches)?;
         return Ok(());
     }
 
@@ -101,21 +101,31 @@ fn collect_matches(
         if path.is_dir() {
             collect_matches(base, &path, pattern, matches)?;
         } else {
-            add_match(base, &path, pattern, matches);
+            add_match(base, &path, pattern, matches)?;
         }
     }
 
     Ok(())
 }
 
-fn add_match(base: &Path, path: &Path, pattern: &str, matches: &mut BTreeSet<PathBuf>) {
-    let Ok(relative) = path.strip_prefix(base) else {
-        return;
-    };
+fn add_match(
+    base: &Path,
+    path: &Path,
+    pattern: &str,
+    matches: &mut BTreeSet<PathBuf>,
+) -> Result<(), String> {
+    let relative = path.strip_prefix(base).map_err(|error| {
+        format!(
+            "failed to make {} relative to {}: {error}",
+            path.display(),
+            base.display()
+        )
+    })?;
     let relative = relative.to_string_lossy().replace('\\', "/");
     if wildcard_match(pattern, relative.as_str()) {
         matches.insert(relative.into());
     }
+    Ok(())
 }
 
 fn wildcard_match(pattern: &str, value: &str) -> bool {

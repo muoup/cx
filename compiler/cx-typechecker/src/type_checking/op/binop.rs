@@ -203,12 +203,10 @@ fn coerce_pointer_binop(
             }
             .into();
             let pointee = env.symbols.ptr_inner(&lhs._type).cloned().unwrap();
-            let Ok(pointee_layout) = env.symbols.type_layout(&pointee) else {
-                return env.log_error(
-                    &lhs.token_range,
-                    "Cannot compute layout for pointer difference".to_string(),
-                );
-            };
+            let pointee_layout = env
+                .symbols
+                .type_layout(&pointee)
+                .map_err(|err| env.complete_err(err, &lhs.token_range))?;
             let difference_range = lhs.token_range.clone();
             let pointer_to_integer = |operand: THIRExpression| THIRExpression {
                 token_range: operand.token_range.clone(),

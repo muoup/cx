@@ -1,5 +1,6 @@
 use super::calls::build_direct_return_from_memory;
 use super::inst_num;
+use crate::error::{LLVMError, LLVMResult};
 use crate::typing::any_to_basic_val;
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{LMIRBlockTarget, LMIRReturnABI, LMIRValue};
@@ -11,11 +12,11 @@ fn edge_destination<'a, 'b>(
     function_state: &FunctionState<'a, 'b>,
     target: &LMIRBlockTarget,
     name: &str,
-) -> Option<(BasicBlock<'a>, bool)> {
+) -> LLVMResult<(BasicBlock<'a>, bool)> {
     if target.args.is_empty() {
-        Some((function_state.get_block(&target.block)?, false))
+        Ok((function_state.get_block(&target.block)?, false))
     } else {
-        Some((
+        Ok((
             global_state
                 .context
                 .append_basic_block(*function_state.function_value, name),
@@ -28,27 +29,30 @@ fn finish_edge<'a, 'b>(
     function_state: &FunctionState<'a, 'b>,
     edge: BasicBlock<'a>,
     target: &LMIRBlockTarget,
-) -> Option<()> {
+) -> LLVMResult<()> {
     function_state.builder.position_at_end(edge);
     function_state.add_block_arguments(target, edge)?;
     function_state
         .builder
         .build_unconditional_branch(function_state.get_block(&target.block)?)
-        .ok()?;
-    Some(())
+        .map_err(LLVMError::from_error)?;
+    Ok(())
 }
 
 pub(super) fn generate_jump<'a, 'b>(
     function_state: &FunctionState<'a, 'b>,
     target: &LMIRBlockTarget,
-) -> Option<CodegenValue<'a>> {
-    let predecessor = function_state.builder.get_insert_block()?;
+) -> LLVMResult<CodegenValue<'a>> {
+    let predecessor = function_state
+        .builder
+        .get_insert_block()
+        .ok_or_else(|| LLVMError::new("No LLVM insertion block for jump"))?;
     function_state.add_block_arguments(target, predecessor)?;
     function_state
         .builder
         .build_unconditional_branch(function_state.get_block(&target.block)?)
-        .ok()?;
-    Some(CodegenValue::Null)
+        .map_err(LLVMError::from_error)?;
+    Ok(CodegenValue::Null)
 }
 
 pub(super) fn generate_branch<'a, 'b>(
@@ -57,14 +61,18 @@ pub(super) fn generate_branch<'a, 'b>(
     condition: &LMIRValue,
     true_target: &LMIRBlockTarget,
     false_target: &LMIRBlockTarget,
-) -> Option<CodegenValue<'a>> {
-    let mut condition = match function_state.get_value(condition)?.get_value() {
+) -> LLVMResult<CodegenValue<'a>> {
+    let mut condition = match function_state.get_value(condition)?.get_value()? {
         AnyValueEnum::IntValue(value) => value,
         AnyValueEnum::PointerValue(value) => function_state
             .builder
             .build_is_not_null(value, inst_num().as_str())
-            .ok()?,
-        _ => return None,
+            .map_err(LLVMError::from_error)?,
+        _ => {
+            return Err(LLVMError::new(
+                "LLVM branch condition is not an integer or pointer",
+            ));
+        }
     };
     if condition.get_type().get_bit_width() > 1 {
         condition = function_state
@@ -74,7 +82,7 @@ pub(super) fn generate_branch<'a, 'b>(
                 global_state.context.bool_type(),
                 inst_num().as_str(),
             )
-            .unwrap();
+            .map_err(LLVMError::from_error)?;
     }
 
     let (true_edge, finish_true) = edge_destination(
@@ -92,7 +100,7 @@ pub(super) fn generate_branch<'a, 'b>(
     function_state
         .builder
         .build_conditional_branch(condition, true_edge, false_edge)
-        .ok()?;
+        .map_err(LLVMError::from_error)?;
 
     if finish_true {
         finish_edge(function_state, true_edge, true_target)?;
@@ -100,7 +108,7 @@ pub(super) fn generate_branch<'a, 'b>(
     if finish_false {
         finish_edge(function_state, false_edge, false_target)?;
     }
-    Some(CodegenValue::Null)
+    Ok(CodegenValue::Null)
 }
 
 pub(super) fn generate_jump_table<'a, 'b>(
@@ -109,16 +117,16 @@ pub(super) fn generate_jump_table<'a, 'b>(
     value: &LMIRValue,
     targets: &[(u64, LMIRBlockTarget)],
     default: &LMIRBlockTarget,
-) -> Option<CodegenValue<'a>> {
+) -> LLVMResult<CodegenValue<'a>> {
     let value = function_state
         .get_value(value)?
-        .get_value()
+        .get_value()?
         .into_int_value();
     let value_type = value.get_type();
     let mut edges = Vec::with_capacity(targets.len());
     let llvm_targets = targets
         .iter()
-        .map(|(case, target)| {
+        .map(|(case, target)| -> LLVMResult<_> {
             let (edge, needs_finish) = edge_destination(
                 global_state,
                 function_state,
@@ -128,9 +136,9 @@ pub(super) fn generate_jump_table<'a, 'b>(
             if needs_finish {
                 edges.push((edge, target));
             }
-            Some((value_type.const_int(*case, false), edge))
+            Ok((value_type.const_int(*case, false), edge))
         })
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<LLVMResult<Vec<_>>>()?;
     let (default_edge, finish_default) = edge_destination(
         global_state,
         function_state,
@@ -141,24 +149,27 @@ pub(super) fn generate_jump_table<'a, 'b>(
     function_state
         .builder
         .build_switch(value, default_edge, llvm_targets.as_slice())
-        .ok()?;
+        .map_err(LLVMError::from_error)?;
     for (edge, target) in edges {
         finish_edge(function_state, edge, target)?;
     }
     if finish_default {
         finish_edge(function_state, default_edge, default)?;
     }
-    Some(CodegenValue::Null)
+    Ok(CodegenValue::Null)
 }
 
 pub(super) fn generate_return<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &FunctionState<'a, 'b>,
     value: Option<&LMIRValue>,
-) -> Option<CodegenValue<'a>> {
+) -> LLVMResult<CodegenValue<'a>> {
     let Some(value) = value else {
-        function_state.builder.build_return(None).unwrap();
-        return Some(CodegenValue::Null);
+        function_state
+            .builder
+            .build_return(None)
+            .map_err(LLVMError::from_error)?;
+        return Ok(CodegenValue::Null);
     };
 
     let value = function_state.get_value(value)?;
@@ -169,25 +180,28 @@ pub(super) fn generate_return<'a, 'b>(
         )
     {
         let return_value =
-            build_direct_return_from_memory(global_state, function_state, value.get_value())?;
+            build_direct_return_from_memory(global_state, function_state, value.get_value()?)?;
         function_state
             .builder
             .build_return(Some(&return_value))
-            .unwrap();
-        return Some(CodegenValue::Null);
+            .map_err(LLVMError::from_error)?;
+        return Ok(CodegenValue::Null);
     }
 
-    let basic_value = any_to_basic_val(value.get_value())?;
+    let basic_value = any_to_basic_val(value.get_value()?)?;
     function_state
         .builder
         .build_return(Some(&basic_value))
-        .unwrap();
-    Some(CodegenValue::Null)
+        .map_err(LLVMError::from_error)?;
+    Ok(CodegenValue::Null)
 }
 
 pub(super) fn generate_unreachable<'a, 'b>(
     function_state: &FunctionState<'a, 'b>,
-) -> Option<CodegenValue<'a>> {
-    function_state.builder.build_unreachable().ok()?;
-    Some(CodegenValue::Null)
+) -> LLVMResult<CodegenValue<'a>> {
+    function_state
+        .builder
+        .build_unreachable()
+        .map_err(LLVMError::from_error)?;
+    Ok(CodegenValue::Null)
 }

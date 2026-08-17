@@ -279,11 +279,19 @@ impl LanguageServer for Backend {
         let text = document.text.clone();
         drop(document);
 
-        let Ok(tokens) = lex(&text) else {
-            return Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
-                result_id: None,
-                data: vec![],
-            })));
+        let tokens = match lex(&text) {
+            Ok(tokens) => tokens,
+            Err(error) => {
+                eprintln!(
+                    "Failed to lex document while calculating semantic tokens: {}: {}",
+                    error.code(),
+                    error.message()
+                );
+                return Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
+                    result_id: None,
+                    data: vec![],
+                })));
+            }
         };
         let mut semantic_tokens = Vec::new();
         let mut last_line = 0;

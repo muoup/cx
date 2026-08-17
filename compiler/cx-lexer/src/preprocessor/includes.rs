@@ -245,13 +245,24 @@ fn multiarch_include_dirs() -> Vec<PathBuf> {
 #[cfg(all(unix, not(feature = "ignore-system-headers")))]
 fn gcc_include_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    let Ok(targets) = std::fs::read_dir("/usr/lib/gcc") else {
-        return dirs;
+    let targets = match std::fs::read_dir("/usr/lib/gcc") {
+        Ok(targets) => targets,
+        Err(error) => {
+            eprintln!("Warning: failed to inspect GCC include directories: {error}");
+            return dirs;
+        }
     };
 
     for target in targets.flatten() {
-        let Ok(versions) = std::fs::read_dir(target.path()) else {
-            continue;
+        let versions = match std::fs::read_dir(target.path()) {
+            Ok(versions) => versions,
+            Err(error) => {
+                eprintln!(
+                    "Warning: failed to inspect GCC include directory {}: {error}",
+                    target.path().display()
+                );
+                continue;
+            }
         };
 
         for version in versions.flatten() {

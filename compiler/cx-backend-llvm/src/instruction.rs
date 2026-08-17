@@ -6,6 +6,7 @@ mod variadic;
 
 use std::cell::Cell;
 
+use crate::error::LLVMResult;
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{LMIRInstruction, LMIRInstructionKind};
 
@@ -31,7 +32,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &FunctionState<'a, 'b>,
     instruction: &LMIRInstruction,
-) -> Option<CodegenValue<'a>> {
+) -> LLVMResult<CodegenValue<'a>> {
     match &instruction.kind {
         LMIRInstructionKind::Alias { value } => function_state.get_value(value),
         LMIRInstructionKind::GetFunctionAddr { func } => {
@@ -196,7 +197,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
         }
         LMIRInstructionKind::CompilerAssumption { .. } => {
             // TODO: Implement assumptions in LLVM.
-            Some(CodegenValue::Null)
+            Ok(CodegenValue::Null)
         }
         LMIRInstructionKind::Unreachable => control_flow::generate_unreachable(function_state),
     }

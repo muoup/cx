@@ -372,12 +372,15 @@ pub fn project_compilation(
                 eprintln!("  Linked {}", config.output.display());
 
                 // Generate .h header from LMIR
-                let Ok(header) = cx_c_header::generate_header(&entry_lmir, &link_entries) else {
-                    eprintln!(
-                        "Warning: Failed to generate header for library '{}': Header generation is best-effort and will not fail the build",
-                        library.name
-                    );
-                    continue;
+                let header = match cx_c_header::generate_header(&entry_lmir, &link_entries) {
+                    Ok(header) => header,
+                    Err(error) => {
+                        eprintln!(
+                            "Warning: Failed to generate header for library '{}': {error}. Header generation is best-effort and will not fail the build",
+                            library.name
+                        );
+                        continue;
+                    }
                 };
 
                 let header_path = output_dir.join(format!("{}.h", library.name));
