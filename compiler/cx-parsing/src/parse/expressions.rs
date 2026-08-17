@@ -138,6 +138,44 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<HIRExpression> {
     parse_expr_val(data, &mut expr_stack, &mut op_stack)?;
     while let Some(()) = parse_expr_op_concat(data, &mut expr_stack, &mut op_stack)? {}
 
+    let ternary = if try_next!(data.tokens, punctuator!(QuestionMark)) {
+        compress_stack(
+            data,
+            &mut expr_stack,
+            &mut op_stack,
+            binop_prec(HIRBinOp::Assign(None)).saturating_sub(1),
+        )?;
+
+        let Some(condition) = expr_stack.pop() else {
+            return parse_point_error(&data.tokens, "Expected expression before '?'".to_string());
+        };
+
+        let start_index = condition.range.start_token().unwrap_or(data.tokens.index);
+        let then_branch = parse_expr(data)?;
+        assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
+        let else_branch = parse_expr(data)?;
+        let end_index = else_branch.range.end_token().unwrap_or(data.tokens.index);
+
+        Some(
+            HIRExprKind::Ternary {
+                condition: Box::new(condition),
+                then_branch: Box::new(then_branch),
+                else_branch: Box::new(else_branch),
+            }
+            .into_expr(
+                start_index,
+                end_index,
+                data.file_origin_for_range(start_index, end_index),
+            ),
+        )
+    } else {
+        None
+    };
+
+    if let Some(ternary) = ternary {
+        expr_stack.push(ternary);
+    }
+
     compress_stack(data, &mut expr_stack, &mut op_stack, 100)?;
 
     let Some(expr) = expr_stack.pop() else {
@@ -168,26 +206,6 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<HIRExpression> {
                 expr_stack, op_stack
             ),
         );
-    }
-
-    if try_next!(data.tokens, punctuator!(QuestionMark)) {
-        let start_index = expr.range.start_token().unwrap_or(data.tokens.index);
-        let condition = expr;
-        let then_branch = parse_expr(data)?;
-        assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
-        let else_branch = parse_expr(data)?;
-        let end_index = else_branch.range.end_token().unwrap_or(data.tokens.index);
-
-        return Ok(HIRExprKind::Ternary {
-            condition: Box::new(condition),
-            then_branch: Box::new(then_branch),
-            else_branch: Box::new(else_branch),
-        }
-        .into_expr(
-            start_index,
-            end_index,
-            data.file_origin_for_range(start_index, end_index),
-        ));
     }
 
     Ok(expr)
