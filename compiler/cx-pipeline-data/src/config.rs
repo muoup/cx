@@ -39,15 +39,8 @@ pub struct TargetConfig {
 pub struct BinaryEntry {
     pub name: String,
     pub entry: Option<String>,
-    pub compile_all: Option<CompileAllConfig>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct CompileAllConfig {
     #[serde(rename = "match")]
-    pub matches: Vec<String>,
-    #[serde(default)]
-    pub exclude: Vec<String>,
+    pub match_patterns: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -92,52 +85,91 @@ pub fn load_config(path: &Path) -> Result<CXProjectConfig, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::BinaryEntry;
+    use super::{BinaryEntry, CXProjectConfig};
 
     #[test]
-    fn parses_structured_compile_all() {
+    fn parses_binary_match_patterns() {
         let binary: BinaryEntry = toml::from_str(
             r#"
 name = "demo"
-compile_all = { match = ["src/*.c"], exclude = ["src/generated.c"] }
+match = ["src/*.c", "!src/generated.c"]
 "#,
         )
         .unwrap();
 
         assert_eq!(binary.entry, None);
-        let compile_all = binary.compile_all.unwrap();
-        assert_eq!(compile_all.matches, vec!["src/*.c"]);
-        assert_eq!(compile_all.exclude, vec!["src/generated.c"]);
+        assert_eq!(
+            binary.match_patterns,
+            Some(vec!["src/*.c".to_string(), "!src/generated.c".to_string()])
+        );
     }
 
     #[test]
-    fn parses_compile_all_without_excludes() {
+    fn parses_binary_match_patterns_without_entry() {
         let binary: BinaryEntry = toml::from_str(
             r#"
 name = "demo"
-compile_all = { match = ["src/*.c", "platform.cx"] }
+match = ["src/*.c", "platform.cx"]
 "#,
         )
         .unwrap();
 
         assert_eq!(binary.entry, None);
-        let compile_all = binary.compile_all.unwrap();
-        assert_eq!(compile_all.matches, vec!["src/*.c", "platform.cx"]);
-        assert!(compile_all.exclude.is_empty());
+        assert_eq!(
+            binary.match_patterns,
+            Some(vec!["src/*.c".to_string(), "platform.cx".to_string()])
+        );
     }
 
     #[test]
-    fn allows_entry_with_compile_all() {
+    fn allows_entry_with_match_patterns() {
         let binary: BinaryEntry = toml::from_str(
             r#"
 name = "demo"
 entry = "src/main.cx"
-compile_all = { match = ["src/*.c"] }
+match = ["src/*.c"]
 "#,
         )
         .unwrap();
 
         assert_eq!(binary.entry.as_deref(), Some("src/main.cx"));
-        assert_eq!(binary.compile_all.unwrap().matches, vec!["src/*.c"]);
+        assert_eq!(binary.match_patterns, Some(vec!["src/*.c".to_string()]));
+    }
+
+    #[test]
+    fn keeps_match_patterns_scoped_to_each_binary() {
+        let config: CXProjectConfig = toml::from_str(
+            r#"
+[project]
+name = "demo"
+
+[workspace.targets.default]
+
+[[workspace.targets.default.binaries]]
+name = "c_binary"
+match = ["src/*.c"]
+
+[[workspace.targets.default.binaries]]
+name = "cx_binary"
+entry = "src/main.cx"
+"#,
+        )
+        .unwrap();
+
+        let workspace = config.workspace.unwrap();
+        let binaries = workspace
+            .targets
+            .get("default")
+            .unwrap()
+            .binaries
+            .as_ref()
+            .unwrap();
+        assert_eq!(binaries.len(), 2);
+        assert_eq!(
+            binaries[0].match_patterns,
+            Some(vec!["src/*.c".to_string()])
+        );
+        assert_eq!(binaries[1].entry.as_deref(), Some("src/main.cx"));
+        assert_eq!(binaries[1].match_patterns, None);
     }
 }

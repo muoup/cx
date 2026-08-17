@@ -315,7 +315,7 @@ pub fn project_compilation(
                 config.native_objects = native_objects.clone();
                 config.include_dirs = include_dirs.clone();
 
-                match (&binary.entry, &binary.compile_all) {
+                match (&binary.entry, &binary.match_patterns) {
                     (Some(entry), None) => {
                         eprintln!(
                             "Building binary '{}' (target: {})",
@@ -323,11 +323,10 @@ pub fn project_compilation(
                         );
                         standard_compilation(config, Path::new(entry))?;
                     }
-                    (_, Some(compile_all)) => {
+                    (_, Some(patterns)) => {
                         let mut sources = sources::expand_patterns(
                             &base_config.working_directory,
-                            &compile_all.matches,
-                            &compile_all.exclude,
+                            patterns,
                         )
                         .map_err(|error| pipeline_error("COMPILATION ERROR", error))?;
                         sources::prepend_entry(&mut sources, binary.entry.as_deref());
@@ -343,7 +342,7 @@ pub fn project_compilation(
                         return Err(pipeline_error(
                             "COMPILATION ERROR",
                             format!(
-                                "Binary '{}' must define 'entry' or 'compile_all'",
+                                "Binary '{}' must define 'entry' or 'match'",
                                 binary.name
                             ),
                         ));

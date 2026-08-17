@@ -2,44 +2,44 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub(crate) fn expand_patterns(
-    base: &Path,
-    patterns: &[String],
-    excludes: &[String],
-) -> Result<Vec<PathBuf>, String> {
-    let mut matches = BTreeSet::new();
+pub(crate) fn expand_patterns(base: &Path, patterns: &[String]) -> Result<Vec<PathBuf>, String> {
+    let mut selected = BTreeSet::new();
 
-    for pattern in patterns {
-        let pattern = normalize_pattern(pattern);
+    for raw_pattern in patterns {
+        let (exclude, raw_pattern) = match raw_pattern.strip_prefix('!') {
+            Some(pattern) => (true, pattern),
+            None => (false, raw_pattern.as_str()),
+        };
+        let pattern = normalize_pattern(raw_pattern);
+        if pattern.is_empty() {
+            return Err("match pattern cannot be empty".to_string());
+        }
         if Path::new(pattern.as_str()).is_absolute() {
-            return Err(format!("compile_all pattern must be relative: {pattern}"));
+            return Err(format!("match pattern must be relative: {pattern}"));
         }
 
         let root = search_root(base, pattern.as_str());
         if root.exists() {
-            collect_matches(base, &root, pattern.as_str(), &mut matches)?;
+            let mut pattern_matches = BTreeSet::new();
+            collect_matches(base, &root, pattern.as_str(), &mut pattern_matches)?;
+            if exclude {
+                for path in pattern_matches {
+                    selected.remove(&path);
+                }
+            } else {
+                selected.extend(pattern_matches);
+            }
         }
     }
 
-    let excludes = excludes
-        .iter()
-        .map(|pattern| normalize_pattern(pattern))
-        .collect::<Vec<_>>();
-    matches.retain(|path| {
-        let path = path.to_string_lossy().replace('\\', "/");
-        !excludes
-            .iter()
-            .any(|pattern| wildcard_match(pattern, path.as_str()))
-    });
-
-    if matches.is_empty() {
+    if selected.is_empty() {
         return Err(format!(
-            "compile_all patterns matched no source files: {}",
+            "match patterns selected no source files: {}",
             patterns.join(", ")
         ));
     }
 
-    Ok(matches.into_iter().collect())
+    Ok(selected.into_iter().collect())
 }
 
 pub(crate) fn prepend_entry(sources: &mut Vec<PathBuf>, entry: Option<&str>) {
@@ -91,12 +91,12 @@ fn collect_matches(
 
     let entries = fs::read_dir(current).map_err(|error| {
         format!(
-            "failed to read compile_all directory {}: {error}",
+            "failed to read match directory {}: {error}",
             current.display()
         )
     })?;
     for entry in entries {
-        let entry = entry.map_err(|error| format!("failed to read compile_all entry: {error}"))?;
+        let entry = entry.map_err(|error| format!("failed to read match entry: {error}"))?;
         let path = entry.path();
         if path.is_dir() {
             collect_matches(base, &path, pattern, matches)?;
@@ -162,7 +162,7 @@ mod tests {
         fs::write(root.join("src/nested/other.c"), "").unwrap();
         fs::write(root.join("src/main.cx"), "").unwrap();
 
-        let result = expand_patterns(&root, &["src/*.c".to_string()], &[]).unwrap();
+        let result = expand_patterns(&root, &["src/*.c".to_string()]).unwrap();
 
         assert_eq!(result, vec![PathBuf::from("src/main.c")]);
         fs::remove_dir_all(root).unwrap();
@@ -178,7 +178,6 @@ mod tests {
         let result = expand_patterns(
             &root,
             &["src/*.c".to_string(), "src/main.c".to_string()],
-            &[],
         )
         .unwrap();
 
@@ -198,8 +197,10 @@ mod tests {
 
         let result = expand_patterns(
             &root,
-            &["src/*.c".to_string()],
-            &["src/generated.c".to_string()],
+            &[
+                "src/*.c".to_string(),
+                "!src/generated.c".to_string(),
+            ],
         )
         .unwrap();
 
