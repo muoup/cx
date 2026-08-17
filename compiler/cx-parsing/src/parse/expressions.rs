@@ -4,7 +4,9 @@ use crate::{
     log::{parse_point_error, parse_underline_error},
     next_kind, peek_next_kind, try_next,
 };
-use cx_hir::ast::expression::{HIRExprKind, HIRExpression, HIRInitIndex, HIRUnpackBinding};
+use cx_hir::ast::expression::{
+    HIRBinOp, HIRExprKind, HIRExpression, HIRInitIndex, HIRUnpackBinding,
+};
 use cx_hir::ast::pattern::HIRPattern;
 use cx_log::CXResult;
 use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
@@ -201,7 +203,17 @@ pub(crate) fn parse_expr_op_concat(
     };
 
     let op_prec = binop_prec(op.clone());
-    compress_stack(data, expr_stack, op_stack, op_prec)?;
+    let right_associative = matches!(op, HIRBinOp::Assign(_));
+    compress_stack(
+        data,
+        expr_stack,
+        op_stack,
+        if right_associative {
+            op_prec.saturating_sub(1)
+        } else {
+            op_prec
+        },
+    )?;
 
     op_stack.push(PrecOperator::BinOp(op));
 
