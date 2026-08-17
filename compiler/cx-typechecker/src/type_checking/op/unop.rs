@@ -251,7 +251,12 @@ pub(crate) fn typecheck_alignof_expr(
 ) -> CXResult<TypecheckResult> {
     let tc_expr = typecheck_expr(env, namespace, expr, None)
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
-    Ok(alignof_result(tc_expr.token_range, tc_expr._type))
+    let _type = env
+        .symbols
+        .mem_ref_inner(&tc_expr._type)
+        .cloned()
+        .unwrap_or(tc_expr._type);
+    Ok(alignof_result(tc_expr.token_range, _type))
 }
 
 pub(crate) fn typecheck_sizeof_expr(
@@ -262,7 +267,12 @@ pub(crate) fn typecheck_sizeof_expr(
     let tc_expr = typecheck_expr(env, namespace, expr, None)
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
 
-    Ok(sizeof_result(tc_expr.token_range, tc_expr._type))
+    let _type = env
+        .symbols
+        .mem_ref_inner(&tc_expr._type)
+        .cloned()
+        .unwrap_or(tc_expr._type);
+    Ok(sizeof_result(tc_expr.token_range, _type))
 }
 
 fn alignof_result(range: TokenRange, _type: THIRType) -> TypecheckResult {
