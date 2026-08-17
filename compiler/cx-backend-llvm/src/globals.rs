@@ -1,5 +1,5 @@
 use crate::GlobalState;
-use crate::typing::{any_to_basic_type, bc_llvm_type};
+use crate::typing::{any_to_basic_type, bc_llvm_type, convert_linkage};
 use cx_lmir::{LMIRGlobalInitializer, LMIRGlobalState, LMIRGlobalType, LMIRGlobalValue};
 use inkwell::module::Linkage;
 use inkwell::types::{BasicType, BasicTypeEnum};
@@ -49,13 +49,14 @@ pub(crate) fn generate_global_variable(
                 }
             };
 
-            let global = state
-                .module
-                .add_global(basic_type, None, variable.name.as_str());
+            let global = get_global(state, basic_type, variable.name.as_str(), global_state);
 
             if matches!(global_state, LMIRGlobalState::External) {
                 global.set_linkage(Linkage::External);
             } else {
+                if matches!(variable.linkage, cx_lmir::LinkageType::Static) {
+                    global.set_linkage(convert_linkage(variable.linkage));
+                }
                 let initializer = match global_state {
                     LMIRGlobalState::ZeroInitialized => basic_type.const_zero(),
                     LMIRGlobalState::Initialized(initializer) => {
@@ -71,6 +72,40 @@ pub(crate) fn generate_global_variable(
     }
 
     Some(())
+}
+
+fn get_global<'ctx>(
+    state: &mut GlobalState<'ctx>,
+    basic_type: BasicTypeEnum<'ctx>,
+    name: &str,
+    global_state: &LMIRGlobalState,
+) -> inkwell::values::GlobalValue<'ctx> {
+    let Some(existing) = state.module.get_global(name) else {
+        return state.module.add_global(basic_type, None, name);
+    };
+
+    if matches!(global_state, LMIRGlobalState::External)
+        || existing.get_initializer().is_some()
+    {
+        return if matches!(global_state, LMIRGlobalState::External) {
+            existing
+        } else {
+            state.module.add_global(basic_type, None, name)
+        };
+    }
+
+    let replacement = state.module.add_global(basic_type, None, name);
+    existing
+        .as_pointer_value()
+        .replace_all_uses_with(replacement.as_pointer_value());
+    for global in &mut state.globals {
+        if global.get_name().to_bytes() == name.as_bytes() {
+            *global = replacement;
+        }
+    }
+    unsafe { existing.delete() };
+    replacement.set_name(name);
+    replacement
 }
 
 fn global_llvm_type<'ctx>(
