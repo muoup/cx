@@ -8,8 +8,12 @@ fn list_value<'a>(state: &FunctionState<'a, '_>, list: &LMIRValue) -> Option<ink
     Some(state.get_value(list)?.as_basic_value()?.into_pointer_value())
 }
 
-fn intrinsic<'a>(global: &GlobalState<'a>, name: &str) -> Option<inkwell::values::FunctionValue<'a>> {
-    Intrinsic::find(name)?.get_declaration(&global.module, &[])
+fn intrinsic<'a>(
+    global: &GlobalState<'a>,
+    name: &str,
+    parameter_type: inkwell::types::BasicTypeEnum<'a>,
+) -> Option<inkwell::values::FunctionValue<'a>> {
+    Intrinsic::find(name)?.get_declaration(&global.module, &[parameter_type])
 }
 
 pub(super) fn generate_va_start<'a, 'b>(
@@ -18,7 +22,7 @@ pub(super) fn generate_va_start<'a, 'b>(
     list: &LMIRValue,
 ) -> Option<CodegenValue<'a>> {
     let list = list_value(state, list)?;
-    let function = intrinsic(global, "llvm.va_start")?;
+    let function = intrinsic(global, "llvm.va_start", list.get_type().into())?;
     state.builder.build_call(function, &[list.into()], "").ok()?;
     Some(CodegenValue::Null)
 }
@@ -29,7 +33,7 @@ pub(super) fn generate_va_end<'a, 'b>(
     list: &LMIRValue,
 ) -> Option<CodegenValue<'a>> {
     let list = list_value(state, list)?;
-    let function = intrinsic(global, "llvm.va_end")?;
+    let function = intrinsic(global, "llvm.va_end", list.get_type().into())?;
     state.builder.build_call(function, &[list.into()], "").ok()?;
     Some(CodegenValue::Null)
 }
