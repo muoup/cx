@@ -91,7 +91,7 @@ fn classify_param(
     } else if let Some(slots) = direct_aggregate_slots(architecture, &lowered, layout.size) {
         LMIRParameterABI::Direct { slots }
     } else {
-        LMIRParameterABI::Indirect {
+        LMIRParameterABI::ByValue {
             alignment: layout.alignment as u8,
         }
     };

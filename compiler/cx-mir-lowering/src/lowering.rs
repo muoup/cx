@@ -335,7 +335,7 @@ impl<'a> FunctionLowerer<'a> {
                         },
                     );
                 }
-                LMIRParameterABI::Indirect { .. } => {
+                LMIRParameterABI::Indirect { .. } | LMIRParameterABI::ByValue { .. } => {
                     self.places.insert(
                         place,
                         PlaceBinding::Address {

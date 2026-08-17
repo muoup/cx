@@ -120,6 +120,7 @@ pub struct LMIRParameter {
 pub enum LMIRParameterABI {
     Direct { slots: Vec<LMIRABISlot> },
     Indirect { alignment: u8 },
+    ByValue { alignment: u8 },
 }
 
 #[derive(Debug, Clone)]
@@ -147,7 +148,7 @@ impl LMIRParameterABI {
     pub fn slot_count(&self) -> usize {
         match self {
             LMIRParameterABI::Direct { slots } => slots.len(),
-            LMIRParameterABI::Indirect { .. } => 1,
+            LMIRParameterABI::Indirect { .. } | LMIRParameterABI::ByValue { .. } => 1,
         }
     }
 }
@@ -192,7 +193,7 @@ impl LMIRFunctionSignature {
                     }
                     index -= slots.len();
                 }
-                LMIRParameterABI::Indirect { .. } => {
+                LMIRParameterABI::Indirect { .. } | LMIRParameterABI::ByValue { .. } => {
                     if index == 0 {
                         return Some(LMIRType::default_pointer(target));
                     }

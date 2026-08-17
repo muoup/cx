@@ -1,5 +1,5 @@
 use crate::GlobalState;
-use crate::typing::bc_llvm_signature;
+use crate::typing::{apply_llvm_parameter_attributes, bc_llvm_signature};
 use cx_lmir::LMIRFunctionSignature;
 use inkwell::values::FunctionValue;
 
@@ -16,8 +16,12 @@ pub(crate) fn get_function<'a>(
         return None;
     };
 
-    global_state
-        .module
-        .add_function(name, llvm_prototype, None)
-        .into()
+    let function = global_state.module.add_function(name, llvm_prototype, None);
+    apply_llvm_parameter_attributes(
+        global_state.context,
+        global_state.architecture,
+        &function,
+        signature,
+    )?;
+    Some(function)
 }

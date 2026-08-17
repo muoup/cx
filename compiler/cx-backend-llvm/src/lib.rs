@@ -1,6 +1,7 @@
 use crate::attributes::*;
 use crate::typing::{
-    any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type, convert_linkage,
+    any_to_basic_type, any_to_basic_val, apply_llvm_parameter_attributes, bc_llvm_prototype,
+    bc_llvm_type, convert_linkage,
 };
 use cx_lmir::{
     ElementID, LMIRABISlot, LMIRBasicBlock, LMIRBlockID, LMIRBlockTarget, LMIRFunction,
@@ -427,16 +428,12 @@ fn cache_prototype<'a>(
     func.set_section(Some(&format!(".text.{}", prototype.name)));
 
     let signature = prototype.signature();
-    for i in 0..signature.expanded_param_count() {
-        let param_type = signature
-            .expanded_param_type(global_state.architecture, i)
-            .unwrap();
-        get_type_attributes(global_state.context, &param_type)
-            .into_iter()
-            .for_each(|attr| {
-                func.add_attribute(AttributeLoc::Param(i as u32), attr);
-            });
-    }
+    apply_llvm_parameter_attributes(
+        global_state.context,
+        global_state.architecture,
+        &func,
+        signature,
+    )?;
 
     if matches!(&signature.return_abi, LMIRReturnABI::IndirectSret { .. }) {
         let pointee = bc_llvm_type(global_state.context, &signature.return_type)?;

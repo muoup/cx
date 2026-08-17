@@ -1,15 +1,18 @@
 use crate::GlobalState;
+use crate::attributes::{attr_alignment, attr_byval, get_type_attributes};
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{
     LMIRFunctionPrototype, LMIRFunctionSignature, LMIRParameterABI, LMIRReturnABI, LinkageType,
 };
+use cx_target::ArchitectureConfig;
 use inkwell::AddressSpace;
+use inkwell::attributes::AttributeLoc;
 use inkwell::context::Context;
 use inkwell::module::Linkage;
 use inkwell::types::{
     AnyType, AnyTypeEnum, AsTypeRef, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType,
 };
-use inkwell::values::{AnyValueEnum, BasicValueEnum};
+use inkwell::values::{AnyValueEnum, BasicValueEnum, FunctionValue};
 use std::sync::Mutex;
 
 fn anonymous_struct_name() -> String {
@@ -134,7 +137,7 @@ pub(crate) fn bc_llvm_signature<'a>(
                     args.push(md_type);
                 }
             }
-            LMIRParameterABI::Indirect { .. } => {
+            LMIRParameterABI::Indirect { .. } | LMIRParameterABI::ByValue { .. } => {
                 args.push(state.context.ptr_type(AddressSpace::from(0)).into());
             }
         }
@@ -184,6 +187,53 @@ pub(crate) fn bc_llvm_prototype<'a>(
     prototype: &LMIRFunctionPrototype,
 ) -> Option<FunctionType<'a>> {
     bc_llvm_signature(state, prototype.signature())
+}
+
+pub(crate) fn apply_llvm_parameter_attributes<'a>(
+    context: &'a Context,
+    architecture: &ArchitectureConfig,
+    function: &FunctionValue<'a>,
+    signature: &LMIRFunctionSignature,
+) -> Option<()> {
+    let mut index = usize::from(signature.has_indirect_return_param());
+
+    for parameter in &signature.params {
+        match &parameter.abi {
+            LMIRParameterABI::Direct { slots } => {
+                for slot in slots {
+                    for attribute in get_type_attributes(context, &slot._type) {
+                        function.add_attribute(AttributeLoc::Param(index as u32), attribute);
+                    }
+                    index += 1;
+                }
+            }
+            LMIRParameterABI::Indirect { .. } => {
+                let pointer = LMIRType::default_pointer(architecture);
+                for attribute in get_type_attributes(context, &pointer) {
+                    function.add_attribute(AttributeLoc::Param(index as u32), attribute);
+                }
+                index += 1;
+            }
+            LMIRParameterABI::ByValue { alignment } => {
+                let pointer = LMIRType::default_pointer(architecture);
+                for attribute in get_type_attributes(context, &pointer) {
+                    function.add_attribute(AttributeLoc::Param(index as u32), attribute);
+                }
+                let pointee = bc_llvm_type(context, &parameter._type)?;
+                function.add_attribute(
+                    AttributeLoc::Param(index as u32),
+                    attr_byval(context, pointee),
+                );
+                function.add_attribute(
+                    AttributeLoc::Param(index as u32),
+                    attr_alignment(context, *alignment),
+                );
+                index += 1;
+            }
+        }
+    }
+
+    Some(())
 }
 
 pub(crate) fn convert_linkage(linkage: LinkageType) -> Linkage {

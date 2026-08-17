@@ -1,9 +1,9 @@
 use super::inst_num;
-use crate::attributes::attr_sret;
+use crate::attributes::{attr_alignment, attr_byval, attr_sret};
 use crate::routines::get_function;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_signature, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_lmir::{LMIRFunctionSignature, LMIRReturnABI, LMIRValue};
+use cx_lmir::{LMIRFunctionSignature, LMIRParameterABI, LMIRReturnABI, LMIRValue};
 use cx_util::identifier::CXIdent;
 use inkwell::attributes::AttributeLoc;
 use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, ValueKind};
@@ -112,6 +112,26 @@ pub(super) fn apply_call_abi_attributes<'a>(
             AttributeLoc::Param(0),
             attr_sret(global_state.context, pointee),
         );
+    }
+
+    let mut index = usize::from(method_sig.return_abi.has_indirect_return_param());
+    for parameter in &method_sig.params {
+        match &parameter.abi {
+            LMIRParameterABI::Direct { slots } => index += slots.len(),
+            LMIRParameterABI::Indirect { .. } => index += 1,
+            LMIRParameterABI::ByValue { alignment } => {
+                let pointee = bc_llvm_type(global_state.context, &parameter._type)?;
+                call.add_attribute(
+                    AttributeLoc::Param(index as u32),
+                    attr_byval(global_state.context, pointee),
+                );
+                call.add_attribute(
+                    AttributeLoc::Param(index as u32),
+                    attr_alignment(global_state.context, *alignment),
+                );
+                index += 1;
+            }
+        }
     }
     Some(())
 }

@@ -649,7 +649,8 @@ impl<'a> FunctionLowerer<'a> {
                     })
                     .collect()
             }
-            LMIRParameterABI::Indirect { alignment } => {
+            LMIRParameterABI::Indirect { alignment }
+            | LMIRParameterABI::ByValue { alignment } => {
                 let source = self.lower_value(argument);
                 if matches!(argument, MIRValue::Place(_)) {
                     let copy = self.emit_temp(
