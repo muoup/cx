@@ -197,5 +197,5 @@ int main(int argc, char **argv)
 
     UnloadTexture(s_texture);
     CloseWindow();
-    return EXIT_SUCCESS;
+    return 0;
 }

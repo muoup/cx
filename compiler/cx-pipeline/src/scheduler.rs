@@ -35,12 +35,23 @@ pub(crate) fn scheduling_loop(
     initial_job: CompilationJob,
     reporter: &mut ProgressReporter,
 ) -> CXResult<()> {
+    scheduling_loop_many(context, [initial_job], reporter)
+}
+
+pub(crate) fn scheduling_loop_many(
+    context: &GlobalCompilationContext,
+    initial_jobs: impl IntoIterator<Item = CompilationJob>,
+    reporter: &mut ProgressReporter,
+) -> CXResult<()> {
     let mut queue = JobQueue::new();
 
     let mut compilation_exists = HashMap::new();
 
-    queue.push_job(initial_job);
-    reporter.add_total(1);
+    let initial_jobs = initial_jobs.into_iter().collect::<Vec<_>>();
+    for initial_job in initial_jobs.iter().cloned() {
+        queue.push_job(initial_job);
+    }
+    reporter.add_total(initial_jobs.len());
 
     // TODO: Parallelize this loop
     'queue: while !queue.is_empty() {
@@ -288,7 +299,10 @@ fn perform_job_with_dump(
         std::fs::File::create(&dump_path).map_err(|error| {
             pipeline_error(
                 "COMPILATION ERROR",
-                format!("Failed to create dump file {}: {error}", dump_path.display()),
+                format!(
+                    "Failed to create dump file {}: {error}",
+                    dump_path.display()
+                ),
             )
         })?;
     }
@@ -420,10 +434,8 @@ pub(crate) fn perform_job(
             let self_ast = context.module_db.generation_ast.get(&job.unit);
             let namespace = job.unit.namespace().clone();
 
-            let require_explicit_return = context
-                .config
-                .require_explicit_return
-                .unwrap_or_else(|| {
+            let require_explicit_return =
+                context.config.require_explicit_return.unwrap_or_else(|| {
                     job.unit
                         .as_path()
                         .extension()

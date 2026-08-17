@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -38,7 +38,30 @@ pub struct TargetConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct BinaryEntry {
     pub name: String,
-    pub entry: String,
+    pub entry: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_compile_all")]
+    pub compile_all: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "deserialize_compile_all")]
+    pub exclude: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum CompileAllValue {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+fn deserialize_compile_all<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<CompileAllValue>::deserialize(deserializer).map(|value| {
+        value.map(|value| match value {
+            CompileAllValue::Single(pattern) => vec![pattern],
+            CompileAllValue::Multiple(patterns) => patterns,
+        })
+    })
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -79,4 +102,41 @@ pub fn load_config(path: &Path) -> Result<CXProjectConfig, String> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
     toml::from_str(&content).map_err(|e| format!("Failed to parse {}: {}", path.display(), e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BinaryEntry;
+
+    #[test]
+    fn parses_single_compile_all_pattern() {
+        let binary: BinaryEntry = toml::from_str(
+            r#"
+name = "demo"
+compile_all = "src/*.c"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(binary.entry, None);
+        assert_eq!(binary.compile_all, Some(vec!["src/*.c".to_string()]));
+        assert_eq!(binary.exclude, None);
+    }
+
+    #[test]
+    fn parses_multiple_compile_all_patterns() {
+        let binary: BinaryEntry = toml::from_str(
+            r#"
+name = "demo"
+compile_all = ["src/*.c", "platform.cx"]
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(binary.entry, None);
+        assert_eq!(
+            binary.compile_all,
+            Some(vec!["src/*.c".to_string(), "platform.cx".to_string()])
+        );
+    }
 }
