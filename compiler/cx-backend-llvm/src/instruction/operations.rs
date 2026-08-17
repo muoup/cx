@@ -5,7 +5,7 @@ use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::types::{LMIRType, TypeSize};
 use cx_lmir::{LMIRFloatBinOp, LMIRFloatUnOp, LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRValue};
 use inkwell::AddressSpace;
-use inkwell::values::AnyValue;
+use inkwell::values::{AnyValue, AnyValueEnum};
 
 pub(super) fn generate_pointer_binop<'a, 'b>(
     global_state: &GlobalState<'a>,
@@ -158,7 +158,11 @@ pub(super) fn generate_bit_cast<'a, 'b>(
     value: &LMIRValue,
     target_type: &LMIRType,
 ) -> Option<CodegenValue<'a>> {
-    let value = any_to_basic_val(function_state.get_value(value)?.get_value())?;
+    let value = function_state.get_value(value)?.get_value();
+    if let AnyValueEnum::PointerValue(value) = value {
+        return Some(CodegenValue::Value(value.as_any_value_enum()));
+    }
+    let value = any_to_basic_val(value)?;
     let target = any_to_basic_type(bc_llvm_type(global_state.context, target_type)?)?;
     let value = function_state
         .builder

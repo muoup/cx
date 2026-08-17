@@ -304,7 +304,7 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> Option
     for (i, global) in global_state.globals.iter().enumerate() {
         function_state.value_map.insert(
             LMIRValue::Global(i as ElementID),
-            CodegenValue::Value(global.as_any_value_enum()),
+            CodegenValue::Value(global.as_pointer_value().as_any_value_enum()),
         );
     }
 

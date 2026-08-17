@@ -6,7 +6,7 @@ use cx_lmir::types::LMIRType;
 use cx_util::identifier::CXIdent;
 use inkwell::AddressSpace;
 use inkwell::types::AnyTypeEnum;
-use inkwell::values::{AnyValue, BasicValue};
+use inkwell::values::{AnyValue, AnyValueEnum, BasicValue};
 
 pub(super) fn generate_allocate<'a, 'b>(
     function_state: &FunctionState<'a, 'b>,
@@ -131,10 +131,18 @@ pub(super) fn generate_memcpy<'a, 'b>(
     size: &LMIRValue,
     alignment: u8,
 ) -> Option<CodegenValue<'a>> {
-    let src = function_state
-        .get_value(src)?
-        .get_value()
-        .into_pointer_value();
+    let src = match function_state.get_value(src)?.get_value() {
+        AnyValueEnum::PointerValue(value) => value,
+        value => {
+            let value = any_to_basic_val(value)?;
+            let temporary = function_state
+                .builder
+                .build_alloca(value.get_type(), inst_num().as_str())
+                .unwrap();
+            function_state.builder.build_store(temporary, value).unwrap();
+            temporary
+        }
+    };
     let dest = function_state
         .get_value(dest)?
         .get_value()
