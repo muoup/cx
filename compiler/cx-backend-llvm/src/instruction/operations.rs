@@ -159,8 +159,12 @@ pub(super) fn generate_bit_cast<'a, 'b>(
     target_type: &LMIRType,
 ) -> Option<CodegenValue<'a>> {
     let value = function_state.get_value(value)?.get_value();
+    if let AnyValueEnum::FunctionValue(value) = value {
+        let value = value.as_global_value().as_pointer_value();
+        return Some(CodegenValue::Value(AnyValueEnum::PointerValue(value)));
+    }
     if let AnyValueEnum::PointerValue(value) = value {
-        return Some(CodegenValue::Value(value.as_any_value_enum()));
+        return Some(CodegenValue::Value(AnyValueEnum::PointerValue(value)));
     }
     let value = any_to_basic_val(value)?;
     let target = any_to_basic_type(bc_llvm_type(global_state.context, target_type)?)?;
