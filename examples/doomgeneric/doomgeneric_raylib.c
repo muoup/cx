@@ -42,6 +42,7 @@ enum {
 #define KEYQUEUE_SIZE 32
 
 static Texture2D s_texture;
+static Color s_frame_buffer[DOOMGENERIC_RESX * DOOMGENERIC_RESY];
 static unsigned short s_key_queue[KEYQUEUE_SIZE];
 static unsigned int s_key_queue_write_index;
 static unsigned int s_key_queue_read_index;
@@ -145,7 +146,19 @@ void DG_Init(void)
 
 void DG_DrawFrame(void)
 {
-    UpdateTexture(s_texture, DG_ScreenBuffer);
+    unsigned int i;
+
+    for (i = 0; i < DOOMGENERIC_RESX * DOOMGENERIC_RESY; i++)
+    {
+        uint32_t pixel = DG_ScreenBuffer[i];
+
+        s_frame_buffer[i].r = (unsigned char)(pixel >> 16);
+        s_frame_buffer[i].g = (unsigned char)(pixel >> 8);
+        s_frame_buffer[i].b = (unsigned char)pixel;
+        s_frame_buffer[i].a = 255;
+    }
+
+    UpdateTexture(s_texture, s_frame_buffer);
 
     BeginDrawing();
     ClearBackground(BLACK);
