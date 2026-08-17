@@ -49,6 +49,27 @@ pub(crate) fn resolve_indirect_base(
                 };
             }
 
+            if let Some(array_inner) = env.symbols.array_inner(&inner_type).cloned() {
+                let pointer = THIRExpression {
+                    token_range: TokenRange::internal(),
+                    kind: THIRExpressionKind::TypeConversion {
+                        operand: Box::new(source),
+                        conversion: cx_thir::thir::expression::THIRCoercion::ReinterpretBits,
+                    },
+                    _type: env.symbols.pointer_to(array_inner.clone()),
+                };
+
+                return IndirectBase {
+                    source: THIRExpression {
+                        token_range: TokenRange::internal(),
+                        kind: THIRExpressionKind::Typechange(Box::new(pointer)),
+                        _type: env.symbols.mem_ref_to(array_inner.clone()),
+                    },
+                    source_type: array_inner,
+                    owned: false,
+                };
+            }
+
             if env.symbols.mem_ref_inner(&inner_type).is_some() {
                 source = THIRExpression {
                     token_range: TokenRange::internal(),
