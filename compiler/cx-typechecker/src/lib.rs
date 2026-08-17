@@ -211,17 +211,12 @@ fn canonicalize_global_initializer(
             _type,
             token_range,
         },
-        THIRExpressionKind::TypeConversion {
-            conversion,
-            operand,
-        } if contains_global_reference(&operand) =>
-        {
-            THIRExpression {
-                kind: THIRExpressionKind::TypeConversion { conversion, operand },
-                _type,
-                token_range,
-            }
-        }
+        THIRExpressionKind::TypeConversion { conversion, operand }
+            if contains_global_reference(&operand) => THIRExpression {
+            kind: THIRExpressionKind::TypeConversion { conversion, operand },
+            _type,
+            token_range,
+        },
         THIRExpressionKind::Typechange(operand)
             if matches!(operand.kind, THIRExpressionKind::GlobalVariable { .. }) =>
         {
@@ -236,6 +231,25 @@ fn canonicalize_global_initializer(
             _type,
             token_range,
         },
+        THIRExpressionKind::Copy { source } => {
+            if contains_global_reference(&source) {
+                THIRExpression {
+                    kind: THIRExpressionKind::Copy { source },
+                    _type,
+                    token_range,
+                }
+            } else {
+                evaluate_comptime_expression(
+                    env,
+                    THIRExpression {
+                        kind: THIRExpressionKind::Copy { source },
+                        _type,
+                        token_range,
+                    },
+                )
+                .map(|value| value.into_expression())?
+            }
+        }
         THIRExpressionKind::FunctionReference { .. } => THIRExpression {
             kind,
             _type,
@@ -276,6 +290,7 @@ fn canonicalize_global_initializer(
 fn contains_global_reference(expression: &THIRExpression) -> bool {
     match &expression.kind {
         THIRExpressionKind::GlobalVariable { .. } => true,
+        THIRExpressionKind::Copy { source } => contains_global_reference(source),
         THIRExpressionKind::Typechange(operand)
         | THIRExpressionKind::TypeConversion { operand, .. } => {
             contains_global_reference(operand)

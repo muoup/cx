@@ -12,6 +12,7 @@ use cx_thir::{
         data::{THIRFnPrototype, THIRFunction},
         expression::{
             THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRLocalID,
+            THIRIntBinOp,
             THIRPtrDiffBinOp,
         },
         global::{MIRGlobalVarKind, MIRGlobalVariable as THIRGlobalVariable},
@@ -320,6 +321,7 @@ impl<'thir> MIRBuilder<'thir> {
         }
 
         match &expression.kind {
+            THIRExpressionKind::Copy { source } => self.lower_global_constant(source),
             THIRExpressionKind::BoolLiteral(value) => MIRConstant::Bool(*value),
             THIRExpressionKind::FunctionReference { name, debug_name } => MIRConstant::Function(
                 self.ensure_function(name, &expression._type, debug_name.as_ref()),
@@ -1064,6 +1066,7 @@ impl<'thir> MIRBuilder<'thir> {
 fn global_reference_symbol(expression: &THIRExpression) -> Option<&CXIdent> {
     match &expression.kind {
         THIRExpressionKind::GlobalVariable { symbol } => Some(symbol),
+        THIRExpressionKind::Copy { source } => global_reference_symbol(source),
         THIRExpressionKind::Typechange(operand)
         | THIRExpressionKind::TypeConversion { operand, .. } => {
             global_reference_symbol(operand)
@@ -1075,6 +1078,24 @@ fn global_reference_symbol(expression: &THIRExpression) -> Option<&CXIdent> {
 fn integer_literal(expression: &THIRExpression) -> Option<i64> {
     match &expression.kind {
         THIRExpressionKind::IntLiteral(value) => i64::try_from(*value).ok(),
+        THIRExpressionKind::BinaryOperation {
+            lhs,
+            rhs,
+            op: THIRBinOp::Integer { op, .. },
+        } => {
+            let lhs = integer_literal(lhs)?;
+            let rhs = integer_literal(rhs)?;
+            Some(match op {
+                THIRIntBinOp::ADD => lhs + rhs,
+                THIRIntBinOp::SUB => lhs - rhs,
+                THIRIntBinOp::MUL | THIRIntBinOp::IMUL => lhs * rhs,
+                THIRIntBinOp::DIV | THIRIntBinOp::IDIV => lhs / rhs,
+                THIRIntBinOp::MOD | THIRIntBinOp::IMOD => lhs % rhs,
+                THIRIntBinOp::SHL => lhs << rhs,
+                THIRIntBinOp::ASHR | THIRIntBinOp::LSHR => lhs >> rhs,
+                _ => return None,
+            })
+        }
         THIRExpressionKind::Typechange(operand)
         | THIRExpressionKind::TypeConversion { operand, .. } => integer_literal(operand),
         _ => None,
