@@ -2,6 +2,7 @@ use std::fmt::{self, Display, Formatter};
 
 use cx_util::linkage::LinkageMode;
 
+use crate::MIRGlobalVariable;
 use crate::expr::{
     MIRAggregateOp, MIRBasicBlock, MIRConstant, MIRInstrKind, MIRPlace, MIRPlaceAggregateOp,
     MIRValue, MIRValueAggregateOp,
@@ -200,7 +201,7 @@ fn aggregate_fields(kind: &MIRTypeKind) -> Option<&[MIRField]> {
 fn write_global(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
-    global: &crate::global::MIRGlobalVariable,
+    global: &MIRGlobalVariable,
     types: &mut TypePrinter<'_>,
 ) -> fmt::Result {
     match global.state {
