@@ -19,7 +19,7 @@ use crate::{
     type_checking::{
         coercion::{
             explicit::explicit_cast,
-            implicit::{implicit_cast, promotion::std_rval_promotion},
+            implicit::{implicit_cast, promotion::{std_rval_promotion, sizeof_promotion}},
         },
         op::binop::is::typecheck_is,
         result::TypecheckResult,
@@ -250,13 +250,10 @@ pub(crate) fn typecheck_alignof_expr(
     expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     let tc_expr = typecheck_expr(env, namespace, expr, None)
-        .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
-    let _type = env
-        .symbols
-        .mem_ref_inner(&tc_expr._type)
-        .cloned()
-        .unwrap_or(tc_expr._type);
-    Ok(alignof_result(tc_expr.token_range, _type))
+        .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
+        .and_then(|v| sizeof_promotion(env, v))?;
+
+    Ok(alignof_result(tc_expr.token_range, tc_expr._type))
 }
 
 pub(crate) fn typecheck_sizeof_expr(
@@ -265,14 +262,10 @@ pub(crate) fn typecheck_sizeof_expr(
     expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     let tc_expr = typecheck_expr(env, namespace, expr, None)
-        .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
+        .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
+        .and_then(|v| sizeof_promotion(env, v))?;
 
-    let _type = env
-        .symbols
-        .mem_ref_inner(&tc_expr._type)
-        .cloned()
-        .unwrap_or(tc_expr._type);
-    Ok(sizeof_result(tc_expr.token_range, _type))
+    Ok(sizeof_result(tc_expr.token_range, tc_expr._type))
 }
 
 fn alignof_result(range: TokenRange, _type: THIRType) -> TypecheckResult {
