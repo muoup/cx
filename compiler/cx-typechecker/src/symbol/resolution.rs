@@ -2,7 +2,7 @@ use cx_hir::{
     ast::{
         function::{HIRFunctionContract, HIRFunctionKind},
         template::HIRTemplatePrototype,
-        types::HIRType,
+        types::{HIRType, HIRTypeKind},
     },
     symbols::{HIRSymbol, HIRSymbolKind},
 };
@@ -19,7 +19,7 @@ use cx_thir::{
     thir::{
         contextual_eq::TypeContextEqual,
         data::{MIRTemplateInput, THIRFnPrototype, THIRFnSignature, THIRParameter, TemplateInfo},
-        expression::{THIRExpression, THIRExpressionKind},
+        expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
         global::{MIRGlobalVarKind, MIRGlobalVariable},
         name_mangling::{base_mangle_member, base_mangle_templated_name},
     },
@@ -40,6 +40,41 @@ pub fn resolve_symbol(
     symbol_namespace: &EnvironmentNamespace,
     name: &CXIdent,
     symbol: &HIRSymbol,
+) -> CXResult<MIRSymbol> {
+    resolve_symbol_inner(
+        env,
+        evaluation_namespace,
+        symbol_namespace,
+        name,
+        symbol,
+        true,
+    )
+}
+
+pub(crate) fn resolve_symbol_without_implicit_array_decay(
+    env: &mut TypeEnvironment,
+    evaluation_namespace: &EnvironmentNamespace,
+    symbol_namespace: &EnvironmentNamespace,
+    name: &CXIdent,
+    symbol: &HIRSymbol,
+) -> CXResult<MIRSymbol> {
+    resolve_symbol_inner(
+        env,
+        evaluation_namespace,
+        symbol_namespace,
+        name,
+        symbol,
+        false,
+    )
+}
+
+fn resolve_symbol_inner(
+    env: &mut TypeEnvironment,
+    evaluation_namespace: &EnvironmentNamespace,
+    symbol_namespace: &EnvironmentNamespace,
+    name: &CXIdent,
+    symbol: &HIRSymbol,
+    decay_implicit_array: bool,
 ) -> CXResult<MIRSymbol> {
     match &symbol.kind {
         HIRSymbolKind::DuplicateDefinition(definitions) => resolve_duplicate_definition(
@@ -81,13 +116,29 @@ pub fn resolve_symbol(
                 });
             }
 
-            Ok(MIRSymbol::Expression(THIRExpression {
+            let global = THIRExpression {
                 token_range: TokenRange::internal(),
                 kind: THIRExpressionKind::GlobalVariable {
-                    symbol: symbol_name,
+                    symbol: symbol_name.clone(),
                 },
-                _type: env.symbols.mem_ref_to(ty),
-            }))
+                _type: env.symbols.mem_ref_to(ty.clone()),
+            };
+            let expression = if decay_implicit_array
+                && matches!(_type.kind, HIRTypeKind::ImplicitSizedArray(_))
+            {
+                THIRExpression {
+                    token_range: TokenRange::internal(),
+                    kind: THIRExpressionKind::TypeConversion {
+                        operand: Box::new(global),
+                        conversion: THIRCoercion::ReinterpretBits,
+                    },
+                    _type: ty,
+                }
+            } else {
+                global
+            };
+
+            Ok(MIRSymbol::Expression(expression))
         }
 
         HIRSymbolKind::FunctionReference(prototype) => {
@@ -217,21 +268,23 @@ fn resolve_duplicate_definition(
         ));
     };
 
-    let first = resolve_symbol(
+    let first = resolve_symbol_inner(
         env,
         evaluation_namespace,
         symbol_namespace,
         name,
         &HIRSymbol::new(visibility, first.clone()),
+        false,
     )?;
 
     for definition in rest {
-        let candidate = resolve_symbol(
+        let candidate = resolve_symbol_inner(
             env,
             evaluation_namespace,
             symbol_namespace,
             name,
             &HIRSymbol::new(visibility, definition.clone()),
+            false,
         )?;
 
         if !mir_symbols_equivalent(env, &first, &candidate) {

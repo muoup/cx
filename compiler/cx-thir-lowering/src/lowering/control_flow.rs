@@ -209,6 +209,36 @@ pub(super) fn lower_if(
     else_branch: Option<&THIRExpression>,
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
+    if builder.current_block_terminated() {
+        let then_block = builder.new_block("if.unreachable.then");
+        let else_block = builder.new_block("if.unreachable.else");
+        let continuation = builder.new_block("if.unreachable.continuation");
+        let value_match = !matches!(result_type.kind, THIRTypeKind::Void);
+
+        builder.set_current_block(then_block);
+        if value_match {
+            lower_scoped_value(builder, then_branch, result_type)?;
+        } else {
+            lower_scoped(builder, then_branch)?;
+        }
+
+        builder.set_current_block(else_block);
+        if let Some(else_branch) = else_branch {
+            if value_match {
+                lower_scoped_value(builder, else_branch, result_type)?;
+            } else {
+                lower_scoped(builder, else_branch)?;
+            }
+        }
+
+        builder.set_current_block(continuation);
+        return Ok(if value_match {
+            MIRValue::Constant(MIRConstant::Undefined)
+        } else {
+            MIRValue::Constant(MIRConstant::Unit)
+        });
+    }
+
     let condition = super::lower_expression(builder, condition)?;
     let then_block = builder.new_block("if.then");
     let else_block = builder.new_block("if.else");

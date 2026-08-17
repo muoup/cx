@@ -128,7 +128,8 @@ fn global_llvm_type<'ctx>(
 
     match &_type.kind {
         cx_lmir::types::LMIRTypeKind::Opaque { bytes }
-            if *bytes == state.architecture.pointer_size() =>
+            if *bytes == state.architecture.pointer_size()
+                && usize::from(_type.alignment) == state.architecture.pointer_alignment() =>
         {
             state
                 .context

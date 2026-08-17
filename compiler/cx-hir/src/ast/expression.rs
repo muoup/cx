@@ -7,7 +7,12 @@ use cx_util::{
 };
 use speedy::{Readable, Writable};
 
-use crate::ast::{pattern::HIRPattern, template::HIRTemplateInput, types::HIRType};
+use crate::ast::{
+    modifiers::LinkageMode,
+    pattern::HIRPattern,
+    template::HIRTemplateInput,
+    types::HIRType,
+};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct HIRExpression {
@@ -115,6 +120,7 @@ pub enum HIRExprKind {
         _type: HIRType,
         name: CXIdent,
         initial_value: Option<Box<HIRExpression>>,
+        linkage: LinkageMode,
     },
     BinOp {
         lhs: Box<HIRExpression>,

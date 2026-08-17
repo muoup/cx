@@ -243,6 +243,7 @@ impl<'a> Display for HIRExprFormatter<'a> {
                 name,
                 _type,
                 initial_value,
+                ..
             } => {
                 writeln!(f, "VarDeclaration {name}: {_type}")?;
 

@@ -154,6 +154,7 @@ fn typecheck_expr_inner(
             _type,
             name,
             initial_value,
+            linkage,
         } => typecheck_var_declaration(
             env,
             namespace,
@@ -161,6 +162,7 @@ fn typecheck_expr_inner(
             _type,
             name,
             initial_value.as_ref().map(|v| v.as_ref()),
+            *linkage,
         )?,
 
         HIRExprKind::Identifier {
@@ -187,7 +189,8 @@ fn typecheck_expr_inner(
         } => {
             let condition_result = typecheck_expr(env, namespace, condition, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
-                .and_then(|v| std_rval_promotion(env, v))?;
+                .and_then(|v| std_rval_promotion(env, v))
+                .and_then(|v| implicit_cast(env, v, &THIRType::bool()))?;
             env.push_scope(false, false);
             env.function.configure_merge_scope(expr, None);
             let join_scope_idx = env.function.current_scope_index();
@@ -285,7 +288,8 @@ fn typecheck_expr_inner(
 
             let condition_result = typecheck_expr(env, namespace, condition, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
-                .and_then(|v| std_rval_promotion(env, v))?;
+                .and_then(|v| std_rval_promotion(env, v))
+                .and_then(|v| implicit_cast(env, v, &THIRType::bool()))?;
             let body_result = typecheck_fallthrough_scope(
                 env,
                 namespace,
@@ -331,7 +335,8 @@ fn typecheck_expr_inner(
 
             let condition_result = typecheck_expr(env, namespace, condition, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
-                .and_then(|v| std_rval_promotion(env, v))?;
+                .and_then(|v| std_rval_promotion(env, v))
+                .and_then(|v| implicit_cast(env, v, &THIRType::bool()))?;
             let body_result = typecheck_fallthrough_scope(
                 env,
                 namespace,

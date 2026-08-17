@@ -394,6 +394,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                     _type,
                     name,
                     initial_value,
+                    linkage: specifiers.linkage,
                 }
                 .into_expr(
                     start_index,

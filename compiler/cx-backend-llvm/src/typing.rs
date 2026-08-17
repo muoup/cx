@@ -110,6 +110,12 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &LMIRType) -> Option
                 .map(|s| s.as_any_type_enum());
         }
 
+        LMIRTypeKind::Opaque { bytes }
+            if *bytes == ArchitectureConfig::native().pointer_size()
+                && usize::from(_type.alignment) == ArchitectureConfig::native().pointer_alignment() =>
+        {
+            context.ptr_type(AddressSpace::from(0)).as_any_type_enum()
+        }
         LMIRTypeKind::Opaque { bytes } => context
             .i8_type()
             .array_type(*bytes as u32)

@@ -5,7 +5,10 @@ use std::{
 
 use cx_util::namespace::{NamespacePath, QualifiedName};
 
-use crate::symbols::{HIRSymbol, SymbolNamespaceData};
+use crate::{
+    ast::modifiers::HIRSymbolNameScheme,
+    symbols::{HIRSymbol, HIRSymbolKind, SymbolNamespaceData},
+};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ExportNameMode {
@@ -108,6 +111,35 @@ impl GlobalSymbolRegistry {
             .get(&name.namespace)?
             .get_symbol(name.name.as_str())
             .cloned()
+    }
+
+    pub fn resolve_unmangled_global(
+        &self,
+        name: &str,
+    ) -> Vec<(NamespacePath, HIRSymbol)> {
+        let inner = self
+            .inner
+            .read()
+            .expect("GlobalSymbolRegistry read lock poisoned");
+
+        inner
+            .namespaces
+            .iter()
+            .filter_map(|(namespace, data)| {
+                let symbol = data.get_symbol(name)?;
+                if matches!(
+                    &symbol.kind,
+                    HIRSymbolKind::AddressableGlobal {
+                        symbol_naming: HIRSymbolNameScheme::Unmangled,
+                        ..
+                    }
+                ) {
+                    Some((namespace.clone(), symbol.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     pub fn resolve_aliases(

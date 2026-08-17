@@ -447,8 +447,11 @@ fn lower_int_binop(op: &HIRBinOp, signed: bool) -> Option<THIRIntBinOp> {
     Some(match op {
         HIRBinOp::Add => THIRIntBinOp::ADD,
         HIRBinOp::Subtract => THIRIntBinOp::SUB,
+        HIRBinOp::Multiply if signed => THIRIntBinOp::IMUL,
         HIRBinOp::Multiply => THIRIntBinOp::MUL,
+        HIRBinOp::Divide if signed => THIRIntBinOp::IDIV,
         HIRBinOp::Divide => THIRIntBinOp::DIV,
+        HIRBinOp::Modulus if signed => THIRIntBinOp::IMOD,
         HIRBinOp::Modulus => THIRIntBinOp::MOD,
 
         HIRBinOp::Less if !signed => THIRIntBinOp::LT,

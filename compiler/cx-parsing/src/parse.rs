@@ -281,9 +281,18 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
     }
 
     let (name, return_type, linkage) = parse_initializer(data)?;
-    let symbol_naming = data.symbol_naming;
-    let inherited_external =
-        symbol_naming == HIRSymbolNameScheme::Unmangled && linkage == LinkageMode::Standard;
+    let symbol_naming = if data.c_mode {
+        if linkage == LinkageMode::Static {
+            HIRSymbolNameScheme::Namespaced
+        } else {
+            HIRSymbolNameScheme::Unmangled
+        }
+    } else {
+        data.symbol_naming
+    };
+    let inherited_external = !data.c_mode
+        && symbol_naming == HIRSymbolNameScheme::Unmangled
+        && linkage == LinkageMode::Standard;
 
     let Some(name) = name else {
         // Blank statement consisting on just a type, (i.e. struct [name] { [fields] };)
