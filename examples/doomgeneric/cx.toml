@@ -2,7 +2,7 @@
 name = "doomgeneric"
 
 [build]
-backend = "cranelift"
+backend = "llvm"
 optimization = "O2"
 
 [workspace.targets.default]
