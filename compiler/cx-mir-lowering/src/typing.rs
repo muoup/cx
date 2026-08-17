@@ -81,6 +81,10 @@ fn classify_param(
 ) -> LMIRParameter {
     let lowered = convert_type(ty, types);
     let layout = layout(types, ty);
+    let aggregate_value = matches!(
+        types.kind(ty),
+        Some(MIRTypeKind::Structured { .. } | MIRTypeKind::Union { .. })
+    );
     let abi = if !lowered.is_memory_resident() {
         LMIRParameterABI::Direct {
             slots: vec![LMIRABISlot {
@@ -90,8 +94,12 @@ fn classify_param(
         }
     } else if let Some(slots) = direct_aggregate_slots(architecture, &lowered, layout.size) {
         LMIRParameterABI::Direct { slots }
-    } else {
+    } else if aggregate_value {
         LMIRParameterABI::ByValue {
+            alignment: layout.alignment as u8,
+        }
+    } else {
+        LMIRParameterABI::Indirect {
             alignment: layout.alignment as u8,
         }
     };
@@ -317,4 +325,47 @@ fn homogeneous_float_fields(ty: &LMIRType) -> Option<(usize, LMIRFloatType)> {
         .iter()
         .all(|(_, field)| matches!(field.kind, LMIRTypeKind::Float(value) if value == first))
         .then_some((fields.len(), first))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cx_mir::MIRTypeDefinition;
+
+    #[test]
+    fn large_struct_parameters_use_c_by_value_abi() {
+        let architecture = ArchitectureConfig::new(8, 8);
+        let mut types = MIRTypeRegistry::new(architecture);
+        let integer = types.intern(MIRTypeDefinition::new(MIRTypeKind::Integer {
+            ty: MIRIntType::I32,
+            signed: true,
+        }));
+        let structure = types.intern(MIRTypeDefinition::new(MIRTypeKind::Structured {
+            fields: (0..6).map(|_| MIRField::standard(integer)).collect(),
+        }));
+
+        let parameter = classify_param(&architecture, None, structure, &types);
+
+        assert!(matches!(
+            parameter.abi,
+            LMIRParameterABI::ByValue { alignment: 4 }
+        ));
+    }
+
+    #[test]
+    fn opaque_parameters_remain_indirect() {
+        let architecture = ArchitectureConfig::new(8, 8);
+        let mut types = MIRTypeRegistry::new(architecture);
+        let opaque = types.intern(MIRTypeDefinition::new(MIRTypeKind::Opaque {
+            size: 24,
+            alignment: 8,
+        }));
+
+        let parameter = classify_param(&architecture, None, opaque, &types);
+
+        assert!(matches!(
+            parameter.abi,
+            LMIRParameterABI::Indirect { alignment: 8 }
+        ));
+    }
 }
