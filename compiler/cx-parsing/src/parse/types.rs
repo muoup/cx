@@ -1,15 +1,15 @@
 use crate::parse::expressions::parse_expr;
-use crate::parse::{try_parse_simple_identifier, ParserData};
+use crate::parse::{ParserData, try_parse_simple_identifier};
 use crate::{assert_token_matches, log::parse_point_error, next_kind, peek_kind, try_next};
+use cx_hir::ast::HIRStmt;
+use cx_hir::ast::expression::HIRExpression;
 use cx_hir::ast::global_var::HIREnumDefinition;
 use cx_hir::ast::types::HIRMoveSemantics;
-use cx_hir::ast::expression::HIRExpression;
-use cx_hir::ast::HIRStmt;
 use cx_hir::ast::{
     function::{HIRFunctionKind, HIRFunctionPrototype},
     global_var::{HIREnumVariant, HIRGlobalVariable},
     modifiers::{
-        HIRSymbolNameScheme, HIRTypeQualifiers, LinkageMode, HIR_CONST, HIR_RESTRICT, HIR_VOLATILE,
+        HIR_CONST, HIR_RESTRICT, HIR_VOLATILE, HIRSymbolNameScheme, HIRTypeQualifiers, LinkageMode,
     },
     template::HIRTemplatePrototype,
     types::{HIRAggregateAttributes, HIRField, HIRType, HIRTypeKind, PredeclarationType},
@@ -18,12 +18,12 @@ use cx_log::CXResult;
 use cx_thir::intrinsic_types::is_intrinsic_type;
 use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
 use cx_tokens::{
-    identifier, intrinsic, keyword, operator, punctuator, specifier, TokenIter, TokenRange,
+    TokenIter, TokenRange, identifier, intrinsic, keyword, operator, punctuator, specifier,
 };
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
 
-use crate::parse::functions::{parse_params, ParseParamsResult};
+use crate::parse::functions::{ParseParamsResult, parse_params};
 use crate::parse::templates::{note_templated_types, try_parse_template, unnote_templated_types};
 use crate::parse::{parse_intrinsic, try_parse_qualified_name, try_parse_type_identifier};
 
@@ -47,6 +47,13 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
             data.tokens.index = pre_idx;
 
             data.is_type_ident(&ident)?
+                && !matches!(
+                    data.tokens.slice.get(pre_idx + 1).map(|token| &token.kind),
+                    Some(
+                        TokenKind::Assignment(_)
+                            | TokenKind::Operator(cx_tokens::token::OperatorType::Access)
+                    )
+                )
         }
 
         _ => false,
@@ -435,12 +442,12 @@ pub(crate) fn parse_specifier(tokens: &mut TokenIter) -> HIRTypeQualifiers {
     parse_decl_specifiers(tokens).qualifiers
 }
 
-struct ParsedSpecifiers {
-    qualifiers: HIRTypeQualifiers,
-    linkage: LinkageMode,
+pub(crate) struct ParsedSpecifiers {
+    pub(crate) qualifiers: HIRTypeQualifiers,
+    pub(crate) linkage: LinkageMode,
 }
 
-fn parse_decl_specifiers(tokens: &mut TokenIter) -> ParsedSpecifiers {
+pub(crate) fn parse_decl_specifiers(tokens: &mut TokenIter) -> ParsedSpecifiers {
     let mut spec_acc: HIRTypeQualifiers = 0;
     let mut linkage = LinkageMode::Standard;
 
@@ -565,8 +572,9 @@ pub(crate) fn parse_type_mods(
                 .into_iter()
                 .rev()
                 .fold(fn_ptr_type, |inner, size| match size {
-                    Some(size) => HIRTypeKind::ExplicitSizedArray(Box::new(inner), Box::new(size))
-                        .to_type(),
+                    Some(size) => {
+                        HIRTypeKind::ExplicitSizedArray(Box::new(inner), Box::new(size)).to_type()
+                    }
                     None => HIRTypeKind::ImplicitSizedArray(Box::new(inner)).to_type(),
                 });
 

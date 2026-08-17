@@ -11,10 +11,11 @@ use crate::{
     next_kind,
     parse::{
         expressions::{parse_expr, parse_pattern},
+        functions::try_function_parse,
         parse_block,
         parser::ParserData,
         try_parse_simple_identifier,
-        types::{is_type_decl, parse_base_mods, parse_specifier, parse_type_base},
+        types::{is_type_decl, parse_base_mods, parse_type_base},
     },
     try_next,
 };
@@ -43,10 +44,7 @@ pub(crate) fn parse_stmt(data: &mut ParserData) -> CXResult<HIRExpression> {
 
 pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<HIRExpression>> {
     let label_start = data.tokens.index;
-    if let (
-        Some(TokenKind::Identifier(name)),
-        Some(TokenKind::Punctuator(PunctuatorType::Colon)),
-    ) = (
+    if let (Some(TokenKind::Identifier(name)), Some(TokenKind::Punctuator(PunctuatorType::Colon))) = (
         data.tokens.peek().map(|token| &token.kind),
         data.tokens
             .slice
@@ -340,8 +338,8 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
     let start_index = data.tokens.index;
 
     try_next!(data.tokens, keyword!(Register));
-    let specifiers = parse_specifier(&mut data.tokens);
-    let base_type = parse_type_base(data)?.add_specifier(specifiers);
+    let specifiers = super::types::parse_decl_specifiers(&mut data.tokens);
+    let base_type = parse_type_base(data)?.add_specifier(specifiers.qualifiers);
 
     let mut decls = Vec::new();
     data.change_comma_mode(false);
@@ -350,6 +348,37 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
         let (name, _type) = parse_base_mods(data, base_type.clone())?;
 
         if let Some(name) = name {
+            if data.c_mode || specifiers.linkage == cx_hir::ast::modifiers::LinkageMode::Extern {
+                let linkage = if data.c_mode
+                    && specifiers.linkage == cx_hir::ast::modifiers::LinkageMode::Standard
+                {
+                    cx_hir::ast::modifiers::LinkageMode::Extern
+                } else {
+                    specifiers.linkage
+                };
+                if let Some(function) = try_function_parse(
+                    data,
+                    _type.clone(),
+                    name.clone(),
+                    linkage,
+                    data.symbol_naming,
+                    false,
+                )? {
+                    data.add_stmt(cx_hir::ast::HIRStmt::FunctionDefinition {
+                        prototype: function.prototype,
+                        visibility: data.visibility,
+                        template_prototype: function.template_prototype,
+                        body: None,
+                    });
+                    data.pop_comma_mode();
+                    return Ok(HIRExprKind::Void.into_expr(
+                        start_index,
+                        data.tokens.index,
+                        data.file_origin_for_range(start_index, data.tokens.index),
+                    ));
+                }
+            }
+
             // Check for initializer after variable name
             let initial_value = if try_next!(data.tokens, TokenKind::Assignment(None)) {
                 data.change_comma_mode(false);
