@@ -27,12 +27,16 @@ use crate::{
 /// loses its memory reference wrapper, meaning this conversion will be skipped.
 ///
 
-pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResult<CoercionResult> {
+pub fn try_conversion(
+    env: &mut TypeEnvironment,
+    expr: THIRExpression,
+    allow_arrays: bool,
+) -> CXResult<CoercionResult> {
     let Some(mem_inner) = env.symbols.mem_ref_inner(&expr._type).cloned() else {
         return CoercionResult::unapplied(expr);
     };
 
-    if mem_inner.is_array() || mem_inner.is_str() || mem_inner.is_function() {
+    if (!allow_arrays && mem_inner.is_array()) || mem_inner.is_str() || mem_inner.is_function() {
         return CoercionResult::unapplied(expr);
     }
 
@@ -40,32 +44,6 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResu
         return CoercionResult::unapplied_with_obstacle(expr, CoercionObstacle::Uncopyable);
     }
 
-    let token_range = expr.token_range.clone();
-    let result_type = mem_inner.without_specifier(HIR_CONST);
-    let loaded = THIRExpression {
-        token_range,
-        _type: result_type.clone(),
-        kind: THIRExpressionKind::Copy {
-            source: Box::new(expr),
-        },
-    };
-
-    CoercionResult::success(loaded)
-}
-
-pub fn sizeof_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResult<CoercionResult> {
-    let Some(mem_inner) = env.symbols.mem_ref_inner(&expr._type).cloned() else {
-        return CoercionResult::unapplied(expr);
-    };
-
-    if mem_inner.is_str() || mem_inner.is_function() {
-        return CoercionResult::unapplied(expr);
-    }
-
-    if mem_inner.is_nocopy() {
-        return CoercionResult::unapplied_with_obstacle(expr, CoercionObstacle::Uncopyable);
-    }
-    
     let token_range = expr.token_range.clone();
     let result_type = mem_inner.without_specifier(HIR_CONST);
     let loaded = THIRExpression {

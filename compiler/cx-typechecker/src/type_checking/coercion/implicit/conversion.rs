@@ -65,21 +65,13 @@ fn internal(
     target_type: &THIRType,
 ) -> CXResult<CoercionResult> {
     if env.symbols.is_cx_str(&from_type) && is_char_array(env, target_type) {
-        return coercion_expr(
-            expr,
-            target_type.clone(),
-            THIRCoercion::ReinterpretBits,
-        );
+        return coercion_expr(expr, target_type.clone(), THIRCoercion::ReinterpretBits);
     }
 
     if env.symbols.is_cx_str(&from_type)
         && matches!(target_type.kind, THIRTypeKind::PointerTo { .. })
     {
-        return coercion_expr(
-            expr,
-            target_type.clone(),
-            THIRCoercion::ReinterpretBits,
-        );
+        return coercion_expr(expr, target_type.clone(), THIRCoercion::ReinterpretBits);
     }
 
     if matches!(expr.kind, THIRExpressionKind::IntLiteral(0))
@@ -107,11 +99,7 @@ fn internal(
             env.symbols.resolve_type_id(*to_inner),
         )?
     {
-        return coercion_expr(
-            expr,
-            target_type.clone(),
-            THIRCoercion::ReinterpretBits,
-        );
+        return coercion_expr(expr, target_type.clone(), THIRCoercion::ReinterpretBits);
     }
 
     if expr._type.is_integer() {
@@ -229,7 +217,7 @@ fn internal(
             let i2 = env.symbols.resolve_type_id(*i2);
 
             if i1.is_memory_reference() {
-                return lvalue::try_conversion(env, expr);
+                return lvalue::try_conversion(env, expr, false);
             }
 
             if compatible::compatible_types(env, i1, i2)? {
@@ -257,8 +245,9 @@ fn internal(
         }
 
         // Note: type 2 is not a memory reference due to previous case
-        (THIRTypeKind::MemoryReference { .. }, _) => std_rval_promotion(env, expr)
-            .and_then(CoercionResult::success),
+        (THIRTypeKind::MemoryReference { .. }, _) => {
+            std_rval_promotion(env, expr).and_then(CoercionResult::success)
+        }
 
         (_, THIRTypeKind::PointerTo { inner_type })
             if env.type_eq(&from_type, env.symbols.resolve_type_id(*inner_type)) =>

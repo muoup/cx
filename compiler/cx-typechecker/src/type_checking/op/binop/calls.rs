@@ -1,8 +1,8 @@
 use crate::comptime::{ComptimeCallArg, evaluate_comptime_call, evaluate_staged_expression_call};
 use crate::environment::TypeEnvironment;
 use crate::symbol::deduction::complete_templated_callee_maybe;
-use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::conversion::compatible;
+use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::lvalue;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::contracts::typecheck_contract;
@@ -88,7 +88,10 @@ pub(crate) fn typecheck_va_list(
     let list = typecheck_expr(env, namespace, expr, None)?
         .standard_ready_assure(env, expr.token_range())?
         .internal_ready_assertion();
-    let actual = env.symbols.mem_ref_inner(&list._type).unwrap_or(&list._type);
+    let actual = env
+        .symbols
+        .mem_ref_inner(&list._type)
+        .unwrap_or(&list._type);
     let expected = env.get_intrinsic_type("__builtin_va_list");
     if !compatible::compatible_types(env, actual, &expected)? {
         return env.log_error(
@@ -201,7 +204,7 @@ fn load_callable(
     function: THIRExpression,
 ) -> CXResult<(THIRExpression, THIRFnSignature)> {
     let loaded_function =
-        lvalue::try_conversion(env, function)?.catch_unapplied(|expr, _| Ok(expr))?;
+        lvalue::try_conversion(env, function, false)?.catch_unapplied(|expr, _| Ok(expr))?;
     let function_type = loaded_function.get_type();
     let Some(callable_type) = env
         .symbols
