@@ -38,7 +38,6 @@ pub fn compilation_hash() -> u64 {
 #[derive(Debug)]
 pub struct GlobalCompilationContext {
     pub config: CompilerConfig,
-    pub module_mode: bool,
     pub module_db: ModuleData,
 
     pub linking_files: Mutex<HashSet<PathBuf>>,

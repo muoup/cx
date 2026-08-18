@@ -136,7 +136,7 @@ fn import_jobs_for_unit(
     let mut jobs = Vec::new();
 
     for import in imports {
-        if !context.module_mode && !import.is_library_module() {
+        if !context.config.module_mode && !import.is_library_module() {
             return Err(pipeline_error(
                 "COMPILATION ERROR",
                 format!(

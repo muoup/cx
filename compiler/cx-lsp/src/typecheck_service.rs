@@ -98,7 +98,6 @@ pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckRepo
             native_objects: vec![],
             predefined_macros: vec![],
         },
-        module_mode: true,
         module_db: cx_pipeline_data::db::ModuleData::new(),
         linking_files: Mutex::new(HashSet::new()),
     };

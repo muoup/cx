@@ -47,7 +47,6 @@ pub(crate) fn pipeline_error(code: impl Into<String>, message: impl Into<String>
 pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResult<()> {
     let verbose = config.verbose;
     let compiler_context = GlobalCompilationContext {
-        module_mode: config.module_mode,
         config,
         module_db: ModuleData::new(),
         linking_files: Mutex::new(HashSet::new()),
@@ -125,7 +124,6 @@ pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) ->
 
     let verbose = config.verbose;
     let compiler_context = GlobalCompilationContext {
-        module_mode: config.module_mode,
         config,
         module_db: ModuleData::new(),
         linking_files: Mutex::new(HashSet::new()),
@@ -181,7 +179,6 @@ pub fn library_compilation(
 ) -> CXResult<cx_lmir::LMIRUnit> {
     let verbose = config.verbose;
     let compiler_context = GlobalCompilationContext {
-        module_mode: config.module_mode,
         config,
         module_db: ModuleData::new(),
         linking_files: Mutex::new(HashSet::new()),
