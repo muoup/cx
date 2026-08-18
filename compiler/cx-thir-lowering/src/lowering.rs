@@ -3,6 +3,7 @@ mod calls;
 mod control_flow;
 mod memory;
 mod operators;
+pub(crate) mod types;
 
 use cx_log::CXResult;
 use cx_mir::{
@@ -19,6 +20,7 @@ use cx_thir::{
 };
 
 use crate::builder::{MIRBuilder, integer_type};
+use crate::lowering::types::lower_float_type;
 
 pub(crate) fn lower_unit(builder: &mut MIRBuilder<'_>, thir: &THIRUnit) -> CXResult<()> {
     for (index, function) in thir.functions.iter().enumerate() {
@@ -84,7 +86,7 @@ fn lower_expression(
             }
             THIRExpressionKind::FloatLiteral(value) => {
                 let ty = match expression._type.kind {
-                    THIRTypeKind::Float { _type } => operators::lower_float_type(_type),
+                    THIRTypeKind::Float { _type } => lower_float_type(_type),
                     _ => cx_mir::MIRFloatType::F64,
                 };
                 MIRValue::Constant(MIRConstant::Float { value: *value, ty })

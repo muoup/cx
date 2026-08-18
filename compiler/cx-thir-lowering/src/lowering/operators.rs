@@ -1,9 +1,9 @@
 use cx_mir::{
-    MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRIntBinaryOp, MIRIntType, MIRPointerBinaryOp,
+    MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRIntBinaryOp, MIRPointerBinaryOp,
     MIRPointerOffsetOp, MIRUnaryOp,
 };
 use cx_thir::thir::{
-    data::{THIRFloatType, THIRIntType, THIRType, THIRTypeKind},
+    data::{THIRType, THIRTypeKind},
     expression::{
         THIRBinOp, THIRCoercion, THIRFloatBinOp, THIRIntBinOp, THIRPtrBinOp, THIRPtrDiffBinOp,
         THIRUnOp,
@@ -11,6 +11,7 @@ use cx_thir::thir::{
 };
 
 use crate::builder::{MIRBuilder, integer_type};
+use super::types::{lower_float_type, lower_int_type};
 
 pub(super) fn lower_binary_op(builder: &mut MIRBuilder<'_>, op: &THIRBinOp) -> MIRBinaryOp {
     match op {
@@ -157,23 +158,5 @@ pub(super) fn lower_coercion(
         THIRCoercion::GetFnPtr => MIRCoercion::FunctionToPointer,
         THIRCoercion::Typechange => MIRCoercion::TypeChange,
         THIRCoercion::ReinterpretBits => MIRCoercion::ReinterpretBits,
-    }
-}
-
-pub(super) fn lower_int_type(ty: THIRIntType) -> MIRIntType {
-    match ty {
-        THIRIntType::I1 => MIRIntType::I1,
-        THIRIntType::I8 => MIRIntType::I8,
-        THIRIntType::I16 => MIRIntType::I16,
-        THIRIntType::I32 => MIRIntType::I32,
-        THIRIntType::I64 => MIRIntType::I64,
-        THIRIntType::I128 => MIRIntType::I128,
-    }
-}
-
-pub(super) fn lower_float_type(ty: THIRFloatType) -> cx_mir::MIRFloatType {
-    match ty {
-        THIRFloatType::F32 => cx_mir::MIRFloatType::F32,
-        THIRFloatType::F64 => cx_mir::MIRFloatType::F64,
     }
 }

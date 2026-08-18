@@ -19,12 +19,14 @@ use cx_thir::{
             contains_null_pointer_conversion, function_reference_symbol, global_reference_symbol,
         },
         global::{MIRGlobalVarKind, MIRGlobalVariable as THIRGlobalVariable},
-        r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
+        r#type::{THIRFloatType, THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
+
+use crate::lowering::types::lower_int_type;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct LoopContext {
@@ -1073,17 +1075,6 @@ fn integer_literal(expression: &THIRExpression) -> Option<i64> {
         THIRExpressionKind::Typechange(operand)
         | THIRExpressionKind::TypeConversion { operand, .. } => integer_literal(operand),
         _ => None,
-    }
-}
-
-fn lower_int_type(ty: THIRIntType) -> MIRIntType {
-    match ty {
-        THIRIntType::I1 => MIRIntType::I1,
-        THIRIntType::I8 => MIRIntType::I8,
-        THIRIntType::I16 => MIRIntType::I16,
-        THIRIntType::I32 => MIRIntType::I32,
-        THIRIntType::I64 => MIRIntType::I64,
-        THIRIntType::I128 => MIRIntType::I128,
     }
 }
 

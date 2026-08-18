@@ -75,7 +75,7 @@ pub(super) fn lower_pattern_test(
             lhs_value,
             MIRConstant::Float {
                 value: *value,
-                ty: super::operators::lower_float_type(*ty),
+                ty: super::types::lower_float_type(*ty),
             },
         ),
     };
@@ -158,7 +158,7 @@ pub(super) fn constant_from_expression(expression: &THIRExpression) -> MIRConsta
         THIRExpressionKind::FloatLiteral(value) => MIRConstant::Float {
             value: *value,
             ty: match expression._type.kind {
-                THIRTypeKind::Float { _type } => super::operators::lower_float_type(_type),
+                THIRTypeKind::Float { _type } => super::types::lower_float_type(_type),
                 _ => cx_mir::MIRFloatType::F64,
             },
         },
@@ -175,7 +175,7 @@ pub(super) fn constant_from_pattern(pattern: &THIRPattern) -> MIRConstant {
         },
         THIRPattern::Float(value, ty) => MIRConstant::Float {
             value: *value,
-            ty: super::operators::lower_float_type(*ty),
+            ty: super::types::lower_float_type(*ty),
         },
         THIRPattern::TaggedUnionVariant { variant_index, .. } => MIRConstant::Integer {
             value: *variant_index as i128,
