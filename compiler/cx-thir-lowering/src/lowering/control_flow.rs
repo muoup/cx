@@ -2,7 +2,7 @@ use cx_log::CXResult;
 use cx_mir::{MIRBlockTarget, MIRConstant, MIRInstrKind, MIRScopeID, MIRValue};
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
-    expression::{THIRBinOp, THIRExpression, THIRIntBinOp, THIRLocalID},
+    expression::{THIRBinOp, THIRExpression, THIRExpressionKind, THIRIntBinOp, THIRLocalID},
     pattern::THIRPattern,
 };
 use cx_thir::type_context::THIRTypeContext;
@@ -11,6 +11,34 @@ use crate::{
     builder::MIRBuilder,
     lowering::{aggregates, lower_expression},
 };
+
+pub(super) fn contains_label(expression: &THIRExpression) -> bool {
+    match &expression.kind {
+        THIRExpressionKind::Label { .. } => true,
+        THIRExpressionKind::Block { statements, .. } => statements.iter().any(contains_label),
+        THIRExpressionKind::If {
+            then_branch,
+            else_branch,
+            ..
+        } => contains_label(then_branch)
+            || else_branch
+                .as_deref()
+                .is_some_and(contains_label),
+        THIRExpressionKind::While { body, .. } | THIRExpressionKind::For { body, .. } => {
+            contains_label(body)
+        }
+        THIRExpressionKind::CSwitch { cases, default, .. } => {
+            cases.iter().any(|(_, body)| contains_label(body))
+                || default.as_deref().is_some_and(contains_label)
+        }
+        THIRExpressionKind::Match { arms, default, .. } => {
+            arms.iter().any(|(_, body)| contains_label(body))
+                || default.as_deref().is_some_and(contains_label)
+        }
+        THIRExpressionKind::Unsafe { expression } => contains_label(expression),
+        _ => false,
+    }
+}
 
 fn move_value(builder: &mut MIRBuilder<'_>, value: MIRValue, ty: &THIRType) -> MIRValue {
     let value = match value {

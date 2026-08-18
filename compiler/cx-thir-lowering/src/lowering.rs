@@ -759,7 +759,7 @@ fn lower_expression(
                 }
                 builder.push_named_scope();
                 for statement in statements {
-                    if builder.current_block_terminated() && !contains_label(statement) {
+                    if builder.current_block_terminated() && !control_flow::contains_label(statement) {
                         break;
                     }
                     result = lower_expression(builder, statement)?;
@@ -884,32 +884,4 @@ fn lower_expression(
     })();
     builder.restore_source_range(previous_range);
     result
-}
-
-fn contains_label(expression: &THIRExpression) -> bool {
-    match &expression.kind {
-        THIRExpressionKind::Label { .. } => true,
-        THIRExpressionKind::Block { statements, .. } => statements.iter().any(contains_label),
-        THIRExpressionKind::If {
-            then_branch,
-            else_branch,
-            ..
-        } => contains_label(then_branch)
-            || else_branch
-                .as_deref()
-                .is_some_and(contains_label),
-        THIRExpressionKind::While { body, .. } | THIRExpressionKind::For { body, .. } => {
-            contains_label(body)
-        }
-        THIRExpressionKind::CSwitch { cases, default, .. } => {
-            cases.iter().any(|(_, body)| contains_label(body))
-                || default.as_deref().is_some_and(contains_label)
-        }
-        THIRExpressionKind::Match { arms, default, .. } => {
-            arms.iter().any(|(_, body)| contains_label(body))
-                || default.as_deref().is_some_and(contains_label)
-        }
-        THIRExpressionKind::Unsafe { expression } => contains_label(expression),
-        _ => false,
-    }
 }
