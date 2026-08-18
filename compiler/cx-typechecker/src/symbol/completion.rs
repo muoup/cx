@@ -24,7 +24,6 @@ use cx_thir::{
             THIRComptimeValueType, THIRFnPrototype, THIRFnSignature, THIRParameter,
             THIRTypeAttributes,
         },
-        name_mangling::{mangle_namespace_symbol, mangle_qualified_name},
         r#type::{THIRField, THIRMoveSemantics, THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
@@ -34,7 +33,10 @@ use crate::{
     EnvironmentNamespace,
     comptime::evaluate_comptime_expression,
     environment::{SymbolLookupKind, TypeEnvironment},
-    symbol::resolution::{apply_template, resolve_symbol},
+    symbol::{
+        name_mangling::mangle_qualified_name,
+        resolution::{apply_template, resolve_symbol},
+    },
     type_checking::typechecker::typecheck_expr,
 };
 
@@ -771,7 +773,7 @@ fn completed_function_name(
         HIRFunctionKind::AssociatedFunction {
             namespace: associated_namespace,
             name,
-        } => mangle_namespace_symbol(&QualifiedName::new(
+        } => cx_util::namespace::mangle_namespace_symbol(&QualifiedName::new(
             namespace.child(associated_namespace.clone()),
             name.clone(),
         )),

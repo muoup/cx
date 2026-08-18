@@ -21,7 +21,6 @@ use cx_thir::{
         data::{MIRTemplateInput, THIRFnPrototype, THIRFnSignature, THIRParameter, TemplateInfo},
         expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
         global::{MIRGlobalVarKind, MIRGlobalVariable},
-        name_mangling::{base_mangle_member, base_mangle_templated_name},
     },
     type_context::THIRTypeContext,
 };
@@ -31,6 +30,7 @@ use crate::{
     symbol::{
         completion::{complete_comptime_prototype, complete_prototype, complete_type},
         r#enum::resolve_enum_block,
+        name_mangling::{base_mangle_member, base_mangle_templated_name},
     },
 };
 

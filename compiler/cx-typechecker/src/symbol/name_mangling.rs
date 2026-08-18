@@ -1,8 +1,8 @@
-use crate::thir::data::{THIRType, THIRTypeKind};
-use crate::thir::r#type::THIRField;
-use crate::type_context::THIRTypeContext;
 use cx_hir::registry::{ExportNameMode, GlobalSymbolRegistry};
-use cx_util::namespace::QualifiedName;
+use cx_thir::thir::data::{THIRType, THIRTypeKind};
+use cx_thir::thir::r#type::THIRField;
+use cx_thir::type_context::THIRTypeContext;
+use cx_util::namespace::{QualifiedName, mangle_namespace_symbol};
 
 pub fn mangle_qualified_name(
     global_registry: &GlobalSymbolRegistry,
@@ -15,10 +15,6 @@ pub fn mangle_qualified_name(
     }
 
     mangle_namespace_symbol(name)
-}
-
-pub fn mangle_namespace_symbol(name: &QualifiedName) -> String {
-    cx_util::namespace::mangle_namespace_symbol(name)
 }
 
 pub fn base_mangle_templated_name<'a>(
@@ -185,9 +181,9 @@ fn push_component(mangled: &mut String, component: &str) {
 #[cfg(test)]
 mod tests {
     use super::base_mangle_templated_name;
-    use crate::thir::r#type::{THIRIntType, THIRType, THIRTypeID, THIRTypeKind};
-    use crate::type_context::THIRTypeContext;
     use cx_target::ArchitectureConfig;
+    use cx_thir::thir::r#type::{THIRIntType, THIRType, THIRTypeID, THIRTypeKind};
+    use cx_thir::type_context::THIRTypeContext;
 
     struct TestTypes {
         types: Vec<THIRType>,
