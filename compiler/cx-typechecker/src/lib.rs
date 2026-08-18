@@ -3,6 +3,9 @@ use cx_hir::decomposition::{HIRGenerationAST, HIRGenerationStmt};
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
 use cx_thir::thir::expression::{THIRCoercion, THIRExpression, THIRExpressionKind};
+use cx_thir::thir::expression_queries::{
+    contains_function_reference, contains_global_reference, contains_null_pointer_conversion,
+};
 use cx_thir::thir::global::{MIRGlobalVarKind, MIRGlobalVariable};
 use cx_util::linkage::LinkageMode;
 
@@ -270,7 +273,7 @@ fn canonicalize_global_initializer(
             token_range,
         },
         kind @ THIRExpressionKind::Typechange(_)
-            if contains_function_reference_kind(&kind) =>
+            if contains_function_reference(&kind) =>
         {
             THIRExpression {
                 kind,
@@ -279,7 +282,7 @@ fn canonicalize_global_initializer(
             }
         }
         kind @ THIRExpressionKind::TypeConversion { .. }
-            if contains_function_reference_kind(&kind) =>
+            if contains_function_reference(&kind) =>
         {
             THIRExpression {
                 kind,
@@ -299,47 +302,4 @@ fn canonicalize_global_initializer(
     };
 
     Ok(Some(expression))
-}
-
-fn contains_global_reference(expression: &THIRExpression) -> bool {
-    match &expression.kind {
-        THIRExpressionKind::GlobalVariable { .. } => true,
-        THIRExpressionKind::Copy { source } => contains_global_reference(source),
-        THIRExpressionKind::Typechange(operand)
-        | THIRExpressionKind::TypeConversion { operand, .. } => {
-            contains_global_reference(operand)
-        }
-        THIRExpressionKind::BinaryOperation { lhs, rhs, .. } => {
-            contains_global_reference(lhs) || contains_global_reference(rhs)
-        }
-        _ => false,
-    }
-}
-
-fn contains_null_pointer_conversion(kind: &THIRExpressionKind) -> bool {
-    match kind {
-        THIRExpressionKind::Typechange(operand) => {
-            contains_null_pointer_conversion(&operand.kind)
-        }
-        THIRExpressionKind::TypeConversion {
-            conversion: THIRCoercion::IntToPtr { .. },
-            operand,
-        } => matches!(operand.kind, THIRExpressionKind::IntLiteral(0))
-            || contains_null_pointer_conversion(&operand.kind),
-        THIRExpressionKind::TypeConversion { operand, .. } => {
-            contains_null_pointer_conversion(&operand.kind)
-        }
-        _ => false,
-    }
-}
-
-fn contains_function_reference_kind(kind: &THIRExpressionKind) -> bool {
-    match kind {
-        THIRExpressionKind::FunctionReference { .. } => true,
-        THIRExpressionKind::Typechange(operand)
-        | THIRExpressionKind::TypeConversion { operand, .. } => {
-            contains_function_reference_kind(&operand.kind)
-        }
-        _ => false,
-    }
 }

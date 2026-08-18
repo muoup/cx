@@ -15,6 +15,9 @@ use cx_thir::{
             THIRIntBinOp,
             THIRPtrDiffBinOp,
         },
+        expression_queries::{
+            contains_null_pointer_conversion, function_reference_symbol, global_reference_symbol,
+        },
         global::{MIRGlobalVarKind, MIRGlobalVariable as THIRGlobalVariable},
         r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
     },
@@ -406,7 +409,7 @@ impl<'thir> MIRBuilder<'thir> {
                 }
             }
             THIRExpressionKind::TypeConversion { .. }
-                if Self::contains_null_pointer_conversion(expression) =>
+                if contains_null_pointer_conversion(&expression.kind) =>
             {
                 MIRConstant::Null {
                     ty: self.lower_type(&expression._type),
@@ -472,23 +475,6 @@ impl<'thir> MIRBuilder<'thir> {
                 Some((global, offset * size))
             }
             _ => None,
-        }
-    }
-
-    fn contains_null_pointer_conversion(expression: &THIRExpression) -> bool {
-        match &expression.kind {
-            THIRExpressionKind::Typechange(operand) => {
-                Self::contains_null_pointer_conversion(operand)
-            }
-            THIRExpressionKind::TypeConversion {
-                conversion: THIRCoercion::IntToPtr { .. },
-                operand,
-            } => matches!(operand.kind, THIRExpressionKind::IntLiteral(0))
-                || Self::contains_null_pointer_conversion(operand),
-            THIRExpressionKind::TypeConversion { operand, .. } => {
-                Self::contains_null_pointer_conversion(operand)
-            }
-            _ => false,
         }
     }
 
@@ -1063,18 +1049,6 @@ impl<'thir> MIRBuilder<'thir> {
     }
 }
 
-fn global_reference_symbol(expression: &THIRExpression) -> Option<&CXIdent> {
-    match &expression.kind {
-        THIRExpressionKind::GlobalVariable { symbol } => Some(symbol),
-        THIRExpressionKind::Copy { source } => global_reference_symbol(source),
-        THIRExpressionKind::Typechange(operand)
-        | THIRExpressionKind::TypeConversion { operand, .. } => {
-            global_reference_symbol(operand)
-        }
-        _ => None,
-    }
-}
-
 fn integer_literal(expression: &THIRExpression) -> Option<i64> {
     match &expression.kind {
         THIRExpressionKind::IntLiteral(value) => i64::try_from(*value).ok(),
@@ -1098,17 +1072,6 @@ fn integer_literal(expression: &THIRExpression) -> Option<i64> {
         }
         THIRExpressionKind::Typechange(operand)
         | THIRExpressionKind::TypeConversion { operand, .. } => integer_literal(operand),
-        _ => None,
-    }
-}
-
-fn function_reference_symbol(expression: &THIRExpression) -> Option<&CXIdent> {
-    match &expression.kind {
-        THIRExpressionKind::FunctionReference { name, .. } => Some(name),
-        THIRExpressionKind::Typechange(operand)
-        | THIRExpressionKind::TypeConversion { operand, .. } => {
-            function_reference_symbol(operand)
-        }
         _ => None,
     }
 }
