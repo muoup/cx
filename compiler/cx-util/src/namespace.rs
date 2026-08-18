@@ -265,3 +265,59 @@ impl Display for QualifiedName {
         write!(f, "{}", self.as_flat_name())
     }
 }
+
+pub fn mangle_namespace_symbol(name: &QualifiedName) -> String {
+    let mut mangled = String::from("_N");
+    push_mangled_component(
+        &mut mangled,
+        name.namespace.segments().len().to_string().as_str(),
+    );
+
+    for segment in name.namespace.segments() {
+        push_mangled_component(&mut mangled, segment.as_str());
+    }
+
+    push_mangled_component(&mut mangled, name.name.as_str());
+    mangled
+}
+
+fn push_mangled_component(mangled: &mut String, component: &str) {
+    mangled.push_str(component.len().to_string().as_str());
+    mangled.push('_');
+    mangled.push_str(component);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{NamespacePath, QualifiedName, mangle_namespace_symbol};
+    use crate::identifier::CXIdent;
+
+    fn qualified(namespace: &str, name: &str) -> QualifiedName {
+        QualifiedName::new(
+            NamespacePath::from_scoped_path(namespace),
+            CXIdent::new(name),
+        )
+    }
+
+    #[test]
+    fn namespace_mangling_distinguishes_component_boundaries() {
+        let nested_name = qualified("foo::bar", "baz");
+        let underscored_name = qualified("foo", "bar_baz");
+
+        assert_ne!(
+            mangle_namespace_symbol(&nested_name),
+            mangle_namespace_symbol(&underscored_name)
+        );
+    }
+
+    #[test]
+    fn namespace_mangling_distinguishes_underscores_in_namespaces() {
+        let nested_name = qualified("foo_bar", "baz");
+        let split_name = qualified("foo::bar", "baz");
+
+        assert_ne!(
+            mangle_namespace_symbol(&nested_name),
+            mangle_namespace_symbol(&split_name)
+        );
+    }
+}

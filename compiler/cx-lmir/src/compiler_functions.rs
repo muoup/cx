@@ -1,6 +1,6 @@
 use cx_util::{
     identifier::CXIdent,
-    namespace::{NamespacePath, QualifiedName},
+    namespace::{NamespacePath, QualifiedName, mangle_namespace_symbol},
 };
 
 /// Stable source identity for a runtime function referenced by compiler-generated LMIR.
@@ -21,15 +21,7 @@ impl LMIRCompilerFunction {
     /// Compiler runtime modules are imported modules, so their exported symbols
     /// use the standard namespace mangling scheme.
     pub fn symbol_name(self) -> String {
-        let name = self.qualified_name();
-        let mut symbol = String::from("_N");
-        for segment in name.namespace.segments() {
-            symbol.push('_');
-            symbol.push_str(segment.as_str());
-        }
-        symbol.push('_');
-        symbol.push_str(name.name.as_str());
-        symbol
+        mangle_namespace_symbol(&self.qualified_name())
     }
 }
 
