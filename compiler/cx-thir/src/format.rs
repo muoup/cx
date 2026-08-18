@@ -5,7 +5,7 @@ use crate::thir::data::{THIRFnPrototype, THIRFnSignature, THIRParameter};
 use crate::thir::expression::{
     THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp,
 };
-use crate::thir::global::{MIRGlobalVarKind, MIRGlobalVariable};
+use crate::thir::global::{THIRGlobalVarKind, THIRGlobalVariable};
 use crate::thir::r#type::{
     THIRField, THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind,
 };
@@ -59,8 +59,8 @@ impl MIRDisplayable for THIRFunction {}
 impl MIRDisplayable for THIRFnSignature {}
 impl MIRDisplayable for THIRFnPrototype {}
 impl MIRDisplayable for THIRParameter {}
-impl MIRDisplayable for MIRGlobalVariable {}
-impl MIRDisplayable for MIRGlobalVarKind {}
+impl MIRDisplayable for THIRGlobalVariable {}
+impl MIRDisplayable for THIRGlobalVarKind {}
 
 impl THIRType {
     pub fn display_with<'a>(
@@ -116,7 +116,7 @@ impl THIRParameter {
     }
 }
 
-impl MIRGlobalVariable {
+impl THIRGlobalVariable {
     pub fn display_with<'a>(
         &'a self,
         definitions: &'a dyn THIRTypeContext,
@@ -125,7 +125,7 @@ impl MIRGlobalVariable {
     }
 }
 
-impl MIRGlobalVarKind {
+impl THIRGlobalVarKind {
     pub fn display_with<'a>(
         &'a self,
         definitions: &'a dyn THIRTypeContext,
@@ -524,7 +524,7 @@ impl Display for MIRDisplay<'_, THIRParameter> {
     }
 }
 
-impl Display for MIRDisplay<'_, MIRGlobalVariable> {
+impl Display for MIRDisplay<'_, THIRGlobalVariable> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "global {} ", self.content.linkage)?;
         write!(
@@ -545,10 +545,10 @@ impl Display for MIRDisplay<'_, MIRGlobalVariable> {
     }
 }
 
-impl Display for MIRDisplay<'_, MIRGlobalVarKind> {
+impl Display for MIRDisplay<'_, THIRGlobalVarKind> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.content {
-            MIRGlobalVarKind::StringLiteral { name, value } => {
+            THIRGlobalVarKind::StringLiteral { name, value } => {
                 let escaped_value = value
                     .replace('\\', "\\\\")
                     .replace('\n', "\\n")
@@ -557,7 +557,7 @@ impl Display for MIRDisplay<'_, MIRGlobalVarKind> {
 
                 write!(f, "string {} = \"{}\"", name, escaped_value)
             }
-            MIRGlobalVarKind::Variable {
+            THIRGlobalVarKind::Variable {
                 name,
                 _type,
                 initializer,

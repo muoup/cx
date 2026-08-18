@@ -18,15 +18,15 @@ use cx_thir::{
     symbol::MIRSymbol,
     thir::{
         contextual_eq::TypeContextEqual,
-        data::{MIRTemplateInput, THIRFnPrototype, THIRFnSignature, THIRParameter, TemplateInfo},
+        data::{THIRTemplateInput, THIRFnPrototype, THIRFnSignature, THIRParameter, TemplateInfo},
         expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
-        global::{MIRGlobalVarKind, MIRGlobalVariable},
+        global::{THIRGlobalVarKind, THIRGlobalVariable},
     },
     type_context::THIRTypeContext,
 };
 
 use crate::{
-    environment::{MIRFunctionGenRequest, TypeEnvironment},
+    environment::{THIRFunctionGenRequest, TypeEnvironment},
     symbol::{
         completion::{complete_comptime_prototype, complete_prototype, complete_type},
         r#enum::resolve_enum_block,
@@ -105,10 +105,10 @@ fn resolve_symbol_inner(
             ));
 
             if evaluation_namespace != symbol_namespace {
-                env.items.push_generated_global(MIRGlobalVariable {
+                env.items.push_generated_global(THIRGlobalVariable {
                     is_mutable: false,
                     linkage: LinkageMode::Extern,
-                    kind: MIRGlobalVarKind::Variable {
+                    kind: THIRGlobalVarKind::Variable {
                         name: symbol_name.clone(),
                         _type: ty.clone(),
                         initializer: None,
@@ -374,7 +374,7 @@ fn resolve_type_constructor(
     .with_debug_name(name.clone());
 
     env.items
-        .push_request(MIRFunctionGenRequest::TypeConstructor {
+        .push_request(THIRFunctionGenRequest::TypeConstructor {
             symbol_name: prototype.symbol_name().to_owned(),
             debug_name: name.clone(),
             union_type,
@@ -388,7 +388,7 @@ fn resolve_type_constructor(
 pub fn apply_template(
     env: &mut TypeEnvironment,
     symbol: &MIRSymbol,
-    template_input: MIRTemplateInput,
+    template_input: THIRTemplateInput,
 ) -> CXMaybeRawResult<Option<MIRSymbol>> {
     let MIRSymbol::Template {
         template_prototype: input,
@@ -435,7 +435,7 @@ pub fn apply_template(
     if let MIRSymbol::FunctionReference(prototype) = &symbol
         && let Some(name) = prototype.lookup_identifier().cloned()
     {
-        env.items.push_request(MIRFunctionGenRequest::Template {
+        env.items.push_request(THIRFunctionGenRequest::Template {
             name,
             prototype: prototype.clone(),
             input: template_input,
@@ -481,7 +481,7 @@ fn function_lexical_namespace(
 pub fn apply_template_input(
     env: &mut TypeEnvironment,
     prototype: &HIRTemplatePrototype,
-    input: &MIRTemplateInput,
+    input: &THIRTemplateInput,
 ) -> CXRawResult<()> {
     for (param, arg) in prototype.types.iter().zip(input.args.iter()) {
         env.symbols.insert_local_type_id(param.as_string(), *arg)?;
@@ -494,7 +494,7 @@ fn attach_template_metadata(
     env: &mut TypeEnvironment,
     symbol: &mut MIRSymbol,
     _namespace: &EnvironmentNamespace,
-    input: MIRTemplateInput,
+    input: THIRTemplateInput,
 ) {
     match symbol {
         MIRSymbol::Type(id) => {

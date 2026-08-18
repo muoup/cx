@@ -18,7 +18,7 @@ use cx_thir::{
         expression_queries::{
             contains_null_pointer_conversion, function_reference_symbol, global_reference_symbol,
         },
-        global::{MIRGlobalVarKind, MIRGlobalVariable as THIRGlobalVariable},
+        global::{THIRGlobalVarKind, THIRGlobalVariable},
         r#type::{THIRFloatType, THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
@@ -280,13 +280,13 @@ impl<'thir> MIRBuilder<'thir> {
 
     fn predeclare_global(&mut self, global: &THIRGlobalVariable) {
         let (name, ty, state, nodrop) = match &global.kind {
-            MIRGlobalVarKind::StringLiteral { name, value } => (
+            THIRGlobalVarKind::StringLiteral { name, value } => (
                 name.clone(),
                 self.lower_type(&THIRType::from(THIRTypeKind::Str)),
                 MIRGlobalState::Initialized(MIRConstant::String(value.clone())),
                 true,
             ),
-            MIRGlobalVarKind::Variable {
+            THIRGlobalVarKind::Variable {
                 name,
                 _type,
                 initializer,

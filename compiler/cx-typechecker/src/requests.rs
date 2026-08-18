@@ -1,7 +1,7 @@
 use cx_hir::{ast::function::HIRFunctionContract, symbols::HIRSymbolKind};
 use cx_log::CXResult;
 use cx_thir::thir::{
-    data::{MIRTemplateInput, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter},
+    data::{THIRTemplateInput, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter},
     expression::{THIRExpression, THIRExpressionKind},
     r#type::THIRType,
 };
@@ -9,7 +9,7 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode, namespace::QualifiedName};
 
 use crate::{
-    environment::{MIRFunctionGenRequest, TypeEnvironment},
+    environment::{THIRFunctionGenRequest, TypeEnvironment},
     symbol::resolution::{apply_template_input, symbol_lexical_namespace},
     type_checking::functions::typecheck_function,
 };
@@ -17,7 +17,7 @@ use crate::{
 pub fn fulfill_requests(env: &mut TypeEnvironment) -> CXResult<()> {
     while let Some(request) = env.items.pop_request() {
         match request {
-            MIRFunctionGenRequest::TypeConstructor {
+        THIRFunctionGenRequest::TypeConstructor {
                 symbol_name,
                 debug_name,
                 union_type,
@@ -32,7 +32,7 @@ pub fn fulfill_requests(env: &mut TypeEnvironment) -> CXResult<()> {
                 variant_index,
             ),
 
-            MIRFunctionGenRequest::Template {
+        THIRFunctionGenRequest::Template {
                 name,
                 prototype,
                 input,
@@ -121,7 +121,7 @@ fn realize_fn_template(
     env: &mut TypeEnvironment,
     name: &QualifiedName,
     prototype: THIRFnPrototype,
-    input: &MIRTemplateInput,
+    input: &THIRTemplateInput,
 ) -> CXResult<()> {
     let stmt = env
         .symbols

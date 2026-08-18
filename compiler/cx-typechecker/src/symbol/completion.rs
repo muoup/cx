@@ -20,7 +20,7 @@ use cx_thir::{
     symbol::MIRSymbol,
     thir::{
         data::{
-            MIRTemplateInput, THIRComptimeFnPrototype, THIRComptimeParameter,
+            THIRTemplateInput, THIRComptimeFnPrototype, THIRComptimeParameter,
             THIRComptimeValueType, THIRFnPrototype, THIRFnSignature, THIRParameter,
             THIRTypeAttributes,
         },
@@ -44,14 +44,14 @@ pub fn complete_template_input(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     input: &HIRTemplateInput,
-) -> CXResult<MIRTemplateInput> {
+) -> CXResult<THIRTemplateInput> {
     let args = input
         .params
         .iter()
         .map(|param| complete_type_id(env, namespace, param))
         .collect::<CXResult<Vec<_>>>()?;
 
-    Ok(MIRTemplateInput { args })
+    Ok(THIRTemplateInput { args })
 }
 
 pub fn complete_type(

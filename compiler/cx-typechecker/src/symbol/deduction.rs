@@ -13,7 +13,7 @@ use cx_log::{
 use cx_thir::{
     EnvironmentNamespace,
     symbol::MIRSymbol,
-    thir::data::{MIRTemplateInput, THIRFnSignature, THIRType, THIRTypeKind},
+    thir::data::{THIRTemplateInput, THIRFnSignature, THIRType, THIRTypeKind},
     type_context::THIRTypeContext,
 };
 use cx_util::namespace::QualifiedName;
@@ -99,7 +99,7 @@ fn deduce_template_input(
     source: &cx_hir::symbols::HIRSymbol,
     arg_types: &[THIRType],
     expected_return_type: Option<&THIRType>,
-) -> CXMaybeRawResult<MIRTemplateInput> {
+) -> CXMaybeRawResult<THIRTemplateInput> {
     let shell = match &source.kind {
         HIRSymbolKind::FunctionReference(shell) => TemplateDeductionShell::Runtime(shell),
         HIRSymbolKind::ComptimeFunction { definition, .. } => {
@@ -164,7 +164,7 @@ fn deduce_template_input(
         })
         .collect::<CXMaybeRawResult<Vec<_>>>()?;
 
-    Ok(MIRTemplateInput { args })
+    Ok(THIRTemplateInput { args })
 }
 
 enum TemplateDeductionShell<'a> {

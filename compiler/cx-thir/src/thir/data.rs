@@ -212,11 +212,11 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRFnProt
 }
 
 #[derive(Debug, Clone)]
-pub struct MIRTemplateInput {
+pub struct THIRTemplateInput {
     pub args: Vec<THIRTypeID>,
 }
 
-impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for MIRTemplateInput {
+impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRTemplateInput {
     fn compare(
         &self,
         other: &Self,
@@ -230,7 +230,7 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for MIRTemplat
 #[derive(Debug, Clone)]
 pub struct TemplateInfo {
     pub base_name: Option<QualifiedName>,
-    pub template_input: MIRTemplateInput,
+    pub template_input: THIRTemplateInput,
 }
 
 impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for TemplateInfo {

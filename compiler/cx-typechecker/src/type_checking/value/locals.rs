@@ -22,7 +22,7 @@ use cx_thir::{
     thir::{
         data::THIRType,
         expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
-        global::{MIRGlobalVarKind, MIRGlobalVariable},
+        global::{THIRGlobalVarKind, THIRGlobalVariable},
     },
 };
 use cx_tokens::TokenRange;
@@ -76,10 +76,10 @@ pub(crate) fn typecheck_var_declaration(
                     &symbol_definition,
                 )?
             } else {
-                env.items.push_generated_global(MIRGlobalVariable {
+                env.items.push_generated_global(THIRGlobalVariable {
                     is_mutable: true,
                     linkage: LinkageMode::Extern,
-                    kind: MIRGlobalVarKind::Variable {
+                    kind: THIRGlobalVarKind::Variable {
                         name: name.clone(),
                         _type: ty.clone(),
                         initializer: None,

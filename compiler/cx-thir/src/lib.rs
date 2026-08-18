@@ -4,7 +4,7 @@ use crate::{
     registry::THIRDecomposedRegistry,
     thir::{
         data::THIRFunction,
-        global::MIRGlobalVariable,
+        global::THIRGlobalVariable,
     },
 };
 
@@ -21,6 +21,6 @@ mod format;
 pub struct THIRUnit {
     pub source_namespace: EnvironmentNamespace,
     pub functions: Vec<THIRFunction>,
-    pub global_variables: Vec<MIRGlobalVariable>,
+    pub global_variables: Vec<THIRGlobalVariable>,
     pub registry: THIRDecomposedRegistry,
 }

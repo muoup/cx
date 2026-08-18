@@ -6,7 +6,7 @@ use cx_thir::thir::expression::{THIRCoercion, THIRExpression, THIRExpressionKind
 use cx_thir::thir::expression_queries::{
     contains_function_reference, contains_global_reference, contains_null_pointer_conversion,
 };
-use cx_thir::thir::global::{MIRGlobalVarKind, MIRGlobalVariable};
+use cx_thir::thir::global::{THIRGlobalVarKind, THIRGlobalVariable};
 use cx_util::linkage::LinkageMode;
 
 pub mod environment;
@@ -38,10 +38,10 @@ pub fn typecheck(
             }
 
             HIRGenerationStmt::StringLiteral { name, value } => {
-                let global = MIRGlobalVariable {
+                let global = THIRGlobalVariable {
                     is_mutable: false,
                     linkage: LinkageMode::Static,
-                    kind: MIRGlobalVarKind::StringLiteral {
+                    kind: THIRGlobalVarKind::StringLiteral {
                         name: name.clone(),
                         value: value.clone(),
                     },
@@ -110,10 +110,10 @@ pub fn typecheck(
                     );
                 }
 
-                let global = MIRGlobalVariable {
+                let global = THIRGlobalVariable {
                     is_mutable: _type.get_specifier(HIR_CONST),
                     linkage: *linkage,
-                    kind: MIRGlobalVarKind::Variable {
+                    kind: THIRGlobalVarKind::Variable {
                         name: CXIdent::new(symbol_name),
                         _type: global_type,
                         initializer: comptime_init,

@@ -33,7 +33,7 @@ pub(crate) mod control_flow;
 pub(crate) mod function_context;
 pub(crate) mod items;
 
-pub use items::MIRFunctionGenRequest;
+pub use items::THIRFunctionGenRequest;
 
 pub struct TypeEnvironment<'a> {
     pub module_data: &'a ModuleData,

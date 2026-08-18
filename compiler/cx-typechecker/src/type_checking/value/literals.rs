@@ -4,7 +4,7 @@ use cx_log::CXResult;
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
     expression::{THIRExpression, THIRExpressionKind},
-    global::{MIRGlobalVarKind, MIRGlobalVariable},
+    global::{THIRGlobalVarKind, THIRGlobalVariable},
 };
 use cx_tokens::{
     TokenRange,
@@ -111,8 +111,8 @@ pub(crate) fn typecheck_string_literal(env: &mut TypeEnvironment, val: &str) -> 
     let anonymous_name = anonymous_name_gen();
     let name_ident = CXIdent::new(anonymous_name.clone());
 
-    env.items.push_generated_global(MIRGlobalVariable {
-        kind: MIRGlobalVarKind::StringLiteral {
+    env.items.push_generated_global(THIRGlobalVariable {
+        kind: THIRGlobalVarKind::StringLiteral {
             name: name_ident.clone(),
             value: val.to_string(),
         },
