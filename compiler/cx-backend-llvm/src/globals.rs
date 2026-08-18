@@ -269,9 +269,9 @@ fn global_initializer<'ctx>(
                 Ok(unsafe { ArrayValue::new_const_array(&element_type, &values) }.into())
             }
             _ => {
-                return Err(LLVMError::new(
+                Err(LLVMError::new(
                     "Aggregate initializer used with non-aggregate LLVM type",
-                ));
+                ))
             }
         },
         LMIRGlobalInitializer::Global(global) => {

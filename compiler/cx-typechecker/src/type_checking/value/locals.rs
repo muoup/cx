@@ -173,7 +173,7 @@ pub(crate) fn typecheck_var_declaration(
             token_range: TokenRange::internal(),
             kind: THIRExpressionKind::Variable {
                 name: name.clone(),
-                local_id: local_id,
+                local_id,
             },
             _type: mem_type,
         },

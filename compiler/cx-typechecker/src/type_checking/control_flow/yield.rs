@@ -57,11 +57,10 @@ pub fn typecheck_yield(
             } else {
                 expr
             };
-            if target_type.is_none() {
-                if let Some(context) = env.function.current_yield_context_mut() {
+            if target_type.is_none()
+                && let Some(context) = env.function.current_yield_context_mut() {
                     context.result_type = Some(expr._type.clone());
                 }
-            }
             Some(Box::new(expr))
         }
 

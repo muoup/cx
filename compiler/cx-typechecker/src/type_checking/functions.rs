@@ -58,7 +58,7 @@ pub fn typecheck_function(
                 token_range: TokenRange::internal(),
                 kind: THIRExpressionKind::Variable {
                     name: name.clone(),
-                    local_id: local_id,
+                    local_id,
                 },
                 _type: ref_type,
             },

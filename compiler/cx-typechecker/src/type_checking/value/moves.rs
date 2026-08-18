@@ -310,7 +310,7 @@ pub(crate) fn typecheck_unpack(
                 _type: symbol_type,
                 kind: THIRExpressionKind::Variable {
                     name: unpack_binding.binding.clone(),
-                    local_id: local_id,
+                    local_id,
                 },
             },
         );
@@ -318,7 +318,7 @@ pub(crate) fn typecheck_unpack(
         thir_bindings.push(THIRUnpackBinding {
             field_name: unpack_binding.field.clone(),
             field_index: field_pos,
-            field_type: field_type,
+            field_type,
 
             binding_name: unpack_binding.binding.clone(),
             binding_local_id: local_id,
