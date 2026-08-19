@@ -9,29 +9,21 @@ use crate::{MIRBuilder, builder::integer_type, lowering::types::lower_type};
 
 pub(crate) fn lower_global(builder: &mut MIRBuilder, global: &THIRGlobalVariable) {
     match &global.kind {
-        THIRGlobalVarKind::StringLiteral { name, value } => todo!(),
+        THIRGlobalVarKind::StringLiteral { .. } => {}
 
         THIRGlobalVarKind::Variable {
             name,
-            _type,
             initializer,
+            ..
         } => {
-            let ty = lower_type(builder, _type);
-            let initializer = initializer
-                .as_ref()
-                .map(|expr| lower_global_constant(builder, expr));
-
-            builder.unit_mut().add_global(
-                name.clone(),
-                ty,
-                global.linkage,
-                global.is_mutable,
-                false,
-                match initializer {
-                    Some(constant) => MIRGlobalState::Initialized(constant),
-                    None => MIRGlobalState::ZeroInitialized,
-                },
-            );
+            let Some(initializer) = initializer else {
+                return;
+            };
+            let constant = lower_global_constant(builder, initializer);
+            let id = builder
+                .global_id(name.as_str())
+                .unwrap_or_else(|| panic!("global {name} was not declared"));
+            builder.set_global_state(id, MIRGlobalState::Initialized(constant));
         }
     }
 }

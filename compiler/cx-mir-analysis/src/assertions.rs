@@ -74,7 +74,7 @@ fn merge_map<K: Ord + Copy>(
 }
 
 pub(crate) fn check(unit: &MIRUnit) -> Result<(), MIRAnalysisError> {
-    for function in &unit.functions {
+    for function in unit.functions() {
         if function.prototype.signature.safe {
             check_function(function)?;
         }

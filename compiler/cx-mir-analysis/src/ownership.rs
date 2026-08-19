@@ -70,7 +70,7 @@ impl OwnershipState {
 /// Checks path-sensitive ownership and `@nodrop` discharge after MIR has
 /// established the actual control-flow graph.
 pub(crate) fn check(unit: &MIRUnit) -> Result<(), MIRAnalysisError> {
-    for function in &unit.functions {
+    for function in unit.functions() {
         check_function(unit, function)?;
     }
     Ok(())

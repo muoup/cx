@@ -6,5 +6,5 @@ mod lowering;
 mod typing;
 
 pub fn generate_lmir(mir: &MIRUnit) -> CXResult<LMIRUnit> {
-    lowering::lower_unit(mir, &mir.types)
+    lowering::lower_unit(mir, mir.types())
 }

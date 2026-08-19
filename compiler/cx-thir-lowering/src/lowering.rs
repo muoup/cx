@@ -29,7 +29,7 @@ use crate::{
 
 pub(crate) fn lower_unit(builder: &mut MIRBuilder<'_>, thir: &THIRUnit) -> CXResult<()> {
     for function in &thir.functions {
-        builder.unit_mut().add_function(function);
+        builder.predeclare_function(function);
     }
 
     for global in &thir.global_variables {
@@ -37,7 +37,7 @@ pub(crate) fn lower_unit(builder: &mut MIRBuilder<'_>, thir: &THIRUnit) -> CXRes
     }
 
     for global in &thir.global_variables {
-        builder.lower_global(global);
+        globals::lower_global(builder, global);
     }
 
     for (index, function) in thir.functions.iter().enumerate() {
@@ -114,7 +114,7 @@ fn lower_expression(
             THIRExpressionKind::Unit => MIRValue::Constant(MIRConstant::Unit),
             THIRExpressionKind::SizeOf { _type } | THIRExpressionKind::AlignOf { _type } => {
                 let type_id = lower_type(builder, _type);
-                let layout = builder.unit().types.layout(type_id).map_err(|error| {
+                let layout = builder.types().layout(type_id).map_err(|error| {
                     cx_log::error::CXErr::new(
                         cx_log::error::message::CXStdErrMessage::error(
                             "MIRLayoutError",

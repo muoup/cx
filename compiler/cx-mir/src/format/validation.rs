@@ -4,10 +4,11 @@ use crate::{
     expr::{MIRBasicBlockID, MIRRegister},
     format::TypePrinter,
     global::MIRFunctionID,
+    ty::MIRTypeRegistryBuilder,
     unit::MIRUnit,
 };
 
-use super::error::MIRValidationError;
+use crate::validator::error::MIRValidationError;
 
 pub struct MIRValidationErrorDisplay<'a> {
     error: &'a MIRValidationError,
@@ -32,7 +33,7 @@ impl Display for MIRValidationErrorDisplay<'_> {
 
 struct ValidationFormat<'a> {
     unit: &'a MIRUnit,
-    types: TypePrinter<'a>,
+    types: TypePrinter<'a, MIRTypeRegistryBuilder>,
 }
 
 impl ValidationFormat<'_> {

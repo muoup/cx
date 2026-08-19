@@ -13,7 +13,7 @@ use crate::op::{
     MIRUnaryOp,
 };
 use crate::ty::interface::MTRegistry;
-use crate::ty::{MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind, MIRTypeRegistryBuilder};
+use crate::ty::{MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind};
 use crate::unit::MIRUnit;
 
 pub struct MIRDisplay<'a> {
@@ -170,8 +170,8 @@ impl<'a, T: MTRegistry + Sized> TypePrinter<'a, T> {
     ) -> fmt::Result {
         if let Some(name) = self
             .registry
-            .kind(aggregate_type)
-            .and_then(aggregate_fields)
+            .definition(aggregate_type)
+            .and_then(|definition| aggregate_fields(&definition.kind))
             .and_then(|fields| fields.get(index))
             .and_then(MIRField::name)
         {
@@ -199,11 +199,11 @@ fn aggregate_fields(kind: &MIRTypeKind) -> Option<&[MIRField]> {
     }
 }
 
-fn write_global(
+fn write_global<T: MTRegistry>(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
     global: &MIRGlobalVariable,
-    types: &mut TypePrinter<'_>,
+    types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     match global.state {
         MIRGlobalState::External => f.write_str("extern ")?,
@@ -227,11 +227,11 @@ fn write_global(
     Ok(())
 }
 
-fn write_function(
+fn write_function<T: MTRegistry>(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
     function: &MIRFunction,
-    types: &mut TypePrinter<'_>,
+    types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     if function.prototype.linkage == LinkageMode::Static {
         f.write_str("static ")?;
@@ -287,12 +287,12 @@ fn write_function(
     f.write_str("}")
 }
 
-fn write_block(
+fn write_block<T: MTRegistry>(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
     function: &MIRFunction,
     block: &MIRBasicBlock,
-    types: &mut TypePrinter<'_>,
+    types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     write!(f, "    bb{}", block.id.index())?;
     if !block.params.is_empty() {
@@ -317,12 +317,12 @@ fn write_block(
     Ok(())
 }
 
-fn write_instruction(
+fn write_instruction<T: MTRegistry>(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
     function: &MIRFunction,
     instruction: &MIRInstrKind,
-    types: &mut TypePrinter<'_>,
+    types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     match instruction {
         MIRInstrKind::ScopeEnter { scope } => write!(f, "scope.enter {scope:?}"),
@@ -541,12 +541,12 @@ fn write_instruction(
     }
 }
 
-fn write_aggregate(
+fn write_aggregate<T: MTRegistry>(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
     function: &MIRFunction,
     operation: &MIRAggregateOp,
-    types: &mut TypePrinter<'_>,
+    types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     match operation {
         MIRAggregateOp::Place { out, op } => {

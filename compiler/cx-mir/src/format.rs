@@ -4,6 +4,8 @@ mod contextual;
 mod validation;
 
 pub use contextual::MIRDisplay;
+pub(crate) use contextual::TypePrinter;
+pub use validation::MIRValidationErrorDisplay;
 
 use crate::{
     MIRLayoutError, MIRTypeID,

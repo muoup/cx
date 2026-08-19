@@ -13,21 +13,21 @@ pub fn lower_type(builder: &mut MIRBuilder, ty: &THIRType) -> MIRTypeID {
 
     let kind = lower_type_kind(builder, &ty.kind);
     let debug_name = builder.registry().type_debug_name(ty);
-    let id = builder.unit_mut().types.intern(MIRType {
+    let id = builder.types_mut().intern(MIRType {
         kind,
         minimum_alignment: ty.attributes.minimum_alignment,
     });
-    if builder.unit_mut().types.debug_name(id).is_none()
+    if builder.types().debug_name(id).is_none()
         && let Some(debug_name) = debug_name
     {
-        builder.unit_mut().types.set_debug_name(id, debug_name);
+        builder.types_mut().set_debug_name(id, debug_name);
     }
     id
 }
 
 pub fn lower_type_id(builder: &mut MIRBuilder, id: THIRTypeID) -> MIRTypeID {
     let mir_id = MIRTypeID::new(id.index());
-    if builder.unit_mut().types.definition(mir_id).is_some() || builder.lowering_types.contains(&id)
+    if builder.types().definition(mir_id).is_some() || builder.lowering_types.contains(&id)
     {
         return mir_id;
     }
@@ -39,8 +39,7 @@ pub fn lower_type_id(builder: &mut MIRBuilder, id: THIRTypeID) -> MIRTypeID {
             "THIR type {id} is outside its registry"
         );
         builder
-            .unit_mut()
-            .types
+            .types_mut()
             .define(mir_id, MIRType::new(MIRTypeKind::Undefined))
             .expect("reserved THIR type ID must have one MIR definition");
         builder.lowering_types.remove(&id);
@@ -51,13 +50,10 @@ pub fn lower_type_id(builder: &mut MIRBuilder, id: THIRTypeID) -> MIRTypeID {
         kind: lower_type_kind(builder, &ty.kind),
         minimum_alignment: ty.attributes.minimum_alignment,
     };
-    builder
-        .unit_mut()
-        .types
-        .define(mir_id, definition)
+    builder.types_mut().define(mir_id, definition)
         .expect("THIR type ID must have one MIR definition");
     if let Some(debug_name) = debug_name {
-        builder.unit_mut().types.set_debug_name(mir_id, debug_name);
+        builder.types_mut().set_debug_name(mir_id, debug_name);
     }
     builder.lowering_types.remove(&id);
     mir_id

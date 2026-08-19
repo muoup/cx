@@ -1,22 +1,29 @@
-use crate::{global::{MIRFunction, MIRGlobalVariable}, ty::registry::MIRTypeRegistry};
+use crate::{
+    global::{MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalVariable},
+    ty::registry::MIRTypeRegistryBuilder,
+};
 
 #[derive(Debug, Clone)]
 pub struct MIRUnit {
-    types: MIRTypeRegistry,
+    types: MIRTypeRegistryBuilder,
     functions: Vec<MIRFunction>,
     globals: Vec<MIRGlobalVariable>,
 }
 
 impl MIRUnit {
-    pub fn new(registry: MIRTypeRegistry, functions: Vec<MIRFunction>, globals: MIRGlobalVariable) -> Self {
+    pub fn from_parts(
+        types: MIRTypeRegistryBuilder,
+        functions: Vec<MIRFunction>,
+        globals: Vec<MIRGlobalVariable>,
+    ) -> Self {
         Self {
-            types: registry,
+            types,
             functions,
-            globals: vec![globals],
+            globals,
         }
     }
 
-    pub fn types(&self) -> &MIRTypeRegistry {
+    pub fn types(&self) -> &MIRTypeRegistryBuilder {
         &self.types
     }
 
@@ -26,5 +33,13 @@ impl MIRUnit {
 
     pub fn globals(&self) -> &[MIRGlobalVariable] {
         &self.globals
+    }
+
+    pub fn function(&self, id: MIRFunctionID) -> Option<&MIRFunction> {
+        self.functions.get(id.index())
+    }
+
+    pub fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
+        self.globals.get(id.index())
     }
 }

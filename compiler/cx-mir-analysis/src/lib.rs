@@ -27,7 +27,7 @@ pub fn analyze(
     }
 
     let functions = unit
-        .functions
+        .functions()
         .iter()
         .map(|function| (function.id, liveness::analyze_function(function)))
         .collect();

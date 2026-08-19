@@ -10,7 +10,7 @@ use super::error::MIRValidationError;
 
 impl MIRUnit {
     pub(super) fn validate_internal(&self) -> Result<(), MIRValidationError> {
-        for (index, global) in self.globals.iter().enumerate() {
+        for (index, global) in self.globals().iter().enumerate() {
             if global.id.index() != index {
                 return Err(MIRValidationError::NonDenseId {
                     entity: "global",
@@ -21,7 +21,7 @@ impl MIRUnit {
             }
         }
 
-        for (function_index, function) in self.functions.iter().enumerate() {
+        for (function_index, function) in self.functions().iter().enumerate() {
             if function.id.index() != function_index {
                 return Err(MIRValidationError::NonDenseId {
                     entity: "function",
@@ -231,8 +231,8 @@ impl MIRUnit {
                     function.prototype.signature.params.len(),
                 ))
             }
-            MIRPlace::Global(id) if id.index() >= self.globals.len() => {
-                Some(("global", id.index(), self.globals.len()))
+            MIRPlace::Global(id) if id.index() >= self.globals().len() => {
+                Some(("global", id.index(), self.globals().len()))
             }
             _ => None,
         };
@@ -250,9 +250,9 @@ impl MIRUnit {
             }
             if let Some(referenced) = operand.function()
                 && bad_id.is_none()
-                && referenced.index() >= self.functions.len()
+                && referenced.index() >= self.functions().len()
             {
-                bad_id = Some(("function", referenced.index(), self.functions.len()));
+                bad_id = Some(("function", referenced.index(), self.functions().len()));
             }
         });
         for place in instruction.defined_places() {
@@ -347,7 +347,7 @@ impl MIRUnit {
                 .expect("validated block parameter is missing")
                 .ty;
             if let Some(actual) = self.value_type_for_expected(function, argument, expected)
-                && !self.types.same_type(actual, expected)
+                && !self.types().same_type(actual, expected)
             {
                 return Err(MIRValidationError::BlockArgumentType {
                     function: function.id,

@@ -38,6 +38,7 @@ pub enum MIRGlobalState {
 
 #[derive(Debug, Clone)]
 pub struct MIRGlobalVariable {
+    pub id: MIRGlobalID,
     pub name: CXIdent,
     pub ty: MIRTypeID,
     pub linkage: LinkageMode,
@@ -48,8 +49,15 @@ pub struct MIRGlobalVariable {
 }
 
 impl MIRGlobalVariable {
-    pub fn new(name: CXIdent, ty: MIRTypeID, linkage: LinkageMode, is_mutable: bool) -> Self {
+    pub fn new(
+        id: MIRGlobalID,
+        name: CXIdent,
+        ty: MIRTypeID,
+        linkage: LinkageMode,
+        is_mutable: bool,
+    ) -> Self {
         Self {
+            id,
             name,
             ty,
             linkage,

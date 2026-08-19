@@ -32,7 +32,7 @@ mod memory;
 
 pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistryBuilder) -> CXResult<LMIRUnit> {
     let mut prototypes = LMIRFunctionMap::new();
-    for function in &mir.functions {
+    for function in mir.functions() {
         if !keep_function(function) {
             continue;
         }
@@ -44,7 +44,7 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistryBuilder) -> CXRes
         .or_insert_with(|| assertion_prototype(types));
 
     let mut global_indices = HashMap::new();
-    for global in &mir.globals {
+    for global in mir.globals() {
         if keep_global(global) {
             let index = global_indices.len() as u32;
             global_indices.insert(global.id, index);
@@ -52,7 +52,7 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistryBuilder) -> CXRes
     }
 
     let mut globals = mir
-        .globals
+        .globals()
         .iter()
         .filter(|global| keep_global(global))
         .map(|global| {
@@ -96,7 +96,7 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistryBuilder) -> CXRes
         .collect::<Vec<_>>();
 
     let mut functions = Vec::new();
-    for function in &mir.functions {
+    for function in mir.functions() {
         if function.is_declaration() || !keep_function(function) {
             continue;
         }
@@ -148,7 +148,7 @@ fn lower_global_initializer(
             _type: convert_float_type(*ty),
         },
         MIRConstant::Aggregate { ty, fields }
-            if matches!(mir.types.kind(*ty), Some(cx_mir::MIRTypeKind::Union { .. }))
+            if matches!(mir.types().kind(*ty), Some(cx_mir::MIRTypeKind::Union { .. }))
                 && fields.iter().all(|(_, value)| is_zero_constant(value)) =>
         {
             LMIRGlobalInitializer::Null

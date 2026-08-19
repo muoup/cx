@@ -1,18 +1,18 @@
 use std::collections::{HashMap, HashSet};
 
+use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
     MIRBasicBlockID, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID,
     MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRRegister,
-    MIRScopeID, MIRTypeID, MIRTypeKind, MIRUnit, MIRValue,
+    MIRScopeID, MIRTypeID, MIRTypeKind, MIRTypeRegistryBuilder, MIRUnit, MIRValue,
 };
 use cx_thir::{
     THIRUnit,
     registry::THIRDecomposedRegistry,
     thir::{
         data::{THIRFnPrototype, THIRFunction},
-        expression::{
-            THIRBinOp, THIRExpression, THIRExpressionKind, THIRIntBinOp, THIRLocalID,
-        },
+        expression::{THIRBinOp, THIRExpression, THIRExpressionKind, THIRIntBinOp, THIRLocalID},
+        global::{THIRGlobalVarKind, THIRGlobalVariable},
         r#type::{THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
@@ -20,7 +20,10 @@ use cx_thir::{
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
+mod module;
+
 use crate::lowering::types::{lower_int_type, lower_type, lower_type_id};
+use module::MIRModuleState;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct LoopContext {
@@ -57,17 +60,12 @@ struct FunctionContext {
 }
 
 pub struct MIRBuilder<'thir> {
-    unit: MIRUnit,
+    types: MIRTypeRegistryBuilder,
+    module: MIRModuleState,
     registry: &'thir THIRDecomposedRegistry,
 
     pub(crate) lowering_types: HashSet<THIRTypeID>,
-
-    function_symbols: HashMap<String, BuilderSymbol<MIRFunctionID>>,
-    global_symbols: HashMap<String, BuilderSymbol<MIRGlobalID>>,
-
-    definitions: Vec<MIRFunctionID>,
     current: Option<FunctionContext>,
-
     source_range: TokenRange,
 }
 
@@ -99,17 +97,14 @@ impl<T: Copy> BuilderSymbol<T> {
 impl<'thir> MIRBuilder<'thir> {
     pub fn new(thir: &'thir THIRUnit) -> Self {
         let mut builder = Self {
-            unit: MIRUnit::new(*thir.registry.architecture()),
+            types: MIRTypeRegistryBuilder::new(*thir.registry.architecture()),
+            module: MIRModuleState::new(),
             registry: &thir.registry,
             lowering_types: HashSet::new(),
-            function_symbols: HashMap::new(),
-            global_symbols: HashMap::new(),
-            definitions: Vec::with_capacity(thir.functions.len()),
             current: None,
             source_range: TokenRange::internal(),
         };
         builder
-            .unit
             .types
             .reserve_id_space(thir.registry.type_id_bound());
 
@@ -126,31 +121,63 @@ impl<'thir> MIRBuilder<'thir> {
         self.registry
     }
 
-    pub fn unit(&self) -> &MIRUnit {
-        &self.unit
+    pub(crate) fn types(&self) -> &MIRTypeRegistryBuilder {
+        &self.types
     }
 
-    pub fn unit_mut(&mut self) -> &mut MIRUnit {
-        &mut self.unit
+    pub(crate) fn types_mut(&mut self) -> &mut MIRTypeRegistryBuilder {
+        &mut self.types
     }
 
     pub fn finish(self) -> MIRUnit {
-        let mut unit = self.unit;
-        for symbol in self.function_symbols.values() {
-            unit.function_mut(symbol.id())
-                .expect("builder function symbol points to a missing MIR function")
-                .is_used = symbol.is_used();
-        }
-        for symbol in self.global_symbols.values() {
-            unit.global_mut(symbol.id())
-                .expect("builder global symbol points to a missing MIR global")
-                .is_used = symbol.is_used();
-        }
         assert!(
             self.current.is_none(),
             "attempted to finish MIR while a function is active"
         );
-        unit
+        self.module.finish(self.types)
+    }
+
+    pub(crate) fn compute_layouts(&mut self) -> Result<(), cx_mir::MIRLayoutError> {
+        self.types.compute_layouts()
+    }
+
+    pub(crate) fn set_global_state(&mut self, id: MIRGlobalID, state: MIRGlobalState) {
+        self.module.set_global_state(id, state);
+    }
+
+    pub(crate) fn predeclare_function(&mut self, function: &THIRFunction) {
+        let prototype = self.convert_prototype(&function.prototype);
+        self.module.declare_function(prototype, true);
+    }
+
+    pub(crate) fn predeclare_global(&mut self, global: &THIRGlobalVariable) {
+        let (name, ty, state, nodrop) = match &global.kind {
+            THIRGlobalVarKind::StringLiteral { name, value } => (
+                name.clone(),
+                lower_type(self, &THIRType::from(THIRTypeKind::Str)),
+                MIRGlobalState::Initialized(MIRConstant::String(value.clone())),
+                true,
+            ),
+            THIRGlobalVarKind::Variable {
+                name,
+                _type,
+                initializer,
+            } => {
+                let state = match (initializer, global.linkage) {
+                    (None, LinkageMode::Extern) => MIRGlobalState::External,
+                    _ => MIRGlobalState::ZeroInitialized,
+                };
+                (
+                    name.clone(),
+                    lower_type(self, _type),
+                    state,
+                    _type.is_nodrop(),
+                )
+            }
+        };
+
+        self.module
+            .declare_global(name, ty, global.linkage, global.is_mutable, nodrop, state);
     }
 
     fn lower_string_array_constant(
@@ -159,13 +186,13 @@ impl<'thir> MIRBuilder<'thir> {
         symbol: &CXIdent,
     ) -> MIRConstant {
         let ty = lower_type(self, expression_type);
-        let length = match self.unit.types.kind(ty) {
+        let length = match self.types().kind(ty) {
             Some(MIRTypeKind::Array { length, .. }) => *length,
             _ => panic!("string literal initializer target is not an array"),
         };
         let global = self
             .global_symbol(symbol.as_str())
-            .and_then(|id| self.unit.global(id))
+            .and_then(|id| self.module.global(id))
             .unwrap_or_else(|| panic!("string literal global {symbol} is not declared"));
         let MIRGlobalState::Initialized(MIRConstant::String(value)) = &global.state else {
             panic!("global {symbol} is not a string literal");
@@ -218,7 +245,7 @@ impl<'thir> MIRBuilder<'thir> {
             })
             .collect();
         let return_type = if matches!(signature.return_type.kind, THIRTypeKind::Void) {
-            self.unit.types.unit()
+            self.types().unit()
         } else {
             lower_type(self, &signature.return_type)
         };
@@ -231,16 +258,17 @@ impl<'thir> MIRBuilder<'thir> {
     pub(crate) fn start_function(&mut self, index: usize, function: &THIRFunction) {
         assert!(self.current.is_none(), "a MIR function is already active");
         let function_id = *self
-            .definitions
+            .module
+            .function_ids()
             .get(index)
             .expect("THIR function predeclaration is missing");
         let entry = self
-            .unit
+            .module
             .function_mut(function_id)
             .expect("predeclared MIR function is missing")
             .add_block();
         let root_scope = self
-            .unit
+            .module
             .function_mut(function_id)
             .expect("predeclared MIR function is missing")
             .add_scope(function.body.token_range.clone());
@@ -291,9 +319,9 @@ impl<'thir> MIRBuilder<'thir> {
         );
         assert_eq!(context.defers.len(), 1, "defer stack is unbalanced");
 
-        let unit_type = self.unit.types.unit();
+        let unit_type = self.types().unit();
         let returns_value = self
-            .unit
+            .module
             .function(context.function)
             .expect("active MIR function is missing")
             .prototype
@@ -301,7 +329,7 @@ impl<'thir> MIRBuilder<'thir> {
             .return_type
             != unit_type;
         let function = self
-            .unit
+            .module
             .function_mut(context.function)
             .expect("active MIR function is missing");
         for block in &mut function.blocks {
@@ -557,11 +585,15 @@ impl<'thir> MIRBuilder<'thir> {
     }
 
     pub(crate) fn function_symbol(&mut self, name: &str) -> Option<MIRFunctionID> {
-        self.function_symbols.get_mut(name).map(|name| name.get())
+        self.module.function_symbol(name)
     }
 
     pub(crate) fn global_symbol(&mut self, name: &str) -> Option<MIRGlobalID> {
-        self.global_symbols.get_mut(name).map(|name| name.get())
+        self.module.global_symbol(name)
+    }
+
+    pub(crate) fn global_id(&self, name: &str) -> Option<MIRGlobalID> {
+        self.module.global_id(name)
     }
 
     pub(crate) fn push_contextual_scope(
@@ -666,14 +698,14 @@ impl<'thir> MIRBuilder<'thir> {
     }
 
     fn function(&self) -> &cx_mir::MIRFunction {
-        self.unit
+        self.module
             .function(self.current_function_id())
             .expect("active MIR function is missing")
     }
 
     fn function_mut(&mut self) -> &mut cx_mir::MIRFunction {
         let id = self.current_function_id();
-        self.unit
+        self.module
             .function_mut(id)
             .expect("active MIR function is missing")
     }
