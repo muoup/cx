@@ -6,7 +6,7 @@ use crate::{
         MIRPlaceAggregateOp, MIRRegister, MIRValue, MIRValueAggregateOp,
     },
     global::{MIRFunction, MIRFunctionID},
-    ty::{MIRField, MIRTypeDefinition, MIRTypeID, MIRTypeKind},
+    ty::{MIRField, MIRType, MIRTypeID, MIRTypeKind},
     unit::MIRUnit,
 };
 
@@ -278,7 +278,7 @@ impl MIRUnit {
         actual: MIRTypeID,
         expected: MIRTypeID,
     ) -> Result<(), MIRValidationError> {
-        if self.types.same_type(actual, expected) {
+        if self.types().same_type(actual, expected) {
             Ok(())
         } else {
             Err(MIRValidationError::TypeMismatch {
@@ -326,23 +326,23 @@ impl MIRUnit {
             MIRValue::Constant(MIRConstant::Unit) => Some(self.types.unit()),
             MIRValue::Constant(MIRConstant::Bool(_)) => {
                 self.types
-                    .find(&MIRTypeDefinition::new(MIRTypeKind::Integer {
+                    .find(&MIRType::new(MIRTypeKind::Integer {
                         ty: crate::MIRIntType::I1,
                         signed: false,
                     }))
             }
             MIRValue::Constant(MIRConstant::Integer { ty, signed, .. }) => {
                 self.types
-                    .find(&MIRTypeDefinition::new(MIRTypeKind::Integer {
+                    .find(&MIRType::new(MIRTypeKind::Integer {
                         ty: *ty,
                         signed: *signed,
                     }))
             }
             MIRValue::Constant(MIRConstant::Float { ty, .. }) => self
                 .types
-                .find(&MIRTypeDefinition::new(MIRTypeKind::Float { ty: *ty })),
+                .find(&MIRType::new(MIRTypeKind::Float { ty: *ty })),
             MIRValue::Constant(MIRConstant::String(_)) => {
-                self.types.find(&MIRTypeDefinition::new(MIRTypeKind::Str))
+                self.types.find(&MIRType::new(MIRTypeKind::Str))
             }
             MIRValue::Constant(MIRConstant::Null { ty }) => Some(*ty),
             MIRValue::Constant(MIRConstant::Aggregate { ty, .. }) => Some(*ty),

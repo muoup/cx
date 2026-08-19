@@ -24,7 +24,7 @@ pub use op::{
 };
 pub use ty::{
     MIRBitfieldAccess, MIRField, MIRFieldLayout, MIRFloatType, MIRFunctionType, MIRIntType,
-    MIRLayoutError, MIRTypeDefinition, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRTypeRegistry,
+    MIRLayoutError, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRTypeRegistryBuilder,
 };
 pub use unit::MIRUnit;
 pub use validator::{MIRValidationError, validate};

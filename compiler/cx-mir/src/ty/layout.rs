@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
-use super::{MIRField, MIRTypeID, MIRTypeKind, MIRTypeRegistry};
+use super::{MIRField, MIRTypeID, MIRTypeKind, MIRTypeRegistryBuilder};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MIRTypeLayout {
     pub size: usize,
     pub alignment: usize,
@@ -33,7 +33,7 @@ pub enum MIRLayoutError {
     SizeOverflow,
 }
 
-impl MIRTypeRegistry {
+impl MIRTypeRegistryBuilder {
     pub fn compute_layouts(&mut self) -> Result<(), MIRLayoutError> {
         for index in 0..self.definitions.len() {
             let id = MIRTypeID::new(index);

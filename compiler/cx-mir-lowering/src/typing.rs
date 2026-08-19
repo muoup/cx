@@ -5,14 +5,14 @@ use cx_lmir::{
 };
 use cx_mir::{
     MIRField, MIRFloatType, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRTypeID, MIRTypeKind,
-    MIRTypeRegistry,
+    MIRTypeRegistryBuilder,
 };
 use cx_target::ArchitectureConfig;
 use cx_util::linkage::LinkageMode;
 
 pub(crate) fn convert_prototype(
     prototype: &MIRFnPrototype,
-    types: &MIRTypeRegistry,
+    types: &MIRTypeRegistryBuilder,
 ) -> LMIRFunctionPrototype {
     LMIRFunctionPrototype {
         name: prototype.signature.symbol_name.clone(),
@@ -23,7 +23,7 @@ pub(crate) fn convert_prototype(
 
 pub(crate) fn classify_signature(
     signature: &MIRFnSignature,
-    types: &MIRTypeRegistry,
+    types: &MIRTypeRegistryBuilder,
 ) -> LMIRFunctionSignature {
     let return_type = convert_type(signature.return_type, types);
     let return_layout = (!return_type.is_void()).then(|| layout(types, signature.return_type));
@@ -77,7 +77,7 @@ fn classify_param(
     architecture: &ArchitectureConfig,
     name: Option<cx_util::identifier::CXIdent>,
     ty: MIRTypeID,
-    types: &MIRTypeRegistry,
+    types: &MIRTypeRegistryBuilder,
 ) -> LMIRParameter {
     let lowered = convert_type(ty, types);
     let layout = layout(types, ty);
@@ -136,7 +136,7 @@ pub(crate) fn convert_float_type(ty: MIRFloatType) -> LMIRFloatType {
     }
 }
 
-pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
+pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistryBuilder) -> LMIRType {
     let definition = types
         .definition(ty)
         .unwrap_or_else(|| panic!("invalid MIR type {ty}"));
@@ -196,13 +196,13 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
     }
 }
 
-fn layout(types: &MIRTypeRegistry, ty: MIRTypeID) -> cx_mir::MIRTypeLayout {
+fn layout(types: &MIRTypeRegistryBuilder, ty: MIRTypeID) -> cx_mir::MIRTypeLayout {
     types
         .layout(ty)
         .unwrap_or_else(|err| panic!("failed to calculate MIR layout for {ty}: {err}"))
 }
 
-fn lower_union(variants: &[MIRField], types: &MIRTypeRegistry) -> LMIRType {
+fn lower_union(variants: &[MIRField], types: &MIRTypeRegistryBuilder) -> LMIRType {
     let (size, alignment) = variants
         .iter()
         .map(|variant| layout(types, variant.ty()))

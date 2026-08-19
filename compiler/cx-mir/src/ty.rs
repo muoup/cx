@@ -1,12 +1,29 @@
-mod layout;
-mod registry;
+pub mod layout;
+pub mod registry;
+pub mod interface;
+pub mod comparison;
 
 use cx_util::dense_id;
 
 pub use layout::{MIRFieldLayout, MIRLayoutError, MIRTypeLayout};
-pub use registry::MIRTypeRegistry;
+pub use registry::MIRTypeRegistryBuilder;
 
 dense_id!(MIRTypeID);
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MIRType {
+    pub kind: MIRTypeKind,
+    pub layout: MIRTypeLayout,
+}
+
+impl MIRType {
+    pub fn new(kind: MIRTypeKind, layout: MIRTypeLayout) -> Self {
+        Self {
+            kind,
+            layout
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MIRIntType {
@@ -156,19 +173,4 @@ pub enum MIRTypeKind {
     },
     Undefined,
     Str,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct MIRTypeDefinition {
-    pub kind: MIRTypeKind,
-    pub minimum_alignment: Option<usize>,
-}
-
-impl MIRTypeDefinition {
-    pub fn new(kind: MIRTypeKind) -> Self {
-        Self {
-            kind,
-            minimum_alignment: None,
-        }
-    }
 }

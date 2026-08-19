@@ -1,4 +1,4 @@
-use cx_mir::{MIRFloatType, MIRIntType, MIRTypeDefinition, MIRTypeID, MIRTypeKind};
+use cx_mir::{MIRFloatType, MIRIntType, MIRType, MIRTypeID, MIRTypeKind};
 use cx_thir::{
     thir::r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
     type_context::THIRTypeContext,
@@ -13,7 +13,7 @@ pub fn lower_type(builder: &mut MIRBuilder, ty: &THIRType) -> MIRTypeID {
 
     let kind = lower_type_kind(builder, &ty.kind);
     let debug_name = builder.registry().type_debug_name(ty);
-    let id = builder.unit_mut().types.intern(MIRTypeDefinition {
+    let id = builder.unit_mut().types.intern(MIRType {
         kind,
         minimum_alignment: ty.attributes.minimum_alignment,
     });
@@ -41,13 +41,13 @@ pub fn lower_type_id(builder: &mut MIRBuilder, id: THIRTypeID) -> MIRTypeID {
         builder
             .unit_mut()
             .types
-            .define(mir_id, MIRTypeDefinition::new(MIRTypeKind::Undefined))
+            .define(mir_id, MIRType::new(MIRTypeKind::Undefined))
             .expect("reserved THIR type ID must have one MIR definition");
         builder.lowering_types.remove(&id);
         return mir_id;
     };
     let debug_name = builder.registry().type_debug_name(&ty);
-    let definition = MIRTypeDefinition {
+    let definition = MIRType {
         kind: lower_type_kind(builder, &ty.kind),
         minimum_alignment: ty.attributes.minimum_alignment,
     };

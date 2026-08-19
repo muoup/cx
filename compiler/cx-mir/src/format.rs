@@ -1,7 +1,8 @@
 use std::fmt::{self, Display, Formatter};
 
 mod contextual;
-pub(crate) use contextual::TypePrinter;
+mod validation;
+
 pub use contextual::MIRDisplay;
 
 use crate::{
@@ -223,8 +224,7 @@ impl Display for MIRGlobalVariable {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "global {} {}: {} [{:?}, {}]",
-            self.id,
+            "global {}: {} [{:?}, {}]",
             self.name,
             self.ty,
             self.linkage,

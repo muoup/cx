@@ -1,9 +1,10 @@
-pub(crate) mod aggregates;
 mod calls;
 mod control_flow;
+mod globals;
 mod memory;
 mod operators;
 
+pub(crate) mod aggregates;
 pub(crate) mod types;
 
 use cx_log::CXResult;
@@ -20,18 +21,21 @@ use cx_thir::{
     type_context::THIRTypeContext,
 };
 
-use crate::{builder::{MIRBuilder, integer_type}, lowering::types::lower_type};
 use crate::lowering::types::lower_float_type;
+use crate::{
+    builder::{MIRBuilder, integer_type},
+    lowering::types::lower_type,
+};
 
 pub(crate) fn lower_unit(builder: &mut MIRBuilder<'_>, thir: &THIRUnit) -> CXResult<()> {
     for function in &thir.functions {
-        builder.predeclare_function(function);
+        builder.unit_mut().add_function(function);
     }
-    
+
     for global in &thir.global_variables {
         builder.predeclare_global(global);
     }
-    
+
     for global in &thir.global_variables {
         builder.lower_global(global);
     }
@@ -50,11 +54,11 @@ fn lower_function(
 ) -> CXResult<()> {
     builder.start_function(index, function);
     lower_expression(builder, &function.body)?;
-    
+
     if !builder.current_block_terminated() {
         control_flow::lower_root_defers(builder)?;
     }
-    
+
     builder.finish_function();
     Ok(())
 }
@@ -166,12 +170,9 @@ fn lower_expression(
                 .unwrap_or(MIRValue::Constant(MIRConstant::Undefined)),
             THIRExpressionKind::FunctionReference { name, .. } => {
                 MIRValue::Constant(MIRConstant::Function(
-                    builder.function_symbol(name.as_str()).unwrap_or_else(|| {
-                        panic!(
-                            "function '{}' not found",
-                            name
-                        )
-                    }),
+                    builder
+                        .function_symbol(name.as_str())
+                        .unwrap_or_else(|| panic!("function '{}' not found", name)),
                 ))
             }
 

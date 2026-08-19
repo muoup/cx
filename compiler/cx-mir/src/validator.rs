@@ -1,5 +1,4 @@
 mod error;
-mod format;
 mod structure;
 mod types;
 

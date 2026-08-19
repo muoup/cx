@@ -24,7 +24,7 @@ impl Display for MIRValidationErrorDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut context = ValidationFormat {
             unit: self.unit,
-            types: TypePrinter::new(&self.unit.types),
+            types: TypePrinter::new(self.unit.types()),
         };
         context.write_error(f, self.error)
     }

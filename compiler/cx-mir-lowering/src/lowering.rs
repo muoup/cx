@@ -16,7 +16,7 @@ use cx_mir::{
     MIRConstant, MIRFieldLayout, MIRFloatBinaryOp, MIRFnParam, MIRFnSignature, MIRFunction,
     MIRFunctionType, MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntBinaryOp, MIRIntType,
     MIRPlace, MIRPlaceAggregateOp, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister, MIRTypeID,
-    MIRTypeKind, MIRTypeRegistry, MIRUnaryOp, MIRUnit, MIRValue, MIRValueAggregateOp,
+    MIRTypeKind, MIRTypeRegistryBuilder, MIRUnaryOp, MIRUnit, MIRValue, MIRValueAggregateOp,
 };
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
@@ -30,7 +30,7 @@ mod instructions;
 #[path = "memory.rs"]
 mod memory;
 
-pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistry) -> CXResult<LMIRUnit> {
+pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistryBuilder) -> CXResult<LMIRUnit> {
     let mut prototypes = LMIRFunctionMap::new();
     for function in &mir.functions {
         if !keep_function(function) {
@@ -204,7 +204,7 @@ fn is_zero_constant(constant: &MIRConstant) -> bool {
     }
 }
 
-fn assertion_prototype(types: &MIRTypeRegistry) -> LMIRFunctionPrototype {
+fn assertion_prototype(types: &MIRTypeRegistryBuilder) -> LMIRFunctionPrototype {
     let pointer = LMIRType::default_pointer(types.architecture());
     LMIRFunctionPrototype {
         name: CXIdent::new(ASSERTION.symbol_name()),
@@ -257,7 +257,7 @@ enum PlaceBinding {
 struct FunctionLowerer<'a> {
     unit: &'a MIRUnit,
     function: &'a MIRFunction,
-    types: &'a MIRTypeRegistry,
+    types: &'a MIRTypeRegistryBuilder,
     prototypes: &'a LMIRFunctionMap,
     global_indices: &'a HashMap<MIRGlobalID, u32>,
     globals: &'a mut Vec<LMIRGlobalValue>,
@@ -273,7 +273,7 @@ impl<'a> FunctionLowerer<'a> {
     fn new(
         unit: &'a MIRUnit,
         function: &'a MIRFunction,
-        types: &'a MIRTypeRegistry,
+        types: &'a MIRTypeRegistryBuilder,
         prototypes: &'a LMIRFunctionMap,
         global_indices: &'a HashMap<MIRGlobalID, u32>,
         globals: &'a mut Vec<LMIRGlobalValue>,
@@ -507,7 +507,7 @@ impl<'a> FunctionLowerer<'a> {
                     variadic: function.prototype.signature.variadic,
                 };
                 self.types
-                    .find(&cx_mir::MIRTypeDefinition::new(MIRTypeKind::Function {
+                    .find(&cx_mir::MIRType::new(MIRTypeKind::Function {
                         signature,
                     }))
             }

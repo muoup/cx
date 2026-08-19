@@ -38,25 +38,18 @@ pub enum MIRGlobalState {
 
 #[derive(Debug, Clone)]
 pub struct MIRGlobalVariable {
-    pub id: MIRGlobalID,
     pub name: CXIdent,
     pub ty: MIRTypeID,
     pub linkage: LinkageMode,
     pub state: MIRGlobalState,
     pub is_mutable: bool,
     pub nodrop: bool,
+    pub is_used: bool,
 }
 
 impl MIRGlobalVariable {
-    pub fn new(
-        id: MIRGlobalID,
-        name: CXIdent,
-        ty: MIRTypeID,
-        linkage: LinkageMode,
-        is_mutable: bool,
-    ) -> Self {
+    pub fn new(name: CXIdent, ty: MIRTypeID, linkage: LinkageMode, is_mutable: bool) -> Self {
         Self {
-            id,
             name,
             ty,
             linkage,
@@ -67,6 +60,7 @@ impl MIRGlobalVariable {
             },
             is_mutable,
             nodrop: false,
+            is_used: false,
         }
     }
 }
@@ -166,6 +160,7 @@ pub struct MIRRegisterDecl {
 pub struct MIRFunction {
     pub id: MIRFunctionID,
     pub prototype: MIRFnPrototype,
+    pub is_used: bool,
     pub entry: Option<MIRBasicBlockID>,
     pub blocks: Vec<MIRBasicBlock>,
     pub places: Vec<MIRPlaceDecl>,
@@ -178,6 +173,7 @@ impl MIRFunction {
         Self {
             id,
             prototype,
+            is_used: false,
             entry: None,
             blocks: Vec::new(),
             places: Vec::new(),

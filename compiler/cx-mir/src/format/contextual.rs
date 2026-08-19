@@ -12,7 +12,8 @@ use crate::op::{
     MIRBinaryOp, MIRFloatBinaryOp, MIRIntBinaryOp, MIRPointerBinaryOp, MIRPointerOffsetOp,
     MIRUnaryOp,
 };
-use crate::ty::{MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind, MIRTypeRegistry};
+use crate::ty::interface::MTRegistry;
+use crate::ty::{MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind, MIRTypeRegistryBuilder};
 use crate::unit::MIRUnit;
 
 pub struct MIRDisplay<'a> {
@@ -27,20 +28,20 @@ impl MIRUnit {
 
 impl Display for MIRDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let mut types = TypePrinter::new(&self.unit.types);
+        let mut types = TypePrinter::new(self.unit.types());
 
-        for (index, global) in self.unit.globals.iter().enumerate() {
+        for (index, global) in self.unit.globals().iter().enumerate() {
             if index != 0 {
                 f.write_str("\n")?;
             }
             write_global(f, self.unit, global, &mut types)?;
         }
 
-        if !self.unit.globals.is_empty() && !self.unit.functions.is_empty() {
+        if !self.unit.globals().is_empty() && !self.unit.functions().is_empty() {
             f.write_str("\n\n")?;
         }
 
-        for (index, function) in self.unit.functions.iter().enumerate() {
+        for (index, function) in self.unit.functions().iter().enumerate() {
             if index != 0 {
                 f.write_str("\n")?;
             }
@@ -51,13 +52,13 @@ impl Display for MIRDisplay<'_> {
     }
 }
 
-pub(crate) struct TypePrinter<'a> {
-    registry: &'a MIRTypeRegistry,
+pub(crate) struct TypePrinter<'a, T: MTRegistry + Sized> {
+    registry: &'a T,
     active: Vec<MIRTypeID>,
 }
 
-impl<'a> TypePrinter<'a> {
-    pub(crate) fn new(registry: &'a MIRTypeRegistry) -> Self {
+impl<'a, T: MTRegistry + Sized> TypePrinter<'a, T> {
+    pub(crate) fn new(registry: &'a T) -> Self {
         Self {
             registry,
             active: Vec::new(),
