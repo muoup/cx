@@ -1,9 +1,7 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    expr::{MIRBasicBlockID, MIRBlockTarget, MIRInstrKind, MIRPlace},
-    global::{MIRFunction, MIRFunctionID},
-    unit::MIRUnit,
+    expr::{MIRBasicBlockID, MIRBlockTarget, MIRInstrKind, MIRPlace}, global::{MIRFunction, MIRFunctionID}, ty::interface::MTRegistry, unit::MIRUnit
 };
 
 use super::error::MIRValidationError;

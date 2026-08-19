@@ -1,3 +1,5 @@
+use cx_mir::ty::interface::MTRegistry;
+
 use super::*;
 
 impl<'a> FunctionLowerer<'a> {
@@ -420,8 +422,8 @@ impl<'a> FunctionLowerer<'a> {
             let ty = self.binding_type(&place);
             let previous = self.load_binding(place.clone(), ty, None);
             let amount = i128::from(*amount);
-            let (result_kind, result_type) = match self.types.kind(ty) {
-                Some(MIRTypeKind::PointerTo { inner }) => (
+            let (result_kind, result_type) = match self.types.kind(ty).unwrap() {
+                MIRTypeKind::PointerTo { inner } => (
                     LMIRInstructionKind::PointerBinOp {
                         op: if amount < 0 {
                             LMIRPtrBinOp::SUB
@@ -435,6 +437,7 @@ impl<'a> FunctionLowerer<'a> {
                     },
                     self.ty(ty),
                 ),
+
                 _ => (
                     LMIRInstructionKind::IntegerBinOp {
                         op: LMIRIntBinOp::ADD,
@@ -447,8 +450,8 @@ impl<'a> FunctionLowerer<'a> {
             let result = self.emit_temp(result_kind, result_type);
             self.store_binding(place, result.clone(), ty);
             let value = if matches!(
-                self.types.kind(self.register_decl_type(out)),
-                Some(MIRTypeKind::MemoryReference { .. })
+                self.types.kind(self.register_decl_type(out)).unwrap(),
+                MIRTypeKind::MemoryReference { .. }
             ) {
                 self.address(self.place(place_id))
             } else if *post {
@@ -649,8 +652,7 @@ impl<'a> FunctionLowerer<'a> {
                     })
                     .collect()
             }
-            LMIRParameterABI::Indirect { alignment }
-            | LMIRParameterABI::ByValue { alignment } => {
+            LMIRParameterABI::Indirect { alignment } | LMIRParameterABI::ByValue { alignment } => {
                 let source = self.lower_value(argument);
                 if matches!(argument, MIRValue::Place(_)) {
                     let copy = self.emit_temp(

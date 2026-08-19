@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use crate::ty::interface::MTRegistry;
+
 use super::{MIRField, MIRTypeID, MIRTypeKind, MIRTypeRegistryBuilder};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -34,45 +36,26 @@ pub enum MIRLayoutError {
 }
 
 impl MIRTypeRegistryBuilder {
-    pub fn compute_layouts(&mut self) -> Result<(), MIRLayoutError> {
-        for index in 0..self.definitions.len() {
-            let id = MIRTypeID::new(index);
-            if self.definition(id).is_none() {
-                continue;
-            }
-            if matches!(self.kind(id), Some(MIRTypeKind::Undefined)) {
-                continue;
-            }
-            let layout = self.layout_of(id)?;
-            self.layouts[index] = Some(layout);
-        }
-        Ok(())
-    }
-
-    pub fn layout(&self, id: MIRTypeID) -> Result<MIRTypeLayout, MIRLayoutError> {
-        self.layouts
-            .get(id.index())
-            .and_then(|layout| *layout)
-            .map(Ok)
-            .unwrap_or_else(|| self.layout_of(id))
-    }
-
-    pub fn layout_of(&self, id: MIRTypeID) -> Result<MIRTypeLayout, MIRLayoutError> {
-        self.layout_inner(id, &mut HashSet::new())
-    }
-
     pub fn field_layout(
         &self,
         aggregate: MIRTypeID,
         field_index: usize,
     ) -> Result<MIRFieldLayout, MIRLayoutError> {
-        let aggregate = match self.kind(aggregate) {
-            Some(MIRTypeKind::MemoryReference { inner, .. }) => *inner,
-            _ => aggregate,
+        let aggregate_def = self
+            .definition(aggregate)
+            .ok_or_else(|| MIRLayoutError::InvalidType(aggregate))?;
+
+        let aggregate_type = match aggregate_def.kind {
+            MIRTypeKind::MemoryReference { inner, .. } => self
+                .definition(inner)
+                .ok_or_else(|| MIRLayoutError::InvalidType(inner))?,
+            _ => aggregate_def,
         };
-        let (fields, is_union) = match self.kind(aggregate) {
-            Some(MIRTypeKind::Structured { fields }) => (fields, false),
-            Some(MIRTypeKind::Union { variants }) => (variants, true),
+
+        let (fields, is_union) = match &aggregate_type.kind {
+            MIRTypeKind::Structured { fields } => (fields, false),
+            MIRTypeKind::Union { variants } => (variants, true),
+
             _ => {
                 return Err(MIRLayoutError::InvalidField {
                     ty: aggregate,
@@ -80,14 +63,20 @@ impl MIRTypeRegistryBuilder {
                 });
             }
         };
-        self.aggregate_field_layout(aggregate, fields, is_union, field_index)
+
+        self.aggregate_field_layout(aggregate, &fields, is_union, field_index)
     }
 
     pub fn tagged_union_tag_offset(&self, sum: MIRTypeID) -> Result<usize, MIRLayoutError> {
-        let Some(MIRTypeKind::TaggedUnion { variants }) = self.kind(sum) else {
+        let sum_def = self
+            .definition(sum)
+            .ok_or_else(|| MIRLayoutError::InvalidType(sum))?;
+
+        let MIRTypeKind::TaggedUnion { variants } = &sum_def.kind else {
             return Err(MIRLayoutError::InvalidType(sum));
         };
-        let data = self.union_layout(variants, &mut HashSet::new())?;
+
+        let data = self.union_layout(&variants, &mut HashSet::new())?;
         align_to(data.size, 1)
     }
 
@@ -100,6 +89,7 @@ impl MIRTypeRegistryBuilder {
             return Err(MIRLayoutError::RecursiveType(id));
         }
         let definition = self.definition(id).ok_or(MIRLayoutError::InvalidType(id))?;
+
         let mut layout = match &definition.kind {
             MIRTypeKind::Void => MIRTypeLayout {
                 size: 0,
@@ -110,11 +100,12 @@ impl MIRTypeRegistryBuilder {
             MIRTypeKind::PointerTo { .. }
             | MIRTypeKind::MemoryReference { .. }
             | MIRTypeKind::Function { .. } => MIRTypeLayout {
-                size: self.architecture.pointer_size(),
-                alignment: self.architecture.pointer_alignment(),
+                size: self.architecture().pointer_size(),
+                alignment: self.architecture().pointer_alignment(),
             },
             MIRTypeKind::Array { length, inner } => {
                 let inner = self.layout_inner(*inner, visiting)?;
+
                 MIRTypeLayout {
                     size: inner
                         .size
@@ -138,15 +129,12 @@ impl MIRTypeRegistryBuilder {
             },
             MIRTypeKind::Undefined => return Err(MIRLayoutError::InvalidType(id)),
         };
+
         visiting.remove(&id);
 
-        layout.alignment = layout.alignment.clamp(1, self.architecture.pointer_size());
-        if let Some(alignment) = definition.minimum_alignment {
-            if alignment == 0 || !alignment.is_power_of_two() {
-                return Err(MIRLayoutError::InvalidAlignment(alignment));
-            }
-            layout.alignment = layout.alignment.max(alignment);
-        }
+        layout.alignment = layout
+            .alignment
+            .clamp(1, self.architecture().pointer_size());
         layout.size = align_to(layout.size, layout.alignment)?;
         Ok(layout)
     }
@@ -288,11 +276,11 @@ impl MIRTypeRegistryBuilder {
                     if let Some((_, start, size, _)) = active.take() {
                         offset = start + size;
                     }
-                    let layout = self.layout(*type_id)?;
+                    let ty = self.resolve_type_id(*type_id)?;
                     offset = if is_union {
                         0
                     } else {
-                        align_to(offset, layout.alignment)?
+                        align_to(offset, ty.layout.alignment)?
                     };
                     if index == field_index {
                         return Ok(MIRFieldLayout::Standard {
@@ -302,7 +290,7 @@ impl MIRTypeRegistryBuilder {
                     }
                     if !is_union {
                         offset = offset
-                            .checked_add(layout.size)
+                            .checked_add(ty.layout.size)
                             .ok_or(MIRLayoutError::SizeOverflow)?;
                     }
                 }
@@ -311,8 +299,8 @@ impl MIRTypeRegistryBuilder {
                     width,
                     ..
                 } => {
-                    let layout = self.layout(*integer_type_id)?;
-                    validate_bitfield(*width, layout)?;
+                    let ty = self.resolve_type_id(*integer_type_id)?;
+                    validate_bitfield(*width, ty.layout)?;
                     if is_union {
                         if index == field_index {
                             return Ok(MIRFieldLayout::Bitfield {
@@ -326,21 +314,21 @@ impl MIRTypeRegistryBuilder {
                     }
                     if *width == 0 {
                         active = None;
-                        offset = align_to(offset, layout.alignment)?;
+                        offset = align_to(offset, ty.layout.alignment)?;
                         continue;
                     }
                     let (start, bit_offset) = match active.take() {
                         Some((id, start, _size, used))
-                            if id == *integer_type_id && used + *width <= layout.size * 8 =>
+                            if id == *integer_type_id && used + *width <= ty.layout.size * 8 =>
                         {
                             (start, used)
                         }
                         Some((_, start, size, _)) => {
-                            offset = align_to(start + size, layout.alignment)?;
+                            offset = align_to(start + size, ty.layout.alignment)?;
                             (offset, 0)
                         }
                         None => {
-                            offset = align_to(offset, layout.alignment)?;
+                            offset = align_to(offset, ty.layout.alignment)?;
                             (offset, 0)
                         }
                     };
@@ -352,7 +340,7 @@ impl MIRTypeRegistryBuilder {
                             storage_type: *integer_type_id,
                         });
                     }
-                    active = Some((*integer_type_id, start, layout.size, bit_offset + *width));
+                    active = Some((*integer_type_id, start, ty.layout.size, bit_offset + *width));
                 }
             }
         }

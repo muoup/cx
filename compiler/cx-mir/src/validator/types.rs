@@ -1,12 +1,13 @@
 use std::collections::BTreeSet;
 
 use crate::{
+    MIRIntType,
     expr::{
         MIRAggregateOp, MIRAssignTarget, MIRBasicBlockID, MIRConstant, MIRInstrKind, MIRPlace,
         MIRPlaceAggregateOp, MIRRegister, MIRValue, MIRValueAggregateOp,
     },
     global::{MIRFunction, MIRFunctionID},
-    ty::{MIRField, MIRType, MIRTypeID, MIRTypeKind},
+    ty::{MIRField, MIRTypeID, MIRTypeKind, interface::MTRegistry},
     unit::MIRUnit,
 };
 
@@ -121,8 +122,8 @@ impl MIRUnit {
                         variant, sum_type, ..
                     },
             }) => {
-                let expected = match self.types().kind(*sum_type) {
-                    Some(MIRTypeKind::TaggedUnion { variants }) => variants
+                let expected = match self.types().kind(*sum_type).unwrap() {
+                    MIRTypeKind::TaggedUnion { variants } => variants
                         .get(*variant)
                         .map(MIRField::ty)
                         .ok_or(MIRValidationError::VariantSwitchCaseOutOfRange {
@@ -132,6 +133,7 @@ impl MIRUnit {
                             variant: *variant,
                             variant_count: variants.len(),
                         })?,
+
                     _ => *sum_type,
                 };
                 self.expect_register_type(
@@ -167,32 +169,36 @@ impl MIRUnit {
                     subject,
                     *sum_type,
                 )?;
-                if let Some(MIRTypeKind::TaggedUnion { variants }) = self.types().kind(*sum_type) {
-                    let mut seen = BTreeSet::new();
-                    for (variant, _) in cases {
-                        if *variant >= variants.len() {
-                            return Err(MIRValidationError::VariantSwitchCaseOutOfRange {
-                                function: function.id,
-                                block,
-                                instruction,
-                                variant: *variant,
-                                variant_count: variants.len(),
-                            });
-                        }
-                        if !seen.insert(*variant) {
-                            return Err(MIRValidationError::DuplicateVariantSwitchCase {
-                                function: function.id,
-                                block,
-                                instruction,
-                                variant: *variant,
-                            });
-                        }
+
+                let MIRTypeKind::TaggedUnion { variants } = self.types().kind(*sum_type).unwrap()
+                else {
+                    unreachable!("validated variant switch subject is not a tagged union");
+                };
+
+                let mut seen = BTreeSet::new();
+                for (variant, _) in cases {
+                    if *variant >= variants.len() {
+                        return Err(MIRValidationError::VariantSwitchCaseOutOfRange {
+                            function: function.id,
+                            block,
+                            instruction,
+                            variant: *variant,
+                            variant_count: variants.len(),
+                        });
+                    }
+                    if !seen.insert(*variant) {
+                        return Err(MIRValidationError::DuplicateVariantSwitchCase {
+                            function: function.id,
+                            block,
+                            instruction,
+                            variant: *variant,
+                        });
                     }
                 }
             }
             MIRInstrKind::Return { value: Some(value) } => {
                 let return_type = function.prototype.signature.return_type;
-                if !matches!(self.types().kind(return_type), Some(MIRTypeKind::Void)) {
+                if !matches!(self.types().kind(return_type).unwrap(), MIRTypeKind::Void) {
                     self.expect_value_type(
                         function,
                         block,
@@ -301,8 +307,8 @@ impl MIRUnit {
         match value {
             MIRValue::Place(place) => {
                 let raw = self.place_type(function, *place)?;
-                if let Some(MIRTypeKind::MemoryReference { inner, .. }) = self.types().kind(expected)
-                    && self.types().same_type(raw, *inner)
+                if let MIRTypeKind::MemoryReference { inner, .. } = self.types().kind(raw).unwrap()
+                    && self.types().same_type(*inner, expected)
                 {
                     return Some(expected);
                 }
@@ -325,24 +331,22 @@ impl MIRUnit {
             }
             MIRValue::Constant(MIRConstant::Unit) => Some(self.types().unit()),
             MIRValue::Constant(MIRConstant::Bool(_)) => {
-                self.types()
-                    .find(&MIRType::new(MIRTypeKind::Integer {
-                        ty: crate::MIRIntType::I1,
-                        signed: false,
-                    }))
+                self.types().find_kind(&MIRTypeKind::Integer {
+                    ty: MIRIntType::I1,
+                    signed: false,
+                })
             }
             MIRValue::Constant(MIRConstant::Integer { ty, signed, .. }) => {
-                self.types()
-                    .find(&MIRType::new(MIRTypeKind::Integer {
-                        ty: *ty,
-                        signed: *signed,
-                    }))
+                self.types().find_kind(&MIRTypeKind::Integer {
+                    ty: *ty,
+                    signed: *signed,
+                })
             }
-            MIRValue::Constant(MIRConstant::Float { ty, .. }) => self
-                .types()
-                .find(&MIRType::new(MIRTypeKind::Float { ty: *ty })),
+            MIRValue::Constant(MIRConstant::Float { ty, .. }) => {
+                self.types().find_kind(&MIRTypeKind::Float { ty: *ty })
+            }
             MIRValue::Constant(MIRConstant::String(_)) => {
-                self.types().find(&MIRType::new(MIRTypeKind::Str))
+                self.types().find_kind(&MIRTypeKind::Str)
             }
             MIRValue::Constant(MIRConstant::Null { ty }) => Some(*ty),
             MIRValue::Constant(MIRConstant::Aggregate { ty, .. }) => Some(*ty),
@@ -358,8 +362,8 @@ impl MIRUnit {
         place: MIRPlace,
     ) -> Option<MIRTypeID> {
         let raw = self.place_type(function, place)?;
-        match self.types().kind(raw) {
-            Some(MIRTypeKind::MemoryReference { inner, .. }) => Some(*inner),
+        match self.types().kind(raw).unwrap() {
+            MIRTypeKind::MemoryReference { inner, .. } => Some(*inner),
             _ => Some(raw),
         }
     }
@@ -372,11 +376,11 @@ impl MIRUnit {
     ) -> Option<MIRTypeID> {
         let raw = self.place_type(function, place)?;
         let expected_is_reference = matches!(
-            self.types().kind(expected),
-            Some(MIRTypeKind::MemoryReference { .. })
+            self.types().kind(expected).unwrap(),
+            MIRTypeKind::MemoryReference { .. }
         );
         if expected_is_reference {
-            if let Some(MIRTypeKind::MemoryReference { inner, .. }) = self.types().kind(raw)
+            if let MIRTypeKind::MemoryReference { inner, .. } = self.types().kind(raw).unwrap()
                 && self.types().same_type(*inner, expected)
             {
                 return Some(*inner);

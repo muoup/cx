@@ -1,7 +1,33 @@
-fn same_kind(
+use std::collections::HashSet;
+
+use crate::{MIRField, MIRTypeID, MIRTypeKind, ty::interface::MTRegistry};
+
+pub(crate) fn same_type_inner<T: MTRegistry>(
+    registry: &T,
+    compared: &mut HashSet<(MIRTypeID, MIRTypeID)>,
+    left: MIRTypeID,
+    right: MIRTypeID,
+) -> bool {
+    if left == right {
+        return true;
+    }
+
+    if !compared.insert((left, right)) {
+        return true;
+    }
+
+    let (Some(left), Some(right)) = (registry.definition(left), registry.definition(right)) else {
+        return false;
+    };
+
+    left.layout == right.layout && same_kind(registry, compared, &left.kind, &right.kind)
+}
+
+fn same_kind<T: MTRegistry>(
+    registry: &T,
+    compared: &mut HashSet<(MIRTypeID, MIRTypeID)>,
     left: &MIRTypeKind,
     right: &MIRTypeKind,
-    mut same_id: impl FnMut(MIRTypeID, MIRTypeID) -> bool,
 ) -> bool {
     match (left, right) {
         (MIRTypeKind::Void, MIRTypeKind::Void)
@@ -23,9 +49,15 @@ fn same_kind(
         | (
             MIRTypeKind::TaggedUnion { variants: left },
             MIRTypeKind::TaggedUnion { variants: right },
-        ) => same_fields(left, right, &mut same_id),
+        ) => {
+            left.len() == right.len()
+                && left
+                    .iter()
+                    .zip(right)
+                    .all(|(left, right)| same_field(registry, compared, left, right))
+        }
         (MIRTypeKind::PointerTo { inner: left }, MIRTypeKind::PointerTo { inner: right }) => {
-            same_id(*left, *right)
+            same_type_inner(registry, compared, *left, *right)
         }
         (
             MIRTypeKind::MemoryReference {
@@ -37,12 +69,16 @@ fn same_kind(
                 bitfield: right_bitfield,
             },
         ) => {
-            same_id(*left_inner, *right_inner)
-                && same_bitfield(
-                    left_bitfield.as_ref(),
-                    right_bitfield.as_ref(),
-                    &mut same_id,
-                )
+            same_type_inner(registry, compared, *left_inner, *right_inner)
+                && match (left_bitfield, right_bitfield) {
+                    (None, None) => true,
+                    (Some(left), Some(right)) => {
+                        left.bit_offset == right.bit_offset
+                            && left.bit_width == right.bit_width
+                            && left.signed == right.signed
+                    }
+                    _ => false,
+                }
         }
         (
             MIRTypeKind::Array {
@@ -53,9 +89,19 @@ fn same_kind(
                 length: right_length,
                 inner: right_inner,
             },
-        ) => left_length == right_length && same_id(*left_inner, *right_inner),
+        ) => {
+            left_length == right_length
+                && same_type_inner(registry, compared, *left_inner, *right_inner)
+        }
         (MIRTypeKind::Function { signature: left }, MIRTypeKind::Function { signature: right }) => {
-            same_function_type(left, right, &mut same_id)
+            left.variadic == right.variadic
+                && same_type_inner(registry, compared, left.return_type, right.return_type)
+                && left.params.len() == right.params.len()
+                && left
+                    .params
+                    .iter()
+                    .zip(&right.params)
+                    .all(|(left, right)| same_type_inner(registry, compared, *left, *right))
         }
         (
             MIRTypeKind::Opaque {
@@ -71,74 +117,38 @@ fn same_kind(
     }
 }
 
-fn same_bitfield(
-    left: Option<&MIRBitfieldAccess>,
-    right: Option<&MIRBitfieldAccess>,
-    same_id: &mut impl FnMut(MIRTypeID, MIRTypeID) -> bool,
+fn same_field<T: MTRegistry>(
+    registry: &T,
+    compared: &mut HashSet<(MIRTypeID, MIRTypeID)>,
+    left: &MIRField,
+    right: &MIRField,
 ) -> bool {
     match (left, right) {
-        (None, None) => true,
-        (Some(left), Some(right)) => {
-            same_id(left.storage_type, right.storage_type)
-                && left.bit_offset == right.bit_offset
-                && left.bit_width == right.bit_width
-                && left.signed == right.signed
+        (
+            MIRField::Bitfield {
+                integer_type_id: left_itd,
+                width: left_width,
+                ..
+            },
+            MIRField::Bitfield {
+                integer_type_id: right_itd,
+                width: right_width,
+                ..
+            },
+        ) => {
+            left_width == right_width && same_type_inner(registry, compared, *left_itd, *right_itd)
         }
+
+        (
+            MIRField::Standard {
+                type_id: left_type, ..
+            },
+            MIRField::Standard {
+                type_id: right_type,
+                ..
+            },
+        ) => same_type_inner(registry, compared, *left_type, *right_type),
+
         _ => false,
     }
-}
-
-fn same_function_type(
-    left: &MIRFunctionType,
-    right: &MIRFunctionType,
-    same_id: &mut impl FnMut(MIRTypeID, MIRTypeID) -> bool,
-) -> bool {
-    left.variadic == right.variadic
-        && same_id(left.return_type, right.return_type)
-        && left.params.len() == right.params.len()
-        && left
-            .params
-            .iter()
-            .zip(&right.params)
-            .all(|(left, right)| same_id(*left, *right))
-}
-
-fn same_fields(
-    left: &[MIRField],
-    right: &[MIRField],
-    same_id: &mut impl FnMut(MIRTypeID, MIRTypeID) -> bool,
-) -> bool {
-    left.len() == right.len()
-        && left
-            .iter()
-            .zip(right)
-            .all(|(left, right)| match (left, right) {
-                (
-                    MIRField::Standard {
-                        name: left_name,
-                        type_id: left,
-                    },
-                    MIRField::Standard {
-                        name: right_name,
-                        type_id: right,
-                    },
-                ) => left_name == right_name && same_id(*left, *right),
-                (
-                    MIRField::Bitfield {
-                        name: left_name,
-                        integer_type_id: left_type,
-                        width: left_width,
-                    },
-                    MIRField::Bitfield {
-                        name: right_name,
-                        integer_type_id: right_type,
-                        width: right_width,
-                    },
-                ) => {
-                    left_name == right_name
-                        && left_width == right_width
-                        && same_id(*left_type, *right_type)
-                }
-                _ => false,
-            })
 }

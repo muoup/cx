@@ -18,6 +18,7 @@ impl<'a> FunctionLowerer<'a> {
     fn move_place(&mut self, place: MIRPlace) -> LMIRValue {
         let binding = self.place(place);
         let ty = self.binding_type(&binding);
+        
         if self.is_direct_reference_parameter(place)
             || self.is_address_valued(ty)
             || self.ty(ty).is_memory_resident()
@@ -49,25 +50,6 @@ impl<'a> FunctionLowerer<'a> {
         } else {
             self.load_binding(binding, ty, None)
         }
-    }
-
-    pub(super) fn is_address_valued(&self, ty: MIRTypeID) -> bool {
-        matches!(self.types.kind(ty), Some(MIRTypeKind::Str))
-    }
-
-    fn is_direct_reference_parameter(&self, place: MIRPlace) -> bool {
-        let MIRPlace::Parameter(parameter) = place else {
-            return false;
-        };
-        matches!(
-            self.function
-                .prototype
-                .signature
-                .params
-                .get(parameter.index())
-                .and_then(|parameter| self.types.kind(parameter.ty)),
-            Some(MIRTypeKind::MemoryReference { .. })
-        )
     }
 
     pub(super) fn lower_constant(&mut self, constant: &MIRConstant) -> LMIRValue {

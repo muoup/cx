@@ -1,7 +1,7 @@
+pub mod comparison;
+pub mod interface;
 pub mod layout;
 pub mod registry;
-pub mod interface;
-pub mod comparison;
 
 use cx_util::dense_id;
 
@@ -18,10 +18,7 @@ pub struct MIRType {
 
 impl MIRType {
     pub fn new(kind: MIRTypeKind, layout: MIRTypeLayout) -> Self {
-        Self {
-            kind,
-            layout
-        }
+        Self { kind, layout }
     }
 }
 
@@ -121,7 +118,6 @@ impl MIRField {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MIRBitfieldAccess {
-    pub storage_type: MIRTypeID,
     pub bit_offset: usize,
     pub bit_width: usize,
     pub signed: bool,

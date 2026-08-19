@@ -1,19 +1,16 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use cx_target::ArchitectureConfig;
 
-use crate::ty::interface::MTRegistry;
+use crate::{MIRTypeKind, ty::interface::MTRegistry};
 
-use super::{
-    MIRBitfieldAccess, MIRField, MIRFunctionType, MIRLayoutError, MIRType, MIRTypeID, MIRTypeKind,
-    MIRTypeLayout,
-};
+use super::{MIRLayoutError, MIRType, MIRTypeID};
 
 #[derive(Debug, Clone)]
 pub struct MIRTypeRegistryBuilder {
     architecture: ArchitectureConfig,
     definitions: Vec<Option<MIRType>>,
- 
+
     interner: HashMap<MIRType, MIRTypeID>,
     debug_names: Vec<Option<String>>,
     next_id: usize,
@@ -23,7 +20,8 @@ pub struct MIRTypeRegistryBuilder {
 pub struct MIRTypeRegistry {
     architecture: ArchitectureConfig,
     definitions: Vec<MIRType>,
-    layouts: Vec<MIRTypeLayout>,
+
+    debug_names: HashMap<MIRTypeID, String>,
 }
 
 impl MTRegistry for MIRTypeRegistry {
@@ -41,6 +39,10 @@ impl MTRegistry for MIRTypeRegistry {
             .position(|t| t == ty)
             .map(MIRTypeID::new)
     }
+
+    fn debug_name(&self, id: MIRTypeID) -> Option<&str> {
+        self.debug_names.get(&id).map(|s| s.as_str())
+    }
 }
 
 impl MTRegistry for MIRTypeRegistryBuilder {
@@ -55,6 +57,10 @@ impl MTRegistry for MIRTypeRegistryBuilder {
     fn find(&self, ty: &MIRType) -> Option<MIRTypeID> {
         self.interner.get(ty).copied()
     }
+
+    fn debug_name(&self, id: MIRTypeID) -> Option<&str> {
+        self.debug_names.get(id.index()).and_then(|s| s.as_deref())
+    }
 }
 
 impl MIRTypeRegistryBuilder {
@@ -64,7 +70,6 @@ impl MIRTypeRegistryBuilder {
             definitions: Vec::new(),
             interner: HashMap::new(),
             debug_names: Vec::new(),
-            layouts: Vec::new(),
             next_id: 0,
         }
     }
@@ -88,12 +93,17 @@ impl MIRTypeRegistryBuilder {
         if self.definitions.len() < end {
             self.definitions.resize_with(end, || None);
             self.debug_names.resize(end, None);
-            self.layouts.resize(end, None);
         }
     }
 
     pub fn find(&self, definition: &MIRType) -> Option<MIRTypeID> {
         self.interner.get(definition).copied()
+    }
+
+    pub fn find_kind(&self, kind: &MIRTypeKind) -> Option<MIRTypeID> {
+        self.interner
+            .iter()
+            .find_map(|(ty, id)| if &ty.kind == kind { Some(*id) } else { None })
     }
 
     pub fn define(&mut self, id: MIRTypeID, definition: MIRType) -> Result<(), MIRLayoutError> {
@@ -104,7 +114,6 @@ impl MIRTypeRegistryBuilder {
             return Err(MIRLayoutError::DuplicateType(id));
         }
         *slot = Some(definition.clone());
-        self.layouts[id.index()] = None;
         self.interner.entry(definition).or_insert(id);
         Ok(())
     }
@@ -114,34 +123,6 @@ impl MIRTypeRegistryBuilder {
             let len = index + 1;
             self.definitions.resize_with(len, || None);
             self.debug_names.resize(len, None);
-            self.layouts.resize(len, None);
         }
-    }
-
-    pub fn same_type(&self, left: MIRTypeID, right: MIRTypeID) -> bool {
-        if left == right {
-            return true;
-        }
-
-        self.same_type_inner(left, right, &mut HashSet::new())
-    }
-
-    fn same_type_inner(
-        &self,
-        left: MIRTypeID,
-        right: MIRTypeID,
-        compared: &mut HashSet<(MIRTypeID, MIRTypeID)>,
-    ) -> bool {
-        if !compared.insert((left, right)) {
-            return true;
-        }
-
-        let (Some(left), Some(right)) = (self.definition(left), self.definition(right)) else {
-            return false;
-        };
-        left.minimum_alignment == right.minimum_alignment
-            && same_kind(&left.kind, &right.kind, |left, right| {
-                self.same_type_inner(left, right, compared)
-            })
     }
 }

@@ -11,6 +11,7 @@ use cx_lmir::{
     LMIRUnit, LMIRValue, LinkageType,
 };
 use cx_log::CXResult;
+use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
     MIRAggregateOp, MIRAssignTarget, MIRBasicBlockID, MIRBinaryOp, MIRBlockTarget, MIRCoercion,
     MIRConstant, MIRFieldLayout, MIRFloatBinaryOp, MIRFnParam, MIRFnSignature, MIRFunction,
@@ -148,7 +149,7 @@ fn lower_global_initializer(
             _type: convert_float_type(*ty),
         },
         MIRConstant::Aggregate { ty, fields }
-            if matches!(mir.types().kind(*ty), Some(cx_mir::MIRTypeKind::Union { .. }))
+            if matches!(mir.types().kind(*ty).unwrap(), MIRTypeKind::Union { .. })
                 && fields.iter().all(|(_, value)| is_zero_constant(value)) =>
         {
             LMIRGlobalInitializer::Null
@@ -157,10 +158,7 @@ fn lower_global_initializer(
             fields: fields
                 .iter()
                 .map(|(index, value)| {
-                    (
-                        *index,
-                        lower_global_initializer(mir, value, global_indices),
-                    )
+                    (*index, lower_global_initializer(mir, value, global_indices))
                 })
                 .collect(),
         },
@@ -170,14 +168,12 @@ fn lower_global_initializer(
                 .get(global)
                 .expect("global initializer references a filtered global"),
         ),
-        MIRConstant::GlobalOffset { global, offset, .. } => {
-            LMIRGlobalInitializer::GlobalOffset {
-                global: *global_indices
-                    .get(global)
-                    .expect("global initializer references a filtered global"),
-                offset: *offset,
-            }
-        }
+        MIRConstant::GlobalOffset { global, offset, .. } => LMIRGlobalInitializer::GlobalOffset {
+            global: *global_indices
+                .get(global)
+                .expect("global initializer references a filtered global"),
+            offset: *offset,
+        },
         MIRConstant::Function(function) => LMIRGlobalInitializer::Function(
             mir.function(*function)
                 .expect("invalid MIR function constant")
@@ -186,9 +182,9 @@ fn lower_global_initializer(
                 .symbol_name
                 .to_string(),
         ),
-        MIRConstant::Unit
-        | MIRConstant::String(_)
-        | MIRConstant::Undefined => panic!("unsupported MIR global initializer: {constant:?}"),
+        MIRConstant::Unit | MIRConstant::String(_) | MIRConstant::Undefined => {
+            panic!("unsupported MIR global initializer: {constant:?}")
+        }
     }
 }
 
@@ -400,10 +396,7 @@ impl<'a> FunctionLowerer<'a> {
                     abi_index += 1;
                 }
                 LMIRParameterABI::Direct { slots }
-                    if matches!(
-                        self.types.kind(parameter.ty),
-                        Some(MIRTypeKind::MemoryReference { .. })
-                    ) =>
+                    if self.types.is_reference_type(parameter.ty).unwrap() =>
                 {
                     debug_assert_eq!(slots.len(), 1);
                     self.places.insert(
@@ -412,11 +405,8 @@ impl<'a> FunctionLowerer<'a> {
                             value: LMIRValue::ParameterRef(abi_index as u32),
                             ty: self
                                 .types
-                                .kind(parameter.ty)
-                                .and_then(|kind| match kind {
-                                    MIRTypeKind::MemoryReference { inner, .. } => Some(*inner),
-                                    _ => None,
-                                })
+                                .reference_inner(parameter.ty)
+                                .unwrap()
                                 .expect("reference parameter is missing its pointee type"),
                         },
                     );
@@ -478,7 +468,7 @@ impl<'a> FunctionLowerer<'a> {
     }
 
     fn callable_type(&self, ty: MIRTypeID) -> Option<&MIRFunctionType> {
-        match self.types.kind(ty)? {
+        match self.types.kind(ty).unwrap() {
             MIRTypeKind::Function { signature } => Some(signature),
             MIRTypeKind::PointerTo { inner } | MIRTypeKind::MemoryReference { inner, .. } => {
                 self.callable_type(*inner)
@@ -507,43 +497,17 @@ impl<'a> FunctionLowerer<'a> {
                     variadic: function.prototype.signature.variadic,
                 };
                 self.types
-                    .find(&cx_mir::MIRType::new(MIRTypeKind::Function {
-                        signature,
-                    }))
+                    .find_kind(&MIRTypeKind::Function { signature })
             }
             _ => None,
         }
-    }
-
-    fn value_is_pointer(&self, value: &MIRValue) -> bool {
-        let ty = match value {
-            MIRValue::Constant(
-                MIRConstant::Null { ty }
-                | MIRConstant::Global { ty, .. }
-                | MIRConstant::GlobalOffset { ty, .. },
-            ) => *ty,
-            MIRValue::Constant(_) => return false,
-            _ => match self.value_type(value) {
-                Some(ty) => ty,
-                None => return false,
-            },
-        };
-
-        matches!(
-            self.types.kind(ty),
-            Some(MIRTypeKind::PointerTo { .. } | MIRTypeKind::MemoryReference { .. })
-        )
     }
 
     fn place(&self, place: MIRPlace) -> PlaceBinding {
         match place {
             MIRPlace::Global(global) => PlaceBinding::Address {
                 value: LMIRValue::Global(self.global_index(global)),
-                ty: self
-                    .unit
-                    .global(global)
-                    .expect("invalid global place")
-                    .ty,
+                ty: self.unit.global(global).expect("invalid global place").ty,
             },
             _ => self
                 .places
@@ -574,8 +538,7 @@ impl<'a> FunctionLowerer<'a> {
     fn place_decl_type(&self, place: MIRPlace) -> MIRTypeID {
         match place {
             MIRPlace::FunctionLocal(id) => self.function.place(id).unwrap().ty,
-            MIRPlace::Parameter(id) => self.function.prototype.signature.params[id.index()]
-                .ty,
+            MIRPlace::Parameter(id) => self.function.prototype.signature.params[id.index()].ty,
             MIRPlace::Global(id) => self.unit.global(id).unwrap().ty,
         }
     }
@@ -661,8 +624,9 @@ impl<'a> FunctionLowerer<'a> {
 
     fn layout(&self, ty: MIRTypeID) -> cx_mir::MIRTypeLayout {
         self.types
-            .layout(ty)
-            .unwrap_or_else(|err| panic!("invalid MIR type layout: {err}"))
+            .resolve_type_id(ty)
+            .unwrap()
+            .layout
     }
 
     fn int_constant(&self, value: i128, ty: LMIRIntegerType) -> LMIRValue {
@@ -676,8 +640,9 @@ impl<'a> FunctionLowerer<'a> {
     }
 
     fn integer_kind(&self, ty: MIRTypeID) -> LMIRIntegerType {
-        match self.types.kind(ty) {
-            Some(MIRTypeKind::Integer { ty, .. }) => convert_integer_type(*ty),
+        match self.types.kind(ty).unwrap() {
+            MIRTypeKind::Integer { ty, .. } => convert_integer_type(*ty),
+            
             _ => convert_integer_type(self.types.pointer_integer_type()),
         }
     }
@@ -692,7 +657,7 @@ impl<'a> FunctionLowerer<'a> {
 
     fn variant_type(&self, sum_type: MIRTypeID, index: usize) -> MIRTypeID {
         let sum_type = self.semantic_sum_type(sum_type);
-        let Some(MIRTypeKind::TaggedUnion { variants }) = self.types.kind(sum_type) else {
+        let MIRTypeKind::TaggedUnion { variants } = self.types.kind(sum_type).unwrap() else {
             panic!("variant operation on non-tagged union")
         };
         variants[index].ty()
@@ -706,8 +671,8 @@ impl<'a> FunctionLowerer<'a> {
     }
 
     fn semantic_sum_type(&self, sum_type: MIRTypeID) -> MIRTypeID {
-        match self.types.kind(sum_type) {
-            Some(MIRTypeKind::MemoryReference { inner, .. }) => *inner,
+        match self.types.kind(sum_type).unwrap() {
+            MIRTypeKind::MemoryReference { inner, .. } => *inner,
             _ => sum_type,
         }
     }

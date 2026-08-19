@@ -1,4 +1,4 @@
-use cx_mir::{MIRFloatType, MIRIntType, MIRType, MIRTypeID, MIRTypeKind};
+use cx_mir::{MIRBitfieldAccess, MIRFloatType, MIRIntType, MIRType, MIRTypeID, MIRTypeKind};
 use cx_thir::{
     thir::r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
     type_context::THIRTypeContext,
@@ -27,8 +27,7 @@ pub fn lower_type(builder: &mut MIRBuilder, ty: &THIRType) -> MIRTypeID {
 
 pub fn lower_type_id(builder: &mut MIRBuilder, id: THIRTypeID) -> MIRTypeID {
     let mir_id = MIRTypeID::new(id.index());
-    if builder.types().definition(mir_id).is_some() || builder.lowering_types.contains(&id)
-    {
+    if builder.types().definition(mir_id).is_some() || builder.lowering_types.contains(&id) {
         return mir_id;
     }
 
@@ -50,7 +49,9 @@ pub fn lower_type_id(builder: &mut MIRBuilder, id: THIRTypeID) -> MIRTypeID {
         kind: lower_type_kind(builder, &ty.kind),
         minimum_alignment: ty.attributes.minimum_alignment,
     };
-    builder.types_mut().define(mir_id, definition)
+    builder
+        .types_mut()
+        .define(mir_id, definition)
         .expect("THIR type ID must have one MIR definition");
     if let Some(debug_name) = debug_name {
         builder.types_mut().set_debug_name(mir_id, debug_name);
@@ -98,8 +99,7 @@ pub(crate) fn lower_type_kind(builder: &mut MIRBuilder, kind: &THIRTypeKind) -> 
             bitfield,
         } => MIRTypeKind::MemoryReference {
             inner: lower_type_id(builder, *inner_type),
-            bitfield: bitfield.as_ref().map(|bitfield| cx_mir::MIRBitfieldAccess {
-                storage_type: lower_type_id(builder, bitfield.storage_type),
+            bitfield: bitfield.as_ref().map(|bitfield| MIRBitfieldAccess {
                 bit_offset: bitfield.bit_offset,
                 bit_width: bitfield.bit_width,
                 signed: bitfield.signed,
