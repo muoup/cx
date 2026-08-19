@@ -84,12 +84,17 @@ impl MIRModuleState {
         &self.definition_ids
     }
 
-    pub(crate) fn function(&self, id: MIRFunctionID) -> Option<&MIRFunction> {
-        self.functions.get(&id)
+    pub(crate) fn take_function(&mut self, id: MIRFunctionID) -> MIRFunction {
+        self.functions
+            .remove(&id)
+            .expect("active MIR function is missing from module state")
     }
 
-    pub(crate) fn function_mut(&mut self, id: MIRFunctionID) -> Option<&mut MIRFunction> {
-        self.functions.get_mut(&id)
+    pub(crate) fn insert_function(&mut self, function: MIRFunction) {
+        assert!(
+            self.functions.insert(function.id, function).is_none(),
+            "MIR function was inserted into module state twice"
+        );
     }
 
     pub(crate) fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {

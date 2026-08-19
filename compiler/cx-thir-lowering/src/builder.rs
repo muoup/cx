@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    MIRBasicBlockID, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID,
+    MIRBasicBlockID, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction,
+    MIRFunctionID,
     MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRRegister,
     MIRScopeID, MIRTypeID, MIRTypeKind, MIRTypeRegistryBuilder, MIRUnit, MIRValue,
 };
@@ -47,7 +48,7 @@ struct LabelTarget {
 
 #[derive(Debug)]
 struct FunctionContext {
-    function: MIRFunctionID,
+    mir: MIRFunction,
     current_block: MIRBasicBlockID,
     local_places: HashMap<THIRLocalID, MIRPlace>,
     local_values: HashMap<THIRLocalID, MIRValue>,
@@ -262,19 +263,12 @@ impl<'thir> MIRBuilder<'thir> {
             .function_ids()
             .get(index)
             .expect("THIR function predeclaration is missing");
-        let entry = self
-            .module
-            .function_mut(function_id)
-            .expect("predeclared MIR function is missing")
-            .add_block();
-        let root_scope = self
-            .module
-            .function_mut(function_id)
-            .expect("predeclared MIR function is missing")
-            .add_scope(function.body.token_range.clone());
+        let mut mir = self.module.take_function(function_id);
+        let entry = mir.add_block();
+        let root_scope = mir.add_scope(function.body.token_range.clone());
 
         self.current = Some(FunctionContext {
-            function: function_id,
+            mir,
             current_block: entry,
             local_places: HashMap::new(),
             local_values: HashMap::new(),
@@ -320,19 +314,8 @@ impl<'thir> MIRBuilder<'thir> {
         assert_eq!(context.defers.len(), 1, "defer stack is unbalanced");
 
         let unit_type = self.types().unit();
-        let returns_value = self
-            .module
-            .function(context.function)
-            .expect("active MIR function is missing")
-            .prototype
-            .signature
-            .return_type
-            != unit_type;
-        let function = self
-            .module
-            .function_mut(context.function)
-            .expect("active MIR function is missing");
-        for block in &mut function.blocks {
+        let returns_value = context.mir.prototype.signature.return_type != unit_type;
+        for block in &mut context.mir.blocks {
             if block.terminator().is_some() {
                 continue;
             }
@@ -343,10 +326,11 @@ impl<'thir> MIRBuilder<'thir> {
             };
             block.push(terminator);
         }
+        self.module.insert_function(context.mir);
     }
 
     pub(crate) fn current_function_id(&self) -> MIRFunctionID {
-        self.context().function
+        self.context().mir.id
     }
 
     pub(crate) fn current_block(&self) -> MIRBasicBlockID {
@@ -698,16 +682,11 @@ impl<'thir> MIRBuilder<'thir> {
     }
 
     fn function(&self) -> &cx_mir::MIRFunction {
-        self.module
-            .function(self.current_function_id())
-            .expect("active MIR function is missing")
+        &self.context().mir
     }
 
     fn function_mut(&mut self) -> &mut cx_mir::MIRFunction {
-        let id = self.current_function_id();
-        self.module
-            .function_mut(id)
-            .expect("active MIR function is missing")
+        &mut self.context_mut().mir
     }
 }
 
