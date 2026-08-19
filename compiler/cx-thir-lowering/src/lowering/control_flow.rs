@@ -9,7 +9,7 @@ use cx_thir::type_context::THIRTypeContext;
 
 use crate::{
     builder::MIRBuilder,
-    lowering::{aggregates, lower_expression},
+    lowering::{aggregates, lower_expression, types::lower_type},
 };
 
 pub(super) fn contains_label(expression: &THIRExpression) -> bool {
@@ -126,7 +126,7 @@ pub(super) fn finish_value_cleanup(
     let value = if !steps.is_empty() && ty.is_memory_reference() {
         match value {
             MIRValue::Place(place) => {
-                let type_id = builder.lower_type(ty);
+                let type_id = lower_type(builder, ty);
                 let out = builder.register(type_id, None);
                 builder.emit(MIRInstrKind::AddressOf { out, place });
                 MIRValue::Register(out)
@@ -150,7 +150,7 @@ pub(super) fn finish_value_cleanup(
         return Ok(value);
     }
 
-    let type_id = builder.lower_type(ty);
+    let type_id = lower_type(builder, ty);
     let cleanup_blocks = steps
         .iter()
         .map(|_| {
@@ -272,7 +272,7 @@ pub(super) fn lower_if(
     let else_block = builder.new_block("if.else");
     let merge_block = builder.new_block("if.merge");
     let result = (!matches!(result_type.kind, THIRTypeKind::Void)).then(|| {
-        let type_id = builder.lower_type(result_type);
+        let type_id = lower_type(builder, result_type);
         builder.block_param(merge_block, type_id, None)
     });
     builder.emit(MIRInstrKind::Branch {
@@ -334,7 +334,7 @@ pub(super) fn lower_short_circuit(
     let lhs_value = super::lower_expression(builder, lhs)?;
     let rhs_block = builder.new_block("logical.rhs");
     let merge_block = builder.new_block("logical.merge");
-    let result_type_id = builder.lower_type(result_type);
+    let result_type_id = lower_type(builder, result_type);
     let result = builder.block_param(merge_block, result_type_id, None);
     let is_and = matches!(
         op,
@@ -554,7 +554,7 @@ pub(super) fn lower_match(
         .or_else(|| synthetic_unreachable.then(|| builder.new_block("match.unreachable")))
         .unwrap_or(exit);
 
-    let result_type_id = value_match.then(|| builder.lower_type(result_type));
+    let result_type_id = value_match.then(|| lower_type(builder, result_type));
     builder.push_yield(exit, result_type_id);
 
     let mut blocks = Vec::with_capacity(arms.len());
@@ -574,7 +574,7 @@ pub(super) fn lower_match(
                 (*variant_index, MIRBlockTarget::new(*block))
             })
             .collect();
-        let sum_type_id = builder.lower_type(&subject_type);
+        let sum_type_id = lower_type(builder, &subject_type);
         builder.emit(MIRInstrKind::VariantSwitch {
             subject: subject_value.clone(),
             sum_type: sum_type_id,

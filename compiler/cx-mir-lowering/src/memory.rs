@@ -107,7 +107,7 @@ impl<'a> FunctionLowerer<'a> {
                     self.ty(*ty),
                 )
             }
-            MIRConstant::Global { global, .. } => LMIRValue::Global(global.index() as u32),
+            MIRConstant::Global { global, .. } => LMIRValue::Global(self.global_index(*global)),
             MIRConstant::GlobalOffset { .. } => {
                 panic!("global offset constants must be lowered as initializers")
             }

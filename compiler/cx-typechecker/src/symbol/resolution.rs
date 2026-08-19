@@ -51,22 +51,22 @@ pub fn resolve_symbol(
     )
 }
 
-pub(crate) fn resolve_symbol_without_implicit_array_decay(
-    env: &mut TypeEnvironment,
-    evaluation_namespace: &EnvironmentNamespace,
-    symbol_namespace: &EnvironmentNamespace,
-    name: &CXIdent,
-    symbol: &HIRSymbol,
-) -> CXResult<MIRSymbol> {
-    resolve_symbol_inner(
-        env,
-        evaluation_namespace,
-        symbol_namespace,
-        name,
-        symbol,
-        false,
-    )
-}
+// pub(crate) fn resolve_symbol_without_implicit_array_decay(
+//     env: &mut TypeEnvironment,
+//     evaluation_namespace: &EnvironmentNamespace,
+//     symbol_namespace: &EnvironmentNamespace,
+//     name: &CXIdent,
+//     symbol: &HIRSymbol,
+// ) -> CXResult<MIRSymbol> {
+//     resolve_symbol_inner(
+//         env,
+//         evaluation_namespace,
+//         symbol_namespace,
+//         name,
+//         symbol,
+//         false,
+//     )
+// }
 
 fn resolve_symbol_inner(
     env: &mut TypeEnvironment,

@@ -3,13 +3,14 @@ use cx_mir::MIRUnit;
 use cx_thir::THIRUnit;
 
 pub mod builder;
-mod lowering;
+pub(crate) mod lowering;
 
 pub use builder::MIRBuilder;
 
 pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
     let mut builder = MIRBuilder::new(thir);
     lowering::lower_unit(&mut builder, thir)?;
+    
     let mut mir = builder.finish();
     mir.compute_layouts().map_err(|error| {
         cx_log::error::CXErr::new(
@@ -19,5 +20,6 @@ pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
             ),
         )
     })?;
+
     Ok(mir)
 }

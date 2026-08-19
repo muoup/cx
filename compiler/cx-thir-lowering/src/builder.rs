@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use cx_mir::{
-    MIRBasicBlockID, MIRConstant, MIRField, MIRFnParam, MIRFnPrototype, MIRFnSignature,
-    MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace,
-    MIRRegister, MIRScopeID, MIRTypeDefinition, MIRTypeID, MIRTypeKind, MIRUnit, MIRValue,
+    MIRBasicBlockID, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID,
+    MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRRegister,
+    MIRScopeID, MIRTypeID, MIRTypeKind, MIRUnit, MIRValue,
 };
 use cx_thir::{
     THIRUnit,
@@ -11,8 +11,7 @@ use cx_thir::{
     thir::{
         data::{THIRFnPrototype, THIRFunction},
         expression::{
-            THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRLocalID,
-            THIRIntBinOp,
+            THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRIntBinOp, THIRLocalID,
             THIRPtrDiffBinOp,
         },
         expression_queries::{
@@ -26,7 +25,7 @@ use cx_thir::{
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
-use crate::lowering::types::lower_int_type;
+use crate::lowering::types::{lower_int_type, lower_type, lower_type_id};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct LoopContext {
@@ -62,21 +61,44 @@ struct FunctionContext {
     defers: Vec<Vec<THIRExpression>>,
 }
 
-/// Stateful constructor for one semantic MIR unit.
-///
-/// Functions and globals are predeclared before any body is visited, making
-/// symbol resolution deterministic and allowing forward references. Places,
-/// registers, and blocks are allocated by the dense append-only allocators on
-/// `MIRFunction`.
 pub struct MIRBuilder<'thir> {
     unit: MIRUnit,
     registry: &'thir THIRDecomposedRegistry,
-    lowering_types: HashSet<THIRTypeID>,
-    function_symbols: HashMap<String, MIRFunctionID>,
-    global_symbols: HashMap<String, MIRGlobalID>,
+
+    pub(crate) lowering_types: HashSet<THIRTypeID>,
+
+    function_symbols: HashMap<String, BuilderSymbol<MIRFunctionID>>,
+    global_symbols: HashMap<String, BuilderSymbol<MIRGlobalID>>,
+
     definitions: Vec<MIRFunctionID>,
     current: Option<FunctionContext>,
+
     source_range: TokenRange,
+}
+
+#[derive(Debug)]
+pub struct BuilderSymbol<T: Copy> {
+    id: T,
+    used: bool,
+}
+
+impl<T: Copy> BuilderSymbol<T> {
+    pub fn new(id: T) -> Self {
+        Self { id, used: false }
+    }
+
+    pub fn get(&mut self) -> T {
+        self.used = true;
+        self.id
+    }
+
+    pub fn id(&self) -> T {
+        self.id
+    }
+
+    pub fn is_used(&self) -> bool {
+        self.used
+    }
 }
 
 impl<'thir> MIRBuilder<'thir> {
@@ -100,15 +122,8 @@ impl<'thir> MIRBuilder<'thir> {
             .registry
             .intrinsic_type_id("void")
             .expect("THIR registry is missing the intrinsic void type");
-        builder.lower_type_id(unit);
 
-        for function in &thir.functions {
-            builder.predeclare_function(function);
-        }
-        for global in &thir.global_variables {
-            builder.predeclare_global(global);
-        }
-
+        lower_type_id(&mut builder, unit);
         builder
     }
 
@@ -120,169 +135,44 @@ impl<'thir> MIRBuilder<'thir> {
         &self.unit
     }
 
+    pub fn unit_mut(&mut self) -> &mut MIRUnit {
+        &mut self.unit
+    }
+
     pub fn finish(self) -> MIRUnit {
+        let mut unit = self.unit;
+        for symbol in self.function_symbols.values() {
+            unit.function_mut(symbol.id())
+                .expect("builder function symbol points to a missing MIR function")
+                .is_used = symbol.is_used();
+        }
+        for symbol in self.global_symbols.values() {
+            unit.global_mut(symbol.id())
+                .expect("builder global symbol points to a missing MIR global")
+                .is_used = symbol.is_used();
+        }
         assert!(
             self.current.is_none(),
             "attempted to finish MIR while a function is active"
         );
-        self.unit
+        unit
     }
 
-    pub(crate) fn lower_type(&mut self, ty: &THIRType) -> MIRTypeID {
-        if let Some(id) = self.registry.type_id(ty) {
-            return self.lower_type_id(id);
-        }
-        let kind = self.lower_type_kind_mut(&ty.kind);
-        let debug_name = self.type_debug_name(ty);
-        let id = self.unit.types.intern(MIRTypeDefinition {
-            kind,
-            minimum_alignment: ty.attributes.minimum_alignment,
-        });
-        if self.unit.types.debug_name(id).is_none()
-            && let Some(debug_name) = debug_name
-        {
-            self.unit.types.set_debug_name(id, debug_name);
-        }
-        id
-    }
-
-    fn lower_type_id(&mut self, id: THIRTypeID) -> MIRTypeID {
-        let mir_id = MIRTypeID::new(id.index());
-        if self.unit.types.definition(mir_id).is_some() || self.lowering_types.contains(&id) {
-            return mir_id;
-        }
-
-        self.lowering_types.insert(id);
-        let Some(ty) = self.registry.try_resolve_type_id(id).cloned() else {
-            assert!(
-                id.0 < self.registry.type_id_bound(),
-                "THIR type {id} is outside its registry"
-            );
-            self.unit
-                .types
-                .define(mir_id, MIRTypeDefinition::new(MIRTypeKind::Undefined))
-                .expect("reserved THIR type ID must have one MIR definition");
-            self.lowering_types.remove(&id);
-            return mir_id;
-        };
-        let debug_name = self.type_debug_name(&ty);
-        let definition = MIRTypeDefinition {
-            kind: self.lower_type_kind_mut(&ty.kind),
-            minimum_alignment: ty.attributes.minimum_alignment,
-        };
-        self.unit
-            .types
-            .define(mir_id, definition)
-            .expect("THIR type ID must have one MIR definition");
-        if let Some(debug_name) = debug_name {
-            self.unit.types.set_debug_name(mir_id, debug_name);
-        }
-        self.lowering_types.remove(&id);
-        mir_id
-    }
-
-    fn type_debug_name(&self, ty: &THIRType) -> Option<String> {
-        ty.strong_identifier()
-            .map(|_| ty.display_with(self.registry).to_string())
-    }
-
-    fn lower_type_kind_mut(&mut self, kind: &THIRTypeKind) -> MIRTypeKind {
-        match kind {
-            THIRTypeKind::Void => MIRTypeKind::Void,
-            THIRTypeKind::Integer { _type, signed } => MIRTypeKind::Integer {
-                ty: lower_int_type(*_type),
-                signed: *signed,
-            },
-            THIRTypeKind::Float { _type } => MIRTypeKind::Float {
-                ty: match _type {
-                    cx_thir::thir::r#type::THIRFloatType::F32 => cx_mir::MIRFloatType::F32,
-                    cx_thir::thir::r#type::THIRFloatType::F64 => cx_mir::MIRFloatType::F64,
-                },
-            },
-            THIRTypeKind::Structured { fields } => MIRTypeKind::Structured {
-                fields: fields.iter().map(|field| self.lower_field(field)).collect(),
-            },
-            THIRTypeKind::Union { variants } => MIRTypeKind::Union {
-                variants: variants
-                    .iter()
-                    .map(|field| self.lower_field(field))
-                    .collect(),
-            },
-            THIRTypeKind::TaggedUnion { variants } => MIRTypeKind::TaggedUnion {
-                variants: variants
-                    .iter()
-                    .map(|field| self.lower_field(field))
-                    .collect(),
-            },
-            THIRTypeKind::PointerTo { inner_type } => MIRTypeKind::PointerTo {
-                inner: self.lower_type_id(*inner_type),
-            },
-            THIRTypeKind::MemoryReference {
-                inner_type,
-                bitfield,
-            } => MIRTypeKind::MemoryReference {
-                inner: self.lower_type_id(*inner_type),
-                bitfield: bitfield.as_ref().map(|bitfield| cx_mir::MIRBitfieldAccess {
-                    storage_type: self.lower_type_id(bitfield.storage_type),
-                    bit_offset: bitfield.bit_offset,
-                    bit_width: bitfield.bit_width,
-                    signed: bitfield.signed,
-                }),
-            },
-            THIRTypeKind::Array { length, inner_type } => MIRTypeKind::Array {
-                length: *length,
-                inner: self.lower_type_id(*inner_type),
-            },
-            THIRTypeKind::Function { signature } => MIRTypeKind::Function {
-                signature: cx_mir::MIRFunctionType {
-                    params: signature
-                        .params
-                        .iter()
-                        .map(|param| self.lower_type(&param._type))
-                        .collect(),
-                    return_type: self.lower_type(&signature.return_type),
-                    variadic: signature.var_args,
-                },
-            },
-            THIRTypeKind::Opaque { size, alignment } => MIRTypeKind::Opaque {
-                size: *size,
-                alignment: *alignment,
-            },
-            THIRTypeKind::Undefined => MIRTypeKind::Undefined,
-            THIRTypeKind::Str => MIRTypeKind::Str,
-        }
-    }
-
-    fn lower_field(&mut self, field: &cx_thir::thir::r#type::THIRField) -> MIRField {
-        match field {
-            cx_thir::thir::r#type::THIRField::Standard { name, type_id } => {
-                MIRField::named(name.clone(), self.lower_type_id(*type_id))
-            }
-            cx_thir::thir::r#type::THIRField::Bitfield {
-                name,
-                integer_type_id,
-                width,
-            } => MIRField::Bitfield {
-                name: name.clone(),
-                integer_type_id: self.lower_type_id(*integer_type_id),
-                width: *width,
-            },
-        }
-    }
-
-    fn predeclare_function(&mut self, function: &THIRFunction) {
+    pub(crate) fn predeclare_function(&mut self, function: &THIRFunction) {
         let name = function.prototype.symbol_name().to_string();
         let prototype = self.convert_prototype(&function.prototype);
         let id = self.unit.add_function(prototype);
-        self.function_symbols.entry(name).or_insert(id);
+        self.function_symbols
+            .entry(name)
+            .or_insert(BuilderSymbol::new(id));
         self.definitions.push(id);
     }
 
-    fn predeclare_global(&mut self, global: &THIRGlobalVariable) {
+    pub(crate) fn predeclare_global(&mut self, global: &THIRGlobalVariable) {
         let (name, ty, state, nodrop) = match &global.kind {
             THIRGlobalVarKind::StringLiteral { name, value } => (
                 name.clone(),
-                self.lower_type(&THIRType::from(THIRTypeKind::Str)),
+                lower_type(self, &THIRType::from(THIRTypeKind::Str)),
                 MIRGlobalState::Initialized(MIRConstant::String(value.clone())),
                 true,
             ),
@@ -291,14 +181,13 @@ impl<'thir> MIRBuilder<'thir> {
                 _type,
                 initializer,
             } => {
-                let state = match initializer {
-                    Some(value) => MIRGlobalState::Initialized(self.lower_global_constant(value)),
-                    None if global.linkage == LinkageMode::Extern => MIRGlobalState::External,
-                    None => MIRGlobalState::ZeroInitialized,
+                let state = match (initializer, global.linkage) {
+                    (None, LinkageMode::Extern) => MIRGlobalState::External,
+                    _ => MIRGlobalState::ZeroInitialized,
                 };
                 (
                     name.clone(),
-                    self.lower_type(_type),
+                    lower_type(self, _type),
                     state,
                     _type.is_nodrop(),
                 )
@@ -313,7 +202,32 @@ impl<'thir> MIRBuilder<'thir> {
             nodrop,
             state,
         );
-        self.global_symbols.entry(name.as_string()).or_insert(id);
+
+        self.global_symbols
+            .entry(name.as_string())
+            .or_insert(BuilderSymbol::new(id));
+    }
+
+    pub(crate) fn lower_global(&mut self, global: &THIRGlobalVariable) {
+        let THIRGlobalVarKind::Variable {
+            name,
+            initializer: Some(initializer),
+            ..
+        } = &global.kind
+        else {
+            return;
+        };
+
+        let id = self
+            .global_symbols
+            .get(name.as_str())
+            .map(BuilderSymbol::id)
+            .unwrap_or_else(|| panic!("global {name} was not predeclared"));
+        let state = MIRGlobalState::Initialized(self.lower_global_constant(initializer));
+        self.unit
+            .global_mut(id)
+            .expect("predeclared MIR global is missing")
+            .state = state;
     }
 
     fn lower_global_constant(&mut self, expression: &THIRExpression) -> MIRConstant {
@@ -321,15 +235,19 @@ impl<'thir> MIRBuilder<'thir> {
             return MIRConstant::GlobalOffset {
                 global,
                 offset,
-                ty: self.lower_type(&expression._type),
+                ty: lower_type(self, &expression._type),
             };
         }
 
         match &expression.kind {
-            THIRExpressionKind::Copy { source } => self.lower_global_constant(source),
+            THIRExpressionKind::Typechange(source) | THIRExpressionKind::Copy { source } => {
+                self.lower_global_constant(source)
+            }
+
             THIRExpressionKind::BoolLiteral(value) => MIRConstant::Bool(*value),
-            THIRExpressionKind::FunctionReference { name, debug_name } => MIRConstant::Function(
-                self.ensure_function(name, &expression._type, debug_name.as_ref()),
+            THIRExpressionKind::FunctionReference { name, .. } => MIRConstant::Function(
+                self.function_symbol(name.as_str())
+                    .unwrap_or_else(|| panic!("function {name} is not declared")),
             ),
             THIRExpressionKind::GlobalVariable { symbol } => {
                 let global = self
@@ -337,25 +255,9 @@ impl<'thir> MIRBuilder<'thir> {
                     .unwrap_or_else(|| panic!("global {symbol} is not declared"));
                 MIRConstant::Global {
                     global,
-                    ty: self.lower_type(&expression._type),
+                    ty: lower_type(self, &expression._type),
                 }
             }
-            THIRExpressionKind::Typechange(operand)
-                if function_reference_symbol(operand).is_some() => MIRConstant::Function(
-                self.ensure_function(
-                    function_reference_symbol(operand).unwrap(),
-                    &expression._type,
-                    None,
-                ),
-            ),
-            THIRExpressionKind::TypeConversion { operand, .. }
-                if function_reference_symbol(operand).is_some() => MIRConstant::Function(
-                self.ensure_function(
-                    function_reference_symbol(operand).unwrap(),
-                    &expression._type,
-                    None,
-                ),
-            ),
             THIRExpressionKind::IntLiteral(value) => {
                 let (ty, signed) = integer_type(&expression._type);
                 MIRConstant::Integer {
@@ -377,45 +279,42 @@ impl<'thir> MIRBuilder<'thir> {
                 },
             },
             THIRExpressionKind::ArrayInitializer { elements, .. } => MIRConstant::Aggregate {
-                ty: self.lower_type(&expression._type),
+                ty: lower_type(self, &expression._type),
                 fields: elements
                     .iter()
                     .enumerate()
                     .map(|(index, element)| (index, self.lower_global_constant(element)))
                     .collect(),
             },
-            THIRExpressionKind::StructInitializer { initializations, .. } => {
-                MIRConstant::Aggregate {
-                    ty: self.lower_type(&expression._type),
-                    fields: initializations
-                        .iter()
-                        .map(|initialization| {
-                            (
-                                initialization.field_index,
-                                self.lower_global_constant(&initialization.value),
-                            )
-                        })
-                        .collect(),
-                }
-            }
-            THIRExpressionKind::Typechange(operand)
-                if global_reference_symbol(operand).is_some() =>
-            {
-                let symbol = global_reference_symbol(operand).unwrap();
-                let global = self
-                    .global_symbol(symbol.as_str())
-                    .unwrap_or_else(|| panic!("string literal global {symbol} is not declared"));
-                MIRConstant::Global {
-                    global,
-                    ty: self.lower_type(&expression._type),
-                }
-            }
+            THIRExpressionKind::StructInitializer {
+                initializations, ..
+            } => MIRConstant::Aggregate {
+                ty: lower_type(self, &expression._type),
+                fields: initializations
+                    .iter()
+                    .map(|initialization| {
+                        (
+                            initialization.field_index,
+                            self.lower_global_constant(&initialization.value),
+                        )
+                    })
+                    .collect(),
+            },
             THIRExpressionKind::TypeConversion { .. }
                 if contains_null_pointer_conversion(&expression.kind) =>
             {
                 MIRConstant::Null {
-                    ty: self.lower_type(&expression._type),
+                    ty: lower_type(self, &expression._type),
                 }
+            }
+            THIRExpressionKind::TypeConversion { operand, .. }
+                if function_reference_symbol(operand).is_some() =>
+            {
+                let symbol = function_reference_symbol(operand).unwrap();
+                let function = self
+                    .function_symbol(symbol.as_str())
+                    .unwrap_or_else(|| panic!("function {symbol} is not declared"));
+                MIRConstant::Function(function)
             }
             THIRExpressionKind::TypeConversion {
                 conversion: THIRCoercion::ReinterpretBits,
@@ -436,7 +335,7 @@ impl<'thir> MIRBuilder<'thir> {
                     .unwrap_or_else(|| panic!("string literal global {symbol} is not declared"));
                 MIRConstant::Global {
                     global,
-                    ty: self.lower_type(&expression._type),
+                    ty: lower_type(self, &expression._type),
                 }
             }
             THIRExpressionKind::TypeConversion { operand, .. }
@@ -448,14 +347,14 @@ impl<'thir> MIRBuilder<'thir> {
                     .unwrap_or_else(|| panic!("string literal global {symbol} is not declared"));
                 MIRConstant::Global {
                     global,
-                    ty: self.lower_type(&expression._type),
+                    ty: lower_type(self, &expression._type),
                 }
             }
             _ => panic!("unsupported global initializer: {expression:?}"),
         }
     }
 
-    fn global_pointer_offset(&self, expression: &THIRExpression) -> Option<(MIRGlobalID, i64)> {
+    fn global_pointer_offset(&mut self, expression: &THIRExpression) -> Option<(MIRGlobalID, i64)> {
         match &expression.kind {
             THIRExpressionKind::Typechange(operand)
             | THIRExpressionKind::TypeConversion { operand, .. } => {
@@ -485,7 +384,7 @@ impl<'thir> MIRBuilder<'thir> {
         expression_type: &THIRType,
         symbol: &CXIdent,
     ) -> MIRConstant {
-        let ty = self.lower_type(expression_type);
+        let ty = lower_type(self, expression_type);
         let length = match self.unit.types.kind(ty) {
             Some(MIRTypeKind::Array { length, .. }) => *length,
             _ => panic!("string literal initializer target is not an array"),
@@ -536,7 +435,7 @@ impl<'thir> MIRBuilder<'thir> {
             .iter()
             .map(|param| {
                 let nodrop = param._type.is_nodrop();
-                let ty = self.lower_type(&param._type);
+                let ty = lower_type(self, &param._type);
                 match &param.name {
                     Some(name) => MIRFnParam::named(name.clone(), ty),
                     None => MIRFnParam::new(ty),
@@ -547,7 +446,7 @@ impl<'thir> MIRBuilder<'thir> {
         let return_type = if matches!(signature.return_type.kind, THIRTypeKind::Void) {
             self.unit.types.unit()
         } else {
-            self.lower_type(&signature.return_type)
+            lower_type(self, &signature.return_type)
         };
         let mut lowered = MIRFnSignature::new(name, params, return_type);
         lowered.variadic = signature.var_args;
@@ -737,7 +636,9 @@ impl<'thir> MIRBuilder<'thir> {
     }
 
     pub(crate) fn register_type(&self, register: MIRRegister) -> Option<MIRTypeID> {
-        self.function().register(register).map(|register| register.ty)
+        self.function()
+            .register(register)
+            .map(|register| register.ty)
     }
 
     pub(crate) fn block_param(
@@ -881,59 +782,12 @@ impl<'thir> MIRBuilder<'thir> {
             .find_map(|scope| scope.get(name.as_str()).cloned())
     }
 
-    pub(crate) fn function_symbol(&self, name: &str) -> Option<MIRFunctionID> {
-        self.function_symbols.get(name).copied()
+    pub(crate) fn function_symbol(&mut self, name: &str) -> Option<MIRFunctionID> {
+        self.function_symbols.get_mut(name).map(|name| name.get())
     }
 
-    pub(crate) fn ensure_function(
-        &mut self,
-        name: &CXIdent,
-        callable_type: &THIRType,
-        debug_name: Option<&CXIdent>,
-    ) -> MIRFunctionID {
-        if let Some(id) = self.function_symbol(name.as_str()) {
-            if let Some(debug_name) = debug_name
-                && let Some(function) = self.unit.function_mut(id)
-                && function.prototype.signature.debug_name.is_none()
-            {
-                function.prototype.signature.debug_name = Some(debug_name.clone());
-            }
-            return id;
-        }
-
-        let signature = self
-            .registry
-            .intern_signature(callable_type)
-            .cloned()
-            .unwrap_or_default();
-        let mut prototype =
-            self.prototype_from_signature(name.clone(), &signature, LinkageMode::Extern);
-        prototype.signature.debug_name = debug_name.cloned();
-        let id = self.unit.add_function(prototype);
-        self.function_symbols.insert(name.as_string(), id);
-        id
-    }
-
-    pub(crate) fn global_symbol(&self, name: &str) -> Option<MIRGlobalID> {
-        self.global_symbols.get(name).copied()
-    }
-
-    pub(crate) fn ensure_global(&mut self, name: &CXIdent, ty: &THIRType) -> MIRGlobalID {
-        if let Some(id) = self.global_symbol(name.as_str()) {
-            return id;
-        }
-
-        let ty_id = self.lower_type(ty);
-        let id = self.unit.add_global(
-            name.clone(),
-            ty_id,
-            LinkageMode::Extern,
-            true,
-            ty.is_nodrop(),
-            MIRGlobalState::External,
-        );
-        self.global_symbols.insert(name.as_string(), id);
-        id
+    pub(crate) fn global_symbol(&mut self, name: &str) -> Option<MIRGlobalID> {
+        self.global_symbols.get_mut(name).map(|name| name.get())
     }
 
     pub(crate) fn push_contextual_scope(

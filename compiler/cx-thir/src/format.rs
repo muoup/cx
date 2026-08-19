@@ -33,7 +33,7 @@ impl TypeDisplayState {
     }
 }
 
-pub struct MIRDisplay<'a, T: ?Sized> {
+pub struct THIRDisplay<'a, T: ?Sized> {
     content: &'a T,
     definitions: &'a dyn THIRTypeContext,
 }
@@ -42,11 +42,11 @@ trait MIRDisplayable {
     fn display_with_definitions<'a>(
         &'a self,
         definitions: &'a dyn THIRTypeContext,
-    ) -> MIRDisplay<'a, Self>
+    ) -> THIRDisplay<'a, Self>
     where
         Self: Sized,
     {
-        MIRDisplay {
+        THIRDisplay {
             content: self,
             definitions,
         }
@@ -66,7 +66,7 @@ impl THIRType {
     pub fn display_with<'a>(
         &'a self,
         definitions: &'a dyn THIRTypeContext,
-    ) -> MIRDisplay<'a, Self> {
+    ) -> THIRDisplay<'a, Self> {
         self.display_with_definitions(definitions)
     }
 }
@@ -75,7 +75,7 @@ impl THIRExpression {
     pub fn display_with<'a>(
         &'a self,
         definitions: &'a dyn THIRTypeContext,
-    ) -> MIRDisplay<'a, Self> {
+    ) -> THIRDisplay<'a, Self> {
         self.display_with_definitions(definitions)
     }
 }
@@ -84,7 +84,7 @@ impl THIRFunction {
     pub fn display_with<'a>(
         &'a self,
         definitions: &'a dyn THIRTypeContext,
-    ) -> MIRDisplay<'a, Self> {
+    ) -> THIRDisplay<'a, Self> {
         self.display_with_definitions(definitions)
     }
 }
@@ -93,7 +93,7 @@ impl THIRFnSignature {
     pub fn display_with<'a>(
         &'a self,
         definitions: &'a dyn THIRTypeContext,
-    ) -> MIRDisplay<'a, Self> {
+    ) -> THIRDisplay<'a, Self> {
         self.display_with_definitions(definitions)
     }
 }
@@ -102,7 +102,7 @@ impl THIRFnPrototype {
     pub fn display_with<'a>(
         &'a self,
         definitions: &'a dyn THIRTypeContext,
-    ) -> MIRDisplay<'a, Self> {
+    ) -> THIRDisplay<'a, Self> {
         self.display_with_definitions(definitions)
     }
 }
@@ -111,7 +111,7 @@ impl THIRParameter {
     pub fn display_with<'a>(
         &'a self,
         definitions: &'a dyn THIRTypeContext,
-    ) -> MIRDisplay<'a, Self> {
+    ) -> THIRDisplay<'a, Self> {
         self.display_with_definitions(definitions)
     }
 }
@@ -120,7 +120,7 @@ impl THIRGlobalVariable {
     pub fn display_with<'a>(
         &'a self,
         definitions: &'a dyn THIRTypeContext,
-    ) -> MIRDisplay<'a, Self> {
+    ) -> THIRDisplay<'a, Self> {
         self.display_with_definitions(definitions)
     }
 }
@@ -129,14 +129,14 @@ impl THIRGlobalVarKind {
     pub fn display_with<'a>(
         &'a self,
         definitions: &'a dyn THIRTypeContext,
-    ) -> MIRDisplay<'a, Self> {
+    ) -> THIRDisplay<'a, Self> {
         self.display_with_definitions(definitions)
     }
 }
 
 impl THIRUnit {
-    pub fn display_pretty(&self) -> MIRDisplay<'_, Self> {
-        MIRDisplay {
+    pub fn display_pretty(&self) -> THIRDisplay<'_, Self> {
+        THIRDisplay {
             content: self,
             definitions: &self.registry,
         }
@@ -436,19 +436,19 @@ fn write_type_body(
     }
 }
 
-impl Display for MIRDisplay<'_, THIRType> {
+impl Display for THIRDisplay<'_, THIRType> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write_type_root(f, self.definitions, self.content)
     }
 }
 
-impl Display for MIRDisplay<'_, THIRExpression> {
+impl Display for THIRDisplay<'_, THIRExpression> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         MIRExpressionFormatter::with_definitions(self.content, 0, self.definitions).fmt(f)
     }
 }
 
-impl Display for MIRDisplay<'_, THIRFunction> {
+impl Display for THIRDisplay<'_, THIRFunction> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
@@ -461,7 +461,7 @@ impl Display for MIRDisplay<'_, THIRFunction> {
     }
 }
 
-impl Display for MIRDisplay<'_, THIRFnSignature> {
+impl Display for THIRDisplay<'_, THIRFnSignature> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write_signature_with_context(
             f,
@@ -472,7 +472,7 @@ impl Display for MIRDisplay<'_, THIRFnSignature> {
     }
 }
 
-impl Display for MIRDisplay<'_, THIRFnPrototype> {
+impl Display for THIRDisplay<'_, THIRFnPrototype> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write_function_name(f, self.content)?;
         write!(
@@ -502,7 +502,7 @@ fn write_function_name(f: &mut Formatter<'_>, prototype: &THIRFnPrototype) -> st
     Ok(())
 }
 
-impl Display for MIRDisplay<'_, THIRParameter> {
+impl Display for THIRDisplay<'_, THIRParameter> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if let Some(name) = &self.content.name {
             write!(
@@ -524,7 +524,7 @@ impl Display for MIRDisplay<'_, THIRParameter> {
     }
 }
 
-impl Display for MIRDisplay<'_, THIRGlobalVariable> {
+impl Display for THIRDisplay<'_, THIRGlobalVariable> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "global {} ", self.content.linkage)?;
         write!(
@@ -545,7 +545,7 @@ impl Display for MIRDisplay<'_, THIRGlobalVariable> {
     }
 }
 
-impl Display for MIRDisplay<'_, THIRGlobalVarKind> {
+impl Display for THIRDisplay<'_, THIRGlobalVarKind> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.content {
             THIRGlobalVarKind::StringLiteral { name, value } => {
@@ -583,9 +583,9 @@ impl Display for MIRDisplay<'_, THIRGlobalVarKind> {
     }
 }
 
-impl Display for MIRDisplay<'_, THIRUnit> {
+impl Display for THIRDisplay<'_, THIRUnit> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "MIR Unit:")?;
+        writeln!(f, "THIR Unit:")?;
 
         writeln!(f, "\nFunctions:")?;
         for function in &self.content.functions {

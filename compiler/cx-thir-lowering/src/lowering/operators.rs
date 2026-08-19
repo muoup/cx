@@ -10,7 +10,7 @@ use cx_thir::thir::{
     },
 };
 
-use crate::builder::{MIRBuilder, integer_type};
+use crate::{builder::{MIRBuilder, integer_type}, lowering::types::lower_type};
 use super::types::{lower_float_type, lower_int_type};
 
 pub(super) fn lower_binary_op(builder: &mut MIRBuilder<'_>, op: &THIRBinOp) -> MIRBinaryOp {
@@ -77,7 +77,7 @@ pub(super) fn lower_binary_op(builder: &mut MIRBuilder<'_>, op: &THIRBinOp) -> M
                 THIRPtrDiffBinOp::ADD => MIRPointerOffsetOp::Add,
                 THIRPtrDiffBinOp::SUB => MIRPointerOffsetOp::Sub,
             },
-            pointee: builder.lower_type(ptr_inner.as_ref()),
+            pointee: lower_type(builder, ptr_inner.as_ref()),
         },
         THIRBinOp::Pointer { op } => MIRBinaryOp::Pointer(match op {
             THIRPtrBinOp::EQ => MIRPointerBinaryOp::Eq,

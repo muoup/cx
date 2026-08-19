@@ -451,6 +451,7 @@ pub(crate) fn perform_job(
             typecheck(&mut env, &namespace, &self_ast)?;
 
             let thir = env.finish_thir_unit(namespace)?;
+            
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&thir.display_pretty());
             }

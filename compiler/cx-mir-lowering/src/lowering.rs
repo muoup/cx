@@ -14,11 +14,11 @@ use cx_log::CXResult;
 use cx_mir::{
     MIRAggregateOp, MIRAssignTarget, MIRBasicBlockID, MIRBinaryOp, MIRBlockTarget, MIRCoercion,
     MIRConstant, MIRFieldLayout, MIRFloatBinaryOp, MIRFnParam, MIRFnSignature, MIRFunction,
-    MIRFunctionType, MIRGlobalState, MIRInstrKind, MIRIntBinaryOp, MIRIntType, MIRPlace,
-    MIRPlaceAggregateOp, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister, MIRTypeID,
+    MIRFunctionType, MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntBinaryOp, MIRIntType,
+    MIRPlace, MIRPlaceAggregateOp, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister, MIRTypeID,
     MIRTypeKind, MIRTypeRegistry, MIRUnaryOp, MIRUnit, MIRValue, MIRValueAggregateOp,
 };
-use cx_util::identifier::CXIdent;
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::typing::{
     classify_signature, convert_float_type, convert_integer_type, convert_linkage,
@@ -33,6 +33,9 @@ mod memory;
 pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistry) -> CXResult<LMIRUnit> {
     let mut prototypes = LMIRFunctionMap::new();
     for function in &mir.functions {
+        if !keep_function(function) {
+            continue;
+        }
         let prototype = convert_prototype(&function.prototype, types);
         prototypes.insert(prototype.name.to_string(), prototype);
     }
@@ -40,9 +43,18 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistry) -> CXResult<LMI
         .entry(ASSERTION.symbol_name())
         .or_insert_with(|| assertion_prototype(types));
 
+    let mut global_indices = HashMap::new();
+    for global in &mir.globals {
+        if keep_global(global) {
+            let index = global_indices.len() as u32;
+            global_indices.insert(global.id, index);
+        }
+    }
+
     let mut globals = mir
         .globals
         .iter()
+        .filter(|global| keep_global(global))
         .map(|global| {
             let linkage = if matches!(global.state, MIRGlobalState::External) {
                 LinkageType::External
@@ -68,7 +80,11 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistry) -> CXResult<LMI
                 },
                 MIRGlobalState::Initialized(constant) => LMIRGlobalType::Variable {
                     _type: lowered_type,
-                    state: LoweredGlobalState::Initialized(lower_global_initializer(mir, constant)),
+                    state: LoweredGlobalState::Initialized(lower_global_initializer(
+                        mir,
+                        constant,
+                        &global_indices,
+                    )),
                 },
             };
             LMIRGlobalValue {
@@ -81,10 +97,17 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistry) -> CXResult<LMI
 
     let mut functions = Vec::new();
     for function in &mir.functions {
-        if function.is_declaration() {
+        if function.is_declaration() || !keep_function(function) {
             continue;
         }
-        let lowerer = FunctionLowerer::new(mir, function, types, &prototypes, &mut globals);
+        let lowerer = FunctionLowerer::new(
+            mir,
+            function,
+            types,
+            &prototypes,
+            &global_indices,
+            &mut globals,
+        );
         functions.push(lowerer.lower()?);
     }
 
@@ -96,7 +119,19 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistry) -> CXResult<LMI
     })
 }
 
-fn lower_global_initializer(mir: &MIRUnit, constant: &MIRConstant) -> LMIRGlobalInitializer {
+fn keep_function(function: &MIRFunction) -> bool {
+    function.is_used || function.prototype.linkage == LinkageMode::Standard
+}
+
+fn keep_global(global: &cx_mir::MIRGlobalVariable) -> bool {
+    global.is_used || global.linkage == LinkageMode::Standard
+}
+
+fn lower_global_initializer(
+    mir: &MIRUnit,
+    constant: &MIRConstant,
+    global_indices: &HashMap<MIRGlobalID, u32>,
+) -> LMIRGlobalInitializer {
     match constant {
         MIRConstant::Bool(value) => LMIRGlobalInitializer::Integer {
             value: i128::from(*value),
@@ -121,16 +156,25 @@ fn lower_global_initializer(mir: &MIRUnit, constant: &MIRConstant) -> LMIRGlobal
         MIRConstant::Aggregate { fields, .. } => LMIRGlobalInitializer::Aggregate {
             fields: fields
                 .iter()
-                .map(|(index, value)| (*index, lower_global_initializer(mir, value)))
+                .map(|(index, value)| {
+                    (
+                        *index,
+                        lower_global_initializer(mir, value, global_indices),
+                    )
+                })
                 .collect(),
         },
         MIRConstant::Null { .. } => LMIRGlobalInitializer::Null,
-        MIRConstant::Global { global, .. } => {
-            LMIRGlobalInitializer::Global(global.index() as u32)
-        }
+        MIRConstant::Global { global, .. } => LMIRGlobalInitializer::Global(
+            *global_indices
+                .get(global)
+                .expect("global initializer references a filtered global"),
+        ),
         MIRConstant::GlobalOffset { global, offset, .. } => {
             LMIRGlobalInitializer::GlobalOffset {
-                global: global.index() as u32,
+                global: *global_indices
+                    .get(global)
+                    .expect("global initializer references a filtered global"),
                 offset: *offset,
             }
         }
@@ -215,6 +259,7 @@ struct FunctionLowerer<'a> {
     function: &'a MIRFunction,
     types: &'a MIRTypeRegistry,
     prototypes: &'a LMIRFunctionMap,
+    global_indices: &'a HashMap<MIRGlobalID, u32>,
     globals: &'a mut Vec<LMIRGlobalValue>,
     prototype: LMIRFunctionPrototype,
     blocks: Vec<LMIRBasicBlock>,
@@ -230,6 +275,7 @@ impl<'a> FunctionLowerer<'a> {
         function: &'a MIRFunction,
         types: &'a MIRTypeRegistry,
         prototypes: &'a LMIRFunctionMap,
+        global_indices: &'a HashMap<MIRGlobalID, u32>,
         globals: &'a mut Vec<LMIRGlobalValue>,
     ) -> Self {
         let entry = function.entry.expect("MIR definition has no entry");
@@ -271,6 +317,7 @@ impl<'a> FunctionLowerer<'a> {
             function,
             types,
             prototypes,
+            global_indices,
             globals,
             prototype: convert_prototype(&function.prototype, types),
             blocks,
@@ -279,6 +326,13 @@ impl<'a> FunctionLowerer<'a> {
             current: 0,
             temp: 0,
         }
+    }
+
+    pub(super) fn global_index(&self, global: MIRGlobalID) -> u32 {
+        *self
+            .global_indices
+            .get(&global)
+            .expect("MIR value references a filtered global")
     }
 
     fn lower(mut self) -> CXResult<LMIRFunction> {
@@ -484,7 +538,7 @@ impl<'a> FunctionLowerer<'a> {
     fn place(&self, place: MIRPlace) -> PlaceBinding {
         match place {
             MIRPlace::Global(global) => PlaceBinding::Address {
-                value: LMIRValue::Global(global.index() as u32),
+                value: LMIRValue::Global(self.global_index(global)),
                 ty: self
                     .unit
                     .global(global)

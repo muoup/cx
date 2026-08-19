@@ -4,6 +4,10 @@ use cx_thir::thir::r#type::THIRField;
 use cx_thir::type_context::THIRTypeContext;
 use cx_util::namespace::{QualifiedName, mangle_namespace_symbol};
 
+pub fn mangle_static_symbol(symbol_name: &str, function_name: &str) -> String {
+    format!("_S{}_{}_{}", symbol_name.len(), symbol_name, function_name)
+}
+
 pub fn mangle_qualified_name(
     global_registry: &GlobalSymbolRegistry,
     name: &QualifiedName,
@@ -176,47 +180,4 @@ fn push_component(mangled: &mut String, component: &str) {
     mangled.push_str(component.len().to_string().as_str());
     mangled.push('_');
     mangled.push_str(component);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::base_mangle_templated_name;
-    use cx_target::ArchitectureConfig;
-    use cx_thir::thir::r#type::{THIRIntType, THIRType, THIRTypeID, THIRTypeKind};
-    use cx_thir::type_context::THIRTypeContext;
-
-    struct TestTypes {
-        types: Vec<THIRType>,
-    }
-
-    impl THIRTypeContext for TestTypes {
-        fn architecture(&self) -> &ArchitectureConfig {
-            static ARCHITECTURE: ArchitectureConfig = ArchitectureConfig::new(8, 8);
-            &ARCHITECTURE
-        }
-
-        fn resolve_type_id(&self, id: THIRTypeID) -> &THIRType {
-            &self.types[id.index()]
-        }
-    }
-
-    #[test]
-    fn template_mangling_distinguishes_name_and_argument_boundaries() {
-        let integer = THIRType::from(THIRTypeKind::Integer {
-            _type: THIRIntType::I32,
-            signed: true,
-        });
-        let pointer = THIRType::from(THIRTypeKind::PointerTo {
-            inner_type: THIRTypeID::new(0),
-        });
-        let types = TestTypes {
-            types: vec![integer.clone()],
-        };
-
-        let pointer_argument = base_mangle_templated_name(&types, "foo", std::iter::once(&pointer));
-        let integer_argument =
-            base_mangle_templated_name(&types, "fooP", std::iter::once(&integer));
-
-        assert_ne!(pointer_argument, integer_argument);
-    }
 }

@@ -1,12 +1,13 @@
 use cx_log::CXResult;
-use cx_mir::{MIRConstant, MIRInstrKind, MIRValue};
+use cx_mir::{MIRConstant, MIRField, MIRInstrKind, MIRValue};
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
     expression::THIRExpression,
+    r#type::THIRField,
 };
 use cx_thir::type_context::THIRTypeContext;
 
-use crate::builder::MIRBuilder;
+use crate::{builder::MIRBuilder, lowering::types::{lower_type, lower_type_id}};
 
 pub(super) fn lower_call(
     builder: &mut MIRBuilder<'_>,
@@ -45,7 +46,7 @@ pub(super) fn lower_call(
 
     let returns_value = !matches!(result_type.kind, THIRTypeKind::Void);
     let out = returns_value.then(|| {
-        let result_type_id = builder.lower_type(result_type);
+        let result_type_id = lower_type(builder, result_type);
         builder.register(result_type_id, None)
     });
     builder.emit(MIRInstrKind::Call {
@@ -87,4 +88,21 @@ pub(super) fn lower_call(
     }
 
     Ok(value)
+}
+
+pub fn lower_field(builder: &mut MIRBuilder, field: &cx_thir::thir::r#type::THIRField) -> MIRField {
+    match field {
+        THIRField::Standard { name, type_id } => {
+            MIRField::named(name.clone(), lower_type_id(builder, *type_id))
+        }
+        THIRField::Bitfield {
+            name,
+            integer_type_id,
+            width,
+        } => MIRField::Bitfield {
+            name: name.clone(),
+            integer_type_id: lower_type_id(builder, *integer_type_id),
+            width: *width,
+        },
+    }
 }

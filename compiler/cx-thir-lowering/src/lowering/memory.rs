@@ -3,6 +3,7 @@ use cx_thir::thir::data::THIRType;
 use cx_thir::type_context::THIRTypeContext;
 
 use crate::builder::MIRBuilder;
+use crate::lowering::types::lower_type;
 
 pub(super) fn assign_operand_to_place(
     builder: &mut MIRBuilder<'_>,
@@ -10,7 +11,7 @@ pub(super) fn assign_operand_to_place(
     ty: &THIRType,
     name: Option<cx_util::identifier::CXIdent>,
 ) -> cx_mir::MIRPlace {
-    let type_id = builder.lower_type(ty);
+    let type_id = lower_type(builder, ty);
     let place = builder.create(type_id, name, ty.is_nodrop());
     builder.emit(MIRInstrKind::Assign {
         target: MIRAssignTarget::Place(place),
@@ -32,7 +33,7 @@ pub(super) fn ensure_place(
                 .mem_ref_inner()
                 .expect("memory reference is missing its pointee type");
             let pointee = builder.registry().resolve_type_id(inner_type).clone();
-            let pointee_type = builder.lower_type(&pointee);
+            let pointee_type = lower_type(builder, &pointee);
             let out = builder.place(pointee_type, None, false);
             builder.emit(MIRInstrKind::Dereference {
                 out,
