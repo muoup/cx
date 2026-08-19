@@ -91,12 +91,6 @@ impl Display for HIRGlobalVariable {
 
 impl Display for HIRDefinition {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        if self.namespace.is_root() {
-            write!(f, "[root] ")?;
-        } else {
-            write!(f, "[{}] ", self.namespace)?;
-        }
-
         Display::fmt(&self.stmt, f)
     }
 }
