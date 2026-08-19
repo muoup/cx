@@ -6,13 +6,36 @@ use cx_mir::{
 };
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
-use super::BuilderSymbol;
+#[derive(Debug)]
+struct ModuleSymbol<T: Copy> {
+    id: T,
+    used: bool,
+}
+
+impl<T: Copy> ModuleSymbol<T> {
+    fn new(id: T) -> Self {
+        Self { id, used: false }
+    }
+
+    fn get(&mut self) -> T {
+        self.used = true;
+        self.id
+    }
+
+    fn id(&self) -> T {
+        self.id
+    }
+
+    fn is_used(&self) -> bool {
+        self.used
+    }
+}
 
 pub(crate) struct MIRModuleState {
     functions: HashMap<MIRFunctionID, MIRFunction>,
     globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
-    function_symbols: HashMap<String, BuilderSymbol<MIRFunctionID>>,
-    global_symbols: HashMap<String, BuilderSymbol<MIRGlobalID>>,
+    function_symbols: HashMap<String, ModuleSymbol<MIRFunctionID>>,
+    global_symbols: HashMap<String, ModuleSymbol<MIRGlobalID>>,
     definition_ids: Vec<MIRFunctionID>,
     next_function_id: usize,
     next_global_id: usize,
@@ -48,7 +71,7 @@ impl MIRModuleState {
         let id = MIRFunctionID::new(self.next_function_id);
         self.next_function_id += 1;
         self.functions.insert(id, MIRFunction::new(id, prototype));
-        self.function_symbols.insert(name, BuilderSymbol::new(id));
+        self.function_symbols.insert(name, ModuleSymbol::new(id));
         if is_definition {
             self.definition_ids.push(id);
         }
@@ -76,7 +99,7 @@ impl MIRModuleState {
         global.state = state;
         self.globals.insert(id, global);
         self.global_symbols
-            .insert(name_string, BuilderSymbol::new(id));
+            .insert(name_string, ModuleSymbol::new(id));
         id
     }
 
@@ -102,15 +125,15 @@ impl MIRModuleState {
     }
 
     pub(crate) fn global_id(&self, name: &str) -> Option<MIRGlobalID> {
-        self.global_symbols.get(name).map(BuilderSymbol::id)
+        self.global_symbols.get(name).map(ModuleSymbol::id)
     }
 
     pub(crate) fn function_symbol(&mut self, name: &str) -> Option<MIRFunctionID> {
-        self.function_symbols.get_mut(name).map(BuilderSymbol::get)
+        self.function_symbols.get_mut(name).map(ModuleSymbol::get)
     }
 
     pub(crate) fn global_symbol(&mut self, name: &str) -> Option<MIRGlobalID> {
-        self.global_symbols.get_mut(name).map(BuilderSymbol::get)
+        self.global_symbols.get_mut(name).map(ModuleSymbol::get)
     }
 
     pub(crate) fn set_global_state(&mut self, id: MIRGlobalID, state: MIRGlobalState) {

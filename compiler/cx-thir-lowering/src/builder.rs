@@ -1,9 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    MIRBasicBlockID, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction,
-    MIRFunctionID,
+    MIRBasicBlockID, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID,
     MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRRegister,
     MIRScopeID, MIRTypeID, MIRTypeKind, MIRTypeRegistryBuilder, MIRUnit, MIRValue,
 };
@@ -21,44 +20,12 @@ use cx_thir::{
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
+mod function;
 mod module;
 
 use crate::lowering::types::{lower_int_type, lower_type, lower_type_id};
+use function::{FunctionContext, LoopContext, YieldContext};
 use module::MIRModuleState;
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct LoopContext {
-    pub break_target: MIRBasicBlockID,
-    pub continue_target: Option<MIRBasicBlockID>,
-    pub lexical_scope_depth: usize,
-}
-
-#[derive(Debug)]
-pub(crate) struct YieldContext {
-    pub target: MIRBasicBlockID,
-    pub result: Option<MIRRegister>,
-    pub lexical_scope_depth: usize,
-}
-
-#[derive(Debug)]
-struct LabelTarget {
-    block: MIRBasicBlockID,
-    declared: bool,
-}
-
-#[derive(Debug)]
-struct FunctionContext {
-    mir: MIRFunction,
-    current_block: MIRBasicBlockID,
-    local_places: HashMap<THIRLocalID, MIRPlace>,
-    local_values: HashMap<THIRLocalID, MIRValue>,
-    named_values: Vec<HashMap<String, MIRValue>>,
-    loops: Vec<LoopContext>,
-    yields: Vec<YieldContext>,
-    labels: HashMap<String, LabelTarget>,
-    lexical_scopes: Vec<MIRScopeID>,
-    defers: Vec<Vec<THIRExpression>>,
-}
 
 pub struct MIRBuilder<'thir> {
     types: MIRTypeRegistryBuilder,
@@ -66,33 +33,8 @@ pub struct MIRBuilder<'thir> {
     registry: &'thir THIRDecomposedRegistry,
 
     pub(crate) lowering_types: HashSet<THIRTypeID>,
-    current: Option<FunctionContext>,
+    function: Option<FunctionContext>,
     source_range: TokenRange,
-}
-
-#[derive(Debug)]
-pub struct BuilderSymbol<T: Copy> {
-    id: T,
-    used: bool,
-}
-
-impl<T: Copy> BuilderSymbol<T> {
-    pub fn new(id: T) -> Self {
-        Self { id, used: false }
-    }
-
-    pub fn get(&mut self) -> T {
-        self.used = true;
-        self.id
-    }
-
-    pub fn id(&self) -> T {
-        self.id
-    }
-
-    pub fn is_used(&self) -> bool {
-        self.used
-    }
 }
 
 impl<'thir> MIRBuilder<'thir> {
@@ -102,7 +44,7 @@ impl<'thir> MIRBuilder<'thir> {
             module: MIRModuleState::new(),
             registry: &thir.registry,
             lowering_types: HashSet::new(),
-            current: None,
+            function: None,
             source_range: TokenRange::internal(),
         };
         builder
@@ -132,7 +74,7 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub fn finish(self) -> MIRUnit {
         assert!(
-            self.current.is_none(),
+            self.function.is_none(),
             "attempted to finish MIR while a function is active"
         );
         self.module.finish(self.types)
@@ -257,7 +199,7 @@ impl<'thir> MIRBuilder<'thir> {
     }
 
     pub(crate) fn start_function(&mut self, index: usize, function: &THIRFunction) {
-        assert!(self.current.is_none(), "a MIR function is already active");
+        assert!(self.function.is_none(), "a MIR function is already active");
         let function_id = *self
             .module
             .function_ids()
@@ -267,19 +209,8 @@ impl<'thir> MIRBuilder<'thir> {
         let entry = mir.add_block();
         let root_scope = mir.add_scope(function.body.token_range.clone());
 
-        self.current = Some(FunctionContext {
-            mir,
-            current_block: entry,
-            local_places: HashMap::new(),
-            local_values: HashMap::new(),
-            named_values: vec![HashMap::new()],
-            loops: Vec::new(),
-            yields: Vec::new(),
-            labels: HashMap::new(),
-            lexical_scopes: vec![root_scope],
-            defers: vec![Vec::new()],
-        });
-        self.set_block_name(entry, "entry");
+        self.function = Some(FunctionContext::new(mir, entry, root_scope));
+        self.context_mut().set_block_name(entry, "entry");
 
         for (index, parameter) in function.prototype.signature().params.iter().enumerate() {
             let place = MIRPlace::Parameter(MIRParameterID::new(index));
@@ -294,107 +225,39 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub(crate) fn finish_function(&mut self) {
         let context = self
-            .current
+            .function
             .take()
             .expect("attempted to finish without an active MIR function");
-        assert!(context.loops.is_empty(), "loop context stack is unbalanced");
-        assert!(
-            context.yields.is_empty(),
-            "yield context stack is unbalanced"
-        );
-        assert!(
-            context.labels.values().all(|label| label.declared),
-            "MIR function contains an unresolved label"
-        );
-        assert_eq!(
-            context.lexical_scopes.len(),
-            1,
-            "lexical scope stack is unbalanced"
-        );
-        assert_eq!(context.defers.len(), 1, "defer stack is unbalanced");
-
-        let unit_type = self.types().unit();
-        let returns_value = context.mir.prototype.signature.return_type != unit_type;
-        for block in &mut context.mir.blocks {
-            if block.terminator().is_some() {
-                continue;
-            }
-            let terminator = if block.id == context.current_block && !returns_value {
-                MIRInstrKind::Return { value: None }
-            } else {
-                MIRInstrKind::Unreachable
-            };
-            block.push(terminator);
-        }
-        self.module.insert_function(context.mir);
+        self.module
+            .insert_function(context.finish(self.types().unit()));
     }
 
     pub(crate) fn current_function_id(&self) -> MIRFunctionID {
-        self.context().mir.id
+        self.context().id()
     }
 
     pub(crate) fn current_block(&self) -> MIRBasicBlockID {
-        self.context().current_block
+        self.context().current_block()
     }
 
     pub(crate) fn set_current_block(&mut self, block: MIRBasicBlockID) {
-        assert!(
-            self.function().block(block).is_some(),
-            "selected block does not belong to the active function"
-        );
-        self.context_mut().current_block = block;
+        self.context_mut().set_current_block(block);
     }
 
     pub(crate) fn new_block(&mut self, debug_name: &str) -> MIRBasicBlockID {
-        let id = self.function_mut().add_block();
-        self.set_block_name(id, debug_name);
-        id
-    }
-
-    fn set_block_name(&mut self, block: MIRBasicBlockID, debug_name: &str) {
-        self.function_mut()
-            .block_mut(block)
-            .expect("selected block does not exist")
-            .debug_name = Some(CXIdent::new(debug_name));
-    }
-
-    pub(crate) fn block_terminated(&self, block: MIRBasicBlockID) -> bool {
-        self.function()
-            .block(block)
-            .expect("selected block does not exist")
-            .terminator()
-            .is_some()
+        self.context_mut().new_block(debug_name)
     }
 
     pub(crate) fn current_block_terminated(&self) -> bool {
-        self.block_terminated(self.current_block())
+        self.context().current_block_terminated()
     }
 
     pub(crate) fn label_block(&mut self, name: &CXIdent) -> MIRBasicBlockID {
-        if let Some(label) = self.context().labels.get(name.as_str()) {
-            return label.block;
-        }
-        let block = self.new_block(&format!("label.{}", name.as_str()));
-        self.context_mut().labels.insert(
-            name.as_string(),
-            LabelTarget {
-                block,
-                declared: false,
-            },
-        );
-        block
+        self.context_mut().label_block(name)
     }
 
     pub(crate) fn declare_label(&mut self, name: &CXIdent) -> MIRBasicBlockID {
-        let block = self.label_block(name);
-        let label = self
-            .context_mut()
-            .labels
-            .get_mut(name.as_str())
-            .expect("label block was just allocated");
-        assert!(!label.declared, "duplicate MIR label declaration");
-        label.declared = true;
-        block
+        self.context_mut().declare_label(name)
     }
 
     pub(crate) fn set_source_range(&mut self, range: TokenRange) -> TokenRange {
@@ -406,25 +269,16 @@ impl<'thir> MIRBuilder<'thir> {
     }
 
     pub(crate) fn emit(&mut self, instruction: MIRInstrKind) -> bool {
-        if self.current_block_terminated() {
-            return false;
-        }
-        let block = self.current_block();
         let range = self.source_range.clone();
-        self.function_mut()
-            .push_instr_at(block, instruction, range)
-            .expect("active MIR block is missing");
-        true
+        self.context_mut().emit(instruction, range)
     }
 
     pub(crate) fn register(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>) -> MIRRegister {
-        self.function_mut().add_register(ty, debug_name)
+        self.context_mut().register(ty, debug_name)
     }
 
     pub(crate) fn register_type(&self, register: MIRRegister) -> Option<MIRTypeID> {
-        self.function()
-            .register(register)
-            .map(|register| register.ty)
+        self.context().register_type(register)
     }
 
     pub(crate) fn block_param(
@@ -433,9 +287,7 @@ impl<'thir> MIRBuilder<'thir> {
         ty: MIRTypeID,
         debug_name: Option<CXIdent>,
     ) -> MIRRegister {
-        self.function_mut()
-            .add_block_param(block, ty, debug_name)
-            .expect("selected block does not exist")
+        self.context_mut().block_param(block, ty, debug_name)
     }
 
     pub(crate) fn place(
@@ -444,13 +296,7 @@ impl<'thir> MIRBuilder<'thir> {
         debug_name: Option<CXIdent>,
         nodrop: bool,
     ) -> MIRPlace {
-        let scope = self
-            .context()
-            .lexical_scopes
-            .last()
-            .copied()
-            .expect("active function has no lexical scope");
-        self.function_mut().add_place(ty, debug_name, nodrop, scope)
+        self.context_mut().place(ty, debug_name, nodrop)
     }
 
     pub(crate) fn create(
@@ -465,107 +311,59 @@ impl<'thir> MIRBuilder<'thir> {
     }
 
     pub(crate) fn bind_local(&mut self, local: THIRLocalID, place: MIRPlace) {
-        self.context_mut().local_places.insert(local, place);
+        self.context_mut().bind_local(local, place);
     }
 
     pub(crate) fn bind_local_value(&mut self, local: THIRLocalID, value: MIRValue) {
-        self.context_mut().local_values.insert(local, value);
+        self.context_mut().bind_local_value(local, value);
     }
 
     pub(crate) fn local(&self, local: THIRLocalID) -> Option<MIRPlace> {
-        self.context().local_places.get(&local).copied()
+        self.context().local(local)
     }
 
     pub(crate) fn local_value(&self, local: THIRLocalID) -> Option<MIRValue> {
-        self.context().local_values.get(&local).cloned()
+        self.context().local_value(local)
     }
 
     pub(crate) fn push_named_scope(&mut self) {
-        self.context_mut().named_values.push(HashMap::new());
+        self.context_mut().push_named_scope();
     }
 
     pub(crate) fn pop_named_scope(&mut self) {
-        let context = self.context_mut();
-        assert!(
-            context.named_values.len() > 1,
-            "attempted to pop the function's base symbol scope"
-        );
-        context.named_values.pop();
+        self.context_mut().pop_named_scope();
     }
 
     pub(crate) fn push_lexical_scope(&mut self, token_range: TokenRange) {
-        let scope = self.function_mut().add_scope(token_range);
-        let context = self.context_mut();
-        context.lexical_scopes.push(scope);
-        context.defers.push(Vec::new());
+        let scope = self.context_mut().push_lexical_scope(token_range);
         self.emit(MIRInstrKind::ScopeEnter { scope });
     }
 
     pub(crate) fn pop_lexical_scope(&mut self) -> (MIRScopeID, Vec<THIRExpression>) {
-        let context = self.context_mut();
-        assert!(
-            context.lexical_scopes.len() > 1,
-            "attempted to pop the function's lexical scope"
-        );
-        assert_eq!(
-            context.lexical_scopes.len(),
-            context.defers.len(),
-            "lexical scope and defer stacks are unbalanced"
-        );
-        let defers = context
-            .defers
-            .pop()
-            .expect("active lexical scope has a defer list");
-        let scope = context
-            .lexical_scopes
-            .pop()
-            .expect("lexical scope stack is non-empty");
-        (scope, defers)
+        self.context_mut().pop_lexical_scope()
     }
 
     pub(crate) fn lexical_scope_depth(&self) -> usize {
-        self.context().lexical_scopes.len()
+        self.context().lexical_scope_depth()
     }
 
     pub(crate) fn register_defer(&mut self, expression: THIRExpression) {
-        self.context_mut()
-            .defers
-            .last_mut()
-            .expect("active function has no defer scope")
-            .push(expression);
+        self.context_mut().register_defer(expression);
     }
 
     pub(crate) fn lexical_scope_exits_to(
         &self,
         depth: usize,
     ) -> Vec<(MIRScopeID, Vec<THIRExpression>)> {
-        assert!(
-            depth <= self.lexical_scope_depth(),
-            "invalid lexical scope depth"
-        );
-        let context = self.context();
-        context.lexical_scopes[depth..]
-            .iter()
-            .zip(&context.defers[depth..])
-            .rev()
-            .map(|(scope, defers)| (*scope, defers.clone()))
-            .collect()
+        self.context().lexical_scope_exits_to(depth)
     }
 
     pub(crate) fn bind_named(&mut self, name: &CXIdent, value: MIRValue) {
-        self.context_mut()
-            .named_values
-            .last_mut()
-            .expect("active function has no symbol scope")
-            .insert(name.as_string(), value);
+        self.context_mut().bind_named(name, value);
     }
 
     pub(crate) fn named(&self, name: &CXIdent) -> Option<MIRValue> {
-        self.context()
-            .named_values
-            .iter()
-            .rev()
-            .find_map(|scope| scope.get(name.as_str()).cloned())
+        self.context().named(name)
     }
 
     pub(crate) fn function_symbol(&mut self, name: &str) -> Option<MIRFunctionID> {
@@ -585,108 +383,64 @@ impl<'thir> MIRBuilder<'thir> {
         break_target: MIRBasicBlockID,
         continue_target: Option<MIRBasicBlockID>,
     ) {
-        let lexical_scope_depth = self.lexical_scope_depth();
-        self.context_mut().loops.push(LoopContext {
-            break_target,
-            continue_target,
-            lexical_scope_depth,
-        });
+        self.context_mut()
+            .push_contextual_scope(break_target, continue_target);
     }
 
     pub(crate) fn pop_loop(&mut self) -> LoopContext {
-        self.context_mut()
-            .loops
-            .pop()
-            .expect("loop context stack is unbalanced")
+        self.context_mut().pop_loop()
     }
 
     pub(crate) fn break_target(&self) -> Option<MIRBasicBlockID> {
-        self.context()
-            .loops
-            .last()
-            .map(|context| context.break_target)
+        self.context().break_target()
     }
 
     pub(crate) fn continue_target(&self) -> Option<MIRBasicBlockID> {
-        self.context()
-            .loops
-            .iter()
-            .rev()
-            .find_map(|context| context.continue_target)
+        self.context().continue_target()
     }
 
     pub(crate) fn break_scope_depth(&self) -> Option<usize> {
-        self.context()
-            .loops
-            .last()
-            .map(|context| context.lexical_scope_depth)
+        self.context().break_scope_depth()
     }
 
     pub(crate) fn continue_scope_depth(&self) -> Option<usize> {
-        self.context()
-            .loops
-            .iter()
-            .rev()
-            .find_map(|context| context.continue_target.map(|_| context.lexical_scope_depth))
+        self.context().continue_scope_depth()
     }
 
     pub(crate) fn push_yield(&mut self, target: MIRBasicBlockID, result_type: Option<MIRTypeID>) {
-        let result = result_type.map(|ty| self.block_param(target, ty, None));
-        let lexical_scope_depth = self.lexical_scope_depth();
-        self.context_mut().yields.push(YieldContext {
-            target,
-            result,
-            lexical_scope_depth,
-        });
+        self.context_mut().push_yield(target, result_type);
     }
 
     pub(crate) fn yield_target(&self) -> Option<MIRBasicBlockID> {
-        self.context().yields.last().map(|context| context.target)
+        self.context().yield_target()
     }
 
     pub(crate) fn yield_scope_depth(&self) -> Option<usize> {
-        self.context()
-            .yields
-            .last()
-            .map(|context| context.lexical_scope_depth)
+        self.context().yield_scope_depth()
     }
 
     pub(crate) fn yield_result(&self) -> Option<MIRRegister> {
-        self.context()
-            .yields
-            .last()
-            .and_then(|context| context.result)
+        self.context().yield_result()
     }
 
     pub(crate) fn pop_yield(&mut self) -> YieldContext {
-        self.context_mut()
-            .yields
-            .pop()
-            .expect("yield context stack is unbalanced")
+        self.context_mut().pop_yield()
     }
 
     pub(crate) fn root_defers(&self) -> Vec<THIRExpression> {
-        self.context().defers.first().cloned().unwrap_or_default()
+        self.context().root_defers()
     }
 
     fn context(&self) -> &FunctionContext {
-        self.current
+        self.function
             .as_ref()
             .expect("no MIR function is currently active")
     }
 
     fn context_mut(&mut self) -> &mut FunctionContext {
-        self.current
+        self.function
             .as_mut()
             .expect("no MIR function is currently active")
-    }
-
-    fn function(&self) -> &cx_mir::MIRFunction {
-        &self.context().mir
-    }
-
-    fn function_mut(&mut self) -> &mut cx_mir::MIRFunction {
-        &mut self.context_mut().mir
     }
 }
 
