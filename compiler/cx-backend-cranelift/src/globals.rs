@@ -1,26 +1,20 @@
 use crate::{routines::convert_linkage, GlobalState};
-use cranelift_module::{DataDescription, Linkage, Module};
+use cranelift_module::{DataDescription, DataId, Linkage, Module};
 use cx_lmir::types::{LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRGlobalInitializer, LMIRGlobalState, LMIRGlobalType, LMIRGlobalValue};
 use cx_log::CXResult;
 
-pub(crate) fn generate_global(state: &mut GlobalState, variable: &LMIRGlobalValue) -> CXResult<()> {
-    let id = match &variable._type {
+pub(crate) fn declare_global(
+    state: &mut GlobalState,
+    variable: &LMIRGlobalValue,
+) -> CXResult<DataId> {
+    Ok(match &variable._type {
         LMIRGlobalType::StringLiteral(str) => {
-            let id = state
+            let _ = str;
+            state
                 .object_module
                 .declare_anonymous_data(false, false)
-                .unwrap();
-
-            let mut str_data = str.to_owned().into_bytes();
-            str_data.push(b'\0');
-
-            let mut data = DataDescription::new();
-            data.define(str_data.into_boxed_slice());
-
-            state.object_module.define_data(id, &data).unwrap();
-            state.object_module.declare_data_in_data(id, &mut data);
-            id
+                .unwrap()
         }
 
         LMIRGlobalType::Variable {
@@ -41,31 +35,50 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &LMIRGlobalValu
                 .declare_data(variable.name.as_str(), linkage, true, false)
                 .unwrap();
 
-            if linkage == Linkage::Import {
-                id
-            } else {
-                let mut data = DataDescription::new();
+            id
+        }
+    })
+}
 
-                match global_state {
-                    LMIRGlobalState::ZeroInitialized => {
-                        data.define_zeroinit(usize::from(_type.size()));
-                    }
-                    LMIRGlobalState::Initialized(initializer) => {
-                        data.define(initializer_bytes(initializer, _type).into_boxed_slice());
-                        write_initializer_relocations(state, &mut data, initializer, _type, 0);
-                    }
-                    LMIRGlobalState::External => unreachable!(),
-                }
-                state.object_module.define_data(id, &data).expect("");
-                state.object_module.declare_data_in_data(id, &mut data);
-
-                id
+pub(crate) fn define_global(
+    state: &mut GlobalState,
+    id: DataId,
+    variable: &LMIRGlobalValue,
+) -> CXResult<()> {
+    let (data, defined) = match &variable._type {
+        LMIRGlobalType::StringLiteral(str) => {
+            let mut bytes = str.to_owned().into_bytes();
+            bytes.push(b'\0');
+            let mut data = DataDescription::new();
+            data.define(bytes.into_boxed_slice());
+            (data, true)
+        }
+        LMIRGlobalType::Variable {
+            _type,
+            state: global_state,
+        } => {
+            if matches!(global_state, LMIRGlobalState::External) {
+                return Ok(());
             }
+
+            let mut data = DataDescription::new();
+            match global_state {
+                LMIRGlobalState::ZeroInitialized => {
+                    data.define_zeroinit(usize::from(_type.size()));
+                }
+                LMIRGlobalState::Initialized(initializer) => {
+                    data.define(initializer_bytes(initializer, _type).into_boxed_slice());
+                    write_initializer_relocations(state, &mut data, initializer, _type, 0);
+                }
+                LMIRGlobalState::External => unreachable!(),
+            }
+            (data, true)
         }
     };
 
-    state.global_ids.push(id);
-
+    if defined {
+        state.object_module.define_data(id, &data).unwrap();
+    }
     Ok(())
 }
 

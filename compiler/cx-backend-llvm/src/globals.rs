@@ -1,6 +1,6 @@
-use crate::GlobalState;
 use crate::error::{LLVMError, LLVMResult};
 use crate::typing::{any_to_basic_type, bc_llvm_type, convert_linkage};
+use crate::GlobalState;
 use cx_lmir::{LMIRGlobalInitializer, LMIRGlobalState, LMIRGlobalType, LMIRGlobalValue};
 use inkwell::module::Linkage;
 use inkwell::types::{BasicType, BasicTypeEnum};
@@ -14,7 +14,7 @@ fn string_literal_name() -> String {
     format!(".str_{id}")
 }
 
-pub(crate) fn generate_global_variable(
+pub(crate) fn declare_global_variable(
     state: &mut GlobalState,
     variable: &LMIRGlobalValue,
 ) -> LLVMResult<()> {
@@ -53,28 +53,55 @@ pub(crate) fn generate_global_variable(
 
             if matches!(global_state, LMIRGlobalState::External) {
                 global.set_linkage(Linkage::External);
-            } else {
-                if matches!(variable.linkage, cx_lmir::LinkageType::Static) {
-                    global.set_linkage(convert_linkage(variable.linkage));
-                }
-                let initializer = match global_state {
-                    LMIRGlobalState::ZeroInitialized => basic_type.const_zero(),
-                    LMIRGlobalState::Initialized(initializer) => {
-                        global_initializer(state, basic_type, initializer)?
-                    }
-                    LMIRGlobalState::External => {
-                        return Err(LLVMError::new(
-                            "External global variable unexpectedly received an initializer",
-                        ));
-                    }
-                };
-                global.set_initializer(&initializer);
+            } else if matches!(variable.linkage, cx_lmir::LinkageType::Static) {
+                global.set_linkage(convert_linkage(variable.linkage));
             }
 
             state.globals.push(global);
         }
     }
 
+    Ok(())
+}
+
+pub(crate) fn define_global_variable(
+    state: &mut GlobalState,
+    index: usize,
+    variable: &LMIRGlobalValue,
+) -> LLVMResult<()> {
+    let LMIRGlobalType::Variable {
+        _type,
+        state: global_state,
+    } = &variable._type
+    else {
+        return Ok(());
+    };
+    if matches!(global_state, LMIRGlobalState::External) {
+        return Ok(());
+    }
+
+    let basic_type = match global_state {
+        LMIRGlobalState::Initialized(initializer) => {
+            global_llvm_type(state, _type, &[initializer])?
+        }
+        LMIRGlobalState::ZeroInitialized => {
+            let llvm_type = bc_llvm_type(state.context, _type)?;
+            any_to_basic_type(llvm_type)?
+        }
+        LMIRGlobalState::External => unreachable!(),
+    };
+    let global = *state
+        .globals
+        .get(index)
+        .ok_or_else(|| LLVMError::new(format!("Invalid global definition index {index}")))?;
+    let initializer = match global_state {
+        LMIRGlobalState::ZeroInitialized => basic_type.const_zero(),
+        LMIRGlobalState::Initialized(initializer) => {
+            global_initializer(state, basic_type, initializer)?
+        }
+        LMIRGlobalState::External => unreachable!(),
+    };
+    global.set_initializer(&initializer);
     Ok(())
 }
 

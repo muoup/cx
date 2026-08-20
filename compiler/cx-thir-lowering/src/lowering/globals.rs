@@ -38,6 +38,9 @@ fn lower_global_constant(
 ) -> MIRConstant {
     match &expression.kind {
         THIRExpressionKind::Typechange(source) | THIRExpressionKind::Copy { source } => {
+            if let Some(value) = string_literal(source) {
+                return lower_string_literal(builder, value, target);
+            }
             let source_type = lower_type(builder, &source._type);
             let constant = lower_global_constant(builder, source, source_type);
             retarget_constant(constant, target)
@@ -143,6 +146,9 @@ fn lower_global_conversion(
     {
         return MIRConstant::Null { ty: target };
     }
+    if let Some(value) = string_literal(operand) {
+        return lower_string_literal(builder, value, target);
+    }
 
     let source_type = lower_type(builder, &operand._type);
     let source = lower_global_constant(builder, operand, source_type);
@@ -153,6 +159,18 @@ fn lower_global_conversion(
         | THIRCoercion::Integral { .. }
         | THIRCoercion::FloatCast { .. } => retarget_constant(source, target),
         _ => panic!("unsupported global initializer conversion: {conversion:?}"),
+    }
+}
+
+fn string_literal(expression: &THIRExpression) -> Option<&str> {
+    match &expression.kind {
+        THIRExpressionKind::StringLiteral { value } => Some(value),
+        THIRExpressionKind::Typechange(source)
+        | THIRExpressionKind::Copy { source }
+        | THIRExpressionKind::TypeConversion {
+            operand: source, ..
+        } => string_literal(source),
+        _ => None,
     }
 }
 

@@ -10,8 +10,8 @@ use cx_lmir::{
     LMIRUnit, LMIRValue,
 };
 use cx_log::{
+    error::{context::CXInternalContext, message::CXStdErrMessage, CXErr},
     CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_target::ArchitectureConfig;
 use cx_util::identifier::CXIdent;
@@ -26,7 +26,7 @@ use inkwell::values::{
     AnyValue, AnyValueEnum, BasicValueEnum, FunctionValue, GlobalValue, PhiValue,
 };
 
-use crate::globals::generate_global_variable;
+use crate::globals::{declare_global_variable, define_global_variable};
 use crate::instruction::reset_num;
 use cx_pipeline_data::OptimizationLevel;
 use cx_util::format::dump_data;
@@ -252,7 +252,11 @@ pub fn lmir_aot_codegen(
     }
 
     for global in bytecode.global_vars.iter() {
-        generate_global_variable(&mut global_state, global)?;
+        declare_global_variable(&mut global_state, global)?;
+    }
+
+    for (index, global) in bytecode.global_vars.iter().enumerate() {
+        define_global_variable(&mut global_state, index, global)?;
     }
 
     for func in bytecode.fn_defs.iter() {

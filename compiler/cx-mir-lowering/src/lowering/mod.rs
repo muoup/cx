@@ -27,14 +27,17 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistryBuilder) -> CXRes
         .entry(cx_lmir::compiler_functions::ASSERTION.symbol_name())
         .or_insert_with(|| globals::assertion_prototype(types));
 
+    let mut globals = mir.globals().collect::<Vec<_>>();
+    globals.sort_by_key(|global| global.id.index());
+
     let mut global_indices = HashMap::new();
-    for global in mir.globals() {
+    for global in &globals {
         let index = global_indices.len() as u32;
         global_indices.insert(global.id, index);
     }
 
-    let mut lowered_globals = mir
-        .globals()
+    let mut lowered_globals = globals
+        .iter()
         .map(|global| globals::lower_global(mir, global, types, &global_indices))
         .collect::<Vec<_>>();
 
