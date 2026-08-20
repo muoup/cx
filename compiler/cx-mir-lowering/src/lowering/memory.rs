@@ -26,11 +26,10 @@ pub(super) fn binding_for_place(
     match place {
         MIRPlace::Global(global) => PlaceBinding::Address {
             value: LMIRValue::Global(global_index(context, global)),
-            ty: context
-                .unit()
-                .global(global)
-                .expect("invalid global place")
-                .ty,
+            ty: super::globals::global_type(
+                context.unit().global(global).expect("invalid global place"),
+                context.types(),
+            ),
         },
         _ => context
             .place_binding(place)

@@ -166,7 +166,9 @@ impl MIRModuleState {
         let globals = globals
             .into_iter()
             .filter_map(|(_, global)| {
-                if global.linkage == LinkageMode::Standard {
+                if global.linkage == LinkageMode::Standard
+                    || matches!(&global.kind, MIRGlobalKind::StringLiteral { .. })
+                {
                     return Some((global.id, global));
                 }
 

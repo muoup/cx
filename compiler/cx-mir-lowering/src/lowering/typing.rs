@@ -27,9 +27,7 @@ pub(crate) fn classify_signature(
     types: &MIRTypeRegistryBuilder,
 ) -> LMIRFunctionSignature {
     let return_type = convert_type(signature.return_type, types);
-    let return_layout = return_type
-        .is_memory_resident()
-        .then(|| layout(types, signature.return_type));
+    let return_layout = (!return_type.is_void()).then(|| layout(types, signature.return_type));
     let return_abi = match return_layout {
         Some(layout) => classify_return(
             types.architecture(),

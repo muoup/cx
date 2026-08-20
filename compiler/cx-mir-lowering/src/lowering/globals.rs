@@ -4,18 +4,74 @@ use cx_lmir::compiler_functions::ASSERTION;
 use cx_lmir::types::{LMIRIntegerType, LMIRType};
 use cx_lmir::{
     LMIRABISlot, LMIRFunctionPrototype, LMIRFunctionSignature, LMIRGlobalInitializer,
-    LMIRParameter, LMIRParameterABI, LMIRReturnABI, LinkageType,
+    LMIRGlobalState as LoweredGlobalState, LMIRGlobalType, LMIRGlobalValue, LMIRParameter,
+    LMIRParameterABI, LMIRReturnABI, LinkageType,
 };
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    MIRConstant, MIRGlobalID, MIRTypeKind, MIRTypeRegistryBuilder,
-    MIRUnit,
+    global::MIRGlobalKind, MIRConstant, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRTypeID,
+    MIRTypeKind, MIRTypeRegistryBuilder, MIRUnit,
 };
-use cx_util::{identifier::CXIdent};
+use cx_util::identifier::CXIdent;
 
-use super::typing::{convert_float_type, convert_integer_type};
+use super::typing::{convert_float_type, convert_integer_type, convert_linkage, convert_type};
 
-pub(super) fn lower_global_initializer(
+pub(super) fn lower_global(
+    mir: &MIRUnit,
+    global: &MIRGlobalVariable,
+    types: &MIRTypeRegistryBuilder,
+    global_indices: &HashMap<MIRGlobalID, u32>,
+) -> LMIRGlobalValue {
+    let (linkage, lowered) = match &global.kind {
+        MIRGlobalKind::StringLiteral { value } => (
+            convert_linkage(global.linkage),
+            LMIRGlobalType::StringLiteral(value.clone()),
+        ),
+        MIRGlobalKind::Variable { ty, state, .. } => {
+            let linkage = if matches!(state, MIRGlobalState::External) {
+                LinkageType::External
+            } else {
+                convert_linkage(global.linkage)
+            };
+            let lowered_type = convert_type(*ty, types);
+            let lowered = match state {
+                MIRGlobalState::External => LMIRGlobalType::Variable {
+                    _type: lowered_type,
+                    state: LoweredGlobalState::External,
+                },
+                MIRGlobalState::ZeroInitialized
+                | MIRGlobalState::Initialized(MIRConstant::Unit) => LMIRGlobalType::Variable {
+                    _type: lowered_type,
+                    state: LoweredGlobalState::ZeroInitialized,
+                },
+                MIRGlobalState::Initialized(constant) => LMIRGlobalType::Variable {
+                    _type: lowered_type,
+                    state: LoweredGlobalState::Initialized(lower_global_initializer(
+                        mir,
+                        constant,
+                        global_indices,
+                    )),
+                },
+            };
+            (linkage, lowered)
+        }
+    };
+
+    LMIRGlobalValue {
+        name: global.name.clone(),
+        _type: lowered,
+        linkage,
+    }
+}
+
+pub(super) fn global_type(global: &MIRGlobalVariable, types: &MIRTypeRegistryBuilder) -> MIRTypeID {
+    match &global.kind {
+        MIRGlobalKind::StringLiteral { .. } => types.find_kind(&MIRTypeKind::Str).unwrap(),
+        MIRGlobalKind::Variable { ty, .. } => *ty,
+    }
+}
+
+fn lower_global_initializer(
     mir: &MIRUnit,
     constant: &MIRConstant,
     global_indices: &HashMap<MIRGlobalID, u32>,

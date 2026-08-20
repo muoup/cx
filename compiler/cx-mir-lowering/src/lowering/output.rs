@@ -5,6 +5,7 @@ use cx_mir::{MIRBasicBlockID, MIRPlace, MIRRegister as MIRRegisterID, MIRTypeID}
 use cx_util::identifier::CXIdent;
 
 use crate::context::FunctionLoweringContext;
+use crate::lowering::globals;
 
 use super::typing::{convert_integer_type, convert_type};
 
@@ -16,14 +17,18 @@ pub(super) fn global_index(ctx: &FunctionLoweringContext<'_>, global: cx_mir::MI
 
 pub(super) fn place_decl_type(ctx: &FunctionLoweringContext<'_>, place: MIRPlace) -> MIRTypeID {
     match place {
-        MIRPlace::FunctionLocal(id) => ctx
-            .function()
-            .definition()
-            .and_then(|definition| definition.place(id))
-            .expect("invalid function-local place")
-            .ty,
+        MIRPlace::FunctionLocal(id) => {
+            ctx.function()
+                .definition()
+                .and_then(|definition| definition.place(id))
+                .expect("invalid function-local place")
+                .ty
+        }
         MIRPlace::Parameter(id) => ctx.function().prototype().signature.params[id.index()].ty,
-        MIRPlace::Global(id) => ctx.unit().global(id).unwrap().ty,
+        MIRPlace::Global(id) => globals::global_type(
+            ctx.unit().global(id).expect("invalid global place"),
+            ctx.types(),
+        ),
     }
 }
 
