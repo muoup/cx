@@ -206,8 +206,8 @@ impl<'thir> MIRBuilder<'thir> {
             .insert_function(context.finish(self.types().unit()));
     }
 
-    pub(crate) fn current_function_id(&self) -> MIRFunctionID {
-        self.context().id()
+    pub(crate) fn _current_function_id(&self) -> MIRFunctionID {
+        self.context()._id()
     }
 
     pub(crate) fn current_block(&self) -> MIRBasicBlockID {
@@ -317,7 +317,7 @@ impl<'thir> MIRBuilder<'thir> {
         self.context_mut().pop_lexical_scope()
     }
 
-    pub(crate) fn lexical_scope_depth(&self) -> usize {
+    pub(crate) fn _lexical_scope_depth(&self) -> usize {
         self.context().lexical_scope_depth()
     }
 

@@ -115,7 +115,7 @@ impl MIRModuleState {
         );
     }
 
-    pub(crate) fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
+    pub(crate) fn _global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
         self.globals.get(&id)
     }
 

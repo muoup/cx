@@ -101,7 +101,7 @@ impl FunctionContext {
         MIRFunction::defined(self.id, self.prototype, self.mir)
     }
 
-    pub(crate) fn id(&self) -> MIRFunctionID {
+    pub(crate) fn _id(&self) -> MIRFunctionID {
         self.id
     }
 
