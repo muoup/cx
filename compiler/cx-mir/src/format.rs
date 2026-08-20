@@ -13,7 +13,7 @@ use crate::{
         MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRParameterID, MIRPlace, MIRPlaceID,
         MIRRegister, MIRValue,
     },
-    global::{MIRFnSignature, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable},
+    global::{MIRFnSignature, MIRFunctionID, MIRGlobalID, MIRGlobalState},
     op::{MIRBinaryOp, MIRCoercion, MIRUnaryOp},
     ty::MIRIntType,
     unit::MIRUnit,
@@ -217,24 +217,6 @@ impl Display for MIRGlobalState {
             Self::ZeroInitialized => f.write_str("zero"),
             Self::Initialized(value) => Display::fmt(value, f),
         }
-    }
-}
-
-impl Display for MIRGlobalVariable {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "global {}: {} [{:?}, {}]",
-            self.name,
-            self.ty,
-            self.linkage,
-            if self.is_mutable {
-                "mutable"
-            } else {
-                "readonly"
-            }
-        )?;
-        write!(f, " = {}", self.state)
     }
 }
 

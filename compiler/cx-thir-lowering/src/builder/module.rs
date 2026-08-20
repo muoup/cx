@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use cx_mir::{
     MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable,
-    MIRTypeRegistryBuilder, MIRUnit,
+    MIRTypeRegistryBuilder, MIRUnit, global::MIRGlobalKind,
 };
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
@@ -33,7 +33,8 @@ impl<T: Clone> ModuleSymbol<T> {
 
 pub(crate) struct MIRModuleState {
     functions: HashMap<MIRFunctionID, MIRFunction>,
-    globals: HashMap<MIRGlobalID, ModuleSymbol<MIRGlobalVariable>>,
+    globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
+
     function_symbols: HashMap<String, ModuleSymbol<MIRFunctionID>>,
     global_symbols: HashMap<String, ModuleSymbol<MIRGlobalID>>,
     function_ids: Vec<MIRFunctionID>,
@@ -73,11 +74,8 @@ impl MIRModuleState {
     pub(crate) fn declare_global(
         &mut self,
         name: CXIdent,
-        ty: cx_mir::MIRTypeID,
         linkage: LinkageMode,
-        is_mutable: bool,
-        nodrop: bool,
-        state: MIRGlobalState,
+        kind: MIRGlobalKind
     ) -> MIRGlobalID {
         let name_string = name.as_string();
         if let Some(symbol) = self.global_symbols.get(&name_string) {
@@ -86,10 +84,8 @@ impl MIRModuleState {
 
         let id = MIRGlobalID::new(self.next_global_id);
         self.next_global_id += 1;
-        let mut global = MIRGlobalVariable::new(id, name, ty, linkage, is_mutable);
-        global.is_nodrop = nodrop;
-        global.state = state;
-        self.globals.insert(id, ModuleSymbol::new(global));
+        let global = MIRGlobalVariable::new(id, name, linkage, kind);
+        self.globals.insert(id, global);
         self.global_symbols
             .insert(name_string, ModuleSymbol::new(id));
         id
@@ -114,7 +110,7 @@ impl MIRModuleState {
     }
 
     pub(crate) fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
-        self.globals.get(&id).map(|symbol| &symbol.id)
+        self.globals.get(&id)
     }
 
     pub(crate) fn global_id(&self, name: &str) -> Option<MIRGlobalID> {
@@ -130,93 +126,63 @@ impl MIRModuleState {
     }
 
     pub(crate) fn set_global_state(&mut self, id: MIRGlobalID, state: MIRGlobalState) {
-        self.globals
-            .get_mut(&id)
-            .expect("MIR global state update targets a missing global")
-            .id
-            .state = state;
+        let global = self.globals.get_mut(&id).expect("global is missing from module state");
+        let MIRGlobalKind::Variable { state: s, .. } = &mut global.kind else {
+            panic!("global is not a variable");
+        };
+
+        *s = state;
     }
 
     pub(crate) fn finish(self, types: MIRTypeRegistryBuilder) -> MIRUnit {
         let Self {
-            mut functions,
-            mut globals,
+            functions,
+            globals,
             function_symbols,
             global_symbols,
             function_ids: _,
-            next_function_id,
-            next_global_id,
             ..
         } = self;
 
-        for symbol in function_symbols.values() {
-            functions
-                .get_mut(&symbol.id())
-                .expect("builder function symbol points to a missing MIR function")
-                .set_used(symbol.is_used());
-        }
-        for symbol in global_symbols.values() {
-            globals
-                .get_mut(&symbol.id())
-                .expect("builder global symbol points to a missing MIR global")
-                .id
-                .is_used = symbol.is_used();
-        }
+        let functions = functions
+            .into_iter()
+            .filter_map(|(_, function)| {
+                if function.prototype().linkage == LinkageMode::Standard {
+                    return Some((function.id(), function));
+                }
 
-        MIRUnit::from_parts(
-            types,
-            dense_functions(functions, next_function_id),
-            dense_globals(globals, next_global_id),
-        )
-    }
-}
+                let name = &function.prototype().signature.symbol_name;
+                let symbol = function_symbols
+                    .get(&name.as_string())
+                    .expect("function symbol missing");
 
-fn dense_functions(
-    functions: HashMap<MIRFunctionID, MIRFunction>,
-    length: usize,
-) -> Vec<MIRFunction> {
-    let mut dense = (0..length)
-        .map(|_| None)
-        .collect::<Vec<Option<MIRFunction>>>();
-    for (id, function) in functions {
-        let slot = dense
-            .get_mut(id.index())
-            .expect("MIR function ID is outside the builder range");
-        assert!(slot.is_none(), "MIR function ID was declared twice");
-        *slot = Some(function);
-    }
-    dense
-        .into_iter()
-        .enumerate()
-        .map(|(index, function)| {
-            let function = function.expect("MIR function IDs are not dense");
-            assert_eq!(function.id().index(), index);
-            function
-        })
-        .collect()
-}
+                if symbol.is_used() {
+                    Some((function.id(), function))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let globals = globals
+            .into_iter()
+            .filter_map(|(_, global)| {
+                if global.linkage == LinkageMode::Standard {
+                    return Some((global.id, global));
+                }
 
-fn dense_globals(
-    globals: HashMap<MIRGlobalID, ModuleSymbol<MIRGlobalVariable>>,
-    length: usize,
-) -> Vec<MIRGlobalVariable> {
-    let mut dense = (0..length)
-        .map(|_| None)
-        .collect::<Vec<Option<MIRGlobalVariable>>>();
-    for (id, mut global) in globals {
-        let slot = dense
-            .get_mut(id.index())
-            .expect("MIR global ID is outside the builder range");
-        assert!(slot.is_none(), "MIR global ID was declared twice");
-        *slot = Some(global.get());
+                let name = &global.name;
+                let symbol = global_symbols
+                    .get(&name.as_string())
+                    .expect("global symbol missing");
+
+                if symbol.is_used() {
+                    Some((global.id, global))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        MIRUnit::new(types, functions, globals)
     }
-    dense
-        .into_iter()
-        .enumerate()
-        .map(|(index, mut global)| {
-            let global = global.take().expect("MIR global IDs are not dense");
-            assert_eq!(global.id.index(), index);
-            global
-        })
-        .collect()
 }

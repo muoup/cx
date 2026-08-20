@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -9,15 +11,15 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct MIRUnit {
     types: MIRTypeRegistryBuilder,
-    functions: Vec<MIRFunction>,
-    globals: Vec<MIRGlobalVariable>,
+    functions: HashMap<MIRFunctionID, MIRFunction>,
+    globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
 }
 
 impl MIRUnit {
-    pub fn from_parts(
+    pub fn new(
         types: MIRTypeRegistryBuilder,
-        functions: Vec<MIRFunction>,
-        globals: Vec<MIRGlobalVariable>,
+        functions: HashMap<MIRFunctionID, MIRFunction>,
+        globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
     ) -> Self {
         Self {
             types,
@@ -30,20 +32,20 @@ impl MIRUnit {
         &self.types
     }
 
-    pub fn functions(&self) -> &[MIRFunction] {
-        &self.functions
+    pub fn functions(&self) -> impl ExactSizeIterator<Item = &MIRFunction> {
+        self.functions.values()
     }
 
-    pub fn globals(&self) -> &[MIRGlobalVariable] {
-        &self.globals
+    pub fn globals(&self) -> impl ExactSizeIterator<Item = &MIRGlobalVariable> {
+        self.globals.values()
     }
 
     pub fn function(&self, id: MIRFunctionID) -> Option<&MIRFunction> {
-        self.functions.get(id.index())
+        self.functions.get(&id)
     }
 
     pub fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
-        self.globals.get(id.index())
+        self.globals.get(&id)
     }
 
     pub fn instruction_range(

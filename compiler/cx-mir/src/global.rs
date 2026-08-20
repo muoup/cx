@@ -40,17 +40,49 @@ pub enum MIRGlobalState {
 pub struct MIRGlobalVariable {
     pub id: MIRGlobalID,
     pub name: CXIdent,
-    pub ty: MIRTypeID,
     pub linkage: LinkageMode,
-    pub state: MIRGlobalState,
+    pub kind: MIRGlobalKind,
+}
 
-    pub is_nodrop: bool,
-    pub is_mutable: bool,
-    pub is_used: bool,
+#[derive(Debug, Clone)]
+pub enum MIRGlobalKind {
+    StringLiteral {
+        value: String,
+    },
+
+    Variable {
+        ty: MIRTypeID,
+        state: MIRGlobalState,
+        is_nodrop: bool,
+        is_mutable: bool,
+    },
 }
 
 impl MIRGlobalVariable {
     pub fn new(
+        id: MIRGlobalID,
+        name: CXIdent,
+        linkage: LinkageMode,
+        kind: MIRGlobalKind,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            linkage,
+            kind,
+        }
+    }
+
+    pub fn string_literal(id: MIRGlobalID, name: CXIdent, value: String) -> Self {
+        Self {
+            id,
+            name,
+            linkage: LinkageMode::Static,
+            kind: MIRGlobalKind::StringLiteral { value },
+        }
+    }
+
+    pub fn variable(
         id: MIRGlobalID,
         name: CXIdent,
         ty: MIRTypeID,
@@ -60,16 +92,17 @@ impl MIRGlobalVariable {
         Self {
             id,
             name,
-            ty,
             linkage,
-            state: if linkage == LinkageMode::Extern {
-                MIRGlobalState::External
-            } else {
-                MIRGlobalState::ZeroInitialized
+            kind: MIRGlobalKind::Variable {
+                ty,
+                state: if linkage == LinkageMode::Extern {
+                    MIRGlobalState::External
+                } else {
+                    MIRGlobalState::ZeroInitialized
+                },
+                is_mutable,
+                is_nodrop: false,
             },
-            is_mutable,
-            is_nodrop: false,
-            is_used: false,
         }
     }
 }
@@ -170,7 +203,6 @@ pub struct MIRFunction {
     id: MIRFunctionID,
     prototype: MIRFnPrototype,
     definition: Option<MIRFunctionDefinition>,
-    is_used: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -188,7 +220,6 @@ impl MIRFunction {
             id,
             prototype,
             definition: None,
-            is_used: false,
         }
     }
 
@@ -205,7 +236,6 @@ impl MIRFunction {
             id,
             prototype,
             definition: Some(definition),
-            is_used: false,
         }
     }
 
@@ -221,20 +251,11 @@ impl MIRFunction {
         self.definition.as_ref()
     }
 
-    pub fn is_used(&self) -> bool {
-        self.is_used
-    }
-
-    pub fn set_used(&mut self, is_used: bool) {
-        self.is_used = is_used;
-    }
-
     pub fn into_definition(self) -> (MIRFunctionID, MIRFnPrototype, MIRFunctionDefinition) {
         let Self {
             id,
             prototype,
             definition,
-            is_used: _,
         } = self;
         (
             id,
@@ -258,7 +279,7 @@ impl MIRFunctionDefinition {
     pub fn entry(&self) -> Option<MIRBasicBlockID> {
         self.entry
     }
-    
+
     pub fn blocks(&self) -> &[MIRBasicBlock] {
         &self.blocks
     }

@@ -11,7 +11,7 @@ use super::typing::{convert_integer_type, convert_type};
 pub(super) fn global_index(ctx: &FunctionLoweringContext<'_>, global: cx_mir::MIRGlobalID) -> u32 {
     *ctx.global_indices()
         .get(&global)
-        .expect("MIR value references a filtered global")
+        .unwrap_or_else(|| panic!("global {:?} not found in indices", global))
 }
 
 pub(super) fn place_decl_type(ctx: &FunctionLoweringContext<'_>, place: MIRPlace) -> MIRTypeID {

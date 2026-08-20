@@ -8,20 +8,12 @@ use cx_lmir::{
 };
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    MIRConstant, MIRFunction, MIRGlobalID, MIRGlobalVariable, MIRTypeKind, MIRTypeRegistryBuilder,
+    MIRConstant, MIRGlobalID, MIRTypeKind, MIRTypeRegistryBuilder,
     MIRUnit,
 };
-use cx_util::{identifier::CXIdent, linkage::LinkageMode};
+use cx_util::{identifier::CXIdent};
 
 use super::typing::{convert_float_type, convert_integer_type};
-
-pub(super) fn keep_function(function: &MIRFunction) -> bool {
-    function.is_used() || function.prototype().linkage == LinkageMode::Standard
-}
-
-pub(super) fn keep_global(global: &MIRGlobalVariable) -> bool {
-    global.is_used || global.linkage == LinkageMode::Standard
-}
 
 pub(super) fn lower_global_initializer(
     mir: &MIRUnit,

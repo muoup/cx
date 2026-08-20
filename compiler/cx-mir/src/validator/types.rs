@@ -6,7 +6,7 @@ use crate::{
         MIRAggregateOp, MIRAssignTarget, MIRBasicBlockID, MIRConstant, MIRInstrKind, MIRPlace,
         MIRPlaceAggregateOp, MIRRegister, MIRValue, MIRValueAggregateOp,
     },
-    global::{MIRFunction, MIRFunctionID},
+    global::{MIRFunction, MIRFunctionID, MIRGlobalKind},
     ty::{MIRField, MIRTypeID, MIRTypeKind, interface::MTRegistry},
     unit::MIRUnit,
 };
@@ -324,12 +324,10 @@ impl MIRUnit {
 
     pub(super) fn value_type(&self, function: &MIRFunction, value: &MIRValue) -> Option<MIRTypeID> {
         match value {
-            MIRValue::Register(register) => {
-                function
-                    .definition()
-                    .and_then(|definition| definition.register(*register))
-                    .map(|register| register.ty)
-            }
+            MIRValue::Register(register) => function
+                .definition()
+                .and_then(|definition| definition.register(*register))
+                .map(|register| register.ty),
             MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place) => {
                 self.place_value_type(function, *place)
             }
@@ -409,7 +407,10 @@ impl MIRUnit {
                 .params
                 .get(id.index())
                 .map(|parameter| parameter.ty),
-            MIRPlace::Global(id) => self.global(id).map(|global| global.ty),
+            MIRPlace::Global(id) => self.global(id).map(|global| match global.kind {
+                MIRGlobalKind::StringLiteral { .. } => self.types().find_kind(&MIRTypeKind::Str).unwrap(),
+                MIRGlobalKind::Variable { ty, .. } => ty,
+            }),
         }
     }
 }

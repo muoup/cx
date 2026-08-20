@@ -7,7 +7,7 @@ use crate::expr::{
     MIRAggregateOp, MIRBasicBlock, MIRConstant, MIRInstrKind, MIRPlace, MIRPlaceAggregateOp,
     MIRValue, MIRValueAggregateOp,
 };
-use crate::global::{MIRFunction, MIRGlobalState};
+use crate::global::{MIRFunction, MIRGlobalKind, MIRGlobalState};
 use crate::op::{
     MIRBinaryOp, MIRFloatBinaryOp, MIRIntBinaryOp, MIRPointerBinaryOp, MIRPointerOffsetOp,
     MIRUnaryOp,
@@ -30,19 +30,15 @@ impl Display for MIRDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut types = TypePrinter::new(self.unit.types());
 
-        for (index, global) in self.unit.globals().iter().enumerate() {
-            if index != 0 {
+        for global in self.unit.globals() {
+            if global.id.index() != 0 {
                 f.write_str("\n")?;
             }
             write_global(f, self.unit, global, &mut types)?;
         }
 
-        if !self.unit.globals().is_empty() && !self.unit.functions().is_empty() {
-            f.write_str("\n\n")?;
-        }
-
-        for (index, function) in self.unit.functions().iter().enumerate() {
-            if index != 0 {
+        for function in self.unit.functions() {
+            if function.id().index() != 0 {
                 f.write_str("\n")?;
             }
             write_function(f, self.unit, function, &mut types)?;
@@ -206,25 +202,40 @@ fn write_global<T: MTRegistry>(
     global: &MIRGlobalVariable,
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
-    match global.state {
-        MIRGlobalState::External => f.write_str("extern ")?,
-        _ if global.linkage == LinkageMode::Static => f.write_str("static ")?,
+    match global.linkage {
+        LinkageMode::Extern => f.write_str("extern ")?,
+        LinkageMode::Static => f.write_str("static ")?,
         _ => {}
     }
-    if !global.is_mutable {
-        f.write_str("const ")?;
-    }
     write!(f, "{}: ", global.name)?;
-    types.write(f, global.ty)?;
-    match &global.state {
-        MIRGlobalState::External => f.write_str(";")?,
-        MIRGlobalState::ZeroInitialized => f.write_str(" = zero;")?,
-        MIRGlobalState::Initialized(value) => {
-            f.write_str(" = ")?;
-            write_constant(f, unit, value)?;
-            f.write_str(";")?;
+
+    match &global.kind {
+        MIRGlobalKind::StringLiteral { value } => {
+            write!(f, "str = {}", value)?;
+        }
+
+        MIRGlobalKind::Variable {
+            ty,
+            state,
+            is_nodrop: _,
+            is_mutable,
+        } => {
+            if !is_mutable {
+                f.write_str("const ")?;
+            }
+            types.write(f, *ty)?;
+            match &state {
+                MIRGlobalState::External => f.write_str(";")?,
+                MIRGlobalState::ZeroInitialized => f.write_str(" = zero;")?,
+                MIRGlobalState::Initialized(value) => {
+                    f.write_str(" = ")?;
+                    write_constant(f, unit, value)?;
+                    f.write_str(";")?;
+                }
+            }
         }
     }
+
     Ok(())
 }
 

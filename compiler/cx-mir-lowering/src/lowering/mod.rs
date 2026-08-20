@@ -17,29 +17,24 @@ mod typing;
 
 pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistryBuilder) -> CXResult<LMIRUnit> {
     let mut prototypes = LMIRFunctionMap::new();
+    
     for function in mir.functions() {
-        if !globals::keep_function(function) {
-            continue;
-        }
         let prototype = typing::convert_prototype(function.prototype(), types);
         prototypes.insert(prototype.name.to_string(), prototype);
     }
+    
     prototypes
         .entry(cx_lmir::compiler_functions::ASSERTION.symbol_name())
         .or_insert_with(|| globals::assertion_prototype(types));
 
     let mut global_indices = HashMap::new();
     for global in mir.globals() {
-        if globals::keep_global(global) {
-            let index = global_indices.len() as u32;
-            global_indices.insert(global.id, index);
-        }
+        let index = global_indices.len() as u32;
+        global_indices.insert(global.id, index);
     }
 
     let mut lowered_globals = mir
         .globals()
-        .iter()
-        .filter(|global| globals::keep_global(global))
         .map(|global| {
             let linkage = if matches!(global.state, MIRGlobalState::External) {
                 LinkageType::External
@@ -56,9 +51,6 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistryBuilder) -> CXRes
                     _type: lowered_type,
                     state: LoweredGlobalState::ZeroInitialized,
                 },
-                MIRGlobalState::Initialized(cx_mir::MIRConstant::String(value)) => {
-                    LMIRGlobalType::StringLiteral(value.clone())
-                }
                 MIRGlobalState::Initialized(cx_mir::MIRConstant::Unit) => {
                     LMIRGlobalType::Variable {
                         _type: lowered_type,
@@ -84,7 +76,7 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistryBuilder) -> CXRes
 
     let mut functions = Vec::new();
     for function in mir.functions() {
-        if function.definition().is_none() || !globals::keep_function(function) {
+        if function.definition().is_none() {
             continue;
         }
         functions.push(functions::lower_function(

@@ -557,7 +557,7 @@ impl Display for THIRDisplay<'_, THIRUnit> {
             writeln!(f, "{}", global.display_with_definitions(self.definitions))?;
         }
 
-        writeln!(f, "\nEnd of MIR Unit")
+        writeln!(f, "\nEnd of THIR Unit")
     }
 }
 

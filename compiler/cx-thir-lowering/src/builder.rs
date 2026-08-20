@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 
-use cx_hir::ast::modifiers::HIR_CONST;
+use cx_mir::global::MIRGlobalKind;
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    MIRBasicBlockID, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID,
+    MIRBasicBlockID, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID,
     MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRRegister,
-    MIRScopeID, MIRTypeID, MIRTypeKind, MIRTypeRegistryBuilder, MIRUnit, MIRValue,
+    MIRScopeID, MIRTypeID, MIRTypeRegistryBuilder, MIRUnit, MIRValue,
 };
 use cx_thir::thir::global::THIRGlobalVariable;
 use cx_thir::{
@@ -13,7 +13,7 @@ use cx_thir::{
     registry::THIRDecomposedRegistry,
     thir::{
         data::{THIRFnPrototype, THIRFunction},
-        expression::{THIRBinOp, THIRExpression, THIRExpressionKind, THIRIntBinOp, THIRLocalID},
+        expression::{THIRExpression, THIRLocalID},
         r#type::{THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
@@ -96,14 +96,16 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub(crate) fn predeclare_global(&mut self, global: &THIRGlobalVariable) {
         let ty = lower_type(self, &global._type);
-        
+
         self.module.declare_global(
             global.name.clone(),
-            ty,
             global.linkage,
-            global.is_mutable,
-            false,
-            MIRGlobalState::ZeroInitialized,
+            MIRGlobalKind::Variable {
+                ty,
+                state: MIRGlobalState::External,
+                is_mutable: global.is_mutable,
+                is_nodrop: global._type.is_nodrop(),
+            },
         );
     }
 
@@ -182,22 +184,14 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub fn add_string_literal(&mut self, value: &str) -> MIRGlobalID {
         self.next_anonymous_symbol += 1;
+        
         let name_ident = CXIdent::from(format!("__anon_{}", self.next_anonymous_symbol));
-
-        let const_str = lower_type(
-            self,
-            &THIRType::from(THIRTypeKind::Str).with_specifier(HIR_CONST),
-        );
-        let str_ref = self.types_mut().reference_to(const_str)
-            .expect("failed to create a reference type for string literal");
-
         self.module.declare_global(
             name_ident,
-            str_ref,
             LinkageMode::Static,
-            false,
-            false,
-            MIRGlobalState::Initialized(MIRConstant::String(value.to_owned())),
+            MIRGlobalKind::StringLiteral {
+                value: value.to_owned(),
+            },
         )
     }
 
@@ -419,33 +413,6 @@ impl<'thir> MIRBuilder<'thir> {
         self.function
             .as_mut()
             .expect("no MIR function is currently active")
-    }
-}
-
-fn integer_literal(expression: &THIRExpression) -> Option<i64> {
-    match &expression.kind {
-        THIRExpressionKind::IntLiteral(value) => i64::try_from(*value).ok(),
-        THIRExpressionKind::BinaryOperation {
-            lhs,
-            rhs,
-            op: THIRBinOp::Integer { op, .. },
-        } => {
-            let lhs = integer_literal(lhs)?;
-            let rhs = integer_literal(rhs)?;
-            Some(match op {
-                THIRIntBinOp::ADD => lhs + rhs,
-                THIRIntBinOp::SUB => lhs - rhs,
-                THIRIntBinOp::MUL | THIRIntBinOp::IMUL => lhs * rhs,
-                THIRIntBinOp::DIV | THIRIntBinOp::IDIV => lhs / rhs,
-                THIRIntBinOp::MOD | THIRIntBinOp::IMOD => lhs % rhs,
-                THIRIntBinOp::SHL => lhs << rhs,
-                THIRIntBinOp::ASHR | THIRIntBinOp::LSHR => lhs >> rhs,
-                _ => return None,
-            })
-        }
-        THIRExpressionKind::Typechange(operand)
-        | THIRExpressionKind::TypeConversion { operand, .. } => integer_literal(operand),
-        _ => None,
     }
 }
 

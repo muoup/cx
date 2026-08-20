@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use cx_lmir::{
     LMIRBasicBlock, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype, LMIRGlobalValue,
-    LMIRInstruction,
+    LMIRInstruction, LMIRValue,
 };
 use cx_mir::{
     MIRBasicBlockID, MIRFunction, MIRGlobalID, MIRPlace, MIRRegister, MIRTypeID, MIRUnit,
@@ -11,11 +11,11 @@ use cx_mir::{
 #[derive(Clone)]
 pub(crate) enum PlaceBinding {
     Address {
-        value: cx_lmir::LMIRValue,
+        value: LMIRValue,
         ty: MIRTypeID,
     },
     Bitfield {
-        address: cx_lmir::LMIRValue,
+        address: LMIRValue,
         storage_type: MIRTypeID,
         value_type: MIRTypeID,
         bit_offset: usize,

@@ -1,33 +1,18 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    MIRInstr, expr::{MIRBasicBlockID, MIRBlockTarget, MIRInstrKind, MIRPlace}, global::{MIRFunction, MIRFunctionID}, ty::interface::MTRegistry, unit::MIRUnit
+    MIRInstr,
+    expr::{MIRBasicBlockID, MIRBlockTarget, MIRInstrKind, MIRPlace},
+    global::MIRFunction,
+    ty::interface::MTRegistry,
+    unit::MIRUnit,
 };
 
 use super::error::MIRValidationError;
 
 impl MIRUnit {
     pub(super) fn validate_internal(&self) -> Result<(), MIRValidationError> {
-        for (index, global) in self.globals().iter().enumerate() {
-            if global.id.index() != index {
-                return Err(MIRValidationError::NonDenseId {
-                    entity: "global",
-                    function: None,
-                    position: index,
-                    actual: global.id.index(),
-                });
-            }
-        }
-
-        for (function_index, function) in self.functions().iter().enumerate() {
-            if function.id().index() != function_index {
-                return Err(MIRValidationError::NonDenseId {
-                    entity: "function",
-                    function: None,
-                    position: function_index,
-                    actual: function.id().index(),
-                });
-            }
+        for function in self.functions() {
             self.validate_function(function)?;
         }
 
@@ -88,14 +73,6 @@ impl MIRUnit {
         let entry = definition.entry().ok_or(MIRValidationError::MissingEntry {
             function: function_id,
         })?;
-        self.check_id(
-            function_id,
-            None,
-            None,
-            "entry block",
-            entry.index(),
-            definition.blocks().len(),
-        )?;
 
         if !definition
             .block(entry)
@@ -112,14 +89,6 @@ impl MIRUnit {
         let mut block_params = BTreeSet::new();
         for block in definition.blocks().iter() {
             for param in &block.params {
-                self.check_id(
-                    function_id,
-                    Some(block.id),
-                    None,
-                    "block parameter register",
-                    param.index(),
-                    definition.registers().len(),
-                )?;
                 if !block_params.insert(*param) {
                     return Err(MIRValidationError::DuplicateBlockParameter {
                         function: function_id,
@@ -190,29 +159,6 @@ impl MIRUnit {
         Ok(())
     }
 
-    pub(super) fn check_id(
-        &self,
-        function: MIRFunctionID,
-        block: Option<MIRBasicBlockID>,
-        instruction: Option<usize>,
-        entity: &'static str,
-        id: usize,
-        upper_bound: usize,
-    ) -> Result<(), MIRValidationError> {
-        if id < upper_bound {
-            Ok(())
-        } else {
-            Err(MIRValidationError::IdOutOfRange {
-                function,
-                block,
-                instruction,
-                entity,
-                id,
-                upper_bound,
-            })
-        }
-    }
-
     pub(super) fn validate_instruction(
         &self,
         function: &MIRFunction,
@@ -220,15 +166,18 @@ impl MIRUnit {
         instruction_index: usize,
         instruction: &MIRInstr,
     ) -> Result<(), MIRValidationError> {
-        let function_id = function.id();
-        let definition = function.definition().expect("validated function is missing definition");
-        
+        let definition = function
+            .definition()
+            .expect("validated function is missing definition");
+
         let mut bad_id = None;
         let check_place = |place| match place {
             MIRPlace::FunctionLocal(id) if id.index() >= definition.places().len() => {
                 Some(("place", id.index(), definition.places().len()))
             }
-            MIRPlace::Parameter(id) if id.index() >= function.prototype().signature.params.len() => {
+            MIRPlace::Parameter(id)
+                if id.index() >= function.prototype().signature.params.len() =>
+            {
                 Some((
                     "parameter",
                     id.index(),
@@ -273,17 +222,6 @@ impl MIRUnit {
             if bad_id.is_none() && successor.index() >= definition.blocks().len() {
                 bad_id = Some(("block target", successor.index(), definition.blocks().len()));
             }
-        }
-
-        if let Some((entity, id, upper_bound)) = bad_id {
-            self.check_id(
-                function_id,
-                Some(block),
-                Some(instruction_index),
-                entity,
-                id,
-                upper_bound,
-            )?;
         }
 
         self.validate_targets(function, block, instruction_index, instruction)?;
@@ -332,12 +270,14 @@ impl MIRUnit {
         instruction: usize,
         target: &MIRBlockTarget,
     ) -> Result<(), MIRValidationError> {
-        let definition = function.definition().expect("validated function is missing definition");
+        let definition = function
+            .definition()
+            .expect("validated function is missing definition");
 
         let Some(block) = definition.block(target.block) else {
             return Ok(());
         };
-        
+
         if target.args.len() != block.params.len() {
             return Err(MIRValidationError::BlockArgumentCount {
                 function: function.id(),
