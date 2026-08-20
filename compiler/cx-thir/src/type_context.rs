@@ -3,8 +3,7 @@ use cx_target::ArchitectureConfig;
 use cx_util::namespace::QualifiedName;
 
 use crate::{
-    layout::THIRTypeLayout,
-    thir::data::{THIRFnSignature, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
+    layout::THIRTypeLayout, thir::data::{THIRFnSignature, THIRIntType, THIRType, THIRTypeID, THIRTypeKind}
 };
 
 pub trait THIRTypeContext {

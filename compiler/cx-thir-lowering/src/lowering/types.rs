@@ -1,5 +1,6 @@
-use cx_mir::{MIRBitfieldAccess, MIRFloatType, MIRIntType, MIRType, MIRTypeID, MIRTypeKind};
+use cx_mir::{MIRBitfieldAccess, MIRFloatType, MIRIntType, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, ty::interface::MTRegistry};
 use cx_thir::{
+    layout::{THIRTypeLayout, layout_of},
     thir::r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
     type_context::THIRTypeContext,
 };
@@ -13,10 +14,11 @@ pub fn lower_type(builder: &mut MIRBuilder, ty: &THIRType) -> MIRTypeID {
 
     let kind = lower_type_kind(builder, &ty.kind);
     let debug_name = builder.registry().type_debug_name(ty);
-    let id = builder.types_mut().intern(MIRType {
-        kind,
-        minimum_alignment: ty.attributes.minimum_alignment,
-    });
+    let layout = layout_of(builder.registry(), ty)
+        .map(|layout| lower_layout(builder, &layout))
+        .unwrap_or_else(|_| panic!("THIR type {ty:?} has no layout"));
+
+    let id = builder.types_mut().intern(MIRType { kind, layout });
     if builder.types().debug_name(id).is_none()
         && let Some(debug_name) = debug_name
     {
@@ -39,15 +41,19 @@ pub fn lower_type_id(builder: &mut MIRBuilder, id: THIRTypeID) -> MIRTypeID {
         );
         builder
             .types_mut()
-            .define(mir_id, MIRType::new(MIRTypeKind::Undefined))
+            .define(mir_id, MIRType::undefined())
             .expect("reserved THIR type ID must have one MIR definition");
         builder.lowering_types.remove(&id);
         return mir_id;
     };
     let debug_name = builder.registry().type_debug_name(&ty);
+    let layout = layout_of(builder.registry(), &ty)
+        .map(|layout| lower_layout(builder, &layout))
+        .unwrap_or_else(|_| panic!("THIR type {ty:?} has no layout"));
+
     let definition = MIRType {
         kind: lower_type_kind(builder, &ty.kind),
-        minimum_alignment: ty.attributes.minimum_alignment,
+        layout,
     };
     builder
         .types_mut()
@@ -126,6 +132,13 @@ pub(crate) fn lower_type_kind(builder: &mut MIRBuilder, kind: &THIRTypeKind) -> 
         },
         THIRTypeKind::Undefined => MIRTypeKind::Undefined,
         THIRTypeKind::Str => MIRTypeKind::Str,
+    }
+}
+
+pub(crate) fn lower_layout(_: &mut MIRBuilder, layout: &THIRTypeLayout) -> MIRTypeLayout {
+    MIRTypeLayout {
+        size: layout.size,
+        alignment: layout.alignment,
     }
 }
 

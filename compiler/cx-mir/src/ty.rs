@@ -20,6 +20,16 @@ impl MIRType {
     pub fn new(kind: MIRTypeKind, layout: MIRTypeLayout) -> Self {
         Self { kind, layout }
     }
+
+    pub fn undefined() -> Self {
+        Self {
+            kind: MIRTypeKind::Undefined,
+            layout: MIRTypeLayout {
+                size: 0,
+                alignment: 1,
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

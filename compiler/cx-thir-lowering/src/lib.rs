@@ -10,15 +10,5 @@ pub use builder::MIRBuilder;
 pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
     let mut builder = MIRBuilder::new(thir);
     lowering::lower_unit(&mut builder, thir)?;
-
-    builder.compute_layouts().map_err(|error| {
-        cx_log::error::CXErr::new(
-            cx_log::error::message::CXStdErrMessage::error("MIRLayoutError", error.to_string()),
-            cx_log::error::context::CXInternalContext::error(
-                "MIR layout calculation failed during MIR generation",
-            ),
-        )
-    })?;
-
     Ok(builder.finish())
 }

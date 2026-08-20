@@ -80,10 +80,6 @@ impl<'thir> MIRBuilder<'thir> {
         self.module.finish(self.types)
     }
 
-    pub(crate) fn compute_layouts(&mut self) -> Result<(), cx_mir::MIRLayoutError> {
-        self.types.compute_layouts()
-    }
-
     pub(crate) fn set_global_state(&mut self, id: MIRGlobalID, state: MIRGlobalState) {
         self.module.set_global_state(id, state);
     }
@@ -129,8 +125,8 @@ impl<'thir> MIRBuilder<'thir> {
         symbol: &CXIdent,
     ) -> MIRConstant {
         let ty = lower_type(self, expression_type);
-        let length = match self.types().kind(ty) {
-            Some(MIRTypeKind::Array { length, .. }) => *length,
+        let length = match self.types().kind(ty).unwrap() {
+            MIRTypeKind::Array { length, .. } => *length,
             _ => panic!("string literal initializer target is not an array"),
         };
         let global = self

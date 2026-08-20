@@ -12,7 +12,7 @@ pub struct MIRTypeRegistryBuilder {
     definitions: Vec<Option<MIRType>>,
 
     interner: HashMap<MIRType, MIRTypeID>,
-    debug_names: Vec<Option<String>>,
+    debug_names: HashMap<MIRTypeID, String>,
     next_id: usize,
 }
 
@@ -20,7 +20,6 @@ pub struct MIRTypeRegistryBuilder {
 pub struct MIRTypeRegistry {
     architecture: ArchitectureConfig,
     definitions: Vec<MIRType>,
-
     debug_names: HashMap<MIRTypeID, String>,
 }
 
@@ -59,7 +58,8 @@ impl MTRegistry for MIRTypeRegistryBuilder {
     }
 
     fn debug_name(&self, id: MIRTypeID) -> Option<&str> {
-        self.debug_names.get(id.index()).and_then(|s| s.as_deref())
+        self.debug_names.get(&id)
+            .map(|s| s.as_str())
     }
 }
 
@@ -69,7 +69,7 @@ impl MIRTypeRegistryBuilder {
             architecture,
             definitions: Vec::new(),
             interner: HashMap::new(),
-            debug_names: Vec::new(),
+            debug_names: HashMap::new(),
             next_id: 0,
         }
     }
@@ -87,12 +87,16 @@ impl MIRTypeRegistryBuilder {
         id
     }
 
+    pub fn set_debug_name(&mut self, id: MIRTypeID, name: String) {
+        self.debug_names.insert(id, name);
+    }
+
     pub fn reserve_id_space(&mut self, end: usize) {
         self.next_id = self.next_id.max(end);
         let end = end;
+        
         if self.definitions.len() < end {
             self.definitions.resize_with(end, || None);
-            self.debug_names.resize(end, None);
         }
     }
 
@@ -122,7 +126,6 @@ impl MIRTypeRegistryBuilder {
         if self.definitions.len() <= index {
             let len = index + 1;
             self.definitions.resize_with(len, || None);
-            self.debug_names.resize(len, None);
         }
     }
 }

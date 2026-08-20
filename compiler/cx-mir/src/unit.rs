@@ -1,4 +1,7 @@
+use cx_tokens::TokenRange;
+
 use crate::{
+    MIRBasicBlockID, MIRScopeID,
     global::{MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalVariable},
     ty::registry::MIRTypeRegistryBuilder,
 };
@@ -41,5 +44,23 @@ impl MIRUnit {
 
     pub fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
         self.globals.get(id.index())
+    }
+
+    pub fn instruction_range(
+        &self,
+        function: MIRFunctionID,
+        block: MIRBasicBlockID,
+        instruction: usize,
+    ) -> Option<&TokenRange> {
+        self.function(function)
+            .and_then(|function| function.block(block))
+            .and_then(|block| block.instrs.get(instruction))
+            .map(|instruction| &instruction.token_range)
+    }
+
+    pub fn scope_range(&self, function: MIRFunctionID, scope: MIRScopeID) -> Option<&TokenRange> {
+        self.function(function)
+            .and_then(|function| function.scope(scope))
+            .map(|scope| &scope.token_range)
     }
 }

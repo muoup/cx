@@ -4,6 +4,7 @@ use cx_lmir::{
     LMIRIntBinOp, LMIRValue,
 };
 use cx_mir::ty::interface::MTRegistry;
+use cx_mir::ty::layout::{field_layout, tagged_union_tag_offset};
 use cx_mir::{
     MIRBlockTarget, MIRConstant, MIRFieldLayout, MIRPlace, MIRRegister, MIRTypeID, MIRTypeKind,
     MIRValue,
@@ -74,33 +75,6 @@ fn is_direct_reference_parameter(context: &FunctionLoweringContext<'_>, place: M
             .and_then(|parameter| context.types().kind(parameter.ty).ok()),
         Some(MIRTypeKind::MemoryReference { .. })
     )
-}
-
-fn semantic_sum_type(context: &FunctionLoweringContext<'_>, sum_type: MIRTypeID) -> MIRTypeID {
-    match context.types().kind(sum_type).unwrap() {
-        MIRTypeKind::MemoryReference { inner, .. } => *inner,
-        _ => sum_type,
-    }
-}
-
-pub(super) fn variant_type(
-    context: &FunctionLoweringContext<'_>,
-    sum_type: MIRTypeID,
-    index: usize,
-) -> MIRTypeID {
-    let sum_type = semantic_sum_type(context, sum_type);
-    let MIRTypeKind::TaggedUnion { variants } = context.types().kind(sum_type).unwrap() else {
-        panic!("variant operation on non-tagged union")
-    };
-    variants[index].ty()
-}
-
-pub(super) fn tag_offset(context: &FunctionLoweringContext<'_>, sum_type: MIRTypeID) -> usize {
-    let sum_type = semantic_sum_type(context, sum_type);
-    context
-        .types()
-        .tagged_union_tag_offset(sum_type)
-        .unwrap_or_else(|error| panic!("invalid tagged-union layout: {error}"))
 }
 
 pub(super) fn lower_value(
@@ -479,7 +453,8 @@ pub(super) fn load_discriminant(
         context.types().architecture(),
         LMIRTypeKind::Integer(LMIRIntegerType::I8),
     );
-    let address = offset_address(context, base, tag_offset(context, sum_type), &tag_ty);
+    let address = offset_address(context, base, tagged_union_tag_offset(context.types(), sum_type).unwrap(), &tag_ty);
+
     match result {
         Some(register) => {
             emit_kind_to(
@@ -511,10 +486,8 @@ pub(super) fn field_binding(
     index: usize,
 ) -> PlaceBinding {
     let base = address(context, base);
-    let layout = context
-        .types()
-        .field_layout(aggregate, index)
-        .unwrap_or_else(|error| panic!("invalid MIR field projection: {error}"));
+    let layout = field_layout(context.types(), aggregate, index).unwrap();
+
     match layout {
         MIRFieldLayout::Standard { offset, ty } => PlaceBinding::Address {
             value: if offset == 0 {

@@ -6,6 +6,7 @@ use cx_lmir::{
     LMIRParameterABI, LMIRPtrBinOp, LMIRReturnABI, LMIRValue, LinkageType,
 };
 use cx_mir::ty::interface::MTRegistry;
+use cx_mir::ty::layout::tagged_union_tag_offset;
 use cx_mir::{
     MIRAggregateOp, MIRAssignTarget, MIRBinaryOp, MIRCoercion, MIRConstant, MIRFloatBinaryOp,
     MIRFnParam, MIRFnSignature, MIRFunctionType, MIRInstrKind, MIRIntBinaryOp, MIRIntType,
@@ -18,8 +19,8 @@ use crate::context::{FunctionLoweringContext, PlaceBinding};
 
 use super::memory::{
     address, binding_for_place, binding_type, field_binding, is_address_valued, load_binding,
-    load_discriminant, lower_target, lower_value, store_address, store_binding, tag_offset,
-    unreachable_target, value_as_binding, variant_type,
+    load_discriminant, lower_target, lower_value, store_address, store_binding, unreachable_target,
+    value_as_binding,
 };
 use super::output::{
     allocate_temp, emit_kind_to, emit_temp, emit_to, emit_void, int_constant, integer_kind,
@@ -385,10 +386,21 @@ fn lower_aggregate(context: &mut FunctionLoweringContext<'_>, operation: &MIRAgg
                     base,
                     variant,
                     sum_type,
-                } => PlaceBinding::Address {
-                    value: address(context, binding_for_place(context, *base)),
-                    ty: variant_type(context, *sum_type, *variant),
-                },
+                } => {
+                    let base = address(context, binding_for_place(context, *base));
+                    let MIRTypeKind::TaggedUnion { variants } = context
+                        .types()
+                        .kind(*sum_type)
+                        .expect("invalid MIR sum type")
+                    else {
+                        panic!("variant projection on non-sum type");
+                    };
+
+                    PlaceBinding::Address {
+                        value: base,
+                        ty: variants.get(*variant).expect("invalid variant index").ty(),
+                    }
+                }
             };
             context.bind_place(*out, binding);
         }
@@ -499,14 +511,26 @@ fn lower_variant_construct(
         lowered,
     );
     let base = register_value(context, out);
-    let variant_ty = variant_type(context, sum_type, variant);
+    let MIRTypeKind::TaggedUnion { variants } = context
+        .types()
+        .kind(sum_type)
+        .expect("invalid MIR sum type")
+    else {
+        panic!("variant construction on non-sum type");
+    };
+    let variant_ty = variants.get(variant).expect("invalid variant index").ty();
     let value = lower_value(context, value);
     store_address(context, base.clone(), value, variant_ty);
     let tag_ty = LMIRType::with_implicit_abi(
         context.types().architecture(),
         LMIRTypeKind::Integer(LMIRIntegerType::I8),
     );
-    let tag_address = offset_address(context, base, tag_offset(context, sum_type), &tag_ty);
+    let tag_address = offset_address(
+        context,
+        base,
+        tagged_union_tag_offset(context.types(), sum_type).unwrap(),
+        &tag_ty,
+    );
     emit_void(
         context,
         LMIRInstructionKind::Store {
@@ -524,8 +548,18 @@ fn lower_variant_project(
     value: &MIRValue,
     sum_type: MIRTypeID,
 ) {
-    let variant_type = variant_type(context, sum_type, variant);
-    let lowered = lowered_type(context, variant_type);
+    let MIRTypeKind::TaggedUnion { variants } = context
+        .types()
+        .kind(sum_type)
+        .expect("invalid MIR sum type")
+    else {
+        panic!("variant projection on non-sum type");
+    };
+    let variant_type = variants.get(variant).expect("invalid variant index").ty();
+    let lowered = lowered_type(
+        context,
+        variant_type,
+    );
     if lowered.is_void() {
         emit_to(
             context,

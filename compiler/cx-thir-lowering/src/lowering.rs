@@ -10,7 +10,7 @@ pub(crate) mod types;
 use cx_log::CXResult;
 use cx_mir::{
     MIRAggregateOp, MIRAssignTarget, MIRBlockTarget, MIRConstant, MIRInstrKind, MIRIntType,
-    MIRPlace, MIRPlaceAggregateOp, MIRValue, MIRValueAggregateOp,
+    MIRPlace, MIRPlaceAggregateOp, MIRValue, MIRValueAggregateOp, ty::interface::MTRegistry,
 };
 use cx_thir::{
     THIRUnit,
