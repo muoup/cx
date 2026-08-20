@@ -1,6 +1,7 @@
 use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
 use cx_log::CXResult;
-use cx_thir::thir::{data::THIRComptimeValueType, expression::THIRExpression};
+use cx_thir::thir::{data::THIRComptimeValueType, expression::THIRExpression, r#type::THIRType};
+use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 
 use crate::{
@@ -12,7 +13,6 @@ use crate::{
     environment::TypeEnvironment,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
-        control_flow::expr_may_fall_through,
         result::{ComptimeFunctionValue, StagedFunctionValue, TypecheckResult},
         typechecker::typecheck_expr,
     },
@@ -205,12 +205,6 @@ fn check_staged_source_argument(
         )?;
         let arg = arg.standard_ready_coerce(env, call_range)?;
         if target._type.is_unreachable() {
-            if expr_may_fall_through(&arg) {
-                return env.log_error(
-                    expr.token_range(),
-                    "Staged expression with type 'unreachable' may fall through".to_string(),
-                );
-            }
             return Ok(());
         }
         coerce_staged_argument(env, call_range, TypecheckResult::from(arg), &target._type)
@@ -265,9 +259,9 @@ pub(crate) fn evaluate_staged_expression_call(
 
 fn coerce_staged_argument(
     env: &mut TypeEnvironment,
-    call_range: &cx_tokens::TokenRange,
+    call_range: &TokenRange,
     arg: TypecheckResult,
-    target_type: &cx_thir::thir::data::THIRType,
+    target_type: &THIRType,
 ) -> CXResult<THIRExpression> {
     let arg = arg.standard_ready_coerce(env, call_range)?;
 

@@ -1,4 +1,4 @@
-use cx_hir::ast::{HIR, HIRStmt, global_var::HIRGlobalVariable, modifiers::HIR_CONST};
+use cx_hir::ast::{HIR, HIRStmt, global_var::HIRGlobalVariable};
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
 use cx_thir::thir::data::THIRFunction;
@@ -16,9 +16,7 @@ mod type_checking;
 use crate::globals::lower_global;
 use crate::requests::fulfill_requests;
 use crate::symbol::completion::complete_prototype;
-use crate::type_checking::typechecker::typecheck_expr;
 use crate::{environment::TypeEnvironment, type_checking::functions::typecheck_function};
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 pub fn typecheck(env: &mut TypeEnvironment, ast: &HIR) -> CXResult<()> {
     for definition in &ast.definition_stmts {

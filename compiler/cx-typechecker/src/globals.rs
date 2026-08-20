@@ -31,7 +31,6 @@ pub(crate) fn lower_global(
 ) -> CXResult<()> {
     let _type = complete_type(env, &namespace, hir_type)?;
     ensure_valid_type_component(env, hir_type.range(), &_type, "a global variable", true)?;
-    println!("Lowering global variable: {}::{} of type {}", namespace, name, _type.display_with(&env.symbols));
     
     let symbol_name = completed_symbol_name(
         env,
