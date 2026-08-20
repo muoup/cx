@@ -3,9 +3,9 @@ use std::collections::HashSet;
 use cx_mir::global::MIRGlobalKind;
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    MIRBasicBlockID, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID,
-    MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRRegister,
-    MIRScopeID, MIRTypeID, MIRTypeRegistryBuilder, MIRUnit, MIRValue,
+    MIRBasicBlockID, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID, MIRGlobalID,
+    MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRRegister, MIRScopeID,
+    MIRTypeID, MIRTypeRegistryBuilder, MIRUnit, MIRValue,
 };
 use cx_thir::thir::global::THIRGlobalVariable;
 use cx_thir::{
@@ -106,7 +106,7 @@ impl<'thir> MIRBuilder<'thir> {
                 is_mutable: global.is_mutable,
                 is_nodrop: global._type.is_nodrop(),
             },
-            false
+            false,
         );
     }
 
@@ -185,7 +185,7 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub fn add_string_literal(&mut self, value: &str) -> MIRGlobalID {
         self.next_anonymous_symbol += 1;
-        
+
         let name_ident = CXIdent::from(format!("__anon_{}", self.next_anonymous_symbol));
         self.module.declare_global(
             name_ident,
@@ -193,7 +193,7 @@ impl<'thir> MIRBuilder<'thir> {
             MIRGlobalKind::StringLiteral {
                 value: value.to_owned(),
             },
-            true
+            true,
         )
     }
 

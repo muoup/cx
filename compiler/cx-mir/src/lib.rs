@@ -3,7 +3,6 @@ pub mod global;
 pub mod op;
 pub mod ty;
 pub mod unit;
-pub mod validator;
 
 pub(crate) mod format;
 
@@ -27,4 +26,3 @@ pub use ty::{
     MIRLayoutError, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRTypeRegistryBuilder,
 };
 pub use unit::MIRUnit;
-pub use validator::{MIRValidationError, validate};

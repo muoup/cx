@@ -21,7 +21,7 @@ impl<T: Clone> ModuleSymbol<T> {
         self.used = used;
         self
     }
-    
+
     fn get(&mut self) -> T {
         self.used = true;
         self.id.clone()
@@ -132,7 +132,10 @@ impl MIRModuleState {
     }
 
     pub(crate) fn set_global_state(&mut self, id: MIRGlobalID, state: MIRGlobalState) {
-        let global = self.globals.get_mut(&id).expect("global is missing from module state");
+        let global = self
+            .globals
+            .get_mut(&id)
+            .expect("global is missing from module state");
         let MIRGlobalKind::Variable { state: s, .. } = &mut global.kind else {
             panic!("global is not a variable");
         };

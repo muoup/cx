@@ -769,8 +769,14 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             } => {
                 write!(
                     f,
-                    "CreateStackVariable {} (local_id={:?}) <'",
-                    name, local_id
+                    "CreateLocalVariable {} (ty=",
+                    name
+                )?;
+                self.write_type(f, _type)?;
+                write!(
+                    f,
+                    ", local_id={:?}) <'",
+                    local_id
                 )?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ", adopting={adopting}>")?;
