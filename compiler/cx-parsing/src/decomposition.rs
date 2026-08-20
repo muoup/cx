@@ -1,8 +1,8 @@
 use cx_hir::{
     ast::{
+        HIRDefinition, HIRStmt,
         global_var::HIRGlobalVariable,
         template::{HIRTemplateInput, HIRTemplatePrototype},
-        HIRDefinition, HIRStmt,
     },
     symbols::{HIRSymbol, HIRSymbolKind, SymbolNamespaceData},
 };
@@ -86,6 +86,12 @@ fn insert_symbol(
         .cloned()
     {
         let visibility = existing.visibility.max(symbol.visibility);
+        if let Some(symbol) = coalesce_type_declaration(name.as_str(), &existing.kind, &symbol.kind)
+        {
+            env.get_bucket_mut(namespace)
+                .insert_symbol(name, HIRSymbol::new(visibility, symbol));
+            return Ok(());
+        }
         let mut definitions = match existing.kind {
             HIRSymbolKind::DuplicateDefinition(definitions) => definitions,
             kind => vec![kind],
@@ -101,6 +107,48 @@ fn insert_symbol(
 
     env.get_bucket_mut(namespace).insert_symbol(name, symbol);
     Ok(())
+}
+
+fn coalesce_type_declaration(
+    name: &str,
+    existing: &HIRSymbolKind,
+    incoming: &HIRSymbolKind,
+) -> Option<HIRSymbolKind> {
+    let (HIRSymbolKind::Type(existing_type), HIRSymbolKind::Type(incoming_type)) =
+        (existing, incoming)
+    else {
+        return None;
+    };
+
+    let existing_kind = type_declaration_kind(name, existing_type)?;
+    let incoming_kind = type_declaration_kind(name, incoming_type)?;
+    if existing_kind.0 != incoming_kind.0 {
+        return None;
+    }
+
+    match (existing_kind.1, incoming_kind.1) {
+        (true, false) => Some(incoming.clone()),
+        (false, true) | (true, true) => Some(existing.clone()),
+        (false, false) => None,
+    }
+}
+
+fn type_declaration_kind(name: &str, ty: &HIRType) -> Option<(PredeclarationType, bool)> {
+    match &ty.kind {
+        HIRTypeKind::Identifier {
+            name: definition_name,
+            predeclaration,
+            template_input: None,
+        } if *predeclaration != PredeclarationType::None
+            && definition_name.namespace.is_root()
+            && definition_name.name.as_str() == name =>
+        {
+            Some((*predeclaration, true))
+        }
+        HIRTypeKind::Structured { .. } => Some((PredeclarationType::Struct, false)),
+        HIRTypeKind::Union { .. } => Some((PredeclarationType::Union, false)),
+        _ => None,
+    }
 }
 
 fn decompose_stmt(env: &mut DecompositionEnv, definition: &HIRDefinition) -> CXResult<()> {

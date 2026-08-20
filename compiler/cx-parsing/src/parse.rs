@@ -4,7 +4,7 @@ use cx_hir::ast::{
     global_var::HIRGlobalVariable,
     modifiers::{HIRSymbolNameScheme, LinkageMode},
     template::HIRTemplatePrototype,
-    types::HIRTypeKind,
+    types::{HIRTypeKind, PredeclarationType},
     HIRStmt,
 };
 use cx_log::CXResult;
@@ -207,14 +207,24 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
 
     if let HIRTypeKind::Identifier {
         name: type_name,
+        predeclaration,
         template_input: None,
-        ..
     } = &_type.kind
     {
-        if type_name.namespace.is_root() && type_name.name == name {
+        let is_existing_type_alias = *predeclaration == PredeclarationType::None
+            || data.ast.definition_stmts.iter().any(|definition| {
+                matches!(
+                    &definition.stmt,
+                    HIRStmt::TypeDefinition {
+                        name: Some(existing),
+                        ..
+                    } if existing == &name
+                )
+            });
+        if type_name.namespace.is_root() && type_name.name == name && is_existing_type_alias {
             return Ok(());
         }
-    };
+    }
 
     data.add_stmt(HIRStmt::TypeDefinition {
         name: Some(name),

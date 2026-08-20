@@ -386,6 +386,7 @@ fn write_type_body(
             write_aggregate(f, "tagged_union", ty, variants, definitions, state)
         }
         THIRTypeKind::Void => write!(f, "void"),
+        THIRTypeKind::Unreachable => write!(f, "unreachable"),
         THIRTypeKind::PointerTo { inner_type } => {
             write_type_id(f, definitions, *inner_type, state)?;
             write!(f, "*")?;
@@ -1177,6 +1178,11 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 Ok(())
             }
+            THIRExpressionKind::Unreachable => {
+                write!(f, "Unreachable <'")?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, ">")
+            }
             THIRExpressionKind::Yield { value } => {
                 write!(f, "Yield <'")?;
                 self.write_type(f, &self.expr._type)?;
@@ -1468,6 +1474,7 @@ impl Display for THIRCoercion {
 
             THIRCoercion::ReinterpretBits => write!(f, "reinterpret_bits"),
             THIRCoercion::Typechange => write!(f, "typechange"),
+            THIRCoercion::Unreachable => write!(f, "unreachable"),
         }
     }
 }

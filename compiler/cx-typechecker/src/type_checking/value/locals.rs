@@ -1,9 +1,8 @@
 use crate::{
     environment::TypeEnvironment,
-    symbol::{completion::complete_type, name_mangling::mangle_static_symbol},
+    symbol::{completion::{complete_type, ensure_valid_type_component}, name_mangling::mangle_static_symbol},
     type_checking::{
         coercion::implicit::implicit_cast, result::TypecheckResult, typechecker::typecheck_expr,
-        value::ensure_valid_allocation_type,
     },
 };
 use cx_hir::ast::{
@@ -34,7 +33,7 @@ pub(crate) fn typecheck_var_declaration(
     let ty = complete_type(env, namespace, ty)?;
     let mem_type = env.symbols.mem_ref_to(ty.clone());
 
-    ensure_valid_allocation_type(env, expr.token_range().clone(), "a variable", &ty)?;
+    ensure_valid_type_component(env, expr.token_range(), &ty, "a variable", true)?;
 
     let expr = match linkage {
         LinkageMode::Extern => {

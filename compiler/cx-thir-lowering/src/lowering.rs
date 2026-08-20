@@ -61,6 +61,11 @@ fn lower_function(
 
     if !builder.current_block_terminated() {
         control_flow::lower_root_defers(builder)?;
+        if function.prototype.signature().return_type.is_unreachable()
+            && !builder.current_block_terminated()
+        {
+            builder.emit(MIRInstrKind::Unreachable);
+        }
     }
 
     builder.finish_function();
@@ -754,6 +759,10 @@ fn lower_expression(
                 builder.emit(MIRInstrKind::Return { value });
                 MIRValue::Constant(MIRConstant::Unit)
             }
+            THIRExpressionKind::Unreachable => {
+                builder.emit(MIRInstrKind::Unreachable);
+                MIRValue::Constant(MIRConstant::Unit)
+            }
             THIRExpressionKind::Yield { value } => {
                 let value_type = value
                     .as_deref()
@@ -824,7 +833,7 @@ fn lower_expression(
                 if *creates_scope {
                     let (scope, defers) = builder.pop_lexical_scope();
                     if !builder.current_block_terminated() {
-                        if expression._type.is_unit() {
+                        if expression._type.is_void() {
                             control_flow::lower_scope_exit(builder, scope, &defers)?;
                         } else {
                             result = control_flow::finish_value_cleanup(
@@ -866,6 +875,10 @@ fn lower_expression(
                 operand,
                 conversion,
             } => {
+                if matches!(conversion, THIRCoercion::Unreachable) {
+                    lower_expression(builder, operand)?;
+                    return Ok(MIRValue::Constant(MIRConstant::Undefined));
+                }
                 if matches!(conversion, THIRCoercion::ReinterpretBits)
                     && matches!(&operand._type.kind, THIRTypeKind::MemoryReference { .. })
                     && matches!(

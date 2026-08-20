@@ -15,7 +15,8 @@ pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
         THIRExpressionKind::Return { .. }
         | THIRExpressionKind::Yield { .. }
         | THIRExpressionKind::Break
-        | THIRExpressionKind::Continue => false,
+        | THIRExpressionKind::Continue
+        | THIRExpressionKind::Unreachable => false,
         THIRExpressionKind::Goto { .. } => true,
         THIRExpressionKind::Label { statement, .. } => expr_may_fall_through(statement),
         THIRExpressionKind::Unsafe { expression, .. } => expr_may_fall_through(expression),

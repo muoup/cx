@@ -63,7 +63,7 @@ fn realize_tagged_union_constructor(
         LinkageMode::Static,
         THIRFnSignature {
             return_type: union_type.clone(),
-            params: if variant_type.is_unit() {
+            params: if variant_type.is_void() {
                 Vec::new()
             } else {
                 vec![THIRParameter {
@@ -78,7 +78,7 @@ fn realize_tagged_union_constructor(
     )
     .with_debug_name(debug_name);
 
-    let value = if variant_type.is_unit() {
+    let value = if variant_type.is_void() {
         THIRExpression {
             token_range: TokenRange::internal(),
             _type: variant_type.clone(),

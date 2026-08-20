@@ -365,7 +365,7 @@ fn resolve_type_constructor(
         LinkageMode::Static,
         THIRFnSignature {
             return_type: union_type.clone(),
-            params: if variant_type.is_unit() {
+            params: if variant_type.is_void() {
                 Vec::new()
             } else {
                 vec![THIRParameter {

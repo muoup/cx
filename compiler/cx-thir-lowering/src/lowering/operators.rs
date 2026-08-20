@@ -161,5 +161,6 @@ pub(super) fn lower_coercion(
         THIRCoercion::GetFnPtr => MIRCoercion::FunctionToPointer,
         THIRCoercion::Typechange => MIRCoercion::TypeChange,
         THIRCoercion::ReinterpretBits => MIRCoercion::ReinterpretBits,
+        THIRCoercion::Unreachable => unreachable!("unreachable coercions do not reach MIR coercion lowering"),
     }
 }

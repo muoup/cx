@@ -371,7 +371,10 @@ fn evaluate_type_conversion(
         THIRCoercion::Typechange | THIRCoercion::ReinterpretBits => {
             retag_value(value, result_type, token_range)
         }
-        THIRCoercion::PtrToInt { .. } | THIRCoercion::IntToPtr { .. } | THIRCoercion::GetFnPtr => {
+        THIRCoercion::PtrToInt { .. }
+        | THIRCoercion::IntToPtr { .. }
+        | THIRCoercion::GetFnPtr
+        | THIRCoercion::Unreachable => {
             engine.log_error(
                 token_range,
                 "Invalid conversion in comptime context".to_string(),

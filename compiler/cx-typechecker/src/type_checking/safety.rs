@@ -117,6 +117,7 @@ pub(crate) fn validate_safe_expression(
 
         THIRExpressionKind::Break
         | THIRExpressionKind::Continue
+        | THIRExpressionKind::Unreachable
         | THIRExpressionKind::Goto { .. } => Ok(()),
         THIRExpressionKind::Label { statement, .. } => validate_safe_expression(env, statement),
         THIRExpressionKind::If {

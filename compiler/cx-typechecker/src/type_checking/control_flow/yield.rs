@@ -65,7 +65,7 @@ pub fn typecheck_yield(
             Some(Box::new(expr))
         }
 
-        None if target_type.as_ref().is_some_and(THIRType::is_unit) => {
+        None if target_type.as_ref().is_some_and(THIRType::is_void) => {
             if let Some(context) = env.function.current_yield_context_mut() {
                 context.saw_empty_yield = true;
             }

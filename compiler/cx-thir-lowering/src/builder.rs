@@ -139,7 +139,7 @@ impl<'thir> MIRBuilder<'thir> {
                 .with_nodrop(nodrop)
             })
             .collect();
-        let return_type = if matches!(signature.return_type.kind, THIRTypeKind::Void) {
+        let return_type = if signature.return_type.is_void() || signature.return_type.is_unreachable() {
             self.types().unit()
         } else {
             lower_type(self, &signature.return_type)

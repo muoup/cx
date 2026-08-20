@@ -1,0 +1,7 @@
+unreachable halt() {
+    while (1) {}
+}
+
+int main() {
+    halt();
+}

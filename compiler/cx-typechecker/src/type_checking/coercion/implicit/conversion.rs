@@ -34,6 +34,10 @@ pub fn try_implicit_coercion(
         return CoercionResult::success(expr);
     }
 
+    if from_type.is_unreachable() {
+        return coercion_expr(expr, target_type.clone(), THIRCoercion::Unreachable);
+    }
+
     if compatible::compatible_types(env, &expr._type, target_type)? {
         return CoercionResult::success(THIRExpression {
             token_range: expr.token_range.clone(),
@@ -264,8 +268,8 @@ fn internal(
             let from_inner = env.symbols.resolve_type_id(*from_ptr);
             let to_inner = env.symbols.resolve_type_id(*to_ptr);
 
-            if env.symbols.resolve_type_id(*from_ptr).is_unit()
-                || env.symbols.resolve_type_id(*to_ptr).is_unit()
+            if env.symbols.resolve_type_id(*from_ptr).is_void()
+                || env.symbols.resolve_type_id(*to_ptr).is_void()
             {
                 return implicit::coercion_expr(
                     expr,

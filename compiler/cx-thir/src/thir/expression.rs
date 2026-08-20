@@ -253,6 +253,7 @@ pub enum THIRExpressionKind {
         postcondition: Option<THIRPostcondition>,
         value: Option<Box<THIRExpression>>,
     },
+    Unreachable,
     Yield {
         value: Option<Box<THIRExpression>>,
     },
@@ -469,6 +470,7 @@ pub enum THIRCoercion {
     // A similar no-op operation like Typechange, but represents conversions that *do* change the semantic
     // meaning of the bits, such as converting from an f32 to an i32
     ReinterpretBits,
+    Unreachable,
 }
 
 #[derive(Clone, Debug)]

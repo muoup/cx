@@ -158,6 +158,9 @@ fn lower_global_conversion(
         | THIRCoercion::ReinterpretBits
         | THIRCoercion::Integral { .. }
         | THIRCoercion::FloatCast { .. } => retarget_constant(source, target),
+        THIRCoercion::Unreachable => {
+            panic!("unreachable coercions cannot initialize globals")
+        }
         _ => panic!("unsupported global initializer conversion: {conversion:?}"),
     }
 }

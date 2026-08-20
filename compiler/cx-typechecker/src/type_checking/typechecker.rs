@@ -96,7 +96,7 @@ fn typecheck_expr_inner(
                 typecheck_expr(env, namespace, deferred, None)?
                     .standard_ready_coerce(env, deferred.token_range())
             })?;
-            if !deferred._type.is_unit() {
+            if !deferred._type.is_void() {
                 return env.log_error(
                     expr.token_range(),
                     format!(
@@ -256,10 +256,19 @@ fn typecheck_expr_inner(
             let then_result = typecheck_expr(env, namespace, then_branch, expected_type)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))?;
-            let else_result = typecheck_expr(env, namespace, else_branch, Some(&then_result._type))
+            let else_expected = (!then_result._type.is_unreachable())
+                .then_some(&then_result._type)
+                .or(expected_type);
+            let else_result = typecheck_expr(env, namespace, else_branch, else_expected)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
-                .and_then(|v| std_rval_promotion(env, v))
-                .and_then(|v| implicit_cast(env, v, &then_result._type))?;
+                .and_then(|v| std_rval_promotion(env, v))?;
+            let result_type = if then_result._type.is_unreachable() {
+                else_result._type.clone()
+            } else {
+                then_result._type.clone()
+            };
+            let then_result = implicit_cast(env, then_result, &result_type)?;
+            let else_result = implicit_cast(env, else_result, &result_type)?;
 
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
@@ -268,7 +277,7 @@ fn typecheck_expr_inner(
                     then_branch: Box::new(then_result.clone()),
                     else_branch: Some(Box::new(else_result)),
                 },
-                _type: then_result._type,
+                _type: result_type,
             })
         }
 
@@ -619,6 +628,10 @@ pub fn add_implicit_return(
 
     let func = env.current_function().clone();
 
+    if func.signature().return_type.is_unreachable() {
+        return Ok(expr);
+    }
+
     let implicit_value = if func.symbol_name() == "main" {
         Some(Box::new(THIRExpression {
             token_range: TokenRange::internal(),
@@ -628,7 +641,7 @@ pub fn add_implicit_return(
                 signed: true,
             }),
         }))
-    } else if func.signature().return_type.is_unit() {
+    } else if func.signature().return_type.is_void() {
         None
     } else if !env.require_explicit_return() {
         return Ok(expr);

@@ -42,8 +42,18 @@ pub fn typecheck_return(
 
     let return_type = env.current_function().signature().return_type.clone();
 
+    if return_type.is_unreachable() {
+        return env.log_error(
+            return_range,
+            format!(
+                "Function {} cannot return because its return type is 'unreachable'",
+                env.current_function().pretty_name()
+            ),
+        );
+    }
+
     let return_value = match (value, &return_type) {
-        (Some(mut some_value), return_type) if !return_type.is_unit() => {
+        (Some(mut some_value), return_type) if !return_type.is_void() => {
             let mut _ty = some_value._type.clone();
 
             // If we are returning a copyable struct T, and we are given a &T, we can inline a bit
@@ -66,7 +76,7 @@ pub fn typecheck_return(
             Some(Box::new(implicit_cast(env, some_value, return_type)?))
         }
 
-        (None, _) if return_type.is_unit() => None,
+        (None, _) if return_type.is_void() => None,
 
         (Some(value), _) => {
             return env.log_error(
@@ -105,7 +115,7 @@ pub fn typecheck_return(
         .postcondition
         .clone()
     {
-        if ret_name.is_some() && return_type.is_unit() {
+        if ret_name.is_some() && return_type.is_void() {
             return env.log_error(
                 return_range,
                 "Cannot have a named return variable in a function with void return type"

@@ -127,6 +127,9 @@ fn deduce_template_input(
     }
 
     for (formal_type, actual_type) in shell.formal_types().into_iter().zip(arg_types.iter()) {
+        if is_unreachable_type(formal_type) {
+            continue;
+        }
         deduce_from_cx_type(
             env,
             namespace,
@@ -165,6 +168,17 @@ fn deduce_template_input(
         .collect::<CXMaybeRawResult<Vec<_>>>()?;
 
     Ok(THIRTemplateInput { args })
+}
+
+fn is_unreachable_type(ty: &HIRType) -> bool {
+    matches!(
+        &ty.kind,
+        HIRTypeKind::Identifier {
+            name,
+            template_input: None,
+            ..
+        } if name.namespace.is_root() && name.name.as_str() == "unreachable"
+    )
 }
 
 enum TemplateDeductionShell<'a> {

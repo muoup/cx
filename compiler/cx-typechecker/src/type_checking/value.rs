@@ -5,10 +5,9 @@ pub(crate) mod moves;
 pub(crate) mod unsafe_ops;
 
 use crate::environment::TypeEnvironment;
-use cx_log::CXResult;
 use cx_thir::{
     thir::{
-        data::{THIRType, THIRTypeKind},
+        data::THIRType,
         expression::{THIRExpression, THIRExpressionKind},
     },
     type_context::THIRTypeContext,
@@ -105,22 +104,5 @@ pub(crate) fn resolve_indirect_base(
             source_type,
             owned: true,
         };
-    }
-}
-
-pub(crate) fn ensure_valid_allocation_type(
-    env: &mut TypeEnvironment,
-    range: TokenRange,
-    context: &str,
-    ty: &THIRType,
-) -> CXResult<()> {
-    match &ty.kind {
-        THIRTypeKind::Function { .. } => env.log_error(range, format!("Cannot create {} of function type '{}'; use a pointer to the function type instead", context, ty.display_with(&env.symbols))),
-        THIRTypeKind::Str => env.log_error(range, format!("Cannot create {} of unsized type 'str'; use '&str' instead", context)),
-        THIRTypeKind::Array { inner_type, .. } => {
-            let inner_type = env.symbols.resolve_type_id(*inner_type).clone();
-            ensure_valid_allocation_type(env, range.clone(), "an array element", &inner_type)
-        }
-        _ => Ok(()),
     }
 }

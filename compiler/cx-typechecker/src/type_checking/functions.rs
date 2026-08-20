@@ -1,9 +1,5 @@
 use crate::{
-    environment::TypeEnvironment,
-    type_checking::{
-        typechecker::{add_implicit_return, typecheck_expr},
-        value::ensure_valid_allocation_type,
-    },
+    environment::TypeEnvironment, symbol::completion::{ensure_valid_type_component}, type_checking::typechecker::{add_implicit_return, typecheck_expr}
 };
 use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
@@ -45,11 +41,13 @@ pub fn typecheck_function(
         _type,
     } in prototype.signature().params.iter()
     {
+        ensure_valid_type_component(env, body.token_range(), _type, "a parameter", true)?;
+        
         let Some(name) = name else {
             continue;
-        };
+        };        
+
         let local_id = local_id.expect("named MIR parameter is missing a local id");
-        ensure_valid_allocation_type(env, body.token_range().clone(), "a parameter", _type)?;
         let ref_type = env.symbols.mem_ref_to(_type.clone());
 
         env.symbols.insert_local_value(

@@ -1,7 +1,7 @@
 use cx_log::CXResult;
 use cx_mir::{MIRConstant, MIRField, MIRInstrKind, MIRValue};
 use cx_thir::thir::{
-    data::{THIRType, THIRTypeKind},
+    data::THIRType,
     expression::THIRExpression,
     r#type::THIRField,
 };
@@ -47,7 +47,7 @@ pub(super) fn lower_call(
         builder.pop_named_scope();
     }
 
-    let returns_value = !matches!(result_type.kind, THIRTypeKind::Void);
+    let returns_value = !result_type.is_void() && !result_type.is_unreachable();
     let out = returns_value.then(|| {
         let result_type_id = lower_type(builder, result_type);
         builder.register(result_type_id, None)
@@ -57,7 +57,11 @@ pub(super) fn lower_call(
         callee,
         args: args.clone(),
     });
-    if contract.noreturn {
+    let unreachable_return = builder
+        .registry()
+        .intern_signature(&function._type)
+        .is_some_and(|signature| signature.return_type.is_unreachable());
+    if contract.noreturn || unreachable_return {
         builder.emit(MIRInstrKind::Unreachable);
     }
     let value = out

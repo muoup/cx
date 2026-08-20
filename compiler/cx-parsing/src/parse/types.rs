@@ -1,15 +1,15 @@
 use crate::parse::expressions::parse_expr;
-use crate::parse::{try_parse_simple_identifier, ParserData};
+use crate::parse::{ParserData, try_parse_simple_identifier};
 use crate::{assert_token_matches, log::parse_point_error, next_kind, peek_kind, try_next};
+use cx_hir::ast::HIRStmt;
 use cx_hir::ast::expression::HIRExpression;
 use cx_hir::ast::global_var::HIREnumDefinition;
 use cx_hir::ast::types::HIRMoveSemantics;
-use cx_hir::ast::HIRStmt;
 use cx_hir::ast::{
     function::{HIRFunctionKind, HIRFunctionPrototype},
     global_var::{HIREnumVariant, HIRGlobalVariable},
     modifiers::{
-        HIRSymbolNameScheme, HIRTypeQualifiers, LinkageMode, HIR_CONST, HIR_RESTRICT, HIR_VOLATILE,
+        HIR_CONST, HIR_RESTRICT, HIR_VOLATILE, HIRSymbolNameScheme, HIRTypeQualifiers, LinkageMode,
     },
     template::HIRTemplatePrototype,
     types::{HIRAggregateAttributes, HIRField, HIRType, HIRTypeKind, PredeclarationType},
@@ -18,12 +18,12 @@ use cx_log::CXResult;
 use cx_thir::intrinsic_types::is_intrinsic_type;
 use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
 use cx_tokens::{
-    identifier, intrinsic, keyword, operator, punctuator, specifier, TokenIter, TokenRange,
+    TokenIter, TokenRange, identifier, intrinsic, keyword, operator, punctuator, specifier,
 };
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
 
-use crate::parse::functions::{parse_params, ParseParamsResult};
+use crate::parse::functions::{ParseParamsResult, parse_params};
 use crate::parse::templates::{note_templated_types, try_parse_template, unnote_templated_types};
 use crate::parse::{parse_intrinsic, try_parse_qualified_name, try_parse_type_identifier};
 
@@ -165,13 +165,30 @@ fn predeclaration_type(
     let Some(name) = name else {
         return parse_point_error(&data.tokens, "Predeclaration must have a name".to_string());
     };
+    let is_root_name = name.namespace.is_root();
+    let definition_name = name.name.clone();
 
-    Ok(HIRTypeKind::Identifier {
+    let ty = HIRTypeKind::Identifier {
         name,
         predeclaration,
         template_input: None,
     }
-    .to_type())
+    .to_type();
+
+    if matches!(
+        predeclaration,
+        PredeclarationType::Struct | PredeclarationType::Union
+    ) && is_root_name
+    {
+        data.add_stmt(HIRStmt::TypeDefinition {
+            name: Some(definition_name),
+            visibility: data.visibility,
+            template_prototype: None,
+            _type: ty.clone(),
+        });
+    }
+
+    Ok(ty)
 }
 
 fn defined_type(

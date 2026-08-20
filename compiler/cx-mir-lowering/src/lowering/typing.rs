@@ -4,6 +4,7 @@ use cx_lmir::{
     LMIRReturnABI, LinkageType,
 };
 use cx_mir::ty::interface::MTRegistry;
+use cx_mir::ty::layout::{self, layout_of};
 use cx_mir::{
     MIRField, MIRFloatType, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRTypeID, MIRTypeKind,
     MIRTypeLayout, MIRTypeRegistryBuilder,
@@ -144,7 +145,6 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistryBuilder) -> LMI
         .definition(ty)
         .unwrap_or_else(|| panic!("invalid MIR type {ty}"));
 
-    let type_layout = layout(types, ty);
     let kind = match &definition.kind {
         MIRTypeKind::Opaque { size, .. } => LMIRTypeKind::Opaque { bytes: *size },
         MIRTypeKind::Integer { ty, .. } => LMIRTypeKind::Integer(convert_integer_type(*ty)),
@@ -190,15 +190,18 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistryBuilder) -> LMI
                 .collect(),
         },
         MIRTypeKind::Union { .. } => LMIRTypeKind::Opaque {
-            bytes: type_layout.size,
+            bytes: layout(types, ty).size,
         },
         MIRTypeKind::Void => LMIRTypeKind::Void,
         MIRTypeKind::Str => LMIRTypeKind::Integer(LMIRIntegerType::I8),
         MIRTypeKind::Undefined => panic!("cannot lower undefined MIR type {ty}"),
     };
+    
     LMIRType {
         kind,
-        alignment: type_layout.alignment as u8,
+        alignment: layout_of(types, ty).ok()
+            .map(|layout| layout.alignment as u8)
+            .unwrap_or(1),
     }
 }
 
@@ -218,7 +221,7 @@ pub(super) fn layout(types: &MIRTypeRegistryBuilder, ty: MIRTypeID) -> MIRTypeLa
         .ok()
         .flatten()
         .copied()
-        .or_else(|| cx_mir::ty::layout::layout_of(types, ty).ok())
+        .or_else(|| layout::layout_of(types, ty).ok())
         .unwrap_or_else(|| panic!("MIR type {ty} has no layout"))
 }
 

@@ -12,6 +12,7 @@ use crate::{
     environment::TypeEnvironment,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
+        control_flow::expr_may_fall_through,
         result::{ComptimeFunctionValue, StagedFunctionValue, TypecheckResult},
         typechecker::typecheck_expr,
     },
@@ -196,8 +197,24 @@ fn check_staged_source_argument(
     let snapshot = env.function.current_snapshot();
 
     let result = (|| {
-        let arg = typecheck_expr(env, namespace, expr, Some(&target._type))?;
-        coerce_staged_argument(env, call_range, arg, &target._type).map(|_| ())
+        let arg = typecheck_expr(
+            env,
+            namespace,
+            expr,
+            (!target._type.is_unreachable()).then_some(&target._type),
+        )?;
+        let arg = arg.standard_ready_coerce(env, call_range)?;
+        if target._type.is_unreachable() {
+            if expr_may_fall_through(&arg) {
+                return env.log_error(
+                    expr.token_range(),
+                    "Staged expression with type 'unreachable' may fall through".to_string(),
+                );
+            }
+            return Ok(());
+        }
+        coerce_staged_argument(env, call_range, TypecheckResult::from(arg), &target._type)
+            .map(|_| ())
     })();
 
     env.function.restore_snapshot(&snapshot);

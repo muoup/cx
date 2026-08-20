@@ -13,6 +13,7 @@ pub const INTRINSIC_IMPORTS: &[&str] = &["std/intrinsic/assertion.cx"];
 
 pub const INTRINSIC_TYPES: &[(&str, THIRTypeKind)] = &[
     ("void", THIRTypeKind::Void),
+    ("unreachable", THIRTypeKind::Unreachable),
     (
         "bool",
         THIRTypeKind::Integer {

@@ -70,7 +70,7 @@ fn lower_scoped_value(
 }
 
 fn rvalue(value: MIRValue, ty: &THIRType) -> MIRValue {
-    if ty.is_unit() {
+    if ty.is_void() {
         return MIRValue::Constant(MIRConstant::Unit);
     }
     if ty.is_memory_reference() {

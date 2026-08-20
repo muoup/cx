@@ -122,7 +122,11 @@ pub(crate) fn lower_type_kind(builder: &mut MIRBuilder, kind: &THIRTypeKind) -> 
                     .iter()
                     .map(|param| lower_type(builder, &param._type))
                     .collect(),
-                return_type: lower_type(builder, &signature.return_type),
+                return_type: if signature.return_type.is_unreachable() {
+                    builder.types().unit()
+                } else {
+                    lower_type(builder, &signature.return_type)
+                },
                 variadic: signature.var_args,
             },
         },
@@ -131,6 +135,7 @@ pub(crate) fn lower_type_kind(builder: &mut MIRBuilder, kind: &THIRTypeKind) -> 
             alignment: *alignment,
         },
         THIRTypeKind::Undefined => MIRTypeKind::Undefined,
+        THIRTypeKind::Unreachable => MIRTypeKind::Void,
         THIRTypeKind::Str => MIRTypeKind::Str,
     }
 }
