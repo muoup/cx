@@ -1,10 +1,7 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    expr::{MIRBasicBlockID, MIRBlockTarget, MIRInstrKind, MIRPlace},
-    global::{MIRFunction, MIRFunctionID},
-    ty::interface::MTRegistry,
-    unit::MIRUnit,
+    MIRInstr, expr::{MIRBasicBlockID, MIRBlockTarget, MIRInstrKind, MIRPlace}, global::{MIRFunction, MIRFunctionID}, ty::interface::MTRegistry, unit::MIRUnit
 };
 
 use super::error::MIRValidationError;
@@ -43,7 +40,11 @@ impl MIRUnit {
     ) -> Result<(), MIRValidationError> {
         let function_id = function.id();
 
-        for (position, place) in function.places.iter().enumerate() {
+        let Some(definition) = function.definition() else {
+            return Ok(());
+        };
+
+        for (position, place) in definition.places().iter().enumerate() {
             if place.id.index() != position {
                 return Err(MIRValidationError::NonDenseId {
                     entity: "place",
@@ -53,7 +54,7 @@ impl MIRUnit {
                 });
             }
         }
-        for (position, register) in function.registers.iter().enumerate() {
+        for (position, register) in definition.registers().iter().enumerate() {
             if register.id.index() != position {
                 return Err(MIRValidationError::NonDenseId {
                     entity: "register",
@@ -63,7 +64,7 @@ impl MIRUnit {
                 });
             }
         }
-        for (position, block) in function.blocks.iter().enumerate() {
+        for (position, block) in definition.blocks().iter().enumerate() {
             if block.id.index() != position {
                 return Err(MIRValidationError::NonDenseId {
                     entity: "basic block",
@@ -74,8 +75,8 @@ impl MIRUnit {
             }
         }
 
-        if function.blocks.is_empty() {
-            if let Some(entry) = function.entry {
+        if definition.blocks().is_empty() {
+            if let Some(entry) = definition.entry() {
                 return Err(MIRValidationError::EntryOnDeclaration {
                     function: function_id,
                     entry,
@@ -84,7 +85,7 @@ impl MIRUnit {
             return Ok(());
         }
 
-        let entry = function.entry.ok_or(MIRValidationError::MissingEntry {
+        let entry = definition.entry().ok_or(MIRValidationError::MissingEntry {
             function: function_id,
         })?;
         self.check_id(
@@ -93,10 +94,10 @@ impl MIRUnit {
             None,
             "entry block",
             entry.index(),
-            function.blocks.len(),
+            definition.blocks().len(),
         )?;
 
-        if !function
+        if !definition
             .block(entry)
             .expect("validated entry block is missing")
             .params
@@ -109,7 +110,7 @@ impl MIRUnit {
         }
 
         let mut block_params = BTreeSet::new();
-        for block in &function.blocks {
+        for block in definition.blocks().iter() {
             for param in &block.params {
                 self.check_id(
                     function_id,
@@ -117,7 +118,7 @@ impl MIRUnit {
                     None,
                     "block parameter register",
                     param.index(),
-                    function.registers.len(),
+                    definition.registers().len(),
                 )?;
                 if !block_params.insert(*param) {
                     return Err(MIRValidationError::DuplicateBlockParameter {
@@ -130,7 +131,7 @@ impl MIRUnit {
         }
         let mut register_definitions = block_params;
 
-        for block in &function.blocks {
+        for block in definition.blocks().iter() {
             if block.instrs.is_empty() {
                 return Err(MIRValidationError::EmptyBlock {
                     function: function_id,
@@ -177,7 +178,7 @@ impl MIRUnit {
             }
         }
 
-        for register in &function.registers {
+        for register in definition.registers() {
             if !register_definitions.contains(&register.id) {
                 return Err(MIRValidationError::UndefinedRegister {
                     function: function_id,
@@ -217,19 +218,21 @@ impl MIRUnit {
         function: &MIRFunction,
         block: MIRBasicBlockID,
         instruction_index: usize,
-        instruction: &crate::expr::MIRInstr,
+        instruction: &MIRInstr,
     ) -> Result<(), MIRValidationError> {
-        let function_id = function.id;
+        let function_id = function.id();
+        let definition = function.definition().expect("validated function is missing definition");
+        
         let mut bad_id = None;
         let check_place = |place| match place {
-            MIRPlace::FunctionLocal(id) if id.index() >= function.places.len() => {
-                Some(("place", id.index(), function.places.len()))
+            MIRPlace::FunctionLocal(id) if id.index() >= definition.places().len() => {
+                Some(("place", id.index(), definition.places().len()))
             }
-            MIRPlace::Parameter(id) if id.index() >= function.prototype.signature.params.len() => {
+            MIRPlace::Parameter(id) if id.index() >= function.prototype().signature.params.len() => {
                 Some((
                     "parameter",
                     id.index(),
-                    function.prototype.signature.params.len(),
+                    function.prototype().signature.params.len(),
                 ))
             }
             MIRPlace::Global(id) if id.index() >= self.globals().len() => {
@@ -245,9 +248,9 @@ impl MIRUnit {
             }
             if let Some(register) = operand.register()
                 && bad_id.is_none()
-                && register.index() >= function.registers.len()
+                && register.index() >= definition.registers().len()
             {
-                bad_id = Some(("register", register.index(), function.registers.len()));
+                bad_id = Some(("register", register.index(), definition.registers().len()));
             }
             if let Some(referenced) = operand.function()
                 && bad_id.is_none()
@@ -262,13 +265,13 @@ impl MIRUnit {
             }
         }
         for register in instruction.defined_registers() {
-            if bad_id.is_none() && register.index() >= function.registers.len() {
-                bad_id = Some(("register", register.index(), function.registers.len()));
+            if bad_id.is_none() && register.index() >= definition.registers().len() {
+                bad_id = Some(("register", register.index(), definition.registers().len()));
             }
         }
         for successor in instruction.successors() {
-            if bad_id.is_none() && successor.index() >= function.blocks.len() {
-                bad_id = Some(("block target", successor.index(), function.blocks.len()));
+            if bad_id.is_none() && successor.index() >= definition.blocks().len() {
+                bad_id = Some(("block target", successor.index(), definition.blocks().len()));
             }
         }
 
@@ -329,9 +332,12 @@ impl MIRUnit {
         instruction: usize,
         target: &MIRBlockTarget,
     ) -> Result<(), MIRValidationError> {
-        let Some(block) = function.block(target.block) else {
+        let definition = function.definition().expect("validated function is missing definition");
+
+        let Some(block) = definition.block(target.block) else {
             return Ok(());
         };
+        
         if target.args.len() != block.params.len() {
             return Err(MIRValidationError::BlockArgumentCount {
                 function: function.id(),
@@ -343,7 +349,7 @@ impl MIRUnit {
             });
         }
         for (index, (argument, parameter)) in target.args.iter().zip(&block.params).enumerate() {
-            let expected = function
+            let expected = definition
                 .register(*parameter)
                 .expect("validated block parameter is missing")
                 .ty;
@@ -351,7 +357,7 @@ impl MIRUnit {
                 && !self.types().same_type(actual, expected)
             {
                 return Err(MIRValidationError::BlockArgumentType {
-                    function: function.id,
+                    function: function.id(),
                     source,
                     instruction,
                     target: target.block,

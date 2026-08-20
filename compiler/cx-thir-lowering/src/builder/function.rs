@@ -32,12 +32,16 @@ struct LabelTarget {
 pub(crate) struct FunctionContext {
     mir: MIRFunction,
     current_block: MIRBasicBlockID,
+
     local_places: HashMap<THIRLocalID, MIRPlace>,
     local_values: HashMap<THIRLocalID, MIRValue>,
+
     named_values: Vec<HashMap<String, MIRValue>>,
+
     loops: Vec<LoopContext>,
     yields: Vec<YieldContext>,
     labels: HashMap<String, LabelTarget>,
+
     lexical_scopes: Vec<MIRScopeID>,
     defers: Vec<Vec<THIRExpression>>,
 }
@@ -219,6 +223,30 @@ impl FunctionContext {
 
     pub(crate) fn push_named_scope(&mut self) {
         self.named_values.push(HashMap::new());
+    }
+
+    pub fn block(&self, id: MIRBasicBlockID) -> Option<&MIRBasicBlock> {
+        self.blocks.get(id.index())
+    }
+
+    pub fn block_mut(&mut self, id: MIRBasicBlockID) -> Option<&mut MIRBasicBlock> {
+        self.blocks.get_mut(id.index())
+    }
+
+    pub fn place(&self, id: MIRPlaceID) -> Option<&MIRPlaceDecl> {
+        self.places.get(id.index())
+    }
+
+    pub fn place_mut(&mut self, id: MIRPlaceID) -> Option<&mut MIRPlaceDecl> {
+        self.places.get_mut(id.index())
+    }
+
+    pub fn scope(&self, id: MIRScopeID) -> Option<&MIRScopeDecl> {
+        self.scopes.get(id.index())
+    }
+
+    pub fn register(&self, id: MIRRegister) -> Option<&MIRRegisterDecl> {
+        self.registers.get(id.index())
     }
 
     pub(crate) fn pop_named_scope(&mut self) {

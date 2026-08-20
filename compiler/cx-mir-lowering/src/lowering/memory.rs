@@ -453,7 +453,12 @@ pub(super) fn load_discriminant(
         context.types().architecture(),
         LMIRTypeKind::Integer(LMIRIntegerType::I8),
     );
-    let address = offset_address(context, base, tagged_union_tag_offset(context.types(), sum_type).unwrap(), &tag_ty);
+    let address = offset_address(
+        context,
+        base,
+        tagged_union_tag_offset(context.types(), sum_type).unwrap(),
+        &tag_ty,
+    );
 
     match result {
         Some(register) => {

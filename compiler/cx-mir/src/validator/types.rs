@@ -393,8 +393,12 @@ impl MIRUnit {
     }
 
     pub(super) fn place_type(&self, function: &MIRFunction, place: MIRPlace) -> Option<MIRTypeID> {
+        let Some(definition) = function.definition() else {
+            return None;
+        };
+
         match place {
-            MIRPlace::FunctionLocal(id) => function.place(id).map(|place| place.ty),
+            MIRPlace::FunctionLocal(id) => definition.place(id).map(|place| place.ty),
             MIRPlace::Parameter(id) => function
                 .prototype()
                 .signature

@@ -260,29 +260,31 @@ fn write_function<T: MTRegistry>(
     write!(
         f,
         ") -> {} /* {} */",
-        function.prototype().signature.return_type, function.prototype().signature.symbol_name
+        function.prototype().signature.return_type,
+        function.prototype().signature.symbol_name
     )?;
 
-    let MIRFunction::Definition { id, prototype, entry, blocks, places, registers, scopes } = function else {
-        return f.write_str(";");
+    let Some(_) = function.definition() else {
+        f.write_str(";")?;
+        return Ok(());
     };
 
     f.write_str(" {\n")?;
-    for place in places {
+    for place in function.places().unwrap() {
         f.write_str("    let ")?;
         write_place_name(f, unit, function, MIRPlace::FunctionLocal(place.id))?;
         f.write_str(": ")?;
         types.write(f, place.ty)?;
         f.write_str(";\n")?;
     }
-    for register in registers {
+    for register in function.registers().unwrap() {
         f.write_str("    let ")?;
         write_register_name(f, function, register.id)?;
         f.write_str(": ")?;
         types.write(f, register.ty)?;
         f.write_str(";\n")?;
     }
-    for block in blocks {
+    for block in function.blocks().unwrap() {
         write_block(f, unit, function, block, types)?;
     }
     f.write_str("}")

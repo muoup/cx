@@ -83,8 +83,7 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub(crate) fn predeclare_function(&mut self, function: &THIRFunction) {
         let prototype = self.convert_prototype(&function.prototype);
-
-        self.module.insert_function(MIRFunction
+        self.module.insert_function(MIRFunction::Declaration(prototype));
     }
 
     fn lower_string_array_constant(
@@ -192,6 +191,7 @@ impl<'thir> MIRBuilder<'thir> {
             .function
             .take()
             .expect("attempted to finish without an active MIR function");
+        
         self.module
             .insert_function(context.finish(self.types().unit()));
     }

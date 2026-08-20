@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use cx_mir::{
-    MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable,
-    MIRTypeRegistryBuilder, MIRUnit,
+    MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState,
+    MIRGlobalVariable, MIRTypeRegistryBuilder, MIRUnit,
 };
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
@@ -33,9 +33,10 @@ impl<T: Copy> ModuleSymbol<T> {
 
 pub(crate) struct MIRModuleState {
     functions: HashMap<MIRFunctionID, MIRFunction>,
-    globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
+    globals: HashMap<MIRGlobalID, ModuleSymbol<MIRGlobalVariable>>,
     function_symbols: HashMap<String, ModuleSymbol<MIRFunctionID>>,
     global_symbols: HashMap<String, ModuleSymbol<MIRGlobalID>>,
+
     next_function_id: usize,
     next_global_id: usize,
 }
@@ -52,10 +53,7 @@ impl MIRModuleState {
         }
     }
 
-    pub(crate) fn define_function(
-        &mut self,
-        prototype: MIRFnPrototype
-    ) -> MIRFunctionID {
+    pub(crate) fn define_function(&mut self, prototype: MIRFnPrototype) -> MIRFunctionID {
         let id = MIRFunctionID::new(self.next_function_id);
         self.next_function_id += 1;
         self.functions.insert(id, MIRFunction::new(id, prototype));
@@ -81,9 +79,9 @@ impl MIRModuleState {
         let id = MIRGlobalID::new(self.next_global_id);
         self.next_global_id += 1;
         let mut global = MIRGlobalVariable::new(id, name, ty, linkage, is_mutable);
-        global.nodrop = nodrop;
+        global.is_nodrop = nodrop;
         global.state = state;
-        self.globals.insert(id, global);
+        self.globals.insert(id, ModuleSymbol::new(global));
         self.global_symbols
             .insert(name_string, ModuleSymbol::new(id));
         id
@@ -107,7 +105,7 @@ impl MIRModuleState {
     }
 
     pub(crate) fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
-        self.globals.get(&id)
+        self.globals.get(&id).map(|symbol| &symbol.id)
     }
 
     pub(crate) fn global_id(&self, name: &str) -> Option<MIRGlobalID> {
@@ -187,7 +185,7 @@ fn dense_functions(
 }
 
 fn dense_globals(
-    globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
+    globals: HashMap<MIRGlobalID, ModuleSymbol<MIRGlobalVariable>>,
     length: usize,
 ) -> Vec<MIRGlobalVariable> {
     let mut dense = (0..length)
@@ -198,7 +196,7 @@ fn dense_globals(
             .get_mut(id.index())
             .expect("MIR global ID is outside the builder range");
         assert!(slot.is_none(), "MIR global ID was declared twice");
-        *slot = Some(global);
+        *slot = Some(global.get());
     }
     dense
         .into_iter()

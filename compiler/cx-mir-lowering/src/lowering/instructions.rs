@@ -37,7 +37,7 @@ fn call_signature(
             .unit()
             .function(*id)
             .unwrap()
-            .prototype
+            .prototype()
             .signature
             .symbol_name
             .as_str();
@@ -84,14 +84,14 @@ fn value_type(context: &FunctionLoweringContext<'_>, value: &MIRValue) -> Option
             let function = context.unit().function(*id)?;
             let signature = MIRFunctionType {
                 params: function
-                    .prototype
+                    .prototype()
                     .signature
                     .params
                     .iter()
                     .map(|param| param.ty)
                     .collect(),
-                return_type: function.prototype.signature.return_type,
-                variadic: function.prototype.signature.variadic,
+                return_type: function.prototype().signature.return_type,
+                variadic: function.prototype().signature.variadic,
             };
             context
                 .types()
@@ -556,10 +556,7 @@ fn lower_variant_project(
         panic!("variant projection on non-sum type");
     };
     let variant_type = variants.get(variant).expect("invalid variant index").ty();
-    let lowered = lowered_type(
-        context,
-        variant_type,
-    );
+    let lowered = lowered_type(context, variant_type);
     if lowered.is_void() {
         emit_to(
             context,
@@ -859,7 +856,7 @@ fn lower_call(
         MIRValue::Constant(MIRConstant::Function(id)) => {
             let function = context.unit().function(*id).expect("invalid direct callee");
             LMIRInstructionKind::DirectCall {
-                func: function.prototype.signature.symbol_name.clone(),
+                func: function.prototype().signature.symbol_name.clone(),
                 args: lowered_args,
                 method_sig: signature.clone(),
             }
@@ -964,7 +961,7 @@ fn lower_return(context: &mut FunctionLoweringContext<'_>, value: Option<&MIRVal
     let return_abi = context.prototype().signature.return_abi.clone();
     match (return_abi, value) {
         (LMIRReturnABI::IndirectSret { alignment }, Some(value)) => {
-            let semantic = context.function().prototype.signature.return_type;
+            let semantic = context.function().prototype().signature.return_type;
             let source = lower_value(context, value);
             let size = int_constant(
                 context,

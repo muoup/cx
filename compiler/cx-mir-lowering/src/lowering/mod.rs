@@ -36,50 +36,51 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistryBuilder) -> CXRes
         }
     }
 
-    let mut lowered_globals =
-        mir.globals()
-            .iter()
-            .filter(|global| globals::keep_global(global))
-            .map(|global| {
-                let linkage = if matches!(global.state, MIRGlobalState::External) {
-                    LinkageType::External
-                } else {
-                    typing::convert_linkage(global.linkage)
-                };
-                let lowered_type = typing::convert_type(global.ty, types);
-                let lowered =
-                    match &global.state {
-                        MIRGlobalState::External => LMIRGlobalType::Variable {
-                            _type: lowered_type,
-                            state: LoweredGlobalState::External,
-                        },
-                        MIRGlobalState::ZeroInitialized => LMIRGlobalType::Variable {
-                            _type: lowered_type,
-                            state: LoweredGlobalState::ZeroInitialized,
-                        },
-                        MIRGlobalState::Initialized(cx_mir::MIRConstant::String(value)) => {
-                            LMIRGlobalType::StringLiteral(value.clone())
-                        }
-                        MIRGlobalState::Initialized(cx_mir::MIRConstant::Unit) => {
-                            LMIRGlobalType::Variable {
-                                _type: lowered_type,
-                                state: LoweredGlobalState::ZeroInitialized,
-                            }
-                        }
-                        MIRGlobalState::Initialized(constant) => LMIRGlobalType::Variable {
-                            _type: lowered_type,
-                            state: LoweredGlobalState::Initialized(
-                                globals::lower_global_initializer(mir, constant, &global_indices),
-                            ),
-                        },
-                    };
-                LMIRGlobalValue {
-                    name: global.name.clone(),
-                    _type: lowered,
-                    linkage,
+    let mut lowered_globals = mir
+        .globals()
+        .iter()
+        .filter(|global| globals::keep_global(global))
+        .map(|global| {
+            let linkage = if matches!(global.state, MIRGlobalState::External) {
+                LinkageType::External
+            } else {
+                typing::convert_linkage(global.linkage)
+            };
+            let lowered_type = typing::convert_type(global.ty, types);
+            let lowered = match &global.state {
+                MIRGlobalState::External => LMIRGlobalType::Variable {
+                    _type: lowered_type,
+                    state: LoweredGlobalState::External,
+                },
+                MIRGlobalState::ZeroInitialized => LMIRGlobalType::Variable {
+                    _type: lowered_type,
+                    state: LoweredGlobalState::ZeroInitialized,
+                },
+                MIRGlobalState::Initialized(cx_mir::MIRConstant::String(value)) => {
+                    LMIRGlobalType::StringLiteral(value.clone())
                 }
-            })
-            .collect::<Vec<_>>();
+                MIRGlobalState::Initialized(cx_mir::MIRConstant::Unit) => {
+                    LMIRGlobalType::Variable {
+                        _type: lowered_type,
+                        state: LoweredGlobalState::ZeroInitialized,
+                    }
+                }
+                MIRGlobalState::Initialized(constant) => LMIRGlobalType::Variable {
+                    _type: lowered_type,
+                    state: LoweredGlobalState::Initialized(globals::lower_global_initializer(
+                        mir,
+                        constant,
+                        &global_indices,
+                    )),
+                },
+            };
+            LMIRGlobalValue {
+                name: global.name.clone(),
+                _type: lowered,
+                linkage,
+            }
+        })
+        .collect::<Vec<_>>();
 
     let mut functions = Vec::new();
     for function in mir.functions() {
