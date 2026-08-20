@@ -352,12 +352,15 @@ fn lower_aggregate(context: &mut FunctionLoweringContext<'_>, operation: &MIRAgg
                     base,
                     field,
                     aggregate_type,
-                } => field_binding(
-                    context,
-                    binding_for_place(context, *base),
-                    *aggregate_type,
-                    *field,
-                ),
+                } => {
+                    let target = aggregate_target(context, *aggregate_type);
+                    field_binding(
+                        context,
+                        binding_for_place(context, *base),
+                        target.ty,
+                        *field,
+                    )
+                }
                 MIRPlaceAggregateOp::Index {
                     base,
                     index,
@@ -388,9 +391,10 @@ fn lower_aggregate(context: &mut FunctionLoweringContext<'_>, operation: &MIRAgg
                     sum_type,
                 } => {
                     let base = address(context, binding_for_place(context, *base));
+                    let target = aggregate_target(context, *sum_type);
                     let MIRTypeKind::TaggedUnion { variants } = context
                         .types()
-                        .kind(*sum_type)
+                        .kind(target.ty)
                         .expect("invalid MIR sum type")
                     else {
                         panic!("variant projection on non-sum type");
@@ -406,8 +410,9 @@ fn lower_aggregate(context: &mut FunctionLoweringContext<'_>, operation: &MIRAgg
         }
         MIRAggregateOp::Value { out, op } => match op {
             MIRValueAggregateOp::Discriminant { value, sum_type } => {
-                let binding = value_as_binding(context, value, *sum_type);
-                load_discriminant(context, binding, *sum_type, Some(*out));
+                let target = aggregate_target(context, *sum_type);
+                let binding = value_as_binding(context, value, target.ty);
+                load_discriminant(context, binding, target.ty, Some(*out));
             }
             MIRValueAggregateOp::Construct { ty, fields } => {
                 lower_construct(context, *out, *ty, fields)
@@ -416,13 +421,39 @@ fn lower_aggregate(context: &mut FunctionLoweringContext<'_>, operation: &MIRAgg
                 variant,
                 value,
                 sum_type,
-            } => lower_variant_construct(context, *out, *variant, value, *sum_type),
+            } => {
+                let target = aggregate_target(context, *sum_type);
+                lower_variant_construct(context, *out, *variant, value, target.ty)
+            }
             MIRValueAggregateOp::ProjectVariant {
                 variant,
                 value,
                 sum_type,
-            } => lower_variant_project(context, *out, *variant, value, *sum_type),
+            } => {
+                let target = aggregate_target(context, *sum_type);
+                lower_variant_project(context, *out, *variant, value, target)
+            }
         },
+    }
+}
+
+#[derive(Clone, Copy)]
+struct AggregateTarget {
+    ty: MIRTypeID,
+    by_value: bool,
+}
+
+fn aggregate_target(context: &FunctionLoweringContext<'_>, ty: MIRTypeID) -> AggregateTarget {
+    match context
+        .types()
+        .kind(ty)
+        .expect("invalid MIR aggregate type")
+    {
+        MIRTypeKind::MemoryReference { inner, .. } => AggregateTarget {
+            ty: *inner,
+            by_value: false,
+        },
+        _ => AggregateTarget { ty, by_value: true },
     }
 }
 
@@ -546,8 +577,9 @@ fn lower_variant_project(
     out: MIRRegister,
     variant: usize,
     value: &MIRValue,
-    sum_type: MIRTypeID,
+    target: AggregateTarget,
 ) {
+    let sum_type = target.ty;
     let MIRTypeKind::TaggedUnion { variants } = context
         .types()
         .kind(sum_type)
@@ -567,24 +599,21 @@ fn lower_variant_project(
         );
         return;
     }
-    let base = match value {
-        MIRValue::Register(_) => {
-            let aggregate = lower_value(context, value);
-            emit_temp(
-                context,
-                LMIRInstructionKind::StructAccess {
-                    struct_: aggregate,
-                    struct_type: lowered_type(context, sum_type),
-                    field_index: 0,
-                    field_offset: 0,
-                },
-                LMIRType::default_pointer(context.types().architecture()),
-            )
-        }
-        _ => {
-            let binding = value_as_binding(context, value, sum_type);
-            address(context, binding)
-        }
+    let base = if target.by_value {
+        let aggregate = lower_value(context, value);
+        emit_temp(
+            context,
+            LMIRInstructionKind::StructAccess {
+                struct_: aggregate,
+                struct_type: lowered_type(context, sum_type),
+                field_index: 0,
+                field_offset: 0,
+            },
+            LMIRType::default_pointer(context.types().architecture()),
+        )
+    } else {
+        let binding = value_as_binding(context, value, sum_type);
+        address(context, binding)
     };
     let binding = PlaceBinding::Address {
         value: base,
