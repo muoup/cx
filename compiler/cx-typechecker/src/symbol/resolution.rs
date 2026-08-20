@@ -18,9 +18,12 @@ use cx_thir::{
     symbol::MIRSymbol,
     thir::{
         contextual_eq::TypeContextEqual,
-        data::{THIRFnPrototype, THIRFnSignature, THIRParameter, THIRTemplateInput, TemplateInfo},
+        data::{
+            THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter, THIRTemplateInput,
+            TemplateInfo,
+        },
         expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
-        global::{THIRGlobalVarKind, THIRGlobalVariable},
+        global::THIRGlobalVariable,
     },
     type_context::THIRTypeContext,
 };
@@ -106,13 +109,12 @@ fn resolve_symbol_inner(
 
             if evaluation_namespace != symbol_namespace {
                 env.items.push_generated_global(THIRGlobalVariable {
+                    name: symbol_name.clone(),
+                    _type: ty.clone(),
+                 
                     is_mutable: false,
                     linkage: LinkageMode::Extern,
-                    kind: THIRGlobalVarKind::Variable {
-                        name: symbol_name.clone(),
-                        _type: ty.clone(),
-                        initializer: None,
-                    },
+                    initializer: None,
                 });
             }
 
@@ -144,6 +146,11 @@ fn resolve_symbol_inner(
         HIRSymbolKind::FunctionReference(prototype) => {
             let prototype_namespace = function_lexical_namespace(symbol_namespace, &prototype.kind);
             let prototype = complete_prototype(env, &prototype_namespace, prototype)?;
+
+            env.items.push_generated_function(THIRFunction {
+                prototype: prototype.clone(),
+                body: None,
+            });
 
             Ok(MIRSymbol::FunctionReference(prototype))
         }

@@ -399,10 +399,9 @@ pub(crate) fn perform_job(
             }
 
             let namespace = job.unit.namespace().as_namespace_path().clone();
-            let (symbol_buckets, namespace_friends, generation_ast) =
-                decompose_ast(&namespace, parsed_ast)?.destructure();
+            let decomposition = decompose_ast(&namespace, parsed_ast)?;
 
-            for (namespace, bucket) in symbol_buckets {
+            for (namespace, bucket) in decomposition.symbol_buckets {
                 if let Some((namespace, _)) = context
                     .module_db
                     .symbol_registry
@@ -417,7 +416,7 @@ pub(crate) fn perform_job(
                 }
             }
 
-            for (namespace, friend) in namespace_friends {
+            for (namespace, friend) in decomposition.namespace_friends {
                 context
                     .module_db
                     .symbol_registry
@@ -426,12 +425,12 @@ pub(crate) fn perform_job(
 
             context
                 .module_db
-                .generation_ast
-                .insert(job.unit.clone(), generation_ast);
+                .hir
+                .insert(job.unit.clone(), decomposition.ast);
         }
 
         CompilationStep::Typechecking => {
-            let self_ast = context.module_db.generation_ast.get(&job.unit);
+            let self_ast = context.module_db.hir.get(&job.unit);
             let namespace = job.unit.namespace().clone();
 
             let require_explicit_return =
@@ -448,7 +447,7 @@ pub(crate) fn perform_job(
                 require_explicit_return,
             );
 
-            typecheck(&mut env, &namespace, &self_ast)?;
+            typecheck(&mut env, &self_ast)?;
 
             let thir = env.finish_thir_unit(namespace)?;
 

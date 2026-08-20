@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use cx_target::ArchitectureConfig;
 
-use crate::{MIRTypeKind, ty::interface::MTRegistry};
+use crate::{MIRTypeKind, MIRTypeLayout, ty::interface::MTRegistry};
 
 use super::{MIRLayoutError, MIRType, MIRTypeID};
 
@@ -58,8 +58,7 @@ impl MTRegistry for MIRTypeRegistryBuilder {
     }
 
     fn debug_name(&self, id: MIRTypeID) -> Option<&str> {
-        self.debug_names.get(&id)
-            .map(|s| s.as_str())
+        self.debug_names.get(&id).map(|s| s.as_str())
     }
 }
 
@@ -94,7 +93,7 @@ impl MIRTypeRegistryBuilder {
     pub fn reserve_id_space(&mut self, end: usize) {
         self.next_id = self.next_id.max(end);
         let end = end;
-        
+
         if self.definitions.len() < end {
             self.definitions.resize_with(end, || None);
         }
@@ -127,5 +126,19 @@ impl MIRTypeRegistryBuilder {
             let len = index + 1;
             self.definitions.resize_with(len, || None);
         }
+    }
+
+    pub fn reference_to(&mut self, id: MIRTypeID) -> Result<MIRTypeID, MIRLayoutError> {
+        let ty = MIRType {
+            kind: MIRTypeKind::MemoryReference {
+                inner: id,
+                bitfield: None,
+            },
+            layout: Some(MIRTypeLayout {
+                size: self.architecture().pointer_size(),
+                alignment: self.architecture().pointer_alignment(),
+            }),
+        };
+        Ok(self.intern(ty))
     }
 }

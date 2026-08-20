@@ -33,6 +33,10 @@ pub(crate) fn lower_unit(builder: &mut MIRBuilder<'_>, thir: &THIRUnit) -> CXRes
     }
 
     for global in &thir.global_variables {
+        builder.predeclare_global(global);
+    }
+
+    for global in &thir.global_variables {
         globals::lower_global(builder, global);
     }
 
@@ -48,8 +52,12 @@ fn lower_function(
     index: usize,
     function: &cx_thir::thir::data::THIRFunction,
 ) -> CXResult<()> {
-    builder.start_function(index, function);
-    lower_expression(builder, &function.body)?;
+    let Some(body) = function.body.as_ref() else {
+        return Ok(());
+    };
+
+    builder.start_function(index, function, body);
+    lower_expression(builder, body)?;
 
     if !builder.current_block_terminated() {
         control_flow::lower_root_defers(builder)?;
@@ -106,6 +114,9 @@ fn lower_expression(
                     _ => cx_mir::MIRFloatType::F64,
                 };
                 MIRValue::Constant(MIRConstant::Float { value: *value, ty })
+            }
+            THIRExpressionKind::StringLiteral { value } => {
+                MIRValue::Place(MIRPlace::Global(builder.add_string_literal(value.as_str())))
             }
             THIRExpressionKind::Unit => MIRValue::Constant(MIRConstant::Unit),
             THIRExpressionKind::SizeOf { _type } | THIRExpressionKind::AlignOf { _type } => {

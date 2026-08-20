@@ -87,6 +87,9 @@ pub enum THIRExpressionKind {
     BoolLiteral(bool),
     IntLiteral(i64),
     FloatLiteral(FloatWrapper),
+    StringLiteral {
+        value: String,
+    },
 
     #[default]
     Unit,
@@ -110,8 +113,6 @@ pub enum THIRExpressionKind {
         name: CXIdent,
         debug_name: Option<CXIdent>,
     },
-
-    // Type/layout queries remain symbolic until MIR owns the target layout.
     SizeOf {
         _type: THIRType,
     },

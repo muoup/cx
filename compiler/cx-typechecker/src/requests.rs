@@ -113,8 +113,10 @@ fn realize_tagged_union_constructor(
         },
     };
 
-    env.items
-        .push_generated_function(THIRFunction { prototype, body });
+    env.items.push_generated_function(THIRFunction {
+        prototype,
+        body: Some(body),
+    });
 }
 
 fn realize_fn_template(

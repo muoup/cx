@@ -1,11 +1,13 @@
 use std::collections::HashSet;
 
+use cx_hir::ast::modifiers::HIR_CONST;
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
     MIRBasicBlockID, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID,
     MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRRegister,
     MIRScopeID, MIRTypeID, MIRTypeKind, MIRTypeRegistryBuilder, MIRUnit, MIRValue,
 };
+use cx_thir::thir::global::THIRGlobalVariable;
 use cx_thir::{
     THIRUnit,
     registry::THIRDecomposedRegistry,
@@ -34,6 +36,8 @@ pub struct MIRBuilder<'thir> {
     pub(crate) lowering_types: HashSet<THIRTypeID>,
     function: Option<FunctionContext>,
     source_range: TokenRange,
+
+    next_anonymous_symbol: usize,
 }
 
 impl<'thir> MIRBuilder<'thir> {
@@ -45,6 +49,8 @@ impl<'thir> MIRBuilder<'thir> {
             lowering_types: HashSet::new(),
             function: None,
             source_range: TokenRange::internal(),
+
+            next_anonymous_symbol: 0,
         };
         builder
             .types
@@ -88,39 +94,17 @@ impl<'thir> MIRBuilder<'thir> {
         self.module.declare_function(prototype);
     }
 
-    fn lower_string_array_constant(
-        &mut self,
-        expression_type: &THIRType,
-        symbol: &CXIdent,
-    ) -> MIRConstant {
-        let ty = lower_type(self, expression_type);
-        let length = match self.types().kind(ty).unwrap() {
-            MIRTypeKind::Array { length, .. } => *length,
-            _ => panic!("string literal initializer target is not an array"),
-        };
-        let global = self
-            .global_symbol(symbol.as_str())
-            .and_then(|id| self.module.global(id))
-            .unwrap_or_else(|| panic!("string literal global {symbol} is not declared"));
-        let MIRGlobalState::Initialized(MIRConstant::String(value)) = &global.state else {
-            panic!("global {symbol} is not a string literal");
-        };
-        let mut bytes = value.bytes().chain(std::iter::once(0));
-        let fields = (0..length)
-            .filter_map(|index| {
-                bytes.next().map(|value| {
-                    (
-                        index,
-                        MIRConstant::Integer {
-                            value: value as i128,
-                            ty: MIRIntType::I8,
-                            signed: false,
-                        },
-                    )
-                })
-            })
-            .collect();
-        MIRConstant::Aggregate { ty, fields }
+    pub(crate) fn predeclare_global(&mut self, global: &THIRGlobalVariable) {
+        let ty = lower_type(self, &global._type);
+        
+        self.module.declare_global(
+            global.name.clone(),
+            ty,
+            global.linkage,
+            global.is_mutable,
+            false,
+            MIRGlobalState::ZeroInitialized,
+        );
     }
 
     pub(crate) fn convert_prototype(&mut self, prototype: &THIRFnPrototype) -> MIRFnPrototype {
@@ -163,7 +147,12 @@ impl<'thir> MIRBuilder<'thir> {
         MIRFnPrototype::new(lowered, linkage)
     }
 
-    pub(crate) fn start_function(&mut self, index: usize, function: &THIRFunction) {
+    pub(crate) fn start_function(
+        &mut self,
+        index: usize,
+        function: &THIRFunction,
+        body: &THIRExpression,
+    ) {
         assert!(self.function.is_none(), "a MIR function is already active");
         let function_id = *self
             .module
@@ -173,14 +162,10 @@ impl<'thir> MIRBuilder<'thir> {
         let mir = self.module.take_function(function_id);
         let (id, prototype, mut definition) = mir.into_definition();
         let entry = definition.add_block();
-        let root_scope = definition.add_scope(function.body.token_range.clone());
+        let root_scope = definition.add_scope(body.token_range.clone());
 
         self.function = Some(FunctionContext::new(
-            id,
-            prototype,
-            definition,
-            entry,
-            root_scope,
+            id, prototype, definition, entry, root_scope,
         ));
         self.context_mut().set_block_name(entry, "entry");
 
@@ -193,6 +178,27 @@ impl<'thir> MIRBuilder<'thir> {
                 self.bind_named(name, MIRValue::Place(place));
             }
         }
+    }
+
+    pub fn add_string_literal(&mut self, value: &str) -> MIRGlobalID {
+        self.next_anonymous_symbol += 1;
+        let name_ident = CXIdent::from(format!("__anon_{}", self.next_anonymous_symbol));
+
+        let const_str = lower_type(
+            self,
+            &THIRType::from(THIRTypeKind::Str).with_specifier(HIR_CONST),
+        );
+        let str_ref = self.types_mut().reference_to(const_str)
+            .expect("failed to create a reference type for string literal");
+
+        self.module.declare_global(
+            name_ident,
+            str_ref,
+            LinkageMode::Static,
+            false,
+            false,
+            MIRGlobalState::Initialized(MIRConstant::String(value.to_owned())),
+        )
     }
 
     pub(crate) fn finish_function(&mut self) {

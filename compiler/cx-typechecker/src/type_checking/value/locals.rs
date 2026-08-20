@@ -16,7 +16,7 @@ use cx_thir::{
     EnvironmentNamespace,
     thir::{
         expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
-        global::{THIRGlobalVarKind, THIRGlobalVariable},
+        global::THIRGlobalVariable,
     },
 };
 use cx_tokens::TokenRange;
@@ -58,13 +58,12 @@ pub(crate) fn typecheck_var_declaration(
                 sym_expr
             } else {
                 env.items.push_generated_global(THIRGlobalVariable {
+                    name: name.clone(),
+                    _type: ty.clone(),
+                 
                     is_mutable: true,
                     linkage: LinkageMode::Extern,
-                    kind: THIRGlobalVarKind::Variable {
-                        name: name.clone(),
-                        _type: ty.clone(),
-                        initializer: None,
-                    },
+                    initializer: None,
                 });
 
                 THIRExpression {
@@ -93,13 +92,12 @@ pub(crate) fn typecheck_var_declaration(
             };
 
             env.items.push_generated_global(THIRGlobalVariable {
+                name: CXIdent::new(symbol_name.clone()),
+                _type: ty.clone(),
+
                 is_mutable: !is_const,
                 linkage: LinkageMode::Static,
-                kind: THIRGlobalVarKind::Variable {
-                    name: CXIdent::new(symbol_name.clone()),
-                    _type: ty.clone(),
-                    initializer,
-                },
+                initializer,
             });
 
             let symbol = THIRExpression {

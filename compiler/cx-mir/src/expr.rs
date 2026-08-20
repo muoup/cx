@@ -22,6 +22,7 @@ pub enum MIRPlace {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRConstant {
+    // TODO: Revamp and simplify this a bit; Add staged expressions w/ a more streamlined comptime engine in the MIR layer
     Unit,
     Bool(bool),
     String(String),

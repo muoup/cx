@@ -4,20 +4,10 @@ use crate::thir::{expression::THIRExpression, r#type::THIRType};
 
 #[derive(Debug, Clone)]
 pub struct THIRGlobalVariable {
-    pub kind: THIRGlobalVarKind,
-    pub is_mutable: bool,
+    pub name: CXIdent,
+    pub _type: THIRType,
+    pub initializer: Option<THIRExpression>,
+ 
     pub linkage: LinkageMode,
-}
-
-#[derive(Debug, Clone)]
-pub enum THIRGlobalVarKind {
-    StringLiteral {
-        name: CXIdent,
-        value: String,
-    },
-    Variable {
-        name: CXIdent,
-        _type: THIRType,
-        initializer: Option<THIRExpression>,
-    },
+    pub is_mutable: bool,
 }

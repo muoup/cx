@@ -5,7 +5,7 @@ use crate::thir::data::{THIRFnPrototype, THIRFnSignature, THIRParameter};
 use crate::thir::expression::{
     THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp,
 };
-use crate::thir::global::{THIRGlobalVarKind, THIRGlobalVariable};
+use crate::thir::global::THIRGlobalVariable;
 use crate::thir::r#type::{
     THIRField, THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind,
 };
@@ -60,7 +60,6 @@ impl MIRDisplayable for THIRFnSignature {}
 impl MIRDisplayable for THIRFnPrototype {}
 impl MIRDisplayable for THIRParameter {}
 impl MIRDisplayable for THIRGlobalVariable {}
-impl MIRDisplayable for THIRGlobalVarKind {}
 
 impl THIRType {
     pub fn display_with<'a>(
@@ -117,15 +116,6 @@ impl THIRParameter {
 }
 
 impl THIRGlobalVariable {
-    pub fn display_with<'a>(
-        &'a self,
-        definitions: &'a dyn THIRTypeContext,
-    ) -> THIRDisplay<'a, Self> {
-        self.display_with_definitions(definitions)
-    }
-}
-
-impl THIRGlobalVarKind {
     pub fn display_with<'a>(
         &'a self,
         definitions: &'a dyn THIRTypeContext,
@@ -452,12 +442,18 @@ impl Display for THIRDisplay<'_, THIRFunction> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
-            "{}\nBody:",
+            "{}",
             self.content
                 .prototype
                 .display_with_definitions(self.definitions)
         )?;
-        MIRExpressionFormatter::with_definitions(&self.content.body, 1, self.definitions).fmt(f)
+
+        if let Some(body) = &self.content.body {
+            writeln!(f, "Body:")?;
+            MIRExpressionFormatter::with_definitions(body, 1, self.definitions).fmt(f)
+        } else {
+            write!(f, "Declaration")
+        }
     }
 }
 
@@ -526,12 +522,7 @@ impl Display for THIRDisplay<'_, THIRParameter> {
 
 impl Display for THIRDisplay<'_, THIRGlobalVariable> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "global {} ", self.content.linkage)?;
-        write!(
-            f,
-            "{}",
-            self.content.kind.display_with_definitions(self.definitions)
-        )?;
+        write!(f, "global {} {}", self.content.linkage, self.content.name)?;
         write!(
             f,
             " [{}]",
@@ -541,45 +532,14 @@ impl Display for THIRDisplay<'_, THIRGlobalVariable> {
                 "immutable"
             }
         )?;
+        write!(
+            f,
+            " : {}",
+            self.content
+                ._type
+                .display_with_definitions(self.definitions)
+        )?;
         Ok(())
-    }
-}
-
-impl Display for THIRDisplay<'_, THIRGlobalVarKind> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self.content {
-            THIRGlobalVarKind::StringLiteral { name, value } => {
-                let escaped_value = value
-                    .replace('\\', "\\\\")
-                    .replace('\n', "\\n")
-                    .replace('\t', "\\t")
-                    .replace('\"', "\\\"");
-
-                write!(f, "string {} = \"{}\"", name, escaped_value)
-            }
-            THIRGlobalVarKind::Variable {
-                name,
-                _type,
-                initializer,
-            } => {
-                if let Some(init) = initializer {
-                    write!(
-                        f,
-                        "{} {} = {}",
-                        _type.display_with_definitions(self.definitions),
-                        name,
-                        init.display_with_definitions(self.definitions)
-                    )
-                } else {
-                    write!(
-                        f,
-                        "{} {}",
-                        _type.display_with_definitions(self.definitions),
-                        name
-                    )
-                }
-            }
-        }
     }
 }
 
@@ -691,6 +651,11 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             THIRExpressionKind::FloatLiteral(value) => {
                 write!(f, "FloatLiteral f{} <'", value)?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, ">")
+            }
+            THIRExpressionKind::StringLiteral { value } => {
+                write!(f, "StringLiteral \"{}\" <'", value)?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }

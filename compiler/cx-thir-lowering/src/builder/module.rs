@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use cx_mir::{
-    MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState,
-    MIRGlobalVariable, MIRTypeRegistryBuilder, MIRUnit,
+    MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable,
+    MIRTypeRegistryBuilder, MIRUnit,
 };
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 

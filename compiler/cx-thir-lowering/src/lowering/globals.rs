@@ -1,29 +1,28 @@
 use cx_mir::{MIRConstant, MIRFloatType, MIRGlobalState};
 use cx_thir::thir::{
     expression::{THIRExpression, THIRExpressionKind},
-    global::{THIRGlobalVarKind, THIRGlobalVariable},
+    global::{THIRGlobalVariable},
     r#type::{THIRFloatType, THIRTypeKind},
 };
+use cx_util::linkage::LinkageMode;
 
 use crate::{MIRBuilder, builder::integer_type, lowering::types::lower_type};
 
 pub(crate) fn lower_global(builder: &mut MIRBuilder, global: &THIRGlobalVariable) {
-    match &global.kind {
-        THIRGlobalVarKind::StringLiteral { .. } => {}
+    let id = builder
+        .global_id(global.name.as_str())
+        .unwrap_or_else(|| panic!("global {} was not declared", global.name));
 
-        THIRGlobalVarKind::Variable {
-            name, initializer, ..
-        } => {
-            let Some(initializer) = initializer else {
-                return;
-            };
-            let constant = lower_global_constant(builder, initializer);
-            let id = builder
-                .global_id(name.as_str())
-                .unwrap_or_else(|| panic!("global {name} was not declared"));
-            builder.set_global_state(id, MIRGlobalState::Initialized(constant));
-        }
-    }
+    let state = match global.initializer.as_ref() {
+        Some(initializer) => {
+            let constant = lower_global_constant(builder, &initializer);
+            MIRGlobalState::Initialized(constant)
+        },
+        _ if global.linkage == LinkageMode::Extern => MIRGlobalState::External,
+        _ => MIRGlobalState::ZeroInitialized,
+    };
+
+    builder.set_global_state(id, state);
 }
 
 fn lower_global_constant(builder: &mut MIRBuilder, expression: &THIRExpression) -> MIRConstant {

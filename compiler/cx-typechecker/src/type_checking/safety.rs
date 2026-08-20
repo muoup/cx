@@ -20,6 +20,7 @@ pub(crate) fn validate_safe_expression(
         THIRExpressionKind::BoolLiteral(_)
         | THIRExpressionKind::IntLiteral(_)
         | THIRExpressionKind::FloatLiteral(_)
+        | THIRExpressionKind::StringLiteral { .. }
         | THIRExpressionKind::Unit
         | THIRExpressionKind::SizeOf { .. }
         | THIRExpressionKind::AlignOf { .. }

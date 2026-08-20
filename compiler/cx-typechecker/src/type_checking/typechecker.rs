@@ -21,13 +21,14 @@ use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::{
     identifiers::typecheck_identifier,
     literals::{
-        typecheck_float_literal, typecheck_int_literal, typecheck_string_literal, typecheck_unit,
+        typecheck_float_literal, typecheck_int_literal, typecheck_unit,
     },
     locals::typecheck_var_declaration,
     moves::{typecheck_adopt, typecheck_leak, typecheck_unpack},
     unsafe_ops::typecheck_unsafe,
 };
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
+use cx_hir::ast::modifiers::HIR_CONST;
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
 use cx_thir::thir::data::{THIRIntType, THIRTypeKind};
@@ -148,7 +149,11 @@ fn typecheck_expr_inner(
             typecheck_float_literal(env, expr.token_range(), *val, *suffix)?
         }
 
-        HIRExprKind::StringLiteral { val } => typecheck_string_literal(env, val),
+        HIRExprKind::StringLiteral { val } => TypecheckResult::new(
+            env.symbols
+                .mem_ref_to(THIRType::from(THIRTypeKind::Str).add_specifier(HIR_CONST)),
+            THIRExpressionKind::StringLiteral { value: val.clone() },
+        ),
 
         HIRExprKind::VarDeclaration {
             _type,

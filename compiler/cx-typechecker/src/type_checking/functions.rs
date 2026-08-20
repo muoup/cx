@@ -83,7 +83,7 @@ pub fn typecheck_function(
 
     env.items.push_generated_function(THIRFunction {
         prototype,
-        body: with_implicit_return,
+        body: Some(with_implicit_return),
     });
 
     Ok(())

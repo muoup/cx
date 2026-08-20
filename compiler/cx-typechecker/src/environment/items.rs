@@ -68,6 +68,18 @@ impl ItemRegistry {
     }
 
     pub fn push_generated_function(&mut self, function: THIRFunction) {
+        if let Some(existing) = self
+            .generated_functions
+            .iter_mut()
+            .find(|existing| existing.prototype.symbol_name() == function.prototype.symbol_name())
+        {
+            if existing.body.is_none() {
+                existing.prototype = function.prototype;
+                existing.body = function.body;
+            }
+            return;
+        }
+
         self.generated_functions.push(function);
     }
 

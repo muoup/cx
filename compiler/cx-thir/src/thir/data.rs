@@ -11,7 +11,7 @@ use crate::type_context::THIRTypeContext;
 #[derive(Debug, Clone)]
 pub struct THIRFunction {
     pub prototype: THIRFnPrototype,
-    pub body: THIRExpression,
+    pub body: Option<THIRExpression>,
 }
 
 #[derive(Debug, Clone)]
