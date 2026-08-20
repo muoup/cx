@@ -7,7 +7,10 @@ use cx_thir::thir::{
 };
 use cx_thir::type_context::THIRTypeContext;
 
-use crate::{builder::MIRBuilder, lowering::types::{lower_type, lower_type_id}};
+use crate::{
+    builder::MIRBuilder,
+    lowering::types::{lower_type, lower_type_id},
+};
 
 pub(super) fn lower_call(
     builder: &mut MIRBuilder<'_>,

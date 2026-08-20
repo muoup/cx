@@ -277,9 +277,7 @@ fn constant_value(constant: &MIRConstant) -> ConstValue {
         | MIRConstant::Global { .. }
         | MIRConstant::GlobalOffset { .. }
         | MIRConstant::Function(_)
-        | MIRConstant::Undefined => {
-            ConstValue::Unknown
-        }
+        | MIRConstant::Undefined => ConstValue::Unknown,
     }
 }
 

@@ -70,7 +70,10 @@ pub fn typecheck(
                             THIRExpressionKind::TypeConversion {
                                 conversion: THIRCoercion::ReinterpretBits,
                                 operand,
-                            } if matches!(operand.kind, THIRExpressionKind::ArrayInitializer { .. }) =>
+                            } if matches!(
+                                operand.kind,
+                                THIRExpressionKind::ArrayInitializer { .. }
+                            ) =>
                             {
                                 (operand._type.clone(), operand.as_ref().clone())
                             }
@@ -80,7 +83,10 @@ pub fn typecheck(
                             THIRExpressionKind::TypeConversion {
                                 conversion: THIRCoercion::ReinterpretBits,
                                 operand,
-                            } if matches!(operand.kind, THIRExpressionKind::GlobalVariable { .. }) =>
+                            } if matches!(
+                                operand.kind,
+                                THIRExpressionKind::GlobalVariable { .. }
+                            ) =>
                             {
                                 (_type.clone(), expression)
                             }

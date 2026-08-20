@@ -48,7 +48,10 @@ impl<'a> ParserData<'a> {
     ) -> Self {
         let file_origin = EnvironmentNamespace::from(pp_contents.module_symbols.namespace.clone());
 
-        let c_mode = tokens.file.extension().is_some_and(|extension| extension == "c");
+        let c_mode = tokens
+            .file
+            .extension()
+            .is_some_and(|extension| extension == "c");
 
         Self {
             tokens,

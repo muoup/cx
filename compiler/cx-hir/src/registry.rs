@@ -113,10 +113,7 @@ impl GlobalSymbolRegistry {
             .cloned()
     }
 
-    pub fn resolve_unmangled_global(
-        &self,
-        name: &str,
-    ) -> Vec<(NamespacePath, HIRSymbol)> {
+    pub fn resolve_unmangled_global(&self, name: &str) -> Vec<(NamespacePath, HIRSymbol)> {
         let inner = self
             .inner
             .read()

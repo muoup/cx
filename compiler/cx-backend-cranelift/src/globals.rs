@@ -125,7 +125,10 @@ fn write_initializer_relocations(
             let target = state.object_module.declare_data_in_data(target, data);
             data.write_data_addr(offset as u32, target, 0);
         }
-        LMIRGlobalInitializer::GlobalOffset { global, offset: addend } => {
+        LMIRGlobalInitializer::GlobalOffset {
+            global,
+            offset: addend,
+        } => {
             let target = *state
                 .global_ids
                 .get(*global as usize)
@@ -161,9 +164,10 @@ fn write_initializer_relocations(
 
 fn aggregate_field(ty: &LMIRType, index: usize) -> Option<(LMIRType, usize)> {
     match &ty.kind {
-        LMIRTypeKind::Array { element, size } if index < *size => {
-            Some((element.as_ref().clone(), index * usize::from(element.size())))
-        }
+        LMIRTypeKind::Array { element, size } if index < *size => Some((
+            element.as_ref().clone(),
+            index * usize::from(element.size()),
+        )),
         LMIRTypeKind::Struct { fields, .. } if index < fields.len() => {
             let mut offset = 0usize;
             for (field_index, (_, field_type)) in fields.iter().enumerate() {

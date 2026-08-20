@@ -12,9 +12,7 @@ pub(crate) fn lower_global(builder: &mut MIRBuilder, global: &THIRGlobalVariable
         THIRGlobalVarKind::StringLiteral { .. } => {}
 
         THIRGlobalVarKind::Variable {
-            name,
-            initializer,
-            ..
+            name, initializer, ..
         } => {
             let Some(initializer) = initializer else {
                 return;

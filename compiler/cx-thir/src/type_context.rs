@@ -80,7 +80,10 @@ pub trait THIRTypeContext {
         (type1.specifiers ^ type2.specifiers) & type1.specifiers == 0
     }
 
-    fn type_debug_name(&self, ty: &THIRType) -> Option<String> where Self: Sized {
+    fn type_debug_name(&self, ty: &THIRType) -> Option<String>
+    where
+        Self: Sized,
+    {
         ty.strong_identifier()
             .map(|_| ty.display_with(self).to_string())
     }

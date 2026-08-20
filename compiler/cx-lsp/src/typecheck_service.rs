@@ -165,11 +165,7 @@ fn lsp_error_to_diagnostic(error: &LSPErrors, file_contents: &str) -> Diagnostic
                 ..Default::default()
             }
         }
-        LSPErrors::FatalError {
-            message,
-            line,
-            ..
-        } => Diagnostic {
+        LSPErrors::FatalError { message, line, .. } => Diagnostic {
             range: line_range(file_contents, *line),
             severity: Some(DiagnosticSeverity::ERROR),
             message: message.clone(),

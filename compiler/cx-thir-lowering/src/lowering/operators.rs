@@ -10,8 +10,11 @@ use cx_thir::thir::{
     },
 };
 
-use crate::{builder::{MIRBuilder, integer_type}, lowering::types::lower_type};
 use super::types::{lower_float_type, lower_int_type};
+use crate::{
+    builder::{MIRBuilder, integer_type},
+    lowering::types::lower_type,
+};
 
 pub(super) fn lower_binary_op(builder: &mut MIRBuilder<'_>, op: &THIRBinOp) -> MIRBinaryOp {
     match op {

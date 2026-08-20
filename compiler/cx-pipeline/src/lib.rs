@@ -321,11 +321,9 @@ pub fn project_compilation(
                         standard_compilation(config, Path::new(entry))?;
                     }
                     (_, Some(patterns)) => {
-                        let mut sources = sources::expand_patterns(
-                            &base_config.working_directory,
-                            patterns,
-                        )
-                        .map_err(|error| pipeline_error("COMPILATION ERROR", error))?;
+                        let mut sources =
+                            sources::expand_patterns(&base_config.working_directory, patterns)
+                                .map_err(|error| pipeline_error("COMPILATION ERROR", error))?;
                         sources::prepend_entry(&mut sources, binary.entry.as_deref());
                         eprintln!(
                             "Building binary '{}' (target: {}, {} sources)",
@@ -338,10 +336,7 @@ pub fn project_compilation(
                     (None, None) => {
                         return Err(pipeline_error(
                             "COMPILATION ERROR",
-                            format!(
-                                "Binary '{}' must define 'entry' or 'match'",
-                                binary.name
-                            ),
+                            format!("Binary '{}' must define 'entry' or 'match'", binary.name),
                         ));
                     }
                 }

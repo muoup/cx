@@ -1,7 +1,7 @@
 use cx_hir::{ast::function::HIRFunctionContract, symbols::HIRSymbolKind};
 use cx_log::CXResult;
 use cx_thir::thir::{
-    data::{THIRTemplateInput, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter},
+    data::{THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter, THIRTemplateInput},
     expression::{THIRExpression, THIRExpressionKind},
     r#type::THIRType,
 };
@@ -17,7 +17,7 @@ use crate::{
 pub fn fulfill_requests(env: &mut TypeEnvironment) -> CXResult<()> {
     while let Some(request) = env.items.pop_request() {
         match request {
-        THIRFunctionGenRequest::TypeConstructor {
+            THIRFunctionGenRequest::TypeConstructor {
                 symbol_name,
                 debug_name,
                 union_type,
@@ -32,7 +32,7 @@ pub fn fulfill_requests(env: &mut TypeEnvironment) -> CXResult<()> {
                 variant_index,
             ),
 
-        THIRFunctionGenRequest::Template {
+            THIRFunctionGenRequest::Template {
                 name,
                 prototype,
                 input,
@@ -94,7 +94,7 @@ fn realize_tagged_union_constructor(
             },
         }
     };
-    
+
     let constructed = THIRExpression {
         token_range: TokenRange::internal(),
         _type: union_type.clone(),
@@ -147,7 +147,8 @@ fn realize_fn_template(
         if env.items.request_fulfilled(prototype.symbol_name()) {
             return Ok(());
         }
-        env.items.mark_request_fulfilled(prototype.symbol_name().into());
+        env.items
+            .mark_request_fulfilled(prototype.symbol_name().into());
 
         typecheck_function(env, &namespace, prototype, body)?;
 

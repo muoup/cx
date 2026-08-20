@@ -49,9 +49,7 @@ pub(crate) fn validate_safe_expression(
             validate_safe_expression(env, rhs)
         }
         THIRExpressionKind::UnaryOperation { operand, .. }
-        | THIRExpressionKind::Copy { source: operand } => {
-            validate_safe_expression(env, operand)
-        }
+        | THIRExpressionKind::Copy { source: operand } => validate_safe_expression(env, operand),
 
         THIRExpressionKind::CreateLocalVariable { initial_value, .. } => initial_value
             .as_deref()

@@ -310,25 +310,11 @@ fn transfer_instruction(
             MIRAggregateOp::Place { out, op } => {
                 match op {
                     MIRPlaceAggregateOp::Field { base, .. }
-                    | MIRPlaceAggregateOp::Variant { base, .. } => use_place(
-                        unit,
-                        function,
-                        block,
-                        instruction,
-                        *base,
-                        state,
-                        diagnose,
-                    )?,
+                    | MIRPlaceAggregateOp::Variant { base, .. } => {
+                        use_place(unit, function, block, instruction, *base, state, diagnose)?
+                    }
                     MIRPlaceAggregateOp::Index { base, index, .. } => {
-                        use_place(
-                            unit,
-                            function,
-                            block,
-                            instruction,
-                            *base,
-                            state,
-                            diagnose,
-                        )?;
+                        use_place(unit, function, block, instruction, *base, state, diagnose)?;
                         use_value(unit, function, block, instruction, index, state, diagnose)?;
                     }
                 }

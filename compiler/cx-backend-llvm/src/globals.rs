@@ -268,11 +268,9 @@ fn global_initializer<'ctx>(
                     .collect::<LLVMResult<Vec<_>>>()?;
                 Ok(unsafe { ArrayValue::new_const_array(&element_type, &values) }.into())
             }
-            _ => {
-                Err(LLVMError::new(
-                    "Aggregate initializer used with non-aggregate LLVM type",
-                ))
-            }
+            _ => Err(LLVMError::new(
+                "Aggregate initializer used with non-aggregate LLVM type",
+            )),
         },
         LMIRGlobalInitializer::Global(global) => {
             let pointer_type = basic_type.into_pointer_type();

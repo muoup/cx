@@ -1,15 +1,15 @@
 use crate::parse::expressions::parse_expr;
-use crate::parse::{ParserData, try_parse_simple_identifier};
+use crate::parse::{try_parse_simple_identifier, ParserData};
 use crate::{assert_token_matches, log::parse_point_error, next_kind, peek_kind, try_next};
-use cx_hir::ast::HIRStmt;
 use cx_hir::ast::expression::HIRExpression;
 use cx_hir::ast::global_var::HIREnumDefinition;
 use cx_hir::ast::types::HIRMoveSemantics;
+use cx_hir::ast::HIRStmt;
 use cx_hir::ast::{
     function::{HIRFunctionKind, HIRFunctionPrototype},
     global_var::{HIREnumVariant, HIRGlobalVariable},
     modifiers::{
-        HIR_CONST, HIR_RESTRICT, HIR_VOLATILE, HIRSymbolNameScheme, HIRTypeQualifiers, LinkageMode,
+        HIRSymbolNameScheme, HIRTypeQualifiers, LinkageMode, HIR_CONST, HIR_RESTRICT, HIR_VOLATILE,
     },
     template::HIRTemplatePrototype,
     types::{HIRAggregateAttributes, HIRField, HIRType, HIRTypeKind, PredeclarationType},
@@ -18,12 +18,12 @@ use cx_log::CXResult;
 use cx_thir::intrinsic_types::is_intrinsic_type;
 use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
 use cx_tokens::{
-    TokenIter, TokenRange, identifier, intrinsic, keyword, operator, punctuator, specifier,
+    identifier, intrinsic, keyword, operator, punctuator, specifier, TokenIter, TokenRange,
 };
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
 
-use crate::parse::functions::{ParseParamsResult, parse_params};
+use crate::parse::functions::{parse_params, ParseParamsResult};
 use crate::parse::templates::{note_templated_types, try_parse_template, unnote_templated_types};
 use crate::parse::{parse_intrinsic, try_parse_qualified_name, try_parse_type_identifier};
 

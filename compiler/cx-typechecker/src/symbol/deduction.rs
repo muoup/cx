@@ -13,7 +13,7 @@ use cx_log::{
 use cx_thir::{
     EnvironmentNamespace,
     symbol::MIRSymbol,
-    thir::data::{THIRTemplateInput, THIRFnSignature, THIRType, THIRTypeKind},
+    thir::data::{THIRFnSignature, THIRTemplateInput, THIRType, THIRTypeKind},
     type_context::THIRTypeContext,
 };
 use cx_util::namespace::QualifiedName;

@@ -289,7 +289,7 @@ fn push_mangled_component(mangled: &mut String, component: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{NamespacePath, QualifiedName, mangle_namespace_symbol};
+    use super::{mangle_namespace_symbol, NamespacePath, QualifiedName};
     use crate::identifier::CXIdent;
 
     fn qualified(namespace: &str, name: &str) -> QualifiedName {

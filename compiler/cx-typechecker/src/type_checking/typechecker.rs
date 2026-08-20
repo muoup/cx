@@ -1,6 +1,7 @@
 use std::ops::Deref;
 
 use crate::environment::{LoopScopeKind, ScopeArrowSink, ScopeExitTarget, TypeEnvironment};
+use crate::symbol::completion::complete_type;
 use crate::type_checking::aggregate::initialization::typecheck_initializer_list;
 use crate::type_checking::coercion::implicit::{implicit_cast, promotion::std_rval_promotion};
 use crate::type_checking::control_flow::r#return::typecheck_return;
@@ -26,7 +27,6 @@ use crate::type_checking::value::{
     moves::{typecheck_adopt, typecheck_leak, typecheck_unpack},
     unsafe_ops::typecheck_unsafe,
 };
-use crate::symbol::completion::complete_type;
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
@@ -441,14 +441,8 @@ fn typecheck_expr_inner(
         }
 
         HIRExprKind::Label { name, statement } => {
-            if !env
-                .function
-                .declare_label(name, expr.token_range().clone())
-            {
-                return env.log_error(
-                    expr.token_range(),
-                    format!("Duplicate label '{name}'"),
-                );
+            if !env.function.declare_label(name, expr.token_range().clone()) {
+                return env.log_error(expr.token_range(), format!("Duplicate label '{name}'"));
             }
             let statement = typecheck_expr(env, namespace, statement, None)
                 .and_then(|v| v.standard_ready_coerce(env, statement.token_range()))?;

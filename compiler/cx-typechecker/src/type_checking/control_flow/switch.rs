@@ -1,9 +1,9 @@
+use crate::comptime::evaluate_comptime_expression;
 use crate::environment::{ScopeExitTarget, TypeEnvironment};
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use crate::comptime::evaluate_comptime_expression;
 use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
@@ -82,12 +82,7 @@ pub fn typecheck_switch(
             );
         }
         let case_end = next_case_boundary(block.len(), case_index, cases, default_case);
-        let case_body = case_body_expression(
-            block,
-            case_index,
-            case_end,
-            case_expr.token_range(),
-        );
+        let case_body = case_body_expression(block, case_index, case_end, case_expr.token_range());
 
         let case_value = typecheck_expr(env, namespace, case_expr, None)
             .and_then(|v| v.standard_ready_coerce(env, case_expr.token_range()))

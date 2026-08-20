@@ -245,8 +245,12 @@ impl Display for LMIRInstruction {
                 coercion_type,
             } => {
                 let coerce_type_str = format!("{coercion_type:?}").to_ascii_lowercase();
-                
-                write!(f, "coerce.{} {value} -> {}", coerce_type_str, self.value_type)
+
+                write!(
+                    f,
+                    "coerce.{} {value} -> {}",
+                    coerce_type_str, self.value_type
+                )
             }
             LMIRInstructionKind::Return { value } => {
                 write!(f, "return")?;

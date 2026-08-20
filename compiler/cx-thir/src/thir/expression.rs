@@ -95,7 +95,7 @@ pub enum THIRExpressionKind {
     GlobalVariable {
         symbol: CXIdent,
     },
-    
+
     Variable {
         name: CXIdent,
         local_id: THIRLocalID,
@@ -172,7 +172,7 @@ pub enum THIRExpressionKind {
         name: CXIdent,
         local_id: THIRLocalID,
         struct_type: THIRType,
-        bindings: Vec<THIRUnpackBinding>
+        bindings: Vec<THIRUnpackBinding>,
     },
 
     // Tagged Unions
@@ -255,7 +255,7 @@ pub enum THIRExpressionKind {
     Yield {
         value: Option<Box<THIRExpression>>,
     },
-    
+
     Assert {
         condition: Box<THIRExpression>,
         message: String,
@@ -475,7 +475,7 @@ pub struct THIRUnpackBinding {
     pub field_name: CXIdent,
     pub field_type: THIRType,
     pub field_index: usize,
-    
+
     pub binding_name: CXIdent,
     pub binding_local_id: THIRLocalID,
 }

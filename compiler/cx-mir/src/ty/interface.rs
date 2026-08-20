@@ -2,7 +2,10 @@ use std::collections::HashSet;
 
 use cx_target::ArchitectureConfig;
 
-use crate::{MIRIntType, MIRLayoutError, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, ty::comparison::same_type_inner};
+use crate::{
+    MIRIntType, MIRLayoutError, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout,
+    ty::comparison::same_type_inner,
+};
 
 pub trait MTRegistry: Sized {
     fn architecture(&self) -> &ArchitectureConfig;
@@ -19,13 +22,11 @@ pub trait MTRegistry: Sized {
     }
 
     fn kind(&self, id: MIRTypeID) -> Result<&MIRTypeKind, MIRLayoutError> {
-        self.resolve_type_id(id)
-            .and_then(|ty| Ok(&ty.kind))
+        self.resolve_type_id(id).and_then(|ty| Ok(&ty.kind))
     }
 
     fn layout(&self, id: MIRTypeID) -> Result<&MIRTypeLayout, MIRLayoutError> {
-        self.resolve_type_id(id)
-            .and_then(|ty| Ok(&ty.layout))
+        self.resolve_type_id(id).and_then(|ty| Ok(&ty.layout))
     }
 
     fn pointer_integer_type(&self) -> MIRIntType {
@@ -42,10 +43,7 @@ pub trait MTRegistry: Sized {
         Ok(matches!(ty.kind, MIRTypeKind::MemoryReference { .. }))
     }
 
-    fn reference_inner(
-        &self,
-        id: MIRTypeID,
-    ) -> Result<Option<MIRTypeID>, MIRLayoutError> {
+    fn reference_inner(&self, id: MIRTypeID) -> Result<Option<MIRTypeID>, MIRLayoutError> {
         let ty = self.resolve_type_id(id)?;
         match &ty.kind {
             MIRTypeKind::MemoryReference { inner, .. } => Ok(Some(*inner)),
@@ -58,10 +56,7 @@ pub trait MTRegistry: Sized {
         Ok(matches!(ty.kind, MIRTypeKind::PointerTo { .. }))
     }
 
-    fn pointer_inner(
-        &self,
-        id: MIRTypeID,
-    ) -> Result<Option<MIRTypeID>, MIRLayoutError> {
+    fn pointer_inner(&self, id: MIRTypeID) -> Result<Option<MIRTypeID>, MIRLayoutError> {
         let ty = self.resolve_type_id(id)?;
         match &ty.kind {
             MIRTypeKind::PointerTo { inner } => Ok(Some(*inner)),

@@ -1,6 +1,6 @@
 use cx_util::{
     identifier::CXIdent,
-    namespace::{NamespacePath, QualifiedName, mangle_namespace_symbol},
+    namespace::{mangle_namespace_symbol, NamespacePath, QualifiedName},
 };
 
 /// Stable source identity for a runtime function referenced by compiler-generated LMIR.

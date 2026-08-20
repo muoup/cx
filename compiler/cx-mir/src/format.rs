@@ -10,12 +10,10 @@ pub use validation::MIRValidationErrorDisplay;
 use crate::{
     MIRLayoutError, MIRTypeID,
     expr::{
-        MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRParameterID, MIRPlace, MIRPlaceID, MIRRegister,
-        MIRValue,
+        MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRParameterID, MIRPlace, MIRPlaceID,
+        MIRRegister, MIRValue,
     },
-    global::{
-        MIRFnSignature, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable,
-    },
+    global::{MIRFnSignature, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable},
     op::{MIRBinaryOp, MIRCoercion, MIRUnaryOp},
     ty::MIRIntType,
     unit::MIRUnit,

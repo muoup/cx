@@ -20,9 +20,8 @@ use cx_thir::{
     symbol::MIRSymbol,
     thir::{
         data::{
-            THIRTemplateInput, THIRComptimeFnPrototype, THIRComptimeParameter,
-            THIRComptimeValueType, THIRFnPrototype, THIRFnSignature, THIRParameter,
-            THIRTypeAttributes,
+            THIRComptimeFnPrototype, THIRComptimeParameter, THIRComptimeValueType, THIRFnPrototype,
+            THIRFnSignature, THIRParameter, THIRTemplateInput, THIRTypeAttributes,
         },
         r#type::{THIRField, THIRMoveSemantics, THIRType, THIRTypeID, THIRTypeKind},
     },

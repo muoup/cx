@@ -72,7 +72,7 @@ pub(crate) fn typecheck_var_declaration(
                     kind: THIRExpressionKind::GlobalVariable {
                         symbol: name.clone(),
                     },
-                    _type: mem_type
+                    _type: mem_type,
                 }
             }
         }
@@ -110,10 +110,8 @@ pub(crate) fn typecheck_var_declaration(
                 },
             };
 
-            env.symbols.insert_local_value(
-                QualifiedName::new_raw(name.clone()),
-                symbol.clone(),
-            );
+            env.symbols
+                .insert_local_value(QualifiedName::new_raw(name.clone()), symbol.clone());
 
             symbol
         }

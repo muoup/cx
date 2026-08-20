@@ -249,10 +249,7 @@ fn is_va_arg_callee(expression: &HIRExpression) -> bool {
     )
 }
 
-fn parse_va_arg_call(
-    data: &mut ParserData,
-    expr_stack: &mut Vec<HIRExpression>,
-) -> CXResult<()> {
+fn parse_va_arg_call(data: &mut ParserData, expr_stack: &mut Vec<HIRExpression>) -> CXResult<()> {
     let callee = expr_stack
         .pop()
         .expect("va_arg callee missing from expression stack");
@@ -491,10 +488,7 @@ pub(crate) fn parse_expr_val(
 
             if is_va_arg_callee(&expr)
                 && data.tokens.peek().is_some_and(|token| {
-                    matches!(
-                        token.kind,
-                        TokenKind::Punctuator(PunctuatorType::OpenParen)
-                    )
+                    matches!(token.kind, TokenKind::Punctuator(PunctuatorType::OpenParen))
                 })
             {
                 expr_stack.push(expr);

@@ -8,10 +8,7 @@ use cx_util::{
 use speedy::{Readable, Writable};
 
 use crate::ast::{
-    modifiers::LinkageMode,
-    pattern::HIRPattern,
-    template::HIRTemplateInput,
-    types::HIRType,
+    modifiers::LinkageMode, pattern::HIRPattern, template::HIRTemplateInput, types::HIRType,
 };
 
 #[derive(Debug, PartialEq, Eq, Hash)]

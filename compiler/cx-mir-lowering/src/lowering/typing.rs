@@ -6,7 +6,7 @@ use cx_lmir::{
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
     MIRField, MIRFloatType, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRTypeID, MIRTypeKind,
-    MIRTypeRegistryBuilder,
+    MIRTypeLayout, MIRTypeRegistryBuilder,
 };
 use cx_target::ArchitectureConfig;
 use cx_util::linkage::LinkageMode;
@@ -141,7 +141,7 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistryBuilder) -> LMI
     let definition = types
         .definition(ty)
         .unwrap_or_else(|| panic!("invalid MIR type {ty}"));
-    
+
     let kind = match &definition.kind {
         MIRTypeKind::Opaque { size, .. } => LMIRTypeKind::Opaque { bytes: *size },
         MIRTypeKind::Integer { ty, .. } => LMIRTypeKind::Integer(convert_integer_type(*ty)),
@@ -186,7 +186,9 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistryBuilder) -> LMI
                 })
                 .collect(),
         },
-        MIRTypeKind::Union { .. } => LMIRTypeKind::Opaque { bytes: definition.layout.size },
+        MIRTypeKind::Union { .. } => LMIRTypeKind::Opaque {
+            bytes: definition.layout.size,
+        },
         MIRTypeKind::Void => LMIRTypeKind::Void,
         MIRTypeKind::Str => LMIRTypeKind::Integer(LMIRIntegerType::I8),
         MIRTypeKind::Undefined => panic!("cannot lower undefined MIR type {ty}"),
@@ -200,11 +202,17 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistryBuilder) -> LMI
 fn lower_union(variants: &[MIRField], types: &MIRTypeRegistryBuilder) -> LMIRType {
     let (size, alignment) = variants
         .iter()
-        .map(|variant| types.layout(variant.ty()))
+        .map(|variant| layout(types, variant.ty()))
         .fold((0, 1), |(size, alignment), layout| {
             (size.max(layout.size), alignment.max(layout.alignment))
         });
     LMIRType::new(LMIRTypeKind::Opaque { bytes: size }, alignment as u8)
+}
+
+fn layout(types: &MIRTypeRegistryBuilder, ty: MIRTypeID) -> MIRTypeLayout {
+    *types
+        .layout(ty)
+        .unwrap_or_else(|error| panic!("invalid MIR type layout: {error}"))
 }
 
 fn integer_slot_type(architecture: &ArchitectureConfig, size: usize) -> Option<LMIRType> {

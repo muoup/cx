@@ -89,14 +89,9 @@ impl Display for MIRAnalysisError {
         match self {
             Self::Validation(error) => write!(f, "MIR validation failed: {error}"),
             Self::ProvenFalseAssertion {
-                function,
-                message,
-                ..
+                function, message, ..
             } => {
-                write!(
-                    f,
-                    "Assertion in function {function} is provably false"
-                )?;
+                write!(f, "Assertion in function {function} is provably false")?;
                 if let Some(message) = message {
                     write!(f, ": {message}")?;
                 }

@@ -18,7 +18,7 @@ use cx_thir::{
     symbol::MIRSymbol,
     thir::{
         contextual_eq::TypeContextEqual,
-        data::{THIRTemplateInput, THIRFnPrototype, THIRFnSignature, THIRParameter, TemplateInfo},
+        data::{THIRFnPrototype, THIRFnSignature, THIRParameter, THIRTemplateInput, TemplateInfo},
         expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
         global::{THIRGlobalVarKind, THIRGlobalVariable},
     },

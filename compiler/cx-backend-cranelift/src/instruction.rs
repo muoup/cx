@@ -564,10 +564,7 @@ pub(crate) fn codegen_instruction(
         }
 
         LMIRInstructionKind::Memcpy {
-            dest,
-            src,
-            size,
-            ..
+            dest, src, size, ..
         } => {
             let dest = context.get_value(dest)?.as_value();
             let src = context.get_value(src)?.as_value();

@@ -20,10 +20,7 @@ pub(super) fn contains_label(expression: &THIRExpression) -> bool {
             then_branch,
             else_branch,
             ..
-        } => contains_label(then_branch)
-            || else_branch
-                .as_deref()
-                .is_some_and(contains_label),
+        } => contains_label(then_branch) || else_branch.as_deref().is_some_and(contains_label),
         THIRExpressionKind::While { body, .. } | THIRExpressionKind::For { body, .. } => {
             contains_label(body)
         }

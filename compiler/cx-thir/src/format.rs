@@ -717,7 +717,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 write!(f, "GlobalVariable \"{symbol}\" <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
-            },
+            }
             THIRExpressionKind::Variable { name, .. } => {
                 write!(f, "LocalVariable {} <'", name)?;
                 self.write_type(f, &self.expr._type)?;
@@ -800,7 +800,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 local_id,
                 _type,
                 initial_value,
-                adopting
+                adopting,
             } => {
                 write!(
                     f,
@@ -832,13 +832,13 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            
+
             THIRExpressionKind::Move { name, .. } => {
                 write!(f, "Move <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, "> {}", name)
             }
-            
+
             THIRExpressionKind::MemberAccess {
                 base,
                 member_index,
@@ -891,16 +891,11 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 writeln!(f, "> {}", name)?;
                 for binding in bindings {
                     self.indent(f)?;
-                    writeln!(
-                        f,
-                        ".{} -> {}",
-                        binding.field_name,
-                        binding.binding_name,
-                    )?;
+                    writeln!(f, ".{} -> {}", binding.field_name, binding.binding_name,)?;
                 }
                 Ok(())
-            },
-            
+            }
+
             THIRExpressionKind::TaggedUnionTag { value, .. } => {
                 write!(f, "TaggedUnionTag <'")?;
                 self.write_type(f, &self.expr._type)?;

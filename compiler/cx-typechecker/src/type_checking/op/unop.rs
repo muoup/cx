@@ -19,7 +19,10 @@ use crate::{
     type_checking::{
         coercion::{
             explicit::explicit_cast,
-            implicit::{implicit_cast, promotion::{std_rval_promotion, sizeof_promotion}},
+            implicit::{
+                implicit_cast,
+                promotion::{sizeof_promotion, std_rval_promotion},
+            },
         },
         op::binop::is::typecheck_is,
         result::TypecheckResult,

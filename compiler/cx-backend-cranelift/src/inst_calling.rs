@@ -42,10 +42,7 @@ pub(crate) fn prepare_function_sig(
                 object_module.target_config().pointer_type(),
             )),
             LMIRParameterABI::ByValue { .. } => {
-                let stack_alignment = object_module
-                    .target_config()
-                    .pointer_type()
-                    .bytes() as usize;
+                let stack_alignment = object_module.target_config().pointer_type().bytes() as usize;
                 let size = usize::from(param._type.size())
                     .div_ceil(stack_alignment)
                     .saturating_mul(stack_alignment);

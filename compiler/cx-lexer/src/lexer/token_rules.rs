@@ -213,9 +213,7 @@ fn char_literal(iter: &mut LexCursor<'_>) -> CXResult<TokenKind> {
         Some('\\') if c == '\\' && iter.next() == Some('\'') => {
             Some(TokenKind::IntLiteral(IntegerLiteral::decimal('\\' as u64)))
         }
-        Some('\'') if c != '\\' => {
-            Some(TokenKind::IntLiteral(IntegerLiteral::decimal(c as u64)))
-        }
+        Some('\'') if c != '\\' => Some(TokenKind::IntLiteral(IntegerLiteral::decimal(c as u64))),
         Some('0') if c == '\\' && iter.next() == Some('\'') => {
             Some(TokenKind::IntLiteral(IntegerLiteral::decimal(0)))
         }

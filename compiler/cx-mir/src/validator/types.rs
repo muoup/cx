@@ -345,9 +345,7 @@ impl MIRUnit {
             MIRValue::Constant(MIRConstant::Float { ty, .. }) => {
                 self.types().find_kind(&MIRTypeKind::Float { ty: *ty })
             }
-            MIRValue::Constant(MIRConstant::String(_)) => {
-                self.types().find_kind(&MIRTypeKind::Str)
-            }
+            MIRValue::Constant(MIRConstant::String(_)) => self.types().find_kind(&MIRTypeKind::Str),
             MIRValue::Constant(MIRConstant::Null { ty }) => Some(*ty),
             MIRValue::Constant(MIRConstant::Aggregate { ty, .. }) => Some(*ty),
             MIRValue::Constant(MIRConstant::Global { ty, .. }) => Some(*ty),

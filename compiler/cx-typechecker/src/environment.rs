@@ -217,10 +217,7 @@ impl TypeEnvironment<'_> {
         let qualified_lookup = self.qualified_lookup(namespace, name);
 
         match qualified_lookup {
-            QualifiedLookupResult::Found {
-                value,
-                ..
-            } => CXRawResult::Ok(Some(value)),
+            QualifiedLookupResult::Found { value, .. } => CXRawResult::Ok(Some(value)),
 
             QualifiedLookupResult::NotFound => CXRawResult::Ok(None),
             QualifiedLookupResult::Ambiguous { candidates } => {
