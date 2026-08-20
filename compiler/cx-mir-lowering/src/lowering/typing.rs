@@ -27,7 +27,9 @@ pub(crate) fn classify_signature(
     types: &MIRTypeRegistryBuilder,
 ) -> LMIRFunctionSignature {
     let return_type = convert_type(signature.return_type, types);
-    let return_layout = (!return_type.is_void()).then(|| layout(types, signature.return_type));
+    let return_layout = return_type
+        .is_memory_resident()
+        .then(|| layout(types, signature.return_type));
     let return_abi = match return_layout {
         Some(layout) => classify_return(
             types.architecture(),
@@ -81,7 +83,6 @@ fn classify_param(
     types: &MIRTypeRegistryBuilder,
 ) -> LMIRParameter {
     let lowered = convert_type(ty, types);
-    let layout = layout(types, ty);
     let aggregate_value = matches!(
         types.kind(ty).unwrap(),
         MIRTypeKind::Structured { .. } | MIRTypeKind::Union { .. }
@@ -93,15 +94,18 @@ fn classify_param(
                 _type: lowered.clone(),
             }],
         }
-    } else if let Some(slots) = direct_aggregate_slots(architecture, &lowered, layout.size) {
-        LMIRParameterABI::Direct { slots }
-    } else if aggregate_value {
-        LMIRParameterABI::ByValue {
-            alignment: layout.alignment as u8,
-        }
     } else {
-        LMIRParameterABI::Indirect {
-            alignment: layout.alignment as u8,
+        let layout = layout(types, ty);
+        if let Some(slots) = direct_aggregate_slots(architecture, &lowered, layout.size) {
+            LMIRParameterABI::Direct { slots }
+        } else if aggregate_value {
+            LMIRParameterABI::ByValue {
+                alignment: layout.alignment as u8,
+            }
+        } else {
+            LMIRParameterABI::Indirect {
+                alignment: layout.alignment as u8,
+            }
         }
     };
     LMIRParameter {
@@ -142,6 +146,7 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistryBuilder) -> LMI
         .definition(ty)
         .unwrap_or_else(|| panic!("invalid MIR type {ty}"));
 
+    let type_layout = layout(types, ty);
     let kind = match &definition.kind {
         MIRTypeKind::Opaque { size, .. } => LMIRTypeKind::Opaque { bytes: *size },
         MIRTypeKind::Integer { ty, .. } => LMIRTypeKind::Integer(convert_integer_type(*ty)),
@@ -187,7 +192,7 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistryBuilder) -> LMI
                 .collect(),
         },
         MIRTypeKind::Union { .. } => LMIRTypeKind::Opaque {
-            bytes: definition.layout.size,
+            bytes: type_layout.size,
         },
         MIRTypeKind::Void => LMIRTypeKind::Void,
         MIRTypeKind::Str => LMIRTypeKind::Integer(LMIRIntegerType::I8),
@@ -195,7 +200,7 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistryBuilder) -> LMI
     };
     LMIRType {
         kind,
-        alignment: definition.layout.alignment as u8,
+        alignment: type_layout.alignment as u8,
     }
 }
 
@@ -209,10 +214,14 @@ fn lower_union(variants: &[MIRField], types: &MIRTypeRegistryBuilder) -> LMIRTyp
     LMIRType::new(LMIRTypeKind::Opaque { bytes: size }, alignment as u8)
 }
 
-fn layout(types: &MIRTypeRegistryBuilder, ty: MIRTypeID) -> MIRTypeLayout {
-    *types
+pub(super) fn layout(types: &MIRTypeRegistryBuilder, ty: MIRTypeID) -> MIRTypeLayout {
+    types
         .layout(ty)
-        .unwrap_or_else(|error| panic!("invalid MIR type layout: {error}"))
+        .ok()
+        .flatten()
+        .copied()
+        .or_else(|| cx_mir::ty::layout::layout_of(types, ty).ok())
+        .unwrap_or_else(|| panic!("MIR type {ty} has no layout"))
 }
 
 fn integer_slot_type(architecture: &ArchitectureConfig, size: usize) -> Option<LMIRType> {

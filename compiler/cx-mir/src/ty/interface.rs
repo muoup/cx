@@ -25,8 +25,9 @@ pub trait MTRegistry: Sized {
         self.resolve_type_id(id).and_then(|ty| Ok(&ty.kind))
     }
 
-    fn layout(&self, id: MIRTypeID) -> Result<&MIRTypeLayout, MIRLayoutError> {
-        self.resolve_type_id(id).and_then(|ty| Ok(&ty.layout))
+    fn layout(&self, id: MIRTypeID) -> Result<Option<&MIRTypeLayout>, MIRLayoutError> {
+        self.resolve_type_id(id)
+            .map(|ty| ty.layout.as_ref())
     }
 
     fn pointer_integer_type(&self) -> MIRIntType {

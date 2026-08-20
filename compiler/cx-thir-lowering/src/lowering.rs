@@ -33,10 +33,6 @@ pub(crate) fn lower_unit(builder: &mut MIRBuilder<'_>, thir: &THIRUnit) -> CXRes
     }
 
     for global in &thir.global_variables {
-        builder.predeclare_global(global);
-    }
-
-    for global in &thir.global_variables {
         globals::lower_global(builder, global);
     }
 
@@ -114,17 +110,31 @@ fn lower_expression(
             THIRExpressionKind::Unit => MIRValue::Constant(MIRConstant::Unit),
             THIRExpressionKind::SizeOf { _type } | THIRExpressionKind::AlignOf { _type } => {
                 let type_id = lower_type(builder, _type);
-                let layout = builder.types().layout(type_id).map_err(|error| {
-                    cx_log::error::CXErr::new(
-                        cx_log::error::message::CXStdErrMessage::error(
-                            "MIRLayoutError",
-                            error.to_string(),
-                        ),
-                        cx_log::error::context::CXInternalContext::error(
-                            "failed to calculate type layout during MIR lowering",
-                        ),
-                    )
-                })?;
+                let layout = builder
+                    .types()
+                    .layout(type_id)
+                    .map_err(|error| {
+                        cx_log::error::CXErr::new(
+                            cx_log::error::message::CXStdErrMessage::error(
+                                "MIRLayoutError",
+                                error.to_string(),
+                            ),
+                            cx_log::error::context::CXInternalContext::error(
+                                "failed to calculate type layout during MIR lowering",
+                            ),
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        cx_log::error::CXErr::new(
+                            cx_log::error::message::CXStdErrMessage::error(
+                                "MIRLayoutError",
+                                format!("type {type_id} has no representable layout"),
+                            ),
+                            cx_log::error::context::CXInternalContext::error(
+                                "failed to calculate type layout during MIR lowering",
+                            ),
+                        )
+                    })?;
                 MIRValue::Constant(MIRConstant::Integer {
                     value: if matches!(&expression.kind, THIRExpressionKind::SizeOf { .. }) {
                         layout.size as i128

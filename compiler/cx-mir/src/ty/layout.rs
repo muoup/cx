@@ -268,11 +268,11 @@ fn aggregate_field_layout<T: MTRegistry>(
                 if let Some((_, start, size, _)) = active.take() {
                     offset = start + size;
                 }
-                let ty = registry.resolve_type_id(*type_id)?;
+                let ty = layout_inner(registry, *type_id)?;
                 offset = if is_union {
                     0
                 } else {
-                    align_to(offset, ty.layout.alignment)?
+                    align_to(offset, ty.alignment)?
                 };
                 if index == field_index {
                     return Ok(MIRFieldLayout::Standard {
@@ -282,7 +282,7 @@ fn aggregate_field_layout<T: MTRegistry>(
                 }
                 if !is_union {
                     offset = offset
-                        .checked_add(ty.layout.size)
+                        .checked_add(ty.size)
                         .ok_or(MIRLayoutError::SizeOverflow)?;
                 }
             }
@@ -291,8 +291,8 @@ fn aggregate_field_layout<T: MTRegistry>(
                 width,
                 ..
             } => {
-                let ty = registry.resolve_type_id(*integer_type_id)?;
-                validate_bitfield(*width, ty.layout)?;
+                let ty = layout_inner(registry, *integer_type_id)?;
+                validate_bitfield(*width, ty)?;
                 if is_union {
                     if index == field_index {
                         return Ok(MIRFieldLayout::Bitfield {
@@ -306,21 +306,21 @@ fn aggregate_field_layout<T: MTRegistry>(
                 }
                 if *width == 0 {
                     active = None;
-                    offset = align_to(offset, ty.layout.alignment)?;
+                    offset = align_to(offset, ty.alignment)?;
                     continue;
                 }
                 let (start, bit_offset) = match active.take() {
                     Some((id, start, _size, used))
-                        if id == *integer_type_id && used + *width <= ty.layout.size * 8 =>
+                        if id == *integer_type_id && used + *width <= ty.size * 8 =>
                     {
                         (start, used)
                     }
                     Some((_, start, size, _)) => {
-                        offset = align_to(start + size, ty.layout.alignment)?;
+                        offset = align_to(start + size, ty.alignment)?;
                         (offset, 0)
                     }
                     None => {
-                        offset = align_to(offset, ty.layout.alignment)?;
+                        offset = align_to(offset, ty.alignment)?;
                         (offset, 0)
                     }
                 };
@@ -332,7 +332,7 @@ fn aggregate_field_layout<T: MTRegistry>(
                         storage_type: *integer_type_id,
                     });
                 }
-                active = Some((*integer_type_id, start, ty.layout.size, bit_offset + *width));
+                active = Some((*integer_type_id, start, ty.size, bit_offset + *width));
             }
         }
     }

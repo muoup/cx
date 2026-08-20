@@ -132,7 +132,7 @@ pub(super) fn mir_layout(
     ctx: &FunctionLoweringContext<'_>,
     ty: MIRTypeID,
 ) -> cx_mir::MIRTypeLayout {
-    ctx.types().resolve_type_id(ty).unwrap().layout
+    super::typing::layout(ctx.types(), ty)
 }
 
 pub(super) fn int_constant(

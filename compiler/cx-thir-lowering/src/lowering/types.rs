@@ -15,8 +15,8 @@ pub fn lower_type(builder: &mut MIRBuilder, ty: &THIRType) -> MIRTypeID {
     let kind = lower_type_kind(builder, &ty.kind);
     let debug_name = builder.registry().type_debug_name(ty);
     let layout = layout_of(builder.registry(), ty)
-        .map(|layout| lower_layout(builder, &layout))
-        .unwrap_or_else(|_| panic!("THIR type {ty:?} has no layout"));
+        .ok()
+        .map(|layout| lower_layout(builder, &layout));
 
     let id = builder.types_mut().intern(MIRType { kind, layout });
     if builder.types().debug_name(id).is_none()
@@ -48,8 +48,8 @@ pub fn lower_type_id(builder: &mut MIRBuilder, id: THIRTypeID) -> MIRTypeID {
     };
     let debug_name = builder.registry().type_debug_name(&ty);
     let layout = layout_of(builder.registry(), &ty)
-        .map(|layout| lower_layout(builder, &layout))
-        .unwrap_or_else(|_| panic!("THIR type {ty:?} has no layout"));
+        .ok()
+        .map(|layout| lower_layout(builder, &layout));
 
     let definition = MIRType {
         kind: lower_type_kind(builder, &ty.kind),

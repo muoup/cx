@@ -12,7 +12,6 @@ use cx_thir::{
     thir::{
         data::{THIRFnPrototype, THIRFunction},
         expression::{THIRBinOp, THIRExpression, THIRExpressionKind, THIRIntBinOp, THIRLocalID},
-        global::{THIRGlobalVarKind, THIRGlobalVariable},
         r#type::{THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
@@ -87,36 +86,6 @@ impl<'thir> MIRBuilder<'thir> {
     pub(crate) fn predeclare_function(&mut self, function: &THIRFunction) {
         let prototype = self.convert_prototype(&function.prototype);
         self.module.declare_function(prototype, true);
-    }
-
-    pub(crate) fn predeclare_global(&mut self, global: &THIRGlobalVariable) {
-        let (name, ty, state, nodrop) = match &global.kind {
-            THIRGlobalVarKind::StringLiteral { name, value } => (
-                name.clone(),
-                lower_type(self, &THIRType::from(THIRTypeKind::Str)),
-                MIRGlobalState::Initialized(MIRConstant::String(value.clone())),
-                true,
-            ),
-            THIRGlobalVarKind::Variable {
-                name,
-                _type,
-                initializer,
-            } => {
-                let state = match (initializer, global.linkage) {
-                    (None, LinkageMode::Extern) => MIRGlobalState::External,
-                    _ => MIRGlobalState::ZeroInitialized,
-                };
-                (
-                    name.clone(),
-                    lower_type(self, _type),
-                    state,
-                    _type.is_nodrop(),
-                )
-            }
-        };
-
-        self.module
-            .declare_global(name, ty, global.linkage, global.is_mutable, nodrop, state);
     }
 
     fn lower_string_array_constant(

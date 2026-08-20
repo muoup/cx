@@ -13,21 +13,18 @@ dense_id!(MIRTypeID);
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MIRType {
     pub kind: MIRTypeKind,
-    pub layout: MIRTypeLayout,
+    pub layout: Option<MIRTypeLayout>,
 }
 
 impl MIRType {
-    pub fn new(kind: MIRTypeKind, layout: MIRTypeLayout) -> Self {
+    pub fn new(kind: MIRTypeKind, layout: Option<MIRTypeLayout>) -> Self {
         Self { kind, layout }
     }
 
     pub fn undefined() -> Self {
         Self {
             kind: MIRTypeKind::Undefined,
-            layout: MIRTypeLayout {
-                size: 0,
-                alignment: 1,
-            }
+            layout: None
         }
     }
 }
