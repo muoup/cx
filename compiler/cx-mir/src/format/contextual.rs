@@ -234,13 +234,13 @@ fn write_function<T: MTRegistry>(
     function: &MIRFunction,
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
-    if function.prototype.linkage == LinkageMode::Static {
+    if function.prototype().linkage == LinkageMode::Static {
         f.write_str("static ")?;
-    } else if function.prototype.linkage == LinkageMode::Extern || function.is_declaration() {
+    } else if function.prototype().linkage == LinkageMode::Extern {
         f.write_str("extern ")?;
     }
-    write!(f, "fn {} (", function.prototype.signature.display_name())?;
-    for (index, parameter) in function.prototype.signature.params.iter().enumerate() {
+    write!(f, "fn {} (", function.prototype().signature.display_name())?;
+    for (index, parameter) in function.prototype().signature.params.iter().enumerate() {
         if index != 0 {
             f.write_str(", ")?;
         }
@@ -251,8 +251,8 @@ fn write_function<T: MTRegistry>(
         }
         types.write(f, parameter.ty)?;
     }
-    if function.prototype.signature.variadic {
-        if !function.prototype.signature.params.is_empty() {
+    if function.prototype().signature.variadic {
+        if !function.prototype().signature.params.is_empty() {
             f.write_str(", ")?;
         }
         f.write_str("...")?;
@@ -260,29 +260,29 @@ fn write_function<T: MTRegistry>(
     write!(
         f,
         ") -> {} /* {} */",
-        function.prototype.signature.return_type, function.prototype.signature.symbol_name
+        function.prototype().signature.return_type, function.prototype().signature.symbol_name
     )?;
 
-    if function.is_declaration() {
+    let MIRFunction::Definition { id, prototype, entry, blocks, places, registers, scopes } = function else {
         return f.write_str(";");
-    }
+    };
 
     f.write_str(" {\n")?;
-    for place in &function.places {
+    for place in places {
         f.write_str("    let ")?;
         write_place_name(f, unit, function, MIRPlace::FunctionLocal(place.id))?;
         f.write_str(": ")?;
         types.write(f, place.ty)?;
         f.write_str(";\n")?;
     }
-    for register in &function.registers {
+    for register in registers {
         f.write_str("    let ")?;
         write_register_name(f, function, register.id)?;
         f.write_str(": ")?;
         types.write(f, register.ty)?;
         f.write_str(";\n")?;
     }
-    for block in &function.blocks {
+    for block in blocks {
         write_block(f, unit, function, block, types)?;
     }
     f.write_str("}")
@@ -683,7 +683,7 @@ fn write_constant(f: &mut Formatter<'_>, unit: &MIRUnit, constant: &MIRConstant)
     match constant {
         MIRConstant::Function(function_id) => {
             if let Some(function) = unit.function(*function_id) {
-                write!(f, "fn {}", function.prototype.signature.display_name())
+                write!(f, "fn {}", function.prototype().signature.display_name())
             } else {
                 write!(f, "fn f{}", function_id.index())
             }
@@ -708,7 +708,7 @@ fn write_place_name(
             write!(f, "local{}", id.index())
         }
         MIRPlace::Parameter(id) => {
-            if let Some(parameter) = function.prototype.signature.params.get(id.index())
+            if let Some(parameter) = function.prototype().signature.params.get(id.index())
                 && let Some(name) = &parameter.name
             {
                 return Display::fmt(name, f);

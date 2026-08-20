@@ -165,28 +165,34 @@ pub struct MIRRegisterDecl {
 }
 
 #[derive(Debug, Clone)]
-pub struct MIRFunction {
-    pub id: MIRFunctionID,
-    pub prototype: MIRFnPrototype,
-    pub is_used: bool,
-    pub entry: Option<MIRBasicBlockID>,
-    pub blocks: Vec<MIRBasicBlock>,
-    pub places: Vec<MIRPlaceDecl>,
-    pub registers: Vec<MIRRegisterDecl>,
-    pub scopes: Vec<MIRScopeDecl>,
+pub enum MIRFunction {
+    Declaration {
+        id: MIRFunctionID,
+        prototype: MIRFnPrototype,
+    },
+    Definition {
+        id: MIRFunctionID,
+        prototype: MIRFnPrototype,
+        entry: Option<MIRBasicBlockID>,
+        blocks: Vec<MIRBasicBlock>,
+        places: Vec<MIRPlaceDecl>,
+        registers: Vec<MIRRegisterDecl>,
+        scopes: Vec<MIRScopeDecl>,  
+    },
 }
 
 impl MIRFunction {
-    pub fn new(id: MIRFunctionID, prototype: MIRFnPrototype) -> Self {
-        Self {
-            id,
-            prototype,
-            is_used: false,
-            entry: None,
-            blocks: Vec::new(),
-            places: Vec::new(),
-            registers: Vec::new(),
-            scopes: Vec::new(),
+    pub fn id(&self) -> MIRFunctionID {
+        match self {
+            MIRFunction::Declaration { id, .. } => *id,
+            MIRFunction::Definition { id, .. } => *id,
+        }
+    }
+
+    pub fn prototype(&self) -> &MIRFnPrototype {
+        match self {
+            MIRFunction::Declaration { prototype, .. } => prototype,
+            MIRFunction::Definition { prototype, .. } => prototype,
         }
     }
 
@@ -194,10 +200,6 @@ impl MIRFunction {
         let id = MIRScopeID::new(self.scopes.len());
         self.scopes.push(MIRScopeDecl { id, token_range });
         id
-    }
-
-    pub fn is_declaration(&self) -> bool {
-        self.blocks.is_empty()
     }
 
     pub fn add_place(

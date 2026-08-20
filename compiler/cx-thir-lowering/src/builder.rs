@@ -2,9 +2,7 @@ use std::collections::HashSet;
 
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    MIRBasicBlockID, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID,
-    MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRRegister,
-    MIRScopeID, MIRTypeID, MIRTypeKind, MIRTypeRegistryBuilder, MIRUnit, MIRValue,
+    MIRBasicBlockID, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRRegister, MIRScopeID, MIRTypeID, MIRTypeKind, MIRTypeRegistryBuilder, MIRUnit, MIRValue
 };
 use cx_thir::{
     THIRUnit,
@@ -85,7 +83,8 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub(crate) fn predeclare_function(&mut self, function: &THIRFunction) {
         let prototype = self.convert_prototype(&function.prototype);
-        self.module.declare_function(prototype, true);
+
+        self.module.insert_function(MIRFunction
     }
 
     fn lower_string_array_constant(

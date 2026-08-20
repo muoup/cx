@@ -234,7 +234,7 @@ impl ValidationFormat<'_> {
 
     fn write_function(&self, f: &mut Formatter<'_>, function: MIRFunctionID) -> fmt::Result {
         if let Some(function) = self.unit.function(function) {
-            write!(f, "'{}'", function.prototype.signature.display_name())
+            write!(f, "'{}'", function.prototype().signature.display_name())
         } else {
             f.write_str("'<unknown function>'")
         }

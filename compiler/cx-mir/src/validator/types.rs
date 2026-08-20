@@ -127,7 +127,7 @@ impl MIRUnit {
                         .get(*variant)
                         .map(MIRField::ty)
                         .ok_or(MIRValidationError::VariantSwitchCaseOutOfRange {
-                            function: function.id,
+                            function: function.id(),
                             block,
                             instruction,
                             variant: *variant,
@@ -179,7 +179,7 @@ impl MIRUnit {
                 for (variant, _) in cases {
                     if *variant >= variants.len() {
                         return Err(MIRValidationError::VariantSwitchCaseOutOfRange {
-                            function: function.id,
+                            function: function.id(),
                             block,
                             instruction,
                             variant: *variant,
@@ -188,7 +188,7 @@ impl MIRUnit {
                     }
                     if !seen.insert(*variant) {
                         return Err(MIRValidationError::DuplicateVariantSwitchCase {
-                            function: function.id,
+                            function: function.id(),
                             block,
                             instruction,
                             variant: *variant,
@@ -197,7 +197,7 @@ impl MIRUnit {
                 }
             }
             MIRInstrKind::Return { value: Some(value) } => {
-                let return_type = function.prototype.signature.return_type;
+                let return_type = function.prototype().signature.return_type;
                 if !matches!(self.types().kind(return_type).unwrap(), MIRTypeKind::Void) {
                     self.expect_value_type(
                         function,
@@ -226,7 +226,7 @@ impl MIRUnit {
         let actual = self
             .place_type(function, place)
             .expect("validated place is missing");
-        self.expect_type(function.id, block, instruction, entity, actual, expected)
+        self.expect_type(function.id(), block, instruction, entity, actual, expected)
     }
 
     pub(super) fn expect_place_value_type(
@@ -241,7 +241,7 @@ impl MIRUnit {
         let actual = self
             .place_type_for_expected(function, place, expected)
             .expect("validated place is missing");
-        self.expect_type(function.id, block, instruction, entity, actual, expected)
+        self.expect_type(function.id(), block, instruction, entity, actual, expected)
     }
 
     pub(super) fn expect_register_type(
@@ -257,7 +257,7 @@ impl MIRUnit {
             .register(register)
             .expect("validated register is missing")
             .ty;
-        self.expect_type(function.id, block, instruction, entity, actual, expected)
+        self.expect_type(function.id(), block, instruction, entity, actual, expected)
     }
 
     pub(super) fn expect_value_type(
@@ -272,7 +272,7 @@ impl MIRUnit {
         let Some(actual) = self.value_type_for_expected(function, value, expected) else {
             return Ok(());
         };
-        self.expect_type(function.id, block, instruction, entity, actual, expected)
+        self.expect_type(function.id(), block, instruction, entity, actual, expected)
     }
 
     pub(super) fn expect_type(
@@ -396,7 +396,7 @@ impl MIRUnit {
         match place {
             MIRPlace::FunctionLocal(id) => function.place(id).map(|place| place.ty),
             MIRPlace::Parameter(id) => function
-                .prototype
+                .prototype()
                 .signature
                 .params
                 .get(id.index())

@@ -23,12 +23,12 @@ impl MIRUnit {
         }
 
         for (function_index, function) in self.functions().iter().enumerate() {
-            if function.id.index() != function_index {
+            if function.id().index() != function_index {
                 return Err(MIRValidationError::NonDenseId {
                     entity: "function",
                     function: None,
                     position: function_index,
-                    actual: function.id.index(),
+                    actual: function.id().index(),
                 });
             }
             self.validate_function(function)?;
@@ -41,7 +41,7 @@ impl MIRUnit {
         &self,
         function: &MIRFunction,
     ) -> Result<(), MIRValidationError> {
-        let function_id = function.id;
+        let function_id = function.id();
 
         for (position, place) in function.places.iter().enumerate() {
             if place.id.index() != position {
@@ -334,7 +334,7 @@ impl MIRUnit {
         };
         if target.args.len() != block.params.len() {
             return Err(MIRValidationError::BlockArgumentCount {
-                function: function.id,
+                function: function.id(),
                 source,
                 instruction,
                 target: target.block,

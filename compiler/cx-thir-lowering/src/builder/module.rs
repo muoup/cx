@@ -36,7 +36,6 @@ pub(crate) struct MIRModuleState {
     globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
     function_symbols: HashMap<String, ModuleSymbol<MIRFunctionID>>,
     global_symbols: HashMap<String, ModuleSymbol<MIRGlobalID>>,
-    definition_ids: Vec<MIRFunctionID>,
     next_function_id: usize,
     next_global_id: usize,
 }
@@ -48,33 +47,20 @@ impl MIRModuleState {
             globals: HashMap::new(),
             function_symbols: HashMap::new(),
             global_symbols: HashMap::new(),
-            definition_ids: Vec::new(),
             next_function_id: 0,
             next_global_id: 0,
         }
     }
 
-    pub(crate) fn declare_function(
+    pub(crate) fn define_function(
         &mut self,
-        prototype: MIRFnPrototype,
-        is_definition: bool,
+        prototype: MIRFnPrototype
     ) -> MIRFunctionID {
-        let name = prototype.signature.symbol_name.to_string();
-        if let Some(symbol) = self.function_symbols.get(&name) {
-            let id = symbol.id();
-            if is_definition && !self.definition_ids.contains(&id) {
-                self.definition_ids.push(id);
-            }
-            return id;
-        }
-
         let id = MIRFunctionID::new(self.next_function_id);
         self.next_function_id += 1;
         self.functions.insert(id, MIRFunction::new(id, prototype));
         self.function_symbols.insert(name, ModuleSymbol::new(id));
-        if is_definition {
-            self.definition_ids.push(id);
-        }
+        self.definition_ids.push(id);
         id
     }
 
