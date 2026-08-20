@@ -264,27 +264,27 @@ fn write_function<T: MTRegistry>(
         function.prototype().signature.symbol_name
     )?;
 
-    let Some(_) = function.definition() else {
+    let Some(definition) = function.definition() else {
         f.write_str(";")?;
         return Ok(());
     };
 
     f.write_str(" {\n")?;
-    for place in function.places().unwrap() {
+    for place in definition.places() {
         f.write_str("    let ")?;
         write_place_name(f, unit, function, MIRPlace::FunctionLocal(place.id))?;
         f.write_str(": ")?;
         types.write(f, place.ty)?;
         f.write_str(";\n")?;
     }
-    for register in function.registers().unwrap() {
+    for register in definition.registers() {
         f.write_str("    let ")?;
         write_register_name(f, function, register.id)?;
         f.write_str(": ")?;
         types.write(f, register.ty)?;
         f.write_str(";\n")?;
     }
-    for block in function.blocks().unwrap() {
+    for block in definition.blocks() {
         write_block(f, unit, function, block, types)?;
     }
     f.write_str("}")
@@ -702,7 +702,9 @@ fn write_place_name(
 ) -> fmt::Result {
     match place {
         MIRPlace::FunctionLocal(id) => {
-            if let Some(place) = function.place(id)
+            if let Some(place) = function
+                .definition()
+                .and_then(|definition| definition.place(id))
                 && let Some(name) = &place.debug_name
             {
                 return Display::fmt(name, f);
@@ -731,7 +733,9 @@ fn write_register_name(
     function: &MIRFunction,
     register: crate::expr::MIRRegister,
 ) -> fmt::Result {
-    if let Some(register_decl) = function.register(register)
+    if let Some(register_decl) = function
+        .definition()
+        .and_then(|definition| definition.register(register))
         && let Some(name) = &register_decl.debug_name
     {
         return Display::fmt(name, f);

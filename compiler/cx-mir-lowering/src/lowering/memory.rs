@@ -68,7 +68,7 @@ fn is_direct_reference_parameter(context: &FunctionLoweringContext<'_>, place: M
     matches!(
         context
             .function()
-            .prototype
+            .prototype()
             .signature
             .params
             .get(parameter.index())
@@ -156,7 +156,7 @@ pub(super) fn lower_constant(
                 .unit()
                 .function(*function)
                 .expect("invalid MIR function constant")
-                .prototype
+                .prototype()
                 .signature
                 .symbol_name
                 .clone(),

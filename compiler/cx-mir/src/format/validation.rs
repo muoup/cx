@@ -249,7 +249,8 @@ impl ValidationFormat<'_> {
         if let Some(name) = self
             .unit
             .function(function)
-            .and_then(|function| function.block(block))
+            .and_then(|function| function.definition())
+            .and_then(|definition| definition.block(block))
             .and_then(|block| block.debug_name.as_ref())
         {
             write!(f, "'{}'", name)
@@ -267,7 +268,8 @@ impl ValidationFormat<'_> {
         if let Some(name) = self
             .unit
             .function(function)
-            .and_then(|function| function.register(register))
+            .and_then(|function| function.definition())
+            .and_then(|definition| definition.register(register))
             .and_then(|register| register.debug_name.as_ref())
         {
             write!(f, "'{}'", name)

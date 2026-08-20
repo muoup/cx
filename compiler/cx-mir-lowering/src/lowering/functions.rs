@@ -6,7 +6,7 @@ use cx_lmir::{
 };
 use cx_log::CXResult;
 use cx_mir::ty::interface::MTRegistry;
-use cx_mir::{MIRFunction, MIRGlobalID, MIRPlace, MIRTypeRegistryBuilder};
+use cx_mir::{MIRFunction, MIRFunctionDefinition, MIRGlobalID, MIRPlace, MIRTypeRegistryBuilder};
 
 use crate::context::FunctionLoweringContext;
 
@@ -24,8 +24,11 @@ pub(super) fn lower_function(
     global_indices: &HashMap<MIRGlobalID, u32>,
     globals: &mut Vec<cx_lmir::LMIRGlobalValue>,
 ) -> CXResult<LMIRFunction> {
-    let (blocks, block_indices) = lower_blocks(function, types);
-    let prototype = convert_prototype(&function.prototype, types);
+    let definition = function
+        .definition()
+        .expect("MIR declaration cannot be lowered as a function definition");
+    let (blocks, block_indices) = lower_blocks(definition, types);
+    let prototype = convert_prototype(function.prototype(), types);
     let mut context = FunctionLoweringContext::new(
         unit,
         function,
@@ -39,14 +42,14 @@ pub(super) fn lower_function(
     );
 
     lower_parameters(&mut context);
-    let order = function
-        .blocks
+    let order = definition
+        .blocks()
         .iter()
         .map(|block| block.id)
         .collect::<Vec<_>>();
     for block_id_value in order {
         context.set_current(context.block_index(block_id_value));
-        let instructions = function
+        let instructions = definition
             .block(block_id_value)
             .expect("LMIR block has no MIR source")
             .instrs
@@ -60,14 +63,14 @@ pub(super) fn lower_function(
 }
 
 fn lower_blocks(
-    function: &MIRFunction,
+    function: &MIRFunctionDefinition,
     types: &MIRTypeRegistryBuilder,
 ) -> (Vec<LMIRBasicBlock>, HashMap<cx_mir::MIRBasicBlockID, usize>) {
-    let entry = function.entry.expect("MIR definition has no entry");
+    let entry = function.entry().expect("MIR definition has no entry");
     let mut order = vec![entry];
     order.extend(
         function
-            .blocks
+            .blocks()
             .iter()
             .map(|block| block.id)
             .filter(|id| *id != entry),
@@ -105,7 +108,7 @@ fn lower_parameters(context: &mut FunctionLoweringContext<'_>) {
     let mut abi_index = usize::from(context.prototype().signature.has_indirect_return_param());
     for (index, parameter) in context
         .function()
-        .prototype
+        .prototype()
         .signature
         .params
         .iter()

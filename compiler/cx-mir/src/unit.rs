@@ -53,14 +53,16 @@ impl MIRUnit {
         instruction: usize,
     ) -> Option<&TokenRange> {
         self.function(function)
-            .and_then(|function| function.block(block))
+            .and_then(|function| function.definition())
+            .and_then(|definition| definition.block(block))
             .and_then(|block| block.instrs.get(instruction))
             .map(|instruction| &instruction.token_range)
     }
 
     pub fn scope_range(&self, function: MIRFunctionID, scope: MIRScopeID) -> Option<&TokenRange> {
         self.function(function)
-            .and_then(|function| function.scope(scope))
+            .and_then(|function| function.definition())
+            .and_then(|definition| definition.scope(scope))
             .map(|scope| &scope.token_range)
     }
 }

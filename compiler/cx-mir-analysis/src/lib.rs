@@ -29,7 +29,7 @@ pub fn analyze(
     let functions = unit
         .functions()
         .iter()
-        .map(|function| (function.id, liveness::analyze_function(function)))
+        .map(|function| (function.id(), liveness::analyze_function(function)))
         .collect();
 
     ownership::check(unit)?;

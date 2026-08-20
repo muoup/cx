@@ -2,7 +2,9 @@ use std::collections::HashSet;
 
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    MIRBasicBlockID, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRRegister, MIRScopeID, MIRTypeID, MIRTypeKind, MIRTypeRegistryBuilder, MIRUnit, MIRValue
+    MIRBasicBlockID, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID,
+    MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRRegister,
+    MIRScopeID, MIRTypeID, MIRTypeKind, MIRTypeRegistryBuilder, MIRUnit, MIRValue,
 };
 use cx_thir::{
     THIRUnit,
@@ -83,7 +85,7 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub(crate) fn predeclare_function(&mut self, function: &THIRFunction) {
         let prototype = self.convert_prototype(&function.prototype);
-        self.module.insert_function(MIRFunction::Declaration(prototype));
+        self.module.declare_function(prototype);
     }
 
     fn lower_string_array_constant(
@@ -168,11 +170,18 @@ impl<'thir> MIRBuilder<'thir> {
             .function_ids()
             .get(index)
             .expect("THIR function predeclaration is missing");
-        let mut mir = self.module.take_function(function_id);
-        let entry = mir.add_block();
-        let root_scope = mir.add_scope(function.body.token_range.clone());
+        let mir = self.module.take_function(function_id);
+        let (id, prototype, mut definition) = mir.into_definition();
+        let entry = definition.add_block();
+        let root_scope = definition.add_scope(function.body.token_range.clone());
 
-        self.function = Some(FunctionContext::new(mir, entry, root_scope));
+        self.function = Some(FunctionContext::new(
+            id,
+            prototype,
+            definition,
+            entry,
+            root_scope,
+        ));
         self.context_mut().set_block_name(entry, "entry");
 
         for (index, parameter) in function.prototype.signature().params.iter().enumerate() {
@@ -191,7 +200,6 @@ impl<'thir> MIRBuilder<'thir> {
             .function
             .take()
             .expect("attempted to finish without an active MIR function");
-        
         self.module
             .insert_function(context.finish(self.types().unit()));
     }

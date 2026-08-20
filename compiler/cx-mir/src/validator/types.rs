@@ -254,7 +254,8 @@ impl MIRUnit {
         expected: MIRTypeID,
     ) -> Result<(), MIRValidationError> {
         let actual = function
-            .register(register)
+            .definition()
+            .and_then(|definition| definition.register(register))
             .expect("validated register is missing")
             .ty;
         self.expect_type(function.id(), block, instruction, entity, actual, expected)
@@ -324,7 +325,10 @@ impl MIRUnit {
     pub(super) fn value_type(&self, function: &MIRFunction, value: &MIRValue) -> Option<MIRTypeID> {
         match value {
             MIRValue::Register(register) => {
-                function.register(*register).map(|register| register.ty)
+                function
+                    .definition()
+                    .and_then(|definition| definition.register(*register))
+                    .map(|register| register.ty)
             }
             MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place) => {
                 self.place_value_type(function, *place)

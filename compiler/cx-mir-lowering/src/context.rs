@@ -144,7 +144,8 @@ impl<'a> FunctionLoweringContext<'a> {
 
     pub(crate) fn register_type(&self, register: MIRRegister) -> MIRTypeID {
         self.function
-            .register(register)
+            .definition()
+            .and_then(|definition| definition.register(register))
             .expect("invalid register")
             .ty
     }

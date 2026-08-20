@@ -23,17 +23,18 @@ struct OwnershipState {
 impl OwnershipState {
     fn new(function: &MIRFunction) -> Self {
         let projections = function
-            .blocks
-            .iter()
+            .definition()
+            .into_iter()
+            .flat_map(|definition| definition.blocks())
             .flat_map(|block| block.instrs.iter())
             .filter_map(|instruction| match &instruction.kind {
                 MIRInstrKind::AggregateOp(MIRAggregateOp::Place { out, op }) => {
                     let base = match op {
                         MIRPlaceAggregateOp::Field { base, .. }
                         | MIRPlaceAggregateOp::Index { base, .. }
-                        | MIRPlaceAggregateOp::Variant { base, .. } => *base,
+                        | MIRPlaceAggregateOp::Variant { base, .. } => base,
                     };
-                    Some((*out, base))
+                    Some((*out, *base))
                 }
                 _ => None,
             })
@@ -77,20 +78,23 @@ pub(crate) fn check(unit: &MIRUnit) -> Result<(), MIRAnalysisError> {
 }
 
 fn check_function(unit: &MIRUnit, function: &MIRFunction) -> Result<(), MIRAnalysisError> {
-    let Some(entry) = function.entry else {
+    let Some(definition) = function.definition() else {
         return Ok(());
     };
-    if entry.index() >= function.blocks.len() {
+    let Some(entry) = definition.entry() else {
+        return Ok(());
+    };
+    if entry.index() >= definition.blocks().len() {
         return Ok(());
     }
 
-    let mut entries = vec![None; function.blocks.len()];
+    let mut entries = vec![None; definition.blocks().len()];
     entries[entry.index()] = Some(initial_state(function));
 
     loop {
         let mut changed = false;
 
-        for block in &function.blocks {
+        for block in definition.blocks() {
             let Some(state) = entries[block.id.index()].clone() else {
                 continue;
             };
@@ -122,7 +126,7 @@ fn check_function(unit: &MIRUnit, function: &MIRFunction) -> Result<(), MIRAnaly
         }
     }
 
-    for block in &function.blocks {
+    for block in definition.blocks() {
         let Some(state) = entries[block.id.index()].clone() else {
             continue;
         };
@@ -134,7 +138,7 @@ fn check_function(unit: &MIRUnit, function: &MIRFunction) -> Result<(), MIRAnaly
 
 fn initial_state(function: &MIRFunction) -> OwnershipState {
     let mut state = OwnershipState::new(function);
-    for (index, _) in function.prototype.signature.params.iter().enumerate() {
+    for (index, _) in function.prototype().signature.params.iter().enumerate() {
         state.insert(
             MIRPlace::Parameter(cx_mir::MIRParameterID::new(index)),
             PlaceState::Available,
@@ -217,10 +221,11 @@ fn merge_state(left: PlaceState, right: PlaceState) -> PlaceState {
 fn is_nodrop(function: &MIRFunction, place: MIRPlace) -> bool {
     match place {
         MIRPlace::FunctionLocal(id) => function
-            .place(id)
+            .definition()
+            .and_then(|definition| definition.place(id))
             .is_some_and(|declaration| declaration.nodrop),
         MIRPlace::Parameter(id) => function
-            .prototype
+            .prototype()
             .signature
             .params
             .get(id.index())
@@ -259,10 +264,13 @@ fn transfer_instruction(
     state: &mut OwnershipState,
     diagnose: bool,
 ) -> Result<(), MIRAnalysisError> {
+    let definition = function
+        .definition()
+        .expect("ownership analysis reached a MIR declaration");
     match kind {
         MIRInstrKind::ScopeEnter { .. } => {}
         MIRInstrKind::ScopeExit { scope } => {
-            for declaration in &function.places {
+            for declaration in definition.places() {
                 if declaration.scope != *scope {
                     continue;
                 }
@@ -551,9 +559,12 @@ fn check_function_exit(
         return Ok(());
     }
 
-    let root_scope = function.scopes.first().map(|scope| scope.id);
+    let definition = function
+        .definition()
+        .expect("ownership analysis reached a MIR declaration");
+    let root_scope = definition.scopes().first().map(|scope| scope.id);
 
-    for declaration in &function.places {
+    for declaration in definition.places() {
         if !declaration.nodrop {
             continue;
         }
@@ -573,7 +584,7 @@ fn check_function_exit(
         }
     }
 
-    for (index, parameter) in function.prototype.signature.params.iter().enumerate() {
+    for (index, parameter) in function.prototype().signature.params.iter().enumerate() {
         if !parameter.nodrop {
             continue;
         }
@@ -629,12 +640,12 @@ fn ownership_error(
     message: String,
 ) -> MIRAnalysisError {
     MIRAnalysisError::OwnershipViolation {
-        function: function.id,
+        function: function.id(),
         block,
         instruction,
         scope,
         place,
-        function_name: function.prototype.signature.display_name().to_string(),
+        function_name: function.prototype().signature.display_name().to_string(),
         message,
     }
 }
@@ -642,12 +653,13 @@ fn ownership_error(
 fn place_name(unit: &MIRUnit, function: &MIRFunction, place: MIRPlace) -> String {
     match place {
         MIRPlace::FunctionLocal(id) => function
-            .place(id)
+            .definition()
+            .and_then(|definition| definition.place(id))
             .and_then(|declaration| declaration.debug_name.as_ref())
             .map(ToString::to_string)
             .unwrap_or_else(|| "temporary".to_string()),
         MIRPlace::Parameter(id) => function
-            .prototype
+            .prototype()
             .signature
             .params
             .get(id.index())

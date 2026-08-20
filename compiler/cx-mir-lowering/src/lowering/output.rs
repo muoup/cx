@@ -16,8 +16,13 @@ pub(super) fn global_index(ctx: &FunctionLoweringContext<'_>, global: cx_mir::MI
 
 pub(super) fn place_decl_type(ctx: &FunctionLoweringContext<'_>, place: MIRPlace) -> MIRTypeID {
     match place {
-        MIRPlace::FunctionLocal(id) => ctx.function().place(id).unwrap().ty,
-        MIRPlace::Parameter(id) => ctx.function().prototype.signature.params[id.index()].ty,
+        MIRPlace::FunctionLocal(id) => ctx
+            .function()
+            .definition()
+            .and_then(|definition| definition.place(id))
+            .expect("invalid function-local place")
+            .ty,
+        MIRPlace::Parameter(id) => ctx.function().prototype().signature.params[id.index()].ty,
         MIRPlace::Global(id) => ctx.unit().global(id).unwrap().ty,
     }
 }

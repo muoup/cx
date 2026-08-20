@@ -16,7 +16,7 @@ use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 use super::typing::{convert_float_type, convert_integer_type};
 
 pub(super) fn keep_function(function: &MIRFunction) -> bool {
-    function.is_used || function.prototype.linkage == LinkageMode::Standard
+    function.is_used() || function.prototype().linkage == LinkageMode::Standard
 }
 
 pub(super) fn keep_global(global: &MIRGlobalVariable) -> bool {
@@ -72,7 +72,7 @@ pub(super) fn lower_global_initializer(
         MIRConstant::Function(function) => LMIRGlobalInitializer::Function(
             mir.function(*function)
                 .expect("invalid MIR function constant")
-                .prototype
+                .prototype()
                 .signature
                 .symbol_name
                 .to_string(),

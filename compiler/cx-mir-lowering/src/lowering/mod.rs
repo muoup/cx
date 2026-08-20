@@ -21,7 +21,7 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistryBuilder) -> CXRes
         if !globals::keep_function(function) {
             continue;
         }
-        let prototype = typing::convert_prototype(&function.prototype, types);
+        let prototype = typing::convert_prototype(function.prototype(), types);
         prototypes.insert(prototype.name.to_string(), prototype);
     }
     prototypes
@@ -84,7 +84,7 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistryBuilder) -> CXRes
 
     let mut functions = Vec::new();
     for function in mir.functions() {
-        if function.is_declaration() || !globals::keep_function(function) {
+        if function.definition().is_none() || !globals::keep_function(function) {
             continue;
         }
         functions.push(functions::lower_function(

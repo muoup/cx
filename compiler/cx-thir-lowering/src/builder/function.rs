@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use cx_mir::{
-    MIRBasicBlockID, MIRFunction, MIRFunctionID, MIRInstrKind, MIRPlace, MIRRegister, MIRScopeID,
-    MIRTypeID, MIRValue,
+    MIRBasicBlockID, MIRFnPrototype, MIRFunction, MIRFunctionDefinition, MIRFunctionID,
+    MIRInstrKind, MIRPlace, MIRRegister, MIRScopeID, MIRTypeID, MIRValue,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
 use cx_tokens::TokenRange;
@@ -30,7 +30,9 @@ struct LabelTarget {
 
 #[derive(Debug)]
 pub(crate) struct FunctionContext {
-    mir: MIRFunction,
+    id: MIRFunctionID,
+    prototype: MIRFnPrototype,
+    mir: MIRFunctionDefinition,
     current_block: MIRBasicBlockID,
 
     local_places: HashMap<THIRLocalID, MIRPlace>,
@@ -48,11 +50,15 @@ pub(crate) struct FunctionContext {
 
 impl FunctionContext {
     pub(crate) fn new(
-        mir: MIRFunction,
+        id: MIRFunctionID,
+        prototype: MIRFnPrototype,
+        mir: MIRFunctionDefinition,
         current_block: MIRBasicBlockID,
         root_scope: MIRScopeID,
     ) -> Self {
         Self {
+            id,
+            prototype,
             mir,
             current_block,
             local_places: HashMap::new(),
@@ -80,8 +86,8 @@ impl FunctionContext {
         );
         assert_eq!(self.defers.len(), 1, "defer stack is unbalanced");
 
-        let returns_value = self.mir.prototype.signature.return_type != unit_type;
-        for block in &mut self.mir.blocks {
+        let returns_value = self.prototype.signature.return_type != unit_type;
+        for block in self.mir.blocks_mut() {
             if block.terminator().is_some() {
                 continue;
             }
@@ -92,11 +98,11 @@ impl FunctionContext {
             };
             block.push(terminator);
         }
-        self.mir
+        MIRFunction::defined(self.id, self.prototype, self.mir)
     }
 
     pub(crate) fn id(&self) -> MIRFunctionID {
-        self.mir.id
+        self.id
     }
 
     pub(crate) fn current_block(&self) -> MIRBasicBlockID {
@@ -223,30 +229,6 @@ impl FunctionContext {
 
     pub(crate) fn push_named_scope(&mut self) {
         self.named_values.push(HashMap::new());
-    }
-
-    pub fn block(&self, id: MIRBasicBlockID) -> Option<&MIRBasicBlock> {
-        self.blocks.get(id.index())
-    }
-
-    pub fn block_mut(&mut self, id: MIRBasicBlockID) -> Option<&mut MIRBasicBlock> {
-        self.blocks.get_mut(id.index())
-    }
-
-    pub fn place(&self, id: MIRPlaceID) -> Option<&MIRPlaceDecl> {
-        self.places.get(id.index())
-    }
-
-    pub fn place_mut(&mut self, id: MIRPlaceID) -> Option<&mut MIRPlaceDecl> {
-        self.places.get_mut(id.index())
-    }
-
-    pub fn scope(&self, id: MIRScopeID) -> Option<&MIRScopeDecl> {
-        self.scopes.get(id.index())
-    }
-
-    pub fn register(&self, id: MIRRegister) -> Option<&MIRRegisterDecl> {
-        self.registers.get(id.index())
     }
 
     pub(crate) fn pop_named_scope(&mut self) {

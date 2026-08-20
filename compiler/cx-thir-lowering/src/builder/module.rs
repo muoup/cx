@@ -7,23 +7,23 @@ use cx_mir::{
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 #[derive(Debug)]
-struct ModuleSymbol<T: Copy> {
+struct ModuleSymbol<T: Clone> {
     id: T,
     used: bool,
 }
 
-impl<T: Copy> ModuleSymbol<T> {
+impl<T: Clone> ModuleSymbol<T> {
     fn new(id: T) -> Self {
         Self { id, used: false }
     }
 
     fn get(&mut self) -> T {
         self.used = true;
-        self.id
+        self.id.clone()
     }
 
     fn id(&self) -> T {
-        self.id
+        self.id.clone()
     }
 
     fn is_used(&self) -> bool {
@@ -36,6 +36,7 @@ pub(crate) struct MIRModuleState {
     globals: HashMap<MIRGlobalID, ModuleSymbol<MIRGlobalVariable>>,
     function_symbols: HashMap<String, ModuleSymbol<MIRFunctionID>>,
     global_symbols: HashMap<String, ModuleSymbol<MIRGlobalID>>,
+    function_ids: Vec<MIRFunctionID>,
 
     next_function_id: usize,
     next_global_id: usize,
@@ -48,17 +49,24 @@ impl MIRModuleState {
             globals: HashMap::new(),
             function_symbols: HashMap::new(),
             global_symbols: HashMap::new(),
+            function_ids: Vec::new(),
             next_function_id: 0,
             next_global_id: 0,
         }
     }
 
-    pub(crate) fn define_function(&mut self, prototype: MIRFnPrototype) -> MIRFunctionID {
+    pub(crate) fn declare_function(&mut self, prototype: MIRFnPrototype) -> MIRFunctionID {
+        let name = prototype.signature.symbol_name.as_string();
+        if let Some(symbol) = self.function_symbols.get(&name) {
+            return symbol.id();
+        }
+
         let id = MIRFunctionID::new(self.next_function_id);
         self.next_function_id += 1;
-        self.functions.insert(id, MIRFunction::new(id, prototype));
+        self.functions
+            .insert(id, MIRFunction::declaration(id, prototype));
         self.function_symbols.insert(name, ModuleSymbol::new(id));
-        self.definition_ids.push(id);
+        self.function_ids.push(id);
         id
     }
 
@@ -88,7 +96,7 @@ impl MIRModuleState {
     }
 
     pub(crate) fn function_ids(&self) -> &[MIRFunctionID] {
-        &self.definition_ids
+        &self.function_ids
     }
 
     pub(crate) fn take_function(&mut self, id: MIRFunctionID) -> MIRFunction {
@@ -98,8 +106,9 @@ impl MIRModuleState {
     }
 
     pub(crate) fn insert_function(&mut self, function: MIRFunction) {
+        let id = function.id();
         assert!(
-            self.functions.insert(function.id, function).is_none(),
+            self.functions.insert(id, function).is_none(),
             "MIR function was inserted into module state twice"
         );
     }
@@ -124,6 +133,7 @@ impl MIRModuleState {
         self.globals
             .get_mut(&id)
             .expect("MIR global state update targets a missing global")
+            .id
             .state = state;
     }
 
@@ -133,6 +143,7 @@ impl MIRModuleState {
             mut globals,
             function_symbols,
             global_symbols,
+            function_ids: _,
             next_function_id,
             next_global_id,
             ..
@@ -142,12 +153,13 @@ impl MIRModuleState {
             functions
                 .get_mut(&symbol.id())
                 .expect("builder function symbol points to a missing MIR function")
-                .is_used = symbol.is_used();
+                .set_used(symbol.is_used());
         }
         for symbol in global_symbols.values() {
             globals
                 .get_mut(&symbol.id())
                 .expect("builder global symbol points to a missing MIR global")
+                .id
                 .is_used = symbol.is_used();
         }
 
@@ -178,7 +190,7 @@ fn dense_functions(
         .enumerate()
         .map(|(index, function)| {
             let function = function.expect("MIR function IDs are not dense");
-            assert_eq!(function.id.index(), index);
+            assert_eq!(function.id().index(), index);
             function
         })
         .collect()
@@ -191,7 +203,7 @@ fn dense_globals(
     let mut dense = (0..length)
         .map(|_| None)
         .collect::<Vec<Option<MIRGlobalVariable>>>();
-    for (id, global) in globals {
+    for (id, mut global) in globals {
         let slot = dense
             .get_mut(id.index())
             .expect("MIR global ID is outside the builder range");
@@ -201,8 +213,8 @@ fn dense_globals(
     dense
         .into_iter()
         .enumerate()
-        .map(|(index, global)| {
-            let global = global.expect("MIR global IDs are not dense");
+        .map(|(index, mut global)| {
+            let global = global.take().expect("MIR global IDs are not dense");
             assert_eq!(global.id.index(), index);
             global
         })
