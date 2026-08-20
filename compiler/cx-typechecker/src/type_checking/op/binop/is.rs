@@ -11,9 +11,7 @@ use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
 use cx_thir::thir::contextual_eq::TypeContextEqual;
 use cx_thir::thir::data::THIRType;
-use cx_thir::thir::expression::{
-    THIRExpression, THIRExpressionKind, THIRLocalID,
-};
+use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind, THIRLocalID};
 use cx_thir::thir::pattern::THIRPattern;
 use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;

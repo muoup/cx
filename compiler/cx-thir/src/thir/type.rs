@@ -102,6 +102,7 @@ pub struct THIRBitfieldAccess {
 #[derive(Debug, Clone)]
 pub enum THIRTypeKind {
     Void,
+    Unreachable,
     Integer {
         _type: THIRIntType,
         signed: bool,
@@ -376,8 +377,12 @@ impl THIRType {
         matches!(self.kind, THIRTypeKind::Float { .. })
     }
 
-    pub fn is_unit(&self) -> bool {
+    pub fn is_void(&self) -> bool {
         matches!(self.kind, THIRTypeKind::Void)
+    }
+
+    pub fn is_unreachable(&self) -> bool {
+        matches!(self.kind, THIRTypeKind::Unreachable)
     }
 
     pub fn is_structure(&self) -> bool {
@@ -574,6 +579,7 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRTypeKi
     ) -> bool {
         match (self, other) {
             (THIRTypeKind::Void, THIRTypeKind::Void)
+            | (THIRTypeKind::Unreachable, THIRTypeKind::Unreachable)
             | (THIRTypeKind::Undefined, THIRTypeKind::Undefined)
             | (THIRTypeKind::Str, THIRTypeKind::Str) => true,
             (

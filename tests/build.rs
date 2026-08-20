@@ -81,10 +81,11 @@ fn write_module(
         }
 
         let extension = path.extension().and_then(|ext| ext.to_str());
-        let is_compile_only_c = matches!(kind, TestKind::CompileOnly) && extension == Some("c");
-        if extension != Some("cx") && !is_compile_only_c {
+        if !matches!(extension, Some("cx") | Some("c")) {
             continue;
         }
+
+        println!("cargo:rerun-if-changed={}", path.display());
 
         if matches!(kind, TestKind::EndToEnd) && !path.with_extension("cx-output").exists() {
             continue;

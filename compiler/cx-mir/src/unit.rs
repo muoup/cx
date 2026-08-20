@@ -1,93 +1,51 @@
-use cx_target::ArchitectureConfig;
+use std::collections::HashMap;
+
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    expr::{MIRBasicBlockID, MIRScopeID},
-    global::{
-        MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable,
-    },
-    ty::{MIRTypeID, MIRTypeRegistry},
-    validator::MIRValidationError,
+    MIRBasicBlockID, MIRScopeID,
+    global::{MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalVariable},
+    ty::registry::MIRTypeRegistryBuilder,
 };
 
 #[derive(Debug, Clone)]
 pub struct MIRUnit {
-    pub types: MIRTypeRegistry,
-    pub functions: Vec<MIRFunction>,
-    pub globals: Vec<MIRGlobalVariable>,
+    types: MIRTypeRegistryBuilder,
+    functions: HashMap<MIRFunctionID, MIRFunction>,
+    globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
 }
 
 impl MIRUnit {
-    pub fn new(architecture: ArchitectureConfig) -> Self {
+    pub fn new(
+        types: MIRTypeRegistryBuilder,
+        functions: HashMap<MIRFunctionID, MIRFunction>,
+        globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
+    ) -> Self {
         Self {
-            types: MIRTypeRegistry::new(architecture),
-            functions: Vec::new(),
-            globals: Vec::new(),
+            types,
+            functions,
+            globals,
         }
     }
 
-    pub fn compute_layouts(&mut self) -> Result<(), crate::MIRLayoutError> {
-        self.types.compute_layouts()
+    pub fn types(&self) -> &MIRTypeRegistryBuilder {
+        &self.types
     }
 
-    pub fn add_function(&mut self, prototype: MIRFnPrototype) -> MIRFunctionID {
-        let id = MIRFunctionID::new(self.functions.len());
-        self.functions.push(MIRFunction::new(id, prototype));
-        id
+    pub fn functions(&self) -> impl ExactSizeIterator<Item = &MIRFunction> {
+        self.functions.values()
     }
 
-    /// Inserts an already-built function and assigns its canonical dense ID.
-    pub fn push_function(&mut self, mut function: MIRFunction) -> MIRFunctionID {
-        let id = MIRFunctionID::new(self.functions.len());
-        function.id = id;
-        self.functions.push(function);
-        id
-    }
-
-    pub fn add_global(
-        &mut self,
-        name: CXIdent,
-        ty: MIRTypeID,
-        linkage: LinkageMode,
-        is_mutable: bool,
-        nodrop: bool,
-        state: MIRGlobalState,
-    ) -> MIRGlobalID {
-        let id = MIRGlobalID::new(self.globals.len());
-        let mut global = MIRGlobalVariable::new(id, name, ty, linkage, is_mutable);
-        global.nodrop = nodrop;
-        global.state = state;
-        self.globals.push(global);
-        id
-    }
-
-    pub fn push_global(&mut self, mut global: MIRGlobalVariable) -> MIRGlobalID {
-        let id = MIRGlobalID::new(self.globals.len());
-        global.id = id;
-        self.globals.push(global);
-        id
+    pub fn globals(&self) -> impl ExactSizeIterator<Item = &MIRGlobalVariable> {
+        self.globals.values()
     }
 
     pub fn function(&self, id: MIRFunctionID) -> Option<&MIRFunction> {
-        self.functions.get(id.index())
-    }
-
-    pub fn function_mut(&mut self, id: MIRFunctionID) -> Option<&mut MIRFunction> {
-        self.functions.get_mut(id.index())
+        self.functions.get(&id)
     }
 
     pub fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
-        self.globals.get(id.index())
-    }
-
-    pub fn global_mut(&mut self, id: MIRGlobalID) -> Option<&mut MIRGlobalVariable> {
-        self.globals.get_mut(id.index())
-    }
-
-    pub fn validation_error_range(&self, error: &MIRValidationError) -> Option<&TokenRange> {
-        let (function, block, instruction) = error.instruction_location()?;
-        self.instruction_range(function, block, instruction)
+        self.globals.get(&id)
     }
 
     pub fn instruction_range(
@@ -97,14 +55,16 @@ impl MIRUnit {
         instruction: usize,
     ) -> Option<&TokenRange> {
         self.function(function)
-            .and_then(|function| function.block(block))
+            .and_then(|function| function.definition())
+            .and_then(|definition| definition.block(block))
             .and_then(|block| block.instrs.get(instruction))
             .map(|instruction| &instruction.token_range)
     }
 
     pub fn scope_range(&self, function: MIRFunctionID, scope: MIRScopeID) -> Option<&TokenRange> {
         self.function(function)
-            .and_then(|function| function.scope(scope))
+            .and_then(|function| function.definition())
+            .and_then(|definition| definition.scope(scope))
             .map(|scope| &scope.token_range)
     }
 }

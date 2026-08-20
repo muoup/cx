@@ -49,12 +49,12 @@ pub(crate) fn evaluate_expression(
         // for the pre-MIR comptime interpreter, which still evaluates some
         // staged expressions during typechecking.
         THIRExpressionKind::SizeOf { _type } => {
-            let Ok(layout) = engine.env().symbols.type_layout(&_type) else {
-                return engine.log_error(
-                    token_range,
-                    "cannot calculate sizeof in comptime context".to_string(),
-                );
-            };
+            let layout = engine
+                .env()
+                .symbols
+                .type_layout(&_type)
+                .map_err(|err| engine.env().complete_err(err, &expr.token_range))?;
+
             ComptimeValue {
                 token_range,
                 kind: ComptimeKind::Integer {
@@ -66,12 +66,11 @@ pub(crate) fn evaluate_expression(
         }
 
         THIRExpressionKind::AlignOf { _type } => {
-            let Ok(layout) = engine.env().symbols.type_layout(&_type) else {
-                return engine.log_error(
-                    token_range,
-                    "cannot calculate alignof in comptime context".to_string(),
-                );
-            };
+            let layout = engine
+                .env()
+                .symbols
+                .type_layout(&_type)
+                .map_err(|err| engine.env().complete_err(err, &token_range))?;
             ComptimeValue {
                 token_range,
                 kind: ComptimeKind::Integer {
@@ -372,7 +371,10 @@ fn evaluate_type_conversion(
         THIRCoercion::Typechange | THIRCoercion::ReinterpretBits => {
             retag_value(value, result_type, token_range)
         }
-        THIRCoercion::PtrToInt { .. } | THIRCoercion::IntToPtr { .. } | THIRCoercion::GetFnPtr => {
+        THIRCoercion::PtrToInt { .. }
+        | THIRCoercion::IntToPtr { .. }
+        | THIRCoercion::GetFnPtr
+        | THIRCoercion::Unreachable => {
             engine.log_error(
                 token_range,
                 "Invalid conversion in comptime context".to_string(),

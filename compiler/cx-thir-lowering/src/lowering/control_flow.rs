@@ -2,15 +2,40 @@ use cx_log::CXResult;
 use cx_mir::{MIRBlockTarget, MIRConstant, MIRInstrKind, MIRScopeID, MIRValue};
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
-    expression::{THIRBinOp, THIRExpression, THIRIntBinOp, THIRLocalID},
+    expression::{THIRBinOp, THIRExpression, THIRExpressionKind, THIRIntBinOp, THIRLocalID},
     pattern::THIRPattern,
 };
 use cx_thir::type_context::THIRTypeContext;
 
 use crate::{
     builder::MIRBuilder,
-    lowering::{aggregates, lower_expression},
+    lowering::{aggregates, lower_expression, types::lower_type},
 };
+
+pub(super) fn contains_label(expression: &THIRExpression) -> bool {
+    match &expression.kind {
+        THIRExpressionKind::Label { .. } => true,
+        THIRExpressionKind::Block { statements, .. } => statements.iter().any(contains_label),
+        THIRExpressionKind::If {
+            then_branch,
+            else_branch,
+            ..
+        } => contains_label(then_branch) || else_branch.as_deref().is_some_and(contains_label),
+        THIRExpressionKind::While { body, .. } | THIRExpressionKind::For { body, .. } => {
+            contains_label(body)
+        }
+        THIRExpressionKind::CSwitch { cases, default, .. } => {
+            cases.iter().any(|(_, body)| contains_label(body))
+                || default.as_deref().is_some_and(contains_label)
+        }
+        THIRExpressionKind::Match { arms, default, .. } => {
+            arms.iter().any(|(_, body)| contains_label(body))
+                || default.as_deref().is_some_and(contains_label)
+        }
+        THIRExpressionKind::Unsafe { expression } => contains_label(expression),
+        _ => false,
+    }
+}
 
 fn move_value(builder: &mut MIRBuilder<'_>, value: MIRValue, ty: &THIRType) -> MIRValue {
     let value = match value {
@@ -45,7 +70,7 @@ fn lower_scoped_value(
 }
 
 fn rvalue(value: MIRValue, ty: &THIRType) -> MIRValue {
-    if ty.is_unit() {
+    if ty.is_void() {
         return MIRValue::Constant(MIRConstant::Unit);
     }
     if ty.is_memory_reference() {
@@ -98,7 +123,7 @@ pub(super) fn finish_value_cleanup(
     let value = if !steps.is_empty() && ty.is_memory_reference() {
         match value {
             MIRValue::Place(place) => {
-                let type_id = builder.lower_type(ty);
+                let type_id = lower_type(builder, ty);
                 let out = builder.register(type_id, None);
                 builder.emit(MIRInstrKind::AddressOf { out, place });
                 MIRValue::Register(out)
@@ -122,7 +147,7 @@ pub(super) fn finish_value_cleanup(
         return Ok(value);
     }
 
-    let type_id = builder.lower_type(ty);
+    let type_id = lower_type(builder, ty);
     let cleanup_blocks = steps
         .iter()
         .map(|_| {
@@ -209,12 +234,42 @@ pub(super) fn lower_if(
     else_branch: Option<&THIRExpression>,
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
+    if builder.current_block_terminated() {
+        let then_block = builder.new_block("if.unreachable.then");
+        let else_block = builder.new_block("if.unreachable.else");
+        let continuation = builder.new_block("if.unreachable.continuation");
+        let value_match = !matches!(result_type.kind, THIRTypeKind::Void);
+
+        builder.set_current_block(then_block);
+        if value_match {
+            lower_scoped_value(builder, then_branch, result_type)?;
+        } else {
+            lower_scoped(builder, then_branch)?;
+        }
+
+        builder.set_current_block(else_block);
+        if let Some(else_branch) = else_branch {
+            if value_match {
+                lower_scoped_value(builder, else_branch, result_type)?;
+            } else {
+                lower_scoped(builder, else_branch)?;
+            }
+        }
+
+        builder.set_current_block(continuation);
+        return Ok(if value_match {
+            MIRValue::Constant(MIRConstant::Undefined)
+        } else {
+            MIRValue::Constant(MIRConstant::Unit)
+        });
+    }
+
     let condition = super::lower_expression(builder, condition)?;
     let then_block = builder.new_block("if.then");
     let else_block = builder.new_block("if.else");
     let merge_block = builder.new_block("if.merge");
     let result = (!matches!(result_type.kind, THIRTypeKind::Void)).then(|| {
-        let type_id = builder.lower_type(result_type);
+        let type_id = lower_type(builder, result_type);
         builder.block_param(merge_block, type_id, None)
     });
     builder.emit(MIRInstrKind::Branch {
@@ -276,7 +331,7 @@ pub(super) fn lower_short_circuit(
     let lhs_value = super::lower_expression(builder, lhs)?;
     let rhs_block = builder.new_block("logical.rhs");
     let merge_block = builder.new_block("logical.merge");
-    let result_type_id = builder.lower_type(result_type);
+    let result_type_id = lower_type(builder, result_type);
     let result = builder.block_param(merge_block, result_type_id, None);
     let is_and = matches!(
         op,
@@ -496,7 +551,7 @@ pub(super) fn lower_match(
         .or_else(|| synthetic_unreachable.then(|| builder.new_block("match.unreachable")))
         .unwrap_or(exit);
 
-    let result_type_id = value_match.then(|| builder.lower_type(result_type));
+    let result_type_id = value_match.then(|| lower_type(builder, result_type));
     builder.push_yield(exit, result_type_id);
 
     let mut blocks = Vec::with_capacity(arms.len());
@@ -516,7 +571,7 @@ pub(super) fn lower_match(
                 (*variant_index, MIRBlockTarget::new(*block))
             })
             .collect();
-        let sum_type_id = builder.lower_type(&subject_type);
+        let sum_type_id = lower_type(builder, &subject_type);
         builder.emit(MIRInstrKind::VariantSwitch {
             subject: subject_value.clone(),
             sum_type: sum_type_id,

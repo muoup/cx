@@ -274,6 +274,7 @@ impl IntegerLiteral {
     pub fn source_text(self) -> String {
         let value = match self.base {
             IntegerBase::Decimal => self.magnitude.to_string(),
+            IntegerBase::Octal if self.magnitude == 0 => "0".to_string(),
             IntegerBase::Octal => format!("0{:o}", self.magnitude),
             IntegerBase::Hexadecimal => format!("0x{:x}", self.magnitude),
             IntegerBase::Binary => format!("0b{:b}", self.magnitude),
@@ -324,6 +325,8 @@ pub enum OperatorType {
     Equal,
     LessEqual,
     GreaterEqual,
+    LShift,
+    RShift,
 
     DoubleAmpersand,
     DoubleBar,
@@ -372,6 +375,7 @@ pub enum KeywordType {
     Do,
     Break,
     Continue,
+    Goto,
     Return,
     Switch,
     Case,
@@ -512,6 +516,7 @@ impl TokenKind {
             "do" => TokenKind::Keyword(KeywordType::Do),
             "break" => TokenKind::Keyword(KeywordType::Break),
             "continue" => TokenKind::Keyword(KeywordType::Continue),
+            "goto" => TokenKind::Keyword(KeywordType::Goto),
             "return" => TokenKind::Keyword(KeywordType::Return),
             "switch" => TokenKind::Keyword(KeywordType::Switch),
             "case" => TokenKind::Keyword(KeywordType::Case),
@@ -533,6 +538,7 @@ impl TokenKind {
             }
 
             "char" => TokenKind::Intrinsic(IntrinsicType::Char),
+            "_Bool" => TokenKind::Intrinsic(IntrinsicType::Bool),
             "void" => TokenKind::Intrinsic(IntrinsicType::Void),
             "auto" => TokenKind::Intrinsic(IntrinsicType::Auto),
             "unsigned" => TokenKind::Intrinsic(IntrinsicType::Unsigned),

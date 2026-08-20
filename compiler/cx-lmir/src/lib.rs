@@ -62,6 +62,15 @@ pub enum LMIRGlobalInitializer {
         value: FloatWrapper,
         _type: LMIRFloatType,
     },
+    Aggregate {
+        fields: Vec<(usize, LMIRGlobalInitializer)>,
+    },
+    Global(u32),
+    GlobalOffset {
+        global: u32,
+        offset: i64,
+    },
+    Function(String),
     Null,
 }
 
@@ -114,6 +123,7 @@ pub struct LMIRParameter {
 pub enum LMIRParameterABI {
     Direct { slots: Vec<LMIRABISlot> },
     Indirect { alignment: u8 },
+    ByValue { alignment: u8 },
 }
 
 #[derive(Debug, Clone)]
@@ -141,7 +151,7 @@ impl LMIRParameterABI {
     pub fn slot_count(&self) -> usize {
         match self {
             LMIRParameterABI::Direct { slots } => slots.len(),
-            LMIRParameterABI::Indirect { .. } => 1,
+            LMIRParameterABI::Indirect { .. } | LMIRParameterABI::ByValue { .. } => 1,
         }
     }
 }
@@ -186,7 +196,7 @@ impl LMIRFunctionSignature {
                     }
                     index -= slots.len();
                 }
-                LMIRParameterABI::Indirect { .. } => {
+                LMIRParameterABI::Indirect { .. } | LMIRParameterABI::ByValue { .. } => {
                     if index == 0 {
                         return Some(LMIRType::default_pointer(target));
                     }
@@ -350,6 +360,18 @@ pub enum LMIRInstructionKind {
         func_ptr: LMIRValue,
         args: Vec<LMIRValue>,
         method_sig: LMIRFunctionSignature,
+    },
+
+    VaStart {
+        list: LMIRValue,
+        last: LMIRValue,
+    },
+    VaEnd {
+        list: LMIRValue,
+    },
+    VaArg {
+        list: LMIRValue,
+        _type: LMIRType,
     },
 
     GetFunctionAddr {

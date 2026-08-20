@@ -79,9 +79,23 @@ impl<'a> Lexer<'a> {
         let start = self.frame.cursor;
 
         self.frame.with_cursor(|cursor| {
+            let mut literal = None;
+            let mut escaped = false;
             while let Some(c) = cursor.next() {
+                if let Some(delimiter) = literal {
+                    if escaped {
+                        escaped = false;
+                    } else if c == '\\' {
+                        escaped = true;
+                    } else if c == delimiter {
+                        literal = None;
+                    }
+                    continue;
+                }
+
                 match c {
                     '\n' => break,
+                    '"' | '\'' => literal = Some(c),
                     '/' if (cursor.peek() == Some('/') || cursor.peek() == Some('*')) => {
                         cursor.back();
                         break;

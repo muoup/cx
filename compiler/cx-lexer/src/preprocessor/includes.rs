@@ -20,6 +20,21 @@ pub(crate) fn handle_include(
     directive_start: usize,
     _directive_end: usize,
 ) -> CXResult<LexTransition> {
+    handle_include_impl(context, directive_start, false)
+}
+
+pub(crate) fn handle_include_next(
+    context: &mut LexingContext,
+    directive_start: usize,
+) -> CXResult<LexTransition> {
+    handle_include_impl(context, directive_start, true)
+}
+
+fn handle_include_impl(
+    context: &mut LexingContext,
+    directive_start: usize,
+    include_next: bool,
+) -> CXResult<LexTransition> {
     if !context.current_frame().is_active() {
         context.skip_tail();
         return Ok(LexTransition::Continue);
@@ -51,7 +66,11 @@ pub(crate) fn handle_include(
     }
 
     let current_file = context.current_frame().file_path.clone();
-    let path = match includes::resolve_path(&current_file, &context.include_dirs, &file_name) {
+    let path = match if include_next {
+        includes::resolve_next_path(&current_file, &context.include_dirs, &file_name)
+    } else {
+        includes::resolve_path(&current_file, &context.include_dirs, &file_name)
+    } {
         Some(path) => path,
         None => {
             let frame = context.current_frame();
@@ -147,6 +166,43 @@ pub(crate) fn resolve_path(
         .find(|path| path.is_file())
 }
 
+pub(crate) fn resolve_next_path(
+    current_file: &std::path::Path,
+    include_dirs: &[PathBuf],
+    file_name: &str,
+) -> Option<PathBuf> {
+    let is_angled = file_name.starts_with('<') && file_name.ends_with('>');
+    if !is_angled {
+        return None;
+    }
+
+    let inner = &file_name[1..file_name.len() - 1];
+    let mut search = include_dirs.to_vec();
+
+    #[cfg(not(feature = "ignore-system-headers"))]
+    search.extend(system_include_dirs().iter().cloned());
+
+    let current_parent = current_file.parent()?.canonicalize().ok()?;
+    let mut passed_current_dir = false;
+
+    for directory in search {
+        let canonical_directory = directory.canonicalize().ok();
+        if !passed_current_dir {
+            if canonical_directory.as_ref() == Some(&current_parent) {
+                passed_current_dir = true;
+            }
+            continue;
+        }
+
+        let candidate = directory.join(inner);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+
+    None
+}
+
 #[cfg(not(feature = "ignore-system-headers"))]
 fn system_include_dirs() -> &'static [PathBuf] {
     static SYSTEM_INCLUDE_DIRS: OnceLock<Vec<PathBuf>> = OnceLock::new();
@@ -189,13 +245,24 @@ fn multiarch_include_dirs() -> Vec<PathBuf> {
 #[cfg(all(unix, not(feature = "ignore-system-headers")))]
 fn gcc_include_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    let Ok(targets) = std::fs::read_dir("/usr/lib/gcc") else {
-        return dirs;
+    let targets = match std::fs::read_dir("/usr/lib/gcc") {
+        Ok(targets) => targets,
+        Err(error) => {
+            eprintln!("Warning: failed to inspect GCC include directories: {error}");
+            return dirs;
+        }
     };
 
     for target in targets.flatten() {
-        let Ok(versions) = std::fs::read_dir(target.path()) else {
-            continue;
+        let versions = match std::fs::read_dir(target.path()) {
+            Ok(versions) => versions,
+            Err(error) => {
+                eprintln!(
+                    "Warning: failed to inspect GCC include directory {}: {error}",
+                    target.path().display()
+                );
+                continue;
+            }
         };
 
         for version in versions.flatten() {

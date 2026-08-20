@@ -1,6 +1,7 @@
 use crate::comptime::{ComptimeCallArg, evaluate_comptime_call, evaluate_staged_expression_call};
 use crate::environment::TypeEnvironment;
 use crate::symbol::deduction::complete_templated_callee_maybe;
+use crate::type_checking::coercion::implicit::conversion::compatible;
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::lvalue;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
@@ -22,9 +23,86 @@ pub(crate) fn typecheck_method_call(
     expr: &HIRExpression,
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
+    if let HIRExprKind::Identifier {
+        name,
+        template_input: None,
+    } = &lhs.kind
+        && let Some(name) = name.root_name_ref().map(|name| name.as_str())
+        && matches!(
+            name,
+            "va_start" | "va_end" | "__builtin_va_start" | "__builtin_va_end"
+        )
+    {
+        return typecheck_va_builtin(env, namespace, name, rhs, expr);
+    }
+
     let function = typecheck_expr(env, namespace, lhs, None)?;
 
     typecheck_callee_method_call(env, namespace, function, vec![], rhs, expr, expected_type)
+}
+
+fn typecheck_va_builtin(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    name: &str,
+    rhs: &HIRExpression,
+    expr: &HIRExpression,
+) -> CXResult<TypecheckResult> {
+    let args = comma_separated_exprs(rhs);
+    let is_start = matches!(name, "va_start" | "__builtin_va_start");
+    let expected = if is_start { 2 } else { 1 };
+    if args.len() != expected {
+        return env.log_error(
+            expr.token_range(),
+            format!("{name} expects {expected} arguments, found {}", args.len()),
+        );
+    }
+
+    let list = typecheck_va_list(env, namespace, args[0])?;
+    if is_start {
+        let last = typecheck_expr(env, namespace, args[1], None)?
+            .standard_ready_assure(env, args[1].token_range())?
+            .internal_ready_assertion();
+        Ok(TypecheckResult::new(
+            THIRType::unit(),
+            THIRExpressionKind::VaStart {
+                list: Box::new(list),
+                last: Box::new(last),
+            },
+        ))
+    } else {
+        Ok(TypecheckResult::new(
+            THIRType::unit(),
+            THIRExpressionKind::VaEnd {
+                list: Box::new(list),
+            },
+        ))
+    }
+}
+
+pub(crate) fn typecheck_va_list(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    expr: &HIRExpression,
+) -> CXResult<THIRExpression> {
+    let list = typecheck_expr(env, namespace, expr, None)?
+        .standard_ready_assure(env, expr.token_range())?
+        .internal_ready_assertion();
+    let actual = env
+        .symbols
+        .mem_ref_inner(&list._type)
+        .unwrap_or(&list._type);
+    let expected = env.get_intrinsic_type("__builtin_va_list");
+    if !compatible::compatible_types(env, actual, &expected)? {
+        return env.log_error(
+            expr.token_range(),
+            format!(
+                "expected va_list, found {}",
+                list._type.display_with(&env.symbols)
+            ),
+        );
+    }
+    Ok(list)
 }
 
 pub(crate) fn typecheck_callee_method_call(
@@ -126,7 +204,7 @@ fn load_callable(
     function: THIRExpression,
 ) -> CXResult<(THIRExpression, THIRFnSignature)> {
     let loaded_function =
-        lvalue::try_conversion(env, function)?.catch_unapplied(|expr, _| Ok(expr))?;
+        lvalue::try_conversion(env, function, false)?.catch_unapplied(|expr, _| Ok(expr))?;
     let function_type = loaded_function.get_type();
     let Some(callable_type) = env
         .symbols

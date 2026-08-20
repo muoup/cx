@@ -91,12 +91,6 @@ impl Display for HIRGlobalVariable {
 
 impl Display for HIRDefinition {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        if self.namespace.is_root() {
-            write!(f, "[root] ")?;
-        } else {
-            write!(f, "[{}] ", self.namespace)?;
-        }
-
         Display::fmt(&self.stmt, f)
     }
 }
@@ -243,6 +237,7 @@ impl<'a> Display for HIRExprFormatter<'a> {
                 name,
                 _type,
                 initial_value,
+                ..
             } => {
                 writeln!(f, "VarDeclaration {name}: {_type}")?;
 
@@ -411,7 +406,8 @@ impl<'a> Display for HIRExprFormatter<'a> {
                 HIRExprFormatter::new(condition, self.depth + 1).fmt(f)?;
                 for (case_value, case_expr) in cases {
                     self.indent(f)?;
-                    writeln!(f, "Case: {} -> ID: {}", case_value, case_expr)?;
+                    writeln!(f, "Case -> ID: {}", case_expr)?;
+                    HIRExprFormatter::new(case_value, self.depth + 1).fmt(f)?;
                 }
                 if let Some(default_expr) = default_case {
                     self.indent(f)?;
@@ -424,8 +420,17 @@ impl<'a> Display for HIRExprFormatter<'a> {
                 }
                 Ok(())
             }
+            HIRExprKind::VaArg { list, .. } => {
+                writeln!(f, "VaArg")?;
+                HIRExprFormatter::new(list, self.depth + 1).fmt(f)
+            }
             HIRExprKind::Break => writeln!(f, "Break"),
             HIRExprKind::Continue => writeln!(f, "Continue"),
+            HIRExprKind::Goto { name } => writeln!(f, "Goto {name}"),
+            HIRExprKind::Label { name, statement } => {
+                writeln!(f, "Label {name}")?;
+                HIRExprFormatter::new(statement, self.depth + 1).fmt(f)
+            }
         }
     }
 }

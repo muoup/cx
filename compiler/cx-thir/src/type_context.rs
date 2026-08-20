@@ -3,8 +3,7 @@ use cx_target::ArchitectureConfig;
 use cx_util::namespace::QualifiedName;
 
 use crate::{
-    layout::THIRTypeLayout,
-    thir::data::{THIRFnSignature, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
+    layout::THIRTypeLayout, thir::data::{THIRFnSignature, THIRIntType, THIRType, THIRTypeID, THIRTypeKind}
 };
 
 pub trait THIRTypeContext {
@@ -78,5 +77,13 @@ pub trait THIRTypeContext {
     fn cvr_compatible(&self, type1: &THIRType, type2: &THIRType) -> bool {
         // Determines if type1 has any CVR qualifiers that type2 does not have. If so, they are not compatible.
         (type1.specifiers ^ type2.specifiers) & type1.specifiers == 0
+    }
+
+    fn type_debug_name(&self, ty: &THIRType) -> Option<String>
+    where
+        Self: Sized,
+    {
+        ty.strong_identifier()
+            .map(|_| ty.display_with(self).to_string())
     }
 }

@@ -1,82 +1,58 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
+use cx_mir::global::MIRGlobalKind;
+use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    MIRBasicBlockID, MIRConstant, MIRField, MIRFnParam, MIRFnPrototype, MIRFnSignature,
-    MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace,
-    MIRRegister, MIRScopeID, MIRTypeDefinition, MIRTypeID, MIRTypeKind, MIRUnit, MIRValue,
+    MIRBasicBlockID, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID, MIRGlobalID,
+    MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRRegister, MIRScopeID,
+    MIRTypeID, MIRTypeRegistryBuilder, MIRUnit, MIRValue,
 };
+use cx_thir::thir::global::THIRGlobalVariable;
 use cx_thir::{
     THIRUnit,
     registry::THIRDecomposedRegistry,
     thir::{
         data::{THIRFnPrototype, THIRFunction},
         expression::{THIRExpression, THIRLocalID},
-        global::{MIRGlobalVarKind, MIRGlobalVariable as THIRGlobalVariable},
-        r#type::{THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
+        r#type::{THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct LoopContext {
-    pub break_target: MIRBasicBlockID,
-    pub continue_target: Option<MIRBasicBlockID>,
-    pub lexical_scope_depth: usize,
-}
+mod function;
+mod module;
 
-#[derive(Debug)]
-pub(crate) struct YieldContext {
-    pub target: MIRBasicBlockID,
-    pub result: Option<MIRRegister>,
-    pub lexical_scope_depth: usize,
-}
+use crate::lowering::types::{lower_int_type, lower_type, lower_type_id};
+use function::{FunctionContext, LoopContext, YieldContext};
+use module::MIRModuleState;
 
-#[derive(Debug)]
-struct FunctionContext {
-    function: MIRFunctionID,
-    current_block: MIRBasicBlockID,
-    local_places: HashMap<THIRLocalID, MIRPlace>,
-    local_values: HashMap<THIRLocalID, MIRValue>,
-    named_values: Vec<HashMap<String, MIRValue>>,
-    loops: Vec<LoopContext>,
-    yields: Vec<YieldContext>,
-    lexical_scopes: Vec<MIRScopeID>,
-    defers: Vec<Vec<THIRExpression>>,
-}
-
-/// Stateful constructor for one semantic MIR unit.
-///
-/// Functions and globals are predeclared before any body is visited, making
-/// symbol resolution deterministic and allowing forward references. Places,
-/// registers, and blocks are allocated by the dense append-only allocators on
-/// `MIRFunction`.
 pub struct MIRBuilder<'thir> {
-    unit: MIRUnit,
+    types: MIRTypeRegistryBuilder,
+    module: MIRModuleState,
     registry: &'thir THIRDecomposedRegistry,
-    lowering_types: HashSet<THIRTypeID>,
-    function_symbols: HashMap<String, MIRFunctionID>,
-    global_symbols: HashMap<String, MIRGlobalID>,
-    definitions: Vec<MIRFunctionID>,
-    current: Option<FunctionContext>,
+
+    pub(crate) lowering_types: HashSet<THIRTypeID>,
+    function: Option<FunctionContext>,
     source_range: TokenRange,
+
+    next_anonymous_symbol: usize,
 }
 
 impl<'thir> MIRBuilder<'thir> {
     pub fn new(thir: &'thir THIRUnit) -> Self {
         let mut builder = Self {
-            unit: MIRUnit::new(*thir.registry.architecture()),
+            types: MIRTypeRegistryBuilder::new(*thir.registry.architecture()),
+            module: MIRModuleState::new(),
             registry: &thir.registry,
             lowering_types: HashSet::new(),
-            function_symbols: HashMap::new(),
-            global_symbols: HashMap::new(),
-            definitions: Vec::with_capacity(thir.functions.len()),
-            current: None,
+            function: None,
             source_range: TokenRange::internal(),
+
+            next_anonymous_symbol: 0,
         };
         builder
-            .unit
             .types
             .reserve_id_space(thir.registry.type_id_bound());
 
@@ -84,15 +60,8 @@ impl<'thir> MIRBuilder<'thir> {
             .registry
             .intrinsic_type_id("void")
             .expect("THIR registry is missing the intrinsic void type");
-        builder.lower_type_id(unit);
 
-        for function in &thir.functions {
-            builder.predeclare_function(function);
-        }
-        for global in &thir.global_variables {
-            builder.predeclare_global(global);
-        }
-
+        lower_type_id(&mut builder, unit);
         builder
     }
 
@@ -100,214 +69,45 @@ impl<'thir> MIRBuilder<'thir> {
         self.registry
     }
 
-    pub fn unit(&self) -> &MIRUnit {
-        &self.unit
+    pub(crate) fn types(&self) -> &MIRTypeRegistryBuilder {
+        &self.types
+    }
+
+    pub(crate) fn types_mut(&mut self) -> &mut MIRTypeRegistryBuilder {
+        &mut self.types
     }
 
     pub fn finish(self) -> MIRUnit {
         assert!(
-            self.current.is_none(),
+            self.function.is_none(),
             "attempted to finish MIR while a function is active"
         );
-        self.unit
+        self.module.finish(self.types)
     }
 
-    pub(crate) fn lower_type(&mut self, ty: &THIRType) -> MIRTypeID {
-        if let Some(id) = self.registry.type_id(ty) {
-            return self.lower_type_id(id);
-        }
-        let kind = self.lower_type_kind_mut(&ty.kind);
-        let debug_name = self.type_debug_name(ty);
-        let id = self.unit.types.intern(MIRTypeDefinition {
-            kind,
-            minimum_alignment: ty.attributes.minimum_alignment,
-        });
-        if self.unit.types.debug_name(id).is_none()
-            && let Some(debug_name) = debug_name
-        {
-            self.unit.types.set_debug_name(id, debug_name);
-        }
-        id
+    pub(crate) fn set_global_state(&mut self, id: MIRGlobalID, state: MIRGlobalState) {
+        self.module.set_global_state(id, state);
     }
 
-    fn lower_type_id(&mut self, id: THIRTypeID) -> MIRTypeID {
-        let mir_id = MIRTypeID::new(id.index());
-        if self.unit.types.definition(mir_id).is_some() || self.lowering_types.contains(&id) {
-            return mir_id;
-        }
-
-        self.lowering_types.insert(id);
-        let Some(ty) = self.registry.try_resolve_type_id(id).cloned() else {
-            assert!(
-                id.0 < self.registry.type_id_bound(),
-                "THIR type {id} is outside its registry"
-            );
-            self.unit
-                .types
-                .define(mir_id, MIRTypeDefinition::new(MIRTypeKind::Undefined))
-                .expect("reserved THIR type ID must have one MIR definition");
-            self.lowering_types.remove(&id);
-            return mir_id;
-        };
-        let debug_name = self.type_debug_name(&ty);
-        let definition = MIRTypeDefinition {
-            kind: self.lower_type_kind_mut(&ty.kind),
-            minimum_alignment: ty.attributes.minimum_alignment,
-        };
-        self.unit
-            .types
-            .define(mir_id, definition)
-            .expect("THIR type ID must have one MIR definition");
-        if let Some(debug_name) = debug_name {
-            self.unit.types.set_debug_name(mir_id, debug_name);
-        }
-        self.lowering_types.remove(&id);
-        mir_id
-    }
-
-    fn type_debug_name(&self, ty: &THIRType) -> Option<String> {
-        ty.strong_identifier()
-            .map(|_| ty.display_with(self.registry).to_string())
-    }
-
-    fn lower_type_kind_mut(&mut self, kind: &THIRTypeKind) -> MIRTypeKind {
-        match kind {
-            THIRTypeKind::Void => MIRTypeKind::Void,
-            THIRTypeKind::Integer { _type, signed } => MIRTypeKind::Integer {
-                ty: lower_int_type(*_type),
-                signed: *signed,
-            },
-            THIRTypeKind::Float { _type } => MIRTypeKind::Float {
-                ty: match _type {
-                    cx_thir::thir::r#type::THIRFloatType::F32 => cx_mir::MIRFloatType::F32,
-                    cx_thir::thir::r#type::THIRFloatType::F64 => cx_mir::MIRFloatType::F64,
-                },
-            },
-            THIRTypeKind::Structured { fields } => MIRTypeKind::Structured {
-                fields: fields.iter().map(|field| self.lower_field(field)).collect(),
-            },
-            THIRTypeKind::Union { variants } => MIRTypeKind::Union {
-                variants: variants
-                    .iter()
-                    .map(|field| self.lower_field(field))
-                    .collect(),
-            },
-            THIRTypeKind::TaggedUnion { variants } => MIRTypeKind::TaggedUnion {
-                variants: variants
-                    .iter()
-                    .map(|field| self.lower_field(field))
-                    .collect(),
-            },
-            THIRTypeKind::PointerTo { inner_type } => MIRTypeKind::PointerTo {
-                inner: self.lower_type_id(*inner_type),
-            },
-            THIRTypeKind::MemoryReference {
-                inner_type,
-                bitfield,
-            } => MIRTypeKind::MemoryReference {
-                inner: self.lower_type_id(*inner_type),
-                bitfield: bitfield.as_ref().map(|bitfield| cx_mir::MIRBitfieldAccess {
-                    storage_type: self.lower_type_id(bitfield.storage_type),
-                    bit_offset: bitfield.bit_offset,
-                    bit_width: bitfield.bit_width,
-                    signed: bitfield.signed,
-                }),
-            },
-            THIRTypeKind::Array { length, inner_type } => MIRTypeKind::Array {
-                length: *length,
-                inner: self.lower_type_id(*inner_type),
-            },
-            THIRTypeKind::Function { signature } => MIRTypeKind::Function {
-                signature: cx_mir::MIRFunctionType {
-                    params: signature
-                        .params
-                        .iter()
-                        .map(|param| self.lower_type(&param._type))
-                        .collect(),
-                    return_type: self.lower_type(&signature.return_type),
-                    variadic: signature.var_args,
-                },
-            },
-            THIRTypeKind::Opaque { size, alignment } => MIRTypeKind::Opaque {
-                size: *size,
-                alignment: *alignment,
-            },
-            THIRTypeKind::Undefined => MIRTypeKind::Undefined,
-            THIRTypeKind::Str => MIRTypeKind::Str,
-        }
-    }
-
-    fn lower_field(&mut self, field: &cx_thir::thir::r#type::THIRField) -> MIRField {
-        match field {
-            cx_thir::thir::r#type::THIRField::Standard { name, type_id } => {
-                MIRField::named(name.clone(), self.lower_type_id(*type_id))
-            }
-            cx_thir::thir::r#type::THIRField::Bitfield {
-                name,
-                integer_type_id,
-                width,
-            } => MIRField::Bitfield {
-                name: name.clone(),
-                integer_type_id: self.lower_type_id(*integer_type_id),
-                width: *width,
-            },
-        }
-    }
-
-    fn predeclare_function(&mut self, function: &THIRFunction) {
-        let name = function.prototype.symbol_name().to_string();
+    pub(crate) fn predeclare_function(&mut self, function: &THIRFunction) {
         let prototype = self.convert_prototype(&function.prototype);
-        let id = self.unit.add_function(prototype);
-        self.function_symbols.entry(name).or_insert(id);
-        self.definitions.push(id);
+        self.module.declare_function(prototype);
     }
 
-    fn predeclare_global(&mut self, global: &THIRGlobalVariable) {
-        let (name, ty, state, nodrop) = match &global.kind {
-            MIRGlobalVarKind::StringLiteral { name, value } => (
-                name.clone(),
-                self.lower_type(&THIRType::from(THIRTypeKind::Str)),
-                MIRGlobalState::Initialized(MIRConstant::String(value.clone())),
-                true,
-            ),
-            MIRGlobalVarKind::Variable {
-                name,
-                _type,
-                initializer,
-            } => {
-                let state = match initializer {
-                    Some(value) => match &_type.kind {
-                        THIRTypeKind::Integer {
-                            _type: integer_type,
-                            signed,
-                        } => MIRGlobalState::Initialized(MIRConstant::Integer {
-                            value: *value as i128,
-                            ty: lower_int_type(*integer_type),
-                            signed: *signed,
-                        }),
-                        _ => MIRGlobalState::ZeroInitialized,
-                    },
-                    None if global.linkage == LinkageMode::Extern => MIRGlobalState::External,
-                    None => MIRGlobalState::ZeroInitialized,
-                };
-                (
-                    name.clone(),
-                    self.lower_type(_type),
-                    state,
-                    _type.is_nodrop(),
-                )
-            }
-        };
+    pub(crate) fn predeclare_global(&mut self, global: &THIRGlobalVariable) {
+        let ty = lower_type(self, &global._type);
 
-        let id = self.unit.add_global(
-            name.clone(),
-            ty,
+        self.module.declare_global(
+            global.name.clone(),
             global.linkage,
-            global.is_mutable,
-            nodrop,
-            state,
+            MIRGlobalKind::Variable {
+                ty,
+                state: MIRGlobalState::External,
+                is_mutable: global.is_mutable,
+                is_nodrop: global._type.is_nodrop(),
+            },
+            false,
         );
-        self.global_symbols.entry(name.as_string()).or_insert(id);
     }
 
     pub(crate) fn convert_prototype(&mut self, prototype: &THIRFnPrototype) -> MIRFnPrototype {
@@ -331,7 +131,7 @@ impl<'thir> MIRBuilder<'thir> {
             .iter()
             .map(|param| {
                 let nodrop = param._type.is_nodrop();
-                let ty = self.lower_type(&param._type);
+                let ty = lower_type(self, &param._type);
                 match &param.name {
                     Some(name) => MIRFnParam::named(name.clone(), ty),
                     None => MIRFnParam::new(ty),
@@ -339,10 +139,10 @@ impl<'thir> MIRBuilder<'thir> {
                 .with_nodrop(nodrop)
             })
             .collect();
-        let return_type = if matches!(signature.return_type.kind, THIRTypeKind::Void) {
-            self.unit.types.unit()
+        let return_type = if signature.return_type.is_void() || signature.return_type.is_unreachable() {
+            self.types().unit()
         } else {
-            self.lower_type(&signature.return_type)
+            lower_type(self, &signature.return_type)
         };
         let mut lowered = MIRFnSignature::new(name, params, return_type);
         lowered.variadic = signature.var_args;
@@ -350,35 +150,27 @@ impl<'thir> MIRBuilder<'thir> {
         MIRFnPrototype::new(lowered, linkage)
     }
 
-    pub(crate) fn start_function(&mut self, index: usize, function: &THIRFunction) {
-        assert!(self.current.is_none(), "a MIR function is already active");
+    pub(crate) fn start_function(
+        &mut self,
+        index: usize,
+        function: &THIRFunction,
+        body: &THIRExpression,
+    ) {
+        assert!(self.function.is_none(), "a MIR function is already active");
         let function_id = *self
-            .definitions
+            .module
+            .function_ids()
             .get(index)
             .expect("THIR function predeclaration is missing");
-        let entry = self
-            .unit
-            .function_mut(function_id)
-            .expect("predeclared MIR function is missing")
-            .add_block();
-        let root_scope = self
-            .unit
-            .function_mut(function_id)
-            .expect("predeclared MIR function is missing")
-            .add_scope(function.body.token_range.clone());
+        let mir = self.module.take_function(function_id);
+        let (id, prototype, mut definition) = mir.into_definition();
+        let entry = definition.add_block();
+        let root_scope = definition.add_scope(body.token_range.clone());
 
-        self.current = Some(FunctionContext {
-            function: function_id,
-            current_block: entry,
-            local_places: HashMap::new(),
-            local_values: HashMap::new(),
-            named_values: vec![HashMap::new()],
-            loops: Vec::new(),
-            yields: Vec::new(),
-            lexical_scopes: vec![root_scope],
-            defers: vec![Vec::new()],
-        });
-        self.set_block_name(entry, "entry");
+        self.function = Some(FunctionContext::new(
+            id, prototype, definition, entry, root_scope,
+        ));
+        self.context_mut().set_block_name(entry, "entry");
 
         for (index, parameter) in function.prototype.signature().params.iter().enumerate() {
             let place = MIRPlace::Parameter(MIRParameterID::new(index));
@@ -391,88 +183,55 @@ impl<'thir> MIRBuilder<'thir> {
         }
     }
 
-    pub(crate) fn finish_function(&mut self) {
-        let context = self
-            .current
-            .take()
-            .expect("attempted to finish without an active MIR function");
-        assert!(context.loops.is_empty(), "loop context stack is unbalanced");
-        assert!(
-            context.yields.is_empty(),
-            "yield context stack is unbalanced"
-        );
-        assert_eq!(
-            context.lexical_scopes.len(),
-            1,
-            "lexical scope stack is unbalanced"
-        );
-        assert_eq!(context.defers.len(), 1, "defer stack is unbalanced");
+    pub fn add_string_literal(&mut self, value: &str) -> MIRGlobalID {
+        self.next_anonymous_symbol += 1;
 
-        let unit_type = self.unit.types.unit();
-        let returns_value = self
-            .unit
-            .function(context.function)
-            .expect("active MIR function is missing")
-            .prototype
-            .signature
-            .return_type
-            != unit_type;
-        let function = self
-            .unit
-            .function_mut(context.function)
-            .expect("active MIR function is missing");
-        for block in &mut function.blocks {
-            if block.terminator().is_some() {
-                continue;
-            }
-            let terminator = if block.id == context.current_block && !returns_value {
-                MIRInstrKind::Return { value: None }
-            } else {
-                MIRInstrKind::Unreachable
-            };
-            block.push(terminator);
-        }
+        let name_ident = CXIdent::from(format!("__anon_{}", self.next_anonymous_symbol));
+        self.module.declare_global(
+            name_ident,
+            LinkageMode::Static,
+            MIRGlobalKind::StringLiteral {
+                value: value.to_owned(),
+            },
+            true,
+        )
     }
 
-    pub(crate) fn current_function_id(&self) -> MIRFunctionID {
-        self.context().function
+    pub(crate) fn finish_function(&mut self) {
+        let context = self
+            .function
+            .take()
+            .expect("attempted to finish without an active MIR function");
+        self.module
+            .insert_function(context.finish(self.types().unit()));
+    }
+
+    pub(crate) fn _current_function_id(&self) -> MIRFunctionID {
+        self.context()._id()
     }
 
     pub(crate) fn current_block(&self) -> MIRBasicBlockID {
-        self.context().current_block
+        self.context().current_block()
     }
 
     pub(crate) fn set_current_block(&mut self, block: MIRBasicBlockID) {
-        assert!(
-            self.function().block(block).is_some(),
-            "selected block does not belong to the active function"
-        );
-        self.context_mut().current_block = block;
+        self.context_mut().set_current_block(block);
     }
 
     pub(crate) fn new_block(&mut self, debug_name: &str) -> MIRBasicBlockID {
-        let id = self.function_mut().add_block();
-        self.set_block_name(id, debug_name);
-        id
-    }
-
-    fn set_block_name(&mut self, block: MIRBasicBlockID, debug_name: &str) {
-        self.function_mut()
-            .block_mut(block)
-            .expect("selected block does not exist")
-            .debug_name = Some(CXIdent::new(debug_name));
-    }
-
-    pub(crate) fn block_terminated(&self, block: MIRBasicBlockID) -> bool {
-        self.function()
-            .block(block)
-            .expect("selected block does not exist")
-            .terminator()
-            .is_some()
+        self.context_mut().new_block(debug_name)
     }
 
     pub(crate) fn current_block_terminated(&self) -> bool {
-        self.block_terminated(self.current_block())
+        self.context().current_block_terminated()
+    }
+
+    pub(crate) fn label_block(&mut self, name: &CXIdent) -> MIRBasicBlockID {
+        self.context_mut().label_block(name)
+    }
+
+    pub(crate) fn declare_label(&mut self, name: &CXIdent) -> MIRBasicBlockID {
+        self.context_mut().declare_label(name)
     }
 
     pub(crate) fn set_source_range(&mut self, range: TokenRange) -> TokenRange {
@@ -484,23 +243,16 @@ impl<'thir> MIRBuilder<'thir> {
     }
 
     pub(crate) fn emit(&mut self, instruction: MIRInstrKind) -> bool {
-        if self.current_block_terminated() {
-            return false;
-        }
-        let block = self.current_block();
         let range = self.source_range.clone();
-        self.function_mut()
-            .push_instr_at(block, instruction, range)
-            .expect("active MIR block is missing");
-        true
+        self.context_mut().emit(instruction, range)
     }
 
     pub(crate) fn register(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>) -> MIRRegister {
-        self.function_mut().add_register(ty, debug_name)
+        self.context_mut().register(ty, debug_name)
     }
 
     pub(crate) fn register_type(&self, register: MIRRegister) -> Option<MIRTypeID> {
-        self.function().register(register).map(|register| register.ty)
+        self.context().register_type(register)
     }
 
     pub(crate) fn block_param(
@@ -509,9 +261,7 @@ impl<'thir> MIRBuilder<'thir> {
         ty: MIRTypeID,
         debug_name: Option<CXIdent>,
     ) -> MIRRegister {
-        self.function_mut()
-            .add_block_param(block, ty, debug_name)
-            .expect("selected block does not exist")
+        self.context_mut().block_param(block, ty, debug_name)
     }
 
     pub(crate) fn place(
@@ -520,13 +270,7 @@ impl<'thir> MIRBuilder<'thir> {
         debug_name: Option<CXIdent>,
         nodrop: bool,
     ) -> MIRPlace {
-        let scope = self
-            .context()
-            .lexical_scopes
-            .last()
-            .copied()
-            .expect("active function has no lexical scope");
-        self.function_mut().add_place(ty, debug_name, nodrop, scope)
+        self.context_mut().place(ty, debug_name, nodrop)
     }
 
     pub(crate) fn create(
@@ -541,162 +285,71 @@ impl<'thir> MIRBuilder<'thir> {
     }
 
     pub(crate) fn bind_local(&mut self, local: THIRLocalID, place: MIRPlace) {
-        self.context_mut().local_places.insert(local, place);
+        self.context_mut().bind_local(local, place);
     }
 
     pub(crate) fn bind_local_value(&mut self, local: THIRLocalID, value: MIRValue) {
-        self.context_mut().local_values.insert(local, value);
+        self.context_mut().bind_local_value(local, value);
     }
 
     pub(crate) fn local(&self, local: THIRLocalID) -> Option<MIRPlace> {
-        self.context().local_places.get(&local).copied()
+        self.context().local(local)
     }
 
     pub(crate) fn local_value(&self, local: THIRLocalID) -> Option<MIRValue> {
-        self.context().local_values.get(&local).cloned()
+        self.context().local_value(local)
     }
 
     pub(crate) fn push_named_scope(&mut self) {
-        self.context_mut().named_values.push(HashMap::new());
+        self.context_mut().push_named_scope();
     }
 
     pub(crate) fn pop_named_scope(&mut self) {
-        let context = self.context_mut();
-        assert!(
-            context.named_values.len() > 1,
-            "attempted to pop the function's base symbol scope"
-        );
-        context.named_values.pop();
+        self.context_mut().pop_named_scope();
     }
 
     pub(crate) fn push_lexical_scope(&mut self, token_range: TokenRange) {
-        let scope = self.function_mut().add_scope(token_range);
-        let context = self.context_mut();
-        context.lexical_scopes.push(scope);
-        context.defers.push(Vec::new());
+        let scope = self.context_mut().push_lexical_scope(token_range);
         self.emit(MIRInstrKind::ScopeEnter { scope });
     }
 
     pub(crate) fn pop_lexical_scope(&mut self) -> (MIRScopeID, Vec<THIRExpression>) {
-        let context = self.context_mut();
-        assert!(
-            context.lexical_scopes.len() > 1,
-            "attempted to pop the function's lexical scope"
-        );
-        assert_eq!(
-            context.lexical_scopes.len(),
-            context.defers.len(),
-            "lexical scope and defer stacks are unbalanced"
-        );
-        let defers = context
-            .defers
-            .pop()
-            .expect("active lexical scope has a defer list");
-        let scope = context
-            .lexical_scopes
-            .pop()
-            .expect("lexical scope stack is non-empty");
-        (scope, defers)
+        self.context_mut().pop_lexical_scope()
     }
 
-    pub(crate) fn lexical_scope_depth(&self) -> usize {
-        self.context().lexical_scopes.len()
+    pub(crate) fn _lexical_scope_depth(&self) -> usize {
+        self.context().lexical_scope_depth()
     }
 
     pub(crate) fn register_defer(&mut self, expression: THIRExpression) {
-        self.context_mut()
-            .defers
-            .last_mut()
-            .expect("active function has no defer scope")
-            .push(expression);
+        self.context_mut().register_defer(expression);
     }
 
     pub(crate) fn lexical_scope_exits_to(
         &self,
         depth: usize,
     ) -> Vec<(MIRScopeID, Vec<THIRExpression>)> {
-        assert!(
-            depth <= self.lexical_scope_depth(),
-            "invalid lexical scope depth"
-        );
-        let context = self.context();
-        context.lexical_scopes[depth..]
-            .iter()
-            .zip(&context.defers[depth..])
-            .rev()
-            .map(|(scope, defers)| (*scope, defers.clone()))
-            .collect()
+        self.context().lexical_scope_exits_to(depth)
     }
 
     pub(crate) fn bind_named(&mut self, name: &CXIdent, value: MIRValue) {
-        self.context_mut()
-            .named_values
-            .last_mut()
-            .expect("active function has no symbol scope")
-            .insert(name.as_string(), value);
+        self.context_mut().bind_named(name, value);
     }
 
     pub(crate) fn named(&self, name: &CXIdent) -> Option<MIRValue> {
-        self.context()
-            .named_values
-            .iter()
-            .rev()
-            .find_map(|scope| scope.get(name.as_str()).cloned())
+        self.context().named(name)
     }
 
-    pub(crate) fn function_symbol(&self, name: &str) -> Option<MIRFunctionID> {
-        self.function_symbols.get(name).copied()
+    pub(crate) fn function_symbol(&mut self, name: &str) -> Option<MIRFunctionID> {
+        self.module.function_symbol(name)
     }
 
-    pub(crate) fn ensure_function(
-        &mut self,
-        name: &CXIdent,
-        callable_type: &THIRType,
-        debug_name: Option<&CXIdent>,
-    ) -> MIRFunctionID {
-        if let Some(id) = self.function_symbol(name.as_str()) {
-            if let Some(debug_name) = debug_name
-                && let Some(function) = self.unit.function_mut(id)
-                && function.prototype.signature.debug_name.is_none()
-            {
-                function.prototype.signature.debug_name = Some(debug_name.clone());
-            }
-            return id;
-        }
-
-        let signature = self
-            .registry
-            .intern_signature(callable_type)
-            .cloned()
-            .unwrap_or_default();
-        let mut prototype =
-            self.prototype_from_signature(name.clone(), &signature, LinkageMode::Extern);
-        prototype.signature.debug_name = debug_name.cloned();
-        let id = self.unit.add_function(prototype);
-        self.function_symbols.insert(name.as_string(), id);
-        id
+    pub(crate) fn global_symbol(&mut self, name: &str) -> Option<MIRGlobalID> {
+        self.module.global_symbol(name)
     }
 
-    pub(crate) fn global_symbol(&self, name: &str) -> Option<MIRGlobalID> {
-        self.global_symbols.get(name).copied()
-    }
-
-    pub(crate) fn ensure_global(&mut self, name: &CXIdent, ty: &THIRType) -> MIRGlobalID {
-        if let Some(id) = self.global_symbol(name.as_str()) {
-            return id;
-        }
-
-        let ty_id = self.lower_type(ty);
-        let id = self.unit.add_global(
-            name.clone(),
-            ty_id,
-            LinkageMode::Extern,
-            true,
-            ty.is_nodrop(),
-            MIRGlobalState::External,
-        );
-        self.global_symbols.insert(name.as_string(), id);
-        id
+    pub(crate) fn global_id(&self, name: &str) -> Option<MIRGlobalID> {
+        self.module.global_id(name)
     }
 
     pub(crate) fn push_contextual_scope(
@@ -704,124 +357,64 @@ impl<'thir> MIRBuilder<'thir> {
         break_target: MIRBasicBlockID,
         continue_target: Option<MIRBasicBlockID>,
     ) {
-        let lexical_scope_depth = self.lexical_scope_depth();
-        self.context_mut().loops.push(LoopContext {
-            break_target,
-            continue_target,
-            lexical_scope_depth,
-        });
+        self.context_mut()
+            .push_contextual_scope(break_target, continue_target);
     }
 
     pub(crate) fn pop_loop(&mut self) -> LoopContext {
-        self.context_mut()
-            .loops
-            .pop()
-            .expect("loop context stack is unbalanced")
+        self.context_mut().pop_loop()
     }
 
     pub(crate) fn break_target(&self) -> Option<MIRBasicBlockID> {
-        self.context()
-            .loops
-            .last()
-            .map(|context| context.break_target)
+        self.context().break_target()
     }
 
     pub(crate) fn continue_target(&self) -> Option<MIRBasicBlockID> {
-        self.context()
-            .loops
-            .iter()
-            .rev()
-            .find_map(|context| context.continue_target)
+        self.context().continue_target()
     }
 
     pub(crate) fn break_scope_depth(&self) -> Option<usize> {
-        self.context()
-            .loops
-            .last()
-            .map(|context| context.lexical_scope_depth)
+        self.context().break_scope_depth()
     }
 
     pub(crate) fn continue_scope_depth(&self) -> Option<usize> {
-        self.context()
-            .loops
-            .iter()
-            .rev()
-            .find_map(|context| context.continue_target.map(|_| context.lexical_scope_depth))
+        self.context().continue_scope_depth()
     }
 
     pub(crate) fn push_yield(&mut self, target: MIRBasicBlockID, result_type: Option<MIRTypeID>) {
-        let result = result_type.map(|ty| self.block_param(target, ty, None));
-        let lexical_scope_depth = self.lexical_scope_depth();
-        self.context_mut().yields.push(YieldContext {
-            target,
-            result,
-            lexical_scope_depth,
-        });
+        self.context_mut().push_yield(target, result_type);
     }
 
     pub(crate) fn yield_target(&self) -> Option<MIRBasicBlockID> {
-        self.context().yields.last().map(|context| context.target)
+        self.context().yield_target()
     }
 
     pub(crate) fn yield_scope_depth(&self) -> Option<usize> {
-        self.context()
-            .yields
-            .last()
-            .map(|context| context.lexical_scope_depth)
+        self.context().yield_scope_depth()
     }
 
     pub(crate) fn yield_result(&self) -> Option<MIRRegister> {
-        self.context()
-            .yields
-            .last()
-            .and_then(|context| context.result)
+        self.context().yield_result()
     }
 
     pub(crate) fn pop_yield(&mut self) -> YieldContext {
-        self.context_mut()
-            .yields
-            .pop()
-            .expect("yield context stack is unbalanced")
+        self.context_mut().pop_yield()
     }
 
     pub(crate) fn root_defers(&self) -> Vec<THIRExpression> {
-        self.context().defers.first().cloned().unwrap_or_default()
+        self.context().root_defers()
     }
 
     fn context(&self) -> &FunctionContext {
-        self.current
+        self.function
             .as_ref()
             .expect("no MIR function is currently active")
     }
 
     fn context_mut(&mut self) -> &mut FunctionContext {
-        self.current
+        self.function
             .as_mut()
             .expect("no MIR function is currently active")
-    }
-
-    fn function(&self) -> &cx_mir::MIRFunction {
-        self.unit
-            .function(self.current_function_id())
-            .expect("active MIR function is missing")
-    }
-
-    fn function_mut(&mut self) -> &mut cx_mir::MIRFunction {
-        let id = self.current_function_id();
-        self.unit
-            .function_mut(id)
-            .expect("active MIR function is missing")
-    }
-}
-
-fn lower_int_type(ty: THIRIntType) -> MIRIntType {
-    match ty {
-        THIRIntType::I1 => MIRIntType::I1,
-        THIRIntType::I8 => MIRIntType::I8,
-        THIRIntType::I16 => MIRIntType::I16,
-        THIRIntType::I32 => MIRIntType::I32,
-        THIRIntType::I64 => MIRIntType::I64,
-        THIRIntType::I128 => MIRIntType::I128,
     }
 }
 

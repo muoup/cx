@@ -1,7 +1,0 @@
-import std::io as std;
-
-int main() {
-    const int i = 5;
-    
-    std::printf("The value of i is: %d\n", i);
-}

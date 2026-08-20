@@ -5,12 +5,15 @@ use cx_mir::{MIRBasicBlockID, MIRFunction};
 use crate::types::{MIRBlockLiveness, MIRFunctionAnalysis, MIRInstructionLiveness};
 
 pub(crate) fn analyze_function(function: &MIRFunction) -> MIRFunctionAnalysis {
-    let block_count = function.blocks.len();
+    let Some(definition) = function.definition() else {
+        return MIRFunctionAnalysis::default();
+    };
+    let block_count = definition.blocks().len();
     let mut block_uses = Vec::with_capacity(block_count);
     let mut block_defs = Vec::with_capacity(block_count);
     let mut successors = Vec::with_capacity(block_count);
 
-    for block in &function.blocks {
+    for block in definition.blocks() {
         let mut uses = BTreeSet::new();
         let mut defs = BTreeSet::new();
 
@@ -71,8 +74,8 @@ pub(crate) fn analyze_function(function: &MIRFunction) -> MIRFunctionAnalysis {
         }
     }
 
-    let blocks = function
-        .blocks
+    let blocks = definition
+        .blocks()
         .iter()
         .enumerate()
         .map(|(block_index, block)| {

@@ -3,7 +3,6 @@ pub mod global;
 pub mod op;
 pub mod ty;
 pub mod unit;
-pub mod validator;
 
 pub(crate) mod format;
 
@@ -15,8 +14,8 @@ pub use expr::{
     MIRPlaceID, MIRRegister, MIRScopeID, MIRValue, MIRValueAggregateOp,
 };
 pub use global::{
-    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRGlobalID,
-    MIRGlobalState, MIRGlobalVariable, MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl,
+    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionDefinition, MIRFunctionID,
+    MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl,
 };
 pub use op::{
     MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRIntBinaryOp, MIRPointerBinaryOp,
@@ -24,7 +23,6 @@ pub use op::{
 };
 pub use ty::{
     MIRBitfieldAccess, MIRField, MIRFieldLayout, MIRFloatType, MIRFunctionType, MIRIntType,
-    MIRLayoutError, MIRTypeDefinition, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRTypeRegistry,
+    MIRLayoutError, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRTypeRegistryBuilder,
 };
 pub use unit::MIRUnit;
-pub use validator::{MIRValidationError, validate};

@@ -33,7 +33,7 @@ pub(crate) mod control_flow;
 pub(crate) mod function_context;
 pub(crate) mod items;
 
-pub use items::MIRFunctionGenRequest;
+pub use items::THIRFunctionGenRequest;
 
 pub struct TypeEnvironment<'a> {
     pub module_data: &'a ModuleData,
@@ -45,12 +45,14 @@ pub struct TypeEnvironment<'a> {
     defer_depth: usize,
     staged_expansions: Vec<u64>,
     next_staged_expression_id: u64,
+    require_explicit_return: bool,
 }
 
 impl TypeEnvironment<'_> {
     pub fn new<'a>(
         module_data: &'a ModuleData,
         architecture: ArchitectureConfig,
+        require_explicit_return: bool,
     ) -> TypeEnvironment<'a> {
         TypeEnvironment {
             symbols: MIRSymbolRegistry::new(&module_data.symbol_registry, architecture),
@@ -62,7 +64,12 @@ impl TypeEnvironment<'_> {
             defer_depth: 0,
             staged_expansions: Vec::new(),
             next_staged_expression_id: 0,
+            require_explicit_return,
         }
+    }
+
+    pub fn require_explicit_return(&self) -> bool {
+        self.require_explicit_return
     }
 
     pub fn get_intrinsic_type(&self, name: &str) -> THIRType {
@@ -210,10 +217,7 @@ impl TypeEnvironment<'_> {
         let qualified_lookup = self.qualified_lookup(namespace, name);
 
         match qualified_lookup {
-            QualifiedLookupResult::Found {
-                value,
-                ..
-            } => CXRawResult::Ok(Some(value)),
+            QualifiedLookupResult::Found { value, .. } => CXRawResult::Ok(Some(value)),
 
             QualifiedLookupResult::NotFound => CXRawResult::Ok(None),
             QualifiedLookupResult::Ambiguous { candidates } => {

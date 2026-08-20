@@ -46,7 +46,7 @@ pub fn layout_of<Context: THIRTypeContext + ?Sized>(
             size: *size,
             alignment: *alignment,
         }),
-        THIRTypeKind::Function { .. } | THIRTypeKind::Str => Err(CXStdErrMessage::error(
+        THIRTypeKind::Function { .. } | THIRTypeKind::Str | THIRTypeKind::Unreachable => Err(CXStdErrMessage::error(
             "MIRLayoutError",
             format!("cannot compute layout of type: {ty:?}"),
         )),

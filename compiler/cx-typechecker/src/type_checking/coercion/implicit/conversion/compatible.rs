@@ -61,7 +61,7 @@ pub fn compatible_types(
             let inner1 = env.symbols.resolve_type_id(*inner1);
             let inner2 = env.symbols.resolve_type_id(*inner2);
 
-            if inner1.is_unit() || inner2.is_unit() {
+            if inner1.is_void() || inner2.is_void() {
                 return Ok(true);
             }
 

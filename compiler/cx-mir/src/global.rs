@@ -40,15 +40,49 @@ pub enum MIRGlobalState {
 pub struct MIRGlobalVariable {
     pub id: MIRGlobalID,
     pub name: CXIdent,
-    pub ty: MIRTypeID,
     pub linkage: LinkageMode,
-    pub state: MIRGlobalState,
-    pub is_mutable: bool,
-    pub nodrop: bool,
+    pub kind: MIRGlobalKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum MIRGlobalKind {
+    StringLiteral {
+        value: String,
+    },
+
+    Variable {
+        ty: MIRTypeID,
+        state: MIRGlobalState,
+        is_nodrop: bool,
+        is_mutable: bool,
+    },
 }
 
 impl MIRGlobalVariable {
     pub fn new(
+        id: MIRGlobalID,
+        name: CXIdent,
+        linkage: LinkageMode,
+        kind: MIRGlobalKind,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            linkage,
+            kind,
+        }
+    }
+
+    pub fn string_literal(id: MIRGlobalID, name: CXIdent, value: String) -> Self {
+        Self {
+            id,
+            name,
+            linkage: LinkageMode::Static,
+            kind: MIRGlobalKind::StringLiteral { value },
+        }
+    }
+
+    pub fn variable(
         id: MIRGlobalID,
         name: CXIdent,
         ty: MIRTypeID,
@@ -58,15 +92,17 @@ impl MIRGlobalVariable {
         Self {
             id,
             name,
-            ty,
             linkage,
-            state: if linkage == LinkageMode::Extern {
-                MIRGlobalState::External
-            } else {
-                MIRGlobalState::ZeroInitialized
+            kind: MIRGlobalKind::Variable {
+                ty,
+                state: if linkage == LinkageMode::Extern {
+                    MIRGlobalState::External
+                } else {
+                    MIRGlobalState::ZeroInitialized
+                },
+                is_mutable,
+                is_nodrop: false,
             },
-            is_mutable,
-            nodrop: false,
         }
     }
 }
@@ -164,20 +200,74 @@ pub struct MIRRegisterDecl {
 
 #[derive(Debug, Clone)]
 pub struct MIRFunction {
-    pub id: MIRFunctionID,
-    pub prototype: MIRFnPrototype,
-    pub entry: Option<MIRBasicBlockID>,
-    pub blocks: Vec<MIRBasicBlock>,
-    pub places: Vec<MIRPlaceDecl>,
-    pub registers: Vec<MIRRegisterDecl>,
-    pub scopes: Vec<MIRScopeDecl>,
+    id: MIRFunctionID,
+    prototype: MIRFnPrototype,
+    definition: Option<MIRFunctionDefinition>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MIRFunctionDefinition {
+    entry: Option<MIRBasicBlockID>,
+    blocks: Vec<MIRBasicBlock>,
+    places: Vec<MIRPlaceDecl>,
+    registers: Vec<MIRRegisterDecl>,
+    scopes: Vec<MIRScopeDecl>,
 }
 
 impl MIRFunction {
-    pub fn new(id: MIRFunctionID, prototype: MIRFnPrototype) -> Self {
+    pub fn declaration(id: MIRFunctionID, prototype: MIRFnPrototype) -> Self {
         Self {
             id,
             prototype,
+            definition: None,
+        }
+    }
+
+    pub fn new(id: MIRFunctionID, prototype: MIRFnPrototype) -> Self {
+        Self::defined(id, prototype, MIRFunctionDefinition::new())
+    }
+
+    pub fn defined(
+        id: MIRFunctionID,
+        prototype: MIRFnPrototype,
+        definition: MIRFunctionDefinition,
+    ) -> Self {
+        Self {
+            id,
+            prototype,
+            definition: Some(definition),
+        }
+    }
+
+    pub fn id(&self) -> MIRFunctionID {
+        self.id
+    }
+
+    pub fn prototype(&self) -> &MIRFnPrototype {
+        &self.prototype
+    }
+
+    pub fn definition(&self) -> Option<&MIRFunctionDefinition> {
+        self.definition.as_ref()
+    }
+
+    pub fn into_definition(self) -> (MIRFunctionID, MIRFnPrototype, MIRFunctionDefinition) {
+        let Self {
+            id,
+            prototype,
+            definition,
+        } = self;
+        (
+            id,
+            prototype,
+            definition.unwrap_or_else(MIRFunctionDefinition::new),
+        )
+    }
+}
+
+impl MIRFunctionDefinition {
+    pub fn new() -> Self {
+        Self {
             entry: None,
             blocks: Vec::new(),
             places: Vec::new(),
@@ -186,14 +276,41 @@ impl MIRFunction {
         }
     }
 
-    pub fn add_scope(&mut self, token_range: TokenRange) -> MIRScopeID {
-        let id = MIRScopeID::new(self.scopes.len());
-        self.scopes.push(MIRScopeDecl { id, token_range });
+    pub fn entry(&self) -> Option<MIRBasicBlockID> {
+        self.entry
+    }
+
+    pub fn blocks(&self) -> &[MIRBasicBlock] {
+        &self.blocks
+    }
+
+    pub fn block(&self, id: MIRBasicBlockID) -> Option<&MIRBasicBlock> {
+        self.blocks().get(id.index())
+    }
+
+    pub fn block_mut(&mut self, id: MIRBasicBlockID) -> Option<&mut MIRBasicBlock> {
+        self.blocks.get_mut(id.index())
+    }
+
+    pub fn blocks_mut(&mut self) -> &mut [MIRBasicBlock] {
+        &mut self.blocks
+    }
+
+    pub fn add_block(&mut self) -> MIRBasicBlockID {
+        let id = MIRBasicBlockID::new(self.blocks.len());
+        self.blocks.push(MIRBasicBlock::new(id));
+        if self.entry.is_none() {
+            self.entry = Some(id);
+        }
         id
     }
 
-    pub fn is_declaration(&self) -> bool {
-        self.blocks.is_empty()
+    pub fn places(&self) -> &[MIRPlaceDecl] {
+        &self.places
+    }
+
+    pub fn place(&self, id: MIRPlaceID) -> Option<&MIRPlaceDecl> {
+        self.places().get(id.index())
     }
 
     pub fn add_place(
@@ -214,6 +331,22 @@ impl MIRFunction {
         MIRPlace::FunctionLocal(id)
     }
 
+    pub fn scopes(&self) -> &[MIRScopeDecl] {
+        &self.scopes
+    }
+
+    pub fn scope(&self, id: MIRScopeID) -> Option<&MIRScopeDecl> {
+        self.scopes().get(id.index())
+    }
+
+    pub fn registers(&self) -> &[MIRRegisterDecl] {
+        &self.registers
+    }
+
+    pub fn register(&self, id: MIRRegister) -> Option<&MIRRegisterDecl> {
+        self.registers().get(id.index())
+    }
+
     pub fn add_register(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>) -> MIRRegister {
         let id = MIRRegister::new(self.registers.len());
         self.registers.push(MIRRegisterDecl { id, ty, debug_name });
@@ -232,45 +365,10 @@ impl MIRFunction {
         Some(register)
     }
 
-    pub fn add_block(&mut self) -> MIRBasicBlockID {
-        let id = MIRBasicBlockID::new(self.blocks.len());
-        self.blocks.push(MIRBasicBlock::new(id));
-        if self.entry.is_none() {
-            self.entry = Some(id);
-        }
+    pub fn add_scope(&mut self, token_range: TokenRange) -> MIRScopeID {
+        let id = MIRScopeID::new(self.scopes.len());
+        self.scopes.push(MIRScopeDecl { id, token_range });
         id
-    }
-
-    pub fn block(&self, id: MIRBasicBlockID) -> Option<&MIRBasicBlock> {
-        self.blocks.get(id.index())
-    }
-
-    pub fn block_mut(&mut self, id: MIRBasicBlockID) -> Option<&mut MIRBasicBlock> {
-        self.blocks.get_mut(id.index())
-    }
-
-    pub fn place(&self, id: MIRPlaceID) -> Option<&MIRPlaceDecl> {
-        self.places.get(id.index())
-    }
-
-    pub fn place_mut(&mut self, id: MIRPlaceID) -> Option<&mut MIRPlaceDecl> {
-        self.places.get_mut(id.index())
-    }
-
-    pub fn scope(&self, id: MIRScopeID) -> Option<&MIRScopeDecl> {
-        self.scopes.get(id.index())
-    }
-
-    pub fn register(&self, id: MIRRegister) -> Option<&MIRRegisterDecl> {
-        self.registers.get(id.index())
-    }
-
-    pub fn push_instr(
-        &mut self,
-        block: MIRBasicBlockID,
-        kind: MIRInstrKind,
-    ) -> Option<&mut MIRInstr> {
-        self.push_instr_at(block, kind, TokenRange::internal())
     }
 
     pub fn push_instr_at(

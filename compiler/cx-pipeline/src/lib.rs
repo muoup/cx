@@ -2,11 +2,12 @@ mod backends;
 mod linker;
 pub mod progress;
 mod scheduler;
+mod sources;
 
 use crate::linker::{link, link_objects, link_relocatable};
 use crate::progress::ProgressReporter;
-use crate::scheduler::scheduling_loop;
 use crate::scheduler::scheduling_loop_collect_errors;
+use crate::scheduler::{scheduling_loop, scheduling_loop_many};
 use cx_hir::registry::ExportNameMode;
 use cx_log::{
     CXResult,
@@ -46,7 +47,6 @@ pub(crate) fn pipeline_error(code: impl Into<String>, message: impl Into<String>
 pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResult<()> {
     let verbose = config.verbose;
     let compiler_context = GlobalCompilationContext {
-        module_mode: config.module_mode,
         config,
         module_db: ModuleData::new(),
         linking_files: Mutex::new(HashSet::new()),
@@ -114,13 +114,71 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
     Ok(())
 }
 
+pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) -> CXResult<()> {
+    if base_files.is_empty() {
+        return Err(pipeline_error(
+            "COMPILATION ERROR",
+            "No source files were selected for compilation",
+        ));
+    }
+
+    let verbose = config.verbose;
+    let compiler_context = GlobalCompilationContext {
+        config,
+        module_db: ModuleData::new(),
+        linking_files: Mutex::new(HashSet::new()),
+    };
+
+    let mut reporter = ProgressReporter::new(verbose);
+    let result = with_dump_directory(compiler_context.config.internal_directory.clone(), || {
+        let initial_jobs = base_files
+            .iter()
+            .map(|base_file| {
+                let base_file_str = base_file.to_str().ok_or(pipeline_error(
+                    "COMPILATION ERROR",
+                    "Source file path is not valid UTF-8",
+                ))?;
+                let entry_unit = CompilationUnit::from_rooted(
+                    base_file_str,
+                    &compiler_context.config.working_directory,
+                );
+                compiler_context
+                    .module_db
+                    .symbol_registry
+                    .set_export_name_mode(entry_unit.to_namespace_path(), ExportNameMode::Root);
+                Ok(CompilationJob::new(
+                    vec![],
+                    CompilationStep::PreParse,
+                    entry_unit,
+                ))
+            })
+            .collect::<CXResult<Vec<_>>>()?;
+        scheduling_loop_many(&compiler_context, initial_jobs, &mut reporter)?;
+
+        match compiler_context.config.compilation_mode {
+            CompilationMode::Executable => link(&compiler_context, &mut reporter),
+            CompilationMode::Object | CompilationMode::Library => Err(pipeline_error(
+                "COMPILATION ERROR",
+                "Multi-file compilation only supports executable output",
+            )),
+        }
+    });
+
+    if let Err(error) = result {
+        reporter.clear_line();
+        return Err(error);
+    }
+
+    reporter.finish();
+    Ok(())
+}
+
 pub fn library_compilation(
     config: CompilerConfig,
     base_file: &Path,
 ) -> CXResult<cx_lmir::LMIRUnit> {
     let verbose = config.verbose;
     let compiler_context = GlobalCompilationContext {
-        module_mode: config.module_mode,
         config,
         module_db: ModuleData::new(),
         linking_files: Mutex::new(HashSet::new()),
@@ -246,17 +304,6 @@ pub fn project_compilation(
         // Build binaries
         if let Some(binaries) = &target_config.binaries {
             for binary in binaries {
-                if Path::new(&binary.entry)
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    == Some("c")
-                {
-                    return Err(pipeline_error(
-                        "COMPILATION ERROR",
-                        "C sources are currently supported only in single-file compilation mode",
-                    ));
-                }
-
                 let output = output_dir.join(&binary.name);
                 let mut config = base_config.clone();
                 config.output = output.clone();
@@ -265,11 +312,34 @@ pub fn project_compilation(
                 config.native_objects = native_objects.clone();
                 config.include_dirs = include_dirs.clone();
 
-                eprintln!(
-                    "Building binary '{}' (target: {})",
-                    binary.name, target_name
-                );
-                standard_compilation(config, Path::new(&binary.entry))?;
+                match (&binary.entry, &binary.match_patterns) {
+                    (Some(entry), None) => {
+                        eprintln!(
+                            "Building binary '{}' (target: {})",
+                            binary.name, target_name
+                        );
+                        standard_compilation(config, Path::new(entry))?;
+                    }
+                    (_, Some(patterns)) => {
+                        let mut sources =
+                            sources::expand_patterns(&base_config.working_directory, patterns)
+                                .map_err(|error| pipeline_error("COMPILATION ERROR", error))?;
+                        sources::prepend_entry(&mut sources, binary.entry.as_deref());
+                        eprintln!(
+                            "Building binary '{}' (target: {}, {} sources)",
+                            binary.name,
+                            target_name,
+                            sources.len()
+                        );
+                        multi_file_compilation(config, &sources)?;
+                    }
+                    (None, None) => {
+                        return Err(pipeline_error(
+                            "COMPILATION ERROR",
+                            format!("Binary '{}' must define 'entry' or 'match'", binary.name),
+                        ));
+                    }
+                }
                 binaries_built.push(output);
             }
         }
@@ -277,17 +347,6 @@ pub fn project_compilation(
         // Build libraries
         if let Some(libraries) = &target_config.libraries {
             for library in libraries {
-                if Path::new(&library.entry)
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    == Some("c")
-                {
-                    return Err(pipeline_error(
-                        "COMPILATION ERROR",
-                        "C sources are currently supported only in single-file compilation mode",
-                    ));
-                }
-
                 let mut config = base_config.clone();
                 config.compilation_mode = CompilationMode::Library;
                 config.link_entries = link_entries.clone();
@@ -305,12 +364,15 @@ pub fn project_compilation(
                 eprintln!("  Linked {}", config.output.display());
 
                 // Generate .h header from LMIR
-                let Ok(header) = cx_c_header::generate_header(&entry_lmir, &link_entries) else {
-                    eprintln!(
-                        "Warning: Failed to generate header for library '{}': Header generation is best-effort and will not fail the build",
-                        library.name
-                    );
-                    continue;
+                let header = match cx_c_header::generate_header(&entry_lmir, &link_entries) {
+                    Ok(header) => header,
+                    Err(error) => {
+                        eprintln!(
+                            "Warning: Failed to generate header for library '{}': {error}. Header generation is best-effort and will not fail the build",
+                            library.name
+                        );
+                        continue;
+                    }
                 };
 
                 let header_path = output_dir.join(format!("{}.h", library.name));

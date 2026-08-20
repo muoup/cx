@@ -1,18 +1,16 @@
 use std::fmt::{self, Display, Formatter};
 
 mod contextual;
-pub(crate) use contextual::TypePrinter;
+
 pub use contextual::MIRDisplay;
 
 use crate::{
     MIRLayoutError, MIRTypeID,
     expr::{
-        MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRParameterID, MIRPlace, MIRPlaceID, MIRRegister,
-        MIRValue,
+        MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRParameterID, MIRPlace, MIRPlaceID,
+        MIRRegister, MIRValue,
     },
-    global::{
-        MIRFnSignature, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable,
-    },
+    global::{MIRFnSignature, MIRFunctionID, MIRGlobalID, MIRGlobalState},
     op::{MIRBinaryOp, MIRCoercion, MIRUnaryOp},
     ty::MIRIntType,
     unit::MIRUnit,
@@ -101,6 +99,20 @@ impl Display for MIRConstant {
             ),
             Self::Float { value, ty } => write!(f, "{value}:{ty:?}"),
             Self::Null { ty } => write!(f, "null:{ty}"),
+            Self::Aggregate { fields, .. } => {
+                f.write_str("{")?;
+                for (index, value) in fields.iter().enumerate() {
+                    if index != 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{}: {}", value.0, value.1)?;
+                }
+                f.write_str("}")
+            }
+            Self::Global { global, .. } => write!(f, "global {global}"),
+            Self::GlobalOffset { global, offset, .. } => {
+                write!(f, "global {global} + {offset}")
+            }
             Self::Function(function) => write!(f, "fn {function}"),
             Self::Undefined => f.write_str("undef"),
         }
@@ -111,7 +123,7 @@ impl Display for MIRValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Register(value) => Display::fmt(value, f),
-            Self::Place(value) => Display::fmt(value, f),
+            Self::Place(value) => write!(f, "&{value}"),
             Self::Copy(place) => write!(f, "copy {place}"),
             Self::Move(place) => write!(f, "move {place}"),
             Self::Constant(value) => Display::fmt(value, f),
@@ -202,25 +214,6 @@ impl Display for MIRGlobalState {
             Self::ZeroInitialized => f.write_str("zero"),
             Self::Initialized(value) => Display::fmt(value, f),
         }
-    }
-}
-
-impl Display for MIRGlobalVariable {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "global {} {}: {} [{:?}, {}]",
-            self.id,
-            self.name,
-            self.ty,
-            self.linkage,
-            if self.is_mutable {
-                "mutable"
-            } else {
-                "readonly"
-            }
-        )?;
-        write!(f, " = {}", self.state)
     }
 }
 

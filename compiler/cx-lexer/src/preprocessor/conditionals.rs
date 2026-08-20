@@ -282,7 +282,9 @@ fn trim_continuation_backslash(output: &mut String) {
     output.pop();
 }
 
-pub(crate) fn read_macro_head(frame: &mut SourceFrame) -> Option<(String, Option<Vec<String>>)> {
+pub(crate) fn read_macro_head(
+    frame: &mut SourceFrame,
+) -> Option<(String, Option<Vec<String>>, bool)> {
     let start = frame.cursor;
     frame.with_cursor(|iter| {
         while let Some(c) = iter.peek() {
@@ -301,7 +303,7 @@ pub(crate) fn read_macro_head(frame: &mut SourceFrame) -> Option<(String, Option
     let name = frame.source[start..frame.cursor].to_string();
 
     if frame.peek() != Some('(') {
-        return Some((name, None));
+        return Some((name, None, false));
     }
 
     frame.with_cursor(|iter| {
@@ -311,23 +313,25 @@ pub(crate) fn read_macro_head(frame: &mut SourceFrame) -> Option<(String, Option
     while let Some(c) = frame.peek() {
         if c == ')' {
             let params_text = &frame.source[params_start..frame.cursor];
-            let params = if params_text.trim().is_empty() {
-                Vec::new()
-            } else {
-                params_text
-                    .split(',')
-                    .map(|param| param.trim().to_string())
-                    .collect()
-            };
+            let mut params = Vec::new();
+            let mut variadic = false;
+            for param in params_text.split(',') {
+                let param = param.trim();
+                if param == "..." {
+                    variadic = true;
+                } else if !param.is_empty() {
+                    params.push(param.to_string());
+                }
+            }
             frame.with_cursor(|iter| {
                 iter.next();
             });
-            return Some((name, Some(params)));
+            return Some((name, Some(params), variadic));
         }
         frame.with_cursor(|iter| {
             iter.next();
         });
     }
 
-    Some((name, Some(Vec::new())))
+    Some((name, Some(Vec::new()), false))
 }

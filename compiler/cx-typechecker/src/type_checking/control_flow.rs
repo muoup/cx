@@ -15,7 +15,10 @@ pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
         THIRExpressionKind::Return { .. }
         | THIRExpressionKind::Yield { .. }
         | THIRExpressionKind::Break
-        | THIRExpressionKind::Continue => false,
+        | THIRExpressionKind::Continue
+        | THIRExpressionKind::Unreachable => false,
+        THIRExpressionKind::Goto { .. } => true,
+        THIRExpressionKind::Label { statement, .. } => expr_may_fall_through(statement),
         THIRExpressionKind::Unsafe { expression, .. } => expr_may_fall_through(expression),
         THIRExpressionKind::Block { statements, .. } => {
             statements.last().map(expr_may_fall_through).unwrap_or(true)
@@ -52,10 +55,16 @@ pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
                     .map(|branch| expr_may_fall_through(branch))
                     .unwrap_or(!exhaustive)
         }
-        THIRExpressionKind::CallFunction { function, .. } => !matches!(
-            &function.kind,
-            THIRExpressionKind::FunctionReference { name, .. } if name.as_str() == "exit"
-        ),
+        THIRExpressionKind::CallFunction {
+            function, contract, ..
+        } => {
+            !contract.noreturn
+                && !matches!(
+                    &function.kind,
+                    THIRExpressionKind::FunctionReference { name, .. }
+                        if name.as_str() == "exit"
+                )
+        }
         _ => true,
     }
 }

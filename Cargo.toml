@@ -10,11 +10,14 @@ members = [
 
 # Keep feature-gated path dependencies out of the workspace's default package set.
 # They are still built when a workspace member enables the corresponding feature.
-exclude = [
-    "compiler/cx-backend-cranelift",
-    "compiler/cx-backend-llvm",
-]
+# exclude = [
+#     "compiler/cx-backend-cranelift",
+#     "compiler/cx-backend-llvm",
+# ]
 
 [profile.release-with-debug]
 inherits = "release"
 debug = true
+
+[profile.test]
+opt-level = 1

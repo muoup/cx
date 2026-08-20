@@ -23,12 +23,14 @@ pub struct InitArgs {
 pub struct FileArgs {
     pub input_files: Vec<String>,
     pub include_dirs: Vec<String>,
+    pub predefined_macros: Vec<(String, String)>,
     pub output_file: Option<String>,
     pub compile_only: bool,
     pub backend: CompilerBackend,
     pub optimization_level: OptimizationLevel,
     pub unsafe_mode: bool,
     pub verbose: bool,
+    pub require_explicit_return: Option<bool>,
 }
 
 #[derive(Debug)]
@@ -38,6 +40,7 @@ pub struct BuildArgs {
     pub optimization_level: Option<OptimizationLevel>,
     pub unsafe_mode: bool,
     pub verbose: bool,
+    pub require_explicit_return: Option<bool>,
 }
 
 #[derive(Debug)]
@@ -52,6 +55,7 @@ struct CommonArgs {
     optimization_level: Option<OptimizationLevel>,
     unsafe_mode: bool,
     verbose: bool,
+    require_explicit_return: Option<bool>,
 }
 
 #[derive(Debug)]
@@ -64,6 +68,7 @@ struct ParsedCommonArgs {
 struct FileSpecificArgs {
     input_files: Vec<String>,
     include_dirs: Vec<String>,
+    predefined_macros: Vec<(String, String)>,
     output_file: Option<String>,
     compile_only: bool,
 }
@@ -120,6 +125,8 @@ fn parse_common_flags(args: impl IntoIterator<Item = String>, topic: Topic) -> P
             "-Ofast" => common.optimization_level = Some(OptimizationLevel::Ofast),
             "--unsafe" => common.unsafe_mode = true,
             "--verbose" => common.verbose = true,
+            "--allow-implicit-return" => common.require_explicit_return = Some(false),
+            "--require-explicit-return" => common.require_explicit_return = Some(true),
             _ => rest.push(arg),
         }
     }
@@ -197,6 +204,7 @@ fn parse_build_args_inner(
         optimization_level: common.optimization_level,
         unsafe_mode: common.unsafe_mode,
         verbose: common.verbose,
+        require_explicit_return: common.require_explicit_return,
     })
 }
 
@@ -229,6 +237,7 @@ fn parse_file_args(args: impl IntoIterator<Item = String>) -> Result<Command, St
     let FileSpecificArgs {
         input_files,
         include_dirs,
+        predefined_macros,
         output_file,
         compile_only,
     } = parse_file_specific_args(rest)?;
@@ -251,12 +260,14 @@ fn parse_file_args(args: impl IntoIterator<Item = String>) -> Result<Command, St
     Ok(Command::CompileFile(FileArgs {
         input_files,
         include_dirs,
+        predefined_macros,
         output_file,
         compile_only,
         backend: common.backend.unwrap_or_else(default_backend),
         optimization_level: common.optimization_level.unwrap_or_default(),
         unsafe_mode: common.unsafe_mode,
         verbose: common.verbose,
+        require_explicit_return: common.require_explicit_return,
     }))
 }
 
@@ -297,6 +308,25 @@ fn parse_file_specific_args(
             }
         }
 
+        if arg == "-D" {
+            let definition = args_iter
+                .next()
+                .ok_or_else(|| "-D flag requires a macro definition".to_string())?;
+            parsed
+                .predefined_macros
+                .push(parse_macro_definition(&definition)?);
+            continue;
+        }
+
+        if let Some(definition) = arg.strip_prefix("-D") {
+            if !definition.is_empty() {
+                parsed
+                    .predefined_macros
+                    .push(parse_macro_definition(definition)?);
+                continue;
+            }
+        }
+
         if arg.starts_with('-') {
             return Err(format!("Unknown flag: {arg}"));
         }
@@ -305,6 +335,25 @@ fn parse_file_specific_args(
     }
 
     Ok(parsed)
+}
+
+fn parse_macro_definition(definition: &str) -> Result<(String, String), String> {
+    let (name, value) = definition
+        .split_once('=')
+        .map_or((definition, "1"), |(name, value)| (name, value));
+
+    let mut characters = name.chars();
+    let valid_start = characters
+        .next()
+        .is_some_and(|character| character == '_' || character.is_ascii_alphabetic());
+    let valid_rest =
+        characters.all(|character| character == '_' || character.is_ascii_alphanumeric());
+
+    if !valid_start || !valid_rest {
+        return Err(format!("Invalid macro name in -D definition: '{name}'"));
+    }
+
+    Ok((name.to_string(), value.to_string()))
 }
 
 fn parse_init_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {

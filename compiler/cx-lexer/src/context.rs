@@ -13,7 +13,7 @@ use cx_util::module_path::cx_library_directory;
 use crate::{
     lexer::{
         comments::skip_directive_tail,
-        scanner::{LexEvent, LexTransition, Lexer},
+        scanner::{LexEvent, LexTransition, Lexer, tokenize_text},
         source::{ConditionalFrame, LanguageMode, SourceFrame},
     },
     preprocessor::{Preprocessor, builtins::builtin_macros},
@@ -22,10 +22,18 @@ use crate::{
 #[derive(Clone)]
 pub(crate) enum Macro {
     Object(Box<[Token]>),
+    Builtin(BuiltinMacro),
     Function {
         params: Box<[String]>,
         body: Box<[Token]>,
+        variadic: bool,
     },
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum BuiltinMacro {
+    File,
+    Line,
 }
 
 pub(crate) struct SourceInput {
@@ -38,6 +46,7 @@ pub(crate) struct LexingContext {
     pub(crate) include_dirs: Vec<PathBuf>,
     pub(crate) macros: HashMap<String, Macro>,
     pub(crate) once_files: HashSet<PathBuf>,
+    source_texts: HashMap<PathBuf, String>,
     sources: Vec<SourceFrame>,
     pending_tokens: Vec<Token>,
     tokens: Vec<Token>,
@@ -48,6 +57,7 @@ impl LexingContext {
         source: String,
         source_path: &Path,
         include_dirs: &[PathBuf],
+        predefined_macros: &[(String, String)],
     ) -> CXResult<Self> {
         let builtin_path = PathBuf::from(cx_library_directory("libc/internal/__builtins.h"));
         let builtin_source = std::fs::read_to_string(&builtin_path).map_err(|e| {
@@ -64,10 +74,21 @@ impl LexingContext {
             )
         })?;
 
+        let mut macros = builtin_macros();
+        let language_mode = LanguageMode::for_root_path(source_path);
+        for (name, value) in predefined_macros {
+            let tokens = tokenize_text(value, source_path, language_mode)?;
+            macros.insert(name.clone(), Macro::Object(tokens.into_boxed_slice()));
+        }
+
         Ok(Self {
             include_dirs: include_dirs.to_vec(),
-            macros: builtin_macros(),
+            macros,
             once_files: HashSet::new(),
+            source_texts: HashMap::from([
+                (source_path.to_path_buf(), source.clone()),
+                (builtin_path.clone(), builtin_source.clone()),
+            ]),
             sources: vec![
                 SourceFrame::new(source, source_path),
                 SourceFrame::new(builtin_source, &builtin_path),
@@ -99,7 +120,7 @@ impl LexingContext {
             self.apply_transition(transition)?;
         }
 
-        Ok(self.tokens)
+        Ok(concatenate_string_literals(self.tokens))
     }
 
     pub(crate) fn current_frame(&self) -> &SourceFrame {
@@ -125,6 +146,8 @@ impl LexingContext {
             }
             LexTransition::PushSource(input) => {
                 self.flush_pending_tokens();
+                self.source_texts
+                    .insert(input.path.clone(), input.source.clone());
                 self.tokens.push(Token::new(
                     TokenKind::IncludeBegin,
                     (0, 0),
@@ -248,7 +271,40 @@ impl LexingContext {
                     expanded.extend(retarget_tokens(body.iter().cloned(), token));
                     index += 1;
                 }
-                Macro::Function { params, body } => {
+                Macro::Builtin(BuiltinMacro::File) => {
+                    expanded.extend(retarget_tokens(
+                        std::iter::once(Token::new_unknown(TokenKind::StringLiteral(
+                            token.file_origin.to_string_lossy().into_owned(),
+                        ))),
+                        token,
+                    ));
+                    index += 1;
+                }
+                Macro::Builtin(BuiltinMacro::Line) => {
+                    let line = self
+                        .source_texts
+                        .get(token.file_origin.as_ref())
+                        .map(|source| {
+                            source[..token.byte_start_index.min(source.len())]
+                                .bytes()
+                                .filter(|byte| *byte == b'\n')
+                                .count()
+                                + 1
+                        })
+                        .unwrap_or(1);
+                    expanded.extend(retarget_tokens(
+                        std::iter::once(Token::new_unknown(TokenKind::IntLiteral(
+                            cx_tokens::token::IntegerLiteral::decimal(line as u64),
+                        ))),
+                        token,
+                    ));
+                    index += 1;
+                }
+                Macro::Function {
+                    params,
+                    body,
+                    variadic,
+                } => {
                     let Some((mut args, next_index)) = parse_macro_args(&base_tokens, index + 1)
                     else {
                         expanded.push(token.clone());
@@ -256,20 +312,25 @@ impl LexingContext {
                         continue;
                     };
 
-                    if args.is_empty() && params.len() == 1 {
+                    if !variadic && args.is_empty() && params.len() == 1 {
                         args.push(Vec::new());
                     }
 
-                    if args.len() != params.len() {
+                    if (!variadic && args.len() != params.len())
+                        || (*variadic && args.len() < params.len())
+                    {
                         expanded.push(token.clone());
                         index += 1;
                         continue;
                     }
 
+                    let variadic_args = macro_variadic_args(&args, params.len(), *variadic);
                     let expanded_args = args
                         .iter()
                         .map(|arg| self.expand_macros(arg.clone()))
                         .collect::<Vec<_>>();
+                    let expanded_variadic_args =
+                        macro_variadic_args(&expanded_args, params.len(), *variadic);
 
                     let mut body_index = 0;
                     while body_index < body.len() {
@@ -289,6 +350,9 @@ impl LexingContext {
                                 params,
                                 &args,
                                 &expanded_args,
+                                &variadic_args,
+                                &expanded_variadic_args,
+                                *variadic,
                                 false,
                             );
                             if right.is_empty() {
@@ -309,12 +373,17 @@ impl LexingContext {
                             TokenKind::Punctuator(PunctuatorType::Hash)
                         ) && let Some(next_token) = body.get(body_index + 1)
                             && let TokenKind::Identifier(identifier) = &next_token.kind
-                            && let Some(param_index) =
-                                params.iter().position(|param| param == identifier)
+                            && let Some(stringified) = stringify_macro_parameter(
+                                identifier,
+                                params,
+                                &args,
+                                &variadic_args,
+                                *variadic,
+                            )
                         {
                             expanded.extend(retarget_tokens(
                                 std::iter::once(Token::new_unknown(TokenKind::StringLiteral(
-                                    stringify_macro_arg(&args[param_index]),
+                                    stringify_macro_arg(&stringified),
                                 ))),
                                 token,
                             ));
@@ -323,13 +392,31 @@ impl LexingContext {
                         }
 
                         if let TokenKind::Identifier(identifier) = &body_token.kind
-                            && let Some(param_index) =
-                                params.iter().position(|param| param == identifier)
+                            && (params.iter().any(|param| param == identifier)
+                                || (*variadic && identifier == "__VA_ARGS__"))
                         {
                             let arg_tokens = if is_hash_hash(body, body_index + 1) {
-                                args[param_index].clone()
+                                replacement_tokens_for_macro_body_token(
+                                    body_token,
+                                    params,
+                                    &args,
+                                    &expanded_args,
+                                    &variadic_args,
+                                    &expanded_variadic_args,
+                                    *variadic,
+                                    false,
+                                )
                             } else {
-                                expanded_args[param_index].clone()
+                                replacement_tokens_for_macro_body_token(
+                                    body_token,
+                                    params,
+                                    &args,
+                                    &expanded_args,
+                                    &variadic_args,
+                                    &expanded_variadic_args,
+                                    *variadic,
+                                    true,
+                                )
                             };
                             expanded.extend(retarget_tokens(arg_tokens, token));
                             body_index += 1;
@@ -368,6 +455,24 @@ impl LexingContext {
     }
 }
 
+fn concatenate_string_literals(tokens: Vec<Token>) -> Vec<Token> {
+    let mut result: Vec<Token> = Vec::with_capacity(tokens.len());
+
+    for token in tokens {
+        if let Some(previous) = result.last_mut()
+            && let TokenKind::StringLiteral(previous_value) = &mut previous.kind
+            && let TokenKind::StringLiteral(value) = &token.kind
+        {
+            previous_value.push_str(value);
+            previous.byte_end_index = token.byte_end_index;
+        } else {
+            result.push(token);
+        }
+    }
+
+    result
+}
+
 fn is_hash_hash(tokens: &[Token], index: usize) -> bool {
     matches!(
         (
@@ -386,19 +491,63 @@ fn replacement_tokens_for_macro_body_token(
     params: &[String],
     raw_args: &[Vec<Token>],
     expanded_args: &[Vec<Token>],
+    variadic_args: &[Token],
+    expanded_variadic_args: &[Token],
+    variadic: bool,
     expand_arg: bool,
 ) -> Vec<Token> {
-    if let TokenKind::Identifier(identifier) = &body_token.kind
-        && let Some(param_index) = params.iter().position(|param| param == identifier)
-    {
-        return if expand_arg {
-            expanded_args[param_index].clone()
-        } else {
-            raw_args[param_index].clone()
-        };
+    if let TokenKind::Identifier(identifier) = &body_token.kind {
+        if variadic && identifier == "__VA_ARGS__" {
+            return if expand_arg {
+                expanded_variadic_args.to_vec()
+            } else {
+                variadic_args.to_vec()
+            };
+        }
+
+        if let Some(param_index) = params.iter().position(|param| param == identifier) {
+            return if expand_arg {
+                expanded_args[param_index].clone()
+            } else {
+                raw_args[param_index].clone()
+            };
+        }
     }
 
     vec![body_token.clone()]
+}
+
+fn macro_variadic_args(args: &[Vec<Token>], named_count: usize, variadic: bool) -> Vec<Token> {
+    if !variadic || args.len() <= named_count {
+        return Vec::new();
+    }
+
+    let mut result = Vec::new();
+    for (index, arg) in args[named_count..].iter().enumerate() {
+        if index > 0 {
+            result.push(Token::new_unknown(TokenKind::Operator(
+                cx_tokens::token::OperatorType::Comma,
+            )));
+        }
+        result.extend(arg.iter().cloned());
+    }
+    result
+}
+
+fn stringify_macro_parameter(
+    identifier: &str,
+    params: &[String],
+    raw_args: &[Vec<Token>],
+    variadic_args: &[Token],
+    variadic: bool,
+) -> Option<Vec<Token>> {
+    if let Some(param_index) = params.iter().position(|param| param == identifier) {
+        return Some(raw_args[param_index].clone());
+    }
+    if variadic && identifier == "__VA_ARGS__" {
+        return Some(variadic_args.to_vec());
+    }
+    None
 }
 
 fn paste_tokens(left: Token, right: Token, expansion_site: &Token) -> Token {

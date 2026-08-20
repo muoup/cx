@@ -1,9 +1,7 @@
-use cx_hir::ast::modifiers::HIR_CONST;
-use cx_hir::decomposition::{HIRGenerationAST, HIRGenerationStmt};
+use cx_hir::ast::{HIR, HIRStmt, global_var::HIRGlobalVariable};
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
-use cx_thir::thir::global::{MIRGlobalVarKind, MIRGlobalVariable};
-use cx_util::linkage::LinkageMode;
+use cx_thir::thir::data::THIRFunction;
 
 pub mod environment;
 pub mod log;
@@ -12,77 +10,56 @@ pub mod symbol;
 pub(crate) mod requests;
 
 pub(crate) mod comptime;
+mod globals;
 mod type_checking;
 
-use crate::comptime::evaluate_comptime_expression;
+use crate::globals::lower_global;
 use crate::requests::fulfill_requests;
-use crate::symbol::completion::{complete_prototype, complete_type, completed_symbol_name};
-use crate::type_checking::typechecker::typecheck_expr;
+use crate::symbol::completion::complete_prototype;
 use crate::{environment::TypeEnvironment, type_checking::functions::typecheck_function};
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
-pub fn typecheck(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    ast: &HIRGenerationAST,
-) -> CXResult<()> {
-    for stmt in ast.generation_stmts.iter() {
-        match stmt {
-            HIRGenerationStmt::Function { prototype, body } => {
-                let prototype = complete_prototype(env, namespace, prototype)?;
-                typecheck_function(env, namespace, prototype.clone(), body)?;
-            }
+pub fn typecheck(env: &mut TypeEnvironment, ast: &HIR) -> CXResult<()> {
+    for definition in &ast.definition_stmts {
+        let namespace = EnvironmentNamespace::from(definition.namespace.clone());
 
-            HIRGenerationStmt::StringLiteral { name, value } => {
-                let global = MIRGlobalVariable {
-                    is_mutable: false,
-                    linkage: LinkageMode::Static,
-                    kind: MIRGlobalVarKind::StringLiteral {
-                        name: name.clone(),
-                        value: value.clone(),
-                    },
-                };
-
-                env.items.push_generated_global(global);
-            }
-
-            HIRGenerationStmt::AddressableGlobal {
-                name,
-                _type,
-                linkage,
-                symbol_naming,
-                initializer,
+        match &definition.stmt {
+            HIRStmt::FunctionDefinition {
+                prototype,
+                template_prototype: None,
+                body: Some(body),
+                ..
             } => {
-                let _type = complete_type(env, namespace, _type)?;
-                let symbol_name = completed_symbol_name(
-                    env,
-                    QualifiedName::new(namespace.clone(), name.clone()),
-                    *symbol_naming,
-                );
-                let comptime_init = initializer
-                    .as_ref()
-                    .map(|init| {
-                        typecheck_expr(env, namespace, init, Some(&_type))
-                            .and_then(|tc| tc.standard_ready_coerce(env, init.token_range()))
-                            .and_then(|tc| evaluate_comptime_expression(env, tc))
-                            .and_then(|ce| ce.as_integer().ok_or_else(|| {
-                                env.error(init.token_range(), "Global variable initializer must be a constant integer expression".to_string())
-                            }))
-                    })
-                    .transpose()?;
-
-                let global = MIRGlobalVariable {
-                    is_mutable: _type.get_specifier(HIR_CONST),
-                    linkage: *linkage,
-                    kind: MIRGlobalVarKind::Variable {
-                        name: CXIdent::new(symbol_name),
-                        _type,
-                        initializer: comptime_init,
-                    },
-                };
-
-                env.items.push_generated_global(global);
+                let prototype = complete_prototype(env, &namespace, prototype)?;
+                typecheck_function(env, &namespace, prototype, body)?;
             }
+
+            HIRStmt::FunctionDefinition {
+                prototype,
+                template_prototype: None,
+                body: None,
+                ..
+            } => {
+                let prototype = complete_prototype(env, &namespace, prototype)?;
+                env.items.push_generated_function(THIRFunction {
+                    prototype,
+                    body: None,
+                });
+            }
+
+            HIRStmt::GlobalVariableDefinition {
+                variable:
+                    HIRGlobalVariable::Standard {
+                        name,
+                        _type: hir_type,
+                        linkage,
+                        symbol_name_scheme: name_scheme,
+                        initializer,
+                        ..
+                    },
+                ..
+            } => lower_global(env, &namespace, name.clone(), hir_type, *linkage, *name_scheme, initializer.as_ref())?,
+
+            _ => {}
         }
     }
 

@@ -1,0 +1,45 @@
+[project]
+name = "doomgeneric"
+
+[build]
+backend = "llvm"
+optimization = "O2"
+
+[workspace.targets.default]
+native_objects = [
+  "../artifacts/raylib/lib/raylib.o",
+]
+include_dirs = [
+  "../../lib/libc",
+  "../artifacts/raylib/include",
+  "upstream/doomgeneric",
+]
+link = [
+  { name = "m", kind = "system" },
+  { name = "pthread", kind = "system" },
+  { name = "dl", kind = "system" },
+  { name = "rt", kind = "system" },
+  { name = "X11", kind = "system" },
+]
+
+[[workspace.targets.default.binaries]]
+name = "doomgeneric"
+match = [
+  "upstream/doomgeneric/*.c",
+  "doomgeneric_raylib.c",
+  "!upstream/doomgeneric/doomgeneric_allegro.c",
+  "!upstream/doomgeneric/doomgeneric_emscripten.c",
+  "!upstream/doomgeneric/doomgeneric_linuxvt.c",
+  "!upstream/doomgeneric/doomgeneric_sdl.c",
+  "!upstream/doomgeneric/doomgeneric_soso.c",
+  "!upstream/doomgeneric/doomgeneric_sosox.c",
+  "!upstream/doomgeneric/doomgeneric_win.c",
+  "!upstream/doomgeneric/doomgeneric_xlib.c",
+  "!upstream/doomgeneric/gusconf.c",
+  "!upstream/doomgeneric/icon.c",
+  "!upstream/doomgeneric/i_allegromusic.c",
+  "!upstream/doomgeneric/i_allegrosound.c",
+  "!upstream/doomgeneric/i_sdlmusic.c",
+  "!upstream/doomgeneric/i_sdlsound.c",
+  "!upstream/doomgeneric/mus2mid.c",
+]

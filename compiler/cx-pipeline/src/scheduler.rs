@@ -35,12 +35,23 @@ pub(crate) fn scheduling_loop(
     initial_job: CompilationJob,
     reporter: &mut ProgressReporter,
 ) -> CXResult<()> {
+    scheduling_loop_many(context, [initial_job], reporter)
+}
+
+pub(crate) fn scheduling_loop_many(
+    context: &GlobalCompilationContext,
+    initial_jobs: impl IntoIterator<Item = CompilationJob>,
+    reporter: &mut ProgressReporter,
+) -> CXResult<()> {
     let mut queue = JobQueue::new();
 
     let mut compilation_exists = HashMap::new();
 
-    queue.push_job(initial_job);
-    reporter.add_total(1);
+    let initial_jobs = initial_jobs.into_iter().collect::<Vec<_>>();
+    for initial_job in initial_jobs.iter().cloned() {
+        queue.push_job(initial_job);
+    }
+    reporter.add_total(initial_jobs.len());
 
     // TODO: Parallelize this loop
     'queue: while !queue.is_empty() {
@@ -125,7 +136,7 @@ fn import_jobs_for_unit(
     let mut jobs = Vec::new();
 
     for import in imports {
-        if !context.module_mode && !import.is_library_module() {
+        if !context.config.module_mode && !import.is_library_module() {
             return Err(pipeline_error(
                 "COMPILATION ERROR",
                 format!(
@@ -288,7 +299,10 @@ fn perform_job_with_dump(
         std::fs::File::create(&dump_path).map_err(|error| {
             pipeline_error(
                 "COMPILATION ERROR",
-                format!("Failed to create dump file {}: {error}", dump_path.display()),
+                format!(
+                    "Failed to create dump file {}: {error}",
+                    dump_path.display()
+                ),
             )
         })?;
     }
@@ -328,6 +342,7 @@ pub(crate) fn perform_job(
                 file_contents.as_str(),
                 &file_path,
                 &context.config.include_dirs,
+                &context.config.predefined_macros,
             )?;
 
             let preparse_config = PreparseConfig::from_compiler_config(&context.config);
@@ -384,10 +399,9 @@ pub(crate) fn perform_job(
             }
 
             let namespace = job.unit.namespace().as_namespace_path().clone();
-            let (symbol_buckets, namespace_friends, generation_ast) =
-                decompose_ast(&namespace, parsed_ast)?.destructure();
+            let decomposition = decompose_ast(&namespace, parsed_ast)?;
 
-            for (namespace, bucket) in symbol_buckets {
+            for (namespace, bucket) in decomposition.symbol_buckets {
                 if let Some((namespace, _)) = context
                     .module_db
                     .symbol_registry
@@ -402,7 +416,7 @@ pub(crate) fn perform_job(
                 }
             }
 
-            for (namespace, friend) in namespace_friends {
+            for (namespace, friend) in decomposition.namespace_friends {
                 context
                     .module_db
                     .symbol_registry
@@ -411,19 +425,32 @@ pub(crate) fn perform_job(
 
             context
                 .module_db
-                .generation_ast
-                .insert(job.unit.clone(), generation_ast);
+                .hir
+                .insert(job.unit.clone(), decomposition.ast);
         }
 
         CompilationStep::Typechecking => {
-            let self_ast = context.module_db.generation_ast.get(&job.unit);
+            let self_ast = context.module_db.hir.get(&job.unit);
             let namespace = job.unit.namespace().clone();
 
-            let mut env = TypeEnvironment::new(&context.module_db, context.config.architecture);
+            let require_explicit_return =
+                context.config.require_explicit_return.unwrap_or_else(|| {
+                    job.unit
+                        .as_path()
+                        .extension()
+                        .and_then(|extension| extension.to_str())
+                        != Some("c")
+                });
+            let mut env = TypeEnvironment::new(
+                &context.module_db,
+                context.config.architecture,
+                require_explicit_return,
+            );
 
-            typecheck(&mut env, &namespace, &self_ast)?;
+            typecheck(&mut env, &self_ast)?;
 
             let thir = env.finish_thir_unit(namespace)?;
+
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&thir.display_pretty());
             }

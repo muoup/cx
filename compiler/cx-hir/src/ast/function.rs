@@ -10,6 +10,7 @@ use crate::ast::{
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq)]
 pub struct HIRFunctionContract {
     pub safe: bool,
+    pub noreturn: bool,
 
     pub precondition: Option<HIRExpression>,
     pub postcondition: Option<(Option<CXIdent>, HIRExpression)>,

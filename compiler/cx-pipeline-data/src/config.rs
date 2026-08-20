@@ -18,6 +18,7 @@ pub struct ProjectSection {
 pub struct BuildSection {
     pub backend: Option<String>,
     pub optimization: Option<String>,
+    pub require_explicit_return: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -37,7 +38,9 @@ pub struct TargetConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct BinaryEntry {
     pub name: String,
-    pub entry: String,
+    pub entry: Option<String>,
+    #[serde(rename = "match")]
+    pub match_patterns: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

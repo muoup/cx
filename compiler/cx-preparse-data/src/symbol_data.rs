@@ -8,6 +8,7 @@ use crate::VisibilityMode;
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Readable, Writable)]
 pub enum PreparseSymbolKind {
     Type,
+    Tag,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
@@ -22,6 +23,14 @@ impl PreparseSymbol {
         Self {
             name,
             kind: PreparseSymbolKind::Type,
+            visibility,
+        }
+    }
+
+    pub fn tag_name(name: CXIdent, visibility: VisibilityMode) -> Self {
+        Self {
+            name,
+            kind: PreparseSymbolKind::Tag,
             visibility,
         }
     }
@@ -68,5 +77,10 @@ impl PreparseModuleSymbols {
     pub fn add_type(&mut self, name: CXIdent, visibility: VisibilityMode) {
         self.symbols
             .push(PreparseSymbol::type_name(name, visibility));
+    }
+
+    pub fn add_tag(&mut self, name: CXIdent, visibility: VisibilityMode) {
+        self.symbols
+            .push(PreparseSymbol::tag_name(name, visibility));
     }
 }

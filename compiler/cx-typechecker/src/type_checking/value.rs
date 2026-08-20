@@ -5,10 +5,9 @@ pub(crate) mod moves;
 pub(crate) mod unsafe_ops;
 
 use crate::environment::TypeEnvironment;
-use cx_log::CXResult;
 use cx_thir::{
     thir::{
-        data::{THIRType, THIRTypeKind},
+        data::THIRType,
         expression::{THIRExpression, THIRExpressionKind},
     },
     type_context::THIRTypeContext,
@@ -49,6 +48,27 @@ pub(crate) fn resolve_indirect_base(
                 };
             }
 
+            if let Some(array_inner) = env.symbols.array_inner(&inner_type).cloned() {
+                let pointer = THIRExpression {
+                    token_range: TokenRange::internal(),
+                    kind: THIRExpressionKind::TypeConversion {
+                        operand: Box::new(source),
+                        conversion: cx_thir::thir::expression::THIRCoercion::ReinterpretBits,
+                    },
+                    _type: env.symbols.pointer_to(array_inner.clone()),
+                };
+
+                return IndirectBase {
+                    source: THIRExpression {
+                        token_range: TokenRange::internal(),
+                        kind: THIRExpressionKind::Typechange(Box::new(pointer)),
+                        _type: env.symbols.mem_ref_to(array_inner.clone()),
+                    },
+                    source_type: array_inner,
+                    owned: false,
+                };
+            }
+
             if env.symbols.mem_ref_inner(&inner_type).is_some() {
                 source = THIRExpression {
                     token_range: TokenRange::internal(),
@@ -84,22 +104,5 @@ pub(crate) fn resolve_indirect_base(
             source_type,
             owned: true,
         };
-    }
-}
-
-pub(crate) fn ensure_valid_allocation_type(
-    env: &mut TypeEnvironment,
-    range: TokenRange,
-    context: &str,
-    ty: &THIRType,
-) -> CXResult<()> {
-    match &ty.kind {
-        THIRTypeKind::Function { .. } => env.log_error(range, format!("Cannot create {} of function type '{}'; use a pointer to the function type instead", context, ty.display_with(&env.symbols))),
-        THIRTypeKind::Str => env.log_error(range, format!("Cannot create {} of unsized type 'str'; use '&str' instead", context)),
-        THIRTypeKind::Array { inner_type, .. } => {
-            let inner_type = env.symbols.resolve_type_id(*inner_type).clone();
-            ensure_valid_allocation_type(env, range.clone(), "an array element", &inner_type)
-        }
-        _ => Ok(()),
     }
 }

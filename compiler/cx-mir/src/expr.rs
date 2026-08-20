@@ -22,6 +22,7 @@ pub enum MIRPlace {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRConstant {
+    // TODO: Revamp and simplify this a bit; Add staged expressions w/ a more streamlined comptime engine in the MIR layer
     Unit,
     Bool(bool),
     String(String),
@@ -35,6 +36,19 @@ pub enum MIRConstant {
         ty: MIRFloatType,
     },
     Null {
+        ty: MIRTypeID,
+    },
+    Aggregate {
+        ty: MIRTypeID,
+        fields: Vec<(usize, MIRConstant)>,
+    },
+    Global {
+        global: MIRGlobalID,
+        ty: MIRTypeID,
+    },
+    GlobalOffset {
+        global: MIRGlobalID,
+        offset: i64,
         ty: MIRTypeID,
     },
     Function(MIRFunctionID),
@@ -269,6 +283,7 @@ impl MIRInstr {
             } => Some(*register),
             MIRInstrKind::AggregateOp(MIRAggregateOp::Value { out, .. }) => Some(*out),
             MIRInstrKind::Call { out, .. } => *out,
+            MIRInstrKind::VaArg { out, .. } => Some(*out),
             _ => None,
         };
         register.into_iter()
@@ -334,6 +349,13 @@ impl MIRInstr {
                 for arg in args {
                     visit(MIRInstrOperand::Value(arg));
                 }
+            }
+            MIRInstrKind::VaStart { list, last } => {
+                visit(MIRInstrOperand::Value(list));
+                visit(MIRInstrOperand::Value(last));
+            }
+            MIRInstrKind::VaEnd { list } | MIRInstrKind::VaArg { list, .. } => {
+                visit(MIRInstrOperand::Value(list));
             }
             MIRInstrKind::BinOp { lhs, rhs, .. } => {
                 visit(MIRInstrOperand::Value(lhs));
@@ -443,6 +465,18 @@ pub enum MIRInstrKind {
         out: Option<MIRRegister>,
         callee: MIRValue,
         args: Vec<MIRValue>,
+    },
+    VaStart {
+        list: MIRValue,
+        last: MIRValue,
+    },
+    VaEnd {
+        list: MIRValue,
+    },
+    VaArg {
+        out: MIRRegister,
+        list: MIRValue,
+        ty: MIRTypeID,
     },
 
     BinOp {

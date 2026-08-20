@@ -78,6 +78,7 @@ fn compiler_config(
             CompilerBackend::Cranelift => OptimizationLevel::O0,
             CompilerBackend::LLVM => OptimizationLevel::O1,
         },
+        require_explicit_return: None,
         output,
         unsafe_mode: false,
         compilation_mode,
@@ -90,6 +91,7 @@ fn compiler_config(
         link_entries: vec![],
         native_objects: vec![],
         include_dirs: vec![],
+        predefined_macros: vec![],
     }
 }
 

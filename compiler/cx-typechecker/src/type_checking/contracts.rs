@@ -91,6 +91,7 @@ pub(crate) fn typecheck_contract(
 
     Ok(THIRFnContract {
         safe: naive_contract.safe,
+        noreturn: naive_contract.noreturn,
         precondition,
         postcondition,
     })

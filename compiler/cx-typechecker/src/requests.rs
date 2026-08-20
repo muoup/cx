@@ -1,7 +1,7 @@
 use cx_hir::{ast::function::HIRFunctionContract, symbols::HIRSymbolKind};
 use cx_log::CXResult;
 use cx_thir::thir::{
-    data::{MIRTemplateInput, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter},
+    data::{THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter, THIRTemplateInput},
     expression::{THIRExpression, THIRExpressionKind},
     r#type::THIRType,
 };
@@ -9,7 +9,7 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode, namespace::QualifiedName};
 
 use crate::{
-    environment::{MIRFunctionGenRequest, TypeEnvironment},
+    environment::{THIRFunctionGenRequest, TypeEnvironment},
     symbol::resolution::{apply_template_input, symbol_lexical_namespace},
     type_checking::functions::typecheck_function,
 };
@@ -17,7 +17,7 @@ use crate::{
 pub fn fulfill_requests(env: &mut TypeEnvironment) -> CXResult<()> {
     while let Some(request) = env.items.pop_request() {
         match request {
-            MIRFunctionGenRequest::TypeConstructor {
+            THIRFunctionGenRequest::TypeConstructor {
                 symbol_name,
                 debug_name,
                 union_type,
@@ -32,7 +32,7 @@ pub fn fulfill_requests(env: &mut TypeEnvironment) -> CXResult<()> {
                 variant_index,
             ),
 
-            MIRFunctionGenRequest::Template {
+            THIRFunctionGenRequest::Template {
                 name,
                 prototype,
                 input,
@@ -63,7 +63,7 @@ fn realize_tagged_union_constructor(
         LinkageMode::Static,
         THIRFnSignature {
             return_type: union_type.clone(),
-            params: if variant_type.is_unit() {
+            params: if variant_type.is_void() {
                 Vec::new()
             } else {
                 vec![THIRParameter {
@@ -78,7 +78,7 @@ fn realize_tagged_union_constructor(
     )
     .with_debug_name(debug_name);
 
-    let value = if variant_type.is_unit() {
+    let value = if variant_type.is_void() {
         THIRExpression {
             token_range: TokenRange::internal(),
             _type: variant_type.clone(),
@@ -94,7 +94,7 @@ fn realize_tagged_union_constructor(
             },
         }
     };
-    
+
     let constructed = THIRExpression {
         token_range: TokenRange::internal(),
         _type: union_type.clone(),
@@ -113,15 +113,17 @@ fn realize_tagged_union_constructor(
         },
     };
 
-    env.items
-        .push_generated_function(THIRFunction { prototype, body });
+    env.items.push_generated_function(THIRFunction {
+        prototype,
+        body: Some(body),
+    });
 }
 
 fn realize_fn_template(
     env: &mut TypeEnvironment,
     name: &QualifiedName,
     prototype: THIRFnPrototype,
-    input: &MIRTemplateInput,
+    input: &THIRTemplateInput,
 ) -> CXResult<()> {
     let stmt = env
         .symbols
@@ -147,7 +149,8 @@ fn realize_fn_template(
         if env.items.request_fulfilled(prototype.symbol_name()) {
             return Ok(());
         }
-        env.items.mark_request_fulfilled(prototype.symbol_name().into());
+        env.items
+            .mark_request_fulfilled(prototype.symbol_name().into());
 
         typecheck_function(env, &namespace, prototype, body)?;
 

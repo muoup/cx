@@ -1,12 +1,16 @@
 use cx_log::CXResult;
-use cx_mir::{MIRConstant, MIRInstrKind, MIRValue};
+use cx_mir::{MIRConstant, MIRField, MIRInstrKind, MIRValue};
 use cx_thir::thir::{
-    data::{THIRType, THIRTypeKind},
+    data::THIRType,
     expression::THIRExpression,
+    r#type::THIRField,
 };
 use cx_thir::type_context::THIRTypeContext;
 
-use crate::builder::MIRBuilder;
+use crate::{
+    builder::MIRBuilder,
+    lowering::types::{lower_type, lower_type_id},
+};
 
 pub(super) fn lower_call(
     builder: &mut MIRBuilder<'_>,
@@ -43,9 +47,9 @@ pub(super) fn lower_call(
         builder.pop_named_scope();
     }
 
-    let returns_value = !matches!(result_type.kind, THIRTypeKind::Void);
+    let returns_value = !result_type.is_void() && !result_type.is_unreachable();
     let out = returns_value.then(|| {
-        let result_type_id = builder.lower_type(result_type);
+        let result_type_id = lower_type(builder, result_type);
         builder.register(result_type_id, None)
     });
     builder.emit(MIRInstrKind::Call {
@@ -53,6 +57,13 @@ pub(super) fn lower_call(
         callee,
         args: args.clone(),
     });
+    let unreachable_return = builder
+        .registry()
+        .intern_signature(&function._type)
+        .is_some_and(|signature| signature.return_type.is_unreachable());
+    if contract.noreturn || unreachable_return {
+        builder.emit(MIRInstrKind::Unreachable);
+    }
     let value = out
         .map(MIRValue::Register)
         .unwrap_or(MIRValue::Constant(MIRConstant::Unit));
@@ -84,4 +95,21 @@ pub(super) fn lower_call(
     }
 
     Ok(value)
+}
+
+pub fn lower_field(builder: &mut MIRBuilder, field: &cx_thir::thir::r#type::THIRField) -> MIRField {
+    match field {
+        THIRField::Standard { name, type_id } => {
+            MIRField::named(name.clone(), lower_type_id(builder, *type_id))
+        }
+        THIRField::Bitfield {
+            name,
+            integer_type_id,
+            width,
+        } => MIRField::Bitfield {
+            name: name.clone(),
+            integer_type_id: lower_type_id(builder, *integer_type_id),
+            width: *width,
+        },
+    }
 }

@@ -41,6 +41,16 @@ pub(crate) fn prepare_function_sig(
             LMIRParameterABI::Indirect { .. } => sig.params.push(ir::AbiParam::new(
                 object_module.target_config().pointer_type(),
             )),
+            LMIRParameterABI::ByValue { .. } => {
+                let stack_alignment = object_module.target_config().pointer_type().bytes() as usize;
+                let size = usize::from(param._type.size())
+                    .div_ceil(stack_alignment)
+                    .saturating_mul(stack_alignment);
+                sig.params.push(ir::AbiParam::special(
+                    object_module.target_config().pointer_type(),
+                    ArgumentPurpose::StructArgument(size as u32),
+                ));
+            }
         }
     }
 

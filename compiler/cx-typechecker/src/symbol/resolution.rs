@@ -2,7 +2,7 @@ use cx_hir::{
     ast::{
         function::{HIRFunctionContract, HIRFunctionKind},
         template::HIRTemplatePrototype,
-        types::HIRType,
+        types::{HIRType, HIRTypeKind},
     },
     symbols::{HIRSymbol, HIRSymbolKind},
 };
@@ -18,19 +18,22 @@ use cx_thir::{
     symbol::MIRSymbol,
     thir::{
         contextual_eq::TypeContextEqual,
-        data::{MIRTemplateInput, THIRFnPrototype, THIRFnSignature, THIRParameter, TemplateInfo},
-        expression::{THIRExpression, THIRExpressionKind},
-        global::{MIRGlobalVarKind, MIRGlobalVariable},
-        name_mangling::{base_mangle_member, base_mangle_templated_name},
+        data::{
+            THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter, THIRTemplateInput,
+            TemplateInfo,
+        },
+        expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
+        global::THIRGlobalVariable,
     },
     type_context::THIRTypeContext,
 };
 
 use crate::{
-    environment::{MIRFunctionGenRequest, TypeEnvironment},
+    environment::{THIRFunctionGenRequest, TypeEnvironment},
     symbol::{
         completion::{complete_comptime_prototype, complete_prototype, complete_type},
         r#enum::resolve_enum_block,
+        name_mangling::{base_mangle_member, base_mangle_templated_name},
     },
 };
 
@@ -40,6 +43,41 @@ pub fn resolve_symbol(
     symbol_namespace: &EnvironmentNamespace,
     name: &CXIdent,
     symbol: &HIRSymbol,
+) -> CXResult<MIRSymbol> {
+    resolve_symbol_inner(
+        env,
+        evaluation_namespace,
+        symbol_namespace,
+        name,
+        symbol,
+        true,
+    )
+}
+
+// pub(crate) fn resolve_symbol_without_implicit_array_decay(
+//     env: &mut TypeEnvironment,
+//     evaluation_namespace: &EnvironmentNamespace,
+//     symbol_namespace: &EnvironmentNamespace,
+//     name: &CXIdent,
+//     symbol: &HIRSymbol,
+// ) -> CXResult<MIRSymbol> {
+//     resolve_symbol_inner(
+//         env,
+//         evaluation_namespace,
+//         symbol_namespace,
+//         name,
+//         symbol,
+//         false,
+//     )
+// }
+
+fn resolve_symbol_inner(
+    env: &mut TypeEnvironment,
+    evaluation_namespace: &EnvironmentNamespace,
+    symbol_namespace: &EnvironmentNamespace,
+    name: &CXIdent,
+    symbol: &HIRSymbol,
+    decay_implicit_array: bool,
 ) -> CXResult<MIRSymbol> {
     match &symbol.kind {
         HIRSymbolKind::DuplicateDefinition(definitions) => resolve_duplicate_definition(
@@ -70,29 +108,49 @@ pub fn resolve_symbol(
             ));
 
             if evaluation_namespace != symbol_namespace {
-                env.items.push_generated_global(MIRGlobalVariable {
+                env.items.push_generated_global(THIRGlobalVariable {
+                    name: symbol_name.clone(),
+                    _type: ty.clone(),
+                 
                     is_mutable: false,
                     linkage: LinkageMode::Extern,
-                    kind: MIRGlobalVarKind::Variable {
-                        name: symbol_name.clone(),
-                        _type: ty.clone(),
-                        initializer: None,
-                    },
+                    initializer: None,
                 });
             }
 
-            Ok(MIRSymbol::Expression(THIRExpression {
+            let global = THIRExpression {
                 token_range: TokenRange::internal(),
                 kind: THIRExpressionKind::GlobalVariable {
-                    symbol: symbol_name,
+                    symbol: symbol_name.clone(),
                 },
-                _type: env.symbols.mem_ref_to(ty),
-            }))
+                _type: env.symbols.mem_ref_to(ty.clone()),
+            };
+            let expression = if decay_implicit_array
+                && matches!(_type.kind, HIRTypeKind::ImplicitSizedArray(_))
+            {
+                THIRExpression {
+                    token_range: TokenRange::internal(),
+                    kind: THIRExpressionKind::TypeConversion {
+                        operand: Box::new(global),
+                        conversion: THIRCoercion::ReinterpretBits,
+                    },
+                    _type: ty,
+                }
+            } else {
+                global
+            };
+
+            Ok(MIRSymbol::Expression(expression))
         }
 
         HIRSymbolKind::FunctionReference(prototype) => {
             let prototype_namespace = function_lexical_namespace(symbol_namespace, &prototype.kind);
             let prototype = complete_prototype(env, &prototype_namespace, prototype)?;
+
+            env.items.push_generated_function(THIRFunction {
+                prototype: prototype.clone(),
+                body: None,
+            });
 
             Ok(MIRSymbol::FunctionReference(prototype))
         }
@@ -217,21 +275,23 @@ fn resolve_duplicate_definition(
         ));
     };
 
-    let first = resolve_symbol(
+    let first = resolve_symbol_inner(
         env,
         evaluation_namespace,
         symbol_namespace,
         name,
         &HIRSymbol::new(visibility, first.clone()),
+        false,
     )?;
 
     for definition in rest {
-        let candidate = resolve_symbol(
+        let candidate = resolve_symbol_inner(
             env,
             evaluation_namespace,
             symbol_namespace,
             name,
             &HIRSymbol::new(visibility, definition.clone()),
+            false,
         )?;
 
         if !mir_symbols_equivalent(env, &first, &candidate) {
@@ -305,7 +365,7 @@ fn resolve_type_constructor(
         LinkageMode::Static,
         THIRFnSignature {
             return_type: union_type.clone(),
-            params: if variant_type.is_unit() {
+            params: if variant_type.is_void() {
                 Vec::new()
             } else {
                 vec![THIRParameter {
@@ -321,7 +381,7 @@ fn resolve_type_constructor(
     .with_debug_name(name.clone());
 
     env.items
-        .push_request(MIRFunctionGenRequest::TypeConstructor {
+        .push_request(THIRFunctionGenRequest::TypeConstructor {
             symbol_name: prototype.symbol_name().to_owned(),
             debug_name: name.clone(),
             union_type,
@@ -335,7 +395,7 @@ fn resolve_type_constructor(
 pub fn apply_template(
     env: &mut TypeEnvironment,
     symbol: &MIRSymbol,
-    template_input: MIRTemplateInput,
+    template_input: THIRTemplateInput,
 ) -> CXMaybeRawResult<Option<MIRSymbol>> {
     let MIRSymbol::Template {
         template_prototype: input,
@@ -382,7 +442,7 @@ pub fn apply_template(
     if let MIRSymbol::FunctionReference(prototype) = &symbol
         && let Some(name) = prototype.lookup_identifier().cloned()
     {
-        env.items.push_request(MIRFunctionGenRequest::Template {
+        env.items.push_request(THIRFunctionGenRequest::Template {
             name,
             prototype: prototype.clone(),
             input: template_input,
@@ -428,7 +488,7 @@ fn function_lexical_namespace(
 pub fn apply_template_input(
     env: &mut TypeEnvironment,
     prototype: &HIRTemplatePrototype,
-    input: &MIRTemplateInput,
+    input: &THIRTemplateInput,
 ) -> CXRawResult<()> {
     for (param, arg) in prototype.types.iter().zip(input.args.iter()) {
         env.symbols.insert_local_type_id(param.as_string(), *arg)?;
@@ -441,7 +501,7 @@ fn attach_template_metadata(
     env: &mut TypeEnvironment,
     symbol: &mut MIRSymbol,
     _namespace: &EnvironmentNamespace,
-    input: MIRTemplateInput,
+    input: THIRTemplateInput,
 ) {
     match symbol {
         MIRSymbol::Type(id) => {
