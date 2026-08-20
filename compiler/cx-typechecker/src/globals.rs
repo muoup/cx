@@ -2,6 +2,7 @@ use cx_log::CXResult;
 use cx_thir::thir::expression::{THIRCoercion, THIRExpression, THIRExpressionKind};
 use cx_thir::thir::expression_queries::{
     contains_function_reference, contains_global_reference, contains_null_pointer_conversion,
+    contains_string_literal,
 };
 
 use crate::comptime::evaluate_comptime_expression;
@@ -54,6 +55,13 @@ pub(crate) fn canonicalize_global_initializer(
                     initializations,
                     struct_type,
                 },
+                _type,
+                token_range,
+            }
+        }
+        kind @ THIRExpressionKind::TypeConversion { .. } if contains_string_literal(&kind) => {
+            THIRExpression {
+                kind,
                 _type,
                 token_range,
             }
@@ -130,6 +138,11 @@ pub(crate) fn canonicalize_global_initializer(
         }
         THIRExpressionKind::GlobalVariable { symbol } => THIRExpression {
             kind: THIRExpressionKind::GlobalVariable { symbol },
+            _type,
+            token_range,
+        },
+        THIRExpressionKind::StringLiteral { value } => THIRExpression {
+            kind: THIRExpressionKind::StringLiteral { value },
             _type,
             token_range,
         },

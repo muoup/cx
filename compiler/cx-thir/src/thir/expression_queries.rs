@@ -62,3 +62,15 @@ pub fn contains_function_reference(kind: &THIRExpressionKind) -> bool {
         _ => false,
     }
 }
+
+pub fn contains_string_literal(kind: &THIRExpressionKind) -> bool {
+    match kind {
+        THIRExpressionKind::StringLiteral { .. } => true,
+        THIRExpressionKind::Copy { source }
+        | THIRExpressionKind::Typechange(source)
+        | THIRExpressionKind::TypeConversion {
+            operand: source, ..
+        } => contains_string_literal(&source.kind),
+        _ => false,
+    }
+}
