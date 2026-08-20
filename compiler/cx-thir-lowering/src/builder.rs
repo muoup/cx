@@ -106,6 +106,7 @@ impl<'thir> MIRBuilder<'thir> {
                 is_mutable: global.is_mutable,
                 is_nodrop: global._type.is_nodrop(),
             },
+            false
         );
     }
 
@@ -192,6 +193,7 @@ impl<'thir> MIRBuilder<'thir> {
             MIRGlobalKind::StringLiteral {
                 value: value.to_owned(),
             },
+            true
         )
     }
 

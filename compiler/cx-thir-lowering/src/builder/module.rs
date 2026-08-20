@@ -17,6 +17,11 @@ impl<T: Clone> ModuleSymbol<T> {
         Self { id, used: false }
     }
 
+    fn with_used(mut self, used: bool) -> Self {
+        self.used = used;
+        self
+    }
+    
     fn get(&mut self) -> T {
         self.used = true;
         self.id.clone()
@@ -75,7 +80,8 @@ impl MIRModuleState {
         &mut self,
         name: CXIdent,
         linkage: LinkageMode,
-        kind: MIRGlobalKind
+        kind: MIRGlobalKind,
+        pre_used: bool,
     ) -> MIRGlobalID {
         let name_string = name.as_string();
         if let Some(symbol) = self.global_symbols.get(&name_string) {
@@ -87,7 +93,7 @@ impl MIRModuleState {
         let global = MIRGlobalVariable::new(id, name, linkage, kind);
         self.globals.insert(id, global);
         self.global_symbols
-            .insert(name_string, ModuleSymbol::new(id));
+            .insert(name_string, ModuleSymbol::new(id).with_used(pre_used));
         id
     }
 
@@ -166,9 +172,7 @@ impl MIRModuleState {
         let globals = globals
             .into_iter()
             .filter_map(|(_, global)| {
-                if global.linkage == LinkageMode::Standard
-                    || matches!(&global.kind, MIRGlobalKind::StringLiteral { .. })
-                {
+                if global.linkage == LinkageMode::Standard {
                     return Some((global.id, global));
                 }
 
