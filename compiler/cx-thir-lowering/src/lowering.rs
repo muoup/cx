@@ -55,15 +55,6 @@ pub(crate) fn lower_unit(builder: &mut MIRBuilder<'_>, thir: &THIRUnit) -> CXRes
         lower_function(builder, index, function)?;
     }
 
-    for global in &thir.global_variables {
-        if global.initializer.is_some() {
-            let id = builder
-                .global_id(global.name.as_str())
-                .expect("global predeclaration is missing");
-            globals::evaluate_global_initializer(builder, id, global);
-        }
-    }
-
     Ok(())
 }
 
@@ -141,11 +132,7 @@ fn lower_expression(
                 MIRValue::Constant(MIRConstant::Float { value: *value, ty })
             }
             THIRExpressionKind::StringLiteral { value } => {
-                if builder.function_mode() == cx_mir::MIRFunctionMode::ComptimeOnly {
-                    MIRValue::Constant(MIRConstant::String(value.clone()))
-                } else {
-                    MIRValue::Place(MIRPlace::Global(builder.add_string_literal(value.as_str())))
-                }
+                MIRValue::Place(MIRPlace::Global(builder.add_string_literal(value.as_str())))
             }
             THIRExpressionKind::Unit => MIRValue::Constant(MIRConstant::Unit),
             THIRExpressionKind::SizeOf { _type } | THIRExpressionKind::AlignOf { _type } => {

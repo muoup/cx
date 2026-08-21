@@ -3,8 +3,10 @@ use std::collections::HashMap;
 use cx_tokens::TokenRange;
 
 use crate::{
-    MIRBasicBlockID, MIRScopeID,
-    global::{MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalVariable},
+    MIRBasicBlockID, MIRConstant, MIRScopeID,
+    global::{
+        MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalKind, MIRGlobalState, MIRGlobalVariable,
+    },
     ty::registry::MIRTypeRegistryBuilder,
 };
 
@@ -60,6 +62,25 @@ impl MIRUnit {
 
     pub fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
         self.globals.get(&id)
+    }
+
+    pub fn materialize_global(
+        &mut self,
+        id: MIRGlobalID,
+        value: MIRConstant,
+    ) -> Result<(), String> {
+        let global = self
+            .globals
+            .get_mut(&id)
+            .ok_or_else(|| format!("global {id} is not present in the MIR unit"))?;
+        let MIRGlobalKind::Variable { state, .. } = &mut global.kind else {
+            return Err(format!("global {id} is not a variable"));
+        };
+        let MIRGlobalState::Initializer(_) = state else {
+            return Err(format!("global {id} does not have a pending initializer"));
+        };
+        *state = MIRGlobalState::Initialized(value);
+        Ok(())
     }
 
     pub fn instruction_range(

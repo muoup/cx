@@ -149,6 +149,11 @@ impl CompilationUnit {
         Self::from_module_path_with_extension(module_path, working_directory, extension)
     }
 
+    pub fn with_namespace(mut self, namespace: EnvironmentNamespace) -> Self {
+        self.namespace = namespace;
+        self
+    }
+
     pub fn from_module_path(module_path: ModulePath, working_directory: &Path) -> Self {
         Self::from_module_path_with_extension(module_path, working_directory, "cx")
     }

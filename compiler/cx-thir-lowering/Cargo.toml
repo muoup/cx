@@ -7,7 +7,6 @@ edition = "2024"
 cx-hir = { path = "../cx-hir" }
 cx-log = { path = "../cx-log" }
 cx-mir = { path = "../cx-mir" }
-cx-mir-comptime = { path = "../cx-mir-comptime" }
 cx-thir = { path = "../cx-thir" }
 cx-util = { path = "../cx-util" }
 cx-tokens = { path = "../cx-tokens" }

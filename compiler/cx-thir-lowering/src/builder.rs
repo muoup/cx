@@ -244,10 +244,6 @@ impl<'thir> MIRBuilder<'thir> {
         self.context()._id()
     }
 
-    pub(crate) fn function_mode(&self) -> MIRFunctionMode {
-        self.context().mode()
-    }
-
     pub(crate) fn current_block(&self) -> MIRBasicBlockID {
         self.context().current_block()
     }

@@ -17,6 +17,7 @@ cx-parsing = { path = "../cx-parsing" }
 cx-typechecker = { path = "../cx-typechecker" }
 cx-thir-lowering = { path = "../cx-thir-lowering" }
 cx-mir = { path = "../cx-mir" }
+cx-mir-comptime = { path = "../cx-mir-comptime" }
 cx-mir-analysis = { path = "../cx-mir-analysis" }
 cx-mir-lowering = { path = "../cx-mir-lowering" }
 cx-backend-llvm = { path = "../cx-backend-llvm", optional = true }

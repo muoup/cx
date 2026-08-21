@@ -390,7 +390,6 @@ version = "0.1.0"
 dependencies = [
  "cx-hir",
  "cx-mir",
- "cx-mir-comptime",
  "cx-util",
 ]
 
@@ -399,6 +398,8 @@ name = "cx-mir-comptime"
 version = "0.1.0"
 dependencies = [
  "cx-mir",
+ "cx-target",
+ "cx-util",
 ]
 
 [[package]]
@@ -409,7 +410,6 @@ dependencies = [
  "cx-lmir",
  "cx-log",
  "cx-mir",
- "cx-mir-comptime",
  "cx-target",
  "cx-util",
 ]
@@ -448,6 +448,7 @@ dependencies = [
  "cx-log",
  "cx-mir",
  "cx-mir-analysis",
+ "cx-mir-comptime",
  "cx-mir-lowering",
  "cx-parsing",
  "cx-pipeline-data",
@@ -511,7 +512,6 @@ dependencies = [
  "cx-hir",
  "cx-log",
  "cx-mir",
- "cx-mir-comptime",
  "cx-thir",
  "cx-tokens",
  "cx-util",

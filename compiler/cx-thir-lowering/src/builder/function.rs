@@ -108,10 +108,6 @@ impl FunctionContext {
         self.id
     }
 
-    pub(crate) fn mode(&self) -> MIRFunctionMode {
-        self.mode
-    }
-
     pub(crate) fn current_block(&self) -> MIRBasicBlockID {
         self.current_block
     }

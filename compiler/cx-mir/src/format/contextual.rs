@@ -211,7 +211,7 @@ fn write_global<T: MTRegistry>(
 
     match &global.kind {
         MIRGlobalKind::StringLiteral { value } => {
-            write!(f, "str = {}", value)?;
+            write!(f, "str = {};", value)?;
         }
 
         MIRGlobalKind::Variable {
@@ -239,7 +239,7 @@ fn write_global<T: MTRegistry>(
         }
     }
 
-    Ok(())
+    writeln!(f)
 }
 
 fn write_function<T: MTRegistry>(

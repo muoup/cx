@@ -31,13 +31,13 @@ pub(crate) fn lower_global(
 ) -> CXResult<()> {
     let _type = complete_type(env, &namespace, hir_type)?;
     ensure_valid_type_component(env, hir_type.range(), &_type, "a global variable", true)?;
-    
+
     let symbol_name = completed_symbol_name(
         env,
         QualifiedName::new(namespace.clone(), name.clone()),
         name_scheme,
     );
-    
+
     let (global_type, comptime_init) = initializer
         .as_ref()
         .map(|init| {
@@ -148,6 +148,12 @@ pub(crate) fn canonicalize_global_initializer(
                 token_range,
             }
         }
+        kind @ THIRExpressionKind::BinaryOperation { .. }
+        | kind @ THIRExpressionKind::UnaryOperation { .. } => THIRExpression {
+            kind,
+            _type,
+            token_range,
+        },
         kind @ THIRExpressionKind::TypeConversion { .. } if contains_string_literal(&kind) => {
             THIRExpression {
                 kind,
@@ -216,15 +222,26 @@ pub(crate) fn canonicalize_global_initializer(
             _type,
             token_range,
         },
-        THIRExpressionKind::Typechange(operand)
-            if matches!(operand.kind, THIRExpressionKind::GlobalVariable { .. }) =>
-        {
-            THIRExpression {
-                kind: THIRExpressionKind::Typechange(operand),
-                _type,
-                token_range,
-            }
-        }
+        kind @ THIRExpressionKind::TypeConversion {
+            conversion:
+                THIRCoercion::Integral { .. }
+                | THIRCoercion::FloatCast { .. }
+                | THIRCoercion::IntToFloat { .. }
+                | THIRCoercion::FloatToInt { .. }
+                | THIRCoercion::GetFnPtr
+                | THIRCoercion::Typechange
+                | THIRCoercion::ReinterpretBits,
+            ..
+        } => THIRExpression {
+            kind,
+            _type,
+            token_range,
+        },
+        THIRExpressionKind::Typechange(operand) => THIRExpression {
+            kind: THIRExpressionKind::Typechange(operand),
+            _type,
+            token_range,
+        },
         THIRExpressionKind::GlobalVariable { symbol } => THIRExpression {
             kind: THIRExpressionKind::GlobalVariable { symbol },
             _type,
@@ -235,37 +252,16 @@ pub(crate) fn canonicalize_global_initializer(
             _type,
             token_range,
         },
-        THIRExpressionKind::Copy { source } => {
-            if contains_global_reference(&source) {
-                THIRExpression {
-                    kind: THIRExpressionKind::Copy { source },
-                    _type,
-                    token_range,
-                }
-            } else {
-                evaluate_comptime_expression(
-                    env,
-                    THIRExpression {
-                        kind: THIRExpressionKind::Copy { source },
-                        _type,
-                        token_range,
-                    },
-                )
-                .map(|value| value.into_expression())?
-            }
-        }
+        THIRExpressionKind::Copy { source } => THIRExpression {
+            kind: THIRExpressionKind::Copy { source },
+            _type,
+            token_range,
+        },
         THIRExpressionKind::FunctionReference { .. } => THIRExpression {
             kind,
             _type,
             token_range,
         },
-        kind @ THIRExpressionKind::Typechange(_) if contains_function_reference(&kind) => {
-            THIRExpression {
-                kind,
-                _type,
-                token_range,
-            }
-        }
         kind @ THIRExpressionKind::TypeConversion { .. } if contains_function_reference(&kind) => {
             THIRExpression {
                 kind,

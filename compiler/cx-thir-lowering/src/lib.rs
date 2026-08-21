@@ -6,7 +6,6 @@ pub mod builder;
 pub(crate) mod lowering;
 
 pub use builder::MIRBuilder;
-pub use cx_mir_comptime::{MIRComptimeEngine, MIRComptimeError};
 
 pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
     let mut builder = MIRBuilder::new(thir);
