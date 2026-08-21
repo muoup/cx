@@ -124,6 +124,54 @@ fn evaluates_scalar_instruction() {
 }
 
 #[test]
+fn evaluates_left_shift_instruction() {
+    let (types, _, integer_type, _) = types();
+    let mut definition = MIRFunctionDefinition::new();
+    let entry = definition.add_block();
+    let result = definition.add_register(integer_type, None);
+    definition
+        .block_mut(entry)
+        .unwrap()
+        .push(MIRInstrKind::BinOp {
+            out: result,
+            op: MIRBinaryOp::Integer {
+                ty: MIRIntType::I32,
+                signed: false,
+                op: MIRIntBinaryOp::ShiftLeft,
+            },
+            lhs: MIRValue::Constant(integer(1)),
+            rhs: MIRValue::Constant(integer(8)),
+        });
+    definition
+        .block_mut(entry)
+        .unwrap()
+        .push(MIRInstrKind::Return {
+            value: Some(MIRValue::Register(result)),
+        });
+    let mir = unit(
+        types,
+        [(
+            MIRFunctionID::new(0),
+            function(MIRFunctionID::new(0), integer_type, definition),
+        )],
+        [],
+        vec![],
+    );
+
+    let value = MIRComptimeEngine::new(&mir)
+        .evaluate(MIRFunctionID::new(0), &[])
+        .unwrap();
+    assert_eq!(
+        value,
+        MIRConstant::Integer {
+            value: 256,
+            ty: MIRIntType::I32,
+            signed: false,
+        }
+    );
+}
+
+#[test]
 fn evaluates_aggregate_instruction() {
     let (mut types, _, integer_type, _) = types();
     let array_type = types.intern(MIRType::new(

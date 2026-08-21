@@ -85,7 +85,7 @@ pub(crate) fn typecheck_var_declaration(
                     let init_expr = init_tc
                         .standard_ready_coerce(env, expr.token_range())
                         .and_then(|value| implicit_cast(env, value, &ty))?;
-                    crate::globals::canonicalize_global_initializer(env, init_expr)?
+                    Some(init_expr)
                 }
                 None => None,
             };

@@ -106,7 +106,8 @@ pub(crate) fn type_mangle(definitions: &impl THIRTypeContext, ty: &THIRType) -> 
             inner_type,
         } => {
             let mut mangled = String::from("a");
-            push_component(&mut mangled, size.to_string().as_str());
+            let size = size.display_with(definitions).to_string();
+            push_component(&mut mangled, size.as_str());
             let inner_type = type_mangle(definitions, definitions.resolve_type_id(*inner_type));
             push_component(&mut mangled, inner_type.as_str());
             mangled

@@ -3,6 +3,7 @@ use cx_mir::{MIRCallKind, MIRConstant, MIRField, MIRInstrKind, MIRValue};
 use cx_thir::thir::{data::THIRType, expression::THIRExpression, r#type::THIRField};
 use cx_thir::type_context::THIRTypeContext;
 
+use crate::lowering::lower_expression;
 use crate::{
     builder::MIRBuilder,
     lowering::types::{lower_type, lower_type_id},
@@ -15,10 +16,10 @@ pub(super) fn lower_call(
     contract: &cx_thir::thir::expression::THIRFnContract,
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
-    let callee = super::lower_expression(builder, function)?;
+    let callee = lower_expression(builder, function)?;
     let mut args = Vec::with_capacity(arguments.len());
     for argument in arguments {
-        args.push(super::lower_expression(builder, argument)?);
+        args.push(lower_expression(builder, argument)?);
     }
 
     if let Some(precondition) = &contract.precondition {
@@ -44,10 +45,12 @@ pub(super) fn lower_call(
     }
 
     let returns_value = !result_type.is_void() && !result_type.is_unreachable();
-    let out = returns_value.then(|| {
-        let result_type_id = lower_type(builder, result_type);
-        builder.register(result_type_id, None)
-    });
+    let out = if returns_value {
+        let result_type_id = lower_type(builder, result_type)?;
+        Some(builder.register(result_type_id, None))
+    } else {
+        None
+    };
     builder.emit(MIRInstrKind::Call {
         out,
         kind: MIRCallKind::Runtime,
@@ -94,19 +97,23 @@ pub(super) fn lower_call(
     Ok(value)
 }
 
-pub fn lower_field(builder: &mut MIRBuilder, field: &cx_thir::thir::r#type::THIRField) -> MIRField {
+pub fn lower_field(
+    builder: &mut MIRBuilder,
+    field: &cx_thir::thir::r#type::THIRField,
+) -> cx_log::CXResult<MIRField> {
     match field {
-        THIRField::Standard { name, type_id } => {
-            MIRField::named(name.clone(), lower_type_id(builder, *type_id))
-        }
+        THIRField::Standard { name, type_id } => Ok(MIRField::named(
+            name.clone(),
+            lower_type_id(builder, *type_id)?,
+        )),
         THIRField::Bitfield {
             name,
             integer_type_id,
             width,
-        } => MIRField::Bitfield {
+        } => Ok(MIRField::Bitfield {
             name: name.clone(),
-            integer_type_id: lower_type_id(builder, *integer_type_id),
+            integer_type_id: lower_type_id(builder, *integer_type_id)?,
             width: *width,
-        },
+        }),
     }
 }

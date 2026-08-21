@@ -512,6 +512,7 @@ dependencies = [
  "cx-hir",
  "cx-log",
  "cx-mir",
+ "cx-mir-comptime",
  "cx-thir",
  "cx-tokens",
  "cx-util",

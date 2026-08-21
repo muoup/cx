@@ -78,7 +78,9 @@ pub fn compatible_types(
                 length: len2,
             },
         ) => {
-            if len1 != len2 {
+            if len1.display_with(&env.symbols).to_string()
+                != len2.display_with(&env.symbols).to_string()
+            {
                 return Ok(false);
             }
 

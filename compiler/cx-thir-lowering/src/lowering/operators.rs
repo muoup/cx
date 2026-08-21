@@ -1,3 +1,4 @@
+use cx_log::CXResult;
 use cx_mir::{
     MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRIntBinaryOp, MIRPointerBinaryOp,
     MIRPointerOffsetOp, MIRUnaryOp,
@@ -16,8 +17,11 @@ use crate::{
     lowering::types::lower_type,
 };
 
-pub(super) fn lower_binary_op(builder: &mut MIRBuilder<'_>, op: &THIRBinOp) -> MIRBinaryOp {
-    match op {
+pub(super) fn lower_binary_op(
+    builder: &mut MIRBuilder<'_>,
+    op: &THIRBinOp,
+) -> CXResult<MIRBinaryOp> {
+    Ok(match op {
         THIRBinOp::Integer { itype, op } => MIRBinaryOp::Integer {
             ty: lower_int_type(*itype),
             signed: matches!(
@@ -80,7 +84,7 @@ pub(super) fn lower_binary_op(builder: &mut MIRBuilder<'_>, op: &THIRBinOp) -> M
                 THIRPtrDiffBinOp::ADD => MIRPointerOffsetOp::Add,
                 THIRPtrDiffBinOp::SUB => MIRPointerOffsetOp::Sub,
             },
-            pointee: lower_type(builder, ptr_inner.as_ref()),
+            pointee: lower_type(builder, ptr_inner.as_ref())?,
         },
         THIRBinOp::Pointer { op } => MIRBinaryOp::Pointer(match op {
             THIRPtrBinOp::EQ => MIRPointerBinaryOp::Eq,
@@ -90,7 +94,7 @@ pub(super) fn lower_binary_op(builder: &mut MIRBuilder<'_>, op: &THIRBinOp) -> M
             THIRPtrBinOp::GT => MIRPointerBinaryOp::Gt,
             THIRPtrBinOp::GE => MIRPointerBinaryOp::Ge,
         }),
-    }
+    })
 }
 
 pub(super) fn lower_unary_op(op: &THIRUnOp, operand_type: &THIRType) -> MIRUnaryOp {
@@ -161,6 +165,8 @@ pub(super) fn lower_coercion(
         THIRCoercion::GetFnPtr => MIRCoercion::FunctionToPointer,
         THIRCoercion::Typechange => MIRCoercion::TypeChange,
         THIRCoercion::ReinterpretBits => MIRCoercion::ReinterpretBits,
-        THIRCoercion::Unreachable => unreachable!("unreachable coercions do not reach MIR coercion lowering"),
+        THIRCoercion::Unreachable => {
+            unreachable!("unreachable coercions do not reach MIR coercion lowering")
+        }
     }
 }

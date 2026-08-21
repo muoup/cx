@@ -64,7 +64,7 @@ pub fn typecheck_initializer_list(
                 namespace,
                 indices,
                 &inner_type,
-                Some(*length),
+                Some(length.as_ref()),
                 &to_type,
             )
         }
@@ -157,7 +157,7 @@ fn typecheck_array_initializer(
     namespace: &EnvironmentNamespace,
     indices: &[HIRInitIndex],
     inner_type: &THIRType,
-    size: Option<usize>,
+    size: Option<&cx_thir::thir::expression::THIRExpression>,
     _to_type: &THIRType,
 ) -> CXResult<TypecheckResult> {
     for index in indices {
@@ -169,23 +169,17 @@ fn typecheck_array_initializer(
         }
     }
 
-    if let Some(size) = size
-        && indices.len() > size
-    {
-        return env.log_error(
-            TokenRange::internal(),
-            format!(
-                "Too many elements in array initializer (expected {}, found {})",
-                size,
-                indices.len()
-            ),
-        );
-    }
-
-    let array_size = size.unwrap_or(indices.len());
+    let array_size = size.cloned().unwrap_or_else(|| {
+        let integer_type = env.get_intrinsic_type("int");
+        cx_thir::thir::expression::THIRExpression {
+            token_range: TokenRange::internal(),
+            _type: integer_type,
+            kind: cx_thir::thir::expression::THIRExpressionKind::IntLiteral(indices.len() as i64),
+        }
+    });
     let array_type = THIRType::from(THIRTypeKind::Array {
         inner_type: env.symbols.generate_type_id(inner_type.clone()),
-        length: array_size,
+        length: Box::new(array_size),
     });
 
     let elements = indices

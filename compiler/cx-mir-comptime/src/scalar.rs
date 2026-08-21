@@ -189,9 +189,9 @@ fn integer(
         MIRIntBinaryOp::BitAnd => integer_constant(left & right, ty, signed),
         MIRIntBinaryOp::BitOr => integer_constant(left | right, ty, signed),
         MIRIntBinaryOp::BitXor => integer_constant(left ^ right, ty, signed),
-        MIRIntBinaryOp::ShiftLeft => shift(left, right, ty, signed, false)?,
-        MIRIntBinaryOp::ArithmeticShiftRight => shift(left, right, ty, signed, true)?,
-        MIRIntBinaryOp::LogicalShiftRight => shift(left, right, ty, false, false)?,
+        MIRIntBinaryOp::ShiftLeft => shift(left, right, ty, signed, true, false)?,
+        MIRIntBinaryOp::ArithmeticShiftRight => shift(left, right, ty, signed, false, true)?,
+        MIRIntBinaryOp::LogicalShiftRight => shift(left, right, ty, false, false, false)?,
     };
     Ok(value)
 }
@@ -244,11 +244,8 @@ fn pointer_offset(
         }
         _ => return Err(format!("pointer offset index {rhs:?} is not an integer")),
     };
-    let size = unit
-        .types()
-        .layout(pointee)
+    let size = cx_mir::ty::layout::layout_of(unit.types(), pointee)
         .map_err(|error| format!("invalid pointer offset pointee {pointee}: {error}"))?
-        .ok_or_else(|| format!("pointer offset pointee {pointee} has no layout"))?
         .size;
     let offset = index
         .checked_mul(i128::try_from(size).map_err(|_| "pointer offset is too large".to_owned())?)
@@ -441,6 +438,7 @@ fn shift(
     right: u128,
     ty: MIRIntType,
     signed: bool,
+    left_shift: bool,
     arithmetic: bool,
 ) -> Result<MIRConstant, String> {
     let bits = match ty {
@@ -450,10 +448,10 @@ fn shift(
     if right >= u128::from(bits as u64) {
         return Err("integer shift amount is out of range".to_owned());
     }
-    let value = if arithmetic {
-        (signed_value(left, ty) >> right as u32) as u128
-    } else if signed {
+    let value = if left_shift {
         left << right as u32
+    } else if arithmetic {
+        (signed_value(left, ty) >> right as u32) as u128
     } else {
         left >> right as u32
     };

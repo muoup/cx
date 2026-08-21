@@ -1,11 +1,12 @@
 use std::collections::HashSet;
 
+use cx_log::CXResult;
 use cx_mir::global::MIRGlobalKind;
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    MIRBasicBlockID, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID, MIRFunctionMode,
-    MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRRegister,
-    MIRScopeID, MIRTypeID, MIRTypeRegistryBuilder, MIRUnit, MIRValue,
+    MIRBasicBlockID, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID,
+    MIRFunctionMode, MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID,
+    MIRPlace, MIRRegister, MIRScopeID, MIRTypeID, MIRTypeRegistryBuilder, MIRUnit, MIRValue,
 };
 use cx_thir::thir::global::THIRGlobalVariable;
 use cx_thir::{
@@ -34,10 +35,11 @@ pub struct MIRBuilder<'thir> {
     registry: &'thir THIRDecomposedRegistry,
 
     pub(crate) lowering_types: HashSet<THIRTypeID>,
-    function: Option<FunctionContext>,
+    function: Vec<FunctionContext>,
     source_range: TokenRange,
 
     next_anonymous_symbol: usize,
+    next_comptime_function: usize,
 }
 
 impl<'thir> MIRBuilder<'thir> {
@@ -47,10 +49,11 @@ impl<'thir> MIRBuilder<'thir> {
             module: MIRModuleState::new(),
             registry: &thir.registry,
             lowering_types: HashSet::new(),
-            function: None,
+            function: Vec::new(),
             source_range: TokenRange::internal(),
 
             next_anonymous_symbol: 0,
+            next_comptime_function: 0,
         };
         builder
             .types
@@ -61,7 +64,9 @@ impl<'thir> MIRBuilder<'thir> {
             .intrinsic_type_id("void")
             .expect("THIR registry is missing the intrinsic void type");
 
-        lower_type_id(&mut builder, unit);
+        if lower_type_id(&mut builder, unit).is_err() {
+            unreachable!("intrinsic void type must lower");
+        }
         builder
     }
 
@@ -79,7 +84,7 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub fn finish(self) -> MIRUnit {
         assert!(
-            self.function.is_none(),
+            self.function.is_empty(),
             "attempted to finish MIR while a function is active"
         );
         self.module.finish(self.types)
@@ -89,13 +94,17 @@ impl<'thir> MIRBuilder<'thir> {
         self.module.set_global_state(id, state);
     }
 
-    pub(crate) fn predeclare_function(&mut self, function: &THIRFunction) {
-        let prototype = self.convert_prototype(&function.prototype);
+    pub(crate) fn predeclare_function(&mut self, function: &THIRFunction) -> CXResult<()> {
+        let prototype = self.convert_prototype(&function.prototype)?;
         self.module.declare_function(prototype);
+        Ok(())
     }
 
-    pub(crate) fn predeclare_global(&mut self, global: &THIRGlobalVariable) -> MIRGlobalID {
-        let ty = lower_type(self, &global._type);
+    pub(crate) fn predeclare_global(
+        &mut self,
+        global: &THIRGlobalVariable,
+    ) -> cx_log::CXResult<()> {
+        let ty = lower_type(self, &global._type)?;
 
         self.module.declare_global(
             global.name.clone(),
@@ -107,7 +116,8 @@ impl<'thir> MIRBuilder<'thir> {
                 is_nodrop: global._type.is_nodrop(),
             },
             false,
-        )
+        );
+        Ok(())
     }
 
     pub(crate) fn declare_global_initializer(&mut self, global: MIRGlobalID) -> MIRFunctionID {
@@ -126,14 +136,17 @@ impl<'thir> MIRBuilder<'thir> {
         function
     }
 
-    pub(crate) fn convert_prototype(&mut self, prototype: &THIRFnPrototype) -> MIRFnPrototype {
+    pub(crate) fn convert_prototype(
+        &mut self,
+        prototype: &THIRFnPrototype,
+    ) -> cx_log::CXResult<MIRFnPrototype> {
         let mut lowered = self.prototype_from_signature(
             CXIdent::new(prototype.symbol_name()),
             prototype.signature(),
             prototype.linkage(),
-        );
+        )?;
         lowered.signature.debug_name = prototype.debug_name().cloned();
-        lowered
+        Ok(lowered)
     }
 
     fn prototype_from_signature(
@@ -141,30 +154,30 @@ impl<'thir> MIRBuilder<'thir> {
         name: CXIdent,
         signature: &cx_thir::thir::data::THIRFnSignature,
         linkage: LinkageMode,
-    ) -> MIRFnPrototype {
+    ) -> cx_log::CXResult<MIRFnPrototype> {
         let params = signature
             .params
             .iter()
             .map(|param| {
                 let nodrop = param._type.is_nodrop();
-                let ty = lower_type(self, &param._type);
-                match &param.name {
+                let ty = lower_type(self, &param._type)?;
+                Ok(match &param.name {
                     Some(name) => MIRFnParam::named(name.clone(), ty),
                     None => MIRFnParam::new(ty),
                 }
-                .with_nodrop(nodrop)
+                .with_nodrop(nodrop))
             })
-            .collect();
+            .collect::<cx_log::CXResult<Vec<_>>>()?;
         let return_type =
             if signature.return_type.is_void() || signature.return_type.is_unreachable() {
                 self.types().unit()
             } else {
-                lower_type(self, &signature.return_type)
+                lower_type(self, &signature.return_type)?
             };
         let mut lowered = MIRFnSignature::new(name, params, return_type);
         lowered.variadic = signature.var_args;
         lowered.safe = signature.contract.safe;
-        MIRFnPrototype::new(lowered, linkage)
+        Ok(MIRFnPrototype::new(lowered, linkage))
     }
 
     pub(crate) fn start_function(
@@ -173,7 +186,7 @@ impl<'thir> MIRBuilder<'thir> {
         function: &THIRFunction,
         body: &THIRExpression,
     ) {
-        assert!(self.function.is_none(), "a MIR function is already active");
+        assert!(self.function.is_empty(), "a MIR function is already active");
         let function_id = *self
             .module
             .function_ids()
@@ -184,7 +197,7 @@ impl<'thir> MIRBuilder<'thir> {
         let entry = definition.add_block();
         let root_scope = definition.add_scope(body.token_range.clone());
 
-        self.function = Some(FunctionContext::new(
+        self.function.push(FunctionContext::new(
             id, prototype, mode, definition, entry, root_scope,
         ));
         self.context_mut().set_block_name(entry, "entry");
@@ -205,16 +218,43 @@ impl<'thir> MIRBuilder<'thir> {
         function_id: MIRFunctionID,
         body: &THIRExpression,
     ) {
-        assert!(self.function.is_none(), "a MIR function is already active");
+        assert!(self.function.is_empty(), "a MIR function is already active");
         let mir = self.module.take_function(function_id);
         let (id, prototype, mut definition, mode) = mir.into_definition_with_mode();
         let entry = definition.add_block();
         let root_scope = definition.add_scope(body.token_range.clone());
 
-        self.function = Some(FunctionContext::new(
+        self.function.push(FunctionContext::new(
             id, prototype, mode, definition, entry, root_scope,
         ));
         self.context_mut().set_block_name(entry, "entry");
+    }
+
+    pub(crate) fn start_comptime_function(
+        &mut self,
+        expression: &THIRExpression,
+    ) -> cx_log::CXResult<MIRFunctionID> {
+        let name = CXIdent::new(format!(
+            "__cx_mir_comptime_expr_{}",
+            self.next_comptime_function
+        ));
+        self.next_comptime_function += 1;
+
+        let return_type = lower_type(self, &expression._type)?;
+        let signature = MIRFnSignature::new(name, Vec::new(), return_type);
+        let prototype = MIRFnPrototype::new(signature, LinkageMode::Static);
+        let mir = self
+            .module
+            .new_temporary_function(prototype, MIRFunctionMode::ComptimeOnly);
+        let (id, prototype, mut definition, mode) = mir.into_definition_with_mode();
+        let entry = definition.add_block();
+        let root_scope = definition.add_scope(expression.token_range.clone());
+
+        self.function.push(FunctionContext::new(
+            id, prototype, mode, definition, entry, root_scope,
+        ));
+        self.context_mut().set_block_name(entry, "entry");
+        Ok(id)
     }
 
     pub fn add_string_literal(&mut self, value: &str) -> MIRGlobalID {
@@ -234,10 +274,22 @@ impl<'thir> MIRBuilder<'thir> {
     pub(crate) fn finish_function(&mut self) {
         let context = self
             .function
-            .take()
+            .pop()
             .expect("attempted to finish without an active MIR function");
         self.module
             .insert_function(context.finish(self.types().unit()));
+    }
+
+    pub(crate) fn finish_comptime_function(&mut self) -> MIRFunction {
+        let context = self
+            .function
+            .pop()
+            .expect("attempted to finish without an active MIR function");
+        context.finish(self.types().unit())
+    }
+
+    pub(crate) fn comptime_unit(&self, function: MIRFunction) -> MIRUnit {
+        self.module.snapshot(self.types.clone(), function)
     }
 
     pub(crate) fn _current_function_id(&self) -> MIRFunctionID {
@@ -441,13 +493,13 @@ impl<'thir> MIRBuilder<'thir> {
 
     fn context(&self) -> &FunctionContext {
         self.function
-            .as_ref()
+            .last()
             .expect("no MIR function is currently active")
     }
 
     fn context_mut(&mut self) -> &mut FunctionContext {
         self.function
-            .as_mut()
+            .last_mut()
             .expect("no MIR function is currently active")
     }
 }

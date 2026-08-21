@@ -414,7 +414,7 @@ fn write_type_body(
         } => {
             write!(f, "[")?;
             write_type_id(f, definitions, *inner_type, state)?;
-            write!(f, "; {size}]")
+            write!(f, "; {}]", size.display_with(definitions))
         }
         THIRTypeKind::Opaque { size, alignment } => {
             write!(f, "opaque(size: {size}, align: {alignment})")

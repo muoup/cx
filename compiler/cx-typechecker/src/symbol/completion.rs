@@ -31,12 +31,12 @@ use cx_thir::{
 
 use crate::{
     EnvironmentNamespace,
-    comptime::evaluate_comptime_expression,
     environment::{SymbolLookupKind, TypeEnvironment},
     symbol::{
         name_mangling::mangle_qualified_name,
         resolution::{apply_template, resolve_symbol},
     },
+    type_checking::coercion::{implicit::implicit_cast, implicit::promotion::std_rval_promotion},
     type_checking::typechecker::typecheck_expr,
 };
 
@@ -120,18 +120,12 @@ fn complete_type_inner(
 
             let size = typecheck_expr(env, namespace, size, None)
                 .and_then(|v| v.standard_ready_coerce(env, size.token_range()))
-                .and_then(|v| evaluate_comptime_expression(env, v))
-                .and_then(|v| {
-                    v.as_integer().ok_or_else(|| {
-                        env.error(
-                            v.token_range,
-                            "Array size must be an integer literal".to_string(),
-                        )
-                    })
-                })?;
+                .and_then(|v| std_rval_promotion(env, v))?;
+            let integer_type = env.get_intrinsic_type("int");
+            let size = implicit_cast(env, size, &integer_type)?;
             THIRTypeKind::Array {
                 inner_type: id,
-                length: size as usize,
+                length: Box::new(size),
             }
             .into()
         }

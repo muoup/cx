@@ -1,6 +1,5 @@
-use crate::comptime::evaluate_comptime_expression;
 use crate::environment::{ScopeExitTarget, TypeEnvironment};
-use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
+use crate::type_checking::coercion::implicit::{implicit_cast, promotion::std_rval_promotion};
 use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
@@ -9,7 +8,7 @@ use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
-    expression::{THIRExpression, THIRExpressionKind},
+    expression::THIRExpressionKind,
 };
 use cx_tokens::TokenRange;
 
@@ -65,6 +64,16 @@ pub fn typecheck_switch(
     let condition_value = typecheck_expr(env, namespace, condition, None)
         .and_then(|v| v.standard_ready_coerce(env, condition.token_range()))
         .and_then(|v| std_rval_promotion(env, v))?;
+    let THIRTypeKind::Integer { .. } = condition_value.get_type().kind else {
+        return env.log_error(
+            &condition_value.token_range,
+            format!(
+                "Switch condition must be an integer type, found {}",
+                condition_value.get_type().display_with(&env.symbols)
+            ),
+        );
+    };
+    let condition_type = condition_value.get_type().clone();
     let base_snapshot = env.function.current_snapshot();
 
     let mut arms = Vec::new();
@@ -86,15 +95,8 @@ pub fn typecheck_switch(
 
         let case_value = typecheck_expr(env, namespace, case_expr, None)
             .and_then(|v| v.standard_ready_coerce(env, case_expr.token_range()))
-            .and_then(|v| evaluate_comptime_expression(env, v))
-            .and_then(|v| {
-                v.as_integer().ok_or_else(|| {
-                    env.error(
-                        case_expr.token_range(),
-                        "Switch case must be an integer constant expression".to_string(),
-                    )
-                })
-            })?;
+            .and_then(|v| std_rval_promotion(env, v))
+            .and_then(|v| implicit_cast(env, v, &condition_type))?;
 
         let case_body_expr = typecheck_expr(env, namespace, &case_body, None)
             .and_then(|v| v.standard_ready_coerce(env, case_body.token_range()))?;
@@ -103,35 +105,14 @@ pub fn typecheck_switch(
                 &ScopeExitTarget {
                     target_scope: join_scope_idx,
                     sink: crate::environment::ScopeArrowSink::Merge,
-                    label: format!("case {}", case_value),
+                    label: format!("case {}", case_index),
                 },
                 env.function.current_snapshot(),
             );
         }
         env.function.restore_snapshot(&base_snapshot);
 
-        // Create a pattern expression that matches the constant value
-        // Use the condition's integer type for the pattern
-        let THIRTypeKind::Integer { _type, signed } = &condition_value.get_type().kind else {
-            return env.log_error(
-                &condition_value.token_range,
-                format!(
-                    "Switch condition must be an integer type, found {}",
-                    condition_value.get_type().display_with(&env.symbols)
-                ),
-            );
-        };
-
-        let pattern_expr = THIRExpression {
-            token_range: TokenRange::internal(),
-            kind: THIRExpressionKind::IntLiteral(case_value),
-            _type: THIRType::from(THIRTypeKind::Integer {
-                signed: *signed,
-                _type: *_type,
-            }),
-        };
-
-        arms.push((Box::new(pattern_expr), Box::new(case_body_expr)));
+        arms.push((Box::new(case_value), Box::new(case_body_expr)));
     }
 
     // Handle default case

@@ -32,13 +32,10 @@ pub fn layout_of<Context: THIRTypeContext + ?Sized>(
                 alignment: architecture.pointer_alignment(),
             })
         }
-        THIRTypeKind::Array { length, inner_type } => {
-            let inner = layout_of(definitions, definitions.resolve_type_id(*inner_type))?;
-            Ok(THIRTypeLayout {
-                size: inner.size * length,
-                alignment: inner.alignment,
-            })
-        }
+        THIRTypeKind::Array { .. } => Err(CXStdErrMessage::error(
+            "MIRLayoutError",
+            "array length is unresolved until MIR lowering",
+        )),
         THIRTypeKind::Structured { fields } => struct_layout(definitions, fields),
         THIRTypeKind::Union { variants } => union_layout(definitions, variants),
         THIRTypeKind::TaggedUnion { variants } => tagged_union_layout(definitions, variants),

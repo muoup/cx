@@ -86,6 +86,16 @@ impl MIRModuleState {
         id
     }
 
+    pub(crate) fn new_temporary_function(
+        &mut self,
+        prototype: MIRFnPrototype,
+        mode: MIRFunctionMode,
+    ) -> MIRFunction {
+        let id = MIRFunctionID::new(self.next_function_id);
+        self.next_function_id += 1;
+        MIRFunction::declaration(id, prototype, mode)
+    }
+
     pub(crate) fn declare_global(
         &mut self,
         name: CXIdent,
@@ -124,6 +134,21 @@ impl MIRModuleState {
             self.functions.insert(id, function).is_none(),
             "MIR function was inserted into module state twice"
         );
+    }
+
+    pub(crate) fn snapshot(
+        &self,
+        types: MIRTypeRegistryBuilder,
+        extra_function: MIRFunction,
+    ) -> MIRUnit {
+        let mut functions = self.functions.clone();
+        functions.insert(extra_function.id(), extra_function);
+        MIRUnit::new(
+            types,
+            functions,
+            self.globals.clone(),
+            self.global_ids.clone(),
+        )
     }
 
     pub(crate) fn _global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
