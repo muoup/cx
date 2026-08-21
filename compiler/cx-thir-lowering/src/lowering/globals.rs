@@ -1,5 +1,8 @@
+use cx_log::CXResult;
 use cx_mir::ty::interface::MTRegistry;
-use cx_mir::{MIRConstant, MIRFloatType, MIRGlobalState, MIRTypeID, MIRTypeKind};
+use cx_mir::{
+    MIRConstant, MIRFloatType, MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRTypeID, MIRTypeKind,
+};
 use cx_thir::thir::{
     expression::{THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRPtrDiffBinOp},
     global::THIRGlobalVariable,
@@ -8,16 +11,31 @@ use cx_thir::thir::{
 use cx_util::linkage::LinkageMode;
 
 use crate::{
-    builder::integer_type,
+    builder::{MIRBuilder, integer_type},
     lowering::types::{lower_int_type, lower_type},
-    MIRBuilder,
 };
 
-pub(crate) fn lower_global(builder: &mut MIRBuilder, global: &THIRGlobalVariable) {
-    let id = builder
-        .global_id(global.name.as_str())
-        .unwrap_or_else(|| panic!("global {} was not declared", global.name));
+pub(crate) fn lower_global_initializer(
+    builder: &mut MIRBuilder<'_>,
+    function: cx_mir::MIRFunctionID,
+    global: &THIRGlobalVariable,
+) -> CXResult<()> {
+    let initializer = global
+        .initializer
+        .as_ref()
+        .expect("global initialization request has no initializer");
+    builder.start_global_initializer(function, initializer);
+    let value = super::lower_expression(builder, initializer)?;
+    builder.emit(MIRInstrKind::Return { value: Some(value) });
+    builder.finish_function();
+    Ok(())
+}
 
+pub(crate) fn lower_global(
+    builder: &mut MIRBuilder<'_>,
+    id: MIRGlobalID,
+    global: &THIRGlobalVariable,
+) {
     let state = match global.initializer.as_ref() {
         Some(initializer) => {
             let ty = lower_type(builder, &global._type);

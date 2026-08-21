@@ -1,10 +1,7 @@
 use crate::backends::{cranelift_compile, llvm_compile};
-use crate::pipeline_error;
+use crate::{diagnostics, pipeline_error};
 use crate::progress::ProgressReporter;
-use cx_log::{
-    CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
-};
+use cx_log::{CXResult, error::CXErr};
 use cx_mir_analysis::{MIRAnalysisOptions, analyze};
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::preparse::PreparseConfig;
@@ -475,23 +472,10 @@ pub(crate) fn perform_job(
                     },
                 )
                 .map_err(|error| {
-                    let diagnostic_context = error
-                        .scope_location()
-                        .and_then(|(function, scope)| mir.scope_range(function, scope))
-                        .or_else(|| {
-                            error.instruction_location().and_then(
-                                |(function, block, instruction)| {
-                                    mir.instruction_range(function, block, instruction)
-                                },
-                            )
-                        })
-                        .map(|range| context.module_db.convert_token_range(range))
-                        .unwrap_or_else(|| {
-                            CXInternalContext::error("MIR analysis failed outside source context")
-                        });
-                    CXErr::new(
-                        CXStdErrMessage::error("ANALYSIS ERROR", error.message_with(&mir)),
-                        diagnostic_context,
+                    diagnostics::mir_diagnostic_error(
+                        &context.module_db,
+                        Some(&mir),
+                        error.diagnostic(),
                     )
                 })?;
 

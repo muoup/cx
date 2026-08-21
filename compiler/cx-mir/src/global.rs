@@ -29,6 +29,13 @@ macro_rules! dense_id {
 dense_id!(MIRFunctionID);
 dense_id!(MIRGlobalID);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MIRFunctionMode {
+    Runtime,
+    Constexpr,
+    ConstOnly,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRGlobalState {
     External,
@@ -59,12 +66,7 @@ pub enum MIRGlobalKind {
 }
 
 impl MIRGlobalVariable {
-    pub fn new(
-        id: MIRGlobalID,
-        name: CXIdent,
-        linkage: LinkageMode,
-        kind: MIRGlobalKind,
-    ) -> Self {
+    pub fn new(id: MIRGlobalID, name: CXIdent, linkage: LinkageMode, kind: MIRGlobalKind) -> Self {
         Self {
             id,
             name,
@@ -202,6 +204,7 @@ pub struct MIRRegisterDecl {
 pub struct MIRFunction {
     id: MIRFunctionID,
     prototype: MIRFnPrototype,
+    mode: MIRFunctionMode,
     definition: Option<MIRFunctionDefinition>,
 }
 
@@ -215,26 +218,29 @@ pub struct MIRFunctionDefinition {
 }
 
 impl MIRFunction {
-    pub fn declaration(id: MIRFunctionID, prototype: MIRFnPrototype) -> Self {
+    pub fn declaration(
+        id: MIRFunctionID,
+        prototype: MIRFnPrototype,
+        mode: MIRFunctionMode,
+    ) -> Self {
         Self {
             id,
             prototype,
+            mode,
             definition: None,
         }
-    }
-
-    pub fn new(id: MIRFunctionID, prototype: MIRFnPrototype) -> Self {
-        Self::defined(id, prototype, MIRFunctionDefinition::new())
     }
 
     pub fn defined(
         id: MIRFunctionID,
         prototype: MIRFnPrototype,
         definition: MIRFunctionDefinition,
+        mode: MIRFunctionMode,
     ) -> Self {
         Self {
             id,
             prototype,
+            mode,
             definition: Some(definition),
         }
     }
@@ -247,20 +253,38 @@ impl MIRFunction {
         &self.prototype
     }
 
+    pub fn mode(&self) -> MIRFunctionMode {
+        self.mode
+    }
+
     pub fn definition(&self) -> Option<&MIRFunctionDefinition> {
         self.definition.as_ref()
     }
 
     pub fn into_definition(self) -> (MIRFunctionID, MIRFnPrototype, MIRFunctionDefinition) {
+        let (id, prototype, definition, _) = self.into_definition_with_mode();
+        (id, prototype, definition)
+    }
+
+    pub fn into_definition_with_mode(
+        self,
+    ) -> (
+        MIRFunctionID,
+        MIRFnPrototype,
+        MIRFunctionDefinition,
+        MIRFunctionMode,
+    ) {
         let Self {
             id,
             prototype,
+            mode,
             definition,
         } = self;
         (
             id,
             prototype,
             definition.unwrap_or_else(MIRFunctionDefinition::new),
+            mode,
         )
     }
 }

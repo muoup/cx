@@ -1,4 +1,5 @@
 mod backends;
+mod diagnostics;
 mod linker;
 pub mod progress;
 mod scheduler;

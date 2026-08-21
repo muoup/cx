@@ -1,3 +1,4 @@
+pub mod diagnostic;
 pub mod expr;
 pub mod global;
 pub mod op;
@@ -8,6 +9,7 @@ pub(crate) mod format;
 
 pub use format::MIRDisplay;
 
+pub use diagnostic::{MIRDiagnostic, MIRDiagnosticLocation};
 pub use expr::{
     MIRAggregateOp, MIRAssignTarget, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget, MIRConstant,
     MIRInstr, MIRInstrKind, MIRInstrOperand, MIRParameterID, MIRPlace, MIRPlaceAggregateOp,
@@ -15,7 +17,8 @@ pub use expr::{
 };
 pub use global::{
     MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionDefinition, MIRFunctionID,
-    MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl,
+    MIRFunctionMode, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRPlaceDecl,
+    MIRRegisterDecl, MIRScopeDecl,
 };
 pub use op::{
     MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRIntBinaryOp, MIRPointerBinaryOp,

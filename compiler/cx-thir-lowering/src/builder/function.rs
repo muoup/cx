@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use cx_mir::{
     MIRBasicBlockID, MIRFnPrototype, MIRFunction, MIRFunctionDefinition, MIRFunctionID,
-    MIRInstrKind, MIRPlace, MIRRegister, MIRScopeID, MIRTypeID, MIRValue,
+    MIRFunctionMode, MIRInstrKind, MIRPlace, MIRRegister, MIRScopeID, MIRTypeID, MIRValue,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
 use cx_tokens::TokenRange;
@@ -32,6 +32,7 @@ struct LabelTarget {
 pub(crate) struct FunctionContext {
     id: MIRFunctionID,
     prototype: MIRFnPrototype,
+    mode: MIRFunctionMode,
     mir: MIRFunctionDefinition,
     current_block: MIRBasicBlockID,
 
@@ -52,6 +53,7 @@ impl FunctionContext {
     pub(crate) fn new(
         id: MIRFunctionID,
         prototype: MIRFnPrototype,
+        mode: MIRFunctionMode,
         mir: MIRFunctionDefinition,
         current_block: MIRBasicBlockID,
         root_scope: MIRScopeID,
@@ -59,6 +61,7 @@ impl FunctionContext {
         Self {
             id,
             prototype,
+            mode,
             mir,
             current_block,
             local_places: HashMap::new(),
@@ -98,11 +101,15 @@ impl FunctionContext {
             };
             block.push(terminator);
         }
-        MIRFunction::defined(self.id, self.prototype, self.mir)
+        MIRFunction::defined(self.id, self.prototype, self.mir, self.mode)
     }
 
     pub(crate) fn _id(&self) -> MIRFunctionID {
         self.id
+    }
+
+    pub(crate) fn mode(&self) -> MIRFunctionMode {
+        self.mode
     }
 
     pub(crate) fn current_block(&self) -> MIRBasicBlockID {

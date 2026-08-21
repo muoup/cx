@@ -437,6 +437,7 @@ dependencies = [
  "cx-lexer",
  "cx-lmir",
  "cx-log",
+ "cx-mir",
  "cx-mir-analysis",
  "cx-mir-lowering",
  "cx-parsing",

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use cx_lmir::{LMIRFunctionMap, LMIRUnit, LinkageType};
 use cx_log::CXResult;
 use cx_mir::ty::interface::MTRegistry;
-use cx_mir::{MIRTypeRegistryBuilder, MIRUnit};
+use cx_mir::{MIRFunctionMode, MIRTypeRegistryBuilder, MIRUnit};
 
 mod functions;
 mod globals;
@@ -16,6 +16,9 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistryBuilder) -> CXRes
     let mut prototypes = LMIRFunctionMap::new();
 
     for function in mir.functions() {
+        if function.mode() == MIRFunctionMode::ConstOnly {
+            continue;
+        }
         let mut prototype = typing::convert_prototype(function.prototype(), types);
         if function.definition().is_none() {
             prototype.linkage = LinkageType::External;
@@ -43,7 +46,7 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistryBuilder) -> CXRes
 
     let mut functions = Vec::new();
     for function in mir.functions() {
-        if function.definition().is_none() {
+        if function.mode() == MIRFunctionMode::ConstOnly || function.definition().is_none() {
             continue;
         }
         functions.push(functions::lower_function(

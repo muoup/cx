@@ -10,13 +10,15 @@ pub(crate) mod types;
 use cx_log::CXResult;
 use cx_mir::{
     MIRAggregateOp, MIRAssignTarget, MIRBlockTarget, MIRConstant, MIRInstrKind, MIRIntType,
-    MIRPlace, MIRPlaceAggregateOp, MIRValue, MIRValueAggregateOp, ty::interface::MTRegistry,
+    MIRPlace, MIRPlaceAggregateOp, MIRValue, MIRValueAggregateOp, MIRFunctionID, MIRGlobalID,
+    ty::interface::MTRegistry,
 };
 use cx_thir::{
     THIRUnit,
     thir::{
-        data::{THIRType, THIRTypeKind},
+        data::{THIRFunction, THIRType, THIRTypeKind},
         expression::{THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRIntBinOp},
+        global::THIRGlobalVariable,
     },
     type_context::THIRTypeContext,
 };
@@ -27,6 +29,18 @@ use crate::{
     lowering::types::lower_type,
 };
 
+enum MIRMaterializationRequest<'thir> {
+    Function {
+        index: usize,
+        source: &'thir THIRFunction,
+    },
+    GlobalInitializer {
+        global: MIRGlobalID,
+        function: MIRFunctionID,
+        source: &'thir THIRGlobalVariable,
+    },
+}
+
 pub(crate) fn lower_unit(builder: &mut MIRBuilder<'_>, thir: &THIRUnit) -> CXResult<()> {
     for function in &thir.functions {
         builder.predeclare_function(function);
@@ -36,15 +50,61 @@ pub(crate) fn lower_unit(builder: &mut MIRBuilder<'_>, thir: &THIRUnit) -> CXRes
         builder.predeclare_global(global);
     }
 
+    let mut requests = Vec::new();
+
     for global in &thir.global_variables {
-        globals::lower_global(builder, global);
+        if global.initializer.is_some() {
+            let id = builder
+                .global_id(global.name.as_str())
+                .expect("global predeclaration is missing");
+            let function = builder.declare_global_initializer(id);
+            requests.push(MIRMaterializationRequest::GlobalInitializer {
+                global: id,
+                function,
+                source: global,
+            });
+        } else {
+            let id = builder
+                .global_id(global.name.as_str())
+                .expect("global predeclaration is missing");
+            globals::lower_global(builder, id, global);
+        }
     }
 
     for (index, function) in thir.functions.iter().enumerate() {
-        lower_function(builder, index, function)?;
+        requests.push(MIRMaterializationRequest::Function {
+            index,
+            source: function,
+        });
     }
 
+    for request in &requests {
+        match request {
+            MIRMaterializationRequest::Function { index, source } => {
+                lower_function(builder, *index, source)?;
+            }
+            MIRMaterializationRequest::GlobalInitializer {
+                function, source, ..
+            } => {
+                globals::lower_global_initializer(builder, *function, source)?;
+            }
+        }
+    }
+
+    evaluate_global_initializers(builder, requests);
+
     Ok(())
+}
+
+fn evaluate_global_initializers(
+    builder: &mut MIRBuilder<'_>,
+    requests: Vec<MIRMaterializationRequest<'_>>,
+) {
+    for request in requests {
+        if let MIRMaterializationRequest::GlobalInitializer { global, source, .. } = request {
+            globals::lower_global(builder, global, source);
+        }
+    }
 }
 
 fn lower_function(
@@ -121,7 +181,11 @@ fn lower_expression(
                 MIRValue::Constant(MIRConstant::Float { value: *value, ty })
             }
             THIRExpressionKind::StringLiteral { value } => {
-                MIRValue::Place(MIRPlace::Global(builder.add_string_literal(value.as_str())))
+                if builder.function_mode() == cx_mir::MIRFunctionMode::ConstOnly {
+                    MIRValue::Constant(MIRConstant::String(value.clone()))
+                } else {
+                    MIRValue::Place(MIRPlace::Global(builder.add_string_literal(value.as_str())))
+                }
             }
             THIRExpressionKind::Unit => MIRValue::Constant(MIRConstant::Unit),
             THIRExpressionKind::SizeOf { _type } | THIRExpressionKind::AlignOf { _type } => {

@@ -30,6 +30,12 @@ The compiler has two separate compile-time mechanisms:
 comptime-only function is never lowered into a runtime call site, although it
 may use normal call instructions inside an evaluator-only MIR body.
 
+The MIR evaluator belongs to `cx-thir-lowering`. It needs the lowering context
+that owns the in-progress MIR module, type registry, global declarations, and
+materialization requests, and its work is complete before the finished MIR
+unit is handed to later MIR consumers. `cx-mir` owns the representation and
+IDs, not the evaluator or THIR-lowering context.
+
 ## MIR Representation
 
 Function metadata should distinguish these modes:
@@ -38,10 +44,15 @@ Function metadata should distinguish these modes:
 - `Constexpr`: code generation plus evaluation when every argument is known.
 - `ConstOnly`: evaluator only and rejected by runtime MIR validation.
 
-Const-only and constexpr bodies use ordinary `MIRFunctionDefinition` blocks.
-Global initializers should use a private function-like const body or an
-equivalent `MIRConstBody` wrapper. They must not be emitted as ordinary LMIR
-functions merely to evaluate an initializer.
+Const-only and constexpr bodies use ordinary `MIRFunctionDefinition` blocks,
+with `MIRFunctionMode` carried by the enclosing `MIRFunction`. Global
+initializers use private `ConstOnly` functions represented by a lowering-owned
+materialization request. THIR to MIR lowering first materializes every function
+and global-initializer body, then walks the global-initializer requests in their
+declared order to evaluate them. These requests are not retained in the
+finished `MIRUnit`; the materialized functions remain ordinary MIR functions
+and are skipped by MIR to LMIR lowering, so an initializer is never emitted as
+an ordinary runtime function merely to evaluate it.
 
 The evaluator's public boundary is intentionally small:
 
@@ -49,8 +60,9 @@ The evaluator's public boundary is intentionally small:
 evaluate(unit, body, arguments) -> Result<MIRConstant, MIRConstEvalError>
 ```
 
-The body can be a function definition, a private global-initializer body, or a
-future inline const expression lowered into a synthetic entry block.
+The body can be an ordinary MIR function definition, including a private
+global-initializer function, or a future inline const expression lowered into a
+synthetic entry block.
 
 ## Evaluation Values
 

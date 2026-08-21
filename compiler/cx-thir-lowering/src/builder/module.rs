@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use cx_mir::{
-    MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable,
-    MIRTypeRegistryBuilder, MIRUnit, global::MIRGlobalKind,
+    MIRFnPrototype, MIRFunction, MIRFunctionID, MIRFunctionMode, MIRGlobalID, MIRGlobalState,
+    MIRGlobalVariable, MIRTypeID, MIRTypeRegistryBuilder, MIRUnit, global::MIRGlobalKind,
 };
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
@@ -62,6 +62,14 @@ impl MIRModuleState {
     }
 
     pub(crate) fn declare_function(&mut self, prototype: MIRFnPrototype) -> MIRFunctionID {
+        self.declare_function_with_mode(prototype, MIRFunctionMode::Runtime)
+    }
+
+    pub(crate) fn declare_function_with_mode(
+        &mut self,
+        prototype: MIRFnPrototype,
+        mode: MIRFunctionMode,
+    ) -> MIRFunctionID {
         let name = prototype.signature.symbol_name.as_string();
         if let Some(symbol) = self.function_symbols.get(&name) {
             return symbol.id();
@@ -70,7 +78,7 @@ impl MIRModuleState {
         let id = MIRFunctionID::new(self.next_function_id);
         self.next_function_id += 1;
         self.functions
-            .insert(id, MIRFunction::declaration(id, prototype));
+            .insert(id, MIRFunction::declaration(id, prototype, mode));
         self.function_symbols.insert(name, ModuleSymbol::new(id));
         self.function_ids.push(id);
         id
@@ -119,6 +127,14 @@ impl MIRModuleState {
         self.globals.get(&id)
     }
 
+    pub(crate) fn global_type(&self, id: MIRGlobalID) -> Option<MIRTypeID> {
+        let global = self.globals.get(&id)?;
+        match &global.kind {
+            MIRGlobalKind::StringLiteral { .. } => None,
+            MIRGlobalKind::Variable { ty, .. } => Some(*ty),
+        }
+    }
+
     pub(crate) fn global_id(&self, name: &str) -> Option<MIRGlobalID> {
         self.global_symbols.get(name).map(ModuleSymbol::id)
     }
@@ -156,7 +172,9 @@ impl MIRModuleState {
         let functions = functions
             .into_iter()
             .filter_map(|(_, function)| {
-                if function.prototype().linkage == LinkageMode::Standard {
+                if function.mode() == MIRFunctionMode::ConstOnly
+                    || function.prototype().linkage == LinkageMode::Standard
+                {
                     return Some((function.id(), function));
                 }
 

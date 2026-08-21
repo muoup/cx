@@ -3,9 +3,9 @@ use std::collections::HashSet;
 use cx_mir::global::MIRGlobalKind;
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    MIRBasicBlockID, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID, MIRGlobalID,
-    MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRRegister, MIRScopeID,
-    MIRTypeID, MIRTypeRegistryBuilder, MIRUnit, MIRValue,
+    MIRBasicBlockID, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID, MIRFunctionMode,
+    MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRRegister,
+    MIRScopeID, MIRTypeID, MIRTypeRegistryBuilder, MIRUnit, MIRValue,
 };
 use cx_thir::thir::global::THIRGlobalVariable;
 use cx_thir::{
@@ -94,7 +94,7 @@ impl<'thir> MIRBuilder<'thir> {
         self.module.declare_function(prototype);
     }
 
-    pub(crate) fn predeclare_global(&mut self, global: &THIRGlobalVariable) {
+    pub(crate) fn predeclare_global(&mut self, global: &THIRGlobalVariable) -> MIRGlobalID {
         let ty = lower_type(self, &global._type);
 
         self.module.declare_global(
@@ -107,7 +107,21 @@ impl<'thir> MIRBuilder<'thir> {
                 is_nodrop: global._type.is_nodrop(),
             },
             false,
-        );
+        )
+    }
+
+    pub(crate) fn declare_global_initializer(&mut self, global: MIRGlobalID) -> MIRFunctionID {
+        let ty = self
+            .module
+            .global_type(global)
+            .expect("global initializer target is not a variable");
+        let name = CXIdent::new(format!("__cx_mir_global_init_{}", global.index()));
+        let signature = MIRFnSignature::new(name, Vec::new(), ty);
+        let prototype = MIRFnPrototype::new(signature, LinkageMode::Static);
+        let function = self
+            .module
+            .declare_function_with_mode(prototype, MIRFunctionMode::ConstOnly);
+        function
     }
 
     pub(crate) fn convert_prototype(&mut self, prototype: &THIRFnPrototype) -> MIRFnPrototype {
@@ -139,11 +153,12 @@ impl<'thir> MIRBuilder<'thir> {
                 .with_nodrop(nodrop)
             })
             .collect();
-        let return_type = if signature.return_type.is_void() || signature.return_type.is_unreachable() {
-            self.types().unit()
-        } else {
-            lower_type(self, &signature.return_type)
-        };
+        let return_type =
+            if signature.return_type.is_void() || signature.return_type.is_unreachable() {
+                self.types().unit()
+            } else {
+                lower_type(self, &signature.return_type)
+            };
         let mut lowered = MIRFnSignature::new(name, params, return_type);
         lowered.variadic = signature.var_args;
         lowered.safe = signature.contract.safe;
@@ -163,12 +178,12 @@ impl<'thir> MIRBuilder<'thir> {
             .get(index)
             .expect("THIR function predeclaration is missing");
         let mir = self.module.take_function(function_id);
-        let (id, prototype, mut definition) = mir.into_definition();
+        let (id, prototype, mut definition, mode) = mir.into_definition_with_mode();
         let entry = definition.add_block();
         let root_scope = definition.add_scope(body.token_range.clone());
 
         self.function = Some(FunctionContext::new(
-            id, prototype, definition, entry, root_scope,
+            id, prototype, mode, definition, entry, root_scope,
         ));
         self.context_mut().set_block_name(entry, "entry");
 
@@ -181,6 +196,23 @@ impl<'thir> MIRBuilder<'thir> {
                 self.bind_named(name, MIRValue::Place(place));
             }
         }
+    }
+
+    pub(crate) fn start_global_initializer(
+        &mut self,
+        function_id: MIRFunctionID,
+        body: &THIRExpression,
+    ) {
+        assert!(self.function.is_none(), "a MIR function is already active");
+        let mir = self.module.take_function(function_id);
+        let (id, prototype, mut definition, mode) = mir.into_definition_with_mode();
+        let entry = definition.add_block();
+        let root_scope = definition.add_scope(body.token_range.clone());
+
+        self.function = Some(FunctionContext::new(
+            id, prototype, mode, definition, entry, root_scope,
+        ));
+        self.context_mut().set_block_name(entry, "entry");
     }
 
     pub fn add_string_literal(&mut self, value: &str) -> MIRGlobalID {
@@ -208,6 +240,10 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub(crate) fn _current_function_id(&self) -> MIRFunctionID {
         self.context()._id()
+    }
+
+    pub(crate) fn function_mode(&self) -> MIRFunctionMode {
+        self.context().mode()
     }
 
     pub(crate) fn current_block(&self) -> MIRBasicBlockID {

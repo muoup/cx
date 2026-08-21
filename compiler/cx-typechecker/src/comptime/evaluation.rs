@@ -40,6 +40,17 @@ pub(crate) fn evaluate_expression(
             float_value_from_type(value, &expr_type, THIRFloatType::F32, token_range)
         }
 
+        THIRExpressionKind::StringLiteral { value } => {
+            ComptimeValue {
+                kind: ComptimeKind::Emit(THIRExpression {
+                    kind: THIRExpressionKind::StringLiteral { value },
+                    _type: expr_type,
+                    token_range: token_range.clone(),
+                }),
+                token_range: token_range,
+            }
+        },
+
         THIRExpressionKind::Unit => ComptimeValue {
             token_range,
             kind: ComptimeKind::Unit,
@@ -128,6 +139,50 @@ pub(crate) fn evaluate_expression(
                 );
             }
         }
+
+        THIRExpressionKind::ArrayInitializer { elements, element_type } => {
+            let comptime_values = elements
+                .into_iter()
+                .map(|element| evaluate_expression(engine, element).map(ComptimeValue::into_expression))
+                .collect::<CXResult<Vec<_>>>()?;
+
+            ComptimeValue {
+                kind: ComptimeKind::Emit(THIRExpression {
+                    kind: THIRExpressionKind::ArrayInitializer {
+                        elements: comptime_values,
+                        element_type,
+                    },
+                    _type: expr_type,
+                    token_range: token_range.clone(),
+                }),
+                token_range
+            }
+        },
+
+        THIRExpressionKind::StructInitializer { initializations, struct_type } => {
+            let comptime_initializations = initializations
+                .into_iter()
+                .map(|initialization| {
+                    evaluate_expression(engine, initialization.value)
+                        .map(|value| cx_thir::thir::expression::StructInitialization {
+                            field_index: initialization.field_index,
+                            value: value.into_expression(),
+                        })
+                })
+                .collect::<CXResult<Vec<_>>>()?;
+
+            ComptimeValue {
+                kind: ComptimeKind::Emit(THIRExpression {
+                    kind: THIRExpressionKind::StructInitializer {
+                        initializations: comptime_initializations,
+                        struct_type,
+                    },
+                    _type: expr_type,
+                    token_range: token_range.clone(),
+                }),
+                token_range
+            }
+        },
 
         _ => {
             return engine.log_error(

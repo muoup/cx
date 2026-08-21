@@ -9,8 +9,8 @@ use cx_lmir::{
 };
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    global::MIRGlobalKind, MIRConstant, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRTypeID,
-    MIRTypeKind, MIRTypeRegistryBuilder, MIRUnit,
+    MIRConstant, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRTypeID, MIRTypeKind,
+    MIRTypeRegistryBuilder, MIRUnit, global::MIRGlobalKind,
 };
 use cx_util::identifier::CXIdent;
 
