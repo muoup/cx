@@ -12,7 +12,7 @@ use cx_thir::type_context::THIRTypeContext;
 
 use crate::{
     builder::MIRBuilder,
-    lowering::{aggregates, comptime, lower_expression, materialize_value, types::lower_type},
+    lowering::{aggregates, lower_expression, materialize_value, types::lower_type},
 };
 
 pub(super) fn contains_label(expression: &THIRExpression) -> bool {
@@ -469,6 +469,7 @@ pub(super) fn lower_switch(
     for (case, _) in cases {
         let block = builder.new_block("switch.case");
         let case_value = comptime::evaluate(builder, case)?;
+        
         if !matches!(case_value, MIRConstant::Integer { .. }) {
             return Err(CXErr::new(
                 CXStdErrMessage::error(
@@ -478,6 +479,7 @@ pub(super) fn lower_switch(
                 CXInternalContext::error("MIR switch case did not produce an integer constant"),
             ));
         }
+        
         targets.push((case_value, MIRBlockTarget::new(block)));
         bodies.push(block);
     }

@@ -201,7 +201,7 @@ impl MIRModuleState {
         let functions = functions
             .into_iter()
             .filter_map(|(_, function)| {
-                if function.mode() == MIRFunctionMode::ComptimeOnly
+                if function.mode() == MIRFunctionMode::Comptime
                     || function.prototype().linkage == LinkageMode::Standard
                 {
                     return Some((function.id(), function));

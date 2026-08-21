@@ -32,8 +32,8 @@ dense_id!(MIRGlobalID);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MIRFunctionMode {
     Runtime,
+    Constexpr,
     Comptime,
-    ComptimeOnly,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

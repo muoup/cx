@@ -16,7 +16,7 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistryBuilder) -> CXRes
     let mut prototypes = LMIRFunctionMap::new();
 
     for function in mir.functions() {
-        if function.mode() == MIRFunctionMode::ComptimeOnly {
+        if function.mode() == MIRFunctionMode::Comptime {
             continue;
         }
         let mut prototype = typing::convert_prototype(function.prototype(), types);
@@ -46,7 +46,7 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistryBuilder) -> CXRes
 
     let mut functions = Vec::new();
     for function in mir.functions() {
-        if function.mode() == MIRFunctionMode::ComptimeOnly || function.definition().is_none() {
+        if function.mode() == MIRFunctionMode::Comptime || function.definition().is_none() {
             continue;
         }
         functions.push(functions::lower_function(

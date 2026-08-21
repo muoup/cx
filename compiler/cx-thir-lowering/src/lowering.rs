@@ -1,5 +1,4 @@
 mod calls;
-mod comptime;
 mod control_flow;
 mod globals;
 mod memory;

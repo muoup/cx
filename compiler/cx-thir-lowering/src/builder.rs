@@ -8,6 +8,7 @@ use cx_mir::{
     MIRFunctionMode, MIRGlobalID, MIRGlobalState, MIRInstrKind, MIRIntType, MIRParameterID,
     MIRPlace, MIRRegister, MIRScopeID, MIRTypeID, MIRTypeRegistryBuilder, MIRUnit, MIRValue,
 };
+use cx_mir_comptime::context::MIRContext;
 use cx_thir::thir::global::THIRGlobalVariable;
 use cx_thir::{
     THIRUnit,
@@ -130,7 +131,7 @@ impl<'thir> MIRBuilder<'thir> {
         let prototype = MIRFnPrototype::new(signature, LinkageMode::Static);
         let function = self
             .module
-            .declare_function_with_mode(prototype, MIRFunctionMode::ComptimeOnly);
+            .declare_function_with_mode(prototype, MIRFunctionMode::Comptime);
         self.module
             .set_global_state(global, MIRGlobalState::Initializer(function));
         function
@@ -245,7 +246,7 @@ impl<'thir> MIRBuilder<'thir> {
         let prototype = MIRFnPrototype::new(signature, LinkageMode::Static);
         let mir = self
             .module
-            .new_temporary_function(prototype, MIRFunctionMode::ComptimeOnly);
+            .new_temporary_function(prototype, MIRFunctionMode::Comptime);
         let (id, prototype, mut definition, mode) = mir.into_definition_with_mode();
         let entry = definition.add_block();
         let root_scope = definition.add_scope(expression.token_range.clone());
@@ -290,10 +291,6 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub(crate) fn comptime_unit(&self, function: MIRFunction) -> MIRUnit {
         self.module.snapshot(self.types.clone(), function)
-    }
-
-    pub(crate) fn _current_function_id(&self) -> MIRFunctionID {
-        self.context()._id()
     }
 
     pub(crate) fn current_block(&self) -> MIRBasicBlockID {
@@ -501,6 +498,12 @@ impl<'thir> MIRBuilder<'thir> {
         self.function
             .last_mut()
             .expect("no MIR function is currently active")
+    }
+}
+
+impl MIRContext for MIRBuilder {
+    fn current_function(&self) -> &MIRFunction {
+        self.module.function_symbol(name)
     }
 }
 
