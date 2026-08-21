@@ -1,78 +1,44 @@
 use std::collections::HashMap;
 
 use cx_mir::{
-    MIRBasicBlockID, MIRFnPrototype, MIRFunction, MIRBody, MIRFunctionID,
-    MIRFunctionMode, MIRInstrKind, MIRPlace, MIRRegister, MIRScopeID, MIRTypeID, MIRValue,
+    MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRFunctionMode,
+    MIRInstrKind, MIRPlace, MIRRegister, MIRScopeID, MIRType, MIRTypeID, MIRValue,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct LoopContext {
-    pub break_target: MIRBasicBlockID,
-    pub continue_target: Option<MIRBasicBlockID>,
-    pub lexical_scope_depth: usize,
-}
-
 #[derive(Debug)]
-pub(crate) struct YieldContext {
-    pub target: MIRBasicBlockID,
-    pub result: Option<MIRRegister>,
-    pub lexical_scope_depth: usize,
-}
-
-#[derive(Debug)]
-struct LabelTarget {
-    block: MIRBasicBlockID,
-    declared: bool,
-}
-
-#[derive(Debug)]
-pub(crate) struct FunctionContext {
+pub(crate) struct FunctionBuilder<'thir> {
     id: MIRFunctionID,
     prototype: MIRFnPrototype,
     mode: MIRFunctionMode,
-    mir: MIRBody,
-    
-    current_block: MIRBasicBlockID,
 
-    local_places: HashMap<THIRLocalID, MIRPlace>,
-    local_values: HashMap<THIRLocalID, MIRValue>,
+    body: MIRBodyBuilder,
 
-    named_values: Vec<HashMap<String, MIRValue>>,
-
-    loops: Vec<LoopContext>,
-    yields: Vec<YieldContext>,
-    labels: HashMap<String, LabelTarget>,
-
-    lexical_scopes: Vec<MIRScopeID>,
-    defers: Vec<Vec<THIRExpression>>,
+    scope_stack: Vec<ScopeContext<'thir>>,
 }
 
-impl FunctionContext {
-    pub(crate) fn new(
-        id: MIRFunctionID,
-        prototype: MIRFnPrototype,
-        mode: MIRFunctionMode,
-        mir: MIRBody,
-        current_block: MIRBasicBlockID,
-        root_scope: MIRScopeID,
-    ) -> Self {
+#[derive(Debug)]
+pub(crate) struct ScopeContext<'a> {
+    id: MIRScopeID,
+
+    yield_target: Option<(MIRBasicBlockID, MIRType)>,
+    continue_target: Option<MIRBasicBlockID>,
+    break_target: Option<MIRBasicBlockID>,
+
+    cleanups: Vec<&'a THIRExpression>,
+}
+
+impl FunctionBuilder {
+    pub(crate) fn new(func: MIRFunction) -> Self {
         Self {
-            id,
-            prototype,
-            mode,
-            mir,
-            current_block,
-            local_places: HashMap::new(),
-            local_values: HashMap::new(),
-            named_values: vec![HashMap::new()],
-            loops: Vec::new(),
-            yields: Vec::new(),
-            labels: HashMap::new(),
-            lexical_scopes: vec![root_scope],
-            defers: vec![Vec::new()],
+            id: func.id(),
+            mode: func.mode(),
+            prototype: *func.prototype(),
+            body: MIRBody::new(),
+
+            scope_stack: Vec::new(),
         }
     }
 
@@ -91,7 +57,7 @@ impl FunctionContext {
         assert_eq!(self.defers.len(), 1, "defer stack is unbalanced");
 
         let returns_value = self.prototype.signature.return_type != unit_type;
-        for block in self.mir.blocks_mut() {
+        for block in self.body.blocks_mut() {
             if block.terminator().is_some() {
                 continue;
             }
@@ -102,8 +68,8 @@ impl FunctionContext {
             };
             block.push(terminator);
         }
-        
-        MIRFunction::new(self.id, self.prototype, self.mode, Some(self.mir))
+
+        MIRFunction::new(self.id, self.prototype, Some(self.body.finish()))
     }
 
     pub(crate) fn id(&self) -> MIRFunctionID {
@@ -111,88 +77,29 @@ impl FunctionContext {
     }
 
     pub(crate) fn definition(self) -> MIRBody {
-        self.mir
+        self.body
     }
 
     pub(crate) fn current_block(&self) -> MIRBasicBlockID {
         self.current_block
     }
 
-    pub(crate) fn set_current_block(&mut self, block: MIRBasicBlockID) {
-        assert!(
-            self.mir.block(block).is_some(),
-            "selected block does not belong to the active function"
-        );
-        self.current_block = block;
-    }
-
-    pub(crate) fn new_block(&mut self, debug_name: &str) -> MIRBasicBlockID {
-        let id = self.mir.add_block();
-        self.set_block_name(id, debug_name);
-        id
-    }
-
-    pub(crate) fn set_block_name(&mut self, block: MIRBasicBlockID, debug_name: &str) {
-        self.mir
-            .block_mut(block)
-            .expect("selected block does not exist")
-            .debug_name = Some(CXIdent::new(debug_name));
-    }
-
-    pub(crate) fn block_terminated(&self, block: MIRBasicBlockID) -> bool {
-        self.mir
-            .block(block)
-            .expect("selected block does not exist")
-            .terminator()
-            .is_some()
-    }
-
-    pub(crate) fn current_block_terminated(&self) -> bool {
-        self.block_terminated(self.current_block)
-    }
-
-    pub(crate) fn label_block(&mut self, name: &CXIdent) -> MIRBasicBlockID {
-        if let Some(label) = self.labels.get(name.as_str()) {
-            return label.block;
-        }
-        let block = self.new_block(&format!("label.{}", name.as_str()));
-        self.labels.insert(
-            name.as_string(),
-            LabelTarget {
-                block,
-                declared: false,
-            },
-        );
-        block
-    }
-
-    pub(crate) fn declare_label(&mut self, name: &CXIdent) -> MIRBasicBlockID {
-        let block = self.label_block(name);
-        let label = self
-            .labels
-            .get_mut(name.as_str())
-            .expect("label block was just allocated");
-        assert!(!label.declared, "duplicate MIR label declaration");
-        label.declared = true;
-        block
-    }
-
     pub(crate) fn emit(&mut self, instruction: MIRInstrKind, source_range: TokenRange) -> bool {
         if self.current_block_terminated() {
             return false;
         }
-        self.mir
+        self.body
             .push_instr_at(self.current_block, instruction, source_range)
             .expect("active MIR block is missing");
         true
     }
 
     pub(crate) fn register(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>) -> MIRRegister {
-        self.mir.add_register(ty, debug_name)
+        self.body.add_register(ty, debug_name)
     }
 
     pub(crate) fn register_type(&self, register: MIRRegister) -> Option<MIRTypeID> {
-        self.mir.register(register).map(|register| register.ty)
+        self.body.register(register).map(|register| register.ty)
     }
 
     pub(crate) fn block_param(
@@ -201,7 +108,7 @@ impl FunctionContext {
         ty: MIRTypeID,
         debug_name: Option<CXIdent>,
     ) -> MIRRegister {
-        self.mir
+        self.body
             .add_block_param(block, ty, debug_name)
             .expect("selected block does not exist")
     }
@@ -217,7 +124,7 @@ impl FunctionContext {
             .last()
             .copied()
             .expect("active function has no lexical scope");
-        self.mir.add_place(ty, debug_name, nodrop, scope)
+        self.body.add_place(ty, debug_name, nodrop, scope)
     }
 
     pub(crate) fn bind_local(&mut self, local: THIRLocalID, place: MIRPlace) {
@@ -263,7 +170,7 @@ impl FunctionContext {
     }
 
     pub(crate) fn push_lexical_scope(&mut self, token_range: TokenRange) -> MIRScopeID {
-        let scope = self.mir.add_scope(token_range);
+        let scope = self.body.add_scope(token_range);
         self.lexical_scopes.push(scope);
         self.defers.push(Vec::new());
         scope

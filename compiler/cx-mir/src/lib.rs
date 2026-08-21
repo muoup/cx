@@ -16,7 +16,7 @@ pub use expr::{
     MIRPlaceAggregateOp, MIRPlaceID, MIRRegister, MIRScopeID, MIRValue, MIRValueAggregateOp,
 };
 pub use global::{
-    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRBody, MIRFunctionID,
+    MIRBody, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID,
     MIRFunctionMode, MIRGlobalID, MIRGlobalKind, MIRGlobalState, MIRGlobalVariable, MIRPlaceDecl,
     MIRRegisterDecl, MIRScopeDecl,
 };

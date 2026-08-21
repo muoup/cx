@@ -6,7 +6,7 @@ use cx_lmir::{
 };
 use cx_log::CXResult;
 use cx_mir::ty::interface::MTRegistry;
-use cx_mir::{MIRFunction, MIRBody, MIRGlobalID, MIRPlace, MIRTypeRegistryBuilder};
+use cx_mir::{MIRBody, MIRFunction, MIRGlobalID, MIRPlace, MIRTypeRegistryBuilder};
 
 use crate::context::FunctionLoweringContext;
 

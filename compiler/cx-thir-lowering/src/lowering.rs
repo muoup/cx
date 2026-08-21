@@ -9,9 +9,7 @@ pub(crate) mod types;
 
 use cx_log::CXResult;
 use cx_mir::{
-    MIRAggregateOp, MIRAssignTarget, MIRBlockTarget, MIRConstant, MIRInstrKind, MIRIntType,
-    MIRPlace, MIRPlaceAggregateOp, MIRTypeKind, MIRValue, MIRValueAggregateOp,
-    ty::interface::MTRegistry,
+    MIRAggregateOp, MIRAssignTarget, MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstrKind, MIRIntType, MIRPlace, MIRPlaceAggregateOp, MIRTypeKind, MIRValue, MIRValueAggregateOp, ty::interface::MTRegistry
 };
 use cx_thir::{
     THIRUnit,
@@ -22,51 +20,19 @@ use cx_thir::{
     type_context::THIRTypeContext,
 };
 
-use crate::lowering::types::lower_float_type;
+use crate::lowering::{globals::fulfill_init_request, types::lower_float_type};
 use crate::{builder::MIRBuilder, lowering::types::lower_type};
 
-pub(crate) fn lower_unit(builder: &mut MIRBuilder<'_>, thir: &THIRUnit) -> CXResult<()> {
-    for function in &thir.functions {
-        let prototype = builder.convert_prototype(&function.prototype)?;
-        builder.module().declare_function(prototype);
-    }
-
-    for global in &thir.global_variables {
-        builder.predeclare_global(global)?;
-    }
-
-    for global in &thir.global_variables {
-        if global.initializer.is_some() {
-            let id = builder
-                .global_id(global.name.as_str())
-                .expect("global predeclaration is missing");
-            let function = builder.declare_global_initializer(id);
-            globals::lower_global_initializer(builder, function, global)?;
-        } else {
-            let id = builder
-                .global_id(global.name.as_str())
-                .expect("global predeclaration is missing");
-            globals::lower_global(builder, id, global);
-        }
-    }
-
-    for (index, function) in thir.functions.iter().enumerate() {
-        lower_function(builder, index, function)?;
-    }
-
-    Ok(())
-}
-
-fn lower_function(
+pub(crate) fn lower_function(
     builder: &mut MIRBuilder<'_>,
-    index: usize,
-    function: &THIRFunction,
+    id: MIRFunctionID,
+    function: &THIRFunction
 ) -> CXResult<()> {
     let Some(body) = function.body.as_ref() else {
         return Ok(());
     };
 
-    builder.start_function(index, function, body);
+    builder.start_function(id);
     lower_expression(builder, body)?;
 
     if !builder.current_block_terminated() {
@@ -80,31 +46,6 @@ fn lower_function(
 
     builder.finish_function();
     Ok(())
-}
-
-pub(super) fn materialize_value(
-    builder: &mut MIRBuilder<'_>,
-    value: MIRValue,
-    ty: &THIRType,
-) -> CXResult<MIRValue> {
-    let place = match value {
-        MIRValue::Copy(place) => Some((place, false)),
-        MIRValue::Move(place) => Some((place, true)),
-        value => return Ok(value),
-    };
-    let (place, moves) = place.expect("a place value was just matched");
-    let type_id = lower_type(builder, ty)?;
-    let out = builder.register(type_id, None);
-    builder.emit(MIRInstrKind::Assign {
-        target: MIRAssignTarget::Register(out),
-        value: if moves {
-            MIRValue::Move(place)
-        } else {
-            MIRValue::Copy(place)
-        },
-        ty: type_id,
-    });
-    Ok(MIRValue::Register(out))
 }
 
 fn lower_expression(

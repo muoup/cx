@@ -217,7 +217,6 @@ fn write_global<T: MTRegistry>(
         MIRGlobalKind::Variable {
             ty,
             state,
-            is_nodrop: _,
             is_mutable,
         } => {
             if !is_mutable {

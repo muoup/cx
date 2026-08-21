@@ -61,7 +61,6 @@ pub enum MIRGlobalKind {
     Variable {
         ty: MIRTypeID,
         state: MIRGlobalState,
-        is_nodrop: bool,
         is_mutable: bool,
     },
 }
@@ -104,7 +103,6 @@ impl MIRGlobalVariable {
                     MIRGlobalState::ZeroInitialized
                 },
                 is_mutable,
-                is_nodrop: false,
             },
         }
     }
@@ -222,7 +220,8 @@ pub struct MIRFunction {
 
 #[derive(Debug, Clone)]
 pub struct MIRBody {
-    entry: Option<MIRBasicBlockID>,
+    entry: MIRBasicBlockID,
+
     blocks: Vec<MIRBasicBlock>,
     places: Vec<MIRPlaceDecl>,
     registers: Vec<MIRRegisterDecl>,
@@ -265,17 +264,23 @@ impl MIRFunction {
 }
 
 impl MIRBody {
-    pub fn new() -> Self {
+    pub fn new(
+        entry: MIRBasicBlockID,
+        blocks: Vec<MIRBasicBlock>,
+        places: Vec<MIRPlaceDecl>,
+        registers: Vec<MIRRegisterDecl>,
+        scopes: Vec<MIRScopeDecl>,
+    ) -> Self {
         Self {
-            entry: None,
-            blocks: Vec::new(),
-            places: Vec::new(),
-            registers: Vec::new(),
-            scopes: Vec::new(),
+            entry,
+            blocks,
+            places,
+            registers,
+            scopes,
         }
     }
 
-    pub fn entry(&self) -> Option<MIRBasicBlockID> {
+    pub fn entry(&self) -> MIRBasicBlockID {
         self.entry
     }
 
