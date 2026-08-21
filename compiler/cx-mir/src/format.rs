@@ -212,6 +212,7 @@ impl Display for MIRGlobalState {
         match self {
             Self::External => f.write_str("external"),
             Self::ZeroInitialized => f.write_str("zero"),
+            Self::Initializer(function) => write!(f, "comptime initializer {function}"),
             Self::Initialized(value) => Display::fmt(value, f),
         }
     }

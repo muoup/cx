@@ -1,17 +1,17 @@
 # AI-Generated Document: MIR Comptime Evaluation Plan
 
-This note records an implementation direction for MIR constant evaluation. It is
+This note records an implementation direction for MIR comptime evaluation. It is
 not a language specification and does not commit the compiler to a particular
 surface syntax.
 
 ## Goal
 
-MIR should own evaluation of concrete compile-time values. A single evaluator
-should accept a function-like MIR body and constant arguments, execute its
+MIR should own evaluation of concrete comptime values. A single evaluator
+should accept a function-like MIR body and comptime arguments, execute its
 basic blocks, and return an `MIRConstant` when the result is valid in the
 requesting context.
 
-The first consumers are global initializers and runtime-callable constexpr
+The first consumers are global initializers and runtime-callable comptime
 functions. This replaces frontend-specific expression recognizers with a
 semantic evaluator that sees the same coercions, aggregates, control flow, and
 calls as code generation.
@@ -20,49 +20,53 @@ calls as code generation.
 
 The compiler has two separate compile-time mechanisms:
 
-- Constant evaluation computes concrete runtime values, including aggregate
+- Comptime evaluation computes concrete runtime values, including aggregate
   values and symbolic pointers. It belongs in MIR.
 - Staged `comptime` and `emit` construct typed language artifacts before MIR
   exists. They remain a frontend mechanism until MIR has a representation for
   emitted expressions, places, types, and declarations.
 
-`constexpr` functions can be both runtime-callable and MIR-evaluable. A
-comptime-only function is never lowered into a runtime call site, although it
-may use normal call instructions inside an evaluator-only MIR body.
+`Comptime` functions can be both runtime-callable and MIR-evaluable. A
+`ComptimeOnly` function is never lowered into a runtime call site, although it
+may use normal call instructions inside a comptime MIR body.
 
-The MIR evaluator belongs to `cx-thir-lowering`. It needs the lowering context
-that owns the in-progress MIR module, type registry, global declarations, and
-materialization requests, and its work is complete before the finished MIR
-unit is handed to later MIR consumers. `cx-mir` owns the representation and
-IDs, not the evaluator or THIR-lowering context.
+The evaluator belongs in `cx-mir-comptime`. It depends on MIR, not THIR, so it
+can be used by THIR lowering, MIR analysis, and MIR-to-LMIR lowering. The
+passes that schedule evaluation own the surrounding compiler context; the
+engine executes one MIR body and returns an `MIRConstant`.
 
 ## MIR Representation
 
 Function metadata should distinguish these modes:
 
 - `Runtime`: code generation only.
-- `Constexpr`: code generation plus evaluation when every argument is known.
-- `ConstOnly`: evaluator only and rejected by runtime MIR validation.
+- `Comptime`: code generation plus comptime evaluation when every argument is
+  known.
+- `ComptimeOnly`: comptime evaluation only and rejected by runtime MIR
+  lowering.
 
-Const-only and constexpr bodies use ordinary `MIRFunctionDefinition` blocks,
+Comptime and comptime-only bodies use ordinary `MIRFunctionDefinition` blocks,
 with `MIRFunctionMode` carried by the enclosing `MIRFunction`. Global
-initializers use private `ConstOnly` functions represented by a lowering-owned
-materialization request. THIR to MIR lowering first materializes every function
-and global-initializer body, then walks the global-initializer requests in their
-declared order to evaluate them. These requests are not retained in the
-finished `MIRUnit`; the materialized functions remain ordinary MIR functions
-and are skipped by MIR to LMIR lowering, so an initializer is never emitted as
-an ordinary runtime function merely to evaluate it.
+initializers use private `ComptimeOnly` functions. A global in
+`MIRGlobalState::Initializer` holds the function ID until a comptime pass
+replaces it with `MIRGlobalState::Initialized`; this is a value representation,
+not a request or a lifecycle state machine.
 
 The evaluator's public boundary is intentionally small:
 
 ```text
-evaluate(unit, body, arguments) -> Result<MIRConstant, MIRConstEvalError>
+MIRComptimeEngine::evaluate(function, arguments)
+    -> Result<MIRConstant, MIRComptimeError>
 ```
 
 The body can be an ordinary MIR function definition, including a private
-global-initializer function, or a future inline const expression lowered into a
+global-initializer function, or a future inline comptime expression lowered into a
 synthetic entry block.
+
+Calls carry an explicit `MIRCallKind`: runtime calls are lowered to runtime
+code, while comptime calls must be consumed by a comptime pass before LMIR
+lowering. A callee's function mode remains a validation constraint, not an
+implicit rewrite of an ordinary call.
 
 ## Evaluation Values
 
@@ -89,10 +93,10 @@ interprets the ordinary MIR instruction set in phases:
    arithmetic, coercions, and return.
 2. Add create/address/dereference and typed temporary allocation handling.
 3. Add branches, jump-table dispatch, and block arguments.
-4. Add calls to `Constexpr` and `ConstOnly` functions.
+4. Add calls to `Comptime` and `ComptimeOnly` functions.
 
 Runtime-only operations, external calls, variadics, `emit`, and observable
-side effects fail with a source-ranged const-evaluation diagnostic. The
+side effects fail with a source-ranged comptime diagnostic. The
 evaluator should report the active function/block/instruction stack, rather
 than panicking on an unsupported instruction.
 
@@ -119,7 +123,7 @@ must remain a relocation even if its target is declared later in source order.
    route its constants through a shared MIR constant representation.
 2. Introduce evaluator types and diagnostics without changing existing staged
    comptime behavior.
-3. Lower simple constexpr/global initializer bodies into private const bodies
+3. Lower simple comptime/global initializer bodies into private comptime bodies
    and evaluate scalar and aggregate results.
 4. Add memory, control flow, calls, caching, and recursion handling.
 5. Remove the THIR scalar comptime evaluator from global-initializer

@@ -180,6 +180,12 @@ pub enum MIRValueAggregateOp {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MIRCallKind {
+    Runtime,
+    Comptime,
+}
+
 #[derive(Debug, Clone)]
 pub struct MIRBasicBlock {
     pub id: MIRBasicBlockID,
@@ -463,6 +469,7 @@ pub enum MIRInstrKind {
 
     Call {
         out: Option<MIRRegister>,
+        kind: MIRCallKind,
         callee: MIRValue,
         args: Vec<MIRValue>,
     },

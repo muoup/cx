@@ -9,8 +9,8 @@ use cx_lmir::{
 };
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    MIRConstant, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRTypeID, MIRTypeKind,
-    MIRTypeRegistryBuilder, MIRUnit, global::MIRGlobalKind,
+    global::MIRGlobalKind, MIRConstant, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRTypeID,
+    MIRTypeKind, MIRTypeRegistryBuilder, MIRUnit,
 };
 use cx_util::identifier::CXIdent;
 
@@ -44,6 +44,9 @@ pub(super) fn lower_global(
                     _type: lowered_type,
                     state: LoweredGlobalState::ZeroInitialized,
                 },
+                MIRGlobalState::Initializer(function) => {
+                    panic!("unresolved comptime initializer function {function}")
+                }
                 MIRGlobalState::Initialized(constant) => LMIRGlobalType::Variable {
                     _type: lowered_type,
                     state: LoweredGlobalState::Initialized(lower_global_initializer(

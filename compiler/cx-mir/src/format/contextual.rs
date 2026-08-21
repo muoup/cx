@@ -227,6 +227,9 @@ fn write_global<T: MTRegistry>(
             match &state {
                 MIRGlobalState::External => f.write_str(";")?,
                 MIRGlobalState::ZeroInitialized => f.write_str(" = zero;")?,
+                MIRGlobalState::Initializer(function) => {
+                    write!(f, " = comptime initializer {function};")?;
+                }
                 MIRGlobalState::Initialized(value) => {
                     f.write_str(" = ")?;
                     write_constant(f, unit, value)?;
@@ -378,10 +381,18 @@ fn write_instruction<T: MTRegistry>(
         MIRInstrKind::AggregateOp(operation) => {
             write_aggregate(f, unit, function, operation, types)
         }
-        MIRInstrKind::Call { out, callee, args } => {
+        MIRInstrKind::Call {
+            out,
+            kind,
+            callee,
+            args,
+        } => {
             if let Some(out) = out {
                 write_register_name(f, function, *out)?;
                 f.write_str(" = ")?;
+            }
+            if *kind == crate::MIRCallKind::Comptime {
+                f.write_str("comptime ")?;
             }
             write_value(f, unit, function, callee)?;
             f.write_str("(")?;

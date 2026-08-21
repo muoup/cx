@@ -7,6 +7,7 @@ autotests = false
 [dependencies]
 cx-hir = { path = "../cx-hir" }
 cx-mir = { path = "../cx-mir" }
+cx-mir-comptime = { path = "../cx-mir-comptime" }
 cx-lmir = { path = "../cx-lmir" }
 cx-target = { path = "../cx-target" }
 

@@ -36,17 +36,27 @@ pub(crate) fn lower_global(
     id: MIRGlobalID,
     global: &THIRGlobalVariable,
 ) {
-    let state = match global.initializer.as_ref() {
-        Some(initializer) => {
-            let ty = lower_type(builder, &global._type);
-            let constant = lower_global_constant(builder, initializer, ty);
-            MIRGlobalState::Initialized(constant)
-        }
-        _ if global.linkage == LinkageMode::Extern => MIRGlobalState::External,
-        _ => MIRGlobalState::ZeroInitialized,
+    let state = if global.linkage == LinkageMode::Extern {
+        MIRGlobalState::External
+    } else {
+        MIRGlobalState::ZeroInitialized
     };
 
     builder.set_global_state(id, state);
+}
+
+pub(crate) fn evaluate_global_initializer(
+    builder: &mut MIRBuilder<'_>,
+    id: MIRGlobalID,
+    global: &THIRGlobalVariable,
+) {
+    let initializer = global
+        .initializer
+        .as_ref()
+        .expect("global comptime initializer is missing");
+    let ty = lower_type(builder, &global._type);
+    let constant = lower_global_constant(builder, initializer, ty);
+    builder.set_global_state(id, MIRGlobalState::Initialized(constant));
 }
 
 fn lower_global_constant(

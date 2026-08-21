@@ -43,6 +43,7 @@ pub(crate) struct MIRModuleState {
     function_symbols: HashMap<String, ModuleSymbol<MIRFunctionID>>,
     global_symbols: HashMap<String, ModuleSymbol<MIRGlobalID>>,
     function_ids: Vec<MIRFunctionID>,
+    global_ids: Vec<MIRGlobalID>,
 
     next_function_id: usize,
     next_global_id: usize,
@@ -56,6 +57,7 @@ impl MIRModuleState {
             function_symbols: HashMap::new(),
             global_symbols: HashMap::new(),
             function_ids: Vec::new(),
+            global_ids: Vec::new(),
             next_function_id: 0,
             next_global_id: 0,
         }
@@ -102,6 +104,7 @@ impl MIRModuleState {
         self.globals.insert(id, global);
         self.global_symbols
             .insert(name_string, ModuleSymbol::new(id).with_used(pre_used));
+        self.global_ids.push(id);
         id
     }
 
@@ -166,13 +169,14 @@ impl MIRModuleState {
             function_symbols,
             global_symbols,
             function_ids: _,
+            global_ids,
             ..
         } = self;
 
         let functions = functions
             .into_iter()
             .filter_map(|(_, function)| {
-                if function.mode() == MIRFunctionMode::ConstOnly
+                if function.mode() == MIRFunctionMode::ComptimeOnly
                     || function.prototype().linkage == LinkageMode::Standard
                 {
                     return Some((function.id(), function));
@@ -190,7 +194,7 @@ impl MIRModuleState {
                 }
             })
             .collect();
-        let globals = globals
+        let globals: HashMap<MIRGlobalID, MIRGlobalVariable> = globals
             .into_iter()
             .filter_map(|(_, global)| {
                 if global.linkage == LinkageMode::Standard {
@@ -209,7 +213,11 @@ impl MIRModuleState {
                 }
             })
             .collect();
+        let global_order = global_ids
+            .into_iter()
+            .filter(|id| globals.contains_key(id))
+            .collect();
 
-        MIRUnit::new(types, functions, globals)
+        MIRUnit::new(types, functions, globals, global_order)
     }
 }

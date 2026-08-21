@@ -8,10 +8,10 @@ use cx_lmir::{
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::tagged_union_tag_offset;
 use cx_mir::{
-    MIRAggregateOp, MIRAssignTarget, MIRBinaryOp, MIRCoercion, MIRConstant, MIRFloatBinaryOp,
-    MIRFnParam, MIRFnSignature, MIRFunctionType, MIRInstrKind, MIRIntBinaryOp, MIRIntType,
-    MIRPlaceAggregateOp, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister, MIRTypeID,
-    MIRTypeKind, MIRUnaryOp, MIRValue, MIRValueAggregateOp,
+    MIRAggregateOp, MIRAssignTarget, MIRBinaryOp, MIRCallKind, MIRCoercion, MIRConstant,
+    MIRFloatBinaryOp, MIRFnParam, MIRFnSignature, MIRFunctionType, MIRInstrKind, MIRIntBinaryOp,
+    MIRIntType, MIRPlaceAggregateOp, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister,
+    MIRTypeID, MIRTypeKind, MIRUnaryOp, MIRValue, MIRValueAggregateOp,
 };
 use cx_util::identifier::CXIdent;
 
@@ -231,7 +231,16 @@ pub(super) fn lower_instruction(
             );
         }
         MIRInstrKind::AggregateOp(operation) => lower_aggregate(context, operation),
-        MIRInstrKind::Call { out, callee, args } => lower_call(context, *out, callee, args),
+        MIRInstrKind::Call {
+            out,
+            kind: MIRCallKind::Runtime,
+            callee,
+            args,
+        } => lower_call(context, *out, callee, args),
+        MIRInstrKind::Call {
+            kind: MIRCallKind::Comptime,
+            ..
+        } => panic!("unresolved comptime call reached LMIR lowering"),
         MIRInstrKind::VaStart { list, last } => {
             let list = lower_value(context, list);
             let last = lower_value(context, last);

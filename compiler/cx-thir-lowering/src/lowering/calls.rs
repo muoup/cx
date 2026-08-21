@@ -1,10 +1,6 @@
 use cx_log::CXResult;
-use cx_mir::{MIRConstant, MIRField, MIRInstrKind, MIRValue};
-use cx_thir::thir::{
-    data::THIRType,
-    expression::THIRExpression,
-    r#type::THIRField,
-};
+use cx_mir::{MIRCallKind, MIRConstant, MIRField, MIRInstrKind, MIRValue};
+use cx_thir::thir::{data::THIRType, expression::THIRExpression, r#type::THIRField};
 use cx_thir::type_context::THIRTypeContext;
 
 use crate::{
@@ -54,6 +50,7 @@ pub(super) fn lower_call(
     });
     builder.emit(MIRInstrKind::Call {
         out,
+        kind: MIRCallKind::Runtime,
         callee,
         args: args.clone(),
     });

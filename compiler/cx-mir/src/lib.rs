@@ -11,14 +11,14 @@ pub use format::MIRDisplay;
 
 pub use diagnostic::{MIRDiagnostic, MIRDiagnosticLocation};
 pub use expr::{
-    MIRAggregateOp, MIRAssignTarget, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget, MIRConstant,
-    MIRInstr, MIRInstrKind, MIRInstrOperand, MIRParameterID, MIRPlace, MIRPlaceAggregateOp,
-    MIRPlaceID, MIRRegister, MIRScopeID, MIRValue, MIRValueAggregateOp,
+    MIRAggregateOp, MIRAssignTarget, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget, MIRCallKind,
+    MIRConstant, MIRInstr, MIRInstrKind, MIRInstrOperand, MIRParameterID, MIRPlace,
+    MIRPlaceAggregateOp, MIRPlaceID, MIRRegister, MIRScopeID, MIRValue, MIRValueAggregateOp,
 };
 pub use global::{
     MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionDefinition, MIRFunctionID,
-    MIRFunctionMode, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRPlaceDecl,
-    MIRRegisterDecl, MIRScopeDecl,
+    MIRFunctionMode, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRPlaceDecl, MIRRegisterDecl,
+    MIRScopeDecl,
 };
 pub use op::{
     MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRIntBinaryOp, MIRPointerBinaryOp,

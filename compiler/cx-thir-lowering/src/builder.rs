@@ -120,7 +120,9 @@ impl<'thir> MIRBuilder<'thir> {
         let prototype = MIRFnPrototype::new(signature, LinkageMode::Static);
         let function = self
             .module
-            .declare_function_with_mode(prototype, MIRFunctionMode::ConstOnly);
+            .declare_function_with_mode(prototype, MIRFunctionMode::ComptimeOnly);
+        self.module
+            .set_global_state(global, MIRGlobalState::Initializer(function));
         function
     }
 

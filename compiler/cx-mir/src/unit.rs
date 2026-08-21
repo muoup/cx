@@ -13,6 +13,7 @@ pub struct MIRUnit {
     types: MIRTypeRegistryBuilder,
     functions: HashMap<MIRFunctionID, MIRFunction>,
     globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
+    global_order: Vec<MIRGlobalID>,
 }
 
 impl MIRUnit {
@@ -20,11 +21,13 @@ impl MIRUnit {
         types: MIRTypeRegistryBuilder,
         functions: HashMap<MIRFunctionID, MIRFunction>,
         globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
+        global_order: Vec<MIRGlobalID>,
     ) -> Self {
         Self {
             types,
             functions,
             globals,
+            global_order,
         }
     }
 
@@ -38,6 +41,17 @@ impl MIRUnit {
 
     pub fn globals(&self) -> impl ExactSizeIterator<Item = &MIRGlobalVariable> {
         self.globals.values()
+    }
+
+    pub fn global_order(&self) -> &[MIRGlobalID] {
+        &self.global_order
+    }
+
+    pub fn globals_in_order(&self) -> impl ExactSizeIterator<Item = &MIRGlobalVariable> {
+        self.global_order.iter().map(|id| {
+            self.global(*id)
+                .expect("MIR global order contains an invalid ID")
+        })
     }
 
     pub fn function(&self, id: MIRFunctionID) -> Option<&MIRFunction> {
