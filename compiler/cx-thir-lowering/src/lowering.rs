@@ -23,10 +23,7 @@ use cx_thir::{
 };
 
 use crate::lowering::types::lower_float_type;
-use crate::{
-    builder::{MIRBuilder, integer_type},
-    lowering::types::lower_type,
-};
+use crate::{builder::MIRBuilder, lowering::types::lower_type};
 
 pub(crate) fn lower_unit(builder: &mut MIRBuilder<'_>, thir: &THIRUnit) -> CXResult<()> {
     for function in &thir.functions {

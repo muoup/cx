@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use cx_mir::{
-    MIRBasicBlockID, MIRFnPrototype, MIRFunction, MIRFunctionDefinition, MIRFunctionID,
+    MIRBasicBlockID, MIRFnPrototype, MIRFunction, MIRBody, MIRFunctionID,
     MIRFunctionMode, MIRInstrKind, MIRPlace, MIRRegister, MIRScopeID, MIRTypeID, MIRValue,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
@@ -33,7 +33,8 @@ pub(crate) struct FunctionContext {
     id: MIRFunctionID,
     prototype: MIRFnPrototype,
     mode: MIRFunctionMode,
-    mir: MIRFunctionDefinition,
+    mir: MIRBody,
+    
     current_block: MIRBasicBlockID,
 
     local_places: HashMap<THIRLocalID, MIRPlace>,
@@ -54,7 +55,7 @@ impl FunctionContext {
         id: MIRFunctionID,
         prototype: MIRFnPrototype,
         mode: MIRFunctionMode,
-        mir: MIRFunctionDefinition,
+        mir: MIRBody,
         current_block: MIRBasicBlockID,
         root_scope: MIRScopeID,
     ) -> Self {
@@ -101,11 +102,16 @@ impl FunctionContext {
             };
             block.push(terminator);
         }
-        MIRFunction::defined(self.id, self.prototype, self.mir, self.mode)
+        
+        MIRFunction::new(self.id, self.prototype, self.mode, Some(self.mir))
     }
 
-    pub(crate) fn _id(&self) -> MIRFunctionID {
+    pub(crate) fn id(&self) -> MIRFunctionID {
         self.id
+    }
+
+    pub(crate) fn definition(self) -> MIRBody {
+        self.mir
     }
 
     pub(crate) fn current_block(&self) -> MIRBasicBlockID {

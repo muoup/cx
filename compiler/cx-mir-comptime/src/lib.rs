@@ -1,4 +1,3 @@
-mod aggregate;
 mod engine;
 mod error;
 mod value;

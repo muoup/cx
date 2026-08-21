@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use cx_mir::{
-    MIRFnPrototype, MIRFunction, MIRFunctionID, MIRFunctionMode, MIRGlobalID, MIRGlobalState,
-    MIRGlobalVariable, MIRTypeID, MIRTypeRegistryBuilder, MIRUnit, global::MIRGlobalKind,
+    MIRFnPrototype, MIRFunction, MIRBody, MIRFunctionID, MIRFunctionMode, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRTypeID, MIRTypeRegistryBuilder, MIRUnit, global::MIRGlobalKind
 };
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
@@ -42,6 +41,7 @@ pub(crate) struct MIRModuleState {
 
     function_symbols: HashMap<String, ModuleSymbol<MIRFunctionID>>,
     global_symbols: HashMap<String, ModuleSymbol<MIRGlobalID>>,
+
     function_ids: Vec<MIRFunctionID>,
     global_ids: Vec<MIRGlobalID>,
 
@@ -63,11 +63,7 @@ impl MIRModuleState {
         }
     }
 
-    pub(crate) fn declare_function(&mut self, prototype: MIRFnPrototype) -> MIRFunctionID {
-        self.declare_function_with_mode(prototype, MIRFunctionMode::Runtime)
-    }
-
-    pub(crate) fn declare_function_with_mode(
+    pub(crate) fn declare_function(
         &mut self,
         prototype: MIRFnPrototype,
         mode: MIRFunctionMode,
@@ -80,20 +76,10 @@ impl MIRModuleState {
         let id = MIRFunctionID::new(self.next_function_id);
         self.next_function_id += 1;
         self.functions
-            .insert(id, MIRFunction::declaration(id, prototype, mode));
+            .insert(id, MIRFunction::new(id, prototype, mode));
         self.function_symbols.insert(name, ModuleSymbol::new(id));
         self.function_ids.push(id);
         id
-    }
-
-    pub(crate) fn new_temporary_function(
-        &mut self,
-        prototype: MIRFnPrototype,
-        mode: MIRFunctionMode,
-    ) -> MIRFunction {
-        let id = MIRFunctionID::new(self.next_function_id);
-        self.next_function_id += 1;
-        MIRFunction::declaration(id, prototype, mode)
     }
 
     pub(crate) fn declare_global(
@@ -116,6 +102,14 @@ impl MIRModuleState {
             .insert(name_string, ModuleSymbol::new(id).with_used(pre_used));
         self.global_ids.push(id);
         id
+    }
+
+    pub(crate) fn define_function(&mut self, id: MIRFunctionID, def: MIRBody) {
+        let Some(function) = self.functions.get_mut(&id) else {
+            unreachable!("Could not define function id: {}", id);
+        };
+
+        function.define(def);
     }
 
     pub(crate) fn function_ids(&self) -> &[MIRFunctionID] {
@@ -151,10 +145,6 @@ impl MIRModuleState {
         )
     }
 
-    pub(crate) fn _global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
-        self.globals.get(&id)
-    }
-
     pub(crate) fn global_type(&self, id: MIRGlobalID) -> Option<MIRTypeID> {
         let global = self.globals.get(&id)?;
         match &global.kind {
@@ -185,64 +175,5 @@ impl MIRModuleState {
         };
 
         *s = state;
-    }
-
-    pub(crate) fn finish(self, types: MIRTypeRegistryBuilder) -> MIRUnit {
-        let Self {
-            functions,
-            globals,
-            function_symbols,
-            global_symbols,
-            function_ids: _,
-            global_ids,
-            ..
-        } = self;
-
-        let functions = functions
-            .into_iter()
-            .filter_map(|(_, function)| {
-                if function.mode() == MIRFunctionMode::Comptime
-                    || function.prototype().linkage == LinkageMode::Standard
-                {
-                    return Some((function.id(), function));
-                }
-
-                let name = &function.prototype().signature.symbol_name;
-                let symbol = function_symbols
-                    .get(&name.as_string())
-                    .expect("function symbol missing");
-
-                if symbol.is_used() {
-                    Some((function.id(), function))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        let globals: HashMap<MIRGlobalID, MIRGlobalVariable> = globals
-            .into_iter()
-            .filter_map(|(_, global)| {
-                if global.linkage == LinkageMode::Standard {
-                    return Some((global.id, global));
-                }
-
-                let name = &global.name;
-                let symbol = global_symbols
-                    .get(&name.as_string())
-                    .expect("global symbol missing");
-
-                if symbol.is_used() {
-                    Some((global.id, global))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        let global_order = global_ids
-            .into_iter()
-            .filter(|id| globals.contains_key(id))
-            .collect();
-
-        MIRUnit::new(types, functions, globals, global_order)
     }
 }

@@ -206,11 +206,11 @@ pub struct MIRFunction {
     id: MIRFunctionID,
     prototype: MIRFnPrototype,
     mode: MIRFunctionMode,
-    definition: Option<MIRFunctionDefinition>,
+    definition: Option<MIRBody>,
 }
 
 #[derive(Debug, Clone)]
-pub struct MIRFunctionDefinition {
+pub struct MIRBody {
     entry: Option<MIRBasicBlockID>,
     blocks: Vec<MIRBasicBlock>,
     places: Vec<MIRPlaceDecl>,
@@ -219,30 +219,17 @@ pub struct MIRFunctionDefinition {
 }
 
 impl MIRFunction {
-    pub fn declaration(
+    pub fn new(
         id: MIRFunctionID,
         prototype: MIRFnPrototype,
         mode: MIRFunctionMode,
+        definition: Option<MIRBody>,
     ) -> Self {
         Self {
             id,
             prototype,
             mode,
-            definition: None,
-        }
-    }
-
-    pub fn defined(
-        id: MIRFunctionID,
-        prototype: MIRFnPrototype,
-        definition: MIRFunctionDefinition,
-        mode: MIRFunctionMode,
-    ) -> Self {
-        Self {
-            id,
-            prototype,
-            mode,
-            definition: Some(definition),
+            definition,
         }
     }
 
@@ -258,39 +245,21 @@ impl MIRFunction {
         self.mode
     }
 
-    pub fn definition(&self) -> Option<&MIRFunctionDefinition> {
+    pub fn definition(&self) -> Option<&MIRBody> {
         self.definition.as_ref()
     }
 
-    pub fn into_definition(self) -> (MIRFunctionID, MIRFnPrototype, MIRFunctionDefinition) {
-        let (id, prototype, definition, _) = self.into_definition_with_mode();
-        (id, prototype, definition)
-    }
-
-    pub fn into_definition_with_mode(
-        self,
-    ) -> (
-        MIRFunctionID,
-        MIRFnPrototype,
-        MIRFunctionDefinition,
-        MIRFunctionMode,
-    ) {
-        let Self {
-            id,
-            prototype,
-            mode,
-            definition,
-        } = self;
-        (
-            id,
-            prototype,
-            definition.unwrap_or_else(MIRFunctionDefinition::new),
-            mode,
-        )
+    pub fn define(&mut self, def: MIRBody) {
+        assert!(
+            self.definition().is_none(),
+            "Attempt to redefine function: {}",
+            self.prototype().signature.display_name()
+        );
+        self.definition = Some(def);
     }
 }
 
-impl MIRFunctionDefinition {
+impl MIRBody {
     pub fn new() -> Self {
         Self {
             entry: None,
