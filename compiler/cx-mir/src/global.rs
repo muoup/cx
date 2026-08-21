@@ -144,21 +144,33 @@ impl MIRFnParam {
 pub struct MIRFnSignature {
     pub symbol_name: CXIdent,
     pub debug_name: Option<CXIdent>,
-    pub params: Vec<MIRFnParam>,
+
     pub return_type: MIRTypeID,
+    pub params: Vec<MIRFnParam>,
+
     pub variadic: bool,
     pub safe: bool,
+    pub mode: MIRFunctionMode,
 }
 
 impl MIRFnSignature {
-    pub fn new(symbol_name: CXIdent, params: Vec<MIRFnParam>, return_type: MIRTypeID) -> Self {
+    pub fn new(
+        symbol_name: CXIdent,
+        debug_name: Option<CXIdent>,
+        params: Vec<MIRFnParam>,
+        return_type: MIRTypeID,
+        mode: MIRFunctionMode,
+        variadic: bool,
+        safe: bool,
+    ) -> Self {
         Self {
             symbol_name,
-            debug_name: None,
+            debug_name,
             params,
             return_type,
-            variadic: false,
-            safe: false,
+            mode,
+            variadic,
+            safe,
         }
     }
 
@@ -205,7 +217,6 @@ pub struct MIRRegisterDecl {
 pub struct MIRFunction {
     id: MIRFunctionID,
     prototype: MIRFnPrototype,
-    mode: MIRFunctionMode,
     definition: Option<MIRBody>,
 }
 
@@ -219,16 +230,10 @@ pub struct MIRBody {
 }
 
 impl MIRFunction {
-    pub fn new(
-        id: MIRFunctionID,
-        prototype: MIRFnPrototype,
-        mode: MIRFunctionMode,
-        definition: Option<MIRBody>,
-    ) -> Self {
+    pub fn new(id: MIRFunctionID, prototype: MIRFnPrototype, definition: Option<MIRBody>) -> Self {
         Self {
             id,
             prototype,
-            mode,
             definition,
         }
     }
@@ -242,7 +247,7 @@ impl MIRFunction {
     }
 
     pub fn mode(&self) -> MIRFunctionMode {
-        self.mode
+        self.prototype().signature.mode
     }
 
     pub fn definition(&self) -> Option<&MIRBody> {

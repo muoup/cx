@@ -292,13 +292,6 @@ impl THIRType {
         }
     }
 
-    pub fn internal_function() -> Self {
-        THIRType::from(THIRTypeKind::Function {
-            signature: Box::new(THIRFnSignature::default()),
-        })
-        .with_strong_identifier(CXIdent::from("__internal_function"))
-    }
-
     pub fn with_strong_identifier(mut self, name: CXIdent) -> THIRType {
         self.strong_identifier = Some(name.as_string());
         self
@@ -336,6 +329,10 @@ impl THIRType {
 
     pub fn get_specifier(&self, specifier: HIRTypeQualifiers) -> bool {
         self.specifiers & specifier == specifier
+    }
+
+    pub fn cvr_compatible_with(&self, other: &THIRType) -> bool {
+        (self.specifiers ^ other.specifiers) & self.specifiers == 0
     }
 
     pub fn is_pointer(&self) -> bool {

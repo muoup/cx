@@ -16,7 +16,7 @@ use cx_mir::{
 use cx_thir::{
     THIRUnit,
     thir::{
-        data::{THIRType, THIRTypeKind},
+        data::{THIRFunction, THIRType, THIRTypeKind},
         expression::{THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRIntBinOp},
     },
     type_context::THIRTypeContext,
@@ -27,7 +27,8 @@ use crate::{builder::MIRBuilder, lowering::types::lower_type};
 
 pub(crate) fn lower_unit(builder: &mut MIRBuilder<'_>, thir: &THIRUnit) -> CXResult<()> {
     for function in &thir.functions {
-        builder.predeclare_function(function)?;
+        let prototype = builder.convert_prototype(&function.prototype)?;
+        builder.module().declare_function(prototype);
     }
 
     for global in &thir.global_variables {
@@ -59,7 +60,7 @@ pub(crate) fn lower_unit(builder: &mut MIRBuilder<'_>, thir: &THIRUnit) -> CXRes
 fn lower_function(
     builder: &mut MIRBuilder<'_>,
     index: usize,
-    function: &cx_thir::thir::data::THIRFunction,
+    function: &THIRFunction,
 ) -> CXResult<()> {
     let Some(body) = function.body.as_ref() else {
         return Ok(());
@@ -853,7 +854,9 @@ fn lower_expression(
                 if *creates_scope {
                     builder.push_lexical_scope(expression.token_range.clone());
                 }
+                
                 builder.push_named_scope();
+                
                 for statement in statements {
                     if builder.current_block_terminated()
                         && !control_flow::contains_label(statement)
@@ -862,7 +865,9 @@ fn lower_expression(
                     }
                     result = lower_expression(builder, statement)?;
                 }
+                
                 builder.pop_named_scope();
+                
                 if *creates_scope {
                     let (scope, defers) = builder.pop_lexical_scope();
                     if !builder.current_block_terminated() {
@@ -878,6 +883,7 @@ fn lower_expression(
                         }
                     }
                 }
+                
                 result
             }
 

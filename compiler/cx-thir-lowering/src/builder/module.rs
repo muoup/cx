@@ -65,8 +65,7 @@ impl MIRModuleState {
 
     pub(crate) fn declare_function(
         &mut self,
-        prototype: MIRFnPrototype,
-        mode: MIRFunctionMode,
+        prototype: MIRFnPrototype
     ) -> MIRFunctionID {
         let name = prototype.signature.symbol_name.as_string();
         if let Some(symbol) = self.function_symbols.get(&name) {
@@ -76,7 +75,7 @@ impl MIRModuleState {
         let id = MIRFunctionID::new(self.next_function_id);
         self.next_function_id += 1;
         self.functions
-            .insert(id, MIRFunction::new(id, prototype, mode));
+            .insert(id, MIRFunction::new(id, prototype, None));
         self.function_symbols.insert(name, ModuleSymbol::new(id));
         self.function_ids.push(id);
         id
@@ -114,6 +113,10 @@ impl MIRModuleState {
 
     pub(crate) fn function_ids(&self) -> &[MIRFunctionID] {
         &self.function_ids
+    }
+
+    pub(crate) fn function(&self, id: MIRFunctionID) -> Option<&MIRFunction> {
+        self.functions.get(&id)
     }
 
     pub(crate) fn take_function(&mut self, id: MIRFunctionID) -> MIRFunction {

@@ -1,4 +1,3 @@
-use crate::comptime::{ComptimeCallArg, evaluate_comptime_call, evaluate_staged_expression_call};
 use crate::environment::TypeEnvironment;
 use crate::symbol::deduction::complete_templated_callee_maybe;
 use crate::type_checking::coercion::implicit::conversion::compatible;
@@ -6,6 +5,8 @@ use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::lvalue;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::contracts::typecheck_contract;
+use crate::type_checking::result::ComptimeFunctionValue;
+use crate::type_checking::result::StagedFunctionValue;
 use crate::type_checking::result::{ComptimeTypecheckValue, TypecheckExtract, TypecheckResult};
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
@@ -146,21 +147,6 @@ pub(crate) fn typecheck_callee_method_call(
             );
         }
         callee => callee,
-    };
-
-    let CompletedCallee::Runtime(callee) = callee else {
-        let CompletedCallee::Comptime(function) = callee else {
-            unreachable!()
-        };
-        let all_args = implicit_args
-            .into_iter()
-            .map(ComptimeCallArg::Mir)
-            .chain(raw_args.into_iter().map(|arg| ComptimeCallArg::Source {
-                namespace,
-                expr: arg,
-            }))
-            .collect::<Vec<_>>();
-        return evaluate_comptime_call(env, expr.token_range(), function, all_args);
     };
 
     let (loaded_function, signature) = load_callable(env, expr, callee)?;
@@ -458,8 +444,8 @@ fn complete_callee(
 
 enum CompletedCallee {
     Runtime(THIRExpression),
-    Comptime(crate::type_checking::result::ComptimeFunctionValue),
-    Staged(crate::type_checking::result::StagedFunctionValue),
+    Comptime(ComptimeFunctionValue),
+    Staged(StagedFunctionValue),
 }
 
 pub(crate) fn comma_separated_exprs(expr: &HIRExpression) -> Vec<&HIRExpression> {

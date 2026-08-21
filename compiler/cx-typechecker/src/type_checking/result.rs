@@ -8,7 +8,6 @@ use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind, THIRLocalID}
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
 
-use crate::comptime::value::ComptimeValue;
 use crate::environment::TypeEnvironment;
 use cx_tokens::TokenRange;
 
@@ -53,21 +52,11 @@ impl TypecheckedBinding {
 #[derive(Debug)]
 pub enum TypecheckState {
     Ready(THIRExpression),
-    Comptime(ComptimeTypecheckValue),
     IncompleteTemplatedCallee {
         name: QualifiedName,
         template_input: Option<HIRTemplateInput>,
     },
     NeedsExpectedType(ExpectedTypeDeferredExpr),
-}
-
-#[derive(Debug, Clone)]
-pub enum ComptimeTypecheckValue {
-    Function(ComptimeFunctionValue),
-    StagedFunction(StagedFunctionValue),
-    Value(ComptimeValue),
-    #[allow(dead_code)]
-    StagedExpr(THIRExpression),
 }
 
 #[derive(Debug, Clone)]
@@ -223,55 +212,6 @@ impl TypecheckResult {
         }
     }
 
-    pub fn comptime_function(value: ComptimeFunctionValue) -> Self {
-        Self {
-            expression: TypecheckState::Comptime(ComptimeTypecheckValue::Function(value)),
-            binding: None,
-            adopting: false,
-        }
-    }
-
-    pub fn staged_function(value: StagedFunctionValue) -> Self {
-        Self {
-            expression: TypecheckState::Comptime(ComptimeTypecheckValue::StagedFunction(value)),
-            binding: None,
-            adopting: false,
-        }
-    }
-
-    pub fn comptime_value(value: ComptimeValue) -> Self {
-        Self {
-            expression: TypecheckState::Comptime(ComptimeTypecheckValue::Value(value)),
-            binding: None,
-            adopting: false,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn staged_expr(expression: THIRExpression) -> Self {
-        Self {
-            expression: TypecheckState::Comptime(ComptimeTypecheckValue::StagedExpr(expression)),
-            binding: None,
-            adopting: false,
-        }
-    }
-
-    pub fn needs_expected_type<F>(resolver: F) -> Self
-    where
-        F: FnOnce(
-                &mut TypeEnvironment,
-                &EnvironmentNamespace,
-                &THIRType,
-            ) -> CXResult<THIRExpression>
-            + 'static,
-    {
-        Self {
-            expression: TypecheckState::NeedsExpectedType(ExpectedTypeDeferredExpr::new(resolver)),
-            binding: None,
-            adopting: false,
-        }
-    }
-
     pub fn with_binding(mut self, binding: TypecheckedBinding) -> Self {
         self.binding = Some(binding);
         self
@@ -344,21 +284,6 @@ impl TypecheckResult {
         }
     }
 
-    pub fn set_token_range_if_missing(&mut self, token_range: TokenRange) -> CXResult<()> {
-        let expression = match &mut self.expression {
-            TypecheckState::Ready(expression) => expression,
-            TypecheckState::IncompleteTemplatedCallee { .. }
-            | TypecheckState::NeedsExpectedType(_)
-            | TypecheckState::Comptime(_) => return Ok(()),
-        };
-
-        if !matches!(expression.token_range, TokenRange::Source { .. }) {
-            expression.token_range = token_range;
-        }
-
-        Ok(())
-    }
-
     pub fn apply_expected_type(
         self,
         env: &mut TypeEnvironment,
@@ -376,45 +301,4 @@ impl TypecheckResult {
         }
     }
 
-    pub fn from_symbol(
-        symbol: MIRSymbol,
-        name: QualifiedName,
-        template_input: Option<HIRTemplateInput>,
-    ) -> CXRawResult<Self> {
-        if matches!(symbol, MIRSymbol::Template { .. }) {
-            return Ok(Self::incomplete_template(name, template_input));
-        }
-
-        if let MIRSymbol::ComptimeFunctionReference {
-            prototype,
-            namespace,
-            body,
-            template_bindings,
-        } = symbol
-        {
-            return Ok(Self::comptime_function(ComptimeFunctionValue {
-                prototype,
-                namespace,
-                body,
-                template_bindings,
-            }));
-        }
-
-        if let MIRSymbol::StagedExpressionFunction {
-            namespace,
-            params,
-            body,
-            return_type,
-        } = symbol
-        {
-            return Ok(Self::staged_function(StagedFunctionValue {
-                namespace,
-                params,
-                body,
-                return_type,
-            }));
-        }
-
-        symbol.as_expression().map(Self::from)
-    }
 }

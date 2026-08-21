@@ -22,10 +22,16 @@ pub struct THIRParameter {
 }
 
 #[derive(Debug, Clone)]
-pub struct THIRComptimeValueType {
-    pub expr: bool,
-    pub params: Vec<THIRType>,
-    pub _type: THIRType,
+pub struct THIRComptimeFunction {
+    pub name: Option<CXIdent>,
+}
+
+#[derive(Debug, Clone)]
+pub struct THIRComptimeFnPrototype {
+    lookup_identifier: Option<QualifiedName>,
+    debug_name: Option<CXIdent>,
+    return_type: THIRComptimeValueType,
+    params: Vec<THIRComptimeParameter>,
 }
 
 #[derive(Debug, Clone)]
@@ -35,11 +41,10 @@ pub struct THIRComptimeParameter {
 }
 
 #[derive(Debug, Clone)]
-pub struct THIRComptimeFnPrototype {
-    lookup_identifier: Option<QualifiedName>,
-    debug_name: Option<CXIdent>,
-    return_type: THIRComptimeValueType,
-    params: Vec<THIRComptimeParameter>,
+pub struct THIRComptimeValueType {
+    pub expr: bool,
+    pub params: Vec<THIRType>,
+    pub _type: THIRType,
 }
 
 impl THIRComptimeFnPrototype {

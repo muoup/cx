@@ -27,7 +27,7 @@ mod function;
 mod module;
 
 use crate::lowering::types::{lower_type, lower_type_id};
-use function::{FunctionContext, LoopContext, YieldContext};
+use function::{FunctionContext};
 use module::MIRModuleState;
 
 pub struct MIRBuilder<'thir> {
@@ -37,7 +37,6 @@ pub struct MIRBuilder<'thir> {
 
     lowering_types: HashSet<THIRTypeID>,
     function: Option<FunctionContext>,
-    source_range: TokenRange,
 
     next_anonymous_symbol: usize,
     next_comptime_function: usize,
@@ -83,38 +82,28 @@ impl<'thir> MIRBuilder<'thir> {
         &mut self.types
     }
 
+    pub fn module(&self) -> &MIRModuleState {
+        &self.module
+    }
+    
+    pub fn module_mut(&self) -> &MIRModuleState {
+        &mut self.module
+    }
+
+    pub fn current_fn(&self) -> &FunctionContext {
+        self.function
+            .as_ref()
+            .expect("no MIR function is currently active")
+    }
+
+    pub fn current_fn_mut(&mut self) -> &mut FunctionContext {
+        self.function
+            .as_mut()
+            .expect("no MIR function is currently active")
+    }
+
     pub fn finish(self) -> MIRUnit {
         todo!()
-    }
-
-    pub(crate) fn set_global_state(&mut self, id: MIRGlobalID, state: MIRGlobalState) {
-        self.module.set_global_state(id, state);
-    }
-
-    pub(crate) fn predeclare_function(&mut self, function: &THIRFunction) -> CXResult<()> {
-        let prototype = self.convert_prototype(&function.prototype)?;
-        self.module.declare_function(prototype);
-        Ok(())
-    }
-
-    pub(crate) fn predeclare_global(
-        &mut self,
-        global: &THIRGlobalVariable,
-    ) -> cx_log::CXResult<()> {
-        let ty = lower_type(self, &global._type)?;
-
-        self.module.declare_global(
-            global.name.clone(),
-            global.linkage,
-            MIRGlobalKind::Variable {
-                ty,
-                state: MIRGlobalState::External,
-                is_mutable: global.is_mutable,
-                is_nodrop: global._type.is_nodrop(),
-            },
-            false,
-        );
-        Ok(())
     }
 
     pub(crate) fn convert_prototype(
@@ -167,31 +156,7 @@ impl<'thir> MIRBuilder<'thir> {
         function: &THIRFunction,
         body: &THIRExpression,
     ) {
-        assert!(self.function.is_none(), "a MIR function is already active");
-        let function_id = *self
-            .module
-            .function_ids()
-            .get(index)
-            .expect("THIR function predeclaration is missing");
-        let mir = self.module.take_function(function_id);
-        let (id, prototype, mut definition, mode) = mir.into_definition_with_mode();
-        let entry = definition.add_block();
-        let root_scope = definition.add_scope(body.token_range.clone());
-
-        self.function = Some(FunctionContext::new(
-            id, prototype, mode, definition, entry, root_scope,
-        ));
-        self.context_mut().set_block_name(entry, "entry");
-
-        for (index, parameter) in function.prototype.signature().params.iter().enumerate() {
-            let place = MIRPlace::Parameter(MIRParameterID::new(index));
-            if let Some(local_id) = parameter.local_id {
-                self.bind_local(local_id, place);
-            }
-            if let Some(name) = &parameter.name {
-                self.bind_named(name, MIRValue::Place(place));
-            }
-        }
+        let Some(function) = self.module.function(
     }
 
     pub fn add_string_literal(&mut self, value: &str) -> MIRGlobalID {
@@ -213,72 +178,13 @@ impl<'thir> MIRBuilder<'thir> {
             unreachable!("No function context available at finish_function");
         };
 
-        let function = self
-            .module
+        self.module
             .define_function(context.id(), context.definition());
-    }
-
-    pub(crate) fn current_block(&self) -> MIRBasicBlockID {
-        self.context().current_block()
-    }
-
-    pub(crate) fn set_current_block(&mut self, block: MIRBasicBlockID) {
-        self.context_mut().set_current_block(block);
-    }
-
-    pub(crate) fn new_block(&mut self, debug_name: &str) -> MIRBasicBlockID {
-        self.context_mut().new_block(debug_name)
-    }
-
-    pub(crate) fn current_block_terminated(&self) -> bool {
-        self.context().current_block_terminated()
-    }
-
-    pub(crate) fn label_block(&mut self, name: &CXIdent) -> MIRBasicBlockID {
-        self.context_mut().label_block(name)
-    }
-
-    pub(crate) fn declare_label(&mut self, name: &CXIdent) -> MIRBasicBlockID {
-        self.context_mut().declare_label(name)
-    }
-
-    pub(crate) fn set_source_range(&mut self, range: TokenRange) -> TokenRange {
-        std::mem::replace(&mut self.source_range, range)
-    }
-
-    pub(crate) fn restore_source_range(&mut self, range: TokenRange) {
-        self.source_range = range;
     }
 
     pub(crate) fn emit(&mut self, instruction: MIRInstrKind) -> bool {
         let range = self.source_range.clone();
-        self.context_mut().emit(instruction, range)
-    }
-
-    pub(crate) fn register(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>) -> MIRRegister {
-        self.context_mut().register(ty, debug_name)
-    }
-
-    pub(crate) fn register_type(&self, register: MIRRegister) -> Option<MIRTypeID> {
-        self.context().register_type(register)
-    }
-
-    pub(crate) fn block_param(
-        &mut self,
-        block: MIRBasicBlockID,
-        ty: MIRTypeID,
-        debug_name: Option<CXIdent>,
-    ) -> MIRRegister {
-        self.context_mut().block_param(block, ty, debug_name)
-    }
-
-    pub(crate) fn place(
-        &mut self,
-        ty: MIRTypeID,
-        debug_name: Option<CXIdent>,
-        nodrop: bool,
-    ) -> MIRPlace {
-        self.context_mut().place(ty, debug_name, nodrop)
+        self.current_fn_mut().emit(instruction, range)
     }
 
     pub(crate) fn create(
@@ -291,138 +197,9 @@ impl<'thir> MIRBuilder<'thir> {
         self.emit(MIRInstrKind::Create { out: place, ty });
         place
     }
-
-    pub(crate) fn bind_local(&mut self, local: THIRLocalID, place: MIRPlace) {
-        self.context_mut().bind_local(local, place);
-    }
-
-    pub(crate) fn bind_local_value(&mut self, local: THIRLocalID, value: MIRValue) {
-        self.context_mut().bind_local_value(local, value);
-    }
-
-    pub(crate) fn local(&self, local: THIRLocalID) -> Option<MIRPlace> {
-        self.context().local(local)
-    }
-
-    pub(crate) fn local_value(&self, local: THIRLocalID) -> Option<MIRValue> {
-        self.context().local_value(local)
-    }
-
-    pub(crate) fn push_named_scope(&mut self) {
-        self.context_mut().push_named_scope();
-    }
-
-    pub(crate) fn pop_named_scope(&mut self) {
-        self.context_mut().pop_named_scope();
-    }
-
-    pub(crate) fn push_lexical_scope(&mut self, token_range: TokenRange) {
-        let scope = self.context_mut().push_lexical_scope(token_range);
-        self.emit(MIRInstrKind::ScopeEnter { scope });
-    }
-
-    pub(crate) fn pop_lexical_scope(&mut self) -> (MIRScopeID, Vec<THIRExpression>) {
-        self.context_mut().pop_lexical_scope()
-    }
-
-    pub(crate) fn _lexical_scope_depth(&self) -> usize {
-        self.context().lexical_scope_depth()
-    }
-
-    pub(crate) fn register_defer(&mut self, expression: THIRExpression) {
-        self.context_mut().register_defer(expression);
-    }
-
-    pub(crate) fn lexical_scope_exits_to(
-        &self,
-        depth: usize,
-    ) -> Vec<(MIRScopeID, Vec<THIRExpression>)> {
-        self.context().lexical_scope_exits_to(depth)
-    }
-
-    pub(crate) fn bind_named(&mut self, name: &CXIdent, value: MIRValue) {
-        self.context_mut().bind_named(name, value);
-    }
-
+    
     pub(crate) fn named(&self, name: &CXIdent) -> Option<MIRValue> {
-        self.context().named(name)
-    }
-
-    pub(crate) fn function_symbol(&mut self, name: &str) -> Option<MIRFunctionID> {
-        self.module.function_symbol(name)
-    }
-
-    pub(crate) fn global_symbol(&mut self, name: &str) -> Option<MIRGlobalID> {
-        self.module.global_symbol(name)
-    }
-
-    pub(crate) fn global_id(&self, name: &str) -> Option<MIRGlobalID> {
-        self.module.global_id(name)
-    }
-
-    pub(crate) fn push_contextual_scope(
-        &mut self,
-        break_target: MIRBasicBlockID,
-        continue_target: Option<MIRBasicBlockID>,
-    ) {
-        self.context_mut()
-            .push_contextual_scope(break_target, continue_target);
-    }
-
-    pub(crate) fn pop_loop(&mut self) -> LoopContext {
-        self.context_mut().pop_loop()
-    }
-
-    pub(crate) fn break_target(&self) -> Option<MIRBasicBlockID> {
-        self.context().break_target()
-    }
-
-    pub(crate) fn continue_target(&self) -> Option<MIRBasicBlockID> {
-        self.context().continue_target()
-    }
-
-    pub(crate) fn break_scope_depth(&self) -> Option<usize> {
-        self.context().break_scope_depth()
-    }
-
-    pub(crate) fn continue_scope_depth(&self) -> Option<usize> {
-        self.context().continue_scope_depth()
-    }
-
-    pub(crate) fn push_yield(&mut self, target: MIRBasicBlockID, result_type: Option<MIRTypeID>) {
-        self.context_mut().push_yield(target, result_type);
-    }
-
-    pub(crate) fn yield_target(&self) -> Option<MIRBasicBlockID> {
-        self.context().yield_target()
-    }
-
-    pub(crate) fn yield_scope_depth(&self) -> Option<usize> {
-        self.context().yield_scope_depth()
-    }
-
-    pub(crate) fn yield_result(&self) -> Option<MIRRegister> {
-        self.context().yield_result()
-    }
-
-    pub(crate) fn pop_yield(&mut self) -> YieldContext {
-        self.context_mut().pop_yield()
-    }
-
-    pub(crate) fn root_defers(&self) -> Vec<THIRExpression> {
-        self.context().root_defers()
-    }
-
-    fn context(&self) -> &FunctionContext {
-        self.function
-            .as_ref()
-            .expect("no MIR function is currently active")
-    }
-
-    fn context_mut(&mut self) -> &mut FunctionContext {
-        self.function
-            .as_mut()
-            .expect("no MIR function is currently active")
+        self.current_fn().named(name)
     }
 }
 
