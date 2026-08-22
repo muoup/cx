@@ -1,4 +1,5 @@
 mod calls;
+pub(crate) mod comptime;
 mod control_flow;
 mod memory;
 mod operators;
@@ -13,14 +14,16 @@ use cx_mir::{
 };
 use cx_thir::{
     thir::{
+        comptime::THIRComptimeFn,
         data::{THIRFunction, THIRTypeKind},
         expression::{THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRIntBinOp},
+        r#type::THIRType,
     },
     type_context::THIRTypeContext,
 };
 
 use crate::lowering::types::lower_float_type;
-use crate::{builder::MIRBuilder, lowering::types::lower_type};
+use crate::{builder::{MIRBuilder, integer_type}, lowering::types::lower_type};
 
 pub(crate) fn lower_function(
     builder: &mut MIRBuilder<'_>,
@@ -35,11 +38,79 @@ pub(crate) fn lower_function(
     lower_expression(builder, body)?;
 
     if !builder.current_fn().current_block_terminated() {
-        todo!("Implicit return logic")
+        let value = if matches!(
+            function.prototype.signature().return_type.kind,
+            THIRTypeKind::Void
+        ) {
+            None
+        } else {
+            Some(MIRValue::Constant(MIRConstant::Undefined))
+        };
+        builder.emit(MIRInstrKind::Return { value });
     }
 
     builder.finish_function();
     Ok(())
+}
+
+pub(crate) fn lower_comptime_function(
+    builder: &mut MIRBuilder<'_>,
+    id: MIRFunctionID,
+    function: &THIRComptimeFn,
+) -> CXResult<()> {
+    let Some(body) = function.body.as_ref() else {
+        return Ok(());
+    };
+
+    builder.start_function(id);
+    builder.push_named_scope();
+    for parameter in function.prototype.params() {
+        if let Some(name) = &parameter.name {
+            let ty = lower_type(builder, &parameter.value_type._type)?;
+            let place = builder.place(ty, Some(name.clone()), false);
+            builder.bind_named(name, MIRValue::Place(place));
+        }
+    }
+
+    let value = lower_expression(builder, body)?;
+
+    if !builder.current_block_terminated() {
+        let value =
+            if matches!(function.prototype.return_type()._type.kind, THIRTypeKind::Void) {
+                None
+            } else {
+                Some(value)
+            };
+        builder.emit(MIRInstrKind::Return { value });
+    }
+    builder.pop_named_scope();
+
+    builder.finish_function();
+    Ok(())
+}
+
+pub(super) fn materialize_value(
+    builder: &mut MIRBuilder<'_>,
+    value: MIRValue,
+    ty: &THIRType,
+) -> CXResult<MIRValue> {
+    let (place, moves) = match value {
+        MIRValue::Copy(place) => (place, false),
+        MIRValue::Move(place) => (place, true),
+        value => return Ok(value),
+    };
+    let type_id = lower_type(builder, ty)?;
+    let out = builder.register(type_id, None);
+    builder.emit(MIRInstrKind::Assign {
+        target: MIRAssignTarget::Register(out),
+        value: if moves {
+            MIRValue::Move(place)
+        } else {
+            MIRValue::Copy(place)
+        },
+        ty: type_id,
+    });
+    Ok(MIRValue::Register(out))
 }
 
 fn lower_expression(
@@ -293,12 +364,13 @@ fn lower_expression(
 
                 let ptarget = memory::ensure_place(builder, mtarget, &target._type)?;
 
-                builder.current_fn().emit(MIRInstrKind::Assign {
+                builder.set_source_range(target.token_range.clone());
+                builder.emit(MIRInstrKind::Assign {
                     target: MIRAssignTarget::Place(ptarget),
                     value: mvalue,
                     ty: assignment_type,
-                }, target.token_range.clone());
-                
+                });
+
                 MIRValue::Place(ptarget)
             }
 
@@ -923,6 +995,13 @@ fn lower_expression(
                 }
             }
             THIRExpressionKind::Unsafe { expression: inner } => lower_expression(builder, inner)?,
+            THIRExpressionKind::StagedExpression { params, body } => {
+                if params.is_empty() {
+                    lower_expression(builder, body)?
+                } else {
+                    MIRValue::Constant(MIRConstant::Undefined)
+                }
+            }
         };
 
         Ok(value)

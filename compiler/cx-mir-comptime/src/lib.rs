@@ -4,7 +4,9 @@ mod value;
 
 pub mod context;
 
-use crate::{context::MIRContext, value::MIRComptimeValue};
+pub use value::{MIRComptimeValue, MIRStagedParameter};
+
+use crate::context::MIRContext;
 use cx_log::CXResult;
 use cx_mir::{MIRConstant, MIRFunctionMode, MIRValue};
 use cx_thir::thir::expression::THIRExpression;
@@ -15,7 +17,7 @@ pub fn lower_comptime_expression<T: MIRContext>(
     context: &mut T,
     expr: &THIRExpression,
 ) -> CXResult<MIRValue> {
-    let comptime_value = match context.current_function().mode() {
+    let comptime_value = match context.current_prototype().signature.mode {
         // In a comptime context, if for instance a comptime function is invoked, we DONT want to eagerly evaluate this, as
         // eager evaluation requires the function to be pre-generated, and recursive function call chains will fail. Therefore
         // we should just generate normal instructions that defer this evaluation to the comptime engine we are guaranteed to be

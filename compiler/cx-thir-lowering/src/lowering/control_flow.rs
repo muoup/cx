@@ -12,7 +12,7 @@ use cx_thir::type_context::THIRTypeContext;
 
 use crate::{
     builder::MIRBuilder,
-    lowering::{aggregates, lower_expression, materialize_value, types::lower_type},
+    lowering::{aggregates, comptime, lower_expression, materialize_value, types::lower_type},
 };
 
 pub(super) fn contains_label(expression: &THIRExpression) -> bool {

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cx_mir::{
     MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID,
@@ -43,8 +43,19 @@ pub(crate) struct MIRModuleBuilder {
     function_symbols: HashMap<String, ModuleSymbol<MIRFunctionID>>,
     global_symbols: HashMap<String, ModuleSymbol<MIRGlobalID>>,
 
+    global_order: Vec<MIRGlobalID>,
+    
+    next_string_literal: usize,
     next_function_id: usize,
     next_global_id: usize,
+}
+
+pub(crate) struct ModuleParts {
+    pub functions: HashMap<MIRFunctionID, MIRFunction>,
+    pub globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
+    pub global_order: Vec<MIRGlobalID>,
+    pub used_functions: HashSet<MIRFunctionID>,
+    pub used_globals: HashSet<MIRGlobalID>,
 }
 
 impl MIRModuleBuilder {
@@ -54,6 +65,8 @@ impl MIRModuleBuilder {
             globals: HashMap::new(),
             function_symbols: HashMap::new(),
             global_symbols: HashMap::new(),
+            global_order: Vec::new(),
+            next_string_literal: 0,
             next_function_id: 0,
             next_global_id: 0,
         }
@@ -89,9 +102,23 @@ impl MIRModuleBuilder {
         self.next_global_id += 1;
         let global = MIRGlobalVariable::new(id, name, linkage, kind);
         self.globals.insert(id, global);
+        self.global_order.push(id);
         self.global_symbols
             .insert(name_string, ModuleSymbol::new(id).with_used(pre_used));
         id
+    }
+
+    pub(crate) fn add_string_literal(&mut self, value: &str) -> MIRGlobalID {
+        let name = CXIdent::from(format!("__anon_str_{}", self.next_string_literal));
+        self.next_string_literal += 1;
+        self.declare_global(
+            true,
+            name,
+            LinkageMode::Static,
+            MIRGlobalKind::StringLiteral {
+                value: value.to_owned(),
+            },
+        )
     }
 
     pub(crate) fn define_function(&mut self, id: MIRFunctionID, def: MIRBody) {
@@ -110,6 +137,13 @@ impl MIRModuleBuilder {
         self.global_symbols.get(name).map(ModuleSymbol::id)
     }
 
+    pub(crate) fn global_symbol(&mut self, name: &str) -> Option<MIRGlobalID> {
+        self.global_symbols
+            .get_mut(name)
+            .map(ModuleSymbol::get)
+            .map(|id| *id)
+    }
+
     pub(crate) fn function_symbol(&mut self, name: &str) -> Option<MIRFunctionID> {
         self.function_symbols.get_mut(name)
             .map(ModuleSymbol::get)
@@ -126,5 +160,25 @@ impl MIRModuleBuilder {
         };
 
         *s = state;
+    }
+
+    pub(crate) fn into_parts(self) -> ModuleParts {
+        ModuleParts {
+            used_functions: self
+                .function_symbols
+                .values()
+                .filter(|symbol| symbol.is_used())
+                .map(|symbol| symbol.id())
+                .collect(),
+            used_globals: self
+                .global_symbols
+                .values()
+                .filter(|symbol| symbol.is_used())
+                .map(|symbol| symbol.id())
+                .collect(),
+            functions: self.functions,
+            globals: self.globals,
+            global_order: self.global_order,
+        }
     }
 }
