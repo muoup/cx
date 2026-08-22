@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
 use cx_mir::{
-    MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRFunctionMode, MIRGlobalID,
-    MIRGlobalState, MIRGlobalVariable, MIRTypeID, MIRTypeRegistryBuilder, MIRUnit,
-    global::MIRGlobalKind,
+    MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID,
+    MIRGlobalState, MIRGlobalVariable, global::MIRGlobalKind,
 };
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
@@ -23,9 +22,9 @@ impl<T: Clone> ModuleSymbol<T> {
         self
     }
 
-    fn get(&mut self) -> T {
+    fn get(&mut self) -> &mut T {
         self.used = true;
-        self.id.clone()
+        &mut self.id
     }
 
     fn id(&self) -> T {
@@ -71,7 +70,6 @@ impl MIRModuleBuilder {
         self.functions
             .insert(id, MIRFunction::new(id, prototype, None));
         self.function_symbols.insert(name, ModuleSymbol::new(id));
-        self.function_ids.push(id);
         id
     }
 
@@ -93,7 +91,6 @@ impl MIRModuleBuilder {
         self.globals.insert(id, global);
         self.global_symbols
             .insert(name_string, ModuleSymbol::new(id).with_used(pre_used));
-        self.global_ids.push(id);
         id
     }
 
@@ -114,7 +111,9 @@ impl MIRModuleBuilder {
     }
 
     pub(crate) fn function_symbol(&mut self, name: &str) -> Option<MIRFunctionID> {
-        self.function_symbols.get_mut(name).map(ModuleSymbol::get)
+        self.function_symbols.get_mut(name)
+            .map(ModuleSymbol::get)
+            .map(|id| *id)
     }
 
     pub(crate) fn set_global_state(&mut self, id: MIRGlobalID, state: MIRGlobalState) {

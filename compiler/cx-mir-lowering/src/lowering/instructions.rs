@@ -9,7 +9,8 @@ use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::tagged_union_tag_offset;
 use cx_mir::{
     MIRAggregateOp, MIRAssignTarget, MIRBinaryOp, MIRCallKind, MIRCoercion, MIRConstant,
-    MIRFloatBinaryOp, MIRFnParam, MIRFnSignature, MIRFunctionType, MIRInstrKind, MIRIntBinaryOp,
+    MIRFloatBinaryOp, MIRFnParam, MIRFnSignature, MIRFunctionMode, MIRFunctionType, MIRInstrKind,
+    MIRIntBinaryOp,
     MIRIntType, MIRPlaceAggregateOp, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister,
     MIRTypeID, MIRTypeKind, MIRUnaryOp, MIRValue, MIRValueAggregateOp,
 };
@@ -57,6 +58,7 @@ fn call_signature(
         return_type: signature.return_type,
         variadic: signature.variadic,
         safe: false,
+        mode: MIRFunctionMode::Runtime,
     };
     classify_signature(&mir_signature, context.types())
 }

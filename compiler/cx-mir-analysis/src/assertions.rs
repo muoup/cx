@@ -86,9 +86,7 @@ fn check_function(function: &MIRFunction) -> Result<(), MIRAnalysisError> {
     let Some(definition) = function.definition() else {
         return Ok(());
     };
-    let Some(entry) = definition.entry() else {
-        return Ok(());
-    };
+    let entry = definition.entry();
     if entry.index() >= definition.blocks().len() {
         return Ok(());
     }

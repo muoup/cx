@@ -10,7 +10,7 @@ use cx_thir::thir::{
 };
 use cx_thir::type_context::THIRTypeContext;
 
-use crate::{builder::MIRBuilder, lowering::types::lower_type};
+use crate::{builder::MIRBuilder, lowering::{memory, types::lower_type}};
 
 pub(super) fn lower_pattern_test(
     builder: &mut MIRBuilder<'_>,
@@ -26,7 +26,7 @@ pub(super) fn lower_pattern_test(
             inner_local_id,
             inner_name,
         } => {
-            let base = super::memory::ensure_place(builder, lhs_value.clone(), &lhs._type)?;
+            let base = memory::ensure_place(builder, lhs_value.clone(), &lhs._type)?;
             if let Some(local_id) = inner_local_id {
                 let payload_type = sum_variant_type(builder, sum_type, *variant_index);
                 let payload_type_id = lower_type(builder, &payload_type)?;

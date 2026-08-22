@@ -104,11 +104,12 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn finish_thir_unit(self, source_namespace: EnvironmentNamespace) -> CXResult<THIRUnit> {
-        let (functions, globals) = self.items.drain_generated_items();
+        let (functions, comptime_functions, globals) = self.items.drain_generated_items();
 
         Ok(THIRUnit {
             source_namespace,
             functions,
+            comptime_functions,
             global_variables: globals,
             registry: self.symbols.decompose(),
         })

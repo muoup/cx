@@ -3,7 +3,7 @@ use crate::progress::ProgressReporter;
 use crate::{diagnostics, pipeline_error};
 use cx_log::{CXResult, error::CXErr};
 use cx_mir_analysis::{MIRAnalysisOptions, analyze};
-use cx_mir_comptime::materialize_globals;
+
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::preparse::PreparseConfig;
 use cx_parsing::{decompose_ast, parse_ast, preparse};
@@ -458,14 +458,7 @@ pub(crate) fn perform_job(
 
         CompilationStep::MIRGen => {
             let thir = context.module_db.thir.get(&job.unit);
-            let mut mir = generate_mir(thir.as_ref())?;
-            materialize_globals(&mut mir).map_err(|error| {
-                diagnostics::mir_diagnostic_error(
-                    &context.module_db,
-                    Some(&mir),
-                    error.diagnostic(),
-                )
-            })?;
+            let mir = generate_mir(thir.as_ref())?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&mir);

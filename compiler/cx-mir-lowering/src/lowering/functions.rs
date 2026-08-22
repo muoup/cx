@@ -66,7 +66,7 @@ fn lower_blocks(
     function: &MIRBody,
     types: &MIRTypeRegistryBuilder,
 ) -> (Vec<LMIRBasicBlock>, HashMap<cx_mir::MIRBasicBlockID, usize>) {
-    let entry = function.entry().expect("MIR definition has no entry");
+    let entry = function.entry();
     let mut order = vec![entry];
     order.extend(
         function

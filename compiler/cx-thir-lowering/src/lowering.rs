@@ -1,9 +1,9 @@
 mod calls;
 mod control_flow;
-mod globals;
 mod memory;
 mod operators;
 
+pub(crate) mod globals;
 pub(crate) mod aggregates;
 pub(crate) mod types;
 
@@ -12,15 +12,14 @@ use cx_mir::{
     MIRAggregateOp, MIRAssignTarget, MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstrKind, MIRIntType, MIRPlace, MIRPlaceAggregateOp, MIRTypeKind, MIRValue, MIRValueAggregateOp, ty::interface::MTRegistry
 };
 use cx_thir::{
-    THIRUnit,
     thir::{
-        data::{THIRFunction, THIRType, THIRTypeKind},
+        data::{THIRFunction, THIRTypeKind},
         expression::{THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRIntBinOp},
     },
     type_context::THIRTypeContext,
 };
 
-use crate::lowering::{globals::fulfill_init_request, types::lower_float_type};
+use crate::lowering::types::lower_float_type;
 use crate::{builder::MIRBuilder, lowering::types::lower_type};
 
 pub(crate) fn lower_function(
@@ -35,13 +34,8 @@ pub(crate) fn lower_function(
     builder.start_function(id);
     lower_expression(builder, body)?;
 
-    if !builder.current_block_terminated() {
-        control_flow::lower_root_defers(builder)?;
-        if function.prototype.signature().return_type.is_unreachable()
-            && !builder.current_block_terminated()
-        {
-            builder.emit(MIRInstrKind::Unreachable);
-        }
+    if !builder.current_fn().current_block_terminated() {
+        todo!("Implicit return logic")
     }
 
     builder.finish_function();
@@ -72,7 +66,7 @@ fn lower_expression(
                 MIRValue::Constant(MIRConstant::Float { value: *value, ty })
             }
             THIRExpressionKind::StringLiteral { value } => {
-                MIRValue::Place(MIRPlace::Global(builder.add_string_literal(value.as_str())))
+                MIRValue::Place(MIRPlace::Global(builder.module_mut().add_string_literal(value.as_str())))
             }
             THIRExpressionKind::Unit => MIRValue::Constant(MIRConstant::Unit),
             THIRExpressionKind::SizeOf { _type } | THIRExpressionKind::AlignOf { _type } => {
@@ -294,16 +288,18 @@ fn lower_expression(
             THIRExpressionKind::Assign { target, value } => {
                 let assignment_type = lower_type(builder, &value._type)?;
 
-                let target_value = lower_expression(builder, target)?;
-                let target = memory::ensure_place(builder, target_value, &target._type)?;
-                let value = lower_expression(builder, value)?;
+                let mtarget = lower_expression(builder, target)?;
+                let mvalue = lower_expression(builder, value)?;
 
-                builder.emit(MIRInstrKind::Assign {
-                    target: MIRAssignTarget::Place(target),
-                    value,
+                let ptarget = memory::ensure_place(builder, mtarget, &target._type)?;
+
+                builder.current_fn().emit(MIRInstrKind::Assign {
+                    target: MIRAssignTarget::Place(ptarget),
+                    value: mvalue,
                     ty: assignment_type,
-                });
-                MIRValue::Place(target)
+                }, target.token_range.clone());
+                
+                MIRValue::Place(ptarget)
             }
 
             THIRExpressionKind::Typechange(inner) => {
@@ -819,7 +815,7 @@ fn lower_expression(
                                 builder,
                                 result,
                                 &expression._type,
-                                vec![(Some(scope), defers)],
+                                vec![(Some(scope), todo!())],
                             )?;
                         }
                     }

@@ -1,17 +1,24 @@
 use cx_hir::{ast::function::HIRFunctionContract, symbols::HIRSymbolKind};
 use cx_log::CXResult;
-use cx_thir::thir::{
-    data::{THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter, THIRTemplateInput},
-    expression::{THIRExpression, THIRExpressionKind},
-    r#type::THIRType,
+use cx_thir::type_context::THIRTypeContext;
+use cx_thir::{
+    EnvironmentNamespace,
+    thir::{
+        data::{THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter, THIRTemplateInput},
+        expression::{THIRExpression, THIRExpressionKind},
+        r#type::THIRType,
+    },
 };
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode, namespace::QualifiedName};
 
 use crate::{
     environment::{THIRFunctionGenRequest, TypeEnvironment},
-    symbol::resolution::{apply_template_input, symbol_lexical_namespace},
-    type_checking::functions::typecheck_function,
+    symbol::{
+        name_mangling::base_mangle_templated_name,
+        resolution::{apply_template_input, symbol_lexical_namespace},
+    },
+    type_checking::functions::{typecheck_comptime_function, typecheck_function},
 };
 
 pub fn fulfill_requests(env: &mut TypeEnvironment) -> CXResult<()> {
@@ -37,6 +44,12 @@ pub fn fulfill_requests(env: &mut TypeEnvironment) -> CXResult<()> {
                 prototype,
                 input,
             } => realize_fn_template(env, &name, prototype, &input)?,
+
+            THIRFunctionGenRequest::Comptime {
+                lookup_identifier,
+                prototype,
+                input,
+            } => realize_comptime_function(env, &lookup_identifier, prototype, input.as_ref())?,
         }
     }
 
@@ -153,6 +166,82 @@ fn realize_fn_template(
             .mark_request_fulfilled(prototype.symbol_name().into());
 
         typecheck_function(env, &namespace, prototype, body)?;
+
+        Ok(())
+    })();
+    env.symbols.pop_local_scope();
+
+    result
+}
+
+fn realize_comptime_function(
+    env: &mut TypeEnvironment,
+    lookup_identifier: &QualifiedName,
+    mut prototype: THIRComptimeFnPrototype,
+    input: Option<&THIRTemplateInput>,
+) -> CXResult<()> {
+    let instance_name = match input {
+        Some(input) => base_mangle_templated_name(
+            &env.symbols,
+            prototype.symbol_name(),
+            input
+                .args
+                .iter()
+                .map(|arg| env.symbols.resolve_type_id(*arg)),
+        ),
+        None => prototype.symbol_name().to_owned(),
+    };
+
+    if env.items.request_fulfilled(&instance_name) {
+        return Ok(());
+    }
+    env.items.mark_request_fulfilled(instance_name.clone());
+
+    let stmt = env
+        .symbols
+        .get_global_registry()
+        .resolve(lookup_identifier)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "Expected comptime function '{}' to be present in the symbol registry",
+                lookup_identifier
+            )
+        });
+
+    let (template, body) = match &stmt.kind {
+        HIRSymbolKind::ComptimeFunction { body, .. } => (None, body),
+        HIRSymbolKind::ComptimeFunctionTemplate {
+            template, body, ..
+        } => {
+            // Template instances are realized from dedicated requests carrying
+            // their template input; never emit the unbound base form.
+            let _ = template;
+            if input.is_none() {
+                return Ok(());
+            }
+            (Some(template), body)
+        }
+        other => {
+            let _ = other;
+            unreachable!("Expected comptime function definition")
+        }
+    };
+
+    let namespace = EnvironmentNamespace::from(symbol_lexical_namespace(&lookup_identifier.namespace, &stmt));
+    env.symbols.push_local_scope();
+    let result = (|| -> CXResult<()> {
+        if let (Some(template), Some(input)) = (template, input) {
+            apply_template_input(env, template, input)
+                .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
+        }
+
+        if env.items.request_fulfilled(&instance_name) {
+            return Ok(());
+        }
+        env.items.mark_request_fulfilled(instance_name.clone());
+
+        prototype.map_symbol_name(|_| instance_name.clone());
+        typecheck_comptime_function(env, &namespace, prototype.clone(), body)?;
 
         Ok(())
     })();

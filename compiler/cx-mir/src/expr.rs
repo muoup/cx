@@ -205,7 +205,7 @@ impl MIRBasicBlock {
     }
 
     pub fn push(&mut self, kind: MIRInstrKind) -> &mut MIRInstr {
-        self.instrs.push(MIRInstr::new(kind));
+        self.instrs.push(MIRInstr::new(kind, TokenRange::internal()));
         self.instrs
             .last_mut()
             .expect("an instruction was just pushed")
@@ -225,11 +225,7 @@ pub struct MIRInstr {
 }
 
 impl MIRInstr {
-    pub fn new(kind: MIRInstrKind) -> Self {
-        Self::new_at(kind, TokenRange::internal())
-    }
-
-    pub fn new_at(kind: MIRInstrKind, token_range: TokenRange) -> Self {
+    pub fn new(kind: MIRInstrKind, token_range: TokenRange) -> Self {
         Self { kind, token_range }
     }
 

@@ -120,11 +120,17 @@ fn typecheck_expr_inner(
             )
         }
 
-        HIRExprKind::StagedExpression { .. } => TypecheckResult::staged_expr(THIRExpression {
-            token_range: expr.token_range().clone(),
-            kind: THIRExpressionKind::Unit,
-            _type: expected_type.cloned().unwrap_or_else(THIRType::unit),
-        }),
+        HIRExprKind::StagedExpression { params, body } => {
+            if params.is_empty() {
+                return typecheck_expr(env, namespace, body, expected_type);
+            }
+
+            return Ok(TypecheckResult::untyped_staged(
+                params.clone(),
+                body.clone(),
+                namespace.clone(),
+            ));
+        }
 
         HIRExprKind::Then => {
             return env.log_error(

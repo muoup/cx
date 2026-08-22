@@ -2,10 +2,7 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    expr::{
-        MIRBasicBlock, MIRBasicBlockID, MIRConstant, MIRInstr, MIRInstrKind, MIRPlace, MIRPlaceID,
-        MIRRegister, MIRScopeID,
-    },
+    expr::{MIRBasicBlock, MIRBasicBlockID, MIRConstant, MIRPlaceID, MIRRegister, MIRScopeID},
     ty::MIRTypeID,
 };
 
@@ -215,7 +212,46 @@ pub struct MIRRegisterDecl {
 pub struct MIRFunction {
     id: MIRFunctionID,
     prototype: MIRFnPrototype,
-    definition: Option<MIRBody>,
+    body: Option<MIRBody>,
+}
+
+impl MIRFunction {
+    pub fn new(id: MIRFunctionID, prototype: MIRFnPrototype, definition: Option<MIRBody>) -> Self {
+        Self {
+            id,
+            prototype,
+            body: definition,
+        }
+    }
+
+    pub fn id(&self) -> MIRFunctionID {
+        self.id
+    }
+
+    pub fn body(&self) -> Option<&MIRBody> {
+        self.body.as_ref()
+    }
+
+    pub fn prototype(&self) -> &MIRFnPrototype {
+        &self.prototype
+    }
+
+    pub fn mode(&self) -> MIRFunctionMode {
+        self.prototype().signature.mode
+    }
+
+    pub fn definition(&self) -> Option<&MIRBody> {
+        self.body.as_ref()
+    }
+
+    pub fn define(&mut self, def: MIRBody) {
+        assert!(
+            self.definition().is_none(),
+            "Attempt to redefine function: {}",
+            self.prototype().signature.display_name()
+        );
+        self.body = Some(def);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -228,55 +264,14 @@ pub struct MIRBody {
     scopes: Vec<MIRScopeDecl>,
 }
 
-impl MIRFunction {
-    pub fn new(id: MIRFunctionID, prototype: MIRFnPrototype, definition: Option<MIRBody>) -> Self {
-        Self {
-            id,
-            prototype,
-            definition,
-        }
-    }
-
-    pub fn id(&self) -> MIRFunctionID {
-        self.id
-    }
-
-    pub fn prototype(&self) -> &MIRFnPrototype {
-        &self.prototype
-    }
-
-    pub fn mode(&self) -> MIRFunctionMode {
-        self.prototype().signature.mode
-    }
-
-    pub fn definition(&self) -> Option<&MIRBody> {
-        self.definition.as_ref()
-    }
-
-    pub fn define(&mut self, def: MIRBody) {
-        assert!(
-            self.definition().is_none(),
-            "Attempt to redefine function: {}",
-            self.prototype().signature.display_name()
-        );
-        self.definition = Some(def);
-    }
-}
-
 impl MIRBody {
-    pub fn new(
-        entry: MIRBasicBlockID,
-        blocks: Vec<MIRBasicBlock>,
-        places: Vec<MIRPlaceDecl>,
-        registers: Vec<MIRRegisterDecl>,
-        scopes: Vec<MIRScopeDecl>,
-    ) -> Self {
+    pub fn new() -> Self {
         Self {
-            entry,
-            blocks,
-            places,
-            registers,
-            scopes,
+            entry: MIRBasicBlockID::new(0),
+            blocks: Vec::new(),
+            places: Vec::new(),
+            registers: Vec::new(),
+            scopes: Vec::new(),
         }
     }
 
@@ -295,20 +290,7 @@ impl MIRBody {
     pub fn block_mut(&mut self, id: MIRBasicBlockID) -> Option<&mut MIRBasicBlock> {
         self.blocks.get_mut(id.index())
     }
-
-    pub fn blocks_mut(&mut self) -> &mut [MIRBasicBlock] {
-        &mut self.blocks
-    }
-
-    pub fn add_block(&mut self) -> MIRBasicBlockID {
-        let id = MIRBasicBlockID::new(self.blocks.len());
-        self.blocks.push(MIRBasicBlock::new(id));
-        if self.entry.is_none() {
-            self.entry = Some(id);
-        }
-        id
-    }
-
+    
     pub fn places(&self) -> &[MIRPlaceDecl] {
         &self.places
     }
@@ -317,22 +299,8 @@ impl MIRBody {
         self.places().get(id.index())
     }
 
-    pub fn add_place(
-        &mut self,
-        ty: MIRTypeID,
-        debug_name: Option<CXIdent>,
-        nodrop: bool,
-        scope: MIRScopeID,
-    ) -> MIRPlace {
-        let id = MIRPlaceID::new(self.places.len());
-        self.places.push(MIRPlaceDecl {
-            id,
-            ty,
-            debug_name,
-            nodrop,
-            scope,
-        });
-        MIRPlace::FunctionLocal(id)
+    pub fn place_mut(&mut self, id: MIRPlaceID) -> Option<&mut MIRPlaceDecl> {
+        self.places.get_mut(id.index())
     }
 
     pub fn scopes(&self) -> &[MIRScopeDecl] {
@@ -343,46 +311,15 @@ impl MIRBody {
         self.scopes().get(id.index())
     }
 
+    pub fn scope_mut(&mut self, id: MIRScopeID) -> Option<&mut MIRScopeDecl> {
+        self.scopes.get_mut(id.index())
+    }
+
     pub fn registers(&self) -> &[MIRRegisterDecl] {
         &self.registers
     }
 
     pub fn register(&self, id: MIRRegister) -> Option<&MIRRegisterDecl> {
         self.registers().get(id.index())
-    }
-
-    pub fn add_register(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>) -> MIRRegister {
-        let id = MIRRegister::new(self.registers.len());
-        self.registers.push(MIRRegisterDecl { id, ty, debug_name });
-        id
-    }
-
-    pub fn add_block_param(
-        &mut self,
-        block: MIRBasicBlockID,
-        ty: MIRTypeID,
-        debug_name: Option<CXIdent>,
-    ) -> Option<MIRRegister> {
-        self.block(block)?;
-        let register = self.add_register(ty, debug_name);
-        self.block_mut(block)?.params.push(register);
-        Some(register)
-    }
-
-    pub fn add_scope(&mut self, token_range: TokenRange) -> MIRScopeID {
-        let id = MIRScopeID::new(self.scopes.len());
-        self.scopes.push(MIRScopeDecl { id, token_range });
-        id
-    }
-
-    pub fn push_instr_at(
-        &mut self,
-        block: MIRBasicBlockID,
-        kind: MIRInstrKind,
-        token_range: TokenRange,
-    ) -> Option<&mut MIRInstr> {
-        let block = self.block_mut(block)?;
-        block.instrs.push(MIRInstr::new_at(kind, token_range));
-        block.instrs.last_mut()
     }
 }

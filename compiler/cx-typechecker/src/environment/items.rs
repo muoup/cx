@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use cx_thir::thir::comptime::THIRComptimeFn;
+use cx_thir::thir::data::THIRComptimeFnPrototype;
 use cx_thir::thir::data::THIRFnPrototype;
 use cx_thir::thir::data::THIRFunction;
 use cx_thir::thir::data::THIRTemplateInput;
@@ -14,6 +16,11 @@ pub enum THIRFunctionGenRequest {
         prototype: THIRFnPrototype,
         input: THIRTemplateInput,
     },
+    Comptime {
+        lookup_identifier: QualifiedName,
+        prototype: THIRComptimeFnPrototype,
+        input: Option<THIRTemplateInput>,
+    },
     TypeConstructor {
         symbol_name: String,
         debug_name: CXIdent,
@@ -25,6 +32,7 @@ pub enum THIRFunctionGenRequest {
 
 pub struct ItemRegistry {
     generated_functions: Vec<THIRFunction>,
+    generated_comptime_functions: Vec<THIRComptimeFn>,
     generated_globals: Vec<THIRGlobalVariable>,
     requests: Vec<THIRFunctionGenRequest>,
     requests_fulfilled: HashSet<String>,
@@ -34,6 +42,7 @@ impl ItemRegistry {
     pub fn new() -> Self {
         Self {
             generated_functions: Vec::new(),
+            generated_comptime_functions: Vec::new(),
             generated_globals: Vec::new(),
 
             requests: Vec::new(),
@@ -41,14 +50,24 @@ impl ItemRegistry {
         }
     }
 
-    pub fn drain_generated_items(self) -> (Vec<THIRFunction>, Vec<THIRGlobalVariable>) {
+    pub fn drain_generated_items(
+        self,
+    ) -> (
+        Vec<THIRFunction>,
+        Vec<THIRComptimeFn>,
+        Vec<THIRGlobalVariable>,
+    ) {
         if !self.requests.is_empty() {
             unreachable!(
                 "Attempted to drain generated items while there are still pending generation requests. This is a bug."
             )
         }
 
-        (self.generated_functions, self.generated_globals)
+        (
+            self.generated_functions,
+            self.generated_comptime_functions,
+            self.generated_globals,
+        )
     }
 
     pub fn push_request(&mut self, request: THIRFunctionGenRequest) {
@@ -81,6 +100,10 @@ impl ItemRegistry {
         }
 
         self.generated_functions.push(function);
+    }
+
+    pub fn push_generated_comptime_function(&mut self, function: THIRComptimeFn) {
+        self.generated_comptime_functions.push(function);
     }
 
     pub fn push_generated_global(&mut self, global: THIRGlobalVariable) {

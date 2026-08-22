@@ -357,10 +357,23 @@ pub fn complete_comptime_prototype(
 
     let lookup_identifier = function_lookup_identifier(namespace, &prototype.kind);
     let debug_name = lookup_identifier.name.clone();
+    let symbol_name = completed_comptime_symbol_name(env, &lookup_identifier);
 
-    Ok(THIRComptimeFnPrototype::new(return_type, params)
-        .with_lookup_identifier(lookup_identifier)
-        .with_debug_name(debug_name))
+    Ok(
+        THIRComptimeFnPrototype::new(symbol_name, return_type, params)
+            .with_lookup_identifier(lookup_identifier)
+            .with_debug_name(debug_name),
+    )
+}
+
+fn completed_comptime_symbol_name(
+    env: &TypeEnvironment,
+    lookup_identifier: &QualifiedName,
+) -> String {
+    crate::symbol::name_mangling::mangle_qualified_name(
+        env.symbols.get_global_registry(),
+        lookup_identifier,
+    )
 }
 
 fn function_lookup_identifier(
