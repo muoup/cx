@@ -2,7 +2,7 @@ use cx_log::{
     CXResult,
     error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
 };
-use cx_mir::{MIRBlockTarget, MIRConstant, MIRInstrKind, MIRScopeID, MIRValue};
+use cx_mir::{MIRBlockTarget, MIRConstant, MIRInstrKind, MIRValue};
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
     expression::{THIRBinOp, THIRExpression, THIRExpressionKind, THIRIntBinOp, THIRLocalID},
@@ -31,13 +31,17 @@ pub fn lower_scoped(
 }
 
 pub fn auto_pop_scope(builder: &mut MIRBuilder) -> CXResult<()> {
-    let defers: &[THIRExpression] =
-        unsafe { std::mem::transmute(builder.fun_mut().current_scope().deferred_expressions()) };
+    let defers = builder
+        .fun()
+        .current_scope()
+        .deferred_expressions()
+        .to_vec();
 
     for defer in defers {
         lower_expression(builder, &defer)?;
     }
 
+    let _ = builder.fun_mut().pop_scope();
     Ok(())
 }
 
@@ -86,9 +90,13 @@ pub(super) fn lower_if(
     else_branch: Option<&THIRExpression>,
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
-    let then_block = builder.fun_mut().new_block("if.unreachable.then");
-    let else_block = builder.fun_mut().new_block("if.unreachable.else");
-    let continuation = builder.fun_mut().new_block("if.unreachable.continuation");
+    if builder.fun().current_block_terminated() {
+        return Ok(MIRValue::Constant(MIRConstant::Unit));
+    }
+    
+    let then_block = builder.fun_mut().new_block("if.then");
+    let else_block = if else_branch.is_some() { Some(builder.fun_mut().new_block("if.else")) } else { None };
+    let continuation = builder.fun_mut().new_block("if.continuation");
 
     builder.fun_mut().push_scope(condition.token_range.clone());
 
@@ -96,7 +104,7 @@ pub(super) fn lower_if(
     builder.emit(MIRInstrKind::Branch {
         cond: condition_value,
         true_target: MIRBlockTarget::new(then_block),
-        false_target: MIRBlockTarget::new(else_block),
+        false_target: MIRBlockTarget::new(else_block.unwrap_or(continuation))
     });
 
     // TODO: This should be strengthened in the future if we want to support Rust style unit-values.
@@ -113,9 +121,17 @@ pub(super) fn lower_if(
     builder.fun_mut().set_current_block(then_block);
     lower_scoped(builder, then_branch)?;
 
-    builder.fun_mut().set_current_block(else_block);
+    builder.emit(MIRInstrKind::Jump {
+        target: MIRBlockTarget::new(continuation),
+    });
+
     if let Some(else_branch) = else_branch {
+        builder.fun_mut().set_current_block(else_block.unwrap());
         lower_scoped(builder, else_branch)?;
+
+        builder.emit(MIRInstrKind::Jump {
+            target: MIRBlockTarget::new(continuation),
+        });
     }
 
     auto_pop_scope(builder)?;
@@ -367,10 +383,17 @@ pub(super) fn lower_match(
         .or_else(|| synthetic_unreachable.then(|| builder.fun_mut().new_block("match.unreachable")))
         .unwrap_or(exit);
 
-    if value_match {
+    let subject_place = match &subject_value {
+        MIRValue::Place(place) => Some(*place),
+        _ => None,
+    };
+
+    let yield_register = if value_match {
         let result_type_id = lower_type(builder, result_type)?;
-        builder.fun_mut().set_yield_recipient(exit, result_type_id);
-    }
+        Some(builder.fun_mut().set_yield_recipient(exit, result_type_id))
+    } else {
+        None
+    };
 
     let mut blocks = Vec::with_capacity(arms.len());
     for _ in arms {
@@ -405,10 +428,10 @@ pub(super) fn lower_match(
                     aggregates::constant_from_pattern(pattern),
                     MIRBlockTarget::new(*block),
                 )
-            })
+        })
             .collect();
         builder.emit(MIRInstrKind::IntSwitch {
-            value: subject_value,
+            value: subject_value.clone(),
             cases,
             default: default_target,
         });
@@ -420,14 +443,10 @@ pub(super) fn lower_match(
     for ((pattern, body), block) in arms.iter().zip(blocks) {
         builder.fun_mut().set_current_block(block);
         builder.fun_mut().push_invisible_scope();
- 
-        if variant_match {
-            let subject_type = builder.registry().resolve_type_id(subject_type.id);
-            let subject_place = builder.fun_mut().new_place(ty, "match.subject", nodrop)?;
-
+        if let Some(subject_place) = subject_place {
             aggregates::bind_pattern_payload(builder, pattern, subject_place, &condition._type)?;
         }
- 
+
         let body_value = lower_expression(builder, body)?;
         auto_pop_scope(builder)?;
 
@@ -444,13 +463,9 @@ pub(super) fn lower_match(
     }
 
     if let Some(default) = default {
-        builder.set_current_block(default_block);
-        let default_value = if value_match {
-            lower_scoped_value(builder, default, result_type)?
-        } else {
-            lower_scoped(builder, default)?
-        };
-        if !builder.current_block_terminated() {
+        builder.fun_mut().set_current_block(default_block);
+        let default_value = lower_scoped(builder, default)?;
+        if !builder.fun().current_block_terminated() {
             builder.emit(MIRInstrKind::Jump {
                 target: MIRBlockTarget::with_args(
                     exit,
@@ -465,16 +480,14 @@ pub(super) fn lower_match(
     }
 
     if synthetic_unreachable {
-        builder.set_current_block(default_block);
+        builder.fun_mut().set_current_block(default_block);
         builder.emit(MIRInstrKind::Unreachable);
     }
 
-    builder.pop_loop();
-    let yields = builder.pop_yield();
-    builder.set_current_block(exit);
+    auto_pop_scope(builder)?;
+    builder.fun_mut().set_current_block(exit);
 
-    match yields.result {
-        Some(result) => Ok(MIRValue::Register(result)),
-        None => Ok(MIRValue::Constant(MIRConstant::Unit)),
-    }
+    Ok(yield_register
+        .map(MIRValue::Register)
+        .unwrap_or(MIRValue::Constant(MIRConstant::Unit)))
 }

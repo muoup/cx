@@ -273,14 +273,25 @@ fn typecheck_expr_inner(
             } else {
                 then_result._type.clone()
             };
-            let then_result = implicit_cast(env, then_result, &result_type)?;
-            let else_result = implicit_cast(env, else_result, &result_type)?;
+            
+            let then_result = implicit_cast(env, then_result, &result_type)
+                .map(|v| THIRExpression {
+                    _type: THIRType::unit(),
+                    kind: THIRExpressionKind::Yield { value: Some(Box::new(v)) },
+                    token_range: TokenRange::internal(),
+                })?;
+            let else_result = implicit_cast(env, else_result, &result_type)
+                .map(|v| THIRExpression {
+                    _type: THIRType::unit(),
+                    kind: THIRExpressionKind::Yield { value: Some(Box::new(v)) },
+                    token_range: TokenRange::internal(),
+                })?;
 
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
                 kind: THIRExpressionKind::If {
                     condition: Box::new(condition_result),
-                    then_branch: Box::new(then_result.clone()),
+                    then_branch: Box::new(then_result),
                     else_branch: Some(Box::new(else_result)),
                 },
                 _type: result_type,

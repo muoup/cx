@@ -28,13 +28,13 @@ pub(crate) struct FunctionBuilder {
 pub(crate) struct ScopeContext {
     id: MIRScopeID,
 
-    yield_target: Option<MIRBasicBlockID>,
+    pub(crate) yield_target: Option<MIRBasicBlockID>,
 
-    break_target: Option<MIRBasicBlockID>,
-    continue_target: Option<MIRBasicBlockID>,
+    pub(crate) break_target: Option<MIRBasicBlockID>,
+    pub(crate) continue_target: Option<MIRBasicBlockID>,
 
     named_values: HashMap<String, MIRValue>,
-    defered_expressions: Vec<THIRExpression>,
+    pub(crate) defered_expressions: Vec<THIRExpression>,
 }
 
 impl ScopeContext {
