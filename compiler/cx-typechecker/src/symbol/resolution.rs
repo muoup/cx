@@ -22,7 +22,7 @@ use cx_thir::{
             THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter, THIRTemplateInput,
             TemplateInfo,
         },
-        expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
+        expression::{THIRCoercion, THIRExpression, THIRExpressionKind, THIRLocalID},
         global::THIRGlobalVariable,
     },
     type_context::THIRTypeContext,
@@ -111,7 +111,7 @@ fn resolve_symbol_inner(
                 env.items.push_generated_global(THIRGlobalVariable {
                     name: symbol_name.clone(),
                     _type: ty.clone(),
-                 
+
                     is_mutable: false,
                     linkage: LinkageMode::Extern,
                     initializer: None,
@@ -380,7 +380,7 @@ fn resolve_type_constructor(
             } else {
                 vec![THIRParameter {
                     name: Some(CXIdent::new("value")),
-                    local_id: Some(cx_thir::thir::expression::THIRLocalID::fresh()),
+                    local_id: THIRLocalID::fresh(),
                     _type: variant_type.clone(),
                 }]
             },

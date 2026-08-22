@@ -23,8 +23,7 @@ use cx_thir::{
         data::{
             THIRComptimeFnPrototype, THIRComptimeParameter, THIRComptimeValueType, THIRFnPrototype,
             THIRFnSignature, THIRParameter, THIRTemplateInput, THIRTypeAttributes,
-        },
-        r#type::{THIRField, THIRMoveSemantics, THIRType, THIRTypeID, THIRTypeKind},
+        }, expression::THIRLocalID, r#type::{THIRField, THIRMoveSemantics, THIRType, THIRTypeID, THIRTypeKind}
     },
     type_context::THIRTypeContext,
 };
@@ -405,10 +404,7 @@ fn complete_explicit_parameters(
             };
             Ok(THIRParameter {
                 name: param.name.clone(),
-                local_id: param
-                    .name
-                    .as_ref()
-                    .map(|_| cx_thir::thir::expression::THIRLocalID::fresh()),
+                local_id: THIRLocalID::fresh(),
                 _type,
             })
         })

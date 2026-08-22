@@ -1,4 +1,4 @@
-use cx_log::CXResult;
+use cx_log::{CXResult, error::{CXErr, context::CXInternalContext, message::CXStdErrMessage}};
 use cx_mir::{
     MIRAggregateOp, MIRBinaryOp, MIRConstant, MIRInstrKind, MIRIntBinaryOp, MIRIntType, MIRPlace,
     MIRPlaceAggregateOp, MIRValue, MIRValueAggregateOp,
@@ -10,7 +10,10 @@ use cx_thir::thir::{
 };
 use cx_thir::type_context::THIRTypeContext;
 
-use crate::{builder::MIRBuilder, lowering::{memory, types::lower_type}};
+use crate::{
+    builder::MIRBuilder,
+    lowering::{memory, types::lower_type},
+};
 
 pub(super) fn lower_pattern_test(
     builder: &mut MIRBuilder<'_>,
@@ -30,8 +33,12 @@ pub(super) fn lower_pattern_test(
             if let Some(local_id) = inner_local_id {
                 let payload_type = sum_variant_type(builder, sum_type, *variant_index);
                 let payload_type_id = lower_type(builder, &payload_type)?;
-                let payload = builder.place(payload_type_id, inner_name.clone(), false);
+                let payload =
+                    builder
+                        .fun_mut()
+                        .new_place(payload_type_id, inner_name.clone(), false);
                 let sum_type_id = lower_type(builder, sum_type)?;
+
                 builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Place {
                     out: payload,
                     op: MIRPlaceAggregateOp::Variant {
@@ -40,7 +47,10 @@ pub(super) fn lower_pattern_test(
                         sum_type: sum_type_id,
                     },
                 }));
-                builder.bind_local(*local_id, payload);
+
+                builder
+                    .fun_mut()
+                    .bind_local(*local_id, MIRValue::Place(payload));
             }
             let tag_type = lower_type(
                 builder,
@@ -49,7 +59,7 @@ pub(super) fn lower_pattern_test(
                     signed: false,
                 }),
             )?;
-            let tag = builder.register(tag_type, None);
+            let tag = builder.fun_mut().new_register(tag_type, None);
             let sum_type_id = lower_type(builder, sum_type)?;
             builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Value {
                 out: tag,
@@ -84,7 +94,7 @@ pub(super) fn lower_pattern_test(
         ),
     };
     let result_type_id = lower_type(builder, result_type)?;
-    let out = builder.register(result_type_id, None);
+    let out = builder.fun_mut().new_register(result_type_id, None);
     builder.emit(MIRInstrKind::BinOp {
         out,
         op: MIRBinaryOp::Integer {
@@ -113,7 +123,9 @@ pub(super) fn bind_pattern_payload(
     {
         let payload_type = sum_variant_type(builder, sum_type, *variant_index);
         let payload_type_id = lower_type(builder, &payload_type)?;
-        let payload = builder.place(payload_type_id, inner_name.clone(), false);
+        let payload = builder
+            .fun_mut()
+            .new_place(payload_type_id, inner_name.clone(), false);
         let sum_type_id = lower_type(builder, sum_type)?;
 
         builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Place {
@@ -125,9 +137,13 @@ pub(super) fn bind_pattern_payload(
             },
         }));
 
-        builder.bind_local(*local_id, payload);
+        builder
+            .fun_mut()
+            .bind_local(*local_id, MIRValue::Place(payload));
         if let Some(name) = inner_name {
-            builder.bind_named(name, MIRValue::Place(payload));
+            builder
+                .fun_mut()
+                .bind_named_value(name, MIRValue::Place(payload));
         }
     }
     Ok(())
@@ -165,5 +181,15 @@ pub(super) fn constant_from_pattern(pattern: &THIRPattern) -> MIRConstant {
             ty: MIRIntType::I8,
             signed: false,
         },
+    }
+}
+
+pub fn move_value(value: MIRValue) -> CXResult<MIRValue> {
+    match value {
+        MIRValue::Place(place) => Ok(MIRValue::Move(place)),
+        _ => Err(CXErr::new(
+            CXStdErrMessage::error("COMPTIME ERROR", "expression depends on a runtime local"),
+            CXInternalContext::error("runtime local is unavailable in a comptime expression"),
+        )),
     }
 }

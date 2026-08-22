@@ -35,7 +35,7 @@ pub(super) fn ensure_place(
                 .expect("memory reference is missing its pointee type");
             let pointee = builder.registry().resolve_type_id(inner_type).clone();
             let pointee_type = lower_type(builder, &pointee)?;
-            let out = builder.place(pointee_type, None, false);
+            let out = builder.fun_mut().new_place(pointee_type, None, false);
             builder.emit(MIRInstrKind::Dereference {
                 out,
                 pointer: value,

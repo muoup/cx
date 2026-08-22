@@ -17,7 +17,7 @@ pub struct THIRFunction {
 #[derive(Debug, Clone)]
 pub struct THIRParameter {
     pub name: Option<CXIdent>,
-    pub local_id: Option<THIRLocalID>,
+    pub local_id: THIRLocalID,
     pub _type: THIRType,
 }
 

@@ -1,5 +1,6 @@
 use cx_log::CXResult;
 use cx_mir::{MIRCallKind, MIRConstant, MIRField, MIRInstrKind, MIRValue};
+use cx_thir::thir::expression::THIRFnContract;
 use cx_thir::thir::{data::THIRType, expression::THIRExpression, r#type::THIRField};
 use cx_thir::type_context::THIRTypeContext;
 
@@ -13,7 +14,7 @@ pub(super) fn lower_call(
     builder: &mut MIRBuilder<'_>,
     function: &THIRExpression,
     arguments: &[THIRExpression],
-    contract: &cx_thir::thir::expression::THIRFnContract,
+    contract: &THIRFnContract,
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
     let callee = lower_expression(builder, function)?;
@@ -23,7 +24,7 @@ pub(super) fn lower_call(
     }
 
     if let Some(precondition) = &contract.precondition {
-        builder.push_named_scope();
+        builder.fun_mut().push_invisible_scope();
         let parameter_names = builder
             .registry()
             .intern_signature(&function._type)
@@ -37,17 +38,17 @@ pub(super) fn lower_call(
             .unwrap_or_default();
         for (name, argument) in parameter_names.iter().zip(args.iter().cloned()) {
             if let Some(name) = name {
-                builder.bind_named(name, argument);
+                builder.fun_mut().bind_named_value(name, argument);
             }
         }
         super::lower_expression(builder, precondition)?;
-        builder.pop_named_scope();
+        builder.fun_mut().pop_scope();
     }
 
     let returns_value = !result_type.is_void() && !result_type.is_unreachable();
     let out = if returns_value {
         let result_type_id = lower_type(builder, result_type)?;
-        Some(builder.register(result_type_id, None))
+        Some(builder.fun_mut().new_register(result_type_id, None))
     } else {
         None
     };
@@ -69,7 +70,7 @@ pub(super) fn lower_call(
         .unwrap_or(MIRValue::Constant(MIRConstant::Unit));
 
     if let Some(postcondition) = &contract.postcondition {
-        builder.push_named_scope();
+        builder.fun_mut().push_invisible_scope();
         let parameter_names = builder
             .registry()
             .intern_signature(&function._type)
@@ -83,15 +84,15 @@ pub(super) fn lower_call(
             .unwrap_or_default();
         for (name, argument) in parameter_names.iter().zip(args) {
             if let Some(name) = name {
-                builder.bind_named(name, argument);
+                builder.fun_mut().bind_named_value(name, argument);
             }
         }
         if let Some(name) = &postcondition.binding {
-            builder.bind_named(name, value.clone());
+            builder.fun_mut().bind_named_value(name, value.clone());
         }
         let condition = super::lower_expression(builder, &postcondition.condition)?;
         builder.emit(MIRInstrKind::Assume { condition });
-        builder.pop_named_scope();
+        builder.fun_mut().pop_scope();
     }
 
     Ok(value)

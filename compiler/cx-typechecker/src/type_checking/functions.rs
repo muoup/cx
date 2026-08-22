@@ -10,7 +10,9 @@ use cx_thir::{
     EnvironmentNamespace,
     thir::{
         comptime::THIRComptimeFn,
-        data::{THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter},
+        data::{
+            THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter,
+        },
         expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
         r#type::THIRTypeKind,
     },
@@ -47,12 +49,11 @@ pub fn typecheck_function(
     } in prototype.signature().params.iter()
     {
         ensure_valid_type_component(env, body.token_range(), _type, "a parameter", true)?;
-        
+
         let Some(name) = name else {
             continue;
-        };        
+        };
 
-        let local_id = local_id.expect("named MIR parameter is missing a local id");
         let ref_type = env.symbols.mem_ref_to(_type.clone());
 
         env.symbols.insert_local_value(
@@ -61,7 +62,7 @@ pub fn typecheck_function(
                 token_range: TokenRange::internal(),
                 kind: THIRExpressionKind::Variable {
                     name: name.clone(),
-                    local_id,
+                    local_id: *local_id,
                 },
                 _type: ref_type,
             },
@@ -148,7 +149,7 @@ pub fn typecheck_comptime_function(
 
         bookkeeping_params.push(THIRParameter {
             name: Some(name),
-            local_id: Some(local_id),
+            local_id,
             _type: if is_parameterized_staged {
                 THIRTypeKind::Undefined.into()
             } else {
@@ -174,7 +175,8 @@ pub fn typecheck_comptime_function(
     env.function.begin_function(bookkeeping);
     env.push_scope(false, false);
     env.function.set_scope_anchor(body);
-    env.function.configure_merge_scope(body, Some("fallthrough"));
+    env.function
+        .configure_merge_scope(body, Some("fallthrough"));
 
     env.enter_comptime_context();
     let checked = (|| -> CXResult<THIRExpression> {

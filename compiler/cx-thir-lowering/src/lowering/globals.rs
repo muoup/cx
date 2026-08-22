@@ -78,7 +78,7 @@ pub(crate) fn fulfill_init_request(
     builder.start_function(request.init_id);
 
     let value = lower_expression(builder, &request.initializer)?;
-    if !builder.current_block_terminated() {
+    if !builder.fun_mut().current_block_terminated() {
         builder.emit(MIRInstrKind::Return {
             value: Some(value),
         });

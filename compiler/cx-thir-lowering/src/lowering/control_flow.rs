@@ -40,38 +40,6 @@ pub(super) fn contains_label(expression: &THIRExpression) -> bool {
     }
 }
 
-fn move_value(builder: &mut MIRBuilder<'_>, value: MIRValue, ty: &THIRType) -> CXResult<MIRValue> {
-    let value = match value {
-        MIRValue::Place(place) => MIRValue::Move(place),
-        value => value,
-    };
-    materialize_value(builder, value, ty)
-}
-
-fn lower_scoped(builder: &mut MIRBuilder<'_>, expression: &THIRExpression) -> CXResult<MIRValue> {
-    builder.push_lexical_scope(expression.token_range.clone());
-    let result = super::lower_expression(builder, expression);
-    let (scope, defers) = builder.pop_lexical_scope();
-    if result.is_ok() && !builder.current_block_terminated() {
-        lower_scope_exit(builder, scope, &defers)?;
-    }
-    result
-}
-
-fn lower_scoped_value(
-    builder: &mut MIRBuilder<'_>,
-    expression: &THIRExpression,
-    ty: &THIRType,
-) -> CXResult<MIRValue> {
-    builder.push_lexical_scope(expression.token_range.clone());
-    let result = super::lower_expression(builder, expression)?;
-    let (scope, defers) = builder.pop_lexical_scope();
-    if builder.current_block_terminated() {
-        return Ok(result);
-    }
-    finish_value_cleanup(builder, result, ty, vec![(Some(scope), defers)])
-}
-
 fn rvalue(value: MIRValue, ty: &THIRType) -> MIRValue {
     if ty.is_void() {
         return MIRValue::Constant(MIRConstant::Unit);
@@ -85,151 +53,6 @@ fn rvalue(value: MIRValue, ty: &THIRType) -> MIRValue {
     }
 }
 
-fn lower_defers(builder: &mut MIRBuilder<'_>, defers: &[THIRExpression]) -> CXResult<()> {
-    for defer in defers.iter().rev() {
-        if builder.current_block_terminated() {
-            break;
-        }
-        super::lower_expression(builder, defer)?;
-    }
-    Ok(())
-}
-
-pub(super) fn lower_scope_exit(
-    builder: &mut MIRBuilder<'_>,
-    scope: cx_mir::MIRScopeID,
-    defers: &[THIRExpression],
-) -> CXResult<()> {
-    lower_cleanup_step(builder, Some(scope), defers)
-}
-
-fn lower_cleanup_step(
-    builder: &mut MIRBuilder<'_>,
-    scope: Option<MIRScopeID>,
-    defers: &[THIRExpression],
-) -> CXResult<()> {
-    lower_defers(builder, defers)?;
-    if let Some(scope) = scope
-        && !builder.current_block_terminated()
-    {
-        builder.emit(MIRInstrKind::ScopeExit { scope });
-    }
-    Ok(())
-}
-
-pub(super) fn finish_value_cleanup(
-    builder: &mut MIRBuilder<'_>,
-    value: MIRValue,
-    ty: &THIRType,
-    steps: Vec<(Option<MIRScopeID>, Vec<THIRExpression>)>,
-) -> CXResult<MIRValue> {
-    let value = if !steps.is_empty() && ty.is_memory_reference() {
-        match value {
-            MIRValue::Place(place) => {
-                let type_id = lower_type(builder, ty)?;
-                let out = builder.register(type_id, None);
-                builder.emit(MIRInstrKind::AddressOf { out, place });
-                MIRValue::Register(out)
-            }
-            value => value,
-        }
-    } else {
-        rvalue(value, ty)
-    };
-    if steps.is_empty() {
-        return Ok(value);
-    }
-
-    if !matches!(value, MIRValue::Copy(_) | MIRValue::Move(_)) {
-        for (scope, defers) in steps {
-            if builder.current_block_terminated() {
-                break;
-            }
-            lower_cleanup_step(builder, scope, &defers)?;
-        }
-        return Ok(value);
-    }
-
-    let type_id = lower_type(builder, ty)?;
-    let cleanup_blocks = steps
-        .iter()
-        .map(|_| {
-            let block = builder.new_block("cleanup");
-            let parameter = builder.block_param(block, type_id, None);
-            (block, parameter)
-        })
-        .collect::<Vec<_>>();
-    builder.emit(MIRInstrKind::Jump {
-        target: MIRBlockTarget::with_args(cleanup_blocks[0].0, vec![value]),
-    });
-
-    let mut result = None;
-    for (index, ((scope, defers), (block, parameter))) in
-        steps.into_iter().zip(cleanup_blocks.iter()).enumerate()
-    {
-        builder.set_current_block(*block);
-        lower_cleanup_step(builder, scope, &defers)?;
-        if builder.current_block_terminated() {
-            continue;
-        }
-        let value = MIRValue::Register(*parameter);
-        if let Some((next, _)) = cleanup_blocks.get(index + 1) {
-            builder.emit(MIRInstrKind::Jump {
-                target: MIRBlockTarget::with_args(*next, vec![value]),
-            });
-        } else {
-            result = Some(value);
-        }
-    }
-    Ok(result.unwrap_or(MIRValue::Constant(MIRConstant::Undefined)))
-}
-
-pub(super) fn cleanup_value_to(
-    builder: &mut MIRBuilder<'_>,
-    depth: usize,
-    value: MIRValue,
-    ty: &THIRType,
-) -> CXResult<MIRValue> {
-    let steps = builder
-        .lexical_scope_exits_to(depth)
-        .into_iter()
-        .map(|(scope, defers)| (Some(scope), defers))
-        .collect();
-    finish_value_cleanup(builder, value, ty, steps)
-}
-
-pub(super) fn cleanup_value_for_return(
-    builder: &mut MIRBuilder<'_>,
-    value: MIRValue,
-    ty: &THIRType,
-) -> CXResult<MIRValue> {
-    let mut steps = builder
-        .lexical_scope_exits_to(1)
-        .into_iter()
-        .map(|(scope, defers)| (Some(scope), defers))
-        .collect::<Vec<_>>();
-    let root_defers = builder.root_defers();
-    if !root_defers.is_empty() {
-        steps.push((None, root_defers));
-    }
-    finish_value_cleanup(builder, value, ty, steps)
-}
-
-pub(super) fn lower_root_defers(builder: &mut MIRBuilder<'_>) -> CXResult<()> {
-    let defers = builder.root_defers();
-    lower_defers(builder, &defers)
-}
-
-pub(super) fn unwind_lexical_scopes_to(builder: &mut MIRBuilder<'_>, depth: usize) -> CXResult<()> {
-    for (scope, defers) in builder.lexical_scope_exits_to(depth) {
-        if builder.current_block_terminated() {
-            break;
-        }
-        lower_scope_exit(builder, scope, &defers)?;
-    }
-    Ok(())
-}
-
 pub(super) fn lower_if(
     builder: &mut MIRBuilder<'_>,
     condition: &THIRExpression,
@@ -237,30 +60,35 @@ pub(super) fn lower_if(
     else_branch: Option<&THIRExpression>,
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
-    if builder.current_block_terminated() {
-        let then_block = builder.new_block("if.unreachable.then");
-        let else_block = builder.new_block("if.unreachable.else");
-        let continuation = builder.new_block("if.unreachable.continuation");
-        let value_match = !matches!(result_type.kind, THIRTypeKind::Void);
+    if builder.fun().current_block_terminated() {
+        let then_block = builder.fun_mut().new_block("if.unreachable.then");
+        let else_block = builder.fun_mut().new_block("if.unreachable.else");
+        let continuation = builder.fun_mut().new_block("if.unreachable.continuation");
 
-        builder.set_current_block(then_block);
-        if value_match {
-            lower_scoped_value(builder, then_branch, result_type)?;
-        } else {
-            lower_scoped(builder, then_branch)?;
+        // TODO: This should be strengthened in the future if we want to support Rust style unit-values.
+        let yielding = !matches!(result_type.kind, THIRTypeKind::Void);
+
+        builder.fun_mut().set_current_block(then_block);
+        builder.fun_mut().push_scope(then_branch.token_range.clone());
+        builder.fun_mut().current_scope_mut()
+            .set_break_target(continuation);
+        
+        if yielding {
+            builder.fun_mut().current_scope_mut()
+                .set_yield_target(target, result);
         }
 
-        builder.set_current_block(else_block);
+        builder.fun_mut().set_current_block(else_block);
         if let Some(else_branch) = else_branch {
-            if value_match {
+            if yielding {
                 lower_scoped_value(builder, else_branch, result_type)?;
             } else {
                 lower_scoped(builder, else_branch)?;
             }
         }
 
-        builder.set_current_block(continuation);
-        return Ok(if value_match {
+        builder.fun_mut().set_current_block(continuation);
+        return Ok(if yielding {
             MIRValue::Constant(MIRConstant::Undefined)
         } else {
             MIRValue::Constant(MIRConstant::Unit)
@@ -268,12 +96,12 @@ pub(super) fn lower_if(
     }
 
     let condition = super::lower_expression(builder, condition)?;
-    let then_block = builder.new_block("if.then");
-    let else_block = builder.new_block("if.else");
-    let merge_block = builder.new_block("if.merge");
+    let then_block = builder.fun_mut().new_block("if.then");
+    let else_block = builder.fun_mut().new_block("if.else");
+    let merge_block = builder.fun_mut().new_block("if.merge");
     let result = if !matches!(result_type.kind, THIRTypeKind::Void) {
         let type_id = lower_type(builder, result_type)?;
-        Some(builder.block_param(merge_block, type_id, None))
+        Some(builder.fun_mut().block_param(merge_block, type_id, None))
     } else {
         None
     };
@@ -285,13 +113,13 @@ pub(super) fn lower_if(
 
     let value_match = !matches!(result_type.kind, THIRTypeKind::Void);
     let mut has_incoming = false;
-    builder.set_current_block(then_block);
+    builder.fun_mut().set_current_block(then_block);
     let then_value = if value_match {
         lower_scoped_value(builder, then_branch, result_type)?
     } else {
         lower_scoped(builder, then_branch)?
     };
-    if !builder.current_block_terminated() {
+    if !builder.fun_mut().current_block_terminated() {
         let args = result.map(|_| vec![then_value.clone()]).unwrap_or_default();
         builder.emit(MIRInstrKind::Jump {
             target: MIRBlockTarget::with_args(merge_block, args),
@@ -299,7 +127,7 @@ pub(super) fn lower_if(
         has_incoming = true;
     }
 
-    builder.set_current_block(else_block);
+    builder.fun_mut().set_current_block(else_block);
     let else_value = else_branch
         .map(|branch| {
             if value_match {
@@ -310,7 +138,7 @@ pub(super) fn lower_if(
         })
         .transpose()?
         .unwrap_or(MIRValue::Constant(MIRConstant::Unit));
-    if !builder.current_block_terminated() {
+    if !builder.fun_mut().current_block_terminated() {
         let args = result.map(|_| vec![else_value]).unwrap_or_default();
         builder.emit(MIRInstrKind::Jump {
             target: MIRBlockTarget::with_args(merge_block, args),
@@ -318,7 +146,7 @@ pub(super) fn lower_if(
         has_incoming = true;
     }
 
-    builder.set_current_block(merge_block);
+    builder.fun_mut().set_current_block(merge_block);
     match (result, has_incoming) {
         (Some(result), true) => Ok(MIRValue::Register(result)),
         (Some(_), false) => Ok(MIRValue::Constant(MIRConstant::Undefined)),
@@ -333,11 +161,11 @@ pub(super) fn lower_short_circuit(
     op: &THIRBinOp,
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
-    let lhs_value = super::lower_expression(builder, lhs)?;
-    let rhs_block = builder.new_block("logical.rhs");
-    let merge_block = builder.new_block("logical.merge");
+    let lhs_value = lower_expression(builder, lhs)?;
+    let rhs_block = builder.fun_mut().new_block("logical.rhs");
+    let merge_block = builder.fun_mut().new_block("logical.merge");
     let result_type_id = lower_type(builder, result_type)?;
-    let result = builder.block_param(merge_block, result_type_id, None);
+    let result = builder.fun_mut().block_param(merge_block, result_type_id, None);
     let is_and = matches!(
         op,
         THIRBinOp::Integer {
@@ -357,15 +185,15 @@ pub(super) fn lower_short_circuit(
         false_target: if is_and { merge_target } else { rhs_target },
     });
 
-    builder.set_current_block(rhs_block);
+    builder.fun_mut().set_current_block(rhs_block);
     let rhs_value = super::lower_expression(builder, rhs)?;
-    if !builder.current_block_terminated() {
+    if !builder.fun().current_block_terminated() {
         builder.emit(MIRInstrKind::Jump {
             target: MIRBlockTarget::with_args(merge_block, vec![rhs_value]),
         });
     }
 
-    builder.set_current_block(merge_block);
+    builder.fun_mut().set_current_block(merge_block);
     Ok(MIRValue::Register(result))
 }
 
@@ -375,9 +203,10 @@ pub(super) fn lower_while(
     body: &THIRExpression,
     pre_eval: bool,
 ) -> CXResult<()> {
-    let condition_block = builder.new_block("while.condition");
-    let body_block = builder.new_block("while.body");
-    let exit_block = builder.new_block("while.exit");
+    let condition_block = builder.fun_mut().new_block("while.condition");
+    let body_block = builder.fun_mut().new_block("while.body");
+    let exit_block = builder.fun_mut().new_block("while.exit");
+    
     builder.emit(MIRInstrKind::Jump {
         target: MIRBlockTarget::new(if pre_eval {
             condition_block
@@ -386,24 +215,32 @@ pub(super) fn lower_while(
         }),
     });
 
-    builder.set_current_block(condition_block);
-    let condition = super::lower_expression(builder, condition)?;
+    builder.fun_mut().set_current_block(condition_block);
+    let condition = lower_expression(builder, condition)?;
     builder.emit(MIRInstrKind::Branch {
         cond: condition,
         true_target: MIRBlockTarget::new(body_block),
         false_target: MIRBlockTarget::new(exit_block),
     });
 
-    builder.set_current_block(body_block);
-    builder.push_contextual_scope(exit_block, Some(condition_block));
+    builder.fun_mut().set_current_block(body_block);
+    builder.fun_mut().push_invisible_scope();
+    builder.fun_mut().current_scope_mut()
+        .set_break_target(exit_block)
+        .set_continue_target(condition_block);
+    
     lower_scoped(builder, body)?;
-    builder.pop_loop();
-    if !builder.current_block_terminated() {
+    
+    let (_, _) = builder.fun_mut().pop_scope();
+    todo!("pop_scope replacement");
+
+    if !builder.fun().current_block_terminated() {
         builder.emit(MIRInstrKind::Jump {
             target: MIRBlockTarget::new(condition_block),
         });
     }
-    builder.set_current_block(exit_block);
+    
+    builder.fun_mut().set_current_block(exit_block);
     Ok(())
 }
 
@@ -414,27 +251,30 @@ pub(super) fn lower_for(
     increment: &THIRExpression,
     body: &THIRExpression,
 ) -> CXResult<()> {
-    super::lower_expression(builder, init)?;
-    let condition_block = builder.new_block("for.condition");
-    let body_block = builder.new_block("for.body");
-    let increment_block = builder.new_block("for.increment");
-    let exit_block = builder.new_block("for.exit");
+    lower_expression(builder, init)?;
+
+    let condition_block = builder.fun_mut().new_block("for.condition");
+    let body_block = builder.fun_mut().new_block("for.body");
+    let increment_block = builder.fun_mut().new_block("for.increment");
+    let exit_block = builder.fun_mut().new_block("for.exit");
+
     builder.emit(MIRInstrKind::Jump {
         target: MIRBlockTarget::new(condition_block),
     });
 
-    builder.set_current_block(condition_block);
-    let condition = super::lower_expression(builder, condition)?;
+    builder.fun_mut().set_current_block(condition_block);
+    let condition = lower_expression(builder, condition)?;
     builder.emit(MIRInstrKind::Branch {
         cond: condition,
         true_target: MIRBlockTarget::new(body_block),
         false_target: MIRBlockTarget::new(exit_block),
     });
 
-    builder.set_current_block(body_block);
-    builder.push_contextual_scope(exit_block, Some(increment_block));
+    builder.fun_mut().set_current_block(body_block);
+    builder.fun_mut().push_contextual_scope(exit_block, Some(increment_block));
     lower_scoped(builder, body)?;
     builder.pop_loop();
+    
     if !builder.current_block_terminated() {
         builder.emit(MIRInstrKind::Jump {
             target: MIRBlockTarget::new(increment_block),
@@ -458,16 +298,16 @@ pub(super) fn lower_switch(
     cases: &[(Box<THIRExpression>, Box<THIRExpression>)],
     default: Option<&THIRExpression>,
 ) -> CXResult<()> {
-    let value = super::lower_expression(builder, condition)?;
-    let exit = builder.new_block("switch.exit");
+    let value = lower_expression(builder, condition)?;
+    let exit = builder.fun_mut().new_block("switch.exit");
     let default_block = default
-        .map(|_| builder.new_block("switch.default"))
+        .map(|_| builder.fun_mut().new_block("switch.default"))
         .unwrap_or(exit);
     let mut targets = Vec::with_capacity(cases.len());
     let mut bodies = Vec::with_capacity(cases.len());
     
     for (case, _) in cases {
-        let block = builder.new_block("switch.case");
+        let block = builder.fun_mut().new_block("switch.case");
         let case_value = comptime::evaluate(builder, case)?;
         
         if !matches!(case_value, MIRConstant::Integer { .. }) {
@@ -552,7 +392,7 @@ pub(super) fn lower_match(
     };
     match &subject_value {
         MIRValue::Place(place) => builder.bind_local(subject, *place),
-        value => builder.bind_local_value(subject, value.clone()),
+        value => builder.bind_local(subject, value.clone()),
     }
     let subject_place = match &subject_value {
         MIRValue::Place(place) => Some(*place),
@@ -621,12 +461,12 @@ pub(super) fn lower_match(
     for ((pattern, body), block) in arms.iter().zip(blocks) {
         builder.set_current_block(block);
 
-        builder.push_lexical_scope(body.token_range.clone());
+        builder.push_scope(body.token_range.clone());
         if let Some(subject_place) = subject_place {
             aggregates::bind_pattern_payload(builder, pattern, subject_place, &condition._type)?;
         }
         let body_value = lower_expression(builder, body)?;
-        let (scope, defers) = builder.pop_lexical_scope();
+        let (scope, defers) = builder.pop_scope();
 
         if !builder.current_block_terminated() {
             let body_value = if value_match {
@@ -687,4 +527,14 @@ pub(super) fn lower_match(
         Some(result) => Ok(MIRValue::Register(result)),
         None => Ok(MIRValue::Constant(MIRConstant::Unit)),
     }
+}
+
+pub fn auto_pop_scope(builder: &mut MIRBuilder) -> CXResult<()> {
+    let defers = builder.fun_mut().current_scope().deferred_expressions();
+
+    for defer in defers {
+        lower_expression(builder, &defer)?;
+    }
+
+    Ok(())
 }

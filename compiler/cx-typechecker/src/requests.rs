@@ -81,7 +81,7 @@ fn realize_tagged_union_constructor(
             } else {
                 vec![THIRParameter {
                     name: Some(param_name.clone()),
-                    local_id: Some(param_local_id),
+                    local_id: param_local_id,
                     _type: variant_type.clone(),
                 }]
             },
