@@ -29,7 +29,6 @@ pub(crate) struct ScopeContext {
     id: MIRScopeID,
 
     yield_target: Option<MIRBasicBlockID>,
-    yield_result: Option<MIRRegister>,
 
     break_target: Option<MIRBasicBlockID>,
     continue_target: Option<MIRBasicBlockID>,
@@ -44,7 +43,6 @@ impl ScopeContext {
             id,
             
             yield_target: None,
-            yield_result: None,
             break_target: None,
             continue_target: None,
             named_values: HashMap::new(),
@@ -52,9 +50,8 @@ impl ScopeContext {
         }
     }
 
-    pub fn set_yield_target(&mut self, target: MIRBasicBlockID, result: Option<MIRRegister>) {
+    pub fn set_yield_target(&mut self, target: MIRBasicBlockID) {
         self.yield_target = Some(target);
-        self.yield_result = result;
     }
 
     pub fn set_break_target(&mut self, target: MIRBasicBlockID) -> &mut Self {
@@ -172,6 +169,10 @@ impl FunctionBuilder {
             .instrs
             .last()
             .is_some_and(|instr| instr.is_terminator())
+    }
+
+    pub fn set_yield_recipient(&mut self, target: MIRBasicBlockID, ty: MIRTypeID) -> MIRRegister {
+        self.block_param(target, ty, Some(CXIdent::new("yield_result")))
     }
 
     pub fn label(&mut self, name: &CXIdent) -> Option<MIRBasicBlockID> {
