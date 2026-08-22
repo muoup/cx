@@ -15,3 +15,13 @@ pub enum MIRComptimeValue<'staged> {
 pub struct MIRStagedParameter {
     ty: MIRType,
 }
+
+impl MIRStagedParameter {
+    pub fn new(ty: MIRType) -> Self {
+        Self { ty }
+    }
+
+    pub fn ty(&self) -> &MIRType {
+        &self.ty
+    }
+}

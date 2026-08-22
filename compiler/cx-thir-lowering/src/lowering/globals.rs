@@ -30,7 +30,11 @@ pub(crate) fn predeclare_global(
         global.linkage,
         MIRGlobalKind::Variable {
             ty,
-            state: MIRGlobalState::ZeroInitialized,
+            state: if global.linkage == LinkageMode::Extern {
+                MIRGlobalState::External
+            } else {
+                MIRGlobalState::ZeroInitialized
+            },
             is_mutable: global.is_mutable,
         },
     ))

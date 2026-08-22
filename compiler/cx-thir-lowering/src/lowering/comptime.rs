@@ -3,7 +3,7 @@ use cx_log::{
     error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_mir::MIRConstant;
-use cx_mir_comptime::{MIRComptimeValue, evaluate_comptime_expr};
+use cx_mir_comptime::{MIRComptimeValue, evaluate_compite_expr};
 use cx_thir::thir::expression::THIRExpression;
 
 use crate::builder::MIRBuilder;
@@ -23,7 +23,7 @@ pub(crate) fn evaluate_integer(
     expression: &THIRExpression,
     context: &str,
 ) -> CXResult<usize> {
-    let value = evaluate_comptime_expr(builder, expression)?;
+    let value = evaluate_compite_expr(builder, expression)?;
     match value {
         MIRComptimeValue::Integer { val, .. } => {
             usize::try_from(val).map_err(|_| constant_error(context))
@@ -36,7 +36,7 @@ pub(crate) fn evaluate(
     builder: &mut MIRBuilder<'_>,
     expression: &THIRExpression,
 ) -> CXResult<MIRConstant> {
-    let value = evaluate_comptime_expr(builder, expression)?;
+    let value = evaluate_compite_expr(builder, expression)?;
     match value {
         MIRComptimeValue::Integer { val, _ty, signed } => Ok(MIRConstant::Integer {
             value: val,

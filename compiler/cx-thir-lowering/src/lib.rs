@@ -55,5 +55,23 @@ pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
         lower_function(&mut builder, id, function)?;
     }
 
-    Ok(builder.finish())
+    let mut unit = builder.finish();
+
+    let evaluated = cx_mir_comptime::evaluate_unit_globals(&unit)?;
+    for (global_id, constant) in evaluated {
+        unit.materialize_global(global_id, constant)
+            .map_err(|error| {
+                cx_log::error::CXErr::new(
+                    cx_log::error::message::CXStdErrMessage::error(
+                        "COMPTIME ERROR",
+                        error,
+                    ),
+                    cx_log::error::context::CXInternalContext::error(
+                        "failed to materialize a global initializer",
+                    ),
+                )
+            })?;
+    }
+
+    Ok(unit)
 }

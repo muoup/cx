@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use cx_mir::{
-    MIRBasicBlockID, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID,
-    MIRFunctionMode, MIRGlobalID, MIRInstrKind, MIRPlace, MIRRegister, MIRScopeID,
-    MIRTypeRegistryBuilder, MIRTypeID, MIRUnit, MIRValue,
+    MIRBasicBlockID, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction,
+    MIRFunctionID, MIRFunctionMode, MIRGlobalID, MIRInstrKind, MIRPlace, MIRRegister,
+    MIRScopeID, MIRTypeRegistryBuilder, MIRTypeID, MIRUnit, MIRValue,
 };
 use cx_mir_comptime::context::MIRContext;
 use cx_thir::{
@@ -89,21 +89,21 @@ impl<'thir> MIRBuilder<'thir> {
         &mut self.types
     }
 
-    pub fn module(&self) -> &MIRModuleBuilder {
+    pub(crate) fn module(&self) -> &MIRModuleBuilder {
         &self.module
     }
 
-    pub fn module_mut(&mut self) -> &mut MIRModuleBuilder {
+    pub(crate) fn module_mut(&mut self) -> &mut MIRModuleBuilder {
         &mut self.module
     }
 
-    pub fn current_fn(&self) -> &FunctionBuilder {
+    pub(crate) fn current_fn(&self) -> &FunctionBuilder {
         self.function
             .as_ref()
             .expect("no MIR function is currently active")
     }
 
-    pub fn current_fn_mut(&mut self) -> &mut FunctionBuilder {
+    pub(crate) fn current_fn_mut(&mut self) -> &mut FunctionBuilder {
         self.function
             .as_mut()
             .expect("no MIR function is currently active")
@@ -285,7 +285,7 @@ impl<'thir> MIRBuilder<'thir> {
         self.current_fn_mut().push_yield(target, result_type);
     }
 
-    pub fn pop_yield(&mut self) -> YieldContext {
+    pub(crate) fn pop_yield(&mut self) -> YieldContext {
         self.current_fn_mut().pop_yield()
     }
 
@@ -430,12 +430,76 @@ impl<'thir> MIRBuilder<'thir> {
     }
 }
 
+impl cx_mir_comptime::ComptimeResolver for MIRModuleBuilder {
+    fn resolve(&self, id: MIRFunctionID) -> Option<&MIRFunction> {
+        self.function(id)
+    }
+}
+
 impl MIRContext for MIRBuilder<'_> {
     fn current_prototype(&self) -> &MIRFnPrototype {
         match self.function.as_ref() {
             Some(function) => function.prototype(),
             None => &self.ambient_prototype,
         }
+    }
+
+    fn comptime_resolver(&self) -> &dyn cx_mir_comptime::ComptimeResolver {
+        &self.module
+    }
+
+    fn lower_thir(
+        &mut self,
+        expression: &cx_thir::thir::expression::THIRExpression,
+    ) -> cx_log::CXResult<MIRValue> {
+        crate::lowering::lower_expression(self, expression)
+    }
+
+    fn capture_expression(
+        &mut self,
+        expression: &cx_thir::thir::expression::THIRExpression,
+    ) -> cx_log::CXResult<MIRFunction> {
+        use cx_mir::MIRInstrKind;
+        use cx_tokens::TokenRange;
+
+        let id = self.module_mut().allocate_function_id();
+        let prototype = match self.function.as_ref() {
+            Some(active) => active.prototype().clone(),
+            None => self.ambient_prototype.clone(),
+        };
+
+        let saved_function = self.function.take();
+        let saved_range =
+            std::mem::replace(&mut self.source_range, TokenRange::internal());
+
+        self.function = Some(FunctionBuilder::new(MIRFunction::new(
+            id,
+            prototype.clone(),
+            None,
+        )));
+
+        let result = (|| -> cx_log::CXResult<()> {
+            let value = crate::lowering::lower_expression(self, expression)?;
+            if !self.current_block_terminated() {
+                let frame = self.current_fn_mut();
+                frame.emit(
+                    MIRInstrKind::Return {
+                        value: Some(value),
+                    },
+                    TokenRange::internal(),
+                );
+            }
+            Ok(())
+        })();
+
+        let scratch = self.function.take();
+        self.function = saved_function;
+        self.restore_source_range(saved_range);
+
+        result?;
+
+        let (id, body) = scratch.expect("capture builder is present").concise_finish();
+        Ok(MIRFunction::new(id, prototype, Some(body)))
     }
 }
 

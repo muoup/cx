@@ -35,18 +35,37 @@ pub(crate) fn lower_function(
     };
 
     builder.start_function(id);
+
+    for (index, parameter) in function
+        .prototype
+        .signature()
+        .params
+        .iter()
+        .enumerate()
+    {
+        let place = MIRPlace::Parameter(cx_mir::MIRParameterID::new(index));
+        if let Some(local_id) = parameter.local_id {
+            builder.bind_local(local_id, place.clone());
+        }
+        if let Some(name) = &parameter.name {
+            builder.bind_named(
+                name,
+                MIRValue::Place(place),
+            );
+        }
+    }
+
     lower_expression(builder, body)?;
 
     if !builder.current_fn().current_block_terminated() {
-        let value = if matches!(
+        if matches!(
             function.prototype.signature().return_type.kind,
             THIRTypeKind::Void
         ) {
-            None
+            builder.emit(MIRInstrKind::Return { value: None });
         } else {
-            Some(MIRValue::Constant(MIRConstant::Undefined))
-        };
-        builder.emit(MIRInstrKind::Return { value });
+            builder.emit(MIRInstrKind::Unreachable);
+        }
     }
 
     builder.finish_function();
@@ -64,11 +83,12 @@ pub(crate) fn lower_comptime_function(
 
     builder.start_function(id);
     builder.push_named_scope();
-    for parameter in function.prototype.params() {
+    for (index, parameter) in function.prototype.params().iter().enumerate() {
         if let Some(name) = &parameter.name {
-            let ty = lower_type(builder, &parameter.value_type._type)?;
-            let place = builder.place(ty, Some(name.clone()), false);
-            builder.bind_named(name, MIRValue::Place(place));
+            builder.bind_named(
+                name,
+                MIRValue::Place(MIRPlace::Parameter(cx_mir::MIRParameterID::new(index))),
+            );
         }
     }
 
@@ -113,7 +133,7 @@ pub(super) fn materialize_value(
     Ok(MIRValue::Register(out))
 }
 
-fn lower_expression(
+pub(crate) fn lower_expression(
     builder: &mut MIRBuilder<'_>,
     expression: &THIRExpression,
 ) -> CXResult<MIRValue> {
@@ -137,6 +157,11 @@ fn lower_expression(
                 MIRValue::Constant(MIRConstant::Float { value: *value, ty })
             }
             THIRExpressionKind::StringLiteral { value } => {
+                if builder.types().find_kind(&MIRTypeKind::Str).is_none() {
+                    builder
+                        .types_mut()
+                        .intern(cx_mir::MIRType::new(MIRTypeKind::Str, None));
+                }
                 MIRValue::Place(MIRPlace::Global(builder.module_mut().add_string_literal(value.as_str())))
             }
             THIRExpressionKind::Unit => MIRValue::Constant(MIRConstant::Unit),

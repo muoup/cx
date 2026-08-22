@@ -54,6 +54,7 @@ struct LabelTarget {
 impl FunctionBuilder {
     pub(crate) fn new(func: MIRFunction) -> Self {
         let mut body = MIRBody::new();
+        let entry = body.add_block();
         let root_scope = body.add_scope(TokenRange::internal());
 
         Self {
@@ -61,7 +62,7 @@ impl FunctionBuilder {
             mode: func.mode(),
             prototype: func.prototype().clone(),
 
-            current_block: body.entry(),
+            current_block: entry,
 
             local_places: HashMap::new(),
             local_values: HashMap::new(),
@@ -81,7 +82,7 @@ impl FunctionBuilder {
         }
     }
 
-    pub(crate) fn finish(mut self) -> MIRFunction {
+    pub(crate) fn finish(self) -> MIRFunction {
         assert!(
             self.scope_stack.len() == 1,
             "scope stack is unbalanced at function end"

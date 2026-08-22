@@ -86,6 +86,12 @@ impl MIRModuleBuilder {
         id
     }
 
+    pub(crate) fn allocate_function_id(&mut self) -> MIRFunctionID {
+        let id = MIRFunctionID::new(self.next_function_id);
+        self.next_function_id += 1;
+        id
+    }
+
     pub(crate) fn declare_global(
         &mut self,
         pre_used: bool,
