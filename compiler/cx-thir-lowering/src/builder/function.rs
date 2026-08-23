@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use cx_mir::{
     MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID,
@@ -34,7 +34,7 @@ pub(crate) struct ScopeContext {
     pub(crate) continue_target: Option<MIRBasicBlockID>,
 
     named_values: HashMap<String, MIRValue>,
-    pub(crate) defered_expressions: Vec<THIRExpression>,
+    pub(crate) defered_expressions: Vec<Rc<THIRExpression>>,
 }
 
 impl ScopeContext {
@@ -64,7 +64,7 @@ impl ScopeContext {
         self
     }
 
-    pub fn deferred_expressions(&self) -> &[THIRExpression] {
+    pub fn deferred_expressions(&self) -> &[Rc<THIRExpression>] {
         &self.defered_expressions
     }
 
@@ -274,7 +274,7 @@ impl FunctionBuilder {
     }
 
     #[must_use]
-    pub fn pop_scope(&mut self) -> (MIRScopeID, Vec<THIRExpression>) {
+    pub fn pop_scope(&mut self) -> (MIRScopeID, Vec<Rc<THIRExpression>>) {
         let scope = self.scope_stack.pop().expect("scope stack is empty");
 
         (scope.id, scope.defered_expressions)

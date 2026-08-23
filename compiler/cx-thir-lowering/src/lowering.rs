@@ -857,13 +857,24 @@ pub(crate) fn lower_expression(
                 postcondition,
                 value,
             } => {
-                let has_value = value.is_some();
-                let value = value
-                    .as_deref()
+                let value_expression = value.as_deref();
+                let lowered_value = value_expression
                     .map(|value| lower_expression(builder, value))
                     .transpose()?;
-                let value = value.unwrap_or(MIRValue::Constant(MIRConstant::Unit));
-                let value = has_value.then_some(value);
+                let lowered_value = lowered_value.unwrap_or(MIRValue::Constant(MIRConstant::Unit));
+                let lowered_value = match (lowered_value, value_expression) {
+                    (MIRValue::PlaceRef(place), Some(expression))
+                        if !expression._type.is_memory_reference() => MIRValue::Copy(place),
+                    (value, _) => value,
+                };
+                let value = match value_expression {
+                    Some(expression) => Some(materialize_value(
+                        builder,
+                        lowered_value,
+                        &expression._type,
+                    )?),
+                    None => None,
+                };
                 if let Some(postcondition) = postcondition {
                     builder
                         .fun_mut()
@@ -931,7 +942,7 @@ pub(crate) fn lower_expression(
                     .fun_mut()
                     .current_scope_mut()
                     .defered_expressions
-                    .push((**deferred).clone());
+                    .push(std::rc::Rc::new((**deferred).clone()));
                 MIRValue::Constant(MIRConstant::Unit)
             }
             THIRExpressionKind::Block {

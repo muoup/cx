@@ -31,18 +31,17 @@ pub fn lower_scoped(
 }
 
 pub fn auto_cleanup(builder: &mut MIRBuilder, to_scope: MIRScopeID) -> CXResult<()> {
-    let unsafe_builder_ref = unsafe { &mut *(builder as *mut MIRBuilder) };
-
-    let scopes = builder.fun().scope_stack()
+    let defers = builder
+        .fun()
+        .scope_stack()
         .iter()
         .rev()
         .take_while(|scope| scope.id() != to_scope)
+        .flat_map(|scope| scope.deferred_expressions().iter().rev().cloned())
         .collect::<Vec<_>>();
-    
-    for scope in scopes.into_iter() {
-        for defer in scope.deferred_expressions() {
-            lower_expression(unsafe_builder_ref, defer)?;
-        }
+
+    for defer in defers {
+        lower_expression(builder, defer.as_ref())?;
     }
 
     Ok(())
@@ -55,8 +54,8 @@ pub fn auto_pop_scope(builder: &mut MIRBuilder) -> CXResult<()> {
         .deferred_expressions()
         .to_vec();
 
-    for defer in defers {
-        lower_expression(builder, &defer)?;
+    for defer in defers.into_iter().rev() {
+        lower_expression(builder, defer.as_ref())?;
     }
 
     let _ = builder.fun_mut().pop_scope();
@@ -70,10 +69,6 @@ pub(super) fn lower_if(
     else_branch: Option<&THIRExpression>,
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
-    if builder.fun().current_block_terminated() {
-        return Ok(MIRValue::Constant(MIRConstant::Unit));
-    }
-
     let then_block = builder.fun_mut().new_block("if.then");
     let else_block = if else_branch.is_some() {
         Some(builder.fun_mut().new_block("if.else"))
