@@ -446,7 +446,7 @@ fn use_value(
     diagnose: bool,
 ) -> Result<(), MIRAnalysisError> {
     match value {
-        MIRValue::Place(place) | MIRValue::Copy(place) => {
+        MIRValue::PlaceRef(place) | MIRValue::Copy(place) => {
             use_place(unit, function, block, instruction, *place, state, diagnose)
         }
         MIRValue::Move(place) => {

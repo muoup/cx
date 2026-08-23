@@ -79,7 +79,7 @@ fn callable_type<'a>(
 fn value_type(context: &FunctionLoweringContext<'_>, value: &MIRValue) -> Option<MIRTypeID> {
     match value {
         MIRValue::Register(register) => Some(register_decl_type(context, *register)),
-        MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place) => {
+        MIRValue::PlaceRef(place) | MIRValue::Copy(place) | MIRValue::Move(place) => {
             Some(place_decl_type(context, *place))
         }
         MIRValue::Constant(MIRConstant::Function(id)) => {
@@ -707,7 +707,7 @@ fn lower_unary(
 ) {
     if let MIRUnaryOp::Increment { amount, post } = op {
         let place_id = match operand {
-            MIRValue::Place(place) => *place,
+            MIRValue::PlaceRef(place) => *place,
             _ => panic!("increment requires a place operand"),
         };
         let place = binding_for_place(context, place_id);
@@ -963,7 +963,7 @@ fn lower_call_argument(
         }
         LMIRParameterABI::Indirect { alignment } | LMIRParameterABI::ByValue { alignment } => {
             let source = lower_value(context, argument);
-            if matches!(argument, MIRValue::Place(_)) {
+            if matches!(argument, MIRValue::PlaceRef(_)) {
                 let copy = emit_temp(
                     context,
                     LMIRInstructionKind::Allocate {

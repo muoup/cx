@@ -31,7 +31,7 @@ impl ConstEnvironment {
                 .get(register)
                 .cloned()
                 .unwrap_or(ConstValue::Unknown),
-            MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place) => self
+            MIRValue::PlaceRef(place) | MIRValue::Copy(place) | MIRValue::Move(place) => self
                 .places
                 .get(place)
                 .cloned()

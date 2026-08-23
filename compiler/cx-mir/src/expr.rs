@@ -58,7 +58,7 @@ pub enum MIRConstant {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRValue {
     Register(MIRRegister),
-    Place(MIRPlace),
+    PlaceRef(MIRPlace),
     Copy(MIRPlace),
     Move(MIRPlace),
     Constant(MIRConstant),
@@ -79,7 +79,7 @@ pub enum MIRInstrOperand<'a> {
 impl MIRInstrOperand<'_> {
     pub const fn place(self) -> Option<MIRPlace> {
         match self {
-            Self::Value(MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place)) => {
+            Self::Value(MIRValue::PlaceRef(place) | MIRValue::Copy(place) | MIRValue::Move(place)) => {
                 Some(*place)
             }
             Self::Place(place) => Some(place),

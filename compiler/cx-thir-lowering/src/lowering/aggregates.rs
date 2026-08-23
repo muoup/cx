@@ -1,6 +1,9 @@
-use cx_log::{CXResult, error::{CXErr, context::CXInternalContext, message::CXStdErrMessage}};
+use cx_log::{
+    CXResult,
+    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+};
 use cx_mir::{
-    MIRAggregateOp, MIRBinaryOp, MIRConstant, MIRInstrKind, MIRIntBinaryOp, MIRIntType, MIRPlace,
+    MIRAggregateOp, MIRBinaryOp, MIRConstant, MIRInstrKind, MIRIntBinaryOp, MIRIntType,
     MIRPlaceAggregateOp, MIRValue, MIRValueAggregateOp,
 };
 use cx_thir::thir::{
@@ -50,7 +53,7 @@ pub(super) fn lower_pattern_test(
 
                 builder
                     .fun_mut()
-                    .bind_local(*local_id, MIRValue::Place(payload));
+                    .bind_local(*local_id, MIRValue::PlaceRef(payload));
             }
             let tag_type = lower_type(
                 builder,
@@ -111,7 +114,7 @@ pub(super) fn lower_pattern_test(
 pub(super) fn bind_pattern_payload(
     builder: &mut MIRBuilder<'_>,
     pattern: &THIRPattern,
-    subject: MIRPlace,
+    subject: MIRValue,
     sum_type: &THIRType,
 ) -> CXResult<()> {
     if let THIRPattern::TaggedUnionVariant {
@@ -123,27 +126,53 @@ pub(super) fn bind_pattern_payload(
     {
         let payload_type = sum_variant_type(builder, sum_type, *variant_index);
         let payload_type_id = lower_type(builder, &payload_type)?;
-        let payload = builder
-            .fun_mut()
-            .new_place(payload_type_id, inner_name.clone(), false);
         let sum_type_id = lower_type(builder, sum_type)?;
 
-        builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Place {
-            out: payload,
-            op: MIRPlaceAggregateOp::Variant {
-                base: subject,
-                variant: *variant_index,
-                sum_type: sum_type_id,
+        let (payload, instr) = match subject {
+            MIRValue::Copy(place) |
+            MIRValue::Move(place) |
+            MIRValue::PlaceRef(place) => {
+                let out = builder
+                    .fun_mut()
+                    .new_place(payload_type_id, inner_name.clone(), false);
+
+                (MIRValue::PlaceRef(out), MIRAggregateOp::Place {
+                    out: out.clone(),
+                    op: MIRPlaceAggregateOp::Variant {
+                        base: place,
+                        variant: *variant_index,
+                        sum_type: sum_type_id,
+                    },
+                })
             },
-        }));
+
+            MIRValue::Register(reg) => {
+                let out = builder
+                    .fun_mut()
+                    .new_register(payload_type_id, inner_name.clone());
+
+                (MIRValue::Register(out), MIRAggregateOp::Value {
+                    out: out.clone(),
+                    op: MIRValueAggregateOp::ProjectVariant {
+                        value: MIRValue::Register(reg),
+                        variant: *variant_index,
+                        sum_type: sum_type_id,
+                    },
+                })
+            }
+
+            _ => unreachable!(),
+        };
+
+        builder.emit(MIRInstrKind::AggregateOp(instr));
 
         builder
             .fun_mut()
-            .bind_local(*local_id, MIRValue::Place(payload));
+            .bind_local(*local_id, payload.clone());
         if let Some(name) = inner_name {
             builder
                 .fun_mut()
-                .bind_named_value(name, MIRValue::Place(payload));
+                .bind_named_value(name, payload);
         }
     }
     Ok(())
@@ -186,10 +215,12 @@ pub(super) fn constant_from_pattern(pattern: &THIRPattern) -> MIRConstant {
 
 pub fn move_value(value: MIRValue) -> CXResult<MIRValue> {
     match value {
-        MIRValue::Place(place) => Ok(MIRValue::Move(place)),
+        MIRValue::PlaceRef(place) => Ok(MIRValue::Move(place)),
+        MIRValue::Move(place) => Ok(MIRValue::Move(place)),
+        MIRValue::Register(reg) => Ok(MIRValue::Register(reg)),
         _ => Err(CXErr::new(
-            CXStdErrMessage::error("COMPTIME ERROR", "expression depends on a runtime local"),
-            CXInternalContext::error("runtime local is unavailable in a comptime expression"),
+            CXStdErrMessage::error("TYPE ERROR", format!("Cannot move value: {:?}", value)),
+            CXInternalContext::error("IN: move_value"),
         )),
     }
 }

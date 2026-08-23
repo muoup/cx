@@ -233,7 +233,7 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                                 let frame = self.frames.last_mut().expect("active frame");
                                 frame.registers.insert(register, updated.clone());
                             }
-                            MIRValue::Place(place)
+                            MIRValue::PlaceRef(place)
                             | MIRValue::Copy(place)
                             | MIRValue::Move(place) => {
                                 self.write_direct_cell(place, updated.clone())?;
@@ -537,7 +537,7 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
         operand: &MIRValue,
         to_type: cx_mir::MIRTypeID,
     ) -> CXResult<Option<MIRConstant>> {
-        let MIRValue::Place(MIRPlace::Global(global)) = operand else {
+        let MIRValue::PlaceRef(MIRPlace::Global(global)) = operand else {
             return Ok(None);
         };
         let Some(registry) = self.resolver.types() else {
@@ -1009,7 +1009,7 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                 .and_then(|frame| frame.registers.get(register))
                 .cloned()
                 .unwrap_or(MIRConstant::Undefined),
-            MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place) => {
+            MIRValue::PlaceRef(place) | MIRValue::Copy(place) | MIRValue::Move(place) => {
                 if let MIRPlace::Global(global) = place {
                     self.read_global_rvalue(*global)?
                 } else {

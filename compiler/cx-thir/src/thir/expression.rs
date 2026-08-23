@@ -170,9 +170,7 @@ pub enum THIRExpressionKind {
         pattern: THIRPattern,
     },
     Unpack {
-        name: CXIdent,
-        local_id: THIRLocalID,
-        struct_type: THIRType,
+        value: Box<THIRExpression>,
         bindings: Vec<THIRUnpackBinding>,
     },
 

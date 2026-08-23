@@ -768,17 +768,9 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 initial_value,
                 adopting,
             } => {
-                write!(
-                    f,
-                    "CreateLocalVariable {} (ty=",
-                    name
-                )?;
+                write!(f, "CreateLocalVariable {} (ty=", name)?;
                 self.write_type(f, _type)?;
-                write!(
-                    f,
-                    ", local_id={:?}) <'",
-                    local_id
-                )?;
+                write!(f, ", local_id={:?}) <'", local_id)?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ", adopting={adopting}>")?;
                 if let Some(initial_value) = initial_value {
@@ -857,10 +849,20 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::Unpack { name, bindings, .. } => {
-                write!(f, "Unpack <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, "> {}", name)?;
+            THIRExpressionKind::Unpack {
+                value, bindings, ..
+            } => {
+                write!(
+                    f,
+                    "Unpack <'{}>",
+                    value._type.display_with(self.definitions)
+                )?;
+                MIRExpressionFormatter {
+                    expr: value,
+                    depth: self.depth + 1,
+                    definitions: self.definitions,
+                }
+                .fmt(f)?;
                 for binding in bindings {
                     self.indent(f)?;
                     writeln!(f, ".{} -> {}", binding.field_name, binding.binding_name,)?;
@@ -1214,7 +1216,12 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}: {}", name.as_str(), ty.display_with_definitions(self.definitions))?;
+                    write!(
+                        f,
+                        "{}: {}",
+                        name.as_str(),
+                        ty.display_with_definitions(self.definitions)
+                    )?;
                 }
                 writeln!(f, "] <'")?;
                 self.write_type(f, &self.expr._type)?;

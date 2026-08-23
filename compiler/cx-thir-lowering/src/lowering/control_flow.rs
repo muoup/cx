@@ -105,8 +105,9 @@ pub(super) fn lower_if(
     builder.fun_mut().set_current_block(then_block);
  
     builder.fun_mut().push_scope(then_branch.token_range.clone());
-    builder.fun_mut().current_scope_mut()
-        .set_yield_target(merge);
+    if yielding {
+        builder.fun_mut().current_scope_mut().set_yield_target(merge);
+    }
     lower_scoped(builder, then_branch)?;
     auto_pop_scope(builder)?;
 
@@ -118,8 +119,9 @@ pub(super) fn lower_if(
         builder.fun_mut().set_current_block(else_block.unwrap());
 
         builder.fun_mut().push_scope(else_branch.token_range.clone());
-        builder.fun_mut().current_scope_mut()
-            .set_yield_target(merge);
+        if yielding {
+            builder.fun_mut().current_scope_mut().set_yield_target(merge);
+        }
         lower_expression(builder, else_branch)?;
         auto_pop_scope(builder)?;
 
@@ -363,7 +365,9 @@ pub(super) fn lower_match(
 
     let subject_value = match (variant_match, consuming_subject) {
         (false, _) => subject_value,
-        (true, true) => move_value(subject_value)?,
+        (true, true) => {
+            materialize_value(builder, move_value(subject_value)?, &condition._type)?
+        }
         (true, false) => materialize_value(builder, subject_value, &condition._type)?,
     };
 
@@ -376,11 +380,6 @@ pub(super) fn lower_match(
         .map(|_| builder.fun_mut().new_block("match.default"))
         .or_else(|| synthetic_unreachable.then(|| builder.fun_mut().new_block("match.unreachable")))
         .unwrap_or(exit);
-
-    let subject_place = match &subject_value {
-        MIRValue::Place(place) => Some(*place),
-        _ => None,
-    };
 
     let yield_register = if value_match {
         let result_type_id = lower_type(builder, result_type)?;
@@ -437,9 +436,7 @@ pub(super) fn lower_match(
     for ((pattern, body), block) in arms.iter().zip(blocks) {
         builder.fun_mut().set_current_block(block);
         builder.fun_mut().push_invisible_scope();
-        if let Some(subject_place) = subject_place {
-            aggregates::bind_pattern_payload(builder, pattern, subject_place, &condition._type)?;
-        }
+        aggregates::bind_pattern_payload(builder, pattern, subject_value.clone(), &condition._type)?;
 
         let body_value = lower_expression(builder, body)?;
         auto_pop_scope(builder)?;

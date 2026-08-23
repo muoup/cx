@@ -689,7 +689,7 @@ fn write_value(
 ) -> fmt::Result {
     match value {
         MIRValue::Register(register) => write_register_name(f, function, *register),
-        MIRValue::Place(place) => write_place_name(f, unit, function, *place),
+        MIRValue::PlaceRef(place) => write_place_name(f, unit, function, *place),
         MIRValue::Copy(place) => {
             f.write_str("copy ")?;
             write_place_name(f, unit, function, *place)
