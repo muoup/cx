@@ -320,7 +320,7 @@ pub enum THIRExpressionKind {
     /// parameter types, and the node itself carries no meaningful type
     /// (it is typed `THIRTypeKind::Undefined`).
     StagedExpression {
-        params: Vec<(CXIdent, THIRType)>,
+        params: Vec<(CXIdent, THIRLocalID, THIRType)>,
         body: Box<THIRExpression>,
     },
 }

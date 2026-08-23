@@ -23,7 +23,9 @@ use cx_thir::{
         data::{
             THIRComptimeFnPrototype, THIRComptimeParameter, THIRComptimeValueType, THIRFnPrototype,
             THIRFnSignature, THIRParameter, THIRTemplateInput, THIRTypeAttributes,
-        }, expression::THIRLocalID, r#type::{THIRField, THIRMoveSemantics, THIRType, THIRTypeID, THIRTypeKind}
+        },
+        expression::THIRLocalID,
+        r#type::{THIRField, THIRMoveSemantics, THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
 };
@@ -234,7 +236,10 @@ pub fn ensure_valid_type_component(
             format!("{} type component cannot be 'unreachable'", context),
         ),
 
-        THIRTypeKind::Function { .. } | THIRTypeKind::Str | THIRTypeKind::Undefined | THIRTypeKind::Void
+        THIRTypeKind::Function { .. }
+        | THIRTypeKind::Str
+        | THIRTypeKind::Undefined
+        | THIRTypeKind::Void
             if enforce_allocatable =>
         {
             env.log_error(
@@ -340,6 +345,7 @@ pub fn complete_comptime_prototype(
         .map(|param| {
             Ok(THIRComptimeParameter {
                 name: param.name.clone(),
+                local_id: THIRLocalID::fresh(),
                 value_type: THIRComptimeValueType {
                     expr: param.value_type.expr,
                     params: param

@@ -10,9 +10,8 @@ use cx_mir::ty::layout::tagged_union_tag_offset;
 use cx_mir::{
     MIRAggregateOp, MIRAssignTarget, MIRBinaryOp, MIRCallKind, MIRCoercion, MIRConstant,
     MIRFloatBinaryOp, MIRFnParam, MIRFnSignature, MIRFunctionMode, MIRFunctionType, MIRInstrKind,
-    MIRIntBinaryOp,
-    MIRIntType, MIRPlaceAggregateOp, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister,
-    MIRTypeID, MIRTypeKind, MIRUnaryOp, MIRValue, MIRValueAggregateOp,
+    MIRIntBinaryOp, MIRIntType, MIRPlaceAggregateOp, MIRPointerBinaryOp, MIRPointerOffsetOp,
+    MIRRegister, MIRTypeID, MIRTypeKind, MIRUnaryOp, MIRValue, MIRValueAggregateOp,
 };
 use cx_util::identifier::CXIdent;
 
@@ -59,6 +58,7 @@ fn call_signature(
         variadic: signature.variadic,
         safe: false,
         mode: MIRFunctionMode::Runtime,
+        return_staged_params: None,
     };
     classify_signature(&mir_signature, context.types())
 }
@@ -186,7 +186,11 @@ pub(super) fn lower_instruction(
         | MIRInstrKind::ScopeExit { .. }
         | MIRInstrKind::Initialize { .. }
         | MIRInstrKind::Leak { .. }
-        | MIRInstrKind::Emit { .. } => {}
+        | MIRInstrKind::MakeStaged { .. }
+        | MIRInstrKind::ApplyStaged { .. }
+        | MIRInstrKind::StagedReturn { .. }
+        | MIRInstrKind::StagedMove { .. }
+        | MIRInstrKind::StagedUse { .. } => {}
         MIRInstrKind::Create { out, ty } => {
             let lowered = lowered_type(context, *ty);
             let layout = mir_layout(context, *ty);

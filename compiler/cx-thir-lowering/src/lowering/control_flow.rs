@@ -2,7 +2,10 @@ use cx_log::{
     CXResult,
     error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
 };
-use cx_mir::{MIRBlockTarget, MIRConstant, MIRInstrKind, MIRScopeID, MIRValue};
+use cx_mir::{
+    MIRBlockTarget, MIRConstant, MIRInstrKind, MIRScopeID, MIRTypeKind, MIRValue,
+    ty::interface::MTRegistry,
+};
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
     expression::{THIRBinOp, THIRExpression, THIRIntBinOp, THIRLocalID},
@@ -86,22 +89,22 @@ pub(super) fn lower_if(
         false_target: MIRBlockTarget::new(else_block.unwrap_or(merge)),
     });
 
-    // TODO: This should be strengthened in the future if we want to support Rust style unit-values.
-    let yielding = !matches!(result_type.kind, THIRTypeKind::Void);
+    let result_type_id = lower_type(builder, result_type)?;
+    let yielding = !matches!(builder.types().kind(result_type_id), Ok(MIRTypeKind::Void));
     let yield_register = yielding
-        .then(|| {
-            let yield_type = lower_type(builder, result_type)?;
-            Ok(builder
-                .fun_mut()
-                .set_yield_recipient(merge, yield_type))
-        })
+        .then(|| Ok(builder.fun_mut().set_yield_recipient(merge, result_type_id)))
         .transpose()?;
 
     builder.fun_mut().set_current_block(then_block);
- 
-    builder.fun_mut().push_scope(then_branch.token_range.clone());
+
+    builder
+        .fun_mut()
+        .push_scope(then_branch.token_range.clone());
     if yielding {
-        builder.fun_mut().current_scope_mut().set_yield_target(merge);
+        builder
+            .fun_mut()
+            .current_scope_mut()
+            .set_yield_target(merge);
     }
     lower_scoped(builder, then_branch)?;
     auto_pop_scope(builder)?;
@@ -113,9 +116,14 @@ pub(super) fn lower_if(
     if let Some(else_branch) = else_branch {
         builder.fun_mut().set_current_block(else_block.unwrap());
 
-        builder.fun_mut().push_scope(else_branch.token_range.clone());
+        builder
+            .fun_mut()
+            .push_scope(else_branch.token_range.clone());
         if yielding {
-            builder.fun_mut().current_scope_mut().set_yield_target(merge);
+            builder
+                .fun_mut()
+                .current_scope_mut()
+                .set_yield_target(merge);
         }
         lower_expression(builder, else_branch)?;
         auto_pop_scope(builder)?;
@@ -360,14 +368,13 @@ pub(super) fn lower_match(
 
     let subject_value = match (variant_match, consuming_subject) {
         (false, _) => subject_value,
-        (true, true) => {
-            materialize_value(builder, move_value(subject_value)?, &condition._type)?
-        }
+        (true, true) => materialize_value(builder, move_value(subject_value)?, &condition._type)?,
         (true, false) => materialize_value(builder, subject_value, &condition._type)?,
     };
 
     builder.fun_mut().bind_local(subject, subject_value.clone());
-    let value_match = !matches!(result_type.kind, THIRTypeKind::Void);
+    let result_type_id = lower_type(builder, result_type)?;
+    let value_match = !matches!(builder.types().kind(result_type_id), Ok(MIRTypeKind::Void));
 
     let exit = builder.fun_mut().new_block("match.exit");
     let synthetic_unreachable = default.is_none() && (exhaustive || value_match);
@@ -377,7 +384,6 @@ pub(super) fn lower_match(
         .unwrap_or(exit);
 
     let yield_register = if value_match {
-        let result_type_id = lower_type(builder, result_type)?;
         Some(builder.fun_mut().set_yield_recipient(exit, result_type_id))
     } else {
         None
@@ -431,7 +437,12 @@ pub(super) fn lower_match(
     for ((pattern, body), block) in arms.iter().zip(blocks) {
         builder.fun_mut().set_current_block(block);
         builder.fun_mut().push_invisible_scope();
-        aggregates::bind_pattern_payload(builder, pattern, subject_value.clone(), &condition._type)?;
+        aggregates::bind_pattern_payload(
+            builder,
+            pattern,
+            subject_value.clone(),
+            &condition._type,
+        )?;
 
         let body_value = lower_expression(builder, body)?;
         auto_pop_scope(builder)?;

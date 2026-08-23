@@ -4,7 +4,10 @@ use cx_thir::type_context::THIRTypeContext;
 use cx_thir::{
     EnvironmentNamespace,
     thir::{
-        data::{THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter, THIRTemplateInput},
+        data::{
+            THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter,
+            THIRTemplateInput,
+        },
         expression::{THIRExpression, THIRExpressionKind},
         r#type::THIRType,
     },
@@ -210,9 +213,7 @@ fn realize_comptime_function(
 
     let (template, body) = match &stmt.kind {
         HIRSymbolKind::ComptimeFunction { body, .. } => (None, body),
-        HIRSymbolKind::ComptimeFunctionTemplate {
-            template, body, ..
-        } => {
+        HIRSymbolKind::ComptimeFunctionTemplate { template, body, .. } => {
             // Template instances are realized from dedicated requests carrying
             // their template input; never emit the unbound base form.
             let _ = template;
@@ -227,18 +228,16 @@ fn realize_comptime_function(
         }
     };
 
-    let namespace = EnvironmentNamespace::from(symbol_lexical_namespace(&lookup_identifier.namespace, &stmt));
+    let namespace = EnvironmentNamespace::from(symbol_lexical_namespace(
+        &lookup_identifier.namespace,
+        &stmt,
+    ));
     env.symbols.push_local_scope();
     let result = (|| -> CXResult<()> {
         if let (Some(template), Some(input)) = (template, input) {
             apply_template_input(env, template, input)
                 .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
         }
-
-        if env.items.request_fulfilled(&instance_name) {
-            return Ok(());
-        }
-        env.items.mark_request_fulfilled(instance_name.clone());
 
         prototype.map_symbol_name(|_| instance_name.clone());
         typecheck_comptime_function(env, &namespace, prototype.clone(), body)?;

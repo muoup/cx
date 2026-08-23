@@ -427,11 +427,27 @@ fn transfer_instruction(
                 }
             }
         }
-        MIRInstrKind::Unreachable | MIRInstrKind::Emit { .. } => {
-            if let MIRInstrKind::Emit { value } = kind {
+        MIRInstrKind::MakeStaged { captures, .. } => {
+            for value in captures {
                 use_value(unit, function, block, instruction, value, state, diagnose)?;
             }
         }
+        MIRInstrKind::ApplyStaged { staged, args, .. } => {
+            use_value(unit, function, block, instruction, staged, state, diagnose)?;
+            for value in args {
+                use_value(unit, function, block, instruction, value, state, diagnose)?;
+            }
+        }
+        MIRInstrKind::StagedReturn { value } => {
+            use_value(unit, function, block, instruction, value, state, diagnose)?;
+        }
+        MIRInstrKind::StagedMove { value, .. } => {
+            use_value(unit, function, block, instruction, value, state, diagnose)?;
+        }
+        MIRInstrKind::StagedUse { value } => {
+            use_value(unit, function, block, instruction, value, state, diagnose)?;
+        }
+        MIRInstrKind::Unreachable => {}
     }
     Ok(())
 }

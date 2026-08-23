@@ -1,5 +1,6 @@
-use crate::environment::TypeEnvironment;
+use crate::environment::{THIRFunctionGenRequest, TypeEnvironment};
 use crate::symbol::deduction::complete_templated_callee_maybe;
+use crate::symbol::name_mangling::base_mangle_templated_name;
 use crate::type_checking::coercion::implicit::conversion::compatible;
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::lvalue;
@@ -11,8 +12,8 @@ use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
 use cx_thir::thir::data::{
-    THIRComptimeFnPrototype, THIRComptimeValueType, THIRFloatType, THIRFnSignature, THIRType,
-    THIRTypeKind,
+    THIRComptimeFnPrototype, THIRComptimeValueType, THIRFloatType, THIRFnSignature,
+    THIRTemplateInput, THIRType, THIRTypeKind,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind, THIRFnContract, THIRLocalID};
 use cx_thir::type_context::THIRTypeContext;
@@ -419,18 +420,20 @@ fn complete_callee(
                 TypecheckState::UntypedStaged { .. } => {
                     return env.log_error(
                         expr.token_range(),
-                        "Cannot call a staged expression without declared parameter types".to_string(),
+                        "Cannot call a staged expression without declared parameter types"
+                            .to_string(),
                     );
-                },
+                }
 
-                TypecheckState::ComptimeFunction { prototype, .. } => {
-                    return Ok(CompletedCallee::Comptime {
-                        prototype: prototype.clone(),
-                        symbol_name: CXIdent::new(prototype.symbol_name()),
-                    });
-                },
+                TypecheckState::ComptimeFunction {
+                    prototype,
+                    template_bindings,
+                    ..
+                } => {
+                    return Ok(prepare_comptime_callee(env, prototype, template_bindings));
+                }
 
-                _ => ()
+                _ => (),
             }
 
             let Some(parts) = function.into_incomplete_callee_parts() else {
@@ -455,13 +458,13 @@ fn complete_callee(
 
             match TypecheckResult::from_symbol(symbol, parts.name, parts.template_input) {
                 Ok(result) => {
-                    if let TypecheckState::ComptimeFunction { prototype, .. } =
-                        &result.expression_state()
+                    if let TypecheckState::ComptimeFunction {
+                        prototype,
+                        template_bindings,
+                        ..
+                    } = &result.expression_state()
                     {
-                        return Ok(CompletedCallee::Comptime {
-                            prototype: prototype.clone(),
-                            symbol_name: CXIdent::new(prototype.symbol_name()),
-                        });
+                        return Ok(prepare_comptime_callee(env, prototype, template_bindings));
                     }
 
                     match result.try_into_expression() {
@@ -475,6 +478,54 @@ fn complete_callee(
             }
         }
     }
+}
+
+fn prepare_comptime_callee(
+    env: &mut TypeEnvironment,
+    prototype: &THIRComptimeFnPrototype,
+    template_bindings: &[(CXIdent, cx_thir::thir::r#type::THIRTypeID)],
+) -> CompletedCallee {
+    let symbol_name = comptime_instance_name(env, prototype, template_bindings);
+    let runtime_return_type = env.comptime_runtime_return_type().cloned().or_else(|| {
+        env.try_current_function()
+            .map(|function| function.signature().return_type.clone())
+    });
+    let prototype = prototype
+        .clone()
+        .with_runtime_return_type(runtime_return_type);
+
+    if let Some(lookup_identifier) = prototype.lookup_identifier().cloned() {
+        let input = (!template_bindings.is_empty()).then(|| THIRTemplateInput {
+            args: template_bindings.iter().map(|(_, ty)| *ty).collect(),
+        });
+        env.items.push_request(THIRFunctionGenRequest::Comptime {
+            lookup_identifier,
+            prototype: prototype.clone(),
+            input,
+        });
+    }
+
+    CompletedCallee::Comptime {
+        prototype,
+        symbol_name,
+    }
+}
+
+fn comptime_instance_name(
+    env: &TypeEnvironment,
+    prototype: &THIRComptimeFnPrototype,
+    template_bindings: &[(CXIdent, cx_thir::thir::r#type::THIRTypeID)],
+) -> CXIdent {
+    if template_bindings.is_empty() {
+        return CXIdent::new(prototype.symbol_name());
+    }
+    CXIdent::new(base_mangle_templated_name(
+        &env.symbols,
+        prototype.symbol_name(),
+        template_bindings
+            .iter()
+            .map(|(_, ty)| env.symbols.resolve_type_id(*ty)),
+    ))
 }
 
 enum CompletedCallee {
@@ -545,8 +596,27 @@ fn complete_comptime_call(
             // Plain value or non-parameterized staged (`expr T`) parameter:
             // a normal typed argument.
             let target_type = value_type._type.clone();
-            let result = typecheck_expr(env, namespace, arg, Some(&target_type))?
+            let expected =
+                if value_type.expr && (target_type.is_void() || target_type.is_unreachable()) {
+                    None
+                } else {
+                    Some(&target_type)
+                };
+            let result = typecheck_expr(env, namespace, arg, expected)?
                 .standard_ready_coerce(env, arg.token_range())?;
+            if value_type.expr {
+                arguments.push(
+                    if target_type.is_memory_reference()
+                        || target_type.is_void()
+                        || target_type.is_unreachable()
+                    {
+                        result
+                    } else {
+                        implicit_cast(env, result, &target_type)?
+                    },
+                );
+                continue;
+            }
             let promoted = if target_type.is_memory_reference() {
                 result
             } else {
@@ -613,7 +683,6 @@ fn build_staged_argument(
     let mut checked_params = Vec::with_capacity(source_params.len());
     for (name, ty) in source_params.iter().zip(value_type.params.iter()) {
         let local_id = THIRLocalID::fresh();
-        let ref_type = env.symbols.mem_ref_to(ty.clone());
         env.symbols.insert_local_value(
             QualifiedName::new_raw(name.clone()),
             THIRExpression {
@@ -622,10 +691,10 @@ fn build_staged_argument(
                     name: name.clone(),
                     local_id,
                 },
-                _type: ref_type,
+                _type: ty.clone(),
             },
         );
-        checked_params.push((name.clone(), ty.clone()));
+        checked_params.push((name.clone(), local_id, ty.clone()));
     }
 
     let body_result = typecheck_expr(env, namespace, body, Some(&value_type._type))?
@@ -670,6 +739,10 @@ fn complete_staged_call(
     for (arg, target_type) in raw_args.into_iter().zip(params.iter()) {
         let result = typecheck_expr(env, namespace, arg, Some(target_type))?
             .standard_ready_coerce(env, arg.token_range())?;
+        if target_type.is_memory_reference() && result._type.is_memory_reference() {
+            arguments.push(result);
+            continue;
+        }
         let promoted = if target_type.is_memory_reference() {
             result
         } else {

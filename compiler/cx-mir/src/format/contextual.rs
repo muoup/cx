@@ -558,8 +558,44 @@ fn write_instruction<T: MTRegistry>(
             f.write_str(" }")
         }
         MIRInstrKind::Unreachable => f.write_str("unreachable"),
-        MIRInstrKind::Emit { value } => {
-            f.write_str("emit ")?;
+        MIRInstrKind::MakeStaged { out, captures, .. } => {
+            write_register_name(f, function, *out)?;
+            f.write_str(" = staged[")?;
+            for (index, capture) in captures.iter().enumerate() {
+                if index != 0 {
+                    f.write_str(", ")?;
+                }
+                write_value(f, unit, function, capture)?;
+            }
+            f.write_str("]")
+        }
+        MIRInstrKind::ApplyStaged { out, staged, args } => {
+            if let Some(out) = out {
+                write_register_name(f, function, *out)?;
+                f.write_str(" = ")?;
+            }
+            f.write_str("apply ")?;
+            write_value(f, unit, function, staged)?;
+            f.write_str("(")?;
+            for (index, arg) in args.iter().enumerate() {
+                if index != 0 {
+                    f.write_str(", ")?;
+                }
+                write_value(f, unit, function, arg)?;
+            }
+            f.write_str(")")
+        }
+        MIRInstrKind::StagedReturn { value } => {
+            f.write_str("staged.return ")?;
+            write_value(f, unit, function, value)
+        }
+        MIRInstrKind::StagedMove { out, value } => {
+            write_register_name(f, function, *out)?;
+            f.write_str(" = staged.move ")?;
+            write_value(f, unit, function, value)
+        }
+        MIRInstrKind::StagedUse { value } => {
+            f.write_str("staged.use ")?;
             write_value(f, unit, function, value)
         }
     }

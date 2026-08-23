@@ -41,7 +41,7 @@ impl ScopeContext {
     pub fn new(id: MIRScopeID) -> Self {
         Self {
             id,
-            
+
             yield_target: None,
             break_target: None,
             continue_target: None,
@@ -174,8 +174,7 @@ impl FunctionBuilder {
     }
 
     pub fn label(&mut self, name: &CXIdent) -> Option<MIRBasicBlockID> {
-        self.labels.get(name.as_str())
-            .copied()
+        self.labels.get(name.as_str()).copied()
     }
 
     pub fn declare_label(&mut self, name: &CXIdent, id: MIRBasicBlockID) {
@@ -186,7 +185,7 @@ impl FunctionBuilder {
         if self.current_block_terminated() {
             return;
         }
-        
+
         self.active_block_mut()
             .instrs
             .push(MIRInstr::new(instruction, range));
@@ -213,18 +212,27 @@ impl FunctionBuilder {
         self.body.add_block_param(block, ty, debug_name)
     }
 
-    pub fn new_place(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>, nodrop: bool) -> MIRPlace {
+    pub fn new_place(
+        &mut self,
+        ty: MIRTypeID,
+        debug_name: Option<CXIdent>,
+        nodrop: bool,
+    ) -> MIRPlace {
         let scope = self
             .scope_stack
             .last()
             .expect("active function has no lexical scope")
             .id;
-        
+
         self.body.add_place(ty, debug_name, nodrop, scope)
     }
 
     pub fn local(&self, local: THIRLocalID) -> Option<MIRValue> {
         self.local_values.get(&local).cloned()
+    }
+
+    pub fn locals(&self) -> HashMap<THIRLocalID, MIRValue> {
+        self.local_values.clone()
     }
 
     pub fn bind_local(&mut self, local: THIRLocalID, value: MIRValue) {

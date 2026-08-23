@@ -13,7 +13,7 @@ use cx_thir::{
         data::{
             THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter,
         },
-        expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
+        expression::{THIRExpression, THIRExpressionKind},
         r#type::THIRTypeKind,
     },
 };
@@ -114,7 +114,7 @@ pub fn typecheck_comptime_function(
         let Some(name) = param.name.clone() else {
             continue;
         };
-        let local_id = THIRLocalID::fresh();
+        let local_id = param.local_id;
         let is_parameterized_staged = param.value_type.expr && !param.value_type.params.is_empty();
 
         if is_parameterized_staged {
@@ -125,15 +125,21 @@ pub fn typecheck_comptime_function(
                 param.value_type._type.clone(),
             );
         } else {
-            ensure_valid_type_component(
-                env,
-                body.token_range(),
-                &param.value_type._type,
-                "a parameter",
-                true,
-            )?;
+            if !param.value_type.expr {
+                ensure_valid_type_component(
+                    env,
+                    body.token_range(),
+                    &param.value_type._type,
+                    "a parameter",
+                    true,
+                )?;
+            }
 
-            let ref_type = env.symbols.mem_ref_to(param.value_type._type.clone());
+            let local_type = if param.value_type.expr {
+                param.value_type._type.clone()
+            } else {
+                env.symbols.mem_ref_to(param.value_type._type.clone())
+            };
             env.symbols.insert_local_value(
                 QualifiedName::new_raw(name.clone()),
                 THIRExpression {
@@ -142,7 +148,7 @@ pub fn typecheck_comptime_function(
                         name: name.clone(),
                         local_id,
                     },
-                    _type: ref_type,
+                    _type: local_type,
                 },
             );
         }
@@ -178,7 +184,7 @@ pub fn typecheck_comptime_function(
     env.function
         .configure_merge_scope(body, Some("fallthrough"));
 
-    env.enter_comptime_context();
+    env.enter_comptime_context(prototype.runtime_return_type().cloned());
     let checked = (|| -> CXResult<THIRExpression> {
         let body_expr = typecheck_expr(env, namespace, body, None)?
             .standard_ready_coerce(env, body.token_range())?;

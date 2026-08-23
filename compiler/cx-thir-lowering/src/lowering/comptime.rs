@@ -25,8 +25,8 @@ pub(crate) fn evaluate_integer(
 ) -> CXResult<usize> {
     let value = evaluate_compite_expr(builder, expression)?;
     match value {
-        MIRComptimeValue::Integer { val, .. } => {
-            usize::try_from(val).map_err(|_| constant_error(context))
+        MIRComptimeValue::Constant(MIRConstant::Integer { value, .. }) => {
+            usize::try_from(value).map_err(|_| constant_error(context))
         }
         _ => Err(constant_error(context)),
     }
@@ -38,17 +38,7 @@ pub(crate) fn evaluate(
 ) -> CXResult<MIRConstant> {
     let value = evaluate_compite_expr(builder, expression)?;
     match value {
-        MIRComptimeValue::Integer { val, _ty, signed } => Ok(MIRConstant::Integer {
-            value: val,
-            ty: _ty,
-            signed,
-        }),
-        MIRComptimeValue::Float { val, _ty } => Ok(MIRConstant::Float {
-            value: val,
-            ty: _ty,
-        }),
-        MIRComptimeValue::FunctionReference(id) => Ok(MIRConstant::Function(id)),
-        MIRComptimeValue::Staged { .. } => Err(constant_error("staged expression")),
+        MIRComptimeValue::Constant(value) => Ok(value),
+        MIRComptimeValue::Staged(_) => Err(constant_error("staged expression")),
     }
 }
-

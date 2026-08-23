@@ -20,9 +20,7 @@ use crate::type_checking::op::{self, try_typecheck_special_binop, typecheck_bino
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::{
     identifiers::typecheck_identifier,
-    literals::{
-        typecheck_float_literal, typecheck_int_literal, typecheck_unit,
-    },
+    literals::{typecheck_float_literal, typecheck_int_literal, typecheck_unit},
     locals::typecheck_var_declaration,
     moves::{typecheck_adopt, typecheck_leak, typecheck_unpack},
     unsafe_ops::typecheck_unsafe,
@@ -273,17 +271,21 @@ fn typecheck_expr_inner(
             } else {
                 then_result._type.clone()
             };
-            
-            let then_result = implicit_cast(env, then_result, &result_type)
-                .map(|v| THIRExpression {
+
+            let then_result =
+                implicit_cast(env, then_result, &result_type).map(|v| THIRExpression {
                     _type: THIRType::unit(),
-                    kind: THIRExpressionKind::Yield { value: Some(Box::new(v)) },
+                    kind: THIRExpressionKind::Yield {
+                        value: Some(Box::new(v)),
+                    },
                     token_range: TokenRange::internal(),
                 })?;
-            let else_result = implicit_cast(env, else_result, &result_type)
-                .map(|v| THIRExpression {
+            let else_result =
+                implicit_cast(env, else_result, &result_type).map(|v| THIRExpression {
                     _type: THIRType::unit(),
-                    kind: THIRExpressionKind::Yield { value: Some(Box::new(v)) },
+                    kind: THIRExpressionKind::Yield {
+                        value: Some(Box::new(v)),
+                    },
                     token_range: TokenRange::internal(),
                 })?;
 
@@ -488,7 +490,13 @@ fn typecheck_expr_inner(
         }
 
         HIRExprKind::Return { value } => {
-            let return_type = env.current_function().signature().return_type.clone();
+            let return_type = if env.in_runtime_emit_context() {
+                env.comptime_runtime_return_type()
+                    .cloned()
+                    .unwrap_or_else(|| env.current_function().signature().return_type.clone())
+            } else {
+                env.current_function().signature().return_type.clone()
+            };
             let value = value
                 .as_ref()
                 .map(|v| {

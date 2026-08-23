@@ -5,10 +5,10 @@ mod value;
 
 pub mod context;
 
+pub use context::ComptimeResolver;
 pub use engine::{EngineLimits, MIRComptimeEngine};
 pub use interpretable::{ComptimeInterpretable, InterpretedFunction};
-pub use context::ComptimeResolver;
-pub use value::{MIRComptimeValue, MIRStagedParameter};
+pub use value::{MIRComptimeValue, MIRStagedBinding, MIRStagedValue};
 
 use crate::{context::MIRContext, error::comptime_error};
 use cx_log::CXResult;
@@ -35,25 +35,12 @@ pub fn lower_comptime_value<T: MIRContext>(
     expr: MIRComptimeValue,
 ) -> CXResult<MIRValue> {
     Ok(match expr {
-        MIRComptimeValue::Integer { val, _ty, signed } => MIRValue::Constant(MIRConstant::Integer {
-            value: val,
-            ty: _ty,
-            signed,
-        }),
-        MIRComptimeValue::Float { val, _ty } => MIRValue::Constant(MIRConstant::Float {
-            value: val,
-            ty: _ty,
-        }),
-        MIRComptimeValue::FunctionReference(id) => MIRValue::Constant(MIRConstant::Function(id)),
-        MIRComptimeValue::Staged { expr, parameters } => {
-            if !parameters.is_empty() {
-                return comptime_error(
-                    expr.token_range.clone(),
-                    "produced staged expression requires parameters to be materialized",
-                );
-            }
-            let value = evaluate_compite_expr(_context, expr)?;
-            lower_comptime_value(_context, value)?
+        MIRComptimeValue::Constant(value) => MIRValue::Constant(value),
+        MIRComptimeValue::Staged(_) => {
+            return comptime_error(
+                expr_token_range(),
+                "staged values must be instantiated by the MIR lowering context",
+            );
         }
     })
 }
@@ -68,10 +55,10 @@ pub fn generate_comptime_instructions<T: MIRContext>(
 }
 
 /// Captures a standalone lowering of a THIR expression into an anonymous comptime function and interprets it into a constant.
-pub fn evaluate_compite_expr<'a, T: MIRContext>(
+pub fn evaluate_compite_expr<T: MIRContext>(
     context: &mut T,
-    expr: &'a THIRExpression,
-) -> CXResult<MIRComptimeValue<'a>> {
+    expr: &THIRExpression,
+) -> CXResult<MIRComptimeValue> {
     let function = context.capture_expression(expr)?;
     let resolver = context.comptime_resolver();
     let mut engine = MIRComptimeEngine::new(resolver);
@@ -79,14 +66,12 @@ pub fn evaluate_compite_expr<'a, T: MIRContext>(
         InterpretedFunction::new(&function).expect("captured comptime functions have definitions");
 
     let constant = engine.run(entry, &[])?;
-    Ok(constant_to_value(constant))
+    Ok(MIRComptimeValue::Constant(constant))
 }
 
 /// Evaluates every pending global initializer in the unit by interpreting its anonymous init function, returning the resolved
 /// constants in declaration order for the caller to materialize.
-pub fn evaluate_unit_globals(
-    unit: &MIRUnit,
-) -> CXResult<Vec<(cx_mir::MIRGlobalID, MIRConstant)>> {
+pub fn evaluate_unit_globals(unit: &MIRUnit) -> CXResult<Vec<(cx_mir::MIRGlobalID, MIRConstant)>> {
     use cx_mir::{MIRGlobalKind, MIRGlobalState};
 
     let mut engine = MIRComptimeEngine::new(unit);
@@ -113,17 +98,6 @@ pub fn evaluate_unit_globals(
     Ok(evaluated)
 }
 
-fn constant_to_value(constant: MIRConstant) -> MIRComptimeValue<'static> {
-    match constant {
-        MIRConstant::Integer { value, ty, signed } => MIRComptimeValue::Integer {
-            val: value,
-            _ty: ty,
-            signed,
-        },
-        MIRConstant::Float { value, ty } => MIRComptimeValue::Float { val: value, _ty: ty },
-        MIRConstant::Function(id) => MIRComptimeValue::FunctionReference(id),
-        other => unreachable!(
-            "comptime engine returned an unsupported top-level constant {other:?}"
-        ),
-    }
+fn expr_token_range() -> cx_tokens::TokenRange {
+    cx_tokens::TokenRange::internal()
 }

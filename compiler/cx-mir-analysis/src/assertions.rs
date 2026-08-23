@@ -262,7 +262,11 @@ fn transfer_instruction(environment: &mut ConstEnvironment, kind: &MIRInstrKind)
         | MIRInstrKind::VaStart { .. }
         | MIRInstrKind::VaEnd { .. }
         | MIRInstrKind::Unreachable
-        | MIRInstrKind::Emit { .. } => {}
+        | MIRInstrKind::MakeStaged { .. }
+        | MIRInstrKind::ApplyStaged { .. }
+        | MIRInstrKind::StagedReturn { .. }
+        | MIRInstrKind::StagedMove { .. }
+        | MIRInstrKind::StagedUse { .. } => {}
     }
 }
 

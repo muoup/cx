@@ -2,12 +2,12 @@ use std::collections::{HashMap, HashSet};
 
 use cx_log::CXResult;
 use cx_mir::{
-    ty::interface::MTRegistry,
-    ty::layout::{field_layout, layout_of},
     MIRAggregateOp, MIRAssignTarget, MIRBinaryOp, MIRBlockTarget, MIRCoercion, MIRConstant,
     MIRFieldLayout, MIRFloatBinaryOp, MIRFunctionID, MIRFunctionMode, MIRGlobalID, MIRGlobalKind,
     MIRInstrKind, MIRIntBinaryOp, MIRIntType, MIRParameterID, MIRPlace, MIRPointerBinaryOp,
     MIRPointerOffsetOp, MIRRegister, MIRTypeID, MIRTypeKind, MIRUnaryOp, MIRValue,
+    ty::interface::MTRegistry,
+    ty::layout::{field_layout, layout_of},
 };
 use cx_tokens::TokenRange;
 use cx_util::unsafe_float::FloatWrapper;
@@ -16,6 +16,7 @@ use crate::{
     context::ComptimeResolver,
     error::comptime_error,
     interpretable::{ComptimeInterpretable, InterpretedFunction},
+    value::{MIRComptimeValue, MIRStagedBinding, MIRStagedValue},
 };
 
 const DEFAULT_STEP_BUDGET: u64 = 1_000_000;
@@ -54,8 +55,8 @@ impl PathSeg {
 
 struct Frame<'ctx> {
     code: InterpretedFunction<'ctx>,
-    registers: HashMap<MIRRegister, MIRConstant>,
-    cells: HashMap<MIRPlace, MIRConstant>,
+    registers: HashMap<MIRRegister, MIRComptimeValue>,
+    cells: HashMap<MIRPlace, MIRComptimeValue>,
     derived: HashMap<MIRPlace, (MIRPlace, Vec<PathSeg>)>,
 }
 
@@ -100,6 +101,29 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
         entry: InterpretedFunction<'ctx>,
         args: &[MIRConstant],
     ) -> CXResult<MIRConstant> {
+        let args = args
+            .iter()
+            .cloned()
+            .map(MIRComptimeValue::Constant)
+            .collect::<Vec<_>>();
+        self.run_values(entry, &args)?.constant().ok_or_else(|| {
+            cx_log::error::CXErr::new(
+                cx_log::error::message::CXStdErrMessage::error(
+                    "COMPTIME ERROR",
+                    "expected a concrete compile-time value",
+                ),
+                cx_log::error::context::CXInternalContext::error(
+                    "staged value escaped a constant evaluation",
+                ),
+            )
+        })
+    }
+
+    pub fn run_values(
+        &mut self,
+        entry: InterpretedFunction<'ctx>,
+        args: &[MIRComptimeValue],
+    ) -> CXResult<MIRComptimeValue> {
         self.push_frame(entry, args)?;
         self.run_top_frame()
     }
@@ -107,7 +131,7 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
     fn push_frame(
         &mut self,
         code: InterpretedFunction<'ctx>,
-        args: &[MIRConstant],
+        args: &[MIRComptimeValue],
     ) -> CXResult<()> {
         let mut frame = Frame::new(code);
         for (index, value) in args.iter().enumerate() {
@@ -126,13 +150,16 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
         Ok(())
     }
 
-    fn run_top_frame(&mut self) -> CXResult<MIRConstant> {
+    fn run_top_frame(&mut self) -> CXResult<MIRComptimeValue> {
         loop {
             self.steps += 1;
             if self.steps > self.limits.max_steps {
                 return comptime_error(
                     TokenRange::internal(),
-                    format!("comptime evaluation exceeded {} steps", self.limits.max_steps),
+                    format!(
+                        "comptime evaluation exceeded {} steps",
+                        self.limits.max_steps
+                    ),
                 );
             }
 
@@ -156,29 +183,29 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                 MIRInstrKind::Initialize { .. } | MIRInstrKind::Leak { .. } => {}
                 MIRInstrKind::Create { out, ty } => {
                     let frame = self.frames.last_mut().expect("active frame");
-                    frame.cells.insert(out, MIRConstant::Undefined);
+                    frame
+                        .cells
+                        .insert(out, MIRComptimeValue::Constant(MIRConstant::Undefined));
                     let _ = ty;
                 }
-                MIRInstrKind::Assign {
-                    target,
-                    value,
-                    ty,
-                } => {
-                    let constant = self.read_value(&value)?;
+                MIRInstrKind::Assign { target, value, ty } => {
+                    let value = self.read_value(&value)?;
                     match target {
                         MIRAssignTarget::Register(register) => {
                             let frame = self.frames.last_mut().expect("active frame");
-                            frame.registers.insert(register, constant);
+                            frame.registers.insert(register, value);
                         }
                         MIRAssignTarget::Place(place) => {
-                            self.write_place(place, constant, Some(ty))?;
+                            self.write_place(place, value, Some(ty))?;
                         }
                     }
                 }
                 MIRInstrKind::AddressOf { out, place } => {
                     let constant = self.address_of(place, &range)?;
                     let frame = self.frames.last_mut().expect("active frame");
-                    frame.registers.insert(out, constant);
+                    frame
+                        .registers
+                        .insert(out, MIRComptimeValue::Constant(constant));
                 }
                 MIRInstrKind::Dereference { .. } => {
                     return comptime_error(
@@ -188,12 +215,9 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                 }
                 MIRInstrKind::AggregateOp(op) => self.execute_aggregate_op(op)?,
                 MIRInstrKind::Call {
-                    out,
-                    callee,
-                    args,
-                    ..
+                    out, callee, args, ..
                 } => {
-                    let callee_value = self.read_value(&callee)?;
+                    let callee_value = self.read_constant(&callee, &range)?;
                     let function_id = match callee_value {
                         MIRConstant::Function(id) => id,
                         other => {
@@ -213,41 +237,53 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                         frame.registers.insert(out, result);
                     }
                 }
-                MIRInstrKind::VaStart { .. } | MIRInstrKind::VaEnd { .. }
+                MIRInstrKind::VaStart { .. }
+                | MIRInstrKind::VaEnd { .. }
                 | MIRInstrKind::VaArg { .. } => {
                     return comptime_error(range, "variadic operations are not comptime-capable");
                 }
                 MIRInstrKind::BinOp { out, op, lhs, rhs } => {
-                    let lhs = self.read_value(&lhs)?;
-                    let rhs = self.read_value(&rhs)?;
+                    let lhs = self.read_constant(&lhs, &range)?;
+                    let rhs = self.read_constant(&rhs, &range)?;
                     let result = self.evaluate_binop(op, lhs, rhs)?;
                     let frame = self.frames.last_mut().expect("active frame");
-                    frame.registers.insert(out, result);
+                    frame
+                        .registers
+                        .insert(out, MIRComptimeValue::Constant(result));
                 }
                 MIRInstrKind::UnOp { out, op, operand } => {
                     if let MIRUnaryOp::Increment { amount, post } = op {
-                        let old = self.read_value(&operand)?;
+                        let old = self.read_constant(&operand, &range)?;
                         let updated = increment_constant(old.clone(), amount)?;
                         match operand {
                             MIRValue::Register(register) => {
                                 let frame = self.frames.last_mut().expect("active frame");
-                                frame.registers.insert(register, updated.clone());
+                                frame
+                                    .registers
+                                    .insert(register, MIRComptimeValue::Constant(updated.clone()));
                             }
                             MIRValue::PlaceRef(place)
                             | MIRValue::Copy(place)
                             | MIRValue::Move(place) => {
-                                self.write_direct_cell(place, updated.clone())?;
+                                self.write_direct_cell(
+                                    place,
+                                    MIRComptimeValue::Constant(updated.clone()),
+                                )?;
                             }
                             MIRValue::Constant(_) => {}
                         }
                         let exposed = if post { old } else { updated };
                         let frame = self.frames.last_mut().expect("active frame");
-                        frame.registers.insert(out, exposed);
+                        frame
+                            .registers
+                            .insert(out, MIRComptimeValue::Constant(exposed));
                     } else {
-                        let operand = self.read_value(&operand)?;
+                        let operand = self.read_constant(&operand, &range)?;
                         let result = self.evaluate_unop(op, operand)?;
                         let frame = self.frames.last_mut().expect("active frame");
-                        frame.registers.insert(out, result);
+                        frame
+                            .registers
+                            .insert(out, MIRComptimeValue::Constant(result));
                     }
                 }
                 MIRInstrKind::Coerce {
@@ -263,19 +299,21 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                         match self.coerce_global_special(&operand, to_type)? {
                             Some(constant) => constant,
                             None => {
-                                let operand = self.read_value(&operand)?;
+                                let operand = self.read_constant(&operand, &range)?;
                                 self.evaluate_coercion(coercion, operand, to_type)?
                             }
                         }
                     } else {
-                        let operand = self.read_value(&operand)?;
+                        let operand = self.read_constant(&operand, &range)?;
                         self.evaluate_coercion(coercion, operand, to_type)?
                     };
                     let frame = self.frames.last_mut().expect("active frame");
-                    frame.registers.insert(out, result);
+                    frame
+                        .registers
+                        .insert(out, MIRComptimeValue::Constant(result));
                 }
                 MIRInstrKind::Assert { condition, message } => {
-                    let condition = self.read_value(&condition)?;
+                    let condition = self.read_constant(&condition, &range)?;
                     if !is_truthy(&condition) {
                         return comptime_error(
                             range,
@@ -284,12 +322,12 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                     }
                 }
                 MIRInstrKind::Assume { condition } => {
-                    let _ = self.read_value(&condition)?;
+                    let _ = self.read_constant(&condition, &range)?;
                 }
                 MIRInstrKind::Return { value } => {
                     let constant = match value {
                         Some(value) => self.read_value(&value)?,
-                        None => MIRConstant::Unit,
+                        None => MIRComptimeValue::Constant(MIRConstant::Unit),
                     };
                     self.frames.pop();
                     return Ok(constant);
@@ -302,7 +340,7 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                     true_target,
                     false_target,
                 } => {
-                    let condition = self.read_value(&cond)?;
+                    let condition = self.read_constant(&cond, &range)?;
                     let target = if is_truthy(&condition) {
                         true_target
                     } else {
@@ -315,7 +353,7 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                     cases,
                     default,
                 } => {
-                    let subject = self.read_value(&value)?;
+                    let subject = self.read_constant(&value, &range)?;
                     let mut taken = default;
                     for (case, target) in cases {
                         if constant_equals(&subject, &case) {
@@ -336,7 +374,7 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                     default,
                     ..
                 } => {
-                    let subject = self.read_value(&subject)?;
+                    let subject = self.read_constant(&subject, &range)?;
                     let discriminant = variant_discriminant(&subject);
                     let mut taken = default;
                     for (variant, target) in cases {
@@ -355,11 +393,45 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                 MIRInstrKind::Unreachable => {
                     return comptime_error(range, "unreachable code executed at compile time");
                 }
-                MIRInstrKind::Emit { .. } => {
-                    return comptime_error(
-                        range,
-                        "staged splicing is not supported by the comptime engine yet",
-                    );
+                MIRInstrKind::MakeStaged {
+                    out,
+                    template,
+                    captures,
+                } => {
+                    let mut bindings = Vec::with_capacity(captures.len());
+                    for capture in captures {
+                        bindings.push(MIRStagedBinding::Comptime(self.read_value(&capture)?));
+                    }
+                    let staged = MIRStagedValue::new(template, bindings, Vec::new(), None);
+                    let frame = self.frames.last_mut().expect("active frame");
+                    frame
+                        .registers
+                        .insert(out, MIRComptimeValue::Staged(std::sync::Arc::new(staged)));
+                }
+                MIRInstrKind::ApplyStaged { out, staged, args } => {
+                    let MIRComptimeValue::Staged(staged) = self.read_value(&staged)? else {
+                        return comptime_error(range, "attempted to apply a non-staged value");
+                    };
+                    let mut bindings = Vec::with_capacity(args.len());
+                    for arg in args {
+                        bindings.push(MIRStagedBinding::Comptime(self.read_value(&arg)?));
+                    }
+                    if let Some(out) = out {
+                        let frame = self.frames.last_mut().expect("active frame");
+                        frame.registers.insert(
+                            out,
+                            MIRComptimeValue::Staged(std::sync::Arc::new(staged.apply(bindings))),
+                        );
+                    }
+                }
+                MIRInstrKind::StagedReturn { .. } => {
+                    return comptime_error(range, "staged template executed as a function");
+                }
+                MIRInstrKind::StagedMove { .. } => {
+                    return comptime_error(range, "staged move executed as a function");
+                }
+                MIRInstrKind::StagedUse { .. } => {
+                    return comptime_error(range, "staged use executed as a function");
                 }
             }
         }
@@ -387,8 +459,8 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
     fn call_function(
         &mut self,
         function_id: MIRFunctionID,
-        args: &[MIRConstant],
-    ) -> CXResult<MIRConstant> {
+        args: &[MIRComptimeValue],
+    ) -> CXResult<MIRComptimeValue> {
         if self.frames.len() >= self.limits.max_call_depth {
             return comptime_error(
                 TokenRange::internal(),
@@ -403,9 +475,7 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
         let Some(function) = resolver.resolve(function_id) else {
             return comptime_error(
                 TokenRange::internal(),
-                format!(
-                    "function {function_id:?} is not available during comptime evaluation"
-                ),
+                format!("function {function_id:?} is not available during comptime evaluation"),
             );
         };
 
@@ -436,21 +506,13 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                 use cx_mir::MIRPlaceAggregateOp as Op;
 
                 let (root, path) = match op {
-                    Op::Field {
-                        base,
-                        field,
-                        ..
-                    } => {
+                    Op::Field { base, field, .. } => {
                         let (root, mut path) = self.resolve_projection(base);
                         path.push(PathSeg::Field(field));
                         (root, path)
                     }
-                    Op::Index {
-                        base,
-                        index,
-                        ..
-                    } => {
-                        let index = self.read_value(&index)?;
+                    Op::Index { base, index, .. } => {
+                        let index = self.read_constant(&index, &TokenRange::internal())?;
                         let index = match index {
                             MIRConstant::Integer { value, .. } => value,
                             other => {
@@ -464,11 +526,7 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                         path.push(PathSeg::Index(index));
                         (root, path)
                     }
-                    Op::Variant {
-                        base,
-                        variant,
-                        ..
-                    } => {
+                    Op::Variant { base, variant, .. } => {
                         let (root, mut path) = self.resolve_projection(base);
                         path.push(PathSeg::Variant(variant));
                         (root, path)
@@ -484,7 +542,7 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
 
                 let constant = match op {
                     Op::Discriminant { value, .. } => {
-                        let value = self.read_value(&value)?;
+                        let value = self.read_constant(&value, &TokenRange::internal())?;
                         match variant_discriminant(&value) {
                             Some(discriminant) => MIRConstant::Integer {
                                 value: discriminant as i128,
@@ -497,7 +555,10 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                     Op::Construct { ty, fields } => {
                         let mut evaluated = Vec::with_capacity(fields.len());
                         for (index, field) in fields {
-                            evaluated.push((index, self.read_value(&field)?));
+                            evaluated.push((
+                                index,
+                                self.read_constant(&field, &TokenRange::internal())?,
+                            ));
                         }
                         MIRConstant::Aggregate {
                             ty,
@@ -510,16 +571,21 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                         sum_type,
                     } => MIRConstant::Aggregate {
                         ty: sum_type,
-                        fields: vec![(variant, self.read_value(&value)?)],
+                        fields: vec![(
+                            variant,
+                            self.read_constant(&value, &TokenRange::internal())?,
+                        )],
                     },
                     Op::ProjectVariant { variant, value, .. } => {
-                        let value = self.read_value(&value)?;
+                        let value = self.read_constant(&value, &TokenRange::internal())?;
                         read_path(&value, &[PathSeg::Variant(variant)])
                     }
                 };
 
                 let frame = self.frames.last_mut().expect("active frame");
-                frame.registers.insert(out, constant);
+                frame
+                    .registers
+                    .insert(out, MIRComptimeValue::Constant(constant));
                 Ok(())
             }
         }
@@ -700,10 +766,7 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                 };
                 Ok(ty)
             }
-            None => comptime_error(
-                range.clone(),
-                "unknown global in an address-of computation",
-            ),
+            None => comptime_error(range.clone(), "unknown global in an address-of computation"),
         }
     }
 
@@ -795,8 +858,10 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                 let result = match op {
                     MIRPointerBinaryOp::Eq => equal,
                     MIRPointerBinaryOp::Ne => !equal,
-                    MIRPointerBinaryOp::Lt | MIRPointerBinaryOp::Le
-                    | MIRPointerBinaryOp::Gt | MIRPointerBinaryOp::Ge => {
+                    MIRPointerBinaryOp::Lt
+                    | MIRPointerBinaryOp::Le
+                    | MIRPointerBinaryOp::Gt
+                    | MIRPointerBinaryOp::Ge => {
                         return comptime_error(
                             TokenRange::internal(),
                             "ordered pointer comparisons are not supported in a comptime context yet",
@@ -845,34 +910,26 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
             }
             Op::Eq => boolean(lhs == rhs),
             Op::Ne => boolean(lhs != rhs),
-            Op::Lt | Op::SignedLt => {
-                boolean(if signed || matches!(op, Op::SignedLt) {
-                    lhs < rhs
-                } else {
-                    (lhs as u128) < (rhs as u128)
-                })
-            }
-            Op::Le | Op::SignedLe => {
-                boolean(if signed || matches!(op, Op::SignedLe) {
-                    lhs <= rhs
-                } else {
-                    (lhs as u128) <= (rhs as u128)
-                })
-            }
-            Op::Gt | Op::SignedGt => {
-                boolean(if signed || matches!(op, Op::SignedGt) {
-                    lhs > rhs
-                } else {
-                    (lhs as u128) > (rhs as u128)
-                })
-            }
-            Op::Ge | Op::SignedGe => {
-                boolean(if signed || matches!(op, Op::SignedGe) {
-                    lhs >= rhs
-                } else {
-                    (lhs as u128) >= (rhs as u128)
-                })
-            }
+            Op::Lt | Op::SignedLt => boolean(if signed || matches!(op, Op::SignedLt) {
+                lhs < rhs
+            } else {
+                (lhs as u128) < (rhs as u128)
+            }),
+            Op::Le | Op::SignedLe => boolean(if signed || matches!(op, Op::SignedLe) {
+                lhs <= rhs
+            } else {
+                (lhs as u128) <= (rhs as u128)
+            }),
+            Op::Gt | Op::SignedGt => boolean(if signed || matches!(op, Op::SignedGt) {
+                lhs > rhs
+            } else {
+                (lhs as u128) > (rhs as u128)
+            }),
+            Op::Ge | Op::SignedGe => boolean(if signed || matches!(op, Op::SignedGe) {
+                lhs >= rhs
+            } else {
+                (lhs as u128) >= (rhs as u128)
+            }),
             Op::LogicalAnd => boolean(is_truthy(&int(lhs)) && is_truthy(&int(rhs))),
             Op::LogicalOr => boolean(is_truthy(&int(lhs)) || is_truthy(&int(rhs))),
             Op::BitAnd => int(lhs & rhs),
@@ -884,11 +941,7 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
         })
     }
 
-    fn evaluate_unop(
-        &mut self,
-        op: MIRUnaryOp,
-        operand: MIRConstant,
-    ) -> CXResult<MIRConstant> {
+    fn evaluate_unop(&mut self, op: MIRUnaryOp, operand: MIRConstant) -> CXResult<MIRConstant> {
         Ok(match op {
             MIRUnaryOp::IntegerNeg { ty, signed } => {
                 let value = as_integer(&operand).wrapping_neg();
@@ -920,7 +973,11 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
         to_type: cx_mir::MIRTypeID,
     ) -> CXResult<MIRConstant> {
         Ok(match coercion {
-            MIRCoercion::Integral { sign_extend, from, to } => {
+            MIRCoercion::Integral {
+                sign_extend,
+                from,
+                to,
+            } => {
                 let _ = from;
                 let source_signed = matches!(operand, MIRConstant::Integer { signed: true, .. });
                 let raw = as_integer(&operand);
@@ -1000,23 +1057,32 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
         })
     }
 
-    fn read_value(&mut self, value: &MIRValue) -> CXResult<MIRConstant> {
+    fn read_value(&mut self, value: &MIRValue) -> CXResult<MIRComptimeValue> {
         Ok(match value {
-            MIRValue::Constant(constant) => constant.clone(),
+            MIRValue::Constant(constant) => MIRComptimeValue::Constant(constant.clone()),
             MIRValue::Register(register) => self
                 .frames
                 .last()
                 .and_then(|frame| frame.registers.get(register))
                 .cloned()
-                .unwrap_or(MIRConstant::Undefined),
+                .unwrap_or(MIRComptimeValue::Constant(MIRConstant::Undefined)),
             MIRValue::PlaceRef(place) | MIRValue::Copy(place) | MIRValue::Move(place) => {
                 if let MIRPlace::Global(global) = place {
-                    self.read_global_rvalue(*global)?
+                    MIRComptimeValue::Constant(self.read_global_rvalue(*global)?)
                 } else {
                     self.read_place(*place)?
                 }
             }
         })
+    }
+
+    fn read_constant(&mut self, value: &MIRValue, range: &TokenRange) -> CXResult<MIRConstant> {
+        match self.read_value(value)? {
+            MIRComptimeValue::Constant(value) => Ok(value),
+            MIRComptimeValue::Staged(_) => {
+                comptime_error(range.clone(), "staged value used as a concrete value")
+            }
+        }
     }
 
     fn read_global_rvalue(&mut self, global: MIRGlobalID) -> CXResult<MIRConstant> {
@@ -1029,9 +1095,9 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
         self.read_global(global)
     }
 
-    fn read_place(&mut self, place: MIRPlace) -> CXResult<MIRConstant> {
+    fn read_place(&mut self, place: MIRPlace) -> CXResult<MIRComptimeValue> {
         if let MIRPlace::Global(global) = place {
-            return self.read_global(global);
+            return Ok(MIRComptimeValue::Constant(self.read_global(global)?));
         }
 
         let projection = self.resolve_projection(place);
@@ -1041,28 +1107,40 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                 .last()
                 .and_then(|frame| frame.cells.get(&place))
                 .cloned()
-                .unwrap_or(MIRConstant::Undefined));
+                .unwrap_or(MIRComptimeValue::Constant(MIRConstant::Undefined)));
         }
 
         let root = match &projection.0 {
-            MIRPlace::Global(global) => self.read_global(*global)?,
+            MIRPlace::Global(global) => MIRComptimeValue::Constant(self.read_global(*global)?),
             other => self
                 .frames
                 .last()
                 .and_then(|frame| frame.cells.get(other))
                 .cloned()
-                .unwrap_or(MIRConstant::Undefined),
+                .unwrap_or(MIRComptimeValue::Constant(MIRConstant::Undefined)),
         };
-        Ok(read_path(&root, &projection.1))
+        let MIRComptimeValue::Constant(root) = root else {
+            return comptime_error(
+                TokenRange::internal(),
+                "cannot project through a staged value",
+            );
+        };
+        Ok(MIRComptimeValue::Constant(read_path(&root, &projection.1)))
     }
 
     fn write_place(
         &mut self,
         place: MIRPlace,
-        value: MIRConstant,
+        value: MIRComptimeValue,
         aggregate_type: Option<cx_mir::MIRTypeID>,
     ) -> CXResult<()> {
         if let MIRPlace::Global(global) = place {
+            let MIRComptimeValue::Constant(value) = value else {
+                return comptime_error(
+                    TokenRange::internal(),
+                    "cannot store a staged value in a global",
+                );
+            };
             self.globals.insert(global, value);
             return Ok(());
         }
@@ -1075,13 +1153,25 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
 
         let (root, path) = projection;
         let current = match &root {
-            MIRPlace::Global(global) => self.read_global(*global)?,
+            MIRPlace::Global(global) => MIRComptimeValue::Constant(self.read_global(*global)?),
             other => self
                 .frames
                 .last()
                 .and_then(|frame| frame.cells.get(other))
                 .cloned()
-                .unwrap_or(MIRConstant::Undefined),
+                .unwrap_or(MIRComptimeValue::Constant(MIRConstant::Undefined)),
+        };
+        let MIRComptimeValue::Constant(current) = current else {
+            return comptime_error(
+                TokenRange::internal(),
+                "cannot assign through a staged value",
+            );
+        };
+        let MIRComptimeValue::Constant(value) = value else {
+            return comptime_error(
+                TokenRange::internal(),
+                "cannot store a staged value in an aggregate projection",
+            );
         };
         let updated = write_path(&current, &path, value, aggregate_type);
         match root {
@@ -1090,13 +1180,15 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
             }
             other => {
                 let frame = self.frames.last_mut().expect("active frame");
-                frame.cells.insert(other, updated);
+                frame
+                    .cells
+                    .insert(other, MIRComptimeValue::Constant(updated));
             }
         }
         Ok(())
     }
 
-    fn write_direct_cell(&mut self, place: MIRPlace, value: MIRConstant) -> CXResult<()> {
+    fn write_direct_cell(&mut self, place: MIRPlace, value: MIRComptimeValue) -> CXResult<()> {
         debug_assert!(
             !matches!(place, MIRPlace::Global(_)),
             "globals are handled by write_place"
@@ -1123,7 +1215,13 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
                 return Ok(constant);
             }
             if let Some(initializer) = resolver.global_initializer(global) {
-                return self.call_function(initializer, &[]);
+                return match self.call_function(initializer, &[])? {
+                    MIRComptimeValue::Constant(value) => Ok(value),
+                    MIRComptimeValue::Staged(_) => comptime_error(
+                        TokenRange::internal(),
+                        "global initializer returned a staged value",
+                    ),
+                };
             }
             if matches!(
                 resolver.global_kind(global),
@@ -1191,10 +1289,7 @@ fn is_truthy(constant: &MIRConstant) -> bool {
 
 fn constant_equals(lhs: &MIRConstant, rhs: &MIRConstant) -> bool {
     match (lhs, rhs) {
-        (
-            MIRConstant::Integer { value: l, .. },
-            MIRConstant::Integer { value: r, .. },
-        ) => l == r,
+        (MIRConstant::Integer { value: l, .. }, MIRConstant::Integer { value: r, .. }) => l == r,
         _ => lhs == rhs,
     }
 }
@@ -1284,10 +1379,7 @@ fn write_path(
     MIRConstant::Aggregate { ty, fields }
 }
 
-fn increment_constant(
-    constant: MIRConstant,
-    amount: i8,
-) -> CXResult<MIRConstant> {
+fn increment_constant(constant: MIRConstant, amount: i8) -> CXResult<MIRConstant> {
     match constant {
         MIRConstant::Integer { value, ty, signed } => Ok(MIRConstant::Integer {
             value: value.wrapping_add(amount as i128),

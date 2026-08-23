@@ -3,6 +3,7 @@ pub(crate) mod comptime;
 mod control_flow;
 mod memory;
 mod operators;
+mod staged;
 
 pub(crate) mod aggregates;
 pub(crate) mod globals;
@@ -91,11 +92,12 @@ pub(crate) fn lower_comptime_function(
     builder.fun_mut().push_scope(body.token_range.clone());
 
     for (index, parameter) in function.prototype.params().iter().enumerate() {
+        let value = MIRValue::PlaceRef(MIRPlace::Parameter(cx_mir::MIRParameterID::new(index)));
+        builder
+            .fun_mut()
+            .bind_local(parameter.local_id, value.clone());
         if let Some(name) = &parameter.name {
-            builder.fun_mut().bind_named_value(
-                name,
-                MIRValue::PlaceRef(MIRPlace::Parameter(cx_mir::MIRParameterID::new(index))),
-            );
+            builder.fun_mut().bind_named_value(name, value);
         }
     }
 
@@ -205,17 +207,28 @@ pub(crate) fn lower_expression(
             }
 
             THIRExpressionKind::Variable { local_id, .. } => {
-                builder.fun().local(*local_id).ok_or_else(|| {
-                    CXErr::new(
-                        CXStdErrMessage::error(
-                            "MIR ERROR",
-                            format!("could not find local id {:?}", local_id),
-                        ),
-                        CXInternalContext::error(
-                            "runtime local is unavailable in an thir lowering context"
-                        ),
-                    )
-                })?
+                let value = builder
+                    .local_value(*local_id, &expression._type)?
+                    .ok_or_else(|| {
+                        CXErr::new(
+                            CXStdErrMessage::error(
+                                "MIR ERROR",
+                                format!("could not find local id {:?}", local_id),
+                            ),
+                            CXInternalContext::error(
+                                "runtime local is unavailable in an thir lowering context",
+                            ),
+                        )
+                    })?;
+                if builder.is_capturing()
+                    && (expression._type.is_void() || expression._type.is_unreachable())
+                    && matches!(value, MIRValue::Register(_))
+                {
+                    builder.emit(MIRInstrKind::StagedUse {
+                        value: value.clone(),
+                    });
+                }
+                value
             }
 
             THIRExpressionKind::GlobalVariable { symbol } => MIRValue::PlaceRef(MIRPlace::Global(
@@ -337,21 +350,27 @@ pub(crate) fn lower_expression(
                 }
             }
 
-            THIRExpressionKind::Move { local_id, .. } => builder
-                .fun()
-                .local(*local_id)
-                .ok_or_else(|| {
-                    CXErr::new(
-                        CXStdErrMessage::error(
-                            "COMPTIME ERROR",
-                            "expression depends on a runtime local",
-                        ),
-                        CXInternalContext::error(
-                            "THIRExpressionKind::Move"
-                        ),
-                    )
-                })
-                .and_then(move_value)?,
+            THIRExpressionKind::Move { local_id, .. } => {
+                let value = builder
+                    .local_value(*local_id, &expression._type)?
+                    .ok_or_else(|| {
+                        CXErr::new(
+                            CXStdErrMessage::error(
+                                "COMPTIME ERROR",
+                                "expression depends on a runtime local",
+                            ),
+                            CXInternalContext::error("THIRExpressionKind::Move"),
+                        )
+                    })?;
+                if builder.is_capturing() && matches!(value, MIRValue::Register(_)) {
+                    let ty = lower_type(builder, &expression._type)?;
+                    let out = builder.fun_mut().new_register(ty, None);
+                    builder.emit(MIRInstrKind::StagedMove { out, value });
+                    MIRValue::Register(out)
+                } else {
+                    move_value(value)?
+                }
+            }
 
             THIRExpressionKind::CreateLocalVariable {
                 name,
@@ -541,12 +560,10 @@ pub(crate) fn lower_expression(
             }
 
             THIRExpressionKind::Unpack {
-                value,
-                bindings,
-                ..
+                value, bindings, ..
             } => {
                 let lowered_value = lower_expression(builder, value)?;
-                
+
                 let target = memory::ensure_place(builder, lowered_value, &value._type)?;
                 let struct_type_id = lower_type(builder, &value._type)?;
                 let base = builder.create(struct_type_id, None, false);
@@ -864,7 +881,10 @@ pub(crate) fn lower_expression(
                 let lowered_value = lowered_value.unwrap_or(MIRValue::Constant(MIRConstant::Unit));
                 let lowered_value = match (lowered_value, value_expression) {
                     (MIRValue::PlaceRef(place), Some(expression))
-                        if !expression._type.is_memory_reference() => MIRValue::Copy(place),
+                        if !expression._type.is_memory_reference() =>
+                    {
+                        MIRValue::Copy(place)
+                    }
                     (value, _) => value,
                 };
                 let value = match value_expression {
@@ -921,11 +941,14 @@ pub(crate) fn lower_expression(
             }
 
             THIRExpressionKind::Emit(inner) => {
-                let value = lower_expression(builder, inner)?;
-                builder.emit(MIRInstrKind::Emit {
-                    value: value.clone(),
+                let (template, captures) = builder.capture_staged(inner, &[], None)?;
+                let out = builder.fun_mut().new_register(template.result_type(), None);
+                builder.emit(MIRInstrKind::MakeStaged {
+                    out,
+                    template,
+                    captures,
                 });
-                value
+                MIRValue::Register(out)
             }
             THIRExpressionKind::Assert { condition, message } => {
                 let condition = lower_expression(builder, condition)?;
@@ -1068,11 +1091,18 @@ pub(crate) fn lower_expression(
             }
             THIRExpressionKind::Unsafe { expression: inner } => lower_expression(builder, inner)?,
             THIRExpressionKind::StagedExpression { params, body } => {
-                if params.is_empty() {
-                    lower_expression(builder, body)?
-                } else {
-                    MIRValue::Constant(MIRConstant::Undefined)
-                }
+                let params = params
+                    .iter()
+                    .map(|(_, local, ty)| (*local, ty))
+                    .collect::<Vec<_>>();
+                let (template, captures) = builder.capture_staged(body, &params, None)?;
+                let out = builder.fun_mut().new_register(template.result_type(), None);
+                builder.emit(MIRInstrKind::MakeStaged {
+                    out,
+                    template,
+                    captures,
+                });
+                MIRValue::Register(out)
             }
         };
 

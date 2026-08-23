@@ -40,7 +40,13 @@ pub fn typecheck_return(
         );
     }
 
-    let return_type = env.current_function().signature().return_type.clone();
+    let return_type = if env.in_runtime_emit_context() {
+        env.comptime_runtime_return_type()
+            .cloned()
+            .unwrap_or_else(|| env.current_function().signature().return_type.clone())
+    } else {
+        env.current_function().signature().return_type.clone()
+    };
 
     if return_type.is_unreachable() {
         return env.log_error(
@@ -77,6 +83,8 @@ pub fn typecheck_return(
         }
 
         (None, _) if return_type.is_void() => None,
+
+        (Some(value), _) if env.in_comptime_context() => Some(Box::new(value)),
 
         (Some(value), _) => {
             return env.log_error(

@@ -2,6 +2,7 @@ pub mod diagnostic;
 pub mod expr;
 pub mod global;
 pub mod op;
+pub mod staged;
 pub mod ty;
 pub mod unit;
 
@@ -24,6 +25,7 @@ pub use op::{
     MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRIntBinaryOp, MIRPointerBinaryOp,
     MIRPointerOffsetOp, MIRUnaryOp,
 };
+pub use staged::MIRStagedTemplate;
 pub use ty::{
     MIRBitfieldAccess, MIRField, MIRFieldLayout, MIRFloatType, MIRFunctionType, MIRIntType,
     MIRLayoutError, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRTypeRegistryBuilder,

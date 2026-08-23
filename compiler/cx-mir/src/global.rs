@@ -2,7 +2,9 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    expr::{MIRBasicBlock, MIRBasicBlockID, MIRConstant, MIRPlace, MIRPlaceID, MIRRegister, MIRScopeID},
+    expr::{
+        MIRBasicBlock, MIRBasicBlockID, MIRConstant, MIRPlace, MIRPlaceID, MIRRegister, MIRScopeID,
+    },
     ty::MIRTypeID,
 };
 
@@ -110,6 +112,8 @@ pub struct MIRFnParam {
     pub name: Option<CXIdent>,
     pub ty: MIRTypeID,
     pub nodrop: bool,
+    pub staged_params: Option<Vec<MIRTypeID>>,
+    pub staged_diverges: bool,
 }
 
 impl MIRFnParam {
@@ -118,6 +122,8 @@ impl MIRFnParam {
             name: None,
             ty,
             nodrop: false,
+            staged_params: None,
+            staged_diverges: false,
         }
     }
 
@@ -126,11 +132,19 @@ impl MIRFnParam {
             name: Some(name),
             ty,
             nodrop: false,
+            staged_params: None,
+            staged_diverges: false,
         }
     }
 
     pub fn with_nodrop(mut self, nodrop: bool) -> Self {
         self.nodrop = nodrop;
+        self
+    }
+
+    pub fn with_staged(mut self, params: Option<Vec<MIRTypeID>>, diverges: bool) -> Self {
+        self.staged_params = params;
+        self.staged_diverges = diverges;
         self
     }
 }
@@ -146,6 +160,7 @@ pub struct MIRFnSignature {
     pub variadic: bool,
     pub safe: bool,
     pub mode: MIRFunctionMode,
+    pub return_staged_params: Option<Vec<MIRTypeID>>,
 }
 
 impl MIRFnSignature {
@@ -166,11 +181,17 @@ impl MIRFnSignature {
             mode,
             variadic,
             safe,
+            return_staged_params: None,
         }
     }
 
     pub fn display_name(&self) -> &CXIdent {
         self.debug_name.as_ref().unwrap_or(&self.symbol_name)
+    }
+
+    pub fn with_staged_return(mut self, params: Option<Vec<MIRTypeID>>) -> Self {
+        self.return_staged_params = params;
+        self
     }
 }
 
@@ -331,7 +352,7 @@ impl MIRBody {
     pub fn block_mut(&mut self, id: MIRBasicBlockID) -> Option<&mut MIRBasicBlock> {
         self.blocks.get_mut(id.index())
     }
-    
+
     pub fn places(&self) -> &[MIRPlaceDecl] {
         &self.places
     }
@@ -362,11 +383,7 @@ impl MIRBody {
         id
     }
 
-    pub fn add_register(
-        &mut self,
-        ty: MIRTypeID,
-        debug_name: Option<CXIdent>,
-    ) -> MIRRegister {
+    pub fn add_register(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>) -> MIRRegister {
         let id = MIRRegister::new(self.registers.len());
         self.registers.push(MIRRegisterDecl { id, ty, debug_name });
         id

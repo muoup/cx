@@ -1212,7 +1212,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             THIRExpressionKind::StagedExpression { params, body } => {
                 write!(f, "StagedExpression [")?;
-                for (i, (name, ty)) in params.iter().enumerate() {
+                for (i, (name, _, ty)) in params.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }

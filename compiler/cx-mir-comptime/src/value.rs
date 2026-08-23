@@ -1,27 +1,79 @@
-use cx_mir::{MIRFloatType, MIRFunctionID, MIRIntType, MIRType};
-use cx_thir::thir::expression::THIRExpression;
-use cx_util::unsafe_float::FloatWrapper;
+use std::sync::Arc;
 
-pub enum MIRComptimeValue<'staged> {
-    Integer { val: i128, _ty: MIRIntType, signed: bool },
-    Float { val: FloatWrapper, _ty: MIRFloatType },
-    FunctionReference(MIRFunctionID),
-    Staged {
-        expr: &'staged THIRExpression,
-        parameters: Vec<MIRStagedParameter>,
-    },
+use cx_mir::{MIRConstant, MIRFunctionID, MIRStagedTemplate, MIRValue};
+
+#[derive(Debug, Clone)]
+pub enum MIRComptimeValue {
+    Constant(MIRConstant),
+    Staged(Arc<MIRStagedValue>),
 }
 
-pub struct MIRStagedParameter {
-    ty: MIRType,
+impl MIRComptimeValue {
+    pub fn constant(self) -> Option<MIRConstant> {
+        match self {
+            Self::Constant(value) => Some(value),
+            Self::Staged(_) => None,
+        }
+    }
 }
 
-impl MIRStagedParameter {
-    pub fn new(ty: MIRType) -> Self {
-        Self { ty }
+impl From<MIRConstant> for MIRComptimeValue {
+    fn from(value: MIRConstant) -> Self {
+        Self::Constant(value)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum MIRStagedBinding {
+    Value(MIRValue),
+    Comptime(MIRComptimeValue),
+}
+
+#[derive(Debug)]
+pub struct MIRStagedValue {
+    template: Arc<MIRStagedTemplate>,
+    captures: Arc<[MIRStagedBinding]>,
+    args: Arc<[MIRStagedBinding]>,
+    runtime_origin: Option<MIRFunctionID>,
+}
+
+impl MIRStagedValue {
+    pub fn new(
+        template: Arc<MIRStagedTemplate>,
+        captures: Vec<MIRStagedBinding>,
+        args: Vec<MIRStagedBinding>,
+        runtime_origin: Option<MIRFunctionID>,
+    ) -> Self {
+        Self {
+            template,
+            captures: captures.into(),
+            args: args.into(),
+            runtime_origin,
+        }
     }
 
-    pub fn ty(&self) -> &MIRType {
-        &self.ty
+    pub fn template(&self) -> &Arc<MIRStagedTemplate> {
+        &self.template
+    }
+
+    pub fn captures(&self) -> &[MIRStagedBinding] {
+        &self.captures
+    }
+
+    pub fn args(&self) -> &[MIRStagedBinding] {
+        &self.args
+    }
+
+    pub fn runtime_origin(&self) -> Option<MIRFunctionID> {
+        self.runtime_origin
+    }
+
+    pub fn apply(&self, args: Vec<MIRStagedBinding>) -> Self {
+        Self::new(
+            self.template.clone(),
+            self.captures.to_vec(),
+            args,
+            self.runtime_origin,
+        )
     }
 }

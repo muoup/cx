@@ -1,9 +1,13 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
+use cx_log::CXResult;
 use cx_mir::{
-    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID,
-    MIRFunctionMode, MIRInstrKind, MIRPlace, MIRTypeID,
-    MIRTypeRegistryBuilder, MIRUnit, MIRValue,
+    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRFunctionMode,
+    MIRInstrKind, MIRPlace, MIRRegister, MIRStagedTemplate, MIRTypeID, MIRTypeRegistryBuilder,
+    MIRUnit, MIRValue,
 };
 use cx_mir_comptime::context::MIRContext;
 use cx_thir::{
@@ -11,6 +15,7 @@ use cx_thir::{
     registry::THIRDecomposedRegistry,
     thir::{
         data::{THIRComptimeFnPrototype, THIRFnPrototype},
+        expression::THIRLocalID,
         r#type::THIRTypeID,
     },
     type_context::THIRTypeContext,
@@ -22,7 +27,10 @@ use cx_util::linkage::LinkageMode;
 mod function;
 mod module;
 
-use crate::lowering::{self, types::{lower_type, lower_type_id}};
+use crate::lowering::{
+    self,
+    types::{lower_type, lower_type_id},
+};
 use function::FunctionBuilder;
 use module::{MIRModuleBuilder, ModuleParts};
 
@@ -35,6 +43,13 @@ pub struct MIRBuilder<'thir> {
     function: Option<FunctionBuilder>,
     ambient_prototype: MIRFnPrototype,
     source_range: TokenRange,
+    capture: Option<CaptureContext>,
+}
+
+struct CaptureContext {
+    source_locals: HashMap<THIRLocalID, MIRValue>,
+    captures: Vec<(MIRRegister, MIRValue)>,
+    params: Vec<MIRRegister>,
 }
 
 impl<'thir> MIRBuilder<'thir> {
@@ -59,6 +74,7 @@ impl<'thir> MIRBuilder<'thir> {
                 LinkageMode::Static,
             ),
             source_range: TokenRange::internal(),
+            capture: None,
         };
         builder
             .types
@@ -98,6 +114,15 @@ impl<'thir> MIRBuilder<'thir> {
         &mut self.module
     }
 
+    pub(crate) fn resolve_function(
+        &mut self,
+        name: &str,
+    ) -> Option<(MIRFunctionID, MIRFnPrototype)> {
+        let id = self.module_mut().function_symbol(name)?;
+        let prototype = self.module().function(id)?.prototype().clone();
+        Some((id, prototype))
+    }
+
     pub(crate) fn fun(&self) -> &FunctionBuilder {
         self.function
             .as_ref()
@@ -110,6 +135,10 @@ impl<'thir> MIRBuilder<'thir> {
             .expect("no MIR function is currently active")
     }
 
+    pub(crate) fn is_capturing(&self) -> bool {
+        self.capture.is_some()
+    }
+
     pub(crate) fn set_source_range(&mut self, range: TokenRange) -> TokenRange {
         std::mem::replace(&mut self.source_range, range)
     }
@@ -120,7 +149,7 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub fn emit(&mut self, instr: MIRInstrKind) {
         let range = self.source_range.clone();
-        
+
         self.fun_mut().emit(instr, range);
     }
 
@@ -128,6 +157,97 @@ impl<'thir> MIRBuilder<'thir> {
         let place = self.fun_mut().new_place(ty, debug_name, nodrop);
         self.emit(MIRInstrKind::Create { out: place, ty });
         place
+    }
+
+    pub(crate) fn local_value(
+        &mut self,
+        local: THIRLocalID,
+        ty: &cx_thir::thir::r#type::THIRType,
+    ) -> CXResult<Option<MIRValue>> {
+        if let Some(value) = self.fun().local(local) {
+            return Ok(Some(value));
+        }
+
+        let Some(capture) = self.capture.as_ref() else {
+            return Ok(None);
+        };
+        let source = capture.source_locals.get(&local).cloned();
+        if source.is_none() {
+            return Ok(None);
+        }
+
+        let ty = lower_type(self, ty)?;
+        let input = self.fun_mut().new_register(ty, None);
+        let value = MIRValue::Register(input);
+        self.fun_mut().bind_local(local, value.clone());
+        let capture = self.capture.as_mut().expect("capture context is active");
+        capture
+            .captures
+            .push((input, source.expect("captured local has a source value")));
+        Ok(Some(value))
+    }
+
+    pub(crate) fn capture_staged(
+        &mut self,
+        expression: &cx_thir::thir::expression::THIRExpression,
+        params: &[(THIRLocalID, &cx_thir::thir::r#type::THIRType)],
+        diverges: Option<bool>,
+    ) -> CXResult<(Arc<MIRStagedTemplate>, Vec<MIRValue>)> {
+        let id = self.module_mut().allocate_function_id();
+        let prototype = self.fun().prototype().clone();
+        let source_locals = self.fun().locals();
+        let saved_function = self.function.take();
+        let saved_capture = self.capture.take();
+        let saved_range = std::mem::replace(&mut self.source_range, TokenRange::internal());
+
+        self.function = Some(FunctionBuilder::new(MIRFunction::new(id, prototype, None)));
+        self.capture = Some(CaptureContext {
+            source_locals,
+            captures: Vec::new(),
+            params: Vec::new(),
+        });
+
+        for (local, ty) in params {
+            let ty = lower_type(self, ty)?;
+            let input = self.fun_mut().new_register(ty, None);
+            self.fun_mut().bind_local(*local, MIRValue::Register(input));
+            self.capture
+                .as_mut()
+                .expect("capture context is active")
+                .params
+                .push(input);
+        }
+
+        let lowered = (|| -> CXResult<MIRTypeID> {
+            let value = lowering::lower_expression(self, expression)?;
+            let result_type = lower_type(self, &expression._type)?;
+            if !self.fun().current_block_terminated() {
+                self.emit(MIRInstrKind::StagedReturn { value });
+            }
+            Ok(result_type)
+        })();
+
+        let scratch = self.function.take();
+        let capture = self.capture.take().expect("capture context is present");
+        self.function = saved_function;
+        self.capture = saved_capture;
+        self.restore_source_range(saved_range);
+
+        let result_type = lowered?;
+        let (_, body) = scratch
+            .expect("capture builder is present")
+            .concise_finish();
+        let (inputs, values): (Vec<_>, Vec<_>) = capture.captures.into_iter().unzip();
+        Ok((
+            Arc::new(MIRStagedTemplate::new(
+                body,
+                inputs,
+                capture.params,
+                result_type,
+                diverges.unwrap_or_else(|| expression._type.is_unreachable()),
+            )),
+            values,
+        ))
     }
 
     pub fn finish(self) -> MIRUnit {
@@ -202,14 +322,42 @@ impl<'thir> MIRBuilder<'thir> {
         let mut params = Vec::with_capacity(prototype.params().len());
         for parameter in prototype.params() {
             let ty = lower_type(self, &parameter.value_type._type)?;
+            let staged_params = if parameter.value_type.expr {
+                Some(
+                    parameter
+                        .value_type
+                        .params
+                        .iter()
+                        .map(|ty| lower_type(self, ty))
+                        .collect::<CXResult<Vec<_>>>()?,
+                )
+            } else {
+                None
+            };
             let param = match parameter.name.clone() {
                 Some(name) => MIRFnParam::named(name, ty),
                 None => MIRFnParam::new(ty),
-            };
+            }
+            .with_staged(
+                staged_params,
+                parameter.value_type.expr && parameter.value_type._type.is_unreachable(),
+            );
             params.push(param);
         }
 
         let return_type = lower_type(self, &prototype.return_type()._type)?;
+        let return_staged_params = if prototype.return_type().expr {
+            Some(
+                prototype
+                    .return_type()
+                    .params
+                    .iter()
+                    .map(|ty| lower_type(self, ty))
+                    .collect::<CXResult<Vec<_>>>()?,
+            )
+        } else {
+            None
+        };
 
         Ok(MIRFnPrototype::new(
             MIRFnSignature::new(
@@ -220,7 +368,8 @@ impl<'thir> MIRBuilder<'thir> {
                 MIRFunctionMode::Comptime,
                 false,
                 true,
-            ),
+            )
+            .with_staged_return(return_staged_params),
             LinkageMode::Static,
         ))
     }
