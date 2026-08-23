@@ -100,8 +100,32 @@ impl MIRModuleBuilder {
         kind: MIRGlobalKind,
     ) -> MIRGlobalID {
         let name_string = name.as_string();
-        if let Some(symbol) = self.global_symbols.get(&name_string) {
-            return symbol.id();
+        if let Some(id) = self.global_symbols.get(&name_string).map(ModuleSymbol::id) {
+            if let Some(global) = self.globals.get_mut(&id)
+                && matches!(
+                    &global.kind,
+                    MIRGlobalKind::Variable {
+                        state: MIRGlobalState::External,
+                        ..
+                    }
+                )
+                && matches!(
+                    &kind,
+                    MIRGlobalKind::Variable {
+                        state: MIRGlobalState::ZeroInitialized
+                            | MIRGlobalState::Initializer(_)
+                            | MIRGlobalState::Initialized(_),
+                        ..
+                    }
+                )
+            {
+                global.linkage = linkage;
+                global.kind = kind;
+            }
+            if pre_used && let Some(symbol) = self.global_symbols.get_mut(&name_string) {
+                symbol.used = true;
+            }
+            return id;
         }
 
         let id = MIRGlobalID::new(self.next_global_id);

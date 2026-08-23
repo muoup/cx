@@ -619,17 +619,18 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRTypeKi
             ) => left_bitfield == right_bitfield && left.compare(right, definitions, state),
             (
                 THIRTypeKind::Array {
-                    length: left_len,
+                    length: _,
                     inner_type: left_inner,
                 },
                 THIRTypeKind::Array {
-                    length: right_len,
+                    length: _,
                     inner_type: right_inner,
                 },
             ) => {
-                left_len._type.compare(&right_len._type, definitions, state)
-                    && format!("{:?}", left_len.kind) == format!("{:?}", right_len.kind)
-                    && left_inner.compare(right_inner, definitions, state)
+                // FIXME: This is unsound, but we cannot compare the lengths here as comptime is handled in the MIR.
+                // "Type comparison" should probably be replaced with type assignability or similar in the future to make this
+                // interpretation sound.
+                left_inner.compare(right_inner, definitions, state)
             }
             (
                 THIRTypeKind::Function { signature: left },

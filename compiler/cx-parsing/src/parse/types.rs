@@ -185,6 +185,7 @@ fn predeclaration_type(
             visibility: data.visibility,
             template_prototype: None,
             _type: ty.clone(),
+            tag: Some(predeclaration),
         });
     }
 
@@ -207,6 +208,7 @@ fn defined_type(
             visibility: data.visibility,
             template_prototype,
             _type,
+            tag: Some(predeclaration),
         });
 
         Ok(HIRTypeKind::Identifier {

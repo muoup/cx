@@ -9,7 +9,7 @@ use cx_hir::ast::{
         PredeclarationType,
     },
 };
-use cx_hir::symbols::HIRSymbolKind;
+use cx_hir::symbols::{HIRSymbol, HIRSymbolKind};
 use cx_log::{
     CXRawResult, CXResult,
     error::{CXMaybeRawErr, CXMaybeRawResult},
@@ -35,10 +35,12 @@ use crate::{
     environment::{SymbolLookupKind, TypeEnvironment},
     symbol::{
         name_mangling::mangle_qualified_name,
-        resolution::{apply_template, resolve_symbol},
+        resolution::{apply_template, resolve_duplicate_type_symbol, resolve_symbol},
     },
-    type_checking::coercion::{implicit::implicit_cast, implicit::promotion::std_rval_promotion},
-    type_checking::typechecker::typecheck_expr,
+    type_checking::{
+        coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
+        typechecker::typecheck_expr,
+    },
 };
 
 pub fn complete_template_input(
@@ -77,10 +79,16 @@ pub fn complete_type_id(
     match &ty.kind {
         HIRTypeKind::Identifier {
             name,
-            predeclaration: _,
+            predeclaration,
             template_input,
         } => {
-            let id = complete_identifier_type(env, namespace, name, template_input)
+            let id = complete_identifier_type(
+                env,
+                namespace,
+                name,
+                *predeclaration,
+                template_input,
+            )
                 .map_err(|err| env.complete_maybe_err(err, ty.range()))?;
 
             Ok(apply_type_specifiers(env, id, ty.specifiers))
@@ -102,10 +110,16 @@ fn complete_type_inner(
     let mut completed = match &ty.kind {
         HIRTypeKind::Identifier {
             name,
-            predeclaration: _,
+            predeclaration,
             template_input,
         } => {
-            let id = complete_identifier_type(env, namespace, name, template_input)
+            let id = complete_identifier_type(
+                env,
+                namespace,
+                name,
+                *predeclaration,
+                template_input,
+            )
                 .map_err(|err| env.complete_maybe_err(err, ty.range()))?;
 
             let Some(completed) = env.symbols.try_resolve_type_id(id).cloned() else {
@@ -421,6 +435,7 @@ fn complete_identifier_type(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     name: &QualifiedName,
+    predeclaration: PredeclarationType,
     template_input: &Option<HIRTemplateInput>,
 ) -> CXMaybeRawResult<THIRTypeID> {
     let Some(lookup) = env.lookup_symbol(namespace, name)? else {
@@ -430,6 +445,7 @@ fn complete_identifier_type(
     };
 
     let resolved_name = lookup.resolved_name;
+
     let symbol = match lookup.kind {
         SymbolLookupKind::Resolved(symbol) => {
             return complete_resolved_type_lookup(env, namespace, name, symbol, template_input);
@@ -437,8 +453,34 @@ fn complete_identifier_type(
         SymbolLookupKind::Untyped(symbol) => symbol,
     };
 
-    match &symbol.kind {
-        HIRSymbolKind::Type(definition) => {
+    let symbol_kind = match &symbol.kind {
+        HIRSymbolKind::DuplicateDefinition(definitions) => {
+            resolve_duplicate_type_symbol(env, name, predeclaration, definitions)?
+        }
+
+        _ => &symbol.kind,
+    };
+
+    let cacheable = match symbol_kind {
+        HIRSymbolKind::Type(_) => {
+            predeclaration == PredeclarationType::None
+                && !matches!(&symbol.kind, HIRSymbolKind::DuplicateDefinition(_))
+        }
+        HIRSymbolKind::TagType { tag, .. } => {
+            *tag == predeclaration || predeclaration == PredeclarationType::None
+        }
+        _ => false,
+    } && template_input.is_none();
+    if cacheable
+        && let Some(MIRSymbol::Type(id)) = env.symbols.get_preresolved_symbol(&resolved_name)
+    {
+        return Ok(*id);
+    }
+
+    match symbol_kind {
+        HIRSymbolKind::Type(definition)
+            if predeclaration == PredeclarationType::None =>
+        {
             if template_input.is_some() {
                 return env
                     .log_error_base(format!("Type '{name}' does not accept template arguments"))
@@ -450,8 +492,40 @@ fn complete_identifier_type(
                     mangle_qualified_name(env.symbols.get_global_registry(), &resolved_name),
                 ));
             let prereserved_id = env.symbols.reserve_type_id();
-            env.symbols
-                .insert_type_symbol(resolved_name.clone(), prereserved_id);
+            if cacheable {
+                env.symbols
+                    .insert_type_symbol(resolved_name.clone(), prereserved_id);
+            }
+            env.symbols.overwrite_type_id(prereserved_id, dummy_type);
+
+            let completed = complete_type(
+                env,
+                &EnvironmentNamespace::from(&resolved_name.namespace),
+                definition,
+            )?;
+
+            env.symbols.overwrite_type_id(prereserved_id, completed);
+            Ok(prereserved_id)
+        }
+
+        HIRSymbolKind::TagType { definition, tag }
+            if *tag == predeclaration || predeclaration == PredeclarationType::None =>
+        {
+            if template_input.is_some() {
+                return env
+                    .log_error_base(format!("Type '{name}' does not accept template arguments"))
+                    .map_err(|err| err.into());
+            }
+
+            let dummy_type =
+                THIRType::from(THIRTypeKind::Undefined).with_strong_identifier(CXIdent::from(
+                    mangle_qualified_name(env.symbols.get_global_registry(), &resolved_name),
+                ));
+            let prereserved_id = env.symbols.reserve_type_id();
+            if cacheable {
+                env.symbols
+                    .insert_type_symbol(resolved_name.clone(), prereserved_id);
+            }
             env.symbols.overwrite_type_id(prereserved_id, dummy_type);
 
             if is_self_predeclaration(definition, &resolved_name) {
@@ -468,13 +542,29 @@ fn complete_identifier_type(
             Ok(prereserved_id)
         }
 
-        HIRSymbolKind::TypeTemplate { .. } => {
+        HIRSymbolKind::TypeTemplate { .. } if predeclaration == PredeclarationType::None => {
+            let type_symbol = HIRSymbol::new(symbol.visibility, symbol_kind.clone());
             let mir_symbol = resolve_symbol(
                 env,
                 namespace,
                 &EnvironmentNamespace::from(&resolved_name.namespace),
                 &resolved_name.name,
-                &symbol,
+                &type_symbol,
+            )?;
+
+            complete_template_type_lookup(env, namespace, name, &mir_symbol, template_input)
+        }
+
+        HIRSymbolKind::TagTypeTemplate { tag, .. }
+            if *tag == predeclaration || predeclaration == PredeclarationType::None =>
+        {
+            let type_symbol = HIRSymbol::new(symbol.visibility, symbol_kind.clone());
+            let mir_symbol = resolve_symbol(
+                env,
+                namespace,
+                &EnvironmentNamespace::from(&resolved_name.namespace),
+                &resolved_name.name,
+                &type_symbol,
             )?;
 
             complete_template_type_lookup(env, namespace, name, &mir_symbol, template_input)

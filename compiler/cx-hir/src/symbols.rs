@@ -10,7 +10,7 @@ use crate::ast::{
     global_var::HIREnumDefinition,
     modifiers::{HIRSymbolNameScheme, VisibilityMode},
     template::HIRTemplatePrototype,
-    types::HIRType,
+    types::{HIRType, PredeclarationType},
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -26,11 +26,14 @@ impl HIRSymbol {
 
     pub fn is_type(&self) -> bool {
         match &self.kind {
-            HIRSymbolKind::Type(_) => true,
+            HIRSymbolKind::Type(_) | HIRSymbolKind::TagType { .. } => true,
             HIRSymbolKind::DuplicateDefinition(definitions) => definitions.iter().any(|kind| {
                 matches!(
                     kind,
-                    HIRSymbolKind::Type(_) | HIRSymbolKind::TypeTemplate { .. }
+                    HIRSymbolKind::Type(_)
+                        | HIRSymbolKind::TagType { .. }
+                        | HIRSymbolKind::TypeTemplate { .. }
+                        | HIRSymbolKind::TagTypeTemplate { .. }
                 )
             }),
             _ => false,
@@ -43,6 +46,10 @@ pub type EnumBlockIdx = usize;
 #[derive(Debug, Clone, PartialEq)]
 pub enum HIRSymbolKind {
     Type(HIRType),
+    TagType {
+        definition: HIRType,
+        tag: PredeclarationType,
+    },
     FunctionReference(HIRFunctionPrototype),
     TypeConstructor {
         template: Option<HIRTemplatePrototype>,
@@ -61,6 +68,11 @@ pub enum HIRSymbolKind {
     TypeTemplate {
         template: HIRTemplatePrototype,
         definition: HIRType,
+    },
+    TagTypeTemplate {
+        template: HIRTemplatePrototype,
+        definition: HIRType,
+        tag: PredeclarationType,
     },
     FunctionTemplate {
         template: HIRTemplatePrototype,

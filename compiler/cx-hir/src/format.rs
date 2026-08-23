@@ -103,6 +103,7 @@ impl Display for HIRStmt {
                 visibility,
                 template_prototype,
                 _type,
+                tag: _,
             } => {
                 write!(f, "{visibility:?} ")?;
                 if let Some(template) = template_prototype {

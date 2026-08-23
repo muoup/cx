@@ -85,15 +85,22 @@ pub(crate) fn resolve_enum_block<'a, 'b>(
             .transpose()?
             .unwrap_or_else(|| next_value.clone());
 
-        next_value = THIRExpression {
-            token_range: TokenRange::internal(),
-            _type: integer_type.clone(),
-            kind: THIRExpressionKind::BinaryOperation {
-                lhs: Box::new(value.clone()),
-                rhs: Box::new(one.clone()),
-                op: THIRBinOp::Integer {
-                    itype: integer_kind,
-                    op: THIRIntBinOp::ADD,
+        next_value = match &value.kind {
+            THIRExpressionKind::IntLiteral(value) => THIRExpression {
+                token_range: TokenRange::internal(),
+                _type: integer_type.clone(),
+                kind: THIRExpressionKind::IntLiteral(value + 1),
+            },
+            _ => THIRExpression {
+                token_range: TokenRange::internal(),
+                _type: integer_type.clone(),
+                kind: THIRExpressionKind::BinaryOperation {
+                    lhs: Box::new(value.clone()),
+                    rhs: Box::new(one.clone()),
+                    op: THIRBinOp::Integer {
+                        itype: integer_kind,
+                        op: THIRIntBinOp::ADD,
+                    },
                 },
             },
         };
