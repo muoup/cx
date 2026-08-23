@@ -17,8 +17,30 @@ pub struct THIRFunction {
 #[derive(Debug, Clone)]
 pub struct THIRParameter {
     pub name: Option<CXIdent>,
-    pub local_id: Option<THIRLocalID>,
+    pub local_id: THIRLocalID,
     pub _type: THIRType,
+}
+
+#[derive(Debug, Clone)]
+pub struct THIRComptimeFunction {
+    pub name: Option<CXIdent>,
+}
+
+#[derive(Debug, Clone)]
+pub struct THIRComptimeFnPrototype {
+    symbol_name: String,
+    lookup_identifier: Option<QualifiedName>,
+    debug_name: Option<CXIdent>,
+    return_type: THIRComptimeValueType,
+    params: Vec<THIRComptimeParameter>,
+    runtime_return_type: Option<THIRType>,
+}
+
+#[derive(Debug, Clone)]
+pub struct THIRComptimeParameter {
+    pub name: Option<CXIdent>,
+    pub local_id: THIRLocalID,
+    pub value_type: THIRComptimeValueType,
 }
 
 #[derive(Debug, Clone)]
@@ -28,27 +50,31 @@ pub struct THIRComptimeValueType {
     pub _type: THIRType,
 }
 
-#[derive(Debug, Clone)]
-pub struct THIRComptimeParameter {
-    pub name: Option<CXIdent>,
-    pub value_type: THIRComptimeValueType,
-}
-
-#[derive(Debug, Clone)]
-pub struct THIRComptimeFnPrototype {
-    lookup_identifier: Option<QualifiedName>,
-    debug_name: Option<CXIdent>,
-    return_type: THIRComptimeValueType,
-    params: Vec<THIRComptimeParameter>,
-}
-
 impl THIRComptimeFnPrototype {
-    pub fn new(return_type: THIRComptimeValueType, params: Vec<THIRComptimeParameter>) -> Self {
+    pub fn new(
+        symbol_name: impl Into<String>,
+        return_type: THIRComptimeValueType,
+        params: Vec<THIRComptimeParameter>,
+    ) -> Self {
         Self {
+            symbol_name: symbol_name.into(),
             lookup_identifier: None,
             debug_name: None,
             return_type,
             params,
+            runtime_return_type: None,
+        }
+    }
+
+    pub fn symbol_name(&self) -> &str {
+        self.symbol_name.as_str()
+    }
+
+    pub fn pretty_name(&self) -> &str {
+        if let Some(debug_name) = &self.debug_name {
+            debug_name.as_str()
+        } else {
+            self.symbol_name.as_str()
         }
     }
 
@@ -68,6 +94,15 @@ impl THIRComptimeFnPrototype {
         &self.params
     }
 
+    pub fn runtime_return_type(&self) -> Option<&THIRType> {
+        self.runtime_return_type.as_ref()
+    }
+
+    pub fn with_runtime_return_type(mut self, ty: Option<THIRType>) -> Self {
+        self.runtime_return_type = ty;
+        self
+    }
+
     pub fn with_lookup_identifier(mut self, lookup_identifier: QualifiedName) -> Self {
         self.lookup_identifier = Some(lookup_identifier);
         self
@@ -76,6 +111,13 @@ impl THIRComptimeFnPrototype {
     pub fn with_debug_name(mut self, debug_name: CXIdent) -> Self {
         self.debug_name = Some(debug_name);
         self
+    }
+
+    pub fn map_symbol_name<F>(&mut self, f: F)
+    where
+        F: FnOnce(&str) -> String,
+    {
+        self.symbol_name = f(self.symbol_name.as_str());
     }
 }
 

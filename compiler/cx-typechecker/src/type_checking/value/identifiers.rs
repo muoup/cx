@@ -79,6 +79,31 @@ pub(crate) fn typecheck_identifier(
         return Ok(TypecheckResult::from(staged));
     }
 
+    // A local staged binding (e.g. a parameterized staged parameter of a
+    // comptime function) resolves to an undefined-typed reference that may
+    // only be called or passed onward.
+    if let MIRSymbol::StagedExpressionFunction {
+        local_id,
+        params,
+        return_type,
+    } = symbol
+    {
+        return Ok(TypecheckResult::staged(
+            crate::type_checking::result::StagedValue {
+                reference: THIRExpression {
+                    token_range: expr.token_range().clone(),
+                    kind: THIRExpressionKind::Variable {
+                        name: name.name.clone(),
+                        local_id,
+                    },
+                    _type: THIRTypeKind::Undefined.into(),
+                },
+                params,
+                return_type,
+            },
+        ));
+    }
+
     if let Some(completed_input) = template_input
         .map(|input| complete_template_input(env, namespace, input))
         .transpose()?

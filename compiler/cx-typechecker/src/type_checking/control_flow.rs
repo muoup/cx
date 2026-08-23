@@ -11,6 +11,9 @@ pub(crate) mod switch;
 pub(crate) mod r#yield;
 
 pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
+    if expr._type.is_unreachable() {
+        return false;
+    }
     match &expr.kind {
         THIRExpressionKind::Return { .. }
         | THIRExpressionKind::Yield { .. }
@@ -20,6 +23,7 @@ pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
         THIRExpressionKind::Goto { .. } => true,
         THIRExpressionKind::Label { statement, .. } => expr_may_fall_through(statement),
         THIRExpressionKind::Unsafe { expression, .. } => expr_may_fall_through(expression),
+        THIRExpressionKind::StagedExpression { body, .. } => expr_may_fall_through(body),
         THIRExpressionKind::Block { statements, .. } => {
             statements.last().map(expr_may_fall_through).unwrap_or(true)
         }
@@ -56,9 +60,17 @@ pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
                     .unwrap_or(!exhaustive)
         }
         THIRExpressionKind::CallFunction {
-            function, contract, ..
+            function,
+            arguments,
+            contract,
         } => {
             !contract.noreturn
+                && arguments.iter().all(|argument| match &argument.kind {
+                    THIRExpressionKind::StagedExpression { body, .. } => {
+                        expr_may_fall_through(body)
+                    }
+                    _ => true,
+                })
                 && !matches!(
                     &function.kind,
                     THIRExpressionKind::FunctionReference { name, .. }

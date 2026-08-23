@@ -44,6 +44,9 @@ pub(super) fn lower_global(
                     _type: lowered_type,
                     state: LoweredGlobalState::ZeroInitialized,
                 },
+                MIRGlobalState::Initializer(function) => {
+                    panic!("unresolved comptime initializer function {function}")
+                }
                 MIRGlobalState::Initialized(constant) => LMIRGlobalType::Variable {
                     _type: lowered_type,
                     state: LoweredGlobalState::Initialized(lower_global_initializer(

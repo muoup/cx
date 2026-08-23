@@ -8,10 +8,10 @@ use cx_lmir::{
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::tagged_union_tag_offset;
 use cx_mir::{
-    MIRAggregateOp, MIRAssignTarget, MIRBinaryOp, MIRCoercion, MIRConstant, MIRFloatBinaryOp,
-    MIRFnParam, MIRFnSignature, MIRFunctionType, MIRInstrKind, MIRIntBinaryOp, MIRIntType,
-    MIRPlaceAggregateOp, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister, MIRTypeID,
-    MIRTypeKind, MIRUnaryOp, MIRValue, MIRValueAggregateOp,
+    MIRAggregateOp, MIRAssignTarget, MIRBinaryOp, MIRCallKind, MIRCoercion, MIRConstant,
+    MIRFloatBinaryOp, MIRFnParam, MIRFnSignature, MIRFunctionMode, MIRFunctionType, MIRInstrKind,
+    MIRIntBinaryOp, MIRIntType, MIRPlaceAggregateOp, MIRPointerBinaryOp, MIRPointerOffsetOp,
+    MIRRegister, MIRTypeID, MIRTypeKind, MIRUnaryOp, MIRValue, MIRValueAggregateOp,
 };
 use cx_util::identifier::CXIdent;
 
@@ -57,6 +57,8 @@ fn call_signature(
         return_type: signature.return_type,
         variadic: signature.variadic,
         safe: false,
+        mode: MIRFunctionMode::Runtime,
+        return_staged_params: None,
     };
     classify_signature(&mir_signature, context.types())
 }
@@ -77,7 +79,7 @@ fn callable_type<'a>(
 fn value_type(context: &FunctionLoweringContext<'_>, value: &MIRValue) -> Option<MIRTypeID> {
     match value {
         MIRValue::Register(register) => Some(register_decl_type(context, *register)),
-        MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place) => {
+        MIRValue::PlaceRef(place) | MIRValue::Copy(place) | MIRValue::Move(place) => {
             Some(place_decl_type(context, *place))
         }
         MIRValue::Constant(MIRConstant::Function(id)) => {
@@ -184,7 +186,11 @@ pub(super) fn lower_instruction(
         | MIRInstrKind::ScopeExit { .. }
         | MIRInstrKind::Initialize { .. }
         | MIRInstrKind::Leak { .. }
-        | MIRInstrKind::Emit { .. } => {}
+        | MIRInstrKind::MakeStaged { .. }
+        | MIRInstrKind::ApplyStaged { .. }
+        | MIRInstrKind::StagedReturn { .. }
+        | MIRInstrKind::StagedMove { .. }
+        | MIRInstrKind::StagedUse { .. } => {}
         MIRInstrKind::Create { out, ty } => {
             let lowered = lowered_type(context, *ty);
             let layout = mir_layout(context, *ty);
@@ -231,7 +237,16 @@ pub(super) fn lower_instruction(
             );
         }
         MIRInstrKind::AggregateOp(operation) => lower_aggregate(context, operation),
-        MIRInstrKind::Call { out, callee, args } => lower_call(context, *out, callee, args),
+        MIRInstrKind::Call {
+            out,
+            kind: MIRCallKind::Runtime,
+            callee,
+            args,
+        } => lower_call(context, *out, callee, args),
+        MIRInstrKind::Call {
+            kind: MIRCallKind::Comptime,
+            ..
+        } => panic!("unresolved comptime call reached LMIR lowering"),
         MIRInstrKind::VaStart { list, last } => {
             let list = lower_value(context, list);
             let last = lower_value(context, last);
@@ -696,7 +711,7 @@ fn lower_unary(
 ) {
     if let MIRUnaryOp::Increment { amount, post } = op {
         let place_id = match operand {
-            MIRValue::Place(place) => *place,
+            MIRValue::PlaceRef(place) => *place,
             _ => panic!("increment requires a place operand"),
         };
         let place = binding_for_place(context, place_id);
@@ -952,7 +967,7 @@ fn lower_call_argument(
         }
         LMIRParameterABI::Indirect { alignment } | LMIRParameterABI::ByValue { alignment } => {
             let source = lower_value(context, argument);
-            if matches!(argument, MIRValue::Place(_)) {
+            if matches!(argument, MIRValue::PlaceRef(_)) {
                 let copy = emit_temp(
                     context,
                     LMIRInstructionKind::Allocate {

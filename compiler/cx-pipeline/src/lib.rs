@@ -1,4 +1,5 @@
 mod backends;
+mod diagnostics;
 mod linker;
 pub mod progress;
 mod scheduler;
@@ -21,6 +22,7 @@ use cx_pipeline_data::{
     CompilationMode, CompilationUnit, CompilerConfig, GlobalCompilationContext,
 };
 use cx_util::format::{with_dump_directory, without_dumps};
+use cx_util::namespace::EnvironmentNamespace;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -58,10 +60,15 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
     ))?;
     let entry_unit =
         CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory);
-    compiler_context
-        .module_db
-        .symbol_registry
-        .set_export_name_mode(entry_unit.to_namespace_path(), ExportNameMode::Root);
+    let entry_unit = if compiler_context.config.module_mode {
+        compiler_context
+            .module_db
+            .symbol_registry
+            .set_export_name_mode(entry_unit.to_namespace_path(), ExportNameMode::Root);
+        entry_unit
+    } else {
+        entry_unit.with_namespace(EnvironmentNamespace::root())
+    };
 
     let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, entry_unit.clone());
 

@@ -4,7 +4,9 @@ use std::{
     fmt::{self, Display, Formatter},
 };
 
-use cx_mir::{MIRBasicBlockID, MIRFunctionID, MIRPlace, MIRScopeID, MIRUnit};
+use cx_mir::{
+    MIRBasicBlockID, MIRDiagnostic, MIRDiagnosticLocation, MIRFunctionID, MIRPlace, MIRScopeID,
+};
 
 /// Controls optional checks performed before the independent dataflow analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,36 +118,41 @@ impl Error for MIRAnalysisError {
 }
 
 impl MIRAnalysisError {
-    pub fn message_with(&self, _: &MIRUnit) -> String {
-        self.to_string()
-    }
-
-    pub fn instruction_location(&self) -> Option<(MIRFunctionID, MIRBasicBlockID, usize)> {
+    pub fn diagnostic(&self) -> MIRDiagnostic {
         match self {
             Self::ProvenFalseAssertion {
                 function,
                 block,
                 instruction,
                 ..
-            } => Some((*function, *block, *instruction)),
+            } => MIRDiagnostic::new(
+                "ANALYSIS ERROR",
+                self.to_string(),
+                MIRDiagnosticLocation::Instruction {
+                    function: *function,
+                    block: *block,
+                    instruction: *instruction,
+                },
+            ),
             Self::OwnershipViolation {
                 function,
                 block,
                 instruction,
+                scope,
                 ..
-            } => Some((*function, *block, *instruction)),
-        }
-    }
-
-    pub fn scope_location(&self) -> Option<(MIRFunctionID, MIRScopeID)> {
-        match self {
-            Self::OwnershipViolation {
-                function,
-                scope: Some(scope),
-                ..
-            } => Some((*function, *scope)),
-            Self::ProvenFalseAssertion { .. }
-            | Self::OwnershipViolation { scope: None, .. } => None,
+            } => {
+                let location = scope
+                    .map(|scope| MIRDiagnosticLocation::Scope {
+                        function: *function,
+                        scope,
+                    })
+                    .unwrap_or(MIRDiagnosticLocation::Instruction {
+                        function: *function,
+                        block: *block,
+                        instruction: *instruction,
+                    });
+                MIRDiagnostic::new("ANALYSIS ERROR", self.to_string(), location)
+            }
         }
     }
 }

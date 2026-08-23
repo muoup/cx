@@ -170,9 +170,7 @@ pub enum THIRExpressionKind {
         pattern: THIRPattern,
     },
     Unpack {
-        name: CXIdent,
-        local_id: THIRLocalID,
-        struct_type: THIRType,
+        value: Box<THIRExpression>,
         bindings: Vec<THIRUnpackBinding>,
     },
 
@@ -316,6 +314,15 @@ pub enum THIRExpressionKind {
 
     // Comptime
     Emit(Box<THIRExpression>),
+
+    /// A parameterized staged expression literal (`|params| body`). The node is
+    /// equivalent to an AST subtree: `body` is fully typechecked against the
+    /// parameter types, and the node itself carries no meaningful type
+    /// (it is typed `THIRTypeKind::Undefined`).
+    StagedExpression {
+        params: Vec<(CXIdent, THIRLocalID, THIRType)>,
+        body: Box<THIRExpression>,
+    },
 }
 
 #[derive(Clone, Debug, Readable, Writable)]

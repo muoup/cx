@@ -98,7 +98,10 @@ fn compiler_config(
 fn classify_failure_stage(message: &str) -> Option<FailureStage> {
     if message.starts_with("PARSER ERROR") {
         Some(FailureStage::Parse)
-    } else if message.starts_with("TYPE ERROR") {
+    } else if message.starts_with("TYPE ERROR")
+        || message.starts_with("COMPTIME ERROR")
+        || message.starts_with("CONST EVAL ERROR")
+    {
         Some(FailureStage::Typecheck)
     } else if message.starts_with("ANALYSIS ERROR") {
         Some(FailureStage::Analysis)

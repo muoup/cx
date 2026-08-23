@@ -238,17 +238,15 @@ impl<'a> MIRSymbolRegistry<'a> {
     pub fn insert_local_staged_expression_function(
         &mut self,
         name: QualifiedName,
-        namespace: EnvironmentNamespace,
-        params: Vec<(CXIdent, THIRType)>,
-        body: HIRExpression,
+        local_id: cx_thir::thir::expression::THIRLocalID,
+        params: Vec<THIRType>,
         return_type: THIRType,
     ) {
         self.local_symbols.insert(
             name,
             MIRSymbol::StagedExpressionFunction {
-                namespace,
+                local_id,
                 params,
-                body: Box::new(body),
                 return_type,
             },
         );

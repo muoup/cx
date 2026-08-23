@@ -22,7 +22,7 @@ use cx_thir::{
             THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter, THIRTemplateInput,
             TemplateInfo,
         },
-        expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
+        expression::{THIRCoercion, THIRExpression, THIRExpressionKind, THIRLocalID},
         global::THIRGlobalVariable,
     },
     type_context::THIRTypeContext,
@@ -111,7 +111,7 @@ fn resolve_symbol_inner(
                 env.items.push_generated_global(THIRGlobalVariable {
                     name: symbol_name.clone(),
                     _type: ty.clone(),
-                 
+
                     is_mutable: false,
                     linkage: LinkageMode::Extern,
                     initializer: None,
@@ -155,17 +155,27 @@ fn resolve_symbol_inner(
             Ok(MIRSymbol::FunctionReference(prototype))
         }
 
-        HIRSymbolKind::ComptimeFunction { definition, body } => {
+        HIRSymbolKind::ComptimeFunction { definition, .. } => {
             let prototype_namespace =
                 function_lexical_namespace(symbol_namespace, &definition.kind);
             let prototype = complete_comptime_prototype(env, &prototype_namespace, definition)?;
 
-            Ok(MIRSymbol::ComptimeFunctionReference {
-                prototype,
-                namespace: prototype_namespace,
-                body: body.clone(),
+            let symbol = MIRSymbol::ComptimeFunctionReference {
+                prototype: prototype.clone(),
+                namespace: prototype_namespace.clone(),
                 template_bindings: Vec::new(),
-            })
+            };
+
+            // Comptime functions are emitted lazily, on first reference.
+            if let Some(lookup_identifier) = prototype.lookup_identifier().cloned() {
+                env.items.push_request(THIRFunctionGenRequest::Comptime {
+                    lookup_identifier,
+                    prototype,
+                    input: None,
+                });
+            }
+
+            Ok(symbol)
         }
 
         HIRSymbolKind::TypeConstructor {
@@ -370,7 +380,7 @@ fn resolve_type_constructor(
             } else {
                 vec![THIRParameter {
                     name: Some(CXIdent::new("value")),
-                    local_id: Some(cx_thir::thir::expression::THIRLocalID::fresh()),
+                    local_id: THIRLocalID::fresh(),
                     _type: variant_type.clone(),
                 }]
             },
@@ -427,7 +437,9 @@ pub fn apply_template(
 
     let mut symbol = result?;
     if let MIRSymbol::ComptimeFunctionReference {
-        template_bindings, ..
+        prototype,
+        template_bindings,
+        ..
     } = &mut symbol
     {
         *template_bindings = input
@@ -436,6 +448,15 @@ pub fn apply_template(
             .cloned()
             .zip(template_input.args.iter().copied())
             .collect();
+
+        // Templated comptime functions instantiate per template input.
+        if let Some(lookup_identifier) = prototype.lookup_identifier().cloned() {
+            env.items.push_request(THIRFunctionGenRequest::Comptime {
+                lookup_identifier,
+                prototype: prototype.clone(),
+                input: Some(template_input.clone()),
+            });
+        }
     }
     attach_template_metadata(env, &mut symbol, namespace, template_input.clone());
 

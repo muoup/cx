@@ -203,6 +203,9 @@ pub(crate) fn validate_safe_expression(
             Ok(())
         }
         THIRExpressionKind::Defer { expression } => validate_safe_expression(env, expression),
+        THIRExpressionKind::StagedExpression { body, .. } => {
+            validate_safe_expression(env, body)
+        }
         THIRExpressionKind::Emit(inner)
         | THIRExpressionKind::Assert {
             condition: inner, ..

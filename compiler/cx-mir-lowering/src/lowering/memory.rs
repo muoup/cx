@@ -82,7 +82,7 @@ pub(super) fn lower_value(
 ) -> LMIRValue {
     match value {
         MIRValue::Register(register) => register_value(context, *register),
-        MIRValue::Place(place) => lower_reference(context, *place),
+        MIRValue::PlaceRef(place) => lower_reference(context, *place),
         MIRValue::Copy(place) => copy_place(context, *place),
         MIRValue::Move(place) => move_place(context, *place),
         MIRValue::Constant(constant) => lower_constant(context, constant),
@@ -433,7 +433,7 @@ pub(super) fn value_as_binding(
     ty: MIRTypeID,
 ) -> PlaceBinding {
     match value {
-        MIRValue::Place(place) => binding_for_place(context, *place),
+        MIRValue::PlaceRef(place) => binding_for_place(context, *place),
         _ => PlaceBinding::Address {
             value: lower_value(context, value),
             ty,

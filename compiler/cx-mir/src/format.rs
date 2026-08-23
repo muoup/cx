@@ -123,7 +123,7 @@ impl Display for MIRValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Register(value) => Display::fmt(value, f),
-            Self::Place(value) => write!(f, "&{value}"),
+            Self::PlaceRef(value) => write!(f, "&{value}"),
             Self::Copy(place) => write!(f, "copy {place}"),
             Self::Move(place) => write!(f, "move {place}"),
             Self::Constant(value) => Display::fmt(value, f),
@@ -212,6 +212,7 @@ impl Display for MIRGlobalState {
         match self {
             Self::External => f.write_str("external"),
             Self::ZeroInitialized => f.write_str("zero"),
+            Self::Initializer(function) => write!(f, "comptime initializer {function}"),
             Self::Initialized(value) => Display::fmt(value, f),
         }
     }

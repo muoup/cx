@@ -5,6 +5,7 @@ use speedy::{Readable, Writable};
 use crate::{
     thir::contextual_eq::{TypeComparisonState, TypeContextEqual},
     thir::data::{THIRFnSignature, TemplateInfo},
+    thir::expression::THIRExpression,
     type_context::THIRTypeContext,
 };
 
@@ -127,7 +128,7 @@ pub enum THIRTypeKind {
         bitfield: Option<THIRBitfieldAccess>,
     },
     Array {
-        length: usize,
+        length: Box<THIRExpression>,
         inner_type: THIRTypeID,
     },
     Function {
@@ -291,13 +292,6 @@ impl THIRType {
         }
     }
 
-    pub fn internal_function() -> Self {
-        THIRType::from(THIRTypeKind::Function {
-            signature: Box::new(THIRFnSignature::default()),
-        })
-        .with_strong_identifier(CXIdent::from("__internal_function"))
-    }
-
     pub fn with_strong_identifier(mut self, name: CXIdent) -> THIRType {
         self.strong_identifier = Some(name.as_string());
         self
@@ -335,6 +329,10 @@ impl THIRType {
 
     pub fn get_specifier(&self, specifier: HIRTypeQualifiers) -> bool {
         self.specifiers & specifier == specifier
+    }
+
+    pub fn cvr_compatible_with(&self, other: &THIRType) -> bool {
+        (self.specifiers ^ other.specifiers) & self.specifiers == 0
     }
 
     pub fn is_pointer(&self) -> bool {
@@ -628,7 +626,11 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRTypeKi
                     length: right_len,
                     inner_type: right_inner,
                 },
-            ) => left_len == right_len && left_inner.compare(right_inner, definitions, state),
+            ) => {
+                left_len._type.compare(&right_len._type, definitions, state)
+                    && format!("{:?}", left_len.kind) == format!("{:?}", right_len.kind)
+                    && left_inner.compare(right_inner, definitions, state)
+            }
             (
                 THIRTypeKind::Function { signature: left },
                 THIRTypeKind::Function { signature: right },

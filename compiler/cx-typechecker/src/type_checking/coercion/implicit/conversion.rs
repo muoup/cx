@@ -232,7 +232,7 @@ fn internal(
                 );
             }
 
-            if env.symbols.cvr_compatible(i1, i2)
+            if i1.cvr_compatible_with(i2)
                 && env.type_eq(
                     &i1.clone().without_specifiers(),
                     &i2.clone().without_specifiers(),

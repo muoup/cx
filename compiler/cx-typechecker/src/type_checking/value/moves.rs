@@ -198,29 +198,11 @@ pub(crate) fn typecheck_unpack(
     let value = typecheck_expr(env, namespace, inner, None)?
         .standard_ready_assure(env, expr.token_range())?;
 
-    let Some(value_binding) = value.binding().cloned() else {
-        return env.log_error(
-            expr.token_range(),
-            "@unpack requires a local identifier".to_string(),
-        );
-    };
-
-    if !matches!(
-        value.ready_expression().map(|expression| &expression.kind),
-        Some(THIRExpressionKind::Move { .. })
-    ) {
-        return env.log_error(
-            expr.token_range(),
-            "@unpack requires a moved value; access struct members directly for non-consuming access"
-                .to_string(),
-        );
-    }
-
     let thir_expr = value.standard_ready_coerce(env, inner.token_range())?;
     let THIRTypeKind::Structured { fields } = &thir_expr._type.kind else {
         return env.log_error(
             expr.token_range(),
-            "@unpack expects a struct type".to_string(),
+            "@unpack expects an owned struct type".to_string(),
         );
     };
 
@@ -328,10 +310,7 @@ pub(crate) fn typecheck_unpack(
     Ok(TypecheckResult::new(
         THIRType::unit(),
         THIRExpressionKind::Unpack {
-            name: value_binding.root.clone(),
-            local_id: value_binding.local_id,
-
-            struct_type: thir_expr._type.clone(),
+            value: Box::new(thir_expr),
             bindings: thir_bindings,
         },
     ))

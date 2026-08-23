@@ -211,13 +211,12 @@ fn write_global<T: MTRegistry>(
 
     match &global.kind {
         MIRGlobalKind::StringLiteral { value } => {
-            write!(f, "str = {}", value)?;
+            write!(f, "str = {};", value)?;
         }
 
         MIRGlobalKind::Variable {
             ty,
             state,
-            is_nodrop: _,
             is_mutable,
         } => {
             if !is_mutable {
@@ -227,6 +226,9 @@ fn write_global<T: MTRegistry>(
             match &state {
                 MIRGlobalState::External => f.write_str(";")?,
                 MIRGlobalState::ZeroInitialized => f.write_str(" = zero;")?,
+                MIRGlobalState::Initializer(function) => {
+                    write!(f, " = comptime initializer {function};")?;
+                }
                 MIRGlobalState::Initialized(value) => {
                     f.write_str(" = ")?;
                     write_constant(f, unit, value)?;
@@ -236,7 +238,7 @@ fn write_global<T: MTRegistry>(
         }
     }
 
-    Ok(())
+    writeln!(f)
 }
 
 fn write_function<T: MTRegistry>(
@@ -378,10 +380,18 @@ fn write_instruction<T: MTRegistry>(
         MIRInstrKind::AggregateOp(operation) => {
             write_aggregate(f, unit, function, operation, types)
         }
-        MIRInstrKind::Call { out, callee, args } => {
+        MIRInstrKind::Call {
+            out,
+            kind,
+            callee,
+            args,
+        } => {
             if let Some(out) = out {
                 write_register_name(f, function, *out)?;
                 f.write_str(" = ")?;
+            }
+            if *kind == crate::MIRCallKind::Comptime {
+                f.write_str("comptime ")?;
             }
             write_value(f, unit, function, callee)?;
             f.write_str("(")?;
@@ -548,8 +558,44 @@ fn write_instruction<T: MTRegistry>(
             f.write_str(" }")
         }
         MIRInstrKind::Unreachable => f.write_str("unreachable"),
-        MIRInstrKind::Emit { value } => {
-            f.write_str("emit ")?;
+        MIRInstrKind::MakeStaged { out, captures, .. } => {
+            write_register_name(f, function, *out)?;
+            f.write_str(" = staged[")?;
+            for (index, capture) in captures.iter().enumerate() {
+                if index != 0 {
+                    f.write_str(", ")?;
+                }
+                write_value(f, unit, function, capture)?;
+            }
+            f.write_str("]")
+        }
+        MIRInstrKind::ApplyStaged { out, staged, args } => {
+            if let Some(out) = out {
+                write_register_name(f, function, *out)?;
+                f.write_str(" = ")?;
+            }
+            f.write_str("apply ")?;
+            write_value(f, unit, function, staged)?;
+            f.write_str("(")?;
+            for (index, arg) in args.iter().enumerate() {
+                if index != 0 {
+                    f.write_str(", ")?;
+                }
+                write_value(f, unit, function, arg)?;
+            }
+            f.write_str(")")
+        }
+        MIRInstrKind::StagedReturn { value } => {
+            f.write_str("staged.return ")?;
+            write_value(f, unit, function, value)
+        }
+        MIRInstrKind::StagedMove { out, value } => {
+            write_register_name(f, function, *out)?;
+            f.write_str(" = staged.move ")?;
+            write_value(f, unit, function, value)
+        }
+        MIRInstrKind::StagedUse { value } => {
+            f.write_str("staged.use ")?;
             write_value(f, unit, function, value)
         }
     }
@@ -679,7 +725,7 @@ fn write_value(
 ) -> fmt::Result {
     match value {
         MIRValue::Register(register) => write_register_name(f, function, *register),
-        MIRValue::Place(place) => write_place_name(f, unit, function, *place),
+        MIRValue::PlaceRef(place) => write_place_name(f, unit, function, *place),
         MIRValue::Copy(place) => {
             f.write_str("copy ")?;
             write_place_name(f, unit, function, *place)

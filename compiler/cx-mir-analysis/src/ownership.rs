@@ -81,9 +81,7 @@ fn check_function(unit: &MIRUnit, function: &MIRFunction) -> Result<(), MIRAnaly
     let Some(definition) = function.definition() else {
         return Ok(());
     };
-    let Some(entry) = definition.entry() else {
-        return Ok(());
-    };
+    let entry = definition.entry();
     if entry.index() >= definition.blocks().len() {
         return Ok(());
     }
@@ -429,11 +427,27 @@ fn transfer_instruction(
                 }
             }
         }
-        MIRInstrKind::Unreachable | MIRInstrKind::Emit { .. } => {
-            if let MIRInstrKind::Emit { value } = kind {
+        MIRInstrKind::MakeStaged { captures, .. } => {
+            for value in captures {
                 use_value(unit, function, block, instruction, value, state, diagnose)?;
             }
         }
+        MIRInstrKind::ApplyStaged { staged, args, .. } => {
+            use_value(unit, function, block, instruction, staged, state, diagnose)?;
+            for value in args {
+                use_value(unit, function, block, instruction, value, state, diagnose)?;
+            }
+        }
+        MIRInstrKind::StagedReturn { value } => {
+            use_value(unit, function, block, instruction, value, state, diagnose)?;
+        }
+        MIRInstrKind::StagedMove { value, .. } => {
+            use_value(unit, function, block, instruction, value, state, diagnose)?;
+        }
+        MIRInstrKind::StagedUse { value } => {
+            use_value(unit, function, block, instruction, value, state, diagnose)?;
+        }
+        MIRInstrKind::Unreachable => {}
     }
     Ok(())
 }
@@ -448,7 +462,7 @@ fn use_value(
     diagnose: bool,
 ) -> Result<(), MIRAnalysisError> {
     match value {
-        MIRValue::Place(place) | MIRValue::Copy(place) => {
+        MIRValue::PlaceRef(place) | MIRValue::Copy(place) => {
             use_place(unit, function, block, instruction, *place, state, diagnose)
         }
         MIRValue::Move(place) => {

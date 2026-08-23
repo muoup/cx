@@ -203,10 +203,6 @@ fn coerce_pointer_binop(
             }
             .into();
             let pointee = env.symbols.ptr_inner(&lhs._type).cloned().unwrap();
-            let pointee_layout = env
-                .symbols
-                .type_layout(&pointee)
-                .map_err(|err| env.complete_err(err, &lhs.token_range))?;
             let difference_range = lhs.token_range.clone();
             let pointer_to_integer = |operand: THIRExpression| THIRExpression {
                 token_range: operand.token_range.clone(),
@@ -239,7 +235,7 @@ fn coerce_pointer_binop(
                     }),
                     rhs: Box::new(THIRExpression {
                         token_range: difference_range.clone(),
-                        kind: THIRExpressionKind::IntLiteral(pointee_layout.size as i64),
+                        kind: THIRExpressionKind::SizeOf { _type: pointee },
                         _type: integer_type.clone(),
                     }),
                 },

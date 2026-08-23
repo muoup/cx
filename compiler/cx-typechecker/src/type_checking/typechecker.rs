@@ -20,9 +20,7 @@ use crate::type_checking::op::{self, try_typecheck_special_binop, typecheck_bino
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::{
     identifiers::typecheck_identifier,
-    literals::{
-        typecheck_float_literal, typecheck_int_literal, typecheck_unit,
-    },
+    literals::{typecheck_float_literal, typecheck_int_literal, typecheck_unit},
     locals::typecheck_var_declaration,
     moves::{typecheck_adopt, typecheck_leak, typecheck_unpack},
     unsafe_ops::typecheck_unsafe,
@@ -120,11 +118,13 @@ fn typecheck_expr_inner(
             )
         }
 
-        HIRExprKind::StagedExpression { .. } => TypecheckResult::staged_expr(THIRExpression {
-            token_range: expr.token_range().clone(),
-            kind: THIRExpressionKind::Unit,
-            _type: expected_type.cloned().unwrap_or_else(THIRType::unit),
-        }),
+        HIRExprKind::StagedExpression { params, body } => {
+            if params.is_empty() {
+                return typecheck_expr(env, namespace, body, expected_type);
+            }
+
+            return Ok(TypecheckResult::untyped_staged());
+        }
 
         HIRExprKind::Then => {
             return env.log_error(
@@ -267,14 +267,29 @@ fn typecheck_expr_inner(
             } else {
                 then_result._type.clone()
             };
-            let then_result = implicit_cast(env, then_result, &result_type)?;
-            let else_result = implicit_cast(env, else_result, &result_type)?;
+
+            let then_result =
+                implicit_cast(env, then_result, &result_type).map(|v| THIRExpression {
+                    _type: THIRType::unit(),
+                    kind: THIRExpressionKind::Yield {
+                        value: Some(Box::new(v)),
+                    },
+                    token_range: TokenRange::internal(),
+                })?;
+            let else_result =
+                implicit_cast(env, else_result, &result_type).map(|v| THIRExpression {
+                    _type: THIRType::unit(),
+                    kind: THIRExpressionKind::Yield {
+                        value: Some(Box::new(v)),
+                    },
+                    token_range: TokenRange::internal(),
+                })?;
 
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
                 kind: THIRExpressionKind::If {
                     condition: Box::new(condition_result),
-                    then_branch: Box::new(then_result.clone()),
+                    then_branch: Box::new(then_result),
                     else_branch: Some(Box::new(else_result)),
                 },
                 _type: result_type,
@@ -471,7 +486,13 @@ fn typecheck_expr_inner(
         }
 
         HIRExprKind::Return { value } => {
-            let return_type = env.current_function().signature().return_type.clone();
+            let return_type = if env.in_runtime_emit_context() {
+                env.comptime_runtime_return_type()
+                    .cloned()
+                    .unwrap_or_else(|| env.current_function().signature().return_type.clone())
+            } else {
+                env.current_function().signature().return_type.clone()
+            };
             let value = value
                 .as_ref()
                 .map(|v| {

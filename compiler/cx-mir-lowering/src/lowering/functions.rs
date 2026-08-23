@@ -6,7 +6,7 @@ use cx_lmir::{
 };
 use cx_log::CXResult;
 use cx_mir::ty::interface::MTRegistry;
-use cx_mir::{MIRFunction, MIRFunctionDefinition, MIRGlobalID, MIRPlace, MIRTypeRegistryBuilder};
+use cx_mir::{MIRBody, MIRFunction, MIRGlobalID, MIRPlace, MIRTypeRegistryBuilder};
 
 use crate::context::FunctionLoweringContext;
 
@@ -63,10 +63,10 @@ pub(super) fn lower_function(
 }
 
 fn lower_blocks(
-    function: &MIRFunctionDefinition,
+    function: &MIRBody,
     types: &MIRTypeRegistryBuilder,
 ) -> (Vec<LMIRBasicBlock>, HashMap<cx_mir::MIRBasicBlockID, usize>) {
-    let entry = function.entry().expect("MIR definition has no entry");
+    let entry = function.entry();
     let mut order = vec![entry];
     order.extend(
         function

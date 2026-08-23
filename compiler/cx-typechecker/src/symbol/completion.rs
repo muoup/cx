@@ -24,6 +24,7 @@ use cx_thir::{
             THIRComptimeFnPrototype, THIRComptimeParameter, THIRComptimeValueType, THIRFnPrototype,
             THIRFnSignature, THIRParameter, THIRTemplateInput, THIRTypeAttributes,
         },
+        expression::THIRLocalID,
         r#type::{THIRField, THIRMoveSemantics, THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
@@ -31,12 +32,12 @@ use cx_thir::{
 
 use crate::{
     EnvironmentNamespace,
-    comptime::evaluate_comptime_expression,
     environment::{SymbolLookupKind, TypeEnvironment},
     symbol::{
         name_mangling::mangle_qualified_name,
         resolution::{apply_template, resolve_symbol},
     },
+    type_checking::coercion::{implicit::implicit_cast, implicit::promotion::std_rval_promotion},
     type_checking::typechecker::typecheck_expr,
 };
 
@@ -120,18 +121,12 @@ fn complete_type_inner(
 
             let size = typecheck_expr(env, namespace, size, None)
                 .and_then(|v| v.standard_ready_coerce(env, size.token_range()))
-                .and_then(|v| evaluate_comptime_expression(env, v))
-                .and_then(|v| {
-                    v.as_integer().ok_or_else(|| {
-                        env.error(
-                            v.token_range,
-                            "Array size must be an integer literal".to_string(),
-                        )
-                    })
-                })?;
+                .and_then(|v| std_rval_promotion(env, v))?;
+            let integer_type = env.get_intrinsic_type("int");
+            let size = implicit_cast(env, size, &integer_type)?;
             THIRTypeKind::Array {
                 inner_type: id,
-                length: size as usize,
+                length: Box::new(size),
             }
             .into()
         }
@@ -241,7 +236,10 @@ pub fn ensure_valid_type_component(
             format!("{} type component cannot be 'unreachable'", context),
         ),
 
-        THIRTypeKind::Function { .. } | THIRTypeKind::Str | THIRTypeKind::Undefined | THIRTypeKind::Void
+        THIRTypeKind::Function { .. }
+        | THIRTypeKind::Str
+        | THIRTypeKind::Undefined
+        | THIRTypeKind::Void
             if enforce_allocatable =>
         {
             env.log_error(
@@ -347,6 +345,7 @@ pub fn complete_comptime_prototype(
         .map(|param| {
             Ok(THIRComptimeParameter {
                 name: param.name.clone(),
+                local_id: THIRLocalID::fresh(),
                 value_type: THIRComptimeValueType {
                     expr: param.value_type.expr,
                     params: param
@@ -363,10 +362,23 @@ pub fn complete_comptime_prototype(
 
     let lookup_identifier = function_lookup_identifier(namespace, &prototype.kind);
     let debug_name = lookup_identifier.name.clone();
+    let symbol_name = completed_comptime_symbol_name(env, &lookup_identifier);
 
-    Ok(THIRComptimeFnPrototype::new(return_type, params)
-        .with_lookup_identifier(lookup_identifier)
-        .with_debug_name(debug_name))
+    Ok(
+        THIRComptimeFnPrototype::new(symbol_name, return_type, params)
+            .with_lookup_identifier(lookup_identifier)
+            .with_debug_name(debug_name),
+    )
+}
+
+fn completed_comptime_symbol_name(
+    env: &TypeEnvironment,
+    lookup_identifier: &QualifiedName,
+) -> String {
+    crate::symbol::name_mangling::mangle_qualified_name(
+        env.symbols.get_global_registry(),
+        lookup_identifier,
+    )
 }
 
 fn function_lookup_identifier(
@@ -398,10 +410,7 @@ fn complete_explicit_parameters(
             };
             Ok(THIRParameter {
                 name: param.name.clone(),
-                local_id: param
-                    .name
-                    .as_ref()
-                    .map(|_| cx_thir::thir::expression::THIRLocalID::fresh()),
+                local_id: THIRLocalID::fresh(),
                 _type,
             })
         })

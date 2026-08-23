@@ -31,7 +31,7 @@ impl ConstEnvironment {
                 .get(register)
                 .cloned()
                 .unwrap_or(ConstValue::Unknown),
-            MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place) => self
+            MIRValue::PlaceRef(place) | MIRValue::Copy(place) | MIRValue::Move(place) => self
                 .places
                 .get(place)
                 .cloned()
@@ -86,9 +86,7 @@ fn check_function(function: &MIRFunction) -> Result<(), MIRAnalysisError> {
     let Some(definition) = function.definition() else {
         return Ok(());
     };
-    let Some(entry) = definition.entry() else {
-        return Ok(());
-    };
+    let entry = definition.entry();
     if entry.index() >= definition.blocks().len() {
         return Ok(());
     }
@@ -264,7 +262,11 @@ fn transfer_instruction(environment: &mut ConstEnvironment, kind: &MIRInstrKind)
         | MIRInstrKind::VaStart { .. }
         | MIRInstrKind::VaEnd { .. }
         | MIRInstrKind::Unreachable
-        | MIRInstrKind::Emit { .. } => {}
+        | MIRInstrKind::MakeStaged { .. }
+        | MIRInstrKind::ApplyStaged { .. }
+        | MIRInstrKind::StagedReturn { .. }
+        | MIRInstrKind::StagedMove { .. }
+        | MIRInstrKind::StagedUse { .. } => {}
     }
 }
 

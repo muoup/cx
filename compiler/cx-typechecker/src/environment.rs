@@ -41,6 +41,7 @@ pub struct TypeEnvironment<'a> {
     pub items: ItemRegistry,
     pub function: FunctionContext,
     comptime_emit_bases: Vec<usize>,
+    comptime_runtime_return_types: Vec<Option<cx_thir::thir::r#type::THIRType>>,
     runtime_emit_depth: usize,
     defer_depth: usize,
     staged_expansions: Vec<u64>,
@@ -60,6 +61,7 @@ impl TypeEnvironment<'_> {
             items: ItemRegistry::new(),
             function: FunctionContext::default(),
             comptime_emit_bases: Vec::new(),
+            comptime_runtime_return_types: Vec::new(),
             runtime_emit_depth: 0,
             defer_depth: 0,
             staged_expansions: Vec::new(),
@@ -104,11 +106,12 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn finish_thir_unit(self, source_namespace: EnvironmentNamespace) -> CXResult<THIRUnit> {
-        let (functions, globals) = self.items.drain_generated_items();
+        let (functions, comptime_functions, globals) = self.items.drain_generated_items();
 
         Ok(THIRUnit {
             source_namespace,
             functions,
+            comptime_functions,
             global_variables: globals,
             registry: self.symbols.decompose(),
         })
@@ -144,14 +147,21 @@ impl TypeEnvironment<'_> {
         self.function.restore_mode(snapshot);
     }
 
-    pub fn enter_comptime_context(&mut self) {
+    pub fn enter_comptime_context(
+        &mut self,
+        runtime_return_type: Option<cx_thir::thir::r#type::THIRType>,
+    ) {
         self.comptime_emit_bases.push(self.runtime_emit_depth);
+        self.comptime_runtime_return_types.push(runtime_return_type);
     }
 
     pub fn exit_comptime_context(&mut self) {
         self.comptime_emit_bases
             .pop()
             .expect("Comptime context stack underflow");
+        self.comptime_runtime_return_types
+            .pop()
+            .expect("Comptime return type stack underflow");
     }
 
     pub fn in_comptime_context(&self) -> bool {
@@ -172,6 +182,12 @@ impl TypeEnvironment<'_> {
         self.comptime_emit_bases
             .last()
             .is_some_and(|base| self.runtime_emit_depth > *base)
+    }
+
+    pub fn comptime_runtime_return_type(&self) -> Option<&cx_thir::thir::r#type::THIRType> {
+        self.comptime_runtime_return_types
+            .last()
+            .and_then(Option::as_ref)
     }
 
     pub fn next_staged_expression_id(&mut self) -> u64 {
