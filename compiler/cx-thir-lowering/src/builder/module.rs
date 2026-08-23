@@ -139,10 +139,6 @@ impl MIRModuleBuilder {
         self.functions.get(&id)
     }
 
-    pub(crate) fn global_id(&self, name: &str) -> Option<MIRGlobalID> {
-        self.global_symbols.get(name).map(ModuleSymbol::id)
-    }
-
     pub(crate) fn global_symbol(&mut self, name: &str) -> Option<MIRGlobalID> {
         self.global_symbols
             .get_mut(name)

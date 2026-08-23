@@ -2,10 +2,10 @@ use cx_log::{
     CXResult,
     error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
 };
-use cx_mir::{MIRBlockTarget, MIRConstant, MIRInstrKind, MIRValue};
+use cx_mir::{MIRBlockTarget, MIRConstant, MIRInstrKind, MIRScopeID, MIRValue};
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
-    expression::{THIRBinOp, THIRExpression, THIRExpressionKind, THIRIntBinOp, THIRLocalID},
+    expression::{THIRBinOp, THIRExpression, THIRIntBinOp, THIRLocalID},
     pattern::THIRPattern,
 };
 use cx_thir::type_context::THIRTypeContext;
@@ -30,6 +30,24 @@ pub fn lower_scoped(
     Ok(expr)
 }
 
+pub fn auto_cleanup(builder: &mut MIRBuilder, to_scope: MIRScopeID) -> CXResult<()> {
+    let unsafe_builder_ref = unsafe { &mut *(builder as *mut MIRBuilder) };
+
+    let scopes = builder.fun().scope_stack()
+        .iter()
+        .rev()
+        .take_while(|scope| scope.id() != to_scope)
+        .collect::<Vec<_>>();
+    
+    for scope in scopes.into_iter() {
+        for defer in scope.deferred_expressions() {
+            lower_expression(unsafe_builder_ref, defer)?;
+        }
+    }
+
+    Ok(())
+}
+
 pub fn auto_pop_scope(builder: &mut MIRBuilder) -> CXResult<()> {
     let defers = builder
         .fun()
@@ -45,44 +63,6 @@ pub fn auto_pop_scope(builder: &mut MIRBuilder) -> CXResult<()> {
     Ok(())
 }
 
-pub(super) fn contains_label(expression: &THIRExpression) -> bool {
-    match &expression.kind {
-        THIRExpressionKind::Label { .. } => true,
-        THIRExpressionKind::Block { statements, .. } => statements.iter().any(contains_label),
-        THIRExpressionKind::If {
-            then_branch,
-            else_branch,
-            ..
-        } => contains_label(then_branch) || else_branch.as_deref().is_some_and(contains_label),
-        THIRExpressionKind::While { body, .. } | THIRExpressionKind::For { body, .. } => {
-            contains_label(body)
-        }
-        THIRExpressionKind::CSwitch { cases, default, .. } => {
-            cases.iter().any(|(_, body)| contains_label(body))
-                || default.as_deref().is_some_and(contains_label)
-        }
-        THIRExpressionKind::Match { arms, default, .. } => {
-            arms.iter().any(|(_, body)| contains_label(body))
-                || default.as_deref().is_some_and(contains_label)
-        }
-        THIRExpressionKind::Unsafe { expression } => contains_label(expression),
-        _ => false,
-    }
-}
-
-fn rvalue(value: MIRValue, ty: &THIRType) -> MIRValue {
-    if ty.is_void() {
-        return MIRValue::Constant(MIRConstant::Unit);
-    }
-    if ty.is_memory_reference() {
-        return value;
-    }
-    match value {
-        MIRValue::Place(place) => MIRValue::Copy(place),
-        value => value,
-    }
-}
-
 pub(super) fn lower_if(
     builder: &mut MIRBuilder<'_>,
     condition: &THIRExpression,
@@ -93,10 +73,14 @@ pub(super) fn lower_if(
     if builder.fun().current_block_terminated() {
         return Ok(MIRValue::Constant(MIRConstant::Unit));
     }
-    
+
     let then_block = builder.fun_mut().new_block("if.then");
-    let else_block = if else_branch.is_some() { Some(builder.fun_mut().new_block("if.else")) } else { None };
-    let continuation = builder.fun_mut().new_block("if.continuation");
+    let else_block = if else_branch.is_some() {
+        Some(builder.fun_mut().new_block("if.else"))
+    } else {
+        None
+    };
+    let merge = builder.fun_mut().new_block("if.merge");
 
     builder.fun_mut().push_scope(condition.token_range.clone());
 
@@ -104,7 +88,7 @@ pub(super) fn lower_if(
     builder.emit(MIRInstrKind::Branch {
         cond: condition_value,
         true_target: MIRBlockTarget::new(then_block),
-        false_target: MIRBlockTarget::new(else_block.unwrap_or(continuation))
+        false_target: MIRBlockTarget::new(else_block.unwrap_or(merge)),
     });
 
     // TODO: This should be strengthened in the future if we want to support Rust style unit-values.
@@ -114,29 +98,39 @@ pub(super) fn lower_if(
             let yield_type = lower_type(builder, result_type)?;
             Ok(builder
                 .fun_mut()
-                .set_yield_recipient(continuation, yield_type))
+                .set_yield_recipient(merge, yield_type))
         })
         .transpose()?;
 
     builder.fun_mut().set_current_block(then_block);
+ 
+    builder.fun_mut().push_scope(then_branch.token_range.clone());
+    builder.fun_mut().current_scope_mut()
+        .set_yield_target(merge);
     lower_scoped(builder, then_branch)?;
+    auto_pop_scope(builder)?;
 
     builder.emit(MIRInstrKind::Jump {
-        target: MIRBlockTarget::new(continuation),
+        target: MIRBlockTarget::new(merge),
     });
 
     if let Some(else_branch) = else_branch {
         builder.fun_mut().set_current_block(else_block.unwrap());
-        lower_scoped(builder, else_branch)?;
+
+        builder.fun_mut().push_scope(else_branch.token_range.clone());
+        builder.fun_mut().current_scope_mut()
+            .set_yield_target(merge);
+        lower_expression(builder, else_branch)?;
+        auto_pop_scope(builder)?;
 
         builder.emit(MIRInstrKind::Jump {
-            target: MIRBlockTarget::new(continuation),
+            target: MIRBlockTarget::new(merge),
         });
     }
 
     auto_pop_scope(builder)?;
 
-    builder.fun_mut().set_current_block(continuation);
+    builder.fun_mut().set_current_block(merge);
     return Ok(match yield_register {
         Some(reg) => MIRValue::Register(reg),
         None => MIRValue::Constant(MIRConstant::Unit),
@@ -428,7 +422,7 @@ pub(super) fn lower_match(
                     aggregates::constant_from_pattern(pattern),
                     MIRBlockTarget::new(*block),
                 )
-        })
+            })
             .collect();
         builder.emit(MIRInstrKind::IntSwitch {
             value: subject_value.clone(),

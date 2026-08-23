@@ -4,13 +4,18 @@ mod control_flow;
 mod memory;
 mod operators;
 
-pub(crate) mod globals;
 pub(crate) mod aggregates;
+pub(crate) mod globals;
 pub(crate) mod types;
 
-use cx_log::{CXResult, error::{CXErr, context::CXInternalContext, message::CXStdErrMessage}};
+use cx_log::{
+    CXResult,
+    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+};
 use cx_mir::{
-    MIRAggregateOp, MIRAssignTarget, MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRPlaceAggregateOp, MIRTypeKind, MIRValue, MIRValueAggregateOp, ty::interface::MTRegistry
+    MIRAggregateOp, MIRAssignTarget, MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstrKind,
+    MIRIntType, MIRParameterID, MIRPlace, MIRPlaceAggregateOp, MIRTypeKind, MIRValue,
+    MIRValueAggregateOp, ty::interface::MTRegistry,
 };
 use cx_thir::{
     thir::{
@@ -22,13 +27,20 @@ use cx_thir::{
     type_context::THIRTypeContext,
 };
 
-use crate::lowering::{aggregates::move_value, types::lower_float_type};
-use crate::{builder::{MIRBuilder, integer_type}, lowering::types::lower_type};
+use crate::lowering::{
+    aggregates::move_value,
+    control_flow::{auto_cleanup, auto_pop_scope},
+    types::lower_float_type,
+};
+use crate::{
+    builder::{MIRBuilder, integer_type},
+    lowering::types::lower_type,
+};
 
 pub(crate) fn lower_function(
     builder: &mut MIRBuilder<'_>,
     id: MIRFunctionID,
-    function: &THIRFunction
+    function: &THIRFunction,
 ) -> CXResult<()> {
     let Some(body) = function.body.as_ref() else {
         return Ok(());
@@ -36,21 +48,16 @@ pub(crate) fn lower_function(
 
     builder.start_function(id);
 
-    for (index, parameter) in function
-        .prototype
-        .signature()
-        .params
-        .iter()
-        .enumerate()
-    {
+    for (index, parameter) in function.prototype.signature().params.iter().enumerate() {
         let place = MIRPlace::Parameter(MIRParameterID::new(index));
-    
-        builder.fun_mut().bind_local(parameter.local_id, MIRValue::Place(place.clone()));
+
+        builder
+            .fun_mut()
+            .bind_local(parameter.local_id, MIRValue::Place(place.clone()));
         if let Some(name) = &parameter.name {
-            builder.fun_mut().bind_named_value(
-                name,
-                MIRValue::Place(place),
-            );
+            builder
+                .fun_mut()
+                .bind_named_value(name, MIRValue::Place(place));
         }
     }
 
@@ -82,7 +89,7 @@ pub(crate) fn lower_comptime_function(
 
     builder.start_function(id);
     builder.fun_mut().push_scope(body.token_range.clone());
-    
+
     for (index, parameter) in function.prototype.params().iter().enumerate() {
         if let Some(name) = &parameter.name {
             builder.fun_mut().bind_named_value(
@@ -95,18 +102,20 @@ pub(crate) fn lower_comptime_function(
     let value = lower_expression(builder, body)?;
 
     if !builder.fun_mut().current_block_terminated() {
-        let value =
-            if matches!(function.prototype.return_type()._type.kind, THIRTypeKind::Void) {
-                None
-            } else {
-                Some(value)
-            };
+        let value = if matches!(
+            function.prototype.return_type()._type.kind,
+            THIRTypeKind::Void
+        ) {
+            None
+        } else {
+            Some(value)
+        };
         builder.emit(MIRInstrKind::Return { value });
     }
-    
-    builder.fun_mut().pop_scope();
+
+    auto_pop_scope(builder)?;
     builder.finish_function();
-    
+
     Ok(())
 }
 
@@ -122,7 +131,7 @@ pub(super) fn materialize_value(
     };
     let type_id = lower_type(builder, ty)?;
     let out = builder.fun_mut().new_register(type_id, None);
-    
+
     builder.emit(MIRInstrKind::Assign {
         target: MIRAssignTarget::Register(out),
         value: if moves {
@@ -132,7 +141,7 @@ pub(super) fn materialize_value(
         },
         ty: type_id,
     });
-    
+
     Ok(MIRValue::Register(out))
 }
 
@@ -165,7 +174,9 @@ pub(crate) fn lower_expression(
                         .types_mut()
                         .intern(cx_mir::MIRType::new(MIRTypeKind::Str, None));
                 }
-                MIRValue::Place(MIRPlace::Global(builder.module_mut().add_string_literal(value.as_str())))
+                MIRValue::Place(MIRPlace::Global(
+                    builder.module_mut().add_string_literal(value.as_str()),
+                ))
             }
             THIRExpressionKind::Unit => MIRValue::Constant(MIRConstant::Unit),
             THIRExpressionKind::SizeOf { _type } | THIRExpressionKind::AlignOf { _type } => {
@@ -193,10 +204,8 @@ pub(crate) fn lower_expression(
                 })
             }
 
-            THIRExpressionKind::Variable { local_id, .. } => builder
-                .fun()
-                .local(*local_id)
-                .ok_or_else(|| {
+            THIRExpressionKind::Variable { local_id, .. } => {
+                builder.fun().local(*local_id).ok_or_else(|| {
                     cx_log::error::CXErr::new(
                         cx_log::error::message::CXStdErrMessage::error(
                             "COMPTIME ERROR",
@@ -206,20 +215,22 @@ pub(crate) fn lower_expression(
                             "runtime local is unavailable in a comptime expression",
                         ),
                     )
-                })?,
+                })?
+            }
 
             THIRExpressionKind::GlobalVariable { symbol } => MIRValue::Place(MIRPlace::Global(
-                builder.module_mut().global_symbol(symbol.as_str()).ok_or_else(|| {
-                    CXErr::new(
-                        CXStdErrMessage::error(
-                            "MissingGlobalVariable",
-                            format!("global variable '{}' not found", symbol),
-                        ),
-                        CXInternalContext::error(
-                            "failed to lower global variable reference",
-                        ),
-                    )
-                })?,
+                builder
+                    .module_mut()
+                    .global_symbol(symbol.as_str())
+                    .ok_or_else(|| {
+                        CXErr::new(
+                            CXStdErrMessage::error(
+                                "MissingGlobalVariable",
+                                format!("global variable '{}' not found", symbol),
+                            ),
+                            CXInternalContext::error("failed to lower global variable reference"),
+                        )
+                    })?,
             )),
 
             THIRExpressionKind::ContractVariable { name, .. } => builder
@@ -236,20 +247,20 @@ pub(crate) fn lower_expression(
                     value => value,
                 })
                 .unwrap_or(MIRValue::Constant(MIRConstant::Undefined)),
-            
-            THIRExpressionKind::FunctionReference { name, .. } => {
-                builder.module_mut().function_symbol(name.as_str()).ok_or_else(|| {
+
+            THIRExpressionKind::FunctionReference { name, .. } => builder
+                .module_mut()
+                .function_symbol(name.as_str())
+                .ok_or_else(|| {
                     CXErr::new(
                         CXStdErrMessage::error(
                             "MissingFunction",
                             format!("function '{}' not found", name),
                         ),
-                        CXInternalContext::error(
-                            "failed to lower function reference",
-                        ),
+                        CXInternalContext::error("failed to lower function reference"),
                     )
-                }).map(|v| MIRValue::Constant(MIRConstant::Function(v)))?
-            }
+                })
+                .map(|v| MIRValue::Constant(MIRConstant::Function(v)))?,
 
             THIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
                 if matches!(
@@ -359,8 +370,12 @@ pub(crate) fn lower_expression(
                         .expect("adopting local variable is missing its initial value");
                     match initial_value {
                         MIRValue::Place(place) => {
-                            builder.fun_mut().bind_local(*local_id, MIRValue::Place(place));
-                            builder.fun_mut().bind_named_value(name, MIRValue::Place(place));
+                            builder
+                                .fun_mut()
+                                .bind_local(*local_id, MIRValue::Place(place));
+                            builder
+                                .fun_mut()
+                                .bind_named_value(name, MIRValue::Place(place));
                             MIRValue::Place(place)
                         }
                         value => {
@@ -370,8 +385,12 @@ pub(crate) fn lower_expression(
                                 _type,
                                 Some(name.clone()),
                             )?;
-                            builder.fun_mut().bind_local(*local_id, MIRValue::Place(place));
-                            builder.fun_mut().bind_named_value(name, MIRValue::Place(place));
+                            builder
+                                .fun_mut()
+                                .bind_local(*local_id, MIRValue::Place(place));
+                            builder
+                                .fun_mut()
+                                .bind_named_value(name, MIRValue::Place(place));
                             MIRValue::Place(place)
                         }
                     }
@@ -387,8 +406,12 @@ pub(crate) fn lower_expression(
                     } else {
                         builder.emit(MIRInstrKind::Initialize { place });
                     }
-                    builder.fun_mut().bind_local(*local_id, MIRValue::Place(place));
-                    builder.fun_mut().bind_named_value(name, MIRValue::Place(place));
+                    builder
+                        .fun_mut()
+                        .bind_local(*local_id, MIRValue::Place(place));
+                    builder
+                        .fun_mut()
+                        .bind_named_value(name, MIRValue::Place(place));
                     MIRValue::Place(place)
                 }
             }
@@ -529,7 +552,7 @@ pub(crate) fn lower_expression(
                     .expect("unpack target local is missing");
                 let struct_type_id = lower_type(builder, struct_type)?;
                 let base = builder.create(struct_type_id, None, false);
-                
+
                 builder.emit(MIRInstrKind::Assign {
                     target: MIRAssignTarget::Place(base),
                     value: move_value(target)?,
@@ -718,35 +741,38 @@ pub(crate) fn lower_expression(
             }
 
             THIRExpressionKind::Break => {
-                let target = builder
+                let Some((scope_id, block_id)) = builder
                     .fun()
                     .scope_stack()
                     .iter()
                     .rev()
-                    .find_map(|scope| scope.break_target);
-                if let Some(target) = target {
-                    builder.emit(MIRInstrKind::Jump {
-                        target: MIRBlockTarget::new(target),
-                    });
-                } else {
-                    builder.emit(MIRInstrKind::Unreachable);
-                }
+                    .find_map(|scope| scope.break_target.map(|t| (scope.id(), t)))
+                else {
+                    unreachable!("break expression is not inside a loop scope");
+                };
+
+                auto_cleanup(builder, scope_id)?;
+                builder.emit(MIRInstrKind::Jump {
+                    target: MIRBlockTarget::new(block_id),
+                });
+
                 MIRValue::Constant(MIRConstant::Unit)
             }
             THIRExpressionKind::Continue => {
-                let target = builder
+                let Some((scope_id, block_id)) = builder
                     .fun()
                     .scope_stack()
                     .iter()
                     .rev()
-                    .find_map(|scope| scope.continue_target);
-                if let Some(target) = target {
-                    builder.emit(MIRInstrKind::Jump {
-                        target: MIRBlockTarget::new(target),
-                    });
-                } else {
-                    builder.emit(MIRInstrKind::Unreachable);
-                }
+                    .find_map(|scope| scope.continue_target.map(|t| (scope.id(), t)))
+                else {
+                    unreachable!("continue expression is not inside a loop scope");
+                };
+
+                auto_cleanup(builder, scope_id)?;
+                builder.emit(MIRInstrKind::Jump {
+                    target: MIRBlockTarget::new(block_id),
+                });
                 MIRValue::Constant(MIRConstant::Unit)
             }
             THIRExpressionKind::Goto { name } => {
@@ -850,34 +876,41 @@ pub(crate) fn lower_expression(
                     lower_expression(builder, &postcondition.condition)?;
                     let _ = builder.fun_mut().pop_scope();
                 }
+
+                auto_cleanup(builder, builder.fun().scope_stack().first().unwrap().id())?;
                 builder.emit(MIRInstrKind::Return { value });
                 MIRValue::Constant(MIRConstant::Unit)
             }
+
             THIRExpressionKind::Unreachable => {
                 builder.emit(MIRInstrKind::Unreachable);
                 MIRValue::Constant(MIRConstant::Unit)
             }
+
             THIRExpressionKind::Yield { value } => {
                 let value = value
                     .as_deref()
                     .map(|value| lower_expression(builder, value))
                     .transpose()?;
-                let target = builder
+
+                let Some((scope_id, block_id)) = builder
                     .fun()
                     .scope_stack()
                     .iter()
                     .rev()
-                    .find_map(|scope| scope.yield_target);
-                if let Some(target) = target {
-                    let args = value.into_iter().collect();
-                    builder.emit(MIRInstrKind::Jump {
-                        target: MIRBlockTarget::with_args(target, args),
-                    });
-                } else if value.is_some() {
-                    builder.emit(MIRInstrKind::Unreachable);
-                }
+                    .find_map(|scope| scope.yield_target.map(|t| (scope.id(), t)))
+                else {
+                    unreachable!("yield expression is not inside a yieldable scope");
+                };
+
+                let args = value.into_iter().collect();
+                auto_cleanup(builder, scope_id)?;
+                builder.emit(MIRInstrKind::Jump {
+                    target: MIRBlockTarget::with_args(block_id, args),
+                });
                 MIRValue::Constant(MIRConstant::Unit)
             }
+
             THIRExpressionKind::Emit(inner) => {
                 let value = lower_expression(builder, inner)?;
                 builder.emit(MIRInstrKind::Emit {
@@ -909,13 +942,11 @@ pub(crate) fn lower_expression(
             } => {
                 let mut result = MIRValue::Constant(MIRConstant::Unit);
                 if *creates_scope {
-                    builder
-                        .fun_mut()
-                        .push_scope(expression.token_range.clone());
+                    builder.fun_mut().push_scope(expression.token_range.clone());
                 }
 
                 builder.fun_mut().push_invisible_scope();
-                
+
                 for statement in statements {
                     result = lower_expression(builder, statement)?;
                 }

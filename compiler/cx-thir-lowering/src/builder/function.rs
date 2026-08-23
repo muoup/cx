@@ -67,12 +67,10 @@ impl ScopeContext {
     pub fn deferred_expressions(&self) -> &[THIRExpression] {
         &self.defered_expressions
     }
-}
 
-#[derive(Debug)]
-pub(crate) struct YieldContext {
-    pub target: MIRBasicBlockID,
-    pub result: Option<MIRRegister>,
+    pub(crate) fn id(&self) -> MIRScopeID {
+        self.id
+    }
 }
 
 impl FunctionBuilder {
@@ -292,10 +290,6 @@ impl FunctionBuilder {
         self.scope_stack
             .last_mut()
             .expect("active function has no lexical scope")
-    }
-
-    pub fn lexical_scope_depth(&self) -> usize {
-        self.scope_stack.len()
     }
 
     pub fn scope_stack(&self) -> &[ScopeContext] {

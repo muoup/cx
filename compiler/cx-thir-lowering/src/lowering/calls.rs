@@ -4,6 +4,7 @@ use cx_thir::thir::expression::THIRFnContract;
 use cx_thir::thir::{data::THIRType, expression::THIRExpression, r#type::THIRField};
 use cx_thir::type_context::THIRTypeContext;
 
+use crate::lowering::control_flow::auto_pop_scope;
 use crate::lowering::lower_expression;
 use crate::{
     builder::MIRBuilder,
@@ -41,8 +42,8 @@ pub(super) fn lower_call(
                 builder.fun_mut().bind_named_value(name, argument);
             }
         }
-        super::lower_expression(builder, precondition)?;
-        builder.fun_mut().pop_scope();
+        lower_expression(builder, precondition)?;
+        auto_pop_scope(builder)?;
     }
 
     let returns_value = !result_type.is_void() && !result_type.is_unreachable();
@@ -92,7 +93,7 @@ pub(super) fn lower_call(
         }
         let condition = super::lower_expression(builder, &postcondition.condition)?;
         builder.emit(MIRInstrKind::Assume { condition });
-        builder.fun_mut().pop_scope();
+        auto_pop_scope(builder)?;
     }
 
     Ok(value)

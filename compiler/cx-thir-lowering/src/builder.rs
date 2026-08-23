@@ -89,6 +89,7 @@ impl<'thir> MIRBuilder<'thir> {
         &mut self.types
     }
 
+    #[allow(dead_code)]
     pub(crate) fn module(&self) -> &MIRModuleBuilder {
         &self.module
     }
@@ -224,6 +225,7 @@ impl<'thir> MIRBuilder<'thir> {
         ))
     }
 
+    #[allow(dead_code)]
     pub(crate) fn start_new_function(&mut self, proto: MIRFnPrototype) -> MIRFunctionID {
         let id = self.module_mut().declare_function(proto);
         self.start_function(id);
