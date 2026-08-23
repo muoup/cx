@@ -95,6 +95,7 @@ impl FunctionBuilder {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn finish(self) -> MIRFunction {
         assert!(
             self.scope_stack.len() == 1,
@@ -141,6 +142,7 @@ impl FunctionBuilder {
             .expect("current block must exist")
     }
 
+    #[allow(dead_code)]
     pub fn current_block(&self) -> MIRBasicBlockID {
         self.current_block
     }
@@ -153,6 +155,7 @@ impl FunctionBuilder {
         self.current_block = block;
     }
 
+    #[allow(dead_code)]
     pub fn block_terminated(&self, block: MIRBasicBlockID) -> bool {
         self.body
             .block(block)

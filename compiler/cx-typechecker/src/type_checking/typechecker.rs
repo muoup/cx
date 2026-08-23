@@ -123,11 +123,7 @@ fn typecheck_expr_inner(
                 return typecheck_expr(env, namespace, body, expected_type);
             }
 
-            return Ok(TypecheckResult::untyped_staged(
-                params.clone(),
-                body.clone(),
-                namespace.clone(),
-            ));
+            return Ok(TypecheckResult::untyped_staged());
         }
 
         HIRExprKind::Then => {

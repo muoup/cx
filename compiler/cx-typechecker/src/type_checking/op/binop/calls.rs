@@ -417,7 +417,7 @@ fn complete_callee(
             };
 
             match function.expression_state() {
-                TypecheckState::UntypedStaged { .. } => {
+                TypecheckState::UntypedStaged => {
                     return env.log_error(
                         expr.token_range(),
                         "Cannot call a staged expression without declared parameter types"

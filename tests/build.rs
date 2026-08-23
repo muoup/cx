@@ -51,7 +51,9 @@ fn write_module(
     depth: usize,
 ) {
     let indent = "    ".repeat(depth);
-    output.push_str(&format!("{indent}mod {module_name} {{\n"));
+    output.push_str(&format!(
+        "{indent}#[allow(non_snake_case)]\n{indent}mod {module_name} {{\n"
+    ));
 
     let mut entries = fs::read_dir(current)
         .unwrap_or_else(|_| panic!("Failed to read directory: {}", current.display()))

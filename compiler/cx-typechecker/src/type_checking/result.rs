@@ -1,4 +1,3 @@
-use cx_hir::ast::expression::HIRExpression;
 use cx_hir::ast::template::HIRTemplateInput;
 use cx_log::{CXRawResult, CXResult};
 use cx_thir::EnvironmentNamespace;
@@ -53,14 +52,9 @@ impl TypecheckedBinding {
 pub enum TypecheckState {
     Ready(THIRExpression),
     Staged(StagedValue),
-    UntypedStaged {
-        params: Vec<CXIdent>,
-        body: Box<HIRExpression>,
-        namespace: EnvironmentNamespace,
-    },
+    UntypedStaged,
     ComptimeFunction {
         prototype: THIRComptimeFnPrototype,
-        namespace: EnvironmentNamespace,
         template_bindings: Vec<(CXIdent, THIRTypeID)>,
     },
     IncompleteTemplatedCallee {
@@ -165,7 +159,7 @@ impl TypecheckResult {
     ) -> CXResult<TypecheckResult> {
         match self.expression {
             TypecheckState::Ready(_) => Ok(self),
-            TypecheckState::Staged(_) | TypecheckState::UntypedStaged { .. } => env.log_error(
+            TypecheckState::Staged(_) | TypecheckState::UntypedStaged => env.log_error(
                 token_range,
                 "Staged expression cannot be used as a runtime expression".to_string(),
             ),
@@ -226,17 +220,9 @@ impl TypecheckResult {
         }
     }
 
-    pub fn untyped_staged(
-        params: Vec<CXIdent>,
-        body: Box<HIRExpression>,
-        namespace: EnvironmentNamespace,
-    ) -> Self {
+    pub fn untyped_staged() -> Self {
         Self {
-            expression: TypecheckState::UntypedStaged {
-                params,
-                body,
-                namespace,
-            },
+            expression: TypecheckState::UntypedStaged,
             binding: None,
             adopting: false,
         }
@@ -244,13 +230,11 @@ impl TypecheckResult {
 
     pub fn comptime_function(
         prototype: THIRComptimeFnPrototype,
-        namespace: EnvironmentNamespace,
         template_bindings: Vec<(CXIdent, THIRTypeID)>,
     ) -> Self {
         Self {
             expression: TypecheckState::ComptimeFunction {
                 prototype,
-                namespace,
                 template_bindings,
             },
             binding: None,
@@ -348,7 +332,7 @@ impl TypecheckResult {
         match &self.expression {
             TypecheckState::Ready(expression) => Some(&expression._type),
             TypecheckState::Staged(_)
-            | TypecheckState::UntypedStaged { .. }
+            | TypecheckState::UntypedStaged
             | TypecheckState::ComptimeFunction { .. } => None,
             TypecheckState::NeedsExpectedType(_) => None,
             TypecheckState::IncompleteTemplatedCallee { .. } => None,
@@ -381,13 +365,9 @@ impl TypecheckResult {
             MIRSymbol::Template { .. } => Ok(Self::incomplete_template(name, template_input)),
             MIRSymbol::ComptimeFunctionReference {
                 prototype,
-                namespace,
                 template_bindings,
-            } => CXRawResult::Ok(Self::comptime_function(
-                prototype,
-                namespace,
-                template_bindings,
-            )),
+                ..
+            } => CXRawResult::Ok(Self::comptime_function(prototype, template_bindings)),
             _ => symbol.as_expression().map(Self::from),
         }
     }

@@ -177,10 +177,15 @@ pub(crate) fn resolve_next_path(
     }
 
     let inner = &file_name[1..file_name.len() - 1];
-    let mut search = include_dirs.to_vec();
+    let search = include_dirs.to_vec();
 
     #[cfg(not(feature = "ignore-system-headers"))]
-    search.extend(system_include_dirs().iter().cloned());
+    let search = search
+        .into_iter()
+        .chain(system_include_dirs().iter().cloned());
+
+    #[cfg(feature = "ignore-system-headers")]
+    let search = search.into_iter();
 
     let current_parent = current_file.parent()?.canonicalize().ok()?;
     let mut passed_current_dir = false;
