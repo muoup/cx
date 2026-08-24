@@ -1,8 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
+use cx_log::{
+    CXResult,
+    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+};
 use cx_mir::{
-    MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID,
-    MIRGlobalState, MIRGlobalVariable, global::MIRGlobalKind,
+    MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState,
+    MIRGlobalVariable, global::MIRGlobalKind,
 };
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
@@ -98,18 +102,28 @@ impl MIRModuleBuilder {
         name: CXIdent,
         linkage: LinkageMode,
         kind: MIRGlobalKind,
-    ) -> MIRGlobalID {
+    ) -> CXResult<MIRGlobalID> {
         let name_string = name.as_string();
         if let Some(id) = self.global_symbols.get(&name_string).map(ModuleSymbol::id) {
-            if let Some(global) = self.globals.get_mut(&id)
-                && matches!(
+            let existing_is_external = self.globals.get(&id).is_some_and(|global| {
+                matches!(
                     &global.kind,
                     MIRGlobalKind::Variable {
                         state: MIRGlobalState::External,
                         ..
                     }
                 )
-                && matches!(
+            });
+            let incoming_is_external = matches!(
+                &kind,
+                MIRGlobalKind::Variable {
+                    state: MIRGlobalState::External,
+                    ..
+                }
+            );
+
+            if existing_is_external && !incoming_is_external {
+                if !matches!(
                     &kind,
                     MIRGlobalKind::Variable {
                         state: MIRGlobalState::ZeroInitialized
@@ -117,15 +131,35 @@ impl MIRModuleBuilder {
                             | MIRGlobalState::Initialized(_),
                         ..
                     }
-                )
-            {
+                ) {
+                    return Err(CXErr::new(
+                        CXStdErrMessage::error(
+                            "TYPE ERROR",
+                            format!("Duplicate global definition '{name}'"),
+                        ),
+                        CXInternalContext::error("duplicate global definition during MIR lowering"),
+                    ));
+                }
+
+                let global = self
+                    .globals
+                    .get_mut(&id)
+                    .expect("global symbol points to a missing global");
                 global.linkage = linkage;
                 global.kind = kind;
+            } else if !existing_is_external && !incoming_is_external {
+                return Err(CXErr::new(
+                    CXStdErrMessage::error(
+                        "TYPE ERROR",
+                        format!("Duplicate global definition '{name}'"),
+                    ),
+                    CXInternalContext::error("duplicate global definition during MIR lowering"),
+                ));
             }
             if pre_used && let Some(symbol) = self.global_symbols.get_mut(&name_string) {
                 symbol.used = true;
             }
-            return id;
+            return Ok(id);
         }
 
         let id = MIRGlobalID::new(self.next_global_id);
@@ -135,10 +169,10 @@ impl MIRModuleBuilder {
         self.global_order.push(id);
         self.global_symbols
             .insert(name_string, ModuleSymbol::new(id).with_used(pre_used));
-        id
+        Ok(id)
     }
 
-    pub(crate) fn add_string_literal(&mut self, value: &str) -> MIRGlobalID {
+    pub(crate) fn add_string_literal(&mut self, value: &str) -> CXResult<MIRGlobalID> {
         let name = CXIdent::from(format!("__anon_str_{}", self.next_string_literal));
         self.next_string_literal += 1;
         self.declare_global(

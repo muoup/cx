@@ -295,6 +295,12 @@ impl TypeEnvironment<'_> {
             unreachable!("resolved lookup was handled above")
         };
 
+        if let Some(symbol) = self.symbols.get_preresolved_symbol(&resolved_name)
+            && matches!(symbol, MIRSymbol::Expression(_))
+        {
+            return Ok(symbol.clone());
+        }
+
         let symbol = resolve_symbol(
             self,
             namespace,

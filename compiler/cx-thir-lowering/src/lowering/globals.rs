@@ -24,7 +24,7 @@ pub(crate) fn predeclare_global(
 ) -> CXResult<MIRGlobalID> {
     let ty = lower_type(builder, &global._type)?;
 
-    Ok(builder.module_mut().declare_global(
+    builder.module_mut().declare_global(
         global.linkage == LinkageMode::Extern,
         global.name.clone(),
         global.linkage,
@@ -37,7 +37,7 @@ pub(crate) fn predeclare_global(
             },
             is_mutable: global.is_mutable,
         },
-    ))
+    )
 }
 
 pub(crate) fn lower_global(

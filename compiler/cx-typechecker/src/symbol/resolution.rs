@@ -337,7 +337,18 @@ pub(crate) fn resolve_duplicate_type_symbol<'a>(
     } else if typedefs.len() == 1 {
         Ok(typedefs[0])
     } else {
-        if typedefs.iter().skip(1).all(|t| t.eq(&typedefs[0])) {
+        let first = typedefs[0];
+        let compatible = typedefs
+            .iter()
+            .skip(1)
+            .try_fold(true, |compatible, candidate| {
+                if !compatible {
+                    return Ok(false);
+                }
+
+                type_declarations_equivalent(env, name, first, candidate)
+            })?;
+        if compatible {
             Ok(typedefs[0])
         } else {
             env
@@ -345,6 +356,59 @@ pub(crate) fn resolve_duplicate_type_symbol<'a>(
                 .map_err(|err| err.into())
         }
     }
+}
+
+fn type_declarations_equivalent(
+    env: &mut TypeEnvironment,
+    name: &QualifiedName,
+    left: &HIRSymbolKind,
+    right: &HIRSymbolKind,
+) -> CXMaybeRawResult<bool> {
+    let (left_template, left_definition, left_is_tag) = match left {
+        HIRSymbolKind::Type(definition) => (None, definition, false),
+        HIRSymbolKind::TagType { definition, .. } => (None, definition, true),
+        HIRSymbolKind::TypeTemplate {
+            template,
+            definition,
+        } => (Some(template), definition, false),
+        HIRSymbolKind::TagTypeTemplate {
+            template,
+            definition,
+            ..
+        } => (Some(template), definition, true),
+        _ => return Ok(false),
+    };
+    let (right_template, right_definition, right_is_tag) = match right {
+        HIRSymbolKind::Type(definition) => (None, definition, false),
+        HIRSymbolKind::TagType { definition, .. } => (None, definition, true),
+        HIRSymbolKind::TypeTemplate {
+            template,
+            definition,
+        } => (Some(template), definition, false),
+        HIRSymbolKind::TagTypeTemplate {
+            template,
+            definition,
+            ..
+        } => (Some(template), definition, true),
+        _ => return Ok(false),
+    };
+
+    if left_is_tag || right_is_tag || left_template != right_template {
+        return Ok(false);
+    }
+
+    if left_template.is_some() {
+        let mut left_definition = left_definition.clone();
+        let mut right_definition = right_definition.clone();
+        left_definition.range = TokenRange::internal();
+        right_definition.range = TokenRange::internal();
+        return Ok(left_definition == right_definition);
+    }
+
+    let namespace = EnvironmentNamespace::from(&name.namespace);
+    let left_definition = complete_type(env, &namespace, left_definition)?;
+    let right_definition = complete_type(env, &namespace, right_definition)?;
+    Ok(env.type_eq(&left_definition, &right_definition))
 }
 
 fn resolve_duplicate_definition(
@@ -367,10 +431,10 @@ fn resolve_duplicate_definition(
         .collect::<Vec<_>>();
 
     let Some((first, rest)) = definitions.split_first() else {
-        return internal_type_error(format!(
-            "Duplicate symbol declaration '{}' has no ordinary definitions",
-            name
-        ));
+        return env.log_error(
+            TokenRange::internal(),
+            format!("Symbol '{}' does not refer to a value", name),
+        );
     };
 
     let first = resolve_symbol_inner(

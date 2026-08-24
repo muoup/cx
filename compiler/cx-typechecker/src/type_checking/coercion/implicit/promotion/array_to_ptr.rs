@@ -24,7 +24,10 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResu
         return CoercionResult::unapplied(expr);
     }
 
-    let array_inner = env.symbols.array_inner(&mem_inner).unwrap().clone();
+    let mut array_inner = env.symbols.array_inner(&mem_inner).unwrap().clone();
+    if mem_inner.get_specifier(cx_hir::ast::modifiers::HIR_CONST) {
+        array_inner = array_inner.with_specifier(cx_hir::ast::modifiers::HIR_CONST);
+    }
     let new_type = env.symbols.pointer_to(array_inner);
 
     let coerced = THIRExpression {

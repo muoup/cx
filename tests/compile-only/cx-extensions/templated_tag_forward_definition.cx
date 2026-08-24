@@ -1,0 +1,10 @@
+struct Box<T>;
+
+struct Box<T> {
+    T value;
+};
+
+int main() {
+    Box<int> box = (Box<int>) { .value = 3 };
+    return box.value == 3 ? 0 : 1;
+}

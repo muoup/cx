@@ -177,7 +177,7 @@ pub(crate) fn lower_expression(
                         .intern(cx_mir::MIRType::new(MIRTypeKind::Str, None));
                 }
                 MIRValue::PlaceRef(MIRPlace::Global(
-                    builder.module_mut().add_string_literal(value.as_str()),
+                    builder.module_mut().add_string_literal(value.as_str())?,
                 ))
             }
             THIRExpressionKind::Unit => MIRValue::Constant(MIRConstant::Unit),

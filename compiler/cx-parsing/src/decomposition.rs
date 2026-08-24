@@ -136,20 +136,53 @@ fn coalesce_type_declaration(
     incoming: &HIRSymbolKind,
 ) -> Option<HIRSymbolKind> {
     let (
-        HIRSymbolKind::TagType {
-            definition: existing_type,
-            tag: existing_tag,
-        },
-        HIRSymbolKind::TagType {
-            definition: incoming_type,
-            tag: incoming_tag,
-        },
-    ) = (existing, incoming)
-    else {
-        return None;
+        existing_type,
+        existing_tag,
+        existing_template,
+        incoming_type,
+        incoming_tag,
+        incoming_template,
+    ) = match (existing, incoming) {
+        (
+            HIRSymbolKind::TagType {
+                definition: existing_type,
+                tag: existing_tag,
+            },
+            HIRSymbolKind::TagType {
+                definition: incoming_type,
+                tag: incoming_tag,
+            },
+        ) => (
+            existing_type,
+            existing_tag,
+            None,
+            incoming_type,
+            incoming_tag,
+            None,
+        ),
+        (
+            HIRSymbolKind::TagTypeTemplate {
+                template: existing_template,
+                definition: existing_type,
+                tag: existing_tag,
+            },
+            HIRSymbolKind::TagTypeTemplate {
+                template: incoming_template,
+                definition: incoming_type,
+                tag: incoming_tag,
+            },
+        ) => (
+            existing_type,
+            existing_tag,
+            Some(existing_template),
+            incoming_type,
+            incoming_tag,
+            Some(incoming_template),
+        ),
+        _ => return None,
     };
 
-    if existing_tag != incoming_tag {
+    if existing_tag != incoming_tag || existing_template != incoming_template {
         return None;
     }
 

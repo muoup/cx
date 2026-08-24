@@ -20,6 +20,7 @@ use cx_thir::{
         expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
         global::THIRGlobalVariable,
     },
+    type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
@@ -85,7 +86,6 @@ pub(crate) fn typecheck_var_declaration(
         LinkageMode::Static => {
             let symbol_name =
                 mangle_static_symbol(name.as_str(), env.current_function().symbol_name());
-            let is_const = ty.get_specifier(HIR_CONST);
             let (global_type, initializer) = match initial_value {
                 Some(initial_value) => {
                     let init_tc = typecheck_expr(env, namespace, initial_value, Some(&ty))?;
@@ -109,6 +109,18 @@ pub(crate) fn typecheck_var_declaration(
                     (global_type, Some(init_expr))
                 }
                 None => (ty.clone(), None),
+            };
+            let is_const = ty.get_specifier(HIR_CONST) || {
+                let mut element_type = env.symbols.array_inner(&global_type);
+                let mut is_const = false;
+                while let Some(element) = element_type {
+                    if element.get_specifier(HIR_CONST) {
+                        is_const = true;
+                        break;
+                    }
+                    element_type = env.symbols.array_inner(element);
+                }
+                is_const
             };
 
             env.items.push_generated_global(THIRGlobalVariable {
