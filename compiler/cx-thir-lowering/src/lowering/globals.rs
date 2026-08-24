@@ -63,6 +63,7 @@ pub(crate) fn lower_global(
     let init_id = builder
         .module_mut()
         .declare_function(MIRFnPrototype::new(signature, LinkageMode::Static));
+    builder.module_mut().begin_global_initializer(id, init_id)?;
 
     Ok(Some(MIRGlobalInitRequest {
         global_id: id,

@@ -24,6 +24,7 @@ use cx_thir::{
         },
         expression::{THIRCoercion, THIRExpression, THIRExpressionKind, THIRLocalID},
         global::THIRGlobalVariable,
+        r#type::{THIRType, THIRTypeKind},
     },
     type_context::THIRTypeContext,
 };
@@ -364,36 +365,40 @@ fn type_declarations_equivalent(
     left: &HIRSymbolKind,
     right: &HIRSymbolKind,
 ) -> CXMaybeRawResult<bool> {
-    let (left_template, left_definition, left_is_tag) = match left {
-        HIRSymbolKind::Type(definition) => (None, definition, false),
-        HIRSymbolKind::TagType { definition, .. } => (None, definition, true),
+    let (left_template, left_definition, left_tag) = match left {
+        HIRSymbolKind::Type(definition) => (None, definition, None),
+        HIRSymbolKind::TagType { definition, tag } => (None, definition, Some(*tag)),
         HIRSymbolKind::TypeTemplate {
             template,
             definition,
-        } => (Some(template), definition, false),
+        } => (Some(template), definition, None),
         HIRSymbolKind::TagTypeTemplate {
             template,
             definition,
-            ..
-        } => (Some(template), definition, true),
+            tag,
+        } => (Some(template), definition, Some(*tag)),
         _ => return Ok(false),
     };
-    let (right_template, right_definition, right_is_tag) = match right {
-        HIRSymbolKind::Type(definition) => (None, definition, false),
-        HIRSymbolKind::TagType { definition, .. } => (None, definition, true),
+    let (right_template, right_definition, right_tag) = match right {
+        HIRSymbolKind::Type(definition) => (None, definition, None),
+        HIRSymbolKind::TagType { definition, tag } => (None, definition, Some(*tag)),
         HIRSymbolKind::TypeTemplate {
             template,
             definition,
-        } => (Some(template), definition, false),
+        } => (Some(template), definition, None),
         HIRSymbolKind::TagTypeTemplate {
             template,
             definition,
-            ..
-        } => (Some(template), definition, true),
+            tag,
+        } => (Some(template), definition, Some(*tag)),
         _ => return Ok(false),
     };
 
-    if left_is_tag || right_is_tag || left_template != right_template {
+    if left_tag != right_tag || left_template != right_template {
+        return Ok(false);
+    }
+
+    if left_tag == Some(PredeclarationType::Enum) {
         return Ok(false);
     }
 
@@ -406,9 +411,36 @@ fn type_declarations_equivalent(
     }
 
     let namespace = EnvironmentNamespace::from(&name.namespace);
-    let left_definition = complete_type(env, &namespace, left_definition)?;
-    let right_definition = complete_type(env, &namespace, right_definition)?;
-    Ok(env.type_eq(&left_definition, &right_definition))
+    let (mut left_definition, mut right_definition) = if left_tag.is_some() {
+        let placeholder = env
+            .symbols
+            .generate_type_id(THIRType::from(THIRTypeKind::Undefined));
+        env.symbols.push_local_scope();
+        let result: CXMaybeRawResult<(THIRType, THIRType)> = (|| {
+            env.symbols
+                .insert_local_type_id(name.name.as_string(), placeholder)?;
+            Ok((
+                complete_type(env, &namespace, left_definition)?,
+                complete_type(env, &namespace, right_definition)?,
+            ))
+        })();
+        env.symbols.pop_local_scope();
+        result?
+    } else {
+        (
+            complete_type(env, &namespace, left_definition)?,
+            complete_type(env, &namespace, right_definition)?,
+        )
+    };
+    if left_tag.is_some() {
+        left_definition.strong_identifier = None;
+        left_definition.lookup_identifier = None;
+        right_definition.strong_identifier = None;
+        right_definition.lookup_identifier = None;
+        Ok(left_definition.contextual_eq(&right_definition, &env.symbols))
+    } else {
+        Ok(env.type_eq(&left_definition, &right_definition))
+    }
 }
 
 fn resolve_duplicate_definition(
