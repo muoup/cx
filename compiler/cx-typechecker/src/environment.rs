@@ -295,6 +295,12 @@ impl TypeEnvironment<'_> {
             unreachable!("resolved lookup was handled above")
         };
 
+        if let Some(symbol) = self.symbols.get_preresolved_symbol(&resolved_name)
+            && matches!(symbol, MIRSymbol::Expression(_))
+        {
+            return Ok(symbol.clone());
+        }
+
         let symbol = resolve_symbol(
             self,
             namespace,
@@ -364,27 +370,29 @@ impl QualifiedLookup for TypeEnvironment<'_> {
         lexical_namespace: &NamespacePath,
         name: &QualifiedName,
     ) -> Option<Self::Output> {
+        if let Some(sym) = self
+            .symbols
+            .get_global_registry()
+            .resolve(name)
+            .filter(|sym| {
+                self.symbol_visible_from(
+                    &EnvironmentNamespace::from(lexical_namespace),
+                    name,
+                    sym,
+                )
+            })
+        {
+            return Some(SymbolLookup {
+                resolved_name: name.clone(),
+                kind: SymbolLookupKind::Untyped(sym.clone()),
+            });
+        }
+
         self.symbols
             .get_preresolved_symbol(name)
             .map(|sym| SymbolLookup {
                 resolved_name: name.clone(),
                 kind: SymbolLookupKind::Resolved(sym.clone()),
-            })
-            .or_else(|| {
-                self.symbols
-                    .get_global_registry()
-                    .resolve(name)
-                    .filter(|sym| {
-                        self.symbol_visible_from(
-                            &EnvironmentNamespace::from(lexical_namespace),
-                            name,
-                            sym,
-                        )
-                    })
-                    .map(|sym| SymbolLookup {
-                        resolved_name: name.clone(),
-                        kind: SymbolLookupKind::Untyped(sym.clone()),
-                    })
             })
     }
 

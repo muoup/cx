@@ -222,6 +222,13 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
                 )
             });
         if type_name.namespace.is_root() && type_name.name == name && is_existing_type_alias {
+            data.add_stmt(HIRStmt::TypeDefinition {
+                name: Some(name),
+                visibility: data.visibility,
+                _type: _type.clone(),
+                template_prototype: template_prototype.clone(),
+                tag: None,
+            });
             return Ok(());
         }
     }
@@ -231,6 +238,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
         visibility: data.visibility,
         _type: _type.clone(),
         template_prototype: template_prototype.clone(),
+        tag: None,
     });
 
     Ok(())

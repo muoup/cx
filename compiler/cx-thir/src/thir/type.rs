@@ -5,7 +5,7 @@ use speedy::{Readable, Writable};
 use crate::{
     thir::contextual_eq::{TypeComparisonState, TypeContextEqual},
     thir::data::{THIRFnSignature, TemplateInfo},
-    thir::expression::THIRExpression,
+    thir::expression::{THIRExpression, THIRExpressionKind},
     type_context::THIRTypeContext,
 };
 
@@ -619,17 +619,23 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRTypeKi
             ) => left_bitfield == right_bitfield && left.compare(right, definitions, state),
             (
                 THIRTypeKind::Array {
-                    length: left_len,
+                    length: left_length,
                     inner_type: left_inner,
                 },
                 THIRTypeKind::Array {
-                    length: right_len,
+                    length: right_length,
                     inner_type: right_inner,
                 },
             ) => {
-                left_len._type.compare(&right_len._type, definitions, state)
-                    && format!("{:?}", left_len.kind) == format!("{:?}", right_len.kind)
-                    && left_inner.compare(right_inner, definitions, state)
+                let same_length = match (&left_length.kind, &right_length.kind) {
+                    (
+                        THIRExpressionKind::IntLiteral(left_length),
+                        THIRExpressionKind::IntLiteral(right_length),
+                    ) => left_length == right_length,
+                    _ => true,
+                };
+
+                same_length && left_inner.compare(right_inner, definitions, state)
             }
             (
                 THIRTypeKind::Function { signature: left },

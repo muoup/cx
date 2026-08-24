@@ -161,6 +161,7 @@ fn predeclaration_type(
     data: &mut ParserData,
     name: Option<QualifiedName>,
     predeclaration: PredeclarationType,
+    template_prototype: Option<HIRTemplatePrototype>,
 ) -> CXResult<HIRType> {
     let Some(name) = name else {
         return parse_point_error(&data.tokens, "Predeclaration must have a name".to_string());
@@ -183,8 +184,9 @@ fn predeclaration_type(
         data.add_stmt(HIRStmt::TypeDefinition {
             name: Some(definition_name),
             visibility: data.visibility,
-            template_prototype: None,
+            template_prototype,
             _type: ty.clone(),
+            tag: Some(predeclaration),
         });
     }
 
@@ -207,6 +209,7 @@ fn defined_type(
             visibility: data.visibility,
             template_prototype,
             _type,
+            tag: Some(predeclaration),
         });
 
         Ok(HIRTypeKind::Identifier {
@@ -231,7 +234,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<HIRType> {
     let attributes = parse_type_attributes(data, "struct")?;
 
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
-        return predeclaration_type(data, name, PredeclarationType::Struct);
+        return predeclaration_type(data, name, PredeclarationType::Struct, template_prototype);
     }
 
     if let Some(template_prototype) = &template_prototype {
@@ -287,7 +290,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<HIRType> {
     let name = try_parse_qualified_name(&mut data.tokens)?;
 
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
-        return predeclaration_type(data, name, PredeclarationType::Enum);
+        return predeclaration_type(data, name, PredeclarationType::Enum, None);
     }
 
     let mut variants = Vec::new();
@@ -423,7 +426,7 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<HIRType> {
     let template_prototype = try_parse_template(&mut data.tokens)?;
 
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
-        return predeclaration_type(data, name, PredeclarationType::Union);
+        return predeclaration_type(data, name, PredeclarationType::Union, template_prototype);
     }
 
     let mut fields = Vec::new();

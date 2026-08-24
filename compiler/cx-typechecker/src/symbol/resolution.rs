@@ -2,7 +2,7 @@ use cx_hir::{
     ast::{
         function::{HIRFunctionContract, HIRFunctionKind},
         template::HIRTemplatePrototype,
-        types::{HIRType, HIRTypeKind},
+        types::{HIRType, HIRTypeKind, PredeclarationType},
     },
     symbols::{HIRSymbol, HIRSymbolKind},
 };
@@ -11,7 +11,7 @@ use cx_log::{
     error::{CXMaybeRawErr, CXMaybeRawResult},
 };
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, linkage::LinkageMode};
+use cx_util::{identifier::CXIdent, linkage::LinkageMode, namespace::QualifiedName};
 
 use cx_thir::{
     EnvironmentNamespace,
@@ -24,12 +24,14 @@ use cx_thir::{
         },
         expression::{THIRCoercion, THIRExpression, THIRExpressionKind, THIRLocalID},
         global::THIRGlobalVariable,
+        r#type::{THIRType, THIRTypeKind},
     },
     type_context::THIRTypeContext,
 };
 
 use crate::{
     environment::{THIRFunctionGenRequest, TypeEnvironment},
+    log::internal_type_error,
     symbol::{
         completion::{complete_comptime_prototype, complete_prototype, complete_type},
         r#enum::resolve_enum_block,
@@ -54,23 +56,6 @@ pub fn resolve_symbol(
     )
 }
 
-// pub(crate) fn resolve_symbol_without_implicit_array_decay(
-//     env: &mut TypeEnvironment,
-//     evaluation_namespace: &EnvironmentNamespace,
-//     symbol_namespace: &EnvironmentNamespace,
-//     name: &CXIdent,
-//     symbol: &HIRSymbol,
-// ) -> CXResult<MIRSymbol> {
-//     resolve_symbol_inner(
-//         env,
-//         evaluation_namespace,
-//         symbol_namespace,
-//         name,
-//         symbol,
-//         false,
-//     )
-// }
-
 fn resolve_symbol_inner(
     env: &mut TypeEnvironment,
     evaluation_namespace: &EnvironmentNamespace,
@@ -89,7 +74,7 @@ fn resolve_symbol_inner(
             definitions,
         ),
 
-        HIRSymbolKind::Type(ty) => {
+        HIRSymbolKind::Type(ty) | HIRSymbolKind::TagType { definition: ty, .. } => {
             let completed = complete_type(env, symbol_namespace, ty)?;
             let id = env.symbols.generate_type_id(completed);
             Ok(MIRSymbol::Type(id))
@@ -229,6 +214,27 @@ fn resolve_symbol_inner(
             })
         }
 
+        HIRSymbolKind::TagTypeTemplate {
+            template: input,
+            definition,
+            tag,
+        } => {
+            let source = HIRSymbol::new(
+                symbol.visibility,
+                HIRSymbolKind::TagType {
+                    definition: definition.clone(),
+                    tag: *tag,
+                },
+            );
+
+            Ok(MIRSymbol::Template {
+                template_prototype: input.clone(),
+                name: name.clone(),
+                source: Box::new(source),
+                namespace: symbol_namespace.clone(),
+            })
+        }
+
         HIRSymbolKind::FunctionTemplate {
             template: input,
             definition,
@@ -270,6 +276,173 @@ fn resolve_symbol_inner(
     }
 }
 
+pub(crate) fn resolve_duplicate_type_symbol<'a>(
+    env: &mut TypeEnvironment,
+    name: &QualifiedName,
+    predeclaration: PredeclarationType,
+    definitions: &'a [HIRSymbolKind],
+) -> CXMaybeRawResult<&'a HIRSymbolKind> {
+    let is_tag = |kind: &HIRSymbolKind| {
+        matches!(kind, HIRSymbolKind::TagType { .. } | HIRSymbolKind::TagTypeTemplate { .. })
+    };
+    let is_ordinary_type = |kind: &HIRSymbolKind| {
+        matches!(kind, HIRSymbolKind::Type(_) | HIRSymbolKind::TypeTemplate { .. })
+    };
+
+    let typedefs = match predeclaration {
+        PredeclarationType::None => {
+            let ordinary = definitions
+                .iter()
+                .filter(|kind| is_ordinary_type(kind))
+                .collect::<Vec<_>>();
+            let has_other_ordinary = definitions
+                .iter()
+                .any(|kind| !is_tag(kind) && !is_ordinary_type(kind));
+            if !ordinary.is_empty() && has_other_ordinary {
+                return env
+                    .log_error_base(format!(
+                        "Symbol '{name}' has incompatible ordinary declarations"
+                    ))
+                    .map_err(|err| err.into());
+            }
+            if ordinary.is_empty() {
+                definitions.iter().filter(|kind| is_tag(kind)).collect()
+            } else {
+                ordinary
+            }
+        }
+        predeclaration => {
+            let tags = definitions
+                .iter()
+                .filter_map(|kind| match kind {
+                    HIRSymbolKind::TagType { tag, .. }
+                    | HIRSymbolKind::TagTypeTemplate { tag, .. } => Some((kind, *tag)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            if tags.iter().any(|(_, tag)| *tag != predeclaration) {
+                return env
+                    .log_error_base(format!("Symbol '{name}' has incompatible tag declarations"))
+                    .map_err(|err| err.into());
+            }
+            tags.into_iter()
+                .map(|(kind, _)| kind)
+                .collect::<Vec<_>>()
+        }
+    };
+
+    if typedefs.is_empty() {
+        env
+            .log_error_base(format!("Symbol '{name}' is not a type"))
+            .map_err(|err| err.into())
+    } else if typedefs.len() == 1 {
+        Ok(typedefs[0])
+    } else {
+        let first = typedefs[0];
+        let compatible = typedefs
+            .iter()
+            .skip(1)
+            .try_fold(true, |compatible, candidate| {
+                if !compatible {
+                    return Ok(false);
+                }
+
+                type_declarations_equivalent(env, name, first, candidate)
+            })?;
+        if compatible {
+            Ok(typedefs[0])
+        } else {
+            env
+                .log_error_base(format!("Symbol '{name}' has multiple type definitions"))
+                .map_err(|err| err.into())
+        }
+    }
+}
+
+fn type_declarations_equivalent(
+    env: &mut TypeEnvironment,
+    name: &QualifiedName,
+    left: &HIRSymbolKind,
+    right: &HIRSymbolKind,
+) -> CXMaybeRawResult<bool> {
+    let (left_template, left_definition, left_tag) = match left {
+        HIRSymbolKind::Type(definition) => (None, definition, None),
+        HIRSymbolKind::TagType { definition, tag } => (None, definition, Some(*tag)),
+        HIRSymbolKind::TypeTemplate {
+            template,
+            definition,
+        } => (Some(template), definition, None),
+        HIRSymbolKind::TagTypeTemplate {
+            template,
+            definition,
+            tag,
+        } => (Some(template), definition, Some(*tag)),
+        _ => return Ok(false),
+    };
+    let (right_template, right_definition, right_tag) = match right {
+        HIRSymbolKind::Type(definition) => (None, definition, None),
+        HIRSymbolKind::TagType { definition, tag } => (None, definition, Some(*tag)),
+        HIRSymbolKind::TypeTemplate {
+            template,
+            definition,
+        } => (Some(template), definition, None),
+        HIRSymbolKind::TagTypeTemplate {
+            template,
+            definition,
+            tag,
+        } => (Some(template), definition, Some(*tag)),
+        _ => return Ok(false),
+    };
+
+    if left_tag != right_tag || left_template != right_template {
+        return Ok(false);
+    }
+
+    if left_tag == Some(PredeclarationType::Enum) {
+        return Ok(false);
+    }
+
+    if left_template.is_some() {
+        let mut left_definition = left_definition.clone();
+        let mut right_definition = right_definition.clone();
+        left_definition.range = TokenRange::internal();
+        right_definition.range = TokenRange::internal();
+        return Ok(left_definition == right_definition);
+    }
+
+    let namespace = EnvironmentNamespace::from(&name.namespace);
+    let (mut left_definition, mut right_definition) = if left_tag.is_some() {
+        let placeholder = env
+            .symbols
+            .generate_type_id(THIRType::from(THIRTypeKind::Undefined));
+        env.symbols.push_local_scope();
+        let result: CXMaybeRawResult<(THIRType, THIRType)> = (|| {
+            env.symbols
+                .insert_local_type_id(name.name.as_string(), placeholder)?;
+            Ok((
+                complete_type(env, &namespace, left_definition)?,
+                complete_type(env, &namespace, right_definition)?,
+            ))
+        })();
+        env.symbols.pop_local_scope();
+        result?
+    } else {
+        (
+            complete_type(env, &namespace, left_definition)?,
+            complete_type(env, &namespace, right_definition)?,
+        )
+    };
+    if left_tag.is_some() {
+        left_definition.strong_identifier = None;
+        left_definition.lookup_identifier = None;
+        right_definition.strong_identifier = None;
+        right_definition.lookup_identifier = None;
+        Ok(left_definition.contextual_eq(&right_definition, &env.symbols))
+    } else {
+        Ok(env.type_eq(&left_definition, &right_definition))
+    }
+}
+
 fn resolve_duplicate_definition(
     env: &mut TypeEnvironment,
     evaluation_namespace: &EnvironmentNamespace,
@@ -278,11 +451,22 @@ fn resolve_duplicate_definition(
     visibility: cx_hir::ast::modifiers::VisibilityMode,
     definitions: &[HIRSymbolKind],
 ) -> CXResult<MIRSymbol> {
+    let definitions = definitions
+        .iter()
+        .filter(|kind| {
+            !matches!(
+                kind,
+                HIRSymbolKind::TagType { .. } | HIRSymbolKind::TagTypeTemplate { .. }
+            )
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
     let Some((first, rest)) = definitions.split_first() else {
-        return crate::log::internal_type_error(format!(
-            "Duplicate symbol declaration '{}' has no definitions",
-            name
-        ));
+        return env.log_error(
+            TokenRange::internal(),
+            format!("Symbol '{}' does not refer to a value", name),
+        );
     };
 
     let first = resolve_symbol_inner(
@@ -305,7 +489,7 @@ fn resolve_duplicate_definition(
         )?;
 
         if !mir_symbols_equivalent(env, &first, &candidate) {
-            return crate::log::internal_type_error(format!(
+            return internal_type_error(format!(
                 "Duplicate symbol declaration '{}' resolves to incompatible definitions",
                 name
             ));
