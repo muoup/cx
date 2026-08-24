@@ -40,8 +40,10 @@ pub struct TypeEnvironment<'a> {
     pub symbols: MIRSymbolRegistry<'a>,
     pub items: ItemRegistry,
     pub function: FunctionContext,
+    
     comptime_emit_bases: Vec<usize>,
-    comptime_runtime_return_types: Vec<Option<cx_thir::thir::r#type::THIRType>>,
+    comptime_runtime_return_types: Vec<Option<THIRType>>,
+
     runtime_emit_depth: usize,
     defer_depth: usize,
     staged_expansions: Vec<u64>,

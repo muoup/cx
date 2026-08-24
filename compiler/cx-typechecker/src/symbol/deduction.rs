@@ -101,7 +101,7 @@ fn deduce_template_input(
     expected_return_type: Option<&THIRType>,
 ) -> CXMaybeRawResult<THIRTemplateInput> {
     let shell = match &source.kind {
-        HIRSymbolKind::FunctionReference(shell) => TemplateDeductionShell::Runtime(shell),
+        HIRSymbolKind::Function(shell) => TemplateDeductionShell::Runtime(shell),
         HIRSymbolKind::ComptimeFunction { definition, .. } => {
             TemplateDeductionShell::Comptime(definition)
         }

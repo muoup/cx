@@ -21,6 +21,7 @@ use cx_util::{identifier::CXIdent, namespace::QualifiedName, scoped_map::ScopedM
 pub struct MIRSymbolRegistry<'a> {
     architecture: ArchitectureConfig,
     global_registry: &'a GlobalSymbolRegistry,
+    
     global_cache: HashMap<QualifiedName, MIRSymbol>,
     tag_cache: HashMap<QualifiedName, MIRSymbol>,
     local_symbols: ScopedMap<QualifiedName, MIRSymbol>,

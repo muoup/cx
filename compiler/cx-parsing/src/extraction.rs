@@ -12,13 +12,13 @@ use cx_log::CXResult;
 use cx_preparse_data::NamespaceAliases;
 use cx_util::namespace::{NamespacePath, QualifiedName};
 
-pub struct DecompositionEnv<'a> {
+pub struct ExtractionEnv<'a> {
     namespace: &'a NamespacePath,
     symbol_buckets: Vec<(NamespacePath, SymbolNamespaceData)>,
     namespace_friends: Vec<(NamespacePath, NamespacePath)>,
 }
 
-impl<'a> DecompositionEnv<'a> {
+impl<'a> ExtractionEnv<'a> {
     pub fn new(namespace: &'a NamespacePath, namespace_aliases: NamespaceAliases) -> Self {
         Self {
             namespace,
@@ -68,43 +68,16 @@ impl<'a> DecompositionEnv<'a> {
     }
 
     pub fn decompose_stmt(&mut self, definition: &HIRDefinition) -> CXResult<()> {
-        decompose_stmt(self, definition)
+        extract_from_stmt(self, definition)
     }
 }
 
 fn insert_symbol(
-    env: &mut DecompositionEnv,
+    env: &mut ExtractionEnv,
     namespace: &NamespacePath,
     identifier: SymbolIdentifier,
     symbol: HIRSymbol,
 ) -> CXResult<()> {
-    if let Some(existing) = env
-        .get_bucket_mut(namespace)
-        .get_symbol(&identifier)
-        .cloned()
-    {
-        if let Some((index, coalesced)) =
-            existing
-                .declarations()
-                .iter()
-                .enumerate()
-                .find_map(|(index, existing)| {
-                    coalesce_type_declaration(identifier.name(), &existing.kind, &symbol.kind).map(
-                        |kind| {
-                            (
-                                index,
-                                HIRSymbol::new(existing.visibility.max(symbol.visibility), kind),
-                            )
-                        },
-                    )
-                })
-        {
-            env.get_bucket_mut(namespace)
-                .replace_symbol(identifier, index, coalesced);
-            return Ok(());
-        }
-    }
-
     env.get_bucket_mut(namespace)
         .insert_symbol(identifier, symbol);
     Ok(())
@@ -172,7 +145,7 @@ fn is_forward_type_declaration(name: &str, ty: &HIRType, tag: HIRTagKind) -> boo
     )
 }
 
-fn decompose_stmt(env: &mut DecompositionEnv, definition: &HIRDefinition) -> CXResult<()> {
+fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) -> CXResult<()> {
     let stmt_namespace = definition.namespace.clone();
 
     let base_namespace = if stmt_namespace.is_root() {
@@ -226,17 +199,28 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: &HIRDefinition) -> CXR
 
                     let symbol = HIRSymbol::new(
                         *visibility,
-                        HIRSymbolKind::TypeConstructor {
-                            template: template_prototype.clone(),
-                            union_type: union_type.clone(),
-                            variant_index,
-                        },
+                        HIRSymbolKind::TypeConstructor(
+                            match template_prototype.clone() {
+                                Some(prototype) => HIRSymbolData::Template {
+                                    base: TypeConstructorData {
+                                        union_type: union_type.clone(),
+                                        variant_index,
+                                    },
+                                    template: convert_template_proto_to_args(prototype),
+                                    template_prototype: prototype,
+                                },
+                                None => HIRSymbolData::Standard(TypeConstructorData {
+                                    union_type: union_type.clone(),
+                                    variant_index,
+                                })
+                            }
+                        )
                     );
 
                     insert_symbol(
                         env,
                         &variant_namespace,
-                        SymbolIdentifier::standard(variant_name.clone()),
+                        SymbolIdentifier::Standard(variant_name.clone()),
                         symbol,
                     )?;
                 }
@@ -271,7 +255,7 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: &HIRDefinition) -> CXR
                 }
                 None => HIRSymbol::new(
                     *visibility,
-                    HIRSymbolKind::FunctionReference(prototype.clone()),
+                    HIRSymbolKind::Function(prototype.clone()),
                 ),
             };
 

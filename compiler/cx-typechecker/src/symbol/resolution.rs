@@ -85,7 +85,7 @@ pub fn resolve_symbol(
 fn symbol_range(symbol: &HIRSymbol) -> TokenRange {
     match &symbol.kind {
         HIRSymbolKind::Type(ty) => ty.definition.range.clone(),
-        HIRSymbolKind::FunctionReference(prototype)
+        HIRSymbolKind::Function(prototype)
         | HIRSymbolKind::FunctionTemplate {
             definition: prototype,
             ..
@@ -191,7 +191,7 @@ fn resolve_symbol_inner(
             Ok(MIRSymbol::Expression(expression))
         }
 
-        HIRSymbolKind::FunctionReference(prototype) => {
+        HIRSymbolKind::Function(prototype) => {
             let prototype_namespace = function_lexical_namespace(symbol_namespace, &prototype.kind);
             let prototype = complete_prototype(env, &prototype_namespace, prototype)?;
 
@@ -270,7 +270,7 @@ fn resolve_symbol_inner(
         } => {
             let source = HIRSymbol::new(
                 symbol.visibility,
-                HIRSymbolKind::FunctionReference(definition.clone()),
+                HIRSymbolKind::Function(definition.clone()),
             );
 
             Ok(MIRSymbol::Template {
@@ -550,7 +550,7 @@ pub fn symbol_lexical_namespace(
 ) -> EnvironmentNamespace {
     let namespace = namespace.into();
     match &symbol.kind {
-        HIRSymbolKind::FunctionReference(prototype)
+        HIRSymbolKind::Function(prototype)
         | HIRSymbolKind::FunctionTemplate {
             definition: prototype,
             ..

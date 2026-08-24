@@ -100,7 +100,7 @@ impl GlobalSymbolRegistry {
     }
 
     pub fn resolve(&self, name: &QualifiedName) -> Option<SymbolResolution> {
-        self.resolve_identifier(name, SymbolIdentifier::standard(name.name.as_string()))
+        self.resolve_identifier(name, SymbolIdentifier::Standard(name.name.as_string()))
     }
 
     pub fn resolve_tag(&self, name: &QualifiedName) -> Option<SymbolResolution> {
