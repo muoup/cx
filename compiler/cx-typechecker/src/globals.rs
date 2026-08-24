@@ -1,10 +1,12 @@
 use cx_hir::ast::expression::HIRExpression;
 use cx_hir::ast::modifiers::{HIR_CONST, HIRSymbolNameScheme};
-use cx_hir::ast::types::HIRType;
+use cx_hir::ast::types::{HIRType, HIRTypeKind};
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
+use cx_thir::thir::data::THIRType;
 use cx_thir::thir::expression::{THIRCoercion, THIRExpression, THIRExpressionKind};
 use cx_thir::thir::global::THIRGlobalVariable;
+use cx_thir::type_context::THIRTypeContext;
 use cx_util::identifier::CXIdent;
 use cx_util::linkage::LinkageMode;
 use cx_util::namespace::QualifiedName;
@@ -24,7 +26,8 @@ pub(crate) fn lower_global(
     name_scheme: HIRSymbolNameScheme,
     initializer: Option<&HIRExpression>,
 ) -> CXResult<()> {
-    let _type = complete_type(env, &namespace, hir_type)?;
+    let is_inferred_array = matches!(hir_type.kind, HIRTypeKind::ImplicitSizedArray(_));
+    let mut _type = complete_type(env, &namespace, hir_type)?;
     ensure_valid_type_component(env, hir_type.range(), &_type, "a global variable", true)?;
 
     let symbol_name = completed_symbol_name(
@@ -32,6 +35,16 @@ pub(crate) fn lower_global(
         QualifiedName::new(namespace.clone(), name.clone()),
         name_scheme,
     );
+    let previous_type = env
+        .items
+        .generated_global(&symbol_name)
+        .map(|global| global._type.clone());
+
+    if let Some(previous_type) = &previous_type
+        && env.type_eq(previous_type, &_type)
+    {
+        _type = previous_type.clone();
+    }
 
     let (global_type, comptime_init) = initializer
         .as_ref()
@@ -42,10 +55,12 @@ pub(crate) fn lower_global(
                 THIRExpressionKind::TypeConversion {
                     conversion: THIRCoercion::ReinterpretBits,
                     operand,
-                } if matches!(operand.kind, THIRExpressionKind::ArrayInitializer { .. }) => {
+                } if is_inferred_array
+                    && matches!(operand.kind, THIRExpressionKind::ArrayInitializer { .. }) =>
+                {
                     (operand._type.clone(), operand.as_ref().clone())
                 }
-                THIRExpressionKind::ArrayInitializer { .. } => {
+                THIRExpressionKind::ArrayInitializer { .. } if is_inferred_array => {
                     (expression._type.clone(), expression)
                 }
                 THIRExpressionKind::TypeConversion {
@@ -60,6 +75,25 @@ pub(crate) fn lower_global(
         })
         .transpose()?
         .unwrap_or_else(|| (_type.clone(), None));
+    let global_type = if let Some(previous_type) = previous_type {
+        if env.type_eq(&previous_type, &global_type) {
+            previous_type
+        } else if is_inferred_array
+            && incomplete_array_declaration_compatible(env, &previous_type, &global_type)
+        {
+            global_type
+        } else {
+            return env.log_error(
+                hir_type.range(),
+                format!(
+                    "Attempting to redeclare global '{}' with a different type.",
+                    name
+                ),
+            );
+        }
+    } else {
+        global_type
+    };
 
     if !env.type_eq(&_type, &global_type) {
         let global_value_type = env.symbols.mem_ref_to(global_type.clone());
@@ -85,6 +119,20 @@ pub(crate) fn lower_global(
         linkage,
     };
 
-    env.items.push_generated_global(global);
+    env.items.push_generated_global(global, true);
     Ok(())
+}
+
+fn incomplete_array_declaration_compatible(
+    env: &TypeEnvironment,
+    declaration: &THIRType,
+    definition: &THIRType,
+) -> bool {
+    let Some(declaration_inner) = env.symbols.ptr_inner(declaration) else {
+        return false;
+    };
+    let Some(definition_inner) = env.symbols.array_inner(definition) else {
+        return false;
+    };
+    env.type_eq(declaration_inner, definition_inner)
 }

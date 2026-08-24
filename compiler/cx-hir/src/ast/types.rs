@@ -13,13 +13,28 @@ pub struct HIRType {
     pub range: TokenRange,
 }
 
-#[derive(Debug, Default, Hash, Clone, Copy, PartialEq, Eq)]
-pub enum PredeclarationType {
-    #[default]
-    None,
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
+pub enum HIRTagKind {
     Struct,
     Union,
     Enum,
+}
+
+impl HIRTagKind {
+    pub fn prefix(self) -> &'static str {
+        match self {
+            Self::Struct => "struct",
+            Self::Union => "union",
+            Self::Enum => "enum",
+        }
+    }
+}
+
+#[derive(Debug, Default, Hash, Clone, Copy, PartialEq, Eq)]
+pub enum HIRTypeLookup {
+    #[default]
+    Standard,
+    Tag(HIRTagKind),
 }
 
 #[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
@@ -54,7 +69,7 @@ pub enum HIRField {
 pub enum HIRTypeKind {
     Identifier {
         name: QualifiedName,
-        predeclaration: PredeclarationType,
+        lookup: HIRTypeLookup,
         template_input: Option<HIRTemplateInput>,
     },
 
@@ -94,7 +109,7 @@ impl From<&str> for HIRType {
             0,
             HIRTypeKind::Identifier {
                 name: QualifiedName::new_raw(CXIdent::from(value)),
-                predeclaration: PredeclarationType::None,
+                lookup: HIRTypeLookup::Standard,
                 template_input: None,
             },
         )
@@ -107,6 +122,16 @@ impl HIRType {
             kind,
             specifiers,
             range: TokenRange::Internal,
+        }
+    }
+
+    pub fn tag_kind(&self) -> Option<HIRTagKind> {
+        match &self.kind {
+            HIRTypeKind::Identifier {
+                lookup: HIRTypeLookup::Tag(tag),
+                ..
+            } => Some(*tag),
+            _ => None,
         }
     }
 

@@ -60,14 +60,17 @@ pub(crate) fn typecheck_var_declaration(
 
                 sym_expr
             } else {
-                env.items.push_generated_global(THIRGlobalVariable {
-                    name: name.clone(),
-                    _type: ty.clone(),
+                env.items.push_generated_global(
+                    THIRGlobalVariable {
+                        name: name.clone(),
+                        _type: ty.clone(),
 
-                    is_mutable: true,
-                    linkage: LinkageMode::Extern,
-                    initializer: None,
-                });
+                        is_mutable: true,
+                        linkage: LinkageMode::Extern,
+                        initializer: None,
+                    },
+                    false,
+                );
 
                 THIRExpression {
                     token_range: expr.token_range().clone(),
@@ -123,14 +126,17 @@ pub(crate) fn typecheck_var_declaration(
                 is_const
             };
 
-            env.items.push_generated_global(THIRGlobalVariable {
-                name: CXIdent::new(symbol_name.clone()),
-                _type: global_type.clone(),
+            env.items.push_generated_global(
+                THIRGlobalVariable {
+                    name: CXIdent::new(symbol_name.clone()),
+                    _type: global_type.clone(),
 
-                is_mutable: !is_const,
-                linkage: LinkageMode::Static,
-                initializer,
-            });
+                    is_mutable: !is_const,
+                    linkage: LinkageMode::Static,
+                    initializer,
+                },
+                false,
+            );
 
             let symbol = THIRExpression {
                 token_range: expr.token_range().clone(),

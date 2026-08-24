@@ -7,7 +7,7 @@ use cx_thir::thir::data::THIRFunction;
 use cx_thir::thir::data::THIRTemplateInput;
 use cx_thir::thir::global::THIRGlobalVariable;
 use cx_thir::thir::r#type::THIRType;
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_util::{identifier::CXIdent, linkage::LinkageMode, namespace::QualifiedName};
 
 #[derive(Debug)]
 pub enum THIRFunctionGenRequest {
@@ -17,9 +17,9 @@ pub enum THIRFunctionGenRequest {
         input: THIRTemplateInput,
     },
     Comptime {
-        lookup_identifier: QualifiedName,
+        name: QualifiedName,
         prototype: THIRComptimeFnPrototype,
-        input: Option<THIRTemplateInput>,
+        input: THIRTemplateInput,
     },
     TypeConstructor {
         symbol_name: String,
@@ -106,7 +106,22 @@ impl ItemRegistry {
         self.generated_comptime_functions.push(function);
     }
 
-    pub fn push_generated_global(&mut self, global: THIRGlobalVariable) {
+    pub fn push_generated_global(&mut self, global: THIRGlobalVariable, replace_external: bool) {
+        if replace_external
+            && global.linkage != LinkageMode::Extern
+            && let Some(existing) = self.generated_globals.iter_mut().find(|existing| {
+                existing.name == global.name && existing.linkage == LinkageMode::Extern
+            })
+        {
+            *existing = global;
+            return;
+        }
         self.generated_globals.push(global);
+    }
+
+    pub fn generated_global(&self, name: &str) -> Option<&THIRGlobalVariable> {
+        self.generated_globals
+            .iter()
+            .find(|global| global.name.as_str() == name)
     }
 }

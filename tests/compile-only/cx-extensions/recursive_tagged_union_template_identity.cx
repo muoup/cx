@@ -1,0 +1,21 @@
+struct wrapper<T> {
+    T* value;
+};
+
+enum union node {
+    link :: wrapper<node>,
+    end :: void
+};
+
+void consume(wrapper<node> value) {}
+
+void inspect(node value) {
+    match (value) {
+        node::link(link) => consume(link);
+        node::end() => {}
+    }
+}
+
+int main() {
+    return 0;
+}

@@ -6,7 +6,7 @@ use cx_mir_analysis::{MIRAnalysisOptions, analyze};
 
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::preparse::PreparseConfig;
-use cx_parsing::{decompose_ast, parse_ast, preparse};
+use cx_parsing::{ast_extract_symbols, parse_ast, preparse};
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::directories::internal_directory;
 use cx_pipeline_data::internal_storage::{resource_path, retrieve_data};
@@ -397,7 +397,7 @@ pub(crate) fn perform_job(
             }
 
             let namespace = job.unit.namespace().as_namespace_path().clone();
-            let decomposition = decompose_ast(&namespace, parsed_ast)?;
+            let decomposition = ast_extract_symbols(&namespace, &parsed_ast);
 
             for (namespace, bucket) in decomposition.symbol_buckets {
                 if let Some((namespace, _)) = context
@@ -421,10 +421,7 @@ pub(crate) fn perform_job(
                     .insert_namespace_friend(namespace, friend);
             }
 
-            context
-                .module_db
-                .hir
-                .insert(job.unit.clone(), decomposition.ast);
+            context.module_db.hir.insert(job.unit.clone(), parsed_ast);
         }
 
         CompilationStep::Typechecking => {

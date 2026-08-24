@@ -101,12 +101,10 @@ fn deduce_template_input(
     expected_return_type: Option<&THIRType>,
 ) -> CXMaybeRawResult<THIRTemplateInput> {
     let shell = match &source.kind {
-        HIRSymbolKind::FunctionReference(shell) => TemplateDeductionShell::Runtime(shell),
-        HIRSymbolKind::ComptimeFunction { definition, .. } => {
-            TemplateDeductionShell::Comptime(definition)
-        }
-        HIRSymbolKind::TypeConstructor { union_type, .. } => {
-            TemplateDeductionShell::TypeConstructor(union_type)
+        HIRSymbolKind::Function(data) => TemplateDeductionShell::Runtime(data.base()),
+        HIRSymbolKind::ComptimeFunction(data) => TemplateDeductionShell::Comptime(data.base()),
+        HIRSymbolKind::TypeConstructor(data) => {
+            TemplateDeductionShell::TypeConstructor(&data.base().union_type)
         }
         _ => {
             return crate::log::internal_type_error(

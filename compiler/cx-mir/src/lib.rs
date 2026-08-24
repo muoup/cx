@@ -14,7 +14,8 @@ pub use diagnostic::{MIRDiagnostic, MIRDiagnosticLocation};
 pub use expr::{
     MIRAggregateOp, MIRAssignTarget, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget, MIRCallKind,
     MIRConstant, MIRInstr, MIRInstrKind, MIRInstrOperand, MIRParameterID, MIRPlace,
-    MIRPlaceAggregateOp, MIRPlaceID, MIRRegister, MIRScopeID, MIRValue, MIRValueAggregateOp,
+    MIRPlaceAggregateOp, MIRPlaceID, MIRRegister, MIRScopeID, MIRStagedExitKind, MIRValue,
+    MIRValueAggregateOp,
 };
 pub use global::{
     MIRBody, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID,

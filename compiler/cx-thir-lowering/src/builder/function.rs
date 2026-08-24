@@ -2,8 +2,8 @@ use std::{collections::HashMap, rc::Rc};
 
 use cx_mir::{
     MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID,
-    MIRFunctionMode, MIRInstr, MIRInstrKind, MIRPlace, MIRRegister, MIRScopeID, MIRTypeID,
-    MIRValue,
+    MIRFunctionMode, MIRInstr, MIRInstrKind, MIRPlace, MIRRegister, MIRScopeID, MIRStagedExitKind,
+    MIRTypeID, MIRValue,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
 use cx_tokens::TokenRange;
@@ -305,5 +305,15 @@ impl FunctionBuilder {
 
     pub fn scope_stack(&self) -> &[ScopeContext] {
         &self.scope_stack
+    }
+
+    pub fn exit_target(&self, kind: MIRStagedExitKind) -> Option<(MIRScopeID, MIRBasicBlockID)> {
+        self.scope_stack.iter().rev().find_map(|scope| {
+            let block = match kind {
+                MIRStagedExitKind::Break => scope.break_target,
+                MIRStagedExitKind::Continue => scope.continue_target,
+            }?;
+            Some((scope.id(), block))
+        })
     }
 }

@@ -29,7 +29,7 @@ pub struct THIRComptimeFunction {
 #[derive(Debug, Clone)]
 pub struct THIRComptimeFnPrototype {
     symbol_name: String,
-    lookup_identifier: Option<QualifiedName>,
+    lookup_identifier: QualifiedName,
     debug_name: Option<CXIdent>,
     return_type: THIRComptimeValueType,
     params: Vec<THIRComptimeParameter>,
@@ -53,15 +53,16 @@ pub struct THIRComptimeValueType {
 impl THIRComptimeFnPrototype {
     pub fn new(
         symbol_name: impl Into<String>,
+        lookup_identifier: QualifiedName,
         return_type: THIRComptimeValueType,
         params: Vec<THIRComptimeParameter>,
     ) -> Self {
         Self {
             symbol_name: symbol_name.into(),
-            lookup_identifier: None,
-            debug_name: None,
+            lookup_identifier,
             return_type,
             params,
+            debug_name: None,
             runtime_return_type: None,
         }
     }
@@ -78,8 +79,8 @@ impl THIRComptimeFnPrototype {
         }
     }
 
-    pub fn lookup_identifier(&self) -> Option<&QualifiedName> {
-        self.lookup_identifier.as_ref()
+    pub fn lookup_identifier(&self) -> &QualifiedName {
+        &self.lookup_identifier
     }
 
     pub fn debug_name(&self) -> Option<&CXIdent> {
@@ -100,11 +101,6 @@ impl THIRComptimeFnPrototype {
 
     pub fn with_runtime_return_type(mut self, ty: Option<THIRType>) -> Self {
         self.runtime_return_type = ty;
-        self
-    }
-
-    pub fn with_lookup_identifier(mut self, lookup_identifier: QualifiedName) -> Self {
-        self.lookup_identifier = Some(lookup_identifier);
         self
     }
 

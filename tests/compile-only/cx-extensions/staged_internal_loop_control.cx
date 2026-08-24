@@ -1,0 +1,14 @@
+import std::optional as std;
+
+int main() {
+    std::opt<int> value = std::opt::none<int>();
+    int result = move value |> std::opt::unwrap_or_else(.{
+        while (1) {
+            break;
+        }
+
+        return 0;
+    });
+
+    return result;
+}

@@ -7,7 +7,7 @@ use cx_util::namespace::{NamespacePath, QualifiedName};
 
 use crate::{
     ast::modifiers::HIRSymbolNameScheme,
-    symbols::{HIRSymbol, HIRSymbolKind, SymbolNamespaceData},
+    symbols::{HIRSymbol, HIRSymbolKind, SymbolNamespaceData, SymbolResolution},
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -41,12 +41,7 @@ impl GlobalSymbolRegistry {
             .write()
             .expect("GlobalSymbolRegistry write lock poisoned");
 
-        if let Some(existing) = inner.namespaces.get_mut(&namespace) {
-            if namespace.is_root() {
-                existing.merge_from(data);
-                return None;
-            }
-
+        if inner.namespaces.contains_key(&namespace) {
             return Some((namespace, data));
         }
 
@@ -99,18 +94,26 @@ impl GlobalSymbolRegistry {
         ExportNameMode::Namespaced
     }
 
-    pub fn resolve(&self, name: &QualifiedName) -> Option<HIRSymbol> {
+    pub fn resolve(&self, name: &QualifiedName) -> Option<SymbolResolution> {
         let inner = self
             .inner
             .read()
             .expect("GlobalSymbolRegistry read lock poisoned");
-
-        // TODO: Try to avoid cloning here
         inner
             .namespaces
             .get(&name.namespace)?
-            .get_symbol(name.name.as_str())
-            .cloned()
+            .get_standard_symbol(name.name.as_str())
+    }
+
+    pub fn resolve_tag(&self, name: &QualifiedName) -> Option<SymbolResolution> {
+        let inner = self
+            .inner
+            .read()
+            .expect("GlobalSymbolRegistry read lock poisoned");
+        inner
+            .namespaces
+            .get(&name.namespace)?
+            .get_tag_symbol(name.name.as_str())
     }
 
     pub fn resolve_unmangled_global(&self, name: &str) -> Vec<(NamespacePath, HIRSymbol)> {
@@ -122,19 +125,20 @@ impl GlobalSymbolRegistry {
         inner
             .namespaces
             .iter()
-            .filter_map(|(namespace, data)| {
-                let symbol = data.get_symbol(name)?;
-                if matches!(
-                    &symbol.kind,
-                    HIRSymbolKind::AddressableGlobal {
-                        symbol_naming: HIRSymbolNameScheme::Unmangled,
-                        ..
-                    }
-                ) {
-                    Some((namespace.clone(), symbol.clone()))
-                } else {
-                    None
-                }
+            .flat_map(|(namespace, data)| {
+                data.get_standard_symbol(name)
+                    .into_iter()
+                    .flat_map(SymbolResolution::into_declarations)
+                    .filter_map(|symbol| {
+                        matches!(
+                            &symbol.kind,
+                            HIRSymbolKind::AddressableGlobal {
+                                symbol_naming: HIRSymbolNameScheme::Unmangled,
+                                ..
+                            }
+                        )
+                        .then(|| (namespace.clone(), symbol.clone()))
+                    })
             })
             .collect()
     }

@@ -5,7 +5,7 @@ use cx_util::linkage::LinkageMode;
 use crate::MIRGlobalVariable;
 use crate::expr::{
     MIRAggregateOp, MIRBasicBlock, MIRConstant, MIRInstrKind, MIRPlace, MIRPlaceAggregateOp,
-    MIRValue, MIRValueAggregateOp,
+    MIRStagedExitKind, MIRValue, MIRValueAggregateOp,
 };
 use crate::global::{MIRFunction, MIRGlobalKind, MIRGlobalState};
 use crate::op::{
@@ -589,6 +589,10 @@ fn write_instruction<T: MTRegistry>(
             f.write_str("staged.return ")?;
             write_value(f, unit, function, value)
         }
+        MIRInstrKind::StagedExit { kind } => match kind {
+            MIRStagedExitKind::Break => f.write_str("staged.break"),
+            MIRStagedExitKind::Continue => f.write_str("staged.continue"),
+        },
         MIRInstrKind::StagedMove { out, value } => {
             write_register_name(f, function, *out)?;
             f.write_str(" = staged.move ")?;

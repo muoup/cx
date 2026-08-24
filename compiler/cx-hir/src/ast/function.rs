@@ -39,8 +39,8 @@ pub struct HIRParameter {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct HIRComptimeFnPrototype {
     pub kind: HIRFunctionKind,
-    pub params: Vec<HIRComptimeParameter>,
     pub return_type: HIRComptimeValueType,
+    pub params: Vec<HIRComptimeParameter>,
     pub range: TokenRange,
 }
 

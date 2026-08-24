@@ -441,6 +441,7 @@ fn transfer_instruction(
         MIRInstrKind::StagedReturn { value } => {
             use_value(unit, function, block, instruction, value, state, diagnose)?;
         }
+        MIRInstrKind::StagedExit { .. } => {}
         MIRInstrKind::StagedMove { value, .. } => {
             use_value(unit, function, block, instruction, value, state, diagnose)?;
         }

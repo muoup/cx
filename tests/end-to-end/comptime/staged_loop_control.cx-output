@@ -1,0 +1,11 @@
+continue 1
+cleanup 20
+cleanup 10
+continue 2
+cleanup 20
+cleanup 10
+continued
+break
+broken
+switch break
+switched

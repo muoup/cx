@@ -1,0 +1,54 @@
+#include <stdio.h>
+
+import std::optional as std;
+
+void trace_cleanup(int value) {
+    printf("cleanup %d\n", value);
+}
+
+comptime expr void with_cleanup(expr int& value, expr(int&) void proc) {
+    return emit .{
+        defer trace_cleanup(20);
+        proc(value);
+    };
+}
+
+int main() {
+    int iteration = 0;
+    while (iteration < 2) {
+        iteration += 1;
+        defer trace_cleanup(10);
+        int value = iteration;
+        with_cleanup(value) <| |captured| .{
+            printf("continue %d\n", captured);
+            continue;
+        };
+        printf("unreachable continue\n");
+    }
+    printf("continued\n");
+
+    while (1) {
+        std::opt<int> value = std::opt::none<int>();
+        int result = move value |> std::opt::unwrap_or_else(.{
+            printf("break\n");
+            break;
+        });
+        printf("unreachable break %d\n", result);
+    }
+    printf("broken\n");
+
+    switch (1) {
+        case 1: {
+            std::opt<int> value = std::opt::none<int>();
+            move value |> std::opt::unwrap_or_else(.{
+                printf("switch break\n");
+                break;
+            });
+            printf("unreachable switch\n");
+        }
+        default:
+            printf("unreachable default\n");
+    }
+    printf("switched\n");
+    return 0;
+}

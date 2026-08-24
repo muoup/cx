@@ -408,6 +408,7 @@ fn typecheck_expr_inner(
                     "'break' used outside of a loop or switch context".to_string(),
                 );
             };
+            let staged = env.staged_control_target_is_external(scope_idx);
             enqueue_jump_arrow(
                 env,
                 &ScopeExitTarget {
@@ -419,7 +420,7 @@ fn typecheck_expr_inner(
 
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: THIRExpressionKind::Break,
+                kind: THIRExpressionKind::Break { staged },
                 _type: THIRType::unit(),
             })
         }
@@ -437,6 +438,7 @@ fn typecheck_expr_inner(
                     "'continue' used outside of a loop context".to_string(),
                 );
             };
+            let staged = env.staged_control_target_is_external(scope_idx);
             enqueue_jump_arrow(
                 env,
                 &ScopeExitTarget {
@@ -448,7 +450,7 @@ fn typecheck_expr_inner(
 
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: THIRExpressionKind::Continue,
+                kind: THIRExpressionKind::Continue { staged },
                 _type: THIRType::unit(),
             })
         }
