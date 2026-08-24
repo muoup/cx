@@ -434,67 +434,6 @@ impl QualifiedLookup for TypeEnvironment<'_> {
     }
 }
 
-struct TagQualifiedLookup<'a, 'b>(&'a TypeEnvironment<'b>);
-
-impl QualifiedLookup for TagQualifiedLookup<'_, '_> {
-    type Output = SymbolLookup;
-
-    fn lookup_local(
-        &self,
-        _lexical_namespace: &NamespacePath,
-        _name: &QualifiedName,
-    ) -> Option<Self::Output> {
-        None
-    }
-
-    fn lookup_exact(
-        &self,
-        lexical_namespace: &NamespacePath,
-        name: &QualifiedName,
-    ) -> Option<Self::Output> {
-        if let Some(resolution) = self
-            .0
-            .symbols
-            .get_global_registry()
-            .resolve_tag(name)
-            .and_then(|resolution| {
-                resolution.filter(|symbol| {
-                    self.0.symbol_visible_from(
-                        &EnvironmentNamespace::from(lexical_namespace),
-                        name,
-                        symbol,
-                    )
-                })
-            })
-        {
-            return Some(SymbolLookup {
-                resolved_name: name.clone(),
-                kind: SymbolLookupKind::Untyped(resolution),
-            });
-        }
-
-        self.0
-            .symbols
-            .get_preresolved_tag(name)
-            .map(|symbol| SymbolLookup {
-                resolved_name: name.clone(),
-                kind: SymbolLookupKind::Resolved(symbol.clone()),
-            })
-    }
-
-    fn resolve_aliases(
-        &self,
-        lexical_namespace: &NamespacePath,
-        namespace: &NamespacePath,
-    ) -> Vec<NamespacePath> {
-        self.0
-            .symbols
-            .get_global_registry()
-            .resolve_aliases(lexical_namespace, namespace)
-            .expect("failed to resolve namespace aliases")
-    }
-}
-
 pub struct SymbolLookup {
     pub resolved_name: QualifiedName,
     pub kind: SymbolLookupKind,

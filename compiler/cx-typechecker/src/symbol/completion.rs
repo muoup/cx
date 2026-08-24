@@ -380,9 +380,14 @@ pub fn complete_comptime_prototype(
     let debug_name = lookup_identifier.name.clone();
     let symbol_name = completed_comptime_symbol_name(env, &lookup_identifier);
 
+    env.items.push_request(THIRFunctionGenRequest::Comptime {
+        lookup_identifier,
+        prototype,
+        input: None,
+    });
+
     Ok(
-        THIRComptimeFnPrototype::new(symbol_name, return_type, params)
-            .with_lookup_identifier(lookup_identifier)
+        THIRComptimeFnPrototype::new(symbol_name, lookup_identifier, return_type, params)
             .with_debug_name(debug_name),
     )
 }

@@ -41,13 +41,12 @@ impl GlobalSymbolRegistry {
             .write()
             .expect("GlobalSymbolRegistry write lock poisoned");
 
-        if let Some(existing) = inner.namespaces.get_mut(&namespace) {
-            if namespace.is_root() {
-                existing.merge_from(data);
-                return None;
-            }
-
-            return Some((namespace, data));
+        if let Some(existing) = inner.namespaces.get(&namespace) {
+            unreachable!(
+                "Namespace {} already exists in global symbol registry with data: {:?}",
+                namespace,
+                existing
+            );
         }
 
         inner.namespaces.insert(namespace, data);

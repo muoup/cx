@@ -4,7 +4,7 @@ use cx_hir::{
         template::HIRTemplatePrototype,
         types::{HIRTagKind, HIRType, HIRTypeKind},
     },
-    symbols::{HIRSymbol, HIRSymbolKind, HIRTypeSymbol, SymbolResolution},
+    symbols::{HIRSymbol, HIRSymbolData, HIRSymbolKind, HIRTypeSymbol, SymbolResolution},
 };
 use cx_log::{
     CXRawResult, CXResult,
@@ -85,18 +85,12 @@ pub fn resolve_symbol(
 fn symbol_range(symbol: &HIRSymbol) -> TokenRange {
     match &symbol.kind {
         HIRSymbolKind::Type(ty) => ty.definition.range.clone(),
-        HIRSymbolKind::Function(prototype)
-        | HIRSymbolKind::FunctionTemplate {
-            definition: prototype,
-            ..
-        } => prototype.range.clone(),
-        HIRSymbolKind::AddressableGlobal { _type, .. }
-        | HIRSymbolKind::TypeConstructor {
-            union_type: _type, ..
-        } => _type.range.clone(),
-        HIRSymbolKind::ComptimeFunction { definition, .. }
-        | HIRSymbolKind::ComptimeFunctionTemplate { definition, .. } => definition.range.clone(),
+        HIRSymbolKind::Function(data) => data.base().range.clone(),
+        HIRSymbolKind::TypeConstructor(data) => data.base().union_type.range.clone(),
+        HIRSymbolKind::ComptimeFunction(data) => data.base().range.clone(),
+
         HIRSymbolKind::EnumIdent { .. } => TokenRange::internal(),
+        HIRSymbolKind::AddressableGlobal { _type, .. } => _type.range().clone(),
     }
 }
 
@@ -109,36 +103,132 @@ fn resolve_symbol_inner(
     decay_implicit_array: bool,
 ) -> CXResult<MIRSymbol> {
     match &symbol.kind {
-        HIRSymbolKind::Type(type_symbol @ HIRTypeSymbol { template: None, .. }) => {
+        HIRSymbolKind::Type(data) => {
             let lookup_identifier =
                 QualifiedName::new(symbol_namespace.as_namespace_path().clone(), name.clone());
-            let completed =
-                complete_type_symbol(env, symbol_namespace, &lookup_identifier, type_symbol)?;
-            let id = env.symbols.generate_type_id(completed);
-            Ok(MIRSymbol::Type(id))
+
+            match data {
+                HIRSymbolData::Standard(standard) => {
+                    let completed =
+                        complete_type_symbol(env, symbol_namespace, &lookup_identifier, standard)?;
+                    let id = env.symbols.generate_type_id(completed);
+                    Ok(MIRSymbol::Type(id))
+                }
+
+                HIRSymbolData::Template {
+                    base,
+                    template,
+                    template_prototype,
+                } => {
+                    let source = HIRSymbol::new(
+                        symbol.visibility,
+                        HIRSymbolKind::Type(HIRTypeSymbol {
+                            definition: base.clone(),
+                            template: None,
+                            tag: data.tag,
+                        }),
+                    );
+
+                    Ok(MIRSymbol::Template {
+                        template_prototype: template_prototype.clone(),
+                        name: name.clone(),
+                        source: Box::new(source),
+                        namespace: symbol_namespace.clone(),
+                    })
+                }
+            }
         }
 
-        HIRSymbolKind::Type(HIRTypeSymbol {
-            definition,
-            template: Some(template),
-            tag,
-        }) => {
-            let source = HIRSymbol::new(
-                symbol.visibility,
-                HIRSymbolKind::Type(HIRTypeSymbol {
-                    definition: definition.clone(),
-                    template: None,
-                    tag: *tag,
+        HIRSymbolKind::Function(data) => {
+            let prototype_namespace = function_lexical_namespace(symbol_namespace, &data.kind);
+
+            match data {
+                HIRSymbolData::Standard(prototype) => {
+                    complete_prototype(env, &prototype_namespace, prototype)
+                        .map(MIRSymbol::FunctionReference)
+                }
+                HIRSymbolData::Template {
+                    base,
+                    template,
+                    template_prototype,
+                } => Ok(MIRSymbol::Template {
+                    template_prototype: template_prototype.clone(),
+                    name: name.clone(),
+                    source: Box::new(HIRSymbol::new(
+                        symbol.visibility,
+                        HIRSymbolKind::Function(HIRSymbolData::Standard(base.clone())),
+                    )),
+                    namespace: prototype_namespace.clone(),
                 }),
-            );
-
-            Ok(MIRSymbol::Template {
-                template_prototype: template.clone(),
-                name: name.clone(),
-                source: Box::new(source),
-                namespace: symbol_namespace.clone(),
-            })
+            }
         }
+
+        HIRSymbolKind::ComptimeFunction(data) => {
+            let prototype_namespace =
+                function_lexical_namespace(symbol_namespace, &definition.kind);
+
+            match data {
+                HIRSymbolData::Standard(standard) => {
+                    complete_comptime_prototype(env, &prototype_namespace, standard).map(
+                        |prototype| MIRSymbol::ComptimeFunctionReference {
+                            prototype,
+                            namespace: prototype_namespace.clone(),
+                            template_bindings: Vec::new(),
+                        },
+                    )
+                }
+                HIRSymbolData::Template {
+                    base,
+                    template,
+                    template_prototype,
+                } => Ok(MIRSymbol::Template {
+                    template_prototype: template_prototype.clone(),
+                    name: name.clone(),
+                    source: Box::new(HIRSymbol::new(
+                        symbol.visibility,
+                        HIRSymbolKind::ComptimeFunction(HIRSymbolData::Standard(base.clone())),
+                    )),
+                    namespace: prototype_namespace.clone(),
+                }),
+            }
+        }
+
+        HIRSymbolKind::TypeConstructor(data) => match data {
+            HIRSymbolData::Standard(standard) => resolve_type_constructor(
+                env,
+                symbol_namespace,
+                name,
+                &standard.union_type,
+                standard.variant_index,
+            ),
+
+            HIRSymbolData::Template {
+                base,
+                template,
+                template_prototype,
+            } => {
+                let source = HIRSymbol::new(
+                    symbol.visibility,
+                    HIRSymbolKind::TypeConstructor(HIRSymbolData::Standard(base.clone()))
+                );
+
+                Ok(MIRSymbol::Template {
+                    template_prototype: template_prototype.clone(),
+                    name: name.clone(),
+                    source: Box::new(source),
+                    namespace: symbol_namespace.clone(),
+                })
+            }
+        },
+
+        HIRSymbolKind::EnumIdent {
+            enum_block_idx,
+            variant_index,
+        } => resolve_enum_block(env, symbol_namespace, *enum_block_idx).map(|b| {
+            b.variant_expr(*variant_index)
+                .expect("Expected enum variant to be in the global registry")
+                .clone()
+        }),
 
         HIRSymbolKind::AddressableGlobal {
             name,
@@ -189,117 +279,6 @@ fn resolve_symbol_inner(
             };
 
             Ok(MIRSymbol::Expression(expression))
-        }
-
-        HIRSymbolKind::Function(prototype) => {
-            let prototype_namespace = function_lexical_namespace(symbol_namespace, &prototype.kind);
-            let prototype = complete_prototype(env, &prototype_namespace, prototype)?;
-
-            env.items.push_generated_function(THIRFunction {
-                prototype: prototype.clone(),
-                body: None,
-            });
-
-            Ok(MIRSymbol::FunctionReference(prototype))
-        }
-
-        HIRSymbolKind::ComptimeFunction { definition, .. } => {
-            let prototype_namespace =
-                function_lexical_namespace(symbol_namespace, &definition.kind);
-            let prototype = complete_comptime_prototype(env, &prototype_namespace, definition)?;
-
-            let symbol = MIRSymbol::ComptimeFunctionReference {
-                prototype: prototype.clone(),
-                namespace: prototype_namespace.clone(),
-                template_bindings: Vec::new(),
-            };
-
-            // Comptime functions are emitted lazily, on first reference.
-            if let Some(lookup_identifier) = prototype.lookup_identifier().cloned() {
-                env.items.push_request(THIRFunctionGenRequest::Comptime {
-                    lookup_identifier,
-                    prototype,
-                    input: None,
-                });
-            }
-
-            Ok(symbol)
-        }
-
-        HIRSymbolKind::TypeConstructor {
-            template: Some(template),
-            union_type,
-            variant_index,
-        } => {
-            let source = HIRSymbol::new(
-                symbol.visibility,
-                HIRSymbolKind::TypeConstructor {
-                    template: None,
-                    union_type: union_type.clone(),
-                    variant_index: *variant_index,
-                },
-            );
-
-            Ok(MIRSymbol::Template {
-                template_prototype: template.clone(),
-                name: name.clone(),
-                source: Box::new(source),
-                namespace: symbol_namespace.clone(),
-            })
-        }
-
-        HIRSymbolKind::TypeConstructor {
-            template: None,
-            union_type,
-            variant_index,
-        } => resolve_type_constructor(env, symbol_namespace, name, union_type, *variant_index),
-
-        HIRSymbolKind::EnumIdent {
-            enum_block_idx,
-            variant_index,
-        } => resolve_enum_block(env, symbol_namespace, *enum_block_idx).map(|b| {
-            b.variant_expr(*variant_index)
-                .expect("Expected enum variant to be in the global registry")
-                .clone()
-        }),
-
-        HIRSymbolKind::FunctionTemplate {
-            template: input,
-            definition,
-            ..
-        } => {
-            let source = HIRSymbol::new(
-                symbol.visibility,
-                HIRSymbolKind::Function(definition.clone()),
-            );
-
-            Ok(MIRSymbol::Template {
-                template_prototype: input.clone(),
-                name: name.clone(),
-                source: Box::new(source),
-                namespace: symbol_namespace.clone(),
-            })
-        }
-
-        HIRSymbolKind::ComptimeFunctionTemplate {
-            template: input,
-            definition,
-            body,
-        } => {
-            let source = HIRSymbol::new(
-                symbol.visibility,
-                HIRSymbolKind::ComptimeFunction {
-                    definition: definition.clone(),
-                    body: body.clone(),
-                },
-            );
-
-            Ok(MIRSymbol::Template {
-                template_prototype: input.clone(),
-                name: name.clone(),
-                source: Box::new(source),
-                namespace: symbol_namespace.clone(),
-            })
         }
     }
 }

@@ -1,6 +1,5 @@
 use std::collections::{hash_map::Entry, HashMap};
 
-use cx_log::CXRawResult;
 use cx_preparse_data::NamespaceAliases;
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::NamespacePath;
@@ -61,6 +60,13 @@ impl<
                 template_prototype: proto,
             },
             None => Self::Standard(base),
+        }
+    }
+
+    pub fn base(&self) -> &Base {
+        match self {
+            Self::Standard(base) => base,
+            Self::Template { base, .. } => base,
         }
     }
 }
@@ -136,32 +142,6 @@ impl SymbolNamespaceData {
                 }
             },
         };
-
-        Ok(())
-    }
-
-    pub fn merge_from(&mut self, other: SymbolNamespaceData) {
-        let enum_offset = self.enum_blocks.len();
-        self.enum_blocks.extend(other.enum_blocks);
-        for (alias, targets) in other.namespace_aliases {
-            for target in targets {
-                self.insert_namespace_alias(alias.clone(), target);
-            }
-        }
-        self.symbols.extend(
-            other
-                .symbols
-                .into_iter()
-                .map(|(identifier, mut resolution)| {
-                    for symbol in &mut resolution.declarations {
-                        if let HIRSymbolKind::EnumIdent { enum_block_idx, .. } = &mut symbol.kind {
-                            *enum_block_idx += enum_offset;
-                        }
-                    }
-
-                    (identifier, resolution)
-                }),
-        );
     }
 
     pub fn insert_enum_block(&mut self, block: HIREnumDefinition) -> EnumBlockIdx {
