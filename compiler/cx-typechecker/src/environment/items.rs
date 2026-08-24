@@ -17,9 +17,9 @@ pub enum THIRFunctionGenRequest {
         input: THIRTemplateInput,
     },
     Comptime {
-        lookup_identifier: QualifiedName,
+        name: QualifiedName,
         prototype: THIRComptimeFnPrototype,
-        input: Option<THIRTemplateInput>,
+        input: THIRTemplateInput,
     },
     TypeConstructor {
         symbol_name: String,

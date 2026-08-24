@@ -4,11 +4,12 @@ use cx_hir::{
         global_var::HIRGlobalVariable,
         template::{HIRTemplateInput, HIRTemplatePrototype},
     },
-    symbols::{HIRSymbol, HIRSymbolKind, HIRTypeSymbol, SymbolIdentifier, SymbolNamespaceData},
+    symbols::{
+        HIRFunctionSymbol, HIRSymbol, HIRSymbolData, HIRSymbolKind, HIRTypeConstructorSymbol, SymbolIdentifier, SymbolNamespaceData, TypeConstructorData
+    },
 };
 
-use cx_hir::ast::types::{HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup};
-use cx_log::CXResult;
+use cx_hir::ast::types::{HIRType, HIRTypeKind, HIRTypeLookup};
 use cx_preparse_data::NamespaceAliases;
 use cx_util::namespace::{NamespacePath, QualifiedName};
 
@@ -67,7 +68,7 @@ impl<'a> ExtractionEnv<'a> {
         &mut self.symbol_buckets.last_mut().unwrap().1
     }
 
-    pub fn decompose_stmt(&mut self, definition: &HIRDefinition) -> CXResult<()> {
+    pub fn extract_stmt(&mut self, definition: &HIRDefinition) {
         extract_from_stmt(self, definition)
     }
 }
@@ -77,75 +78,12 @@ fn insert_symbol(
     namespace: &NamespacePath,
     identifier: SymbolIdentifier,
     symbol: HIRSymbol,
-) -> CXResult<()> {
+) {
     env.get_bucket_mut(namespace)
         .insert_symbol(identifier, symbol);
-    Ok(())
 }
 
-fn coalesce_type_declaration(
-    name: &str,
-    existing: &HIRSymbolKind,
-    incoming: &HIRSymbolKind,
-) -> Option<HIRSymbolKind> {
-    let (
-        existing_type,
-        existing_tag,
-        existing_template,
-        incoming_type,
-        incoming_tag,
-        incoming_template,
-    ) = match (existing, incoming) {
-        (
-            HIRSymbolKind::Type(HIRTypeSymbol {
-                definition: existing_type,
-                tag: Some(existing_tag),
-                template: existing_template,
-            }),
-            HIRSymbolKind::Type(HIRTypeSymbol {
-                definition: incoming_type,
-                tag: Some(incoming_tag),
-                template: incoming_template,
-            }),
-        ) => (
-            existing_type,
-            existing_tag,
-            existing_template.as_ref(),
-            incoming_type,
-            incoming_tag,
-            incoming_template.as_ref(),
-        ),
-        _ => return None,
-    };
-
-    if existing_tag != incoming_tag || existing_template != incoming_template {
-        return None;
-    }
-
-    let existing_is_forward = is_forward_type_declaration(name, existing_type, *existing_tag);
-    let incoming_is_forward = is_forward_type_declaration(name, incoming_type, *incoming_tag);
-
-    match (existing_is_forward, incoming_is_forward) {
-        (true, false) => Some(incoming.clone()),
-        (false, true) | (true, true) => Some(existing.clone()),
-        (false, false) => None,
-    }
-}
-
-fn is_forward_type_declaration(name: &str, ty: &HIRType, tag: HIRTagKind) -> bool {
-    matches!(
-        &ty.kind,
-        HIRTypeKind::Identifier {
-            name: definition_name,
-            lookup: HIRTypeLookup::Tag(definition_tag),
-            template_input: None,
-        } if *definition_tag == tag
-            && definition_name.namespace.is_root()
-            && definition_name.name.as_str() == name
-    )
-}
-
-fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) -> CXResult<()> {
+fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
     let stmt_namespace = definition.namespace.clone();
 
     let base_namespace = if stmt_namespace.is_root() {
@@ -163,22 +101,24 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) -> CXR
             tag,
         } => {
             let Some(name) = name else {
-                return Ok(());
+                return;
             };
 
-            let symbol_kind = HIRSymbolKind::Type(HIRTypeSymbol {
-                definition: _type.clone(),
-                template: template_prototype.clone(),
-                tag: *tag,
-            });
+            let symbol_kind = HIRSymbolKind::Type(HIRSymbolData::new(
+                _type.clone(),
+                (),
+                template_prototype.clone(),
+            ));
             let symbol = HIRSymbol::new(*visibility, symbol_kind);
-            let identifier = if tag.is_some() {
-                SymbolIdentifier::tag(name.to_string())
-            } else {
-                SymbolIdentifier::standard(name.to_string())
+            let identifier = match tag {
+                Some(kind) => SymbolIdentifier::Tag {
+                    kind: *kind,
+                    name: name.to_string(),
+                },
+                None => SymbolIdentifier::Standard(name.to_string()),
             };
 
-            insert_symbol(env, base_namespace, identifier, symbol)?;
+            insert_symbol(env, base_namespace, identifier, symbol);
 
             if let HIRTypeKind::TaggedUnion { variants, .. } = &_type.kind {
                 let union_name = QualifiedName::new(base_namespace.clone(), name.clone());
@@ -199,22 +139,22 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) -> CXR
 
                     let symbol = HIRSymbol::new(
                         *visibility,
-                        HIRSymbolKind::TypeConstructor(
-                            match template_prototype.clone() {
-                                Some(prototype) => HIRSymbolData::Template {
-                                    base: TypeConstructorData {
-                                        union_type: union_type.clone(),
-                                        variant_index,
-                                    },
-                                    template: convert_template_proto_to_args(prototype),
-                                    template_prototype: prototype,
-                                },
-                                None => HIRSymbolData::Standard(TypeConstructorData {
+                        HIRSymbolKind::TypeConstructor(match template_prototype.clone() {
+                            Some(prototype) => HIRTypeConstructorSymbol::Template {
+                                base: TypeConstructorData {
                                     union_type: union_type.clone(),
                                     variant_index,
-                                })
-                            }
-                        )
+                                },
+                                template_data: (),
+                                template_prototype: prototype,
+                            },
+                            None => HIRTypeConstructorSymbol::Standard {
+                                base: TypeConstructorData {
+                                    union_type: union_type.clone(),
+                                    variant_index,
+                                }
+                            },
+                        }),
                     );
 
                     insert_symbol(
@@ -222,7 +162,7 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) -> CXR
                         &variant_namespace,
                         SymbolIdentifier::Standard(variant_name.clone()),
                         symbol,
-                    )?;
+                    );
                 }
             }
         }
@@ -241,30 +181,32 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) -> CXR
             let symbol = match template_prototype {
                 Some(input) => {
                     let Some(body) = body else {
-                        return Ok(());
+                        return;
                     };
 
                     HIRSymbol::new(
                         *visibility,
-                        HIRSymbolKind::FunctionTemplate {
-                            template: input.clone(),
-                            definition: prototype.clone(),
-                            body: body.clone(),
-                        },
+                        HIRSymbolKind::Function(HIRFunctionSymbol::Template {
+                            base: prototype.clone(),
+                            template_data: body.clone(),
+                            template_prototype: input.clone(),
+                        })
                     )
                 }
                 None => HIRSymbol::new(
                     *visibility,
-                    HIRSymbolKind::Function(prototype.clone()),
-                ),
+                    HIRSymbolKind::Function(HIRFunctionSymbol::Standard {
+                        base: prototype.clone()
+                    })
+                )
             };
 
             insert_symbol(
                 env,
                 &namespace,
-                SymbolIdentifier::standard(name.to_string()),
+                SymbolIdentifier::Standard(name.to_string()),
                 symbol,
-            )?;
+            );
         }
 
         HIRStmt::ComptimeFunctionDefinition {
@@ -281,27 +223,28 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) -> CXR
             let symbol = match template_prototype {
                 Some(input) => HIRSymbol::new(
                     *visibility,
-                    HIRSymbolKind::ComptimeFunctionTemplate {
-                        template: input.clone(),
-                        definition: prototype.clone(),
-                        body: body.clone(),
-                    },
+                    HIRSymbolKind::ComptimeFunction(HIRSymbolData::new(
+                        prototype.clone(),
+                        body.clone(),
+                        Some(input.clone()),
+                    )),
                 ),
                 None => HIRSymbol::new(
                     *visibility,
-                    HIRSymbolKind::ComptimeFunction {
-                        definition: prototype.clone(),
-                        body: body.clone(),
-                    },
+                    HIRSymbolKind::ComptimeFunction(HIRSymbolData::new(
+                        prototype.clone(),
+                        body.clone(),
+                        None,
+                    )),
                 ),
             };
 
             insert_symbol(
                 env,
                 &namespace,
-                SymbolIdentifier::standard(name.to_string()),
+                SymbolIdentifier::Standard(name.to_string()),
                 symbol,
-            )?;
+            );
         }
 
         HIRStmt::GlobalVariableDefinition {
@@ -324,9 +267,9 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) -> CXR
                     insert_symbol(
                         env,
                         base_namespace,
-                        SymbolIdentifier::standard(variant.name.as_string()),
+                        SymbolIdentifier::Standard(variant.name.as_string()),
                         symbol,
-                    )?;
+                    );
                 }
             }
 
@@ -348,14 +291,12 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) -> CXR
                 insert_symbol(
                     env,
                     base_namespace,
-                    SymbolIdentifier::standard(name.to_string()),
+                    SymbolIdentifier::Standard(name.to_string()),
                     symbol,
-                )?;
+                );
             }
         },
     };
-
-    Ok(())
 }
 
 fn convert_template_proto_to_args(prototype: HIRTemplatePrototype) -> HIRTemplateInput {

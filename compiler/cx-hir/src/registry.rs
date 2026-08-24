@@ -7,7 +7,7 @@ use cx_util::namespace::{NamespacePath, QualifiedName};
 
 use crate::{
     ast::modifiers::HIRSymbolNameScheme,
-    symbols::{HIRSymbol, HIRSymbolKind, SymbolIdentifier, SymbolNamespaceData, SymbolResolution},
+    symbols::{HIRSymbol, HIRSymbolKind, SymbolNamespaceData, SymbolResolution},
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -41,12 +41,8 @@ impl GlobalSymbolRegistry {
             .write()
             .expect("GlobalSymbolRegistry write lock poisoned");
 
-        if let Some(existing) = inner.namespaces.get(&namespace) {
-            unreachable!(
-                "Namespace {} already exists in global symbol registry with data: {:?}",
-                namespace,
-                existing
-            );
+        if inner.namespaces.contains_key(&namespace) {
+            return Some((namespace, data));
         }
 
         inner.namespaces.insert(namespace, data);
@@ -99,29 +95,25 @@ impl GlobalSymbolRegistry {
     }
 
     pub fn resolve(&self, name: &QualifiedName) -> Option<SymbolResolution> {
-        self.resolve_identifier(name, SymbolIdentifier::Standard(name.name.as_string()))
-    }
-
-    pub fn resolve_tag(&self, name: &QualifiedName) -> Option<SymbolResolution> {
-        self.resolve_identifier(name, SymbolIdentifier::tag(name.name.as_string()))
-    }
-
-    fn resolve_identifier(
-        &self,
-        name: &QualifiedName,
-        identifier: SymbolIdentifier,
-    ) -> Option<SymbolResolution> {
         let inner = self
             .inner
             .read()
             .expect("GlobalSymbolRegistry read lock poisoned");
-
-        // TODO: Try to avoid cloning here
         inner
             .namespaces
             .get(&name.namespace)?
-            .get_symbol(&identifier)
-            .cloned()
+            .get_standard_symbol(name.name.as_str())
+    }
+
+    pub fn resolve_tag(&self, name: &QualifiedName) -> Option<SymbolResolution> {
+        let inner = self
+            .inner
+            .read()
+            .expect("GlobalSymbolRegistry read lock poisoned");
+        inner
+            .namespaces
+            .get(&name.namespace)?
+            .get_tag_symbol(name.name.as_str())
     }
 
     pub fn resolve_unmangled_global(&self, name: &str) -> Vec<(NamespacePath, HIRSymbol)> {
@@ -134,9 +126,9 @@ impl GlobalSymbolRegistry {
             .namespaces
             .iter()
             .flat_map(|(namespace, data)| {
-                data.get_symbol(&SymbolIdentifier::standard(name))
+                data.get_standard_symbol(name)
                     .into_iter()
-                    .flat_map(|resolution| resolution.declarations())
+                    .flat_map(SymbolResolution::into_declarations)
                     .filter_map(|symbol| {
                         matches!(
                             &symbol.kind,

@@ -1,4 +1,7 @@
-use cx_hir::{ast::function::HIRFunctionContract, symbols::HIRSymbolKind};
+use cx_hir::{
+    ast::function::HIRFunctionContract,
+    symbols::{HIRSymbolData, HIRSymbolKind},
+};
 use cx_log::CXResult;
 use cx_thir::type_context::THIRTypeContext;
 use cx_thir::{
@@ -49,10 +52,10 @@ pub fn fulfill_requests(env: &mut TypeEnvironment) -> CXResult<()> {
             } => realize_fn_template(env, &name, prototype, &input)?,
 
             THIRFunctionGenRequest::Comptime {
-                lookup_identifier,
+                name,
                 prototype,
-                input,
-            } => realize_comptime_function(env, &lookup_identifier, prototype, input.as_ref())?,
+                ref input,
+            } => realize_comptime_fn_template(env, &name, prototype, &input)?,
         }
     }
 
@@ -155,9 +158,19 @@ fn realize_fn_template(
     let stmt = resolution
         .declarations()
         .iter()
-        .find(|symbol| matches!(symbol.kind, HIRSymbolKind::FunctionTemplate { .. }))
+        .find(|symbol| {
+            matches!(
+                symbol.kind,
+                HIRSymbolKind::Function(HIRSymbolData::Template { .. })
+            )
+        })
         .expect("Expected function template declaration in the symbol registry");
-    let HIRSymbolKind::FunctionTemplate { template, body, .. } = &stmt.kind else {
+    let HIRSymbolKind::Function(HIRSymbolData::Template {
+        template_data: body,
+        template_prototype: template,
+        ..
+    }) = &stmt.kind
+    else {
         unreachable!("Expected template to be a function template");
     };
 
@@ -182,27 +195,25 @@ fn realize_fn_template(
     result
 }
 
-fn realize_comptime_function(
+fn realize_comptime_fn_template(
     env: &mut TypeEnvironment,
     lookup_identifier: &QualifiedName,
     mut prototype: THIRComptimeFnPrototype,
-    input: Option<&THIRTemplateInput>,
+    input: &THIRTemplateInput,
 ) -> CXResult<()> {
-    let instance_name = match input {
-        Some(input) => base_mangle_templated_name(
-            &env.symbols,
-            prototype.symbol_name(),
-            input
-                .args
-                .iter()
-                .map(|arg| env.symbols.resolve_type_id(*arg)),
-        ),
-        None => prototype.symbol_name().to_owned(),
-    };
+    let instance_name = base_mangle_templated_name(
+        &env.symbols,
+        prototype.symbol_name(),
+        input
+            .args
+            .iter()
+            .map(|arg| env.symbols.resolve_type_id(*arg)),
+    );
 
     if env.items.request_fulfilled(&instance_name) {
         return Ok(());
     }
+    
     env.items.mark_request_fulfilled(instance_name.clone());
 
     let resolution = env
@@ -219,45 +230,25 @@ fn realize_comptime_function(
     let stmt = resolution
         .declarations()
         .iter()
-        .find(|symbol| {
-            matches!(
-                symbol.kind,
-                HIRSymbolKind::ComptimeFunction { .. }
-                    | HIRSymbolKind::ComptimeFunctionTemplate { .. }
-            )
-        })
+        .find(|symbol| matches!(symbol.kind, HIRSymbolKind::ComptimeFunction(_)))
         .expect("Expected comptime function declaration in the symbol registry");
-    let (template, body) = match &stmt.kind {
-        HIRSymbolKind::ComptimeFunction { body, .. } => (None, body),
-        HIRSymbolKind::ComptimeFunctionTemplate { template, body, .. } => {
-            // Template instances are realized from dedicated requests carrying
-            // their template input; never emit the unbound base form.
-            let _ = template;
-            if input.is_none() {
-                return Ok(());
-            }
-            (Some(template), body)
-        }
-        other => {
-            let _ = other;
-            unreachable!("Expected comptime function definition")
-        }
+
+    let HIRSymbolKind::ComptimeFunction(HIRSymbolData::Template { template_data, template_prototype, .. }) = &stmt.kind else {
+        unreachable!("Expected comptime function to be a template");
     };
 
     let namespace = EnvironmentNamespace::from(symbol_lexical_namespace(
         &lookup_identifier.namespace,
         &stmt,
     ));
+    
     env.symbols.push_local_scope();
     let result = (|| -> CXResult<()> {
-        if let (Some(template), Some(input)) = (template, input) {
-            apply_template_input(env, template, input)
-                .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
-        }
-
+        apply_template_input(env, template_prototype, input)
+            .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
+        
         prototype.map_symbol_name(|_| instance_name.clone());
-        typecheck_comptime_function(env, &namespace, prototype.clone(), body)?;
-
+        typecheck_comptime_function(env, &namespace, prototype.clone(), template_data)?;
         Ok(())
     })();
     env.symbols.pop_local_scope();

@@ -8,7 +8,7 @@ use cx_hir::ast::{
         HIRAggregateAttributes, HIRField, HIRMoveSemantics, HIRType, HIRTypeKind, HIRTypeLookup,
     },
 };
-use cx_hir::symbols::{HIRSymbolKind, HIRTypeSymbol, SymbolResolution};
+use cx_hir::symbols::{HIRSymbolData, HIRSymbolKind, SymbolResolution};
 use cx_log::{
     CXRawResult, CXResult,
     error::{CXMaybeRawErr, CXMaybeRawResult},
@@ -74,10 +74,11 @@ pub(crate) fn complete_type_symbol(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     name: &QualifiedName,
-    symbol: &HIRTypeSymbol,
+    symbol: &HIRType,
+    tag: Option<cx_hir::ast::types::HIRTagKind>,
 ) -> CXResult<THIRType> {
-    let mut completed = complete_type(env, namespace, &symbol.definition)?;
-    if let Some(tag) = symbol.tag {
+    let mut completed = complete_type(env, namespace, symbol)?;
+    if let Some(tag) = tag {
         let mangled_name = mangle_qualified_name(env.symbols.get_global_registry(), name);
         completed.strong_identifier = Some(format!("{} {mangled_name}", tag.prefix()));
         completed.lookup_identifier = Some(name.clone());
@@ -380,12 +381,6 @@ pub fn complete_comptime_prototype(
     let debug_name = lookup_identifier.name.clone();
     let symbol_name = completed_comptime_symbol_name(env, &lookup_identifier);
 
-    env.items.push_request(THIRFunctionGenRequest::Comptime {
-        lookup_identifier,
-        prototype,
-        input: None,
-    });
-
     Ok(
         THIRComptimeFnPrototype::new(symbol_name, lookup_identifier, return_type, params)
             .with_debug_name(debug_name),
@@ -450,7 +445,7 @@ fn complete_identifier_type(
             Some(lookup) => (Some(lookup), TypeSymbolQuery::Standard, false),
             None => (
                 env.lookup_tag_symbol(namespace, name)?,
-                TypeSymbolQuery::ImplicitTag,
+                TypeSymbolQuery::WildcardTag,
                 true,
             ),
         },
@@ -475,11 +470,14 @@ fn complete_identifier_type(
         SymbolLookupKind::Untyped(resolution) => resolution,
     };
 
-    let symbol = resolve_type_symbol(env, name, query, &resolution)?;
+    let resolved = resolve_type_symbol(env, name, query, &resolution)?;
+    let symbol = resolved.symbol;
+    let tag = resolved.tag;
     let HIRSymbolKind::Type(type_symbol) = &symbol.kind else {
         unreachable!("type symbol resolution returned a non-type declaration")
     };
-    let cacheable = type_symbol.template.is_none() && template_input.is_none();
+    let cacheable =
+        matches!(type_symbol, HIRSymbolData::Standard { .. }) && template_input.is_none();
     let cached = if is_tag_lookup {
         env.symbols.get_preresolved_tag(&resolved_name)
     } else {
@@ -489,8 +487,10 @@ fn complete_identifier_type(
         return Ok(*id);
     }
 
-    match &type_symbol.template {
-        None => {
+    match type_symbol {
+        HIRSymbolData::Standard {
+            base: definition, ..
+        } => {
             if template_input.is_some() {
                 return env
                     .log_error_base(format!("Type '{name}' does not accept template arguments"))
@@ -499,7 +499,7 @@ fn complete_identifier_type(
 
             let mangled_name =
                 mangle_qualified_name(env.symbols.get_global_registry(), &resolved_name);
-            let strong_name = type_symbol.tag.map_or_else(
+            let strong_name = tag.map_or_else(
                 || mangled_name.clone(),
                 |tag| format!("{} {mangled_name}", tag.prefix()),
             );
@@ -517,9 +517,7 @@ fn complete_identifier_type(
             }
             env.symbols.overwrite_type_id(prereserved_id, dummy_type);
 
-            if type_symbol.tag.is_some()
-                && is_self_predeclaration(&type_symbol.definition, &resolved_name)
-            {
+            if tag.is_some() && is_self_predeclaration(definition, &resolved_name) {
                 let dummy_type = THIRType::from(THIRTypeKind::Undefined)
                     .with_strong_identifier(CXIdent::from(strong_name));
                 env.symbols.overwrite_type_id(prereserved_id, dummy_type);
@@ -530,15 +528,19 @@ fn complete_identifier_type(
                 env,
                 &EnvironmentNamespace::from(&resolved_name.namespace),
                 &resolved_name,
-                type_symbol,
+                definition,
+                tag,
             )?;
 
             env.symbols.overwrite_type_id(prereserved_id, completed);
             Ok(prereserved_id)
         }
 
-        Some(_) => {
-            let resolution = SymbolResolution::new(symbol.clone());
+        HIRSymbolData::Template { .. } => {
+            let resolution = tag.map_or_else(
+                || SymbolResolution::new(symbol.clone()),
+                |tag| SymbolResolution::new_tagged(tag, symbol.clone()),
+            );
             let mir_symbol = resolve_symbol(
                 env,
                 namespace,

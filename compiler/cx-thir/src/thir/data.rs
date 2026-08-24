@@ -59,11 +59,9 @@ impl THIRComptimeFnPrototype {
     ) -> Self {
         Self {
             symbol_name: symbol_name.into(),
- 
             lookup_identifier,
             return_type,
             params,
-            
             debug_name: None,
             runtime_return_type: None,
         }
@@ -81,8 +79,8 @@ impl THIRComptimeFnPrototype {
         }
     }
 
-    pub fn lookup_identifier(&self) -> Option<&QualifiedName> {
-        self.lookup_identifier.as_ref()
+    pub fn lookup_identifier(&self) -> &QualifiedName {
+        &self.lookup_identifier
     }
 
     pub fn debug_name(&self) -> Option<&CXIdent> {

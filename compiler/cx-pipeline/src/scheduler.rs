@@ -397,7 +397,7 @@ pub(crate) fn perform_job(
             }
 
             let namespace = job.unit.namespace().as_namespace_path().clone();
-            let decomposition = ast_extract_symbols(&namespace, parsed_ast)?;
+            let decomposition = ast_extract_symbols(&namespace, &parsed_ast);
 
             for (namespace, bucket) in decomposition.symbol_buckets {
                 if let Some((namespace, _)) = context
@@ -421,10 +421,7 @@ pub(crate) fn perform_job(
                     .insert_namespace_friend(namespace, friend);
             }
 
-            context
-                .module_db
-                .hir
-                .insert(job.unit.clone(), decomposition.ast);
+            context.module_db.hir.insert(job.unit.clone(), parsed_ast);
         }
 
         CompilationStep::Typechecking => {

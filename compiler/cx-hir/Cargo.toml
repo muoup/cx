@@ -7,7 +7,6 @@ autotests = false
 [dependencies]
 cx-namespace = { path = "../cx-namespace" }
 cx-util = { path = "../cx-util" }
-cx-log = { path = "../cx-log" }
 cx-tokens = { path = "../cx-tokens" }
 cx-preparse-data = { path = "../cx-preparse-data" }
 

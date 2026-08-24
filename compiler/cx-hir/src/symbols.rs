@@ -34,42 +34,44 @@ pub type EnumBlockIdx = usize;
 #[derive(Debug, Clone, PartialEq)]
 pub enum HIRSymbolData<
     Base: std::fmt::Debug + Clone + PartialEq,
-    TemplateData: std::fmt::Debug + Clone + PartialEq,
+    Data: std::fmt::Debug + Clone + PartialEq,
 > {
-    Standard(Base),
+    Standard {
+        base: Base
+    },
     Template {
         base: Base,
-        template: TemplateData,
+        template_data: Data,
         template_prototype: HIRTemplatePrototype,
     },
 }
 
-impl<
-        Base: std::fmt::Debug + Clone + PartialEq,
-        TemplateData: std::fmt::Debug + Clone + PartialEq,
-    > HIRSymbolData<Base, TemplateData>
+impl<Base: std::fmt::Debug + Clone + PartialEq, Data: std::fmt::Debug + Clone + PartialEq>
+    HIRSymbolData<Base, Data>
 {
-    pub fn new_default(base: Base, template_proto: Option<HIRTemplatePrototype>) -> Self
-    where
-        TemplateData: Default,
-    {
+    pub fn new(base: Base, data: Data, template_proto: Option<HIRTemplatePrototype>) -> Self {
         match template_proto {
             Some(proto) => Self::Template {
                 base,
-                template: TemplateData::default(),
+                template_data: data,
                 template_prototype: proto,
             },
-            None => Self::Standard(base),
+            None => Self::Standard { base },
         }
     }
 
     pub fn base(&self) -> &Base {
         match self {
-            Self::Standard(base) => base,
+            Self::Standard { base, .. } => base,
             Self::Template { base, .. } => base,
         }
     }
 }
+
+pub type HIRTypeSymbol = HIRSymbolData<HIRType, ()>;
+pub type HIRTypeConstructorSymbol = HIRSymbolData<TypeConstructorData, ()>;
+pub type HIRFunctionSymbol = HIRSymbolData<HIRFunctionPrototype, Box<HIRExpression>>;
+pub type HIRComptimeFunctionSymbol = HIRSymbolData<HIRComptimeFnPrototype, Box<HIRExpression>>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeConstructorData {
@@ -79,10 +81,10 @@ pub struct TypeConstructorData {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum HIRSymbolKind {
-    Type(HIRSymbolData<HIRType, ()>),
-    Function(HIRSymbolData<HIRFunctionPrototype, Box<HIRExpression>>),
-    TypeConstructor(HIRSymbolData<TypeConstructorData, ()>),
-    ComptimeFunction(HIRSymbolData<HIRComptimeFnPrototype, Box<HIRExpression>>),
+    Type(HIRTypeSymbol),
+    Function(HIRFunctionSymbol),
+    TypeConstructor(HIRTypeConstructorSymbol),
+    ComptimeFunction(HIRComptimeFunctionSymbol),
     AddressableGlobal {
         name: CXIdent,
         _type: HIRType,
@@ -98,6 +100,62 @@ pub enum HIRSymbolKind {
 pub enum SymbolIdentifier {
     Standard(String),
     Tag { kind: HIRTagKind, name: String },
+}
+
+#[derive(Debug, Clone)]
+pub struct SymbolResolution {
+    declarations: Vec<HIRSymbol>,
+    tag_kinds: Option<Vec<HIRTagKind>>,
+}
+
+impl SymbolResolution {
+    pub fn new(symbol: HIRSymbol) -> Self {
+        Self {
+            declarations: vec![symbol],
+            tag_kinds: None,
+        }
+    }
+
+    pub fn new_tagged(tag: HIRTagKind, symbol: HIRSymbol) -> Self {
+        Self {
+            declarations: vec![symbol],
+            tag_kinds: Some(vec![tag]),
+        }
+    }
+
+    pub fn standard(declarations: Vec<HIRSymbol>) -> Self {
+        Self {
+            declarations,
+            tag_kinds: None,
+        }
+    }
+
+    pub fn tagged(declarations: Vec<(HIRTagKind, HIRSymbol)>) -> Self {
+        let (tag_kinds, declarations) = declarations.into_iter().unzip();
+        Self {
+            declarations,
+            tag_kinds: Some(tag_kinds),
+        }
+    }
+
+    pub fn declarations(&self) -> &[HIRSymbol] {
+        &self.declarations
+    }
+
+    pub fn into_declarations(self) -> Vec<HIRSymbol> {
+        self.declarations
+    }
+
+    pub fn tag_kinds(&self) -> Option<&[HIRTagKind]> {
+        self.tag_kinds.as_deref()
+    }
+
+    pub fn filter(&self, mut predicate: impl FnMut(&HIRSymbol) -> bool) -> Option<Self> {
+        self.declarations
+            .iter()
+            .any(&mut predicate)
+            .then(|| self.clone())
+    }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -149,8 +207,18 @@ impl SymbolNamespaceData {
         self.enum_blocks.len() - 1
     }
 
-    pub fn get_symbol(&self, identifier: &SymbolIdentifier) -> Option<&SymbolResolution> {
-        self.symbols.get(identifier)
+    pub fn get_standard_symbol(&self, name: &str) -> Option<SymbolResolution> {
+        self.symbols
+            .get(name)
+            .cloned()
+            .map(SymbolResolution::standard)
+    }
+
+    pub fn get_tag_symbol(&self, name: &str) -> Option<SymbolResolution> {
+        self.tagged_symbols
+            .get(name)
+            .cloned()
+            .map(SymbolResolution::tagged)
     }
 
     pub fn insert_namespace_alias(&mut self, alias: NamespacePath, target: NamespacePath) {

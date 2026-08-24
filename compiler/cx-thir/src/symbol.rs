@@ -1,5 +1,5 @@
 use cx_hir::{
-    ast::{expression::HIRExpression, template::HIRTemplatePrototype},
+    ast::{expression::HIRExpression, template::HIRTemplatePrototype, types::HIRTagKind},
     symbols::HIRSymbol,
 };
 use cx_log::error::{CXRawResult, message::CXStdErrMessage};
@@ -44,6 +44,7 @@ pub enum MIRSymbol {
         name: CXIdent,
         namespace: EnvironmentNamespace,
         source: Box<HIRSymbol>,
+        tag: Option<HIRTagKind>,
     },
 }
 

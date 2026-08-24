@@ -16,6 +16,7 @@ use cx_thir::thir::data::{
     THIRTemplateInput, THIRType, THIRTypeKind,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind, THIRFnContract, THIRLocalID};
+use cx_thir::thir::r#type::THIRTypeID;
 use cx_thir::type_context::THIRTypeContext;
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
@@ -483,23 +484,26 @@ fn complete_callee(
 fn prepare_comptime_callee(
     env: &mut TypeEnvironment,
     prototype: &THIRComptimeFnPrototype,
-    template_bindings: &[(CXIdent, cx_thir::thir::r#type::THIRTypeID)],
+    template_bindings: &[(CXIdent, THIRTypeID)],
 ) -> CompletedCallee {
     let symbol_name = comptime_instance_name(env, prototype, template_bindings);
+
     let runtime_return_type = env.comptime_runtime_return_type().cloned().or_else(|| {
         env.try_current_function()
             .map(|function| function.signature().return_type.clone())
     });
+
     let prototype = prototype
         .clone()
         .with_runtime_return_type(runtime_return_type);
 
-    if let Some(lookup_identifier) = prototype.lookup_identifier().cloned() {
-        let input = (!template_bindings.is_empty()).then(|| THIRTemplateInput {
+    if !template_bindings.is_empty() {
+        let input = THIRTemplateInput {
             args: template_bindings.iter().map(|(_, ty)| *ty).collect(),
-        });
+        };
+
         env.items.push_request(THIRFunctionGenRequest::Comptime {
-            lookup_identifier,
+            name: prototype.lookup_identifier().clone(),
             prototype: prototype.clone(),
             input,
         });

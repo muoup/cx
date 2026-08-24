@@ -1,14 +1,14 @@
 use cx_hir::ast::HIR;
 use cx_hir::symbols::SymbolNamespaceData;
 use cx_log::CXResult;
-use cx_preparse_data::{registry::GlobalPreparseRegistry, PreparseContents};
+use cx_preparse_data::{PreparseContents, registry::GlobalPreparseRegistry};
 use cx_tokens::TokenIter;
 use cx_util::namespace::NamespacePath;
 
 use crate::{
     extraction::ExtractionEnv,
     parse::{parse_global_stmt, parser::ParserData},
-    preparse::{iterate_tokens, PreparseConfig, PreparseData},
+    preparse::{PreparseConfig, PreparseData, iterate_tokens},
 };
 
 pub(crate) mod extraction;
@@ -17,7 +17,7 @@ pub(crate) mod macros;
 
 pub struct HIRSymbolExtraction {
     pub symbol_buckets: Vec<(NamespacePath, SymbolNamespaceData)>,
-    pub namespace_friends: Vec<(NamespacePath, NamespacePath)>
+    pub namespace_friends: Vec<(NamespacePath, NamespacePath)>,
 }
 
 pub mod parse;
@@ -60,17 +60,17 @@ pub fn parse_ast(
     Ok(data.take_ast())
 }
 
-pub fn ast_extract_symbols<'a>(namespace: &'a NamespacePath, ast: HIR) -> CXResult<HIRSymbolExtraction> {
+pub fn ast_extract_symbols(namespace: &NamespacePath, ast: &HIR) -> HIRSymbolExtraction {
     let namespace_aliases = ast.namespace_aliases.clone();
     let mut env = ExtractionEnv::new(namespace, namespace_aliases);
 
     for definition in &ast.definition_stmts {
-        env.decompose_stmt(definition)?;
+        env.extract_stmt(definition);
     }
 
     let (symbol_buckets, namespace_friends) = env.destructure();
-    Ok(HIRSymbolExtraction {
+    HIRSymbolExtraction {
         symbol_buckets,
         namespace_friends,
-    })
+    }
 }

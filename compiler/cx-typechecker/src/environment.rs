@@ -40,7 +40,7 @@ pub struct TypeEnvironment<'a> {
     pub symbols: MIRSymbolRegistry<'a>,
     pub items: ItemRegistry,
     pub function: FunctionContext,
-    
+
     comptime_emit_bases: Vec<usize>,
     comptime_runtime_return_types: Vec<Option<THIRType>>,
 
@@ -232,25 +232,13 @@ impl TypeEnvironment<'_> {
         namespace: &EnvironmentNamespace,
         name: &QualifiedName,
     ) -> CXRawResult<Option<SymbolLookup>> {
-        let qualified_lookup = self.qualified_lookup(namespace, name);
-
-        match qualified_lookup {
-            QualifiedLookupResult::Found { value, .. } => CXRawResult::Ok(Some(value)),
-
-            QualifiedLookupResult::NotFound => CXRawResult::Ok(None),
-            QualifiedLookupResult::Ambiguous { candidates } => {
-                let message = format!(
-                    "Ambiguous Symbol Reference, candidates: {}",
-                    candidates
-                        .iter()
-                        .map(|c| c.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-
-                CXStdErrMessage::result("TYPE ERROR", message)
+        finish_qualified_lookup(
+            QualifiedSymbolLookup {
+                env: self,
+                table: SymbolTable::Standard,
             }
-        }
+            .qualified_lookup(namespace, name),
+        )
     }
 
     pub fn lookup_tag_symbol(
@@ -258,21 +246,13 @@ impl TypeEnvironment<'_> {
         namespace: &EnvironmentNamespace,
         name: &QualifiedName,
     ) -> CXRawResult<Option<SymbolLookup>> {
-        match TagQualifiedLookup(self).qualified_lookup(namespace, name) {
-            QualifiedLookupResult::Found { value, .. } => CXRawResult::Ok(Some(value)),
-            QualifiedLookupResult::NotFound => CXRawResult::Ok(None),
-            QualifiedLookupResult::Ambiguous { candidates } => CXStdErrMessage::result(
-                "TYPE ERROR",
-                format!(
-                    "Ambiguous Symbol Reference, candidates: {}",
-                    candidates
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ),
-            ),
-        }
+        finish_qualified_lookup(
+            QualifiedSymbolLookup {
+                env: self,
+                table: SymbolTable::Tag,
+            }
+            .qualified_lookup(namespace, name),
+        )
     }
 
     fn symbol_visible_from(
@@ -373,7 +353,18 @@ impl TypeEnvironment<'_> {
     }
 }
 
-impl QualifiedLookup for TypeEnvironment<'_> {
+#[derive(Clone, Copy)]
+enum SymbolTable {
+    Standard,
+    Tag,
+}
+
+struct QualifiedSymbolLookup<'a, 'b> {
+    env: &'a TypeEnvironment<'b>,
+    table: SymbolTable,
+}
+
+impl QualifiedLookup for QualifiedSymbolLookup<'_, '_> {
     type Output = SymbolLookup;
 
     fn lookup_local(
@@ -381,8 +372,13 @@ impl QualifiedLookup for TypeEnvironment<'_> {
         _lexical_namespace: &NamespacePath,
         name: &QualifiedName,
     ) -> Option<Self::Output> {
-        self.symbols
-            .get_local_symbol_avoiding_staged_expansions(name, &self.staged_expansions)
+        if matches!(self.table, SymbolTable::Tag) {
+            return None;
+        }
+
+        self.env
+            .symbols
+            .get_local_symbol_avoiding_staged_expansions(name, &self.env.staged_expansions)
             .map(|sym| SymbolLookup {
                 resolved_name: name.clone(),
                 kind: SymbolLookupKind::Resolved(sym.clone()),
@@ -394,32 +390,34 @@ impl QualifiedLookup for TypeEnvironment<'_> {
         lexical_namespace: &NamespacePath,
         name: &QualifiedName,
     ) -> Option<Self::Output> {
-        if let Some(sym) = self
-            .symbols
-            .get_global_registry()
-            .resolve(name)
-            .and_then(|resolution| {
-                resolution.filter(|symbol| {
-                    self.symbol_visible_from(
-                        &EnvironmentNamespace::from(lexical_namespace),
-                        name,
-                        symbol,
-                    )
-                })
+        let resolution = match self.table {
+            SymbolTable::Standard => self.env.symbols.get_global_registry().resolve(name),
+            SymbolTable::Tag => self.env.symbols.get_global_registry().resolve_tag(name),
+        };
+
+        if let Some(resolution) = resolution.and_then(|resolution| {
+            resolution.filter(|symbol| {
+                self.env.symbol_visible_from(
+                    &EnvironmentNamespace::from(lexical_namespace),
+                    name,
+                    symbol,
+                )
             })
-        {
+        }) {
             return Some(SymbolLookup {
                 resolved_name: name.clone(),
-                kind: SymbolLookupKind::Untyped(sym.clone()),
+                kind: SymbolLookupKind::Untyped(resolution),
             });
         }
 
-        self.symbols
-            .get_preresolved_symbol(name)
-            .map(|sym| SymbolLookup {
-                resolved_name: name.clone(),
-                kind: SymbolLookupKind::Resolved(sym.clone()),
-            })
+        let cached = match self.table {
+            SymbolTable::Standard => self.env.symbols.get_preresolved_symbol(name),
+            SymbolTable::Tag => self.env.symbols.get_preresolved_tag(name),
+        };
+        cached.map(|sym| SymbolLookup {
+            resolved_name: name.clone(),
+            kind: SymbolLookupKind::Resolved(sym.clone()),
+        })
     }
 
     fn resolve_aliases(
@@ -427,10 +425,33 @@ impl QualifiedLookup for TypeEnvironment<'_> {
         lexical_namespace: &NamespacePath,
         namespace: &NamespacePath,
     ) -> Vec<NamespacePath> {
-        self.symbols
+        self.env
+            .symbols
             .get_global_registry()
             .resolve_aliases(lexical_namespace, namespace)
-            .expect("failed to resolve namespace aliases")
+            .unwrap_or_else(|| {
+                panic!("failed to resolve namespace aliases for '{lexical_namespace}'")
+            })
+    }
+}
+
+fn finish_qualified_lookup(
+    lookup: QualifiedLookupResult<SymbolLookup>,
+) -> CXRawResult<Option<SymbolLookup>> {
+    match lookup {
+        QualifiedLookupResult::Found { value, .. } => CXRawResult::Ok(Some(value)),
+        QualifiedLookupResult::NotFound => CXRawResult::Ok(None),
+        QualifiedLookupResult::Ambiguous { candidates } => CXStdErrMessage::result(
+            "TYPE ERROR",
+            format!(
+                "Ambiguous Symbol Reference, candidates: {}",
+                candidates
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        ),
     }
 }
 
