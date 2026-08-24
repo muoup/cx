@@ -12,6 +12,7 @@ use cx_mir::{
 use cx_mir_comptime::{MIRComptimeValue, MIRStagedBinding, MIRStagedValue};
 
 use crate::builder::MIRBuilder;
+use crate::lowering::control_flow::auto_cleanup;
 
 fn staged_error(message: impl Into<String>) -> CXErr {
     CXErr::new(
@@ -30,7 +31,7 @@ pub(crate) fn instantiate(
 fn instantiate_inner(
     builder: &mut MIRBuilder<'_>,
     staged: &MIRStagedValue,
-    return_prefix: &[MIRInstr],
+    escape_prefix: &[MIRInstr],
 ) -> CXResult<MIRValue> {
     if let Some(origin) = staged.runtime_origin()
         && origin != builder.fun().id()
@@ -174,7 +175,7 @@ fn instantiate_inner(
                 &instruction.kind,
                 &mut values,
                 &mut staged_inputs,
-                return_prefix,
+                escape_prefix,
                 deferred_callee,
             )?;
             match &instruction.kind {
@@ -187,6 +188,29 @@ fn instantiate_inner(
                     builder.fun_mut().emit(
                         MIRInstrKind::Jump {
                             target: MIRBlockTarget::with_args(continuation, args),
+                        },
+                        instruction.token_range.clone(),
+                    );
+                }
+                MIRInstrKind::StagedExit { kind } => {
+                    for prefix in escape_prefix {
+                        builder
+                            .fun_mut()
+                            .emit(prefix.kind.clone(), prefix.token_range.clone());
+                    }
+                    let Some((scope, block)) = builder.fun().exit_target(*kind) else {
+                        let name = match kind {
+                            cx_mir::MIRStagedExitKind::Break => "break",
+                            cx_mir::MIRStagedExitKind::Continue => "continue",
+                        };
+                        return Err(staged_error(format!(
+                            "staged {name} has no target in the materialization context"
+                        )));
+                    };
+                    auto_cleanup(builder, scope)?;
+                    builder.fun_mut().emit(
+                        MIRInstrKind::Jump {
+                            target: MIRBlockTarget::new(block),
                         },
                         instruction.token_range.clone(),
                     );
@@ -206,9 +230,9 @@ fn instantiate_inner(
                                 .map(MIRStagedBinding::Value)
                         })
                         .collect::<CXResult<Vec<_>>>()?;
-                    let mut child_return_prefix = Vec::new();
+                    let mut child_escape_prefix = Vec::new();
                     for suffix in &block.instrs[instruction_index + 1..] {
-                        if matches!(suffix.kind, MIRInstrKind::StagedReturn { .. }) {
+                        if suffix.kind.is_terminator() {
                             break;
                         }
                         if matches!(
@@ -222,7 +246,7 @@ fn instantiate_inner(
                         if writes_omitted_value(&suffix.kind, &values, &omitted_places) {
                             continue;
                         }
-                        child_return_prefix.push(MIRInstr::new(
+                        child_escape_prefix.push(MIRInstr::new(
                             map_instruction(
                                 &suffix.kind,
                                 &values,
@@ -235,10 +259,9 @@ fn instantiate_inner(
                             suffix.token_range.clone(),
                         ));
                     }
-                    child_return_prefix.extend_from_slice(return_prefix);
+                    child_escape_prefix.extend_from_slice(escape_prefix);
                     let applied = dependency.apply(args);
-                    let value =
-                        instantiate_inner(builder, &applied, &child_return_prefix)?;
+                    let value = instantiate_inner(builder, &applied, &child_escape_prefix)?;
                     if let Some(out) = out {
                         values.insert(*out, value);
                     }
@@ -260,7 +283,7 @@ fn instantiate_inner(
                 }
                 MIRInstrKind::StagedUse { .. } => {}
                 MIRInstrKind::Return { .. } => {
-                    for prefix in return_prefix {
+                    for prefix in escape_prefix {
                         builder
                             .fun_mut()
                             .emit(prefix.kind.clone(), prefix.token_range.clone());
@@ -333,7 +356,7 @@ fn resolve_dependencies(
     instruction: &MIRInstrKind,
     values: &mut HashMap<MIRRegister, MIRValue>,
     staged_inputs: &mut HashMap<MIRRegister, std::sync::Arc<MIRStagedValue>>,
-    return_prefix: &[MIRInstr],
+    escape_prefix: &[MIRInstr],
     deferred: Option<MIRRegister>,
 ) -> CXResult<()> {
     let mut inputs = Vec::new();
@@ -358,7 +381,7 @@ fn resolve_dependencies(
                 "parameterized staged value used without an application",
             ));
         }
-        let value = instantiate_inner(builder, &staged, return_prefix)?;
+        let value = instantiate_inner(builder, &staged, escape_prefix)?;
         values.insert(input, value);
     }
     Ok(())
@@ -734,6 +757,7 @@ fn map_instruction(
         MIRInstrKind::MakeStaged { .. }
         | MIRInstrKind::ApplyStaged { .. }
         | MIRInstrKind::StagedReturn { .. }
+        | MIRInstrKind::StagedExit { .. }
         | MIRInstrKind::StagedMove { .. }
         | MIRInstrKind::StagedUse { .. } => {
             return Err(staged_error("nested staged instruction was not expanded"));

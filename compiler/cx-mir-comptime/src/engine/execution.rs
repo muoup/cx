@@ -327,6 +327,9 @@ fn run_top_frame(engine: &mut MIRComptimeEngine<'_>) -> CXResult<MIRComptimeValu
             MIRInstrKind::StagedReturn { .. } => {
                 return comptime_error(range, "staged template executed as a function");
             }
+            MIRInstrKind::StagedExit { .. } => {
+                return comptime_error(range, "staged exit executed as a function");
+            }
             MIRInstrKind::StagedMove { .. } => {
                 return comptime_error(range, "staged move executed as a function");
             }

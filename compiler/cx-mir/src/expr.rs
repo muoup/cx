@@ -189,6 +189,12 @@ pub enum MIRCallKind {
     Comptime,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MIRStagedExitKind {
+    Break,
+    Continue,
+}
+
 #[derive(Debug, Clone)]
 pub struct MIRBasicBlock {
     pub id: MIRBasicBlockID,
@@ -435,6 +441,7 @@ impl MIRInstr {
             | MIRInstrKind::Create { .. }
             | MIRInstrKind::ScopeEnter { .. }
             | MIRInstrKind::ScopeExit { .. }
+            | MIRInstrKind::StagedExit { .. }
             | MIRInstrKind::Unreachable => {}
         }
     }
@@ -568,6 +575,9 @@ pub enum MIRInstrKind {
     StagedReturn {
         value: MIRValue,
     },
+    StagedExit {
+        kind: MIRStagedExitKind,
+    },
     StagedMove {
         out: MIRRegister,
         value: MIRValue,
@@ -587,6 +597,7 @@ impl MIRInstrKind {
                 | Self::IntSwitch { .. }
                 | Self::VariantSwitch { .. }
                 | Self::StagedReturn { .. }
+                | Self::StagedExit { .. }
                 | Self::Unreachable
         )
     }

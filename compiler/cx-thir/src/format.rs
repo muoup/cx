@@ -1420,12 +1420,12 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::Break => {
+            THIRExpressionKind::Break { .. } => {
                 write!(f, "Break <type='")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, "'>")
             }
-            THIRExpressionKind::Continue => {
+            THIRExpressionKind::Continue { .. } => {
                 write!(f, "Continue <type='")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, "'>")

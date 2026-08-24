@@ -3,8 +3,8 @@ use cx_log::{
     error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_mir::{
-    MIRBlockTarget, MIRConstant, MIRInstrKind, MIRScopeID, MIRTypeKind, MIRValue,
-    ty::interface::MTRegistry,
+    MIRBlockTarget, MIRConstant, MIRInstrKind, MIRScopeID, MIRStagedExitKind, MIRTypeKind,
+    MIRValue, ty::interface::MTRegistry,
 };
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
@@ -48,6 +48,35 @@ pub fn auto_cleanup(builder: &mut MIRBuilder, to_scope: MIRScopeID) -> CXResult<
     }
 
     Ok(())
+}
+
+pub fn lower_control_exit(
+    builder: &mut MIRBuilder<'_>,
+    kind: MIRStagedExitKind,
+    staged: bool,
+) -> CXResult<MIRValue> {
+    if staged {
+        assert!(builder.is_capturing());
+        let root_scope = builder
+            .fun()
+            .scope_stack()
+            .first()
+            .expect("captured function has no root scope")
+            .id();
+        auto_cleanup(builder, root_scope)?;
+        builder.emit(MIRInstrKind::StagedExit { kind });
+        return Ok(MIRValue::Constant(MIRConstant::Unit));
+    }
+
+    let Some((scope, block)) = builder.fun().exit_target(kind) else {
+        unreachable!("control-flow expression has no target scope");
+    };
+
+    auto_cleanup(builder, scope)?;
+    builder.emit(MIRInstrKind::Jump {
+        target: MIRBlockTarget::new(block),
+    });
+    Ok(MIRValue::Constant(MIRConstant::Unit))
 }
 
 pub fn auto_pop_scope(builder: &mut MIRBuilder) -> CXResult<()> {

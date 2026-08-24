@@ -207,8 +207,12 @@ pub enum THIRExpressionKind {
     },
 
     // Control Flow
-    Break,
-    Continue,
+    Break {
+        staged: bool,
+    },
+    Continue {
+        staged: bool,
+    },
     Goto {
         name: CXIdent,
     },

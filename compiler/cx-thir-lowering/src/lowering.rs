@@ -15,8 +15,8 @@ use cx_log::{
 };
 use cx_mir::{
     MIRAggregateOp, MIRAssignTarget, MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstrKind,
-    MIRIntType, MIRParameterID, MIRPlace, MIRPlaceAggregateOp, MIRTypeKind, MIRValue,
-    MIRValueAggregateOp, ty::interface::MTRegistry,
+    MIRIntType, MIRParameterID, MIRPlace, MIRPlaceAggregateOp, MIRStagedExitKind, MIRTypeKind,
+    MIRValue, MIRValueAggregateOp, ty::interface::MTRegistry,
 };
 use cx_thir::{
     thir::{
@@ -30,7 +30,7 @@ use cx_thir::{
 
 use crate::lowering::{
     aggregates::move_value,
-    control_flow::{auto_cleanup, auto_pop_scope},
+    control_flow::{auto_cleanup, auto_pop_scope, lower_control_exit},
     types::lower_float_type,
 };
 use crate::{
@@ -755,40 +755,11 @@ pub(crate) fn lower_expression(
                 MIRValue::Register(out)
             }
 
-            THIRExpressionKind::Break => {
-                let Some((scope_id, block_id)) = builder
-                    .fun()
-                    .scope_stack()
-                    .iter()
-                    .rev()
-                    .find_map(|scope| scope.break_target.map(|t| (scope.id(), t)))
-                else {
-                    unreachable!("break expression is not inside a loop scope");
-                };
-
-                auto_cleanup(builder, scope_id)?;
-                builder.emit(MIRInstrKind::Jump {
-                    target: MIRBlockTarget::new(block_id),
-                });
-
-                MIRValue::Constant(MIRConstant::Unit)
+            THIRExpressionKind::Break { staged } => {
+                lower_control_exit(builder, MIRStagedExitKind::Break, *staged)?
             }
-            THIRExpressionKind::Continue => {
-                let Some((scope_id, block_id)) = builder
-                    .fun()
-                    .scope_stack()
-                    .iter()
-                    .rev()
-                    .find_map(|scope| scope.continue_target.map(|t| (scope.id(), t)))
-                else {
-                    unreachable!("continue expression is not inside a loop scope");
-                };
-
-                auto_cleanup(builder, scope_id)?;
-                builder.emit(MIRInstrKind::Jump {
-                    target: MIRBlockTarget::new(block_id),
-                });
-                MIRValue::Constant(MIRConstant::Unit)
+            THIRExpressionKind::Continue { staged } => {
+                lower_control_exit(builder, MIRStagedExitKind::Continue, *staged)?
             }
             THIRExpressionKind::Goto { name } => {
                 let target = if let Some(target) = builder.fun_mut().label(name) {

@@ -265,6 +265,7 @@ fn transfer_instruction(environment: &mut ConstEnvironment, kind: &MIRInstrKind)
         | MIRInstrKind::MakeStaged { .. }
         | MIRInstrKind::ApplyStaged { .. }
         | MIRInstrKind::StagedReturn { .. }
+        | MIRInstrKind::StagedExit { .. }
         | MIRInstrKind::StagedMove { .. }
         | MIRInstrKind::StagedUse { .. } => {}
     }

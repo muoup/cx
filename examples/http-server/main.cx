@@ -6,35 +6,6 @@ import std::functional as std;
 
 import std::net::tcp as std::net;
 
-void serve_client(std::net::tcp_listener& server) {
-    char buffer[1024];
-
-    std::net::tcp_stream client = server |> std::net::tcp_listener::accept()
-        |> std::opt::unwrap_or_else(.{
-            std::io::println("Failed to accept client");
-            return;
-        });
-
-    client |> std::net::tcp_stream::read(buffer, 1024)
-        |> std::opt::unwrap_or_else(.{
-            move client |> std::net::tcp_stream::close();
-            std::io::println("Failed to read request");
-            return;
-        });
-
-    std::println("Received request");
-
-    std::span<const u8> response_buffer = std::span::str_as_bytes("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 48\r\nConnection: close\r\n\r\n<html><body><h1>Hello, world!</h1></body></html>");
-    client |> std::net::tcp_stream::write(response_buffer)
-        |> std::opt::unwrap_or_else(.{
-            move client |> std::net::tcp_stream::close();
-            std::io::println("Failed to write response");
-            return;
-        });
-
-    move client |> std::net::tcp_stream::close();
-}
-
 int main() {
     std::net::endpoint addr = std::net::endpoint::ipv4("0.0.0.0", 8080)
         |> std::opt::unwrap_or_else(.{
@@ -64,9 +35,35 @@ int main() {
 
     std::println("Server started on 127.0.0.1:8080");
 
+    char buffer[1024];
+
     while (1) {
         std::println("Waiting for client connection...");
-        server |> serve_client();
+
+        std::net::tcp_stream client = server |> std::net::tcp_listener::accept()
+            |> std::opt::unwrap_or_else(.{
+                std::io::println("Failed to accept client");
+                continue;
+            });
+
+        client |> std::net::tcp_stream::read(buffer, 1024)
+            |> std::opt::unwrap_or_else(.{
+                move client |> std::net::tcp_stream::close();
+                std::io::println("Failed to read request");
+                continue;
+            });
+
+        std::println("Received request");
+
+        std::span<const u8> response_buffer = std::span::str_as_bytes("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 48\r\nConnection: close\r\n\r\n<html><body><h1>Hello, world!</h1></body></html>");
+        client |> std::net::tcp_stream::write(response_buffer)
+            |> std::opt::unwrap_or_else(.{
+                move client |> std::net::tcp_stream::close();
+                std::io::println("Failed to write response");
+                continue;
+            });
+
+        move client |> std::net::tcp_stream::close();
     }
 
     move server |> std::net::tcp_listener::close();
