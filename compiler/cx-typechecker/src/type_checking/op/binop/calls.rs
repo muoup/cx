@@ -606,8 +606,12 @@ fn complete_comptime_call(
                 } else {
                     Some(&target_type)
                 };
-            let result = typecheck_expr(env, namespace, arg, expected)?
-                .standard_ready_coerce(env, arg.token_range())?;
+            let result = if value_type.expr {
+                env.in_staged(|env| typecheck_expr(env, namespace, arg, expected))?
+            } else {
+                typecheck_expr(env, namespace, arg, expected)?
+            }
+            .standard_ready_coerce(env, arg.token_range())?;
             if value_type.expr {
                 arguments.push(
                     if target_type.is_memory_reference()
@@ -701,8 +705,10 @@ fn build_staged_argument(
         checked_params.push((name.clone(), local_id, ty.clone()));
     }
 
-    let body_result = typecheck_expr(env, namespace, body, Some(&value_type._type))?
-        .standard_ready_coerce(env, call_range);
+    let body_result = env.in_staged(|env| {
+        typecheck_expr(env, namespace, body, Some(&value_type._type))?
+            .standard_ready_coerce(env, call_range)
+    });
     env.symbols.pop_local_scope();
     let checked_body = body_result?;
 

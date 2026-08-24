@@ -46,6 +46,7 @@ pub struct TypeEnvironment<'a> {
 
     runtime_emit_depth: usize,
     defer_depth: usize,
+    staged_scope_boundaries: Vec<ScopeId>,
     staged_expansions: Vec<u64>,
     next_staged_expression_id: u64,
     require_explicit_return: bool,
@@ -66,6 +67,7 @@ impl TypeEnvironment<'_> {
             comptime_runtime_return_types: Vec::new(),
             runtime_emit_depth: 0,
             defer_depth: 0,
+            staged_scope_boundaries: Vec::new(),
             staged_expansions: Vec::new(),
             next_staged_expression_id: 0,
             require_explicit_return,
@@ -105,6 +107,23 @@ impl TypeEnvironment<'_> {
 
     pub fn in_defer_context(&self) -> bool {
         self.defer_depth > 0
+    }
+
+    pub fn in_staged<F, T>(&mut self, f: F) -> CXResult<T>
+    where
+        F: FnOnce(&mut Self) -> CXResult<T>,
+    {
+        self.staged_scope_boundaries
+            .push(self.function.current_scope_index());
+        let result = f(self);
+        self.staged_scope_boundaries.pop();
+        result
+    }
+
+    pub fn staged_control_target_is_external(&self, target: ScopeId) -> bool {
+        self.staged_scope_boundaries
+            .last()
+            .is_some_and(|boundary| target.index() <= boundary.index())
     }
 
     pub fn finish_thir_unit(self, source_namespace: EnvironmentNamespace) -> CXResult<THIRUnit> {

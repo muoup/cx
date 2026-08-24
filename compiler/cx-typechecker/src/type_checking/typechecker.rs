@@ -408,6 +408,12 @@ fn typecheck_expr_inner(
                     "'break' used outside of a loop or switch context".to_string(),
                 );
             };
+            if env.staged_control_target_is_external(scope_idx) {
+                return env.log_error(
+                    expr.token_range(),
+                    "break cannot target a scope outside a staged expression".to_string(),
+                );
+            }
             enqueue_jump_arrow(
                 env,
                 &ScopeExitTarget {

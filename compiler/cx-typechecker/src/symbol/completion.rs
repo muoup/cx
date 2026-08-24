@@ -504,7 +504,7 @@ fn complete_identifier_type(
                 |tag| format!("{} {mangled_name}", tag.prefix()),
             );
             let dummy_type = THIRType::from(THIRTypeKind::Undefined)
-                .with_strong_identifier(CXIdent::from(mangled_name));
+                .with_strong_identifier(CXIdent::from(strong_name.clone()));
             let prereserved_id = env.symbols.reserve_type_id();
             if cacheable {
                 if is_tag_lookup {
@@ -518,9 +518,6 @@ fn complete_identifier_type(
             env.symbols.overwrite_type_id(prereserved_id, dummy_type);
 
             if tag.is_some() && is_self_predeclaration(definition, &resolved_name) {
-                let dummy_type = THIRType::from(THIRTypeKind::Undefined)
-                    .with_strong_identifier(CXIdent::from(strong_name));
-                env.symbols.overwrite_type_id(prereserved_id, dummy_type);
                 return Ok(prereserved_id);
             }
 
@@ -769,8 +766,10 @@ fn type_contains_by_value(
         return false;
     };
 
-    if ty.strong_identifier() == Some(aggregate_identifier) {
-        return true;
+    if let Some(strong_identifier) = &ty.strong_identifier {
+        if strong_identifier.as_str() == aggregate_identifier {
+            return true;
+        }
     }
 
     match &ty.kind {
