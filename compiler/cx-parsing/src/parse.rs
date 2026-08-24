@@ -1,18 +1,17 @@
 use cx_hir::ast::{
+    HIRStmt,
     expression::{HIRExprKind, HIRExpression},
     function::HIRFunctionPrototype,
     global_var::HIRGlobalVariable,
     modifiers::{HIRSymbolNameScheme, LinkageMode},
     template::HIRTemplatePrototype,
-    types::{HIRTypeKind, PredeclarationType},
-    HIRStmt,
+    types::{HIRTypeKind, HIRTypeLookup},
 };
 use cx_log::CXResult;
 use cx_preparse_data::VisibilityMode;
 use cx_tokens::{
-    keyword, operator, punctuator, specifier,
+    TokenIter, keyword, operator, punctuator, specifier,
     token::{OperatorType, PunctuatorType, SpecifierType, TokenKind},
-    TokenIter,
 };
 use cx_util::identifier::CXIdent;
 
@@ -207,11 +206,11 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
 
     if let HIRTypeKind::Identifier {
         name: type_name,
-        predeclaration,
+        lookup,
         template_input: None,
     } = &_type.kind
     {
-        let is_existing_type_alias = *predeclaration == PredeclarationType::None
+        let is_existing_type_alias = *lookup == HIRTypeLookup::Standard
             || data.ast.definition_stmts.iter().any(|definition| {
                 matches!(
                     &definition.stmt,

@@ -4,10 +4,10 @@ use cx_hir::{
         global_var::HIRGlobalVariable,
         template::{HIRTemplateInput, HIRTemplatePrototype},
     },
-    symbols::{HIRSymbol, HIRSymbolKind, SymbolNamespaceData},
+    symbols::{HIRSymbol, HIRSymbolKind, HIRTypeSymbol, SymbolIdentifier, SymbolNamespaceData},
 };
 
-use cx_hir::ast::types::{HIRType, HIRTypeKind, PredeclarationType};
+use cx_hir::ast::types::{HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup};
 use cx_log::CXResult;
 use cx_preparse_data::NamespaceAliases;
 use cx_util::namespace::{NamespacePath, QualifiedName};
@@ -75,58 +75,38 @@ impl<'a> DecompositionEnv<'a> {
 fn insert_symbol(
     env: &mut DecompositionEnv,
     namespace: &NamespacePath,
-    name: impl Into<String>,
+    identifier: SymbolIdentifier,
     symbol: HIRSymbol,
 ) -> CXResult<()> {
-    let name = name.into();
-
     if let Some(existing) = env
         .get_bucket_mut(namespace)
-        .get_symbol(name.as_str())
+        .get_symbol(&identifier)
         .cloned()
     {
-        let visibility = existing.visibility.max(symbol.visibility);
-        if let Some(symbol) = coalesce_type_declaration(name.as_str(), &existing.kind, &symbol.kind)
+        if let Some((index, coalesced)) =
+            existing
+                .declarations()
+                .iter()
+                .enumerate()
+                .find_map(|(index, existing)| {
+                    coalesce_type_declaration(identifier.name(), &existing.kind, &symbol.kind).map(
+                        |kind| {
+                            (
+                                index,
+                                HIRSymbol::new(existing.visibility.max(symbol.visibility), kind),
+                            )
+                        },
+                    )
+                })
         {
             env.get_bucket_mut(namespace)
-                .insert_symbol(name, HIRSymbol::new(visibility, symbol));
+                .replace_symbol(identifier, index, coalesced);
             return Ok(());
         }
-        if let HIRSymbolKind::DuplicateDefinition(definitions) = &existing.kind {
-            if let Some(index) = definitions.iter().position(|kind| {
-                coalesce_type_declaration(name.as_str(), kind, &symbol.kind).is_some()
-            }) {
-                let mut definitions = definitions.clone();
-                definitions[index] = coalesce_type_declaration(
-                    name.as_str(),
-                    &definitions[index],
-                    &symbol.kind,
-                )
-                .expect("type declaration was checked before replacement");
-                env.get_bucket_mut(namespace).insert_symbol(
-                    name,
-                    HIRSymbol::new(
-                        visibility,
-                        HIRSymbolKind::DuplicateDefinition(definitions),
-                    ),
-                );
-                return Ok(());
-            }
-        }
-        let mut definitions = match existing.kind {
-            HIRSymbolKind::DuplicateDefinition(definitions) => definitions,
-            kind => vec![kind],
-        };
-        definitions.push(symbol.kind);
-
-        env.get_bucket_mut(namespace).insert_symbol(
-            name,
-            HIRSymbol::new(visibility, HIRSymbolKind::DuplicateDefinition(definitions)),
-        );
-        return Ok(());
     }
 
-    env.get_bucket_mut(namespace).insert_symbol(name, symbol);
+    env.get_bucket_mut(namespace)
+        .insert_symbol(identifier, symbol);
     Ok(())
 }
 
@@ -144,40 +124,23 @@ fn coalesce_type_declaration(
         incoming_template,
     ) = match (existing, incoming) {
         (
-            HIRSymbolKind::TagType {
+            HIRSymbolKind::Type(HIRTypeSymbol {
                 definition: existing_type,
-                tag: existing_tag,
-            },
-            HIRSymbolKind::TagType {
-                definition: incoming_type,
-                tag: incoming_tag,
-            },
-        ) => (
-            existing_type,
-            existing_tag,
-            None,
-            incoming_type,
-            incoming_tag,
-            None,
-        ),
-        (
-            HIRSymbolKind::TagTypeTemplate {
+                tag: Some(existing_tag),
                 template: existing_template,
-                definition: existing_type,
-                tag: existing_tag,
-            },
-            HIRSymbolKind::TagTypeTemplate {
-                template: incoming_template,
+            }),
+            HIRSymbolKind::Type(HIRTypeSymbol {
                 definition: incoming_type,
-                tag: incoming_tag,
-            },
+                tag: Some(incoming_tag),
+                template: incoming_template,
+            }),
         ) => (
             existing_type,
             existing_tag,
-            Some(existing_template),
+            existing_template.as_ref(),
             incoming_type,
             incoming_tag,
-            Some(incoming_template),
+            incoming_template.as_ref(),
         ),
         _ => return None,
     };
@@ -196,14 +159,14 @@ fn coalesce_type_declaration(
     }
 }
 
-fn is_forward_type_declaration(name: &str, ty: &HIRType, tag: PredeclarationType) -> bool {
+fn is_forward_type_declaration(name: &str, ty: &HIRType, tag: HIRTagKind) -> bool {
     matches!(
         &ty.kind,
         HIRTypeKind::Identifier {
             name: definition_name,
-            predeclaration,
+            lookup: HIRTypeLookup::Tag(definition_tag),
             template_input: None,
-        } if *predeclaration == tag
+        } if *definition_tag == tag
             && definition_name.namespace.is_root()
             && definition_name.name.as_str() == name
     )
@@ -230,31 +193,25 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: &HIRDefinition) -> CXR
                 return Ok(());
             };
 
-            let symbol_kind = match (template_prototype.clone(), *tag) {
-                (Some(input), Some(tag)) => HIRSymbolKind::TagTypeTemplate {
-                    template: input,
-                    definition: _type.clone(),
-                    tag,
-                },
-                (Some(input), None) => HIRSymbolKind::TypeTemplate {
-                    template: input,
-                    definition: _type.clone(),
-                },
-                (None, Some(tag)) => HIRSymbolKind::TagType {
-                    definition: _type.clone(),
-                    tag,
-                },
-                (None, None) => HIRSymbolKind::Type(_type.clone()),
-            };
+            let symbol_kind = HIRSymbolKind::Type(HIRTypeSymbol {
+                definition: _type.clone(),
+                template: template_prototype.clone(),
+                tag: *tag,
+            });
             let symbol = HIRSymbol::new(*visibility, symbol_kind);
+            let identifier = if tag.is_some() {
+                SymbolIdentifier::tag(name.to_string())
+            } else {
+                SymbolIdentifier::standard(name.to_string())
+            };
 
-            insert_symbol(env, base_namespace, name.to_string(), symbol)?;
+            insert_symbol(env, base_namespace, identifier, symbol)?;
 
             if let HIRTypeKind::TaggedUnion { variants, .. } = &_type.kind {
                 let union_name = QualifiedName::new(base_namespace.clone(), name.clone());
                 let union_type = HIRTypeKind::Identifier {
                     name: union_name,
-                    predeclaration: PredeclarationType::None,
+                    lookup: HIRTypeLookup::Standard,
                     template_input: template_prototype
                         .clone()
                         .map(convert_template_proto_to_args),
@@ -276,7 +233,12 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: &HIRDefinition) -> CXR
                         },
                     );
 
-                    insert_symbol(env, &variant_namespace, variant_name.clone(), symbol)?;
+                    insert_symbol(
+                        env,
+                        &variant_namespace,
+                        SymbolIdentifier::standard(variant_name.clone()),
+                        symbol,
+                    )?;
                 }
             }
         }
@@ -313,7 +275,12 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: &HIRDefinition) -> CXR
                 ),
             };
 
-            insert_symbol(env, &namespace, name.to_string(), symbol)?;
+            insert_symbol(
+                env,
+                &namespace,
+                SymbolIdentifier::standard(name.to_string()),
+                symbol,
+            )?;
         }
 
         HIRStmt::ComptimeFunctionDefinition {
@@ -345,7 +312,12 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: &HIRDefinition) -> CXR
                 ),
             };
 
-            insert_symbol(env, &namespace, name.to_string(), symbol)?;
+            insert_symbol(
+                env,
+                &namespace,
+                SymbolIdentifier::standard(name.to_string()),
+                symbol,
+            )?;
         }
 
         HIRStmt::GlobalVariableDefinition {
@@ -365,7 +337,12 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: &HIRDefinition) -> CXR
                         },
                     );
 
-                    insert_symbol(env, base_namespace, variant.name.as_string(), symbol)?;
+                    insert_symbol(
+                        env,
+                        base_namespace,
+                        SymbolIdentifier::standard(variant.name.as_string()),
+                        symbol,
+                    )?;
                 }
             }
 
@@ -384,7 +361,12 @@ fn decompose_stmt(env: &mut DecompositionEnv, definition: &HIRDefinition) -> CXR
                     },
                 );
 
-                insert_symbol(env, base_namespace, name.to_string(), symbol)?;
+                insert_symbol(
+                    env,
+                    base_namespace,
+                    SymbolIdentifier::standard(name.to_string()),
+                    symbol,
+                )?;
             }
         },
     };
@@ -399,7 +381,7 @@ fn convert_template_proto_to_args(prototype: HIRTemplatePrototype) -> HIRTemplat
         .map(|name| {
             HIRTypeKind::Identifier {
                 name: QualifiedName::new_raw(name),
-                predeclaration: PredeclarationType::None,
+                lookup: HIRTypeLookup::Standard,
                 template_input: None,
             }
             .to_type()

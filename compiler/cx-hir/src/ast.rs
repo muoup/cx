@@ -7,7 +7,7 @@ use crate::ast::{
     global_var::HIRGlobalVariable,
     modifiers::VisibilityMode,
     template::HIRTemplatePrototype,
-    types::{HIRType, PredeclarationType},
+    types::{HIRTagKind, HIRType},
 };
 
 pub mod expression;
@@ -39,7 +39,7 @@ pub enum HIRStmt {
         visibility: VisibilityMode,
         template_prototype: Option<HIRTemplatePrototype>,
         _type: HIRType,
-        tag: Option<PredeclarationType>,
+        tag: Option<HIRTagKind>,
     },
 
     FunctionDefinition {

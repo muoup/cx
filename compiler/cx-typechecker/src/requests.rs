@@ -141,7 +141,7 @@ fn realize_fn_template(
     prototype: THIRFnPrototype,
     input: &THIRTemplateInput,
 ) -> CXResult<()> {
-    let stmt = env
+    let resolution = env
         .symbols
         .get_global_registry()
         .resolve(name)
@@ -152,6 +152,11 @@ fn realize_fn_template(
             )
         });
 
+    let stmt = resolution
+        .declarations()
+        .iter()
+        .find(|symbol| matches!(symbol.kind, HIRSymbolKind::FunctionTemplate { .. }))
+        .expect("Expected function template declaration in the symbol registry");
     let HIRSymbolKind::FunctionTemplate { template, body, .. } = &stmt.kind else {
         unreachable!("Expected template to be a function template");
     };
@@ -200,7 +205,7 @@ fn realize_comptime_function(
     }
     env.items.mark_request_fulfilled(instance_name.clone());
 
-    let stmt = env
+    let resolution = env
         .symbols
         .get_global_registry()
         .resolve(lookup_identifier)
@@ -211,6 +216,17 @@ fn realize_comptime_function(
             )
         });
 
+    let stmt = resolution
+        .declarations()
+        .iter()
+        .find(|symbol| {
+            matches!(
+                symbol.kind,
+                HIRSymbolKind::ComptimeFunction { .. }
+                    | HIRSymbolKind::ComptimeFunctionTemplate { .. }
+            )
+        })
+        .expect("Expected comptime function declaration in the symbol registry");
     let (template, body) = match &stmt.kind {
         HIRSymbolKind::ComptimeFunction { body, .. } => (None, body),
         HIRSymbolKind::ComptimeFunctionTemplate { template, body, .. } => {

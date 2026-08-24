@@ -22,6 +22,7 @@ pub struct MIRSymbolRegistry<'a> {
     architecture: ArchitectureConfig,
     global_registry: &'a GlobalSymbolRegistry,
     global_cache: HashMap<QualifiedName, MIRSymbol>,
+    tag_cache: HashMap<QualifiedName, MIRSymbol>,
     local_symbols: ScopedMap<QualifiedName, MIRSymbol>,
 
     typeid_defs: HashMap<THIRTypeID, THIRType>,
@@ -63,6 +64,7 @@ impl<'a> MIRSymbolRegistry<'a> {
             architecture,
             global_registry,
             global_cache: HashMap::new(),
+            tag_cache: HashMap::new(),
             local_symbols: ScopedMap::new_with_starting_scope(),
 
             typeid_defs: HashMap::new(),
@@ -116,6 +118,10 @@ impl<'a> MIRSymbolRegistry<'a> {
 
     pub fn get_preresolved_symbol(&self, name: &QualifiedName) -> Option<&MIRSymbol> {
         self.global_cache.get(name)
+    }
+
+    pub fn get_preresolved_tag(&self, name: &QualifiedName) -> Option<&MIRSymbol> {
+        self.tag_cache.get(name)
     }
 
     pub fn generate_type_id(&mut self, ty: THIRType) -> THIRTypeID {
@@ -210,6 +216,10 @@ impl<'a> MIRSymbolRegistry<'a> {
 
     pub fn insert_type_symbol(&mut self, name: QualifiedName, id: THIRTypeID) {
         self.insert_symbol(name, MIRSymbol::Type(id));
+    }
+
+    pub fn insert_tag_type_symbol(&mut self, name: QualifiedName, id: THIRTypeID) {
+        self.tag_cache.insert(name, MIRSymbol::Type(id));
     }
 
     pub fn insert_local_value(&mut self, name: QualifiedName, expr: THIRExpression) {

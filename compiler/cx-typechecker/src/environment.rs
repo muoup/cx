@@ -1,7 +1,7 @@
 use std::borrow::Borrow;
 
 use cx_hir::ast::modifiers::VisibilityMode;
-use cx_hir::symbols::HIRSymbol;
+use cx_hir::symbols::{HIRSymbol, SymbolResolution};
 use cx_log::{
     CXRawResult, CXResult,
     error::{CXErr, CXErrMsg, CXMaybeRawErr, context::CXInternalContext, message::CXStdErrMessage},
@@ -251,6 +251,28 @@ impl TypeEnvironment<'_> {
         }
     }
 
+    pub fn lookup_tag_symbol(
+        &self,
+        namespace: &EnvironmentNamespace,
+        name: &QualifiedName,
+    ) -> CXRawResult<Option<SymbolLookup>> {
+        match TagQualifiedLookup(self).qualified_lookup(namespace, name) {
+            QualifiedLookupResult::Found { value, .. } => CXRawResult::Ok(Some(value)),
+            QualifiedLookupResult::NotFound => CXRawResult::Ok(None),
+            QualifiedLookupResult::Ambiguous { candidates } => CXStdErrMessage::result(
+                "TYPE ERROR",
+                format!(
+                    "Ambiguous Symbol Reference, candidates: {}",
+                    candidates
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            ),
+        }
+    }
+
     fn symbol_visible_from(
         &self,
         namespace: &EnvironmentNamespace,
@@ -374,12 +396,14 @@ impl QualifiedLookup for TypeEnvironment<'_> {
             .symbols
             .get_global_registry()
             .resolve(name)
-            .filter(|sym| {
-                self.symbol_visible_from(
-                    &EnvironmentNamespace::from(lexical_namespace),
-                    name,
-                    sym,
-                )
+            .and_then(|resolution| {
+                resolution.filter(|symbol| {
+                    self.symbol_visible_from(
+                        &EnvironmentNamespace::from(lexical_namespace),
+                        name,
+                        symbol,
+                    )
+                })
             })
         {
             return Some(SymbolLookup {
@@ -408,6 +432,67 @@ impl QualifiedLookup for TypeEnvironment<'_> {
     }
 }
 
+struct TagQualifiedLookup<'a, 'b>(&'a TypeEnvironment<'b>);
+
+impl QualifiedLookup for TagQualifiedLookup<'_, '_> {
+    type Output = SymbolLookup;
+
+    fn lookup_local(
+        &self,
+        _lexical_namespace: &NamespacePath,
+        _name: &QualifiedName,
+    ) -> Option<Self::Output> {
+        None
+    }
+
+    fn lookup_exact(
+        &self,
+        lexical_namespace: &NamespacePath,
+        name: &QualifiedName,
+    ) -> Option<Self::Output> {
+        if let Some(resolution) = self
+            .0
+            .symbols
+            .get_global_registry()
+            .resolve_tag(name)
+            .and_then(|resolution| {
+                resolution.filter(|symbol| {
+                    self.0.symbol_visible_from(
+                        &EnvironmentNamespace::from(lexical_namespace),
+                        name,
+                        symbol,
+                    )
+                })
+            })
+        {
+            return Some(SymbolLookup {
+                resolved_name: name.clone(),
+                kind: SymbolLookupKind::Untyped(resolution),
+            });
+        }
+
+        self.0
+            .symbols
+            .get_preresolved_tag(name)
+            .map(|symbol| SymbolLookup {
+                resolved_name: name.clone(),
+                kind: SymbolLookupKind::Resolved(symbol.clone()),
+            })
+    }
+
+    fn resolve_aliases(
+        &self,
+        lexical_namespace: &NamespacePath,
+        namespace: &NamespacePath,
+    ) -> Vec<NamespacePath> {
+        self.0
+            .symbols
+            .get_global_registry()
+            .resolve_aliases(lexical_namespace, namespace)
+            .expect("failed to resolve namespace aliases")
+    }
+}
+
 pub struct SymbolLookup {
     pub resolved_name: QualifiedName,
     pub kind: SymbolLookupKind,
@@ -415,5 +500,5 @@ pub struct SymbolLookup {
 
 pub enum SymbolLookupKind {
     Resolved(MIRSymbol),
-    Untyped(HIRSymbol),
+    Untyped(SymbolResolution),
 }

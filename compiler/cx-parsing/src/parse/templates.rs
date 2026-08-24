@@ -1,9 +1,9 @@
 use crate::parse::ParserData;
 use crate::{assert_token_matches, log::parse_point_error, peek_kind, try_next};
 use cx_hir::ast::template::{HIRTemplateInput, HIRTemplatePrototype};
-use cx_hir::ast::types::{HIRType, HIRTypeKind, PredeclarationType};
+use cx_hir::ast::types::{HIRType, HIRTypeKind, HIRTypeLookup};
 use cx_log::CXResult;
-use cx_tokens::{identifier, operator, TokenIter};
+use cx_tokens::{TokenIter, identifier, operator};
 use cx_util::namespace::NamespacePath;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
@@ -23,7 +23,7 @@ pub(crate) fn note_templated_types(
 
         let _nil_type: HIRType = HIRTypeKind::Identifier {
             name: QualifiedName::new_raw(CXIdent::new("__undefined_template_type")),
-            predeclaration: PredeclarationType::None,
+            lookup: HIRTypeLookup::Standard,
             template_input: None,
         }
         .to_type();

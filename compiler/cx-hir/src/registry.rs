@@ -7,7 +7,7 @@ use cx_util::namespace::{NamespacePath, QualifiedName};
 
 use crate::{
     ast::modifiers::HIRSymbolNameScheme,
-    symbols::{HIRSymbol, HIRSymbolKind, SymbolNamespaceData},
+    symbols::{HIRSymbol, HIRSymbolKind, SymbolIdentifier, SymbolNamespaceData, SymbolResolution},
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -99,7 +99,19 @@ impl GlobalSymbolRegistry {
         ExportNameMode::Namespaced
     }
 
-    pub fn resolve(&self, name: &QualifiedName) -> Option<HIRSymbol> {
+    pub fn resolve(&self, name: &QualifiedName) -> Option<SymbolResolution> {
+        self.resolve_identifier(name, SymbolIdentifier::standard(name.name.as_string()))
+    }
+
+    pub fn resolve_tag(&self, name: &QualifiedName) -> Option<SymbolResolution> {
+        self.resolve_identifier(name, SymbolIdentifier::tag(name.name.as_string()))
+    }
+
+    fn resolve_identifier(
+        &self,
+        name: &QualifiedName,
+        identifier: SymbolIdentifier,
+    ) -> Option<SymbolResolution> {
         let inner = self
             .inner
             .read()
@@ -109,7 +121,7 @@ impl GlobalSymbolRegistry {
         inner
             .namespaces
             .get(&name.namespace)?
-            .get_symbol(name.name.as_str())
+            .get_symbol(&identifier)
             .cloned()
     }
 
@@ -122,19 +134,20 @@ impl GlobalSymbolRegistry {
         inner
             .namespaces
             .iter()
-            .filter_map(|(namespace, data)| {
-                let symbol = data.get_symbol(name)?;
-                if matches!(
-                    &symbol.kind,
-                    HIRSymbolKind::AddressableGlobal {
-                        symbol_naming: HIRSymbolNameScheme::Unmangled,
-                        ..
-                    }
-                ) {
-                    Some((namespace.clone(), symbol.clone()))
-                } else {
-                    None
-                }
+            .flat_map(|(namespace, data)| {
+                data.get_symbol(&SymbolIdentifier::standard(name))
+                    .into_iter()
+                    .flat_map(|resolution| resolution.declarations())
+                    .filter_map(|symbol| {
+                        matches!(
+                            &symbol.kind,
+                            HIRSymbolKind::AddressableGlobal {
+                                symbol_naming: HIRSymbolNameScheme::Unmangled,
+                                ..
+                            }
+                        )
+                        .then(|| (namespace.clone(), symbol.clone()))
+                    })
             })
             .collect()
     }

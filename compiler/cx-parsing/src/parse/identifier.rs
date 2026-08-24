@@ -1,16 +1,15 @@
 use cx_hir::ast::{
     expression::{HIRExprKind, HIRExpression},
     template::HIRTemplateInput,
-    types::{HIRType, HIRTypeKind, PredeclarationType},
+    types::{HIRType, HIRTypeKind, HIRTypeLookup},
 };
 use cx_log::{
-    error::{context::CXInternalContext, message::CXStdErrMessage, CXErr},
     CXResult,
+    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_tokens::{
-    operator,
+    TokenIter, operator,
     token::{OperatorType, TokenKind},
-    TokenIter,
 };
 use cx_util::{
     identifier::CXIdent,
@@ -35,10 +34,10 @@ impl ParsedIdentifier {
         }
     }
 
-    pub(crate) fn into_type(self, predeclaration: PredeclarationType) -> HIRType {
+    pub(crate) fn into_type(self, lookup: HIRTypeLookup) -> HIRType {
         HIRTypeKind::Identifier {
             name: self.name,
-            predeclaration,
+            lookup,
             template_input: self.template_input,
         }
         .to_type()
