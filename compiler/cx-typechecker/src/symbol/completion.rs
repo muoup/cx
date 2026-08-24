@@ -70,22 +70,6 @@ pub fn complete_type(
     Ok(completed)
 }
 
-pub(crate) fn complete_type_symbol(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    name: &QualifiedName,
-    symbol: &HIRType,
-    tag: Option<cx_hir::ast::types::HIRTagKind>,
-) -> CXResult<THIRType> {
-    let mut completed = complete_type(env, namespace, symbol)?;
-    if let Some(tag) = tag {
-        let mangled_name = mangle_qualified_name(env.symbols.get_global_registry(), name);
-        completed.strong_identifier = Some(format!("{} {mangled_name}", tag.prefix()));
-        completed.lookup_identifier = Some(name.clone());
-    }
-    Ok(completed)
-}
-
 pub fn complete_type_id(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
@@ -499,12 +483,8 @@ fn complete_identifier_type(
 
             let mangled_name =
                 mangle_qualified_name(env.symbols.get_global_registry(), &resolved_name);
-            let strong_name = tag.map_or_else(
-                || mangled_name.clone(),
-                |tag| format!("{} {mangled_name}", tag.prefix()),
-            );
             let dummy_type = THIRType::from(THIRTypeKind::Undefined)
-                .with_strong_identifier(CXIdent::from(strong_name.clone()));
+                .with_strong_identifier(CXIdent::from(mangled_name));
             let prereserved_id = env.symbols.reserve_type_id();
             if cacheable {
                 if is_tag_lookup {
@@ -521,15 +501,15 @@ fn complete_identifier_type(
                 return Ok(prereserved_id);
             }
 
-            let completed = complete_type_symbol(
+            let ty = complete_type_inner(
                 env,
                 &EnvironmentNamespace::from(&resolved_name.namespace),
-                &resolved_name,
                 definition,
-                tag,
-            )?;
+            )
+            .map_err(CXMaybeRawErr::Complete)?;
 
-            env.symbols.overwrite_type_id(prereserved_id, completed);
+            env.symbols.overwrite_type_id(prereserved_id, ty);
+
             Ok(prereserved_id)
         }
 
@@ -700,16 +680,24 @@ fn ensure_aggregate_fields_complete(
 ) -> CXRawResult<()> {
     for field in fields {
         let id = field.ty();
-        if !env.symbols.contains(id) {
-            let name = field.name().unwrap_or("<anonymous>");
-            return env.log_error_base(format!("Aggregate field '{}' has incomplete type", name));
-        }
-        if env.symbols.resolve_type_id(id).is_unreachable() {
-            let name = field.name().unwrap_or("<anonymous>");
+
+        let Some(_ty) = env.symbols.try_resolve_type_id(id) else {
             return env.log_error_base(format!(
-                "Aggregate field '{}' cannot have type 'unreachable'",
-                name
+                "Aggregate field '{}' has incomplete type",
+                field.name().unwrap_or("<anonymous>")
             ));
+        };
+
+        match &_ty.kind {
+            THIRTypeKind::Unreachable | THIRTypeKind::Undefined | THIRTypeKind::Str => {
+                return env.log_error_base(format!(
+                    "Aggregate field '{}' has invalid type '{}'",
+                    field.name().unwrap_or("<anonymous>"),
+                    _ty.display_with(&env.symbols)
+                ));
+            }
+
+            _ => (),
         }
     }
 

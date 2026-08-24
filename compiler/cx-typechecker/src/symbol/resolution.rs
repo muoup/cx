@@ -32,7 +32,7 @@ use crate::{
     environment::{THIRFunctionGenRequest, TypeEnvironment},
     symbol::{
         completion::{
-            complete_comptime_prototype, complete_prototype, complete_type, complete_type_symbol,
+            complete_comptime_prototype, complete_prototype, complete_type, complete_type_id,
         },
         r#enum::resolve_enum_block,
         name_mangling::{base_mangle_member, base_mangle_templated_name},
@@ -108,43 +108,31 @@ fn resolve_symbol_inner(
     decay_implicit_array: bool,
 ) -> CXResult<MIRSymbol> {
     match &symbol.kind {
-        HIRSymbolKind::Type(data) => {
-            let lookup_identifier =
-                QualifiedName::new(symbol_namespace.as_namespace_path().clone(), name.clone());
-
-            match data {
-                HIRSymbolData::Standard { base: standard, .. } => {
-                    let completed = complete_type_symbol(
-                        env,
-                        symbol_namespace,
-                        &lookup_identifier,
-                        standard,
-                        tag,
-                    )?;
-                    let id = env.symbols.generate_type_id(completed);
-                    Ok(MIRSymbol::Type(id))
-                }
-
-                HIRSymbolData::Template {
-                    base,
-                    template_data: _,
-                    template_prototype,
-                } => {
-                    let source = HIRSymbol::new(
-                        symbol.visibility,
-                        HIRSymbolKind::Type(HIRSymbolData::Standard { base: base.clone() }),
-                    );
-
-                    Ok(MIRSymbol::Template {
-                        template_prototype: template_prototype.clone(),
-                        name: name.clone(),
-                        source: Box::new(source),
-                        namespace: symbol_namespace.clone(),
-                        tag,
-                    })
-                }
+        HIRSymbolKind::Type(data) => match data {
+            HIRSymbolData::Standard { base: standard, .. } => {
+                let completed = complete_type_id(env, symbol_namespace, &standard)?;
+                Ok(MIRSymbol::Type(completed))
             }
-        }
+
+            HIRSymbolData::Template {
+                base,
+                template_data: _,
+                template_prototype,
+            } => {
+                let source = HIRSymbol::new(
+                    symbol.visibility,
+                    HIRSymbolKind::Type(HIRSymbolData::Standard { base: base.clone() }),
+                );
+
+                Ok(MIRSymbol::Template {
+                    template_prototype: template_prototype.clone(),
+                    name: name.clone(),
+                    source: Box::new(source),
+                    namespace: symbol_namespace.clone(),
+                    tag,
+                })
+            }
+        },
 
         HIRSymbolKind::Function(data) => {
             let prototype_namespace =
