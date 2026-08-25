@@ -312,6 +312,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-benchmarks"
+version = "0.0.0"
+dependencies = [
+ "cx-test-support",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cx-c-header"
 version = "0.0.0"
 dependencies = [
@@ -493,6 +502,14 @@ dependencies = [
 [[package]]
 name = "cx-target"
 version = "0.0.0"
+
+[[package]]
+name = "cx-test-support"
+version = "0.0.0"
+dependencies = [
+ "cx-pipeline",
+ "cx-pipeline-data",
+]
 
 [[package]]
 name = "cx-thir"
@@ -923,8 +940,7 @@ dependencies = [
 name = "integration-tests"
 version = "0.0.0"
 dependencies = [
- "cx-pipeline",
- "cx-pipeline-data",
+ "cx-test-support",
 ]
 
 [[package]]

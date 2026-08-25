@@ -6,7 +6,9 @@ members = [
     "compiler/cx-lsp", "compiler/cx-mir",
     "compiler/cx-mir-comptime",
     "compiler/cx-zed-extension",
-    "tests"
+    "tests/benchmarks",
+    "tests/integration",
+    "tests/support"
 ]
 
 # Keep feature-gated path dependencies out of the workspace's default package set.

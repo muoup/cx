@@ -13,6 +13,7 @@ enum TestKind {
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("Missing manifest dir"));
+    let fixture_dir = manifest_dir.join("fixtures");
     let tests = [
         ("end-to-end", TestKind::EndToEnd),
         ("compile-only", TestKind::CompileOnly),
@@ -24,17 +25,10 @@ fn main() {
     let mut output = String::new();
 
     for (root, kind) in tests {
-        let root_path = manifest_dir.join(root);
+        let root_path = fixture_dir.join(root);
         println!("cargo:rerun-if-changed={}", root_path.display());
         if root_path.exists() {
-            write_module(
-                &mut output,
-                &sanitize_ident(root),
-                &root_path,
-                &root_path,
-                kind,
-                0,
-            );
+            write_module(&mut output, &sanitize_ident(root), &root_path, kind, 0);
         }
     }
 
@@ -45,7 +39,6 @@ fn main() {
 fn write_module(
     output: &mut String,
     module_name: &str,
-    root: &Path,
     current: &Path,
     kind: TestKind,
     depth: usize,
@@ -71,14 +64,7 @@ fn write_module(
         }
 
         if path.is_dir() {
-            write_module(
-                output,
-                &sanitize_ident(&file_name),
-                root,
-                &path,
-                kind,
-                depth + 1,
-            );
+            write_module(output, &sanitize_ident(&file_name), &path, kind, depth + 1);
             continue;
         }
 
@@ -89,7 +75,7 @@ fn write_module(
 
         println!("cargo:rerun-if-changed={}", path.display());
 
-        if matches!(kind, TestKind::EndToEnd) && !path.with_extension("cx-output").exists() {
+        if matches!(kind, TestKind::EndToEnd) && !has_stdout_expectation(&path) {
             continue;
         }
 
@@ -124,6 +110,16 @@ fn write_module(
     }
 
     output.push_str(&format!("{indent}}}\n"));
+}
+
+fn has_stdout_expectation(path: &Path) -> bool {
+    if path.with_extension("cx-output").exists() {
+        return true;
+    }
+
+    fs::read_to_string(path)
+        .map(|source| source.contains("CX-STDOUT:"))
+        .unwrap_or(false)
 }
 
 fn sanitize_ident(name: &str) -> String {

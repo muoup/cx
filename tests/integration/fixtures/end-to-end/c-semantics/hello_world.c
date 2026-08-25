@@ -1,3 +1,5 @@
+/* CX-STDOUT: Hello, World! */
+
 int puts(char* s);
 
 int main() {
