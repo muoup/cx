@@ -5,6 +5,10 @@ on:
     branches:
       - main
       - dev
+  push:
+    branches:
+      - main
+      - dev
 
 jobs:
   integration:
@@ -60,7 +64,55 @@ jobs:
           echo "${llvm_prefix}/bin" >> "$GITHUB_PATH"
           "${llvm_prefix}/bin/llvm-config" --version
 
+      - name: Prepare benchmark report directory
+        run: mkdir -p benchmark-report
+
       - name: Run compiler benchmarks
         run: |
           set -o pipefail
-          cargo run -p cx-benchmarks --features backend-llvm -- --iterations 1 --warmups 0 --backend both --format github | tee -a "$GITHUB_STEP_SUMMARY"
+          cargo run -p cx-benchmarks --features backend-llvm -- --iterations 1 --warmups 0 --backend both --format github --json-output benchmark-report/report.json > benchmark-report/report.md
+
+      - name: Add benchmark report to job summary
+        if: always()
+        run: |
+          if [[ -f benchmark-report/report.md ]]; then
+            cat benchmark-report/report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## Benchmark Results"
+              echo
+              echo "The benchmark report was unavailable; see the benchmark job logs for details."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Prepare benchmark metadata
+        if: always()
+        env:
+          CX_EVENT: ${{ github.event_name }}
+          CX_RUN_ID: ${{ github.run_id }}
+          CX_PR_NUMBER: ${{ github.event.number || '' }}
+          CX_BASE_BRANCH: ${{ github.base_ref || github.ref_name }}
+          CX_HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+          CX_RUN_SHA: ${{ github.sha }}
+          CX_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          mkdir -p benchmark-report
+          jq -n \
+            --arg event "$CX_EVENT" \
+            --arg run_id "$CX_RUN_ID" \
+            --arg pr_number "$CX_PR_NUMBER" \
+            --arg base_branch "$CX_BASE_BRANCH" \
+            --arg head_branch "$CX_HEAD_BRANCH" \
+            --arg head_sha "$CX_RUN_SHA" \
+            --arg source_sha "$CX_SOURCE_SHA" \
+            '{schema: 1, event: $event, run_id: $run_id, pr_number: $pr_number, base_branch: $base_branch, head_branch: $head_branch, head_sha: $head_sha, source_sha: $source_sha}' \
+            > benchmark-report/metadata.json
+
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cx-benchmark-report
+          path: benchmark-report
+          if-no-files-found: ignore
+          retention-days: 30

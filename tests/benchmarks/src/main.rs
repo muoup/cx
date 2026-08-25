@@ -27,6 +27,7 @@ struct Options {
     warmups: usize,
     backend: Option<String>,
     format: OutputFormat,
+    json_output: Option<PathBuf>,
     cases: Vec<PathBuf>,
 }
 
@@ -53,6 +54,8 @@ struct TimingStats {
     median_ms: f64,
     min_ms: f64,
     max_ms: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    margin_of_error_ms: Option<f64>,
 }
 
 #[derive(Tabled)]
@@ -113,12 +116,21 @@ fn run(options: Options) -> Result<(), String> {
         commit: env::var("GITHUB_SHA").ok(),
         cases: results,
     };
+    let serialized_report =
+        serde_json::to_string_pretty(&report).map_err(|error| error.to_string())?;
+
+    if let Some(path) = options.json_output {
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        fs::write(path, &serialized_report).map_err(|error| error.to_string())?;
+    }
 
     match options.format {
-        OutputFormat::Json => println!(
-            "{}",
-            serde_json::to_string_pretty(&report).map_err(|error| error.to_string())?
-        ),
+        OutputFormat::Json => println!("{serialized_report}"),
         OutputFormat::Pretty => print!("{}", render_pretty_table(&report)),
         OutputFormat::Github => print!("{}", render_github_table(&report)),
     }
@@ -233,13 +245,16 @@ fn stats(mut samples_ms: Vec<f64>) -> TimingStats {
     let sum = samples_ms.iter().sum::<f64>();
     let median_ms = samples_ms[samples_ms.len() / 2];
 
-    TimingStats {
+    let mut timing = TimingStats {
         mean_ms: sum / samples_ms.len() as f64,
         median_ms,
         min_ms: samples_ms[0],
         max_ms: samples_ms[samples_ms.len() - 1],
         samples_ms,
-    }
+        margin_of_error_ms: None,
+    };
+    timing.margin_of_error_ms = margin_of_error_ms(&timing);
+    timing
 }
 
 fn duration_ms(duration: Duration) -> f64 {
@@ -266,7 +281,7 @@ fn render_pretty_table(report: &BenchmarkReport) -> String {
 }
 
 fn render_github_table(report: &BenchmarkReport) -> String {
-    let mut output = String::from("## CX benchmarks\n\n");
+    let mut output = String::from("## Benchmark Results:\n\n");
     output.push_str("| Case | Backend | Compile | Execute |\n");
     output.push_str("| --- | --- | ---: | ---: |\n");
 
@@ -285,7 +300,7 @@ fn render_github_table(report: &BenchmarkReport) -> String {
 }
 
 fn format_stats(stats: &TimingStats) -> String {
-    format_timing(stats.mean_ms, margin_of_error_ms(stats))
+    format_timing(stats.mean_ms, stats.margin_of_error_ms)
 }
 
 fn format_timing(mean_ms: f64, margin_ms: Option<f64>) -> String {
@@ -439,6 +454,7 @@ fn parse_options(args: impl IntoIterator<Item = String>) -> Result<Options, Stri
         warmups: DEFAULT_WARMUPS,
         backend: None,
         format: OutputFormat::Pretty,
+        json_output: None,
         cases: Vec::new(),
     };
     let mut args = args.into_iter();
@@ -455,6 +471,9 @@ fn parse_options(args: impl IntoIterator<Item = String>) -> Result<Options, Stri
                     "github" => OutputFormat::Github,
                     other => return Err(format!("unknown output format: {other}")),
                 }
+            }
+            "--json-output" => {
+                options.json_output = Some(PathBuf::from(next_value(&mut args, "json-output")?))
             }
             "--case" => options
                 .cases
@@ -474,6 +493,11 @@ fn parse_options(args: impl IntoIterator<Item = String>) -> Result<Options, Stri
             *case = current_directory.join(&*case);
         }
     }
+    if let Some(path) = &mut options.json_output {
+        if path.is_relative() {
+            *path = current_directory.join(&*path);
+        }
+    }
 
     Ok(options)
 }
@@ -490,5 +514,5 @@ fn next_value(args: &mut impl Iterator<Item = String>, name: &str) -> Result<Str
 }
 
 fn help_text() -> String {
-    "options: --iterations N --warmups N --backend available|cranelift|llvm|both --format pretty|json|github --case PATH".to_string()
+    "options: --iterations N --warmups N --backend available|cranelift|llvm|both --format pretty|json|github --json-output PATH --case PATH".to_string()
 }

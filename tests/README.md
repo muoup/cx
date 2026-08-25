@@ -10,9 +10,11 @@ The test workspace is split into separate crates so fast correctness tests and d
 cargo run -p cx-benchmarks -- --format pretty
 ```
 
-Use `--format json` for machine-readable results and `--format github` for a Markdown summary suitable for `GITHUB_STEP_SUMMARY`. LLVM cases require `--features backend-llvm`.
+Use `--format json` for machine-readable results and `--format github` for a Markdown summary suitable for `GITHUB_STEP_SUMMARY`. `--json-output PATH` writes the machine-readable report alongside the selected display format, so CI can publish one measurement without running the benchmark twice. LLVM cases require `--features backend-llvm`.
 
 Human-readable timing cells show the mean with a 95% margin of error. Values of one second or longer are displayed in seconds, while shorter values remain in milliseconds; a single sample reports an unavailable margin of error.
+
+CI runs benchmarks on pull requests and on `main`/`dev` pushes. Pull-request runs upload their JSON report, and the trusted report workflow updates one pinned comment with job results, benchmark timings, and percentage deltas against the latest successful baseline artifact for the target branch.
 
 Short output expectations can live beside the source. `CX-STDOUT` starts an exact stdout sequence and each `CX-STDOUT-NEXT` directive adds the immediately following line:
 
