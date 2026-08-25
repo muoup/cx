@@ -91,7 +91,7 @@ cd my_project
 cx build
 ```
 
-See the [build system guide](https://muoup.github.io/cx/docs/build-system) for
+See the [build system guide](https://muoup.github.io/cx/docs/getting-started/build-system) for
 `cx.toml` configuration, library compilation, and C interop.
 
 ## Testing
