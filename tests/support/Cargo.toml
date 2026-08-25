@@ -1,0 +1,13 @@
+[package]
+name = "cx-test-support"
+version = "0.0.0"
+edition = "2021"
+
+[features]
+default = ["cx-pipeline-data/test"]
+ignore-system-headers = ["cx-pipeline/ignore-system-headers"]
+backend-llvm = ["cx-pipeline/backend-llvm"]
+
+[dependencies]
+cx-pipeline-data = { path = "../../compiler/cx-pipeline-data", default-features = false }
+cx-pipeline = { path = "../../compiler/cx-pipeline", default-features = false }

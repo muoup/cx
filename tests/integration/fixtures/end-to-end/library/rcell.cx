@@ -1,0 +1,56 @@
+/* CX-STDOUT: initial 8 */
+/* CX-STDOUT-NEXT: mutated 13 */
+/* CX-STDOUT-NEXT: outer 13 sema 1 */
+/* CX-STDOUT-NEXT: inner 13 sema 2 */
+/* CX-STDOUT-NEXT: outer resumed 13 sema 1 */
+/* CX-STDOUT-NEXT: reads released 0 */
+/* CX-STDOUT-NEXT: returning 13 */
+/* CX-STDOUT-NEXT: returned 13 */
+/* CX-STDOUT-NEXT: after return 14 */
+
+import std::cell::rcell as std;
+import std::io as std;
+
+int read_and_return(std::rcell<int>& cell) {
+    std::rcell::borrow_const(cell) <| |value| then
+
+    std::printf("returning %d\n", value);
+    return value;
+}
+
+int main() {
+    std::rcell<int> cell = std::rcell::new(8);
+
+    std::rcell::borrow_const(cell) <| |value| .{
+        std::printf("initial %d\n", value);
+    };
+
+    std::rcell::borrow(cell) <| |value| .{
+        value += 5;
+    };
+    std::rcell::borrow_const(cell) <| |value| .{
+        std::printf("mutated %d\n", value);
+    };
+
+    std::rcell::borrow_const(cell) <| |outer| .{
+        std::printf("outer %d sema %d\n", outer, cell.sema);
+
+        std::rcell::borrow_const(cell) <| |inner| .{
+            std::printf("inner %d sema %d\n", inner, cell.sema);
+        };
+
+        std::printf("outer resumed %d sema %d\n", outer, cell.sema);
+    };
+
+    std::printf("reads released %d\n", cell.sema);
+    std::printf("returned %d\n", read_and_return(cell));
+
+    std::rcell::borrow(cell) <| |value| .{
+        value += 1;
+    };
+    std::rcell::borrow_const(cell) <| |value| .{
+        std::printf("after return %d\n", value);
+    };
+
+    return 0;
+}

@@ -1,0 +1,20 @@
+/* CX-STDOUT: evaluate subject */
+/* CX-STDOUT-NEXT: selected 20 */
+
+#include <stdio.h>
+
+int make_subject() {
+    printf("evaluate subject\n");
+    return 2;
+}
+
+int main() {
+    int selected = match (make_subject()) {
+        1 => yield 10;
+        2 => yield 20;
+        default => yield 30;
+    };
+
+    printf("selected %d\n", selected);
+    return 0;
+}

@@ -1,0 +1,16 @@
+/* CX-STDOUT: 54321 [no-final-newline] */
+
+#include <stdio.h>
+
+int for_loop(int n) {
+    // Test Comment
+    for (int i = n; i > 0; i--) {
+        putchar('0' + i);
+    }
+    return 0;
+}
+
+int main() {
+    for_loop(5);
+    return 0;
+}

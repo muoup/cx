@@ -1,0 +1,19 @@
+/* CX-STDOUT: Integer addition: 5 + 10 = 15 */
+/* CX-STDOUT-NEXT: Float addition: 5.50 + 10.50 = 16.00 */
+
+#include <stdio.h>
+
+T add<T>(T a, T b) {
+    return a + b;
+}
+
+int main() {
+    int ix = 5;
+    int iy = 10;
+
+    float fx = 5.5;
+    float fy = 10.5;
+
+    printf("Integer addition: %d + %d = %d\n", ix, iy, add<int>(ix, iy));
+    printf("Float addition: %.2f + %.2f = %.2f\n", fx, fy, add<float>(fx, fy));
+}

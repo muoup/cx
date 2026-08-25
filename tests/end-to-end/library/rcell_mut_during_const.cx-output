@@ -1,2 +1,0 @@
-shared active 8
-PANIC: Cannot mutably borrow cell while it is currently borrowed

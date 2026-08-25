@@ -1,0 +1,16 @@
+/* CX-STDOUT: 54321 [no-final-newline] */
+
+#include <stdio.h>
+
+void while_loop(int n) {
+    while (n > 0) {
+        putchar('0' + n);
+        n = n - 1;
+    }
+    return;
+}
+
+int main() {
+    while_loop(5);
+    return 0;
+}

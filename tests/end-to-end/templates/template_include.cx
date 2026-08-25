@@ -1,8 +1,0 @@
-import includes::template_include;
-import includes::template_include_internal;
-
-int printf(char* fmt, ...);
-
-int main() {
-   printf("Template return value: %d\n", includes::template_include::template_return());
-}

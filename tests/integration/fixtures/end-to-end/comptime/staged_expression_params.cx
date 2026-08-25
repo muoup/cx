@@ -1,0 +1,28 @@
+/* CX-STDOUT: staged pair 42 */
+
+#include <stdio.h>
+
+comptime expr void invoke_pair(
+    expr int& lhs,
+    expr int& rhs,
+    expr(int&, int&) void proc
+) {
+    return emit .{
+        proc(lhs, rhs);
+    };
+}
+
+void store_sum(int* output, int lhs, int rhs) {
+    *output = lhs + rhs;
+}
+
+int main() {
+    int lhs = 20;
+    int rhs = 22;
+    int result = 0;
+
+    invoke_pair(lhs, rhs) <| |left, right| store_sum(&result, left, right);
+
+    printf("staged pair %d\n", result);
+    return 0;
+}

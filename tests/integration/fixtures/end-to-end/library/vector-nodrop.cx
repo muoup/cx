@@ -1,0 +1,33 @@
+/* CX-STDOUT: dropped num: 0 */
+/* CX-STDOUT-NEXT: dropped num: 1 */
+/* CX-STDOUT-NEXT: dropped num: 2 */
+/* CX-STDOUT-NEXT: dropped num: 3 */
+/* CX-STDOUT-NEXT: dropped num: 4 */
+/* CX-STDOUT-NEXT: dropped num: 5 */
+/* CX-STDOUT-NEXT: dropped num: 6 */
+/* CX-STDOUT-NEXT: dropped num: 7 */
+/* CX-STDOUT-NEXT: dropped num: 8 */
+/* CX-STDOUT-NEXT: dropped num: 9 */
+
+import std::vector;
+
+#include <stdio.h>
+
+struct test_type : @nodrop {
+    int num;
+};
+
+void destructor(test_type t) {
+    printf("dropped num: %d\n", t.num);
+    @leak(t);
+}
+
+int main() {
+    std::vector::vector<test_type> t = std::vector::vector::new<test_type>();
+
+    for (int i = 0; i < 10; i++) {
+        t |> std::vector::vector::push<test_type>((test_type) { .num = i });
+    }
+
+    move t |> std::vector::vector::drop_with<test_type>(destructor);
+}
