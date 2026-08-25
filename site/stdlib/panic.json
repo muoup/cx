@@ -1,0 +1,21 @@
+{
+  "module": "std::panic",
+  "title": "Panic",
+  "order": 120,
+  "source": "lib/std/panic.cx",
+  "status": "experimental",
+  "summary": "A simple process-terminating panic helper.",
+  "types": [],
+  "functions": [
+    {
+      "name": "panic",
+      "signature": "void panic(const _str& message)",
+      "description": "Prints a panic message and terminates the process.",
+      "parameters": [
+        {"name": "message", "type": "const _str&", "mode": "borrow", "description": "The message to print."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Does not return normally."
+    }
+  ]
+}

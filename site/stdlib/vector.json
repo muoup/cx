@@ -1,0 +1,101 @@
+{
+  "module": "std::vector",
+  "title": "Vectors",
+  "order": 50,
+  "source": "lib/std/vector.cx",
+  "status": "experimental",
+  "summary": "A growable owning array of values.",
+  "types": [
+    {
+      "name": "vector<T>",
+      "kind": "struct",
+      "description": "Owns a resizable contiguous allocation of values.",
+      "attributes": ["@nodrop"],
+      "fields": [
+        {"name": "data", "type": "T*", "description": "Pointer to the element allocation."},
+        {"name": "length", "type": "usize", "description": "Number of initialized elements."},
+        {"name": "capacity", "type": "usize", "description": "Number of elements that fit before growth."}
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "name": "new",
+      "owner": "vector",
+      "signature": "vector<T> vector::new<T>()",
+      "description": "Creates an empty vector with initial capacity.",
+      "parameters": [],
+      "returnType": "vector<T>",
+      "returnDescription": "A new empty vector."
+    },
+    {
+      "name": "drop",
+      "owner": "vector",
+      "signature": "void vector::drop<T>(vector<T> this)",
+      "description": "Releases a vector allocation without destroying its elements.",
+      "parameters": [
+        {"name": "this", "type": "vector<T>", "mode": "consume", "description": "The vector to release."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Nothing."
+    },
+    {
+      "name": "drop_with",
+      "owner": "vector",
+      "signature": "void vector::drop_with<T>(vector<T> this, void (*destructor)(T))",
+      "description": "Destroys each element with a callback and releases the allocation.",
+      "parameters": [
+        {"name": "this", "type": "vector<T>", "mode": "consume", "description": "The vector to destroy."},
+        {"name": "destructor", "type": "void(*)(T)", "mode": "callback", "description": "The element destructor."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Nothing."
+    },
+    {
+      "name": "with_capacity",
+      "owner": "vector",
+      "signature": "vector<T> vector::with_capacity<T>(usize capacity)",
+      "description": "Creates an empty vector with requested capacity.",
+      "parameters": [
+        {"name": "capacity", "type": "usize", "mode": "value", "description": "The initial element capacity."}
+      ],
+      "returnType": "vector<T>",
+      "returnDescription": "A new empty vector."
+    },
+    {
+      "name": "push",
+      "owner": "vector",
+      "signature": "void vector::push<T>(vector<T>& this, T object)",
+      "description": "Appends a value, growing the allocation when necessary.",
+      "parameters": [
+        {"name": "this", "type": "vector<T>&", "mode": "mut-borrow", "description": "The vector to modify."},
+        {"name": "object", "type": "T", "mode": "value", "description": "The value to append."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Nothing."
+    },
+    {
+      "name": "pop",
+      "owner": "vector",
+      "signature": "std::optional::opt<T> vector::pop<T>(vector<T>& this)",
+      "description": "Removes and returns the last element when present.",
+      "parameters": [
+        {"name": "this", "type": "vector<T>&", "mode": "mut-borrow", "description": "The vector to modify."}
+      ],
+      "returnType": "std::optional::opt<T>",
+      "returnDescription": "Some last element or none when the vector is empty."
+    },
+    {
+      "name": "at",
+      "owner": "vector",
+      "signature": "std::optional::opt<T&> vector::at<T>(vector<T>& this, usize index)",
+      "description": "Returns an optional reference to an in-range element.",
+      "parameters": [
+        {"name": "this", "type": "vector<T>&", "mode": "borrow", "description": "The vector to index."},
+        {"name": "index", "type": "usize", "mode": "value", "description": "The element index."}
+      ],
+      "returnType": "std::optional::opt<T&>",
+      "returnDescription": "Some element reference when the index is valid."
+    }
+  ]
+}

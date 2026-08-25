@@ -1,0 +1,181 @@
+{
+  "module": "std::string",
+  "title": "Strings",
+  "order": 40,
+  "source": "lib/std/string.cx",
+  "status": "experimental",
+  "summary": "An owned, growable string backed by a null-terminated buffer.",
+  "types": [
+    {
+      "name": "string",
+      "kind": "struct",
+      "description": "Owns mutable string storage and tracks its length and capacity.",
+      "attributes": ["@nodrop"],
+      "fields": [
+        {"name": "data", "type": "char*", "description": "Pointer to the string buffer."},
+        {"name": "length", "type": "u64", "description": "Number of characters currently stored."},
+        {"name": "capacity", "type": "u64", "description": "Allocated buffer capacity."}
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "name": "new",
+      "owner": "string",
+      "signature": "string string::new()",
+      "description": "Creates an empty owned string.",
+      "parameters": [],
+      "returnType": "string",
+      "returnDescription": "An empty string."
+    },
+    {
+      "name": "clone",
+      "owner": "string",
+      "signature": "string string::clone(const string& this)",
+      "description": "Copies an owned string into a new allocation.",
+      "parameters": [
+        {"name": "this", "type": "const string&", "mode": "borrow", "description": "The string to copy."}
+      ],
+      "returnType": "string",
+      "returnDescription": "A new owned copy."
+    },
+    {
+      "name": "from_str",
+      "owner": "string",
+      "signature": "string string::from_str(const _str& s)",
+      "description": "Creates an owned string from a string reference.",
+      "parameters": [
+        {"name": "s", "type": "const _str&", "mode": "borrow", "description": "The source string."}
+      ],
+      "returnType": "string",
+      "returnDescription": "A new owned string."
+    },
+    {
+      "name": "from_span",
+      "owner": "string",
+      "signature": "string string::from_span(const std::span<const char>& s)",
+      "description": "Creates an owned string from a character span.",
+      "parameters": [
+        {"name": "s", "type": "const std::span<const char>&", "mode": "borrow", "description": "The source character span."}
+      ],
+      "returnType": "string",
+      "returnDescription": "A new owned string."
+    },
+    {
+      "name": "try_new_string",
+      "owner": "string",
+      "signature": "std::optional::opt<string> string::try_new_string()",
+      "description": "Attempts to allocate an empty owned string.",
+      "parameters": [],
+      "returnType": "std::optional::opt<string>",
+      "returnDescription": "Some string on allocation success or none on failure."
+    },
+    {
+      "name": "append",
+      "owner": "string",
+      "signature": "void string::append(string& this, const _str& s)",
+      "description": "Appends a string reference to an owned string.",
+      "parameters": [
+        {"name": "this", "type": "string&", "mode": "mut-borrow", "description": "The destination string."},
+        {"name": "s", "type": "const _str&", "mode": "borrow", "description": "The text to append."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Nothing."
+    },
+    {
+      "name": "append_char",
+      "owner": "string",
+      "signature": "void string::append_char(string& this, char c)",
+      "description": "Appends one character to an owned string.",
+      "parameters": [
+        {"name": "this", "type": "string&", "mode": "mut-borrow", "description": "The destination string."},
+        {"name": "c", "type": "char", "mode": "value", "description": "The character to append."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Nothing."
+    },
+    {
+      "name": "drop",
+      "owner": "string",
+      "signature": "void string::drop(string this)",
+      "description": "Releases the string buffer.",
+      "parameters": [
+        {"name": "this", "type": "string", "mode": "consume", "description": "The string to release."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Nothing."
+    },
+    {
+      "name": "as_str",
+      "owner": "string",
+      "signature": "_str& string::as_str(string& this)",
+      "description": "Views an owned string as a string reference.",
+      "parameters": [
+        {"name": "this", "type": "string&", "mode": "borrow", "description": "The string to view."}
+      ],
+      "returnType": "_str&",
+      "returnDescription": "A reference to the null-terminated string data."
+    },
+    {
+      "name": "str_length",
+      "owner": "string",
+      "signature": "usize string::str_length(const _str& this)",
+      "description": "Returns the length of a string reference.",
+      "parameters": [
+        {"name": "this", "type": "const _str&", "mode": "borrow", "description": "The string to measure."}
+      ],
+      "returnType": "usize",
+      "returnDescription": "The string length."
+    },
+    {
+      "name": "substring",
+      "owner": "string",
+      "signature": "string string::substring(const string& this, usize start, usize end)",
+      "description": "Copies a range from an owned string.",
+      "parameters": [
+        {"name": "this", "type": "const string&", "mode": "borrow", "description": "The source string."},
+        {"name": "start", "type": "usize", "mode": "value", "description": "The inclusive start index."},
+        {"name": "end", "type": "usize", "mode": "value", "description": "The exclusive end index."}
+      ],
+      "returnType": "string",
+      "returnDescription": "A new string containing the selected range."
+    },
+    {
+      "name": "substring",
+      "owner": "str",
+      "signature": "string str::substring(const _str& this, usize start, usize end)",
+      "description": "Copies a range from a string reference.",
+      "parameters": [
+        {"name": "this", "type": "const _str&", "mode": "borrow", "description": "The source string."},
+        {"name": "start", "type": "usize", "mode": "value", "description": "The inclusive start index."},
+        {"name": "end", "type": "usize", "mode": "value", "description": "The exclusive end index."}
+      ],
+      "returnType": "string",
+      "returnDescription": "A new string containing the selected range."
+    },
+    {
+      "name": "equals",
+      "owner": "string",
+      "signature": "bool string::equals(const string& this, const string& other)",
+      "description": "Compares two owned strings for equality.",
+      "parameters": [
+        {"name": "this", "type": "const string&", "mode": "borrow", "description": "The left-hand string."},
+        {"name": "other", "type": "const string&", "mode": "borrow", "description": "The right-hand string."}
+      ],
+      "returnType": "bool",
+      "returnDescription": "True when both strings contain the same bytes."
+    },
+    {
+      "name": "equals",
+      "owner": "str",
+      "signature": "bool str::equals(const _str& this, const _str& other)",
+      "description": "Compares two string references for equality.",
+      "parameters": [
+        {"name": "this", "type": "const _str&", "mode": "borrow", "description": "The left-hand string."},
+        {"name": "other", "type": "const _str&", "mode": "borrow", "description": "The right-hand string."}
+      ],
+      "returnType": "bool",
+      "returnDescription": "True when both strings contain the same bytes."
+    }
+  ]
+}

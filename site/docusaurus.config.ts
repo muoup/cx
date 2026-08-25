@@ -83,6 +83,12 @@ const config: Config = {
           label: 'Manual',
         },
         {
+          type: 'docSidebar',
+          sidebarId: 'stdlibSidebar',
+          position: 'left',
+          label: 'Standard Library',
+        },
+        {
           href: 'https://github.com/muoup/cx',
           label: 'GitHub',
           position: 'right',

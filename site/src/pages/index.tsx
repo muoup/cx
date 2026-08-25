@@ -20,7 +20,7 @@ const featurePanels = [
     },
     {
         title: "C Interop",
-        body: "CX is designed as a strict superset of C, all valid C code will be valid CX code."
+        body: "CX is designed as a strict superset of C, all valid C code is valid CX code."
     },
 ];
 

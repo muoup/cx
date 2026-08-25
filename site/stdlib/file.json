@@ -1,0 +1,116 @@
+{
+  "module": "std::file",
+  "title": "std::file",
+  "order": 80,
+  "source": "lib/std/file.cx",
+  "status": "experimental",
+  "summary": "A small wrapper around C standard-library file handles.",
+  "types": [
+    {
+      "name": "file",
+      "kind": "struct",
+      "description": "Owns a C FILE handle while it remains open.",
+      "attributes": ["@nodrop"],
+      "fields": [
+        {"name": "handle", "type": "FILE*", "description": "The underlying C file handle."}
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "name": "open",
+      "owner": "file",
+      "signature": "std::optional::opt<file> file::open(const char* path, const char* mode)",
+      "description": "Opens a file using a C standard-library mode string.",
+      "parameters": [
+        {"name": "path", "type": "const char*", "mode": "borrow", "description": "The file path."},
+        {"name": "mode", "type": "const char*", "mode": "borrow", "description": "The C fopen mode string."}
+      ],
+      "returnType": "std::optional::opt<file>",
+      "returnDescription": "Some file on success or none when opening fails."
+    },
+    {
+      "name": "write",
+      "owner": "file",
+      "signature": "void file::write(file& this, const char* data)",
+      "description": "Writes a null-terminated string to an open file.",
+      "parameters": [
+        {"name": "this", "type": "file&", "mode": "mut-borrow", "description": "The file to write to."},
+        {"name": "data", "type": "const char*", "mode": "borrow", "description": "The string to write."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Nothing."
+    },
+    {
+      "name": "write_line",
+      "owner": "file",
+      "signature": "void file::write_line(file& this, const char* data)",
+      "description": "Writes a null-terminated string followed by a newline.",
+      "parameters": [
+        {"name": "this", "type": "file&", "mode": "mut-borrow", "description": "The file to write to."},
+        {"name": "data", "type": "const char*", "mode": "borrow", "description": "The line to write."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Nothing."
+    },
+    {
+      "name": "flush",
+      "owner": "file",
+      "signature": "void file::flush(file& this)",
+      "description": "Flushes buffered output for an open file.",
+      "parameters": [
+        {"name": "this", "type": "file&", "mode": "mut-borrow", "description": "The file to flush."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Nothing."
+    },
+    {
+      "name": "read_line",
+      "owner": "file",
+      "signature": "void file::read_line(file& this, char* buffer, u64 buffer_size)",
+      "description": "Reads a line into a caller-provided buffer.",
+      "parameters": [
+        {"name": "this", "type": "file&", "mode": "mut-borrow", "description": "The file to read from."},
+        {"name": "buffer", "type": "char*", "mode": "mut-borrow", "description": "The destination buffer."},
+        {"name": "buffer_size", "type": "u64", "mode": "value", "description": "The capacity of the destination buffer."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Nothing."
+    },
+    {
+      "name": "read",
+      "owner": "file",
+      "signature": "void file::read(file& this, char* buffer, u64 buffer_size)",
+      "description": "Reads bytes into a caller-provided buffer.",
+      "parameters": [
+        {"name": "this", "type": "file&", "mode": "mut-borrow", "description": "The file to read from."},
+        {"name": "buffer", "type": "char*", "mode": "mut-borrow", "description": "The destination buffer."},
+        {"name": "buffer_size", "type": "u64", "mode": "value", "description": "The number of bytes requested."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Nothing."
+    },
+    {
+      "name": "read_to_string",
+      "owner": "file",
+      "signature": "std::string::string file::read_to_string(file& this)",
+      "description": "Reads the remaining file contents into a string.",
+      "parameters": [
+        {"name": "this", "type": "file&", "mode": "mut-borrow", "description": "The file to read from."}
+      ],
+      "returnType": "std::string::string",
+      "returnDescription": "A string containing the remaining contents."
+    },
+    {
+      "name": "close",
+      "owner": "file",
+      "signature": "void file::close(file this)",
+      "description": "Closes a file handle and releases the wrapper.",
+      "parameters": [
+        {"name": "this", "type": "file", "mode": "consume", "description": "The file to close."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Nothing."
+    }
+  ]
+}
