@@ -4,8 +4,8 @@ The JSON files in this directory are the hand-maintained source data for the gen
 
 Each module record can contain:
 
-- `module`, `title`, `order`, `source`, `status`, and `summary` for module metadata;
-- `types` with `name`, `kind`, `description`, `attributes`, `fields`, and `variants`;
-- `functions` with `name`, `owner`, `signature`, `stage`, `safety`, `description`, `parameters`, `returnType`, `returnDescription`, and optional `examples`.
+- `module`, `order`, `source`, and `summary` for module metadata;
+- `types` with an inline kind in `name`, plus `description`, `attributes`, `fields`, and `variants`;
+- `functions` with `name`, `owner`, `signature`, `stage`, `description`, `parameters`, `returnType`, `returnDescription`, and optional `examples`.
 
 The generated pages are ignored by Git. Keep the JSON records concise for now; structural extraction and stronger consistency checks can be added later without changing the rendered format.

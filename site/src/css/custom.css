@@ -177,3 +177,31 @@ body:has(.landing-page) .navbar {
 .theme-code-block .token.boolean {
   color: var(--cx-color-code-number) !important;
 }
+
+.cx-stdlib-page h1,
+.cx-stdlib-page h2 {
+  color: var(--ifm-color-primary);
+}
+
+.cx-stdlib-page h2 {
+  border-bottom: 1px solid var(--cx-color-border);
+  padding-bottom: 0.35rem;
+}
+
+.cx-stdlib-page .cx-stdlib-type-name {
+  color: var(--cx-color-code-type);
+}
+
+.cx-stdlib-page .cx-stdlib-function-name {
+  color: var(--cx-color-code-function);
+}
+
+.cx-stdlib-page .cx-stdlib-type-name code,
+.cx-stdlib-page .cx-stdlib-function-name code {
+  color: inherit;
+}
+
+.cx-stdlib-page blockquote {
+  background: var(--cx-color-code-surface);
+  border-left-color: var(--ifm-color-primary);
+}

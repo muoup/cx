@@ -1,15 +1,12 @@
 {
   "module": "std::box",
-  "title": "Box",
   "order": 60,
   "source": "lib/std/box.cx",
-  "status": "experimental",
   "summary": "Heap-backed ownership for one value.",
   "types": [
     {
-      "name": "box<T>",
-      "kind": "struct",
-      "description": "Owns a single heap-allocated value.",
+      "name": "struct box<T>",
+      "description": "A struct that owns a single heap-allocated value.",
       "attributes": ["@nodrop"],
       "fields": [
         {
@@ -24,14 +21,13 @@
     {
       "name": "new",
       "owner": "box",
-      "signature": "box<T> box::new<T>(T value) safe",
+      "signature": "box<T> box::new<T>(T value)",
       "description": "Allocates a box and moves a value into it.",
       "parameters": [
-        {"name": "value", "type": "T", "mode": "value", "description": "The value to store."}
+        {"name": "value", "type": "T", "description": "The value to store."}
       ],
       "returnType": "box<T>",
-      "returnDescription": "A box owning the value.",
-      "safety": "safe"
+      "returnDescription": "A box owning the value."
     },
     {
       "name": "deref",
@@ -39,7 +35,7 @@
       "signature": "const T& box::deref<T>(const box<T>& this)",
       "description": "Borrows the value stored in a box.",
       "parameters": [
-        {"name": "this", "type": "const box<T>&", "mode": "borrow", "description": "The box to inspect."}
+        {"name": "this", "type": "const box<T>&", "description": "The box to inspect."}
       ],
       "returnType": "const T&",
       "returnDescription": "A read-only reference to the value."
@@ -50,7 +46,7 @@
       "signature": "T& box::deref_mut<T>(box<T>& this)",
       "description": "Mutably borrows the value stored in a box.",
       "parameters": [
-        {"name": "this", "type": "box<T>&", "mode": "mut-borrow", "description": "The box to modify."}
+        {"name": "this", "type": "box<T>&", "description": "The box to modify."}
       ],
       "returnType": "T&",
       "returnDescription": "A mutable reference to the value."
@@ -58,14 +54,13 @@
     {
       "name": "unwrap",
       "owner": "box",
-      "signature": "T box::unwrap<T>(box<T> this) safe",
+      "signature": "T box::unwrap<T>(box<T> this)",
       "description": "Consumes a box and returns its value.",
       "parameters": [
-        {"name": "this", "type": "box<T>", "mode": "consume", "description": "The box to consume."}
+        {"name": "this", "type": "box<T>", "description": "The box to consume."}
       ],
       "returnType": "T",
-      "returnDescription": "The previously owned value.",
-      "safety": "safe"
+      "returnDescription": "The previously owned value."
     },
     {
       "name": "leak",
@@ -73,7 +68,7 @@
       "signature": "T* box::leak<T>(box<T> this)",
       "description": "Consumes a box and releases ownership of its allocation.",
       "parameters": [
-        {"name": "this", "type": "box<T>", "mode": "consume", "description": "The box to leak."}
+        {"name": "this", "type": "box<T>", "description": "The box to leak."}
       ],
       "returnType": "T*",
       "returnDescription": "A raw pointer to the formerly owned value."
@@ -84,8 +79,8 @@
       "signature": "void box::drop_with<T>(box<T> this, void(*drop_value)(T))",
       "description": "Destroys a boxed value with a caller-provided destructor.",
       "parameters": [
-        {"name": "this", "type": "box<T>", "mode": "consume", "description": "The box to destroy."},
-        {"name": "drop_value", "type": "void(*)(T)", "mode": "callback", "description": "The function used to destroy the value."}
+        {"name": "this", "type": "box<T>", "description": "The box to destroy."},
+        {"name": "drop_value", "type": "void(*)(T)", "description": "The function used to destroy the value."}
       ],
       "returnType": "void",
       "returnDescription": "Nothing."
@@ -93,14 +88,13 @@
     {
       "name": "drop",
       "owner": "box",
-      "signature": "void box::drop<T>(box<T> this) safe",
+      "signature": "void box::drop<T>(box<T> this)",
       "description": "Releases a box and its allocation.",
       "parameters": [
-        {"name": "this", "type": "box<T>", "mode": "consume", "description": "The box to release."}
+        {"name": "this", "type": "box<T>", "description": "The box to release."}
       ],
       "returnType": "void",
-      "returnDescription": "Nothing.",
-      "safety": "safe"
+      "returnDescription": "Nothing."
     }
   ]
 }

@@ -1,33 +1,28 @@
 {
   "module": "std::net::udp",
-  "title": "UDP Networking",
   "order": 110,
   "source": "lib/std/net/udp.cx",
-  "status": "experimental",
   "summary": "Minimal UDP socket wrappers for IPv4 datagrams.",
   "types": [
     {
-      "name": "endpoint",
-      "kind": "struct",
-      "description": "Stores an IPv4 socket address and its native length.",
+      "name": "struct endpoint",
+      "description": "A struct that stores an IPv4 socket address and its native length.",
       "fields": [
         {"name": "address", "type": "sockaddr_in", "description": "The native IPv4 address value."},
         {"name": "length", "type": "u32", "description": "The native address length."}
       ]
     },
     {
-      "name": "datagram",
-      "kind": "struct",
-      "description": "Describes one received UDP datagram.",
+      "name": "struct datagram",
+      "description": "A struct that describes one received UDP datagram.",
       "fields": [
         {"name": "length", "type": "u64", "description": "Number of bytes received."},
         {"name": "source", "type": "endpoint", "description": "The sender endpoint."}
       ]
     },
     {
-      "name": "udp_socket",
-      "kind": "struct",
-      "description": "Owns a UDP socket descriptor.",
+      "name": "struct udp_socket",
+      "description": "A struct that owns a UDP socket descriptor.",
       "attributes": ["@nodrop"],
       "fields": [
         {"name": "fd", "type": "i32", "description": "The native socket descriptor."}
@@ -41,8 +36,8 @@
       "signature": "std::opt<endpoint> endpoint::ipv4(const char* address, u16 port)",
       "description": "Builds an IPv4 endpoint from a dotted address and port.",
       "parameters": [
-        {"name": "address", "type": "const char*", "mode": "borrow", "description": "The dotted IPv4 address."},
-        {"name": "port", "type": "u16", "mode": "value", "description": "The UDP port."}
+        {"name": "address", "type": "const char*", "description": "The dotted IPv4 address."},
+        {"name": "port", "type": "u16", "description": "The UDP port."}
       ],
       "returnType": "std::opt<endpoint>",
       "returnDescription": "Some endpoint when the address is valid."
@@ -62,8 +57,8 @@
       "signature": "std::opt<void> udp_socket::bind(udp_socket& this, endpoint addr)",
       "description": "Binds a UDP socket to an endpoint.",
       "parameters": [
-        {"name": "this", "type": "udp_socket&", "mode": "mut-borrow", "description": "The socket to bind."},
-        {"name": "addr", "type": "endpoint", "mode": "value", "description": "The local endpoint."}
+        {"name": "this", "type": "udp_socket&", "description": "The socket to bind."},
+        {"name": "addr", "type": "endpoint", "description": "The local endpoint."}
       ],
       "returnType": "std::opt<void>",
       "returnDescription": "Some void on success or none on failure."
@@ -74,9 +69,9 @@
       "signature": "std::opt<u64> udp_socket::send_to(udp_socket& this, const std::span<const u8> buffer, endpoint& remote)",
       "description": "Sends a byte span to a remote UDP endpoint.",
       "parameters": [
-        {"name": "this", "type": "udp_socket&", "mode": "mut-borrow", "description": "The socket to send from."},
-        {"name": "buffer", "type": "const std::span<const u8>", "mode": "value", "description": "The bytes to send."},
-        {"name": "remote", "type": "endpoint&", "mode": "borrow", "description": "The destination endpoint."}
+        {"name": "this", "type": "udp_socket&", "description": "The socket to send from."},
+        {"name": "buffer", "type": "const std::span<const u8>", "description": "The bytes to send."},
+        {"name": "remote", "type": "endpoint&", "description": "The destination endpoint."}
       ],
       "returnType": "std::opt<u64>",
       "returnDescription": "Some number of bytes sent or none on failure."
@@ -87,9 +82,9 @@
       "signature": "std::opt<datagram> udp_socket::recv_from(udp_socket& this, void* buffer, u64 capacity)",
       "description": "Receives one UDP datagram into a caller-provided buffer.",
       "parameters": [
-        {"name": "this", "type": "udp_socket&", "mode": "mut-borrow", "description": "The socket to receive from."},
-        {"name": "buffer", "type": "void*", "mode": "mut-borrow", "description": "The destination buffer."},
-        {"name": "capacity", "type": "u64", "mode": "value", "description": "The destination capacity."}
+        {"name": "this", "type": "udp_socket&", "description": "The socket to receive from."},
+        {"name": "buffer", "type": "void*", "description": "The destination buffer."},
+        {"name": "capacity", "type": "u64", "description": "The destination capacity."}
       ],
       "returnType": "std::opt<datagram>",
       "returnDescription": "Some datagram on success or none on failure."
@@ -100,7 +95,7 @@
       "signature": "void udp_socket::close(udp_socket this)",
       "description": "Closes a UDP socket descriptor.",
       "parameters": [
-        {"name": "this", "type": "udp_socket", "mode": "consume", "description": "The socket to close."}
+        {"name": "this", "type": "udp_socket", "description": "The socket to close."}
       ],
       "returnType": "void",
       "returnDescription": "Nothing."

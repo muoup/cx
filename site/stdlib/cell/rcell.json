@@ -1,15 +1,12 @@
 {
   "module": "std::cell::rcell",
-  "title": "Runtime Borrow Cell",
   "order": 90,
   "source": "lib/std/cell/rcell.cx",
-  "status": "experimental",
   "summary": "A value with runtime-checked shared and mutable borrows.",
   "types": [
     {
-      "name": "rcell<T>",
-      "kind": "struct",
-      "description": "Stores a value and tracks its active borrow state.",
+      "name": "struct rcell<T>",
+      "description": "A struct that stores a value and tracks its active borrow state.",
       "attributes": ["@copy_traits(T)", "@unsafe_move"],
       "fields": [
         {"name": "inner", "type": "T", "description": "The stored value."},
@@ -24,7 +21,7 @@
       "signature": "rcell<T> rcell::new<T>(T val)",
       "description": "Creates a borrow cell containing a value.",
       "parameters": [
-        {"name": "val", "type": "T", "mode": "value", "description": "The value to store."}
+        {"name": "val", "type": "T", "description": "The value to store."}
       ],
       "returnType": "rcell<T>",
       "returnDescription": "A new borrow cell."
@@ -36,8 +33,8 @@
       "stage": "comptime",
       "description": "Runs a callback with a shared borrow of the cell value.",
       "parameters": [
-        {"name": "cell", "type": "rcell<T>&", "mode": "expr", "description": "The cell to borrow."},
-        {"name": "proc", "type": "expr(const T&) void", "mode": "callback", "description": "The callback receiving the shared borrow."}
+        {"name": "cell", "type": "rcell<T>&", "description": "The cell to borrow."},
+        {"name": "proc", "type": "expr(const T&) void", "description": "The callback receiving the shared borrow."}
       ],
       "returnType": "void",
       "returnDescription": "Nothing."
@@ -49,8 +46,8 @@
       "stage": "comptime",
       "description": "Runs a callback with an exclusive mutable borrow of the cell value.",
       "parameters": [
-        {"name": "cell", "type": "rcell<T>&", "mode": "expr", "description": "The cell to borrow mutably."},
-        {"name": "proc", "type": "expr(T&) void", "mode": "callback", "description": "The callback receiving the mutable borrow."}
+        {"name": "cell", "type": "rcell<T>&", "description": "The cell to borrow mutably."},
+        {"name": "proc", "type": "expr(T&) void", "description": "The callback receiving the mutable borrow."}
       ],
       "returnType": "void",
       "returnDescription": "Nothing."
@@ -59,10 +56,9 @@
       "name": "release",
       "owner": "rcell",
       "signature": "void rcell::release<T>(rcell<T>& cell)",
-      "safety": "not safe",
       "description": "Clears the mutable-borrow state of a cell.",
       "parameters": [
-        {"name": "cell", "type": "rcell<T>&", "mode": "mut-borrow", "description": "The cell whose state is released."}
+        {"name": "cell", "type": "rcell<T>&", "description": "The cell whose state is released."}
       ],
       "returnType": "void",
       "returnDescription": "Nothing."
@@ -71,10 +67,9 @@
       "name": "release_const",
       "owner": "rcell",
       "signature": "void rcell::release_const<T>(rcell<T>& cell)",
-      "safety": "not safe",
       "description": "Decrements the shared-borrow state of a cell.",
       "parameters": [
-        {"name": "cell", "type": "rcell<T>&", "mode": "mut-borrow", "description": "The cell whose shared borrow is released."}
+        {"name": "cell", "type": "rcell<T>&", "description": "The cell whose shared borrow is released."}
       ],
       "returnType": "void",
       "returnDescription": "Nothing."

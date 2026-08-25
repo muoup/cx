@@ -1,15 +1,12 @@
 {
   "module": "std::span",
-  "title": "Spans",
   "order": 30,
   "source": "lib/std/span.cx",
-  "status": "experimental",
   "summary": "Non-owning views over contiguous values.",
   "types": [
     {
-      "name": "span<T>",
-      "kind": "struct",
-      "description": "Describes a contiguous sequence without owning its storage.",
+      "name": "struct span<T>",
+      "description": "A struct describing a contiguous sequence without owning its storage.",
       "fields": [
         {"name": "data", "type": "T*", "description": "Pointer to the first element."},
         {"name": "length", "type": "usize", "description": "Number of elements in the view."}
@@ -23,7 +20,7 @@
       "signature": "usize span::size<T>(span<T>& this)",
       "description": "Returns the number of elements in a span.",
       "parameters": [
-        {"name": "this", "type": "span<T>&", "mode": "borrow", "description": "The span to measure."}
+        {"name": "this", "type": "span<T>&", "description": "The span to measure."}
       ],
       "returnType": "usize",
       "returnDescription": "The span length."
@@ -34,7 +31,7 @@
       "signature": "span<const u8> span::str_as_bytes(const _str& this)",
       "description": "Views a null-terminated string as bytes.",
       "parameters": [
-        {"name": "this", "type": "const _str&", "mode": "borrow", "description": "The string to view."}
+        {"name": "this", "type": "const _str&", "description": "The string to view."}
       ],
       "returnType": "span<const u8>",
       "returnDescription": "A byte span over the string contents."
@@ -45,7 +42,7 @@
       "signature": "_str& span::as_str(span<const u8>& this)",
       "description": "Views a byte span as a string reference.",
       "parameters": [
-        {"name": "this", "type": "span<const u8>&", "mode": "borrow", "description": "The byte span to view."}
+        {"name": "this", "type": "span<const u8>&", "description": "The byte span to view."}
       ],
       "returnType": "_str&",
       "returnDescription": "A string view over the byte data."
@@ -56,8 +53,8 @@
       "signature": "std::opt<T&> span::get<T>(span<T>& this, usize index)",
       "description": "Returns an optional reference to an in-range element.",
       "parameters": [
-        {"name": "this", "type": "span<T>&", "mode": "borrow", "description": "The span to index."},
-        {"name": "index", "type": "usize", "mode": "value", "description": "The element index."}
+        {"name": "this", "type": "span<T>&", "description": "The span to index."},
+        {"name": "index", "type": "usize", "description": "The element index."}
       ],
       "returnType": "std::opt<T&>",
       "returnDescription": "Some element reference when the index is valid."
@@ -68,8 +65,8 @@
       "signature": "T& span::at<T>(span<T>& this, usize index)",
       "description": "Returns an in-range element reference or terminates on failure.",
       "parameters": [
-        {"name": "this", "type": "span<T>&", "mode": "borrow", "description": "The span to index."},
-        {"name": "index", "type": "usize", "mode": "value", "description": "The element index."}
+        {"name": "this", "type": "span<T>&", "description": "The span to index."},
+        {"name": "index", "type": "usize", "description": "The element index."}
       ],
       "returnType": "T&",
       "returnDescription": "A mutable reference to the selected element."
@@ -80,7 +77,7 @@
       "signature": "std::opt<T&> span::first<T>(span<T>& this)",
       "description": "Returns an optional reference to the first element.",
       "parameters": [
-        {"name": "this", "type": "span<T>&", "mode": "borrow", "description": "The span to inspect."}
+        {"name": "this", "type": "span<T>&", "description": "The span to inspect."}
       ],
       "returnType": "std::opt<T&>",
       "returnDescription": "Some first element reference when the span is non-empty."
@@ -91,7 +88,7 @@
       "signature": "std::opt<T&> span::last<T>(span<T>& this)",
       "description": "Returns an optional reference to the last element.",
       "parameters": [
-        {"name": "this", "type": "span<T>&", "mode": "borrow", "description": "The span to inspect."}
+        {"name": "this", "type": "span<T>&", "description": "The span to inspect."}
       ],
       "returnType": "std::opt<T&>",
       "returnDescription": "Some last element reference when the span is non-empty."

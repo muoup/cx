@@ -46,6 +46,15 @@ function inlineCode(value) {
     return `\`${String(value ?? "").replaceAll("`", "\\`")}\``;
 }
 
+function htmlText(value) {
+    return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+}
+
 function renderParameters(parameters = []) {
     if (parameters.length === 0) {
         return "No parameters.";
@@ -53,8 +62,7 @@ function renderParameters(parameters = []) {
 
     return parameters
         .map((parameter) => {
-            const mode = parameter.mode ? ` (${parameter.mode})` : "";
-            return `- ${inlineCode(parameter.name)}: ${inlineCode(parameter.type)}${mode} — ${parameter.description}`;
+            return `- ${inlineCode(parameter.name)}: ${inlineCode(parameter.type)} — ${parameter.description}`;
         })
         .join("\n");
 }
@@ -94,19 +102,16 @@ function renderType(type) {
         : "";
 
     return [
-        `### ${inlineCode(type.name)}`,
+        `### <span className="cx-stdlib-type-name"><code>${htmlText(type.name)}</code></span>`,
         "",
-        `${type.kind ? `${type.kind}. ` : ""}${type.description}${attributes}${fields}${variants}`,
+        `${type.description}${attributes}${fields}${variants}`,
     ].join("\n");
 }
 
 function renderFunction(functionRecord) {
-    const metadata = [
-        functionRecord.stage && functionRecord.stage !== "runtime"
-            ? `Stage: ${inlineCode(functionRecord.stage)}`
-            : null,
-        functionRecord.safety ? `Safety: ${inlineCode(functionRecord.safety)}` : null,
-    ].filter(Boolean).join(" · ");
+    const metadata = functionRecord.stage && functionRecord.stage !== "runtime"
+        ? `Stage: ${inlineCode(functionRecord.stage)}`
+        : "";
     const owner = functionRecord.owner ? `${functionRecord.owner}::` : "";
     const parameters = renderParameters(functionRecord.parameters);
     const returnDescription = functionRecord.returnDescription ?? "The documented return value.";
@@ -120,7 +125,7 @@ function renderFunction(functionRecord) {
         .join("\n\n");
 
     return [
-        `### ${inlineCode(`${owner}${functionRecord.name}`)}`,
+        `### <span className="cx-stdlib-function-name"><code>${htmlText(`${owner}${functionRecord.name}`)}</code></span>`,
         "",
         functionRecord.description,
         "",
@@ -153,20 +158,22 @@ function renderModule(record) {
 
     return [
         "---",
-        `title: ${yamlString(record.title ?? record.module)}`,
+        `title: ${yamlString(record.module)}`,
         `sidebar_position: ${record.order ?? 100}`,
         `description: ${yamlString(record.summary ?? "Standard-library module.")}`,
         "---",
         "",
-        `# ${record.title ?? record.module}`,
+        `<div className="cx-stdlib-page">`,
+        "",
+        `# ${record.module}`,
         "",
         `${record.summary ?? "Standard-library module."}`,
         "",
-        `Module: ${inlineCode(record.module)}  \\`,
-        `Source: ${inlineCode(sourcePath(record))}  \\`,
-        `Status: ${inlineCode(record.status ?? "experimental")}`,
+        `Source: ${inlineCode(sourcePath(record))}`,
         "",
         sections.join("\n\n"),
+        "",
+        "</div>",
         "",
     ].join("\n");
 }
@@ -175,7 +182,7 @@ function renderIndex(records) {
     const modules = records
         .map((record) => {
             const slug = moduleSlug(record.module);
-            return `- [${record.title ?? record.module}](./${slug}.md) — ${record.summary ?? "Standard-library module."}`;
+            return `- [${record.module}](./${slug}.md) — ${record.summary ?? "Standard-library module."}`;
         })
         .join("\n");
 
@@ -186,6 +193,8 @@ function renderIndex(records) {
         "description: Structured reference for the CX standard library.",
         "---",
         "",
+        "<div className=\"cx-stdlib-page\">",
+        "",
         "# Standard Library",
         "",
         "This reference is generated from the structured records in `site/stdlib`. Descriptions are intentionally concise placeholders while the API documentation is being filled in.",
@@ -193,6 +202,8 @@ function renderIndex(records) {
         "## Modules",
         "",
         modules,
+        "",
+        "</div>",
         "",
     ].join("\n");
 }

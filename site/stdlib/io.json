@@ -1,56 +1,50 @@
 {
   "module": "std::io",
-  "title": "Input and Output",
   "order": 10,
   "source": "lib/std/io.cx",
-  "status": "experimental",
   "summary": "Basic console output helpers and the C printf binding.",
   "types": [],
   "functions": [
     {
       "name": "printf",
-      "kind": "extern-function",
       "signature": "public extern \"C\": int printf(const char *__restrict format, ...)",
       "description": "Calls the C formatted-output function.",
       "parameters": [
-        {"name": "format", "type": "const char*", "mode": "borrow", "description": "The C format string."},
-        {"name": "...", "type": "variadic", "mode": "value", "description": "The values consumed by the format string."}
+        {"name": "format", "type": "const char*", "description": "The C format string."},
+        {"name": "...", "type": "variadic", "description": "The values consumed by the format string."}
       ],
       "returnType": "int",
       "returnDescription": "The C printf result."
     },
     {
       "name": "print",
-      "signature": "void print(const _str& s) safe",
+      "signature": "void print(const _str& s)",
       "description": "Writes a string without adding a newline.",
       "parameters": [
-        {"name": "s", "type": "const _str&", "mode": "borrow", "description": "The string to write."}
+        {"name": "s", "type": "const _str&", "description": "The string to write."}
       ],
       "returnType": "void",
-      "returnDescription": "Nothing.",
-      "safety": "safe"
+      "returnDescription": "Nothing."
     },
     {
       "name": "println",
-      "signature": "void println(const _str& s) safe",
+      "signature": "void println(const _str& s)",
       "description": "Writes a string followed by a newline.",
       "parameters": [
-        {"name": "s", "type": "const _str&", "mode": "borrow", "description": "The string to write."}
+        {"name": "s", "type": "const _str&", "description": "The string to write."}
       ],
       "returnType": "void",
-      "returnDescription": "Nothing.",
-      "safety": "safe"
+      "returnDescription": "Nothing."
     },
     {
       "name": "print_char",
-      "signature": "void print_char(i32 c) safe",
+      "signature": "void print_char(i32 c)",
       "description": "Writes one character value.",
       "parameters": [
-        {"name": "c", "type": "i32", "mode": "value", "description": "The character value to write."}
+        {"name": "c", "type": "i32", "description": "The character value to write."}
       ],
       "returnType": "void",
-      "returnDescription": "Nothing.",
-      "safety": "safe"
+      "returnDescription": "Nothing."
     }
   ]
 }
