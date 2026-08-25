@@ -1,3 +1,18 @@
+/* CX-STDOUT: mark 0 */
+/* CX-STDOUT-NEXT: mark 2 */
+/* CX-STDOUT-NEXT: mark 1 */
+/* CX-STDOUT-NEXT: mark 4 */
+/* CX-STDOUT-NEXT: mark 3 */
+/* CX-STDOUT-NEXT: returned 7 */
+/* CX-STDOUT-NEXT: mark 10 */
+/* CX-STDOUT-NEXT: mark 11 */
+/* CX-STDOUT-NEXT: mark 21 */
+/* CX-STDOUT-NEXT: mark 20 */
+/* CX-STDOUT-NEXT: mark 22 */
+/* CX-STDOUT-NEXT: mark 31 */
+/* CX-STDOUT-NEXT: mark 30 */
+/* CX-STDOUT-NEXT: preserved 5 */
+
 #include <stdio.h>
 
 void mark(int value) {

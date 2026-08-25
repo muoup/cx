@@ -1,3 +1,10 @@
+/* CX-STDOUT: inner local 20 */
+/* CX-STDOUT-NEXT: outer local 10 */
+/* CX-STDOUT-NEXT: inner parameter 30 */
+/* CX-STDOUT-NEXT: outer parameter 10 */
+/* CX-STDOUT-NEXT: drop 50 */
+/* CX-STDOUT-NEXT: drop 40 */
+
 #include <stdio.h>
 
 struct Resource {

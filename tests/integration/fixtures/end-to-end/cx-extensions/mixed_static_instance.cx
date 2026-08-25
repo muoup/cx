@@ -1,3 +1,5 @@
+/* CX-STDOUT: s.c = 42 */
+
 #include <stdio.h>
 
 struct Counter {

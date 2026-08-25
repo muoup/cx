@@ -1,3 +1,5 @@
+/* CX-STDOUT: first second */
+
 #include <stdio.h>
 
 const char *messages[] = { "first", "second" };

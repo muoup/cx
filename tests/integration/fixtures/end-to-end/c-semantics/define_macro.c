@@ -1,3 +1,5 @@
+/* CX-STDOUT: The value is: 42 */
+
 #include <stdio.h>
 
 #define TEST_VAL 42

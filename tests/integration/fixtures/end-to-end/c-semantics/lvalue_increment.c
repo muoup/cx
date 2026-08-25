@@ -1,3 +1,5 @@
+/* CX-STDOUT: */
+
 int values[2];
 
 int main(void) {

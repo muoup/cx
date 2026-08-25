@@ -1,3 +1,11 @@
+/* CX-STDOUT: ref access 42 */
+/* CX-STDOUT-NEXT: ptr access 42 */
+/* CX-STDOUT-NEXT: ref match 42 */
+/* CX-STDOUT-NEXT: ptr match 42 */
+/* CX-STDOUT-NEXT: ptr match none -1 */
+/* CX-STDOUT-NEXT: ptr is 10 */
+/* CX-STDOUT-NEXT: ptr is none -1 */
+
 #include <stdio.h>
 
 struct Point {

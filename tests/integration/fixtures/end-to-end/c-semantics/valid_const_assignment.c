@@ -1,3 +1,5 @@
+/* CX-STDOUT: The value of i is: 5 */
+
 #include <stdio.h>
 
 int main() {

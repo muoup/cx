@@ -1,3 +1,5 @@
+/* CX-STDOUT: 3 4 */
+
 #include <stdio.h>
 
 struct Pair {

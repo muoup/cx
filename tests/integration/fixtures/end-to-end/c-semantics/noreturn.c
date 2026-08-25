@@ -1,3 +1,5 @@
+/* CX-STDOUT: */
+
 _Noreturn void stop_forever(void) {
     while (1) {
     }

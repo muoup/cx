@@ -1,3 +1,5 @@
+/* CX-STDOUT: drop templated_object */
+
 #include <stdio.h>
 
 struct templated_object<T> : @nodrop {

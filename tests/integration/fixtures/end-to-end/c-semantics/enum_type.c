@@ -1,3 +1,7 @@
+/* CX-STDOUT: a: 0 */
+/* CX-STDOUT-NEXT: b: 2 */
+/* CX-STDOUT-NEXT: c: 3 */
+
 #include <stdio.h>
 
 enum Test {

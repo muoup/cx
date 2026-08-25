@@ -1,3 +1,5 @@
+/* CX-STDOUT: value 41 calls 1 */
+
 #include <stdio.h>
 
 import std::optional as std;

@@ -1,3 +1,6 @@
+/* CX-STDOUT: value 42 */
+/* CX-STDOUT-NEXT: chained 18 */
+
 #include <stdio.h>
 
 comptime expr T twice<T>(expr T value) {

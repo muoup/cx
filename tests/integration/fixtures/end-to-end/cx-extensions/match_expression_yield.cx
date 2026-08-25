@@ -1,3 +1,7 @@
+/* CX-STDOUT: 7 */
+/* CX-STDOUT-NEXT: 2 */
+/* CX-STDOUT-NEXT: 3 */
+
 #include <stdio.h>
 
 enum union MaybeInt {

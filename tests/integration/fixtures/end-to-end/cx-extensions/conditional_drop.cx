@@ -1,3 +1,6 @@
+/* CX-STDOUT: drop 7 */
+/* CX-STDOUT-NEXT: done */
+
 import std::io as std;
 
 struct Resource : @nodrop {

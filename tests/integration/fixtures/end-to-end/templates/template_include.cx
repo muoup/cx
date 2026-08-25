@@ -1,3 +1,5 @@
+/* CX-STDOUT: Template return value: 10 */
+
 import includes::template_include;
 import includes::template_include_internal;
 

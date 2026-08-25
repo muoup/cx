@@ -1,3 +1,10 @@
+/* CX-STDOUT: Extracted string: Hello, World! */
+/* CX-STDOUT-NEXT: Not a string */
+/* CX-STDOUT-NEXT: Integer: 42 */
+/* CX-STDOUT-NEXT: Float: 3.140000 */
+/* CX-STDOUT-NEXT: String: Hello, World! */
+/* CX-STDOUT-NEXT: Data: a=1, b=2.000000, c=c */
+
 #include <stdlib.h>
 #include <stdio.h>
 

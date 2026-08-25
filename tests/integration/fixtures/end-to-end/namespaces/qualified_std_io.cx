@@ -1,3 +1,5 @@
+/* CX-STDOUT: qualified io */
+
 import std::io;
 
 int main() {

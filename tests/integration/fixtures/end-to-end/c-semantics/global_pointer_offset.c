@@ -1,3 +1,5 @@
+/* CX-STDOUT: */
+
 int values[3];
 int *middle = &values[1];
 

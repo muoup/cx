@@ -1,3 +1,5 @@
+/* CX-STDOUT: */
+
 typedef void (*actionf_v)(void);
 typedef void (*actionf_p2)(void *, void *);
 

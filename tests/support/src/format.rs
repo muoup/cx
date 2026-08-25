@@ -4,7 +4,13 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct TestSpec {
     pub path: PathBuf,
-    pub stdout: Option<Vec<String>>,
+    pub stdout: Option<StdoutExpectation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StdoutExpectation {
+    pub lines: Vec<String>,
+    pub trailing_newline: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -35,8 +41,8 @@ pub fn parse_file(path: &Path) -> Result<TestSpec, FormatError> {
 pub fn expected_stdout(path: &Path) -> Result<Option<String>, FormatError> {
     let spec = parse_file(path)?;
 
-    if let Some(lines) = spec.stdout {
-        return Ok(Some(stdout_text(&lines)));
+    if let Some(stdout) = spec.stdout {
+        return Ok(Some(stdout_text(&stdout)));
     }
 
     let sidecar = path.with_extension("cx-output");
@@ -54,7 +60,7 @@ pub fn expected_stdout(path: &Path) -> Result<Option<String>, FormatError> {
 }
 
 pub fn parse_source(path: &Path, source: &str) -> Result<TestSpec, FormatError> {
-    let mut stdout: Option<Vec<String>> = None;
+    let mut stdout: Option<StdoutExpectation> = None;
 
     for (line, comment) in comments(source) {
         for (offset, comment_line) in comment.lines().enumerate() {
@@ -62,12 +68,14 @@ pub fn parse_source(path: &Path, source: &str) -> Result<TestSpec, FormatError> 
             let directive = comment_line.trim_start();
 
             if let Some(value) = directive.strip_prefix("CX-STDOUT-NEXT:") {
-                let lines = stdout.as_mut().ok_or_else(|| FormatError {
+                let stdout = stdout.as_mut().ok_or_else(|| FormatError {
                     path: path.to_path_buf(),
                     line: line_number,
                     message: "CX-STDOUT-NEXT must follow CX-STDOUT".to_string(),
                 })?;
-                lines.push(directive_value(value));
+                let (value, trailing_newline) = directive_value(value);
+                stdout.lines.push(value);
+                stdout.trailing_newline = trailing_newline;
                 continue;
             }
 
@@ -80,7 +88,11 @@ pub fn parse_source(path: &Path, source: &str) -> Result<TestSpec, FormatError> 
                     });
                 }
 
-                stdout = Some(vec![directive_value(value)]);
+                let (value, trailing_newline) = directive_value(value);
+                stdout = Some(StdoutExpectation {
+                    lines: vec![value],
+                    trailing_newline,
+                });
             }
         }
     }
@@ -91,14 +103,26 @@ pub fn parse_source(path: &Path, source: &str) -> Result<TestSpec, FormatError> 
     })
 }
 
-fn directive_value(value: &str) -> String {
+fn directive_value(value: &str) -> (String, bool) {
     let value = value.strip_prefix(' ').unwrap_or(value);
-    value.strip_suffix(' ').unwrap_or(value).to_string()
+    let value = value.strip_suffix(' ').unwrap_or(value);
+    let (value, trailing_newline) = value
+        .strip_suffix(" [no-final-newline]")
+        .map(|value| (value, false))
+        .unwrap_or((value, true));
+
+    (value.to_string(), trailing_newline)
 }
 
-fn stdout_text(lines: &[String]) -> String {
-    let mut output = lines.join("\n");
-    output.push('\n');
+fn stdout_text(stdout: &StdoutExpectation) -> String {
+    if stdout.lines.len() == 1 && stdout.lines[0].is_empty() {
+        return String::new();
+    }
+
+    let mut output = stdout.lines.join("\n");
+    if stdout.trailing_newline {
+        output.push('\n');
+    }
     output
 }
 
@@ -169,7 +193,7 @@ fn comments(source: &str) -> Vec<(usize, String)> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_source;
+    use super::{parse_source, stdout_text, StdoutExpectation};
     use std::path::Path;
 
     #[test]
@@ -179,7 +203,10 @@ mod tests {
 
         assert_eq!(
             spec.stdout,
-            Some(vec!["first".to_string(), "second".to_string()])
+            Some(StdoutExpectation {
+                lines: vec!["first".to_string(), "second".to_string()],
+                trailing_newline: true,
+            })
         );
     }
 
@@ -190,8 +217,27 @@ mod tests {
 
         assert_eq!(
             spec.stdout,
-            Some(vec!["first".to_string(), "second".to_string()])
+            Some(StdoutExpectation {
+                lines: vec!["first".to_string(), "second".to_string()],
+                trailing_newline: true,
+            })
         );
+    }
+
+    #[test]
+    fn parses_empty_stdout() {
+        let source = "/* CX-STDOUT: */\n";
+        let spec = parse_source(Path::new("case.cx"), source).unwrap();
+
+        assert_eq!(stdout_text(&spec.stdout.unwrap()), "");
+    }
+
+    #[test]
+    fn parses_stdout_without_a_final_newline() {
+        let source = "/* CX-STDOUT: first [no-final-newline] */\n";
+        let spec = parse_source(Path::new("case.cx"), source).unwrap();
+
+        assert_eq!(stdout_text(&spec.stdout.unwrap()), "first");
     }
 
     #[test]

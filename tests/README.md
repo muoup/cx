@@ -19,4 +19,4 @@ Short output expectations can live beside the source. `CX-STDOUT` starts an exac
 /* CX-STDOUT-NEXT: A second line */
 ```
 
-The existing `.cx-output` sidecar remains supported while fixtures are migrated. The inline format always adds a final newline to the expected sequence.
+The legacy `.cx-output` sidecar remains supported for fixtures that have not been migrated. Non-empty inline sequences add a final newline by default; append `[no-final-newline]` to the final directive when the program intentionally leaves stdout unterminated. An empty `CX-STDOUT:` directive expects no stdout.

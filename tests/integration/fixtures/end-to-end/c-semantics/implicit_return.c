@@ -1,3 +1,5 @@
+/* CX-STDOUT: */
+
 int missing_return(void) {
 }
 

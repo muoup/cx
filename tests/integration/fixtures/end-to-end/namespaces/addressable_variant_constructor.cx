@@ -1,3 +1,5 @@
+/* CX-STDOUT: 11 */
+
 import std::optional;
 
 #include <stdio.h>

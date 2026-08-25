@@ -1,3 +1,5 @@
+/* CX-STDOUT: dropped num: 1 */
+
 import std::box;
 
 #include <stdio.h>

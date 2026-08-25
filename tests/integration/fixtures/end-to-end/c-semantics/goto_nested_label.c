@@ -1,3 +1,5 @@
+/* CX-STDOUT: */
+
 int main(void) {
     goto inside;
     return 1;

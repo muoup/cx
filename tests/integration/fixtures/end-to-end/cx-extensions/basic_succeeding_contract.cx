@@ -1,3 +1,5 @@
+/* CX-STDOUT: Result: 15 */
+
 #include <stdio.h>
 
 int contract(int a, int b) 

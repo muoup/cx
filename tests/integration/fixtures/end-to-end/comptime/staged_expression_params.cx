@@ -1,3 +1,5 @@
+/* CX-STDOUT: staged pair 42 */
+
 #include <stdio.h>
 
 comptime expr void invoke_pair(

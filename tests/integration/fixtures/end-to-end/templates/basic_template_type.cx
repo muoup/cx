@@ -1,3 +1,5 @@
+/* CX-STDOUT: data: 42 */
+
 #include <stdio.h>
 
 typedef<T> T* Ptr;

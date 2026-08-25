@@ -1,3 +1,5 @@
+/* CX-STDOUT: 7 */
+
 import _include_macro_a as a;
 import _include_macro_b as b;
 import std::io as std;

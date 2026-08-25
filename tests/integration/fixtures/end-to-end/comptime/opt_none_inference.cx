@@ -1,3 +1,6 @@
+/* CX-STDOUT: initialized none */
+/* CX-STDOUT-NEXT: returned none */
+
 #include <stdio.h>
 
 import std::optional as std;

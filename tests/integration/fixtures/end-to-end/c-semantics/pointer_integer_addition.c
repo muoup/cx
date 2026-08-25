@@ -1,3 +1,5 @@
+/* CX-STDOUT: pointer integer addition */
+
 #include <stdio.h>
 
 int main(void) {

@@ -1,3 +1,7 @@
+/* CX-STDOUT: both some 42 */
+/* CX-STDOUT-NEXT: left none */
+/* CX-STDOUT-NEXT: right none */
+
 #include <stdio.h>
 
 import std::optional as std;

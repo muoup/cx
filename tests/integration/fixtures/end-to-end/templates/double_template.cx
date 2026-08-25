@@ -1,3 +1,5 @@
+/* CX-STDOUT: result: 8.14 */
+
 import std::io as std;
 
 void test<T, U>(T a, U b) {

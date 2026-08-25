@@ -1,3 +1,5 @@
+/* CX-STDOUT: All pointers match expected values. */
+
 #include <stdio.h>
 
 // 12 bytes, however requires 8 byte alignment, so any array of this type will have padding.

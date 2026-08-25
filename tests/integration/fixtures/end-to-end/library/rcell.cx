@@ -1,3 +1,13 @@
+/* CX-STDOUT: initial 8 */
+/* CX-STDOUT-NEXT: mutated 13 */
+/* CX-STDOUT-NEXT: outer 13 sema 1 */
+/* CX-STDOUT-NEXT: inner 13 sema 2 */
+/* CX-STDOUT-NEXT: outer resumed 13 sema 1 */
+/* CX-STDOUT-NEXT: reads released 0 */
+/* CX-STDOUT-NEXT: returning 13 */
+/* CX-STDOUT-NEXT: returned 13 */
+/* CX-STDOUT-NEXT: after return 14 */
+
 import std::cell::rcell as std;
 import std::io as std;
 

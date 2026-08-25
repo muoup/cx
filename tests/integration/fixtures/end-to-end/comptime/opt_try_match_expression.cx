@@ -1,3 +1,6 @@
+/* CX-STDOUT: a some 42 */
+/* CX-STDOUT-NEXT: b none */
+
 #include <stdio.h>
 
 import std::optional as std;

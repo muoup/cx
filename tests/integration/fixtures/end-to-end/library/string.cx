@@ -1,3 +1,5 @@
+/* CX-STDOUT: Hello, world! */
+
 import std::string;
 import std::optional;
 

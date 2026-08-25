@@ -1,3 +1,5 @@
+/* CX-STDOUT: 42 */
+
 #include <stdio.h>
 
 static int base = (3 * 7) - 4;

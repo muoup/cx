@@ -1,3 +1,10 @@
+/* CX-STDOUT: Condition 1 evaluated */
+/* CX-STDOUT-NEXT: condition1 && getCondition1() = 1 */
+/* CX-STDOUT-NEXT: condition2 && getCondition1() = 0 */
+/* CX-STDOUT-NEXT: condition1 || getCondition1() = 1 */
+/* CX-STDOUT-NEXT: Condition 1 evaluated */
+/* CX-STDOUT-NEXT: condition2 || getCondition1() = 1 */
+
 #include <stdio.h>
 
 int getCondition1() {

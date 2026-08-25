@@ -1,3 +1,14 @@
+/* CX-STDOUT: Pass By Reference: */
+/* CX-STDOUT-NEXT: t.inner.a: 1 */
+/* CX-STDOUT-NEXT: t.inner.b: 2 */
+/* CX-STDOUT-NEXT: t.c: 3 */
+/* CX-STDOUT-NEXT: t.d: 4 */
+/* CX-STDOUT-NEXT: Pass By Value: */
+/* CX-STDOUT-NEXT: t.inner.a: 1 */
+/* CX-STDOUT-NEXT: t.inner.b: 2 */
+/* CX-STDOUT-NEXT: t.c: 3 */
+/* CX-STDOUT-NEXT: t.d: 4 */
+
 #include <stdio.h>
 
 struct Inner {

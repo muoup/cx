@@ -9,7 +9,7 @@ pub use compilation::{
 pub use cx_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel,
 };
-pub use format::{expected_stdout, parse_file, FormatError, TestSpec};
+pub use format::{expected_stdout, parse_file, FormatError, StdoutExpectation, TestSpec};
 pub use process::{run_binary, ExecutionResult};
 
 pub fn assert_stdout(expected: &str, actual: &str, label: &str) -> Result<(), String> {

@@ -1,3 +1,5 @@
+/* CX-STDOUT: 92 39 */
+
 #include <stdio.h>
 
 int main() {

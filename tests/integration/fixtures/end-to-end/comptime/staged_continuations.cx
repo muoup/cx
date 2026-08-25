@@ -1,3 +1,17 @@
+/* CX-STDOUT: enter 4 */
+/* CX-STDOUT-NEXT: leave 5 */
+/* CX-STDOUT-NEXT: single complete */
+/* CX-STDOUT-NEXT: enter 7 */
+/* CX-STDOUT-NEXT: return body 7 */
+/* CX-STDOUT-NEXT: leave 7 */
+/* CX-STDOUT-NEXT: returned 8 */
+/* CX-STDOUT-NEXT: enter 20 */
+/* CX-STDOUT-NEXT: enter 22 */
+/* CX-STDOUT-NEXT: nested sum 42 */
+/* CX-STDOUT-NEXT: leave 22 */
+/* CX-STDOUT-NEXT: leave 20 */
+/* CX-STDOUT-NEXT: nested returned 42 */
+
 #include <stdio.h>
 
 void trace_leave(int value) {

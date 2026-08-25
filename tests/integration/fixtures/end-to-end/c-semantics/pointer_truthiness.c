@@ -1,3 +1,5 @@
+/* CX-STDOUT: */
+
 int main(void) {
     int values[1] = { 0 };
     if (values) {

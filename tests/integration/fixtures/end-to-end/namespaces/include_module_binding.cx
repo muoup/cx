@@ -1,3 +1,5 @@
+/* CX-STDOUT: included module */
+
 import _include_binding as binding;
 
 int main() {

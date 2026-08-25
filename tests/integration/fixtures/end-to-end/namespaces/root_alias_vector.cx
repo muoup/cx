@@ -1,3 +1,5 @@
+/* CX-STDOUT: 1 */
+
 import std::vector as _;
 
 #include <stdio.h>

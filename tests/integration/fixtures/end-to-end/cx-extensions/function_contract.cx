@@ -1,3 +1,9 @@
+/* CX-STDOUT: precondition checked */
+/* CX-STDOUT-NEXT: function body executed */
+/* CX-STDOUT-NEXT: postcondition checked */
+/* CX-STDOUT-NEXT: postcondition checked */
+/* CX-STDOUT-NEXT: result: 10 */
+
 import std::io as std;
 
 // Technically the conditions of the contract *should* be pure, to prevent metahacking like this

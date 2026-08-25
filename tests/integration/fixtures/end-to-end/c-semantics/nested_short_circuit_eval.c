@@ -1,3 +1,9 @@
+/* CX-STDOUT: nested lhs and = 0 */
+/* CX-STDOUT-NEXT: nested lhs or = 1 */
+/* CX-STDOUT-NEXT: nested rhs and = 1 */
+/* CX-STDOUT-NEXT: nested rhs or = 1 */
+/* CX-STDOUT-NEXT: mixed nesting = 1 */
+
 #include <stdio.h>
 
 int main() {

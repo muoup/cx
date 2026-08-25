@@ -1,3 +1,8 @@
+/* CX-STDOUT: Result 1: 20 */
+/* CX-STDOUT-NEXT: Result 2: 30 */
+/* CX-STDOUT-NEXT: Result 3: 7 */
+/* CX-STDOUT-NEXT: Result 4: 1 */
+
 #include <stdio.h>
 
 int add(int x, int y) {

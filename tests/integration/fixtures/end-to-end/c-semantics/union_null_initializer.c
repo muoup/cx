@@ -1,3 +1,5 @@
+/* CX-STDOUT: */
+
 typedef void (*handler_t)(void);
 
 typedef union {

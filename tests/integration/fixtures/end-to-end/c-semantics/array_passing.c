@@ -1,3 +1,9 @@
+/* CX-STDOUT: 10 */
+/* CX-STDOUT-NEXT: 20 */
+/* CX-STDOUT-NEXT: 30 */
+/* CX-STDOUT-NEXT: 40 */
+/* CX-STDOUT-NEXT: 50 */
+
 #include <stdio.h>
 
 void print_all(int arr[], int size) {

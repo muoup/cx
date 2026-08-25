@@ -1,3 +1,5 @@
+/* CX-STDOUT: */
+
 typedef struct {
     int value;
 } item_t;

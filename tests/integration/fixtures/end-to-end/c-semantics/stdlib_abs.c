@@ -1,3 +1,5 @@
+/* CX-STDOUT: */
+
 #include <stdlib.h>
 
 int main(void) {

@@ -1,3 +1,5 @@
+/* CX-STDOUT: 12 4 */
+
 #include <stdio.h>
 
 int main() {

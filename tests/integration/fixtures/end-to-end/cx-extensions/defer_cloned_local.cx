@@ -1,3 +1,7 @@
+/* CX-STDOUT: cleanup 11 */
+/* CX-STDOUT-NEXT: body 2 */
+/* CX-STDOUT-NEXT: cleanup 12 */
+
 #include <stdio.h>
 
 void run(int value) {

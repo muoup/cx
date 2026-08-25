@@ -1,3 +1,6 @@
+/* CX-STDOUT: a.i: 42 */
+/* CX-STDOUT-NEXT: b.i: 43 */
+
 import std::io as std;
 
 struct test<T> {

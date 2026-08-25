@@ -1,3 +1,9 @@
+/* CX-STDOUT: close 7 */
+/* CX-STDOUT-NEXT: close 7 */
+/* CX-STDOUT-NEXT: none */
+/* CX-STDOUT-NEXT: void some 3 */
+/* CX-STDOUT-NEXT: void none */
+
 #include <stdio.h>
 
 import std::optional as std;

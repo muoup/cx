@@ -1,3 +1,5 @@
+/* CX-STDOUT: */
+
 int shared_value = 0;
 
 int main(void) {

@@ -1,3 +1,7 @@
+/* CX-STDOUT: pass_through */
+/* CX-STDOUT-NEXT: after pass_through */
+/* CX-STDOUT-NEXT: drop 42 */
+
 import std::io as std;
 
 struct Resource : @nodrop {

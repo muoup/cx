@@ -1,3 +1,15 @@
+/* CX-STDOUT: continue 1 */
+/* CX-STDOUT-NEXT: cleanup 20 */
+/* CX-STDOUT-NEXT: cleanup 10 */
+/* CX-STDOUT-NEXT: continue 2 */
+/* CX-STDOUT-NEXT: cleanup 20 */
+/* CX-STDOUT-NEXT: cleanup 10 */
+/* CX-STDOUT-NEXT: continued */
+/* CX-STDOUT-NEXT: break */
+/* CX-STDOUT-NEXT: broken */
+/* CX-STDOUT-NEXT: switch break */
+/* CX-STDOUT-NEXT: switched */
+
 #include <stdio.h>
 
 import std::optional as std;

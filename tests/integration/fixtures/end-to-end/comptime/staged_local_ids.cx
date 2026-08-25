@@ -1,3 +1,10 @@
+/* CX-STDOUT: enter 20 */
+/* CX-STDOUT-NEXT: enter 22 */
+/* CX-STDOUT-NEXT: sum 42 */
+/* CX-STDOUT-NEXT: leave 22 */
+/* CX-STDOUT-NEXT: leave 20 */
+/* CX-STDOUT-NEXT: returned 42 */
+
 #include <stdio.h>
 
 void leave_generated(int value) {

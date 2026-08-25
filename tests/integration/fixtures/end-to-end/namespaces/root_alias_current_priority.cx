@@ -1,3 +1,5 @@
+/* CX-STDOUT: 9 */
+
 import _alias_root_lib as _;
 
 #include <stdio.h>

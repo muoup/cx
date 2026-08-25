@@ -1,3 +1,6 @@
+/* CX-STDOUT: shared active 8 */
+/* CX-STDOUT-NEXT: PANIC: Cannot mutably borrow cell while it is currently borrowed */
+
 import std::cell::rcell as std;
 import std::io as std;
 

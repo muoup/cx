@@ -1,3 +1,5 @@
+/* CX-STDOUT: 1.5 1 */
+
 int printf(char* fmt, ...);
 
 int main() {

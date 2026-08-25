@@ -1,3 +1,5 @@
+/* CX-STDOUT: i = 2 */
+
 import std::box;
 
 #include <stdio.h>

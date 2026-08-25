@@ -1,3 +1,5 @@
+/* CX-STDOUT: 3 */
+
 #include <stdio.h>
 
 struct item {

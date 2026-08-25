@@ -1,3 +1,6 @@
+/* CX-STDOUT: 5 17 99 */
+/* CX-STDOUT-NEXT: 7 7 */
+
 #include <stdint.h>
 #include <stdio.h>
 

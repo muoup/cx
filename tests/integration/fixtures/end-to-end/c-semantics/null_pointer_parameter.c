@@ -1,3 +1,5 @@
+/* CX-STDOUT: 1 */
+
 #include <stdio.h>
 
 void inspect(char *value) {
