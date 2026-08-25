@@ -186,3 +186,13 @@ The acceptance loop for the skill should be an agent evaluation set: generate sm
 - Is the desired Tree-sitter deliverable syntax highlighting/recovery or a real parse tree for language tooling?
 - Is `constexpr` planned as a public language feature, or should internal `MIRFunctionMode::Constexpr` remain an implementation detail and the manual avoid implying surface support?
 - Should contracts and safe functions be presented as experimental public documentation or kept internal until their semantics stabilize?
+
+## Tree-sitter implementation pass
+
+Implementation snapshot: 2026-08-25, working tree changes are uncommitted. The previous lexical/grouping grammar has been replaced with a structured, recovery-oriented grammar covering declarations, types, function and function-pointer declarators, templates, control flow, expressions, comptime functions, staged blocks and continuations, contracts, compiler intrinsics, tagged aggregates, and `@unpack` bindings. The grammar now includes the current CX keyword/operator surface used by the tracked fixtures, including pipes, postfix increment/decrement, multiword built-in types, qualified import aliases, casts, and the `unreachable` type.
+
+The parser was regenerated with Tree-sitter CLI 0.26.3. The positive/negative fixture scan reports no `ERROR` or `MISSING` nodes in 170 tracked `.cx` fixtures from the executed end-to-end, compile-only, type-error, and analysis-error categories after excluding the two standalone preprocessor support files. The intentionally invalid `parse-errors` fixtures remain expected parser failures and were not treated as regressions.
+
+The grammar query and copied Zed query now capture operators and structured type/function/parameter/property nodes consistently. `tree-sitter.json` and the Zed language config both advertise `.cx` and the documented `.cxh` library extension; the old `.cxl` suffix had no compiler or documentation references. Five Tree-sitter corpus tests under `compiler/cx-treesitter-grammar/test/corpus/cx.txt` lock in comptime functions, staged blocks, function pointers/multiword types, unpack/contracts, and C syntax aliases/casts.
+
+The Zed grammar revision remains the old committed hash `150d6686a6777a4d26e319b794e9fe0c9666b578` in `compiler/cx-zed-extension/extension.toml`. It should be bumped to the commit containing this grammar after the change is committed and pushed; pointing the manifest at the current pre-change commit would make the published extension ignore the implementation. The grammar crate is still outside the root Cargo workspace, so Tree-sitter CLI and corpus validation passed locally but a Cargo package test requires either an isolated package workspace or an intentional root-workspace/lockfile change.
