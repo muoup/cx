@@ -1,0 +1,78 @@
+{
+  "module": "std::cell::rcell",
+  "order": 90,
+  "source": "lib/std/cell/rcell.cx",
+  "summary": "A value with runtime-checked shared and mutable borrows.",
+  "types": [
+    {
+      "name": "struct rcell<T>",
+      "description": "A struct that stores a value and tracks its active borrow state.",
+      "attributes": ["@copy_traits(T)", "@unsafe_move"],
+      "fields": [
+        {"name": "inner", "type": "T", "description": "The stored value."},
+        {"name": "sema", "type": "i16", "description": "The runtime borrow counter."}
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "name": "new",
+      "owner": "rcell",
+      "signature": "rcell<T> rcell::new<T>(T val)",
+      "description": "Creates a borrow cell containing a value.",
+      "parameters": [
+        {"name": "val", "type": "T", "description": "The value to store."}
+      ],
+      "returnType": "rcell<T>",
+      "returnDescription": "A new borrow cell."
+    },
+    {
+      "name": "borrow_const",
+      "owner": "rcell",
+      "signature": "comptime expr void rcell::borrow_const<T>(expr rcell<T>& cell, expr(const T&) void proc)",
+      "stage": "comptime",
+      "description": "Runs a callback with a shared borrow of the cell value.",
+      "parameters": [
+        {"name": "cell", "type": "rcell<T>&", "description": "The cell to borrow."},
+        {"name": "proc", "type": "expr(const T&) void", "description": "The callback receiving the shared borrow."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Nothing."
+    },
+    {
+      "name": "borrow",
+      "owner": "rcell",
+      "signature": "comptime expr void rcell::borrow<T>(expr rcell<T>& cell, expr(T&) void proc)",
+      "stage": "comptime",
+      "description": "Runs a callback with an exclusive mutable borrow of the cell value.",
+      "parameters": [
+        {"name": "cell", "type": "rcell<T>&", "description": "The cell to borrow mutably."},
+        {"name": "proc", "type": "expr(T&) void", "description": "The callback receiving the mutable borrow."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Nothing."
+    },
+    {
+      "name": "release",
+      "owner": "rcell",
+      "signature": "void rcell::release<T>(rcell<T>& cell)",
+      "description": "Clears the mutable-borrow state of a cell.",
+      "parameters": [
+        {"name": "cell", "type": "rcell<T>&", "description": "The cell whose state is released."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Nothing."
+    },
+    {
+      "name": "release_const",
+      "owner": "rcell",
+      "signature": "void rcell::release_const<T>(rcell<T>& cell)",
+      "description": "Decrements the shared-borrow state of a cell.",
+      "parameters": [
+        {"name": "cell", "type": "rcell<T>&", "description": "The cell whose shared borrow is released."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Nothing."
+    }
+  ]
+}

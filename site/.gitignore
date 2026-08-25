@@ -4,6 +4,9 @@
 # Production
 /build
 
+# Generated standard-library pages
+/docs/stdlib
+
 # Generated files
 .docusaurus
 .cache-loader

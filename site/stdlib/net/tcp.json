@@ -1,0 +1,137 @@
+{
+  "module": "std::net::tcp",
+  "order": 100,
+  "source": "lib/std/net/tcp.cx",
+  "summary": "Minimal TCP listener and stream wrappers for IPv4 sockets.",
+  "types": [
+    {
+      "name": "struct endpoint",
+      "description": "A struct that stores an IPv4 socket address and its native length.",
+      "fields": [
+        {"name": "address", "type": "sockaddr_in", "description": "The native IPv4 address value."},
+        {"name": "length", "type": "u32", "description": "The native address length."}
+      ]
+    },
+    {
+      "name": "struct tcp_listener",
+      "description": "A struct that owns a TCP listening socket descriptor.",
+      "attributes": ["@nodrop"],
+      "fields": [
+        {"name": "fd", "type": "i32", "description": "The native socket descriptor."}
+      ]
+    },
+    {
+      "name": "struct tcp_stream",
+      "description": "A struct that owns an accepted TCP stream descriptor.",
+      "attributes": ["@nodrop"],
+      "fields": [
+        {"name": "fd", "type": "i32", "description": "The native socket descriptor."}
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "name": "ipv4",
+      "owner": "endpoint",
+      "signature": "std::opt<endpoint> endpoint::ipv4(const char* address, u16 port)",
+      "description": "Builds an IPv4 endpoint from a dotted address and port.",
+      "parameters": [
+        {"name": "address", "type": "const char*", "description": "The dotted IPv4 address."},
+        {"name": "port", "type": "u16", "description": "The TCP port."}
+      ],
+      "returnType": "std::opt<endpoint>",
+      "returnDescription": "Some endpoint when the address is valid."
+    },
+    {
+      "name": "open",
+      "owner": "tcp_listener",
+      "signature": "std::opt<tcp_listener> tcp_listener::open()",
+      "description": "Creates a TCP listening socket.",
+      "parameters": [],
+      "returnType": "std::opt<tcp_listener>",
+      "returnDescription": "Some listener on socket creation success."
+    },
+    {
+      "name": "bind",
+      "owner": "tcp_listener",
+      "signature": "std::opt<void> tcp_listener::bind(tcp_listener& this, endpoint addr)",
+      "description": "Binds a listener to an endpoint.",
+      "parameters": [
+        {"name": "this", "type": "tcp_listener&", "description": "The listener to bind."},
+        {"name": "addr", "type": "endpoint", "description": "The local endpoint."}
+      ],
+      "returnType": "std::opt<void>",
+      "returnDescription": "Some void on success or none on failure."
+    },
+    {
+      "name": "listen",
+      "owner": "tcp_listener",
+      "signature": "std::opt<void> tcp_listener::listen(tcp_listener& this, int backlog)",
+      "description": "Starts accepting connections on a bound listener.",
+      "parameters": [
+        {"name": "this", "type": "tcp_listener&", "description": "The listener to activate."},
+        {"name": "backlog", "type": "int", "description": "The pending-connection backlog."}
+      ],
+      "returnType": "std::opt<void>",
+      "returnDescription": "Some void on success or none on failure."
+    },
+    {
+      "name": "accept",
+      "owner": "tcp_listener",
+      "signature": "std::opt<tcp_stream> tcp_listener::accept(tcp_listener& this)",
+      "description": "Accepts one pending TCP connection.",
+      "parameters": [
+        {"name": "this", "type": "tcp_listener&", "description": "The listener receiving the connection."}
+      ],
+      "returnType": "std::opt<tcp_stream>",
+      "returnDescription": "Some stream when a connection is accepted."
+    },
+    {
+      "name": "close",
+      "owner": "tcp_listener",
+      "signature": "void tcp_listener::close(tcp_listener this)",
+      "description": "Closes a TCP listener descriptor.",
+      "parameters": [
+        {"name": "this", "type": "tcp_listener", "description": "The listener to close."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Nothing."
+    },
+    {
+      "name": "read",
+      "owner": "tcp_stream",
+      "signature": "std::opt<u64> tcp_stream::read(tcp_stream& this, void* buffer, u64 capacity)",
+      "description": "Reads bytes from a TCP stream.",
+      "parameters": [
+        {"name": "this", "type": "tcp_stream&", "description": "The stream to read from."},
+        {"name": "buffer", "type": "void*", "description": "The destination buffer."},
+        {"name": "capacity", "type": "u64", "description": "The destination capacity."}
+      ],
+      "returnType": "std::opt<u64>",
+      "returnDescription": "Some number of bytes read or none on failure."
+    },
+    {
+      "name": "write",
+      "owner": "tcp_stream",
+      "signature": "std::opt<u64> tcp_stream::write(tcp_stream& this, const std::span<const u8> buffer)",
+      "description": "Writes a byte span to a TCP stream.",
+      "parameters": [
+        {"name": "this", "type": "tcp_stream&", "description": "The stream to write to."},
+        {"name": "buffer", "type": "const std::span<const u8>", "description": "The bytes to send."}
+      ],
+      "returnType": "std::opt<u64>",
+      "returnDescription": "Some number of bytes written or none on failure."
+    },
+    {
+      "name": "close",
+      "owner": "tcp_stream",
+      "signature": "void tcp_stream::close(tcp_stream this)",
+      "description": "Closes a TCP stream descriptor.",
+      "parameters": [
+        {"name": "this", "type": "tcp_stream", "description": "The stream to close."}
+      ],
+      "returnType": "void",
+      "returnDescription": "Nothing."
+    }
+  ]
+}

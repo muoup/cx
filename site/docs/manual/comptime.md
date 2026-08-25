@@ -12,7 +12,7 @@ Functions that can be evaluated at compile time as well as runtime, similar to C
 
 A comptime function is declared with `comptime`. Its ordinary parameters are compile-time values, and calling it evaluates the function during compilation:
 
-```c
+```cx
 comptime int add(int lhs, int rhs) {
     return lhs + rhs;
 }
@@ -22,153 +22,104 @@ Comptime functions may also be templated or associated with a namespace using th
 
 ## Staged Expressions
 
-The syntax `expr T` denotes a staged expression that will produce a runtime value of type `T`. It is not a compile-time-known `T`, and the comptime function cannot inspect its eventual runtime value. Instead, the function can place the expression inside other runtime code and return the composed expression.
+The syntax `expr T` denotes a staged expression that will produce a runtime value of type `T`. It is not a compile-time-known `T`, and the comptime function cannot inspect its eventual runtime value. Instead, the function can place the expression is used for codegen, acting as a 'frozen' expression which can be inserted and manipulated as needed to enable richer code generation. For instance, Rust's `?` operator, which serves to return None from a optional-returning function if its operand is none, allowing for a concise and safe unwrap, can be neatly reimplemented in CX using a comptime function and staged expressions like so:
 
-```c
-comptime expr T twice<T>(expr T value) {
-    return emit value * 2;
+```cx
+comptime expr T opt::try(expr opt<T> this) {
+    return emit match (move this) {
+        opt::some(val) => val;
+        opt::none => return opt::none();
+    };exposed
 }
 ```
 
-Here, `value` represents the caller's runtime expression. A call such as `twice(number + 1)` is evaluated at compile time to produce runtime code equivalent to `(number + 1) * 2`.
+Above also introduces the 'emit' operator. In comptime contexts, the 'emit' operator converts the provided operand into a staged expression. In a runtime function, an rvalue expression passed through a method call to a comptime function expecting a staged expression will handle 'staging' the provided parameter automatically, as such the above function can be invoked like so:
 
-The `expr` modifier can appear on parameters and the return type. An `expr T` parameter accepts a staged expression of type `T`, while an `expr T` return type requires the comptime function to return an emitted expression producing `T`.
+```cx
+std::opt<int> parse_integer(const str&_ input) { ... }
 
-## `emit`
+int i = parse_integer(string)
+    |> std::opt::try();
 
-`emit` takes an expression and stages it for use as the result of a comptime function:
+// or equivalently,
 
-```c
-comptime expr T add_ten<T>(expr T value) {
-    return emit value + 10;
-}
+int i = std::opt::try(parse_integer(string));
 ```
 
-The emitted expression is lowered in place at the caller. Its runtime operations, ownership effects, and control flow therefore belong to the caller's context. A `return` inside emitted code returns from the runtime function containing the comptime call, rather than from the comptime function that produced the code.
+For a more technical explanation, expressions are lowered eagerly to derive their value-producing semantic instructions which are implicitly inserted into the function body. 'emit' defers this, allowing the compiler to lower the expression and store its semantic instructions separately in a 'templated'-like form, only inserted into the function body at materialization point -- i.e. where the compiler lowers a staged expression, either through a variable reference or directly as an rvalue. This enables staged expressions to defer things like the target of a break/continue expression as well so that it properly aligns with the context in which the instructions are inserted.
 
-## Staged Block Expressions
+In the future, runtime functions will be able to store comptime variables and as such will need to use the 'emit' operator to stage the initialization rather than evaluate it directly to a value. This however is to-be-implemented.
 
-The syntax `.{ ... }` creates a `void` block expression in a position where CX expects an expression:
+```cx
 
-```c
-.{
-    release(resource);
-    log_cleanup();
-}
 ```
 
-This syntax is commonly passed to a parameter of type `expr void`, which retains the block as a staged expression. It is not a closure: it creates no function or captured environment and hides no call. The block remains code from the caller's lexical context and is inserted directly wherever the comptime function emits that parameter.
+## Block Expressions
 
-The leading `.` distinguishes a standalone block expression from a normal scoped body or structured initializer. An empty block is written as `.{}`.
+The syntax `.{ ... }` creates a block in a position where CX expects an expression. They are semantically identical to standard blocks, however in places where an expression value is expected, the dot-prefix is used to parse the subsequent expression as a block rather than an initializer list. This syntax proves useful when you want to pass a staged implementation block to a comptime function:
+
+```cx
+comptime expr T if_then(bool condition, expr void proc) {
+    if (condition) proc;
+}
+
+if_then(cond, .{ printf("Condition was true!"); });
+```
 
 ## Parameterized Staged Expressions
 
-A staged expression can accept named parameters supplied by the comptime function that emits it. Its type lists the parameter types between `expr` and the result type:
+A staged expression can accept parameters at its materialization point, useful for when a comptime function wants to do internal evaluation and ensure that its results can be exposed as context to the provided staged expression, for instance:
 
-```c
-comptime expr void with_value(
-    expr int& value,
-    expr(int&) void proc
-) {
-    return emit .{
-        proc(value);
-    };
+```cx
+comptime expr void opt::map<T, U>(opt<T> this, expr U(T) proc) {
+    match (move this) {
+        opt::some(val) => opt::some(proc(this)),
+        opt::none => opt::none(),
+    }
 }
 ```
 
 At the call site, `|parameters| statement` constructs the staged expression. The parameter types come from the comptime function prototype, so the call site supplies only their names:
 
-```c
-with_value(number) <| |ref| print_number(ref);
+```cx
+std::opt<_str&> str_val = ...;
+std::opt<usize> size_val = move i_val
+    |> std::opt::map(|val| std::str_length(val));
 ```
 
-This is source staging rather than a runtime closure, so it does not allocate a closure object. Names from the caller's lexical context remain available because the source body is typechecked at the expansion site; they are not captured into a runtime object. When the comptime function invokes `proc`, `ref` is bound to its emitted argument.
-
-The body after `|parameters|` is one statement. Use a staged block when its extent should be explicit:
-
-```c
-with_value(number) <| |ref| .{
-    inspect(ref);
-    update(ref);
-};
-```
+It should be noted that this syntax, while similar, is not equivalent to other language's concept of anonymous functions or closures. These blocks must be resolved at comptime-time, acting as a way to parameterize a set of staged functionality. One can think of them as a meta-closure, in which its execution logic is used to construct the final code state rather than any runtime execution value.
 
 ## Continuations with `then`
 
 When a parameterized staged expression should contain the remainder of the current lexical block, its direct body can be the `then` keyword:
 
-```c
-resource |> with_resource() <| |ref| then
+```cx
+resource_handle |> with_resource() <| |resource| then
 
-inspect(ref);
-return transform(ref);
+action1(resource);
+action2(resource);
 ```
 
-The parser replaces `then` with the statements that follow it in that block. The continuation is consequently inserted wherever the comptime function invokes its staged parameter. It can contain ordinary caller control flow, including `return`; that return still exits the caller's runtime function.
+The above code snippet would be equivalent to:
 
-Nested continuations allow multiple staged resources without additional indentation:
-
-```c
-first |> with_resource() <| |first_ref|
-second |> with_resource() <| |second_ref| then
-
-consume(first_ref, second_ref);
-```
-
-`then` must be the direct body of a parameterized staged expression, and a statement may contain only one `then` continuation marker.
-
-## Optional-Like Control Flow
-
-The standard library uses staged expressions to implement an optional helper similar to Rust's `?` operator. Its definition returns an emitted `match` expression:
-
-```c
-comptime expr T opt::try<T>(expr opt<T> self) {
-    return emit match (self) {
-        opt::some<T>(value) => yield move value;
-        opt::none<T>() => return opt::none();
-    };
-}
-```
-
-The pipe call supplies its left operand as the staged `self` argument:
-
-```c
-opt<i64> get_option() { ... }
-
-opt<u8> routine() {
-    i64 value = get_option()
-        |> opt::try();
-
-    ...
-}
-```
-
-At the use site, the call produces code equivalent to:
-
-```c
-i64 value = match (get_option()) {
-    opt::some<i64>(value) => yield move value;
-    opt::none<i64>() => return opt::none<u8>();
+```cx
+resource_handle |> with_resource() <| |resource| {
+    action1(resource);
+    action2(resource);
 };
 ```
 
-Because the early return is part of the caller's runtime control flow, it must also satisfy the caller's ownership obligations. `opt::try_or` accepts an additional `expr void` cleanup block for that case:
+The main use-case for the 'then' keyword is to avoid excess indentation. If the example say was:
 
-```c
-opt<i64> routine() {
-    vector<i64> values = ...;
+```cx
+resource_handle1 |> with_resource() <| |resource1|
+resource_handle2 |> with_resource() <| |resource2|
+resource_handle3 |> with_resource() <| |resource3|
 
-    i64 number = values
-        |> find_specific_number()
-        |> opt::try_or(.{
-            move values |> vector::drop();
-        });
-
-    ...
-
-    move values |> vector::drop();
-    return ...;
-}
+action1(resource1, resource2);
+action2(resource3, resource1);
+action3(resource2, resource3);
 ```
 
-The cleanup block is emitted only into the `none` arm. `opt::try` is equivalent to using `opt::try_or(.{})` when no cleanup is required.
+Trying to desugar this into its indented form would thus contain 3 layers of nested block contexts, which can quickly hinder the readability
+of the code, especially for what is a rather common idiom in the language.

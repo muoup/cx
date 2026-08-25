@@ -11,7 +11,7 @@ CX uses explicit imports and visibility sections.
 `import` makes public declarations from another module available to the current
 module. Imported declarations can be referenced through their module namespace.
 
-```cpp
+```cx
 import std::io;
 import math::vec;
 
@@ -33,7 +33,7 @@ declarations rather than symbol copies.
 
 An import can provide an alternative namespace with `as`:
 
-```cpp
+```cx
 import std::vector as v;
 
 v::vector<int> values = v::vector::new<int>();
@@ -41,7 +41,7 @@ v::vector<int> values = v::vector::new<int>();
 
 The special alias `_` places the imported module at the root namespace, allowing its public declarations to be referenced without the module prefix:
 
-```cpp
+```cx
 import std::vector as _;
 
 vector<int> values = vector::new<int>();
@@ -49,7 +49,7 @@ vector<int> values = vector::new<int>();
 
 Aliases may overlap, however any symbol name which refers to multiple definitions due to alias overlap cannot be used. However, if this occurs with `_`-aliasing and one definition refers to a symbol defined in the current module, the namespace symbol will deduce to that definition:
 
-```cpp
+```cx
 // Okay:
 import std::vector as std;
 import std::file as std;
@@ -78,7 +78,7 @@ vector vec = ...; // Okay: the current module's definition of `vector` takes pre
 Visibility is controlled by `public:` and `private:` section headers.
 Declarations are private by default.
 
-```cpp
+```cx
 public:
 
 i32 api_function(i32 x) {
@@ -115,7 +115,7 @@ including its nested includes; after the include ends, the previous CX naming an
 visibility configuration is For handwritten declarations, an `extern "C":` section disables namespace-based
 name mangling without moving the declarations out of their CX module.
 
-```cpp title="lib/c_stdio.cx"
+```cx title="lib/c_stdio.cx"
 #include <stdio.h>
 
 public extern "C":
@@ -133,7 +133,7 @@ An include inherits the current visibility, so declarations are private when
 included under the default visibility and public when included after a
 `public:` header:
 
-```cpp title="lib/c_api.cx"
+```cx title="lib/c_api.cx"
 public:
 
 #include "api.h"
@@ -141,7 +141,7 @@ public:
 
 Importers reference public included declarations through the owning module:
 
-```cpp
+```cx
 import c_api as c;
 
 int main() {
@@ -154,7 +154,7 @@ Included declarations occupy the owning module's ordinary namespace, just like
 handwritten `extern "C"` declarations. They are referenced without qualification
 inside that module and through the module namespace by importers:
 
-```cpp
+```cx
 #include "api.h" // Declares the C function `status`.
 
 int check_status() {

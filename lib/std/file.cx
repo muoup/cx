@@ -1,5 +1,5 @@
-import std::optional;
-import std::string;
+import std::optional as std;
+import std::string as std;
 
 extern "C":
 
@@ -11,14 +11,14 @@ struct file : @nodrop {
     FILE* handle;
 };
 
-std::optional::opt<file> file::open(const char* path, const char* mode) {
+std::opt<file> file::open(const char* path, const char* mode) {
     FILE* handle = fopen(path, mode);
     
     if (handle == NULL) {
         return std::optional::opt::none<file>();
     }
     
-    return std::optional::opt::some<file>((file) { .handle = handle });
+    return std::opt::some<file>((file) { .handle = handle });
 }
 
 void file::write(file& this, const char* data) {
@@ -40,25 +40,27 @@ void file::flush(file& this) {
     }
 }
 
-void file::read_line(file& this, char* buffer, u64 buffer_size) {
-    if (this.handle != NULL) {
-        fgets(buffer, buffer_size, this.handle);
-    }
+std::opt<usize> file::read_line(file& this, char* buffer, u64 buffer_size) {
+    if (this.handle == NULL) return std::opt::none();
+
+    return fgets(buffer, buffer_size, this.handle)
+        |> std::opt::some();
 }
 
-void file::read(file& this, char* buffer, u64 buffer_size) {
-    if (this.handle != NULL) {
-        fread(buffer, 1, buffer_size, this.handle);
-    }
+std::opt<usize> file::read(file& this, char* buffer, u64 buffer_size) {
+    if (this.handle == NULL) return std::opt::none();
+
+    return fread(buffer, 1, buffer_size, this.handle)
+        |> std::opt::some();
 }
 
-std::string::string file::read_to_string(file& this) {
+std::string file::read_to_string(file& this) {
     int c;
-    std::string::string s = std::string::string::new();
+    std::string s = std::string::new();
 
     // TODO: Replace with faster buffering system
     while ((c = fgetc(this.handle)) != EOF) {
-        s |> std::string::string::append_char((char)c);
+        s |> std::string::append_char((char)c);
     }
 
     return move s;

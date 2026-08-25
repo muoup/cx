@@ -1,0 +1,503 @@
+==================
+comptime function
+==================
+comptime expr T twice<T>(expr T value) {
+    return emit value * 2;
+}
+---
+
+(source_file
+  (comptime_function_definition
+    (keyword)
+    (comptime_value_type
+      (keyword)
+      (type
+        (qualified_name
+          (identifier))))
+    (callable_name
+      (templated_name
+        (qualified_name
+          (identifier))
+        (template_arguments
+          (template_argument
+            (qualified_name
+              (identifier))))))
+    (comptime_parameter_list
+      (comptime_parameter
+        (comptime_value_type
+          (keyword)
+          (type
+            (qualified_name
+              (identifier))))
+        (identifier)))
+    (compound_statement
+      (return_statement
+        (keyword)
+        (expression
+          (primary_expression
+            (emit_expression
+              (keyword)
+              (expression
+                (binary_expression
+                  (expression
+                    (primary_expression
+                      (qualified_name
+                        (identifier))))
+                  (operator)
+                  (expression
+                    (primary_expression
+                      (literal
+                        (number_literal)))))))))))))
+
+==================
+staged continuation and block
+==================
+int consume(int value) {
+    return value;
+}
+
+int run(int value) {
+    int result = move value |> consume(.{
+        defer cleanup();
+        return 0;
+    });
+    return result;
+}
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier)))))
+    (compound_statement
+      (return_statement
+        (keyword)
+        (expression
+          (primary_expression
+            (qualified_name
+              (identifier)))))))
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier)))))
+    (compound_statement
+      (declaration
+        (variable_declaration
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator_with_initializer
+            (declarator
+              (identifier))
+            (operator)
+            (expression
+              (binary_expression
+                (expression
+                  (unary_expression
+                    (operator)
+                    (expression
+                      (primary_expression
+                        (qualified_name
+                          (identifier))))))
+                (operator)
+                (expression
+                  (postfix_expression
+                    (primary_expression
+                      (qualified_name
+                        (identifier)))
+                    (argument_list
+                      (expression
+                        (primary_expression
+                          (staged_block
+                            (compound_statement
+                              (defer_statement
+                                (keyword)
+                                (expression
+                                  (postfix_expression
+                                    (primary_expression
+                                      (qualified_name
+                                        (identifier)))
+                                    (argument_list))))
+                              (return_statement
+                                (keyword)
+                                (expression
+                                  (primary_expression
+                                    (literal
+                                      (number_literal)))))))))))))))))
+      (return_statement
+        (keyword)
+        (expression
+          (primary_expression
+            (qualified_name
+              (identifier))))))))
+
+==================
+function pointers and declarations
+==================
+typedef int callback_t(int value);
+
+struct Pair {
+    unsigned int left;
+    unsigned int right;
+};
+
+void apply(void (*callback)(int)) {
+    callback(1);
+}
+---
+
+(source_file
+  (type_definition
+    (typedef_definition
+      (keyword)
+      (type
+        (builtin_type_sequence
+          (builtin_type)))
+      (typedef_declarator_with_initializer
+        (typedef_declarator
+          (identifier)
+          (parameter_list
+            (parameter
+              (type
+                (builtin_type_sequence
+                  (builtin_type)))
+              (declarator
+                (identifier))))))))
+  (type_definition
+    (struct_definition
+      (keyword)
+      (identifier)
+      (field_declaration
+        (type
+          (builtin_type_sequence
+            (builtin_type)
+            (builtin_type)))
+        (field_declarator
+          (declarator
+            (identifier))))
+      (field_declaration
+        (type
+          (builtin_type_sequence
+            (builtin_type)
+            (builtin_type)))
+        (field_declarator
+          (declarator
+            (identifier))))))
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (function_pointer_declarator
+              (pointer_modifier
+                (operator))
+              (identifier)
+              (parameter_list
+                (parameter
+                  (type
+                    (builtin_type_sequence
+                      (builtin_type))))))))))
+    (compound_statement
+      (expression_statement
+        (expression
+          (postfix_expression
+            (primary_expression
+              (qualified_name
+                (identifier)))
+            (argument_list
+              (expression
+                (primary_expression
+                  (literal
+                    (number_literal)))))))))))
+
+==================
+unpack and contracts
+==================
+struct Pair {
+    int left;
+    int right;
+};
+
+int sum(Pair pair) safe where pre: (true), post(ret): (ret >= 0) {
+    @unpack(move pair) {
+        left: left,
+        right: right,
+    };
+    return left + right;
+}
+---
+
+(source_file
+  (type_definition
+    (struct_definition
+      (keyword)
+      (identifier)
+      (field_declaration
+        (type
+          (builtin_type_sequence
+            (builtin_type)))
+        (field_declarator
+          (declarator
+            (identifier))))
+      (field_declaration
+        (type
+          (builtin_type_sequence
+            (builtin_type)))
+        (field_declarator
+          (declarator
+            (identifier))))))
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (qualified_name
+              (identifier)))
+          (declarator
+            (identifier)))))
+    (function_contract
+      (keyword)
+      (keyword)
+      (contract_clause
+        (keyword)
+        (expression
+          (primary_expression
+            (literal
+              (keyword)))))
+      (contract_clause
+        (keyword)
+        (identifier)
+        (expression
+          (binary_expression
+            (expression
+              (primary_expression
+                (qualified_name
+                  (identifier))))
+            (operator)
+            (expression
+              (primary_expression
+                (literal
+                  (number_literal))))))))
+    (compound_statement
+      (unpack_statement
+        (compiler_identifier)
+        (expression
+          (unary_expression
+            (operator)
+            (expression
+              (primary_expression
+                (qualified_name
+                  (identifier))))))
+        (unpack_binding
+          (identifier)
+          (identifier))
+        (unpack_binding
+          (identifier)
+          (identifier)))
+      (return_statement
+        (keyword)
+        (expression
+          (binary_expression
+            (expression
+              (primary_expression
+                (qualified_name
+                  (identifier))))
+            (operator)
+            (expression
+              (primary_expression
+                (qualified_name
+                  (identifier))))))))))
+
+==================
+C syntax and aliases
+==================
+import std::net::udp as std::net;
+
+unreachable todo() {
+    while (1) {}
+}
+
+int choose(int condition) {
+    int i = 0;
+    for (; i < 1; i++) {}
+    return condition ? 1 : todo();
+}
+
+int cast_value(int value) {
+    return @unsafe((const char*)value);
+}
+---
+
+(source_file
+  (import_declaration
+    (keyword)
+    (qualified_name
+      (identifier)
+      (operator)
+      (identifier)
+      (operator)
+      (identifier))
+    (keyword)
+    (qualified_name
+      (identifier)
+      (operator)
+      (identifier)))
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list))
+    (compound_statement
+      (while_statement
+        (keyword)
+        (expression
+          (primary_expression
+            (literal
+              (number_literal))))
+        (compound_statement))))
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier)))))
+    (compound_statement
+      (declaration
+        (variable_declaration
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator_with_initializer
+            (declarator
+              (identifier))
+            (operator)
+            (expression
+              (primary_expression
+                (literal
+                  (number_literal)))))))
+      (for_statement
+        (keyword)
+        (expression
+          (binary_expression
+            (expression
+              (primary_expression
+                (qualified_name
+                  (identifier))))
+            (operator)
+            (expression
+              (primary_expression
+                (literal
+                  (number_literal))))))
+        (expression
+          (postfix_expression
+            (primary_expression
+              (qualified_name
+                (identifier)))
+            (operator)))
+        (compound_statement))
+      (return_statement
+        (keyword)
+        (expression
+          (conditional_expression
+            (conditional_condition
+              (primary_expression
+                (qualified_name
+                  (identifier))))
+            (expression
+              (primary_expression
+                (literal
+                  (number_literal))))
+            (expression
+              (postfix_expression
+                (primary_expression
+                  (qualified_name
+                    (identifier)))
+                (argument_list))))))))
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier)))))
+    (compound_statement
+      (return_statement
+        (keyword)
+        (expression
+          (postfix_expression
+            (primary_expression
+              (compiler_identifier))
+            (argument_list
+              (expression
+                (primary_expression
+                  (cast_expression
+                    (type
+                      (type_qualifier
+                        (keyword))
+                      (builtin_type_sequence
+                        (builtin_type))
+                      (pointer_modifier
+                        (operator)))
+                    (expression
+                      (primary_expression
+                        (qualified_name
+                          (identifier))))))))))))))

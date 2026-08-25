@@ -18,6 +18,9 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
+      - name: Build the default workspace without LLVM
+        run: cargo build --workspace --locked
+
       - name: Install LLVM 22
         shell: bash
         run: |
