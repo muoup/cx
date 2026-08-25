@@ -178,6 +178,92 @@ body:has(.landing-page) .navbar {
   color: var(--cx-color-code-number) !important;
 }
 
+.cx-token-comment {
+  color: var(--cx-color-code-comment);
+}
+
+.cx-token-keyword {
+  color: var(--cx-color-code-keyword);
+  font-weight: 700;
+}
+
+.cx-token-type {
+  color: var(--cx-color-code-type);
+  font-weight: 650;
+}
+
+.cx-token-function {
+  color: var(--cx-color-code-function);
+}
+
+.cx-token-string {
+  color: var(--cx-color-code-string);
+}
+
+.cx-token-number,
+.cx-token-constant {
+  color: var(--cx-color-code-number);
+  font-weight: 650;
+}
+
+.cx-code-block {
+  overflow-x: auto;
+  border: 1px solid var(--cx-color-code-border);
+  margin: 0;
+  padding: 1.5rem;
+  background: var(--cx-color-code-surface);
+  color: var(--cx-color-code-text);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: var(--ifm-code-font-size);
+  line-height: 1.45;
+  white-space: pre;
+}
+
+.cx-code-block code {
+  background: transparent;
+  color: inherit;
+}
+
+.cx-code-block-container {
+  overflow: hidden;
+  border: 1px solid var(--cx-color-code-border);
+  background: var(--cx-color-code-surface);
+}
+
+.cx-code-block-container .cx-code-block {
+  border: 0;
+}
+
+.cx-code-block-title {
+  border-bottom: 1px solid var(--cx-color-code-border);
+  padding: 0.5rem 1rem;
+  background: var(--cx-color-code-surface);
+  color: var(--cx-color-code-text);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.cx-code-block-content {
+  position: relative;
+}
+
+.cx-code-block-copy {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.65rem;
+  border: 1px solid var(--cx-color-code-border);
+  padding: 0.3rem 0.55rem;
+  background: var(--cx-color-code-surface);
+  color: var(--cx-color-code-text);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.75rem;
+}
+
+.cx-code-block-copy:hover {
+  background: var(--cx-color-surface-strong);
+}
+
 .cx-stdlib-page h1,
 .cx-stdlib-page h2 {
   color: var(--ifm-color-primary);

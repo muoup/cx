@@ -25,7 +25,7 @@ Structs and tagged unions may be marked with the following type restrictions:
 
 Restrictions follow a type declaration after a colon:
 
-```c
+```cx
 struct Data : @nocopy {
     int payload[32];
 };
@@ -35,7 +35,7 @@ Restriction application is monotonic: `@nodrop` also applies `@nocopy`, and dupl
 
 `@unsafe_move` is independent of copy and drop restrictions. It is intended for values that may become pinned or otherwise require a runtime condition before relocation:
 
-```c
+```cx
 struct guarded_cell<T> : @copy_traits(T), @unsafe_move {
     T value;
     int borrow_count;
@@ -50,7 +50,7 @@ Operations such as variable initialization, assignment, and function pass-by-val
 
 The expression `move var` transfers the value and kills the `var` binding, avoiding the need for a copy. Any subsequent use of that binding is caught by the typechecker. If a variable is moved in only one control-flow path, the compiler pessimistically treats it as dead in all paths that join the moving path.
 
-```c
+```cx
 struct Data : @nocopy {
     int payload[32];
 };

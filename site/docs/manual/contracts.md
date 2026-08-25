@@ -6,7 +6,7 @@ title: Contracts
 
 Contracts are a work-in-progress feature attached with `where` clauses.
 
-```c
+```cx
 int contract(int a, int b)
 where
     pre: (a > 0 && b > 0),

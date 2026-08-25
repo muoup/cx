@@ -3,6 +3,7 @@ import Link from "@docusaurus/Link";
 import Layout from "@theme/Layout";
 import Heading from "@theme/Heading";
 
+import {tokenizeCx} from "../lib/cx-syntax.mjs";
 import styles from "./index.module.css";
 
 const featurePanels = [
@@ -52,46 +53,19 @@ std::opt<std::net::udp_socket> try_serve(u16 port) {
 }`
 ];
 
-const cxTokenPattern =
-    /("[^"]*"|\b(?:import|if|return|move)\b|\b(?:opt|c_socket|socket_addr|u16|i32)\b|\b(?:std::[A-Za-z_:]+|AF_INET|SOCK_STREAM)\b|\b\d+\b|[A-Za-z_][A-Za-z0-9_]*(?=\())/g;
-
-function cxTokenClass(token: string) {
-    if (/^"/.test(token)) return styles.tokenString;
-    if (/^\d+$/.test(token)) return styles.tokenNumber;
-    if (/^(import|if|return|move)$/.test(token)) return styles.tokenKeyword;
-    if (/^(opt|c_socket|socket_addr|u16|i32)$/.test(token)) {
-        return styles.tokenType;
-    }
-    if (/^(std::[A-Za-z_:]+|AF_INET|SOCK_STREAM)$/.test(token)) {
-        return styles.tokenConstant;
-    }
-
-    return styles.tokenFunction;
-}
-
 function highlightedLine(line: string) {
     const parts: ReactNode[] = [];
-    let cursor = 0;
 
-    for (const match of line.matchAll(cxTokenPattern)) {
-        const token = match[0];
-        const index = match.index ?? 0;
-
-        if (index > cursor) {
-            parts.push(line.slice(cursor, index));
-        }
-
+    for (const [index, token] of tokenizeCx(line).entries()) {
         parts.push(
-            <span className={cxTokenClass(token)} key={`${index}-${token}`}>
-                {token}
-            </span>,
+            token.kind ? (
+                <span className={`cx-token-${token.kind}`} key={`${index}-${token.text}`}>
+                    {token.text}
+                </span>
+            ) : (
+                token.text
+            ),
         );
-
-        cursor = index + token.length;
-    }
-
-    if (cursor < line.length) {
-        parts.push(line.slice(cursor));
     }
 
     return parts;

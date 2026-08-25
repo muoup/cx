@@ -12,7 +12,7 @@ Functions that can be evaluated at compile time as well as runtime, similar to C
 
 A comptime function is declared with `comptime`. Its ordinary parameters are compile-time values, and calling it evaluates the function during compilation:
 
-```c
+```cx
 comptime int add(int lhs, int rhs) {
     return lhs + rhs;
 }
@@ -24,7 +24,7 @@ Comptime functions may also be templated or associated with a namespace using th
 
 The syntax `expr T` denotes a staged expression that will produce a runtime value of type `T`. It is not a compile-time-known `T`, and the comptime function cannot inspect its eventual runtime value. Instead, the function can place the expression is used for codegen, acting as a 'frozen' expression which can be inserted and manipulated as needed to enable richer code generation. For instance, Rust's `?` operator, which serves to return None from a optional-returning function if its operand is none, allowing for a concise and safe unwrap, can be neatly reimplemented in CX using a comptime function and staged expressions like so:
 
-```c
+```cx
 comptime expr T opt::try(expr opt<T> this) {
     return emit match (move this) {
         opt::some(val) => val;
@@ -35,7 +35,7 @@ comptime expr T opt::try(expr opt<T> this) {
 
 Above also introduces the 'emit' operator. In comptime contexts, the 'emit' operator converts the provided operand into a staged expression. In a runtime function, an rvalue expression passed through a method call to a comptime function expecting a staged expression will handle 'staging' the provided parameter automatically, as such the above function can be invoked like so:
 
-```c
+```cx
 std::opt<int> parse_integer(const str&_ input) { ... }
 
 int i = parse_integer(string)
@@ -50,7 +50,7 @@ For a more technical explanation, expressions are lowered eagerly to derive thei
 
 In the future, runtime functions will be able to store comptime variables and as such will need to use the 'emit' operator to stage the initialization rather than evaluate it directly to a value. This however is to-be-implemented.
 
-```c
+```cx
 
 ```
 
@@ -58,7 +58,7 @@ In the future, runtime functions will be able to store comptime variables and as
 
 The syntax `.{ ... }` creates a block in a position where CX expects an expression. They are semantically identical to standard blocks, however in places where an expression value is expected, the dot-prefix is used to parse the subsequent expression as a block rather than an initializer list. This syntax proves useful when you want to pass a staged implementation block to a comptime function:
 
-```c
+```cx
 comptime expr T if_then(bool condition, expr void proc) {
     if (condition) proc;
 }
@@ -70,7 +70,7 @@ if_then(cond, .{ printf("Condition was true!"); });
 
 A staged expression can accept parameters at its materialization point, useful for when a comptime function wants to do internal evaluation and ensure that its results can be exposed as context to the provided staged expression, for instance:
 
-```c
+```cx
 comptime expr void opt::map<T, U>(opt<T> this, expr U(T) proc) {
     match (move this) {
         opt::some(val) => opt::some(proc(this)),
@@ -81,7 +81,7 @@ comptime expr void opt::map<T, U>(opt<T> this, expr U(T) proc) {
 
 At the call site, `|parameters| statement` constructs the staged expression. The parameter types come from the comptime function prototype, so the call site supplies only their names:
 
-```c
+```cx
 std::opt<_str&> str_val = ...;
 std::opt<usize> size_val = move i_val
     |> std::opt::map(|val| std::str_length(val));
@@ -93,7 +93,7 @@ It should be noted that this syntax, while similar, is not equivalent to other l
 
 When a parameterized staged expression should contain the remainder of the current lexical block, its direct body can be the `then` keyword:
 
-```c
+```cx
 resource_handle |> with_resource() <| |resource| then
 
 action1(resource);
@@ -102,7 +102,7 @@ action2(resource);
 
 The above code snippet would be equivalent to:
 
-```c
+```cx
 resource_handle |> with_resource() <| |resource| {
     action1(resource);
     action2(resource);
@@ -111,7 +111,7 @@ resource_handle |> with_resource() <| |resource| {
 
 The main use-case for the 'then' keyword is to avoid excess indentation. If the example say was:
 
-```c
+```cx
 resource_handle1 |> with_resource() <| |resource1|
 resource_handle2 |> with_resource() <| |resource2|
 resource_handle3 |> with_resource() <| |resource3|
