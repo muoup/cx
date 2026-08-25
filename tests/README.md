@@ -12,6 +12,8 @@ cargo run -p cx-benchmarks -- --format pretty
 
 Use `--format json` for machine-readable results and `--format github` for a Markdown summary suitable for `GITHUB_STEP_SUMMARY`. LLVM cases require `--features backend-llvm`.
 
+Human-readable timing cells show the mean with a 95% margin of error. Values of one second or longer are displayed in seconds, while shorter values remain in milliseconds; a single sample reports an unavailable margin of error.
+
 Short output expectations can live beside the source. `CX-STDOUT` starts an exact stdout sequence and each `CX-STDOUT-NEXT` directive adds the immediately following line:
 
 ```c

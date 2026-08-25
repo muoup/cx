@@ -251,10 +251,10 @@ fn render_pretty_table(report: &BenchmarkReport) -> String {
         .cases
         .iter()
         .map(|result| BenchmarkTableRow {
-            case: result.case.replace('|', "\\|"),
+            case: result.case.clone(),
             backend: result.backend.clone(),
-            compile: format!("{} ms", format_stats(&result.compile)),
-            execute: format!("{} ms", format_stats(&result.execute)),
+            compile: format_stats(&result.compile),
+            execute: format_stats(&result.execute),
         })
         .collect::<Vec<_>>();
     let mut table = Table::new(rows);
@@ -272,7 +272,7 @@ fn render_github_table(report: &BenchmarkReport) -> String {
 
     for result in &report.cases {
         output.push_str(&format!(
-            "| {} | {} | {} ms | {} ms |\n",
+            "| {} | {} | {} | {} |\n",
             result.case.replace('|', "\\|"),
             result.backend,
             format_stats(&result.compile),
@@ -285,10 +285,79 @@ fn render_github_table(report: &BenchmarkReport) -> String {
 }
 
 fn format_stats(stats: &TimingStats) -> String {
-    format!(
-        "{:.2} mean ({:.2} median, {:.2}-{:.2})",
-        stats.mean_ms, stats.median_ms, stats.min_ms, stats.max_ms
-    )
+    format_timing(stats.mean_ms, margin_of_error_ms(stats))
+}
+
+fn format_timing(mean_ms: f64, margin_ms: Option<f64>) -> String {
+    let (mean, margin, unit) = if mean_ms >= 1000.0 {
+        (
+            mean_ms / 1000.0,
+            margin_ms.map(|margin| margin / 1000.0),
+            "s",
+        )
+    } else {
+        (mean_ms, margin_ms, "ms")
+    };
+    let margin = margin
+        .map(|margin| format!("{margin:.2}"))
+        .unwrap_or_else(|| "n/a".to_string());
+
+    format!("{mean:.2} ± {margin} {unit}")
+}
+
+fn margin_of_error_ms(stats: &TimingStats) -> Option<f64> {
+    let sample_count = stats.samples_ms.len();
+    if sample_count < 2 {
+        return None;
+    }
+
+    let variance = stats
+        .samples_ms
+        .iter()
+        .map(|sample| (sample - stats.mean_ms).powi(2))
+        .sum::<f64>()
+        / (sample_count - 1) as f64;
+    let standard_error = (variance / sample_count as f64).sqrt();
+
+    Some(t_critical_95(sample_count - 1) * standard_error)
+}
+
+fn t_critical_95(degrees_of_freedom: usize) -> f64 {
+    const VALUES: [f64; 30] = [
+        12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.160,
+        2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086, 2.080, 2.074, 2.069, 2.064, 2.060, 2.056,
+        2.052, 2.048, 2.045, 2.042,
+    ];
+
+    VALUES
+        .get(degrees_of_freedom.saturating_sub(1))
+        .copied()
+        .unwrap_or(1.96)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{format_stats, format_timing, margin_of_error_ms, stats};
+
+    #[test]
+    fn formats_milliseconds_and_seconds() {
+        assert_eq!(format_timing(999.0, Some(12.5)), "999.00 ± 12.50 ms");
+        assert_eq!(format_timing(1250.0, Some(25.0)), "1.25 ± 0.03 s");
+    }
+
+    #[test]
+    fn reports_margin_of_error_for_multiple_samples() {
+        let timing = stats(vec![100.0, 110.0, 120.0]);
+        let margin = margin_of_error_ms(&timing).unwrap();
+
+        assert!((margin - 24.84).abs() < 0.01);
+        assert_eq!(format_stats(&timing), "110.00 ± 24.84 ms");
+    }
+
+    #[test]
+    fn reports_unavailable_margin_for_one_sample() {
+        assert_eq!(format_stats(&stats(vec![1250.0])), "1.25 ± n/a s");
+    }
 }
 
 fn discover_cases(root: &Path) -> Result<Vec<PathBuf>, String> {
