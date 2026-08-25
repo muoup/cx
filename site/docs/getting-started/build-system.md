@@ -15,7 +15,9 @@ cx [args] file1.cx file2.cx file3.cx ...
 
 Supported Arguments:
 - `-c`: Disables linking and compiles to an object file instead of an executable
-- `-o path/to/file`: Use custom output directory + file name
+- `-I path/to/directory`: Add a header search directory in single-file mode
+- `-D name[=value]`: Define a preprocessor macro in single-file mode
+- `-o path/to/file`: Use a custom output file name
 
 ## Starting a Project
 

@@ -1,10 +1,8 @@
-use cx_log::CXRawResult;
 use cx_target::ArchitectureConfig;
 use cx_util::namespace::QualifiedName;
 
 use crate::{
-    layout::THIRTypeLayout,
-    thir::data::{THIRFnSignature, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
+    thir::data::{THIRFnSignature, THIRIntType, THIRType, THIRTypeID, THIRTypeKind}
 };
 
 pub trait THIRTypeContext {
@@ -14,10 +12,6 @@ pub trait THIRTypeContext {
 
     fn try_resolve_type_id(&self, id: THIRTypeID) -> Option<&THIRType> {
         Some(self.resolve_type_id(id))
-    }
-
-    fn type_layout(&self, ty: &THIRType) -> CXRawResult<THIRTypeLayout> {
-        crate::layout::layout_of(self, ty)
     }
 
     fn pointer_integer_type(&self) -> THIRIntType {
@@ -75,8 +69,13 @@ pub trait THIRTypeContext {
             .unwrap_or(false)
     }
 
-    fn cvr_compatible(&self, type1: &THIRType, type2: &THIRType) -> bool {
-        // Determines if type1 has any CVR qualifiers that type2 does not have. If so, they are not compatible.
-        (type1.specifiers ^ type2.specifiers) & type1.specifiers == 0
+
+
+    fn type_debug_name(&self, ty: &THIRType) -> Option<String>
+    where
+        Self: Sized,
+    {
+        ty.strong_identifier()
+            .map(|_| ty.display_with(self).to_string())
     }
 }

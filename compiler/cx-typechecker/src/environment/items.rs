@@ -1,18 +1,25 @@
 use std::collections::HashSet;
 
-use cx_thir::thir::data::MIRTemplateInput;
+use cx_thir::thir::comptime::THIRComptimeFn;
+use cx_thir::thir::data::THIRComptimeFnPrototype;
 use cx_thir::thir::data::THIRFnPrototype;
 use cx_thir::thir::data::THIRFunction;
-use cx_thir::thir::global::MIRGlobalVariable;
+use cx_thir::thir::data::THIRTemplateInput;
+use cx_thir::thir::global::THIRGlobalVariable;
 use cx_thir::thir::r#type::THIRType;
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_util::{identifier::CXIdent, linkage::LinkageMode, namespace::QualifiedName};
 
 #[derive(Debug)]
-pub enum MIRFunctionGenRequest {
+pub enum THIRFunctionGenRequest {
     Template {
         name: QualifiedName,
         prototype: THIRFnPrototype,
-        input: MIRTemplateInput,
+        input: THIRTemplateInput,
+    },
+    Comptime {
+        name: QualifiedName,
+        prototype: THIRComptimeFnPrototype,
+        input: THIRTemplateInput,
     },
     TypeConstructor {
         symbol_name: String,
@@ -25,8 +32,9 @@ pub enum MIRFunctionGenRequest {
 
 pub struct ItemRegistry {
     generated_functions: Vec<THIRFunction>,
-    generated_globals: Vec<MIRGlobalVariable>,
-    requests: Vec<MIRFunctionGenRequest>,
+    generated_comptime_functions: Vec<THIRComptimeFn>,
+    generated_globals: Vec<THIRGlobalVariable>,
+    requests: Vec<THIRFunctionGenRequest>,
     requests_fulfilled: HashSet<String>,
 }
 
@@ -34,6 +42,7 @@ impl ItemRegistry {
     pub fn new() -> Self {
         Self {
             generated_functions: Vec::new(),
+            generated_comptime_functions: Vec::new(),
             generated_globals: Vec::new(),
 
             requests: Vec::new(),
@@ -41,21 +50,31 @@ impl ItemRegistry {
         }
     }
 
-    pub fn drain_generated_items(self) -> (Vec<THIRFunction>, Vec<MIRGlobalVariable>) {
+    pub fn drain_generated_items(
+        self,
+    ) -> (
+        Vec<THIRFunction>,
+        Vec<THIRComptimeFn>,
+        Vec<THIRGlobalVariable>,
+    ) {
         if !self.requests.is_empty() {
             unreachable!(
                 "Attempted to drain generated items while there are still pending generation requests. This is a bug."
             )
         }
 
-        (self.generated_functions, self.generated_globals)
+        (
+            self.generated_functions,
+            self.generated_comptime_functions,
+            self.generated_globals,
+        )
     }
 
-    pub fn push_request(&mut self, request: MIRFunctionGenRequest) {
+    pub fn push_request(&mut self, request: THIRFunctionGenRequest) {
         self.requests.push(request);
     }
 
-    pub fn pop_request(&mut self) -> Option<MIRFunctionGenRequest> {
+    pub fn pop_request(&mut self) -> Option<THIRFunctionGenRequest> {
         self.requests.pop()
     }
 
@@ -68,10 +87,41 @@ impl ItemRegistry {
     }
 
     pub fn push_generated_function(&mut self, function: THIRFunction) {
+        if let Some(existing) = self
+            .generated_functions
+            .iter_mut()
+            .find(|existing| existing.prototype.symbol_name() == function.prototype.symbol_name())
+        {
+            if existing.body.is_none() {
+                existing.prototype = function.prototype;
+                existing.body = function.body;
+            }
+            return;
+        }
+
         self.generated_functions.push(function);
     }
 
-    pub fn push_generated_global(&mut self, global: MIRGlobalVariable) {
+    pub fn push_generated_comptime_function(&mut self, function: THIRComptimeFn) {
+        self.generated_comptime_functions.push(function);
+    }
+
+    pub fn push_generated_global(&mut self, global: THIRGlobalVariable, replace_external: bool) {
+        if replace_external
+            && global.linkage != LinkageMode::Extern
+            && let Some(existing) = self.generated_globals.iter_mut().find(|existing| {
+                existing.name == global.name && existing.linkage == LinkageMode::Extern
+            })
+        {
+            *existing = global;
+            return;
+        }
         self.generated_globals.push(global);
+    }
+
+    pub fn generated_global(&self, name: &str) -> Option<&THIRGlobalVariable> {
+        self.generated_globals
+            .iter()
+            .find(|global| global.name.as_str() == name)
     }
 }

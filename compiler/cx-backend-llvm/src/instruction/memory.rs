@@ -1,4 +1,5 @@
 use super::inst_num;
+use crate::error::{LLVMError, LLVMResult};
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::LMIRValue;
@@ -6,40 +7,41 @@ use cx_lmir::types::LMIRType;
 use cx_util::identifier::CXIdent;
 use inkwell::AddressSpace;
 use inkwell::types::AnyTypeEnum;
-use inkwell::values::{AnyValue, BasicValue};
+use inkwell::values::{AnyValue, AnyValueEnum, BasicValue};
 
 pub(super) fn generate_allocate<'a, 'b>(
     function_state: &FunctionState<'a, 'b>,
     _type: &LMIRType,
     alignment: u8,
-) -> Option<CodegenValue<'a>> {
+) -> LLVMResult<CodegenValue<'a>> {
     let basic_ty = function_state
         .context
         .i8_type()
         .array_type(usize::from(_type.size()) as u32);
-    let previous_block = function_state.builder.get_insert_block()?;
-    let entry = function_state
-        .get_block(&CXIdent::from("entry"))
-        .expect("failed to get entry block");
+    let previous_block = function_state
+        .builder
+        .get_insert_block()
+        .ok_or_else(|| LLVMError::new("No LLVM insertion block while allocating memory"))?;
+    let entry = function_state.get_block(&CXIdent::from("entry"))?;
     function_state.builder.position_before(
         entry
             .get_first_instruction()
             .as_ref()
-            .expect("entry block must contain an instruction"),
+            .ok_or_else(|| LLVMError::new("LLVM entry block has no instruction"))?,
     );
 
     let value = function_state
         .builder
         .build_alloca(basic_ty, inst_num().as_str())
-        .unwrap();
+        .map_err(LLVMError::from_error)?;
     value
         .as_instruction()
-        .unwrap()
+        .ok_or_else(|| LLVMError::new("LLVM alloca did not produce an instruction"))?
         .set_alignment(alignment as u32)
-        .unwrap();
+        .map_err(LLVMError::from_error)?;
     function_state.builder.position_at_end(previous_block);
 
-    Some(CodegenValue::Value(value.as_any_value_enum()))
+    Ok(CodegenValue::Value(value.as_any_value_enum()))
 }
 
 pub(super) fn generate_struct_access<'a, 'b>(
@@ -47,15 +49,18 @@ pub(super) fn generate_struct_access<'a, 'b>(
     struct_: &LMIRValue,
     struct_type: &LMIRType,
     field_index: usize,
-) -> Option<CodegenValue<'a>> {
-    let Some(AnyTypeEnum::StructType(struct_type)) =
-        bc_llvm_type(function_state.context, struct_type)
-    else {
-        unreachable!("expected struct type for struct access, got: {struct_type:?}");
+) -> LLVMResult<CodegenValue<'a>> {
+    let struct_type = match bc_llvm_type(function_state.context, struct_type)? {
+        AnyTypeEnum::StructType(struct_type) => struct_type,
+        llvm_type => {
+            return Err(LLVMError::new(format!(
+                "Expected struct type for struct access, found {llvm_type:?}"
+            )));
+        }
     };
     let struct_ptr = function_state
         .get_value(struct_)?
-        .get_value()
+        .get_value()?
         .into_pointer_value();
     let gep = function_state
         .builder
@@ -65,8 +70,8 @@ pub(super) fn generate_struct_access<'a, 'b>(
             field_index as u32,
             inst_num().as_str(),
         )
-        .unwrap();
-    Some(CodegenValue::Value(gep.as_any_value_enum()))
+        .map_err(LLVMError::from_error)?;
+    Ok(CodegenValue::Value(gep.as_any_value_enum()))
 }
 
 pub(super) fn generate_store<'a, 'b>(
@@ -75,11 +80,11 @@ pub(super) fn generate_store<'a, 'b>(
     memory: &LMIRValue,
     value: &LMIRValue,
     _type: &LMIRType,
-) -> Option<CodegenValue<'a>> {
+) -> LLVMResult<CodegenValue<'a>> {
     let codegen_value = function_state.get_value(value)?;
     let memory = function_state
         .get_value(memory)?
-        .get_value()
+        .get_value()?
         .into_pointer_value();
 
     match codegen_value {
@@ -88,13 +93,13 @@ pub(super) fn generate_store<'a, 'b>(
             let base = function_state
                 .builder
                 .build_ptr_to_int(memory, usize_type, inst_num().as_str())
-                .unwrap();
+                .map_err(LLVMError::from_error)?;
             for (slot, value) in values {
                 let offset = usize_type.const_int(slot.offset as u64, false);
                 let ptr_int = function_state
                     .builder
                     .build_int_add(base, offset, inst_num().as_str())
-                    .unwrap();
+                    .map_err(LLVMError::from_error)?;
                 let field_ptr = function_state
                     .builder
                     .build_int_to_ptr(
@@ -102,12 +107,14 @@ pub(super) fn generate_store<'a, 'b>(
                         global_state.context.ptr_type(AddressSpace::from(0)),
                         inst_num().as_str(),
                     )
-                    .unwrap();
+                    .map_err(LLVMError::from_error)?;
                 let store = function_state
                     .builder
                     .build_store(field_ptr, value)
-                    .unwrap();
-                store.set_alignment(slot._type.alignment() as u32).unwrap();
+                    .map_err(LLVMError::from_error)?;
+                store
+                    .set_alignment(slot._type.alignment() as u32)
+                    .map_err(LLVMError::from_error)?;
             }
         }
         CodegenValue::Value(any_value) => {
@@ -115,13 +122,15 @@ pub(super) fn generate_store<'a, 'b>(
             let store = function_state
                 .builder
                 .build_store(memory, basic_value)
-                .unwrap();
-            store.set_alignment(_type.alignment() as u32).unwrap();
+                .map_err(LLVMError::from_error)?;
+            store
+                .set_alignment(_type.alignment() as u32)
+                .map_err(LLVMError::from_error)?;
         }
         CodegenValue::Null => {}
     }
 
-    Some(CodegenValue::Null)
+    Ok(CodegenValue::Null)
 }
 
 pub(super) fn generate_memcpy<'a, 'b>(
@@ -130,21 +139,35 @@ pub(super) fn generate_memcpy<'a, 'b>(
     src: &LMIRValue,
     size: &LMIRValue,
     alignment: u8,
-) -> Option<CodegenValue<'a>> {
-    let src = function_state
-        .get_value(src)?
-        .get_value()
-        .into_pointer_value();
+) -> LLVMResult<CodegenValue<'a>> {
+    let src = match function_state.get_value(src)?.get_value()? {
+        AnyValueEnum::PointerValue(value) => value,
+        value => {
+            let value = any_to_basic_val(value)?;
+            let temporary = function_state
+                .builder
+                .build_alloca(value.get_type(), inst_num().as_str())
+                .map_err(LLVMError::from_error)?;
+            function_state
+                .builder
+                .build_store(temporary, value)
+                .map_err(LLVMError::from_error)?;
+            temporary
+        }
+    };
     let dest = function_state
         .get_value(dest)?
-        .get_value()
+        .get_value()?
         .into_pointer_value();
-    let size = function_state.get_value(size)?.get_value().into_int_value();
+    let size = function_state
+        .get_value(size)?
+        .get_value()?
+        .into_int_value();
     function_state
         .builder
         .build_memcpy(dest, alignment as u32, src, alignment as u32, size)
-        .unwrap();
-    Some(CodegenValue::Null)
+        .map_err(LLVMError::from_error)?;
+    Ok(CodegenValue::Null)
 }
 
 pub(super) fn generate_load<'a, 'b>(
@@ -152,10 +175,10 @@ pub(super) fn generate_load<'a, 'b>(
     function_state: &FunctionState<'a, 'b>,
     memory: &LMIRValue,
     _type: &LMIRType,
-) -> Option<CodegenValue<'a>> {
+) -> LLVMResult<CodegenValue<'a>> {
     let memory = function_state
         .get_value(memory)?
-        .get_value()
+        .get_value()?
         .into_pointer_value();
     let loaded = function_state
         .builder
@@ -164,13 +187,13 @@ pub(super) fn generate_load<'a, 'b>(
             memory,
             inst_num().as_str(),
         )
-        .unwrap();
+        .map_err(LLVMError::from_error)?;
     loaded
         .as_instruction_value()
-        .unwrap()
+        .ok_or_else(|| LLVMError::new("LLVM load did not produce an instruction"))?
         .set_alignment(_type.alignment() as u32)
-        .unwrap();
-    Some(CodegenValue::Value(loaded.as_any_value_enum()))
+        .map_err(LLVMError::from_error)?;
+    Ok(CodegenValue::Value(loaded.as_any_value_enum()))
 }
 
 pub(super) fn generate_zero_memory<'a, 'b>(
@@ -178,10 +201,10 @@ pub(super) fn generate_zero_memory<'a, 'b>(
     function_state: &FunctionState<'a, 'b>,
     memory: &LMIRValue,
     _type: &LMIRType,
-) -> Option<CodegenValue<'a>> {
+) -> LLVMResult<CodegenValue<'a>> {
     let memory = function_state
         .get_value(memory)?
-        .get_value()
+        .get_value()?
         .into_pointer_value();
     let zero = global_state.context.i8_type().const_zero();
     let size = global_state
@@ -190,6 +213,6 @@ pub(super) fn generate_zero_memory<'a, 'b>(
     function_state
         .builder
         .build_memset(memory, _type.alignment() as u32, zero, size)
-        .unwrap();
-    Some(CodegenValue::Null)
+        .map_err(LLVMError::from_error)?;
+    Ok(CodegenValue::Null)
 }

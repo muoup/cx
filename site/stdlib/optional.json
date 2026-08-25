@@ -1,0 +1,114 @@
+{
+  "module": "std::optional",
+  "order": 20,
+  "source": "lib/std/optional.cx",
+  "summary": "An enum union for values that may be present or absent.",
+  "types": [
+    {
+      "name": "enum union opt<T>",
+      "description": "An enum union representing either no value or a value of type T.",
+      "attributes": ["@copy_traits(T)"],
+      "variants": [
+        {"name": "none", "payloadType": "void", "description": "Represents an absent value."},
+        {"name": "some", "payloadType": "T", "description": "Stores a present value."}
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "name": "try",
+      "owner": "opt",
+      "signature": "comptime expr T opt::try<T>(expr opt<T> self)",
+      "stage": "comptime",
+      "description": "Produces staged code that unwraps an optional or returns none.",
+      "parameters": [
+        {"name": "self", "type": "opt<T>", "description": "The optional value to inspect."}
+      ],
+      "returnType": "T",
+      "returnDescription": "The contained value when present."
+    },
+    {
+      "name": "try_or",
+      "owner": "opt",
+      "signature": "comptime expr T opt::try_or<T>(expr opt<T> self, expr void on_none)",
+      "stage": "comptime",
+      "description": "Produces staged code that runs a fallback when an optional is none.",
+      "parameters": [
+        {"name": "self", "type": "opt<T>", "description": "The optional value to inspect."},
+        {"name": "on_none", "type": "void", "description": "The staged fallback expression."}
+      ],
+      "returnType": "T",
+      "returnDescription": "The contained value when present."
+    },
+    {
+      "name": "unwrap_or_else",
+      "owner": "opt",
+      "signature": "comptime expr T opt::unwrap_or_else<T>(expr opt<T> self, expr unreachable on_none)",
+      "stage": "comptime",
+      "description": "Produces staged code that uses an unreachable fallback when an optional is none.",
+      "parameters": [
+        {"name": "self", "type": "opt<T>", "description": "The optional value to inspect."},
+        {"name": "on_none", "type": "unreachable", "description": "The staged fallback expression."}
+      ],
+      "returnType": "T",
+      "returnDescription": "The contained value when present."
+    },
+    {
+      "name": "is_some",
+      "owner": "opt",
+      "signature": "bool opt::is_some<T>(opt<T>& this)",
+      "description": "Checks whether an optional contains a value.",
+      "parameters": [
+        {"name": "this", "type": "opt<T>&", "description": "The optional value to inspect."}
+      ],
+      "returnType": "bool",
+      "returnDescription": "True when the value is present."
+    },
+    {
+      "name": "is_none",
+      "owner": "opt",
+      "signature": "bool opt::is_none<T>(opt<T>& this)",
+      "description": "Checks whether an optional is empty.",
+      "parameters": [
+        {"name": "this", "type": "opt<T>&", "description": "The optional value to inspect."}
+      ],
+      "returnType": "bool",
+      "returnDescription": "True when no value is present."
+    },
+    {
+      "name": "map",
+      "owner": "opt",
+      "signature": "opt<U> opt::map<T, U>(opt<T> this, U (*func)(T))",
+      "description": "Transforms a present optional value with a callback.",
+      "parameters": [
+        {"name": "this", "type": "opt<T>", "description": "The optional value to transform."},
+        {"name": "func", "type": "U(*)(T)", "description": "The value transformation function."}
+      ],
+      "returnType": "opt<U>",
+      "returnDescription": "Some transformed value or none."
+    },
+    {
+      "name": "unwrap_or",
+      "owner": "opt",
+      "signature": "T opt::unwrap_or<T>(opt<T> this, T otherwise)",
+      "description": "Returns the contained value or a fallback value.",
+      "parameters": [
+        {"name": "this", "type": "opt<T>", "description": "The optional value to unwrap."},
+        {"name": "otherwise", "type": "T", "description": "The fallback value."}
+      ],
+      "returnType": "T",
+      "returnDescription": "The contained value or fallback."
+    },
+    {
+      "name": "unwrap",
+      "owner": "opt",
+      "signature": "T opt::unwrap<T>(opt<T> this)",
+      "description": "Returns the contained value or terminates the process.",
+      "parameters": [
+        {"name": "this", "type": "opt<T>", "description": "The optional value to unwrap."}
+      ],
+      "returnType": "T",
+      "returnDescription": "The contained value when present."
+    }
+  ]
+}

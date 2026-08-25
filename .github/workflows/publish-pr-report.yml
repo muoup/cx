@@ -1,0 +1,261 @@
+name: Publish CI report
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  publish:
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      CX_INPUT_DIR: ${{ runner.temp }}/cx-publisher-input
+    steps:
+      - name: Check out the trusted default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Create publisher input directory
+        run: mkdir -p "$CX_INPUT_DIR"
+
+      - name: Download pull request benchmark artifact
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v5
+        with:
+          name: cx-benchmark-report
+          path: ${{ runner.temp }}/cx-publisher-input/pr
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve pull request
+        if: always()
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('node:fs');
+            const inputDir = process.env.CX_INPUT_DIR;
+            try {
+              const workflowRun = context.payload.workflow_run;
+              const metadata = (() => {
+                try {
+                  return JSON.parse(fs.readFileSync(`${inputDir}/pr/metadata.json`, 'utf8'));
+                } catch {
+                  return {};
+                }
+              })();
+              const eventPullRequest = workflowRun.pull_requests?.[0];
+              const candidateNumbers = [eventPullRequest?.number, metadata.pr_number]
+                .filter(Boolean)
+                .map(Number);
+              const expectedShas = new Set([workflowRun.head_sha, metadata.source_sha].filter(Boolean));
+              const headRepository = workflowRun.head_repository?.full_name;
+              const headOwner = headRepository?.split('/')[0];
+
+              const matchesRun = (pullRequest) =>
+                expectedShas.has(pullRequest.head?.sha) &&
+                (!workflowRun.head_branch || pullRequest.head?.ref === workflowRun.head_branch) &&
+                (!headRepository || pullRequest.head?.repo?.full_name === headRepository);
+
+              const checkedNumbers = new Set();
+              const candidates = [];
+              for (const number of candidateNumbers) {
+                if (Number.isInteger(number) && number > 0 && !checkedNumbers.has(number)) {
+                  checkedNumbers.add(number);
+                  candidates.push(number);
+                }
+              }
+
+              for (const number of candidates) {
+                const response = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: number,
+                });
+                if (matchesRun(response.data)) {
+                  fs.writeFileSync(`${inputDir}/pull-request.json`, JSON.stringify(response.data));
+                  return;
+                }
+              }
+
+              if (headOwner && workflowRun.head_branch) {
+                const pullRequests = await github.paginate(github.rest.pulls.list, {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  state: 'all',
+                  head: `${headOwner}:${workflowRun.head_branch}`,
+                  per_page: 100,
+                });
+                const matchingPullRequest = pullRequests.find(matchesRun);
+                if (matchingPullRequest) {
+                  fs.writeFileSync(`${inputDir}/pull-request.json`, JSON.stringify(matchingPullRequest));
+                  return;
+                }
+              }
+
+              core.warning('Could not resolve the pull request for this workflow run.');
+            } catch (error) {
+              core.warning(`Pull request lookup failed: ${error.message}`);
+            }
+
+      - name: Select the latest successful baseline
+        id: baseline
+        if: always()
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            try {
+              const fs = require('node:fs');
+              const inputDir = process.env.CX_INPUT_DIR;
+              const workflowRun = context.payload.workflow_run;
+              const pullRequest = (() => {
+                try {
+                  return JSON.parse(fs.readFileSync(`${inputDir}/pull-request.json`, 'utf8'));
+                } catch {
+                  return null;
+                }
+              })();
+              const baseBranch = pullRequest?.base?.ref;
+              if (!baseBranch) {
+                core.setOutput('run_id', '');
+                return;
+              }
+
+              const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'ci.yml',
+                branch: baseBranch,
+                event: 'push',
+                status: 'completed',
+                per_page: 100,
+              });
+
+              for (const run of runs) {
+                if (run.conclusion !== 'success') {
+                  continue;
+                }
+                const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  run_id: run.id,
+                  per_page: 100,
+                });
+                if (artifacts.some((artifact) => artifact.name === 'cx-benchmark-report' && !artifact.expired)) {
+                  core.setOutput('run_id', String(run.id));
+                  return;
+                }
+              }
+
+              core.setOutput('run_id', '');
+            } catch (error) {
+              core.warning(`Baseline lookup failed: ${error.message}`);
+              core.setOutput('run_id', '');
+            }
+
+      - name: Download baseline benchmark artifact
+        if: steps.baseline.outputs.run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v5
+        with:
+          name: cx-benchmark-report
+          path: ${{ runner.temp }}/cx-publisher-input/baseline
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.baseline.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Collect workflow job results
+        if: always()
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('node:fs');
+            const inputDir = process.env.CX_INPUT_DIR;
+            try {
+              const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: context.payload.workflow_run.id,
+                filter: 'latest',
+                per_page: 100,
+              });
+              fs.writeFileSync(`${inputDir}/jobs.json`, JSON.stringify({ jobs }, null, 2));
+            } catch (error) {
+              core.warning(`Workflow job lookup failed: ${error.message}`);
+              fs.writeFileSync(`${inputDir}/jobs.json`, JSON.stringify({ jobs: [] }));
+            }
+
+      - name: Render pinned report
+        if: always()
+        env:
+          CX_REPORT_DIR: ${{ runner.temp }}/cx-publisher-input
+          CX_REPORT_OUTPUT: ${{ runner.temp }}/cx-publisher-input/comment.md
+          CX_BASELINE_RUN_ID: ${{ steps.baseline.outputs.run_id }}
+        run: node .github/scripts/render-ci-report.mjs
+
+      - name: Update the pinned pull request comment
+        if: always()
+        uses: actions/github-script@v8
+        env:
+          CX_REPORT_PATH: ${{ runner.temp }}/cx-publisher-input/comment.md
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('node:fs');
+            const inputDir = process.env.CX_INPUT_DIR;
+            const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+            const pullRequest = (() => {
+              try {
+                return JSON.parse(fs.readFileSync(`${inputDir}/pull-request.json`, 'utf8'));
+              } catch {
+                return null;
+              }
+            })();
+            const body = fs.readFileSync(process.env.CX_REPORT_PATH, 'utf8').trim();
+            if (!pullRequest?.number || !body) {
+              core.info('No pull request report was rendered.');
+              return;
+            }
+
+            const marker = '<!-- cx-ci-report -->';
+            const { owner, repo } = context.repo;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: pullRequest.number,
+              per_page: 100,
+            });
+            const existing = comments.find((comment) =>
+              comment.user?.type === 'Bot' && comment.body?.startsWith(marker),
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pullRequest.number,
+                body,
+              });
+            }

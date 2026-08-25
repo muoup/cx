@@ -1,0 +1,31 @@
+{
+  "module": "std::functional",
+  "order": 70,
+  "source": "lib/std/functional.cx",
+  "summary": "Small helpers for applying callbacks while preserving a value.",
+  "types": [],
+  "functions": [
+    {
+      "name": "tap",
+      "signature": "T tap<T>(T value, void (*func)(T&))",
+      "description": "Calls a callback with a mutable borrow and returns the value.",
+      "parameters": [
+        {"name": "value", "type": "T", "description": "The value to pass through."},
+        {"name": "func", "type": "void(*)(T&)", "description": "The callback to run."}
+      ],
+      "returnType": "T",
+      "returnDescription": "The value after the callback runs."
+    },
+    {
+      "name": "inspect",
+      "signature": "T inspect<T>(T value, void (*func)(const T&))",
+      "description": "Calls a callback with a shared borrow and returns the value.",
+      "parameters": [
+        {"name": "value", "type": "T", "description": "The value to inspect."},
+        {"name": "func", "type": "void(*)(const T&)", "description": "The callback to run."}
+      ],
+      "returnType": "T",
+      "returnDescription": "The unchanged value."
+    }
+  ]
+}

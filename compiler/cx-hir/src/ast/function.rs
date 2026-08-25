@@ -10,6 +10,7 @@ use crate::ast::{
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq)]
 pub struct HIRFunctionContract {
     pub safe: bool,
+    pub noreturn: bool,
 
     pub precondition: Option<HIRExpression>,
     pub postcondition: Option<(Option<CXIdent>, HIRExpression)>,
@@ -38,8 +39,8 @@ pub struct HIRParameter {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct HIRComptimeFnPrototype {
     pub kind: HIRFunctionKind,
-    pub params: Vec<HIRComptimeParameter>,
     pub return_type: HIRComptimeValueType,
+    pub params: Vec<HIRComptimeParameter>,
     pub range: TokenRange,
 }
 

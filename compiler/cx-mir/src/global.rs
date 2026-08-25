@@ -3,8 +3,7 @@ use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
     expr::{
-        MIRBasicBlock, MIRBasicBlockID, MIRConstant, MIRInstr, MIRInstrKind, MIRPlace, MIRPlaceID,
-        MIRRegister, MIRScopeID,
+        MIRBasicBlock, MIRBasicBlockID, MIRConstant, MIRPlace, MIRPlaceID, MIRRegister, MIRScopeID,
     },
     ty::MIRTypeID,
 };
@@ -29,10 +28,18 @@ macro_rules! dense_id {
 dense_id!(MIRFunctionID);
 dense_id!(MIRGlobalID);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MIRFunctionMode {
+    Runtime,
+    Constexpr,
+    Comptime,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRGlobalState {
     External,
     ZeroInitialized,
+    Initializer(MIRFunctionID),
     Initialized(MIRConstant),
 }
 
@@ -40,15 +47,43 @@ pub enum MIRGlobalState {
 pub struct MIRGlobalVariable {
     pub id: MIRGlobalID,
     pub name: CXIdent,
-    pub ty: MIRTypeID,
     pub linkage: LinkageMode,
-    pub state: MIRGlobalState,
-    pub is_mutable: bool,
-    pub nodrop: bool,
+    pub kind: MIRGlobalKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum MIRGlobalKind {
+    StringLiteral {
+        value: String,
+    },
+
+    Variable {
+        ty: MIRTypeID,
+        state: MIRGlobalState,
+        is_mutable: bool,
+    },
 }
 
 impl MIRGlobalVariable {
-    pub fn new(
+    pub fn new(id: MIRGlobalID, name: CXIdent, linkage: LinkageMode, kind: MIRGlobalKind) -> Self {
+        Self {
+            id,
+            name,
+            linkage,
+            kind,
+        }
+    }
+
+    pub fn string_literal(id: MIRGlobalID, name: CXIdent, value: String) -> Self {
+        Self {
+            id,
+            name,
+            linkage: LinkageMode::Static,
+            kind: MIRGlobalKind::StringLiteral { value },
+        }
+    }
+
+    pub fn variable(
         id: MIRGlobalID,
         name: CXIdent,
         ty: MIRTypeID,
@@ -58,15 +93,16 @@ impl MIRGlobalVariable {
         Self {
             id,
             name,
-            ty,
             linkage,
-            state: if linkage == LinkageMode::Extern {
-                MIRGlobalState::External
-            } else {
-                MIRGlobalState::ZeroInitialized
+            kind: MIRGlobalKind::Variable {
+                ty,
+                state: if linkage == LinkageMode::Extern {
+                    MIRGlobalState::External
+                } else {
+                    MIRGlobalState::ZeroInitialized
+                },
+                is_mutable,
             },
-            is_mutable,
-            nodrop: false,
         }
     }
 }
@@ -76,6 +112,8 @@ pub struct MIRFnParam {
     pub name: Option<CXIdent>,
     pub ty: MIRTypeID,
     pub nodrop: bool,
+    pub staged_params: Option<Vec<MIRTypeID>>,
+    pub staged_diverges: bool,
 }
 
 impl MIRFnParam {
@@ -84,6 +122,8 @@ impl MIRFnParam {
             name: None,
             ty,
             nodrop: false,
+            staged_params: None,
+            staged_diverges: false,
         }
     }
 
@@ -92,11 +132,19 @@ impl MIRFnParam {
             name: Some(name),
             ty,
             nodrop: false,
+            staged_params: None,
+            staged_diverges: false,
         }
     }
 
     pub fn with_nodrop(mut self, nodrop: bool) -> Self {
         self.nodrop = nodrop;
+        self
+    }
+
+    pub fn with_staged(mut self, params: Option<Vec<MIRTypeID>>, diverges: bool) -> Self {
+        self.staged_params = params;
+        self.staged_diverges = diverges;
         self
     }
 }
@@ -105,26 +153,45 @@ impl MIRFnParam {
 pub struct MIRFnSignature {
     pub symbol_name: CXIdent,
     pub debug_name: Option<CXIdent>,
-    pub params: Vec<MIRFnParam>,
+
     pub return_type: MIRTypeID,
+    pub params: Vec<MIRFnParam>,
+
     pub variadic: bool,
     pub safe: bool,
+    pub mode: MIRFunctionMode,
+    pub return_staged_params: Option<Vec<MIRTypeID>>,
 }
 
 impl MIRFnSignature {
-    pub fn new(symbol_name: CXIdent, params: Vec<MIRFnParam>, return_type: MIRTypeID) -> Self {
+    pub fn new(
+        symbol_name: CXIdent,
+        debug_name: Option<CXIdent>,
+        params: Vec<MIRFnParam>,
+        return_type: MIRTypeID,
+        mode: MIRFunctionMode,
+        variadic: bool,
+        safe: bool,
+    ) -> Self {
         Self {
             symbol_name,
-            debug_name: None,
+            debug_name,
             params,
             return_type,
-            variadic: false,
-            safe: false,
+            mode,
+            variadic,
+            safe,
+            return_staged_params: None,
         }
     }
 
     pub fn display_name(&self) -> &CXIdent {
         self.debug_name.as_ref().unwrap_or(&self.symbol_name)
+    }
+
+    pub fn with_staged_return(mut self, params: Option<Vec<MIRTypeID>>) -> Self {
+        self.return_staged_params = params;
+        self
     }
 }
 
@@ -164,26 +231,150 @@ pub struct MIRRegisterDecl {
 
 #[derive(Debug, Clone)]
 pub struct MIRFunction {
-    pub id: MIRFunctionID,
-    pub prototype: MIRFnPrototype,
-    pub entry: Option<MIRBasicBlockID>,
-    pub blocks: Vec<MIRBasicBlock>,
-    pub places: Vec<MIRPlaceDecl>,
-    pub registers: Vec<MIRRegisterDecl>,
-    pub scopes: Vec<MIRScopeDecl>,
+    id: MIRFunctionID,
+    prototype: MIRFnPrototype,
+    body: Option<MIRBody>,
 }
 
 impl MIRFunction {
-    pub fn new(id: MIRFunctionID, prototype: MIRFnPrototype) -> Self {
+    pub fn new(id: MIRFunctionID, prototype: MIRFnPrototype, definition: Option<MIRBody>) -> Self {
         Self {
             id,
             prototype,
-            entry: None,
+            body: definition,
+        }
+    }
+
+    pub fn id(&self) -> MIRFunctionID {
+        self.id
+    }
+
+    pub fn body(&self) -> Option<&MIRBody> {
+        self.body.as_ref()
+    }
+
+    pub fn prototype(&self) -> &MIRFnPrototype {
+        &self.prototype
+    }
+
+    pub fn mode(&self) -> MIRFunctionMode {
+        self.prototype().signature.mode
+    }
+
+    pub fn definition(&self) -> Option<&MIRBody> {
+        self.body.as_ref()
+    }
+
+    pub fn define(&mut self, def: MIRBody) {
+        assert!(
+            self.definition().is_none(),
+            "Attempt to redefine function: {}",
+            self.prototype().signature.display_name()
+        );
+        self.body = Some(def);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MIRBody {
+    entry: MIRBasicBlockID,
+
+    blocks: Vec<MIRBasicBlock>,
+    places: Vec<MIRPlaceDecl>,
+    registers: Vec<MIRRegisterDecl>,
+    scopes: Vec<MIRScopeDecl>,
+}
+
+impl MIRBody {
+    pub fn new() -> Self {
+        Self {
+            entry: MIRBasicBlockID::new(0),
             blocks: Vec::new(),
             places: Vec::new(),
             registers: Vec::new(),
             scopes: Vec::new(),
         }
+    }
+
+    pub fn entry(&self) -> MIRBasicBlockID {
+        self.entry
+    }
+
+    pub fn add_block(&mut self) -> MIRBasicBlockID {
+        let id = MIRBasicBlockID::new(self.blocks.len());
+        self.blocks.push(MIRBasicBlock::new(id));
+        id
+    }
+
+    pub fn add_block_named(&mut self, debug_name: impl Into<CXIdent>) -> MIRBasicBlockID {
+        let id = MIRBasicBlockID::new(self.blocks.len());
+        let mut block = MIRBasicBlock::new(id);
+        block.debug_name = Some(debug_name.into());
+        self.blocks.push(block);
+        id
+    }
+
+    pub fn add_block_param(
+        &mut self,
+        block: MIRBasicBlockID,
+        ty: MIRTypeID,
+        debug_name: Option<CXIdent>,
+    ) -> MIRRegister {
+        let register = self.add_register(ty, debug_name);
+        self.block_mut(block)
+            .expect("block param added to unknown block")
+            .params
+            .push(register);
+        register
+    }
+
+    pub fn push_instr_at(
+        &mut self,
+        block: MIRBasicBlockID,
+        kind: crate::MIRInstrKind,
+        token_range: TokenRange,
+    ) {
+        let instr = crate::MIRInstr::new(kind, token_range);
+        self.block_mut(block)
+            .expect("instruction pushed to unknown block")
+            .instrs
+            .push(instr);
+    }
+
+    pub fn blocks(&self) -> &[MIRBasicBlock] {
+        &self.blocks
+    }
+
+    pub fn block(&self, id: MIRBasicBlockID) -> Option<&MIRBasicBlock> {
+        self.blocks().get(id.index())
+    }
+
+    pub fn block_mut(&mut self, id: MIRBasicBlockID) -> Option<&mut MIRBasicBlock> {
+        self.blocks.get_mut(id.index())
+    }
+
+    pub fn places(&self) -> &[MIRPlaceDecl] {
+        &self.places
+    }
+
+    pub fn place(&self, id: MIRPlaceID) -> Option<&MIRPlaceDecl> {
+        self.places().get(id.index())
+    }
+
+    pub fn place_mut(&mut self, id: MIRPlaceID) -> Option<&mut MIRPlaceDecl> {
+        self.places.get_mut(id.index())
+    }
+
+    pub fn scopes(&self) -> &[MIRScopeDecl] {
+        &self.scopes
+    }
+
+    pub fn scope(&self, id: MIRScopeID) -> Option<&MIRScopeDecl> {
+        self.scopes().get(id.index())
+    }
+
+    pub fn scope_mut(&mut self, id: MIRScopeID) -> Option<&mut MIRScopeDecl> {
+        self.scopes.get_mut(id.index())
     }
 
     pub fn add_scope(&mut self, token_range: TokenRange) -> MIRScopeID {
@@ -192,8 +383,10 @@ impl MIRFunction {
         id
     }
 
-    pub fn is_declaration(&self) -> bool {
-        self.blocks.is_empty()
+    pub fn add_register(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>) -> MIRRegister {
+        let id = MIRRegister::new(self.registers.len());
+        self.registers.push(MIRRegisterDecl { id, ty, debug_name });
+        id
     }
 
     pub fn add_place(
@@ -214,73 +407,11 @@ impl MIRFunction {
         MIRPlace::FunctionLocal(id)
     }
 
-    pub fn add_register(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>) -> MIRRegister {
-        let id = MIRRegister::new(self.registers.len());
-        self.registers.push(MIRRegisterDecl { id, ty, debug_name });
-        id
-    }
-
-    pub fn add_block_param(
-        &mut self,
-        block: MIRBasicBlockID,
-        ty: MIRTypeID,
-        debug_name: Option<CXIdent>,
-    ) -> Option<MIRRegister> {
-        self.block(block)?;
-        let register = self.add_register(ty, debug_name);
-        self.block_mut(block)?.params.push(register);
-        Some(register)
-    }
-
-    pub fn add_block(&mut self) -> MIRBasicBlockID {
-        let id = MIRBasicBlockID::new(self.blocks.len());
-        self.blocks.push(MIRBasicBlock::new(id));
-        if self.entry.is_none() {
-            self.entry = Some(id);
-        }
-        id
-    }
-
-    pub fn block(&self, id: MIRBasicBlockID) -> Option<&MIRBasicBlock> {
-        self.blocks.get(id.index())
-    }
-
-    pub fn block_mut(&mut self, id: MIRBasicBlockID) -> Option<&mut MIRBasicBlock> {
-        self.blocks.get_mut(id.index())
-    }
-
-    pub fn place(&self, id: MIRPlaceID) -> Option<&MIRPlaceDecl> {
-        self.places.get(id.index())
-    }
-
-    pub fn place_mut(&mut self, id: MIRPlaceID) -> Option<&mut MIRPlaceDecl> {
-        self.places.get_mut(id.index())
-    }
-
-    pub fn scope(&self, id: MIRScopeID) -> Option<&MIRScopeDecl> {
-        self.scopes.get(id.index())
+    pub fn registers(&self) -> &[MIRRegisterDecl] {
+        &self.registers
     }
 
     pub fn register(&self, id: MIRRegister) -> Option<&MIRRegisterDecl> {
-        self.registers.get(id.index())
-    }
-
-    pub fn push_instr(
-        &mut self,
-        block: MIRBasicBlockID,
-        kind: MIRInstrKind,
-    ) -> Option<&mut MIRInstr> {
-        self.push_instr_at(block, kind, TokenRange::internal())
-    }
-
-    pub fn push_instr_at(
-        &mut self,
-        block: MIRBasicBlockID,
-        kind: MIRInstrKind,
-        token_range: TokenRange,
-    ) -> Option<&mut MIRInstr> {
-        let block = self.block_mut(block)?;
-        block.instrs.push(MIRInstr::new_at(kind, token_range));
-        block.instrs.last_mut()
+        self.registers().get(id.index())
     }
 }

@@ -1,0 +1,17 @@
+/* CX-STDOUT: mutable active 8 */
+/* CX-STDOUT-NEXT: PANIC: Cannot immutably borrow cell while it is currently mutably borrowed */
+
+import std::cell::rcell as std;
+import std::io as std;
+
+int main() {
+    std::rcell<int> cell = std::rcell::new(8);
+    std::rcell::borrow(cell) <| |mutable| then
+
+    std::printf("mutable active %d\n", mutable);
+    std::rcell::borrow_const(cell) <| |value| .{
+        std::printf("unreachable const %d\n", value);
+    };
+    std::printf("unreachable end\n");
+    return 0;
+}

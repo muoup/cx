@@ -19,7 +19,7 @@ behavior across different architectures and operating systems:
 References are declared with a `&` type suffix and provide an alternative to C's pointer types with a stronger invariant. A reference type
 `T&` is non-null, does not require explicit dereferencing, and may be used as a standard value.
 
-```c
+```cx
 void increment(int& x) {
     x = x + 1;
 }
@@ -32,7 +32,7 @@ References are non-owning views of values. The [Ownership and Moves](./move-sema
 The `.` and `->` operators from C are interchangeable. If the left-hand side of a `.` operator is a pointer, it will be implicitly dereferenced
 before the access is evaluated.
 
-```c
+```cx
 struct Data {
     i32 x;
 };
@@ -51,7 +51,7 @@ A `_str` is an unsized type representing string data that terminates with a null
 
 Functions similar to those in C's `string.h` can take `const _str&` instead of `const char*` to document that zero termination is required and prevent accidental use of non-zero-terminated character arrays. A zero-terminated buffer annotated as `const char*`, such as a string created at runtime, can be explicitly cast to `_str&` with a C-style cast. This operation is unsafe, and casting a non-zero-terminated value is undefined behavior.
 
-```c
+```cx
 usize string_length(const _str& value) {
     return strlen(value);
 }

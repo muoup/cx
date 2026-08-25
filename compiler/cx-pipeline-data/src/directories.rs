@@ -12,14 +12,20 @@ pub fn internal_directory(context: &GlobalCompilationContext, unit: &Compilation
     let mut complete_path = context.config.internal_directory.clone();
     complete_path.push(profile_hash);
 
-    let identifier = unit.identifier();
-    let identifier_path = Path::new(&identifier);
-    for component in identifier_path.components() {
-        match component {
-            Component::Normal(part) => complete_path.push(part),
-            Component::CurDir => {}
-            Component::ParentDir => complete_path.push("__parent__"),
-            Component::RootDir | Component::Prefix(_) => {}
+    if unit.namespace().is_root() {
+        if let Some(file_name) = unit.as_path().file_name() {
+            complete_path.push(file_name);
+        }
+    } else {
+        let identifier = unit.identifier();
+        let identifier_path = Path::new(&identifier);
+        for component in identifier_path.components() {
+            match component {
+                Component::Normal(part) => complete_path.push(part),
+                Component::CurDir => {}
+                Component::ParentDir => complete_path.push("__parent__"),
+                Component::RootDir | Component::Prefix(_) => {}
+            }
         }
     }
     complete_path.set_extension("cx");

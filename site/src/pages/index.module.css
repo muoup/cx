@@ -240,30 +240,6 @@
   min-width: max-content;
 }
 
-.tokenKeyword {
-  color: var(--cx-color-code-keyword);
-  font-weight: 700;
-}
-
-.tokenType {
-  color: var(--cx-color-code-type);
-  font-weight: 650;
-}
-
-.tokenFunction {
-  color: var(--cx-color-code-function);
-}
-
-.tokenString {
-  color: var(--cx-color-code-string);
-}
-
-.tokenNumber,
-.tokenConstant {
-  color: var(--cx-color-code-number);
-  font-weight: 650;
-}
-
 .errorLine {
   background: var(--cx-color-error-surface);
   box-shadow: inset 3px 0 0 var(--cx-color-error);

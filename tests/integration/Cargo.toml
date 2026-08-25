@@ -1,0 +1,18 @@
+[package]
+name = "integration-tests"
+version = "0.0.0"
+edition = "2021"
+build = "build.rs"
+
+[features]
+default = ["cx-test-support/default"]
+ignoresystem-headers = ["cx-test-support/ignore-system-headers"]
+backend-llvm = ["cx-test-support/backend-llvm"]
+
+[[test]]
+name = "suite"
+path = "test.rs"
+harness = true
+
+[dependencies]
+cx-test-support = { path = "../support", default-features = false }

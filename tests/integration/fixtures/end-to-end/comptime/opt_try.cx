@@ -1,0 +1,27 @@
+/* CX-STDOUT: some 42 */
+/* CX-STDOUT-NEXT: none */
+
+#include <stdio.h>
+
+import std::optional as std;
+
+std::opt<int> maybe_add_one(std::opt<int> value) {
+    int inner = value |> std::opt::try();
+
+    return std::opt::some<int>(inner + 1);
+}
+
+int main() {
+    std::opt<int> some = maybe_add_one(std::opt::some<int>(41));
+    std::opt<int> none = maybe_add_one(std::opt::none<int>());
+
+    match (some) {
+        std::opt::some<int>(value) => printf("some %d\n", value);
+        std::opt::none<int>() => printf("unexpected none\n");
+    }
+
+    match (none) {
+        std::opt::some<int>(value) => printf("unexpected some %d\n", value);
+        std::opt::none<int>() => printf("none\n");
+    }
+}

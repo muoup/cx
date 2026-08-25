@@ -1,7 +1,7 @@
 use std::borrow::Borrow;
 
 use cx_hir::ast::modifiers::VisibilityMode;
-use cx_hir::symbols::HIRSymbol;
+use cx_hir::symbols::{HIRSymbol, SymbolResolution};
 use cx_log::{
     CXRawResult, CXResult,
     error::{CXErr, CXErrMsg, CXMaybeRawErr, context::CXInternalContext, message::CXStdErrMessage},
@@ -33,24 +33,30 @@ pub(crate) mod control_flow;
 pub(crate) mod function_context;
 pub(crate) mod items;
 
-pub use items::MIRFunctionGenRequest;
+pub use items::THIRFunctionGenRequest;
 
 pub struct TypeEnvironment<'a> {
     pub module_data: &'a ModuleData,
     pub symbols: MIRSymbolRegistry<'a>,
     pub items: ItemRegistry,
     pub function: FunctionContext,
+
     comptime_emit_bases: Vec<usize>,
+    comptime_runtime_return_types: Vec<Option<THIRType>>,
+
     runtime_emit_depth: usize,
     defer_depth: usize,
+    staged_scope_boundaries: Vec<ScopeId>,
     staged_expansions: Vec<u64>,
     next_staged_expression_id: u64,
+    require_explicit_return: bool,
 }
 
 impl TypeEnvironment<'_> {
     pub fn new<'a>(
         module_data: &'a ModuleData,
         architecture: ArchitectureConfig,
+        require_explicit_return: bool,
     ) -> TypeEnvironment<'a> {
         TypeEnvironment {
             symbols: MIRSymbolRegistry::new(&module_data.symbol_registry, architecture),
@@ -58,11 +64,18 @@ impl TypeEnvironment<'_> {
             items: ItemRegistry::new(),
             function: FunctionContext::default(),
             comptime_emit_bases: Vec::new(),
+            comptime_runtime_return_types: Vec::new(),
             runtime_emit_depth: 0,
             defer_depth: 0,
+            staged_scope_boundaries: Vec::new(),
             staged_expansions: Vec::new(),
             next_staged_expression_id: 0,
+            require_explicit_return,
         }
+    }
+
+    pub fn require_explicit_return(&self) -> bool {
+        self.require_explicit_return
     }
 
     pub fn get_intrinsic_type(&self, name: &str) -> THIRType {
@@ -96,12 +109,30 @@ impl TypeEnvironment<'_> {
         self.defer_depth > 0
     }
 
+    pub fn in_staged<F, T>(&mut self, f: F) -> CXResult<T>
+    where
+        F: FnOnce(&mut Self) -> CXResult<T>,
+    {
+        self.staged_scope_boundaries
+            .push(self.function.current_scope_index());
+        let result = f(self);
+        self.staged_scope_boundaries.pop();
+        result
+    }
+
+    pub fn staged_control_target_is_external(&self, target: ScopeId) -> bool {
+        self.staged_scope_boundaries
+            .last()
+            .is_some_and(|boundary| target.index() <= boundary.index())
+    }
+
     pub fn finish_thir_unit(self, source_namespace: EnvironmentNamespace) -> CXResult<THIRUnit> {
-        let (functions, globals) = self.items.drain_generated_items();
+        let (functions, comptime_functions, globals) = self.items.drain_generated_items();
 
         Ok(THIRUnit {
             source_namespace,
             functions,
+            comptime_functions,
             global_variables: globals,
             registry: self.symbols.decompose(),
         })
@@ -137,14 +168,21 @@ impl TypeEnvironment<'_> {
         self.function.restore_mode(snapshot);
     }
 
-    pub fn enter_comptime_context(&mut self) {
+    pub fn enter_comptime_context(
+        &mut self,
+        runtime_return_type: Option<cx_thir::thir::r#type::THIRType>,
+    ) {
         self.comptime_emit_bases.push(self.runtime_emit_depth);
+        self.comptime_runtime_return_types.push(runtime_return_type);
     }
 
     pub fn exit_comptime_context(&mut self) {
         self.comptime_emit_bases
             .pop()
             .expect("Comptime context stack underflow");
+        self.comptime_runtime_return_types
+            .pop()
+            .expect("Comptime return type stack underflow");
     }
 
     pub fn in_comptime_context(&self) -> bool {
@@ -165,6 +203,12 @@ impl TypeEnvironment<'_> {
         self.comptime_emit_bases
             .last()
             .is_some_and(|base| self.runtime_emit_depth > *base)
+    }
+
+    pub fn comptime_runtime_return_type(&self) -> Option<&cx_thir::thir::r#type::THIRType> {
+        self.comptime_runtime_return_types
+            .last()
+            .and_then(Option::as_ref)
     }
 
     pub fn next_staged_expression_id(&mut self) -> u64 {
@@ -207,28 +251,27 @@ impl TypeEnvironment<'_> {
         namespace: &EnvironmentNamespace,
         name: &QualifiedName,
     ) -> CXRawResult<Option<SymbolLookup>> {
-        let qualified_lookup = self.qualified_lookup(namespace, name);
-
-        match qualified_lookup {
-            QualifiedLookupResult::Found {
-                value,
-                ..
-            } => CXRawResult::Ok(Some(value)),
-
-            QualifiedLookupResult::NotFound => CXRawResult::Ok(None),
-            QualifiedLookupResult::Ambiguous { candidates } => {
-                let message = format!(
-                    "Ambiguous Symbol Reference, candidates: {}",
-                    candidates
-                        .iter()
-                        .map(|c| c.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-
-                CXStdErrMessage::result("TYPE ERROR", message)
+        finish_qualified_lookup(
+            QualifiedSymbolLookup {
+                env: self,
+                table: SymbolTable::Standard,
             }
-        }
+            .qualified_lookup(namespace, name),
+        )
+    }
+
+    pub fn lookup_tag_symbol(
+        &self,
+        namespace: &EnvironmentNamespace,
+        name: &QualifiedName,
+    ) -> CXRawResult<Option<SymbolLookup>> {
+        finish_qualified_lookup(
+            QualifiedSymbolLookup {
+                env: self,
+                table: SymbolTable::Tag,
+            }
+            .qualified_lookup(namespace, name),
+        )
     }
 
     fn symbol_visible_from(
@@ -274,6 +317,12 @@ impl TypeEnvironment<'_> {
         let SymbolLookupKind::Untyped(untyped_symbol) = lookup.kind else {
             unreachable!("resolved lookup was handled above")
         };
+
+        if let Some(symbol) = self.symbols.get_preresolved_symbol(&resolved_name)
+            && matches!(symbol, MIRSymbol::Expression(_))
+        {
+            return Ok(symbol.clone());
+        }
 
         let symbol = resolve_symbol(
             self,
@@ -323,7 +372,18 @@ impl TypeEnvironment<'_> {
     }
 }
 
-impl QualifiedLookup for TypeEnvironment<'_> {
+#[derive(Clone, Copy)]
+enum SymbolTable {
+    Standard,
+    Tag,
+}
+
+struct QualifiedSymbolLookup<'a, 'b> {
+    env: &'a TypeEnvironment<'b>,
+    table: SymbolTable,
+}
+
+impl QualifiedLookup for QualifiedSymbolLookup<'_, '_> {
     type Output = SymbolLookup;
 
     fn lookup_local(
@@ -331,8 +391,13 @@ impl QualifiedLookup for TypeEnvironment<'_> {
         _lexical_namespace: &NamespacePath,
         name: &QualifiedName,
     ) -> Option<Self::Output> {
-        self.symbols
-            .get_local_symbol_avoiding_staged_expansions(name, &self.staged_expansions)
+        if matches!(self.table, SymbolTable::Tag) {
+            return None;
+        }
+
+        self.env
+            .symbols
+            .get_local_symbol_avoiding_staged_expansions(name, &self.env.staged_expansions)
             .map(|sym| SymbolLookup {
                 resolved_name: name.clone(),
                 kind: SymbolLookupKind::Resolved(sym.clone()),
@@ -344,28 +409,34 @@ impl QualifiedLookup for TypeEnvironment<'_> {
         lexical_namespace: &NamespacePath,
         name: &QualifiedName,
     ) -> Option<Self::Output> {
-        self.symbols
-            .get_preresolved_symbol(name)
-            .map(|sym| SymbolLookup {
+        let resolution = match self.table {
+            SymbolTable::Standard => self.env.symbols.get_global_registry().resolve(name),
+            SymbolTable::Tag => self.env.symbols.get_global_registry().resolve_tag(name),
+        };
+
+        if let Some(resolution) = resolution.and_then(|resolution| {
+            resolution.filter(|symbol| {
+                self.env.symbol_visible_from(
+                    &EnvironmentNamespace::from(lexical_namespace),
+                    name,
+                    symbol,
+                )
+            })
+        }) {
+            return Some(SymbolLookup {
                 resolved_name: name.clone(),
-                kind: SymbolLookupKind::Resolved(sym.clone()),
-            })
-            .or_else(|| {
-                self.symbols
-                    .get_global_registry()
-                    .resolve(name)
-                    .filter(|sym| {
-                        self.symbol_visible_from(
-                            &EnvironmentNamespace::from(lexical_namespace),
-                            name,
-                            sym,
-                        )
-                    })
-                    .map(|sym| SymbolLookup {
-                        resolved_name: name.clone(),
-                        kind: SymbolLookupKind::Untyped(sym.clone()),
-                    })
-            })
+                kind: SymbolLookupKind::Untyped(resolution),
+            });
+        }
+
+        let cached = match self.table {
+            SymbolTable::Standard => self.env.symbols.get_preresolved_symbol(name),
+            SymbolTable::Tag => self.env.symbols.get_preresolved_tag(name),
+        };
+        cached.map(|sym| SymbolLookup {
+            resolved_name: name.clone(),
+            kind: SymbolLookupKind::Resolved(sym.clone()),
+        })
     }
 
     fn resolve_aliases(
@@ -373,10 +444,33 @@ impl QualifiedLookup for TypeEnvironment<'_> {
         lexical_namespace: &NamespacePath,
         namespace: &NamespacePath,
     ) -> Vec<NamespacePath> {
-        self.symbols
+        self.env
+            .symbols
             .get_global_registry()
             .resolve_aliases(lexical_namespace, namespace)
-            .expect("failed to resolve namespace aliases")
+            .unwrap_or_else(|| {
+                panic!("failed to resolve namespace aliases for '{lexical_namespace}'")
+            })
+    }
+}
+
+fn finish_qualified_lookup(
+    lookup: QualifiedLookupResult<SymbolLookup>,
+) -> CXRawResult<Option<SymbolLookup>> {
+    match lookup {
+        QualifiedLookupResult::Found { value, .. } => CXRawResult::Ok(Some(value)),
+        QualifiedLookupResult::NotFound => CXRawResult::Ok(None),
+        QualifiedLookupResult::Ambiguous { candidates } => CXStdErrMessage::result(
+            "TYPE ERROR",
+            format!(
+                "Ambiguous Symbol Reference, candidates: {}",
+                candidates
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        ),
     }
 }
 
@@ -387,5 +481,5 @@ pub struct SymbolLookup {
 
 pub enum SymbolLookupKind {
     Resolved(MIRSymbol),
-    Untyped(HIRSymbol),
+    Untyped(SymbolResolution),
 }

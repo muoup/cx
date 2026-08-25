@@ -1,5 +1,5 @@
 use crate::codegen::{codegen_fn_prototype, codegen_function};
-use crate::globals::generate_global;
+use crate::globals::{declare_global, define_global};
 use crate::value_type::get_cranelift_type;
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::FuncRef;
@@ -208,10 +208,6 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
         function_sigs: &mut HashMap::new(),
     };
 
-    for global_var in bc.global_vars.iter() {
-        generate_global(&mut global_state, global_var)?;
-    }
-
     for fn_prototype in bc.fn_map.values() {
         codegen_fn_prototype(&mut global_state, fn_prototype).map_err(|e| {
             CXErr::new(
@@ -222,6 +218,15 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
                 )),
             )
         })?;
+    }
+
+    for global_var in &bc.global_vars {
+        let id = declare_global(&mut global_state, global_var)?;
+        global_state.global_ids.push(id);
+    }
+
+    for (global_var, id) in bc.global_vars.iter().zip(&global_state.global_ids.clone()) {
+        define_global(&mut global_state, *id, global_var)?;
     }
 
     for func in bc.fn_defs.iter() {

@@ -64,7 +64,7 @@ pub fn typecheck_initializer_list(
                 namespace,
                 indices,
                 &inner_type,
-                Some(*length),
+                Some(length.as_ref()),
                 &to_type,
             )
         }
@@ -80,6 +80,10 @@ pub fn typecheck_initializer_list(
             typecheck_structured_initializer(env, namespace, expr, indices, &to_type)
         }
 
+        THIRTypeKind::Union { .. } => {
+            typecheck_union_initializer(env, namespace, expr, indices, &to_type)
+        }
+
         _ => env.log_error(
             expr.token_range(),
             format!(
@@ -90,12 +94,70 @@ pub fn typecheck_initializer_list(
     }
 }
 
+fn typecheck_union_initializer(
+    env: &mut TypeEnvironment,
+    namespace: &EnvironmentNamespace,
+    expr: &HIRExpression,
+    indices: &[HIRInitIndex],
+    to_type: &THIRType,
+) -> CXResult<TypecheckResult> {
+    let Some(fields) = to_type.aggregate_fields(&env.symbols) else {
+        return env.log_error(
+            expr.token_range(),
+            format!(
+                "Expected a union type for initializer, found {}",
+                to_type.display_with(&env.symbols)
+            ),
+        );
+    };
+
+    if indices.len() > 1 {
+        return env.log_error(
+            expr.token_range(),
+            "Union initializer may contain at most one element".to_string(),
+        );
+    }
+
+    let initializations = indices
+        .iter()
+        .enumerate()
+        .map(|(index, initialization)| {
+            let field_index = initialization
+                .name
+                .as_ref()
+                .and_then(|name| fields.iter().position(|(field_name, _)| field_name == name))
+                .unwrap_or(index);
+            let Some((_, field_type)) = fields.get(field_index) else {
+                return env.log_error(
+                    expr.token_range(),
+                    "Union initializer field does not exist".to_string(),
+                );
+            };
+            let value = typecheck_expr(env, namespace, &initialization.value, Some(field_type))
+                .and_then(|value| {
+                    value.standard_ready_coerce(env, initialization.value.token_range())
+                })
+                .and_then(|value| implicit_cast(env, value, field_type))?;
+
+            Ok(StructInitialization { field_index, value })
+        })
+        .collect::<CXResult<Vec<_>>>()?;
+
+    Ok(TypecheckResult::new(
+        to_type.clone(),
+        THIRExpressionKind::StructInitializer {
+            struct_type: to_type.clone(),
+            initializations,
+        },
+    ))
+}
+
 fn typecheck_array_initializer(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     indices: &[HIRInitIndex],
     inner_type: &THIRType,
-    size: Option<usize>,
+    size: Option<&cx_thir::thir::expression::THIRExpression>,
     _to_type: &THIRType,
 ) -> CXResult<TypecheckResult> {
     for index in indices {
@@ -107,23 +169,17 @@ fn typecheck_array_initializer(
         }
     }
 
-    if let Some(size) = size
-        && indices.len() > size
-    {
-        return env.log_error(
-            TokenRange::internal(),
-            format!(
-                "Too many elements in array initializer (expected {}, found {})",
-                size,
-                indices.len()
-            ),
-        );
-    }
-
-    let array_size = size.unwrap_or(indices.len());
+    let array_size = size.cloned().unwrap_or_else(|| {
+        let integer_type = env.get_intrinsic_type("int");
+        cx_thir::thir::expression::THIRExpression {
+            token_range: TokenRange::internal(),
+            _type: integer_type,
+            kind: cx_thir::thir::expression::THIRExpressionKind::IntLiteral(indices.len() as i64),
+        }
+    });
     let array_type = THIRType::from(THIRTypeKind::Array {
         inner_type: env.symbols.generate_type_id(inner_type.clone()),
-        length: array_size,
+        length: Box::new(array_size),
     });
 
     let elements = indices
@@ -131,6 +187,7 @@ fn typecheck_array_initializer(
         .map(|index| {
             typecheck_expr(env, namespace, &index.value, Some(inner_type))
                 .and_then(|v| v.standard_ready_coerce(env, index.value.token_range()))
+                .and_then(|v| implicit_cast(env, v, inner_type))
         })
         .collect::<CXResult<_>>()?;
 

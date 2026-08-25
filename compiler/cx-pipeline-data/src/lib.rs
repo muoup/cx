@@ -38,7 +38,6 @@ pub fn compilation_hash() -> u64 {
 #[derive(Debug)]
 pub struct GlobalCompilationContext {
     pub config: CompilerConfig,
-    pub module_mode: bool,
     pub module_db: ModuleData,
 
     pub linking_files: Mutex<HashSet<PathBuf>>,
@@ -57,6 +56,7 @@ pub struct CompilerConfig {
     pub backend: CompilerBackend,
     pub compilation_mode: CompilationMode,
     pub optimization_level: OptimizationLevel,
+    pub require_explicit_return: Option<bool>,
     pub project_config: Option<CXProjectConfig>,
 
     pub output: PathBuf,
@@ -66,6 +66,7 @@ pub struct CompilerConfig {
     pub link_entries: Vec<LinkEntry>,
     pub native_objects: Vec<PathBuf>,
     pub include_dirs: Vec<PathBuf>,
+    pub predefined_macros: Vec<(String, String)>,
 
     pub unsafe_mode: bool,
     pub verbose: bool,
@@ -146,6 +147,11 @@ impl CompilationUnit {
             "cx"
         };
         Self::from_module_path_with_extension(module_path, working_directory, extension)
+    }
+
+    pub fn with_namespace(mut self, namespace: EnvironmentNamespace) -> Self {
+        self.namespace = namespace;
+        self
     }
 
     pub fn from_module_path(module_path: ModulePath, working_directory: &Path) -> Self {

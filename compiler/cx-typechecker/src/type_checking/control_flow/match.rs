@@ -328,7 +328,7 @@ pub fn typecheck_match(
 
     let yield_context = env.function.pop_yield_context();
     let result_type = yield_context.result_type.unwrap_or_else(THIRType::unit);
-    if !result_type.is_unit() {
+    if !result_type.is_void() {
         for flow in &arm_flows {
             if flow.may_fall_through {
                 return env.log_error(

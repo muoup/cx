@@ -12,7 +12,10 @@ use cx_log::CXResult;
 use cx_thir::{
     EnvironmentNamespace,
     symbol::MIRSymbol,
-    thir::{data::THIRTypeKind, expression::THIRExpressionKind},
+    thir::{
+        data::THIRTypeKind,
+        expression::{THIRExpression, THIRExpressionKind},
+    },
 };
 use cx_util::namespace::QualifiedName;
 
@@ -38,12 +41,33 @@ pub(crate) fn typecheck_identifier(
     } = symbol
     {
         env.push_staged_expansion(id);
-        let staged = typecheck_expr(env, &namespace, &staged_expr, Some(&expected_type));
+        let staged = typecheck_expr(
+            env,
+            &namespace,
+            &staged_expr,
+            (!expected_type.is_unreachable()).then_some(&expected_type),
+        );
         env.pop_staged_expansion();
         let staged = staged?;
         let staged = staged.standard_ready_coerce(env, staged_expr.token_range())?;
 
-        let staged = if env.type_eq(&staged._type, &expected_type) {
+        let staged = if expected_type.is_unreachable() {
+            return Ok(TypecheckResult::from(THIRExpression {
+                token_range: staged.token_range.clone(),
+                _type: expected_type,
+                kind: THIRExpressionKind::Block {
+                    statements: vec![
+                        staged,
+                        THIRExpression {
+                            token_range: expr.token_range().clone(),
+                            _type: THIRTypeKind::Void.into(),
+                            kind: THIRExpressionKind::Unreachable,
+                        },
+                    ],
+                    creates_scope: false,
+                },
+            }));
+        } else if env.type_eq(&staged._type, &expected_type) {
             staged
         } else if expected_type.is_memory_reference() {
             implicit_cast(env, staged, &expected_type)?
@@ -53,6 +77,31 @@ pub(crate) fn typecheck_identifier(
         };
 
         return Ok(TypecheckResult::from(staged));
+    }
+
+    // A local staged binding (e.g. a parameterized staged parameter of a
+    // comptime function) resolves to an undefined-typed reference that may
+    // only be called or passed onward.
+    if let MIRSymbol::StagedExpressionFunction {
+        local_id,
+        params,
+        return_type,
+    } = symbol
+    {
+        return Ok(TypecheckResult::staged(
+            crate::type_checking::result::StagedValue {
+                reference: THIRExpression {
+                    token_range: expr.token_range().clone(),
+                    kind: THIRExpressionKind::Variable {
+                        name: name.name.clone(),
+                        local_id,
+                    },
+                    _type: THIRTypeKind::Undefined.into(),
+                },
+                params,
+                return_type,
+            },
+        ));
     }
 
     if let Some(completed_input) = template_input

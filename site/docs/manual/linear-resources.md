@@ -6,7 +6,7 @@ title: Linear Resources
 
 Complex types often need to manage resources that must be cleaned up exactly once. The `@nodrop` restriction prevents a value from falling out of scope and implies `@nocopy`. A value of an `@nodrop` type must be moved elsewhere or explicitly discharged after its resources are handled.
 
-```c
+```cx
 struct string : @nodrop {
     char* data;
     usize length;
@@ -18,7 +18,7 @@ struct string : @nodrop {
 
 `defer expression;` registers a `void` expression to run when the current lexical scope exits:
 
-```c
+```cx
 file handle = open_file(path);
 defer close_file(&handle);
 
@@ -27,7 +27,7 @@ process_file(&handle);
 
 Deferred expressions run in last-in, first-out order. They run on ordinary fallthrough and when control leaves their scope through `return`, `break`, or `continue`. A return value is evaluated and preserved before the deferred expressions execute.
 
-```c
+```cx
 int example() {
     defer log("outer");
     {
@@ -45,7 +45,7 @@ Here, `compute_result()` is evaluated first, followed by `log("inner")` and `log
 
 A function taking an `@nodrop` value by value assumes responsibility for it. This makes consuming associated functions a natural convention for cleanup:
 
-```c
+```cx
 void string::drop(string this) {
     free(this.data);
     @leak(this);
@@ -63,7 +63,7 @@ Passing `string&` instead only borrows the string, so the caller retains respons
 
 After a cleanup function releases the resources held by an `@nodrop` value, `@leak(value)` kills the local binding without moving the value elsewhere. It asserts that allowing the underlying region to disappear is intentional:
 
-```c
+```cx
 void string::drop(string this) {
     free(this.data);
     @leak(this);
@@ -76,7 +76,7 @@ The compiler cannot verify that cleanup occurred before `@leak`; incorrect use c
 
 When an `@nodrop` struct owns `@nodrop` fields, `@unpack` can consume the outer value and create separate owned bindings for selected fields:
 
-```c
+```cx
 struct Resource : @nodrop {
     int data;
 };
@@ -101,7 +101,7 @@ Every `@nodrop` field must be bound by the unpack operation so that no linear re
 
 An edge case arises when dropping values that do not represent unique allocations or memory regions. Consider a vector over some `@nodrop` type `Inner`:
 
-```c
+```cx
 struct InnerVector : @nodrop {
     Inner* data;
     usize length;
@@ -122,7 +122,7 @@ void InnerVector::drop(InnerVector this) {
 
 We are unable to directly move `this.data[i]` here, as `move` is only valid on local variable identifiers, and in practice because `data` is one contiguous heap allocation, there is no ordinary binding that owns each individual element. `@adopt` is an unsafe escape hatch that upgrades a reference to an owned value for cases such as this:
 
-```c
+```cx
 void InnerVector::drop(InnerVector this) {
     for (usize i = 0; i < this.length; i++) {
         Inner element = @adopt(this.data[i]);

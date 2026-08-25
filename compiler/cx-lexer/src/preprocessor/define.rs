@@ -17,7 +17,7 @@ pub(crate) fn handle_define(
     }
 
     context.current_frame_mut().skip_whitespace();
-    let Some((name, params)) = read_macro_head(context.current_frame_mut()) else {
+    let Some((name, params, variadic)) = read_macro_head(context.current_frame_mut()) else {
         let frame = context.current_frame();
         return frame
             .cursor_view()
@@ -33,6 +33,7 @@ pub(crate) fn handle_define(
         Macro::Function {
             params: params.into_boxed_slice(),
             body: tokens.into_boxed_slice(),
+            variadic,
         }
     } else {
         Macro::Object(tokens.into_boxed_slice())

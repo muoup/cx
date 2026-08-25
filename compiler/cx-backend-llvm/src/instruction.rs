@@ -2,9 +2,11 @@ mod calls;
 mod control_flow;
 mod memory;
 mod operations;
+mod variadic;
 
 use std::cell::Cell;
 
+use crate::error::LLVMResult;
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{LMIRInstruction, LMIRInstructionKind};
 
@@ -30,7 +32,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &FunctionState<'a, 'b>,
     instruction: &LMIRInstruction,
-) -> Option<CodegenValue<'a>> {
+) -> LLVMResult<CodegenValue<'a>> {
     match &instruction.kind {
         LMIRInstructionKind::Alias { value } => function_state.get_value(value),
         LMIRInstructionKind::GetFunctionAddr { func } => {
@@ -73,6 +75,15 @@ pub(crate) fn generate_instruction<'a, 'b>(
             method_sig,
         } => {
             calls::generate_indirect_call(global_state, function_state, func_ptr, args, method_sig)
+        }
+        LMIRInstructionKind::VaStart { list, .. } => {
+            variadic::generate_va_start(global_state, function_state, list)
+        }
+        LMIRInstructionKind::VaEnd { list } => {
+            variadic::generate_va_end(global_state, function_state, list)
+        }
+        LMIRInstructionKind::VaArg { list, _type } => {
+            variadic::generate_va_arg(global_state, function_state, list, _type)
         }
         LMIRInstructionKind::Coercion {
             value,
@@ -186,7 +197,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
         }
         LMIRInstructionKind::CompilerAssumption { .. } => {
             // TODO: Implement assumptions in LLVM.
-            Some(CodegenValue::Null)
+            Ok(CodegenValue::Null)
         }
         LMIRInstructionKind::Unreachable => control_flow::generate_unreachable(function_state),
     }

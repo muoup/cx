@@ -1,0 +1,39 @@
+/* CX-STDOUT: a is some: 1 */
+/* CX-STDOUT-NEXT: b is some: 0 */
+/* CX-STDOUT-NEXT: a unwrap_or 100: 42 */
+/* CX-STDOUT-NEXT: b unwrap_or 100: 100 */
+/* CX-STDOUT-NEXT: c is some: 1 */
+/* CX-STDOUT-NEXT: d is some: 0 */
+/* CX-STDOUT-NEXT: c unwrap: 43 */
+/* CX-STDOUT-NEXT: Error: called `opt::unwrap()` on a `None` value */
+
+import std::optional;
+
+#include <stdio.h>
+
+int add_one(i8 x) {
+    return x + 1;
+}
+
+int main() {
+    std::optional::opt<i8> a = std::optional::opt::some<i8>(42);
+    std::optional::opt<i8> b = std::optional::opt::none<i8>();
+
+    printf("a is some: %b\n", a |> std::optional::opt::is_some<i8>());
+    printf("b is some: %b\n", b |> std::optional::opt::is_some<i8>());
+
+    printf("a unwrap_or 100: %d\n", move a |> std::optional::opt::unwrap_or<i8>(100));
+    printf("b unwrap_or 100: %d\n", move b |> std::optional::opt::unwrap_or<i8>(100));
+
+    a = std::optional::opt::some<i8>(42);
+    b = std::optional::opt::none<i8>();
+
+    std::optional::opt<int> c = move a |> std::optional::opt::map<i8, int>(add_one);
+    std::optional::opt<int> d = move b |> std::optional::opt::map<i8, int>(add_one);
+
+    printf("c is some: %b\n", c |> std::optional::opt::is_some<int>());
+    printf("d is some: %b\n", d |> std::optional::opt::is_some<int>());
+
+    printf("c unwrap: %d\n", move c |> std::optional::opt::unwrap<int>());
+    printf("d unwrap: %d\n", move d |> std::optional::opt::unwrap<int>());
+}

@@ -13,7 +13,7 @@ use cx_log::{
 use cx_thir::{
     EnvironmentNamespace,
     symbol::MIRSymbol,
-    thir::data::{MIRTemplateInput, THIRFnSignature, THIRType, THIRTypeKind},
+    thir::data::{THIRFnSignature, THIRTemplateInput, THIRType, THIRTypeKind},
     type_context::THIRTypeContext,
 };
 use cx_util::namespace::QualifiedName;
@@ -99,14 +99,12 @@ fn deduce_template_input(
     source: &cx_hir::symbols::HIRSymbol,
     arg_types: &[THIRType],
     expected_return_type: Option<&THIRType>,
-) -> CXMaybeRawResult<MIRTemplateInput> {
+) -> CXMaybeRawResult<THIRTemplateInput> {
     let shell = match &source.kind {
-        HIRSymbolKind::FunctionReference(shell) => TemplateDeductionShell::Runtime(shell),
-        HIRSymbolKind::ComptimeFunction { definition, .. } => {
-            TemplateDeductionShell::Comptime(definition)
-        }
-        HIRSymbolKind::TypeConstructor { union_type, .. } => {
-            TemplateDeductionShell::TypeConstructor(union_type)
+        HIRSymbolKind::Function(data) => TemplateDeductionShell::Runtime(data.base()),
+        HIRSymbolKind::ComptimeFunction(data) => TemplateDeductionShell::Comptime(data.base()),
+        HIRSymbolKind::TypeConstructor(data) => {
+            TemplateDeductionShell::TypeConstructor(&data.base().union_type)
         }
         _ => {
             return crate::log::internal_type_error(
@@ -127,6 +125,9 @@ fn deduce_template_input(
     }
 
     for (formal_type, actual_type) in shell.formal_types().into_iter().zip(arg_types.iter()) {
+        if is_unreachable_type(formal_type) {
+            continue;
+        }
         deduce_from_cx_type(
             env,
             namespace,
@@ -164,7 +165,18 @@ fn deduce_template_input(
         })
         .collect::<CXMaybeRawResult<Vec<_>>>()?;
 
-    Ok(MIRTemplateInput { args })
+    Ok(THIRTemplateInput { args })
+}
+
+fn is_unreachable_type(ty: &HIRType) -> bool {
+    matches!(
+        &ty.kind,
+        HIRTypeKind::Identifier {
+            name,
+            template_input: None,
+            ..
+        } if name.namespace.is_root() && name.name.as_str() == "unreachable"
+    )
 }
 
 enum TemplateDeductionShell<'a> {

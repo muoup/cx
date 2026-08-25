@@ -4,7 +4,9 @@ use std::{
     fmt::{self, Display, Formatter},
 };
 
-use cx_mir::{MIRBasicBlockID, MIRFunctionID, MIRPlace, MIRScopeID, MIRUnit, MIRValidationError};
+use cx_mir::{
+    MIRBasicBlockID, MIRDiagnostic, MIRDiagnosticLocation, MIRFunctionID, MIRPlace, MIRScopeID,
+};
 
 /// Controls optional checks performed before the independent dataflow analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,7 +68,6 @@ pub struct MIRInstructionLiveness {
 /// Failures that can prevent MIR analysis.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MIRAnalysisError {
-    Validation(MIRValidationError),
     ProvenFalseAssertion {
         function: MIRFunctionID,
         block: MIRBasicBlockID,
@@ -87,16 +88,10 @@ pub enum MIRAnalysisError {
 impl Display for MIRAnalysisError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Validation(error) => write!(f, "MIR validation failed: {error}"),
             Self::ProvenFalseAssertion {
-                function,
-                message,
-                ..
+                function, message, ..
             } => {
-                write!(
-                    f,
-                    "Assertion in function {function} is provably false"
-                )?;
+                write!(f, "Assertion in function {function} is provably false")?;
                 if let Some(message) = message {
                     write!(f, ": {message}")?;
                 }
@@ -117,56 +112,47 @@ impl Display for MIRAnalysisError {
 impl Error for MIRAnalysisError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::Validation(error) => Some(error),
             Self::ProvenFalseAssertion { .. } | Self::OwnershipViolation { .. } => None,
         }
     }
 }
 
-impl From<MIRValidationError> for MIRAnalysisError {
-    fn from(value: MIRValidationError) -> Self {
-        Self::Validation(value)
-    }
-}
-
 impl MIRAnalysisError {
-    pub fn message_with(&self, unit: &MIRUnit) -> String {
+    pub fn diagnostic(&self) -> MIRDiagnostic {
         match self {
-            Self::Validation(error) => {
-                format!("MIR validation failed: {}", error.display_with(unit))
-            }
-            _ => self.to_string(),
-        }
-    }
-
-    pub fn instruction_location(&self) -> Option<(MIRFunctionID, MIRBasicBlockID, usize)> {
-        match self {
-            Self::Validation(error) => error.instruction_location(),
             Self::ProvenFalseAssertion {
                 function,
                 block,
                 instruction,
                 ..
-            } => Some((*function, *block, *instruction)),
+            } => MIRDiagnostic::new(
+                "ANALYSIS ERROR",
+                self.to_string(),
+                MIRDiagnosticLocation::Instruction {
+                    function: *function,
+                    block: *block,
+                    instruction: *instruction,
+                },
+            ),
             Self::OwnershipViolation {
                 function,
                 block,
                 instruction,
+                scope,
                 ..
-            } => Some((*function, *block, *instruction)),
-        }
-    }
-
-    pub fn scope_location(&self) -> Option<(MIRFunctionID, MIRScopeID)> {
-        match self {
-            Self::OwnershipViolation {
-                function,
-                scope: Some(scope),
-                ..
-            } => Some((*function, *scope)),
-            Self::Validation(_)
-            | Self::ProvenFalseAssertion { .. }
-            | Self::OwnershipViolation { scope: None, .. } => None,
+            } => {
+                let location = scope
+                    .map(|scope| MIRDiagnosticLocation::Scope {
+                        function: *function,
+                        scope,
+                    })
+                    .unwrap_or(MIRDiagnosticLocation::Instruction {
+                        function: *function,
+                        block: *block,
+                        instruction: *instruction,
+                    });
+                MIRDiagnostic::new("ANALYSIS ERROR", self.to_string(), location)
+            }
         }
     }
 }

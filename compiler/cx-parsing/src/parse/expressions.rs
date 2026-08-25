@@ -4,7 +4,9 @@ use crate::{
     log::{parse_point_error, parse_underline_error},
     next_kind, peek_next_kind, try_next,
 };
-use cx_hir::ast::expression::{HIRExprKind, HIRExpression, HIRInitIndex, HIRUnpackBinding};
+use cx_hir::ast::expression::{
+    HIRBinOp, HIRExprKind, HIRExpression, HIRInitIndex, HIRUnpackBinding,
+};
 use cx_hir::ast::pattern::HIRPattern;
 use cx_log::CXResult;
 use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
@@ -136,6 +138,44 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<HIRExpression> {
     parse_expr_val(data, &mut expr_stack, &mut op_stack)?;
     while let Some(()) = parse_expr_op_concat(data, &mut expr_stack, &mut op_stack)? {}
 
+    let ternary = if try_next!(data.tokens, punctuator!(QuestionMark)) {
+        compress_stack(
+            data,
+            &mut expr_stack,
+            &mut op_stack,
+            binop_prec(HIRBinOp::Assign(None)).saturating_sub(1),
+        )?;
+
+        let Some(condition) = expr_stack.pop() else {
+            return parse_point_error(&data.tokens, "Expected expression before '?'".to_string());
+        };
+
+        let start_index = condition.range.start_token().unwrap_or(data.tokens.index);
+        let then_branch = parse_expr(data)?;
+        assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
+        let else_branch = parse_expr(data)?;
+        let end_index = else_branch.range.end_token().unwrap_or(data.tokens.index);
+
+        Some(
+            HIRExprKind::Ternary {
+                condition: Box::new(condition),
+                then_branch: Box::new(then_branch),
+                else_branch: Box::new(else_branch),
+            }
+            .into_expr(
+                start_index,
+                end_index,
+                data.file_origin_for_range(start_index, end_index),
+            ),
+        )
+    } else {
+        None
+    };
+
+    if let Some(ternary) = ternary {
+        expr_stack.push(ternary);
+    }
+
     compress_stack(data, &mut expr_stack, &mut op_stack, 100)?;
 
     let Some(expr) = expr_stack.pop() else {
@@ -168,26 +208,6 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<HIRExpression> {
         );
     }
 
-    if try_next!(data.tokens, punctuator!(QuestionMark)) {
-        let start_index = expr.range.start_token().unwrap_or(data.tokens.index);
-        let condition = expr;
-        let then_branch = parse_expr(data)?;
-        assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
-        let else_branch = parse_expr(data)?;
-        let end_index = else_branch.range.end_token().unwrap_or(data.tokens.index);
-
-        return Ok(HIRExprKind::Ternary {
-            condition: Box::new(condition),
-            then_branch: Box::new(then_branch),
-            else_branch: Box::new(else_branch),
-        }
-        .into_expr(
-            start_index,
-            end_index,
-            data.file_origin_for_range(start_index, end_index),
-        ));
-    }
-
     Ok(expr)
 }
 
@@ -201,12 +221,60 @@ pub(crate) fn parse_expr_op_concat(
     };
 
     let op_prec = binop_prec(op.clone());
-    compress_stack(data, expr_stack, op_stack, op_prec)?;
+    let right_associative = matches!(op, HIRBinOp::Assign(_));
+    compress_stack(
+        data,
+        expr_stack,
+        op_stack,
+        if right_associative {
+            op_prec.saturating_sub(1)
+        } else {
+            op_prec
+        },
+    )?;
 
     op_stack.push(PrecOperator::BinOp(op));
 
     parse_expr_val(data, expr_stack, op_stack)?;
     Ok(Some(()))
+}
+
+fn is_va_arg_callee(expression: &HIRExpression) -> bool {
+    matches!(
+        &expression.kind,
+        HIRExprKind::Identifier {
+            name,
+            template_input: None,
+        } if name.root_name_ref().is_some_and(|name| matches!(name.as_str(), "va_arg" | "__builtin_va_arg"))
+    )
+}
+
+fn parse_va_arg_call(data: &mut ParserData, expr_stack: &mut Vec<HIRExpression>) -> CXResult<()> {
+    let callee = expr_stack
+        .pop()
+        .expect("va_arg callee missing from expression stack");
+    let start_index = callee.range.start_token().unwrap_or(data.tokens.index);
+
+    assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+    data.change_comma_mode(false);
+    let list = parse_expr(data)?;
+    data.pop_comma_mode();
+    assert_token_matches!(data.tokens, operator!(Comma), "','");
+    let (_, _type, _) = parse_initializer(data)?;
+    assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+
+    expr_stack.push(
+        HIRExprKind::VaArg {
+            list: Box::new(list),
+            _type,
+        }
+        .into_expr(
+            start_index,
+            data.tokens.index,
+            data.file_origin_for_range(start_index, data.tokens.index),
+        ),
+    );
+    Ok(())
 }
 
 pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<HIRPattern> {
@@ -417,6 +485,16 @@ pub(crate) fn parse_expr_val(
             data.back();
 
             let expr = parse_expr_identifier(data)?;
+
+            if is_va_arg_callee(&expr)
+                && data.tokens.peek().is_some_and(|token| {
+                    matches!(token.kind, TokenKind::Punctuator(PunctuatorType::OpenParen))
+                })
+            {
+                expr_stack.push(expr);
+                parse_va_arg_call(data, expr_stack)?;
+                return Ok(());
+            }
 
             if try_next!(data.tokens, TokenKind::Identifier(_)) {
                 // A common type error is of the form `A b` where A is not a recognized type, this would be picked up

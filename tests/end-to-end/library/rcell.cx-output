@@ -1,9 +1,0 @@
-initial 8
-mutated 13
-outer 13 sema 1
-inner 13 sema 2
-outer resumed 13 sema 1
-reads released 0
-returning 13
-returned 13
-after return 14

@@ -27,6 +27,7 @@ impl THIRLocalID {
 #[derive(Clone, Debug, Default)]
 pub struct THIRFnContract {
     pub safe: bool,
+    pub noreturn: bool,
     pub precondition: Option<Box<THIRExpression>>,
     pub postcondition: Option<THIRPostcondition>,
 }
@@ -86,6 +87,9 @@ pub enum THIRExpressionKind {
     BoolLiteral(bool),
     IntLiteral(i64),
     FloatLiteral(FloatWrapper),
+    StringLiteral {
+        value: String,
+    },
 
     #[default]
     Unit,
@@ -94,7 +98,7 @@ pub enum THIRExpressionKind {
     GlobalVariable {
         symbol: CXIdent,
     },
-    
+
     Variable {
         name: CXIdent,
         local_id: THIRLocalID,
@@ -109,8 +113,6 @@ pub enum THIRExpressionKind {
         name: CXIdent,
         debug_name: Option<CXIdent>,
     },
-
-    // Type/layout queries remain symbolic until MIR owns the target layout.
     SizeOf {
         _type: THIRType,
     },
@@ -168,10 +170,8 @@ pub enum THIRExpressionKind {
         pattern: THIRPattern,
     },
     Unpack {
-        name: CXIdent,
-        local_id: THIRLocalID,
-        struct_type: THIRType,
-        bindings: Vec<THIRUnpackBinding>
+        value: Box<THIRExpression>,
+        bindings: Vec<THIRUnpackBinding>,
     },
 
     // Tagged Unions
@@ -207,8 +207,19 @@ pub enum THIRExpressionKind {
     },
 
     // Control Flow
-    Break,
-    Continue,
+    Break {
+        staged: bool,
+    },
+    Continue {
+        staged: bool,
+    },
+    Goto {
+        name: CXIdent,
+    },
+    Label {
+        name: CXIdent,
+        statement: Box<THIRExpression>,
+    },
     If {
         condition: Box<THIRExpression>,
         then_branch: Box<THIRExpression>,
@@ -244,10 +255,11 @@ pub enum THIRExpressionKind {
         postcondition: Option<THIRPostcondition>,
         value: Option<Box<THIRExpression>>,
     },
+    Unreachable,
     Yield {
         value: Option<Box<THIRExpression>>,
     },
-    
+
     Assert {
         condition: Box<THIRExpression>,
         message: String,
@@ -267,6 +279,18 @@ pub enum THIRExpressionKind {
         function: Box<THIRExpression>,
         arguments: Vec<THIRExpression>,
         contract: THIRFnContract,
+    },
+
+    VaStart {
+        list: Box<THIRExpression>,
+        last: Box<THIRExpression>,
+    },
+    VaEnd {
+        list: Box<THIRExpression>,
+    },
+    VaArg {
+        list: Box<THIRExpression>,
+        _type: THIRType,
     },
 
     // Type Conversion
@@ -294,6 +318,15 @@ pub enum THIRExpressionKind {
 
     // Comptime
     Emit(Box<THIRExpression>),
+
+    /// A parameterized staged expression literal (`|params| body`). The node is
+    /// equivalent to an AST subtree: `body` is fully typechecked against the
+    /// parameter types, and the node itself carries no meaningful type
+    /// (it is typed `THIRTypeKind::Undefined`).
+    StagedExpression {
+        params: Vec<(CXIdent, THIRLocalID, THIRType)>,
+        body: Box<THIRExpression>,
+    },
 }
 
 #[derive(Clone, Debug, Readable, Writable)]
@@ -448,6 +481,7 @@ pub enum THIRCoercion {
     // A similar no-op operation like Typechange, but represents conversions that *do* change the semantic
     // meaning of the bits, such as converting from an f32 to an i32
     ReinterpretBits,
+    Unreachable,
 }
 
 #[derive(Clone, Debug)]
@@ -455,7 +489,7 @@ pub struct THIRUnpackBinding {
     pub field_name: CXIdent,
     pub field_type: THIRType,
     pub field_index: usize,
-    
+
     pub binding_name: CXIdent,
     pub binding_local_id: THIRLocalID,
 }

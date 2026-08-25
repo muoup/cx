@@ -1,4 +1,3 @@
-use cx_hir::ast::expression::HIRExpression;
 use cx_hir::ast::template::HIRTemplateInput;
 use cx_log::{CXRawResult, CXResult};
 use cx_thir::EnvironmentNamespace;
@@ -8,7 +7,6 @@ use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind, THIRLocalID}
 use cx_util::identifier::CXIdent;
 use cx_util::namespace::QualifiedName;
 
-use crate::comptime::value::ComptimeValue;
 use crate::environment::TypeEnvironment;
 use cx_tokens::TokenRange;
 
@@ -53,7 +51,12 @@ impl TypecheckedBinding {
 #[derive(Debug)]
 pub enum TypecheckState {
     Ready(THIRExpression),
-    Comptime(ComptimeTypecheckValue),
+    Staged(StagedValue),
+    UntypedStaged,
+    ComptimeFunction {
+        prototype: THIRComptimeFnPrototype,
+        template_bindings: Vec<(CXIdent, THIRTypeID)>,
+    },
     IncompleteTemplatedCallee {
         name: QualifiedName,
         template_input: Option<HIRTemplateInput>,
@@ -62,28 +65,10 @@ pub enum TypecheckState {
 }
 
 #[derive(Debug, Clone)]
-pub enum ComptimeTypecheckValue {
-    Function(ComptimeFunctionValue),
-    StagedFunction(StagedFunctionValue),
-    Value(ComptimeValue),
-    #[allow(dead_code)]
-    StagedExpr(THIRExpression),
-}
-
-#[derive(Debug, Clone)]
-pub struct StagedFunctionValue {
-    pub namespace: EnvironmentNamespace,
-    pub params: Vec<(CXIdent, THIRType)>,
-    pub body: Box<HIRExpression>,
+pub struct StagedValue {
+    pub reference: THIRExpression,
+    pub params: Vec<THIRType>,
     pub return_type: THIRType,
-}
-
-#[derive(Debug, Clone)]
-pub struct ComptimeFunctionValue {
-    pub prototype: THIRComptimeFnPrototype,
-    pub namespace: EnvironmentNamespace,
-    pub body: Box<HIRExpression>,
-    pub template_bindings: Vec<(CXIdent, THIRTypeID)>,
 }
 
 pub struct IncompleteTemplate {
@@ -174,9 +159,13 @@ impl TypecheckResult {
     ) -> CXResult<TypecheckResult> {
         match self.expression {
             TypecheckState::Ready(_) => Ok(self),
-            TypecheckState::Comptime(_) => env.log_error(
+            TypecheckState::Staged(_) | TypecheckState::UntypedStaged => env.log_error(
                 token_range,
-                "Comptime value cannot be used as a runtime expression".to_string(),
+                "Staged expression cannot be used as a runtime expression".to_string(),
+            ),
+            TypecheckState::ComptimeFunction { .. } => env.log_error(
+                token_range,
+                "Comptime function cannot be used as a value".to_string(),
             ),
             TypecheckState::IncompleteTemplatedCallee { .. } => env.log_error(
                 token_range,
@@ -223,34 +212,31 @@ impl TypecheckResult {
         }
     }
 
-    pub fn comptime_function(value: ComptimeFunctionValue) -> Self {
+    pub fn staged(value: StagedValue) -> Self {
         Self {
-            expression: TypecheckState::Comptime(ComptimeTypecheckValue::Function(value)),
+            expression: TypecheckState::Staged(value),
             binding: None,
             adopting: false,
         }
     }
 
-    pub fn staged_function(value: StagedFunctionValue) -> Self {
+    pub fn untyped_staged() -> Self {
         Self {
-            expression: TypecheckState::Comptime(ComptimeTypecheckValue::StagedFunction(value)),
+            expression: TypecheckState::UntypedStaged,
             binding: None,
             adopting: false,
         }
     }
 
-    pub fn comptime_value(value: ComptimeValue) -> Self {
+    pub fn comptime_function(
+        prototype: THIRComptimeFnPrototype,
+        template_bindings: Vec<(CXIdent, THIRTypeID)>,
+    ) -> Self {
         Self {
-            expression: TypecheckState::Comptime(ComptimeTypecheckValue::Value(value)),
-            binding: None,
-            adopting: false,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn staged_expr(expression: THIRExpression) -> Self {
-        Self {
-            expression: TypecheckState::Comptime(ComptimeTypecheckValue::StagedExpr(expression)),
+            expression: TypecheckState::ComptimeFunction {
+                prototype,
+                template_bindings,
+            },
             binding: None,
             adopting: false,
         }
@@ -304,11 +290,28 @@ impl TypecheckResult {
         }
     }
 
-    pub fn try_into_comptime_value(self) -> TypecheckExtract<ComptimeTypecheckValue> {
+    pub fn try_into_staged(self) -> TypecheckExtract<StagedValue> {
         match self.expression {
-            TypecheckState::Comptime(value) => TypecheckExtract::Succ(value),
+            TypecheckState::Staged(value) => TypecheckExtract::Succ(value),
             expression => TypecheckExtract::Fail(Self { expression, ..self }),
         }
+    }
+
+    pub fn expression_state(&self) -> &TypecheckState {
+        &self.expression
+    }
+
+    pub fn set_token_range_if_missing(&mut self, token_range: TokenRange) -> CXResult<()> {
+        let expression = match &mut self.expression {
+            TypecheckState::Ready(expression) => expression,
+            _ => return Ok(()),
+        };
+
+        if !matches!(expression.token_range, TokenRange::Source { .. }) {
+            expression.token_range = token_range;
+        }
+
+        Ok(())
     }
 
     pub fn into_incomplete_callee_parts(self) -> Option<IncompleteTemplate> {
@@ -328,35 +331,12 @@ impl TypecheckResult {
     pub fn ready_type(&self) -> Option<&THIRType> {
         match &self.expression {
             TypecheckState::Ready(expression) => Some(&expression._type),
-            TypecheckState::Comptime(ComptimeTypecheckValue::StagedExpr(expression)) => {
-                Some(&expression._type)
-            }
-            TypecheckState::Comptime(ComptimeTypecheckValue::Value(value)) => {
-                // FIXME: This allocates a type value; this path is only used for diagnostics and
-                // template deduction should avoid relying on it for non-staged comptime values.
-                let _ = value;
-                None
-            }
-            TypecheckState::Comptime(ComptimeTypecheckValue::Function(_)) => None,
-            TypecheckState::Comptime(ComptimeTypecheckValue::StagedFunction(_)) => None,
+            TypecheckState::Staged(_)
+            | TypecheckState::UntypedStaged
+            | TypecheckState::ComptimeFunction { .. } => None,
             TypecheckState::NeedsExpectedType(_) => None,
             TypecheckState::IncompleteTemplatedCallee { .. } => None,
         }
-    }
-
-    pub fn set_token_range_if_missing(&mut self, token_range: TokenRange) -> CXResult<()> {
-        let expression = match &mut self.expression {
-            TypecheckState::Ready(expression) => expression,
-            TypecheckState::IncompleteTemplatedCallee { .. }
-            | TypecheckState::NeedsExpectedType(_)
-            | TypecheckState::Comptime(_) => return Ok(()),
-        };
-
-        if !matches!(expression.token_range, TokenRange::Source { .. }) {
-            expression.token_range = token_range;
-        }
-
-        Ok(())
     }
 
     pub fn apply_expected_type(
@@ -381,40 +361,14 @@ impl TypecheckResult {
         name: QualifiedName,
         template_input: Option<HIRTemplateInput>,
     ) -> CXRawResult<Self> {
-        if matches!(symbol, MIRSymbol::Template { .. }) {
-            return Ok(Self::incomplete_template(name, template_input));
-        }
-
-        if let MIRSymbol::ComptimeFunctionReference {
-            prototype,
-            namespace,
-            body,
-            template_bindings,
-        } = symbol
-        {
-            return Ok(Self::comptime_function(ComptimeFunctionValue {
+        match symbol {
+            MIRSymbol::Template { .. } => Ok(Self::incomplete_template(name, template_input)),
+            MIRSymbol::ComptimeFunctionReference {
                 prototype,
-                namespace,
-                body,
                 template_bindings,
-            }));
+                ..
+            } => CXRawResult::Ok(Self::comptime_function(prototype, template_bindings)),
+            _ => symbol.as_expression().map(Self::from),
         }
-
-        if let MIRSymbol::StagedExpressionFunction {
-            namespace,
-            params,
-            body,
-            return_type,
-        } = symbol
-        {
-            return Ok(Self::staged_function(StagedFunctionValue {
-                namespace,
-                params,
-                body,
-                return_type,
-            }));
-        }
-
-        symbol.as_expression().map(Self::from)
     }
 }

@@ -32,9 +32,20 @@ pub(crate) fn dispatch(
 ) -> CXResult<TypecheckResult> {
     match &op {
         HIRBinOp::LOr | HIRBinOp::LAnd => resolve_logical(env, op, lhs, rhs),
+        HIRBinOp::Comma => resolve_comma(lhs, rhs),
 
         _ => resolve_std_arithmetic(env, op, lhs, rhs),
     }
+}
+
+fn resolve_comma(lhs: THIRExpression, rhs: THIRExpression) -> CXResult<TypecheckResult> {
+    Ok(TypecheckResult::new(
+        rhs._type.clone(),
+        THIRExpressionKind::Block {
+            statements: vec![lhs, rhs],
+            creates_scope: false,
+        },
+    ))
 }
 
 pub(crate) fn resolve_logical(
@@ -184,6 +195,56 @@ fn coerce_pointer_binop(
     mut rhs: THIRExpression,
 ) -> CXResult<TypecheckResult> {
     if lhs._type.is_pointer() && rhs._type.is_pointer() {
+        if *op == HIRBinOp::Subtract {
+            let pointer_integer = env.symbols.pointer_integer_type();
+            let integer_type: THIRType = THIRTypeKind::Integer {
+                _type: pointer_integer,
+                signed: true,
+            }
+            .into();
+            let pointee = env.symbols.ptr_inner(&lhs._type).cloned().unwrap();
+            let difference_range = lhs.token_range.clone();
+            let pointer_to_integer = |operand: THIRExpression| THIRExpression {
+                token_range: operand.token_range.clone(),
+                kind: THIRExpressionKind::TypeConversion {
+                    operand: Box::new(operand),
+                    conversion: cx_thir::thir::expression::THIRCoercion::PtrToInt {
+                        to_type: pointer_integer,
+                    },
+                },
+                _type: integer_type.clone(),
+            };
+            let difference = THIRExpression {
+                token_range: difference_range.clone(),
+                kind: THIRExpressionKind::BinaryOperation {
+                    op: THIRBinOp::Integer {
+                        itype: pointer_integer,
+                        op: THIRIntBinOp::IDIV,
+                    },
+                    lhs: Box::new(THIRExpression {
+                        token_range: difference_range.clone(),
+                        kind: THIRExpressionKind::BinaryOperation {
+                            op: THIRBinOp::Integer {
+                                itype: pointer_integer,
+                                op: THIRIntBinOp::SUB,
+                            },
+                            lhs: Box::new(pointer_to_integer(lhs)),
+                            rhs: Box::new(pointer_to_integer(rhs)),
+                        },
+                        _type: integer_type.clone(),
+                    }),
+                    rhs: Box::new(THIRExpression {
+                        token_range: difference_range.clone(),
+                        kind: THIRExpressionKind::SizeOf { _type: pointee },
+                        _type: integer_type.clone(),
+                    }),
+                },
+                _type: integer_type.clone(),
+            };
+
+            return Ok(TypecheckResult::from(difference));
+        }
+
         let (return_type, op) = match op {
             HIRBinOp::LessEqual => (THIRType::bool(), THIRPtrBinOp::LE),
             HIRBinOp::GreaterEqual => (THIRType::bool(), THIRPtrBinOp::GE),
@@ -216,14 +277,19 @@ fn coerce_pointer_binop(
         (&mut rhs, &mut lhs)
     };
 
-    let intptr = THIRTypeKind::Integer {
-        _type: env.symbols.pointer_integer_type(),
-        signed: true,
-    };
-
-    *non_pointer = implicit_cast(env, std::mem::take(non_pointer), &intptr.into())?;
-
     let ptr_type = pointer._type.clone();
+    if matches!(op, HIRBinOp::Equal | HIRBinOp::NotEqual)
+        && matches!(non_pointer.kind, THIRExpressionKind::IntLiteral(0))
+    {
+        *non_pointer = implicit_cast(env, std::mem::take(non_pointer), &ptr_type)?;
+    } else {
+        let intptr = THIRTypeKind::Integer {
+            _type: env.symbols.pointer_integer_type(),
+            signed: true,
+        };
+        *non_pointer = implicit_cast(env, std::mem::take(non_pointer), &intptr.into())?;
+    }
+
     let ptr_inner = Box::new(env.symbols.ptr_inner(&ptr_type).cloned().unwrap());
 
     let (return_type, op) = match op {
@@ -375,8 +441,11 @@ fn lower_int_binop(op: &HIRBinOp, signed: bool) -> Option<THIRIntBinOp> {
     Some(match op {
         HIRBinOp::Add => THIRIntBinOp::ADD,
         HIRBinOp::Subtract => THIRIntBinOp::SUB,
+        HIRBinOp::Multiply if signed => THIRIntBinOp::IMUL,
         HIRBinOp::Multiply => THIRIntBinOp::MUL,
+        HIRBinOp::Divide if signed => THIRIntBinOp::IDIV,
         HIRBinOp::Divide => THIRIntBinOp::DIV,
+        HIRBinOp::Modulus if signed => THIRIntBinOp::IMOD,
         HIRBinOp::Modulus => THIRIntBinOp::MOD,
 
         HIRBinOp::Less if !signed => THIRIntBinOp::LT,

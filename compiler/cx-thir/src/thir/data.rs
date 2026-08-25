@@ -11,14 +11,36 @@ use crate::type_context::THIRTypeContext;
 #[derive(Debug, Clone)]
 pub struct THIRFunction {
     pub prototype: THIRFnPrototype,
-    pub body: THIRExpression,
+    pub body: Option<THIRExpression>,
 }
 
 #[derive(Debug, Clone)]
 pub struct THIRParameter {
     pub name: Option<CXIdent>,
-    pub local_id: Option<THIRLocalID>,
+    pub local_id: THIRLocalID,
     pub _type: THIRType,
+}
+
+#[derive(Debug, Clone)]
+pub struct THIRComptimeFunction {
+    pub name: Option<CXIdent>,
+}
+
+#[derive(Debug, Clone)]
+pub struct THIRComptimeFnPrototype {
+    symbol_name: String,
+    lookup_identifier: QualifiedName,
+    debug_name: Option<CXIdent>,
+    return_type: THIRComptimeValueType,
+    params: Vec<THIRComptimeParameter>,
+    runtime_return_type: Option<THIRType>,
+}
+
+#[derive(Debug, Clone)]
+pub struct THIRComptimeParameter {
+    pub name: Option<CXIdent>,
+    pub local_id: THIRLocalID,
+    pub value_type: THIRComptimeValueType,
 }
 
 #[derive(Debug, Clone)]
@@ -28,32 +50,37 @@ pub struct THIRComptimeValueType {
     pub _type: THIRType,
 }
 
-#[derive(Debug, Clone)]
-pub struct THIRComptimeParameter {
-    pub name: Option<CXIdent>,
-    pub value_type: THIRComptimeValueType,
-}
-
-#[derive(Debug, Clone)]
-pub struct THIRComptimeFnPrototype {
-    lookup_identifier: Option<QualifiedName>,
-    debug_name: Option<CXIdent>,
-    return_type: THIRComptimeValueType,
-    params: Vec<THIRComptimeParameter>,
-}
-
 impl THIRComptimeFnPrototype {
-    pub fn new(return_type: THIRComptimeValueType, params: Vec<THIRComptimeParameter>) -> Self {
+    pub fn new(
+        symbol_name: impl Into<String>,
+        lookup_identifier: QualifiedName,
+        return_type: THIRComptimeValueType,
+        params: Vec<THIRComptimeParameter>,
+    ) -> Self {
         Self {
-            lookup_identifier: None,
-            debug_name: None,
+            symbol_name: symbol_name.into(),
+            lookup_identifier,
             return_type,
             params,
+            debug_name: None,
+            runtime_return_type: None,
         }
     }
 
-    pub fn lookup_identifier(&self) -> Option<&QualifiedName> {
-        self.lookup_identifier.as_ref()
+    pub fn symbol_name(&self) -> &str {
+        self.symbol_name.as_str()
+    }
+
+    pub fn pretty_name(&self) -> &str {
+        if let Some(debug_name) = &self.debug_name {
+            debug_name.as_str()
+        } else {
+            self.symbol_name.as_str()
+        }
+    }
+
+    pub fn lookup_identifier(&self) -> &QualifiedName {
+        &self.lookup_identifier
     }
 
     pub fn debug_name(&self) -> Option<&CXIdent> {
@@ -68,14 +95,25 @@ impl THIRComptimeFnPrototype {
         &self.params
     }
 
-    pub fn with_lookup_identifier(mut self, lookup_identifier: QualifiedName) -> Self {
-        self.lookup_identifier = Some(lookup_identifier);
+    pub fn runtime_return_type(&self) -> Option<&THIRType> {
+        self.runtime_return_type.as_ref()
+    }
+
+    pub fn with_runtime_return_type(mut self, ty: Option<THIRType>) -> Self {
+        self.runtime_return_type = ty;
         self
     }
 
     pub fn with_debug_name(mut self, debug_name: CXIdent) -> Self {
         self.debug_name = Some(debug_name);
         self
+    }
+
+    pub fn map_symbol_name<F>(&mut self, f: F)
+    where
+        F: FnOnce(&str) -> String,
+    {
+        self.symbol_name = f(self.symbol_name.as_str());
     }
 }
 
@@ -212,11 +250,11 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRFnProt
 }
 
 #[derive(Debug, Clone)]
-pub struct MIRTemplateInput {
+pub struct THIRTemplateInput {
     pub args: Vec<THIRTypeID>,
 }
 
-impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for MIRTemplateInput {
+impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRTemplateInput {
     fn compare(
         &self,
         other: &Self,
@@ -230,7 +268,7 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for MIRTemplat
 #[derive(Debug, Clone)]
 pub struct TemplateInfo {
     pub base_name: Option<QualifiedName>,
-    pub template_input: MIRTemplateInput,
+    pub template_input: THIRTemplateInput,
 }
 
 impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for TemplateInfo {

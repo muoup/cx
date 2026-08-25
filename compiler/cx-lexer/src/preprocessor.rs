@@ -14,7 +14,7 @@ use crate::{
             handle_elif, handle_else, handle_endif, handle_error, handle_if, handle_ifdef,
         },
         define::{handle_define, handle_undef},
-        includes::{handle_include, handle_pragma},
+        includes::{handle_include, handle_include_next, handle_pragma},
     },
 };
 
@@ -46,6 +46,7 @@ impl Preprocessor {
 
         match directive.as_str() {
             "#include" => handle_include(context, directive_start, directive_end),
+            "#include_next" => handle_include_next(context, directive_start),
             "#define" => handle_define(context, directive_start, directive_end),
             "#undef" => handle_undef(context),
             "#ifdef" | "#ifndef" => {

@@ -1,0 +1,22 @@
+/* CX-STDOUT: Incremented value: 1 */
+/* CX-STDOUT-NEXT: Incremented value: 2 */
+
+int printf(char* fmt, ...);
+
+int x;
+
+T increment<T>() {
+    x++;
+    return x;
+}
+
+void procedure() {
+    int result = increment<int>();
+    printf("Incremented value: %d\n", result);
+}
+
+int main() {
+    procedure();
+    procedure();
+    return 0;
+}

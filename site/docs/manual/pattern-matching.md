@@ -12,7 +12,7 @@ The simplest method to determine whether a tagged union contains a given variant
 
 The binding is created regardless of whether the comparison succeeds, but using it after the comparison evaluates to false is undefined behavior. The idiomatic way to keep the binding valid is to use the `is` operator as an `if` condition:
 
-```c
+```cx
 float get_rectangle_area(shape& s) {
     if (s is shape::rectangle(r)) {
         return r.width * r.height;
@@ -26,7 +26,7 @@ float get_rectangle_area(shape& s) {
 
 Match statements are an alternative to C's `switch` statements that forbid fall-through. Each arm contains a pattern on the left and a single statement or scoped block on the right. Integer matches use integer-literal patterns, while tagged-union matches use variant patterns with an optional payload binding.
 
-```c
+```cx
 void print_number(int i) {
     match (i) {
         1 => printf("i = 1\n");
@@ -41,7 +41,7 @@ void print_number(int i) {
 
 Tagged-union patterns name the variant and may bind its payload inside the corresponding arm. A match listing every variant is exhaustive; `_` can handle all variants or integer values that were not listed explicitly.
 
-```c
+```cx
 float get_area(shape& s) {
     match (s) {
         shape::circle(radius) => return radius * radius * 3.14;
@@ -55,7 +55,7 @@ float get_area(shape& s) {
 
 A `match` can produce a value. `yield` supplies that value from an arm and exits the match expression, including from inside a nested block:
 
-```c
+```cx
 int value = match (maybe) {
     MaybeInt::some(inner) => {
         if (use_inner) yield inner;

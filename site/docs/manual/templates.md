@@ -14,7 +14,7 @@ The current template design uses C++-style copy-and-paste semantics, which come 
 
 Template parameters follow the function name:
 
-```c
+```cx
 T add<T>(T a, T b) {
     return a + b;
 }
@@ -22,7 +22,7 @@ T add<T>(T a, T b) {
 
 Template arguments can be written explicitly or deduced from the function arguments when the parameter types provide enough information:
 
-```c
+```cx
 int explicit_sum = add<int>(1, 2);
 int deduced_sum = add(1, 2);
 ```
@@ -31,7 +31,7 @@ int deduced_sum = add(1, 2);
 
 Template parameters follow the declared type name:
 
-```c
+```cx
 struct Box<T> {
     T value;
 };
@@ -39,6 +39,6 @@ struct Box<T> {
 
 `typedef` can be used to create templated type aliases:
 
-```c
+```cx
 typedef<T> T* Ptr;
 ```

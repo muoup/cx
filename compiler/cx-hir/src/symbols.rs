@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 
 use cx_preparse_data::NamespaceAliases;
 use cx_util::identifier::CXIdent;
@@ -10,7 +10,7 @@ use crate::ast::{
     global_var::HIREnumDefinition,
     modifiers::{HIRSymbolNameScheme, VisibilityMode},
     template::HIRTemplatePrototype,
-    types::HIRType,
+    types::{HIRTagKind, HIRType},
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -25,30 +25,66 @@ impl HIRSymbol {
     }
 
     pub fn is_type(&self) -> bool {
-        match &self.kind {
-            HIRSymbolKind::Type(_) => true,
-            HIRSymbolKind::DuplicateDefinition(definitions) => definitions.iter().any(|kind| {
-                matches!(
-                    kind,
-                    HIRSymbolKind::Type(_) | HIRSymbolKind::TypeTemplate { .. }
-                )
-            }),
-            _ => false,
-        }
+        matches!(self.kind, HIRSymbolKind::Type(_))
     }
 }
 
 pub type EnumBlockIdx = usize;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum HIRSymbolKind {
-    Type(HIRType),
-    FunctionReference(HIRFunctionPrototype),
-    TypeConstructor {
-        template: Option<HIRTemplatePrototype>,
-        union_type: HIRType,
-        variant_index: usize,
+pub enum HIRSymbolData<
+    Base: std::fmt::Debug + Clone + PartialEq,
+    Data: std::fmt::Debug + Clone + PartialEq,
+> {
+    Standard {
+        base: Base
     },
+    Template {
+        base: Base,
+        template_data: Data,
+        template_prototype: HIRTemplatePrototype,
+    },
+}
+
+impl<Base: std::fmt::Debug + Clone + PartialEq, Data: std::fmt::Debug + Clone + PartialEq>
+    HIRSymbolData<Base, Data>
+{
+    pub fn new(base: Base, data: Data, template_proto: Option<HIRTemplatePrototype>) -> Self {
+        match template_proto {
+            Some(proto) => Self::Template {
+                base,
+                template_data: data,
+                template_prototype: proto,
+            },
+            None => Self::Standard { base },
+        }
+    }
+
+    pub fn base(&self) -> &Base {
+        match self {
+            Self::Standard { base, .. } => base,
+            Self::Template { base, .. } => base,
+        }
+    }
+}
+
+pub type HIRTypeSymbol = HIRSymbolData<HIRType, ()>;
+pub type HIRTypeConstructorSymbol = HIRSymbolData<TypeConstructorData, ()>;
+pub type HIRFunctionSymbol = HIRSymbolData<HIRFunctionPrototype, Box<HIRExpression>>;
+pub type HIRComptimeFunctionSymbol = HIRSymbolData<HIRComptimeFnPrototype, Box<HIRExpression>>;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeConstructorData {
+    pub union_type: HIRType,
+    pub variant_index: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum HIRSymbolKind {
+    Type(HIRTypeSymbol),
+    Function(HIRFunctionSymbol),
+    TypeConstructor(HIRTypeConstructorSymbol),
+    ComptimeFunction(HIRComptimeFunctionSymbol),
     AddressableGlobal {
         name: CXIdent,
         _type: HIRType,
@@ -58,32 +94,75 @@ pub enum HIRSymbolKind {
         enum_block_idx: EnumBlockIdx,
         variant_index: usize,
     },
-    TypeTemplate {
-        template: HIRTemplatePrototype,
-        definition: HIRType,
-    },
-    FunctionTemplate {
-        template: HIRTemplatePrototype,
-        definition: HIRFunctionPrototype,
-        body: Box<HIRExpression>,
-    },
-    ComptimeFunction {
-        definition: HIRComptimeFnPrototype,
-        body: Box<HIRExpression>,
-    },
-    ComptimeFunctionTemplate {
-        template: HIRTemplatePrototype,
-        definition: HIRComptimeFnPrototype,
-        body: Box<HIRExpression>,
-    },
-    DuplicateDefinition(Vec<HIRSymbolKind>),
-    // Templated variables should not be supported
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum SymbolIdentifier {
+    Standard(String),
+    Tag { kind: HIRTagKind, name: String },
+}
+
+#[derive(Debug, Clone)]
+pub struct SymbolResolution {
+    declarations: Vec<HIRSymbol>,
+    tag_kinds: Option<Vec<HIRTagKind>>,
+}
+
+impl SymbolResolution {
+    pub fn new(symbol: HIRSymbol) -> Self {
+        Self {
+            declarations: vec![symbol],
+            tag_kinds: None,
+        }
+    }
+
+    pub fn new_tagged(tag: HIRTagKind, symbol: HIRSymbol) -> Self {
+        Self {
+            declarations: vec![symbol],
+            tag_kinds: Some(vec![tag]),
+        }
+    }
+
+    pub fn standard(declarations: Vec<HIRSymbol>) -> Self {
+        Self {
+            declarations,
+            tag_kinds: None,
+        }
+    }
+
+    pub fn tagged(declarations: Vec<(HIRTagKind, HIRSymbol)>) -> Self {
+        let (tag_kinds, declarations) = declarations.into_iter().unzip();
+        Self {
+            declarations,
+            tag_kinds: Some(tag_kinds),
+        }
+    }
+
+    pub fn declarations(&self) -> &[HIRSymbol] {
+        &self.declarations
+    }
+
+    pub fn into_declarations(self) -> Vec<HIRSymbol> {
+        self.declarations
+    }
+
+    pub fn tag_kinds(&self) -> Option<&[HIRTagKind]> {
+        self.tag_kinds.as_deref()
+    }
+
+    pub fn filter(&self, mut predicate: impl FnMut(&HIRSymbol) -> bool) -> Option<Self> {
+        self.declarations
+            .iter()
+            .any(&mut predicate)
+            .then(|| self.clone())
+    }
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct SymbolNamespaceData {
     enum_blocks: Vec<HIREnumDefinition>,
-    symbols: HashMap<String, HIRSymbol>,
+    symbols: HashMap<String, Vec<HIRSymbol>>,
+    tagged_symbols: HashMap<String, Vec<(HIRTagKind, HIRSymbol)>>,
     namespace_aliases: NamespaceAliases,
 }
 
@@ -92,6 +171,7 @@ impl SymbolNamespaceData {
         Self {
             enum_blocks: Vec::new(),
             symbols: HashMap::new(),
+            tagged_symbols: HashMap::new(),
             namespace_aliases: HashMap::new(),
         }
     }
@@ -100,30 +180,26 @@ impl SymbolNamespaceData {
         Self {
             enum_blocks: Vec::new(),
             symbols: HashMap::new(),
+            tagged_symbols: HashMap::new(),
             namespace_aliases,
         }
     }
 
-    pub fn insert_symbol(&mut self, name: impl Into<String>, symbol: HIRSymbol) {
-        self.symbols.insert(name.into(), symbol);
-    }
-
-    pub fn merge_from(&mut self, other: SymbolNamespaceData) {
-        let enum_offset = self.enum_blocks.len();
-        self.enum_blocks.extend(other.enum_blocks);
-        for (alias, targets) in other.namespace_aliases {
-            for target in targets {
-                self.insert_namespace_alias(alias.clone(), target);
-            }
-        }
-        self.symbols
-            .extend(other.symbols.into_iter().map(|(name, mut symbol)| {
-                if let HIRSymbolKind::EnumIdent { enum_block_idx, .. } = &mut symbol.kind {
-                    *enum_block_idx += enum_offset;
+    pub fn insert_symbol(&mut self, identifier: SymbolIdentifier, symbol: HIRSymbol) {
+        match identifier {
+            SymbolIdentifier::Standard(name) => match self.symbols.entry(name) {
+                Entry::Occupied(ref mut entry) => entry.get_mut().push(symbol),
+                Entry::Vacant(entry) => {
+                    entry.insert(vec![symbol]);
                 }
-
-                (name, symbol)
-            }));
+            },
+            SymbolIdentifier::Tag { kind, name } => match self.tagged_symbols.entry(name) {
+                Entry::Occupied(ref mut entry) => entry.get_mut().push((kind, symbol)),
+                Entry::Vacant(entry) => {
+                    entry.insert(vec![(kind, symbol)]);
+                }
+            },
+        };
     }
 
     pub fn insert_enum_block(&mut self, block: HIREnumDefinition) -> EnumBlockIdx {
@@ -131,12 +207,18 @@ impl SymbolNamespaceData {
         self.enum_blocks.len() - 1
     }
 
-    pub fn get_symbol(&self, name: &str) -> Option<&HIRSymbol> {
-        self.symbols.get(name)
+    pub fn get_standard_symbol(&self, name: &str) -> Option<SymbolResolution> {
+        self.symbols
+            .get(name)
+            .cloned()
+            .map(SymbolResolution::standard)
     }
 
-    pub fn symbol_names(&self) -> impl Iterator<Item = &str> {
-        self.symbols.keys().map(String::as_str)
+    pub fn get_tag_symbol(&self, name: &str) -> Option<SymbolResolution> {
+        self.tagged_symbols
+            .get(name)
+            .cloned()
+            .map(SymbolResolution::tagged)
     }
 
     pub fn insert_namespace_alias(&mut self, alias: NamespacePath, target: NamespacePath) {

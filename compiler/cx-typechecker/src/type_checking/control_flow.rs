@@ -11,12 +11,19 @@ pub(crate) mod switch;
 pub(crate) mod r#yield;
 
 pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
+    if expr._type.is_unreachable() {
+        return false;
+    }
     match &expr.kind {
         THIRExpressionKind::Return { .. }
         | THIRExpressionKind::Yield { .. }
-        | THIRExpressionKind::Break
-        | THIRExpressionKind::Continue => false,
+        | THIRExpressionKind::Break { .. }
+        | THIRExpressionKind::Continue { .. }
+        | THIRExpressionKind::Unreachable => false,
+        THIRExpressionKind::Goto { .. } => true,
+        THIRExpressionKind::Label { statement, .. } => expr_may_fall_through(statement),
         THIRExpressionKind::Unsafe { expression, .. } => expr_may_fall_through(expression),
+        THIRExpressionKind::StagedExpression { body, .. } => expr_may_fall_through(body),
         THIRExpressionKind::Block { statements, .. } => {
             statements.last().map(expr_may_fall_through).unwrap_or(true)
         }
@@ -52,10 +59,24 @@ pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
                     .map(|branch| expr_may_fall_through(branch))
                     .unwrap_or(!exhaustive)
         }
-        THIRExpressionKind::CallFunction { function, .. } => !matches!(
-            &function.kind,
-            THIRExpressionKind::FunctionReference { name, .. } if name.as_str() == "exit"
-        ),
+        THIRExpressionKind::CallFunction {
+            function,
+            arguments,
+            contract,
+        } => {
+            !contract.noreturn
+                && arguments.iter().all(|argument| match &argument.kind {
+                    THIRExpressionKind::StagedExpression { body, .. } => {
+                        expr_may_fall_through(body)
+                    }
+                    _ => true,
+                })
+                && !matches!(
+                    &function.kind,
+                    THIRExpressionKind::FunctionReference { name, .. }
+                        if name.as_str() == "exit"
+                )
+        }
         _ => true,
     }
 }

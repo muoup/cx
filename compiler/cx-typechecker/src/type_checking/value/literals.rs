@@ -1,25 +1,14 @@
 use crate::{environment::TypeEnvironment, type_checking::result::TypecheckResult};
-use cx_hir::ast::modifiers::HIR_CONST;
 use cx_log::CXResult;
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
     expression::{THIRExpression, THIRExpressionKind},
-    global::{MIRGlobalVarKind, MIRGlobalVariable},
 };
 use cx_tokens::{
     TokenRange,
     token::{FloatSuffix, IntegerBase, IntegerLength, IntegerSuffix},
 };
 use cx_util::unsafe_float::FloatWrapper;
-use cx_util::{identifier::CXIdent, linkage::LinkageMode};
-
-fn anonymous_name_gen() -> String {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    static COUNTER: AtomicUsize = AtomicUsize::new(0);
-    let id = COUNTER.fetch_add(1, Ordering::SeqCst);
-    format!("__anon_{id}")
-}
 
 pub(crate) fn typecheck_int_literal(
     env: &TypeEnvironment,
@@ -105,30 +94,6 @@ pub(crate) fn typecheck_float_literal(
             "double"
         }),
     }))
-}
-
-pub(crate) fn typecheck_string_literal(env: &mut TypeEnvironment, val: &str) -> TypecheckResult {
-    let anonymous_name = anonymous_name_gen();
-    let name_ident = CXIdent::new(anonymous_name.clone());
-
-    env.items.push_generated_global(MIRGlobalVariable {
-        kind: MIRGlobalVarKind::StringLiteral {
-            name: name_ident.clone(),
-            value: val.to_string(),
-        },
-        is_mutable: false,
-        linkage: LinkageMode::Static,
-    });
-
-    let str_ref_type = env
-        .symbols
-        .mem_ref_to(THIRType::from(THIRTypeKind::Str).add_specifier(HIR_CONST));
-
-    TypecheckResult::from(THIRExpression {
-        token_range: TokenRange::internal(),
-        kind: THIRExpressionKind::GlobalVariable { symbol: name_ident },
-        _type: str_ref_type,
-    })
 }
 
 pub(crate) fn typecheck_unit() -> TypecheckResult {

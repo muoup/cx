@@ -1,3 +1,4 @@
+use crate::error::{LLVMError, LLVMResult};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{LMIRIntBinOp, LMIRPtrBinOp};
 use inkwell::values::{AnyValue, AnyValueEnum, IntValue};
@@ -9,8 +10,8 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
     left_value: AnyValueEnum<'a>,
     right_value: AnyValueEnum<'a>,
     op: LMIRPtrBinOp,
-) -> Option<CodegenValue<'a>> {
-    Some(CodegenValue::Value(match op {
+) -> LLVMResult<CodegenValue<'a>> {
+    Ok(CodegenValue::Value(match op {
         LMIRPtrBinOp::ADD => unsafe {
             let i8_type = global_state.context.i8_type();
             let scaled_right = function_state
@@ -23,7 +24,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                         .const_int(type_size, false),
                     crate::instruction::inst_num().as_str(),
                 )
-                .ok()?
+                .map_err(LLVMError::from_error)?
                 .as_any_value_enum();
 
             function_state
@@ -34,7 +35,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                     &[scaled_right.into_int_value()],
                     crate::instruction::inst_num().as_str(),
                 )
-                .ok()?
+                .map_err(LLVMError::from_error)?
                 .as_any_value_enum()
         },
         LMIRPtrBinOp::SUB => unsafe {
@@ -44,7 +45,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                     right_value.into_int_value(),
                     crate::instruction::inst_num().as_str(),
                 )
-                .ok()?
+                .map_err(LLVMError::from_error)?
                 .as_any_value_enum();
 
             let scaled_right = function_state
@@ -57,7 +58,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                         .const_int(type_size, false),
                     crate::instruction::inst_num().as_str(),
                 )
-                .ok()?
+                .map_err(LLVMError::from_error)?
                 .as_any_value_enum();
 
             function_state
@@ -68,7 +69,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                     &[scaled_right.into_int_value()],
                     crate::instruction::inst_num().as_str(),
                 )
-                .ok()?
+                .map_err(LLVMError::from_error)?
                 .as_any_value_enum()
         },
         LMIRPtrBinOp::EQ => function_state
@@ -79,8 +80,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                 right_value.into_pointer_value(),
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()
-            .unwrap()
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRPtrBinOp::NE => function_state
             .builder
@@ -90,7 +90,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                 right_value.into_pointer_value(),
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRPtrBinOp::LT => function_state
             .builder
@@ -100,7 +100,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                 right_value.into_pointer_value(),
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRPtrBinOp::LE => function_state
             .builder
@@ -110,7 +110,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                 right_value.into_pointer_value(),
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRPtrBinOp::GT => function_state
             .builder
@@ -120,7 +120,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                 right_value.into_pointer_value(),
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRPtrBinOp::GE => function_state
             .builder
@@ -130,7 +130,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                 right_value.into_pointer_value(),
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
     }))
 }
@@ -141,17 +141,8 @@ pub(crate) fn generate_int_binop<'a, 'b>(
     left_value: IntValue<'a>,
     right_value: IntValue<'a>,
     op: LMIRIntBinOp,
-) -> Option<CodegenValue<'a>> {
+) -> LLVMResult<CodegenValue<'a>> {
     let inst_return = match op {
-        // LMIRIntBinOp::ADD if signed => function_state
-        //     .builder
-        //     .build_int_nsw_add(
-        //         left_value,
-        //         right_value,
-        //         crate::instruction::inst_num().as_str(),
-        //     )
-        //     .ok()?
-        //     .as_any_value_enum(),
         LMIRIntBinOp::ADD => function_state
             .builder
             .build_int_add(
@@ -159,17 +150,8 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
-        // LMIRIntBinOp::SUB if signed => function_state
-        //     .builder
-        //     .build_int_nsw_sub(
-        //         left_value,
-        //         right_value,
-        //         crate::instruction::inst_num().as_str(),
-        //     )
-        //     .ok()?
-        //     .as_any_value_enum(),
         LMIRIntBinOp::SUB => function_state
             .builder
             .build_int_sub(
@@ -177,7 +159,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::IMUL => function_state
             .builder
@@ -186,7 +168,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::MUL => function_state
             .builder
@@ -195,7 +177,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::IDIV => function_state
             .builder
@@ -204,7 +186,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::UDIV => function_state
             .builder
@@ -213,7 +195,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::IREM => function_state
             .builder
@@ -222,7 +204,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::UREM => function_state
             .builder
@@ -231,7 +213,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::IGT => function_state
             .builder
@@ -241,7 +223,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::UGT => function_state
             .builder
@@ -251,7 +233,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::IGE => function_state
             .builder
@@ -261,7 +243,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::UGE => function_state
             .builder
@@ -271,7 +253,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::ILT => function_state
             .builder
@@ -281,7 +263,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::ULT => function_state
             .builder
@@ -291,7 +273,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::ILE => function_state
             .builder
@@ -301,7 +283,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
 
         LMIRIntBinOp::ASHR => function_state
@@ -312,7 +294,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 true,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::LSHR => function_state
             .builder
@@ -322,7 +304,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 false,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
 
         LMIRIntBinOp::SHL => function_state
@@ -332,7 +314,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
 
         LMIRIntBinOp::BAND => function_state
@@ -342,7 +324,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::BOR => function_state
             .builder
@@ -351,7 +333,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::BXOR => function_state
             .builder
@@ -360,7 +342,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::LAND => function_state
             .builder
@@ -370,7 +352,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::LOR => function_state
             .builder
@@ -380,7 +362,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::EQ => function_state
             .builder
@@ -390,7 +372,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::NE => function_state
             .builder
@@ -400,7 +382,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
         LMIRIntBinOp::ULE => function_state
             .builder
@@ -410,9 +392,9 @@ pub(crate) fn generate_int_binop<'a, 'b>(
                 right_value,
                 crate::instruction::inst_num().as_str(),
             )
-            .ok()?
+            .map_err(LLVMError::from_error)?
             .as_any_value_enum(),
     };
 
-    Some(CodegenValue::Value(inst_return))
+    Ok(CodegenValue::Value(inst_return))
 }

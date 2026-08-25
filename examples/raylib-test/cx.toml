@@ -10,10 +10,10 @@ binaries = [
   { name = "raylib-test", entry = "main.cx" },
 ]
 native_objects = [
-  "raylib/lib/raylib.o",
+  "../artifacts/raylib/lib/raylib.o",
 ]
 include_dirs = [
-  "raylib/include",
+  "../artifacts/raylib/include",
 ]
 link = [
   { name = "GL", kind = "system" },

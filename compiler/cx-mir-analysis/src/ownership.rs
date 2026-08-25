@@ -23,17 +23,18 @@ struct OwnershipState {
 impl OwnershipState {
     fn new(function: &MIRFunction) -> Self {
         let projections = function
-            .blocks
-            .iter()
+            .definition()
+            .into_iter()
+            .flat_map(|definition| definition.blocks())
             .flat_map(|block| block.instrs.iter())
             .filter_map(|instruction| match &instruction.kind {
                 MIRInstrKind::AggregateOp(MIRAggregateOp::Place { out, op }) => {
                     let base = match op {
                         MIRPlaceAggregateOp::Field { base, .. }
                         | MIRPlaceAggregateOp::Index { base, .. }
-                        | MIRPlaceAggregateOp::Variant { base, .. } => *base,
+                        | MIRPlaceAggregateOp::Variant { base, .. } => base,
                     };
-                    Some((*out, base))
+                    Some((*out, *base))
                 }
                 _ => None,
             })
@@ -70,27 +71,28 @@ impl OwnershipState {
 /// Checks path-sensitive ownership and `@nodrop` discharge after MIR has
 /// established the actual control-flow graph.
 pub(crate) fn check(unit: &MIRUnit) -> Result<(), MIRAnalysisError> {
-    for function in &unit.functions {
+    for function in unit.functions() {
         check_function(unit, function)?;
     }
     Ok(())
 }
 
 fn check_function(unit: &MIRUnit, function: &MIRFunction) -> Result<(), MIRAnalysisError> {
-    let Some(entry) = function.entry else {
+    let Some(definition) = function.definition() else {
         return Ok(());
     };
-    if entry.index() >= function.blocks.len() {
+    let entry = definition.entry();
+    if entry.index() >= definition.blocks().len() {
         return Ok(());
     }
 
-    let mut entries = vec![None; function.blocks.len()];
+    let mut entries = vec![None; definition.blocks().len()];
     entries[entry.index()] = Some(initial_state(function));
 
     loop {
         let mut changed = false;
 
-        for block in &function.blocks {
+        for block in definition.blocks() {
             let Some(state) = entries[block.id.index()].clone() else {
                 continue;
             };
@@ -122,7 +124,7 @@ fn check_function(unit: &MIRUnit, function: &MIRFunction) -> Result<(), MIRAnaly
         }
     }
 
-    for block in &function.blocks {
+    for block in definition.blocks() {
         let Some(state) = entries[block.id.index()].clone() else {
             continue;
         };
@@ -134,7 +136,7 @@ fn check_function(unit: &MIRUnit, function: &MIRFunction) -> Result<(), MIRAnaly
 
 fn initial_state(function: &MIRFunction) -> OwnershipState {
     let mut state = OwnershipState::new(function);
-    for (index, _) in function.prototype.signature.params.iter().enumerate() {
+    for (index, _) in function.prototype().signature.params.iter().enumerate() {
         state.insert(
             MIRPlace::Parameter(cx_mir::MIRParameterID::new(index)),
             PlaceState::Available,
@@ -217,10 +219,11 @@ fn merge_state(left: PlaceState, right: PlaceState) -> PlaceState {
 fn is_nodrop(function: &MIRFunction, place: MIRPlace) -> bool {
     match place {
         MIRPlace::FunctionLocal(id) => function
-            .place(id)
+            .definition()
+            .and_then(|definition| definition.place(id))
             .is_some_and(|declaration| declaration.nodrop),
         MIRPlace::Parameter(id) => function
-            .prototype
+            .prototype()
             .signature
             .params
             .get(id.index())
@@ -259,10 +262,13 @@ fn transfer_instruction(
     state: &mut OwnershipState,
     diagnose: bool,
 ) -> Result<(), MIRAnalysisError> {
+    let definition = function
+        .definition()
+        .expect("ownership analysis reached a MIR declaration");
     match kind {
         MIRInstrKind::ScopeEnter { .. } => {}
         MIRInstrKind::ScopeExit { scope } => {
-            for declaration in &function.places {
+            for declaration in definition.places() {
                 if declaration.scope != *scope {
                     continue;
                 }
@@ -310,25 +316,11 @@ fn transfer_instruction(
             MIRAggregateOp::Place { out, op } => {
                 match op {
                     MIRPlaceAggregateOp::Field { base, .. }
-                    | MIRPlaceAggregateOp::Variant { base, .. } => use_place(
-                        unit,
-                        function,
-                        block,
-                        instruction,
-                        *base,
-                        state,
-                        diagnose,
-                    )?,
+                    | MIRPlaceAggregateOp::Variant { base, .. } => {
+                        use_place(unit, function, block, instruction, *base, state, diagnose)?
+                    }
                     MIRPlaceAggregateOp::Index { base, index, .. } => {
-                        use_place(
-                            unit,
-                            function,
-                            block,
-                            instruction,
-                            *base,
-                            state,
-                            diagnose,
-                        )?;
+                        use_place(unit, function, block, instruction, *base, state, diagnose)?;
                         use_value(unit, function, block, instruction, index, state, diagnose)?;
                     }
                 }
@@ -352,6 +344,16 @@ fn transfer_instruction(
             for arg in args {
                 use_value(unit, function, block, instruction, arg, state, diagnose)?;
             }
+        }
+        MIRInstrKind::VaStart { list, last } => {
+            use_value(unit, function, block, instruction, list, state, diagnose)?;
+            use_value(unit, function, block, instruction, last, state, diagnose)?;
+        }
+        MIRInstrKind::VaEnd { list } => {
+            use_value(unit, function, block, instruction, list, state, diagnose)?;
+        }
+        MIRInstrKind::VaArg { list, .. } => {
+            use_value(unit, function, block, instruction, list, state, diagnose)?;
         }
         MIRInstrKind::BinOp { lhs, rhs, .. } => {
             use_value(unit, function, block, instruction, lhs, state, diagnose)?;
@@ -425,11 +427,28 @@ fn transfer_instruction(
                 }
             }
         }
-        MIRInstrKind::Unreachable | MIRInstrKind::Emit { .. } => {
-            if let MIRInstrKind::Emit { value } = kind {
+        MIRInstrKind::MakeStaged { captures, .. } => {
+            for value in captures {
                 use_value(unit, function, block, instruction, value, state, diagnose)?;
             }
         }
+        MIRInstrKind::ApplyStaged { staged, args, .. } => {
+            use_value(unit, function, block, instruction, staged, state, diagnose)?;
+            for value in args {
+                use_value(unit, function, block, instruction, value, state, diagnose)?;
+            }
+        }
+        MIRInstrKind::StagedReturn { value } => {
+            use_value(unit, function, block, instruction, value, state, diagnose)?;
+        }
+        MIRInstrKind::StagedExit { .. } => {}
+        MIRInstrKind::StagedMove { value, .. } => {
+            use_value(unit, function, block, instruction, value, state, diagnose)?;
+        }
+        MIRInstrKind::StagedUse { value } => {
+            use_value(unit, function, block, instruction, value, state, diagnose)?;
+        }
+        MIRInstrKind::Unreachable => {}
     }
     Ok(())
 }
@@ -444,7 +463,7 @@ fn use_value(
     diagnose: bool,
 ) -> Result<(), MIRAnalysisError> {
     match value {
-        MIRValue::Place(place) | MIRValue::Copy(place) => {
+        MIRValue::PlaceRef(place) | MIRValue::Copy(place) => {
             use_place(unit, function, block, instruction, *place, state, diagnose)
         }
         MIRValue::Move(place) => {
@@ -555,9 +574,12 @@ fn check_function_exit(
         return Ok(());
     }
 
-    let root_scope = function.scopes.first().map(|scope| scope.id);
+    let definition = function
+        .definition()
+        .expect("ownership analysis reached a MIR declaration");
+    let root_scope = definition.scopes().first().map(|scope| scope.id);
 
-    for declaration in &function.places {
+    for declaration in definition.places() {
         if !declaration.nodrop {
             continue;
         }
@@ -577,7 +599,7 @@ fn check_function_exit(
         }
     }
 
-    for (index, parameter) in function.prototype.signature.params.iter().enumerate() {
+    for (index, parameter) in function.prototype().signature.params.iter().enumerate() {
         if !parameter.nodrop {
             continue;
         }
@@ -633,12 +655,12 @@ fn ownership_error(
     message: String,
 ) -> MIRAnalysisError {
     MIRAnalysisError::OwnershipViolation {
-        function: function.id,
+        function: function.id(),
         block,
         instruction,
         scope,
         place,
-        function_name: function.prototype.signature.display_name().to_string(),
+        function_name: function.prototype().signature.display_name().to_string(),
         message,
     }
 }
@@ -646,12 +668,13 @@ fn ownership_error(
 fn place_name(unit: &MIRUnit, function: &MIRFunction, place: MIRPlace) -> String {
     match place {
         MIRPlace::FunctionLocal(id) => function
-            .place(id)
+            .definition()
+            .and_then(|definition| definition.place(id))
             .and_then(|declaration| declaration.debug_name.as_ref())
             .map(ToString::to_string)
             .unwrap_or_else(|| "temporary".to_string()),
         MIRPlace::Parameter(id) => function
-            .prototype
+            .prototype()
             .signature
             .params
             .get(id.index())

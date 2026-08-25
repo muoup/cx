@@ -1,23 +1,59 @@
 use crate::environment::{ScopeExitTarget, TypeEnvironment};
-use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
+use crate::type_checking::coercion::implicit::{implicit_cast, promotion::std_rval_promotion};
 use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_hir::ast::expression::HIRExpression;
+use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
-    expression::{THIRExpression, THIRExpressionKind},
+    expression::THIRExpressionKind,
 };
 use cx_tokens::TokenRange;
+
+fn case_body_expression(
+    block: &[HIRExpression],
+    start: usize,
+    end: usize,
+    fallback_range: &TokenRange,
+) -> HIRExpression {
+    let expressions = block[start..end].to_vec();
+    let range = expressions
+        .first()
+        .map(|expression| expression.range.clone())
+        .unwrap_or_else(|| fallback_range.clone());
+    HIRExpression {
+        kind: HIRExprKind::Block {
+            exprs: expressions,
+            creates_scope: false,
+        },
+        range,
+    }
+}
+
+fn next_case_boundary(
+    block_len: usize,
+    start: usize,
+    cases: &[(HIRExpression, usize)],
+    default_case: Option<&usize>,
+) -> usize {
+    cases
+        .iter()
+        .map(|(_, index)| *index)
+        .chain(default_case.copied())
+        .filter(|index| *index > start)
+        .min()
+        .unwrap_or(block_len)
+        .min(block_len)
+}
 
 pub fn typecheck_switch(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     condition: &HIRExpression,
     block: &[HIRExpression],
-    cases: &[(u64, usize)],
+    cases: &[(HIRExpression, usize)],
     default_case: Option<&usize>,
 ) -> CXResult<TypecheckResult> {
     env.push_scope(true, false);
@@ -28,67 +64,61 @@ pub fn typecheck_switch(
     let condition_value = typecheck_expr(env, namespace, condition, None)
         .and_then(|v| v.standard_ready_coerce(env, condition.token_range()))
         .and_then(|v| std_rval_promotion(env, v))?;
+    let THIRTypeKind::Integer { .. } = condition_value.get_type().kind else {
+        return env.log_error(
+            &condition_value.token_range,
+            format!(
+                "Switch condition must be an integer type, found {}",
+                condition_value.get_type().display_with(&env.symbols)
+            ),
+        );
+    };
+    let condition_type = condition_value.get_type().clone();
     let base_snapshot = env.function.current_snapshot();
 
-    // Build match arms from the cases
-    // Each case maps a constant value to a range of expressions in the block
     let mut arms = Vec::new();
 
-    for (case_index, case_value) in cases {
-        // Find the expression at this case index
-        let Some(case_expr) = block.get(*case_index as usize) else {
+    for (case_expr, case_index) in cases {
+        let case_index = *case_index;
+        if case_index > block.len() {
             return env.log_error(
                 &condition_value.token_range,
                 format!(
                     "Switch case index {} out of bounds (block has {} expressions)",
-                    *case_index,
+                    case_index,
                     block.len()
                 ),
             );
-        };
+        }
+        let case_end = next_case_boundary(block.len(), case_index, cases, default_case);
+        let case_body = case_body_expression(block, case_index, case_end, case_expr.token_range());
 
-        let case_body_expr = typecheck_expr(env, namespace, case_expr, None)
-            .and_then(|v| v.standard_ready_coerce(env, case_expr.token_range()))?;
+        let case_value = typecheck_expr(env, namespace, case_expr, None)
+            .and_then(|v| v.standard_ready_coerce(env, case_expr.token_range()))
+            .and_then(|v| std_rval_promotion(env, v))
+            .and_then(|v| implicit_cast(env, v, &condition_type))?;
+
+        let case_body_expr = typecheck_expr(env, namespace, &case_body, None)
+            .and_then(|v| v.standard_ready_coerce(env, case_body.token_range()))?;
         if expr_may_fall_through(&case_body_expr) {
             env.function.enqueue_scope_arrow(
                 &ScopeExitTarget {
                     target_scope: join_scope_idx,
                     sink: crate::environment::ScopeArrowSink::Merge,
-                    label: format!("case {}", case_value),
+                    label: format!("case {}", case_index),
                 },
                 env.function.current_snapshot(),
             );
         }
         env.function.restore_snapshot(&base_snapshot);
 
-        // Create a pattern expression that matches the constant value
-        // Use the condition's integer type for the pattern
-        let THIRTypeKind::Integer { _type, signed } = &condition_value.get_type().kind else {
-            return env.log_error(
-                &condition_value.token_range,
-                format!(
-                    "Switch condition must be an integer type, found {}",
-                    condition_value.get_type().display_with(&env.symbols)
-                ),
-            );
-        };
-
-        let pattern_expr = THIRExpression {
-            token_range: TokenRange::internal(),
-            kind: THIRExpressionKind::IntLiteral(*case_value as i64),
-            _type: THIRType::from(THIRTypeKind::Integer {
-                signed: *signed,
-                _type: *_type,
-            }),
-        };
-
-        arms.push((Box::new(pattern_expr), Box::new(case_body_expr)));
+        arms.push((Box::new(case_value), Box::new(case_body_expr)));
     }
 
     // Handle default case
     let default_body = match default_case {
         Some(&idx) => {
-            let Some(expr) = block.get(idx) else {
+            if idx > block.len() {
                 return env.log_error(
                     condition_value.token_range,
                     format!(
@@ -97,8 +127,10 @@ pub fn typecheck_switch(
                         block.len()
                     ),
                 );
-            };
-            let body_expr = typecheck_expr(env, namespace, expr, None)
+            }
+            let end = next_case_boundary(block.len(), idx, cases, default_case);
+            let expr = case_body_expression(block, idx, end, &condition_value.token_range);
+            let body_expr = typecheck_expr(env, namespace, &expr, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
             if expr_may_fall_through(&body_expr) {
                 env.function.enqueue_scope_arrow(

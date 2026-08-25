@@ -112,6 +112,15 @@ pub(crate) fn codegen_instruction(
             get_method_return(context, method_sig, inst)
         }
 
+        LMIRInstructionKind::VaStart { .. }
+        | LMIRInstructionKind::VaEnd { .. }
+        | LMIRInstructionKind::VaArg { .. } => {
+            return CXStdErrMessage::result(
+                "UNIMPLEMENTED",
+                "Cranelift lowering of variadic builtins is not implemented",
+            )
+        }
+
         LMIRInstructionKind::Return { value } => {
             match value {
                 Some(value) => {
@@ -555,10 +564,7 @@ pub(crate) fn codegen_instruction(
         }
 
         LMIRInstructionKind::Memcpy {
-            dest,
-            src,
-            size,
-            ..
+            dest, src, size, ..
         } => {
             let dest = context.get_value(dest)?.as_value();
             let src = context.get_value(src)?.as_value();
@@ -701,7 +707,9 @@ pub(crate) fn codegen_instruction(
             let float_bytes = from.bytes();
             let int_bytes = itype.bytes();
 
-            let val = if float_bytes > int_bytes {
+            let val = if float_bytes > int_bytes
+                && context.builder.func.dfg.value_type(ival) != to_cl_type
+            {
                 context.builder.ins().ireduce(to_cl_type, ival)
             } else if float_bytes < int_bytes && *signed {
                 context.builder.ins().sextend(to_cl_type, ival)

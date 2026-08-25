@@ -27,12 +27,16 @@ use crate::{
 /// loses its memory reference wrapper, meaning this conversion will be skipped.
 ///
 
-pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResult<CoercionResult> {
+pub fn try_conversion(
+    env: &mut TypeEnvironment,
+    expr: THIRExpression,
+    allow_arrays: bool,
+) -> CXResult<CoercionResult> {
     let Some(mem_inner) = env.symbols.mem_ref_inner(&expr._type).cloned() else {
         return CoercionResult::unapplied(expr);
     };
 
-    if mem_inner.is_array() || mem_inner.is_str() || mem_inner.is_function() {
+    if (!allow_arrays && mem_inner.is_array()) || mem_inner.is_str() || mem_inner.is_function() {
         return CoercionResult::unapplied(expr);
     }
 

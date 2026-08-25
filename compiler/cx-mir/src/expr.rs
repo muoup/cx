@@ -1,7 +1,10 @@
 use cx_tokens::TokenRange;
 use cx_util::{dense_id, identifier::CXIdent, unsafe_float::FloatWrapper};
 
+use std::sync::Arc;
+
 use crate::{
+    MIRStagedTemplate,
     global::{MIRFunctionID, MIRGlobalID},
     op::{MIRBinaryOp, MIRCoercion, MIRUnaryOp},
     ty::{MIRFloatType, MIRIntType, MIRTypeID},
@@ -22,6 +25,7 @@ pub enum MIRPlace {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRConstant {
+    // TODO: Revamp and simplify this a bit; Add staged expressions w/ a more streamlined comptime engine in the MIR layer
     Unit,
     Bool(bool),
     String(String),
@@ -37,6 +41,19 @@ pub enum MIRConstant {
     Null {
         ty: MIRTypeID,
     },
+    Aggregate {
+        ty: MIRTypeID,
+        fields: Vec<(usize, MIRConstant)>,
+    },
+    Global {
+        global: MIRGlobalID,
+        ty: MIRTypeID,
+    },
+    GlobalOffset {
+        global: MIRGlobalID,
+        offset: i64,
+        ty: MIRTypeID,
+    },
     Function(MIRFunctionID),
     Undefined,
 }
@@ -44,7 +61,7 @@ pub enum MIRConstant {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRValue {
     Register(MIRRegister),
-    Place(MIRPlace),
+    PlaceRef(MIRPlace),
     Copy(MIRPlace),
     Move(MIRPlace),
     Constant(MIRConstant),
@@ -65,9 +82,9 @@ pub enum MIRInstrOperand<'a> {
 impl MIRInstrOperand<'_> {
     pub const fn place(self) -> Option<MIRPlace> {
         match self {
-            Self::Value(MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place)) => {
-                Some(*place)
-            }
+            Self::Value(
+                MIRValue::PlaceRef(place) | MIRValue::Copy(place) | MIRValue::Move(place),
+            ) => Some(*place),
             Self::Place(place) => Some(place),
             _ => None,
         }
@@ -166,6 +183,18 @@ pub enum MIRValueAggregateOp {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MIRCallKind {
+    Runtime,
+    Comptime,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MIRStagedExitKind {
+    Break,
+    Continue,
+}
+
 #[derive(Debug, Clone)]
 pub struct MIRBasicBlock {
     pub id: MIRBasicBlockID,
@@ -185,7 +214,8 @@ impl MIRBasicBlock {
     }
 
     pub fn push(&mut self, kind: MIRInstrKind) -> &mut MIRInstr {
-        self.instrs.push(MIRInstr::new(kind));
+        self.instrs
+            .push(MIRInstr::new(kind, TokenRange::internal()));
         self.instrs
             .last_mut()
             .expect("an instruction was just pushed")
@@ -205,11 +235,7 @@ pub struct MIRInstr {
 }
 
 impl MIRInstr {
-    pub fn new(kind: MIRInstrKind) -> Self {
-        Self::new_at(kind, TokenRange::internal())
-    }
-
-    pub fn new_at(kind: MIRInstrKind, token_range: TokenRange) -> Self {
+    pub fn new(kind: MIRInstrKind, token_range: TokenRange) -> Self {
         Self { kind, token_range }
     }
 
@@ -263,12 +289,15 @@ impl MIRInstr {
             | MIRInstrKind::BinOp { out, .. }
             | MIRInstrKind::UnOp { out, .. }
             | MIRInstrKind::Coerce { out, .. } => Some(*out),
+            MIRInstrKind::MakeStaged { out, .. } => Some(*out),
+            MIRInstrKind::StagedMove { out, .. } => Some(*out),
             MIRInstrKind::Assign {
                 target: MIRAssignTarget::Register(register),
                 ..
             } => Some(*register),
             MIRInstrKind::AggregateOp(MIRAggregateOp::Value { out, .. }) => Some(*out),
-            MIRInstrKind::Call { out, .. } => *out,
+            MIRInstrKind::Call { out, .. } | MIRInstrKind::ApplyStaged { out, .. } => *out,
+            MIRInstrKind::VaArg { out, .. } => Some(*out),
             _ => None,
         };
         register.into_iter()
@@ -277,7 +306,6 @@ impl MIRInstr {
     pub fn visit_operands(&self, mut visit: impl FnMut(MIRInstrOperand<'_>)) {
         match &self.kind {
             MIRInstrKind::Assign { value, .. }
-            | MIRInstrKind::Emit { value }
             | MIRInstrKind::UnOp { operand: value, .. }
             | MIRInstrKind::Coerce { operand: value, .. }
             | MIRInstrKind::Assert {
@@ -335,11 +363,37 @@ impl MIRInstr {
                     visit(MIRInstrOperand::Value(arg));
                 }
             }
+            MIRInstrKind::MakeStaged { captures, .. } => {
+                for capture in captures {
+                    visit(MIRInstrOperand::Value(capture));
+                }
+            }
+            MIRInstrKind::StagedMove { value, .. } => {
+                visit(MIRInstrOperand::Value(value));
+            }
+            MIRInstrKind::StagedUse { value } => {
+                visit(MIRInstrOperand::Value(value));
+            }
+            MIRInstrKind::ApplyStaged { staged, args, .. } => {
+                visit(MIRInstrOperand::Value(staged));
+                for arg in args {
+                    visit(MIRInstrOperand::Value(arg));
+                }
+            }
+            MIRInstrKind::VaStart { list, last } => {
+                visit(MIRInstrOperand::Value(list));
+                visit(MIRInstrOperand::Value(last));
+            }
+            MIRInstrKind::VaEnd { list } | MIRInstrKind::VaArg { list, .. } => {
+                visit(MIRInstrOperand::Value(list));
+            }
             MIRInstrKind::BinOp { lhs, rhs, .. } => {
                 visit(MIRInstrOperand::Value(lhs));
                 visit(MIRInstrOperand::Value(rhs));
             }
-            MIRInstrKind::Return { value: Some(value) } => visit(MIRInstrOperand::Value(value)),
+            MIRInstrKind::Return { value: Some(value) } | MIRInstrKind::StagedReturn { value } => {
+                visit(MIRInstrOperand::Value(value))
+            }
             MIRInstrKind::Return { value: None } => {}
             MIRInstrKind::Jump { target } => {
                 visit_target_operands(target, &mut visit);
@@ -387,6 +441,7 @@ impl MIRInstr {
             | MIRInstrKind::Create { .. }
             | MIRInstrKind::ScopeEnter { .. }
             | MIRInstrKind::ScopeExit { .. }
+            | MIRInstrKind::StagedExit { .. }
             | MIRInstrKind::Unreachable => {}
         }
     }
@@ -441,8 +496,21 @@ pub enum MIRInstrKind {
 
     Call {
         out: Option<MIRRegister>,
+        kind: MIRCallKind,
         callee: MIRValue,
         args: Vec<MIRValue>,
+    },
+    VaStart {
+        list: MIRValue,
+        last: MIRValue,
+    },
+    VaEnd {
+        list: MIRValue,
+    },
+    VaArg {
+        out: MIRRegister,
+        list: MIRValue,
+        ty: MIRTypeID,
     },
 
     BinOp {
@@ -494,8 +562,27 @@ pub enum MIRInstrKind {
     },
     Unreachable,
 
-    // Comptime-only nodes
-    Emit {
+    MakeStaged {
+        out: MIRRegister,
+        template: Arc<MIRStagedTemplate>,
+        captures: Vec<MIRValue>,
+    },
+    ApplyStaged {
+        out: Option<MIRRegister>,
+        staged: MIRValue,
+        args: Vec<MIRValue>,
+    },
+    StagedReturn {
+        value: MIRValue,
+    },
+    StagedExit {
+        kind: MIRStagedExitKind,
+    },
+    StagedMove {
+        out: MIRRegister,
+        value: MIRValue,
+    },
+    StagedUse {
         value: MIRValue,
     },
 }
@@ -509,6 +596,8 @@ impl MIRInstrKind {
                 | Self::Branch { .. }
                 | Self::IntSwitch { .. }
                 | Self::VariantSwitch { .. }
+                | Self::StagedReturn { .. }
+                | Self::StagedExit { .. }
                 | Self::Unreachable
         )
     }

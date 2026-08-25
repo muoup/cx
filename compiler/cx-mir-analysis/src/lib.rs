@@ -15,21 +15,16 @@ pub use types::{
     MIRInstructionLiveness,
 };
 
-use cx_mir::{MIRUnit, validate};
+use cx_mir::MIRUnit;
 
 /// Optionally validates `unit`, then computes backward place liveness.
 pub fn analyze(
     unit: &MIRUnit,
     options: MIRAnalysisOptions,
 ) -> Result<MIRAnalysis, MIRAnalysisError> {
-    if options.validate {
-        validate(unit)?;
-    }
-
     let functions = unit
-        .functions
-        .iter()
-        .map(|function| (function.id, liveness::analyze_function(function)))
+        .functions()
+        .map(|function| (function.id(), liveness::analyze_function(function)))
         .collect();
 
     ownership::check(unit)?;

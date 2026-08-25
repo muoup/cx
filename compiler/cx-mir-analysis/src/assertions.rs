@@ -31,7 +31,7 @@ impl ConstEnvironment {
                 .get(register)
                 .cloned()
                 .unwrap_or(ConstValue::Unknown),
-            MIRValue::Place(place) | MIRValue::Copy(place) | MIRValue::Move(place) => self
+            MIRValue::PlaceRef(place) | MIRValue::Copy(place) | MIRValue::Move(place) => self
                 .places
                 .get(place)
                 .cloned()
@@ -74,8 +74,8 @@ fn merge_map<K: Ord + Copy>(
 }
 
 pub(crate) fn check(unit: &MIRUnit) -> Result<(), MIRAnalysisError> {
-    for function in &unit.functions {
-        if function.prototype.signature.safe {
+    for function in unit.functions() {
+        if function.prototype().signature.safe {
             check_function(function)?;
         }
     }
@@ -83,19 +83,20 @@ pub(crate) fn check(unit: &MIRUnit) -> Result<(), MIRAnalysisError> {
 }
 
 fn check_function(function: &MIRFunction) -> Result<(), MIRAnalysisError> {
-    let Some(entry) = function.entry else {
+    let Some(definition) = function.definition() else {
         return Ok(());
     };
-    if entry.index() >= function.blocks.len() {
+    let entry = definition.entry();
+    if entry.index() >= definition.blocks().len() {
         return Ok(());
     }
 
-    let mut entries = vec![None; function.blocks.len()];
+    let mut entries = vec![None; definition.blocks().len()];
     entries[entry.index()] = Some(ConstEnvironment::default());
 
     loop {
         let mut changed = false;
-        for block in &function.blocks {
+        for block in definition.blocks() {
             let Some(environment) = entries[block.id.index()].clone() else {
                 continue;
             };
@@ -104,7 +105,7 @@ fn check_function(function: &MIRFunction) -> Result<(), MIRAnalysisError> {
                 if target.block.index() >= entries.len() {
                     continue;
                 }
-                let Some(target_block) = function.block(target.block) else {
+                let Some(target_block) = definition.block(target.block) else {
                     continue;
                 };
                 let mut incoming = environment.clone();
@@ -129,7 +130,7 @@ fn check_function(function: &MIRFunction) -> Result<(), MIRAnalysisError> {
         }
     }
 
-    for block in &function.blocks {
+    for block in definition.blocks() {
         let Some(mut environment) = entries[block.id.index()].clone() else {
             continue;
         };
@@ -138,7 +139,7 @@ fn check_function(function: &MIRFunction) -> Result<(), MIRAnalysisError> {
                 && is_false(&environment.value(condition))
             {
                 return Err(MIRAnalysisError::ProvenFalseAssertion {
-                    function: function.id,
+                    function: function.id(),
                     block: block.id,
                     instruction: instruction_index,
                     message: message.clone(),
@@ -223,6 +224,9 @@ fn transfer_instruction(environment: &mut ConstEnvironment, kind: &MIRInstrKind)
                 environment.registers.insert(*out, ConstValue::Unknown);
             }
         }
+        MIRInstrKind::VaArg { out, .. } => {
+            environment.registers.insert(*out, ConstValue::Unknown);
+        }
         MIRInstrKind::BinOp { out, op, lhs, rhs } => {
             let lhs = environment.value(lhs);
             let rhs = environment.value(rhs);
@@ -255,8 +259,15 @@ fn transfer_instruction(environment: &mut ConstEnvironment, kind: &MIRInstrKind)
         | MIRInstrKind::Branch { .. }
         | MIRInstrKind::IntSwitch { .. }
         | MIRInstrKind::VariantSwitch { .. }
+        | MIRInstrKind::VaStart { .. }
+        | MIRInstrKind::VaEnd { .. }
         | MIRInstrKind::Unreachable
-        | MIRInstrKind::Emit { .. } => {}
+        | MIRInstrKind::MakeStaged { .. }
+        | MIRInstrKind::ApplyStaged { .. }
+        | MIRInstrKind::StagedReturn { .. }
+        | MIRInstrKind::StagedExit { .. }
+        | MIRInstrKind::StagedMove { .. }
+        | MIRInstrKind::StagedUse { .. } => {}
     }
 }
 
@@ -267,9 +278,12 @@ fn constant_value(constant: &MIRConstant) -> ConstValue {
         MIRConstant::Integer { value, .. } => ConstValue::Int(*value),
         MIRConstant::Float { value, .. } => ConstValue::Float(value.into()),
         MIRConstant::Null { .. } => ConstValue::Int(0),
-        MIRConstant::String(_) | MIRConstant::Function(_) | MIRConstant::Undefined => {
-            ConstValue::Unknown
-        }
+        MIRConstant::Aggregate { .. } => ConstValue::Unknown,
+        MIRConstant::String(_)
+        | MIRConstant::Global { .. }
+        | MIRConstant::GlobalOffset { .. }
+        | MIRConstant::Function(_)
+        | MIRConstant::Undefined => ConstValue::Unknown,
     }
 }
 

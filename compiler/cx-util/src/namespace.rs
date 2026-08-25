@@ -265,3 +265,24 @@ impl Display for QualifiedName {
         write!(f, "{}", self.as_flat_name())
     }
 }
+
+pub fn mangle_namespace_symbol(name: &QualifiedName) -> String {
+    let mut mangled = String::from("_N");
+    push_mangled_component(
+        &mut mangled,
+        name.namespace.segments().len().to_string().as_str(),
+    );
+
+    for segment in name.namespace.segments() {
+        push_mangled_component(&mut mangled, segment.as_str());
+    }
+
+    push_mangled_component(&mut mangled, name.name.as_str());
+    mangled
+}
+
+fn push_mangled_component(mangled: &mut String, component: &str) {
+    mangled.push_str(component.len().to_string().as_str());
+    mangled.push('_');
+    mangled.push_str(component);
+}

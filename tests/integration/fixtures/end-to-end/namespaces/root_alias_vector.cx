@@ -1,0 +1,13 @@
+/* CX-STDOUT: 1 */
+
+import std::vector as _;
+
+#include <stdio.h>
+
+int main() {
+    vector<int> vec = vector::new<int>();
+    vec |> vector::push<int>(7);
+    printf("%zu\n", vec.length);
+    move vec |> vector::drop<int>();
+    return 0;
+}

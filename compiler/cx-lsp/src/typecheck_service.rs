@@ -81,6 +81,7 @@ pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckRepo
             architecture: ArchitectureConfig::native(),
             backend: CompilerBackend::Cranelift,
             optimization_level: OptimizationLevel::O0,
+            require_explicit_return: None,
             output: project_root.join("cx-lsp-output"),
             working_directory: project_root.to_path_buf(),
 
@@ -95,8 +96,8 @@ pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckRepo
 
             link_entries: vec![],
             native_objects: vec![],
+            predefined_macros: vec![],
         },
-        module_mode: true,
         module_db: cx_pipeline_data::db::ModuleData::new(),
         linking_files: Mutex::new(HashSet::new()),
     };
@@ -164,11 +165,7 @@ fn lsp_error_to_diagnostic(error: &LSPErrors, file_contents: &str) -> Diagnostic
                 ..Default::default()
             }
         }
-        LSPErrors::FatalError {
-            message,
-            line,
-            ..
-        } => Diagnostic {
+        LSPErrors::FatalError { message, line, .. } => Diagnostic {
             range: line_range(file_contents, *line),
             severity: Some(DiagnosticSeverity::ERROR),
             message: message.clone(),

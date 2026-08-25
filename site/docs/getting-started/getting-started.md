@@ -73,11 +73,15 @@ larger multi-file projects should use project mode.
 - `--backend-cranelift`: use the Cranelift backend
 - `--backend-llvm`: use the LLVM backend when available
 - `-O0`, `-O1`, `-O2`, `-O3`, `-Osize`, `-Ofast`: choose optimization level
+- `-c`: compile without linking
+- `-I <directory>`: add a header search directory
+- `-D <name>[=value]`: define a preprocessor macro
 - `-o <output_file>`: set the output path
 - `--verbose`: print each compilation step
+- `--version`: print the compiler version
 
 ## Current Status
 
 CX is a work in progress. It aims for C99 compatibility, but not every C feature
-is implemented yet. To avoid confusion, direct `.c` file compilation is not the
-primary supported mode today; use `.cx` sources while the compiler grows.
+is implemented yet. Direct `.c` compilation is supported in single-file mode;
+project mode remains the workflow for CX module builds.

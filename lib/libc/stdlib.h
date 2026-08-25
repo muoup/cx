@@ -17,9 +17,11 @@ void* realloc(void* ptr, size_t size);
 void free(void* ptr);
 
 int atoi(const char *str);
+int abs(int value);
 double atof(const char *str);
 int rand();
 int srand(unsigned int seed);
 div_t div(int numer, int denom);
+int system(const char *command);
 
 void exit(int status);

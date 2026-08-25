@@ -5,6 +5,7 @@ use speedy::{Readable, Writable};
 use crate::{
     thir::contextual_eq::{TypeComparisonState, TypeContextEqual},
     thir::data::{THIRFnSignature, TemplateInfo},
+    thir::expression::{THIRExpression, THIRExpressionKind},
     type_context::THIRTypeContext,
 };
 
@@ -102,6 +103,7 @@ pub struct THIRBitfieldAccess {
 #[derive(Debug, Clone)]
 pub enum THIRTypeKind {
     Void,
+    Unreachable,
     Integer {
         _type: THIRIntType,
         signed: bool,
@@ -126,7 +128,7 @@ pub enum THIRTypeKind {
         bitfield: Option<THIRBitfieldAccess>,
     },
     Array {
-        length: usize,
+        length: Box<THIRExpression>,
         inner_type: THIRTypeID,
     },
     Function {
@@ -290,13 +292,6 @@ impl THIRType {
         }
     }
 
-    pub fn internal_function() -> Self {
-        THIRType::from(THIRTypeKind::Function {
-            signature: Box::new(THIRFnSignature::default()),
-        })
-        .with_strong_identifier(CXIdent::from("__internal_function"))
-    }
-
     pub fn with_strong_identifier(mut self, name: CXIdent) -> THIRType {
         self.strong_identifier = Some(name.as_string());
         self
@@ -334,6 +329,10 @@ impl THIRType {
 
     pub fn get_specifier(&self, specifier: HIRTypeQualifiers) -> bool {
         self.specifiers & specifier == specifier
+    }
+
+    pub fn cvr_compatible_with(&self, other: &THIRType) -> bool {
+        (self.specifiers ^ other.specifiers) & self.specifiers == 0
     }
 
     pub fn is_pointer(&self) -> bool {
@@ -376,8 +375,12 @@ impl THIRType {
         matches!(self.kind, THIRTypeKind::Float { .. })
     }
 
-    pub fn is_unit(&self) -> bool {
+    pub fn is_void(&self) -> bool {
         matches!(self.kind, THIRTypeKind::Void)
+    }
+
+    pub fn is_unreachable(&self) -> bool {
+        matches!(self.kind, THIRTypeKind::Unreachable)
     }
 
     pub fn is_structure(&self) -> bool {
@@ -574,6 +577,7 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRTypeKi
     ) -> bool {
         match (self, other) {
             (THIRTypeKind::Void, THIRTypeKind::Void)
+            | (THIRTypeKind::Unreachable, THIRTypeKind::Unreachable)
             | (THIRTypeKind::Undefined, THIRTypeKind::Undefined)
             | (THIRTypeKind::Str, THIRTypeKind::Str) => true,
             (
@@ -615,14 +619,24 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRTypeKi
             ) => left_bitfield == right_bitfield && left.compare(right, definitions, state),
             (
                 THIRTypeKind::Array {
-                    length: left_len,
+                    length: left_length,
                     inner_type: left_inner,
                 },
                 THIRTypeKind::Array {
-                    length: right_len,
+                    length: right_length,
                     inner_type: right_inner,
                 },
-            ) => left_len == right_len && left_inner.compare(right_inner, definitions, state),
+            ) => {
+                let same_length = match (&left_length.kind, &right_length.kind) {
+                    (
+                        THIRExpressionKind::IntLiteral(left_length),
+                        THIRExpressionKind::IntLiteral(right_length),
+                    ) => left_length == right_length,
+                    _ => true,
+                };
+
+                same_length && left_inner.compare(right_inner, definitions, state)
+            }
             (
                 THIRTypeKind::Function { signature: left },
                 THIRTypeKind::Function { signature: right },

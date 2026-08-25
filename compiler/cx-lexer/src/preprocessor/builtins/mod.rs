@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use cx_tokens::token::{Token, TokenKind};
 
-use crate::context::Macro;
+use crate::context::{BuiltinMacro, Macro};
 
 pub(crate) fn builtin_macros() -> HashMap<String, Macro> {
     let mut macros = HashMap::new();
@@ -10,6 +10,8 @@ pub(crate) fn builtin_macros() -> HashMap<String, Macro> {
     define_language_predefines(&mut macros);
     define_compiler_predefines(&mut macros);
     define_target_predefines(&mut macros);
+    macros.insert("__FILE__".to_string(), Macro::Builtin(BuiltinMacro::File));
+    macros.insert("__LINE__".to_string(), Macro::Builtin(BuiltinMacro::Line));
 
     macros
 }

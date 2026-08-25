@@ -1,23 +1,13 @@
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
-use crate::thir::r#type::THIRType;
+use crate::thir::{expression::THIRExpression, r#type::THIRType};
 
 #[derive(Debug, Clone)]
-pub struct MIRGlobalVariable {
-    pub kind: MIRGlobalVarKind,
-    pub is_mutable: bool,
+pub struct THIRGlobalVariable {
+    pub name: CXIdent,
+    pub _type: THIRType,
+    pub initializer: Option<THIRExpression>,
+ 
     pub linkage: LinkageMode,
-}
-
-#[derive(Debug, Clone)]
-pub enum MIRGlobalVarKind {
-    StringLiteral {
-        name: CXIdent,
-        value: String,
-    },
-    Variable {
-        name: CXIdent,
-        _type: THIRType,
-        initializer: Option<i64>,
-    },
+    pub is_mutable: bool,
 }

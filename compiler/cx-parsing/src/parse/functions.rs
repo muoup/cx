@@ -40,6 +40,7 @@ pub fn try_function_parse(
     name: CXIdent,
     linkage: LinkageMode,
     symbol_naming: HIRSymbolNameScheme,
+    noreturn: bool,
 ) -> CXResult<Option<FunctionDeclaration>> {
     let range_start = data.tokens.index;
 
@@ -75,12 +76,16 @@ pub fn try_function_parse(
     };
 
     let args = parse_params(data)?;
+    let contract = HIRFunctionContract {
+        noreturn,
+        ..args.contract
+    };
     let prototype = HIRFunctionPrototype {
         return_type,
         kind,
         params: args.params,
         var_args: args.var_args,
-        contract: args.contract,
+        contract,
         linkage,
         symbol_naming,
         range: TokenRange::new(
@@ -238,6 +243,7 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<HIRFunc
 
     let mut contract = HIRFunctionContract {
         safe,
+        noreturn: false,
         precondition: None,
         postcondition: None,
     };

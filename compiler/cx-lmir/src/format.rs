@@ -124,6 +124,21 @@ impl Display for LMIRGlobalInitializer {
                 integer_width(*_type)
             ),
             Self::Float { value, _type } => write!(f, "{value}:{}", float_name(*_type)),
+            Self::Aggregate { fields } => {
+                f.write_str("{")?;
+                for (index, value) in fields.iter().enumerate() {
+                    if index != 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{}: {}", value.0, value.1)?;
+                }
+                f.write_str("}")
+            }
+            Self::Global(global) => write!(f, "global({global})"),
+            Self::GlobalOffset { global, offset } => {
+                write!(f, "global({global}) + {offset}")
+            }
+            Self::Function(function) => write!(f, "function({function})"),
             Self::Null => f.write_str("null"),
         }
     }
@@ -229,7 +244,13 @@ impl Display for LMIRInstruction {
                 value,
                 coercion_type,
             } => {
-                write!(f, "{coercion_type:?}({value}) -> {}", self.value_type)
+                let coerce_type_str = format!("{coercion_type:?}").to_ascii_lowercase();
+
+                write!(
+                    f,
+                    "coerce.{} {value} -> {}",
+                    coerce_type_str, self.value_type
+                )
             }
             LMIRInstructionKind::Return { value } => {
                 write!(f, "return")?;
@@ -283,6 +304,13 @@ impl Display for LMIRInstruction {
                     write!(f, "{arg}")?;
                 }
                 write!(f, ")")
+            }
+            LMIRInstructionKind::VaStart { list, last } => {
+                write!(f, "va_start({list}, {last})")
+            }
+            LMIRInstructionKind::VaEnd { list } => write!(f, "va_end({list})"),
+            LMIRInstructionKind::VaArg { list, _type } => {
+                write!(f, "va_arg({list}, {_type})")
             }
             LMIRInstructionKind::PointerBinOp {
                 left,

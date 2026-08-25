@@ -1,5 +1,5 @@
 use cx_hir::{
-    ast::{expression::HIRExpression, template::HIRTemplatePrototype},
+    ast::{expression::HIRExpression, template::HIRTemplatePrototype, types::HIRTagKind},
     symbols::HIRSymbol,
 };
 use cx_log::error::{CXRawResult, message::CXStdErrMessage};
@@ -10,7 +10,7 @@ use crate::{
     EnvironmentNamespace,
     thir::{
         data::{THIRComptimeFnPrototype, THIRFnPrototype, THIRType, THIRTypeID, THIRTypeKind},
-        expression::{THIRExpression, THIRExpressionKind},
+        expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
     },
     type_context::THIRTypeContext,
 };
@@ -22,7 +22,6 @@ pub enum MIRSymbol {
     ComptimeFunctionReference {
         prototype: THIRComptimeFnPrototype,
         namespace: EnvironmentNamespace,
-        body: Box<HIRExpression>,
         template_bindings: Vec<(CXIdent, THIRTypeID)>,
     },
     StagedExpression {
@@ -31,10 +30,12 @@ pub enum MIRSymbol {
         expr: Box<HIRExpression>,
         expected_type: THIRType,
     },
+    /// A local binding holding a parameterized staged value, e.g. a staged
+    /// parameter of a comptime function. The referenced value is supplied by
+    /// the caller at evaluation time; no body is stored here.
     StagedExpressionFunction {
-        namespace: EnvironmentNamespace,
-        params: Vec<(CXIdent, THIRType)>,
-        body: Box<HIRExpression>,
+        local_id: THIRLocalID,
+        params: Vec<THIRType>,
         return_type: THIRType,
     },
     Expression(THIRExpression),
@@ -43,6 +44,7 @@ pub enum MIRSymbol {
         name: CXIdent,
         namespace: EnvironmentNamespace,
         source: Box<HIRSymbol>,
+        tag: Option<HIRTagKind>,
     },
 }
 

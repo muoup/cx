@@ -1,23 +1,36 @@
-use cx_hir::{ast::function::HIRFunctionContract, symbols::HIRSymbolKind};
+use cx_hir::{
+    ast::function::HIRFunctionContract,
+    symbols::{HIRSymbolData, HIRSymbolKind},
+};
 use cx_log::CXResult;
-use cx_thir::thir::{
-    data::{MIRTemplateInput, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter},
-    expression::{THIRExpression, THIRExpressionKind},
-    r#type::THIRType,
+use cx_thir::type_context::THIRTypeContext;
+use cx_thir::{
+    EnvironmentNamespace,
+    thir::{
+        data::{
+            THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter,
+            THIRTemplateInput,
+        },
+        expression::{THIRExpression, THIRExpressionKind},
+        r#type::THIRType,
+    },
 };
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode, namespace::QualifiedName};
 
 use crate::{
-    environment::{MIRFunctionGenRequest, TypeEnvironment},
-    symbol::resolution::{apply_template_input, symbol_lexical_namespace},
-    type_checking::functions::typecheck_function,
+    environment::{THIRFunctionGenRequest, TypeEnvironment},
+    symbol::{
+        name_mangling::base_mangle_templated_name,
+        resolution::{apply_template_input, symbol_lexical_namespace},
+    },
+    type_checking::functions::{typecheck_comptime_function, typecheck_function},
 };
 
 pub fn fulfill_requests(env: &mut TypeEnvironment) -> CXResult<()> {
     while let Some(request) = env.items.pop_request() {
         match request {
-            MIRFunctionGenRequest::TypeConstructor {
+            THIRFunctionGenRequest::TypeConstructor {
                 symbol_name,
                 debug_name,
                 union_type,
@@ -32,11 +45,17 @@ pub fn fulfill_requests(env: &mut TypeEnvironment) -> CXResult<()> {
                 variant_index,
             ),
 
-            MIRFunctionGenRequest::Template {
+            THIRFunctionGenRequest::Template {
                 name,
                 prototype,
                 input,
             } => realize_fn_template(env, &name, prototype, &input)?,
+
+            THIRFunctionGenRequest::Comptime {
+                name,
+                prototype,
+                ref input,
+            } => realize_comptime_fn_template(env, &name, prototype, &input)?,
         }
     }
 
@@ -63,12 +82,12 @@ fn realize_tagged_union_constructor(
         LinkageMode::Static,
         THIRFnSignature {
             return_type: union_type.clone(),
-            params: if variant_type.is_unit() {
+            params: if variant_type.is_void() {
                 Vec::new()
             } else {
                 vec![THIRParameter {
                     name: Some(param_name.clone()),
-                    local_id: Some(param_local_id),
+                    local_id: param_local_id,
                     _type: variant_type.clone(),
                 }]
             },
@@ -78,7 +97,7 @@ fn realize_tagged_union_constructor(
     )
     .with_debug_name(debug_name);
 
-    let value = if variant_type.is_unit() {
+    let value = if variant_type.is_void() {
         THIRExpression {
             token_range: TokenRange::internal(),
             _type: variant_type.clone(),
@@ -94,7 +113,7 @@ fn realize_tagged_union_constructor(
             },
         }
     };
-    
+
     let constructed = THIRExpression {
         token_range: TokenRange::internal(),
         _type: union_type.clone(),
@@ -113,17 +132,19 @@ fn realize_tagged_union_constructor(
         },
     };
 
-    env.items
-        .push_generated_function(THIRFunction { prototype, body });
+    env.items.push_generated_function(THIRFunction {
+        prototype,
+        body: Some(body),
+    });
 }
 
 fn realize_fn_template(
     env: &mut TypeEnvironment,
     name: &QualifiedName,
     prototype: THIRFnPrototype,
-    input: &MIRTemplateInput,
+    input: &THIRTemplateInput,
 ) -> CXResult<()> {
-    let stmt = env
+    let resolution = env
         .symbols
         .get_global_registry()
         .resolve(name)
@@ -134,7 +155,22 @@ fn realize_fn_template(
             )
         });
 
-    let HIRSymbolKind::FunctionTemplate { template, body, .. } = &stmt.kind else {
+    let stmt = resolution
+        .declarations()
+        .iter()
+        .find(|symbol| {
+            matches!(
+                symbol.kind,
+                HIRSymbolKind::Function(HIRSymbolData::Template { .. })
+            )
+        })
+        .expect("Expected function template declaration in the symbol registry");
+    let HIRSymbolKind::Function(HIRSymbolData::Template {
+        template_data: body,
+        template_prototype: template,
+        ..
+    }) = &stmt.kind
+    else {
         unreachable!("Expected template to be a function template");
     };
 
@@ -147,10 +183,72 @@ fn realize_fn_template(
         if env.items.request_fulfilled(prototype.symbol_name()) {
             return Ok(());
         }
-        env.items.mark_request_fulfilled(prototype.symbol_name().into());
+        env.items
+            .mark_request_fulfilled(prototype.symbol_name().into());
 
         typecheck_function(env, &namespace, prototype, body)?;
 
+        Ok(())
+    })();
+    env.symbols.pop_local_scope();
+
+    result
+}
+
+fn realize_comptime_fn_template(
+    env: &mut TypeEnvironment,
+    lookup_identifier: &QualifiedName,
+    mut prototype: THIRComptimeFnPrototype,
+    input: &THIRTemplateInput,
+) -> CXResult<()> {
+    let instance_name = base_mangle_templated_name(
+        &env.symbols,
+        prototype.symbol_name(),
+        input
+            .args
+            .iter()
+            .map(|arg| env.symbols.resolve_type_id(*arg)),
+    );
+
+    if env.items.request_fulfilled(&instance_name) {
+        return Ok(());
+    }
+    
+    env.items.mark_request_fulfilled(instance_name.clone());
+
+    let resolution = env
+        .symbols
+        .get_global_registry()
+        .resolve(lookup_identifier)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "Expected comptime function '{}' to be present in the symbol registry",
+                lookup_identifier
+            )
+        });
+
+    let stmt = resolution
+        .declarations()
+        .iter()
+        .find(|symbol| matches!(symbol.kind, HIRSymbolKind::ComptimeFunction(_)))
+        .expect("Expected comptime function declaration in the symbol registry");
+
+    let HIRSymbolKind::ComptimeFunction(HIRSymbolData::Template { template_data, template_prototype, .. }) = &stmt.kind else {
+        unreachable!("Expected comptime function to be a template");
+    };
+
+    let namespace = EnvironmentNamespace::from(symbol_lexical_namespace(
+        &lookup_identifier.namespace,
+        &stmt,
+    ));
+    
+    env.symbols.push_local_scope();
+    let result = (|| -> CXResult<()> {
+        apply_template_input(env, template_prototype, input)
+            .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
+        
+        prototype.map_symbol_name(|_| instance_name.clone());
+        typecheck_comptime_function(env, &namespace, prototype.clone(), template_data)?;
         Ok(())
     })();
     env.symbols.pop_local_scope();

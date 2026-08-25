@@ -34,6 +34,10 @@ pub fn try_implicit_coercion(
         return CoercionResult::success(expr);
     }
 
+    if from_type.is_unreachable() {
+        return coercion_expr(expr, target_type.clone(), THIRCoercion::Unreachable);
+    }
+
     if compatible::compatible_types(env, &expr._type, target_type)? {
         return CoercionResult::success(THIRExpression {
             token_range: expr.token_range.clone(),
@@ -64,6 +68,44 @@ fn internal(
     from_type: THIRType,
     target_type: &THIRType,
 ) -> CXResult<CoercionResult> {
+    if env.symbols.is_cx_str(&from_type) && is_char_array(env, target_type) {
+        return coercion_expr(expr, target_type.clone(), THIRCoercion::ReinterpretBits);
+    }
+
+    if env.symbols.is_cx_str(&from_type)
+        && matches!(target_type.kind, THIRTypeKind::PointerTo { .. })
+    {
+        return coercion_expr(expr, target_type.clone(), THIRCoercion::ReinterpretBits);
+    }
+
+    if matches!(expr.kind, THIRExpressionKind::IntLiteral(0))
+        && matches!(target_type.kind, THIRTypeKind::PointerTo { .. })
+    {
+        return coercion_expr(
+            expr,
+            target_type.clone(),
+            THIRCoercion::IntToPtr { sextend: false },
+        );
+    }
+
+    if let (
+        THIRTypeKind::Array {
+            inner_type: from_inner,
+            ..
+        },
+        THIRTypeKind::PointerTo {
+            inner_type: to_inner,
+        },
+    ) = (&from_type.kind, &target_type.kind)
+        && compatible::compatible_types(
+            env,
+            env.symbols.resolve_type_id(*from_inner),
+            env.symbols.resolve_type_id(*to_inner),
+        )?
+    {
+        return coercion_expr(expr, target_type.clone(), THIRCoercion::ReinterpretBits);
+    }
+
     if expr._type.is_integer() {
         if let THIRTypeKind::Float { _type } = &target_type.kind {
             let THIRTypeKind::Integer { signed, .. } = &expr._type.kind else {
@@ -179,7 +221,7 @@ fn internal(
             let i2 = env.symbols.resolve_type_id(*i2);
 
             if i1.is_memory_reference() {
-                return lvalue::try_conversion(env, expr);
+                return lvalue::try_conversion(env, expr, false);
             }
 
             if compatible::compatible_types(env, i1, i2)? {
@@ -190,7 +232,7 @@ fn internal(
                 );
             }
 
-            if env.symbols.cvr_compatible(i1, i2)
+            if i1.cvr_compatible_with(i2)
                 && env.type_eq(
                     &i1.clone().without_specifiers(),
                     &i2.clone().without_specifiers(),
@@ -207,8 +249,9 @@ fn internal(
         }
 
         // Note: type 2 is not a memory reference due to previous case
-        (THIRTypeKind::MemoryReference { .. }, _) => std_rval_promotion(env, expr)
-            .and_then(CoercionResult::success),
+        (THIRTypeKind::MemoryReference { .. }, _) => {
+            std_rval_promotion(env, expr).and_then(CoercionResult::success)
+        }
 
         (_, THIRTypeKind::PointerTo { inner_type })
             if env.type_eq(&from_type, env.symbols.resolve_type_id(*inner_type)) =>
@@ -225,8 +268,8 @@ fn internal(
             let from_inner = env.symbols.resolve_type_id(*from_ptr);
             let to_inner = env.symbols.resolve_type_id(*to_ptr);
 
-            if env.symbols.resolve_type_id(*from_ptr).is_unit()
-                || env.symbols.resolve_type_id(*to_ptr).is_unit()
+            if env.symbols.resolve_type_id(*from_ptr).is_void()
+                || env.symbols.resolve_type_id(*to_ptr).is_void()
             {
                 return implicit::coercion_expr(
                     expr,
@@ -255,4 +298,18 @@ fn internal(
 
         _ => CoercionResult::unapplied(expr),
     }
+}
+
+fn is_char_array(env: &TypeEnvironment, ty: &THIRType) -> bool {
+    let ty = env.symbols.mem_ref_inner(ty).unwrap_or(ty);
+    let THIRTypeKind::Array { inner_type, .. } = ty.kind else {
+        return false;
+    };
+    matches!(
+        env.symbols.resolve_type_id(inner_type).kind,
+        THIRTypeKind::Integer {
+            _type: THIRIntType::I8,
+            signed: false,
+        }
+    )
 }

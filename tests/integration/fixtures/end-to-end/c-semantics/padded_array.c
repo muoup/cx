@@ -1,0 +1,25 @@
+/* CX-STDOUT: All pointers match expected values. */
+
+#include <stdio.h>
+
+// 12 bytes, however requires 8 byte alignment, so any array of this type will have padding.
+struct UnpackedType {
+    long a;
+    int b;
+};
+
+int main() {
+    struct UnpackedType arr[3];
+    
+    for (int i = 0; i < 3; i = i + 1) {
+        char* expected_pointer = (char*)(&arr) + i * 16; // 16 bytes per element due to padding
+        char* actual_pointer = (char*)(&arr[i]);
+        
+        if (expected_pointer != actual_pointer) {
+            printf("Pointer mismatch at index %d: expected %p, got %p\n", i, expected_pointer, actual_pointer);
+        }
+    }
+    
+    puts("All pointers match expected values.");
+    return 0;
+}

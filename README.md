@@ -74,8 +74,12 @@ cx <file.cx> [options]
 - `--backend-cranelift`: use the Cranelift backend (default if not built with the LLVM backend)
 - `--backend-llvm`: use the LLVM backend if compiled with LLVM support (default if built with the LLVM backend)
 - `-O0`, `-O1`, `-O2`, `-O3`, `-Osize`, `-Ofast`: optimization level
+- `-c`: compile without linking
+- `-I <directory>`: add a header search directory
+- `-D <name>[=value]`: define a preprocessor macro
 - `-o <output_file>`: output path
 - `--verbose`: print each compilation step
+- `--version`: print the compiler version
 
 ### Project Build System
 
@@ -87,7 +91,7 @@ cd my_project
 cx build
 ```
 
-See the [build system guide](https://muoup.github.io/cx/docs/build-system) for
+See the [build system guide](https://muoup.github.io/cx/docs/getting-started/build-system) for
 `cx.toml` configuration, library compilation, and C interop.
 
 ## Testing

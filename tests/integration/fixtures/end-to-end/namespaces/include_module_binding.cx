@@ -1,0 +1,18 @@
+/* CX-STDOUT: included module */
+
+import _include_binding as binding;
+
+int main() {
+    if (binding::read_header_parameter() != 11) {
+        return 2;
+    }
+    if (binding::read_header_template() != 13) {
+        return 3;
+    }
+    if (binding::read_header_type() != 12) {
+        return 4;
+    }
+
+    binding::invoke_header_puts();
+    return 0;
+}

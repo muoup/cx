@@ -1,18 +1,17 @@
 use cx_hir::ast::{
+    HIRStmt,
     expression::{HIRExprKind, HIRExpression},
     function::HIRFunctionPrototype,
     global_var::HIRGlobalVariable,
     modifiers::{HIRSymbolNameScheme, LinkageMode},
     template::HIRTemplatePrototype,
-    types::HIRTypeKind,
-    HIRStmt,
+    types::{HIRTypeKind, HIRTypeLookup},
 };
 use cx_log::CXResult;
 use cx_preparse_data::VisibilityMode;
 use cx_tokens::{
-    keyword, operator, punctuator, specifier,
-    token::{SpecifierType, TokenKind},
-    TokenIter,
+    TokenIter, keyword, operator, punctuator, specifier,
+    token::{OperatorType, PunctuatorType, SpecifierType, TokenKind},
 };
 use cx_util::identifier::CXIdent;
 
@@ -26,7 +25,7 @@ use crate::{
         parser::ParserData,
         statement::parse_stmt,
         templates::{note_templated_types, parse_template_prototype, unnote_templated_types},
-        types::{parse_initializer, parse_typedef_initializer},
+        types::{parse_base_mods, parse_initializer, parse_typedef_initializer},
     },
     peek_next_kind, try_next,
 };
@@ -207,20 +206,38 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
 
     if let HIRTypeKind::Identifier {
         name: type_name,
+        lookup,
         template_input: None,
-        ..
     } = &_type.kind
     {
-        if type_name.namespace.is_root() && type_name.name == name {
+        let is_existing_type_alias = *lookup == HIRTypeLookup::Standard
+            || data.ast.definition_stmts.iter().any(|definition| {
+                matches!(
+                    &definition.stmt,
+                    HIRStmt::TypeDefinition {
+                        name: Some(existing),
+                        ..
+                    } if existing == &name
+                )
+            });
+        if type_name.namespace.is_root() && type_name.name == name && is_existing_type_alias {
+            data.add_stmt(HIRStmt::TypeDefinition {
+                name: Some(name),
+                visibility: data.visibility,
+                _type: _type.clone(),
+                template_prototype: template_prototype.clone(),
+                tag: None,
+            });
             return Ok(());
         }
-    };
+    }
 
     data.add_stmt(HIRStmt::TypeDefinition {
         name: Some(name),
         visibility: data.visibility,
         _type: _type.clone(),
         template_prototype: template_prototype.clone(),
+        tag: None,
     });
 
     Ok(())
@@ -272,10 +289,27 @@ fn parse_fn_merge(
 }
 
 fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
+    let noreturn = matches!(
+        data.tokens.peek().map(|token| &token.kind),
+        Some(TokenKind::Identifier(name)) if name == "_Noreturn"
+    );
+    if noreturn {
+        data.tokens.next();
+    }
+
     let (name, return_type, linkage) = parse_initializer(data)?;
-    let symbol_naming = data.symbol_naming;
-    let inherited_external =
-        symbol_naming == HIRSymbolNameScheme::Unmangled && linkage == LinkageMode::Standard;
+    let symbol_naming = if data.c_mode {
+        if linkage == LinkageMode::Static {
+            HIRSymbolNameScheme::Namespaced
+        } else {
+            HIRSymbolNameScheme::Unmangled
+        }
+    } else {
+        data.symbol_naming
+    };
+    let inherited_external = !data.c_mode
+        && symbol_naming == HIRSymbolNameScheme::Unmangled
+        && linkage == LinkageMode::Standard;
 
     let Some(name) = name else {
         // Blank statement consisting on just a type, (i.e. struct [name] { [fields] };)
@@ -297,6 +331,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
         name.clone(),
         linkage,
         symbol_naming,
+        noreturn,
     )? {
         return parse_fn_merge(
             data,
@@ -324,21 +359,63 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
         }
 
         punctuator!(Semicolon) => {
-            data.add_stmt(HIRStmt::GlobalVariableDefinition {
-                visibility: data.visibility,
-                variable: HIRGlobalVariable::Standard {
-                    name: name.clone(),
-                    _type: return_type.clone(),
-                    is_mutable: true,
-                    linkage: if inherited_external {
-                        LinkageMode::Extern
-                    } else {
-                        linkage
-                    },
-                    symbol_name_scheme: symbol_naming,
-                    initializer: None,
-                },
-            });
+            add_global_variable(
+                data,
+                name,
+                return_type.clone(),
+                linkage,
+                symbol_naming,
+                inherited_external,
+                None,
+            );
+        }
+
+        operator!(Comma) => {
+            add_global_variable(
+                data,
+                name,
+                return_type.clone(),
+                linkage,
+                symbol_naming,
+                inherited_external,
+                None,
+            );
+
+            loop {
+                let (next_name, next_type) = parse_base_mods(data, return_type.clone())?;
+                let Some(next_name) = next_name else {
+                    return parse_point_error(
+                        &data.tokens,
+                        "Expected variable name after ','".to_string(),
+                    );
+                };
+                let initializer = if try_next!(data.tokens, TokenKind::Assignment(_)) {
+                    Some(parse_expr(data)?)
+                } else {
+                    None
+                };
+
+                add_global_variable(
+                    data,
+                    next_name,
+                    next_type,
+                    linkage,
+                    symbol_naming,
+                    inherited_external,
+                    initializer,
+                );
+
+                match next_kind!(data.tokens)? {
+                    TokenKind::Operator(OperatorType::Comma) => {}
+                    TokenKind::Punctuator(PunctuatorType::Semicolon) => break,
+                    _ => {
+                        return parse_point_error(
+                            &data.tokens,
+                            "Expected ',' or ';' after global declaration".to_string(),
+                        );
+                    }
+                }
+            }
         }
 
         _ => {
@@ -353,6 +430,32 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
     }
 
     Ok(())
+}
+
+fn add_global_variable(
+    data: &mut ParserData,
+    name: CXIdent,
+    _type: cx_hir::ast::types::HIRType,
+    linkage: LinkageMode,
+    symbol_naming: HIRSymbolNameScheme,
+    inherited_external: bool,
+    initializer: Option<cx_hir::ast::expression::HIRExpression>,
+) {
+    data.add_stmt(HIRStmt::GlobalVariableDefinition {
+        visibility: data.visibility,
+        variable: HIRGlobalVariable::Standard {
+            name,
+            _type,
+            is_mutable: true,
+            linkage: if inherited_external {
+                LinkageMode::Extern
+            } else {
+                linkage
+            },
+            symbol_name_scheme: symbol_naming,
+            initializer,
+        },
+    });
 }
 
 pub(crate) fn parse_block(data: &mut ParserData) -> CXResult<HIRExpression> {

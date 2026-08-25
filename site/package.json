@@ -4,7 +4,10 @@
   "private": true,
   "scripts": {
     "docusaurus": "docusaurus",
+    "stdlib:generate": "node scripts/generate-stdlib-docs.mjs",
+    "prestart": "node scripts/generate-stdlib-docs.mjs",
     "start": "docusaurus start",
+    "prebuild": "node scripts/generate-stdlib-docs.mjs",
     "build": "docusaurus build",
     "swizzle": "docusaurus swizzle",
     "deploy": "docusaurus deploy",

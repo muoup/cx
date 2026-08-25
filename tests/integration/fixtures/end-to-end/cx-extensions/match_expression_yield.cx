@@ -1,0 +1,29 @@
+/* CX-STDOUT: 7 */
+/* CX-STDOUT-NEXT: 2 */
+/* CX-STDOUT-NEXT: 3 */
+
+#include <stdio.h>
+
+enum union MaybeInt {
+    none :: void,
+    some :: int
+};
+
+int pick(MaybeInt maybe, bool first) {
+    int value = match (move maybe) {
+        MaybeInt::some(inner) => {
+            if (first) yield inner;
+
+            yield 2;
+        }
+        MaybeInt::none() => yield 3;
+    };
+
+    return value;
+}
+
+int main() {
+    printf("%d\n", pick(MaybeInt::some(7), 1));
+    printf("%d\n", pick(MaybeInt::some(7), 0));
+    printf("%d\n", pick(MaybeInt::none(), 0));
+}

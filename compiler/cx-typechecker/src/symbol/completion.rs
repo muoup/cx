@@ -5,26 +5,25 @@ use cx_hir::ast::{
     modifiers::{HIRSymbolNameScheme, HIRTypeQualifiers, VisibilityMode},
     template::HIRTemplateInput,
     types::{
-        HIRAggregateAttributes, HIRField, HIRMoveSemantics, HIRType, HIRTypeKind,
-        PredeclarationType,
+        HIRAggregateAttributes, HIRField, HIRMoveSemantics, HIRType, HIRTypeKind, HIRTypeLookup,
     },
 };
-use cx_hir::symbols::HIRSymbolKind;
+use cx_hir::symbols::{HIRSymbolData, HIRSymbolKind, SymbolResolution};
 use cx_log::{
     CXRawResult, CXResult,
     error::{CXMaybeRawErr, CXMaybeRawResult},
 };
+use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
 
 use cx_thir::{
     symbol::MIRSymbol,
     thir::{
         data::{
-            MIRTemplateInput, THIRComptimeFnPrototype, THIRComptimeParameter,
-            THIRComptimeValueType, THIRFnPrototype, THIRFnSignature, THIRParameter,
-            THIRTypeAttributes,
+            THIRComptimeFnPrototype, THIRComptimeParameter, THIRComptimeValueType, THIRFnPrototype,
+            THIRFnSignature, THIRParameter, THIRTemplateInput, THIRTypeAttributes,
         },
-        name_mangling::{mangle_namespace_symbol, mangle_qualified_name},
+        expression::THIRLocalID,
         r#type::{THIRField, THIRMoveSemantics, THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
@@ -32,24 +31,29 @@ use cx_thir::{
 
 use crate::{
     EnvironmentNamespace,
-    comptime::evaluate_comptime_expression,
     environment::{SymbolLookupKind, TypeEnvironment},
-    symbol::resolution::{apply_template, resolve_symbol},
-    type_checking::typechecker::typecheck_expr,
+    symbol::{
+        name_mangling::mangle_qualified_name,
+        resolution::{TypeSymbolQuery, apply_template, resolve_symbol, resolve_type_symbol},
+    },
+    type_checking::{
+        coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
+        typechecker::typecheck_expr,
+    },
 };
 
 pub fn complete_template_input(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     input: &HIRTemplateInput,
-) -> CXResult<MIRTemplateInput> {
+) -> CXResult<THIRTemplateInput> {
     let args = input
         .params
         .iter()
         .map(|param| complete_type_id(env, namespace, param))
         .collect::<CXResult<Vec<_>>>()?;
 
-    Ok(MIRTemplateInput { args })
+    Ok(THIRTemplateInput { args })
 }
 
 pub fn complete_type(
@@ -74,25 +78,24 @@ pub fn complete_type_id(
     match &ty.kind {
         HIRTypeKind::Identifier {
             name,
-            predeclaration,
+            lookup,
             template_input,
         } => {
-            let id =
-                complete_identifier_type(env, namespace, name, *predeclaration, template_input)
-                    .map_err(|err| env.complete_maybe_err(err, ty.range()))?;
+            let id = complete_identifier_type(env, namespace, name, *lookup, template_input)
+                .map_err(|err| env.complete_maybe_err(err, ty.range()))?;
 
             Ok(apply_type_specifiers(env, id, ty.specifiers))
         }
 
         _ => {
-            let completed = complete_type_value(env, namespace, ty)?;
+            let completed = complete_type_inner(env, namespace, ty)?;
 
             Ok(env.symbols.generate_type_id(completed))
         }
     }
 }
 
-fn complete_type_value(
+fn complete_type_inner(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     ty: &HIRType,
@@ -100,12 +103,11 @@ fn complete_type_value(
     let mut completed = match &ty.kind {
         HIRTypeKind::Identifier {
             name,
-            predeclaration,
+            lookup,
             template_input,
         } => {
-            let id =
-                complete_identifier_type(env, namespace, name, *predeclaration, template_input)
-                    .map_err(|err| env.complete_maybe_err(err, ty.range()))?;
+            let id = complete_identifier_type(env, namespace, name, *lookup, template_input)
+                .map_err(|err| env.complete_maybe_err(err, ty.range()))?;
 
             let Some(completed) = env.symbols.try_resolve_type_id(id).cloned() else {
                 return env.log_error(ty.range(), format!("Type '{}' is incomplete", ty));
@@ -115,33 +117,37 @@ fn complete_type_value(
         }
 
         HIRTypeKind::ExplicitSizedArray(inner, size) => {
-            let inner_type = complete_type_id(env, namespace, inner)?;
+            let id = complete_type_id(env, namespace, inner)?;
+            ensure_valid_type_id_component(env, ty.range(), id, "an array element", true)?;
+
             let size = typecheck_expr(env, namespace, size, None)
                 .and_then(|v| v.standard_ready_coerce(env, size.token_range()))
-                .and_then(|v| evaluate_comptime_expression(env, v))
-                .and_then(|v| {
-                    v.as_integer().ok_or_else(|| {
-                        env.error(
-                            v.token_range,
-                            "Array size must be an integer literal".to_string(),
-                        )
-                    })
-                })?;
+                .and_then(|v| std_rval_promotion(env, v))?;
+            let integer_type = env.get_intrinsic_type("int");
+            let size = implicit_cast(env, size, &integer_type)?;
             THIRTypeKind::Array {
-                inner_type,
-                length: size as usize,
+                inner_type: id,
+                length: Box::new(size),
             }
             .into()
         }
 
         HIRTypeKind::ImplicitSizedArray(inner) => {
-            let inner_type = complete_type_id(env, namespace, inner)?;
+            let id = complete_type_id(env, namespace, inner)?;
+            ensure_valid_type_id_component(env, ty.range(), id, "a pointer target", true)?;
 
-            THIRTypeKind::PointerTo { inner_type }.into()
+            THIRTypeKind::PointerTo { inner_type: id }.into()
         }
 
         HIRTypeKind::MemoryReference { inner_type } => {
             let inner_type = complete_type_id(env, namespace, inner_type)?;
+            ensure_valid_type_id_component(
+                env,
+                ty.range(),
+                inner_type,
+                "a reference target",
+                false,
+            )?;
 
             THIRTypeKind::MemoryReference {
                 inner_type,
@@ -152,6 +158,7 @@ fn complete_type_value(
 
         HIRTypeKind::PointerTo { inner_type } => {
             let inner_type = complete_type_id(env, namespace, inner_type)?;
+            ensure_valid_type_id_component(env, ty.range(), inner_type, "a pointer target", false)?;
 
             THIRTypeKind::PointerTo { inner_type }.into()
         }
@@ -203,6 +210,52 @@ fn complete_type_value(
     Ok(completed)
 }
 
+pub fn ensure_valid_type_id_component(
+    env: &TypeEnvironment,
+    range: &TokenRange,
+    ty: THIRTypeID,
+    context: &str,
+    enforce_allocatable: bool,
+) -> CXResult<()> {
+    let Some(ty) = env.symbols.try_resolve_type_id(ty) else {
+        return env.log_error(range, format!("{} type is incomplete", context));
+    };
+
+    ensure_valid_type_component(env, range, ty, context, enforce_allocatable)
+}
+
+pub fn ensure_valid_type_component(
+    env: &TypeEnvironment,
+    range: &TokenRange,
+    ty: &THIRType,
+    context: &str,
+    enforce_allocatable: bool,
+) -> CXResult<()> {
+    match &ty.kind {
+        THIRTypeKind::Unreachable => env.log_error(
+            range,
+            format!("{} type component cannot be 'unreachable'", context),
+        ),
+
+        THIRTypeKind::Function { .. }
+        | THIRTypeKind::Str
+        | THIRTypeKind::Undefined
+        | THIRTypeKind::Void
+            if enforce_allocatable =>
+        {
+            env.log_error(
+                range,
+                format!(
+                    "{} type is unsized and cannot be directly allocated",
+                    context
+                ),
+            )
+        }
+
+        _ => Ok(()),
+    }
+}
+
 fn apply_type_specifiers(
     env: &mut TypeEnvironment,
     id: THIRTypeID,
@@ -226,14 +279,26 @@ pub fn complete_prototype(
     namespace: &EnvironmentNamespace,
     prototype: &HIRFunctionPrototype,
 ) -> CXResult<THIRFnPrototype> {
-    let return_type = complete_type(env, namespace, &prototype.return_type)?;
+    let return_type_id = complete_type_id(env, namespace, &prototype.return_type)?;
     let mut params = complete_explicit_parameters(env, namespace, prototype)?;
+
+    let return_type = env.symbols.resolve_type_id(return_type_id).clone();
+
+    if !return_type.is_unreachable() && !return_type.is_void() {
+        ensure_valid_type_id_component(
+            env,
+            &prototype.range,
+            return_type_id,
+            "a function return value",
+            true,
+        )?;
+    }
 
     // If we have legacy int main(void)-like syntax, we treat it as main with no parameters
     if params.len() == 1 {
         let first_param = &params[0];
 
-        if first_param._type.is_unit() && first_param.name.is_none() {
+        if first_param._type.is_void() && first_param.name.is_none() {
             params.clear();
         }
     }
@@ -281,6 +346,7 @@ pub fn complete_comptime_prototype(
         .map(|param| {
             Ok(THIRComptimeParameter {
                 name: param.name.clone(),
+                local_id: THIRLocalID::fresh(),
                 value_type: THIRComptimeValueType {
                     expr: param.value_type.expr,
                     params: param
@@ -297,10 +363,22 @@ pub fn complete_comptime_prototype(
 
     let lookup_identifier = function_lookup_identifier(namespace, &prototype.kind);
     let debug_name = lookup_identifier.name.clone();
+    let symbol_name = completed_comptime_symbol_name(env, &lookup_identifier);
 
-    Ok(THIRComptimeFnPrototype::new(return_type, params)
-        .with_lookup_identifier(lookup_identifier)
-        .with_debug_name(debug_name))
+    Ok(
+        THIRComptimeFnPrototype::new(symbol_name, lookup_identifier, return_type, params)
+            .with_debug_name(debug_name),
+    )
+}
+
+fn completed_comptime_symbol_name(
+    env: &TypeEnvironment,
+    lookup_identifier: &QualifiedName,
+) -> String {
+    crate::symbol::name_mangling::mangle_qualified_name(
+        env.symbols.get_global_registry(),
+        lookup_identifier,
+    )
 }
 
 fn function_lookup_identifier(
@@ -324,13 +402,16 @@ fn complete_explicit_parameters(
         .params
         .iter()
         .map(|param| {
+            let completed = complete_type(env, namespace, &param._type)?;
+            let _type = if let Some(inner) = env.symbols.array_inner(&completed) {
+                env.symbols.pointer_to(inner.clone())
+            } else {
+                completed
+            };
             Ok(THIRParameter {
                 name: param.name.clone(),
-                local_id: param
-                    .name
-                    .as_ref()
-                    .map(|_| cx_thir::thir::expression::THIRLocalID::fresh()),
-                _type: complete_type(env, namespace, &param._type)?,
+                local_id: THIRLocalID::fresh(),
+                _type,
             })
         })
         .collect::<CXResult<Vec<_>>>()
@@ -340,84 +421,127 @@ fn complete_identifier_type(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     name: &QualifiedName,
-    predeclaration: PredeclarationType,
+    type_lookup: HIRTypeLookup,
     template_input: &Option<HIRTemplateInput>,
 ) -> CXMaybeRawResult<THIRTypeID> {
-    let Some(lookup) = env.lookup_symbol(namespace, name)? else {
-        if predeclaration != PredeclarationType::None && name.namespace.is_root() {
-            let id = env.symbols.reserve_type_id();
-            env.symbols.insert_type_symbol(name.clone(), id);
-            return Ok(id);
-        }
-
+    let (lookup, query, is_tag_lookup) = match type_lookup {
+        HIRTypeLookup::Standard => match env.lookup_symbol(namespace, name)? {
+            Some(lookup) => (Some(lookup), TypeSymbolQuery::Standard, false),
+            None => (
+                env.lookup_tag_symbol(namespace, name)?,
+                TypeSymbolQuery::WildcardTag,
+                true,
+            ),
+        },
+        HIRTypeLookup::Tag(tag) => (
+            env.lookup_tag_symbol(namespace, name)?,
+            TypeSymbolQuery::Tag(tag),
+            true,
+        ),
+    };
+    let Some(lookup) = lookup else {
         return env
             .log_error_base(format!("Type not found: {}", name))
             .map_err(|err| err.into());
     };
 
     let resolved_name = lookup.resolved_name;
-    let symbol = match lookup.kind {
+
+    let resolution = match lookup.kind {
         SymbolLookupKind::Resolved(symbol) => {
             return complete_resolved_type_lookup(env, namespace, name, symbol, template_input);
         }
-        SymbolLookupKind::Untyped(symbol) => symbol,
+        SymbolLookupKind::Untyped(resolution) => resolution,
     };
 
-    match &symbol.kind {
-        HIRSymbolKind::Type(definition) => {
+    let resolved = resolve_type_symbol(env, name, query, &resolution)?;
+    let symbol = resolved.symbol;
+    let tag = resolved.tag;
+    let HIRSymbolKind::Type(type_symbol) = &symbol.kind else {
+        unreachable!("type symbol resolution returned a non-type declaration")
+    };
+    let cacheable =
+        matches!(type_symbol, HIRSymbolData::Standard { .. }) && template_input.is_none();
+    let cached = if is_tag_lookup {
+        env.symbols.get_preresolved_tag(&resolved_name)
+    } else {
+        env.symbols.get_preresolved_symbol(&resolved_name)
+    };
+    if cacheable && let Some(MIRSymbol::Type(id)) = cached {
+        return Ok(*id);
+    }
+
+    match type_symbol {
+        HIRSymbolData::Standard {
+            base: definition, ..
+        } => {
             if template_input.is_some() {
                 return env
                     .log_error_base(format!("Type '{name}' does not accept template arguments"))
                     .map_err(|err| err.into());
             }
 
-            let dummy_type =
-                THIRType::from(THIRTypeKind::Undefined).with_strong_identifier(CXIdent::from(
-                    mangle_qualified_name(env.symbols.get_global_registry(), &resolved_name),
-                ));
+            let mangled_name =
+                mangle_qualified_name(env.symbols.get_global_registry(), &resolved_name);
+            let dummy_type = THIRType::from(THIRTypeKind::Undefined)
+                .with_strong_identifier(CXIdent::from(mangled_name));
             let prereserved_id = env.symbols.reserve_type_id();
-            env.symbols
-                .insert_type_symbol(resolved_name.clone(), prereserved_id);
+            if cacheable {
+                if is_tag_lookup {
+                    env.symbols
+                        .insert_tag_type_symbol(resolved_name.clone(), prereserved_id);
+                } else {
+                    env.symbols
+                        .insert_type_symbol(resolved_name.clone(), prereserved_id);
+                }
+            }
             env.symbols.overwrite_type_id(prereserved_id, dummy_type);
 
-            let completed = complete_type(
+            if tag.is_some() && is_self_predeclaration(definition, &resolved_name) {
+                return Ok(prereserved_id);
+            }
+
+            let ty = complete_type_inner(
                 env,
                 &EnvironmentNamespace::from(&resolved_name.namespace),
                 definition,
-            )?;
+            )
+            .map_err(CXMaybeRawErr::Complete)?;
 
-            env.symbols.overwrite_type_id(prereserved_id, completed);
+            env.symbols.overwrite_type_id(prereserved_id, ty);
+
             Ok(prereserved_id)
         }
 
-        HIRSymbolKind::TypeTemplate { .. } => {
+        HIRSymbolData::Template { .. } => {
+            let resolution = tag.map_or_else(
+                || SymbolResolution::new(symbol.clone()),
+                |tag| SymbolResolution::new_tagged(tag, symbol.clone()),
+            );
             let mir_symbol = resolve_symbol(
                 env,
                 namespace,
                 &EnvironmentNamespace::from(&resolved_name.namespace),
                 &resolved_name.name,
-                &symbol,
+                &resolution,
             )?;
 
             complete_template_type_lookup(env, namespace, name, &mir_symbol, template_input)
         }
-
-        HIRSymbolKind::DuplicateDefinition(_) => {
-            let mir_symbol = resolve_symbol(
-                env,
-                namespace,
-                &EnvironmentNamespace::from(&resolved_name.namespace),
-                &resolved_name.name,
-                &symbol,
-            )?;
-
-            complete_resolved_type_lookup(env, namespace, name, mir_symbol, template_input)
-        }
-
-        _ => env
-            .log_error_base(format!("Symbol '{name}' is not a type"))
-            .map_err(|err| err.into()),
     }
+}
+
+fn is_self_predeclaration(definition: &HIRType, name: &QualifiedName) -> bool {
+    let HIRTypeKind::Identifier {
+        name: definition_name,
+        lookup: HIRTypeLookup::Tag(_),
+        template_input: None,
+    } = &definition.kind
+    else {
+        return false;
+    };
+
+    definition_name.namespace.is_root() && definition_name.name == name.name
 }
 
 fn complete_resolved_type_lookup(
@@ -556,9 +680,24 @@ fn ensure_aggregate_fields_complete(
 ) -> CXRawResult<()> {
     for field in fields {
         let id = field.ty();
-        if !env.symbols.contains(id) {
-            let name = field.name().unwrap_or("<anonymous>");
-            return env.log_error_base(format!("Aggregate field '{}' has incomplete type", name));
+
+        let Some(_ty) = env.symbols.try_resolve_type_id(id) else {
+            return env.log_error_base(format!(
+                "Aggregate field '{}' has incomplete type",
+                field.name().unwrap_or("<anonymous>")
+            ));
+        };
+
+        match &_ty.kind {
+            THIRTypeKind::Unreachable | THIRTypeKind::Undefined | THIRTypeKind::Str => {
+                return env.log_error_base(format!(
+                    "Aggregate field '{}' has invalid type '{}'",
+                    field.name().unwrap_or("<anonymous>"),
+                    _ty.display_with(&env.symbols)
+                ));
+            }
+
+            _ => (),
         }
     }
 
@@ -615,8 +754,10 @@ fn type_contains_by_value(
         return false;
     };
 
-    if ty.strong_identifier() == Some(aggregate_identifier) {
-        return true;
+    if let Some(strong_identifier) = &ty.strong_identifier {
+        if strong_identifier.as_str() == aggregate_identifier {
+            return true;
+        }
     }
 
     match &ty.kind {
@@ -636,6 +777,7 @@ fn type_contains_by_value(
         | THIRTypeKind::Float { .. }
         | THIRTypeKind::Opaque { .. }
         | THIRTypeKind::Undefined
+        | THIRTypeKind::Unreachable
         | THIRTypeKind::Str => false,
     }
 }
@@ -765,7 +907,7 @@ fn completed_function_name(
         HIRFunctionKind::AssociatedFunction {
             namespace: associated_namespace,
             name,
-        } => mangle_namespace_symbol(&QualifiedName::new(
+        } => cx_util::namespace::mangle_namespace_symbol(&QualifiedName::new(
             namespace.child(associated_namespace.clone()),
             name.clone(),
         )),

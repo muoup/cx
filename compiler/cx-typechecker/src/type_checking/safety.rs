@@ -20,6 +20,7 @@ pub(crate) fn validate_safe_expression(
         THIRExpressionKind::BoolLiteral(_)
         | THIRExpressionKind::IntLiteral(_)
         | THIRExpressionKind::FloatLiteral(_)
+        | THIRExpressionKind::StringLiteral { .. }
         | THIRExpressionKind::Unit
         | THIRExpressionKind::SizeOf { .. }
         | THIRExpressionKind::AlignOf { .. }
@@ -36,14 +37,20 @@ pub(crate) fn validate_safe_expression(
 
         THIRExpressionKind::FunctionReference { .. } => validate_callable(env, expression),
 
+        THIRExpressionKind::VaStart { list, last } => {
+            validate_safe_expression(env, list)?;
+            validate_safe_expression(env, last)
+        }
+        THIRExpressionKind::VaEnd { list } | THIRExpressionKind::VaArg { list, .. } => {
+            validate_safe_expression(env, list)
+        }
+
         THIRExpressionKind::BinaryOperation { lhs, rhs, .. } => {
             validate_safe_expression(env, lhs)?;
             validate_safe_expression(env, rhs)
         }
         THIRExpressionKind::UnaryOperation { operand, .. }
-        | THIRExpressionKind::Copy { source: operand } => {
-            validate_safe_expression(env, operand)
-        }
+        | THIRExpressionKind::Copy { source: operand } => validate_safe_expression(env, operand),
 
         THIRExpressionKind::CreateLocalVariable { initial_value, .. } => initial_value
             .as_deref()
@@ -108,7 +115,11 @@ pub(crate) fn validate_safe_expression(
             Ok(())
         }
 
-        THIRExpressionKind::Break | THIRExpressionKind::Continue => Ok(()),
+        THIRExpressionKind::Break { .. }
+        | THIRExpressionKind::Continue { .. }
+        | THIRExpressionKind::Unreachable
+        | THIRExpressionKind::Goto { .. } => Ok(()),
+        THIRExpressionKind::Label { statement, .. } => validate_safe_expression(env, statement),
         THIRExpressionKind::If {
             condition,
             then_branch,
@@ -192,6 +203,7 @@ pub(crate) fn validate_safe_expression(
             Ok(())
         }
         THIRExpressionKind::Defer { expression } => validate_safe_expression(env, expression),
+        THIRExpressionKind::StagedExpression { body, .. } => validate_safe_expression(env, body),
         THIRExpressionKind::Emit(inner)
         | THIRExpressionKind::Assert {
             condition: inner, ..

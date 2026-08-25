@@ -1,6 +1,0 @@
-import std::io;
-
-int main() {
-    std::io::println("qualified io");
-    return 0;
-}

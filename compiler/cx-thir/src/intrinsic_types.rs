@@ -13,6 +13,7 @@ pub const INTRINSIC_IMPORTS: &[&str] = &["std/intrinsic/assertion.cx"];
 
 pub const INTRINSIC_TYPES: &[(&str, THIRTypeKind)] = &[
     ("void", THIRTypeKind::Void),
+    ("unreachable", THIRTypeKind::Unreachable),
     (
         "bool",
         THIRTypeKind::Integer {
@@ -138,6 +139,34 @@ pub const INTRINSIC_TYPES: &[(&str, THIRTypeKind)] = &[
         },
     ),
     (
+        "short",
+        THIRTypeKind::Integer {
+            signed: true,
+            _type: THIRIntType::I16,
+        },
+    ),
+    (
+        "short int",
+        THIRTypeKind::Integer {
+            signed: true,
+            _type: THIRIntType::I16,
+        },
+    ),
+    (
+        "signed short",
+        THIRTypeKind::Integer {
+            signed: true,
+            _type: THIRIntType::I16,
+        },
+    ),
+    (
+        "signed short int",
+        THIRTypeKind::Integer {
+            signed: true,
+            _type: THIRIntType::I16,
+        },
+    ),
+    (
         "unsigned short int",
         THIRTypeKind::Integer {
             signed: false,
@@ -173,6 +202,20 @@ pub const INTRINSIC_TYPES: &[(&str, THIRTypeKind)] = &[
         },
     ),
     (
+        "signed long",
+        THIRTypeKind::Integer {
+            signed: true,
+            _type: THIRIntType::I64,
+        },
+    ),
+    (
+        "signed long int",
+        THIRTypeKind::Integer {
+            signed: true,
+            _type: THIRIntType::I64,
+        },
+    ),
+    (
         "long unsigned int",
         THIRTypeKind::Integer {
             signed: false,
@@ -202,6 +245,13 @@ pub const INTRINSIC_TYPES: &[(&str, THIRTypeKind)] = &[
     ),
     (
         "long long int",
+        THIRTypeKind::Integer {
+            signed: true,
+            _type: THIRIntType::I64,
+        },
+    ),
+    (
+        "signed long long",
         THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I64,
