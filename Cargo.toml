@@ -3,8 +3,7 @@ resolver = "2"
 
 members = [
     "compiler/cx",
-    "compiler/cx-lsp", "compiler/cx-mir",
-    "compiler/cx-mir-comptime",
+    "compiler/cx-lsp",
     "compiler/cx-zed-extension",
     "tests/benchmarks",
     "tests/integration",

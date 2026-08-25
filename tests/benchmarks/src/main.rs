@@ -7,6 +7,10 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use tabled::{
+    settings::{object::Columns, Alignment, Style},
+    Table, Tabled,
+};
 
 const DEFAULT_ITERATIONS: usize = 3;
 const DEFAULT_WARMUPS: usize = 1;
@@ -49,6 +53,18 @@ struct TimingStats {
     median_ms: f64,
     min_ms: f64,
     max_ms: f64,
+}
+
+#[derive(Tabled)]
+struct BenchmarkTableRow {
+    #[tabled(rename = "Case")]
+    case: String,
+    #[tabled(rename = "Backend")]
+    backend: String,
+    #[tabled(rename = "Compile")]
+    compile: String,
+    #[tabled(rename = "Execute")]
+    execute: String,
 }
 
 fn main() {
@@ -103,8 +119,8 @@ fn run(options: Options) -> Result<(), String> {
             "{}",
             serde_json::to_string_pretty(&report).map_err(|error| error.to_string())?
         ),
-        OutputFormat::Pretty => print!("{}", render_table(&report, false)),
-        OutputFormat::Github => print!("{}", render_table(&report, true)),
+        OutputFormat::Pretty => print!("{}", render_pretty_table(&report)),
+        OutputFormat::Github => print!("{}", render_github_table(&report)),
     }
 
     Ok(())
@@ -230,13 +246,27 @@ fn duration_ms(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1000.0
 }
 
-fn render_table(report: &BenchmarkReport, github: bool) -> String {
-    let mut output = String::new();
-    if github {
-        output.push_str("## CX benchmarks\n\n");
-    } else {
-        output.push_str("CX benchmarks\n\n");
-    }
+fn render_pretty_table(report: &BenchmarkReport) -> String {
+    let rows = report
+        .cases
+        .iter()
+        .map(|result| BenchmarkTableRow {
+            case: result.case.replace('|', "\\|"),
+            backend: result.backend.clone(),
+            compile: format!("{} ms", format_stats(&result.compile)),
+            execute: format!("{} ms", format_stats(&result.execute)),
+        })
+        .collect::<Vec<_>>();
+    let mut table = Table::new(rows);
+    table.modify(Columns::one(2), Alignment::right());
+    table.modify(Columns::one(3), Alignment::right());
+    table.with(Style::rounded());
+
+    format!("\nResults: Benchmarks\n{}\n\n", table)
+}
+
+fn render_github_table(report: &BenchmarkReport) -> String {
+    let mut output = String::from("## CX benchmarks\n\n");
     output.push_str("| Case | Backend | Compile | Execute |\n");
     output.push_str("| --- | --- | ---: | ---: |\n");
 
