@@ -203,7 +203,7 @@ impl<'a> Display for HIRExprFormatter<'a> {
                 writeln!(f, "Defer")?;
                 HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
-            HIRExprKind::StagedExpression { params, body } => {
+            HIRExprKind::ParamStagedExpression { params, body } => {
                 writeln!(
                     f,
                     "StagedExpression |{}|",

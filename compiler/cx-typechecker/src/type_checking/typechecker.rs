@@ -18,6 +18,7 @@ use crate::type_checking::op::unop::{
 };
 use crate::type_checking::op::{self, try_typecheck_special_binop, typecheck_binop};
 use crate::type_checking::result::TypecheckResult;
+use crate::type_checking::staged_expr::typecheck_staged_expr;
 use crate::type_checking::value::{
     identifiers::typecheck_identifier,
     literals::{typecheck_float_literal, typecheck_int_literal, typecheck_unit},
@@ -118,12 +119,8 @@ fn typecheck_expr_inner(
             )
         }
 
-        HIRExprKind::StagedExpression { params, body } => {
-            if params.is_empty() {
-                return typecheck_expr(env, namespace, body, expected_type);
-            }
-
-            return Ok(TypecheckResult::untyped_staged());
+        HIRExprKind::ParamStagedExpression { params, body } => {
+            typecheck_staged_expr(env, namespace, body)?
         }
 
         HIRExprKind::Then => {
@@ -516,27 +513,7 @@ fn typecheck_expr_inner(
             value.as_ref().map(Box::as_ref),
         )?,
 
-        HIRExprKind::Emit { expr: inner } => {
-            if !env.in_comptime_context() || env.in_runtime_emit_context() {
-                return env.log_error(
-                    expr.token_range(),
-                    "'emit' may only be used directly in a comptime context".to_string(),
-                );
-            }
-
-            let inner = env.in_runtime_emit(|env| {
-                env.in_staged(|env| {
-                    typecheck_expr(env, namespace, inner, expected_type)?
-                        .standard_ready_coerce(env, inner.token_range())
-                })
-            })?;
-            
-            TypecheckResult::from(THIRExpression {
-                token_range: TokenRange::internal(),
-                _type: inner._type.clone(),
-                kind: THIRExpressionKind::Emit(Box::new(inner)),
-            })
-        }
+        HIRExprKind::Emit { expr: inner } => typecheck_staged_expr(env, namespace, inner)?,
 
         HIRExprKind::Unsafe { expr: inner } => {
             typecheck_unsafe(env, namespace, inner, expected_type)?

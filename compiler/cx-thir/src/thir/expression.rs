@@ -4,6 +4,7 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 
+use crate::thir::comptime::THIRStagedExpr;
 use crate::thir::pattern::THIRPattern;
 use crate::thir::r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeKind};
 
@@ -285,9 +286,11 @@ pub enum THIRExpressionKind {
         list: Box<THIRExpression>,
         last: Box<THIRExpression>,
     },
+
     VaEnd {
         list: Box<THIRExpression>,
     },
+
     VaArg {
         list: Box<THIRExpression>,
         _type: THIRType,
@@ -316,16 +319,10 @@ pub enum THIRExpressionKind {
         expression: Box<THIRExpression>,
     },
 
-    // Comptime
-    Emit(Box<THIRExpression>),
-
-    /// A parameterized staged expression literal (`|params| body`). The node is
-    /// equivalent to an AST subtree: `body` is fully typechecked against the
-    /// parameter types, and the node itself carries no meaningful type
-    /// (it is typed `THIRTypeKind::Undefined`).
-    StagedExpression {
-        params: Vec<(CXIdent, THIRLocalID, THIRType)>,
-        body: Box<THIRExpression>,
+    StagedExpression(THIRStagedExpr),
+    MaterializeStagedExpression {
+        expr: Box<THIRExpression>,
+        with_params: Vec<THIRExpression>
     },
 }
 

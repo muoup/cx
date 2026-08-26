@@ -465,7 +465,7 @@ pub(crate) fn parse_expr_val(
                 parse_expr(data)?
             };
 
-            HIRExprKind::StagedExpression {
+            HIRExprKind::ParamStagedExpression {
                 params,
                 body: Box::new(body),
             }

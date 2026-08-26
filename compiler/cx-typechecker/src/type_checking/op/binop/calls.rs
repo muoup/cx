@@ -7,10 +7,12 @@ use crate::type_checking::coercion::implicit::promotion::lvalue;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::contracts::typecheck_contract;
 use crate::type_checking::result::{TypecheckExtract, TypecheckResult, TypecheckState};
+use crate::type_checking::staged_expr::typecheck_staged_expr;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
 use cx_thir::EnvironmentNamespace;
+use cx_thir::thir::comptime::THIRStagedExpr;
 use cx_thir::thir::data::{
     THIRComptimeFnPrototype, THIRComptimeValueType, THIRFloatType, THIRFnSignature,
     THIRTemplateInput, THIRType, THIRTypeKind,
@@ -20,6 +22,24 @@ use cx_thir::thir::r#type::THIRTypeID;
 use cx_thir::type_context::THIRTypeContext;
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+
+enum CompletedCallee {
+    Runtime(THIRExpression),
+    Staged(THIRStagedExpr),
+    Comptime {
+        prototype: THIRComptimeFnPrototype,
+        symbol_name: CXIdent,
+    },
+}
+
+pub const BUILTIN_FNS: &[&str] = &[
+    "__builtin_va_start",
+    "__builtin_va_end",
+    "__builtin_va_copy",
+    "va_start",
+    "va_end",
+    "va_copy",
+];
 
 pub(crate) fn typecheck_method_call(
     env: &mut TypeEnvironment,
@@ -34,20 +54,17 @@ pub(crate) fn typecheck_method_call(
         template_input: None,
     } = &lhs.kind
         && let Some(name) = name.root_name_ref().map(|name| name.as_str())
-        && matches!(
-            name,
-            "va_start" | "va_end" | "__builtin_va_start" | "__builtin_va_end"
-        )
+        && BUILTIN_FNS.contains(&name)
     {
-        return typecheck_va_builtin(env, namespace, name, rhs, expr);
+        // TODO: This should be handled via real functions implemented with @intrinsics, but for now we just special-case them here.
+        return typecheck_internal_method_call(env, namespace, name, rhs, expr);
     }
 
     let function = typecheck_expr(env, namespace, lhs, None)?;
-
-    typecheck_callee_method_call(env, namespace, function, vec![], rhs, expr, expected_type)
+    typecheck_callee_call(env, namespace, function, &vec![], rhs, expr, expected_type)
 }
 
-fn typecheck_va_builtin(
+fn typecheck_internal_method_call(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     name: &str,
@@ -111,22 +128,22 @@ pub(crate) fn typecheck_va_list(
     Ok(list)
 }
 
-pub(crate) fn typecheck_callee_method_call(
+pub(crate) fn typecheck_callee_call(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     callee: TypecheckResult,
-    implicit_args: Vec<THIRExpression>,
+    implicit_args: &[HIRExpression],
     rhs: &HIRExpression,
     expr: &HIRExpression,
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
-    let raw_args = comma_separated_exprs(rhs);
+    let args = comma_separated_exprs(rhs);
 
     let scope = env.function.current_scope_index();
     let reachable = env.function.is_current_scope_reachable();
     let snapshot = env.function.current_snapshot();
 
-    let tc_args = typecheck_args(env, namespace, raw_args.as_slice())?;
+    let tc_args = typecheck_args(env, namespace, args.as_slice())?;
 
     env.function.restore_snapshot(&snapshot);
     env.function.set_scope_reachable(scope, reachable);
@@ -142,21 +159,10 @@ pub(crate) fn typecheck_callee_method_call(
     )?;
 
     let callee = match callee {
-        CompletedCallee::Staged {
-            reference,
-            params,
-            return_type,
-        } => {
-            return complete_staged_call(
-                env,
-                expr,
-                reference,
-                params,
-                return_type,
-                namespace,
-                raw_args,
-            );
+        CompletedCallee::Staged(staged_expr) => {
+            return complete_staged_call(env, namespace, staged_expr, args.iter());
         }
+
         CompletedCallee::Comptime {
             prototype,
             symbol_name,
@@ -167,18 +173,18 @@ pub(crate) fn typecheck_callee_method_call(
                 expr,
                 prototype,
                 symbol_name,
-                &implicit_args,
-                raw_args,
+                implicit_args.iter().chain(args.iter()),
             );
         }
+
         CompletedCallee::Runtime(callee) => callee,
     };
 
     let (loaded_function, signature) = load_callable(env, expr, callee)?;
 
-    check_argument_count(env, expr, &signature, implicit_args.len() + raw_args.len())?;
+    check_argument_count(env, expr, &signature, implicit_args.len() + args.len())?;
 
-    let explicit_args = typecheck_args(env, namespace, &raw_args)?;
+    let explicit_args = typecheck_args(env, namespace, &args)?;
     let all_args = implicit_args
         .into_iter()
         .map(TypecheckResult::from)
@@ -398,34 +404,19 @@ fn complete_callee(
     namespace: &EnvironmentNamespace,
     expr: &HIRExpression,
     function: TypecheckResult,
-    implicit_args: &[THIRExpression],
+    implicit_args: &[HIRExpression],
     args: &[(&HIRExpression, TypecheckResult)],
     expected_type: Option<&THIRType>,
 ) -> CXResult<CompletedCallee> {
     match function.try_into_expression() {
         TypecheckExtract::Succ(callee) => Ok(CompletedCallee::Runtime(callee)),
-
         TypecheckExtract::Fail(function) => {
             let function = match function.try_into_staged() {
-                TypecheckExtract::Succ(staged) => {
-                    return Ok(CompletedCallee::Staged {
-                        reference: staged.reference,
-                        params: staged.params,
-                        return_type: staged.return_type,
-                    });
-                }
+                TypecheckExtract::Succ(staged) => return Ok(CompletedCallee::Staged(staged)),
                 TypecheckExtract::Fail(function) => function,
             };
 
             match function.expression_state() {
-                TypecheckState::UntypedStaged => {
-                    return env.log_error(
-                        expr.token_range(),
-                        "Cannot call a staged expression without declared parameter types"
-                            .to_string(),
-                    );
-                }
-
                 TypecheckState::ComptimeFunction {
                     prototype,
                     template_bindings,
@@ -487,7 +478,6 @@ fn prepare_comptime_callee(
     template_bindings: &[(CXIdent, THIRTypeID)],
 ) -> CompletedCallee {
     let symbol_name = comptime_instance_name(env, prototype, template_bindings);
-
     let runtime_return_type = env.materialization_return_type();
 
     let prototype = prototype
@@ -515,7 +505,7 @@ fn prepare_comptime_callee(
 fn comptime_instance_name(
     env: &TypeEnvironment,
     prototype: &THIRComptimeFnPrototype,
-    template_bindings: &[(CXIdent, cx_thir::thir::r#type::THIRTypeID)],
+    template_bindings: &[(CXIdent, THIRTypeID)],
 ) -> CXIdent {
     if template_bindings.is_empty() {
         return CXIdent::new(prototype.symbol_name());
@@ -529,107 +519,41 @@ fn comptime_instance_name(
     ))
 }
 
-enum CompletedCallee {
-    Runtime(THIRExpression),
-    Comptime {
-        prototype: THIRComptimeFnPrototype,
-        symbol_name: CXIdent,
-    },
-    Staged {
-        reference: THIRExpression,
-        params: Vec<THIRType>,
-        return_type: THIRType,
-    },
-}
-
-fn complete_comptime_call(
+fn complete_comptime_call<'a>(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     expr: &HIRExpression,
     prototype: THIRComptimeFnPrototype,
     symbol_name: CXIdent,
-    implicit_args: &[THIRExpression],
-    raw_args: Vec<&HIRExpression>,
+    args: impl ExactSizeIterator<Item = &'a HIRExpression>,
 ) -> CXResult<TypecheckResult> {
-    let total = implicit_args.len() + raw_args.len();
-    if total != prototype.params().len() {
+    if args.len() != prototype.params().len() {
         return env.log_error(
             expr.token_range(),
             format!(
                 "Call to comptime function {} expects {} arguments, found {}",
                 prototype.pretty_name(),
                 prototype.params().len(),
-                total
+                args.len()
             ),
         );
     }
 
-    let mut arguments = Vec::with_capacity(total);
-
-    // Implicit arguments (e.g. method receivers) pair with leading params and
-    // are always plain typed values.
-    for (arg, param) in implicit_args
-        .iter()
-        .zip(prototype.params().iter().take(implicit_args.len()))
-    {
-        let target_type = param.value_type._type.clone();
-        let promoted = if target_type.is_memory_reference() {
-            arg.clone()
-        } else {
-            std_rval_promotion(env, arg.clone())?
-        };
-        arguments.push(implicit_cast(env, promoted, &target_type)?);
-    }
-
-    for (arg, param) in raw_args
-        .into_iter()
-        .zip(prototype.params().iter().skip(implicit_args.len()))
-    {
-        let value_type = &param.value_type;
-
-        if value_type.expr && !value_type.params.is_empty() {
-            // Parameterized staged parameter: argument must be a staged
-            // literal; check it against the declared shape now.
-            let staged =
-                build_staged_argument(env, namespace, expr.token_range(), arg, value_type)?;
-            arguments.push(staged);
-        } else {
-            // Plain value or non-parameterized staged (`expr T`) parameter:
-            // a normal typed argument.
-            let target_type = value_type._type.clone();
-            let expected =
-                if value_type.expr && (target_type.is_void() || target_type.is_unreachable()) {
-                    None
-                } else {
-                    Some(&target_type)
-                };
-            let result = if value_type.expr {
-                env.in_staged(|env| typecheck_expr(env, namespace, arg, expected))?
+    let args = args
+        .zip(prototype.params())
+        .map(|(arg, param)| {
+            if param.value_type.expr {
+                Ok(typecheck_staged_expr(env, namespace, arg)?
+                    .map_expr(|expr| implicit_cast(env, expr, &param.value_type._type))?
+                    .into_expr())
             } else {
-                typecheck_expr(env, namespace, arg, expected)?
+                typecheck_expr(env, namespace, arg, Some(&param.value_type._type))
+                    .and_then(|v| v.apply_expected_type(env, namespace, &param.value_type._type))
+                    .and_then(|v| v.standard_ready_coerce(env, arg.token_range()))
+                    .and_then(|v| implicit_cast(env, v, &param.value_type._type))
             }
-            .standard_ready_coerce(env, arg.token_range())?;
-            if value_type.expr {
-                arguments.push(
-                    if target_type.is_memory_reference()
-                        || target_type.is_void()
-                        || target_type.is_unreachable()
-                    {
-                        result
-                    } else {
-                        implicit_cast(env, result, &target_type)?
-                    },
-                );
-                continue;
-            }
-            let promoted = if target_type.is_memory_reference() {
-                result
-            } else {
-                std_rval_promotion(env, result)?
-            };
-            arguments.push(implicit_cast(env, promoted, &target_type)?);
-        }
-    }
+        })
+        .collect::<CXResult<Vec<_>>>()?;
 
     Ok(TypecheckResult::from(THIRExpression {
         token_range: expr.token_range().clone(),
@@ -645,128 +569,48 @@ fn complete_comptime_call(
                     debug_name: prototype.debug_name().cloned(),
                 },
             }),
-            arguments,
+            arguments: args,
             contract: THIRFnContract::default(),
         },
     }))
 }
 
-/// Checks a staged literal (`|params| body`) against a parameterized staged
-/// parameter type (`expr(P) T`), producing a checked `StagedExpression` node.
-fn build_staged_argument(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    call_range: &TokenRange,
-    arg: &HIRExpression,
-    value_type: &THIRComptimeValueType,
-) -> CXResult<THIRExpression> {
-    let HIRExprKind::StagedExpression {
-        params: source_params,
-        body,
-    } = &arg.kind
-    else {
-        return env.log_error(
-            call_range.clone(),
-            "Expected a parameterized staged expression written as |parameters| expression"
-                .to_string(),
-        );
-    };
-
-    if source_params.len() != value_type.params.len() {
-        return env.log_error(
-            call_range.clone(),
-            format!(
-                "Staged expression expects {} parameters, found {}",
-                value_type.params.len(),
-                source_params.len()
-            ),
-        );
-    }
-
-    env.symbols.push_local_scope();
-
-    let mut checked_params = Vec::with_capacity(source_params.len());
-    for (name, ty) in source_params.iter().zip(value_type.params.iter()) {
-        let local_id = THIRLocalID::fresh();
-        env.symbols.insert_local_value(
-            QualifiedName::new_raw(name.clone()),
-            THIRExpression {
-                token_range: TokenRange::internal(),
-                kind: THIRExpressionKind::Variable {
-                    name: name.clone(),
-                    local_id,
-                },
-                _type: ty.clone(),
-            },
-        );
-        checked_params.push((name.clone(), local_id, ty.clone()));
-    }
-
-    let body_result = env.in_staged(|env| {
-        typecheck_expr(env, namespace, body, Some(&value_type._type))?
-            .standard_ready_coerce(env, call_range)
-    });
-    env.symbols.pop_local_scope();
-    let checked_body = body_result?;
-
-    Ok(THIRExpression {
-        token_range: arg.token_range().clone(),
-        _type: THIRTypeKind::Undefined.into(),
-        kind: THIRExpressionKind::StagedExpression {
-            params: checked_params,
-            body: Box::new(checked_body),
-        },
-    })
-}
-
-/// Emits a symbolic call to a staged binding. Arguments are coerced against
-/// the binding's declared parameter types; substitution of the staged body
-/// happens in the engine at evaluation time.
 fn complete_staged_call(
     env: &mut TypeEnvironment,
-    expr: &HIRExpression,
-    reference: THIRExpression,
-    params: Vec<THIRType>,
-    return_type: THIRType,
     namespace: &EnvironmentNamespace,
-    raw_args: Vec<&HIRExpression>,
+    staged_expr: THIRStagedExpr,
+    args: impl ExactSizeIterator<Item = &'_ HIRExpression>,
 ) -> CXResult<TypecheckResult> {
-    if raw_args.len() != params.len() {
+    if args.len() != params.len() {
         return env.log_error(
             expr.token_range(),
             format!(
                 "Staged expression expects {} arguments, found {}",
                 params.len(),
-                raw_args.len()
+                args.len()
             ),
         );
     }
 
-    let mut arguments = Vec::with_capacity(raw_args.len());
-    for (arg, target_type) in raw_args.into_iter().zip(params.iter()) {
-        let result = typecheck_expr(env, namespace, arg, Some(target_type))?
-            .standard_ready_coerce(env, arg.token_range())?;
-        if target_type.is_memory_reference() && result._type.is_memory_reference() {
-            arguments.push(result);
-            continue;
-        }
-        let promoted = if target_type.is_memory_reference() {
-            result
-        } else {
-            std_rval_promotion(env, result)?
-        };
-        arguments.push(implicit_cast(env, promoted, target_type)?);
-    }
+    let args = args
+        .zip(params.iter())
+        .map(|(arg, param)| {
+            typecheck_staged_expr(env, namespace, arg)
+                .and_then(|v| v.apply_expected_type(env, namespace, &param._type))
+                .and_then(|v| v.standard_ready_assert(env, token_range))
+                .and_then(|v| implicit_cast(env, v, &param._type))
+        })
+        .collect::<CXResult<Vec<_>>>()?;
 
-    Ok(TypecheckResult::from(THIRExpression {
-        token_range: expr.token_range().clone(),
-        _type: return_type,
-        kind: THIRExpressionKind::CallFunction {
-            function: Box::new(reference),
-            arguments,
-            contract: THIRFnContract::default(),
-        },
-    }))
+    Ok(
+        TypecheckResult::new(
+            staged_expr.expr()._type.clone(),
+            THIRExpressionKind::MaterializeStagedExpression { 
+                expr: Box::new(staged_expr.into_expr()),
+                with_params: args,
+            }
+        )
+    )
 }
 
 pub(crate) fn comma_separated_exprs(expr: &HIRExpression) -> Vec<&HIRExpression> {

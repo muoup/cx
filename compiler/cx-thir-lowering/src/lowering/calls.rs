@@ -2,7 +2,7 @@ use cx_log::CXResult;
 use std::sync::Arc;
 
 use cx_mir::{
-    MIRCallKind, MIRConstant, MIRField, MIRFunctionID, MIRFunctionMode, MIRInstrKind, MIRValue,
+    MIRCallKind, MIRConstant, MIRField, MIRFunctionID, MIRFunctionMode, MIRInstrKind, MIRStagedTemplate, MIRValue
 };
 use cx_mir_comptime::{
     InterpretedFunction, MIRComptimeEngine, MIRComptimeValue, MIRStagedBinding, MIRStagedValue,
@@ -236,7 +236,7 @@ fn capture_staged_argument(
     builder: &mut MIRBuilder<'_>,
     argument: &THIRExpression,
     diverges: bool,
-) -> CXResult<(Arc<cx_mir::MIRStagedTemplate>, Vec<MIRValue>)> {
+) -> CXResult<(Arc<MIRStagedTemplate>, Vec<MIRValue>)> {
     match &argument.kind {
         THIRExpressionKind::StagedExpression { params, body } => {
             let params = params

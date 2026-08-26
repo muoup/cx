@@ -1199,40 +1199,22 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 Ok(())
             }
-            THIRExpressionKind::Emit(expr) => {
-                write!(f, "Emit <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")?;
-                MIRExpressionFormatter {
-                    expr,
-                    depth: self.depth + 1,
-                    definitions: self.definitions,
-                }
-                .fmt(f)
-            }
-            THIRExpressionKind::StagedExpression { params, body } => {
+            THIRExpressionKind::StagedExpression(staged_expr) => {
                 write!(f, "StagedExpression [")?;
-                for (i, (name, _, ty)) in params.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(
-                        f,
-                        "{}: {}",
-                        name.as_str(),
-                        ty.display_with_definitions(self.definitions)
-                    )?;
+                for param in staged_expr.params() {
+                    write!(f, " {}: ", param.name)?;
+                    self.write_type(f, &param.ty)?;
                 }
-                writeln!(f, "] <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")?;
                 MIRExpressionFormatter {
-                    expr: body,
+                    expr: staged_expr.expr(),
                     depth: self.depth + 1,
                     definitions: self.definitions,
                 }
                 .fmt(f)
             }
+            THIRExpressionKind::MaterializeStagedExpression { staged } => {
+                // todo
+            },
             THIRExpressionKind::Assert { condition, message } => {
                 writeln!(f, "Assert {message:?}")?;
                 MIRExpressionFormatter {

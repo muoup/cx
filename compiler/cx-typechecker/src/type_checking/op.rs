@@ -1,7 +1,7 @@
 use crate::{
     environment::TypeEnvironment,
     type_checking::{
-        op::binop::calls::typecheck_callee_method_call, result::TypecheckResult,
+        op::binop::calls::typecheck_callee_call, result::TypecheckResult,
         typechecker::typecheck_expr,
     },
 };
@@ -48,7 +48,7 @@ pub fn try_typecheck_special_binop(
                 } => {
                     let callee = typecheck_expr(env, namespace, lhs, None)?;
 
-                    Some(typecheck_callee_method_call(
+                    Some(typecheck_callee_call(
                         env,
                         namespace,
                         callee,
@@ -59,7 +59,10 @@ pub fn try_typecheck_special_binop(
                     )?)
                 }
 
-                _ => None,
+                _ => return env.log_error(
+                    expr.token_range(),
+                    "The right side of '|>' must be a method call".to_string(),
+                ),
             }
         }
 

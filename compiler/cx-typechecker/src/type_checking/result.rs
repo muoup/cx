@@ -2,6 +2,7 @@ use cx_hir::ast::template::HIRTemplateInput;
 use cx_log::{CXRawResult, CXResult};
 use cx_thir::EnvironmentNamespace;
 use cx_thir::symbol::MIRSymbol;
+use cx_thir::thir::comptime::THIRStagedExpr;
 use cx_thir::thir::data::{THIRComptimeFnPrototype, THIRType, THIRTypeID};
 use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind, THIRLocalID};
 use cx_util::identifier::CXIdent;
@@ -51,8 +52,7 @@ impl TypecheckedBinding {
 #[derive(Debug)]
 pub enum TypecheckState {
     Ready(THIRExpression),
-    Staged(StagedValue),
-    UntypedStaged,
+    Staged(THIRStagedExpr),
     ComptimeFunction {
         prototype: THIRComptimeFnPrototype,
         template_bindings: Vec<(CXIdent, THIRTypeID)>,
@@ -62,13 +62,6 @@ pub enum TypecheckState {
         template_input: Option<HIRTemplateInput>,
     },
     NeedsExpectedType(ExpectedTypeDeferredExpr),
-}
-
-#[derive(Debug, Clone)]
-pub struct StagedValue {
-    pub reference: THIRExpression,
-    pub params: Vec<THIRType>,
-    pub return_type: THIRType,
 }
 
 pub struct IncompleteTemplate {
@@ -121,11 +114,8 @@ pub enum TypecheckExtract<T> {
 
 #[derive(Debug)]
 pub struct TypecheckResult {
-    /// The accumulated expression
     expression: TypecheckState,
-    /// Binding/place information for expressions that still denote a local place.
     binding: Option<TypecheckedBinding>,
-    /// True when this value adopts an existing region instead of initializing a fresh one.
     adopting: bool,
 }
 
@@ -159,7 +149,7 @@ impl TypecheckResult {
     ) -> CXResult<TypecheckResult> {
         match self.expression {
             TypecheckState::Ready(_) => Ok(self),
-            TypecheckState::Staged(_) | TypecheckState::UntypedStaged => env.log_error(
+            TypecheckState::Staged(_) => env.log_error(
                 token_range,
                 "Staged expression cannot be used as a runtime expression".to_string(),
             ),
@@ -215,14 +205,6 @@ impl TypecheckResult {
     pub fn staged(value: StagedValue) -> Self {
         Self {
             expression: TypecheckState::Staged(value),
-            binding: None,
-            adopting: false,
-        }
-    }
-
-    pub fn untyped_staged() -> Self {
-        Self {
-            expression: TypecheckState::UntypedStaged,
             binding: None,
             adopting: false,
         }
@@ -290,9 +272,10 @@ impl TypecheckResult {
         }
     }
 
-    pub fn try_into_staged(self) -> TypecheckExtract<StagedValue> {
+    pub fn try_into_staged(self) -> TypecheckExtract<THIRStagedExpr> {
         match self.expression {
             TypecheckState::Staged(value) => TypecheckExtract::Succ(value),
+            
             expression => TypecheckExtract::Fail(Self { expression, ..self }),
         }
     }
@@ -332,7 +315,6 @@ impl TypecheckResult {
         match &self.expression {
             TypecheckState::Ready(expression) => Some(&expression._type),
             TypecheckState::Staged(_)
-            | TypecheckState::UntypedStaged
             | TypecheckState::ComptimeFunction { .. } => None,
             TypecheckState::NeedsExpectedType(_) => None,
             TypecheckState::IncompleteTemplatedCallee { .. } => None,

@@ -529,7 +529,7 @@ pub(crate) fn count_then_markers(expr: &HIRExpression) -> usize {
         | HIRExprKind::Unsafe { expr: operand }
         | HIRExprKind::Leak { expr: operand }
         | HIRExprKind::Adopt { expr: operand } => count_then_markers(operand),
-        HIRExprKind::StagedExpression { body, .. } => count_then_markers(body),
+        HIRExprKind::ParamStagedExpression { body, .. } => count_then_markers(body),
         HIRExprKind::Block { exprs, .. } => exprs.iter().map(count_then_markers).sum(),
         _ => 0,
     }
@@ -537,8 +537,8 @@ pub(crate) fn count_then_markers(expr: &HIRExpression) -> usize {
 
 pub(crate) fn count_capturing_then_markers(expr: &HIRExpression) -> usize {
     match &expr.kind {
-        HIRExprKind::StagedExpression { body, .. } if matches!(body.kind, HIRExprKind::Then) => 1,
-        HIRExprKind::StagedExpression { body, .. } => count_capturing_then_markers(body),
+        HIRExprKind::ParamStagedExpression { body, .. } if matches!(body.kind, HIRExprKind::Then) => 1,
+        HIRExprKind::ParamStagedExpression { body, .. } => count_capturing_then_markers(body),
         HIRExprKind::BinOp { lhs, rhs, .. } => {
             count_capturing_then_markers(lhs) + count_capturing_then_markers(rhs)
         }
@@ -569,7 +569,7 @@ fn replace_then_marker(expr: &mut HIRExpression, continuation: HIRExpression) {
             | HIRExprKind::Unsafe { expr: operand }
             | HIRExprKind::Leak { expr: operand }
             | HIRExprKind::Adopt { expr: operand } => replace(operand, continuation),
-            HIRExprKind::StagedExpression { body, .. } => replace(body, continuation),
+            HIRExprKind::ParamStagedExpression { body, .. } => replace(body, continuation),
             HIRExprKind::Block { exprs, .. } => {
                 for expr in exprs {
                     replace(expr, continuation);
