@@ -49,19 +49,30 @@ impl TypecheckedBinding {
     }
 }
 
-#[derive(Debug)]
-pub enum TypecheckState {
-    Ready(THIRExpression),
-    Staged(THIRStagedExpr),
-    ComptimeFunction {
-        prototype: THIRComptimeFnPrototype,
-        template_bindings: Vec<(CXIdent, THIRTypeID)>,
-    },
-    IncompleteTemplatedCallee {
-        name: QualifiedName,
+pub struct THIRStandardTC {
+    expr: THIRExpression,
+    binding: Option<TypecheckedBinding>,
+    adopting: bool,
+}
+
+pub enum TypecheckResult<T> {
+    Ready(T),
+    IncompleteTemplate {
+        base: T,
         template_input: Option<HIRTemplateInput>,
     },
-    NeedsExpectedType(ExpectedTypeDeferredExpr),
+    NeedsExpectedType {
+        base: T,
+        routine:
+            Box<dyn FnOnce(&mut TypeEnvironment, &EnvironmentNamespace, &THIRType) -> CXResult<T>>,
+    },
+}
+
+#[derive(Debug)]
+pub enum TypecheckState {
+    Standard(TypecheckResult<THIRStandardTC>),
+    Staged(TypecheckResult<THIRStagedExpr>),
+    ComptimeFunction(TypecheckResult<THIRComptimeFnPrototype>),
 }
 
 pub struct IncompleteTemplate {
@@ -275,7 +286,7 @@ impl TypecheckResult {
     pub fn try_into_staged(self) -> TypecheckExtract<THIRStagedExpr> {
         match self.expression {
             TypecheckState::Staged(value) => TypecheckExtract::Succ(value),
-            
+
             expression => TypecheckExtract::Fail(Self { expression, ..self }),
         }
     }
@@ -314,8 +325,7 @@ impl TypecheckResult {
     pub fn ready_type(&self) -> Option<&THIRType> {
         match &self.expression {
             TypecheckState::Ready(expression) => Some(&expression._type),
-            TypecheckState::Staged(_)
-            | TypecheckState::ComptimeFunction { .. } => None,
+            TypecheckState::Staged(_) | TypecheckState::ComptimeFunction { .. } => None,
             TypecheckState::NeedsExpectedType(_) => None,
             TypecheckState::IncompleteTemplatedCallee { .. } => None,
         }
