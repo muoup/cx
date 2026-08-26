@@ -148,41 +148,39 @@ pub(crate) fn typecheck_callee_call(
     env.function.restore_snapshot(&snapshot);
     env.function.set_scope_reachable(scope, reachable);
 
-    let callee = complete_callee(
-        env,
-        namespace,
-        expr,
-        callee,
-        &implicit_args,
-        &tc_args,
-        expected_type,
-    )?;
+    let callee = match typecheck_expr(env, namespace, expr, None)? {
+        TypecheckResult::ComptimeFunction(prototype) =>
+            return complete_comptime_call(env, namespace, expr, prototype, args.into_iter()),
 
-    let callee = match callee {
-        CompletedCallee::Staged(staged_expr) => {
-            return complete_staged_call(env, namespace, staged_expr, args.iter());
-        }
+        TypecheckResult::Staged(staged_expr) =>
+            return complete_staged_call(env, namespace, staged_expr, args.into_iter()),
 
-        CompletedCallee::Comptime {
-            prototype,
-            symbol_name,
-        } => {
-            return complete_comptime_call(
-                env,
-                namespace,
-                expr,
-                prototype,
-                symbol_name,
-                implicit_args.iter().chain(args.iter()),
-            );
-        }
-
-        CompletedCallee::Runtime(callee) => callee,
+        _ => callee,
     };
 
-    let (loaded_function, signature) = load_callable(env, expr, callee)?;
+    if arg_count != signature.params.len() && !signature.var_args {
+        return env.log_error(
+            expr.token_range(),
+            format!(
+                "Call to {} expects {} arguments, found {}",
+                signature.display_with(&env.symbols),
+                signature.params.len(),
+                arg_count
+            ),
+        );
+    }
 
-    check_argument_count(env, expr, &signature, implicit_args.len() + args.len())?;
+    if arg_count < signature.params.len() {
+        return env.log_error(
+            expr.token_range(),
+            format!(
+                "Call to {} expects at least {} arguments, found {}",
+                signature.display_with(&env.symbols),
+                signature.params.len(),
+                arg_count
+            ),
+        );
+    }
 
     let explicit_args = typecheck_args(env, namespace, &args)?;
     let all_args = implicit_args
@@ -192,7 +190,7 @@ pub(crate) fn typecheck_callee_call(
         .collect::<Vec<_>>();
 
     let argument_results = complete_call_arguments(env, namespace, &signature, all_args)?;
-    let arguments = complete_call_argument_expressions(env, expr, &signature, argument_results)?;
+    let arguments = complete_call_arguments(env, namespace, &signature, argument_results)?;
     let contract = typecheck_contract(env, namespace, &signature)?;
 
     Ok(TypecheckResult::new(
@@ -238,48 +236,6 @@ fn load_callable(
     };
 
     Ok((loaded_function, callable_type))
-}
-
-fn check_argument_count(
-    env: &TypeEnvironment,
-    expr: &HIRExpression,
-    signature: &THIRFnSignature,
-    arg_count: usize,
-) -> CXResult<()> {
-    if arg_count != signature.params.len() && !signature.var_args {
-        return env.log_error(
-            expr.token_range(),
-            format!(
-                "Call to {} expects {} arguments, found {}",
-                signature.display_with(&env.symbols),
-                signature.params.len(),
-                arg_count
-            ),
-        );
-    }
-
-    if arg_count < signature.params.len() {
-        return env.log_error(
-            expr.token_range(),
-            format!(
-                "Call to {} expects at least {} arguments, found {}",
-                signature.display_with(&env.symbols),
-                signature.params.len(),
-                arg_count
-            ),
-        );
-    }
-
-    Ok(())
-}
-
-fn complete_fixed_argument(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    val: TypecheckResult,
-    target_type: &THIRType,
-) -> CXResult<TypecheckResult> {
-    val.apply_expected_type(env, namespace, target_type)
 }
 
 fn coerce_fixed_argument(
@@ -388,15 +344,6 @@ fn deduction_arg_types(
         .map(THIRExpression::get_type)
         .chain(args.iter().filter_map(|(_, arg)| arg.ready_type().cloned()))
         .collect()
-}
-
-fn complete_call_argument_expressions(
-    env: &mut TypeEnvironment,
-    expr: &HIRExpression,
-    signature: &THIRFnSignature,
-    args: Vec<TypecheckResult>,
-) -> CXResult<Vec<THIRExpression>> {
-    coerce_call_arguments(env, expr, signature, args)
 }
 
 fn complete_callee(
@@ -523,8 +470,7 @@ fn complete_comptime_call<'a>(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
     expr: &HIRExpression,
-    prototype: THIRComptimeFnPrototype,
-    symbol_name: CXIdent,
+    prototype: TypecheckState<THIRComptimeFnPrototype>,
     args: impl ExactSizeIterator<Item = &'a HIRExpression>,
 ) -> CXResult<TypecheckResult> {
     if args.len() != prototype.params().len() {
@@ -578,7 +524,7 @@ fn complete_comptime_call<'a>(
 fn complete_staged_call(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    staged_expr: THIRStagedExpr,
+    staged_expr: TypecheckState<THIRStagedExpr>,
     args: impl ExactSizeIterator<Item = &'_ HIRExpression>,
 ) -> CXResult<TypecheckResult> {
     if args.len() != params.len() {

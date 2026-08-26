@@ -55,7 +55,7 @@ pub struct THIRStandardTC {
     adopting: bool,
 }
 
-pub enum TypecheckResult<T> {
+pub enum TypecheckState<T> {
     Ready(T),
     IncompleteTemplate {
         base: T,
@@ -69,10 +69,10 @@ pub enum TypecheckResult<T> {
 }
 
 #[derive(Debug)]
-pub enum TypecheckState {
-    Standard(TypecheckResult<THIRStandardTC>),
-    Staged(TypecheckResult<THIRStagedExpr>),
-    ComptimeFunction(TypecheckResult<THIRComptimeFnPrototype>),
+pub enum TypecheckResult {
+    Standard(TypecheckState<THIRStandardTC>),
+    Staged(TypecheckState<THIRStagedExpr>),
+    ComptimeFunction(TypecheckState<THIRComptimeFnPrototype>),
 }
 
 pub struct IncompleteTemplate {
