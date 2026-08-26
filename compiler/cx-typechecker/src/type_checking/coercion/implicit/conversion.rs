@@ -16,7 +16,7 @@ use crate::{
         CoercionResult,
         implicit::{
             self, coercion_expr,
-            promotion::{integer, lvalue, std_rval_promotion, std_rval_promotion_coercion},
+            promotion::{integer, lvalue, std_rval_promotion_coercion},
         },
     },
 };
@@ -248,16 +248,8 @@ fn internal(
             CoercionResult::unapplied(expr)
         }
 
-        // Note: type 2 is not a memory reference due to previous case
-        (THIRTypeKind::MemoryReference { .. }, _) => {
-            std_rval_promotion(env, expr).and_then(CoercionResult::success)
-        }
-
-        (_, THIRTypeKind::PointerTo { inner_type })
-            if env.type_eq(&from_type, env.symbols.resolve_type_id(*inner_type)) =>
-        {
-            std_rval_promotion_coercion(env, expr)
-        }
+        // Note: to type is not a memory reference due to previous case
+        (THIRTypeKind::MemoryReference { .. }, _) => std_rval_promotion_coercion(env, expr),
 
         (
             THIRTypeKind::PointerTo {
