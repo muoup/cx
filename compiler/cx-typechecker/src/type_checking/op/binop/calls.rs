@@ -488,10 +488,7 @@ fn prepare_comptime_callee(
 ) -> CompletedCallee {
     let symbol_name = comptime_instance_name(env, prototype, template_bindings);
 
-    let runtime_return_type = env.comptime_runtime_return_type().cloned().or_else(|| {
-        env.try_current_function()
-            .map(|function| function.signature().return_type.clone())
-    });
+    let runtime_return_type = env.materialization_return_type();
 
     let prototype = prototype
         .clone()

@@ -35,6 +35,11 @@ pub(crate) mod items;
 
 pub use items::THIRFunctionGenRequest;
 
+struct StagedContext {
+    boundary: ScopeId,
+    return_type: Option<THIRType>,
+}
+
 pub struct TypeEnvironment<'a> {
     pub module_data: &'a ModuleData,
     pub symbols: MIRSymbolRegistry<'a>,
@@ -46,7 +51,7 @@ pub struct TypeEnvironment<'a> {
 
     runtime_emit_depth: usize,
     defer_depth: usize,
-    staged_scope_boundaries: Vec<ScopeId>,
+    staged_contexts: Vec<StagedContext>,
     staged_expansions: Vec<u64>,
     next_staged_expression_id: u64,
     require_explicit_return: bool,
@@ -67,7 +72,7 @@ impl TypeEnvironment<'_> {
             comptime_runtime_return_types: Vec::new(),
             runtime_emit_depth: 0,
             defer_depth: 0,
-            staged_scope_boundaries: Vec::new(),
+            staged_contexts: Vec::new(),
             staged_expansions: Vec::new(),
             next_staged_expression_id: 0,
             require_explicit_return,
@@ -113,17 +118,30 @@ impl TypeEnvironment<'_> {
     where
         F: FnOnce(&mut Self) -> CXResult<T>,
     {
-        self.staged_scope_boundaries
-            .push(self.function.current_scope_index());
+        let context = StagedContext {
+            boundary: self.function.current_scope_index(),
+            return_type: self.materialization_return_type(),
+        };
+        self.staged_contexts.push(context);
         let result = f(self);
-        self.staged_scope_boundaries.pop();
+        self.staged_contexts.pop();
         result
     }
 
-    pub fn staged_control_target_is_external(&self, target: ScopeId) -> bool {
-        self.staged_scope_boundaries
+    pub fn in_staged_context(&self) -> bool {
+        !self.staged_contexts.is_empty()
+    }
+
+    pub fn staged_return_type(&self) -> Option<&THIRType> {
+        self.staged_contexts
             .last()
-            .is_some_and(|boundary| target.index() <= boundary.index())
+            .and_then(|context| context.return_type.as_ref())
+    }
+
+    pub fn staged_control_target_is_external(&self, target: ScopeId) -> bool {
+        self.staged_contexts
+            .last()
+            .is_some_and(|context| target.index() <= context.boundary.index())
     }
 
     pub fn finish_thir_unit(self, source_namespace: EnvironmentNamespace) -> CXResult<THIRUnit> {
@@ -209,6 +227,20 @@ impl TypeEnvironment<'_> {
         self.comptime_runtime_return_types
             .last()
             .and_then(Option::as_ref)
+    }
+
+    pub fn materialization_return_type(&self) -> Option<THIRType> {
+        if let Some(return_type) = self.staged_return_type() {
+            return Some(return_type.clone());
+        }
+        if let Some(return_type) = self.comptime_runtime_return_type() {
+            return Some(return_type.clone());
+        }
+        if self.in_comptime_context() {
+            return None;
+        }
+        self.try_current_function()
+            .map(|function| function.signature().return_type.clone())
     }
 
     pub fn next_staged_expression_id(&mut self) -> u64 {

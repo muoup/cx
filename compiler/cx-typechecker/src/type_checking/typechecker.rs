@@ -488,10 +488,14 @@ fn typecheck_expr_inner(
         }
 
         HIRExprKind::Return { value } => {
-            let return_type = if env.in_runtime_emit_context() {
-                env.comptime_runtime_return_type()
-                    .cloned()
-                    .unwrap_or_else(|| env.current_function().signature().return_type.clone())
+            let return_type = if env.in_staged_context() || env.in_runtime_emit_context() {
+                let Some(return_type) = env.materialization_return_type() else {
+                    return env.log_error(
+                        expr.token_range(),
+                        "staged return has no materialization context".to_string(),
+                    );
+                };
+                return_type
             } else {
                 env.current_function().signature().return_type.clone()
             };
@@ -521,9 +525,12 @@ fn typecheck_expr_inner(
             }
 
             let inner = env.in_runtime_emit(|env| {
-                typecheck_expr(env, namespace, inner, expected_type)?
-                    .standard_ready_coerce(env, inner.token_range())
+                env.in_staged(|env| {
+                    typecheck_expr(env, namespace, inner, expected_type)?
+                        .standard_ready_coerce(env, inner.token_range())
+                })
             })?;
+            
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
                 _type: inner._type.clone(),
