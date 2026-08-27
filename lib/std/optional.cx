@@ -11,30 +11,6 @@ enum union opt<T> : @copy_traits(T) {
     some :: T
 };
 
-comptime expr T opt::try<T>(expr opt<T> self) {
-    return emit match (self) {
-        opt::some<T>(value) => yield move value;
-        opt::none<T>() => return opt::none();
-    };
-}
-
-comptime expr T opt::try_or<T>(expr opt<T> self, expr void on_none) {
-    return emit match (self) {
-        opt::some<T>(value) => yield move value;
-        opt::none<T>() => {
-            on_none;
-            return opt::none();
-        }
-    };
-}
-
-comptime expr T opt::unwrap_or_else<T>(expr opt<T> self, expr unreachable on_none) {
-    return emit match (self) {
-        opt::some<T>(value) => yield move value;
-        opt::none<T>() => on_none;
-    };
-}
-
 bool opt::is_some<T>(opt<T>& this) {
     return this is opt::some<T>(_);
 }
@@ -51,14 +27,6 @@ opt<U> opt::map<T, U>(opt<T> this, U (*func)(T)) {
     return opt::none<U>();
 }
 
-T opt::unwrap_or<T>(opt<T> this, T otherwise) {
-    if (this is opt::some<T>(value)) {
-        return value;
-    }
-
-    return move otherwise;
-}
-
 T opt::unwrap<T>(opt<T> this) {
     match (move this) {
         opt::some<T>(val) => return move val;
@@ -67,4 +35,35 @@ T opt::unwrap<T>(opt<T> this) {
             exit(1);
         }
     }
+}
+
+T opt::unwrap_or<T>(opt<T> this, T default_value) {
+    match (move this) {
+        opt::some<T>(val) => return move val;
+        opt::none<T>() => return default_value;
+    }
+}
+
+comptime expr T opt::unwrap_or_else<T>(expr opt<T> self, expr unreachable on_none) {
+    return emit match (self) {
+        opt::some<T>(value) => yield move value;
+        opt::none<T>() => on_none;
+    };
+}
+
+comptime expr T opt::try<T>(expr opt<T> self) {
+    return emit match (self) {
+        opt::some<T>(value) => yield move value;
+        opt::none<T>() => return opt::none();
+    };
+}
+
+comptime expr T opt::try_or<T>(expr opt<T> self, expr void on_none) {
+    return emit match (self) {
+        opt::some<T>(value) => yield move value;
+        opt::none<T>() => {
+            on_none;
+            return opt::none();
+        }
+    };
 }

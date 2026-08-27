@@ -21,6 +21,11 @@ std::opt<file> file::open(const char* path, const char* mode) {
     return std::opt::some<file>((file) { .handle = handle });
 }
 
+void file::close(file this) {
+    fclose(this.handle);
+    @leak(this);
+}
+
 void file::write(file& this, const char* data) {
     if (this.handle != NULL) {
         fputs(data, this.handle);
@@ -64,13 +69,4 @@ std::string file::read_to_string(file& this) {
     }
 
     return move s;
-}
-
-void file::close(file this) {
-    if (this.handle != NULL) {
-        fclose(this.handle);
-        this.handle = NULL;
-    }
-    
-    @leak(this);
 }
