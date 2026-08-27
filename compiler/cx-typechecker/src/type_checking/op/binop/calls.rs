@@ -151,6 +151,8 @@ pub(crate) fn typecheck_callee_call(
     env.function.restore_snapshot(&snapshot);
     env.function.set_scope_reachable(scope, reachable);
 
+    // let callee = typecheck_expr(env, namespace, expr, callee)?;
+    
     let callee = complete_callee(
         env,
         namespace,
@@ -270,15 +272,6 @@ fn check_argument_count(
     Ok(())
 }
 
-fn complete_fixed_argument(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    value: TypecheckResult,
-    target_type: &THIRType,
-) -> CXResult<TypecheckResult> {
-    value.apply_expected_type(env, namespace, target_type)
-}
-
 fn coerce_fixed_argument(
     env: &mut TypeEnvironment,
     expr: &HIRExpression,
@@ -347,7 +340,7 @@ fn complete_call_arguments(
         .enumerate()
         .map(|(i, val)| {
             if let Some(param) = signature.params.get(i) {
-                complete_fixed_argument(env, namespace, val, &param._type)
+                val.apply_expected_type(env, namespace, &param._type)
             } else {
                 Ok(val)
             }
@@ -376,17 +369,6 @@ fn coerce_call_arguments(
     Ok(coerced_args)
 }
 
-fn deduction_arg_types(
-    implicit_args: &[THIRExpression],
-    args: &[(&HIRExpression, TypecheckResult)],
-) -> Vec<THIRType> {
-    implicit_args
-        .iter()
-        .map(THIRExpression::get_type)
-        .chain(args.iter().filter_map(|(_, arg)| arg.ready_type().cloned()))
-        .collect()
-}
-
 fn complete_callee(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
@@ -398,7 +380,11 @@ fn complete_callee(
 ) -> CXResult<CompletedCallee> {
     let function = match function {
         TypecheckResult::IncompleteTemplate(parts) => {
-            let deduction_arg_types = deduction_arg_types(implicit_args, args);
+            let deduction_arg_types = implicit_args
+                .iter()
+                .map(THIRExpression::get_type)
+                .chain(args.iter().filter_map(|(_, arg)| arg.ready_type().cloned()))
+                .collect::<Vec<_>>();
             let symbol = match complete_templated_callee_maybe(
                 env,
                 namespace,
