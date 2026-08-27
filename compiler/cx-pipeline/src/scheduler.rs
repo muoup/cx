@@ -16,6 +16,7 @@ use cx_pipeline_data::jobs::{
 use cx_pipeline_data::{
     CompilationMode, CompilationUnit, CompilerBackend, GlobalCompilationContext,
 };
+use cx_preparse_data::Import;
 use cx_thir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_thir_lowering::generate_mir;
 use cx_tokens::TokenIter;
@@ -23,6 +24,7 @@ use cx_typechecker::environment::TypeEnvironment;
 use cx_typechecker::typecheck;
 use cx_util::format::{dump_data, with_dump_file};
 use cx_util::module_path::ModulePath;
+use cx_util::namespace::{NamespacePath, QualifiedName};
 use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::{HashMap, HashSet};
@@ -129,11 +131,11 @@ pub(crate) fn scheduling_loop_many(
 
 fn import_jobs_for_unit(
     context: &GlobalCompilationContext,
-    imports: &[ModulePath],
+    imports: &[Import],
 ) -> CXResult<Vec<CompilationJob>> {
     let mut jobs = Vec::new();
 
-    for import in imports {
+    for import in import_module_paths(imports) {
         if !context.config.module_mode && !import.is_library_module() {
             return Err(pipeline_error(
                 "COMPILATION ERROR",
@@ -156,12 +158,11 @@ fn import_jobs_for_unit(
 
 fn import_requirements_for_unit(
     context: &GlobalCompilationContext,
-    imports: &[ModulePath],
+    imports: &[Import],
     step: CompilationStep,
     shallow: bool,
 ) -> Vec<CompilationJobRequirement> {
-    imports
-        .iter()
+    import_module_paths(imports)
         .map(|import| CompilationJobRequirement {
             unit: CompilationUnit::from_module_path(
                 import.clone(),
@@ -183,9 +184,7 @@ fn import_units_for_unit(
         .lock()
         .get(&unit.namespace().clone())
         .map(|preparse| {
-            preparse
-                .imports
-                .iter()
+            import_module_paths(&preparse.imports)
                 .map(|import| {
                     CompilationUnit::from_module_path(
                         import.clone(),
@@ -194,6 +193,27 @@ fn import_units_for_unit(
                 })
                 .collect()
         })
+}
+
+fn import_module_paths(imports: &[Import]) -> impl Iterator<Item = ModulePath> + '_ {
+    imports.iter().flat_map(|import| {
+        import
+            .names
+            .iter()
+            .map(|name| ModulePath::from_import_path(&name.as_flat_name()))
+    })
+}
+
+fn import_from_module_path(path: ModulePath) -> Import {
+    let namespace = NamespacePath::from(path);
+    let (namespace, name) = namespace
+        .parent_and_name()
+        .expect("compiler-injected import path should have a name");
+
+    Import {
+        names: vec![QualifiedName::new(namespace, name)],
+        alias: None,
+    }
 }
 
 pub(crate) fn handle_job(
@@ -355,7 +375,7 @@ pub(crate) fn perform_job(
                 output.imports.extend(
                     INTRINSIC_IMPORTS
                         .iter()
-                        .map(|s| ModulePath::from_source_path(s)),
+                        .map(|s| import_from_module_path(ModulePath::from_source_path(s))),
                 );
             }
             context

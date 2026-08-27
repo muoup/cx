@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use cx_util::{module_path::ModulePath, namespace::NamespacePath};
+use cx_util::namespace::{NamespacePath, QualifiedName};
 use speedy::{Readable, Writable};
 
 use crate::symbol_data::PreparseModuleSymbols;
@@ -11,9 +11,15 @@ pub mod symbol_data;
 pub type NamespaceAliases = HashMap<NamespacePath, Vec<NamespacePath>>;
 
 #[derive(Debug, Clone, Readable, Writable)]
+pub struct Import {
+    pub names: Vec<QualifiedName>,
+    pub alias: Option<NamespacePath>,
+}
+
+#[derive(Debug, Clone, Readable, Writable)]
 pub struct PreparseContents {
     pub module: String,
-    pub imports: Vec<ModulePath>,
+    pub imports: Vec<Import>,
     pub module_symbols: PreparseModuleSymbols,
     pub namespace_aliases: NamespaceAliases,
 }
