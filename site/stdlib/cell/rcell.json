@@ -36,8 +36,7 @@
         {"name": "cell", "type": "rcell<T>&", "description": "The cell to borrow."},
         {"name": "proc", "type": "expr(const T&) void", "description": "The callback receiving the shared borrow."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     },
     {
       "name": "borrow",
@@ -49,8 +48,7 @@
         {"name": "cell", "type": "rcell<T>&", "description": "The cell to borrow mutably."},
         {"name": "proc", "type": "expr(T&) void", "description": "The callback receiving the mutable borrow."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     },
     {
       "name": "release",
@@ -60,8 +58,7 @@
       "parameters": [
         {"name": "cell", "type": "rcell<T>&", "description": "The cell whose state is released."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     },
     {
       "name": "release_const",
@@ -71,8 +68,7 @@
       "parameters": [
         {"name": "cell", "type": "rcell<T>&", "description": "The cell whose shared borrow is released."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     }
   ]
 }

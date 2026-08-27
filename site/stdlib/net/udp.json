@@ -77,8 +77,7 @@
       "parameters": [
         {"name": "this", "type": "udp_socket", "description": "The socket to close."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     }
   ]
 }

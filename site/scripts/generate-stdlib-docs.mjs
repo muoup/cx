@@ -114,7 +114,14 @@ function renderFunction(functionRecord) {
         : "";
     const owner = functionRecord.owner ? `${functionRecord.owner}::` : "";
     const parameters = renderParameters(functionRecord.parameters);
-    const returnDescription = functionRecord.returnDescription ?? "The documented return value.";
+    const returnType = functionRecord.returnType ?? "void";
+    const returns = returnType === "void"
+        ? []
+        : [
+            "#### Returns",
+            "",
+            `- ${inlineCode(returnType)} — ${functionRecord.returnDescription ?? "The documented return value."}`,
+        ];
     const metadataBlock = metadata ? [`> ${metadata}`, ""] : [];
     const examples = (functionRecord.examples ?? [])
         .map((example, index) => {
@@ -136,9 +143,7 @@ function renderFunction(functionRecord) {
         "",
         parameters,
         "",
-        "#### Returns",
-        "",
-        `- ${inlineCode(functionRecord.returnType ?? "void")} — ${returnDescription}`,
+        ...returns,
         examples ? `\n${examples}` : "",
     ].join("\n");
 }
