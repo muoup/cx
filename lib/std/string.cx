@@ -27,13 +27,6 @@ string string::new() {
             @unsafe(exit(1));
         }
     }
-
-    // Dummy return until `!` returns are supported
-    //return (string) {
-    //    .data = NULL,
-    //    .length = 0,
-    //    .capacity = 0
-    //};
 }
 
 string string::clone(const string& this) {
