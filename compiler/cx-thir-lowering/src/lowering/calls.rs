@@ -2,7 +2,8 @@ use cx_log::CXResult;
 use std::sync::Arc;
 
 use cx_mir::{
-    MIRCallKind, MIRConstant, MIRField, MIRFunctionID, MIRFunctionMode, MIRInstrKind, MIRStagedTemplate, MIRValue
+    MIRCallKind, MIRConstant, MIRField, MIRFunctionID, MIRFunctionMode, MIRInstrKind,
+    MIRStagedTemplate, MIRValue,
 };
 use cx_mir_comptime::{
     InterpretedFunction, MIRComptimeEngine, MIRComptimeValue, MIRStagedBinding, MIRStagedValue,
@@ -238,12 +239,13 @@ fn capture_staged_argument(
     diverges: bool,
 ) -> CXResult<(Arc<MIRStagedTemplate>, Vec<MIRValue>)> {
     match &argument.kind {
-        THIRExpressionKind::StagedExpression { params, body } => {
-            let params = params
+        THIRExpressionKind::StagedExpression(staged) => {
+            let params = staged
+                .params()
                 .iter()
-                .map(|(_, local, ty)| (*local, ty))
+                .map(|parameter| (parameter.local_id, &parameter.ty))
                 .collect::<Vec<_>>();
-            builder.capture_staged(body, &params, Some(diverges))
+            builder.capture_staged(staged.expr(), &params, Some(diverges))
         }
         THIRExpressionKind::Variable { local_id, .. } => {
             let _ = builder.local_value(*local_id, &argument._type)?;

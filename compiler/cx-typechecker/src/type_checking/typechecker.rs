@@ -17,8 +17,10 @@ use crate::type_checking::op::unop::{
     typecheck_alignof_expr, typecheck_alignof_type, typecheck_sizeof_expr, typecheck_sizeof_type,
 };
 use crate::type_checking::op::{self, try_typecheck_special_binop, typecheck_binop};
-use crate::type_checking::result::TypecheckResult;
-use crate::type_checking::staged_expr::typecheck_staged_expr;
+use crate::type_checking::result::{StagedTC, TypecheckResult, TypecheckedExpr};
+use crate::type_checking::staged_expr::{
+    into_expression as staged_into_expression, typecheck_staged_expr,
+};
 use crate::type_checking::value::{
     identifiers::typecheck_identifier,
     literals::{typecheck_float_literal, typecheck_int_literal, typecheck_unit},
@@ -120,7 +122,7 @@ fn typecheck_expr_inner(
         }
 
         HIRExprKind::ParamStagedExpression { params, body } => {
-            typecheck_staged_expr(env, namespace, body)?
+            TypecheckResult::needs_staged_type(params.clone(), body.clone())
         }
 
         HIRExprKind::Then => {
@@ -499,8 +501,22 @@ fn typecheck_expr_inner(
             let value = value
                 .as_ref()
                 .map(|v| {
-                    typecheck_expr(env, namespace, v, Some(&return_type))?
-                        .standard_ready_coerce(env, expr.token_range())
+                    let result = typecheck_expr(env, namespace, v, Some(&return_type))?;
+                    match result {
+                        TypecheckResult::Ready(TypecheckedExpr::Staged(StagedTC::Literal(
+                            staged,
+                        ))) if env.in_comptime_context() => Ok(staged_into_expression(staged)),
+                        TypecheckResult::Ready(TypecheckedExpr::Staged(StagedTC::Binding(
+                            staged,
+                        ))) if env.in_comptime_context() => {
+                            let mut reference = staged.reference;
+                            reference._type = return_type.clone();
+                            Ok(reference)
+                        }
+                        result => result
+                            .apply_expected_type(env, namespace, &return_type)?
+                            .standard_ready_coerce(env, expr.token_range()),
+                    }
                 })
                 .transpose()?;
             typecheck_return(env, namespace, expr.token_range(), value)?
@@ -513,7 +529,9 @@ fn typecheck_expr_inner(
             value.as_ref().map(Box::as_ref),
         )?,
 
-        HIRExprKind::Emit { expr: inner } => typecheck_staged_expr(env, namespace, inner)?,
+        HIRExprKind::Emit { expr: inner } => {
+            typecheck_staged_expr(env, namespace, inner, expected_type)?
+        }
 
         HIRExprKind::Unsafe { expr: inner } => {
             typecheck_unsafe(env, namespace, inner, expected_type)?

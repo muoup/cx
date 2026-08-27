@@ -178,7 +178,6 @@ fn resolve_symbol_inner(
                     Ok(MIRSymbol::ComptimeFunctionReference {
                         prototype,
                         namespace: prototype_namespace.clone(),
-                        template_bindings: Vec::new(),
                     })
                 }
                 HIRSymbolData::Template {
@@ -597,23 +596,13 @@ pub fn apply_template(
     env.symbols.pop_local_scope();
 
     let mut symbol = result?;
-    if let MIRSymbol::ComptimeFunctionReference {
-        prototype,
-        template_bindings,
-        ..
-    } = &mut symbol
-    {
-        *template_bindings = input
-            .types
-            .iter()
-            .cloned()
-            .zip(template_input.args.iter().copied())
-            .collect();
-
-        // Templated comptime functions instantiate per template input.
+    if let MIRSymbol::ComptimeFunctionReference { prototype, .. } = &mut symbol {
+        let request_prototype = prototype
+            .clone()
+            .with_runtime_return_type(env.materialization_return_type());
         env.items.push_request(THIRFunctionGenRequest::Comptime {
             name: prototype.lookup_identifier().clone(),
-            prototype: prototype.clone(),
+            prototype: request_prototype,
             input: template_input.clone(),
         });
     }
@@ -699,6 +688,19 @@ fn attach_template_metadata(
         }
 
         MIRSymbol::FunctionReference(prototype) if prototype.lookup_identifier().is_some() => {
+            prototype.map_symbol_name(|name| {
+                base_mangle_templated_name(
+                    &env.symbols,
+                    name,
+                    input
+                        .args
+                        .iter()
+                        .map(|arg| env.symbols.resolve_type_id(*arg)),
+                )
+            });
+        }
+
+        MIRSymbol::ComptimeFunctionReference { prototype, .. } => {
             prototype.map_symbol_name(|name| {
                 base_mangle_templated_name(
                     &env.symbols,

@@ -911,16 +911,6 @@ pub(crate) fn lower_expression(
                 MIRValue::Constant(MIRConstant::Unit)
             }
 
-            THIRExpressionKind::Emit(inner) => {
-                let (template, captures) = builder.capture_staged(inner, &[], None)?;
-                let out = builder.fun_mut().new_register(template.result_type(), None);
-                builder.emit(MIRInstrKind::MakeStaged {
-                    out,
-                    template,
-                    captures,
-                });
-                MIRValue::Register(out)
-            }
             THIRExpressionKind::Assert { condition, message } => {
                 let condition = lower_expression(builder, condition)?;
                 builder.emit(MIRInstrKind::Assert {
@@ -1061,12 +1051,13 @@ pub(crate) fn lower_expression(
                 }
             }
             THIRExpressionKind::Unsafe { expression: inner } => lower_expression(builder, inner)?,
-            THIRExpressionKind::StagedExpression { params, body } => {
-                let params = params
+            THIRExpressionKind::StagedExpression(staged) => {
+                let params = staged
+                    .params()
                     .iter()
-                    .map(|(_, local, ty)| (*local, ty))
+                    .map(|parameter| (parameter.local_id, &parameter.ty))
                     .collect::<Vec<_>>();
-                let (template, captures) = builder.capture_staged(body, &params, None)?;
+                let (template, captures) = builder.capture_staged(staged.expr(), &params, None)?;
                 let out = builder.fun_mut().new_register(template.result_type(), None);
                 builder.emit(MIRInstrKind::MakeStaged {
                     out,
@@ -1074,6 +1065,22 @@ pub(crate) fn lower_expression(
                     captures,
                 });
                 MIRValue::Register(out)
+            }
+            THIRExpressionKind::MaterializeStagedExpression { expr, with_params } => {
+                let staged = lower_expression(builder, expr)?;
+                let mut args = Vec::with_capacity(with_params.len());
+                for param in with_params {
+                    args.push(lower_expression(builder, param)?);
+                }
+                let out = if expression._type.is_void() || expression._type.is_unreachable() {
+                    None
+                } else {
+                    let ty = lower_type(builder, &expression._type)?;
+                    Some(builder.fun_mut().new_register(ty, None))
+                };
+                builder.emit(MIRInstrKind::ApplyStaged { out, staged, args });
+                out.map(MIRValue::Register)
+                    .unwrap_or(MIRValue::Constant(MIRConstant::Unit))
             }
         };
 

@@ -22,7 +22,6 @@ pub enum MIRSymbol {
     ComptimeFunctionReference {
         prototype: THIRComptimeFnPrototype,
         namespace: EnvironmentNamespace,
-        template_bindings: Vec<(CXIdent, THIRTypeID)>,
     },
     StagedExpression {
         id: u64,

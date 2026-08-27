@@ -3,7 +3,7 @@ use cx_util::identifier::CXIdent;
 
 use crate::thir::{
     data::{THIRComptimeFnPrototype, THIRType},
-    expression::THIRExpression,
+    expression::{THIRExpression, THIRLocalID},
 };
 
 #[derive(Debug, Clone)]
@@ -26,14 +26,15 @@ pub struct THIRStagedExpr {
 #[derive(Debug, Clone)]
 pub struct THIRStagedParameter {
     pub name: CXIdent,
-    pub ty: THIRType
+    pub local_id: THIRLocalID,
+    pub ty: THIRType,
 }
 
 impl THIRStagedExpr {
     pub fn new(expr: Box<THIRExpression>) -> Self {
         Self {
             expr,
-            
+
             params: vec![],
             breaks: false,
             continues: false,
@@ -43,7 +44,8 @@ impl THIRStagedExpr {
     }
 
     pub fn map_expr<F>(self, f: F) -> CXResult<Self>
-        where F: FnOnce(THIRExpression) -> CXResult<THIRExpression>
+    where
+        F: FnOnce(THIRExpression) -> CXResult<THIRExpression>,
     {
         let expr = f(*self.expr)?;
 
@@ -64,7 +66,7 @@ impl THIRStagedExpr {
     pub fn add_params(&mut self, params: Vec<THIRStagedParameter>) {
         self.params.extend(params);
     }
-    
+
     pub fn params(&self) -> &[THIRStagedParameter] {
         &self.params
     }

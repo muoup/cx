@@ -1212,9 +1212,24 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::MaterializeStagedExpression { staged } => {
-                // todo
-            },
+            THIRExpressionKind::MaterializeStagedExpression { expr, with_params } => {
+                writeln!(f, "MaterializeStagedExpression")?;
+                MIRExpressionFormatter {
+                    expr,
+                    depth: self.depth + 1,
+                    definitions: self.definitions,
+                }
+                .fmt(f)?;
+                for param in with_params {
+                    MIRExpressionFormatter {
+                        expr: param,
+                        depth: self.depth + 1,
+                        definitions: self.definitions,
+                    }
+                    .fmt(f)?;
+                }
+                Ok(())
+            }
             THIRExpressionKind::Assert { condition, message } => {
                 writeln!(f, "Assert {message:?}")?;
                 MIRExpressionFormatter {
