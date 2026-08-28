@@ -6,8 +6,8 @@ use std::{
 use cx_log::CXResult;
 use cx_mir::{
     MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRFunctionMode,
-    MIRInstrKind, MIRPlace, MIRRegister, MIRStagedTemplate, MIRTypeID, MIRTypeRegistryBuilder,
-    MIRUnit, MIRValue,
+    MIRInstrKind, MIRPlace, MIRRegister, MIRStagedCapture, MIRStagedTemplate, MIRTypeID,
+    MIRTypeRegistryBuilder, MIRUnit, MIRValue,
 };
 use cx_mir_comptime::context::MIRContext;
 use cx_thir::{
@@ -48,8 +48,9 @@ pub struct MIRBuilder<'thir> {
 
 struct CaptureContext {
     source_locals: HashMap<THIRLocalID, MIRValue>,
-    captures: Vec<(MIRRegister, MIRValue)>,
+    captures: Vec<(MIRStagedCapture, MIRValue)>,
     params: Vec<MIRRegister>,
+    runtime_places: bool,
 }
 
 impl<'thir> MIRBuilder<'thir> {
@@ -171,19 +172,38 @@ impl<'thir> MIRBuilder<'thir> {
         let Some(capture) = self.capture.as_ref() else {
             return Ok(None);
         };
-        let source = capture.source_locals.get(&local).cloned();
-        if source.is_none() {
+        let Some(source) = capture.source_locals.get(&local).cloned() else {
             return Ok(None);
-        }
-
-        let ty = lower_type(self, ty)?;
-        let input = self.fun_mut().new_register(ty, None);
-        let value = MIRValue::Register(input);
+        };
+        let runtime_places = capture.runtime_places;
+        let (input, value) = match &source {
+            MIRValue::PlaceRef(_) if runtime_places => {
+                let pointee = ty
+                    .mem_ref_inner()
+                    .map(|pointee| self.registry.resolve_type_id(pointee).clone())
+                    .unwrap_or_else(|| ty.clone());
+                let ty = lower_type(self, &pointee)?;
+                let MIRPlace::FunctionLocal(place) = self.fun_mut().new_place(ty, None, true)
+                else {
+                    unreachable!("captured place placeholder is not function-local");
+                };
+                (
+                    MIRStagedCapture::Place(place),
+                    MIRValue::PlaceRef(MIRPlace::FunctionLocal(place)),
+                )
+            }
+            _ => {
+                let ty = lower_type(self, ty)?;
+                let register = self.fun_mut().new_register(ty, None);
+                (
+                    MIRStagedCapture::Register(register),
+                    MIRValue::Register(register),
+                )
+            }
+        };
         self.fun_mut().bind_local(local, value.clone());
         let capture = self.capture.as_mut().expect("capture context is active");
-        capture
-            .captures
-            .push((input, source.expect("captured local has a source value")));
+        capture.captures.push((input, source));
         Ok(Some(value))
     }
 
@@ -198,6 +218,10 @@ impl<'thir> MIRBuilder<'thir> {
         let source_locals = self.fun().locals();
         let saved_function = self.function.take();
         let saved_capture = self.capture.take();
+        let runtime_places = saved_capture.is_some()
+            || saved_function
+                .as_ref()
+                .is_some_and(|function| function.mode() != MIRFunctionMode::Comptime);
         let saved_range = std::mem::replace(&mut self.source_range, TokenRange::internal());
 
         self.function = Some(FunctionBuilder::new(MIRFunction::new(id, prototype, None)));
@@ -205,6 +229,7 @@ impl<'thir> MIRBuilder<'thir> {
             source_locals,
             captures: Vec::new(),
             params: Vec::new(),
+            runtime_places,
         });
 
         for (local, ty) in params {

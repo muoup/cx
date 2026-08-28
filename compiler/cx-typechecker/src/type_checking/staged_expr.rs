@@ -14,6 +14,7 @@ use cx_util::namespace::QualifiedName;
 use crate::{
     environment::TypeEnvironment,
     type_checking::{
+        coercion::implicit::implicit_cast,
         result::{DeferredStagedExpr, TypecheckResult},
         typechecker::typecheck_expr,
     },
@@ -83,9 +84,10 @@ pub fn complete_staged_expr(
     }
 
     let body = env.in_staged(|env| {
-        typecheck_expr(env, namespace, &deferred.body, Some(&value_type._type))?
+        let body = typecheck_expr(env, namespace, &deferred.body, Some(&value_type._type))?
             .apply_expected_type(env, namespace, &value_type._type)?
-            .standard_ready_coerce(env, deferred.body.token_range())
+            .standard_ready_coerce(env, deferred.body.token_range())?;
+        implicit_cast(env, body, &value_type._type)
     });
     env.symbols.pop_local_scope();
 

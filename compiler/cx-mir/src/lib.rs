@@ -26,7 +26,7 @@ pub use op::{
     MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRIntBinaryOp, MIRPointerBinaryOp,
     MIRPointerOffsetOp, MIRUnaryOp,
 };
-pub use staged::MIRStagedTemplate;
+pub use staged::{MIRStagedCapture, MIRStagedTemplate};
 pub use ty::{
     MIRBitfieldAccess, MIRField, MIRFieldLayout, MIRFloatType, MIRFunctionType, MIRIntType,
     MIRLayoutError, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRTypeRegistryBuilder,

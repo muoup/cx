@@ -6,8 +6,8 @@ use cx_log::{
 };
 use cx_mir::{
     MIRAggregateOp, MIRAssignTarget, MIRBasicBlockID, MIRBlockTarget, MIRInstr, MIRInstrKind,
-    MIRPlace, MIRPlaceAggregateOp, MIRPlaceID, MIRRegister, MIRScopeID, MIRStagedTargets,
-    MIRTypeKind, MIRValue, MIRValueAggregateOp, ty::interface::MTRegistry,
+    MIRPlace, MIRPlaceAggregateOp, MIRPlaceID, MIRRegister, MIRScopeID, MIRStagedCapture,
+    MIRStagedTargets, MIRTypeKind, MIRValue, MIRValueAggregateOp, ty::interface::MTRegistry,
 };
 use cx_mir_comptime::{MIRComptimeValue, MIRStagedBinding, MIRStagedValue};
 
@@ -53,12 +53,27 @@ fn instantiate_inner(
 
     let mut values = HashMap::new();
     let mut staged_inputs = HashMap::new();
-    for (input, binding) in template
-        .captures()
-        .iter()
-        .zip(staged.captures())
-        .chain(template.params().iter().zip(staged.args()))
-    {
+    let mut places = HashMap::new();
+    for (input, binding) in template.captures().iter().zip(staged.captures()) {
+        match input {
+            MIRStagedCapture::Register(input) => {
+                bind_input(*input, binding, &mut values, &mut staged_inputs)?;
+            }
+            MIRStagedCapture::Place(input) => match binding {
+                MIRStagedBinding::Value(
+                    MIRValue::PlaceRef(place) | MIRValue::Copy(place) | MIRValue::Move(place),
+                ) => {
+                    places.insert(*input, *place);
+                }
+                _ => {
+                    return Err(staged_error(
+                        "staged place capture is not a place reference",
+                    ));
+                }
+            },
+        }
+    }
+    for (input, binding) in template.params().iter().zip(staged.args()) {
         bind_input(*input, binding, &mut values, &mut staged_inputs)?;
     }
 
@@ -72,9 +87,11 @@ fn instantiate_inner(
         scopes.insert(scope.id, mapped);
     }
 
-    let mut places = HashMap::new();
     let mut omitted_places = HashSet::new();
     for place in body.places() {
+        if places.contains_key(&place.id) {
+            continue;
+        }
         if matches!(builder.types().kind(place.ty), Ok(MIRTypeKind::Void)) {
             omitted_places.insert(place.id);
             continue;

@@ -5,14 +5,19 @@
 
 import std::functional as std;
 
+int read(int& value) {
+    return value;
+}
+
 int main() {
-    int tapped = 4 |> std::tap<int, void>(|value| .{
+    int input = 4;
+    int tapped = read(input) |> std::tap<int>(|value| .{
         value += 1;
     });
     printf("tapped %d\n", tapped);
 
     int observed = 0;
-    int inspected = move tapped |> std::inspect<int, void>(|value| .{
+    int inspected = move tapped |> std::inspect<int>(|value| .{
         observed = value;
     });
     printf("inspected %d\n", observed);

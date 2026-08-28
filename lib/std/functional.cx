@@ -1,6 +1,6 @@
 public:
 
-comptime expr T tap<T, U>(expr T value, expr(T&) U func) {
+comptime expr T tap<T>(expr T value, expr(T&) void func) {
     return emit .{
         T val = value;
         func(val);
@@ -8,7 +8,7 @@ comptime expr T tap<T, U>(expr T value, expr(T&) U func) {
     };
 }
 
-comptime expr T inspect<T, U>(expr T value, expr(T&) U func) {
+comptime expr T inspect<T>(expr T value, expr(const T&) void func) {
     return emit .{
         T val = value;
         func(val);
