@@ -280,6 +280,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx"
+version = "0.0.0"
+dependencies = [
+ "cx-log",
+ "cx-pipeline",
+ "cx-pipeline-data",
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "cx-backend-cranelift"
 version = "0.0.0"
 dependencies = [
@@ -323,17 +334,6 @@ dependencies = [
  "cx-lmir",
  "cx-pipeline-data",
  "cx-util",
-]
-
-[[package]]
-name = "cx-cli"
-version = "0.0.0"
-dependencies = [
- "cx-log",
- "cx-pipeline",
- "cx-pipeline-data",
- "serde",
- "toml",
 ]
 
 [[package]]
