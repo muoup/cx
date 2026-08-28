@@ -1,11 +1,10 @@
 use cx_log::CXResult;
 use cx_thir::{
     thir::{
-        expression::{
+        contextual_eq::TypeContextEqual, expression::{
             THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRFloatBinOp,
             THIRPtrBinOp,
-        },
-        r#type::{THIRIntType, THIRType, THIRTypeKind},
+        }, r#type::{THIRIntType, THIRType, THIRTypeKind}
     },
     type_context::THIRTypeContext,
 };
@@ -16,7 +15,7 @@ use crate::{
         CoercionResult,
         implicit::{
             self, coercion_expr,
-            promotion::{integer, lvalue, std_rval_promotion, std_rval_promotion_coercion},
+            promotion::{integer, lvalue, std_rval_promotion_coercion},
         },
     },
 };
@@ -211,6 +210,12 @@ fn internal(
                 target_type.clone(),
                 THIRCoercion::PtrToInt { to_type: *itype },
             )
+        },
+
+        (THIRTypeKind::Function { .. }, THIRTypeKind::PointerTo { inner_type, .. }) 
+            if from_type.contextual_eq(env.symbols.resolve_type_id(*inner_type), &env.symbols) =>
+        {
+            implicit::coercion_expr(expr, target_type.clone(), THIRCoercion::GetFnPtr)
         }
 
         (
@@ -248,16 +253,8 @@ fn internal(
             CoercionResult::unapplied(expr)
         }
 
-        // Note: type 2 is not a memory reference due to previous case
-        (THIRTypeKind::MemoryReference { .. }, _) => {
-            std_rval_promotion(env, expr).and_then(CoercionResult::success)
-        }
-
-        (_, THIRTypeKind::PointerTo { inner_type })
-            if env.type_eq(&from_type, env.symbols.resolve_type_id(*inner_type)) =>
-        {
-            std_rval_promotion_coercion(env, expr)
-        }
+        // Note: to type is not a memory reference due to previous case
+        (THIRTypeKind::MemoryReference { .. }, _) => std_rval_promotion_coercion(env, expr),
 
         (
             THIRTypeKind::PointerTo {

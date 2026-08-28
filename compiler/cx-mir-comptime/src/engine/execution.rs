@@ -306,7 +306,9 @@ fn run_top_frame(engine: &mut MIRComptimeEngine<'_>) -> CXResult<MIRComptimeValu
                     .registers
                     .insert(out, MIRComptimeValue::Staged(std::sync::Arc::new(staged)));
             }
-            MIRInstrKind::ApplyStaged { out, staged, args } => {
+            MIRInstrKind::ApplyStaged {
+                out, staged, args, ..
+            } => {
                 let MIRComptimeValue::Staged(staged) = memory::read_value(engine, &staged)? else {
                     return comptime_error(range, "attempted to apply a non-staged value");
                 };
@@ -329,6 +331,9 @@ fn run_top_frame(engine: &mut MIRComptimeEngine<'_>) -> CXResult<MIRComptimeValu
             }
             MIRInstrKind::StagedExit { .. } => {
                 return comptime_error(range, "staged exit executed as a function");
+            }
+            MIRInstrKind::StagedYield { .. } => {
+                return comptime_error(range, "staged yield executed as a function");
             }
             MIRInstrKind::StagedMove { .. } => {
                 return comptime_error(range, "staged move executed as a function");

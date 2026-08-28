@@ -1,354 +1,189 @@
-use cx_hir::ast::expression::HIRExpression;
-use cx_log::error::CXRawResult;
+use cx_log::error::{CXRawResult, message::CXStdErrMessage};
+use cx_thir::thir::r#type::THIRType;
 use cx_tokens::TokenRange;
 
-/// A snapshot of typechecking reachability at each active control-flow scope.
-///
-/// Ownership state deliberately does not live here. Move validity and
-/// `@nodrop` discharge are checked after lowering, where the complete MIR CFG
-/// and lexical scope markers are available.
-#[derive(Clone)]
-pub struct ControlFlowSnapshot {
-    pub reachable: Vec<bool>,
-}
-
-#[derive(Clone)]
-pub struct ControlFlowArrow {
-    pub label: String,
-    pub snapshot: ControlFlowSnapshot,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ScopeId(usize);
-
-impl ScopeId {
-    pub fn new(index: usize) -> Self {
-        Self(index)
-    }
-
-    pub fn index(self) -> usize {
-        self.0
-    }
+pub enum ControlTarget {
+    Local,
+    Staged,
+    Invalid,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ScopeArrowSink {
-    Merge,
-    LoopContinue,
-    LoopExit,
-    LoopPendingIncrement,
+#[derive(Clone, Default)]
+pub struct ScopeEffects {
+    pub break_range: Option<TokenRange>,
+    pub continue_range: Option<TokenRange>,
+    pub yield_type: Option<THIRType>,
+    pub yield_has_value: Option<bool>,
 }
 
 #[derive(Clone)]
-pub struct ScopeExitTarget {
-    pub target_scope: ScopeId,
-    pub sink: ScopeArrowSink,
-    pub label: String,
-}
-
-#[derive(Clone)]
-pub struct MergeScopeState {
-    pub incoming_arrows: Vec<ControlFlowArrow>,
-    pub include_current_snapshot: Option<String>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LoopScopeKind {
-    While,
-    For,
-}
-
-#[derive(Clone)]
-pub struct LoopScopeState {
-    pub loop_kind: LoopScopeKind,
-    pub entry_snapshot: ControlFlowSnapshot,
-    pub continue_arrows: Vec<ControlFlowArrow>,
-    pub exit_arrows: Vec<ControlFlowArrow>,
-    pub pending_increment_arrows: Vec<ControlFlowArrow>,
-}
-
-#[derive(Clone)]
-pub enum ScopeFlowKind {
-    Plain,
-    Merge(MergeScopeState),
-    Loop(LoopScopeState),
-}
-
-#[derive(Clone)]
-pub struct Scope {
-    pub has_break_merge: bool,
-    pub has_continue_merge: bool,
-    pub reachable: bool,
-    pub anchor_range: Option<TokenRange>,
-    pub natural_exit_target: Option<ScopeExitTarget>,
-    pub flow_kind: ScopeFlowKind,
+pub struct YieldState {
+    pub target: ControlTarget,
+    pub expected_type: Option<THIRType>,
+    pub saw_value: bool,
+    pub saw_empty: bool,
 }
 
 pub struct ControlFlow {
-    scope_stack: Vec<Scope>,
+    scopes: Vec<Scope>,
+}
+
+struct Scope {
+    handles_break: bool,
+    handles_continue: bool,
+    handles_yield: bool,
+    expected_yield_type: Option<THIRType>,
+    staged_boundary: bool,
+    effects: ScopeEffects,
 }
 
 impl ControlFlow {
     pub fn new() -> Self {
-        Self {
-            scope_stack: Vec::new(),
-        }
+        Self { scopes: Vec::new() }
     }
 
-    pub fn push_scope(&mut self, has_break_merge: bool, has_continue_merge: bool) {
-        self.scope_stack.push(Scope {
-            has_break_merge,
-            has_continue_merge,
-            reachable: true,
-            anchor_range: None,
-            natural_exit_target: None,
-            flow_kind: ScopeFlowKind::Plain,
+    pub fn push_scope(&mut self, handles_break: bool, handles_continue: bool) {
+        self.scopes.push(Scope {
+            handles_break,
+            handles_continue,
+            handles_yield: false,
+            expected_yield_type: None,
+            staged_boundary: false,
+            effects: ScopeEffects::default(),
         });
     }
 
-    pub fn pop_scope(&mut self) -> CXRawResult<()> {
-        let Some(scope) = self.scope_stack.last().cloned() else {
-            panic!("Scope stack has uneven push/pop");
+    pub fn push_yield_scope(&mut self, expected_type: Option<THIRType>) {
+        self.scopes.push(Scope {
+            handles_break: false,
+            handles_continue: false,
+            handles_yield: true,
+            expected_yield_type: expected_type,
+            staged_boundary: false,
+            effects: ScopeEffects::default(),
+        });
+    }
+
+    pub fn push_staged_scope(&mut self) {
+        self.scopes.push(Scope {
+            handles_break: false,
+            handles_continue: false,
+            handles_yield: false,
+            expected_yield_type: None,
+            staged_boundary: true,
+            effects: ScopeEffects::default(),
+        });
+    }
+
+    pub fn at_function_root(&self) -> bool {
+        self.scopes.len() == 1
+    }
+
+    pub fn pop_scope(&mut self) -> CXRawResult<ScopeEffects> {
+        let Some(scope) = self.scopes.pop() else {
+            return CXStdErrMessage::result(
+                "TYPE ERROR",
+                "Attempted to pop a scope from an empty scope stack".to_string(),
+            );
         };
 
-        let current_snapshot = scope.reachable.then(|| self.current_snapshot());
-        self.scope_stack.pop();
-
-        let outgoing_snapshot = self.resolve_scope_flow(&scope, current_snapshot.as_ref());
-        let final_reachable = outgoing_snapshot.is_some();
-
-        if let Some(target) = scope.natural_exit_target
-            && final_reachable
+        if !scope.staged_boundary
+            && let Some(parent) = self.scopes.last_mut()
         {
-            let snapshot = outgoing_snapshot.expect("reachable scope has an outgoing snapshot");
-            self.enqueue_scope_arrow(&target, snapshot);
-        } else if let Some(parent) = self.scope_stack.last_mut() {
-            parent.reachable = final_reachable;
-        }
-
-        CXRawResult::Ok(())
-    }
-
-    pub fn current_snapshot(&self) -> ControlFlowSnapshot {
-        ControlFlowSnapshot {
-            reachable: self
-                .scope_stack
-                .iter()
-                .map(|scope| scope.reachable)
-                .collect(),
-        }
-    }
-
-    pub fn restore_snapshot(&mut self, snapshot: &ControlFlowSnapshot) {
-        for (scope, reachable) in self.scope_stack.iter_mut().zip(&snapshot.reachable) {
-            scope.reachable = *reachable;
-        }
-    }
-
-    pub fn current_scope_index(&self) -> ScopeId {
-        ScopeId(self.scope_stack.len() - 1)
-    }
-
-    pub fn set_scope_anchor(&mut self, expr: &HIRExpression) {
-        if let Some(scope) = self.scope_stack.last_mut() {
-            scope.anchor_range = Some(expr.token_range().clone());
-        }
-    }
-
-    pub fn configure_merge_scope(
-        &mut self,
-        expr: &HIRExpression,
-        include_current_snapshot: Option<&str>,
-    ) {
-        let range = expr.token_range().clone();
-        let scope = self
-            .scope_stack
-            .last_mut()
-            .expect("Missing scope to configure");
-        scope.anchor_range = Some(range);
-        scope.flow_kind = ScopeFlowKind::Merge(MergeScopeState {
-            incoming_arrows: Vec::new(),
-            include_current_snapshot: include_current_snapshot.map(str::to_string),
-        });
-    }
-
-    pub fn configure_loop_scope(&mut self, expr: &HIRExpression, loop_kind: LoopScopeKind) {
-        let entry_snapshot = self.current_snapshot();
-        let range = expr.token_range().clone();
-        let scope = self
-            .scope_stack
-            .last_mut()
-            .expect("Missing scope to configure");
-        scope.anchor_range = Some(range);
-        scope.flow_kind = ScopeFlowKind::Loop(LoopScopeState {
-            loop_kind,
-            entry_snapshot,
-            continue_arrows: Vec::new(),
-            exit_arrows: Vec::new(),
-            pending_increment_arrows: Vec::new(),
-        });
-    }
-
-    pub fn set_scope_fallthrough_target(&mut self, target: ScopeExitTarget) {
-        let scope = self
-            .scope_stack
-            .last_mut()
-            .expect("Missing scope to configure");
-        scope.natural_exit_target = Some(target);
-    }
-
-    pub fn enqueue_scope_arrow(&mut self, target: &ScopeExitTarget, snapshot: ControlFlowSnapshot) {
-        let arrow = ControlFlowArrow {
-            label: target.label.clone(),
-            snapshot,
-        };
-        let scope = self
-            .scope_stack
-            .get_mut(target.target_scope.index())
-            .expect("Invalid target scope for control-flow arrow");
-
-        match (&mut scope.flow_kind, target.sink) {
-            (ScopeFlowKind::Merge(state), ScopeArrowSink::Merge) => {
-                state.incoming_arrows.push(arrow)
+            if !scope.handles_break && parent.effects.break_range.is_none() {
+                parent.effects.break_range = scope.effects.break_range.clone();
             }
-            (ScopeFlowKind::Loop(state), ScopeArrowSink::LoopContinue) => {
-                state.continue_arrows.push(arrow)
+            if !scope.handles_continue && parent.effects.continue_range.is_none() {
+                parent.effects.continue_range = scope.effects.continue_range.clone();
             }
-            (ScopeFlowKind::Loop(state), ScopeArrowSink::LoopExit) => state.exit_arrows.push(arrow),
-            (ScopeFlowKind::Loop(state), ScopeArrowSink::LoopPendingIncrement) => {
-                state.pending_increment_arrows.push(arrow)
-            }
-            _ => panic!("Invalid control-flow arrow sink for scope"),
-        }
-    }
-
-    pub fn take_pending_increment_arrows(&mut self, scope: ScopeId) -> Vec<ControlFlowArrow> {
-        let scope = self
-            .scope_stack
-            .get_mut(scope.index())
-            .expect("Invalid loop scope for pending increment arrows");
-
-        match &mut scope.flow_kind {
-            ScopeFlowKind::Loop(state) => std::mem::take(&mut state.pending_increment_arrows),
-            _ => panic!("Pending increment arrows requested from non-loop scope"),
-        }
-    }
-
-    pub fn loop_entry_snapshot(&self, scope: ScopeId) -> ControlFlowSnapshot {
-        let scope = self
-            .scope_stack
-            .get(scope.index())
-            .expect("Invalid loop scope for entry snapshot");
-
-        match &scope.flow_kind {
-            ScopeFlowKind::Loop(state) => state.entry_snapshot.clone(),
-            _ => panic!("Loop entry snapshot requested from non-loop scope"),
-        }
-    }
-
-    pub fn nearest_break_scope(&self) -> Option<ScopeId> {
-        self.scope_stack
-            .iter()
-            .rposition(|scope| scope.has_break_merge)
-            .map(ScopeId)
-    }
-
-    pub fn nearest_continue_scope(&self) -> Option<ScopeId> {
-        self.scope_stack
-            .iter()
-            .rposition(|scope| scope.has_continue_merge)
-            .map(ScopeId)
-    }
-
-    pub fn break_arrow_sink(&self, scope: ScopeId) -> ScopeArrowSink {
-        match self
-            .scope_stack
-            .get(scope.index())
-            .map(|scope| &scope.flow_kind)
-        {
-            Some(ScopeFlowKind::Loop(_)) => ScopeArrowSink::LoopExit,
-            _ => ScopeArrowSink::Merge,
-        }
-    }
-
-    pub fn continue_arrow_sink(&self, scope: ScopeId) -> ScopeArrowSink {
-        match self
-            .scope_stack
-            .get(scope.index())
-            .map(|scope| &scope.flow_kind)
-        {
-            Some(ScopeFlowKind::Loop(state)) if state.loop_kind == LoopScopeKind::For => {
-                ScopeArrowSink::LoopPendingIncrement
-            }
-            Some(ScopeFlowKind::Loop(_)) => ScopeArrowSink::LoopContinue,
-            _ => ScopeArrowSink::Merge,
-        }
-    }
-
-    pub fn mark_jump_unreachable(&mut self, target_scope: ScopeId) {
-        for idx in (target_scope.index() + 1..self.scope_stack.len()).rev() {
-            let scope = &mut self.scope_stack[idx];
-            scope.reachable = false;
-
-            if scope.natural_exit_target.is_some() {
-                break;
+            if !scope.handles_yield && parent.effects.yield_type.is_none() {
+                parent.effects.yield_type = scope.effects.yield_type.clone();
+                parent.effects.yield_has_value = scope.effects.yield_has_value;
             }
         }
+
+        Ok(scope.effects)
     }
 
-    pub fn mark_current_scope_unreachable(&mut self) {
-        if let Some(scope) = self.scope_stack.last_mut() {
-            scope.reachable = false;
-        }
+    pub fn break_target(&self) -> ControlTarget {
+        self.target(|scope| scope.handles_break)
     }
 
-    pub fn set_scope_reachable(&mut self, scope: ScopeId, reachable: bool) {
-        if let Some(scope) = self.scope_stack.get_mut(scope.index()) {
-            scope.reachable = reachable;
-        }
+    pub fn continue_target(&self) -> ControlTarget {
+        self.target(|scope| scope.handles_continue)
     }
 
-    pub fn is_scope_reachable(&self, scope: ScopeId) -> bool {
-        self.scope_stack
-            .get(scope.index())
-            .map(|scope| scope.reachable)
-            .unwrap_or(false)
-    }
-
-    pub fn is_current_scope_reachable(&self) -> bool {
-        self.scope_stack
-            .last()
-            .map(|scope| scope.reachable)
-            .unwrap_or(true)
-    }
-
-    fn resolve_scope_flow(
-        &self,
-        scope: &Scope,
-        current_snapshot: Option<&ControlFlowSnapshot>,
-    ) -> Option<ControlFlowSnapshot> {
-        match &scope.flow_kind {
-            ScopeFlowKind::Plain => current_snapshot.cloned(),
-            ScopeFlowKind::Merge(state) => {
-                if state.include_current_snapshot.is_some() {
-                    current_snapshot.cloned().or_else(|| {
-                        state
-                            .incoming_arrows
-                            .first()
-                            .map(|arrow| arrow.snapshot.clone())
-                    })
-                } else {
-                    state
-                        .incoming_arrows
-                        .first()
-                        .map(|arrow| arrow.snapshot.clone())
-                        .or_else(|| current_snapshot.cloned())
-                }
+    fn target(&self, handles: impl Fn(&Scope) -> bool) -> ControlTarget {
+        for scope in self.scopes.iter().rev() {
+            if scope.staged_boundary {
+                return ControlTarget::Staged;
             }
-            ScopeFlowKind::Loop(state) => state
-                .exit_arrows
-                .first()
-                .map(|arrow| arrow.snapshot.clone()),
+            if handles(scope) {
+                return ControlTarget::Local;
+            }
         }
+        ControlTarget::Invalid
+    }
+
+    pub fn yield_state(&self) -> YieldState {
+        let mut expected_type = None;
+        let mut saw_value = false;
+        let mut saw_empty = false;
+
+        for scope in self.scopes.iter().rev() {
+            if let Some(yield_type) = &scope.effects.yield_type {
+                expected_type.get_or_insert_with(|| yield_type.clone());
+                saw_value |= scope.effects.yield_has_value == Some(true);
+                saw_empty |= scope.effects.yield_has_value == Some(false);
+            }
+
+            if scope.staged_boundary {
+                return YieldState {
+                    target: ControlTarget::Staged,
+                    expected_type,
+                    saw_value,
+                    saw_empty,
+                };
+            }
+            if scope.handles_yield {
+                return YieldState {
+                    target: ControlTarget::Local,
+                    expected_type: scope.expected_yield_type.clone().or(expected_type),
+                    saw_value,
+                    saw_empty,
+                };
+            }
+        }
+
+        YieldState {
+            target: ControlTarget::Invalid,
+            expected_type,
+            saw_value,
+            saw_empty,
+        }
+    }
+
+    pub fn record_break(&mut self, range: TokenRange) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.effects.break_range.get_or_insert(range);
+        }
+    }
+
+    pub fn record_continue(&mut self, range: TokenRange) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.effects.continue_range.get_or_insert(range);
+        }
+    }
+
+    pub fn record_yield(&mut self, ty: THIRType, has_value: bool) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.effects.yield_type.get_or_insert(ty);
+            scope.effects.yield_has_value.get_or_insert(has_value);
+        }
+    }
+
+    pub fn yield_result_type(&self, effects: &ScopeEffects) -> Option<THIRType> {
+        effects.yield_type.clone()
     }
 }

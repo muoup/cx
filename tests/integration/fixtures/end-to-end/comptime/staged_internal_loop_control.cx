@@ -1,0 +1,39 @@
+/* CX-STDOUT: break body */
+/* CX-STDOUT-NEXT: break complete */
+/* CX-STDOUT-NEXT: continue 1 */
+/* CX-STDOUT-NEXT: continue 2 */
+/* CX-STDOUT-NEXT: continue complete */
+
+#include <stdio.h>
+
+comptime expr void with_break(expr unreachable stop) {
+    return emit .{
+        while (1) {
+            printf("break body\n");
+            stop;
+        }
+        printf("break complete\n");
+    };
+}
+
+comptime expr void with_continue(expr void next) {
+    return emit .{
+        int iteration = 0;
+        while (iteration < 2) {
+            iteration += 1;
+            printf("continue %d\n", iteration);
+            next;
+        }
+        printf("continue complete\n");
+    };
+}
+
+int main() {
+    with_break(.{
+        break;
+    });
+    with_continue(.{
+        continue;
+    });
+    return 0;
+}

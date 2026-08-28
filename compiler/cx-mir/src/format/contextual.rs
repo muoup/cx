@@ -569,7 +569,9 @@ fn write_instruction<T: MTRegistry>(
             }
             f.write_str("]")
         }
-        MIRInstrKind::ApplyStaged { out, staged, args } => {
+        MIRInstrKind::ApplyStaged {
+            out, staged, args, ..
+        } => {
             if let Some(out) = out {
                 write_register_name(f, function, *out)?;
                 f.write_str(" = ")?;
@@ -593,12 +595,20 @@ fn write_instruction<T: MTRegistry>(
             MIRStagedExitKind::Break => f.write_str("staged.break"),
             MIRStagedExitKind::Continue => f.write_str("staged.continue"),
         },
+        MIRInstrKind::StagedYield { value, .. } => {
+            f.write_str("staged.yield")?;
+            if let Some(value) = value {
+                f.write_str(" ")?;
+                write_value(f, unit, function, value)?;
+            }
+            Ok(())
+        }
         MIRInstrKind::StagedMove { out, value } => {
             write_register_name(f, function, *out)?;
             f.write_str(" = staged.move ")?;
             write_value(f, unit, function, value)
         }
-        MIRInstrKind::StagedUse { value } => {
+        MIRInstrKind::StagedUse { value, .. } => {
             f.write_str("staged.use ")?;
             write_value(f, unit, function, value)
         }

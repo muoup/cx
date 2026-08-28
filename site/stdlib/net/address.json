@@ -1,0 +1,54 @@
+{
+  "module": "std::net::address",
+  "order": 90,
+  "source": "lib/std/net/address.cx",
+  "summary": "IPv4 socket address types and constructors.",
+  "types": [
+    {
+      "name": "struct endpoint",
+      "description": "A struct that stores an IPv4 socket address and its native length.",
+      "fields": [
+        {"name": "address", "type": "sockaddr_in", "description": "The native IPv4 address value."},
+        {"name": "length", "type": "u32", "description": "The native address length."}
+      ]
+    },
+    {
+      "name": "enum",
+      "description": "Constants for IPv4 socket address families.",
+      "variants": [
+        {"name": "LINUX_AF_INET", "description": "The Linux IPv4 address family value, 2."}
+      ]
+    },
+    {
+      "name": "struct in_addr",
+      "description": "The native IPv4 address value.",
+      "fields": [
+        {"name": "s_addr", "type": "u32", "description": "The IPv4 address in native representation."}
+      ]
+    },
+    {
+      "name": "struct sockaddr_in",
+      "description": "The native IPv4 socket address layout.",
+      "fields": [
+        {"name": "sin_family", "type": "u16", "description": "The address family."},
+        {"name": "sin_port", "type": "u16", "description": "The network-order port."},
+        {"name": "sin_addr", "type": "in_addr", "description": "The IPv4 address."},
+        {"name": "sin_zero", "type": "char[8]", "description": "Padding used by the native layout."}
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "name": "ipv4",
+      "owner": "endpoint",
+      "signature": "std::opt<endpoint> endpoint::ipv4(const _str& address, u16 port)",
+      "description": "Builds an IPv4 endpoint from a dotted address and port.",
+      "parameters": [
+        {"name": "address", "type": "const _str&", "description": "The dotted IPv4 address."},
+        {"name": "port", "type": "u16", "description": "The socket port."}
+      ],
+      "returnType": "std::opt<endpoint>",
+      "returnDescription": "Some endpoint when the address is valid."
+    }
+  ]
+}

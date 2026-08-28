@@ -35,8 +35,7 @@
         {"name": "this", "type": "file&", "description": "The file to write to."},
         {"name": "data", "type": "const char*", "description": "The string to write."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     },
     {
       "name": "write_line",
@@ -47,8 +46,7 @@
         {"name": "this", "type": "file&", "description": "The file to write to."},
         {"name": "data", "type": "const char*", "description": "The line to write."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     },
     {
       "name": "flush",
@@ -58,8 +56,7 @@
       "parameters": [
         {"name": "this", "type": "file&", "description": "The file to flush."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     },
     {
       "name": "read_line",
@@ -71,8 +68,7 @@
         {"name": "buffer", "type": "char*", "description": "The destination buffer."},
         {"name": "buffer_size", "type": "u64", "description": "The capacity of the destination buffer."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     },
     {
       "name": "read",
@@ -84,8 +80,7 @@
         {"name": "buffer", "type": "char*", "description": "The destination buffer."},
         {"name": "buffer_size", "type": "u64", "description": "The number of bytes requested."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     },
     {
       "name": "read_to_string",
@@ -106,8 +101,7 @@
       "parameters": [
         {"name": "this", "type": "file", "description": "The file to close."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     }
   ]
 }

@@ -2,7 +2,8 @@ use cx_log::CXResult;
 use std::sync::Arc;
 
 use cx_mir::{
-    MIRCallKind, MIRConstant, MIRField, MIRFunctionID, MIRFunctionMode, MIRInstrKind, MIRValue,
+    MIRCallKind, MIRConstant, MIRField, MIRFunctionID, MIRFunctionMode, MIRInstrKind,
+    MIRStagedTemplate, MIRValue,
 };
 use cx_mir_comptime::{
     InterpretedFunction, MIRComptimeEngine, MIRComptimeValue, MIRStagedBinding, MIRStagedValue,
@@ -44,7 +45,13 @@ pub(super) fn lower_call(
             let ty = lower_type(builder, result_type)?;
             Some(builder.fun_mut().new_register(ty, None))
         };
-        builder.emit(MIRInstrKind::ApplyStaged { out, staged, args });
+        let targets = builder.fun().staged_targets();
+        builder.emit(MIRInstrKind::ApplyStaged {
+            out,
+            staged,
+            args,
+            targets,
+        });
         return Ok(out
             .map(MIRValue::Register)
             .unwrap_or(MIRValue::Constant(MIRConstant::Unit)));
@@ -236,14 +243,15 @@ fn capture_staged_argument(
     builder: &mut MIRBuilder<'_>,
     argument: &THIRExpression,
     diverges: bool,
-) -> CXResult<(Arc<cx_mir::MIRStagedTemplate>, Vec<MIRValue>)> {
+) -> CXResult<(Arc<MIRStagedTemplate>, Vec<MIRValue>)> {
     match &argument.kind {
-        THIRExpressionKind::StagedExpression { params, body } => {
-            let params = params
+        THIRExpressionKind::StagedExpression(staged) => {
+            let params = staged
+                .params()
                 .iter()
-                .map(|(_, local, ty)| (*local, ty))
+                .map(|parameter| (parameter.local_id, &parameter.ty))
                 .collect::<Vec<_>>();
-            builder.capture_staged(body, &params, Some(diverges))
+            builder.capture_staged(staged.expr(), &params, Some(diverges))
         }
         THIRExpressionKind::Variable { local_id, .. } => {
             let _ = builder.local_value(*local_id, &argument._type)?;

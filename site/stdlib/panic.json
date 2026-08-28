@@ -12,8 +12,7 @@
       "parameters": [
         {"name": "message", "type": "const _str&", "description": "The message to print."}
       ],
-      "returnType": "void",
-      "returnDescription": "Does not return normally."
+      "returnType": "void"
     }
   ]
 }

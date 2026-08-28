@@ -23,7 +23,7 @@ void interpret(lisp_node& node) {
 
 void run(const _str& source) {
     parser::parse(source)
-        |> std::tap<ast::lisp_node>(interpret)
+        |> std::tap<ast::lisp_node>(|t| interpret(t))
         |> lisp_node::drop();
 }
 

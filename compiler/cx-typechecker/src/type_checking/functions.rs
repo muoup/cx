@@ -37,10 +37,7 @@ pub fn typecheck_function(
     }
 
     env.function.begin_function(prototype.clone());
-    env.push_scope(false, false);
-    env.function.set_scope_anchor(body);
-    env.function
-        .configure_merge_scope(body, Some("fallthrough"));
+    env.push_scope(false, false, body.token_range().clone());
 
     for THIRParameter {
         name,
@@ -179,10 +176,7 @@ pub fn typecheck_comptime_function(
     .with_debug_name(debug_name.unwrap_or_else(|| CXIdent::new(prototype.pretty_name())));
 
     env.function.begin_function(bookkeeping);
-    env.push_scope(false, false);
-    env.function.set_scope_anchor(body);
-    env.function
-        .configure_merge_scope(body, Some("fallthrough"));
+    env.push_scope(false, false, body.token_range().clone());
 
     env.enter_comptime_context(prototype.runtime_return_type().cloned());
     let checked = (|| -> CXResult<THIRExpression> {

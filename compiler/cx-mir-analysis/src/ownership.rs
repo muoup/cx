@@ -442,10 +442,15 @@ fn transfer_instruction(
             use_value(unit, function, block, instruction, value, state, diagnose)?;
         }
         MIRInstrKind::StagedExit { .. } => {}
+        MIRInstrKind::StagedYield { value, .. } => {
+            if let Some(value) = value {
+                use_value(unit, function, block, instruction, value, state, diagnose)?;
+            }
+        }
         MIRInstrKind::StagedMove { value, .. } => {
             use_value(unit, function, block, instruction, value, state, diagnose)?;
         }
-        MIRInstrKind::StagedUse { value } => {
+        MIRInstrKind::StagedUse { value, .. } => {
             use_value(unit, function, block, instruction, value, state, diagnose)?;
         }
         MIRInstrKind::Unreachable => {}

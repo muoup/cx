@@ -29,11 +29,12 @@ pub struct THIRComptimeFunction {
 #[derive(Debug, Clone)]
 pub struct THIRComptimeFnPrototype {
     symbol_name: String,
-    lookup_identifier: QualifiedName,
     debug_name: Option<CXIdent>,
+    lookup_identifier: QualifiedName,
+
+    runtime_return_type: Option<THIRType>,
     return_type: THIRComptimeValueType,
     params: Vec<THIRComptimeParameter>,
-    runtime_return_type: Option<THIRType>,
 }
 
 #[derive(Debug, Clone)]

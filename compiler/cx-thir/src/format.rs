@@ -1185,10 +1185,10 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }
-            THIRExpressionKind::Yield { value } => {
+            THIRExpressionKind::Yield { value, staged } => {
                 write!(f, "Yield <'")?;
                 self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")?;
+                writeln!(f, "> staged={staged}")?;
                 if let Some(value) = value {
                     MIRExpressionFormatter {
                         expr: value,
@@ -1199,39 +1199,36 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 Ok(())
             }
-            THIRExpressionKind::Emit(expr) => {
-                write!(f, "Emit <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")?;
+            THIRExpressionKind::StagedExpression(staged_expr) => {
+                write!(f, "StagedExpression [")?;
+                for param in staged_expr.params() {
+                    write!(f, " {}: ", param.name)?;
+                    self.write_type(f, &param.ty)?;
+                }
                 MIRExpressionFormatter {
-                    expr,
+                    expr: staged_expr.expr(),
                     depth: self.depth + 1,
                     definitions: self.definitions,
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::StagedExpression { params, body } => {
-                write!(f, "StagedExpression [")?;
-                for (i, (name, _, ty)) in params.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(
-                        f,
-                        "{}: {}",
-                        name.as_str(),
-                        ty.display_with_definitions(self.definitions)
-                    )?;
-                }
-                writeln!(f, "] <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")?;
+            THIRExpressionKind::MaterializeStagedExpression { expr, with_params } => {
+                writeln!(f, "MaterializeStagedExpression")?;
                 MIRExpressionFormatter {
-                    expr: body,
+                    expr,
                     depth: self.depth + 1,
                     definitions: self.definitions,
                 }
-                .fmt(f)
+                .fmt(f)?;
+                for param in with_params {
+                    MIRExpressionFormatter {
+                        expr: param,
+                        depth: self.depth + 1,
+                        definitions: self.definitions,
+                    }
+                    .fmt(f)?;
+                }
+                Ok(())
             }
             THIRExpressionKind::Assert { condition, message } => {
                 writeln!(f, "Assert {message:?}")?;
@@ -1256,6 +1253,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             THIRExpressionKind::Block {
                 statements,
                 creates_scope,
+                ..
             } => {
                 write!(
                     f,

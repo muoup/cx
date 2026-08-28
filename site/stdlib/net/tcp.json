@@ -5,14 +5,6 @@
   "summary": "Minimal TCP listener and stream wrappers for IPv4 sockets.",
   "types": [
     {
-      "name": "struct endpoint",
-      "description": "A struct that stores an IPv4 socket address and its native length.",
-      "fields": [
-        {"name": "address", "type": "sockaddr_in", "description": "The native IPv4 address value."},
-        {"name": "length", "type": "u32", "description": "The native address length."}
-      ]
-    },
-    {
       "name": "struct tcp_listener",
       "description": "A struct that owns a TCP listening socket descriptor.",
       "attributes": ["@nodrop"],
@@ -31,18 +23,6 @@
   ],
   "functions": [
     {
-      "name": "ipv4",
-      "owner": "endpoint",
-      "signature": "std::opt<endpoint> endpoint::ipv4(const char* address, u16 port)",
-      "description": "Builds an IPv4 endpoint from a dotted address and port.",
-      "parameters": [
-        {"name": "address", "type": "const char*", "description": "The dotted IPv4 address."},
-        {"name": "port", "type": "u16", "description": "The TCP port."}
-      ],
-      "returnType": "std::opt<endpoint>",
-      "returnDescription": "Some endpoint when the address is valid."
-    },
-    {
       "name": "open",
       "owner": "tcp_listener",
       "signature": "std::opt<tcp_listener> tcp_listener::open()",
@@ -54,11 +34,11 @@
     {
       "name": "bind",
       "owner": "tcp_listener",
-      "signature": "std::opt<void> tcp_listener::bind(tcp_listener& this, endpoint addr)",
+      "signature": "std::opt<void> tcp_listener::bind(tcp_listener& this, std::net::endpoint addr)",
       "description": "Binds a listener to an endpoint.",
       "parameters": [
         {"name": "this", "type": "tcp_listener&", "description": "The listener to bind."},
-        {"name": "addr", "type": "endpoint", "description": "The local endpoint."}
+        {"name": "addr", "type": "std::net::endpoint", "description": "The local endpoint."}
       ],
       "returnType": "std::opt<void>",
       "returnDescription": "Some void on success or none on failure."
@@ -94,8 +74,7 @@
       "parameters": [
         {"name": "this", "type": "tcp_listener", "description": "The listener to close."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     },
     {
       "name": "read",
@@ -130,8 +109,7 @@
       "parameters": [
         {"name": "this", "type": "tcp_stream", "description": "The stream to close."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     }
   ]
 }

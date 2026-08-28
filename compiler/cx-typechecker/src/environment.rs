@@ -12,21 +12,23 @@ use cx_target::ArchitectureConfig;
 use cx_thir::{
     EnvironmentNamespace, THIRUnit,
     symbol::MIRSymbol,
-    thir::contextual_eq::TypeContextEqual,
-    thir::data::{THIRFnPrototype, THIRType},
+    thir::{
+        comptime::THIRStagedEffects,
+        contextual_eq::TypeContextEqual,
+        data::{THIRFnPrototype, THIRType},
+    },
     type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 use cx_util::{identifier::CXIdent, namespace::NamespacePath};
 
-pub use crate::environment::control_flow::{
-    ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink, ScopeExitTarget, ScopeId,
-};
+pub use crate::environment::control_flow::{ControlTarget, ScopeEffects};
 use crate::environment::items::ItemRegistry;
-use crate::{environment::function_context::FunctionContext, symbol::registry::MIRSymbolRegistry};
+use crate::symbol::resolution::resolve_symbol;
 use crate::{
-    environment::function_context::FunctionModeSnapshot, symbol::resolution::resolve_symbol,
+    environment::function_context::{FunctionContext, FunctionModeSnapshot},
+    symbol::registry::MIRSymbolRegistry,
 };
 
 pub(crate) mod control_flow;
@@ -34,6 +36,10 @@ pub(crate) mod function_context;
 pub(crate) mod items;
 
 pub use items::THIRFunctionGenRequest;
+
+struct StagedContext {
+    return_type: Option<THIRType>,
+}
 
 pub struct TypeEnvironment<'a> {
     pub module_data: &'a ModuleData,
@@ -46,7 +52,7 @@ pub struct TypeEnvironment<'a> {
 
     runtime_emit_depth: usize,
     defer_depth: usize,
-    staged_scope_boundaries: Vec<ScopeId>,
+    staged_contexts: Vec<StagedContext>,
     staged_expansions: Vec<u64>,
     next_staged_expression_id: u64,
     require_explicit_return: bool,
@@ -67,7 +73,7 @@ impl TypeEnvironment<'_> {
             comptime_runtime_return_types: Vec::new(),
             runtime_emit_depth: 0,
             defer_depth: 0,
-            staged_scope_boundaries: Vec::new(),
+            staged_contexts: Vec::new(),
             staged_expansions: Vec::new(),
             next_staged_expression_id: 0,
             require_explicit_return,
@@ -109,21 +115,32 @@ impl TypeEnvironment<'_> {
         self.defer_depth > 0
     }
 
-    pub fn in_staged<F, T>(&mut self, f: F) -> CXResult<T>
+    pub fn in_staged<F, T>(&mut self, f: F) -> CXResult<(T, ScopeEffects)>
     where
         F: FnOnce(&mut Self) -> CXResult<T>,
     {
-        self.staged_scope_boundaries
-            .push(self.function.current_scope_index());
+        let context = StagedContext {
+            return_type: self.materialization_return_type(),
+        };
+        self.function.flow_mut().push_staged_scope();
+        self.staged_contexts.push(context);
         let result = f(self);
-        self.staged_scope_boundaries.pop();
-        result
+        self.staged_contexts.pop();
+        let effects = self
+            .function
+            .pop_scope()
+            .unwrap_or_else(|_| panic!("staged control-flow scope is unbalanced"));
+        result.map(|value| (value, effects))
     }
 
-    pub fn staged_control_target_is_external(&self, target: ScopeId) -> bool {
-        self.staged_scope_boundaries
+    pub fn in_staged_context(&self) -> bool {
+        !self.staged_contexts.is_empty()
+    }
+
+    pub fn staged_return_type(&self) -> Option<&THIRType> {
+        self.staged_contexts
             .last()
-            .is_some_and(|boundary| target.index() <= boundary.index())
+            .and_then(|context| context.return_type.as_ref())
     }
 
     pub fn finish_thir_unit(self, source_namespace: EnvironmentNamespace) -> CXResult<THIRUnit> {
@@ -138,16 +155,88 @@ impl TypeEnvironment<'_> {
         })
     }
 
-    pub fn push_scope(&mut self, has_break_merge: bool, has_continue_merge: bool) {
+    pub fn push_scope(
+        &mut self,
+        has_break_merge: bool,
+        has_continue_merge: bool,
+        _scope: TokenRange,
+    ) {
         self.symbols.push_local_scope();
         self.function
+            .flow_mut()
             .push_scope(has_break_merge, has_continue_merge);
     }
 
-    pub fn pop_scope(&mut self) -> CXRawResult<()> {
-        self.function.pop_scope()?;
+    pub fn push_yield_scope(&mut self, expected_type: Option<THIRType>) {
+        self.symbols.push_local_scope();
+        self.function.flow_mut().push_yield_scope(expected_type);
+    }
+
+    pub fn pop_scope(&mut self) -> CXRawResult<ScopeEffects> {
+        let effects = self.function.pop_scope()?;
         self.symbols.pop_local_scope();
-        CXRawResult::Ok(())
+        Ok(effects)
+    }
+
+    pub fn staged_effects(&self, effects: &ScopeEffects) -> THIRStagedEffects {
+        THIRStagedEffects {
+            breaks: effects.break_range.is_some(),
+            continues: effects.continue_range.is_some(),
+            yield_type: effects.yield_type.clone(),
+        }
+    }
+
+    pub fn apply_staged_effects(
+        &mut self,
+        effects: &THIRStagedEffects,
+        range: &TokenRange,
+    ) -> CXResult<()> {
+        if effects.breaks {
+            if self.function.flow().break_target() == ControlTarget::Invalid {
+                return self.log_error(
+                    range,
+                    "staged break has no target in the materialization context".to_string(),
+                );
+            }
+            self.function.flow_mut().record_break(range.clone());
+        }
+
+        if effects.continues {
+            if self.function.flow().continue_target() == ControlTarget::Invalid {
+                return self.log_error(
+                    range,
+                    "staged continue has no target in the materialization context".to_string(),
+                );
+            }
+            self.function.flow_mut().record_continue(range.clone());
+        }
+
+        if let Some(yield_type) = &effects.yield_type {
+            let state = self.function.flow().yield_state();
+            if state.target == ControlTarget::Invalid {
+                return self.log_error(
+                    range,
+                    "staged yield has no target in the materialization context".to_string(),
+                );
+            }
+            if let Some(expected_type) = state.expected_type
+                && !self.type_eq(&expected_type, yield_type)
+            {
+                return self.log_error(
+                    range,
+                    format!(
+                        "Staged expression yields {}, but the materialization context expects {}",
+                        yield_type.display_with(&self.symbols),
+                        expected_type.display_with(&self.symbols),
+                    ),
+                );
+            }
+            self.function
+                .flow_mut()
+                .record_yield(yield_type.clone(), !yield_type.is_void());
+        }
+
+        Ok(())
     }
 
     pub fn push_unsafe(&mut self) {
@@ -209,6 +298,20 @@ impl TypeEnvironment<'_> {
         self.comptime_runtime_return_types
             .last()
             .and_then(Option::as_ref)
+    }
+
+    pub fn materialization_return_type(&self) -> Option<THIRType> {
+        if let Some(return_type) = self.staged_return_type() {
+            return Some(return_type.clone());
+        }
+        if let Some(return_type) = self.comptime_runtime_return_type() {
+            return Some(return_type.clone());
+        }
+        if self.in_comptime_context() {
+            return None;
+        }
+        self.try_current_function()
+            .map(|function| function.signature().return_type.clone())
     }
 
     pub fn next_staged_expression_id(&mut self) -> u64 {

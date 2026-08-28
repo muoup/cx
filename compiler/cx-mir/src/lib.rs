@@ -14,8 +14,8 @@ pub use diagnostic::{MIRDiagnostic, MIRDiagnosticLocation};
 pub use expr::{
     MIRAggregateOp, MIRAssignTarget, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget, MIRCallKind,
     MIRConstant, MIRInstr, MIRInstrKind, MIRInstrOperand, MIRParameterID, MIRPlace,
-    MIRPlaceAggregateOp, MIRPlaceID, MIRRegister, MIRScopeID, MIRStagedExitKind, MIRValue,
-    MIRValueAggregateOp,
+    MIRPlaceAggregateOp, MIRPlaceID, MIRRegister, MIRScopeID, MIRStagedExitKind, MIRStagedTargets,
+    MIRValue, MIRValueAggregateOp,
 };
 pub use global::{
     MIRBody, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID,
@@ -26,7 +26,7 @@ pub use op::{
     MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRIntBinaryOp, MIRPointerBinaryOp,
     MIRPointerOffsetOp, MIRUnaryOp,
 };
-pub use staged::MIRStagedTemplate;
+pub use staged::{MIRStagedCapture, MIRStagedTemplate};
 pub use ty::{
     MIRBitfieldAccess, MIRField, MIRFieldLayout, MIRFloatType, MIRFunctionType, MIRIntType,
     MIRLayoutError, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRTypeRegistryBuilder,

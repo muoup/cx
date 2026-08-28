@@ -3,7 +3,7 @@ use crate::{
     symbol::{completion::complete_template_input, resolution::apply_template},
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
-        result::{TypecheckResult, TypecheckedBinding},
+        result::{StagedBindingTC, TypecheckResult, TypecheckedBinding},
         typechecker::typecheck_expr,
     },
 };
@@ -65,6 +65,7 @@ pub(crate) fn typecheck_identifier(
                         },
                     ],
                     creates_scope: false,
+                    yields: false,
                 },
             }));
         } else if env.type_eq(&staged._type, &expected_type) {
@@ -88,20 +89,18 @@ pub(crate) fn typecheck_identifier(
         return_type,
     } = symbol
     {
-        return Ok(TypecheckResult::staged(
-            crate::type_checking::result::StagedValue {
-                reference: THIRExpression {
-                    token_range: expr.token_range().clone(),
-                    kind: THIRExpressionKind::Variable {
-                        name: name.name.clone(),
-                        local_id,
-                    },
-                    _type: THIRTypeKind::Undefined.into(),
+        return Ok(TypecheckResult::staged_binding(StagedBindingTC {
+            reference: THIRExpression {
+                token_range: expr.token_range().clone(),
+                kind: THIRExpressionKind::Variable {
+                    name: name.name.clone(),
+                    local_id,
                 },
-                params,
-                return_type,
+                _type: THIRTypeKind::Undefined.into(),
             },
-        ));
+            params,
+            return_type,
+        }));
     }
 
     if let Some(completed_input) = template_input

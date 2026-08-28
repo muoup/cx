@@ -369,7 +369,7 @@ int cast_value(int value) {
 (source_file
   (import_declaration
     (keyword)
-    (qualified_name
+    (import_path
       (identifier)
       (operator)
       (identifier)
@@ -501,3 +501,44 @@ int cast_value(int value) {
                       (primary_expression
                         (qualified_name
                           (identifier))))))))))))))
+
+==================
+compound imports
+==================
+import std::{vector, optional, net::{udp, tcp, endpoint},} as std;
+import std::string as std;
+---
+
+(source_file
+  (import_declaration
+    (keyword)
+    (import_path
+      (identifier)
+      (operator)
+      (import_group
+        (import_path
+          (identifier))
+        (import_path
+          (identifier))
+        (import_path
+          (identifier)
+          (operator)
+          (import_group
+            (import_path
+              (identifier))
+            (import_path
+              (identifier))
+            (import_path
+              (identifier))))))
+    (keyword)
+    (qualified_name
+      (identifier)))
+  (import_declaration
+    (keyword)
+    (import_path
+      (identifier)
+      (operator)
+      (identifier))
+    (keyword)
+    (qualified_name
+      (identifier))))

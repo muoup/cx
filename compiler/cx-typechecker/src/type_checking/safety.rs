@@ -195,7 +195,7 @@ pub(crate) fn validate_safe_expression(
             }
             Ok(())
         }
-        THIRExpressionKind::Yield { value } => {
+        THIRExpressionKind::Yield { value, .. } => {
             value
                 .as_deref()
                 .map(|value| validate_safe_expression(env, value))
@@ -203,9 +203,14 @@ pub(crate) fn validate_safe_expression(
             Ok(())
         }
         THIRExpressionKind::Defer { expression } => validate_safe_expression(env, expression),
-        THIRExpressionKind::StagedExpression { body, .. } => validate_safe_expression(env, body),
-        THIRExpressionKind::Emit(inner)
-        | THIRExpressionKind::Assert {
+        THIRExpressionKind::StagedExpression(staged) => {
+            validate_safe_expression(env, staged.expr())
+        }
+        THIRExpressionKind::MaterializeStagedExpression { expr, with_params } => {
+            validate_safe_expression(env, expr)?;
+            validate_all(env, with_params)
+        }
+        THIRExpressionKind::Assert {
             condition: inner, ..
         } => validate_safe_expression(env, inner),
         THIRExpressionKind::Block { statements, .. } => validate_all(env, statements),

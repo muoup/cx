@@ -44,6 +44,7 @@ fn resolve_comma(lhs: THIRExpression, rhs: THIRExpression) -> CXResult<Typecheck
         THIRExpressionKind::Block {
             statements: vec![lhs, rhs],
             creates_scope: false,
+            yields: false,
         },
     ))
 }

@@ -33,6 +33,7 @@ import std::string as std;
 import std::functional as std;
 
 import std::net::udp as std::net;
+import std::net::address as std::net;
 
 std::opt<std::net::udp_socket> try_serve(u16 port) {
     std::net::endpoint addr = std::net::endpoint::ipv4("0.0.0.0", port)
@@ -40,18 +41,19 @@ std::opt<std::net::udp_socket> try_serve(u16 port) {
     std::net::udp_socket socket = std::net::udp_socket::open()
         |> std::opt::try();
 
-    socket |> std::net::udp_socket::bind(addr)
-        |> std::opt::try_or(.{
-            socket |> std::net::udp_socket::drop();
-        });
+    socket 
+        |> std::net::udp_socket::bind(addr)`,
+"        |> std::opt::try();",`
 
     std::span<const u8> buffer = std::span::str_as_bytes("Hello, world!");
-    std::opt<u64> result = socket 
-        |> std::net::udp_socket::send_to(buffer, addr)`,
-"        |> std::opt::try();",`
+    socket 
+        |> std::net::udp_socket::send_to(buffer, addr)
+        |> std::opt::try_or(.{
+            move socket |> std::net::udp_socket::close();
+        });
+    
     return move socket |> std::opt::some();
-}`
-];
+}`];
 
 function highlightedLine(line: string) {
     const parts: ReactNode[] = [];

@@ -137,7 +137,7 @@ pub enum HIRExprKind {
     Defer {
         expr: Box<HIRExpression>,
     },
-    StagedExpression {
+    ParamStagedExpression {
         params: Vec<CXIdent>,
         body: Box<HIRExpression>,
     },

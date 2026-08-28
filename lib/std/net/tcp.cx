@@ -1,6 +1,8 @@
 import std::optional as std;
 import std::span as std;
 
+import std::net::address as std::net;
+
 extern "C":
 
 i32 socket(int domain, int type, int protocol);
@@ -10,8 +12,6 @@ i32 listen(int sockfd, int backlog);
 i32 accept(int sockfd, void* addr, u32* addrlen);
 i64 read(int fd, void* buffer, usize length);
 i64 write(int fd, const void* buffer, usize length);
-u32 inet_addr(const char* cp);
-u16 htons(u16 hostshort);
 i32 close(int fd);
 
 enum {
@@ -21,23 +21,7 @@ enum {
     LINUX_SO_REUSEADDR = 2,
 };
 
-struct in_addr {
-    u32 s_addr;
-};
-
-struct sockaddr_in {
-    u16 sin_family;
-    u16 sin_port;
-    in_addr sin_addr;
-    char sin_zero[8];
-};
-
 public:
-
-struct endpoint {
-    sockaddr_in address;
-    u32 length;
-};
 
 struct tcp_listener : @nodrop {
     i32 fd;
@@ -46,25 +30,6 @@ struct tcp_listener : @nodrop {
 struct tcp_stream : @nodrop {
     i32 fd;
 };
-
-std::opt<endpoint> endpoint::ipv4(const char* address, u16 port) {
-    u32 raw_address = inet_addr(address);
-
-    if (raw_address == 0xFFFFFFFF) {
-        return std::opt::none<endpoint>();
-    }
-
-    endpoint value = (endpoint) {
-        .address = (sockaddr_in) {
-            .sin_family = LINUX_AF_INET,
-            .sin_port = htons(port),
-            .sin_addr = (in_addr) { .s_addr = raw_address },
-        },
-        .length = (u32) sizeof(sockaddr_in)
-    };
-
-    return std::opt::some<endpoint>(value);
-}
 
 std::opt<tcp_listener> tcp_listener::open() {
     i32 fd = socket(LINUX_AF_INET, LINUX_SOCK_STREAM, 0);
@@ -79,7 +44,7 @@ std::opt<tcp_listener> tcp_listener::open() {
     return std::opt::some<tcp_listener>((tcp_listener) { .fd = fd });
 }
 
-std::opt<void> tcp_listener::bind(tcp_listener& this, endpoint addr) {
+std::opt<void> tcp_listener::bind(tcp_listener& this, std::net::endpoint addr) {
     if (bind(this.fd, &addr.address, addr.length) < 0) {
         return std::opt::none();
     }
@@ -96,8 +61,8 @@ std::opt<void> tcp_listener::listen(tcp_listener& this, int backlog) {
 }
 
 std::opt<tcp_stream> tcp_listener::accept(tcp_listener& this) {
-    endpoint remote;
-    remote.length = (u32) sizeof(sockaddr_in);
+    std::net::endpoint remote;
+    remote.length = (u32) sizeof(std::net::sockaddr_in);
 
     i32 fd = accept(this.fd, &remote.address, &remote.length);
 

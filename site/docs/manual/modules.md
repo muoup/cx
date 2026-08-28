@@ -24,6 +24,17 @@ int main() {
 Module paths map to file paths. For example, `std::io` resolves to `lib/std/io.cx`
 or the equivalent path relative to the project root.
 
+Related modules can be imported in one statement. Each leaf is expanded into a
+normal module import, and an alias applies to every leaf:
+
+```cx
+import std::{vector, optional, net::{udp, address}} as std;
+```
+
+This is equivalent to importing `std::vector`, `std::optional`,
+`std::net::udp`, and `std::net::address` separately with the same alias.
+Trailing commas are allowed in grouped import lists.
+
 During the namespace migration, imported public symbols are still also available
 by their legacy unqualified names for compatibility with older code. New code
 should prefer qualified names because imports are intended to become reachability
@@ -51,9 +62,7 @@ Aliases may overlap, however any symbol name which refers to multiple definition
 
 ```cx
 // Okay:
-import std::vector as std;
-import std::file as std;
-import std::optional as std;
+import std::{vector, file, optional} as std;
 
 std::vector<int> vec = std::vector::new<int>();
 std::file file = std::file::open("test.txt")

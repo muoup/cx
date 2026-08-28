@@ -139,14 +139,19 @@ fn deduce_template_input(
     }
 
     if let Some(expected_return_type) = expected_return_type {
-        deduce_from_cx_type(
+        let mut expected_bindings = bindings.clone();
+        if deduce_from_cx_type(
             env,
             namespace,
             template_prototype,
-            &mut bindings,
+            &mut expected_bindings,
             shell.return_type(),
             expected_return_type,
-        )?;
+        )
+        .is_ok()
+        {
+            bindings = expected_bindings;
+        }
     }
 
     let args = template_prototype

@@ -607,10 +607,18 @@ module.exports = grammar({
         import_declaration: ($) =>
             seq(
                 keyword($, "import"),
-                $.qualified_name,
+                $.import_path,
                 optional(seq(keyword($, "as"), $.qualified_name)),
                 ";",
             ),
+
+        import_path: ($) =>
+            seq(
+                repeat(seq($.identifier, op($, "::"))),
+                choice($.identifier, $.import_group),
+            ),
+
+        import_group: ($) => seq("{", commaSep1($.import_path), "}"),
 
         access_section: ($) =>
             seq(
