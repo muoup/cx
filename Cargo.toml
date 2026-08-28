@@ -2,7 +2,7 @@
 resolver = "2"
 
 members = [
-    "compiler/cx",
+    "compiler/cx-cli",
     "compiler/cx-lsp",
     "compiler/cx-zed-extension",
     "tests/benchmarks",
