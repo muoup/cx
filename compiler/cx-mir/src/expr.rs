@@ -394,10 +394,11 @@ impl MIRInstr {
             MIRInstrKind::Return { value: Some(value) } | MIRInstrKind::StagedReturn { value } => {
                 visit(MIRInstrOperand::Value(value))
             }
-            MIRInstrKind::StagedYield { value: Some(value) } => {
-                visit(MIRInstrOperand::Value(value))
-            }
-            MIRInstrKind::Return { value: None } | MIRInstrKind::StagedYield { value: None } => {}
+            MIRInstrKind::StagedYield {
+                value: Some(value), ..
+            } => visit(MIRInstrOperand::Value(value)),
+            MIRInstrKind::Return { value: None }
+            | MIRInstrKind::StagedYield { value: None, .. } => {}
             MIRInstrKind::Jump { target } => {
                 visit_target_operands(target, &mut visit);
             }
@@ -584,6 +585,7 @@ pub enum MIRInstrKind {
     },
     StagedYield {
         value: Option<MIRValue>,
+        ty: Option<MIRTypeID>,
     },
     StagedMove {
         out: MIRRegister,

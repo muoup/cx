@@ -595,7 +595,7 @@ fn write_instruction<T: MTRegistry>(
             MIRStagedExitKind::Break => f.write_str("staged.break"),
             MIRStagedExitKind::Continue => f.write_str("staged.continue"),
         },
-        MIRInstrKind::StagedYield { value } => {
+        MIRInstrKind::StagedYield { value, .. } => {
             f.write_str("staged.yield")?;
             if let Some(value) = value {
                 f.write_str(" ")?;

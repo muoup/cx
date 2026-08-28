@@ -180,6 +180,7 @@ pub fn typecheck_match(
                             kind: THIRExpressionKind::Block {
                                 statements: vec![binding, body_expr],
                                 creates_scope: false,
+                                yields: false,
                             },
                         }
                     } else {

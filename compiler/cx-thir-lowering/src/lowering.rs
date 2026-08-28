@@ -890,6 +890,10 @@ pub(crate) fn lower_expression(
             }
 
             THIRExpressionKind::Yield { value, staged } => {
+                let yield_type = value
+                    .as_deref()
+                    .map(|value| lower_type(builder, &value._type))
+                    .transpose()?;
                 let value = value
                     .as_deref()
                     .map(|value| lower_expression(builder, value))
@@ -904,7 +908,10 @@ pub(crate) fn lower_expression(
                         .expect("captured function has no root scope")
                         .id();
                     auto_cleanup(builder, root_scope)?;
-                    builder.emit(MIRInstrKind::StagedYield { value });
+                    builder.emit(MIRInstrKind::StagedYield {
+                        value,
+                        ty: yield_type,
+                    });
                     return Ok(MIRValue::Constant(MIRConstant::Unit));
                 }
 
@@ -947,8 +954,23 @@ pub(crate) fn lower_expression(
             THIRExpressionKind::Block {
                 statements,
                 creates_scope,
+                yields,
             } => {
+                let result_type = lower_type(builder, &expression._type)?;
+                let returns_value =
+                    !matches!(builder.types().kind(result_type), Ok(MIRTypeKind::Void));
+                let merge = yields.then(|| builder.fun_mut().new_block("block.yield"));
+                let yield_register = merge.and_then(|merge| {
+                    returns_value.then(|| builder.fun_mut().set_yield_recipient(merge, result_type))
+                });
                 let mut result = MIRValue::Constant(MIRConstant::Unit);
+                builder.fun_mut().push_invisible_scope();
+                if let Some(merge) = merge {
+                    builder
+                        .fun_mut()
+                        .current_scope_mut()
+                        .set_yield_target(merge);
+                }
                 if *creates_scope {
                     builder.fun_mut().push_scope(expression.token_range.clone());
                 }
@@ -963,8 +985,19 @@ pub(crate) fn lower_expression(
                 if *creates_scope {
                     control_flow::auto_pop_scope(builder)?;
                 }
+                control_flow::auto_pop_scope(builder)?;
 
-                result
+                if let Some(merge) = merge {
+                    if !builder.fun().current_block_terminated() {
+                        builder.emit(MIRInstrKind::Unreachable);
+                    }
+                    builder.fun_mut().set_current_block(merge);
+                    yield_register
+                        .map(MIRValue::Register)
+                        .unwrap_or(MIRValue::Constant(MIRConstant::Unit))
+                } else {
+                    result
+                }
             }
 
             THIRExpressionKind::CallFunction {

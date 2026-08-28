@@ -5,10 +5,9 @@ use cx_log::{
     error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_mir::{
-    MIRAggregateOp, MIRAssignTarget, MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRInstr,
-    MIRInstrKind, MIRPlace, MIRPlaceAggregateOp, MIRPlaceID, MIRRegister, MIRScopeID,
-    MIRStagedTargets, MIRTypeID, MIRTypeKind, MIRValue, MIRValueAggregateOp,
-    ty::interface::MTRegistry,
+    MIRAggregateOp, MIRAssignTarget, MIRBasicBlockID, MIRBlockTarget, MIRInstr, MIRInstrKind,
+    MIRPlace, MIRPlaceAggregateOp, MIRPlaceID, MIRRegister, MIRScopeID, MIRStagedTargets,
+    MIRTypeKind, MIRValue, MIRValueAggregateOp, ty::interface::MTRegistry,
 };
 use cx_mir_comptime::{MIRComptimeValue, MIRStagedBinding, MIRStagedValue};
 
@@ -173,9 +172,7 @@ fn instantiate_inner(
                 _ => None,
             };
             let dependency_targets = match &instruction.kind {
-                MIRInstrKind::ApplyStaged {
-                    targets: local, ..
-                }
+                MIRInstrKind::ApplyStaged { targets: local, .. }
                 | MIRInstrKind::StagedUse { targets: local, .. } => {
                     map_targets(*local, targets, &blocks)?
                 }
@@ -235,35 +232,34 @@ fn instantiate_inner(
                         instruction.token_range.clone(),
                     );
                 }
-                MIRInstrKind::StagedYield { value } => {
+                MIRInstrKind::StagedYield { value, ty } => {
                     for prefix in escape_prefix {
                         builder
                             .fun_mut()
                             .emit(prefix.kind.clone(), prefix.token_range.clone());
                     }
-                    let block = if let Some(block) = targets.yield_target {
-                        block
-                    } else if let Some((scope, block)) = builder
-                        .fun()
-                        .scope_stack()
-                        .iter()
-                        .rev()
-                        .find_map(|scope| scope.yield_target.map(|block| (scope.id(), block)))
-                    {
-                        auto_cleanup(builder, scope)?;
-                        block
-                    } else {
-                        return Err(staged_error(
-                            "staged yield has no target in the materialization context",
-                        ));
-                    };
+                    let block =
+                        if let Some(block) = targets.yield_target {
+                            block
+                        } else if let Some((scope, block)) =
+                            builder.fun().scope_stack().iter().rev().find_map(|scope| {
+                                scope.yield_target.map(|block| (scope.id(), block))
+                            })
+                        {
+                            auto_cleanup(builder, scope)?;
+                            block
+                        } else {
+                            return Err(staged_error(
+                                "staged yield has no target in the materialization context",
+                            ));
+                        };
                     let args: Vec<MIRValue> = value
                         .as_ref()
                         .map(|value| map_value(value, &values, &places, &omitted_places))
                         .transpose()?
                         .into_iter()
                         .collect();
-                    validate_yield(builder, block, &args)?;
+                    validate_yield(builder, block, *ty)?;
                     builder.fun_mut().emit(
                         MIRInstrKind::Jump {
                             target: MIRBlockTarget::with_args(block, args),
@@ -476,7 +472,7 @@ fn map_targets(
 fn validate_yield(
     builder: &MIRBuilder<'_>,
     target: MIRBasicBlockID,
-    args: &[MIRValue],
+    actual: Option<cx_mir::MIRTypeID>,
 ) -> CXResult<()> {
     let expected = builder
         .fun()
@@ -484,94 +480,19 @@ fn validate_yield(
         .block(target)
         .and_then(|block| block.params.first())
         .and_then(|register| builder.fun().register_type(*register));
-    if expected.is_some() != !args.is_empty() {
+    if expected.is_some() != actual.is_some() {
         return Err(staged_error(
             "staged yield value does not match the materialization context",
         ));
     }
-    if let Some(expected) = expected
-        && args
-            .first()
-            .and_then(|value| value_matches_type(builder, value, expected))
-            == Some(false)
+    if let (Some(expected), Some(actual)) = (expected, actual)
+        && !builder.types().same_type(expected, actual)
     {
         return Err(staged_error(
             "staged yield type does not match the materialization context",
         ));
     }
     Ok(())
-}
-
-fn value_matches_type(
-    builder: &MIRBuilder<'_>,
-    value: &MIRValue,
-    expected: MIRTypeID,
-) -> Option<bool> {
-    if let Some(actual) = value_type(builder, value) {
-        return Some(builder.types().same_type(expected, actual));
-    }
-    let expected = builder.types().kind(expected).ok()?;
-    match value {
-        MIRValue::Constant(MIRConstant::Unit) => Some(matches!(expected, MIRTypeKind::Void)),
-        MIRValue::Constant(MIRConstant::Bool(_)) => Some(matches!(
-            expected,
-            MIRTypeKind::Integer {
-                ty: cx_mir::MIRIntType::I1,
-                signed: false
-            }
-        )),
-        MIRValue::Constant(MIRConstant::Integer { ty, signed, .. }) => Some(matches!(
-            expected,
-            MIRTypeKind::Integer {
-                ty: expected_ty,
-                signed: expected_signed
-            } if expected_ty == ty && expected_signed == signed
-        )),
-        MIRValue::Constant(MIRConstant::Float { ty, .. }) => Some(matches!(
-            expected,
-            MIRTypeKind::Float { ty: expected_ty } if expected_ty == ty
-        )),
-        MIRValue::Constant(MIRConstant::String(_)) => {
-            Some(matches!(expected, MIRTypeKind::Str))
-        }
-        _ => None,
-    }
-}
-
-fn value_type(builder: &MIRBuilder<'_>, value: &MIRValue) -> Option<MIRTypeID> {
-    match value {
-        MIRValue::Register(register) => builder.fun().register_type(*register),
-        MIRValue::PlaceRef(MIRPlace::FunctionLocal(place))
-        | MIRValue::Copy(MIRPlace::FunctionLocal(place))
-        | MIRValue::Move(MIRPlace::FunctionLocal(place)) => {
-            builder.fun().body().place(*place).map(|place| place.ty)
-        }
-        MIRValue::PlaceRef(MIRPlace::Parameter(parameter))
-        | MIRValue::Copy(MIRPlace::Parameter(parameter))
-        | MIRValue::Move(MIRPlace::Parameter(parameter)) => builder
-            .fun()
-            .prototype()
-            .signature
-            .params
-            .get(parameter.index())
-            .map(|parameter| parameter.ty),
-        MIRValue::Constant(constant) => match constant {
-            MIRConstant::Null { ty }
-            | MIRConstant::Aggregate { ty, .. }
-            | MIRConstant::Global { ty, .. }
-            | MIRConstant::GlobalOffset { ty, .. } => Some(*ty),
-            MIRConstant::Unit
-            | MIRConstant::Bool(_)
-            | MIRConstant::Integer { .. }
-            | MIRConstant::Float { .. }
-            | MIRConstant::String(_)
-            | MIRConstant::Function(_)
-            | MIRConstant::Undefined => None,
-        },
-        MIRValue::PlaceRef(MIRPlace::Global(_))
-        | MIRValue::Copy(MIRPlace::Global(_))
-        | MIRValue::Move(MIRPlace::Global(_)) => None,
-    }
 }
 
 fn map_value(
@@ -900,8 +821,9 @@ fn map_instruction(
         MIRInstrKind::Return { value: returned } => MIRInstrKind::Return {
             value: returned.as_ref().map(value).transpose()?,
         },
-        MIRInstrKind::StagedYield { value: yielded } => MIRInstrKind::StagedYield {
+        MIRInstrKind::StagedYield { value: yielded, ty } => MIRInstrKind::StagedYield {
             value: yielded.as_ref().map(value).transpose()?,
+            ty: *ty,
         },
         MIRInstrKind::Jump {
             target: destination,

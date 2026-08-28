@@ -76,6 +76,10 @@ impl ControlFlow {
         });
     }
 
+    pub fn at_function_root(&self) -> bool {
+        self.scopes.len() == 1
+    }
+
     pub fn pop_scope(&mut self) -> CXRawResult<ScopeEffects> {
         let Some(scope) = self.scopes.pop() else {
             return CXStdErrMessage::result(

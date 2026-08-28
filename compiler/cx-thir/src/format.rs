@@ -1253,6 +1253,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             THIRExpressionKind::Block {
                 statements,
                 creates_scope,
+                ..
             } => {
                 write!(
                     f,

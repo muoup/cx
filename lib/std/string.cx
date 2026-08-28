@@ -1,6 +1,4 @@
-import std::optional;
-import std::io;
-import std::span as std;
+import std::{optional, io, span} as std;
 
 extern "C":
 
@@ -18,15 +16,29 @@ struct string : @nodrop {
 };
 
 string string::new() {
-    std::optional::opt<string> s = string::try_new_string();
-    
-    match (move s) {
-        std::optional::opt::some<string>(val) => return move val;
-        std::optional::opt::none<string>(_) => {
+    match (string::try_new_string()) {
+        std::opt::some(val) => return move val;
+        std::opt::none(_) => {
             std::io::println("Failed to allocate memory for string");
             @unsafe(exit(1));
         }
     }
+}
+
+std::opt<string> string::try_new_string() {
+    @unsafe {
+        void* base_buffer = calloc(1, 16);
+
+        if (base_buffer == NULL) {
+            return std::opt::none();
+        }
+
+        return std::opt::some((string) {
+            .data = base_buffer,
+            .length = 0,
+            .capacity = 16
+        });
+    };
 }
 
 string string::clone(const string& this) {
@@ -45,25 +57,6 @@ string string::from_span(const std::span<const char>& s) {
     string result = string::new();
     result |> string::append(s |> std::span::as_str());
     return move result;
-}
-
-std::optional::opt<string> string::try_new_string() {
-    @unsafe {
-        void* base_buffer = malloc(16);
-
-        if (base_buffer == NULL) {
-            return std::optional::opt::none<string>();
-        }
-        
-        string s = (string) {
-            .data = base_buffer,
-            .length = 0,
-            .capacity = 16
-        };
-        *s.data = '\0';
-    
-        return std::optional::opt::some<string>(move s);
-    };
 }
 
 void string::append(string& this, const _str& s) {

@@ -57,23 +57,50 @@ fn typecheck_expr_inner(
             exprs,
             creates_scope,
         } => {
-            let mut block = Vec::new();
-
-            for statement in exprs {
-                let expr = typecheck_expr(env, namespace, statement, None)?
-                    .standard_ready_coerce(env, expr.token_range())?;
-
-                block.push(expr);
+            let handles_yield = *creates_scope
+                && !env.function.flow().at_function_root()
+                && (!env.in_staged_context() || expected_type.is_some());
+            if handles_yield {
+                env.push_yield_scope(expected_type.cloned());
             }
 
-            TypecheckResult::from(THIRExpression {
+            let checked = exprs
+                .iter()
+                .map(|statement| {
+                    typecheck_expr(env, namespace, statement, None)
+                        .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
+                })
+                .collect::<CXResult<Vec<_>>>();
+
+            let effects = if handles_yield {
+                Some(
+                    env.pop_scope()
+                        .map_err(|err| env.complete_err(err, expr.token_range()))?,
+                )
+            } else {
+                None
+            };
+            let statements = checked?;
+            let yield_type = effects.and_then(|effects| effects.yield_type);
+            let yields = yield_type.is_some();
+            let result_type = yield_type.unwrap_or_else(THIRType::unit);
+            let block = THIRExpression {
                 token_range: TokenRange::internal(),
                 kind: THIRExpressionKind::Block {
-                    statements: block,
+                    statements,
                     creates_scope: *creates_scope,
+                    yields,
                 },
-                _type: THIRType::unit(),
-            })
+                _type: result_type,
+            };
+            if yields && expr_may_fall_through(&block) {
+                return env.log_error(
+                    expr.token_range(),
+                    "A yielding block must yield a value on every path".to_string(),
+                );
+            }
+
+            TypecheckResult::from(block)
         }
 
         HIRExprKind::Defer { expr: deferred } => {
@@ -636,6 +663,7 @@ pub fn add_implicit_return(
         kind: THIRExpressionKind::Block {
             statements: vec![expr, ret],
             creates_scope: false,
+            yields: false,
         },
         _type: THIRType::unit(),
     })

@@ -1,11 +1,17 @@
 public:
 
-T tap<T>(T value, void (*func)(T&)) {
-    func(value);
-    return move value;
+comptime expr T tap<T, U>(expr T value, expr(T&) U func) {
+    return emit .{
+        T val = value;
+        func(val);
+        yield move val;
+    };
 }
 
-T inspect<T>(T value, void (*func)(const T&)) {
-    func(value);
-    return move value;
+comptime expr T inspect<T, U>(expr T value, expr(T&) U func) {
+    return emit .{
+        T val = value;
+        func(val);
+        yield move val;
+    };
 }

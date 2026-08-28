@@ -65,6 +65,7 @@ pub(crate) fn typecheck_identifier(
                         },
                     ],
                     creates_scope: false,
+                    yields: false,
                 },
             }));
         } else if env.type_eq(&staged._type, &expected_type) {

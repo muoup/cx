@@ -274,6 +274,7 @@ pub enum THIRExpressionKind {
     Block {
         statements: Vec<THIRExpression>,
         creates_scope: bool,
+        yields: bool,
     },
 
     // Function Calls
@@ -323,7 +324,7 @@ pub enum THIRExpressionKind {
     StagedExpression(THIRStagedExpr),
     MaterializeStagedExpression {
         expr: Box<THIRExpression>,
-        with_params: Vec<THIRExpression>
+        with_params: Vec<THIRExpression>,
     },
 }
 
