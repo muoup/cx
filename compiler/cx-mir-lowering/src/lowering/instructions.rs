@@ -190,6 +190,7 @@ pub(super) fn lower_instruction(
         | MIRInstrKind::ApplyStaged { .. }
         | MIRInstrKind::StagedReturn { .. }
         | MIRInstrKind::StagedExit { .. }
+        | MIRInstrKind::StagedYield { .. }
         | MIRInstrKind::StagedMove { .. }
         | MIRInstrKind::StagedUse { .. } => {}
         MIRInstrKind::Create { out, ty } => {

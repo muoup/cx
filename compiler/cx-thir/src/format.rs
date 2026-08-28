@@ -1185,10 +1185,10 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }
-            THIRExpressionKind::Yield { value } => {
+            THIRExpressionKind::Yield { value, staged } => {
                 write!(f, "Yield <'")?;
                 self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")?;
+                writeln!(f, "> staged={staged}")?;
                 if let Some(value) = value {
                     MIRExpressionFormatter {
                         expr: value,

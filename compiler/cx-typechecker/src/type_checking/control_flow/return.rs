@@ -11,7 +11,7 @@ use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 
 use crate::{
-    environment::{ScopeArrowSink, ScopeExitTarget, TypeEnvironment},
+    environment::TypeEnvironment,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
         result::TypecheckResult,

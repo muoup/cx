@@ -141,7 +141,12 @@ pub(crate) fn typecheck_callee_call(
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     let raw_args = comma_separated_exprs(rhs);
-    let tc_args = typecheck_args(env, namespace, raw_args.as_slice())?;
+    let tc_args = if matches!(&callee, TypecheckResult::IncompleteTemplate(_)) {
+        env.in_staged(|env| typecheck_args(env, namespace, raw_args.as_slice()))?
+            .0
+    } else {
+        Vec::new()
+    };
 
     let callee = complete_callee(
         env,
@@ -478,31 +483,35 @@ fn complete_comptime_call(
             } else {
                 Some(target_type)
             };
-        let result = if value_type.expr {
-            env.in_staged(|env| typecheck_expr(env, namespace, argument, expected_type))?
-        } else {
-            typecheck_expr(env, namespace, argument, expected_type)?
-        };
+        if value_type.expr {
+            let (result, _) = env.in_staged(|env| {
+                let result = typecheck_expr(env, namespace, argument, expected_type)?;
+                let result = if let Some(expected_type) = expected_type {
+                    result.apply_expected_type(env, namespace, expected_type)?
+                } else {
+                    result
+                };
+                let result = result.standard_ready_coerce(env, argument.token_range())?;
+                if target_type.is_memory_reference()
+                    || target_type.is_void()
+                    || target_type.is_unreachable()
+                {
+                    Ok(result)
+                } else {
+                    implicit_cast(env, result, target_type)
+                }
+            })?;
+            arguments.push(result);
+            continue;
+        }
+
+        let result = typecheck_expr(env, namespace, argument, expected_type)?;
         let result = if let Some(expected_type) = expected_type {
             result.apply_expected_type(env, namespace, expected_type)?
         } else {
             result
         };
         let result = result.standard_ready_coerce(env, argument.token_range())?;
-
-        if value_type.expr {
-            let result = if target_type.is_memory_reference()
-                || target_type.is_void()
-                || target_type.is_unreachable()
-            {
-                result
-            } else {
-                implicit_cast(env, result, target_type)?
-            };
-            arguments.push(result);
-            continue;
-        }
-
         let result = if target_type.is_memory_reference() {
             result
         } else {
@@ -540,6 +549,7 @@ fn complete_staged_call(
 ) -> CXResult<TypecheckResult> {
     let (callee, params, return_type) = match staged {
         StagedTC::Literal(staged) => {
+            env.apply_staged_effects(staged.effects(), expr.token_range())?;
             let params = staged
                 .params()
                 .iter()
@@ -568,9 +578,7 @@ fn complete_staged_call(
 
     let mut arguments = Vec::with_capacity(raw_args.len());
     for (argument, target_type) in raw_args.into_iter().zip(&params) {
-        let result =
-            env.in_staged(|env| typecheck_expr(env, namespace, argument, Some(target_type)))?;
-        let result = result
+        let result = typecheck_expr(env, namespace, argument, Some(target_type))?
             .apply_expected_type(env, namespace, target_type)?
             .standard_ready_coerce(env, argument.token_range())?;
         let result = if target_type.is_memory_reference() && result._type.is_memory_reference() {

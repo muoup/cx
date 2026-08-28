@@ -564,7 +564,6 @@ dependencies = [
  "cx-thir",
  "cx-tokens",
  "cx-util",
- "speedy",
 ]
 
 [[package]]

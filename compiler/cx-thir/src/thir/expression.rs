@@ -259,6 +259,7 @@ pub enum THIRExpressionKind {
     Unreachable,
     Yield {
         value: Option<Box<THIRExpression>>,
+        staged: bool,
     },
 
     Assert {

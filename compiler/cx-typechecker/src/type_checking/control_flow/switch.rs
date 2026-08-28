@@ -1,6 +1,5 @@
-use crate::environment::{ScopeExitTarget, TypeEnvironment};
+use crate::environment::TypeEnvironment;
 use crate::type_checking::coercion::implicit::{implicit_cast, promotion::std_rval_promotion};
-use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
@@ -57,8 +56,6 @@ pub fn typecheck_switch(
     cases: &[(HIRExpression, usize)],
     default_case: Option<&usize>,
 ) -> CXResult<TypecheckResult> {
-    env.push_scope(true, false, expr.token_range().clone());
-
     let condition_value = typecheck_expr(env, namespace, condition, None)
         .and_then(|v| v.standard_ready_coerce(env, condition.token_range()))
         .and_then(|v| std_rval_promotion(env, v))?;
@@ -72,6 +69,7 @@ pub fn typecheck_switch(
         );
     };
     let condition_type = condition_value.get_type().clone();
+    env.push_scope(true, false, expr.token_range().clone());
 
     let mut arms = Vec::new();
 

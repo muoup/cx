@@ -5,9 +5,10 @@ use cx_log::{
     error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_mir::{
-    MIRAggregateOp, MIRAssignTarget, MIRBasicBlockID, MIRBlockTarget, MIRInstr, MIRInstrKind,
-    MIRPlace, MIRPlaceAggregateOp, MIRPlaceID, MIRRegister, MIRScopeID, MIRTypeKind, MIRValue,
-    MIRValueAggregateOp, ty::interface::MTRegistry,
+    MIRAggregateOp, MIRAssignTarget, MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRInstr,
+    MIRInstrKind, MIRPlace, MIRPlaceAggregateOp, MIRPlaceID, MIRRegister, MIRScopeID,
+    MIRStagedTargets, MIRTypeID, MIRTypeKind, MIRValue, MIRValueAggregateOp,
+    ty::interface::MTRegistry,
 };
 use cx_mir_comptime::{MIRComptimeValue, MIRStagedBinding, MIRStagedValue};
 
@@ -25,13 +26,14 @@ pub(crate) fn instantiate(
     builder: &mut MIRBuilder<'_>,
     staged: &MIRStagedValue,
 ) -> CXResult<MIRValue> {
-    instantiate_inner(builder, staged, &[])
+    instantiate_inner(builder, staged, &[], MIRStagedTargets::default())
 }
 
 fn instantiate_inner(
     builder: &mut MIRBuilder<'_>,
     staged: &MIRStagedValue,
     escape_prefix: &[MIRInstr],
+    targets: MIRStagedTargets,
 ) -> CXResult<MIRValue> {
     if let Some(origin) = staged.runtime_origin()
         && origin != builder.fun().id()
@@ -170,6 +172,15 @@ fn instantiate_inner(
                 } => Some(*register),
                 _ => None,
             };
+            let dependency_targets = match &instruction.kind {
+                MIRInstrKind::ApplyStaged {
+                    targets: local, ..
+                }
+                | MIRInstrKind::StagedUse { targets: local, .. } => {
+                    map_targets(*local, targets, &blocks)?
+                }
+                _ => targets,
+            };
             resolve_dependencies(
                 builder,
                 &instruction.kind,
@@ -177,6 +188,7 @@ fn instantiate_inner(
                 &mut staged_inputs,
                 escape_prefix,
                 deferred_callee,
+                dependency_targets,
             )?;
             match &instruction.kind {
                 MIRInstrKind::StagedReturn { value } => {
@@ -198,7 +210,16 @@ fn instantiate_inner(
                             .fun_mut()
                             .emit(prefix.kind.clone(), prefix.token_range.clone());
                     }
-                    let Some((scope, block)) = builder.fun().exit_target(*kind) else {
+                    let local_target = match kind {
+                        cx_mir::MIRStagedExitKind::Break => targets.break_target,
+                        cx_mir::MIRStagedExitKind::Continue => targets.continue_target,
+                    };
+                    let block = if let Some(block) = local_target {
+                        block
+                    } else if let Some((scope, block)) = builder.fun().exit_target(*kind) {
+                        auto_cleanup(builder, scope)?;
+                        block
+                    } else {
                         let name = match kind {
                             cx_mir::MIRStagedExitKind::Break => "break",
                             cx_mir::MIRStagedExitKind::Continue => "continue",
@@ -207,7 +228,6 @@ fn instantiate_inner(
                             "staged {name} has no target in the materialization context"
                         )));
                     };
-                    auto_cleanup(builder, scope)?;
                     builder.fun_mut().emit(
                         MIRInstrKind::Jump {
                             target: MIRBlockTarget::new(block),
@@ -215,7 +235,48 @@ fn instantiate_inner(
                         instruction.token_range.clone(),
                     );
                 }
-                MIRInstrKind::ApplyStaged { out, staged, args } => {
+                MIRInstrKind::StagedYield { value } => {
+                    for prefix in escape_prefix {
+                        builder
+                            .fun_mut()
+                            .emit(prefix.kind.clone(), prefix.token_range.clone());
+                    }
+                    let block = if let Some(block) = targets.yield_target {
+                        block
+                    } else if let Some((scope, block)) = builder
+                        .fun()
+                        .scope_stack()
+                        .iter()
+                        .rev()
+                        .find_map(|scope| scope.yield_target.map(|block| (scope.id(), block)))
+                    {
+                        auto_cleanup(builder, scope)?;
+                        block
+                    } else {
+                        return Err(staged_error(
+                            "staged yield has no target in the materialization context",
+                        ));
+                    };
+                    let args: Vec<MIRValue> = value
+                        .as_ref()
+                        .map(|value| map_value(value, &values, &places, &omitted_places))
+                        .transpose()?
+                        .into_iter()
+                        .collect();
+                    validate_yield(builder, block, &args)?;
+                    builder.fun_mut().emit(
+                        MIRInstrKind::Jump {
+                            target: MIRBlockTarget::with_args(block, args),
+                        },
+                        instruction.token_range.clone(),
+                    );
+                }
+                MIRInstrKind::ApplyStaged {
+                    out,
+                    staged,
+                    args,
+                    targets: local_targets,
+                } => {
                     let MIRValue::Register(source) = staged else {
                         return Err(staged_error("staged callee is not a template input"));
                     };
@@ -261,7 +322,9 @@ fn instantiate_inner(
                     }
                     child_escape_prefix.extend_from_slice(escape_prefix);
                     let applied = dependency.apply(args);
-                    let value = instantiate_inner(builder, &applied, &child_escape_prefix)?;
+                    let targets = map_targets(*local_targets, targets, &blocks)?;
+                    let value =
+                        instantiate_inner(builder, &applied, &child_escape_prefix, targets)?;
                     if let Some(out) = out {
                         values.insert(*out, value);
                     }
@@ -358,6 +421,7 @@ fn resolve_dependencies(
     staged_inputs: &mut HashMap<MIRRegister, std::sync::Arc<MIRStagedValue>>,
     escape_prefix: &[MIRInstr],
     deferred: Option<MIRRegister>,
+    targets: MIRStagedTargets,
 ) -> CXResult<()> {
     let mut inputs = Vec::new();
     MIRInstr::new(instruction.clone(), cx_tokens::TokenRange::internal()).visit_operands(
@@ -381,10 +445,133 @@ fn resolve_dependencies(
                 "parameterized staged value used without an application",
             ));
         }
-        let value = instantiate_inner(builder, &staged, escape_prefix)?;
+        let value = instantiate_inner(builder, &staged, escape_prefix, targets)?;
         values.insert(input, value);
     }
     Ok(())
+}
+
+fn map_targets(
+    local: MIRStagedTargets,
+    inherited: MIRStagedTargets,
+    blocks: &HashMap<MIRBasicBlockID, MIRBasicBlockID>,
+) -> CXResult<MIRStagedTargets> {
+    let map = |target: Option<MIRBasicBlockID>| {
+        target
+            .map(|target| {
+                blocks
+                    .get(&target)
+                    .copied()
+                    .ok_or_else(|| staged_error("staged target refers to an unknown block"))
+            })
+            .transpose()
+    };
+    Ok(MIRStagedTargets {
+        break_target: map(local.break_target)?.or(inherited.break_target),
+        continue_target: map(local.continue_target)?.or(inherited.continue_target),
+        yield_target: map(local.yield_target)?.or(inherited.yield_target),
+    })
+}
+
+fn validate_yield(
+    builder: &MIRBuilder<'_>,
+    target: MIRBasicBlockID,
+    args: &[MIRValue],
+) -> CXResult<()> {
+    let expected = builder
+        .fun()
+        .body()
+        .block(target)
+        .and_then(|block| block.params.first())
+        .and_then(|register| builder.fun().register_type(*register));
+    if expected.is_some() != !args.is_empty() {
+        return Err(staged_error(
+            "staged yield value does not match the materialization context",
+        ));
+    }
+    if let Some(expected) = expected
+        && args
+            .first()
+            .and_then(|value| value_matches_type(builder, value, expected))
+            == Some(false)
+    {
+        return Err(staged_error(
+            "staged yield type does not match the materialization context",
+        ));
+    }
+    Ok(())
+}
+
+fn value_matches_type(
+    builder: &MIRBuilder<'_>,
+    value: &MIRValue,
+    expected: MIRTypeID,
+) -> Option<bool> {
+    if let Some(actual) = value_type(builder, value) {
+        return Some(builder.types().same_type(expected, actual));
+    }
+    let expected = builder.types().kind(expected).ok()?;
+    match value {
+        MIRValue::Constant(MIRConstant::Unit) => Some(matches!(expected, MIRTypeKind::Void)),
+        MIRValue::Constant(MIRConstant::Bool(_)) => Some(matches!(
+            expected,
+            MIRTypeKind::Integer {
+                ty: cx_mir::MIRIntType::I1,
+                signed: false
+            }
+        )),
+        MIRValue::Constant(MIRConstant::Integer { ty, signed, .. }) => Some(matches!(
+            expected,
+            MIRTypeKind::Integer {
+                ty: expected_ty,
+                signed: expected_signed
+            } if expected_ty == ty && expected_signed == signed
+        )),
+        MIRValue::Constant(MIRConstant::Float { ty, .. }) => Some(matches!(
+            expected,
+            MIRTypeKind::Float { ty: expected_ty } if expected_ty == ty
+        )),
+        MIRValue::Constant(MIRConstant::String(_)) => {
+            Some(matches!(expected, MIRTypeKind::Str))
+        }
+        _ => None,
+    }
+}
+
+fn value_type(builder: &MIRBuilder<'_>, value: &MIRValue) -> Option<MIRTypeID> {
+    match value {
+        MIRValue::Register(register) => builder.fun().register_type(*register),
+        MIRValue::PlaceRef(MIRPlace::FunctionLocal(place))
+        | MIRValue::Copy(MIRPlace::FunctionLocal(place))
+        | MIRValue::Move(MIRPlace::FunctionLocal(place)) => {
+            builder.fun().body().place(*place).map(|place| place.ty)
+        }
+        MIRValue::PlaceRef(MIRPlace::Parameter(parameter))
+        | MIRValue::Copy(MIRPlace::Parameter(parameter))
+        | MIRValue::Move(MIRPlace::Parameter(parameter)) => builder
+            .fun()
+            .prototype()
+            .signature
+            .params
+            .get(parameter.index())
+            .map(|parameter| parameter.ty),
+        MIRValue::Constant(constant) => match constant {
+            MIRConstant::Null { ty }
+            | MIRConstant::Aggregate { ty, .. }
+            | MIRConstant::Global { ty, .. }
+            | MIRConstant::GlobalOffset { ty, .. } => Some(*ty),
+            MIRConstant::Unit
+            | MIRConstant::Bool(_)
+            | MIRConstant::Integer { .. }
+            | MIRConstant::Float { .. }
+            | MIRConstant::String(_)
+            | MIRConstant::Function(_)
+            | MIRConstant::Undefined => None,
+        },
+        MIRValue::PlaceRef(MIRPlace::Global(_))
+        | MIRValue::Copy(MIRPlace::Global(_))
+        | MIRValue::Move(MIRPlace::Global(_)) => None,
+    }
 }
 
 fn map_value(
@@ -712,6 +899,9 @@ fn map_instruction(
         },
         MIRInstrKind::Return { value: returned } => MIRInstrKind::Return {
             value: returned.as_ref().map(value).transpose()?,
+        },
+        MIRInstrKind::StagedYield { value: yielded } => MIRInstrKind::StagedYield {
+            value: yielded.as_ref().map(value).transpose()?,
         },
         MIRInstrKind::Jump {
             target: destination,

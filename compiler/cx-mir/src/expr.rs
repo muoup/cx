@@ -371,7 +371,7 @@ impl MIRInstr {
             MIRInstrKind::StagedMove { value, .. } => {
                 visit(MIRInstrOperand::Value(value));
             }
-            MIRInstrKind::StagedUse { value } => {
+            MIRInstrKind::StagedUse { value, .. } => {
                 visit(MIRInstrOperand::Value(value));
             }
             MIRInstrKind::ApplyStaged { staged, args, .. } => {
@@ -394,7 +394,10 @@ impl MIRInstr {
             MIRInstrKind::Return { value: Some(value) } | MIRInstrKind::StagedReturn { value } => {
                 visit(MIRInstrOperand::Value(value))
             }
-            MIRInstrKind::Return { value: None } => {}
+            MIRInstrKind::StagedYield { value: Some(value) } => {
+                visit(MIRInstrOperand::Value(value))
+            }
+            MIRInstrKind::Return { value: None } | MIRInstrKind::StagedYield { value: None } => {}
             MIRInstrKind::Jump { target } => {
                 visit_target_operands(target, &mut visit);
             }
@@ -571,6 +574,7 @@ pub enum MIRInstrKind {
         out: Option<MIRRegister>,
         staged: MIRValue,
         args: Vec<MIRValue>,
+        targets: MIRStagedTargets,
     },
     StagedReturn {
         value: MIRValue,
@@ -578,13 +582,24 @@ pub enum MIRInstrKind {
     StagedExit {
         kind: MIRStagedExitKind,
     },
+    StagedYield {
+        value: Option<MIRValue>,
+    },
     StagedMove {
         out: MIRRegister,
         value: MIRValue,
     },
     StagedUse {
         value: MIRValue,
+        targets: MIRStagedTargets,
     },
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MIRStagedTargets {
+    pub break_target: Option<MIRBasicBlockID>,
+    pub continue_target: Option<MIRBasicBlockID>,
+    pub yield_target: Option<MIRBasicBlockID>,
 }
 
 impl MIRInstrKind {
@@ -598,6 +613,7 @@ impl MIRInstrKind {
                 | Self::VariantSwitch { .. }
                 | Self::StagedReturn { .. }
                 | Self::StagedExit { .. }
+                | Self::StagedYield { .. }
                 | Self::Unreachable
         )
     }

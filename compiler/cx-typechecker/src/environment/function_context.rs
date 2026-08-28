@@ -5,7 +5,7 @@ use cx_thir::thir::data::THIRFnPrototype;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use crate::environment::control_flow::{ControlFlow, ScopeId};
+use crate::environment::control_flow::{ControlFlow, ScopeEffects};
 
 #[derive(Default)]
 pub struct FunctionContext {
@@ -17,12 +17,18 @@ pub struct FunctionContext {
     unsafe_depth: usize,
 
     flow: Option<ControlFlow>,
-    yield_stack: Vec<YieldContext>,
 }
 
 struct LabelRecord {
     declaration: Option<TokenRange>,
     uses: Vec<TokenRange>,
+}
+
+#[derive(Clone)]
+pub struct FunctionModeSnapshot {
+    safe_mode: bool,
+    contract_pure_mode: bool,
+    unsafe_depth: usize,
 }
 
 impl FunctionContext {
@@ -33,7 +39,6 @@ impl FunctionContext {
         self.flow = Some(ControlFlow::new());
         self.labels.clear();
         self.current_function = Some(prototype);
-        self.yield_stack.clear();
     }
 
     pub fn end_function(&mut self) {
@@ -43,7 +48,6 @@ impl FunctionContext {
         self.require_safe = false;
         self.require_pure = false;
         self.unsafe_depth = 0;
-        self.yield_stack.clear();
     }
 
     pub fn current_function(&self) -> &THIRFnPrototype {
@@ -102,13 +106,8 @@ impl FunctionContext {
             .expect("function control-flow state is only available while checking a function body")
     }
 
-    pub fn pop_scope(&mut self) -> CXRawResult<()> {
-        self.flow_mut().pop_scope()?;
-        CXRawResult::Ok(())
-    }
-
-    pub fn current_scope_index(&self) -> ScopeId {
-        self.flow().current_scope_index()
+    pub fn pop_scope(&mut self) -> CXRawResult<ScopeEffects> {
+        self.flow_mut().pop_scope()
     }
 
     pub fn in_safe_context(&self) -> bool {
@@ -123,9 +122,23 @@ impl FunctionContext {
         self.unsafe_depth -= 1;
     }
 
+    pub fn snapshot_mode(&self) -> FunctionModeSnapshot {
+        FunctionModeSnapshot {
+            safe_mode: self.require_safe,
+            contract_pure_mode: self.require_pure,
+            unsafe_depth: self.unsafe_depth,
+        }
+    }
+
     pub fn set_contract_mode(&mut self, safe: bool) {
         self.require_safe = safe;
         self.require_pure = safe;
         self.unsafe_depth = 0;
+    }
+
+    pub fn restore_mode(&mut self, snapshot: FunctionModeSnapshot) {
+        self.require_safe = snapshot.safe_mode;
+        self.require_pure = snapshot.contract_pure_mode;
+        self.unsafe_depth = snapshot.unsafe_depth;
     }
 }

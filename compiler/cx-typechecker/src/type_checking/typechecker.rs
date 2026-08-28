@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use crate::environment::TypeEnvironment;
+use crate::environment::{ControlTarget, TypeEnvironment};
 use crate::symbol::completion::complete_type;
 use crate::type_checking::aggregate::initialization::typecheck_initializer_list;
 use crate::type_checking::coercion::implicit::{implicit_cast, promotion::std_rval_promotion};
@@ -188,8 +188,6 @@ fn typecheck_expr_inner(
             then_branch,
             else_branch,
         } => {
-            env.push_scope(false, false, condition.range.clone());
-
             let condition_result = typecheck_expr(env, namespace, condition, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))
@@ -253,6 +251,7 @@ fn typecheck_expr_inner(
                     _type: THIRType::unit(),
                     kind: THIRExpressionKind::Yield {
                         value: Some(Box::new(v)),
+                        staged: false,
                     },
                     token_range: TokenRange::internal(),
                 })?;
@@ -261,6 +260,7 @@ fn typecheck_expr_inner(
                     _type: THIRType::unit(),
                     kind: THIRExpressionKind::Yield {
                         value: Some(Box::new(v)),
+                        staged: false,
                     },
                     token_range: TokenRange::internal(),
                 })?;
@@ -281,13 +281,10 @@ fn typecheck_expr_inner(
             body,
             pre_eval,
         } => {
-            env.push_scope(true, true, expr.range.clone());
             let condition_result = typecheck_expr(env, namespace, condition, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))
                 .and_then(|v| implicit_cast(env, v, &THIRType::bool()))?;
-            env.pop_scope()
-                .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
             env.push_scope(true, true, expr.range.clone());
             let body_result = typecheck_expr(env, namespace, body, None)
@@ -312,27 +309,24 @@ fn typecheck_expr_inner(
             increment,
             body,
         } => {
-            env.push_scope(true, true, expr.token_range().clone());
+            env.push_scope(false, false, expr.token_range().clone());
             let init_result = typecheck_expr(env, namespace, init, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
 
-            env.push_scope(true, true, expr.token_range().clone());
             let condition_result = typecheck_expr(env, namespace, condition, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))
                 .and_then(|v| implicit_cast(env, v, &THIRType::bool()))?;
-            env.pop_scope()
-                .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
-            env.push_scope(true, true, expr.token_range().clone());
             let increment_result = typecheck_expr(env, namespace, increment, None)?
                 .standard_ready_coerce(env, expr.token_range())?;
-            env.pop_scope()
-                .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
             env.push_scope(true, true, expr.token_range().clone());
             let body_result = typecheck_expr(env, namespace, body, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
+            env.pop_scope()
+                .map_err(|err| env.complete_err(err, expr.token_range()))?;
+
             env.pop_scope()
                 .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
@@ -356,13 +350,17 @@ fn typecheck_expr_inner(
                 );
             }
 
-            let staged = env.in_staged_context();
-            if !staged && !env.function.flow().can_continue() {
+            let target = env.function.flow().break_target();
+            if target == ControlTarget::Invalid {
                 return env.log_error(
                     expr.token_range(),
-                    "break statement used outside of a loop".to_string(),
+                    "'break' used outside of a loop or switch context".to_string(),
                 );
             }
+            env.function
+                .flow_mut()
+                .record_break(expr.token_range().clone());
+            let staged = target == ControlTarget::Staged;
 
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
@@ -379,7 +377,17 @@ fn typecheck_expr_inner(
                 );
             }
 
-            let staged = env.in_staged_context();
+            let target = env.function.flow().continue_target();
+            if target == ControlTarget::Invalid {
+                return env.log_error(
+                    expr.token_range(),
+                    "'continue' used outside of a loop context".to_string(),
+                );
+            }
+            env.function
+                .flow_mut()
+                .record_continue(expr.token_range().clone());
+            let staged = target == ControlTarget::Staged;
 
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
@@ -563,7 +571,6 @@ fn typecheck_expr_inner(
         } => typecheck_match(
             env,
             namespace,
-            expr,
             condition,
             arms,
             default.as_ref().map(Box::as_ref),

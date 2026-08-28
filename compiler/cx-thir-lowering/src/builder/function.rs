@@ -3,7 +3,7 @@ use std::{collections::HashMap, rc::Rc};
 use cx_mir::{
     MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID,
     MIRFunctionMode, MIRInstr, MIRInstrKind, MIRPlace, MIRRegister, MIRScopeID, MIRStagedExitKind,
-    MIRTypeID, MIRValue,
+    MIRStagedTargets, MIRTypeID, MIRValue,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
 use cx_tokens::TokenRange;
@@ -315,5 +315,19 @@ impl FunctionBuilder {
             }?;
             Some((scope.id(), block))
         })
+    }
+
+    pub fn staged_targets(&self) -> MIRStagedTargets {
+        MIRStagedTargets {
+            break_target: self.exit_target(MIRStagedExitKind::Break).map(|(_, block)| block),
+            continue_target: self
+                .exit_target(MIRStagedExitKind::Continue)
+                .map(|(_, block)| block),
+            yield_target: self
+                .scope_stack
+                .iter()
+                .rev()
+                .find_map(|scope| scope.yield_target),
+        }
     }
 }

@@ -16,11 +16,14 @@ pub struct THIRComptimeFn {
 pub struct THIRStagedExpr {
     expr: Box<THIRExpression>,
     params: Vec<THIRStagedParameter>,
+    effects: THIRStagedEffects,
+}
 
-    breaks: bool,
-    continues: bool,
-    yields: Option<THIRType>,
-    returns: Option<THIRType>,
+#[derive(Debug, Clone, Default)]
+pub struct THIRStagedEffects {
+    pub breaks: bool,
+    pub continues: bool,
+    pub yield_type: Option<THIRType>,
 }
 
 #[derive(Debug, Clone)]
@@ -34,12 +37,8 @@ impl THIRStagedExpr {
     pub fn new(expr: Box<THIRExpression>) -> Self {
         Self {
             expr,
-
             params: vec![],
-            breaks: false,
-            continues: false,
-            yields: None,
-            returns: None,
+            effects: THIRStagedEffects::default(),
         }
     }
 
@@ -52,10 +51,7 @@ impl THIRStagedExpr {
         Ok(Self {
             expr: Box::new(expr),
             params: self.params,
-            breaks: self.breaks,
-            continues: self.continues,
-            yields: self.yields,
-            returns: self.returns,
+            effects: self.effects,
         })
     }
 
@@ -71,35 +67,11 @@ impl THIRStagedExpr {
         &self.params
     }
 
-    pub fn add_break(&mut self) {
-        self.breaks = true;
+    pub fn set_effects(&mut self, effects: THIRStagedEffects) {
+        self.effects = effects;
     }
 
-    pub fn breaks(&self) -> bool {
-        self.breaks
-    }
-
-    pub fn add_continue(&mut self) {
-        self.continues = true;
-    }
-
-    pub fn continues(&self) -> bool {
-        self.continues
-    }
-
-    pub fn set_yield(&mut self, ty: THIRType) {
-        self.yields = Some(ty);
-    }
-
-    pub fn yields(&self) -> Option<&THIRType> {
-        self.yields.as_ref()
-    }
-
-    pub fn set_return(&mut self, ty: THIRType) {
-        self.returns = Some(ty);
-    }
-
-    pub fn returns(&self) -> Option<&THIRType> {
-        self.returns.as_ref()
+    pub fn effects(&self) -> &THIRStagedEffects {
+        &self.effects
     }
 }

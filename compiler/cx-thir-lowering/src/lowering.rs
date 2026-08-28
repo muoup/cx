@@ -224,8 +224,10 @@ pub(crate) fn lower_expression(
                     && (expression._type.is_void() || expression._type.is_unreachable())
                     && matches!(value, MIRValue::Register(_))
                 {
+                    let targets = builder.fun().staged_targets();
                     builder.emit(MIRInstrKind::StagedUse {
                         value: value.clone(),
+                        targets,
                     });
                 }
                 value
@@ -887,11 +889,24 @@ pub(crate) fn lower_expression(
                 MIRValue::Constant(MIRConstant::Unit)
             }
 
-            THIRExpressionKind::Yield { value } => {
+            THIRExpressionKind::Yield { value, staged } => {
                 let value = value
                     .as_deref()
                     .map(|value| lower_expression(builder, value))
                     .transpose()?;
+
+                if *staged {
+                    assert!(builder.is_capturing());
+                    let root_scope = builder
+                        .fun()
+                        .scope_stack()
+                        .first()
+                        .expect("captured function has no root scope")
+                        .id();
+                    auto_cleanup(builder, root_scope)?;
+                    builder.emit(MIRInstrKind::StagedYield { value });
+                    return Ok(MIRValue::Constant(MIRConstant::Unit));
+                }
 
                 let Some((scope_id, block_id)) = builder
                     .fun()
@@ -1078,7 +1093,13 @@ pub(crate) fn lower_expression(
                     let ty = lower_type(builder, &expression._type)?;
                     Some(builder.fun_mut().new_register(ty, None))
                 };
-                builder.emit(MIRInstrKind::ApplyStaged { out, staged, args });
+                let targets = builder.fun().staged_targets();
+                builder.emit(MIRInstrKind::ApplyStaged {
+                    out,
+                    staged,
+                    args,
+                    targets,
+                });
                 out.map(MIRValue::Register)
                     .unwrap_or(MIRValue::Constant(MIRConstant::Unit))
             }

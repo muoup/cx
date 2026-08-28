@@ -1,126 +1,185 @@
 use cx_log::error::{CXRawResult, message::CXStdErrMessage};
 use cx_thir::thir::r#type::THIRType;
 use cx_tokens::TokenRange;
-use cx_util::dense_id;
 
-dense_id!(ScopeId);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ControlTarget {
+    Local,
+    Staged,
+    Invalid,
+}
+
+#[derive(Clone, Default)]
+pub struct ScopeEffects {
+    pub break_range: Option<TokenRange>,
+    pub continue_range: Option<TokenRange>,
+    pub yield_type: Option<THIRType>,
+    pub yield_has_value: Option<bool>,
+}
+
+#[derive(Clone)]
+pub struct YieldState {
+    pub target: ControlTarget,
+    pub expected_type: Option<THIRType>,
+    pub saw_value: bool,
+    pub saw_empty: bool,
+}
 
 pub struct ControlFlow {
-    scope_stack: Vec<Scope>,
+    scopes: Vec<Scope>,
 }
 
-#[derive(Clone)]
-pub struct Scope {
-    has_break_merge: bool,
-    has_continue_merge: bool,
-
-    anchor_range: TokenRange,
-
-    breaks: bool,
-    continues: bool,
-    yields: Vec<YieldRecord>
-}
-
-#[derive(Clone)]
-pub struct YieldRecord {
-    ty: THIRType,
-    range: TokenRange,
+struct Scope {
+    handles_break: bool,
+    handles_continue: bool,
+    handles_yield: bool,
+    expected_yield_type: Option<THIRType>,
+    staged_boundary: bool,
+    effects: ScopeEffects,
 }
 
 impl ControlFlow {
     pub fn new() -> Self {
-        Self {
-            scope_stack: vec![]
-        }
+        Self { scopes: Vec::new() }
     }
 
-    pub fn push_scope(
-        &mut self,
-        has_break_merge: bool,
-        has_continue_merge: bool,
-        anchor_range: TokenRange,
-    ) {
-        self.scope_stack.push(Scope {
-            has_break_merge,
-            has_continue_merge,
-            anchor_range,
-
-            breaks: false,
-            continues: false,
-            yields: vec![]
+    pub fn push_scope(&mut self, handles_break: bool, handles_continue: bool) {
+        self.scopes.push(Scope {
+            handles_break,
+            handles_continue,
+            handles_yield: false,
+            expected_yield_type: None,
+            staged_boundary: false,
+            effects: ScopeEffects::default(),
         });
     }
 
-    pub fn pop_scope(&mut self) -> CXRawResult<()> {
-        let Some(old_scope) = self.scope_stack.pop() else {
+    pub fn push_yield_scope(&mut self, expected_type: Option<THIRType>) {
+        self.scopes.push(Scope {
+            handles_break: false,
+            handles_continue: false,
+            handles_yield: true,
+            expected_yield_type: expected_type,
+            staged_boundary: false,
+            effects: ScopeEffects::default(),
+        });
+    }
+
+    pub fn push_staged_scope(&mut self) {
+        self.scopes.push(Scope {
+            handles_break: false,
+            handles_continue: false,
+            handles_yield: false,
+            expected_yield_type: None,
+            staged_boundary: true,
+            effects: ScopeEffects::default(),
+        });
+    }
+
+    pub fn pop_scope(&mut self) -> CXRawResult<ScopeEffects> {
+        let Some(scope) = self.scopes.pop() else {
             return CXStdErrMessage::result(
                 "TYPE ERROR",
                 "Attempted to pop a scope from an empty scope stack".to_string(),
             );
         };
 
-        if let Some(new_top_scope) = self.scope_stack.last_mut() {
-            new_top_scope.breaks |= old_scope.breaks;
-            new_top_scope.continues |= old_scope.continues;
-            new_top_scope.yields.extend(old_scope.yields);
+        if !scope.staged_boundary
+            && let Some(parent) = self.scopes.last_mut()
+        {
+            if !scope.handles_break && parent.effects.break_range.is_none() {
+                parent.effects.break_range = scope.effects.break_range.clone();
+            }
+            if !scope.handles_continue && parent.effects.continue_range.is_none() {
+                parent.effects.continue_range = scope.effects.continue_range.clone();
+            }
+            if !scope.handles_yield && parent.effects.yield_type.is_none() {
+                parent.effects.yield_type = scope.effects.yield_type.clone();
+                parent.effects.yield_has_value = scope.effects.yield_has_value;
+            }
         }
 
-        Ok(())
+        Ok(scope.effects)
     }
 
-    pub fn record_break(&mut self) -> CXRawResult<()> {
-        if !self.can_break() {
-            return CXStdErrMessage::result(
-                "TYPE ERROR",
-                "Attempted to break outside of a loop".to_string(),
-            );
+    pub fn break_target(&self) -> ControlTarget {
+        self.target(|scope| scope.handles_break)
+    }
+
+    pub fn continue_target(&self) -> ControlTarget {
+        self.target(|scope| scope.handles_continue)
+    }
+
+    fn target(&self, handles: impl Fn(&Scope) -> bool) -> ControlTarget {
+        for scope in self.scopes.iter().rev() {
+            if scope.staged_boundary {
+                return ControlTarget::Staged;
+            }
+            if handles(scope) {
+                return ControlTarget::Local;
+            }
+        }
+        ControlTarget::Invalid
+    }
+
+    pub fn yield_state(&self) -> YieldState {
+        let mut expected_type = None;
+        let mut saw_value = false;
+        let mut saw_empty = false;
+
+        for scope in self.scopes.iter().rev() {
+            if let Some(yield_type) = &scope.effects.yield_type {
+                expected_type.get_or_insert_with(|| yield_type.clone());
+                saw_value |= scope.effects.yield_has_value == Some(true);
+                saw_empty |= scope.effects.yield_has_value == Some(false);
+            }
+
+            if scope.staged_boundary {
+                return YieldState {
+                    target: ControlTarget::Staged,
+                    expected_type,
+                    saw_value,
+                    saw_empty,
+                };
+            }
+            if scope.handles_yield {
+                return YieldState {
+                    target: ControlTarget::Local,
+                    expected_type: scope.expected_yield_type.clone().or(expected_type),
+                    saw_value,
+                    saw_empty,
+                };
+            }
         }
 
-        if let Some(current_scope) = self.scope_stack.last_mut() {
-            current_scope.breaks = true;
+        YieldState {
+            target: ControlTarget::Invalid,
+            expected_type,
+            saw_value,
+            saw_empty,
         }
-
-        Ok(())
     }
 
-    pub fn record_continue(&mut self) -> CXRawResult<()> {
-        if !self.can_continue() {
-            return CXStdErrMessage::result(
-                "TYPE ERROR",
-                "Attempted to continue outside of a loop".to_string(),
-            );
+    pub fn record_break(&mut self, range: TokenRange) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.effects.break_range.get_or_insert(range);
         }
+    }
 
-        if let Some(current_scope) = self.scope_stack.last_mut() {
-            current_scope.continues = true;
+    pub fn record_continue(&mut self, range: TokenRange) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.effects.continue_range.get_or_insert(range);
         }
-
-        Ok(())
     }
 
-    pub fn record_yield(&mut self, tokens: TokenRange, ty: THIRType) -> CXRawResult<()> {
-        if let Some(current_scope) = self.scope_stack.last_mut() {
-            current_scope.yields.push(YieldRecord { ty, range: tokens });
+    pub fn record_yield(&mut self, ty: THIRType, has_value: bool) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.effects.yield_type.get_or_insert(ty);
+            scope.effects.yield_has_value.get_or_insert(has_value);
         }
-
-        Ok(())
     }
 
-    pub fn current_scope_index(&self) -> ScopeId {
-        ScopeId(self.scope_stack.len() - 1)
-    }
-
-    pub fn can_break(&self) -> bool {
-        self.scope_stack
-            .iter()
-            .rev()
-            .any(|scope| scope.has_break_merge)
-    }
-
-    pub fn can_continue(&self) -> bool {
-        self.scope_stack
-            .iter()
-            .rev()
-            .any(|scope| scope.has_continue_merge)
+    pub fn yield_result_type(&self, effects: &ScopeEffects) -> Option<THIRType> {
+        effects.yield_type.clone()
     }
 }

@@ -45,7 +45,13 @@ pub(super) fn lower_call(
             let ty = lower_type(builder, result_type)?;
             Some(builder.fun_mut().new_register(ty, None))
         };
-        builder.emit(MIRInstrKind::ApplyStaged { out, staged, args });
+        let targets = builder.fun().staged_targets();
+        builder.emit(MIRInstrKind::ApplyStaged {
+            out,
+            staged,
+            args,
+            targets,
+        });
         return Ok(out
             .map(MIRValue::Register)
             .unwrap_or(MIRValue::Constant(MIRConstant::Unit)));

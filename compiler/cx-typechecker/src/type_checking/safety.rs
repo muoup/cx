@@ -195,7 +195,7 @@ pub(crate) fn validate_safe_expression(
             }
             Ok(())
         }
-        THIRExpressionKind::Yield { value } => {
+        THIRExpressionKind::Yield { value, .. } => {
             value
                 .as_deref()
                 .map(|value| validate_safe_expression(env, value))
