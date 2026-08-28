@@ -2,7 +2,6 @@ use crate::{
     environment::{ScopeArrowSink, ScopeExitTarget, TypeEnvironment},
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
-        control_flow::enqueue_jump_arrow,
         result::TypecheckResult,
         typechecker::typecheck_expr,
     },
@@ -94,17 +93,8 @@ pub fn typecheck_yield(
     let Some(context) = env.function.current_yield_context_mut() else {
         unreachable!("Yield context disappeared while typechecking yield");
     };
-    context.yield_count += 1;
-    let target_scope = context.target_scope;
 
-    enqueue_jump_arrow(
-        env,
-        &ScopeExitTarget {
-            target_scope,
-            sink: ScopeArrowSink::Merge,
-            label: "yield".to_string(),
-        },
-    );
+    context.yield_count += 1;
 
     Ok(TypecheckResult::new(
         THIRType::unit(),

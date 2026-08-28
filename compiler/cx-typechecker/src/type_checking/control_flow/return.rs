@@ -11,10 +11,9 @@ use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 
 use crate::{
-    environment::{ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment},
+    environment::{ScopeArrowSink, ScopeExitTarget, TypeEnvironment},
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
-        control_flow::enqueue_jump_arrow,
         result::TypecheckResult,
         typechecker::typecheck_expr,
     },
@@ -30,7 +29,7 @@ fn typechange_can_forward_region(return_type: &THIRType) -> bool {
 pub fn typecheck_return(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
-    return_range: &cx_tokens::TokenRange,
+    return_range: &TokenRange,
     value: Option<THIRExpression>,
 ) -> CXResult<TypecheckResult> {
     if env.in_defer_context() {
@@ -111,15 +110,6 @@ pub fn typecheck_return(
         }
     };
 
-    enqueue_jump_arrow(
-        env,
-        &ScopeExitTarget {
-            target_scope: ScopeId::new(0),
-            sink: ScopeArrowSink::Merge,
-            label: "return".to_string(),
-        },
-    );
-
     if let Some((ret_name, ret_contract)) = env
         .current_function()
         .signature()
@@ -135,7 +125,7 @@ pub fn typecheck_return(
             );
         }
 
-        env.push_scope(false, false);
+        env.push_scope(false, false, return_range.clone());
 
         for param in env.current_function().signature().params.clone() {
             let Some(name) = param.name else {

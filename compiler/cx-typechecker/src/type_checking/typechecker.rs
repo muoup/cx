@@ -1,15 +1,12 @@
 use std::ops::Deref;
 
-use crate::environment::{LoopScopeKind, ScopeArrowSink, ScopeExitTarget, TypeEnvironment};
+use crate::environment::TypeEnvironment;
 use crate::symbol::completion::complete_type;
 use crate::type_checking::aggregate::initialization::typecheck_initializer_list;
 use crate::type_checking::coercion::implicit::{implicit_cast, promotion::std_rval_promotion};
+use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::control_flow::r#return::typecheck_return;
 use crate::type_checking::control_flow::r#yield::typecheck_yield;
-use crate::type_checking::control_flow::{
-    enqueue_jump_arrow, expr_may_fall_through, process_for_increment_arrows,
-    typecheck_fallthrough_scope,
-};
 use crate::type_checking::op::binop::access::typecheck_access;
 use crate::type_checking::op::binop::assign::typecheck_assignment;
 use crate::type_checking::op::binop::calls::{typecheck_method_call, typecheck_va_list};
@@ -191,46 +188,30 @@ fn typecheck_expr_inner(
             then_branch,
             else_branch,
         } => {
+            env.push_scope(false, false, condition.range.clone());
+
             let condition_result = typecheck_expr(env, namespace, condition, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))
                 .and_then(|v| implicit_cast(env, v, &THIRType::bool()))?;
-            env.push_scope(false, false);
-            env.function.configure_merge_scope(expr, None);
-            let join_scope_idx = env.function.current_scope_index();
 
-            let then_result = typecheck_fallthrough_scope(
-                env,
-                namespace,
-                then_branch,
-                join_scope_idx,
-                ScopeArrowSink::Merge,
-                "then",
-            )?;
-
-            let else_result = if let Some(else_branch) = else_branch {
-                Some(typecheck_fallthrough_scope(
-                    env,
-                    namespace,
-                    else_branch,
-                    join_scope_idx,
-                    ScopeArrowSink::Merge,
-                    "else",
-                )?)
-            } else {
-                env.function.enqueue_scope_arrow(
-                    &ScopeExitTarget {
-                        target_scope: join_scope_idx,
-                        sink: ScopeArrowSink::Merge,
-                        label: "else".to_string(),
-                    },
-                    env.function.current_snapshot(),
-                );
-                None
-            };
-
+            env.push_scope(false, false, then_branch.token_range().clone());
+            let then_result = typecheck_expr(env, namespace, then_branch, None)
+                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
             env.pop_scope()
                 .map_err(|err| env.complete_err(err, expr.token_range()))?;
+
+            let else_result = else_branch
+                .as_ref()
+                .map(|e| {
+                    env.push_scope(false, false, e.token_range().clone());
+                    let result = typecheck_expr(env, namespace, e, None)
+                        .and_then(|v| v.standard_ready_coerce(env, expr.token_range()));
+                    env.pop_scope()
+                        .map_err(|err| env.complete_err(err, expr.token_range()))?;
+                    result
+                })
+                .transpose()?;
 
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
@@ -300,32 +281,17 @@ fn typecheck_expr_inner(
             body,
             pre_eval,
         } => {
-            env.push_scope(true, true);
-            env.function.set_scope_anchor(expr);
-            env.function
-                .configure_loop_scope(expr, LoopScopeKind::While);
-            let loop_scope_idx = env.function.current_scope_index();
-            env.function.enqueue_scope_arrow(
-                &ScopeExitTarget {
-                    target_scope: loop_scope_idx,
-                    sink: ScopeArrowSink::LoopExit,
-                    label: "zero iterations".to_string(),
-                },
-                env.function.current_snapshot(),
-            );
-
+            env.push_scope(true, true, expr.range.clone());
             let condition_result = typecheck_expr(env, namespace, condition, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))
                 .and_then(|v| implicit_cast(env, v, &THIRType::bool()))?;
-            let body_result = typecheck_fallthrough_scope(
-                env,
-                namespace,
-                body,
-                loop_scope_idx,
-                ScopeArrowSink::LoopContinue,
-                "loop fallthrough",
-            )?;
+            env.pop_scope()
+                .map_err(|err| env.complete_err(err, expr.token_range()))?;
+
+            env.push_scope(true, true, expr.range.clone());
+            let body_result = typecheck_expr(env, namespace, body, None)
+                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
             env.pop_scope()
                 .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
@@ -346,39 +312,27 @@ fn typecheck_expr_inner(
             increment,
             body,
         } => {
-            env.push_scope(true, true);
-            env.function.set_scope_anchor(expr);
+            env.push_scope(true, true, expr.token_range().clone());
             let init_result = typecheck_expr(env, namespace, init, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
-            env.function.configure_loop_scope(expr, LoopScopeKind::For);
-            let loop_scope_idx = env.function.current_scope_index();
-            env.function.enqueue_scope_arrow(
-                &ScopeExitTarget {
-                    target_scope: loop_scope_idx,
-                    sink: ScopeArrowSink::LoopExit,
-                    label: "zero iterations".to_string(),
-                },
-                env.function.current_snapshot(),
-            );
 
+            env.push_scope(true, true, expr.token_range().clone());
             let condition_result = typecheck_expr(env, namespace, condition, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))
                 .and_then(|v| implicit_cast(env, v, &THIRType::bool()))?;
-            let body_result = typecheck_fallthrough_scope(
-                env,
-                namespace,
-                body,
-                loop_scope_idx,
-                ScopeArrowSink::LoopPendingIncrement,
-                "loop fallthrough",
-            )?;
-            process_for_increment_arrows(env, namespace, loop_scope_idx, increment)?;
+            env.pop_scope()
+                .map_err(|err| env.complete_err(err, expr.token_range()))?;
+
+            env.push_scope(true, true, expr.token_range().clone());
             let increment_result = typecheck_expr(env, namespace, increment, None)?
                 .standard_ready_coerce(env, expr.token_range())?;
-            env.function
-                .restore_snapshot(&env.function.loop_entry_snapshot(loop_scope_idx));
-            env.function.set_scope_reachable(loop_scope_idx, true);
+            env.pop_scope()
+                .map_err(|err| env.complete_err(err, expr.token_range()))?;
+
+            env.push_scope(true, true, expr.token_range().clone());
+            let body_result = typecheck_expr(env, namespace, body, None)
+                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
             env.pop_scope()
                 .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
@@ -401,21 +355,14 @@ fn typecheck_expr_inner(
                     "break is not allowed inside a deferred expression".to_string(),
                 );
             }
-            let Some(scope_idx) = env.function.nearest_break_scope() else {
+
+            let staged = env.in_staged_context();
+            if !staged && !env.function.flow().can_continue() {
                 return env.log_error(
                     expr.token_range(),
-                    "'break' used outside of a loop or switch context".to_string(),
+                    "break statement used outside of a loop".to_string(),
                 );
-            };
-            let staged = env.staged_control_target_is_external(scope_idx);
-            enqueue_jump_arrow(
-                env,
-                &ScopeExitTarget {
-                    target_scope: scope_idx,
-                    sink: env.function.break_arrow_sink(scope_idx),
-                    label: "break".to_string(),
-                },
-            );
+            }
 
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
@@ -431,21 +378,8 @@ fn typecheck_expr_inner(
                     "continue is not allowed inside a deferred expression".to_string(),
                 );
             }
-            let Some(scope_idx) = env.function.nearest_continue_scope() else {
-                return env.log_error(
-                    expr.token_range(),
-                    "'continue' used outside of a loop context".to_string(),
-                );
-            };
-            let staged = env.staged_control_target_is_external(scope_idx);
-            enqueue_jump_arrow(
-                env,
-                &ScopeExitTarget {
-                    target_scope: scope_idx,
-                    sink: env.function.continue_arrow_sink(scope_idx),
-                    label: "continue".to_string(),
-                },
-            );
+
+            let staged = env.in_staged_context();
 
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
@@ -615,6 +549,7 @@ fn typecheck_expr_inner(
         } => typecheck_switch(
             env,
             namespace,
+            expr,
             condition,
             block,
             cases,
@@ -628,6 +563,7 @@ fn typecheck_expr_inner(
         } => typecheck_match(
             env,
             namespace,
+            expr,
             condition,
             arms,
             default.as_ref().map(Box::as_ref),

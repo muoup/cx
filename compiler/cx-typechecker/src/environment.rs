@@ -20,14 +20,10 @@ use cx_tokens::TokenRange;
 use cx_util::namespace::QualifiedName;
 use cx_util::{identifier::CXIdent, namespace::NamespacePath};
 
-pub use crate::environment::control_flow::{
-    ControlFlowArrow, ControlFlowSnapshot, LoopScopeKind, ScopeArrowSink, ScopeExitTarget, ScopeId,
-};
+pub use crate::environment::control_flow::ScopeId;
 use crate::environment::items::ItemRegistry;
+use crate::symbol::resolution::resolve_symbol;
 use crate::{environment::function_context::FunctionContext, symbol::registry::MIRSymbolRegistry};
-use crate::{
-    environment::function_context::FunctionModeSnapshot, symbol::resolution::resolve_symbol,
-};
 
 pub(crate) mod control_flow;
 pub(crate) mod function_context;
@@ -156,10 +152,16 @@ impl TypeEnvironment<'_> {
         })
     }
 
-    pub fn push_scope(&mut self, has_break_merge: bool, has_continue_merge: bool) {
+    pub fn push_scope(
+        &mut self,
+        has_break_merge: bool,
+        has_continue_merge: bool,
+        scope: TokenRange,
+    ) {
         self.symbols.push_local_scope();
         self.function
-            .push_scope(has_break_merge, has_continue_merge);
+            .flow_mut()
+            .push_scope(has_break_merge, has_continue_merge, scope);
     }
 
     pub fn pop_scope(&mut self) -> CXRawResult<()> {

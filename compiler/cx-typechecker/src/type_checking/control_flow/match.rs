@@ -5,7 +5,6 @@ use crate::environment::ScopeExitTarget;
 use crate::environment::TypeEnvironment;
 use crate::symbol::completion::complete_template_input;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
-use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::pattern::tagged_union::{
     TypeConstructor, resolve_type_constructor_pattern,
 };
@@ -30,28 +29,23 @@ use cx_util::namespace::QualifiedName;
 pub fn typecheck_match(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
+    expr: &HIRExpression,
     condition: &HIRExpression,
     arms: &[(HIRPattern, HIRExpression)],
     default: Option<&HIRExpression>,
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
+    env.push_scope(false, false, expr.token_range().clone());
+
     let expr_value = typecheck_expr(env, namespace, condition, None)
         .and_then(|v| v.standard_ready_coerce(env, condition.token_range()))
         .map(|v| resolve_indirect_base(env, v))?;
     let expr_type = expr_value.source_type.clone();
 
-    env.push_scope(false, false);
-    env.function.set_scope_anchor(condition);
-    env.function.configure_merge_scope(condition, None);
+    env.push_scope(false, false, expr.token_range().clone());
 
-    let join_scope_idx = env.function.current_scope_index();
-    let base_snapshot = env.function.current_snapshot();
-    let base_reachable = env.function.is_current_scope_reachable();
     let condition_owned = expr_value.owned;
     let mut arm_flows = Vec::new();
-
-    env.function
-        .push_yield_context(join_scope_idx, expected_type.cloned());
 
     let mut match_condition = expr_value.source.clone();
     let subject = THIRLocalID::fresh();
@@ -61,7 +55,7 @@ pub fn typecheck_match(
         THIRTypeKind::Integer { .. } => {
             let expr_value = std_rval_promotion(env, expr_value.source.clone())?;
             match_condition = expr_value;
-            // Integer matching: each arm has an integer literal pattern
+
             let mut result_arms = Vec::new();
 
             for (pattern, body) in arms.iter() {
@@ -72,21 +66,10 @@ pub fn typecheck_match(
                     );
                 };
 
-                let (body_expr, flow) = typecheck_match_arm_body(env, namespace, body, "arm")?;
-                if flow.may_fall_through {
-                    env.function.enqueue_scope_arrow(
-                        &ScopeExitTarget {
-                            target_scope: join_scope_idx,
-                            sink: crate::environment::ScopeArrowSink::Merge,
-                            label: "arm".to_string(),
-                        },
-                        env.function.current_snapshot(),
-                    );
-                }
-                env.function.restore_snapshot(&base_snapshot);
-                env.function
-                    .set_scope_reachable(join_scope_idx, base_reachable);
-                arm_flows.push(flow);
+                env.push_scope(false, false, body.token_range().clone());
+                let body_expr = typecheck_expr(env, namespace, body, None)?;
+                env.pop_scope()
+                    .map_err(|err| env.complete_err(err, body.token_range()))?;
 
                 result_arms.push((THIRPattern::Integer(*pattern_value), Box::new(body_expr)));
             }
@@ -119,16 +102,16 @@ pub fn typecheck_match(
                     inner_name,
                 } = resolve_type_constructor_pattern(env, namespace, condition, pattern)?;
 
+                if template_input.is_some() {
+                    return env.log_error(
+                        condition.token_range(),
+                        "Tagged union pattern may not have template arguments".to_string(),
+                    );
+                }
+
                 if expected_union_name != &union_name {
                     return env.log_error(condition.token_range(), format!("Tagged union variant does not match the type being matched, found '{}', expected '{}'", union_name, expected_union_name));
                 }
-                validate_variant_template_input(
-                    env,
-                    namespace,
-                    &expr_type,
-                    template_input.as_ref(),
-                    condition,
-                )?;
 
                 let variant_idx = variants.iter().position(|field| {
                     let Some(name) = field.name() else {
@@ -148,6 +131,16 @@ pub fn typecheck_match(
                     );
                 };
 
+                if matched_variants.contains(&variant_id) {
+                    return env.log_error(
+                        condition.token_range(),
+                        format!(
+                            "Variant '{}' already matched in this match expression",
+                            variant_name
+                        ),
+                    );
+                }
+
                 let variant_type = env
                     .symbols
                     .resolve_type_id(variants[variant_id].ty())
@@ -155,123 +148,42 @@ pub fn typecheck_match(
 
                 matched_variants.insert(variant_id);
 
-                let inner_local_id = inner_name.as_ref().map(|_| THIRLocalID::fresh());
-                let body_expr = if let Some(inner_name) = &inner_name {
-                    let inner_local_id = inner_local_id.expect("match binding local id");
-                    let (body_expr, flow) = if condition_owned {
-                        let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
-                        let variant = THIRExpression {
+                let match_local = THIRLocalID::fresh();
+
+                env.push_scope(false, false, body.token_range().clone());
+
+                if let Some(inner_name) = inner_name.as_ref() {
+                    env.symbols.insert_local_value(
+                        QualifiedName::new_raw(inner_name.clone()),
+                        THIRExpression {
                             token_range: TokenRange::internal(),
-                            _type: variant_ref_type.clone(),
-                            kind: THIRExpressionKind::TaggedUnionGet {
-                                value: Box::new(subject_expr.clone()),
-                                variant_type: variant_type.clone(),
-                                variant_index: variant_id,
-                            },
-                        };
-                        let bind_region = THIRExpression {
-                            token_range: TokenRange::internal(),
-                            _type: variant_ref_type.clone(),
-                            kind: THIRExpressionKind::CreateLocalVariable {
+                            kind: THIRExpressionKind::Variable {
                                 name: inner_name.clone(),
-                                local_id: inner_local_id,
-                                _type: variant_type.clone(),
-                                initial_value: Some(Box::new(variant)),
-                                adopting: true,
+                                local_id: match_local,
                             },
-                        };
+                            _type: variant_type.clone(),
+                        },
+                    );
+                } else if variant_type.is_nodrop() {
+                    env.log_error(
+                        condition.token_range(),
+                        format!(
+                            "Variant '{}' of tagged union '{}' has a non-void type, but no inner name was provided in the pattern",
+                            variant_name, expected_union_name
+                        ),
+                    )?;
+                }
 
-                        env.push_scope(false, false);
-                        env.function.set_scope_anchor(body);
-                        env.symbols.insert_local_value(
-                            QualifiedName::root(inner_name.clone()),
-                            THIRExpression {
-                                token_range: TokenRange::internal(),
-                                kind: THIRExpressionKind::Variable {
-                                    name: inner_name.clone(),
-                                    local_id: inner_local_id,
-                                },
-                                _type: variant_ref_type,
-                            },
-                        );
-
-                        let (body_expr, flow) =
-                            typecheck_match_arm_body(env, namespace, body, "arm")?;
-                        env.pop_scope()
-                            .map_err(|err| env.complete_err(err, body.token_range()))?;
-
-                        (
-                            THIRExpression {
-                                token_range: TokenRange::internal(),
-                                _type: THIRType::unit(),
-                                kind: THIRExpressionKind::Block {
-                                    statements: vec![bind_region, body_expr],
-                                    creates_scope: false,
-                                },
-                            },
-                            flow,
-                        )
-                    } else {
-                        // Typecheck the body with the borrowed variant value bound.
-                        let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
-                        env.push_scope(false, false);
-                        env.symbols.insert_local_value(
-                            QualifiedName::new_raw(inner_name.clone()),
-                            THIRExpression {
-                                token_range: TokenRange::internal(),
-                                kind: THIRExpressionKind::Variable {
-                                    name: inner_name.clone(),
-                                    local_id: inner_local_id,
-                                },
-                                _type: variant_ref_type,
-                            },
-                        );
-                        let (body_expr, flow) =
-                            typecheck_match_arm_body(env, namespace, body, "arm")?;
-                        env.pop_scope()
-                            .map_err(|err| env.complete_err(err, body.token_range()))?;
-                        (body_expr, flow)
-                    };
-                    if flow.may_fall_through {
-                        env.function.enqueue_scope_arrow(
-                            &ScopeExitTarget {
-                                target_scope: join_scope_idx,
-                                sink: crate::environment::ScopeArrowSink::Merge,
-                                label: "arm".to_string(),
-                            },
-                            env.function.current_snapshot(),
-                        );
-                    }
-                    env.function.restore_snapshot(&base_snapshot);
-                    env.function
-                        .set_scope_reachable(join_scope_idx, base_reachable);
-                    arm_flows.push(flow);
-                    body_expr
-                } else {
-                    let (body_expr, flow) = typecheck_match_arm_body(env, namespace, body, "arm")?;
-                    if flow.may_fall_through {
-                        env.function.enqueue_scope_arrow(
-                            &ScopeExitTarget {
-                                target_scope: join_scope_idx,
-                                sink: crate::environment::ScopeArrowSink::Merge,
-                                label: "arm".to_string(),
-                            },
-                            env.function.current_snapshot(),
-                        );
-                    }
-                    env.function.restore_snapshot(&base_snapshot);
-                    env.function
-                        .set_scope_reachable(join_scope_idx, base_reachable);
-                    arm_flows.push(flow);
-                    body_expr
-                };
+                let body_expr = typecheck_expr(env, namespace, body, None)?;
+                env.pop_scope()
+                    .map_err(|err| env.complete_err(err, body.token_range()))?;
 
                 result_arms.push((
                     THIRPattern::TaggedUnionVariant {
                         sum_type: expr_type.clone(),
                         variant_index: variant_id,
-                        inner_name,
-                        inner_local_id,
+                        inner_name: inner_name.clone(),
+                        inner_local_id: match_local,
                     },
                     Box::new(body_expr),
                 ));
@@ -293,40 +205,17 @@ pub fn typecheck_match(
     };
 
     // Handle default case
-    let default_body = match default {
-        Some(default_expr) => {
-            let (body, flow) = typecheck_match_arm_body(env, namespace, default_expr, "default")?;
-            if flow.may_fall_through {
-                env.function.enqueue_scope_arrow(
-                    &ScopeExitTarget {
-                        target_scope: join_scope_idx,
-                        sink: ScopeArrowSink::Merge,
-                        label: "default".to_string(),
-                    },
-                    env.function.current_snapshot(),
-                );
-            }
-            env.function.restore_snapshot(&base_snapshot);
-            env.function
-                .set_scope_reachable(join_scope_idx, base_reachable);
-            arm_flows.push(flow);
-            Some(Box::new(body))
-        }
-        None => None,
-    };
+    let default_body = default
+        .map(|default_expr| {
+            env.push_scope(false, false, default_expr.token_range().clone());
+            let body_expr = typecheck_expr(env, namespace, default_expr, None);
+            env.pop_scope()
+                .map_err(|err| env.complete_err(err, default_expr.token_range()))?;
+            arm_flows.push(body_expr);
+            Ok(Box::new(body_expr))
+        })
+        .transpose()?;
 
-    if default.is_none() && !match_is_exhaustive {
-        env.function.enqueue_scope_arrow(
-            &ScopeExitTarget {
-                target_scope: join_scope_idx,
-                sink: ScopeArrowSink::Merge,
-                label: "default".to_string(),
-            },
-            env.function.current_snapshot(),
-        );
-    }
-
-    let yield_context = env.function.pop_yield_context();
     let result_type = yield_context.result_type.unwrap_or_else(THIRType::unit);
     if !result_type.is_void() {
         for flow in &arm_flows {
@@ -352,6 +241,9 @@ pub fn typecheck_match(
     env.pop_scope()
         .map_err(|err| env.complete_err(err, condition.token_range()))?;
 
+    env.pop_scope()
+        .map_err(|err| env.complete_err(err, condition.token_range()))?;
+
     // Build the match expression
     Ok(TypecheckResult::new(
         result_type,
@@ -361,39 +253,6 @@ pub fn typecheck_match(
             arms: match_arms,
             default: default_body,
             exhaustive: match_is_exhaustive || default.is_some(),
-        },
-    ))
-}
-
-struct MatchArmFlow {
-    range: TokenRange,
-    label: &'static str,
-    may_fall_through: bool,
-    #[allow(dead_code)]
-    yield_count: usize,
-}
-
-fn typecheck_match_arm_body(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    body: &HIRExpression,
-    label: &'static str,
-) -> CXResult<(THIRExpression, MatchArmFlow)> {
-    let yield_count_before = env.function.current_yield_count();
-    let body_expr = typecheck_expr(env, namespace, body, None)
-        .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
-    let yield_count = env
-        .function
-        .current_yield_count()
-        .saturating_sub(yield_count_before);
-
-    Ok((
-        body_expr.clone(),
-        MatchArmFlow {
-            range: body.token_range().clone(),
-            label,
-            may_fall_through: expr_may_fall_through(&body_expr),
-            yield_count,
         },
     ))
 }

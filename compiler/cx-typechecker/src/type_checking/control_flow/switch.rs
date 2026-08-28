@@ -51,16 +51,14 @@ fn next_case_boundary(
 pub fn typecheck_switch(
     env: &mut TypeEnvironment,
     namespace: &EnvironmentNamespace,
+    expr: &HIRExpression,
     condition: &HIRExpression,
     block: &[HIRExpression],
     cases: &[(HIRExpression, usize)],
     default_case: Option<&usize>,
 ) -> CXResult<TypecheckResult> {
-    env.push_scope(true, false);
-    env.function.set_scope_anchor(condition);
-    env.function.configure_merge_scope(condition, None);
+    env.push_scope(true, false, expr.token_range().clone());
 
-    let join_scope_idx = env.function.current_scope_index();
     let condition_value = typecheck_expr(env, namespace, condition, None)
         .and_then(|v| v.standard_ready_coerce(env, condition.token_range()))
         .and_then(|v| std_rval_promotion(env, v))?;
@@ -74,7 +72,6 @@ pub fn typecheck_switch(
         );
     };
     let condition_type = condition_value.get_type().clone();
-    let base_snapshot = env.function.current_snapshot();
 
     let mut arms = Vec::new();
 
@@ -100,17 +97,6 @@ pub fn typecheck_switch(
 
         let case_body_expr = typecheck_expr(env, namespace, &case_body, None)
             .and_then(|v| v.standard_ready_coerce(env, case_body.token_range()))?;
-        if expr_may_fall_through(&case_body_expr) {
-            env.function.enqueue_scope_arrow(
-                &ScopeExitTarget {
-                    target_scope: join_scope_idx,
-                    sink: crate::environment::ScopeArrowSink::Merge,
-                    label: format!("case {}", case_index),
-                },
-                env.function.current_snapshot(),
-            );
-        }
-        env.function.restore_snapshot(&base_snapshot);
 
         arms.push((Box::new(case_value), Box::new(case_body_expr)));
     }
@@ -132,37 +118,14 @@ pub fn typecheck_switch(
             let expr = case_body_expression(block, idx, end, &condition_value.token_range);
             let body_expr = typecheck_expr(env, namespace, &expr, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
-            if expr_may_fall_through(&body_expr) {
-                env.function.enqueue_scope_arrow(
-                    &ScopeExitTarget {
-                        target_scope: join_scope_idx,
-                        sink: crate::environment::ScopeArrowSink::Merge,
-                        label: "default".to_string(),
-                    },
-                    env.function.current_snapshot(),
-                );
-            }
-            env.function.restore_snapshot(&base_snapshot);
             Some(Box::new(body_expr))
         }
         None => None,
     };
 
-    if default_case.is_none() {
-        env.function.enqueue_scope_arrow(
-            &ScopeExitTarget {
-                target_scope: join_scope_idx,
-                sink: crate::environment::ScopeArrowSink::Merge,
-                label: "no case matched".to_string(),
-            },
-            env.function.current_snapshot(),
-        );
-    }
-
     env.pop_scope()
         .map_err(|err| env.complete_err(err, condition.token_range()))?;
 
-    // Build the match expression
     Ok(TypecheckResult::new(
         THIRType::unit(),
         THIRExpressionKind::CSwitch {

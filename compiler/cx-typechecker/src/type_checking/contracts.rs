@@ -19,7 +19,7 @@ pub(crate) fn typecheck_contract(
     let naive_contract = &prototype.contract;
     let previous_mode = env.push_contract_mode(naive_contract.safe);
 
-    env.push_scope(false, false);
+    env.push_scope(false, false, TokenRange::internal());
 
     for param in prototype.params.iter() {
         if let Some(name) = &param.name {
