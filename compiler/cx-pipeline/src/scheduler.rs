@@ -182,7 +182,7 @@ fn import_units_for_unit(
         .module_db
         .preparse_base
         .lock()
-        .get(&unit.module().clone())
+        .get(&unit.namespace())
         .map(|preparse| {
             import_module_paths(&preparse.imports)
                 .map(|import| {
@@ -252,7 +252,7 @@ pub(crate) fn handle_job(
 
     match job.step {
         CompilationStep::PreParse => {
-            let pp_data = context.module_db.preparse_base.get(&job.unit);
+            let pp_data = context.module_db.preparse_base.get(&job.unit.namespace());
             let mut new_jobs = import_jobs_for_unit(context, &pp_data.imports)?;
 
             job.step = CompilationStep::Parse;
@@ -369,7 +369,7 @@ pub(crate) fn perform_job(
             let preparse_config = PreparseConfig::from_compiler_config(&context.config);
             let mut output = preparse(
                 &preparse_config,
-                TokenIter::new(&tokens, file_path),
+                TokenIter::new(&tokens, PathBuf::new(file_path)),
                 job.unit.to_string(),
                 job.unit.namespace().clone(),
             )?;
@@ -406,8 +406,8 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::Parse => {
-            let pp_data = context.module_db.preparse_base.get(&job.unit);
-            let lexemes = context.module_db.lex_tokens.get(&job.unit);
+            let pp_data = context.module_db.preparse_base.get(job.unit.namespace());
+            let lexemes = context.module_db.lex_tokens.get(job.unit.namespace());
 
             let parsed_ast = parse_ast(
                 TokenIter::new(&lexemes, job.unit.as_path().to_path_buf()),
@@ -448,7 +448,7 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::Typechecking => {
-            let self_ast = context.module_db.hir.get(&job.unit);
+            let self_ast = context.module_db.hir.get(&job.unit.namespace());
             let namespace = job.unit.namespace().clone();
 
             let require_explicit_return =
@@ -477,7 +477,7 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::MIRGen => {
-            let thir = context.module_db.thir.get(&job.unit);
+            let thir = context.module_db.thir.get(job.unit.namespace());
             let mir = generate_mir(thir.as_ref())?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
@@ -503,7 +503,7 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::LMIRGen => {
-            let mir = context.module_db.mir.get(&job.unit);
+            let mir = context.module_db.mir.get(job.unit.namespace());
             let lmir = generate_lmir(mir.as_ref())?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
@@ -517,13 +517,13 @@ pub(crate) fn perform_job(
             let lmir_arc;
             let lmir_owned;
             let lmir: &cx_lmir::LMIRUnit = if retain_lmir {
-                lmir_arc = context.module_db.lmir.get(&job.unit);
+                lmir_arc = context.module_db.lmir.get(job.unit.namespace());
                 &lmir_arc
             } else {
-                lmir_owned = context.module_db.lmir.take(&job.unit);
+                lmir_owned = context.module_db.lmir.take(job.unit.namespace());
                 &lmir_owned
             };
-            let internal_directory = internal_directory(context, &job.unit).with_extension("o");
+            let internal_directory = context.config.internal_directory.join(resource_path(context, &job.unit, ".o"));
             let internal_directory_str = internal_directory.to_str().ok_or(pipeline_error(
                 "COMPILATION ERROR",
                 "Internal directory path is not valid UTF-8",
@@ -689,7 +689,7 @@ fn handle_job_collect_errors(
     // Generate next jobs based on the completed step
     match job.step {
         CompilationStep::PreParse => {
-            let pp_data = context.module_db.preparse_base.get(&job.unit);
+            let pp_data = context.module_db.preparse_base.get(job.unit.namespace());
 
             let mut new_jobs = match import_jobs_for_unit(context, &pp_data.imports) {
                 Ok(jobs) => jobs,

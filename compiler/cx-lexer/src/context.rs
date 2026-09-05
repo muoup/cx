@@ -8,7 +8,7 @@ use cx_log::{
     error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_tokens::token::{PunctuatorType, Token, TokenKind};
-use cx_util::module_path::cx_library_directory;
+use cx_namespace::cx_library_directory;
 
 use crate::{
     lexer::{

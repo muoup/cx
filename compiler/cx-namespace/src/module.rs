@@ -25,7 +25,7 @@ impl AsRef<Path> for ModulePath {
 
 impl ModulePath {
     pub fn new(path: PathBuf) -> Self {
-        Self(path)
+        Self(path.canonicalize().expect("ModulePath::new: Failed to canonicalize path"))
     }
 
     pub fn from_source_path(path: &str) -> Self {
@@ -75,6 +75,26 @@ impl NamespacePath {
     pub fn segments(&self) -> &[CXIdent] {
         &self.segments
     }
+
+    pub fn join(mut self, namespace: Self) -> Self {
+        self.segments.extend(namespace.segments);
+        self
+    }
+
+    pub fn strip_prefix(self, prefix: &Self) -> Option<Self> {
+        if self.segments.len() < prefix.segments.len() {
+            return None;
+        }
+
+        for (i, segment) in prefix.segments.iter().enumerate() {
+            if self.segments[i] != *segment {
+                return None;
+            }
+        }
+
+        let segments = self.segments[prefix.segments.len()..].to_vec();
+        Some(Self { segments })
+    } 
 
     pub fn parent_and_name(self) -> Option<(Self, CXIdent)> {
         if self.segments.is_empty() {

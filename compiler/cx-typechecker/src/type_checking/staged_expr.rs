@@ -1,15 +1,12 @@
 use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
-use cx_thir::{
-    NamespacePath,
-    thir::{
-        comptime::{THIRStagedExpr, THIRStagedParameter},
-        data::{THIRComptimeValueType, THIRType},
-        expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
-    },
+use cx_namespace::module::{NamespacePath, QualifiedName};
+use cx_thir::thir::{
+    comptime::{THIRStagedExpr, THIRStagedParameter},
+    data::{THIRComptimeValueType, THIRType},
+    expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
 };
 use cx_tokens::TokenRange;
-use cx_util::module::QualifiedName;
 
 use crate::{
     environment::TypeEnvironment,

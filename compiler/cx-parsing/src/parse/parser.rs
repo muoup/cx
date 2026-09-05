@@ -4,15 +4,13 @@ use cx_hir::ast::{
     function::HIRFunctionKind, modifiers::HIRSymbolNameScheme, HIRDefinition, HIRStmt, HIR,
 };
 use cx_log::CXResult;
-use cx_namespace::result::QualifiedLookupResult;
-use cx_namespace::QualifiedLookup;
+use cx_namespace::lookup::{QualifiedLookup, QualifiedLookupResult};
+use cx_namespace::module::{ModulePath, NamespacePath, QualifiedName};
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_preparse_data::symbol_data::PreparseSymbolKind;
 use cx_preparse_data::{NamespaceAliases, PreparseContents, VisibilityMode};
 use cx_tokens::{TokenIter, TokenRange};
 use cx_util::identifier::CXIdent;
-use cx_util::module_path::ModulePath;
-use cx_util::module::{NamespacePath, QualifiedName};
 
 use crate::log::parse_point_error;
 

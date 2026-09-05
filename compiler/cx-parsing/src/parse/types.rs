@@ -15,13 +15,13 @@ use cx_hir::ast::{
     types::{HIRAggregateAttributes, HIRField, HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup},
 };
 use cx_log::CXResult;
+use cx_namespace::module::QualifiedName;
 use cx_thir::intrinsic_types::is_intrinsic_type;
 use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
 use cx_tokens::{
     TokenIter, TokenRange, identifier, intrinsic, keyword, operator, punctuator, specifier,
 };
 use cx_util::identifier::CXIdent;
-use cx_util::module::QualifiedName;
 
 use crate::parse::functions::{ParseParamsResult, parse_params};
 use crate::parse::templates::{note_templated_types, try_parse_template, unnote_templated_types};

@@ -3,6 +3,7 @@ use crate::{
     try_next,
 };
 use cx_log::CXResult;
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_pipeline_data::CompilerConfig;
 use cx_preparse_data::{Import, PreparseContents};
 use cx_tokens::{
@@ -10,7 +11,6 @@ use cx_tokens::{
 };
 use cx_util::{
     identifier::CXIdent,
-    module::{NamespacePath, QualifiedName},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -118,7 +118,7 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
             let import = parse_import(&mut data.tokens)?;
 
             for name in &import.names {
-                let import_namespace = import_namespace(name);
+                let import_namespace = name.namespace.clone().child(name.name.clone());
 
                 if import_namespace == data.contents.module_symbols.namespace {
                     return parse_point_error(
@@ -434,10 +434,6 @@ fn push_import_name(
     let name = segments.pop().expect("import path should have a name");
     names.push(QualifiedName::new(NamespacePath::new(segments), name));
     Ok(())
-}
-
-fn import_namespace(name: &QualifiedName) -> NamespacePath {
-    name.namespace.child(name.name.clone())
 }
 
 fn parse_import_alias(tokens: &mut TokenIter) -> CXResult<NamespacePath> {

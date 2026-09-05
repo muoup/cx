@@ -55,14 +55,14 @@ impl ModuleData {
         self.module_units
             .write()
             .expect("register_unit: Deadlock detected")
-            .insert(unit.module().clone(), unit.clone());
+            .insert(unit.namespace().clone(), unit.clone());
     }
 
-    pub fn unit_for_module(&self, module: &NamespacePath) -> Option<CompilationUnit> {
+    pub fn unit_for_namespace(&self, namespace: &NamespacePath) -> Option<CompilationUnit> {
         self.module_units
             .read()
             .expect("unit_for_module: Deadlock detected")
-            .get(module)
+            .get(namespace)
             .cloned()
     }
 }

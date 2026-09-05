@@ -54,18 +54,6 @@ fn intermediate_object_output(
         .join(format!("{index}-{stem}.o"))
 }
 
-fn compiler_config(
-    args: &args::FileArgs,
-    output: PathBuf,
-    mode: CompilationMode,
-) -> CompilerConfig {
-    let invocation_directory = std::env::current_dir().expect("Failed to get current directory");
-    let working_directory = invocation_directory.clone();
-    let internal_directory = setup_internal_directory(&working_directory);
-
-    compiler_config_with_dirs(args, output, mode, working_directory, internal_directory)
-}
-
 fn compiler_config_with_dirs(
     args: &args::FileArgs,
     output: PathBuf,

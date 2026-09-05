@@ -3,9 +3,9 @@ use crate::{assert_token_matches, log::parse_point_error, peek_kind, try_next};
 use cx_hir::ast::template::{HIRTemplateInput, HIRTemplatePrototype};
 use cx_hir::ast::types::{HIRType, HIRTypeKind, HIRTypeLookup};
 use cx_log::CXResult;
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_tokens::{TokenIter, identifier, operator};
-use cx_util::module::NamespacePath;
-use cx_util::{identifier::CXIdent, module::QualifiedName};
+use cx_util::{identifier::CXIdent};
 
 use crate::parse::types::parse_initializer;
 

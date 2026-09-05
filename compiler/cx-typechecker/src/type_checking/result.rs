@@ -2,8 +2,8 @@ use std::fmt::{Debug, Formatter};
 
 use cx_hir::ast::{expression::HIRExpression, template::HIRTemplateInput};
 use cx_log::{CXRawResult, CXResult};
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_thir::{
-    NamespacePath,
     symbol::MIRSymbol,
     thir::{
         comptime::THIRStagedExpr,
@@ -12,7 +12,7 @@ use cx_thir::{
     },
 };
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, module::QualifiedName};
+use cx_util::identifier::CXIdent;
 
 use crate::environment::TypeEnvironment;
 
@@ -173,11 +173,7 @@ impl TypecheckResult {
 
     pub fn needs_expected_type<F>(resolver: F) -> Self
     where
-        F: FnOnce(
-                &mut TypeEnvironment,
-                &NamespacePath,
-                &THIRType,
-            ) -> CXResult<THIRExpression>
+        F: FnOnce(&mut TypeEnvironment, &NamespacePath, &THIRType) -> CXResult<THIRExpression>
             + 'static,
     {
         Self::NeedsExpectedType(Box::new(move |env, namespace, expected_type| {

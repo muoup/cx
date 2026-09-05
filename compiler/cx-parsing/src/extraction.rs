@@ -10,8 +10,8 @@ use cx_hir::{
 };
 
 use cx_hir::ast::types::{HIRType, HIRTypeKind, HIRTypeLookup};
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_preparse_data::NamespaceAliases;
-use cx_util::module::{NamespacePath, QualifiedName};
 
 pub struct ExtractionEnv<'a> {
     namespace: &'a NamespacePath,
@@ -49,7 +49,7 @@ impl<'a> ExtractionEnv<'a> {
             return &mut self.symbol_buckets[idx].1;
         };
 
-        if !namespace.is_root() && namespace.strip(self.namespace).is_none() {
+        if !namespace.is_root() && namespace.strip_prefix(self.namespace).is_none() {
             panic!(
                 "Namespace {} is not a child of current namespace {}",
                 namespace, self.namespace

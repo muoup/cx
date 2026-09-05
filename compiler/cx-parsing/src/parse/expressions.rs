@@ -11,7 +11,7 @@ use cx_hir::ast::pattern::HIRPattern;
 use cx_log::CXResult;
 use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use cx_tokens::{identifier, keyword, operator, punctuator};
-use cx_util::module::QualifiedName;
+use cx_namespace::module::QualifiedName;
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::parse::operators::{

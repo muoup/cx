@@ -13,8 +13,9 @@ use cx_log::{
     CXRawResult, CXResult,
     error::{CXErrorMaybeRaw, CXMaybeRawResult},
 };
+use cx_namespace::{mangling::mangle_namespace_symbol, module::QualifiedName};
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, module::QualifiedName};
+use cx_util::identifier::CXIdent;
 
 use cx_thir::{
     symbol::MIRSymbol,
@@ -24,6 +25,7 @@ use cx_thir::{
             THIRFnSignature, THIRParameter, THIRTemplateInput, THIRTypeAttributes,
         },
         expression::THIRLocalID,
+        name_mangling::mangle_rootable_name,
         r#type::{THIRField, THIRMoveSemantics, THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
@@ -32,9 +34,7 @@ use cx_thir::{
 use crate::{
     NamespacePath,
     environment::{SymbolLookupKind, TypeEnvironment},
-    symbol::{
-        resolution::{TypeSymbolQuery, apply_template, resolve_symbol, resolve_type_symbol},
-    },
+    symbol::resolution::{TypeSymbolQuery, apply_template, resolve_symbol, resolve_type_symbol},
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
         typechecker::typecheck_expr,
@@ -304,8 +304,20 @@ pub fn complete_prototype(
 
     let lookup_identifier = function_lookup_identifier(namespace, &prototype.kind);
     let debug_name = lookup_identifier.name.clone();
-    let symbol_name =
-        completed_function_name(env, namespace, &prototype.kind, prototype.symbol_naming)?;
+    let symbol_name = match prototype.kind {
+        HIRFunctionKind::Standard(name) => mangle_rootable_name(
+            env.symbols.get_global_registry(),
+            &QualifiedName::new(namespace.clone(), name.clone()),
+        ),
+
+        HIRFunctionKind::AssociatedFunction {
+            namespace: suffix,
+            name,
+        } => mangle_rootable_name(
+            env.symbols.get_global_registry(),
+            &QualifiedName::new(namespace.clone().join(suffix), name),
+        ),
+    };
 
     Ok(THIRFnPrototype::new(
         symbol_name,
@@ -362,7 +374,7 @@ pub fn complete_comptime_prototype(
 
     let lookup_identifier = function_lookup_identifier(namespace, &prototype.kind);
     let debug_name = lookup_identifier.name.clone();
-    let symbol_name = completed_comptime_symbol_name(env, &lookup_identifier);
+    let symbol_name = mangle_rootable_name(env.symbols.get_global_registry(), &lookup_identifier);
 
     Ok(
         THIRComptimeFnPrototype::new(symbol_name, lookup_identifier, return_type, params)
@@ -370,20 +382,7 @@ pub fn complete_comptime_prototype(
     )
 }
 
-fn completed_comptime_symbol_name(
-    env: &TypeEnvironment,
-    lookup_identifier: &QualifiedName,
-) -> String {
-    crate::symbol::name_mangling::mangle_qualified_name(
-        env.symbols.get_global_registry(),
-        lookup_identifier,
-    )
-}
-
-fn function_lookup_identifier(
-    namespace: &NamespacePath,
-    kind: &HIRFunctionKind,
-) -> QualifiedName {
+fn function_lookup_identifier(namespace: &NamespacePath, kind: &HIRFunctionKind) -> QualifiedName {
     let QualifiedName {
         namespace: relative_namespace,
         name,
@@ -481,7 +480,7 @@ fn complete_identifier_type(
             }
 
             let mangled_name =
-                mangle_qualified_name(env.symbols.get_global_registry(), &resolved_name);
+                mangle_namespace_symbol(env.symbols.get_global_registry(), &resolved_name);
             let dummy_type = THIRType::from(THIRTypeKind::Undefined)
                 .with_strong_identifier(CXIdent::from(mangled_name));
             let prereserved_id = env.symbols.reserve_type_id();
@@ -502,7 +501,7 @@ fn complete_identifier_type(
 
             let ty = complete_type_inner(
                 env,
-                &NamespacePath::from(&resolved_name.namespace),
+                &resolved_name.namespace,
                 definition,
             )
             .map_err(CXErrorMaybeRaw::Complete)?;
@@ -517,10 +516,11 @@ fn complete_identifier_type(
                 || SymbolResolution::new(symbol.clone()),
                 |tag| SymbolResolution::new_tagged(tag, symbol.clone()),
             );
+            
             let mir_symbol = resolve_symbol(
                 env,
                 namespace,
-                &NamespacePath::from(&resolved_name.namespace),
+                &resolved_name.namespace,
                 &resolved_name.name,
                 &resolution,
             )?;
@@ -631,8 +631,7 @@ where
         .as_ref()
         .map(|name| {
             let lookup_identifier = QualifiedName::new(namespace.clone(), name.clone());
-            let strong_identifier =
-                mangle_qualified_name(env.symbols.get_global_registry(), &lookup_identifier);
+            let strong_identifier = mangle_namespace_symbol(&lookup_identifier);
             (Some(strong_identifier), Some(lookup_identifier))
         })
         .unwrap_or((None, None));
@@ -885,45 +884,5 @@ fn owned_unsafe_move(env: &TypeEnvironment, ty: &THIRType) -> bool {
             owned_unsafe_move(env, env.symbols.resolve_type_id(*inner_type))
         }
         _ => false,
-    }
-}
-
-fn completed_function_name(
-    env: &TypeEnvironment,
-    namespace: &NamespacePath,
-    kind: &HIRFunctionKind,
-    symbol_naming: HIRSymbolNameScheme,
-) -> CXResult<String> {
-    if symbol_naming == HIRSymbolNameScheme::Unmangled {
-        return Ok(kind.into_key().name.to_string());
-    }
-
-    let name = match kind {
-        HIRFunctionKind::Standard(name) => mangle_qualified_name(
-            env.symbols.get_global_registry(),
-            &QualifiedName::new(namespace.clone(), name.clone()),
-        ),
-        HIRFunctionKind::AssociatedFunction {
-            namespace: associated_namespace,
-            name,
-        } => cx_util::module::mangle_namespace_symbol(&QualifiedName::new(
-            namespace.child(associated_namespace.clone()),
-            name.clone(),
-        )),
-    };
-
-    Ok(name)
-}
-
-pub(crate) fn completed_symbol_name(
-    env: &TypeEnvironment,
-    name: QualifiedName,
-    symbol_naming: HIRSymbolNameScheme,
-) -> String {
-    match symbol_naming {
-        HIRSymbolNameScheme::Namespaced => {
-            mangle_qualified_name(env.symbols.get_global_registry(), &name)
-        }
-        HIRSymbolNameScheme::Unmangled => name.name.to_string(),
     }
 }

@@ -7,10 +7,8 @@ use crate::{
 };
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
-use cx_thir::{
-    NamespacePath,
-    thir::{data::THIRType, expression::THIRExpression},
-};
+use cx_namespace::module::NamespacePath;
+use cx_thir::thir::{data::THIRType, expression::THIRExpression};
 
 pub use unop::typecheck_unop;
 
@@ -59,10 +57,12 @@ pub fn try_typecheck_special_binop(
                     )?)
                 }
 
-                _ => return env.log_error(
-                    expr.token_range(),
-                    "The right side of '|>' must be a method call".to_string(),
-                ),
+                _ => {
+                    return env.log_error(
+                        expr.token_range(),
+                        "The right side of '|>' must be a method call".to_string(),
+                    );
+                }
             }
         }
 

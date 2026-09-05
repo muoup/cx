@@ -1,6 +1,6 @@
 use cx_hir::ast::{HIR, HIRStmt, global_var::HIRGlobalVariable};
 use cx_log::CXResult;
-use cx_thir::NamespacePath;
+use cx_namespace::module::NamespacePath;
 use cx_thir::thir::data::THIRFunction;
 
 pub mod environment;

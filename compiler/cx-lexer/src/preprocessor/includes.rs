@@ -7,7 +7,7 @@ use cx_log::{
     CXResult,
     error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
 };
-use cx_util::module_path::cx_library_directory;
+use cx_namespace::cx_library_directory;
 
 use crate::{
     context::{LexingContext, SourceInput},

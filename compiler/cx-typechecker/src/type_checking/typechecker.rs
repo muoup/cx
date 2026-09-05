@@ -28,7 +28,7 @@ use crate::type_checking::value::{
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_hir::ast::modifiers::HIR_CONST;
 use cx_log::CXResult;
-use cx_thir::NamespacePath;
+use cx_namespace::module::NamespacePath;
 use cx_thir::thir::data::{THIRIntType, THIRTypeKind};
 use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
 use cx_tokens::TokenRange;

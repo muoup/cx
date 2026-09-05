@@ -7,13 +7,13 @@ use cx_log::{
     CXResult,
     error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
 };
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_tokens::{
     TokenIter, TokenRange, operator,
     token::{OperatorType, TokenKind},
 };
 use cx_util::{
     identifier::CXIdent,
-    module::{NamespacePath, QualifiedName},
 };
 
 use crate::{log::parse_point_error, next_kind, try_next};

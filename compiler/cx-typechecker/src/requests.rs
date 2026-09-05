@@ -3,27 +3,22 @@ use cx_hir::{
     symbols::{HIRSymbolData, HIRSymbolKind},
 };
 use cx_log::CXResult;
-use cx_thir::type_context::THIRTypeContext;
-use cx_thir::{
-    NamespacePath,
-    thir::{
-        data::{
-            THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter,
-            THIRTemplateInput,
-        },
-        expression::{THIRExpression, THIRExpressionKind},
-        r#type::THIRType,
+use cx_namespace::{mangling::mangle_namespace_symbol, module::{NamespacePath, QualifiedName}};
+use cx_thir::thir::{
+    data::{
+        THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter,
+        THIRTemplateInput,
     },
+    expression::{THIRExpression, THIRExpressionKind},
+    name_mangling::mangle_template_name,
+    r#type::THIRType,
 };
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, linkage::LinkageMode, module::QualifiedName};
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
     environment::{THIRFunctionGenRequest, TypeEnvironment},
-    symbol::{
-        name_mangling::base_mangle_templated_name,
-        resolution::{apply_template_input, symbol_lexical_namespace},
-    },
+    symbol::resolution::{apply_template_input, symbol_lexical_namespace},
     type_checking::functions::{typecheck_comptime_function, typecheck_function},
 };
 
@@ -201,19 +196,13 @@ fn realize_comptime_fn_template(
     mut prototype: THIRComptimeFnPrototype,
     input: &THIRTemplateInput,
 ) -> CXResult<()> {
-    let instance_name = base_mangle_templated_name(
-        &env.symbols,
-        prototype.symbol_name(),
-        input
-            .args
-            .iter()
-            .map(|arg| env.symbols.resolve_type_id(*arg)),
-    );
+    let base_mangle = mangle_namespace_symbol(lookup_identifier);
+    let instance_name = mangle_template_name(&env.symbols, base_mangle, input);
 
     if env.items.request_fulfilled(&instance_name) {
         return Ok(());
     }
-    
+
     env.items.mark_request_fulfilled(instance_name.clone());
 
     let resolution = env
@@ -233,7 +222,12 @@ fn realize_comptime_fn_template(
         .find(|symbol| matches!(symbol.kind, HIRSymbolKind::ComptimeFunction(_)))
         .expect("Expected comptime function declaration in the symbol registry");
 
-    let HIRSymbolKind::ComptimeFunction(HIRSymbolData::Template { template_data, template_prototype, .. }) = &stmt.kind else {
+    let HIRSymbolKind::ComptimeFunction(HIRSymbolData::Template {
+        template_data,
+        template_prototype,
+        ..
+    }) = &stmt.kind
+    else {
         unreachable!("Expected comptime function to be a template");
     };
 
@@ -241,12 +235,12 @@ fn realize_comptime_fn_template(
         &lookup_identifier.namespace,
         &stmt,
     ));
-    
+
     env.symbols.push_local_scope();
     let result = (|| -> CXResult<()> {
         apply_template_input(env, template_prototype, input)
             .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
-        
+
         prototype.map_symbol_name(|_| instance_name.clone());
         typecheck_comptime_function(env, &namespace, prototype.clone(), template_data)?;
         Ok(())

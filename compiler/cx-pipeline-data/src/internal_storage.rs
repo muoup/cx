@@ -1,4 +1,3 @@
-use crate::directories::internal_directory;
 use crate::{CompilationUnit, GlobalCompilationContext};
 use speedy::{LittleEndian, Readable, Writable};
 use std::path::PathBuf;
@@ -8,9 +7,13 @@ pub fn resource_path(
     unit: &CompilationUnit,
     data_suffix: &str,
 ) -> PathBuf {
-    let mut path = internal_directory(context, unit);
-    path.set_extension(data_suffix.trim_start_matches('.'));
-    path
+    let diff = unit.module().as_path()
+        .strip_prefix(&context.config.working_directory)
+        .unwrap_or(unit.module().as_path())
+        .with_extension(data_suffix);
+
+    let complete_path = context.config.internal_directory.join(diff);
+    return complete_path;
 }
 
 pub fn store_text(

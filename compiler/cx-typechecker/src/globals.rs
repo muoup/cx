@@ -2,19 +2,17 @@ use cx_hir::ast::expression::HIRExpression;
 use cx_hir::ast::modifiers::{HIR_CONST, HIRSymbolNameScheme};
 use cx_hir::ast::types::{HIRType, HIRTypeKind};
 use cx_log::CXResult;
-use cx_thir::NamespacePath;
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_thir::thir::data::THIRType;
 use cx_thir::thir::expression::{THIRCoercion, THIRExpression, THIRExpressionKind};
 use cx_thir::thir::global::THIRGlobalVariable;
+use cx_thir::thir::name_mangling::mangle_rootable_name;
 use cx_thir::type_context::THIRTypeContext;
 use cx_util::identifier::CXIdent;
 use cx_util::linkage::LinkageMode;
-use cx_util::module::QualifiedName;
 
 use crate::environment::TypeEnvironment;
-use crate::symbol::completion::{
-    complete_type, completed_symbol_name, ensure_valid_type_component,
-};
+use crate::symbol::completion::{complete_type, ensure_valid_type_component};
 use crate::type_checking::typechecker::typecheck_expr;
 
 pub(crate) fn lower_global(
@@ -30,10 +28,9 @@ pub(crate) fn lower_global(
     let mut _type = complete_type(env, &namespace, hir_type)?;
     ensure_valid_type_component(env, hir_type.range(), &_type, "a global variable", true)?;
 
-    let symbol_name = completed_symbol_name(
-        env,
-        QualifiedName::new(namespace.clone(), name.clone()),
-        name_scheme,
+    let symbol_name = mangle_rootable_name(
+        env.symbols.get_global_registry(),
+        &QualifiedName::new(namespace.clone(), name.clone()),
     );
     let previous_type = env
         .items

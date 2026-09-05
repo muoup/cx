@@ -3,13 +3,12 @@ use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_log::CXResult;
-use cx_thir::NamespacePath;
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_thir::thir::data::{THIRFnSignature, THIRType};
 use cx_thir::thir::expression::{
     THIRExpression, THIRExpressionKind, THIRFnContract, THIRPostcondition,
 };
 use cx_tokens::TokenRange;
-use cx_util::module::QualifiedName;
 
 pub(crate) fn typecheck_contract(
     env: &mut TypeEnvironment,

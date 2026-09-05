@@ -5,18 +5,17 @@ use cx_hir::symbols::{HIRSymbol, SymbolResolution};
 use cx_log::{
     CXRawResult, CXResult,
     error::{
-        CXError,
-        CXRawError,
-        CXErrorMaybeRaw,
+        CXError, CXErrorMaybeRaw, CXRawError,
         context::{CXInternalContext, from_token_range},
         message::CXStdErrMessage,
     },
 };
-use cx_namespace::{QualifiedLookup, result::QualifiedLookupResult};
+use cx_namespace::lookup::{QualifiedLookup, QualifiedLookupResult};
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_pipeline_data::db::ModuleData;
 use cx_target::ArchitectureConfig;
 use cx_thir::{
-    NamespacePath, THIRUnit,
+    THIRUnit,
     symbol::MIRSymbol,
     thir::{
         comptime::THIRStagedEffects,
@@ -26,7 +25,6 @@ use cx_thir::{
     type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
-use cx_util::module::QualifiedName;
 use cx_util::identifier::CXIdent;
 
 pub use crate::environment::control_flow::{ControlTarget, ScopeEffects};
@@ -405,7 +403,7 @@ impl TypeEnvironment<'_> {
                 }
 
                 if matches!(symbol.visibility, VisibilityMode::Package) {
-                    return candidate.namespace.strip(namespace).is_some();
+                    return candidate.namespace.clone().strip_prefix(namespace).is_some();
                 }
 
                 false
@@ -436,7 +434,7 @@ impl TypeEnvironment<'_> {
         let symbol = resolve_symbol(
             self,
             namespace,
-            &NamespacePath::from(&resolved_name.namespace),
+            &resolved_name.namespace,
             &resolved_name.name,
             &untyped_symbol,
         )?;
@@ -525,11 +523,8 @@ impl QualifiedLookup for QualifiedSymbolLookup<'_, '_> {
 
         if let Some(resolution) = resolution.and_then(|resolution| {
             resolution.filter(|symbol| {
-                self.env.symbol_visible_from(
-                    &NamespacePath::from(lexical_namespace),
-                    name,
-                    symbol,
-                )
+                self.env
+                    .symbol_visible_from(lexical_namespace, name, symbol)
             })
         }) {
             return Some(SymbolLookup {

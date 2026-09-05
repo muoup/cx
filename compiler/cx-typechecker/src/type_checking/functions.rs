@@ -6,8 +6,8 @@ use crate::{
 use cx_hir::ast::expression::HIRExpression;
 use cx_hir::ast::function::HIRFunctionContract;
 use cx_log::CXResult;
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_thir::{
-    NamespacePath,
     thir::{
         comptime::THIRComptimeFn,
         data::{
@@ -18,7 +18,7 @@ use cx_thir::{
     },
 };
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, linkage::LinkageMode, module::QualifiedName};
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 pub fn typecheck_function(
     env: &mut TypeEnvironment,
@@ -90,13 +90,6 @@ pub fn typecheck_function(
     Ok(())
 }
 
-/// Typechecks a comptime function body and emits it into the completed THIR.
-///
-/// Comptime functions are checked mostly like normal functions. Plain
-/// parameters and non-parameterized staged parameters (`expr T`) behave like
-/// normal typed locals; parameterized staged parameters (`expr(P) T`) bind as
-/// staged values that carry no static type and may only be called or passed
-/// to other staged parameters.
 pub fn typecheck_comptime_function(
     env: &mut TypeEnvironment,
     namespace: &NamespacePath,

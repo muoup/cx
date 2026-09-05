@@ -12,11 +12,12 @@ use cx_hir::ast::{
     types::HIRType,
 };
 use cx_log::CXResult;
+use cx_namespace::module::QualifiedName;
 use cx_tokens::{
     identifier, keyword, operator, punctuator,
     token::{PunctuatorType, TokenKind},
 };
-use cx_util::{identifier::CXIdent, module::QualifiedName};
+use cx_util::identifier::CXIdent;
 
 use crate::parse::{
     expressions::parse_expr, parser::ParserData, templates::try_parse_template,

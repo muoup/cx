@@ -1,24 +1,23 @@
 use cx_hir::registry::{ExportNameMode, GlobalSymbolRegistry};
 use cx_namespace::{
     mangling::mangle_namespace_symbol,
-    module::{NamespacePath, QualifiedName},
+    module::QualifiedName,
 };
 
 use crate::{
     thir::{
-        data::{THIRType, THIRTypeKind},
+        data::{THIRTemplateInput, THIRType, THIRTypeKind},
         r#type::THIRField,
     },
     type_context::THIRTypeContext,
 };
 
-pub(crate) fn mangle_function_name(
+pub fn mangle_rootable_name(
     global_registry: &GlobalSymbolRegistry,
-    namespace: &NamespacePath,
     name: &QualifiedName,
 ) -> String {
     if name.namespace.is_root()
-        || global_registry.export_name_mode(namespace) == ExportNameMode::Root
+        || global_registry.export_name_mode(&name.namespace) == ExportNameMode::Root
     {
         return name.to_string();
     }
@@ -26,7 +25,27 @@ pub(crate) fn mangle_function_name(
     return mangle_namespace_symbol(name);
 }
 
-pub(crate) fn mangle_type_name(definitions: &impl THIRTypeContext, ty: &THIRType) -> String {
+pub fn mangle_template_name(
+    definitions: &impl THIRTypeContext,
+    name: String,
+    input: &THIRTemplateInput,
+) -> String {
+    let mut base = format!("_T{}_{}_{}_", input.args.len(), name.len(), name);
+
+    for arg in &input.args {
+        base.push_str(
+            format!(
+                "{}_",
+                mangle_type_name(definitions, definitions.resolve_type_id(*arg))
+            )
+            .as_str(),
+        );
+    }
+
+    base
+}
+
+fn mangle_type_name(definitions: &impl THIRTypeContext, ty: &THIRType) -> String {
     if let Some(name) = ty.strong_identifier() {
         let mut mangled = String::from("n");
         push_component(&mut mangled, name);
@@ -69,7 +88,8 @@ pub(crate) fn mangle_type_name(definitions: &impl THIRTypeContext, ty: &THIRType
             } else {
                 mangled.push('0');
             }
-            let inner_type = mangle_type_name(definitions, definitions.resolve_type_id(*inner_type));
+            let inner_type =
+                mangle_type_name(definitions, definitions.resolve_type_id(*inner_type));
             push_component(&mut mangled, inner_type.as_str());
             mangled
         }
@@ -86,7 +106,8 @@ pub(crate) fn mangle_type_name(definitions: &impl THIRTypeContext, ty: &THIRType
             let mut mangled = String::from("a");
             let size = size.display_with(definitions).to_string();
             push_component(&mut mangled, size.as_str());
-            let inner_type = mangle_type_name(definitions, definitions.resolve_type_id(*inner_type));
+            let inner_type =
+                mangle_type_name(definitions, definitions.resolve_type_id(*inner_type));
             push_component(&mut mangled, inner_type.as_str());
             mangled
         }

@@ -1,6 +1,5 @@
 pub mod config;
 pub mod db;
-pub mod directories;
 pub mod internal_storage;
 pub mod jobs;
 
@@ -8,6 +7,7 @@ use crate::config::{CXProjectConfig, LinkEntry};
 use crate::db::ModuleData;
 use cx_namespace::module::{ModulePath, NamespacePath};
 pub use cx_target::ArchitectureConfig;
+use cx_util::identifier::CXIdent;
 use speedy::{Context, Readable, Writable};
 use std::collections::HashSet;
 use std::fmt::Display;
@@ -37,7 +37,7 @@ pub fn compilation_hash() -> u64 {
 pub struct GlobalCompilationContext {
     pub config: CompilerConfig,
     pub module_db: ModuleData,
-
+    
     pub linking_files: Mutex<HashSet<PathBuf>>,
 }
 
@@ -97,21 +97,23 @@ pub struct CompilationUnit {
 
 impl CompilationUnit {
     pub fn new(
+        project_root: &Path,
         module_path: ModulePath,
-        working_directory: &Path,
-        extension: &str,
     ) -> Self {
-        let path_buf = module_path.with_extension(extension);
-        let module = NamespacePath::new(
-            path_buf.clone(),
-            module_path.project_base(working_directory),
+        let diff = module_path.as_path()
+            .strip_prefix(project_root)
+            .unwrap_or(module_path.as_path())
+            .with_extension("");
+
+        let namespace = NamespacePath::new(
+            diff.components()
+                .map(|c| CXIdent::from(c.as_os_str().to_string_lossy().to_string()))
+                .collect(),
         );
 
-        Self {
-            namespace: module
-                .namespace_path()
-                .expect("module file must be inside its project base"),
-            module,
+        CompilationUnit {
+            module: module_path,
+            namespace,
         }
     }
 
@@ -123,10 +125,6 @@ impl CompilationUnit {
         &self.namespace
     }
 
-    pub fn to_namespace_path(&self) -> NamespacePath {
-        self.namespace.clone()
-    }
-
     pub fn is_std_lib(&self) -> bool {
         self.namespace.segments()
             .get(0)
@@ -136,22 +134,17 @@ impl CompilationUnit {
 }
 
 impl<'a, C: Context> Readable<'a, C> for CompilationUnit {
-    fn read_from<R: speedy::Reader<'a, C>>(reader: &mut R) -> Result<Self, C::Error> {
-        let module = NamespacePath::read_from(reader)?;
-        let namespace = NamespacePath::read_from(reader)?;
-
-        Ok(Self { module, namespace })
+    fn read_from<R: speedy::Reader<'a, C>>(_: &mut R) -> Result<Self, C::Error> {
+        todo!()
     }
 }
 
 impl<C: Context> Writable<C> for CompilationUnit {
-    fn write_to<W>(&self, writer: &mut W) -> Result<(), C::Error>
+    fn write_to<W>(&self, _: &mut W) -> Result<(), C::Error>
     where
         W: ?Sized + speedy::Writer<C>,
     {
-        self.module.write_to(writer)?;
-        self.namespace.write_to(writer)?;
-        Ok(())
+        todo!()
     }
 }
 
@@ -164,6 +157,6 @@ impl Hash for CompilationUnit {
 
 impl Display for CompilationUnit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.module)
+        write!(f, "Unit {}", self.namespace())
     }
 }

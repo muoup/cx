@@ -45,6 +45,7 @@ impl Display for HIR {
             f,
             "HIR for file: {}",
             self.module_path
+                .as_path()
                 .to_str()
                 .unwrap_or("Cannot print file path")
         )?;
