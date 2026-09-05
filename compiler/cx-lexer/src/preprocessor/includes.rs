@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 
 use cx_log::{
     CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+    error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_util::module_path::cx_library_directory;
 
@@ -87,7 +87,7 @@ fn handle_include_impl(
     }
 
     let source = std::fs::read_to_string(path.as_path()).map_err(|e| {
-        CXErr::new(
+        CXError::new(
             CXStdErrMessage::error(
                 "LEXER ERROR",
                 format!("Failed to read included file {}: {}", path.display(), e),

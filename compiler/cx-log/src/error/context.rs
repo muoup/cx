@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::{
-    error::CXErrContext,
+    error::CXErrorContext,
     format::{pointing::point_error, underline::pretty_underline_error},
 };
 
@@ -12,7 +12,7 @@ pub struct CXSourceSpan {
     pub byte_end: usize,
 }
 
-pub trait CXErrorContext {
+pub trait CXErrorContextTrait {
     fn dump(&self, f: &mut dyn std::io::Write) -> std::io::Result<()>;
 
     fn source_span(&self) -> Option<CXSourceSpan> {
@@ -30,12 +30,12 @@ impl CXPointingContext {
         Self { file, str_index }
     }
 
-    pub fn error(file: impl Into<PathBuf>, str_index: usize) -> CXErrContext {
+    pub fn error(file: impl Into<PathBuf>, str_index: usize) -> CXErrorContext {
         Box::new(Self::new(file.into(), str_index))
     }
 }
 
-impl CXErrorContext for CXPointingContext {
+impl CXErrorContextTrait for CXPointingContext {
     fn dump(&self, f: &mut dyn std::io::Write) -> std::io::Result<()> {
         point_error(f, self.file.as_path(), self.str_index)
     }
@@ -64,12 +64,12 @@ impl CXUnderlineContext {
         }
     }
 
-    pub fn error(file: impl Into<PathBuf>, str_start: usize, str_end: usize) -> CXErrContext {
+    pub fn error(file: impl Into<PathBuf>, str_start: usize, str_end: usize) -> CXErrorContext {
         Box::new(Self::new(file.into(), str_start, str_end))
     }
 }
 
-impl CXErrorContext for CXUnderlineContext {
+impl CXErrorContextTrait for CXUnderlineContext {
     fn dump(&self, f: &mut dyn std::io::Write) -> std::io::Result<()> {
         pretty_underline_error(f, self.file.as_path(), self.str_start, self.str_end)
     }
@@ -94,12 +94,12 @@ impl CXInternalContext {
         }
     }
 
-    pub fn error(message: impl Into<String>) -> CXErrContext {
+    pub fn error(message: impl Into<String>) -> CXErrorContext {
         Box::new(Self::new(message))
     }
 }
 
-impl CXErrorContext for CXInternalContext {
+impl CXErrorContextTrait for CXInternalContext {
     fn dump(&self, f: &mut dyn std::io::Write) -> std::io::Result<()> {
         writeln!(f, "{}", self.message)
     }

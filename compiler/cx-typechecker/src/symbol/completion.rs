@@ -11,7 +11,7 @@ use cx_hir::ast::{
 use cx_hir::symbols::{HIRSymbolData, HIRSymbolKind, SymbolResolution};
 use cx_log::{
     CXRawResult, CXResult,
-    error::{CXMaybeRawErr, CXMaybeRawResult},
+    error::{CXErrorMaybeRaw, CXMaybeRawResult},
 };
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, namespace::QualifiedName};
@@ -506,7 +506,7 @@ fn complete_identifier_type(
                 &EnvironmentNamespace::from(&resolved_name.namespace),
                 definition,
             )
-            .map_err(CXMaybeRawErr::Complete)?;
+            .map_err(CXErrorMaybeRaw::Complete)?;
 
             env.symbols.overwrite_type_id(prereserved_id, ty);
 
@@ -801,7 +801,7 @@ fn resolve_aggregate_move_attributes(
         let name = QualifiedName::new_raw(CXIdent::new(param_name.as_str()));
         let Some(symbol) = env
             .get_symbol(namespace, &name)
-            .map_err(CXMaybeRawErr::from)?
+            .map_err(CXErrorMaybeRaw::from)?
         else {
             return env
                 .log_error_base(format!(

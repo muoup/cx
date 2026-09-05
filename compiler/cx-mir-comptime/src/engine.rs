@@ -5,7 +5,7 @@ mod state;
 
 use std::collections::{HashMap, HashSet};
 
-use cx_log::CXResult;
+use cx_log::{CXResult, error::{CXError, context::CXInternalContext, message::CXStdErrMessage}};
 use cx_mir::{MIRConstant, MIRGlobalID};
 
 use crate::{
@@ -68,12 +68,12 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
             .map(MIRComptimeValue::Constant)
             .collect::<Vec<_>>();
         self.run_values(entry, &args)?.constant().ok_or_else(|| {
-            cx_log::error::CXErr::new(
-                cx_log::error::message::CXStdErrMessage::error(
+            CXError::new(
+                CXStdErrMessage::error(
                     "COMPTIME ERROR",
                     "expected a concrete compile-time value",
                 ),
-                cx_log::error::context::CXInternalContext::error(
+                CXInternalContext::error(
                     "staged value escaped a constant evaluation",
                 ),
             )

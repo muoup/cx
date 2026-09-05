@@ -1,7 +1,7 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::progress::ProgressReporter;
 use crate::{diagnostics, pipeline_error};
-use cx_log::{CXResult, error::CXErr};
+use cx_log::{CXResult, error::CXError};
 use cx_mir_analysis::{MIRAnalysisOptions, analyze};
 
 use cx_mir_lowering::generate_lmir;
@@ -661,7 +661,7 @@ fn handle_job_collect_errors(
         .into()
     };
 
-    fn spanned_error(error: &CXErr) -> Option<LSPErrors> {
+    fn spanned_error(error: &CXError) -> Option<LSPErrors> {
         let span = error.source_span()?;
         Some(LSPErrors::SpannedError {
             compilation_unit: span.file,

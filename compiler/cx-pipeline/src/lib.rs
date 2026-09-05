@@ -12,7 +12,7 @@ use crate::scheduler::{scheduling_loop, scheduling_loop_many};
 use cx_hir::registry::ExportNameMode;
 use cx_log::{
     CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+    error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_pipeline_data::config::{CXProjectConfig, TargetConfig};
 use cx_pipeline_data::db::ModuleData;
@@ -39,8 +39,8 @@ pub fn link_object_files(output: &Path, object_files: &[PathBuf]) -> CXResult<()
     link_objects(output, object_files)
 }
 
-pub(crate) fn pipeline_error(code: impl Into<String>, message: impl Into<String>) -> CXErr {
-    CXErr::new(
+pub(crate) fn pipeline_error(code: impl Into<String>, message: impl Into<String>) -> CXError {
+    CXError::new(
         CXStdErrMessage::error(code, message),
         CXInternalContext::error("pipeline operation failed outside source context"),
     )

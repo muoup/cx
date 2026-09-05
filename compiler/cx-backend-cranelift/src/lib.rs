@@ -11,7 +11,7 @@ use cx_lmir::{LMIRABISlot, LMIRFunctionSignature};
 use cx_lmir::{LMIRBlockID, LMIRRegister, LMIRUnit, LMIRValue};
 use cx_log::error::context::CXInternalContext;
 use cx_log::error::message::CXStdErrMessage;
-use cx_log::error::CXErr;
+use cx_log::error::CXError;
 use cx_log::{CXRawResult, CXResult};
 use cx_target::ArchitectureConfig;
 use cx_util::identifier::CXIdent;
@@ -177,7 +177,7 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
     let isa = native_builder.finish(flags).unwrap();
     let target_pointer_size = isa.frontend_config().pointer_type().bytes() as usize;
     if bc.architecture.pointer_size() != target_pointer_size {
-        return Err(CXErr::new(
+        return Err(CXError::new(
             CXStdErrMessage::error(
                 "CODEGEN ERROR",
                 format!(
@@ -210,7 +210,7 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
 
     for fn_prototype in bc.fn_map.values() {
         codegen_fn_prototype(&mut global_state, fn_prototype).map_err(|e| {
-            CXErr::new(
+            CXError::new(
                 e,
                 CXInternalContext::error(format!(
                     "Failed to codegen function prototype: {}",
@@ -235,7 +235,7 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
             .get(func.prototype.name.as_str())
             .cloned()
         else {
-            return Err(CXErr::new(
+            return Err(CXError::new(
                 CXStdErrMessage::error(
                     "CODEGEN ERROR",
                     format!(
@@ -258,7 +258,7 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
     }
 
     global_state.object_module.finish().emit().map_err(|err| {
-        CXErr::new(
+        CXError::new(
             CXStdErrMessage::error(
                 "CODEGEN ERROR",
                 format!("Failed to emit object file: {err}"),

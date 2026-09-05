@@ -1,3 +1,5 @@
+use cx_target::ArchitectureConfig;
+
 use crate::thir::data::{THIRFloatType, THIRIntType, THIRTypeKind};
 
 pub fn is_intrinsic_type(name: &str) -> bool {
@@ -11,338 +13,283 @@ pub fn is_intrinsic_type(name: &str) -> bool {
 
 pub const INTRINSIC_IMPORTS: &[&str] = &["std/intrinsic/assertion.cx"];
 
-pub const INTRINSIC_TYPES: &[(&str, THIRTypeKind)] = &[
-    ("void", THIRTypeKind::Void),
-    ("unreachable", THIRTypeKind::Unreachable),
-    (
-        "bool",
-        THIRTypeKind::Integer {
+// TODO: Better architecture-specific handling of integer-like types and other intrinsics
+pub const INTRINSIC_TYPES: &[(&str, fn(&ArchitectureConfig) -> Option<THIRTypeKind>)] = &[
+    ("void", |_| Some(THIRTypeKind::Void)),
+    ("unreachable", |_| Some(THIRTypeKind::Unreachable)),
+    ("bool", |_| {
+        Some(THIRTypeKind::Integer {
             signed: false,
             _type: THIRIntType::I1,
-        },
-    ),
-    (
-        "_Bool",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("_Bool", |_| {
+        Some(THIRTypeKind::Integer {
             signed: false,
             _type: THIRIntType::I1,
-        },
-    ),
-    (
-        "i8",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("i8", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I8,
-        },
-    ),
-    (
-        "i16",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("i16", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I16,
-        },
-    ),
-    (
-        "i32",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("i32", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I32,
-        },
-    ),
-    (
-        "i64",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("i64", |arch| {
+        (arch.pointer_size() >= 8).then(|| THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I64,
-        },
-    ),
-    (
-        "u8",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("u8", |_| {
+        Some(THIRTypeKind::Integer {
             signed: false,
             _type: THIRIntType::I8,
-        },
-    ),
-    (
-        "u16",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("u16", |_| {
+        Some(THIRTypeKind::Integer {
             signed: false,
             _type: THIRIntType::I16,
-        },
-    ),
-    (
-        "u32",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("u32", |_| {
+        Some(THIRTypeKind::Integer {
             signed: false,
             _type: THIRIntType::I32,
-        },
-    ),
-    (
-        "u64",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("u64", |arch| {
+        (arch.pointer_size() >= 8).then(|| THIRTypeKind::Integer {
             signed: false,
             _type: THIRIntType::I64,
-        },
-    ),
-    (
-        "usize",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("usize", |arch| {
+        Some(THIRTypeKind::Integer {
             signed: false,
-            _type: THIRIntType::I64,
-        },
-    ),
-    (
-        "isize",
-        THIRTypeKind::Integer {
+            _type: THIRIntType::from_bytes(arch.pointer_size() as u8)
+                .expect("pointer size should be 1, 2, 4, or 8 bytes"),
+        })
+    }),
+    ("isize", |arch| {
+        Some(THIRTypeKind::Integer {
             signed: true,
-            _type: THIRIntType::I64,
-        },
-    ),
-    (
-        "f32",
-        THIRTypeKind::Float {
+            _type: THIRIntType::from_bytes(arch.pointer_size() as u8)
+                .expect("pointer size should be 1, 2, 4, or 8 bytes"),
+        })
+    }),
+    ("f32", |_| {
+        Some(THIRTypeKind::Float {
             _type: THIRFloatType::F32,
-        },
-    ),
-    (
-        "f64",
-        THIRTypeKind::Float {
+        })
+    }),
+    ("f64", |arch| {
+        (arch.pointer_size() >= 8).then(|| THIRTypeKind::Float {
             _type: THIRFloatType::F64,
-        },
-    ),
-    (
-        "int",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("int", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I32,
-        },
-    ),
-    (
-        "signed int",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("signed int", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I32,
-        },
-    ),
-    (
-        "unsigned int",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("unsigned int", |_| {
+        Some(THIRTypeKind::Integer {
             signed: false,
             _type: THIRIntType::I32,
-        },
-    ),
-    (
-        "unsigned short",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("unsigned short", |_| {
+        Some(THIRTypeKind::Integer {
             signed: false,
             _type: THIRIntType::I16,
-        },
-    ),
-    (
-        "short",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("short", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I16,
-        },
-    ),
-    (
-        "short int",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("short int", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I16,
-        },
-    ),
-    (
-        "signed short",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("signed short", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I16,
-        },
-    ),
-    (
-        "signed short int",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("signed short int", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I16,
-        },
-    ),
-    (
-        "unsigned short int",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("unsigned short int", |_| {
+        Some(THIRTypeKind::Integer {
             signed: false,
             _type: THIRIntType::I32,
-        },
-    ),
-    (
-        "signed",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("signed", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I32,
-        },
-    ),
-    (
-        "unsigned",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("unsigned", |_| {
+        Some(THIRTypeKind::Integer {
             signed: false,
             _type: THIRIntType::I32,
-        },
-    ),
-    (
-        "long",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("long", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I64,
-        },
-    ),
-    (
-        "long int",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("long int", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I64,
-        },
-    ),
-    (
-        "signed long",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("signed long", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I64,
-        },
-    ),
-    (
-        "signed long int",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("signed long int", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I64,
-        },
-    ),
-    (
-        "long unsigned int",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("long unsigned int", |_| {
+        Some(THIRTypeKind::Integer {
             signed: false,
             _type: THIRIntType::I64,
-        },
-    ),
-    (
-        "unsigned long int",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("unsigned long int", |_| {
+        Some(THIRTypeKind::Integer {
             signed: false,
             _type: THIRIntType::I64,
-        },
-    ),
-    (
-        "unsigned long",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("unsigned long", |_| {
+        Some(THIRTypeKind::Integer {
             signed: false,
             _type: THIRIntType::I64,
-        },
-    ),
-    (
-        "long long",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("long long", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I64,
-        },
-    ),
-    (
-        "long long int",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("long long int", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I64,
-        },
-    ),
-    (
-        "signed long long",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("signed long long", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I64,
-        },
-    ),
-    (
-        "signed long long int",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("signed long long int", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I64,
-        },
-    ),
-    (
-        "unsigned long long int",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("unsigned long long int", |_| {
+        Some(THIRTypeKind::Integer {
             signed: false,
             _type: THIRIntType::I64,
-        },
-    ),
-    (
-        "unsigned long long",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("unsigned long long", |_| {
+        Some(THIRTypeKind::Integer {
             signed: false,
             _type: THIRIntType::I64,
-        },
-    ),
-    (
-        "char",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("char", |_| {
+        Some(THIRTypeKind::Integer {
             signed: false,
             _type: THIRIntType::I8,
-        },
-    ),
-    (
-        "unsigned char",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("unsigned char", |_| {
+        Some(THIRTypeKind::Integer {
             signed: false,
             _type: THIRIntType::I8,
-        },
-    ),
-    (
-        "signed char",
-        THIRTypeKind::Integer {
+        })
+    }),
+    ("signed char", |_| {
+        Some(THIRTypeKind::Integer {
             signed: true,
             _type: THIRIntType::I8,
-        },
-    ),
-    (
-        "float",
-        THIRTypeKind::Float {
+        })
+    }),
+    ("float", |_| {
+        Some(THIRTypeKind::Float {
             _type: THIRFloatType::F32,
-        },
-    ),
-    (
-        "double",
-        THIRTypeKind::Float {
+        })
+    }),
+    ("double", |arch| {
+        (arch.pointer_size() >= 8).then(|| THIRTypeKind::Float {
             _type: THIRFloatType::F64,
-        },
-    ),
-    // C header compatibility shims until MIR has long-double, complex, and
+        })
+    }),
+    // TODO: C header compatibility shims until MIR has long-double, complex, and
     // target ABI va_list types.
-    (
-        "__builtin_va_list",
-        THIRTypeKind::Opaque {
-            size: 24,
-            alignment: 8,
-        },
-    ),
-    (
-        "long double",
-        THIRTypeKind::Float {
-            _type: THIRFloatType::F64,
-        },
-    ),
-    (
-        "_Complex float",
-        THIRTypeKind::Float {
-            _type: THIRFloatType::F64,
-        },
-    ),
-    (
-        "_Complex double",
-        THIRTypeKind::Float {
-            _type: THIRFloatType::F64,
-        },
-    ),
-    (
-        "_Complex long double",
-        THIRTypeKind::Float {
-            _type: THIRFloatType::F64,
-        },
-    ),
-    ("_str", THIRTypeKind::Str),
+    ("__builtin_va_list", |_| Some(THIRTypeKind::Opaque {
+        size: 24,
+        alignment: 8,
+    })),
+    ("long double", |_| Some(THIRTypeKind::Float {
+        _type: THIRFloatType::F64,
+    })),
+    ("_Complex float", |_| Some(THIRTypeKind::Float {
+        _type: THIRFloatType::F64,
+    })),
+    ("_Complex double", |_| Some(THIRTypeKind::Float {
+        _type: THIRFloatType::F64,
+    })),
+    ("_Complex long double", |_| Some(THIRTypeKind::Float {
+        _type: THIRFloatType::F64,
+    })),
+    ("_str", |_| Some(THIRTypeKind::Str)),
 ];

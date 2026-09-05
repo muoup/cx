@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use cx_log::{
     CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+    error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_mir::{
     MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState,
@@ -117,7 +117,7 @@ impl MIRModuleBuilder {
                 _ => false,
             };
             if !compatible {
-                return Err(CXErr::new(
+                return Err(CXError::new(
                     CXStdErrMessage::error(
                         "TYPE ERROR",
                         format!("Incompatible global declaration '{name}'"),
@@ -210,7 +210,7 @@ impl MIRModuleBuilder {
             .expect("global symbol points to a missing global");
         let name = global.name.clone();
         let MIRGlobalKind::Variable { state, .. } = &mut global.kind else {
-            return Err(CXErr::new(
+            return Err(CXError::new(
                 CXStdErrMessage::error(
                     "TYPE ERROR",
                     format!("Global '{name}' cannot have an initializer"),
@@ -223,7 +223,7 @@ impl MIRModuleBuilder {
             state,
             MIRGlobalState::Initializer(_) | MIRGlobalState::Initialized(_)
         ) {
-            return Err(CXErr::new(
+            return Err(CXError::new(
                 CXStdErrMessage::error(
                     "TYPE ERROR",
                     format!("Duplicate global definition '{name}'"),

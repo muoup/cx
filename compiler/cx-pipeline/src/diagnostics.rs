@@ -1,4 +1,4 @@
-use cx_log::error::{CXErr, context::CXInternalContext, message::CXStdErrMessage};
+use cx_log::error::{CXError, context::CXInternalContext, message::CXStdErrMessage};
 use cx_mir::{MIRDiagnostic, MIRDiagnosticLocation, MIRUnit};
 use cx_pipeline_data::db::ModuleData;
 
@@ -6,7 +6,7 @@ pub(crate) fn mir_diagnostic_error(
     module_data: &ModuleData,
     mir: Option<&MIRUnit>,
     diagnostic: MIRDiagnostic,
-) -> CXErr {
+) -> CXError {
     let context = match diagnostic.location() {
         MIRDiagnosticLocation::Instruction {
             function,
@@ -34,5 +34,5 @@ pub(crate) fn mir_diagnostic_error(
         message.push_str(note);
     }
 
-    CXErr::new(CXStdErrMessage::error(diagnostic.code(), message), context)
+    CXError::new(CXStdErrMessage::error(diagnostic.code(), message), context)
 }

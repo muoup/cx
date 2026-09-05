@@ -1,4 +1,4 @@
-use crate::error::{CXErrMsg, CXRawResult};
+use crate::error::{CXRawError, CXRawResult};
 
 pub trait CXErrorMessage {
     fn code(&self) -> String;
@@ -15,7 +15,7 @@ pub struct CXStdErrMessage {
     message: String,
 }
 
-impl CXErrMsg {
+impl CXRawError {
     pub fn code(&self) -> String {
         self.0.code()
     }
@@ -33,12 +33,12 @@ impl CXStdErrMessage {
         }
     }
 
-    pub fn error(code: impl Into<String>, message: impl Into<String>) -> CXErrMsg {
-        CXErrMsg(Box::new(Self::new(code, message)))
+    pub fn error(code: impl Into<String>, message: impl Into<String>) -> CXRawError {
+        CXRawError(Box::new(Self::new(code, message)))
     }
 
     pub fn result<T>(code: impl Into<String>, message: impl Into<String>) -> CXRawResult<T> {
-        Err(CXErrMsg(Box::new(Self::new(code, message))))
+        Err(CXRawError(Box::new(Self::new(code, message))))
     }
 }
 

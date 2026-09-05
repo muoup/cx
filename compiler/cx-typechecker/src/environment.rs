@@ -4,7 +4,7 @@ use cx_hir::ast::modifiers::VisibilityMode;
 use cx_hir::symbols::{HIRSymbol, SymbolResolution};
 use cx_log::{
     CXRawResult, CXResult,
-    error::{CXErr, CXErrMsg, CXMaybeRawErr, context::CXInternalContext, message::CXStdErrMessage},
+    error::{CXError, CXRawError, CXErrorMaybeRaw, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_namespace::{QualifiedLookup, result::QualifiedLookupResult};
 use cx_pipeline_data::db::ModuleData;
@@ -336,7 +336,7 @@ impl TypeEnvironment<'_> {
         name: &QualifiedName,
     ) -> CXResult<Option<MIRSymbol>> {
         let lookup = self.lookup_symbol(namespace, name).map_err(|err| {
-            CXErr::new(
+            CXError::new(
                 err,
                 CXInternalContext::error(
                     "symbol lookup failed before a source range was available",
@@ -447,8 +447,8 @@ impl TypeEnvironment<'_> {
         &self,
         range: impl Borrow<TokenRange>,
         message: impl Into<String>,
-    ) -> CXErr {
-        crate::log::produce_(self.module_data, range.borrow(), message, Vec::new())
+    ) -> CXError {
+        crate::log::generate_type_error(self.module_data, range.borrow(), message, Vec::new())
     }
 
     pub(crate) fn log_error_base<T>(&self, message: impl Into<String>) -> CXRawResult<T> {
@@ -463,14 +463,14 @@ impl TypeEnvironment<'_> {
         Err(self.error(range, message))
     }
 
-    pub(crate) fn complete_err(&self, err: CXErrMsg, range: &TokenRange) -> CXErr {
-        CXErr::new(err, self.module_data.convert_token_range(range))
+    pub(crate) fn complete_err(&self, err: CXRawError, range: &TokenRange) -> CXError {
+        CXError::new(err, self.module_data.convert_token_range(range))
     }
 
-    pub(crate) fn complete_maybe_err(&self, err: CXMaybeRawErr, range: &TokenRange) -> CXErr {
+    pub(crate) fn complete_maybe_err(&self, err: CXErrorMaybeRaw, range: &TokenRange) -> CXError {
         match err {
-            CXMaybeRawErr::Complete(value) => value,
-            CXMaybeRawErr::Raw(err) => self.complete_err(err, range),
+            CXErrorMaybeRaw::Complete(value) => value,
+            CXErrorMaybeRaw::Raw(err) => self.complete_err(err, range),
         }
     }
 }

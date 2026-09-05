@@ -11,7 +11,7 @@ use cx_lmir::{
 };
 use cx_log::{
     CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+    error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_target::ArchitectureConfig;
 use cx_util::identifier::CXIdent;
@@ -216,7 +216,7 @@ pub fn lmir_aot_codegen(
     if bytecode.architecture.pointer_size() != pointer_size
         || bytecode.architecture.pointer_alignment() != pointer_alignment
     {
-        return Err(CXErr::new(
+        return Err(CXError::new(
             CXStdErrMessage::error(
                 "CODEGEN ERROR",
                 format!(

@@ -8,7 +8,7 @@ use cx_hir::{
 };
 use cx_log::{
     CXRawResult, CXResult,
-    error::{CXMaybeRawErr, CXMaybeRawResult},
+    error::{CXErrorMaybeRaw, CXMaybeRawResult},
 };
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode, namespace::QualifiedName};
@@ -584,14 +584,14 @@ pub fn apply_template(
                 input.types.len(),
                 template_input.args.len()
             ))
-            .map_err(CXMaybeRawErr::from);
+            .map_err(CXErrorMaybeRaw::from);
     }
 
     env.symbols.push_local_scope();
     let result = (|| -> CXMaybeRawResult<MIRSymbol> {
-        apply_template_input(env, input, &template_input).map_err(CXMaybeRawErr::from)?;
+        apply_template_input(env, input, &template_input).map_err(CXErrorMaybeRaw::from)?;
         resolve_symbol_inner(env, namespace, namespace, name, source, *tag, true)
-            .map_err(CXMaybeRawErr::from)
+            .map_err(CXErrorMaybeRaw::from)
     })();
     env.symbols.pop_local_scope();
 

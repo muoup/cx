@@ -1,6 +1,6 @@
 use cx_log::{
     CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+    error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_mir::{
     MIRBlockTarget, MIRConstant, MIRInstrKind, MIRScopeID, MIRStagedExitKind, MIRTypeKind,
@@ -331,7 +331,7 @@ pub(super) fn lower_switch(
         let case_value = comptime::evaluate(builder, case)?;
 
         if !matches!(case_value, MIRConstant::Integer { .. }) {
-            return Err(CXErr::new(
+            return Err(CXError::new(
                 CXStdErrMessage::error(
                     "COMPTIME ERROR",
                     "switch case expression must evaluate to an integer",

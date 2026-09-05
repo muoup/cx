@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use cx_log::{
     CXResult,
-    error::{CXErr, context::CXPointingContext, message::CXStdErrMessage},
+    error::{CXError, context::CXPointingContext, message::CXStdErrMessage},
 };
 use cx_util::char_iter::CharIter;
 
@@ -134,7 +134,7 @@ impl<'a> LexCursor<'a> {
         byte_index: usize,
         message: impl Into<String>,
     ) -> CXResult<T> {
-        Err(CXErr::new(
+        Err(CXError::new(
             CXStdErrMessage::error("LEXER ERROR", message),
             CXPointingContext::error(self.file_path.to_path_buf(), byte_index),
         ))

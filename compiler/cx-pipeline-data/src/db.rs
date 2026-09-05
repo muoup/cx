@@ -3,7 +3,7 @@ use crate::{CompilationUnit, GlobalCompilationContext};
 use cx_hir::ast::HIR;
 use cx_hir::registry::GlobalSymbolRegistry;
 use cx_lmir::LMIRUnit;
-use cx_log::error::CXErrContext;
+use cx_log::error::CXErrorContext;
 use cx_log::error::context::{CXInternalContext, CXUnderlineContext};
 use cx_mir::MIRUnit;
 use cx_preparse_data::PreparseContents;
@@ -91,7 +91,7 @@ impl ModuleData {
             .insert(unit.namespace().clone());
     }
 
-    pub fn convert_token_range(&self, range: &TokenRange) -> CXErrContext {
+    pub fn convert_token_range(&self, range: &TokenRange) -> CXErrorContext {
         match range {
             TokenRange::Source {
                 namespace,

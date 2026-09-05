@@ -11,7 +11,7 @@ pub(crate) mod types;
 
 use cx_log::{
     CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+    error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_mir::{
     MIRAggregateOp, MIRAssignTarget, MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstrKind,
@@ -185,7 +185,7 @@ pub(crate) fn lower_expression(
                 let type_id = lower_type(builder, _type)?;
                 let layout =
                     cx_mir::ty::layout::layout_of(builder.types(), type_id).map_err(|error| {
-                        cx_log::error::CXErr::new(
+                        cx_log::error::CXError::new(
                             cx_log::error::message::CXStdErrMessage::error(
                                 "MIRLayoutError",
                                 error.to_string(),
@@ -210,7 +210,7 @@ pub(crate) fn lower_expression(
                 let value = builder
                     .local_value(*local_id, &expression._type)?
                     .ok_or_else(|| {
-                        CXErr::new(
+                        CXError::new(
                             CXStdErrMessage::error(
                                 "MIR ERROR",
                                 format!("could not find local id {:?}", local_id),
@@ -238,7 +238,7 @@ pub(crate) fn lower_expression(
                     .module_mut()
                     .global_symbol(symbol.as_str())
                     .ok_or_else(|| {
-                        CXErr::new(
+                        CXError::new(
                             CXStdErrMessage::error(
                                 "MissingGlobalVariable",
                                 format!("global variable '{}' not found", symbol),
@@ -267,7 +267,7 @@ pub(crate) fn lower_expression(
                 .module_mut()
                 .function_symbol(name.as_str())
                 .ok_or_else(|| {
-                    CXErr::new(
+                    CXError::new(
                         CXStdErrMessage::error(
                             "MissingFunction",
                             format!("function '{}' not found", name),
@@ -356,7 +356,7 @@ pub(crate) fn lower_expression(
                 let value = builder
                     .local_value(*local_id, &expression._type)?
                     .ok_or_else(|| {
-                        CXErr::new(
+                        CXError::new(
                             CXStdErrMessage::error(
                                 "COMPTIME ERROR",
                                 "expression depends on a runtime local",
@@ -709,7 +709,7 @@ pub(crate) fn lower_expression(
                 if let Ok(MIRTypeKind::Array { length, .. }) = builder.types().kind(type_id)
                     && fields.len() > *length
                 {
-                    return Err(cx_log::error::CXErr::new(
+                    return Err(cx_log::error::CXError::new(
                         cx_log::error::message::CXStdErrMessage::error(
                             "MIR ARRAY ERROR",
                             format!(

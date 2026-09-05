@@ -1,6 +1,6 @@
 use cx_log::{
     CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+    error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_mir::{
     MIRAggregateOp, MIRBinaryOp, MIRConstant, MIRInstrKind, MIRIntBinaryOp, MIRIntType,
@@ -218,7 +218,7 @@ pub fn move_value(value: MIRValue) -> CXResult<MIRValue> {
         MIRValue::PlaceRef(place) => Ok(MIRValue::Move(place)),
         MIRValue::Move(place) => Ok(MIRValue::Move(place)),
         MIRValue::Register(reg) => Ok(MIRValue::Register(reg)),
-        _ => Err(CXErr::new(
+        _ => Err(CXError::new(
             CXStdErrMessage::error("TYPE ERROR", format!("Cannot move value: {:?}", value)),
             CXInternalContext::error("IN: move_value"),
         )),

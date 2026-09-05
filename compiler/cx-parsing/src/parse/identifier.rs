@@ -5,7 +5,7 @@ use cx_hir::ast::{
 };
 use cx_log::{
     CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+    error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_tokens::{
     TokenIter, operator,
@@ -59,7 +59,7 @@ impl ParsedIdentifier {
     #[allow(dead_code)]
     pub(crate) fn into_qualified_name(self) -> CXResult<QualifiedName> {
         if self.template_input.is_some() {
-            return Err(CXErr::new(
+            return Err(CXError::new(
                 CXStdErrMessage::error("PARSER ERROR", "Expected non-templated identifier"),
                 CXInternalContext::error(
                     "non-templated identifier conversion has no active parser token context",

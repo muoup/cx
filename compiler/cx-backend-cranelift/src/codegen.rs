@@ -10,7 +10,7 @@ use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Module};
 use cx_lmir::{LMIRBasicBlock, LMIRFunction, LMIRFunctionPrototype};
 use cx_log::error::context::CXInternalContext;
-use cx_log::error::{CXErr, CXResult};
+use cx_log::error::{CXError, CXResult};
 use cx_log::CXRawResult;
 use cx_util::format::dump_data;
 
@@ -43,7 +43,7 @@ pub(crate) fn codegen_block(
 
     for instr in fn_block.body.iter() {
         let ret = codegen_instruction(context, instr).map_err(|err| {
-            CXErr::new(
+            CXError::new(
                 err,
                 CXInternalContext::error(format!("Failed to codegen instruction: {instr}")),
             )
@@ -107,7 +107,7 @@ pub(crate) fn codegen_function(
                 .unwrap(),
         )
         .map_err(|err| {
-            CXErr::new(
+            CXError::new(
                 err,
                 CXInternalContext::error("Failed to get Cranelift type for function parameter"),
             )
@@ -127,7 +127,7 @@ pub(crate) fn codegen_function(
                 context.pointer_type
             } else {
                 get_cranelift_type(&parameter._type).map_err(|err| {
-                    CXErr::new(
+                    CXError::new(
                         err,
                         CXInternalContext::error(format!(
                             "Failed to lower block parameter {} in {}",

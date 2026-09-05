@@ -1,5 +1,4 @@
-use cx_log::error::CXErr;
-use cx_log::error::context::CXInternalContext;
+use cx_log::error::{CXError, context::CXInternalContext};
 use cx_log::error::message::CXStdErrMessage;
 use std::fmt::{Display, Formatter};
 
@@ -26,9 +25,9 @@ impl Display for LLVMError {
     }
 }
 
-impl From<LLVMError> for CXErr {
+impl From<LLVMError> for CXError {
     fn from(error: LLVMError) -> Self {
-        CXErr::new(
+        CXError::new(
             CXStdErrMessage::error("INTERNAL LLVM ERROR", error.to_string()),
             CXInternalContext::error(
                 "Internal error while generating LLVM; please report this issue.",

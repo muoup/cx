@@ -5,7 +5,7 @@ use std::{
 
 use cx_log::{
     CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+    error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_tokens::token::{PunctuatorType, Token, TokenKind};
 use cx_util::module_path::cx_library_directory;
@@ -61,7 +61,7 @@ impl LexingContext {
     ) -> CXResult<Self> {
         let builtin_path = PathBuf::from(cx_library_directory("libc/internal/__builtins.h"));
         let builtin_source = std::fs::read_to_string(&builtin_path).map_err(|e| {
-            CXErr::new(
+            CXError::new(
                 CXStdErrMessage::error(
                     "LEXER ERROR",
                     format!(

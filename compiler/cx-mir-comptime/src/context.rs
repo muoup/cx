@@ -4,9 +4,6 @@ use cx_mir::{
     MIRGlobalKind, MIRGlobalState, MIRTypeRegistryBuilder, MIRUnit, MIRValue,
 };
 use cx_thir::thir::expression::THIRExpression;
-use cx_tokens::TokenRange;
-
-use crate::error::log_comptime_error;
 
 pub trait ComptimeResolver {
     fn resolve(&self, id: MIRFunctionID) -> Option<&MIRFunction>;
@@ -70,8 +67,4 @@ pub trait MIRContext {
     fn lower_thir(&mut self, expression: &THIRExpression) -> CXResult<MIRValue>;
 
     fn capture_expression(&mut self, expression: &THIRExpression) -> CXResult<MIRFunction>;
-
-    fn log_error<T>(&self, range: TokenRange, message: impl Into<String>) -> CXResult<T> {
-        log_comptime_error(self, range, message)
-    }
 }

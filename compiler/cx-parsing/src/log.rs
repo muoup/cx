@@ -2,13 +2,13 @@ use cx_log::{
     error::{
         context::{CXInternalContext, CXPointingContext, CXUnderlineContext},
         message::CXStdErrMessage,
-        CXErr,
+        CXError,
     },
     CXResult,
 };
 use cx_tokens::{TokenIter, TokenRange};
 
-fn pointing_context(tokens: &TokenIter<'_>) -> cx_log::error::CXErrContext {
+fn pointing_context(tokens: &TokenIter<'_>) -> cx_log::error::CXErrorContext {
     if let Some(token) = tokens.peek().or_else(|| tokens.prev()) {
         CXPointingContext::error(
             token.file_origin.as_ref().to_path_buf(),
@@ -19,7 +19,7 @@ fn pointing_context(tokens: &TokenIter<'_>) -> cx_log::error::CXErrContext {
     }
 }
 
-fn range_context(tokens: &TokenIter<'_>, range: &TokenRange) -> cx_log::error::CXErrContext {
+fn range_context(tokens: &TokenIter<'_>, range: &TokenRange) -> cx_log::error::CXErrorContext {
     let TokenRange::Source {
         start_token,
         end_token,
@@ -49,8 +49,8 @@ fn range_context(tokens: &TokenIter<'_>, range: &TokenRange) -> cx_log::error::C
     )
 }
 
-fn parse_error(message: impl Into<String>, context: cx_log::error::CXErrContext) -> CXErr {
-    CXErr::new(
+fn parse_error(message: impl Into<String>, context: cx_log::error::CXErrorContext) -> CXError {
+    CXError::new(
         CXStdErrMessage::error("PARSER ERROR", message.into()),
         context,
     )

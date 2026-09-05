@@ -8,7 +8,7 @@ use cx_hir::ast::{
 use cx_hir::symbols::HIRSymbolKind;
 use cx_log::{
     CXRawResult, CXResult,
-    error::{CXMaybeRawErr, CXMaybeRawResult},
+    error::{CXErrorMaybeRaw, CXMaybeRawResult},
 };
 use cx_thir::{
     EnvironmentNamespace,
@@ -20,6 +20,7 @@ use cx_util::namespace::QualifiedName;
 
 use crate::{
     environment::TypeEnvironment,
+    log::{generate_raw_error, internal_type_error},
     symbol::{
         completion::{complete_template_input, complete_type},
         resolution::apply_template,
@@ -38,16 +39,16 @@ pub(crate) fn complete_templated_callee_maybe(
 ) -> CXMaybeRawResult<MIRSymbol> {
     let Some(symbol) = env
         .get_symbol(namespace, name)
-        .map_err(CXMaybeRawErr::from)?
+        .map_err(CXErrorMaybeRaw::from)?
     else {
-        return crate::log::internal_type_error(format!("Templated function '{}' not found", name))
-            .map_err(CXMaybeRawErr::from);
+        return internal_type_error(format!("Templated function '{}' not found", name))
+            .map_err(CXErrorMaybeRaw::from);
     };
 
     if let Some(input) = template_input {
         let completed_input = complete_template_input(env, namespace, input)?;
         return apply_template(env, &symbol, completed_input)?.ok_or_else(|| {
-            CXMaybeRawErr::from(crate::log::type_error_msg(format!(
+            CXErrorMaybeRaw::from(generate_raw_error(format!(
                 "Symbol '{}' does not accept template arguments",
                 name
             )))
@@ -56,7 +57,7 @@ pub(crate) fn complete_templated_callee_maybe(
 
     deduce_template_symbol(env, namespace, &symbol, arg_types, expected_return_type)?.ok_or_else(
         || {
-            CXMaybeRawErr::from(crate::log::type_error_msg(format!(
+            CXErrorMaybeRaw::from(generate_raw_error(format!(
                 "Symbol '{}' is not a template",
                 name
             )))
@@ -110,7 +111,7 @@ fn deduce_template_input(
             return crate::log::internal_type_error(
                 "Only function template deduction is implemented",
             )
-            .map_err(CXMaybeRawErr::from);
+            .map_err(CXErrorMaybeRaw::from);
         }
     };
 
@@ -121,7 +122,7 @@ fn deduce_template_input(
             shell.params_len(),
             arg_types.len()
         ))
-        .map_err(CXMaybeRawErr::from);
+        .map_err(CXErrorMaybeRaw::from);
     }
 
     for (formal_type, actual_type) in shell.formal_types().into_iter().zip(arg_types.iter()) {
@@ -159,7 +160,7 @@ fn deduce_template_input(
         .iter()
         .map(|name| {
             let ty = bindings.remove(name.as_str()).ok_or_else(|| {
-                CXMaybeRawErr::from(crate::log::type_error_msg(format!(
+                CXErrorMaybeRaw::from(crate::log::generate_raw_error(format!(
                     "Could not deduce template argument '{}' for function {}",
                     name,
                     shell.name()

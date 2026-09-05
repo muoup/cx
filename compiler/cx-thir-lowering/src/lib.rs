@@ -3,6 +3,7 @@ use cx_mir::{MIRFunctionMode, MIRUnit};
 use cx_thir::THIRUnit;
 
 pub mod builder;
+
 pub(crate) mod lowering;
 
 pub use builder::MIRBuilder;
@@ -19,14 +20,14 @@ pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
 
     for function in &thir.functions {
         let prototype =
-            builder.convert_prototype(&function.prototype, MIRFunctionMode::Runtime)?;
+            builder.lower_prototype(&function.prototype, MIRFunctionMode::Runtime)?;
         let id = builder.module_mut().declare_function(prototype);
 
         fn_pairs.push((function, id));
     }
 
     for comptime_fn in &thir.comptime_functions {
-        let prototype = builder.convert_comptime_prototype(&comptime_fn.prototype)?;
+        let prototype = builder.lower_comptime_prototype(&comptime_fn.prototype)?;
         let id = builder.module_mut().declare_function(prototype);
 
         comptime_pairs.push((comptime_fn, id));
@@ -61,7 +62,7 @@ pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
     for (global_id, constant) in evaluated {
         unit.materialize_global(global_id, constant)
             .map_err(|error| {
-                cx_log::error::CXErr::new(
+                cx_log::error::CXError::new(
                     cx_log::error::message::CXStdErrMessage::error(
                         "COMPTIME ERROR",
                         error,

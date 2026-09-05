@@ -9,14 +9,14 @@ use cx_mir::{
     MIRInstrKind, MIRPlace, MIRRegister, MIRStagedCapture, MIRStagedTemplate, MIRTypeID,
     MIRTypeRegistryBuilder, MIRUnit, MIRValue,
 };
-use cx_mir_comptime::context::MIRContext;
+use cx_mir_comptime::{ComptimeResolver, context::MIRContext};
 use cx_thir::{
     THIRUnit,
     registry::THIRDecomposedRegistry,
     thir::{
         data::{THIRComptimeFnPrototype, THIRFnPrototype},
-        expression::THIRLocalID,
-        r#type::THIRTypeID,
+        expression::{THIRExpression, THIRLocalID},
+        r#type::{THIRType, THIRTypeID},
     },
     type_context::THIRTypeContext,
 };
@@ -163,7 +163,7 @@ impl<'thir> MIRBuilder<'thir> {
     pub(crate) fn local_value(
         &mut self,
         local: THIRLocalID,
-        ty: &cx_thir::thir::r#type::THIRType,
+        ty: &THIRType,
     ) -> CXResult<Option<MIRValue>> {
         if let Some(value) = self.fun().local(local) {
             return Ok(Some(value));
@@ -209,8 +209,8 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub(crate) fn capture_staged(
         &mut self,
-        expression: &cx_thir::thir::expression::THIRExpression,
-        params: &[(THIRLocalID, &cx_thir::thir::r#type::THIRType)],
+        expression: &THIRExpression,
+        params: &[(THIRLocalID, &THIRType)],
         diverges: Option<bool>,
     ) -> CXResult<(Arc<MIRStagedTemplate>, Vec<MIRValue>)> {
         let id = self.module_mut().allocate_function_id();
@@ -307,11 +307,11 @@ impl<'thir> MIRBuilder<'thir> {
         MIRUnit::new(self.types, functions, globals, global_order)
     }
 
-    pub(crate) fn convert_prototype(
+    pub(crate) fn lower_prototype(
         &mut self,
         prototype: &THIRFnPrototype,
         mode: MIRFunctionMode,
-    ) -> cx_log::CXResult<MIRFnPrototype> {
+    ) -> CXResult<MIRFnPrototype> {
         let signature = prototype.signature();
 
         let mut params = Vec::with_capacity(signature.params.len());
@@ -340,10 +340,10 @@ impl<'thir> MIRBuilder<'thir> {
         ))
     }
 
-    pub(crate) fn convert_comptime_prototype(
+    pub(crate) fn lower_comptime_prototype(
         &mut self,
         prototype: &THIRComptimeFnPrototype,
-    ) -> cx_log::CXResult<MIRFnPrototype> {
+    ) -> CXResult<MIRFnPrototype> {
         let mut params = Vec::with_capacity(prototype.params().len());
         for parameter in prototype.params() {
             let ty = lower_type(self, &parameter.value_type._type)?;
@@ -440,20 +440,20 @@ impl MIRContext for MIRBuilder<'_> {
         }
     }
 
-    fn comptime_resolver(&self) -> &dyn cx_mir_comptime::ComptimeResolver {
+    fn comptime_resolver(&self) -> &dyn ComptimeResolver {
         &self.module
     }
 
     fn lower_thir(
         &mut self,
-        expression: &cx_thir::thir::expression::THIRExpression,
+        expression: &THIRExpression,
     ) -> cx_log::CXResult<MIRValue> {
         crate::lowering::lower_expression(self, expression)
     }
 
     fn capture_expression(
         &mut self,
-        expression: &cx_thir::thir::expression::THIRExpression,
+        expression: &THIRExpression,
     ) -> cx_log::CXResult<MIRFunction> {
         use cx_mir::MIRInstrKind;
         use cx_tokens::TokenRange;

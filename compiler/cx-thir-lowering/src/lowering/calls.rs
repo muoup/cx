@@ -1,4 +1,5 @@
 use cx_log::CXResult;
+use cx_mir_comptime::evaluate_comptime_expr;
 use std::sync::Arc;
 
 use cx_mir::{
@@ -7,7 +8,6 @@ use cx_mir::{
 };
 use cx_mir_comptime::{
     InterpretedFunction, MIRComptimeEngine, MIRComptimeValue, MIRStagedBinding, MIRStagedValue,
-    context::MIRContext,
 };
 use cx_thir::thir::expression::THIRFnContract;
 use cx_thir::thir::{
@@ -196,14 +196,8 @@ fn lower_comptime_call(
                 runtime_origin,
             ))));
         } else {
-            let value = lower_expression(builder, argument)?;
-            let MIRValue::Constant(value) = value else {
-                return builder.log_error(
-                    argument.token_range.clone(),
-                    "non-staged comptime arguments must currently be constants",
-                );
-            };
-            args.push(MIRComptimeValue::Constant(value));
+            let value = evaluate_comptime_expr(builder, argument)?;
+            args.push(value);
         }
     }
 
@@ -261,10 +255,7 @@ fn capture_staged_argument(
     }
 }
 
-pub fn lower_field(
-    builder: &mut MIRBuilder,
-    field: &cx_thir::thir::r#type::THIRField,
-) -> cx_log::CXResult<MIRField> {
+pub fn lower_field(builder: &mut MIRBuilder, field: &THIRField) -> CXResult<MIRField> {
     match field {
         THIRField::Standard { name, type_id } => Ok(MIRField::named(
             name.clone(),

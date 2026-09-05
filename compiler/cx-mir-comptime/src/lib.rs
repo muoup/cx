@@ -15,15 +15,13 @@ use cx_log::CXResult;
 use cx_mir::{MIRConstant, MIRFunctionMode, MIRUnit, MIRValue};
 use cx_thir::thir::expression::THIRExpression;
 
-/// If while lowering a THIRFunction, a comptime expression is encountered, this function will handle the different contexts of what
-/// and how this expression should be handled, acting as a mostly drop-in replacement for the standard lowering format.
 pub fn lower_comptime_expression<T: MIRContext>(
     context: &mut T,
     expr: &THIRExpression,
 ) -> CXResult<MIRValue> {
     match context.current_prototype().signature.mode {
         MIRFunctionMode::Runtime | MIRFunctionMode::Constexpr => {
-            let value = evaluate_compite_expr(context, expr)?;
+            let value = evaluate_comptime_expr(context, expr)?;
             lower_comptime_value(context, value)
         }
         MIRFunctionMode::Comptime => generate_comptime_instructions(context, expr),
@@ -45,8 +43,6 @@ pub fn lower_comptime_value<T: MIRContext>(
     })
 }
 
-/// Lowers a comptime expression verbatim into the active instruction stream. Used inside comptime-mode functions where evaluation
-/// must be deferred to the interpreting engine rather than folded away at lowering time.
 pub fn generate_comptime_instructions<T: MIRContext>(
     context: &mut T,
     expr: &THIRExpression,
@@ -54,8 +50,7 @@ pub fn generate_comptime_instructions<T: MIRContext>(
     context.lower_thir(expr)
 }
 
-/// Captures a standalone lowering of a THIR expression into an anonymous comptime function and interprets it into a constant.
-pub fn evaluate_compite_expr<T: MIRContext>(
+pub fn evaluate_comptime_expr<T: MIRContext>(
     context: &mut T,
     expr: &THIRExpression,
 ) -> CXResult<MIRComptimeValue> {
@@ -69,8 +64,6 @@ pub fn evaluate_compite_expr<T: MIRContext>(
     Ok(MIRComptimeValue::Constant(constant))
 }
 
-/// Evaluates every pending global initializer in the unit by interpreting its anonymous init function, returning the resolved
-/// constants in declaration order for the caller to materialize.
 pub fn evaluate_unit_globals(unit: &MIRUnit) -> CXResult<Vec<(cx_mir::MIRGlobalID, MIRConstant)>> {
     use cx_mir::{MIRGlobalKind, MIRGlobalState};
 

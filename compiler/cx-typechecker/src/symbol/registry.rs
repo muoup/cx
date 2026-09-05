@@ -21,7 +21,7 @@ use cx_util::{identifier::CXIdent, namespace::QualifiedName, scoped_map::ScopedM
 pub struct MIRSymbolRegistry<'a> {
     architecture: ArchitectureConfig,
     global_registry: &'a GlobalSymbolRegistry,
-    
+
     global_cache: HashMap<QualifiedName, MIRSymbol>,
     tag_cache: HashMap<QualifiedName, MIRSymbol>,
     local_symbols: ScopedMap<QualifiedName, MIRSymbol>,
@@ -73,19 +73,10 @@ impl<'a> MIRSymbolRegistry<'a> {
         };
 
         for (name, ty_kind) in INTRINSIC_TYPES {
-            let ty_kind = match *name {
-                "usize" => THIRTypeKind::Integer {
-                    signed: false,
-                    _type: registry.pointer_integer_type(),
-                },
-                "isize" => THIRTypeKind::Integer {
-                    signed: true,
-                    _type: registry.pointer_integer_type(),
-                },
-                _ => ty_kind.clone(),
-            };
             let name = QualifiedName::new_raw(CXIdent::new(*name));
-            let mut ty: THIRType = ty_kind.into();
+            let Some(mut ty) = ty_kind(&architecture).map(|kind| THIRType::from(kind)) else {
+                continue;
+            };
             ty.lookup_identifier = Some(name.clone());
             let id = registry.generate_type_id(ty);
 

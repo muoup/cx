@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use cx_log::{
     CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
+    error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_mir::{
     MIRAggregateOp, MIRAssignTarget, MIRBasicBlockID, MIRBlockTarget, MIRInstr, MIRInstrKind,
@@ -14,8 +14,8 @@ use cx_mir_comptime::{MIRComptimeValue, MIRStagedBinding, MIRStagedValue};
 use crate::builder::MIRBuilder;
 use crate::lowering::control_flow::auto_cleanup;
 
-fn staged_error(message: impl Into<String>) -> CXErr {
-    CXErr::new(
+fn staged_error(message: impl Into<String>) -> CXError {
+    CXError::new(
         CXStdErrMessage::error("COMPTIME ERROR", message.into()),
         CXInternalContext::error("failed to instantiate a staged MIR template"),
     )
