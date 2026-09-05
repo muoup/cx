@@ -21,6 +21,21 @@ pub fn mangle_qualified_name(
     mangle_namespace_symbol(name)
 }
 
+fn mangle_namespace_symbol(name: &QualifiedName) -> String {
+    let mut mangled = String::from("_N");
+    push_mangled_component(
+        &mut mangled,
+        name.namespace.segments().len().to_string().as_str(),
+    );
+
+    for segment in name.namespace.segments() {
+        push_mangled_component(&mut mangled, segment.as_str());
+    }
+
+    push_component(&mut mangled, name.name.as_str());
+    mangled
+}
+
 pub fn base_mangle_templated_name<'a>(
     definitions: &impl THIRTypeContext,
     name: &str,

@@ -9,3 +9,4 @@ pub mod namespace;
 pub mod rwlockser;
 pub mod scoped_map;
 pub mod unsafe_float;
+pub mod module;

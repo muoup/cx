@@ -111,7 +111,9 @@ impl Display for NamespacePath {
 }
 
 #[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
-pub struct EnvironmentNamespace(Arc<NamespacePath>);
+pub struct EnvironmentNamespace {
+    path: Arc<NamespacePath
+};
 
 impl EnvironmentNamespace {
     pub fn root() -> Self {
