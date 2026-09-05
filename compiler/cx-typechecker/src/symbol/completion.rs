@@ -422,112 +422,21 @@ fn complete_identifier_type(
     type_lookup: HIRTypeLookup,
     template_input: &Option<HIRTemplateInput>,
 ) -> CXMaybeRawResult<THIRTypeID> {
-    let (lookup, query, is_tag_lookup) = match type_lookup {
-        HIRTypeLookup::Standard => match env.lookup_symbol(namespace, name)? {
-            Some(lookup) => (Some(lookup), TypeSymbolQuery::Standard, false),
-            None => (
-                env.lookup_tag_symbol(namespace, name)?,
-                TypeSymbolQuery::WildcardTag,
-                true,
-            ),
-        },
-        HIRTypeLookup::Tag(tag) => (
-            env.lookup_tag_symbol(namespace, name)?,
-            TypeSymbolQuery::Tag(tag),
-            true,
-        ),
-    };
-    let Some(lookup) = lookup else {
-        return env
-            .log_error_base(format!("Type not found: {}", name))
-            .map_err(|err| err.into());
-    };
-
-    let resolved_name = lookup.resolved_name;
-
-    let resolution = match lookup.kind {
-        SymbolLookupKind::Resolved(symbol) => {
-            return complete_resolved_type_lookup(env, namespace, name, symbol, template_input);
-        }
-        SymbolLookupKind::Untyped(resolution) => resolution,
-    };
-
-    let resolved = resolve_type_symbol(env, name, query, &resolution)?;
-    let symbol = resolved.symbol;
-    let tag = resolved.tag;
-    let HIRSymbolKind::Type(type_symbol) = &symbol.kind else {
-        unreachable!("type symbol resolution returned a non-type declaration")
-    };
-    let cacheable =
-        matches!(type_symbol, HIRSymbolData::Standard { .. }) && template_input.is_none();
-    let cached = if is_tag_lookup {
-        env.symbols.get_preresolved_tag(&resolved_name)
-    } else {
-        env.symbols.get_preresolved_symbol(&resolved_name)
-    };
-    if cacheable && let Some(MIRSymbol::Type(id)) = cached {
-        return Ok(*id);
-    }
-
-    match type_symbol {
-        HIRSymbolData::Standard {
-            base: definition, ..
-        } => {
-            if template_input.is_some() {
-                return env
-                    .log_error_base(format!("Type '{name}' does not accept template arguments"))
-                    .map_err(|err| err.into());
-            }
-
-            let mangled_name =
-                mangle_namespace_symbol(env.symbols.get_global_registry(), &resolved_name);
-            let dummy_type = THIRType::from(THIRTypeKind::Undefined)
-                .with_strong_identifier(CXIdent::from(mangled_name));
-            let prereserved_id = env.symbols.reserve_type_id();
-            if cacheable {
-                if is_tag_lookup {
-                    env.symbols
-                        .insert_tag_type_symbol(resolved_name.clone(), prereserved_id);
-                } else {
-                    env.symbols
-                        .insert_type_symbol(resolved_name.clone(), prereserved_id);
-                }
-            }
-            env.symbols.overwrite_type_id(prereserved_id, dummy_type);
-
-            if tag.is_some() && is_self_predeclaration(definition, &resolved_name) {
-                return Ok(prereserved_id);
-            }
-
-            let ty = complete_type_inner(
-                env,
-                &resolved_name.namespace,
-                definition,
-            )
-            .map_err(CXErrorMaybeRaw::Complete)?;
-
-            env.symbols.overwrite_type_id(prereserved_id, ty);
-
-            Ok(prereserved_id)
+    let symbol = match type_lookup {
+        HIRTypeLookup::Standard => {
+            env.lookup_symbol(namespace, name)
+                .transpose()
+                .or_else(|| {
+                    env.lookup_tag_symbol(&NamespacePath::root(), name)
+                        .transpose()
+                })
         }
 
-        HIRSymbolData::Template { .. } => {
-            let resolution = tag.map_or_else(
-                || SymbolResolution::new(symbol.clone()),
-                |tag| SymbolResolution::new_tagged(tag, symbol.clone()),
-            );
-            
-            let mir_symbol = resolve_symbol(
-                env,
-                namespace,
-                &resolved_name.namespace,
-                &resolved_name.name,
-                &resolution,
-            )?;
-
-            complete_template_type_lookup(env, namespace, name, &mir_symbol, template_input)
-        }
-    }
+        HIRTypeLookup::Tag(tag) => env
+            .lookup_tag_symbol(namespace, name)
+            .transpose()
+            .and_then(|symbol| if symbol?.kind
+    };
 }
 
 fn is_self_predeclaration(definition: &HIRType, name: &QualifiedName) -> bool {
@@ -830,7 +739,7 @@ fn complete_field(
         HIRField::Standard { name, _type } => {
             let id = complete_type_id(env, namespace, _type)?;
 
-            if !env.symbols.contains(id) {
+            if !env.symbols.contains_type_id(id) {
                 return env.log_error(
                     _type.range(),
                     format!("Aggregate field '{}' has incomplete type", name),
@@ -846,7 +755,7 @@ fn complete_field(
             width,
         } => {
             let id = complete_type_id(env, namespace, integer_type)?;
-            if !env.symbols.contains(id) {
+            if !env.symbols.contains_type_id(id) {
                 let name = name.as_deref().unwrap_or("<anonymous>");
                 return env.log_error(
                     integer_type.range(),

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use cx_hir::{ast::expression::HIRExpression, registry::GlobalSymbolRegistry};
 use cx_log::{CXRawResult, CXResult};
+use cx_namespace::lookup::QualifiedLookup;
 use cx_target::ArchitectureConfig;
 use cx_thir::{
     NamespacePath,
@@ -10,7 +11,7 @@ use cx_thir::{
     symbol::MIRSymbol,
     thir::{
         data::THIRFnPrototype,
-        expression::{THIRExpression, THIRPureExpression},
+        expression::{THIRExpression, THIRLocalID, THIRPureExpression},
         r#type::{THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
@@ -53,6 +54,39 @@ impl THIRTypeContext for MIRSymbolRegistry<'_> {
                 self.try_resolve_type_id(id)
                     .and_then(|ty| ty.lookup_identifier())
             })
+    }
+}
+
+impl QualifiedLookup for MIRSymbolRegistry {
+    type Output = MIRSymbol;
+
+    fn lookup_local(
+        &self,
+        lexical_namespace: &NamespacePath,
+        name: &QualifiedName,
+    ) -> Option<Self::Output> {
+        self.local_symbols.get(name).cloned()
+    }
+
+    fn lookup_exact(
+        &self,
+        lexical_namespace: &NamespacePath,
+        name: &QualifiedName,
+    ) -> Option<Self::Output> {
+        self.global_registry
+            .get_bucket(lexical_namespace)
+            .and_then(|bucket| bucket.get(name))
+            .cloned()
+    }
+
+    fn resolve_aliases(
+        &self,
+        lexical_namespace: &NamespacePath,
+        namespace: &NamespacePath,
+    ) -> Vec<NamespacePath> {
+        self.global_registry
+            .resolve_aliases(lexical_namespace, namespace)
+            .unwrap_or_else(|| vec![])
     }
 }
 
@@ -173,7 +207,7 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.local_symbols.get(name)
     }
 
-    pub fn get_local_symbol_at_shadow_depth(
+    pub fn get_local_symbol_at_depth(
         &self,
         name: &QualifiedName,
         depth: usize,
@@ -188,7 +222,7 @@ impl<'a> MIRSymbolRegistry<'a> {
     ) -> Option<&MIRSymbol> {
         let mut depth = 0;
         loop {
-            let symbol = self.get_local_symbol_at_shadow_depth(name, depth)?;
+            let symbol = self.get_local_symbol_at_depth(name, depth)?;
             match symbol {
                 MIRSymbol::StagedExpression { id, .. } if active_expansions.contains(id) => {
                     depth += 1;
@@ -240,7 +274,7 @@ impl<'a> MIRSymbolRegistry<'a> {
     pub fn insert_local_staged_expression_function(
         &mut self,
         name: QualifiedName,
-        local_id: cx_thir::thir::expression::THIRLocalID,
+        local_id: THIRLocalID,
         params: Vec<THIRType>,
         return_type: THIRType,
     ) {
@@ -254,29 +288,7 @@ impl<'a> MIRSymbolRegistry<'a> {
         );
     }
 
-    pub fn insert_pure_value(&mut self, name: QualifiedName, expr: THIRPureExpression) {
-        self.insert_symbol(name, MIRSymbol::Expression(expr.as_value()));
-    }
-
-    pub fn insert_function_symbol(&mut self, name: QualifiedName, prototype: THIRFnPrototype) {
-        self.insert_symbol(name, MIRSymbol::FunctionReference(prototype));
-    }
-
-    pub fn pointer_to(&mut self, ty: THIRType) -> THIRType {
-        let inner_type = self.generate_type_id(ty);
-        THIRTypeKind::PointerTo { inner_type }.into()
-    }
-
-    pub fn mem_ref_to(&mut self, ty: THIRType) -> THIRType {
-        let inner_type = self.generate_type_id(ty);
-        THIRTypeKind::MemoryReference {
-            inner_type,
-            bitfield: None,
-        }
-        .into()
-    }
-
-    pub fn contains(&self, id: THIRTypeID) -> bool {
+    pub fn contains_type_id(&self, id: THIRTypeID) -> bool {
         self.typeid_defs.contains_key(&id)
     }
 }

@@ -1,11 +1,12 @@
 use cx_hir::{
     ast::{
-        HIRDefinition, HIRStmt,
         global_var::HIRGlobalVariable,
         template::{HIRTemplateInput, HIRTemplatePrototype},
+        HIRDefinition, HIRStmt,
     },
     symbols::{
-        HIRFunctionSymbol, HIRSymbol, HIRSymbolData, HIRSymbolKind, HIRTypeConstructorSymbol, SymbolIdentifier, SymbolNamespaceData, TypeConstructorData
+        HIRFunctionSymbol, HIRSymbol, HIRSymbolData, HIRSymbolKind, HIRTypeConstructorSymbol,
+        SymbolIdentifier, SymbolNamespaceData, TypeConstructorData,
     },
 };
 
@@ -49,7 +50,7 @@ impl<'a> ExtractionEnv<'a> {
             return &mut self.symbol_buckets[idx].1;
         };
 
-        if !namespace.is_root() && namespace.strip_prefix(self.namespace).is_none() {
+        if !namespace.is_root() && namespace.clone().strip_prefix(self.namespace).is_none() {
             panic!(
                 "Namespace {} is not a child of current namespace {}",
                 namespace, self.namespace
@@ -130,7 +131,7 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
                         .map(convert_template_proto_to_args),
                 }
                 .to_type();
-                let variant_namespace = base_namespace.child(name.clone());
+                let variant_namespace = base_namespace.clone().child(name.clone());
 
                 for (variant_index, variant) in variants.iter().enumerate() {
                     let Some((variant_name, _)) = variant.standard_parts() else {
@@ -152,7 +153,7 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
                                 base: TypeConstructorData {
                                     union_type: union_type.clone(),
                                     variant_index,
-                                }
+                                },
                             },
                         }),
                     );
@@ -177,7 +178,7 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
                 name,
                 namespace: q_namespace,
             } = prototype.kind.into_key();
-            let namespace = base_namespace.join(&q_namespace);
+            let namespace = base_namespace.clone().join(q_namespace);
             let symbol = match template_prototype {
                 Some(input) => {
                     let Some(body) = body else {
@@ -190,15 +191,15 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
                             base: prototype.clone(),
                             template_data: body.clone(),
                             template_prototype: input.clone(),
-                        })
+                        }),
                     )
                 }
                 None => HIRSymbol::new(
                     *visibility,
                     HIRSymbolKind::Function(HIRFunctionSymbol::Standard {
-                        base: prototype.clone()
-                    })
-                )
+                        base: prototype.clone(),
+                    }),
+                ),
             };
 
             insert_symbol(
@@ -219,7 +220,7 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
                 name,
                 namespace: q_namespace,
             } = prototype.kind.into_key();
-            let namespace = base_namespace.join(&q_namespace);
+            let namespace = base_namespace.clone().join(q_namespace);
             let symbol = match template_prototype {
                 Some(input) => HIRSymbol::new(
                     *visibility,

@@ -99,28 +99,19 @@ where
         self.data.get(name)
     }
 
-    pub fn get_at_shadow_depth<Q>(&self, name: &Q, depth: usize) -> Option<&V>
+    pub fn get_multi<'s, Q>(&'s self, name: &'s Q) -> impl Iterator<Item = &'s V>
     where
         K: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
     {
-        if depth == 0 {
-            return self.data.get(name);
-        }
-
-        let mut remaining = depth;
-        for scope in self.overwrites.iter().rev() {
-            for (key, previous) in scope.iter().rev() {
-                if key.borrow() == name {
-                    remaining -= 1;
-                    if remaining == 0 {
-                        return previous.as_ref();
-                    }
-                }
-            }
-        }
-
-        None
+        self.data
+            .get(name)
+            .into_iter()
+            .chain(self.overwrites.iter().rev().flat_map(move |scope| {
+                scope.iter().rev().filter_map(move |(key, previous)| {
+                    (key.borrow() == name).then(|| previous.as_ref()).flatten()
+                })
+            }))
     }
 
     pub fn get_mut<Q>(&mut self, name: &Q) -> Option<&mut V>
