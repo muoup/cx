@@ -22,7 +22,7 @@ use cx_thir_lowering::generate_mir;
 use cx_tokens::TokenIter;
 use cx_typechecker::environment::TypeEnvironment;
 use cx_typechecker::typecheck;
-use cx_util::format::{dump_data, with_dump_file};
+use cx_util::format::{dump_data, dumps_enabled, with_dump_file};
 use cx_util::module_path::ModulePath;
 use cx_util::namespace::{NamespacePath, QualifiedName};
 use fs2::FileExt;
@@ -312,6 +312,9 @@ fn perform_job_with_dump(
     job: &CompilationJob,
     retain_lmir: bool,
 ) -> CXResult<JobResult> {
+    if !dumps_enabled() {
+        return perform_job(context, job, retain_lmir);
+    }
     let dump_path = resource_path(context, &job.unit, ".dump");
     if matches!(job.step, CompilationStep::PreParse) {
         std::fs::File::create(&dump_path).map_err(|error| {
@@ -482,10 +485,9 @@ pub(crate) fn perform_job(
             }
 
             if !context.config.unsafe_mode {
-                let analysis = analyze(
+                analyze(
                     &mir,
                     MIRAnalysisOptions {
-                        validate: !context.config.unsafe_mode,
                         check_assertions: !context.config.unsafe_mode,
                     },
                 )
@@ -496,10 +498,6 @@ pub(crate) fn perform_job(
                         error.diagnostic(),
                     )
                 })?;
-
-                if !job.unit.is_std_lib() || context.config.verbose {
-                    dump_data(&analysis);
-                }
             }
 
             context.module_db.mir.insert(job.unit.clone(), mir);

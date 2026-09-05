@@ -1,5 +1,4 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
     error::Error,
     fmt::{self, Display, Formatter},
 };
@@ -8,11 +7,8 @@ use cx_mir::{
     MIRBasicBlockID, MIRDiagnostic, MIRDiagnosticLocation, MIRFunctionID, MIRPlace, MIRScopeID,
 };
 
-/// Controls optional checks performed before the independent dataflow analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MIRAnalysisOptions {
-    /// Validate all MIR structural invariants before computing liveness.
-    pub validate: bool,
     /// Reject assertions that can be proven false from MIR constants.
     pub check_assertions: bool,
 }
@@ -20,49 +16,9 @@ pub struct MIRAnalysisOptions {
 impl Default for MIRAnalysisOptions {
     fn default() -> Self {
         Self {
-            validate: true,
             check_assertions: true,
         }
     }
-}
-
-/// Place liveness for every function in a MIR unit.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct MIRAnalysis {
-    pub functions: BTreeMap<MIRFunctionID, MIRFunctionAnalysis>,
-}
-
-impl MIRAnalysis {
-    pub fn function(&self, id: MIRFunctionID) -> Option<&MIRFunctionAnalysis> {
-        self.functions.get(&id)
-    }
-}
-
-/// Place liveness for each basic block in one function.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct MIRFunctionAnalysis {
-    pub blocks: BTreeMap<MIRBasicBlockID, MIRBlockLiveness>,
-}
-
-impl MIRFunctionAnalysis {
-    pub fn block(&self, id: MIRBasicBlockID) -> Option<&MIRBlockLiveness> {
-        self.blocks.get(&id)
-    }
-}
-
-/// Fixed-point block boundaries and the corresponding instruction boundaries.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct MIRBlockLiveness {
-    pub live_in: BTreeSet<MIRPlace>,
-    pub live_out: BTreeSet<MIRPlace>,
-    pub instructions: Vec<MIRInstructionLiveness>,
-}
-
-/// Place liveness immediately before and after one MIR instruction.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct MIRInstructionLiveness {
-    pub live_before: BTreeSet<MIRPlace>,
-    pub live_after: BTreeSet<MIRPlace>,
 }
 
 /// Failures that can prevent MIR analysis.

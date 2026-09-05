@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    mem::{Discriminant, discriminant},
+};
 
 use cx_target::ArchitectureConfig;
 use cx_util::namespace::QualifiedName;
@@ -6,6 +9,7 @@ use cx_util::namespace::QualifiedName;
 use crate::{
     thir::contextual_eq::TypeContextEqual,
     thir::data::{THIRType, THIRTypeID},
+    thir::r#type::{THIRFloatType, THIRIntType, THIRTypeKind},
     type_context::THIRTypeContext,
 };
 
@@ -20,9 +24,31 @@ pub struct THIRDecomposedRegistry {
     architecture: ArchitectureConfig,
     typeid_map: HashMap<THIRTypeID, THIRType>,
     intrinsic_types: HashMap<String, THIRTypeID>,
+    intrinsic_candidates: HashMap<IntrinsicShape, Vec<THIRTypeID>>,
     identified_types: HashMap<QualifiedName, THIRTypeID>,
     named_types: HashMap<String, THIRTypeID>,
     type_id_bound: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum IntrinsicShape {
+    Named,
+    Integer(THIRIntType, bool),
+    Float(THIRFloatType),
+    Kind(Discriminant<THIRTypeKind>),
+}
+
+impl From<&THIRType> for IntrinsicShape {
+    fn from(ty: &THIRType) -> Self {
+        if ty.strong_identifier.is_some() {
+            return Self::Named;
+        }
+        match &ty.kind {
+            THIRTypeKind::Integer { _type, signed } => Self::Integer(*_type, *signed),
+            THIRTypeKind::Float { _type } => Self::Float(*_type),
+            kind => Self::Kind(discriminant(kind)),
+        }
+    }
 }
 
 impl THIRDecomposedRegistry {
@@ -42,10 +68,24 @@ impl THIRDecomposedRegistry {
                 named_types.entry(name.clone()).or_insert(*id);
             }
         }
+        let mut intrinsic_candidates: HashMap<IntrinsicShape, Vec<THIRTypeID>> = HashMap::new();
+        for id in intrinsic_types.values() {
+            if let Some(ty) = typeid_map.get(id) {
+                intrinsic_candidates
+                    .entry(IntrinsicShape::from(ty))
+                    .or_default()
+                    .push(*id);
+            }
+        }
+        for candidates in intrinsic_candidates.values_mut() {
+            candidates.sort_unstable();
+            candidates.dedup();
+        }
         Self {
             architecture,
             typeid_map,
             intrinsic_types,
+            intrinsic_candidates,
             identified_types,
             named_types,
             type_id_bound,
@@ -76,15 +116,16 @@ impl THIRDecomposedRegistry {
                     .is_some_and(|registered| registered.contextual_eq(ty, self))
             })
             .or_else(|| {
-                self.intrinsic_types
-                    .values()
+                self.intrinsic_candidates
+                    .get(&IntrinsicShape::from(ty))
+                    .into_iter()
+                    .flatten()
                     .copied()
-                    .filter(|id| {
+                    .find(|id| {
                         self.typeid_map
                             .get(id)
                             .is_some_and(|registered| registered.contextual_eq(ty, self))
                     })
-                    .min()
             })
     }
 

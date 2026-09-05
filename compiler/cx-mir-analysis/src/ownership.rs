@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::VecDeque;
 
 use cx_mir::{
     MIRAggregateOp, MIRAssignTarget, MIRBasicBlockID, MIRFunction, MIRInstrKind, MIRPlace,
@@ -7,66 +7,8 @@ use cx_mir::{
 
 use crate::types::MIRAnalysisError;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PlaceState {
-    Uninitialized,
-    Available,
-    Moved,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct OwnershipState {
-    places: BTreeMap<MIRPlace, PlaceState>,
-    projections: BTreeMap<MIRPlace, MIRPlace>,
-}
-
-impl OwnershipState {
-    fn new(function: &MIRFunction) -> Self {
-        let projections = function
-            .definition()
-            .into_iter()
-            .flat_map(|definition| definition.blocks())
-            .flat_map(|block| block.instrs.iter())
-            .filter_map(|instruction| match &instruction.kind {
-                MIRInstrKind::AggregateOp(MIRAggregateOp::Place { out, op }) => {
-                    let base = match op {
-                        MIRPlaceAggregateOp::Field { base, .. }
-                        | MIRPlaceAggregateOp::Index { base, .. }
-                        | MIRPlaceAggregateOp::Variant { base, .. } => base,
-                    };
-                    Some((*out, *base))
-                }
-                _ => None,
-            })
-            .collect();
-
-        Self {
-            places: BTreeMap::new(),
-            projections,
-        }
-    }
-
-    fn get(&self, place: &MIRPlace) -> Option<&PlaceState> {
-        self.places.get(place)
-    }
-
-    fn insert(&mut self, place: MIRPlace, state: PlaceState) {
-        self.places.insert(place, state);
-    }
-
-    fn remove(&mut self, place: &MIRPlace) {
-        self.places.remove(place);
-    }
-
-    fn mark_moved(&mut self, place: MIRPlace) {
-        self.insert(place, PlaceState::Moved);
-        let mut current = place;
-        while let Some(base) = self.projections.get(&current).copied() {
-            self.insert(base, PlaceState::Moved);
-            current = base;
-        }
-    }
-}
+mod state;
+use state::{OwnershipState, PlaceState};
 
 /// Checks path-sensitive ownership and `@nodrop` discharge after MIR has
 /// established the actual control-flow graph.
@@ -89,38 +31,39 @@ fn check_function(unit: &MIRUnit, function: &MIRFunction) -> Result<(), MIRAnaly
     let mut entries = vec![None; definition.blocks().len()];
     entries[entry.index()] = Some(initial_state(function));
 
-    loop {
-        let mut changed = false;
+    let mut pending = VecDeque::from([entry.index()]);
+    let mut queued = vec![false; entries.len()];
+    queued[entry.index()] = true;
+    while let Some(index) = pending.pop_front() {
+        queued[index] = false;
+        let block = &definition.blocks()[index];
+        let Some(state) = entries[block.id.index()].clone() else {
+            continue;
+        };
+        let state = transfer_block(unit, function, block, state, false)?;
 
-        for block in definition.blocks() {
-            let Some(state) = entries[block.id.index()].clone() else {
+        let Some(terminator) = block.instrs.last() else {
+            continue;
+        };
+        for target in terminator.successors() {
+            if target.index() >= entries.len() {
                 continue;
-            };
-            let state = transfer_block(unit, function, block, state, false)?;
-
-            let Some(terminator) = block.instrs.last() else {
-                continue;
-            };
-            for target in terminator.successors() {
-                if target.index() >= entries.len() {
-                    continue;
-                }
-                let Some(slot) = entries.get_mut(target.index()) else {
-                    continue;
-                };
-                changed |= merge_entry(
-                    unit,
-                    function,
-                    block.id,
-                    block.instrs.len().saturating_sub(1),
-                    slot,
-                    &state,
-                )?;
             }
-        }
-
-        if !changed {
-            break;
+            let Some(slot) = entries.get_mut(target.index()) else {
+                continue;
+            };
+            let changed = merge_entry(
+                unit,
+                function,
+                block.id,
+                block.instrs.len().saturating_sub(1),
+                slot,
+                &state,
+            )?;
+            if changed && !queued[target.index()] {
+                queued[target.index()] = true;
+                pending.push_back(target.index());
+            }
         }
     }
 
@@ -158,25 +101,14 @@ fn merge_entry(
         return Ok(true);
     };
 
-    let keys = existing
-        .places
-        .keys()
-        .chain(incoming.places.keys())
-        .copied()
-        .collect::<BTreeSet<_>>();
-    let mut merged = OwnershipState {
-        places: BTreeMap::new(),
-        projections: existing.projections.clone(),
-    };
-    for place in keys {
-        let existing_state = existing
-            .get(&place)
-            .copied()
-            .unwrap_or(PlaceState::Uninitialized);
-        let incoming_state = incoming
-            .get(&place)
-            .copied()
-            .unwrap_or(PlaceState::Uninitialized);
+    let mut changed = false;
+    for index in 0..existing.places.len() {
+        let existing_state = existing.places[index];
+        let incoming_state = incoming.places[index];
+        if existing_state == incoming_state {
+            continue;
+        }
+        let place = existing.place(index);
 
         if is_nodrop(function, place)
             && matches!(existing_state, PlaceState::Available)
@@ -196,17 +128,13 @@ fn merge_entry(
         }
 
         let state = merge_state(existing_state, incoming_state);
-        if state != PlaceState::Uninitialized {
-            merged.insert(place, state);
+        if state != existing_state {
+            existing.places[index] = state;
+            changed = true;
         }
     }
 
-    if *existing != merged {
-        *existing = merged;
-        Ok(true)
-    } else {
-        Ok(false)
-    }
+    Ok(changed)
 }
 
 fn merge_state(left: PlaceState, right: PlaceState) -> PlaceState {

@@ -30,6 +30,7 @@ pub struct FileArgs {
     pub optimization_level: OptimizationLevel,
     pub unsafe_mode: bool,
     pub verbose: bool,
+    pub dump: bool,
     pub require_explicit_return: Option<bool>,
 }
 
@@ -40,6 +41,7 @@ pub struct BuildArgs {
     pub optimization_level: Option<OptimizationLevel>,
     pub unsafe_mode: bool,
     pub verbose: bool,
+    pub dump: bool,
     pub require_explicit_return: Option<bool>,
 }
 
@@ -55,6 +57,7 @@ struct CommonArgs {
     optimization_level: Option<OptimizationLevel>,
     unsafe_mode: bool,
     verbose: bool,
+    dump: bool,
     require_explicit_return: Option<bool>,
 }
 
@@ -125,6 +128,7 @@ fn parse_common_flags(args: impl IntoIterator<Item = String>, topic: Topic) -> P
             "-Ofast" => common.optimization_level = Some(OptimizationLevel::Ofast),
             "--unsafe" => common.unsafe_mode = true,
             "--verbose" => common.verbose = true,
+            "--dump" => common.dump = true,
             "--allow-implicit-return" => common.require_explicit_return = Some(false),
             "--require-explicit-return" => common.require_explicit_return = Some(true),
             _ => rest.push(arg),
@@ -204,6 +208,7 @@ fn parse_build_args_inner(
         optimization_level: common.optimization_level,
         unsafe_mode: common.unsafe_mode,
         verbose: common.verbose,
+        dump: common.dump,
         require_explicit_return: common.require_explicit_return,
     })
 }
@@ -267,6 +272,7 @@ fn parse_file_args(args: impl IntoIterator<Item = String>) -> Result<Command, St
         optimization_level: common.optimization_level.unwrap_or_default(),
         unsafe_mode: common.unsafe_mode,
         verbose: common.verbose,
+        dump: common.dump,
         require_explicit_return: common.require_explicit_return,
     }))
 }

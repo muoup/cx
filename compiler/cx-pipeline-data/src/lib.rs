@@ -70,6 +70,7 @@ pub struct CompilerConfig {
 
     pub unsafe_mode: bool,
     pub verbose: bool,
+    pub dump: bool,
     pub module_mode: bool,
 }
 

@@ -10,8 +10,8 @@ use cx_lmir::{
     LMIRUnit, LMIRValue,
 };
 use cx_log::{
-    error::{context::CXInternalContext, message::CXStdErrMessage, CXErr},
     CXResult,
+    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_target::ArchitectureConfig;
 use cx_util::identifier::CXIdent;
@@ -29,7 +29,7 @@ use inkwell::values::{
 use crate::globals::{declare_global_variable, define_global_variable};
 use crate::instruction::reset_num;
 use cx_pipeline_data::OptimizationLevel;
-use cx_util::format::dump_data;
+use cx_util::format::{dump_data, dumps_enabled};
 use inkwell::basic_block::BasicBlock;
 use std::collections::HashMap;
 
@@ -264,7 +264,9 @@ pub fn lmir_aot_codegen(
     }
 
     if let Err(error) = global_state.module.verify() {
-        dump_data(&global_state.module.print_to_string().to_string_lossy());
+        if dumps_enabled() {
+            dump_data(&global_state.module.print_to_string().to_string_lossy());
+        }
         return Err(LLVMError::from_error(error).into());
     }
     global_state
@@ -276,7 +278,7 @@ pub fn lmir_aot_codegen(
         )
         .map_err(LLVMError::from_error)?;
 
-    if !output_path.contains("std/") {
+    if dumps_enabled() && !output_path.contains("std/") {
         dump_data(&format!(
             "{}",
             global_state.module.print_to_string().to_string_lossy()

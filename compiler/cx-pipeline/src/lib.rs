@@ -74,7 +74,8 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
 
     let mut reporter = ProgressReporter::new(verbose);
 
-    let result = with_dump_directory(compiler_context.config.internal_directory.clone(), || {
+    let dump_directory = compiler_context.config.internal_directory.clone();
+    let result = with_dump_directory(dump_directory, compiler_context.config.dump, || {
         scheduling_loop(&compiler_context, initial_job, &mut reporter)?;
 
         match compiler_context.config.compilation_mode {
@@ -137,7 +138,8 @@ pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) ->
     };
 
     let mut reporter = ProgressReporter::new(verbose);
-    let result = with_dump_directory(compiler_context.config.internal_directory.clone(), || {
+    let dump_directory = compiler_context.config.internal_directory.clone();
+    let result = with_dump_directory(dump_directory, compiler_context.config.dump, || {
         let initial_jobs = base_files
             .iter()
             .map(|base_file| {
@@ -207,7 +209,8 @@ pub fn library_compilation(
 
     let mut reporter = ProgressReporter::new(verbose);
 
-    let result = with_dump_directory(compiler_context.config.internal_directory.clone(), || {
+    let dump_directory = compiler_context.config.internal_directory.clone();
+    let result = with_dump_directory(dump_directory, compiler_context.config.dump, || {
         scheduling_loop(&compiler_context, initial_job, &mut reporter)?;
 
         // Extract exported symbol names from the entry file's LMIR to use as GC roots

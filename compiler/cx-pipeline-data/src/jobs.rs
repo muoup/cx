@@ -75,8 +75,6 @@ pub enum CompilationStep {
     Typechecking = 1 << 2,
 
     /**
-     *  Generates and analyzes MIR from the type-checked AST. MIR liveness analysis always runs;
-     *  invariant validation may be disabled by the compiler configuration.
      *
      *  Requires: A fully type-checked AST.
      *

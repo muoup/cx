@@ -95,6 +95,7 @@ pub fn build_project(args: BuildArgs) -> Vec<PathBuf> {
         output: project_root.clone(), // placeholder, overridden per-target
         unsafe_mode: args.unsafe_mode,
         verbose: args.verbose,
+        dump: args.dump,
         working_directory: project_root.clone(),
         compilation_mode: CompilationMode::Executable,
         module_mode: true,

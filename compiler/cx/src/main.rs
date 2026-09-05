@@ -86,6 +86,7 @@ fn compiler_config_with_dirs(
         output,
         unsafe_mode: args.unsafe_mode,
         verbose: args.verbose,
+        dump: args.dump,
         working_directory,
         internal_directory,
         compilation_mode: mode,
