@@ -11,12 +11,12 @@ use cx_log::{
     error::{CXErrorMaybeRaw, CXMaybeRawResult},
 };
 use cx_thir::{
-    EnvironmentNamespace,
+    NamespacePath,
     symbol::MIRSymbol,
     thir::data::{THIRFnSignature, THIRTemplateInput, THIRType, THIRTypeKind},
     type_context::THIRTypeContext,
 };
-use cx_util::namespace::QualifiedName;
+use cx_util::module::QualifiedName;
 
 use crate::{
     environment::TypeEnvironment,
@@ -31,7 +31,7 @@ type TemplateBindings = HashMap<String, THIRType>;
 
 pub(crate) fn complete_templated_callee_maybe(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     name: &QualifiedName,
     template_input: Option<&HIRTemplateInput>,
     arg_types: &[THIRType],
@@ -67,7 +67,7 @@ pub(crate) fn complete_templated_callee_maybe(
 
 pub(crate) fn deduce_template_symbol(
     env: &mut TypeEnvironment,
-    _namespace: &EnvironmentNamespace,
+    _namespace: &NamespacePath,
     symbol: &MIRSymbol,
     arg_types: &[THIRType],
     expected_return_type: Option<&THIRType>,
@@ -95,7 +95,7 @@ pub(crate) fn deduce_template_symbol(
 
 fn deduce_template_input(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     template_prototype: &HIRTemplatePrototype,
     source: &cx_hir::symbols::HIRSymbol,
     arg_types: &[THIRType],
@@ -239,7 +239,7 @@ impl<'a> TemplateDeductionShell<'a> {
 
 fn deduce_from_cx_type(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     template_prototype: &HIRTemplatePrototype,
     bindings: &mut TemplateBindings,
     formal: &HIRType,
@@ -421,7 +421,7 @@ fn deduce_from_cx_type(
 
 fn deduce_from_function_signature(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     template_prototype: &HIRTemplatePrototype,
     bindings: &mut TemplateBindings,
     formal: &HIRFunctionPrototype,

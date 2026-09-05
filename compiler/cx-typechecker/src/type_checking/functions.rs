@@ -7,7 +7,7 @@ use cx_hir::ast::expression::HIRExpression;
 use cx_hir::ast::function::HIRFunctionContract;
 use cx_log::CXResult;
 use cx_thir::{
-    EnvironmentNamespace,
+    NamespacePath,
     thir::{
         comptime::THIRComptimeFn,
         data::{
@@ -18,11 +18,11 @@ use cx_thir::{
     },
 };
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, linkage::LinkageMode, namespace::QualifiedName};
+use cx_util::{identifier::CXIdent, linkage::LinkageMode, module::QualifiedName};
 
 pub fn typecheck_function(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     prototype: THIRFnPrototype,
     body: &HIRExpression,
 ) -> CXResult<()> {
@@ -99,7 +99,7 @@ pub fn typecheck_function(
 /// to other staged parameters.
 pub fn typecheck_comptime_function(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     prototype: THIRComptimeFnPrototype,
     body: &HIRExpression,
 ) -> CXResult<()> {

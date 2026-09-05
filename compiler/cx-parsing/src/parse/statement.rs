@@ -60,7 +60,11 @@ pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<HIRExpres
                 name,
                 statement: Box::new(statement),
             }
-            .into_expr(label_start, data.tokens.index, data.file_origin.clone()),
+            .into_expr(
+                label_start,
+                data.tokens.index,
+                data.token_range(label_start, data.tokens.index),
+            ),
         ));
     }
 
@@ -77,7 +81,10 @@ pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<HIRExpres
             return Ok(Some(HIRExprKind::Void.into_expr(
                 data.tokens.index,
                 data.tokens.index,
-                data.file_origin.clone(),
+                data.token_range(
+                    data.tokens.index.saturating_sub(1),
+                    data.tokens.index,
+                ),
             )));
         }
 
@@ -292,7 +299,7 @@ pub(crate) fn try_parse_keyword_stmt(
                 .into_expr(
                     data.tokens.index,
                     data.tokens.index,
-                    data.file_origin_for_range(data.tokens.index, data.tokens.index),
+                    data.token_range(data.tokens.index, data.tokens.index),
                 )
             } else {
                 parse_expr(data)?
@@ -306,7 +313,7 @@ pub(crate) fn try_parse_keyword_stmt(
                 HIRExprKind::Void.into_expr(
                     data.tokens.index,
                     data.tokens.index,
-                    data.file_origin_for_range(data.tokens.index, data.tokens.index),
+                    data.token_range(data.tokens.index, data.tokens.index),
                 )
             } else {
                 parse_expr(data)?
@@ -329,7 +336,7 @@ pub(crate) fn try_parse_keyword_stmt(
         kind.into_expr(
             start,
             data.tokens.index,
-            data.file_origin_for_range(start, data.tokens.index),
+            data.token_range(start, data.tokens.index),
         )
     }))
 }
@@ -374,7 +381,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                     return Ok(HIRExprKind::Void.into_expr(
                         start_index,
                         data.tokens.index,
-                        data.file_origin_for_range(start_index, data.tokens.index),
+                        data.token_range(start_index, data.tokens.index),
                     ));
                 }
             }
@@ -399,14 +406,14 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                 .into_expr(
                     start_index,
                     data.tokens.index,
-                    data.file_origin_for_range(start_index, data.tokens.index),
+                    data.token_range(start_index, data.tokens.index),
                 ),
             );
         } else if decls.is_empty() {
             return Ok(HIRExprKind::Void.into_expr(
                 start_index,
                 data.tokens.index,
-                data.file_origin_for_range(start_index, data.tokens.index),
+                data.token_range(start_index, data.tokens.index),
             ));
         } else {
             return parse_point_error(
@@ -432,7 +439,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
         .into_expr(
             start_index,
             data.tokens.index,
-            data.file_origin_for_range(start_index, data.tokens.index),
+            data.token_range(start_index, data.tokens.index),
         ))
     }
 }

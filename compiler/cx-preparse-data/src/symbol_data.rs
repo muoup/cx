@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use cx_util::{identifier::CXIdent, namespace::NamespacePath};
+use cx_namespace::module::NamespacePath;
+use cx_util::{identifier::CXIdent};
 use speedy::{Readable, Writable};
 
 use crate::VisibilityMode;
@@ -60,7 +61,7 @@ impl PreparseNamespaceData {
     }
 }
 
-#[derive(Debug, Default, Clone, Readable, Writable)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub struct PreparseModuleSymbols {
     pub namespace: NamespacePath,
     pub symbols: Vec<PreparseSymbol>,

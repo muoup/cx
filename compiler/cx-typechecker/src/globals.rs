@@ -2,14 +2,14 @@ use cx_hir::ast::expression::HIRExpression;
 use cx_hir::ast::modifiers::{HIR_CONST, HIRSymbolNameScheme};
 use cx_hir::ast::types::{HIRType, HIRTypeKind};
 use cx_log::CXResult;
-use cx_thir::EnvironmentNamespace;
+use cx_thir::NamespacePath;
 use cx_thir::thir::data::THIRType;
 use cx_thir::thir::expression::{THIRCoercion, THIRExpression, THIRExpressionKind};
 use cx_thir::thir::global::THIRGlobalVariable;
 use cx_thir::type_context::THIRTypeContext;
 use cx_util::identifier::CXIdent;
 use cx_util::linkage::LinkageMode;
-use cx_util::namespace::QualifiedName;
+use cx_util::module::QualifiedName;
 
 use crate::environment::TypeEnvironment;
 use crate::symbol::completion::{
@@ -19,7 +19,7 @@ use crate::type_checking::typechecker::typecheck_expr;
 
 pub(crate) fn lower_global(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     name: CXIdent,
     hir_type: &HIRType,
     linkage: LinkageMode,

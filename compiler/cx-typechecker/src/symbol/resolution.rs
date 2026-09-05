@@ -11,10 +11,10 @@ use cx_log::{
     error::{CXErrorMaybeRaw, CXMaybeRawResult},
 };
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, linkage::LinkageMode, namespace::QualifiedName};
+use cx_util::{identifier::CXIdent, linkage::LinkageMode, module::QualifiedName};
 
 use cx_thir::{
-    EnvironmentNamespace,
+    NamespacePath,
     symbol::MIRSymbol,
     thir::{
         contextual_eq::TypeContextEqual,
@@ -41,8 +41,8 @@ use crate::{
 
 pub fn resolve_symbol(
     env: &mut TypeEnvironment,
-    evaluation_namespace: &EnvironmentNamespace,
-    symbol_namespace: &EnvironmentNamespace,
+    evaluation_namespace: &NamespacePath,
+    symbol_namespace: &NamespacePath,
     name: &CXIdent,
     symbols: &SymbolResolution,
 ) -> CXResult<MIRSymbol> {
@@ -100,8 +100,8 @@ fn symbol_range(symbol: &HIRSymbol) -> TokenRange {
 
 fn resolve_symbol_inner(
     env: &mut TypeEnvironment,
-    evaluation_namespace: &EnvironmentNamespace,
-    symbol_namespace: &EnvironmentNamespace,
+    evaluation_namespace: &NamespacePath,
+    symbol_namespace: &NamespacePath,
     name: &CXIdent,
     symbol: &HIRSymbol,
     tag: Option<HIRTagKind>,
@@ -245,7 +245,7 @@ fn resolve_symbol_inner(
             let ty = complete_type(env, symbol_namespace, _type)?;
             let symbol_name = CXIdent::new(crate::symbol::completion::completed_symbol_name(
                 env,
-                cx_util::namespace::QualifiedName::new(symbol_namespace.clone(), name.clone()),
+                cx_util::module::QualifiedName::new(symbol_namespace.clone(), name.clone()),
                 *symbol_naming,
             ));
 
@@ -434,7 +434,7 @@ fn type_declarations_equivalent(
         _ => return Ok(false),
     }
 
-    let namespace = EnvironmentNamespace::from(&name.namespace);
+    let namespace = NamespacePath::from(&name.namespace);
     let left = complete_type(env, &namespace, left.base())?;
     let right = complete_type(env, &namespace, right.base())?;
     Ok(env.type_eq(&left, &right))
@@ -511,7 +511,7 @@ fn mir_symbols_equivalent(env: &TypeEnvironment, left: &MIRSymbol, right: &MIRSy
 
 fn resolve_type_constructor(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     name: &CXIdent,
     union_type: &HIRType,
     variant_index: usize,
@@ -622,9 +622,9 @@ pub fn apply_template(
 }
 
 pub fn symbol_lexical_namespace(
-    namespace: impl Into<EnvironmentNamespace>,
+    namespace: impl Into<NamespacePath>,
     symbol: &HIRSymbol,
-) -> EnvironmentNamespace {
+) -> NamespacePath {
     let namespace = namespace.into();
     match &symbol.kind {
         HIRSymbolKind::Function(data) => function_lexical_namespace(&namespace, &data.base().kind),
@@ -636,14 +636,14 @@ pub fn symbol_lexical_namespace(
 }
 
 fn function_lexical_namespace(
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     kind: &HIRFunctionKind,
-) -> EnvironmentNamespace {
+) -> NamespacePath {
     match kind {
         HIRFunctionKind::AssociatedFunction { .. } => namespace
             .parent_and_name()
             .map(|(parent, _)| parent)
-            .unwrap_or_else(|| namespace.as_namespace_path().clone())
+            .unwrap_or_else(|| namespace.clone())
             .into(),
         HIRFunctionKind::Standard(_) => namespace.clone(),
     }
@@ -664,7 +664,7 @@ pub fn apply_template_input(
 fn attach_template_metadata(
     env: &mut TypeEnvironment,
     symbol: &mut MIRSymbol,
-    _namespace: &EnvironmentNamespace,
+    _namespace: &NamespacePath,
     input: THIRTemplateInput,
 ) {
     match symbol {

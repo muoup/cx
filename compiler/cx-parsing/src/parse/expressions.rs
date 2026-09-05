@@ -11,7 +11,7 @@ use cx_hir::ast::pattern::HIRPattern;
 use cx_log::CXResult;
 use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use cx_tokens::{identifier, keyword, operator, punctuator};
-use cx_util::namespace::QualifiedName;
+use cx_util::module::QualifiedName;
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::parse::operators::{
@@ -45,7 +45,7 @@ fn parse_at_intrinsic_expr(
             .into_expr(
                 start_index,
                 data.tokens.index,
-                data.file_origin_for_range(start_index, data.tokens.index),
+                data.token_range(start_index, data.tokens.index),
             ))
         }
 
@@ -60,7 +60,7 @@ fn parse_at_intrinsic_expr(
             .into_expr(
                 start_index,
                 data.tokens.index,
-                data.file_origin_for_range(start_index, data.tokens.index),
+                data.token_range(start_index, data.tokens.index),
             ))
         }
 
@@ -75,7 +75,7 @@ fn parse_at_intrinsic_expr(
             .into_expr(
                 start_index,
                 data.tokens.index,
-                data.file_origin_for_range(start_index, data.tokens.index),
+                data.token_range(start_index, data.tokens.index),
             ))
         }
 
@@ -116,7 +116,7 @@ fn parse_at_intrinsic_expr(
             .into_expr(
                 start_index,
                 data.tokens.index,
-                data.file_origin_for_range(start_index, data.tokens.index),
+                data.token_range(start_index, data.tokens.index),
             ))
         }
 
@@ -150,11 +150,10 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<HIRExpression> {
             return parse_point_error(&data.tokens, "Expected expression before '?'".to_string());
         };
 
-        let start_index = condition.range.start_token().unwrap_or(data.tokens.index);
         let then_branch = parse_expr(data)?;
         assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
         let else_branch = parse_expr(data)?;
-        let end_index = else_branch.range.end_token().unwrap_or(data.tokens.index);
+        let range = condition.range.cover(&else_branch.range);
 
         Some(
             HIRExprKind::Ternary {
@@ -163,9 +162,9 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<HIRExpression> {
                 else_branch: Box::new(else_branch),
             }
             .into_expr(
-                start_index,
-                end_index,
-                data.file_origin_for_range(start_index, end_index),
+                data.tokens.index.saturating_sub(1),
+                data.tokens.index,
+                range,
             ),
         )
     } else {
@@ -253,8 +252,6 @@ fn parse_va_arg_call(data: &mut ParserData, expr_stack: &mut Vec<HIRExpression>)
     let callee = expr_stack
         .pop()
         .expect("va_arg callee missing from expression stack");
-    let start_index = callee.range.start_token().unwrap_or(data.tokens.index);
-
     assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
     data.change_comma_mode(false);
     let list = parse_expr(data)?;
@@ -269,9 +266,12 @@ fn parse_va_arg_call(data: &mut ParserData, expr_stack: &mut Vec<HIRExpression>)
             _type,
         }
         .into_expr(
-            start_index,
+            data.tokens.index.saturating_sub(1),
             data.tokens.index,
-            data.file_origin_for_range(start_index, data.tokens.index),
+            callee.range.cover(&data.token_range(
+                data.tokens.index.saturating_sub(1),
+                data.tokens.index,
+            )),
         ),
     );
     Ok(())
@@ -347,9 +347,7 @@ fn compress_one_expr(
     match op {
         PrecOperator::UnOp(un_op) => {
             let rhs = expr_stack.pop().unwrap();
-
-            let start_index = rhs.range.start_token().unwrap_or(data.tokens.index);
-            let end_index = rhs.range.end_token().unwrap_or(data.tokens.index);
+            let range = rhs.range.clone();
 
             let acc = HIRExprKind::UnOp {
                 operator: un_op,
@@ -357,17 +355,15 @@ fn compress_one_expr(
             };
 
             Ok(acc.into_expr(
-                start_index,
-                end_index,
-                data.file_origin_for_range(start_index, end_index),
+                data.tokens.index.saturating_sub(1),
+                data.tokens.index,
+                range,
             ))
         }
         PrecOperator::BinOp(bin_op) => {
             let rhs = expr_stack.pop().unwrap();
             let lhs = expr_stack.pop().unwrap();
-
-            let start_index = lhs.range.start_token().unwrap_or(data.tokens.index);
-            let end_index = rhs.range.end_token().unwrap_or(data.tokens.index);
+            let range = lhs.range.cover(&rhs.range);
 
             let acc = HIRExprKind::BinOp {
                 lhs: Box::new(lhs),
@@ -376,9 +372,9 @@ fn compress_one_expr(
             };
 
             Ok(acc.into_expr(
-                start_index,
-                end_index,
-                data.file_origin_for_range(start_index, end_index),
+                data.tokens.index.saturating_sub(1),
+                data.tokens.index,
+                range,
             ))
         }
     }
@@ -501,7 +497,6 @@ pub(crate) fn parse_expr_val(
                 // as an "found unknown token identifer" error but can be far more accurately diagnosed as a missing
                 // type error. There is no valid syntax of an identifier followed by another identifier otherwise
                 return parse_underline_error(
-                    &data.tokens,
                     "Could not resolve type for variable declaration".to_string(),
                     expr.token_range(),
                 );
@@ -523,7 +518,7 @@ pub(crate) fn parse_expr_val(
                 expr_stack.push(HIRExprKind::Void.into_expr(
                     start_index,
                     data.tokens.index,
-                    data.file_origin_for_range(start_index, data.tokens.index),
+                    data.token_range(start_index, data.tokens.index),
                 ));
                 return Ok(());
             }
@@ -557,7 +552,7 @@ pub(crate) fn parse_expr_val(
                 expr_stack.push(HIRExprKind::Void.into_expr(
                     start_index,
                     data.tokens.index,
-                    data.file_origin_for_range(start_index, data.tokens.index),
+                    data.token_range(start_index, data.tokens.index),
                 ));
                 return Ok(());
             }
@@ -580,7 +575,7 @@ pub(crate) fn parse_expr_val(
     .into_expr(
         start_index,
         data.tokens.index,
-        data.file_origin_for_range(start_index, data.tokens.index),
+        data.token_range(start_index, data.tokens.index),
     );
 
     expr_stack.push(acc);
@@ -604,7 +599,7 @@ pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CXResult<HIRExpres
     Ok(ident.into_expr(
         start_index,
         data.tokens.index,
-        data.file_origin_for_range(start_index, data.tokens.index),
+        data.token_range(start_index, data.tokens.index),
     ))
 }
 
@@ -758,7 +753,7 @@ pub(crate) fn parse_keyword_expr(
         e.into_expr(
             start_index,
             data.tokens.index,
-            data.file_origin_for_range(start_index, data.tokens.index),
+            data.token_range(start_index, data.tokens.index),
         )
     })
 }
@@ -806,6 +801,6 @@ pub(crate) fn parse_structured_initialization(data: &mut ParserData) -> CXResult
     Ok(HIRExprKind::InitializerList { indices: inits }.into_expr(
         init_index,
         data.tokens.index,
-        data.file_origin_for_range(init_index, data.tokens.index),
+        data.token_range(init_index, data.tokens.index),
     ))
 }

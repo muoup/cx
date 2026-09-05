@@ -1,6 +1,5 @@
-use std::{path::Path, sync::Arc};
+use std::{path::{Path, PathBuf}, sync::Arc};
 
-use cx_util::namespace::EnvironmentNamespace;
 use speedy::{Context, Readable, Reader, Writable, Writer};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -8,22 +7,34 @@ pub enum TokenRange {
     Internal,
     Error(String),
     Source {
-        namespace: EnvironmentNamespace,
-        start_token: usize,
-        end_token: usize,
+        file: PathBuf,
+        byte_start: usize,
+        byte_end: usize,
     },
 }
 
 impl TokenRange {
-    pub fn new(
-        start_token: usize,
-        end_token: usize,
-        namespace: impl Into<EnvironmentNamespace>,
-    ) -> Self {
+    pub fn from_tokens(start_token: usize, end_token: usize, tokens: &[Token]) -> Self {
+        if start_token > end_token {
+            return Self::error("Token range start is after range end");
+        }
+
+        let end_token = end_token.max(start_token.saturating_add(1));
+        let Some(start) = tokens.get(start_token) else {
+            return Self::error(format!(
+                "Token range start token {start_token} is out of bounds"
+            ));
+        };
+        let Some(end) = tokens.get(end_token.saturating_sub(1)) else {
+            return Self::error(format!(
+                "Token range end token {end_token} is out of bounds"
+            ));
+        };
+
         Self::Source {
-            namespace: namespace.into(),
-            start_token,
-            end_token,
+            file: start.file_origin.as_ref().to_path_buf(),
+            byte_start: start.byte_start_index,
+            byte_end: end.byte_end_index,
         }
     }
 
@@ -35,35 +46,38 @@ impl TokenRange {
         Self::Error(message.into())
     }
 
-    pub fn namespace(&self) -> Option<&EnvironmentNamespace> {
-        match self {
-            Self::Source { namespace, .. } => Some(namespace),
-            Self::Internal | Self::Error(_) => None,
-        }
-    }
-
-    pub fn start_token(&self) -> Option<usize> {
-        match self {
-            Self::Source { start_token, .. } => Some(*start_token),
-            Self::Internal | Self::Error(_) => None,
-        }
-    }
-
-    pub fn end_token(&self) -> Option<usize> {
-        match self {
-            Self::Source { end_token, .. } => Some(*end_token),
-            Self::Internal | Self::Error(_) => None,
-        }
-    }
-
-    pub fn source_bounds(&self) -> Option<(&EnvironmentNamespace, usize, usize)> {
+    pub fn source_bounds(&self) -> Option<(&Path, usize, usize)> {
         match self {
             Self::Source {
-                namespace,
-                start_token,
-                end_token,
-            } => Some((namespace, *start_token, *end_token)),
+                file,
+                byte_start,
+                byte_end,
+            } => Some((file, *byte_start, *byte_end)),
             Self::Internal | Self::Error(_) => None,
+        }
+    }
+
+    pub fn cover(&self, other: &Self) -> Self {
+        match (self, other) {
+            (
+                Self::Source {
+                    file: left_file,
+                    byte_start: left_start,
+                    byte_end: left_end,
+                },
+                Self::Source {
+                    file: right_file,
+                    byte_start: right_start,
+                    byte_end: right_end,
+                },
+            ) if left_file == right_file => Self::Source {
+                file: left_file.clone(),
+                byte_start: (*left_start).min(*right_start),
+                byte_end: (*left_end).max(*right_end),
+            },
+            (Self::Error(message), _) | (_, Self::Error(message)) => Self::Error(message.clone()),
+            (Self::Internal, _) | (_, Self::Internal) => Self::Internal,
+            _ => Self::error("Token range spans multiple files"),
         }
     }
 }
@@ -74,9 +88,9 @@ impl<'a, C: Context> Readable<'a, C> for TokenRange {
             0 => Ok(TokenRange::Internal),
             1 => Ok(TokenRange::Error(String::read_from(reader)?)),
             2 => Ok(TokenRange::Source {
-                namespace: EnvironmentNamespace::read_from(reader)?,
-                start_token: reader.read_u64()? as usize,
-                end_token: reader.read_u64()? as usize,
+                file: PathBuf::from(String::read_from(reader)?),
+                byte_start: reader.read_u64()? as usize,
+                byte_end: reader.read_u64()? as usize,
             }),
             _ => Ok(TokenRange::Error(
                 "Invalid serialized token range".to_string(),
@@ -94,14 +108,14 @@ impl<C: Context> Writable<C> for TokenRange {
                 message.write_to(writer)
             }
             TokenRange::Source {
-                namespace,
-                start_token,
-                end_token,
+                file,
+                byte_start,
+                byte_end,
             } => {
                 writer.write_u8(2)?;
-                namespace.write_to(writer)?;
-                writer.write_u64(*start_token as u64)?;
-                writer.write_u64(*end_token as u64)
+                file.to_string_lossy().as_ref().write_to(writer)?;
+                writer.write_u64(*byte_start as u64)?;
+                writer.write_u64(*byte_end as u64)
             }
         }
     }
@@ -587,5 +601,27 @@ impl TokenKind {
             }
             _ => TokenKind::Identifier(str),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Token, TokenKind, TokenRange};
+    use std::{path::Path, sync::Arc};
+
+    #[test]
+    fn captures_file_and_byte_bounds_from_tokens() {
+        let file: Arc<Path> = Arc::from(Path::new("src/main.cx"));
+        let tokens = [
+            Token::new(TokenKind::Identifier("a".to_string()), (4, 5), file.clone()),
+            Token::new(TokenKind::Identifier("b".to_string()), (6, 7), file),
+        ];
+
+        let range = TokenRange::from_tokens(0, 2, &tokens);
+
+        assert_eq!(
+            range.source_bounds(),
+            Some((Path::new("src/main.cx"), 4, 7))
+        );
     }
 }

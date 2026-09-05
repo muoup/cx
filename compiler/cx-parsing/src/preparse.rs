@@ -10,7 +10,7 @@ use cx_tokens::{
 };
 use cx_util::{
     identifier::CXIdent,
-    namespace::{NamespacePath, QualifiedName},
+    module::{NamespacePath, QualifiedName},
 };
 
 #[derive(Debug, Clone, Copy)]

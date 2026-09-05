@@ -1,7 +1,7 @@
 use cx_hir::ast::global_var::HIREnumDefinition;
 use cx_log::CXResult;
 use cx_thir::{
-    EnvironmentNamespace,
+    NamespacePath,
     symbol::MIRSymbol,
     thir::{
         expression::{THIRBinOp, THIRExpression, THIRExpressionKind, THIRIntBinOp},
@@ -9,7 +9,7 @@ use cx_thir::{
     },
 };
 use cx_tokens::TokenRange;
-use cx_util::namespace::QualifiedName;
+use cx_util::module::QualifiedName;
 
 use crate::{
     environment::TypeEnvironment,
@@ -22,7 +22,7 @@ use crate::{
 pub struct EnumBlockResolution<'a> {
     env: &'a TypeEnvironment<'a>,
     block: &'a HIREnumDefinition,
-    namespace: &'a EnvironmentNamespace,
+    namespace: &'a NamespacePath,
 }
 
 impl<'a> EnumBlockResolution<'a> {
@@ -42,7 +42,7 @@ impl<'a> EnumBlockResolution<'a> {
 
 pub(crate) fn resolve_enum_block<'a, 'b>(
     env: &'a mut TypeEnvironment<'b>,
-    namespace: &'a EnvironmentNamespace,
+    namespace: &'a NamespacePath,
     block_idx: usize,
 ) -> CXResult<EnumBlockResolution<'a>> {
     let (_, data) = env

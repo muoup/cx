@@ -4,13 +4,19 @@ use cx_hir::ast::modifiers::VisibilityMode;
 use cx_hir::symbols::{HIRSymbol, SymbolResolution};
 use cx_log::{
     CXRawResult, CXResult,
-    error::{CXError, CXRawError, CXErrorMaybeRaw, context::CXInternalContext, message::CXStdErrMessage},
+    error::{
+        CXError,
+        CXRawError,
+        CXErrorMaybeRaw,
+        context::{CXInternalContext, from_token_range},
+        message::CXStdErrMessage,
+    },
 };
 use cx_namespace::{QualifiedLookup, result::QualifiedLookupResult};
 use cx_pipeline_data::db::ModuleData;
 use cx_target::ArchitectureConfig;
 use cx_thir::{
-    EnvironmentNamespace, THIRUnit,
+    NamespacePath, THIRUnit,
     symbol::MIRSymbol,
     thir::{
         comptime::THIRStagedEffects,
@@ -20,8 +26,8 @@ use cx_thir::{
     type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
-use cx_util::namespace::QualifiedName;
-use cx_util::{identifier::CXIdent, namespace::NamespacePath};
+use cx_util::module::QualifiedName;
+use cx_util::identifier::CXIdent;
 
 pub use crate::environment::control_flow::{ControlTarget, ScopeEffects};
 use crate::environment::items::ItemRegistry;
@@ -143,7 +149,7 @@ impl TypeEnvironment<'_> {
             .and_then(|context| context.return_type.as_ref())
     }
 
-    pub fn finish_thir_unit(self, source_namespace: EnvironmentNamespace) -> CXResult<THIRUnit> {
+    pub fn finish_thir_unit(self, source_namespace: NamespacePath) -> CXResult<THIRUnit> {
         let (functions, comptime_functions, globals) = self.items.drain_generated_items();
 
         Ok(THIRUnit {
@@ -332,7 +338,7 @@ impl TypeEnvironment<'_> {
 
     pub fn get_symbol(
         &mut self,
-        namespace: &EnvironmentNamespace,
+        namespace: &NamespacePath,
         name: &QualifiedName,
     ) -> CXResult<Option<MIRSymbol>> {
         let lookup = self.lookup_symbol(namespace, name).map_err(|err| {
@@ -351,7 +357,7 @@ impl TypeEnvironment<'_> {
 
     pub fn lookup_symbol(
         &mut self,
-        namespace: &EnvironmentNamespace,
+        namespace: &NamespacePath,
         name: &QualifiedName,
     ) -> CXRawResult<Option<SymbolLookup>> {
         finish_qualified_lookup(
@@ -365,7 +371,7 @@ impl TypeEnvironment<'_> {
 
     pub fn lookup_tag_symbol(
         &self,
-        namespace: &EnvironmentNamespace,
+        namespace: &NamespacePath,
         name: &QualifiedName,
     ) -> CXRawResult<Option<SymbolLookup>> {
         finish_qualified_lookup(
@@ -379,14 +385,14 @@ impl TypeEnvironment<'_> {
 
     fn symbol_visible_from(
         &self,
-        namespace: &EnvironmentNamespace,
+        namespace: &NamespacePath,
         candidate: &QualifiedName,
         symbol: &HIRSymbol,
     ) -> bool {
         match symbol.visibility {
             VisibilityMode::Public => true,
             VisibilityMode::Package | VisibilityMode::Private => {
-                if &candidate.namespace == namespace.as_namespace_path() {
+                if &candidate.namespace == namespace {
                     return true;
                 }
 
@@ -409,7 +415,7 @@ impl TypeEnvironment<'_> {
 
     pub(crate) fn resolve_lookup(
         &mut self,
-        namespace: &EnvironmentNamespace,
+        namespace: &NamespacePath,
         lookup: SymbolLookup,
     ) -> CXResult<MIRSymbol> {
         let resolved_name = lookup.resolved_name;
@@ -430,7 +436,7 @@ impl TypeEnvironment<'_> {
         let symbol = resolve_symbol(
             self,
             namespace,
-            &EnvironmentNamespace::from(&resolved_name.namespace),
+            &NamespacePath::from(&resolved_name.namespace),
             &resolved_name.name,
             &untyped_symbol,
         )?;
@@ -448,7 +454,7 @@ impl TypeEnvironment<'_> {
         range: impl Borrow<TokenRange>,
         message: impl Into<String>,
     ) -> CXError {
-        crate::log::generate_type_error(self.module_data, range.borrow(), message, Vec::new())
+        crate::log::generate_type_error(range.borrow(), message, Vec::new())
     }
 
     pub(crate) fn log_error_base<T>(&self, message: impl Into<String>) -> CXRawResult<T> {
@@ -464,7 +470,7 @@ impl TypeEnvironment<'_> {
     }
 
     pub(crate) fn complete_err(&self, err: CXRawError, range: &TokenRange) -> CXError {
-        CXError::new(err, self.module_data.convert_token_range(range))
+        CXError::new(err, from_token_range(range))
     }
 
     pub(crate) fn complete_maybe_err(&self, err: CXErrorMaybeRaw, range: &TokenRange) -> CXError {
@@ -520,7 +526,7 @@ impl QualifiedLookup for QualifiedSymbolLookup<'_, '_> {
         if let Some(resolution) = resolution.and_then(|resolution| {
             resolution.filter(|symbol| {
                 self.env.symbol_visible_from(
-                    &EnvironmentNamespace::from(lexical_namespace),
+                    &NamespacePath::from(lexical_namespace),
                     name,
                     symbol,
                 )

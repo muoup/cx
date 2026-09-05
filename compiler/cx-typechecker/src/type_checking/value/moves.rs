@@ -13,7 +13,7 @@ use cx_hir::ast::{
 };
 use cx_log::CXResult;
 use cx_thir::{
-    EnvironmentNamespace,
+    NamespacePath,
     thir::{
         data::{THIRType, THIRTypeKind},
         expression::{THIRExpression, THIRExpressionKind, THIRLocalID, THIRUnpackBinding},
@@ -21,11 +21,11 @@ use cx_thir::{
     type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
-use cx_util::namespace::QualifiedName;
+use cx_util::module::QualifiedName;
 
 pub(crate) fn typecheck_move(
     env: &mut TypeEnvironment,
-    _: &EnvironmentNamespace,
+    _: &NamespacePath,
     inner: TypecheckResult,
     inner_expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
@@ -95,7 +95,7 @@ fn owned_unsafe_move(env: &TypeEnvironment, ty: &THIRType) -> bool {
 
 pub(crate) fn typecheck_adopt(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     inner: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
@@ -140,7 +140,7 @@ pub(crate) fn typecheck_adopt(
 
 pub(crate) fn typecheck_leak(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     inner: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
@@ -190,7 +190,7 @@ pub(crate) fn typecheck_leak(
 
 pub(crate) fn typecheck_unpack(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     inner: &HIRExpression,
     bindings: &[HIRUnpackBinding],

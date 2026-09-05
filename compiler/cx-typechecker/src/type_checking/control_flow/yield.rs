@@ -9,14 +9,14 @@ use crate::{
 use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
 use cx_thir::{
-    EnvironmentNamespace,
+    NamespacePath,
     thir::{data::THIRType, expression::THIRExpressionKind},
 };
 use cx_tokens::TokenRange;
 
 pub fn typecheck_yield(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     yield_range: &TokenRange,
     value: Option<&HIRExpression>,
 ) -> CXResult<TypecheckResult> {

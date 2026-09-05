@@ -362,6 +362,7 @@ dependencies = [
 name = "cx-lmir"
 version = "0.0.0"
 dependencies = [
+ "cx-namespace",
  "cx-target",
  "cx-util",
 ]
@@ -438,6 +439,7 @@ name = "cx-namespace"
 version = "0.0.0"
 dependencies = [
  "cx-util",
+ "speedy",
 ]
 
 [[package]]
@@ -488,6 +490,7 @@ dependencies = [
  "cx-lmir",
  "cx-log",
  "cx-mir",
+ "cx-namespace",
  "cx-preparse-data",
  "cx-target",
  "cx-thir",
@@ -502,6 +505,7 @@ dependencies = [
 name = "cx-preparse-data"
 version = "0.0.0"
 dependencies = [
+ "cx-namespace",
  "cx-util",
  "speedy",
 ]
@@ -524,6 +528,7 @@ version = "0.0.0"
 dependencies = [
  "cx-hir",
  "cx-log",
+ "cx-namespace",
  "cx-target",
  "cx-tokens",
  "cx-util",

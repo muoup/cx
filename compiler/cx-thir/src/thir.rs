@@ -6,3 +6,4 @@ pub mod expression_queries;
 pub mod global;
 pub mod pattern;
 pub mod r#type;
+pub mod name_mangling;

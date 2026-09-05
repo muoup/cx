@@ -471,7 +471,7 @@ pub(crate) fn parse_block(data: &mut ParserData) -> CXResult<HIRExpression> {
     .into_expr(
         start_index,
         data.tokens.index,
-        data.file_origin_for_range(start_index, data.tokens.index),
+        data.token_range(start_index, data.tokens.index),
     ))
 }
 
@@ -506,7 +506,7 @@ fn parse_block_statements(data: &mut ParserData) -> CXResult<Vec<HIRExpression>>
             .into_expr(
                 continuation_start,
                 data.tokens.index,
-                data.file_origin_for_range(continuation_start, data.tokens.index),
+                data.token_range(continuation_start, data.tokens.index),
             );
             replace_then_marker(&mut statement, continuation);
             body.push(statement);

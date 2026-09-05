@@ -1,27 +1,22 @@
-use crate::internal_storage::{retrieve_data, store_data};
-use crate::{CompilationUnit, GlobalCompilationContext};
+use crate::CompilationUnit;
 use cx_hir::ast::HIR;
 use cx_hir::registry::GlobalSymbolRegistry;
 use cx_lmir::LMIRUnit;
-use cx_log::error::CXErrorContext;
-use cx_log::error::context::{CXInternalContext, CXUnderlineContext};
 use cx_mir::MIRUnit;
+use cx_namespace::module::NamespacePath;
 use cx_preparse_data::PreparseContents;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_thir::THIRUnit;
-use cx_tokens::TokenRange;
 use cx_tokens::token::Token;
-use cx_util::namespace::EnvironmentNamespace;
-use speedy::{LittleEndian, Readable, Writable};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+
 // TODO: For large codebases, this should eventually should support unloading infrequently used data
 // to save memory, but for now, this is not a priority.
 
 #[derive(Debug)]
 pub struct ModuleData {
-    module_units: RwLock<HashMap<EnvironmentNamespace, CompilationUnit>>,
-    pub do_not_reexport: RwLock<HashSet<EnvironmentNamespace>>,
+    module_units: RwLock<HashMap<NamespacePath, CompilationUnit>>,
 
     pub preparse_registry: GlobalPreparseRegistry,
     pub symbol_registry: GlobalSymbolRegistry,
@@ -30,24 +25,18 @@ pub struct ModuleData {
     pub preparse_base: ModuleMap<PreparseContents>,
 
     pub hir: ModuleMap<HIR>,
-    pub base_mappings: ModuleMap<EnvironmentNamespace>,
+    pub base_mappings: ModuleMap<NamespacePath>,
 
     pub thir: ModuleMap<THIRUnit>,
     pub mir: ModuleMap<MIRUnit>,
     pub lmir: ModuleMap<LMIRUnit>,
 }
 
-impl Default for ModuleData {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl ModuleData {
     pub fn new() -> Self {
         ModuleData {
             module_units: RwLock::new(HashMap::new()),
-            do_not_reexport: RwLock::new(HashSet::new()),
+
             preparse_registry: GlobalPreparseRegistry::default(),
             symbol_registry: GlobalSymbolRegistry::default(),
 
@@ -66,100 +55,22 @@ impl ModuleData {
         self.module_units
             .write()
             .expect("register_unit: Deadlock detected")
-            .insert(unit.namespace().clone(), unit.clone());
+            .insert(unit.module().clone(), unit.clone());
     }
 
-    pub fn unit_for_namespace(&self, namespace: &EnvironmentNamespace) -> Option<CompilationUnit> {
+    pub fn unit_for_module(&self, module: &NamespacePath) -> Option<CompilationUnit> {
         self.module_units
             .read()
-            .expect("unit_for_namespace: Deadlock detected")
-            .get(namespace)
+            .expect("unit_for_module: Deadlock detected")
+            .get(module)
             .cloned()
-    }
-
-    pub fn no_reexport(&self, unit: &CompilationUnit) -> bool {
-        self.do_not_reexport
-            .read()
-            .expect("no_reexport: Deadlock detected")
-            .contains(unit.namespace())
-    }
-
-    pub fn set_no_reexport(&self, unit: &CompilationUnit) {
-        self.do_not_reexport
-            .write()
-            .expect("set_no_reexport: Deadlock detected")
-            .insert(unit.namespace().clone());
-    }
-
-    pub fn convert_token_range(&self, range: &TokenRange) -> CXErrorContext {
-        match range {
-            TokenRange::Source {
-                namespace,
-                start_token,
-                end_token,
-            } => {
-                let lock = self.lex_tokens.lock();
-
-                let Some(tokens) = lock.get(namespace) else {
-                    return CXInternalContext::error(format!(
-                        "failed to resolve diagnostic context: no tokens found for namespace {namespace}"
-                    ));
-                };
-
-                let Some(start) = tokens.get(*start_token) else {
-                    return CXInternalContext::error(format!(
-                        "failed to resolve diagnostic context: start token {start_token} not found in namespace {namespace}"
-                    ));
-                };
-
-                let Some(end) = tokens.get(end_token.saturating_sub(1)) else {
-                    return CXInternalContext::error(format!(
-                        "failed to resolve diagnostic context: end token {end_token} not found in namespace {namespace}"
-                    ));
-                };
-
-                Box::new(CXUnderlineContext::new(
-                    start.file_origin.as_ref().to_path_buf(),
-                    start.byte_start_index,
-                    end.byte_end_index,
-                ))
-            }
-            TokenRange::Internal => {
-                CXInternalContext::error("diagnostic originated in compiler-generated code")
-            }
-            TokenRange::Error(range_error) => {
-                CXInternalContext::error(format!("failed to determine source range: {range_error}"))
-            }
-        }
     }
 }
 
 #[derive(Debug)]
 pub struct ModuleMap<Data> {
     pub storage_extension: String,
-    loaded_data: RwLock<HashMap<EnvironmentNamespace, Arc<Data>>>,
-}
-
-pub trait ModuleMapKey {
-    fn module_key(&self) -> EnvironmentNamespace;
-}
-
-impl ModuleMapKey for EnvironmentNamespace {
-    fn module_key(&self) -> EnvironmentNamespace {
-        self.clone()
-    }
-}
-
-impl ModuleMapKey for CompilationUnit {
-    fn module_key(&self) -> EnvironmentNamespace {
-        self.namespace().clone()
-    }
-}
-
-impl<T: ModuleMapKey + ?Sized> ModuleMapKey for &T {
-    fn module_key(&self) -> EnvironmentNamespace {
-        (*self).module_key()
-    }
+    loaded_data: RwLock<HashMap<NamespacePath, Arc<Data>>>,
 }
 
 impl<Data> ModuleMap<Data> {
@@ -170,8 +81,7 @@ impl<Data> ModuleMap<Data> {
         }
     }
 
-    pub fn take(&self, key: impl ModuleMapKey) -> Data {
-        let key = key.module_key();
+    pub fn take(&self, key: &NamespacePath) -> Data {
         let mut lock = self
             .loaded_data
             .write()
@@ -186,12 +96,11 @@ impl<Data> ModuleMap<Data> {
 
     pub fn take_lock(
         &self,
-        key: impl ModuleMapKey,
+        key: &NamespacePath,
     ) -> (
-        RwLockWriteGuard<'_, HashMap<EnvironmentNamespace, Arc<Data>>>,
+        RwLockWriteGuard<'_, HashMap<NamespacePath, Arc<Data>>>,
         Data,
     ) {
-        let key = key.module_key();
         let mut lock = self.lock_mut();
 
         let data = lock.remove(&key).expect("Data not found in the module map");
@@ -204,8 +113,7 @@ impl<Data> ModuleMap<Data> {
         (lock, Arc::try_unwrap(data).ok().unwrap())
     }
 
-    pub fn get(&self, key: impl ModuleMapKey) -> Arc<Data> {
-        let key = key.module_key();
+    pub fn get(&self, key: &NamespacePath) -> Arc<Data> {
         let lock = self
             .loaded_data
             .read()
@@ -223,14 +131,14 @@ impl<Data> ModuleMap<Data> {
             .clone()
     }
 
-    pub fn get_cloned(&self, key: impl ModuleMapKey) -> Data
+    pub fn get_cloned(&self, key: &NamespacePath) -> Data
     where
         Data: Clone,
     {
         self.get(key).as_ref().clone()
     }
 
-    pub fn insert(&self, key: impl Into<EnvironmentNamespace>, data: Data) {
+    pub fn insert(&self, key: impl Into<NamespacePath>, data: Data) {
         let mut lock = self
             .loaded_data
             .write()
@@ -250,61 +158,15 @@ impl<Data> ModuleMap<Data> {
             .collect()
     }
 
-    pub fn lock(&self) -> RwLockReadGuard<'_, HashMap<EnvironmentNamespace, Arc<Data>>> {
+    pub fn lock(&self) -> RwLockReadGuard<'_, HashMap<NamespacePath, Arc<Data>>> {
         self.loaded_data
             .read()
             .expect("Failed to acquire read lock on loaded data")
     }
 
-    pub fn lock_mut(&self) -> RwLockWriteGuard<'_, HashMap<EnvironmentNamespace, Arc<Data>>> {
+    pub fn lock_mut(&self) -> RwLockWriteGuard<'_, HashMap<NamespacePath, Arc<Data>>> {
         self.loaded_data
             .write()
             .expect("Failed to acquire write lock on loaded data")
-    }
-}
-
-impl<'a, Data: Readable<'a, LittleEndian> + Writable<LittleEndian> + Clone> ModuleMap<Data> {
-    pub fn load_data(
-        &self,
-        context: &GlobalCompilationContext,
-        unit: &CompilationUnit,
-    ) -> Option<()> {
-        let data = retrieve_data::<HashMap<EnvironmentNamespace, Data>>(
-            context,
-            unit,
-            &self.storage_extension,
-        )?;
-        let mut lock = self
-            .loaded_data
-            .write()
-            .expect("Failed to acquire write lock on loaded data");
-
-        lock.extend(data.into_iter().map(|(k, v)| (k, Arc::new(v))));
-
-        Some(())
-    }
-
-    pub fn store_all_data(&self, context: &GlobalCompilationContext) {
-        let lock = self
-            .loaded_data
-            .read()
-            .expect("Failed to acquire read lock on loaded data");
-
-        for namespace in lock.keys() {
-            let Some(unit) = context.module_db.unit_for_namespace(namespace) else {
-                continue;
-            };
-
-            if context.module_db.no_reexport(&unit) {
-                continue;
-            }
-
-            self.store_data(context, &unit);
-        }
-    }
-
-    pub fn store_data(&self, context: &GlobalCompilationContext, unit: &CompilationUnit) {
-        let data_copy = self.get_cloned(unit);
-        store_data(context, unit, &self.storage_extension, data_copy);
     }
 }

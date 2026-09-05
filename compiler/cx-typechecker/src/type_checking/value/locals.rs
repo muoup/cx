@@ -15,7 +15,7 @@ use cx_hir::ast::{
 };
 use cx_log::CXResult;
 use cx_thir::{
-    EnvironmentNamespace,
+    NamespacePath,
     thir::{
         expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
         global::THIRGlobalVariable,
@@ -23,11 +23,11 @@ use cx_thir::{
     type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_util::{identifier::CXIdent, module::QualifiedName};
 
 pub(crate) fn typecheck_var_declaration(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     ty: &HIRType,
     name: &CXIdent,

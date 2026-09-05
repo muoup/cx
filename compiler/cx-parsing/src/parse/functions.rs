@@ -15,9 +15,8 @@ use cx_log::CXResult;
 use cx_tokens::{
     identifier, keyword, operator, punctuator,
     token::{PunctuatorType, TokenKind},
-    TokenRange,
 };
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_util::{identifier::CXIdent, module::QualifiedName};
 
 use crate::parse::{
     expressions::parse_expr, parser::ParserData, templates::try_parse_template,
@@ -88,11 +87,7 @@ pub fn try_function_parse(
         contract,
         linkage,
         symbol_naming,
-        range: TokenRange::new(
-            range_start,
-            data.tokens.index,
-            data.file_origin_for_range(range_start, data.tokens.index),
-        ),
+        range: data.token_range(range_start, data.tokens.index),
     };
 
     Ok(Some(FunctionDeclaration {
@@ -162,11 +157,7 @@ fn try_comptime_function_parse(
         return_type,
         kind,
         params: args,
-        range: TokenRange::new(
-            range_start,
-            data.tokens.index,
-            data.file_origin_for_range(range_start, data.tokens.index),
-        ),
+        range: data.token_range(range_start, data.tokens.index),
     };
 
     Ok(Some(ComptimeFunctionDeclaration {

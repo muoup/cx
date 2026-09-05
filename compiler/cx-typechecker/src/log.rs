@@ -1,8 +1,12 @@
 use cx_log::{
     CXResult,
-    error::{CXError, CXRawError, context::CXInternalContext, message::CXStdErrMessage},
+    error::{
+        CXError,
+        CXRawError,
+        context::{CXInternalContext, from_token_range},
+        message::CXStdErrMessage,
+    },
 };
-use cx_pipeline_data::db::ModuleData;
 use cx_tokens::TokenRange;
 
 fn append_notes(mut message: String, notes: Vec<String>) -> String {
@@ -14,14 +18,13 @@ fn append_notes(mut message: String, notes: Vec<String>) -> String {
 }
 
 pub fn generate_type_error(
-    module_data: &ModuleData,
     range: &TokenRange,
     message: impl Into<String>,
     notes: Vec<String>,
 ) -> CXError {
     CXError::new(
         CXStdErrMessage::error("TYPE ERROR", append_notes(message.into(), notes)),
-        module_data.convert_token_range(range),
+        from_token_range(range),
     )
 }
 

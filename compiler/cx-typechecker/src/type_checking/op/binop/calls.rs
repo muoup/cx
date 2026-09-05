@@ -12,7 +12,7 @@ use crate::type_checking::staged_expr::into_expression as staged_into_expression
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
-use cx_thir::EnvironmentNamespace;
+use cx_thir::NamespacePath;
 use cx_thir::thir::data::{
     THIRComptimeFnPrototype, THIRFloatType, THIRFnSignature, THIRType, THIRTypeKind,
 };
@@ -38,7 +38,7 @@ pub const BUILTIN_FNS: &[&str] = &[
 
 pub(crate) fn typecheck_method_call(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     lhs: &HIRExpression,
     rhs: &HIRExpression,
     expr: &HIRExpression,
@@ -69,7 +69,7 @@ pub(crate) fn typecheck_method_call(
 
 fn typecheck_internal_method_call(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     name: &str,
     rhs: &HIRExpression,
     expr: &HIRExpression,
@@ -108,7 +108,7 @@ fn typecheck_internal_method_call(
 
 pub(crate) fn typecheck_va_list(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
 ) -> CXResult<THIRExpression> {
     let list = typecheck_expr(env, namespace, expr, None)?
@@ -133,7 +133,7 @@ pub(crate) fn typecheck_va_list(
 
 pub(crate) fn typecheck_callee_call(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     callee: TypecheckResult,
     implicit_args: Vec<THIRExpression>,
     rhs: &HIRExpression,
@@ -201,7 +201,7 @@ pub(crate) fn typecheck_callee_call(
 
 fn typecheck_args<'a>(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     args: &[&'a HIRExpression],
 ) -> CXResult<Vec<(&'a HIRExpression, TypecheckResult)>> {
     args.iter()
@@ -327,7 +327,7 @@ fn complete_vararg_argument(
 
 fn complete_call_arguments(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     signature: &THIRFnSignature,
     args: Vec<TypecheckResult>,
 ) -> CXResult<Vec<TypecheckResult>> {
@@ -366,7 +366,7 @@ fn coerce_call_arguments(
 
 fn complete_callee(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     function: TypecheckResult,
     implicit_args: &[THIRExpression],
@@ -422,7 +422,7 @@ fn complete_callee(
 
 fn complete_comptime_call(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     prototype: THIRComptimeFnPrototype,
     implicit_args: &[THIRExpression],
@@ -542,7 +542,7 @@ fn complete_comptime_call(
 
 fn complete_staged_call(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     staged: StagedTC,
     raw_args: Vec<&HIRExpression>,

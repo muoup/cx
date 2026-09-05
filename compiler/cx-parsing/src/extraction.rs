@@ -11,7 +11,7 @@ use cx_hir::{
 
 use cx_hir::ast::types::{HIRType, HIRTypeKind, HIRTypeLookup};
 use cx_preparse_data::NamespaceAliases;
-use cx_util::namespace::{NamespacePath, QualifiedName};
+use cx_util::module::{NamespacePath, QualifiedName};
 
 pub struct ExtractionEnv<'a> {
     namespace: &'a NamespacePath,

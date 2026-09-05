@@ -8,7 +8,7 @@ use crate::{
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
 use cx_thir::{
-    EnvironmentNamespace,
+    NamespacePath,
     thir::{data::THIRType, expression::THIRExpression},
 };
 
@@ -19,7 +19,7 @@ pub mod unop;
 
 pub fn try_typecheck_special_binop(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     op: &HIRBinOp,
     expr: &HIRExpression,
     lhs: &HIRExpression,

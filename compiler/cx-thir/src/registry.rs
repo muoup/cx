@@ -3,8 +3,8 @@ use std::{
     mem::{Discriminant, discriminant},
 };
 
+use cx_namespace::module::QualifiedName;
 use cx_target::ArchitectureConfig;
-use cx_util::namespace::QualifiedName;
 
 use crate::{
     thir::contextual_eq::TypeContextEqual,

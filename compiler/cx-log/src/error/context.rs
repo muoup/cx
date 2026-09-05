@@ -1,9 +1,27 @@
 use std::path::PathBuf;
 
+use cx_tokens::TokenRange;
+
 use crate::{
     error::CXErrorContext,
     format::{pointing::point_error, underline::pretty_underline_error},
 };
+
+pub fn from_token_range(range: &TokenRange) -> CXErrorContext {
+    match range {
+        TokenRange::Source {
+            file,
+            byte_start,
+            byte_end,
+        } => CXUnderlineContext::error(file.clone(), *byte_start, *byte_end),
+        TokenRange::Internal => {
+            CXInternalContext::error("diagnostic originated in compiler-generated code")
+        }
+        TokenRange::Error(message) => {
+            CXInternalContext::error(format!("failed to determine source range: {message}"))
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CXSourceSpan {

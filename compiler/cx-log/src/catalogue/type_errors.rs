@@ -2,24 +2,24 @@ use std::cell::LazyCell;
 
 use cx_tokens::TokenRange;
 
-use crate::error::{CXError, context::{CXInternalContext, CXUnderlineContext}, message::CXStdErrMessage};
+use crate::error::{
+    context::from_token_range,
+    message::CXStdErrMessage,
+    CXError,
+};
 
-pub type StandardTypeError = Box<dyn FnOnce(TokenRange) -> CXError>; 
+pub type StandardTypeError = Box<dyn FnOnce(TokenRange) -> CXError>;
 
-pub const fn standard_type_error(code: usize, message: impl Into<String>) -> LazyCell<StandardTypeError> {
-    LazyCell::new(move || {
-        let message = message.into();
-        
-        Box::new(move |token_range: TokenRange| {
-            CXError::new(
-                CXStdErrMessage::error(format!("T{code}"), message.clone()),
-                CXUnderlineContext::new(token_range.namespace()
-            )
-        })
+pub fn standard_type_error(code: usize, message: impl Into<String>) -> StandardTypeError {
+    let message = message.into();
+    Box::new(move |token_range| {
+        CXError::new(
+            CXStdErrMessage::error(format!("T{code}"), message),
+            from_token_range(&token_range),
+        )
     })
 }
 
 thread_local! {
-    pub static ASSIGN_TO_CONST: LazyCell<StandardTypeError> = standard_type_error(0001, "Identifier not found");
-    
+    pub static ASSIGN_TO_CONST: LazyCell<StandardTypeError> = LazyCell::new(|| standard_type_error(0001, "Identifier not found"));
 }

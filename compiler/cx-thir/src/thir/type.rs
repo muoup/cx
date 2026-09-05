@@ -1,5 +1,6 @@
 use cx_hir::ast::modifiers::{HIRTypeQualifiers, VisibilityMode};
-use cx_util::{dense_id, identifier::CXIdent, namespace::QualifiedName};
+use cx_namespace::{mangling::mangle_namespace_symbol, module::QualifiedName};
+use cx_util::{dense_id, identifier::CXIdent};
 use speedy::{Readable, Writable};
 
 use crate::{
@@ -459,7 +460,7 @@ impl THIRType {
 
     pub fn set_qualified_name(&mut self, new_name: QualifiedName) {
         self.lookup_identifier = Some(new_name.clone());
-        self.strong_identifier = Some(new_name.as_flat_name());
+        self.strong_identifier = Some(mangle_namespace_symbol(&new_name));
     }
 
     pub fn named_struct(

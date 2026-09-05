@@ -10,6 +10,8 @@ cx-hir = { path = "../cx-hir" }
 cx-log = { path = "../cx-log" }
 cx-target = { path = "../cx-target" }
 cx-tokens = { path = "../cx-tokens" }
+
 cx-util = { path = "../cx-util" }
+cx-namespace = { path = "../cx-namespace" }
 
 uuid = { version = "1.17.0", features = ["v4"] }

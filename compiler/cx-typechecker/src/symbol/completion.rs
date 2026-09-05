@@ -14,7 +14,7 @@ use cx_log::{
     error::{CXErrorMaybeRaw, CXMaybeRawResult},
 };
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_util::{identifier::CXIdent, module::QualifiedName};
 
 use cx_thir::{
     symbol::MIRSymbol,
@@ -30,10 +30,9 @@ use cx_thir::{
 };
 
 use crate::{
-    EnvironmentNamespace,
+    NamespacePath,
     environment::{SymbolLookupKind, TypeEnvironment},
     symbol::{
-        name_mangling::mangle_qualified_name,
         resolution::{TypeSymbolQuery, apply_template, resolve_symbol, resolve_type_symbol},
     },
     type_checking::{
@@ -44,7 +43,7 @@ use crate::{
 
 pub fn complete_template_input(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     input: &HIRTemplateInput,
 ) -> CXResult<THIRTemplateInput> {
     let args = input
@@ -58,7 +57,7 @@ pub fn complete_template_input(
 
 pub fn complete_type(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     ty: &HIRType,
 ) -> CXResult<THIRType> {
     let id = complete_type_id(env, namespace, ty)?;
@@ -72,7 +71,7 @@ pub fn complete_type(
 
 pub fn complete_type_id(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     ty: &HIRType,
 ) -> CXResult<THIRTypeID> {
     match &ty.kind {
@@ -97,7 +96,7 @@ pub fn complete_type_id(
 
 fn complete_type_inner(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     ty: &HIRType,
 ) -> CXResult<THIRType> {
     let mut completed = match &ty.kind {
@@ -276,7 +275,7 @@ fn apply_type_specifiers(
 
 pub fn complete_prototype(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     prototype: &HIRFunctionPrototype,
 ) -> CXResult<THIRFnPrototype> {
     let return_type_id = complete_type_id(env, namespace, &prototype.return_type)?;
@@ -327,7 +326,7 @@ pub fn complete_prototype(
 
 pub fn complete_comptime_prototype(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     prototype: &HIRComptimeFnPrototype,
 ) -> CXResult<THIRComptimeFnPrototype> {
     let return_type = THIRComptimeValueType {
@@ -382,7 +381,7 @@ fn completed_comptime_symbol_name(
 }
 
 fn function_lookup_identifier(
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     kind: &HIRFunctionKind,
 ) -> QualifiedName {
     let QualifiedName {
@@ -395,7 +394,7 @@ fn function_lookup_identifier(
 
 fn complete_explicit_parameters(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     prototype: &HIRFunctionPrototype,
 ) -> CXResult<Vec<THIRParameter>> {
     prototype
@@ -419,7 +418,7 @@ fn complete_explicit_parameters(
 
 fn complete_identifier_type(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     name: &QualifiedName,
     type_lookup: HIRTypeLookup,
     template_input: &Option<HIRTemplateInput>,
@@ -503,7 +502,7 @@ fn complete_identifier_type(
 
             let ty = complete_type_inner(
                 env,
-                &EnvironmentNamespace::from(&resolved_name.namespace),
+                &NamespacePath::from(&resolved_name.namespace),
                 definition,
             )
             .map_err(CXErrorMaybeRaw::Complete)?;
@@ -521,7 +520,7 @@ fn complete_identifier_type(
             let mir_symbol = resolve_symbol(
                 env,
                 namespace,
-                &EnvironmentNamespace::from(&resolved_name.namespace),
+                &NamespacePath::from(&resolved_name.namespace),
                 &resolved_name.name,
                 &resolution,
             )?;
@@ -546,7 +545,7 @@ fn is_self_predeclaration(definition: &HIRType, name: &QualifiedName) -> bool {
 
 fn complete_resolved_type_lookup(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     name: &QualifiedName,
     symbol: MIRSymbol,
     template_input: &Option<HIRTemplateInput>,
@@ -572,7 +571,7 @@ fn complete_resolved_type_lookup(
 
 fn complete_template_type_lookup(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     name: &QualifiedName,
     mir_symbol: &MIRSymbol,
     template_input: &Option<HIRTemplateInput>,
@@ -604,7 +603,7 @@ fn complete_template_type_lookup(
 
 fn make_aggregate_type<F>(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     ty: &HIRType,
     name: Option<CXIdent>,
     attributes: Option<&HIRAggregateAttributes>,
@@ -784,7 +783,7 @@ fn type_contains_by_value(
 
 fn resolve_aggregate_move_attributes(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     attributes: Option<&HIRAggregateAttributes>,
 ) -> CXMaybeRawResult<THIRMoveSemantics> {
     let Some(attributes) = attributes else {
@@ -825,7 +824,7 @@ fn resolve_aggregate_move_attributes(
 
 fn complete_field(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     field: &HIRField,
 ) -> CXResult<THIRField> {
     match field {
@@ -891,7 +890,7 @@ fn owned_unsafe_move(env: &TypeEnvironment, ty: &THIRType) -> bool {
 
 fn completed_function_name(
     env: &TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     kind: &HIRFunctionKind,
     symbol_naming: HIRSymbolNameScheme,
 ) -> CXResult<String> {
@@ -907,7 +906,7 @@ fn completed_function_name(
         HIRFunctionKind::AssociatedFunction {
             namespace: associated_namespace,
             name,
-        } => cx_util::namespace::mangle_namespace_symbol(&QualifiedName::new(
+        } => cx_util::module::mangle_namespace_symbol(&QualifiedName::new(
             namespace.child(associated_namespace.clone()),
             name.clone(),
         )),

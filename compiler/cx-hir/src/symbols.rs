@@ -1,8 +1,8 @@
 use std::collections::{hash_map::Entry, HashMap};
 
+use cx_namespace::module::NamespacePath;
 use cx_preparse_data::NamespaceAliases;
 use cx_util::identifier::CXIdent;
-use cx_util::namespace::NamespacePath;
 
 use crate::ast::{
     expression::HIRExpression,

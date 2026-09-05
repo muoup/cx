@@ -1,5 +1,5 @@
 use cx_hir::ast::modifiers::{HIR_CONST, HIR_RESTRICT, HIR_VOLATILE, HIRTypeQualifiers};
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_util::identifier::CXIdent;
 
 use crate::thir::data::{THIRFnPrototype, THIRFnSignature, THIRParameter};
 use crate::thir::expression::{
@@ -215,8 +215,7 @@ fn write_type_base_name(
         .or_else(|| ty.lookup_identifier())
         .or_else(|| id.and_then(|id| definitions.type_id_lookup_identifier(id)))
     {
-        write_qualified_name(f, name)?;
-        return Ok(true);
+        return write!(f, "{name}").map(|_| true);
     }
 
     Ok(false)
@@ -228,10 +227,6 @@ fn has_type_name(definitions: &dyn THIRTypeContext, ty: &THIRType, id: Option<TH
         .or_else(|| ty.lookup_identifier())
         .or_else(|| id.and_then(|id| definitions.type_id_lookup_identifier(id)))
         .is_some()
-}
-
-fn write_qualified_name(f: &mut Formatter<'_>, name: &QualifiedName) -> std::fmt::Result {
-    write!(f, "{name}")
 }
 
 fn write_type_root(

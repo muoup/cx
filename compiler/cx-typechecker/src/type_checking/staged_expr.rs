@@ -1,7 +1,7 @@
 use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
 use cx_thir::{
-    EnvironmentNamespace,
+    NamespacePath,
     thir::{
         comptime::{THIRStagedExpr, THIRStagedParameter},
         data::{THIRComptimeValueType, THIRType},
@@ -9,7 +9,7 @@ use cx_thir::{
     },
 };
 use cx_tokens::TokenRange;
-use cx_util::namespace::QualifiedName;
+use cx_util::module::QualifiedName;
 
 use crate::{
     environment::TypeEnvironment,
@@ -22,7 +22,7 @@ use crate::{
 
 pub fn typecheck_staged_expr(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     inner: &HIRExpression,
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
@@ -45,7 +45,7 @@ pub fn typecheck_staged_expr(
 
 pub fn complete_staged_expr(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     deferred: DeferredStagedExpr,
     value_type: &THIRComptimeValueType,
 ) -> CXResult<THIRStagedExpr> {

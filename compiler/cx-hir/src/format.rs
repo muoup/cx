@@ -41,7 +41,13 @@ impl<'a> HIRExprFormatter<'a> {
 
 impl Display for HIR {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        writeln!(f, "HIR for file: {}", self.module_path)?;
+        writeln!(
+            f,
+            "HIR for file: {}",
+            self.module_path
+                .to_str()
+                .unwrap_or("Cannot print file path")
+        )?;
 
         for def in self.definition_stmts.iter() {
             writeln!(f, "{}", def)?;

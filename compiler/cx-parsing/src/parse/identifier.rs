@@ -8,12 +8,12 @@ use cx_log::{
     error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
 };
 use cx_tokens::{
-    TokenIter, operator,
+    TokenIter, TokenRange, operator,
     token::{OperatorType, TokenKind},
 };
 use cx_util::{
     identifier::CXIdent,
-    namespace::{EnvironmentNamespace, NamespacePath, QualifiedName},
+    module::{NamespacePath, QualifiedName},
 };
 
 use crate::{log::parse_point_error, next_kind, try_next};
@@ -47,13 +47,13 @@ impl ParsedIdentifier {
         self,
         start_index: usize,
         end_index: usize,
-        file_origin: EnvironmentNamespace,
+        range: TokenRange,
     ) -> HIRExpression {
         HIRExprKind::Identifier {
             name: self.name,
             template_input: self.template_input,
         }
-        .into_expr(start_index, end_index, file_origin)
+        .into_expr(start_index, end_index, range)
     }
 
     #[allow(dead_code)]

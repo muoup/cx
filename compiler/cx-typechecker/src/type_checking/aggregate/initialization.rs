@@ -1,7 +1,7 @@
 use cx_hir::ast::expression::{HIRExpression, HIRInitIndex};
 use cx_log::CXResult;
 use cx_thir::{
-    EnvironmentNamespace,
+    NamespacePath,
     thir::{
         data::{THIRType, THIRTypeKind},
         expression::{StructInitialization, THIRExpressionKind},
@@ -20,7 +20,7 @@ use crate::{
 
 pub fn typecheck_initializer_list(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     indices: &[HIRInitIndex],
     to_type: Option<&THIRType>,
@@ -96,7 +96,7 @@ pub fn typecheck_initializer_list(
 
 fn typecheck_union_initializer(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     indices: &[HIRInitIndex],
     to_type: &THIRType,
@@ -154,7 +154,7 @@ fn typecheck_union_initializer(
 
 fn typecheck_array_initializer(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     indices: &[HIRInitIndex],
     inner_type: &THIRType,
     size: Option<&cx_thir::thir::expression::THIRExpression>,
@@ -202,7 +202,7 @@ fn typecheck_array_initializer(
 
 fn typecheck_structured_initializer(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     indices: &[HIRInitIndex],
     to_type: &THIRType,

@@ -4,7 +4,7 @@ use cx_hir::ast::{
 };
 use cx_log::CXResult;
 use cx_thir::{
-    EnvironmentNamespace,
+    NamespacePath,
     thir::{
         expression::{THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp},
         r#type::{THIRIntType, THIRType, THIRTypeKind},
@@ -33,7 +33,7 @@ use crate::{
 
 pub fn typecheck_unop(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     op: &HIRUnOp,
     operand: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
@@ -228,7 +228,7 @@ pub fn typecheck_unop(
 
 pub(crate) fn typecheck_sizeof_type(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     _expr: &HIRExpression,
     ty: &HIRType,
 ) -> CXResult<TypecheckResult> {
@@ -239,7 +239,7 @@ pub(crate) fn typecheck_sizeof_type(
 
 pub(crate) fn typecheck_alignof_type(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     ty: &HIRType,
 ) -> CXResult<TypecheckResult> {
@@ -249,7 +249,7 @@ pub(crate) fn typecheck_alignof_type(
 
 pub(crate) fn typecheck_alignof_expr(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     let tc_expr = typecheck_expr(env, namespace, expr, None)
@@ -261,7 +261,7 @@ pub(crate) fn typecheck_alignof_expr(
 
 pub(crate) fn typecheck_sizeof_expr(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     let tc_expr = typecheck_expr(env, namespace, expr, None)

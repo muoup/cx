@@ -3,7 +3,7 @@ use cx_hir::symbols::SymbolNamespaceData;
 use cx_log::CXResult;
 use cx_preparse_data::{PreparseContents, registry::GlobalPreparseRegistry};
 use cx_tokens::TokenIter;
-use cx_util::namespace::NamespacePath;
+use cx_util::module::NamespacePath;
 
 use crate::{
     extraction::ExtractionEnv,

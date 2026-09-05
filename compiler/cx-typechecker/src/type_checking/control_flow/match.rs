@@ -13,7 +13,7 @@ use crate::type_checking::value::resolve_indirect_base;
 use cx_hir::ast::template::HIRTemplateInput;
 use cx_hir::ast::{expression::HIRExpression, pattern::HIRPattern};
 use cx_log::CXResult;
-use cx_thir::EnvironmentNamespace;
+use cx_thir::NamespacePath;
 use cx_thir::thir::{
     contextual_eq::TypeContextEqual,
     data::{THIRType, THIRTypeKind},
@@ -23,11 +23,11 @@ use cx_thir::thir::{
 use cx_thir::type_context::THIRTypeContext;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
-use cx_util::namespace::QualifiedName;
+use cx_util::module::QualifiedName;
 
 pub fn typecheck_match(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     condition: &HIRExpression,
     arms: &[(HIRPattern, HIRExpression)],
     default: Option<&HIRExpression>,
@@ -286,7 +286,7 @@ struct MatchArmFlow {
 
 fn typecheck_arm(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     body: &HIRExpression,
     label: &'static str,
 ) -> CXResult<(THIRExpression, MatchArmFlow)> {
@@ -305,7 +305,7 @@ fn typecheck_arm(
 
 fn validate_variant_template_input(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     union_type: &THIRType,
     template_input: Option<&HIRTemplateInput>,
     condition: &HIRExpression,

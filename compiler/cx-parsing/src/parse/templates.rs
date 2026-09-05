@@ -4,8 +4,8 @@ use cx_hir::ast::template::{HIRTemplateInput, HIRTemplatePrototype};
 use cx_hir::ast::types::{HIRType, HIRTypeKind, HIRTypeLookup};
 use cx_log::CXResult;
 use cx_tokens::{TokenIter, identifier, operator};
-use cx_util::namespace::NamespacePath;
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_util::module::NamespacePath;
+use cx_util::{identifier::CXIdent, module::QualifiedName};
 
 use crate::parse::types::parse_initializer;
 

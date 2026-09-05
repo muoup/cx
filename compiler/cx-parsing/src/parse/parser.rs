@@ -9,10 +9,10 @@ use cx_namespace::QualifiedLookup;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_preparse_data::symbol_data::PreparseSymbolKind;
 use cx_preparse_data::{NamespaceAliases, PreparseContents, VisibilityMode};
-use cx_tokens::TokenIter;
+use cx_tokens::{TokenIter, TokenRange};
 use cx_util::identifier::CXIdent;
 use cx_util::module_path::ModulePath;
-use cx_util::namespace::{EnvironmentNamespace, NamespacePath, QualifiedName};
+use cx_util::module::{NamespacePath, QualifiedName};
 
 use crate::log::parse_point_error;
 
@@ -24,7 +24,6 @@ pub struct ParserData<'a> {
     include_states: Vec<IncludeParserState>,
     pub expr_commas: Vec<bool>,
     pub pp_contents: &'a PreparseContents,
-    pub file_origin: EnvironmentNamespace,
     // uses u8 mapping instead of a set to prevent problems with shadowing
     pub temporary_type_names: HashMap<CXIdent, u8>,
     namespace_aliases: NamespaceAliases,
@@ -46,8 +45,6 @@ impl<'a> ParserData<'a> {
         pp_contents: &'a PreparseContents,
         registry: &'a GlobalPreparseRegistry,
     ) -> Self {
-        let file_origin = EnvironmentNamespace::from(pp_contents.module_symbols.namespace.clone());
-
         let c_mode = tokens
             .file
             .extension()
@@ -60,7 +57,6 @@ impl<'a> ParserData<'a> {
             include_states: Vec::new(),
             expr_commas: vec![true],
             pp_contents,
-            file_origin,
             registry,
             temporary_type_names: HashMap::new(),
             namespace_aliases: pp_contents.namespace_aliases.clone(),
@@ -89,12 +85,12 @@ impl<'a> ParserData<'a> {
         self.expr_commas.pop();
     }
 
-    pub fn file_origin_for_range(
+    pub fn token_range(
         &self,
-        _start_token: usize,
-        _end_token: usize,
-    ) -> EnvironmentNamespace {
-        self.file_origin.clone()
+        start_token: usize,
+        end_token: usize,
+    ) -> TokenRange {
+        TokenRange::from_tokens(start_token, end_token, self.tokens.slice)
     }
 
     pub fn get_comma_mode(&self) -> bool {

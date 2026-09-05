@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use cx_util::namespace::{NamespacePath, QualifiedName};
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use speedy::{Readable, Writable};
 
 use crate::symbol_data::PreparseModuleSymbols;

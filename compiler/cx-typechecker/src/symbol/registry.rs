@@ -4,7 +4,7 @@ use cx_hir::{ast::expression::HIRExpression, registry::GlobalSymbolRegistry};
 use cx_log::{CXRawResult, CXResult};
 use cx_target::ArchitectureConfig;
 use cx_thir::{
-    EnvironmentNamespace,
+    NamespacePath,
     intrinsic_types::INTRINSIC_TYPES,
     registry::THIRDecomposedRegistry,
     symbol::MIRSymbol,
@@ -15,7 +15,7 @@ use cx_thir::{
     },
     type_context::THIRTypeContext,
 };
-use cx_util::{identifier::CXIdent, namespace::QualifiedName, scoped_map::ScopedMap};
+use cx_util::{identifier::CXIdent, module::QualifiedName, scoped_map::ScopedMap};
 
 /// Module-local symbol definitions
 pub struct MIRSymbolRegistry<'a> {
@@ -222,7 +222,7 @@ impl<'a> MIRSymbolRegistry<'a> {
         &mut self,
         id: u64,
         name: QualifiedName,
-        namespace: EnvironmentNamespace,
+        namespace: NamespacePath,
         expr: HIRExpression,
         expected_type: THIRType,
     ) {

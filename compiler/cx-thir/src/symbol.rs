@@ -3,11 +3,12 @@ use cx_hir::{
     symbols::HIRSymbol,
 };
 use cx_log::error::{CXRawResult, message::CXStdErrMessage};
+use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_util::identifier::CXIdent;
 
 use crate::{
-    EnvironmentNamespace,
+    NamespacePath,
     thir::{
         data::{THIRComptimeFnPrototype, THIRFnPrototype, THIRType, THIRTypeID, THIRTypeKind},
         expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
@@ -21,11 +22,11 @@ pub enum MIRSymbol {
     FunctionReference(THIRFnPrototype),
     ComptimeFunctionReference {
         prototype: THIRComptimeFnPrototype,
-        namespace: EnvironmentNamespace,
+        namespace: NamespacePath,
     },
     StagedExpression {
         id: u64,
-        namespace: EnvironmentNamespace,
+        namespace: NamespacePath,
         expr: Box<HIRExpression>,
         expected_type: THIRType,
     },
@@ -41,7 +42,7 @@ pub enum MIRSymbol {
     Template {
         template_prototype: HIRTemplatePrototype,
         name: CXIdent,
-        namespace: EnvironmentNamespace,
+        namespace: NamespacePath,
         source: Box<HIRSymbol>,
         tag: Option<HIRTagKind>,
     },
@@ -66,10 +67,7 @@ impl MIRSymbol {
                 ..
             } => {
                 if source.is_type() {
-                    Some(QualifiedName::new(
-                        namespace.as_namespace_path().clone(),
-                        name.clone(),
-                    ))
+                    Some(QualifiedName::new(namespace.clone(), name.clone()))
                 } else {
                     None
                 }

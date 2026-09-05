@@ -10,18 +10,18 @@ use crate::{
 use cx_hir::ast::{expression::HIRExpression, template::HIRTemplateInput};
 use cx_log::CXResult;
 use cx_thir::{
-    EnvironmentNamespace,
+    NamespacePath,
     symbol::MIRSymbol,
     thir::{
         data::THIRTypeKind,
         expression::{THIRExpression, THIRExpressionKind},
     },
 };
-use cx_util::namespace::QualifiedName;
+use cx_util::module::QualifiedName;
 
 pub(crate) fn typecheck_identifier(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     name: &QualifiedName,
     template_input: Option<&HIRTemplateInput>,

@@ -1,4 +1,4 @@
-pub use cx_util::namespace::EnvironmentNamespace;
+use cx_namespace::module::NamespacePath;
 
 use crate::{
     registry::THIRDecomposedRegistry,
@@ -19,7 +19,7 @@ mod format;
 
 #[derive(Debug, Clone)]
 pub struct THIRUnit {
-    pub source_namespace: EnvironmentNamespace,
+    pub source_namespace: NamespacePath,
     pub registry: THIRDecomposedRegistry,
 
     pub functions: Vec<THIRFunction>,

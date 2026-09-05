@@ -28,7 +28,7 @@ use crate::type_checking::value::{
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_hir::ast::modifiers::HIR_CONST;
 use cx_log::CXResult;
-use cx_thir::EnvironmentNamespace;
+use cx_thir::NamespacePath;
 use cx_thir::thir::data::{THIRIntType, THIRTypeKind};
 use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
 use cx_tokens::TokenRange;
@@ -39,7 +39,7 @@ use cx_thir::thir::data::THIRType;
 
 pub fn typecheck_expr(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
@@ -48,7 +48,7 @@ pub fn typecheck_expr(
 
 fn typecheck_expr_inner(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
@@ -614,7 +614,7 @@ fn typecheck_expr_inner(
 
 pub fn add_implicit_return(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: THIRExpression,
 ) -> CXResult<THIRExpression> {
     if !expr_may_fall_through(&expr) {

@@ -3,7 +3,7 @@ use std::fmt::{Debug, Formatter};
 use cx_hir::ast::{expression::HIRExpression, template::HIRTemplateInput};
 use cx_log::{CXRawResult, CXResult};
 use cx_thir::{
-    EnvironmentNamespace,
+    NamespacePath,
     symbol::MIRSymbol,
     thir::{
         comptime::THIRStagedExpr,
@@ -12,7 +12,7 @@ use cx_thir::{
     },
 };
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_util::{identifier::CXIdent, module::QualifiedName};
 
 use crate::environment::TypeEnvironment;
 
@@ -102,7 +102,7 @@ pub struct DeferredStagedExpr {
 }
 
 type ExpectedTypeResolver<T> =
-    dyn FnOnce(&mut TypeEnvironment, &EnvironmentNamespace, &THIRType) -> CXResult<T>;
+    dyn FnOnce(&mut TypeEnvironment, &NamespacePath, &THIRType) -> CXResult<T>;
 
 pub enum TypecheckResult<T = TypecheckedExpr> {
     Ready(T),
@@ -175,7 +175,7 @@ impl TypecheckResult {
     where
         F: FnOnce(
                 &mut TypeEnvironment,
-                &EnvironmentNamespace,
+                &NamespacePath,
                 &THIRType,
             ) -> CXResult<THIRExpression>
             + 'static,
@@ -296,7 +296,7 @@ impl TypecheckResult {
     pub fn apply_expected_type(
         self,
         env: &mut TypeEnvironment,
-        namespace: &EnvironmentNamespace,
+        namespace: &NamespacePath,
         expected_type: &THIRType,
     ) -> CXResult<Self> {
         match self {
@@ -310,7 +310,7 @@ impl TypecheckResult {
     pub fn apply_staged_type(
         self,
         env: &mut TypeEnvironment,
-        namespace: &EnvironmentNamespace,
+        namespace: &NamespacePath,
         value_type: &THIRComptimeValueType,
     ) -> CXResult<Self> {
         match self {

@@ -1,6 +1,9 @@
+use std::path::PathBuf;
+
+use cx_namespace::module::NamespacePath;
 pub use cx_preparse_data::Import as HIRImport;
 use cx_preparse_data::NamespaceAliases;
-use cx_util::{identifier::CXIdent, module_path::ModulePath, namespace::NamespacePath};
+use cx_util::{identifier::CXIdent};
 
 use crate::ast::{
     expression::HIRExpression,
@@ -21,7 +24,7 @@ pub mod types;
 
 #[derive(Debug)]
 pub struct HIR {
-    pub module_path: ModulePath,
+    pub module_path: PathBuf,
     pub imports: Vec<HIRImport>,
     pub definition_stmts: Vec<HIRDefinition>,
     pub namespace_aliases: NamespaceAliases,
@@ -64,7 +67,7 @@ pub enum HIRStmt {
 }
 
 impl HIR {
-    pub fn new(module_path: ModulePath, imports: Vec<HIRImport>) -> Self {
+    pub fn new(module_path: PathBuf, imports: Vec<HIRImport>) -> Self {
         Self {
             module_path,
             imports,

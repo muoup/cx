@@ -7,8 +7,7 @@ use crate::position::{byte_range, line_range};
 use cx_pipeline::LSPErrors;
 use cx_pipeline_data::config::CXProjectConfig;
 use cx_pipeline_data::{
-    ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, GlobalCompilationContext,
-    OptimizationLevel,
+    ArchitectureConfig, CompilationMode, CompilationUnit, CompilerBackend, CompilerConfig, GlobalCompilationContext, OptimizationLevel
 };
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -69,7 +68,7 @@ pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckRepo
         .to_string_lossy()
         .to_string();
 
-    let unit = cx_pipeline_data::CompilationUnit::from_rooted(&unit_identifier, project_root);
+    let unit = CompilationUnit::from_rooted(&unit_identifier, project_root);
     let internal_directory = project_root.join(".internal").join("cx-lsp");
     let ProjectSettings {
         config,

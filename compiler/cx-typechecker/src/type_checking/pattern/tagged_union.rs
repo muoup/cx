@@ -1,7 +1,7 @@
 use cx_hir::ast::{expression::HIRExpression, pattern::HIRPattern, template::HIRTemplateInput};
 use cx_log::CXResult;
-use cx_thir::EnvironmentNamespace;
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_thir::NamespacePath;
+use cx_util::{identifier::CXIdent, module::QualifiedName};
 
 use crate::environment::TypeEnvironment;
 
@@ -14,7 +14,7 @@ pub struct TypeConstructor {
 
 pub fn resolve_type_constructor_pattern(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     pattern: &HIRPattern,
 ) -> CXResult<TypeConstructor> {

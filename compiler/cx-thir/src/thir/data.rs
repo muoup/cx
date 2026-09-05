@@ -1,5 +1,6 @@
 use cx_hir::ast::function::HIRFunctionContract;
-use cx_util::{identifier::CXIdent, linkage::LinkageMode, namespace::QualifiedName};
+use cx_namespace::module::QualifiedName;
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::thir::contextual_eq::{TypeComparisonState, TypeContextEqual, compare_ordered};
 use crate::thir::expression::{THIRExpression, THIRLocalID};

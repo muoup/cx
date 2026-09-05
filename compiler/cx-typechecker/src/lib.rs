@@ -1,6 +1,6 @@
 use cx_hir::ast::{HIR, HIRStmt, global_var::HIRGlobalVariable};
 use cx_log::CXResult;
-use cx_thir::EnvironmentNamespace;
+use cx_thir::NamespacePath;
 use cx_thir::thir::data::THIRFunction;
 
 pub mod environment;
@@ -20,7 +20,7 @@ use crate::{environment::TypeEnvironment, type_checking::functions::typecheck_fu
 
 pub fn typecheck(env: &mut TypeEnvironment, ast: &HIR) -> CXResult<()> {
     for definition in &ast.definition_stmts {
-        let namespace = EnvironmentNamespace::from(definition.namespace.clone());
+        let namespace = NamespacePath::from(definition.namespace.clone());
 
         match &definition.stmt {
             HIRStmt::FunctionDefinition {

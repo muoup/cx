@@ -3,7 +3,7 @@ use std::{
     sync::RwLock,
 };
 
-use cx_util::namespace::{NamespacePath, QualifiedName};
+use cx_namespace::module::{NamespacePath, QualifiedName};
 
 use crate::{
     ast::modifiers::HIRSymbolNameScheme,

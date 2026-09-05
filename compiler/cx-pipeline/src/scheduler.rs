@@ -24,7 +24,7 @@ use cx_typechecker::environment::TypeEnvironment;
 use cx_typechecker::typecheck;
 use cx_util::format::{dump_data, dumps_enabled, with_dump_file};
 use cx_util::module_path::ModulePath;
-use cx_util::namespace::{NamespacePath, QualifiedName};
+use cx_util::module::{NamespacePath, QualifiedName};
 use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::{HashMap, HashSet};
@@ -182,7 +182,7 @@ fn import_units_for_unit(
         .module_db
         .preparse_base
         .lock()
-        .get(&unit.namespace().clone())
+        .get(&unit.module().clone())
         .map(|preparse| {
             import_module_paths(&preparse.imports)
                 .map(|import| {
@@ -371,7 +371,7 @@ pub(crate) fn perform_job(
                 &preparse_config,
                 TokenIter::new(&tokens, file_path),
                 job.unit.to_string(),
-                job.unit.namespace().as_namespace_path().clone(),
+                job.unit.namespace().clone(),
             )?;
 
             if !job.unit.is_std_lib() {
@@ -419,7 +419,7 @@ pub(crate) fn perform_job(
                 dump_data(&parsed_ast);
             }
 
-            let namespace = job.unit.namespace().as_namespace_path().clone();
+            let namespace = job.unit.namespace().clone();
             let decomposition = ast_extract_symbols(&namespace, &parsed_ast);
 
             for (namespace, bucket) in decomposition.symbol_buckets {
@@ -493,7 +493,6 @@ pub(crate) fn perform_job(
                 )
                 .map_err(|error| {
                     diagnostics::mir_diagnostic_error(
-                        &context.module_db,
                         Some(&mir),
                         error.diagnostic(),
                     )

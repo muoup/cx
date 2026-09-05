@@ -4,7 +4,7 @@ use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
 use cx_log::CXResult;
-use cx_thir::EnvironmentNamespace;
+use cx_thir::NamespacePath;
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
     expression::THIRExpressionKind,
@@ -49,7 +49,7 @@ fn next_case_boundary(
 
 pub fn typecheck_switch(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     condition: &HIRExpression,
     block: &[HIRExpression],

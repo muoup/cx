@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use cx_lmir::compiler_functions::ASSERTION;
 use cx_lmir::{LMIRFunctionMap, LMIRUnit, LinkageType};
 use cx_log::CXResult;
 use cx_mir::ty::interface::MTRegistry;
@@ -27,7 +28,7 @@ pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistryBuilder) -> CXRes
     }
 
     prototypes
-        .entry(cx_lmir::compiler_functions::ASSERTION.symbol_name())
+        .entry(ASSERTION.symbol_name())
         .or_insert_with(|| globals::assertion_prototype(types));
 
     let mut globals = mir.globals().collect::<Vec<_>>();

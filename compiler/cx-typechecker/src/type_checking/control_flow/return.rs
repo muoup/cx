@@ -1,6 +1,6 @@
 use cx_log::CXResult;
 use cx_thir::{
-    EnvironmentNamespace,
+    NamespacePath,
     thir::{
         expression::{THIRExpression, THIRExpressionKind},
         r#type::THIRType,
@@ -8,7 +8,7 @@ use cx_thir::{
     type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
-use cx_util::namespace::QualifiedName;
+use cx_util::module::QualifiedName;
 
 use crate::{
     environment::TypeEnvironment,
@@ -28,7 +28,7 @@ fn typechange_can_forward_region(return_type: &THIRType) -> bool {
 
 pub fn typecheck_return(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     return_range: &TokenRange,
     value: Option<THIRExpression>,
 ) -> CXResult<TypecheckResult> {

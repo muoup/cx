@@ -21,7 +21,7 @@ use cx_tokens::{
     TokenIter, TokenRange, identifier, intrinsic, keyword, operator, punctuator, specifier,
 };
 use cx_util::identifier::CXIdent;
-use cx_util::namespace::QualifiedName;
+use cx_util::module::QualifiedName;
 
 use crate::parse::functions::{ParseParamsResult, parse_params};
 use crate::parse::templates::{note_templated_types, try_parse_template, unnote_templated_types};
@@ -61,11 +61,7 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
 }
 
 fn token_range(data: &ParserData, start: usize, end: usize) -> TokenRange {
-    TokenRange::new(
-        start,
-        end.max(start.saturating_add(1)),
-        data.file_origin_for_range(start, end),
-    )
+    data.token_range(start, end.max(start.saturating_add(1)))
 }
 
 fn parse_type_attributes(

@@ -5,7 +5,7 @@ use cx_hir::{
 use cx_log::CXResult;
 use cx_thir::type_context::THIRTypeContext;
 use cx_thir::{
-    EnvironmentNamespace,
+    NamespacePath,
     thir::{
         data::{
             THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter,
@@ -16,7 +16,7 @@ use cx_thir::{
     },
 };
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, linkage::LinkageMode, namespace::QualifiedName};
+use cx_util::{identifier::CXIdent, linkage::LinkageMode, module::QualifiedName};
 
 use crate::{
     environment::{THIRFunctionGenRequest, TypeEnvironment},
@@ -237,7 +237,7 @@ fn realize_comptime_fn_template(
         unreachable!("Expected comptime function to be a template");
     };
 
-    let namespace = EnvironmentNamespace::from(symbol_lexical_namespace(
+    let namespace = NamespacePath::from(symbol_lexical_namespace(
         &lookup_identifier.namespace,
         &stmt,
     ));
