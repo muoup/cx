@@ -1,7 +1,7 @@
 use cx_hir::ast::global_var::HIREnumDefinition;
 use cx_log::CXResult;
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_thir::{
-    NamespacePath,
     symbol::MIRSymbol,
     thir::{
         expression::{THIRBinOp, THIRExpression, THIRExpressionKind, THIRIntBinOp},
@@ -9,7 +9,6 @@ use cx_thir::{
     },
 };
 use cx_tokens::TokenRange;
-use cx_util::module::QualifiedName;
 
 use crate::{
     environment::TypeEnvironment,

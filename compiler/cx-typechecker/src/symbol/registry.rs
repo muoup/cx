@@ -291,4 +291,18 @@ impl<'a> MIRSymbolRegistry<'a> {
     pub fn contains_type_id(&self, id: THIRTypeID) -> bool {
         self.typeid_defs.contains_key(&id)
     }
+
+    pub fn pointer_to(&mut self, ty: THIRType) -> THIRType {
+        let inner_type = self.generate_type_id(ty);
+        THIRTypeKind::PointerTo { inner_type }.into()
+    }
+
+    pub fn mem_ref_to(&mut self, ty: THIRType) -> THIRType {
+        let inner_type = self.generate_type_id(ty);
+        THIRTypeKind::MemoryReference {
+            inner_type,
+            bitfield: None,
+        }
+        .into()
+    }
 }

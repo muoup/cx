@@ -28,7 +28,7 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResu
     if mem_inner.get_specifier(cx_hir::ast::modifiers::HIR_CONST) {
         array_inner = array_inner.with_specifier(cx_hir::ast::modifiers::HIR_CONST);
     }
-    let new_type = env.symbols.pointer_to(array_inner);
+    let new_type = env.symbols.ptr_inner(array_inner);
 
     let coerced = THIRExpression {
         _type: new_type,

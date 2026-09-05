@@ -10,13 +10,12 @@ use cx_log::{
     CXRawResult, CXResult,
     error::{CXErrorMaybeRaw, CXMaybeRawResult},
 };
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_thir::{
-    NamespacePath,
     symbol::MIRSymbol,
     thir::data::{THIRFnSignature, THIRTemplateInput, THIRType, THIRTypeKind},
     type_context::THIRTypeContext,
 };
-use cx_util::module::QualifiedName;
 
 use crate::{
     environment::TypeEnvironment,

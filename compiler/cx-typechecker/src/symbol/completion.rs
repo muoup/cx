@@ -423,19 +423,8 @@ fn complete_identifier_type(
     template_input: &Option<HIRTemplateInput>,
 ) -> CXMaybeRawResult<THIRTypeID> {
     let symbol = match type_lookup {
-        HIRTypeLookup::Standard => {
-            env.lookup_symbol(namespace, name)
-                .transpose()
-                .or_else(|| {
-                    env.lookup_tag_symbol(&NamespacePath::root(), name)
-                        .transpose()
-                })
-        }
-
-        HIRTypeLookup::Tag(tag) => env
-            .lookup_tag_symbol(namespace, name)
-            .transpose()
-            .and_then(|symbol| if symbol?.kind
+        HIRTypeLookup::Standard => todo!()
+        HIRTypeLookup::Tag(tag) => todo!()
     };
 }
 
