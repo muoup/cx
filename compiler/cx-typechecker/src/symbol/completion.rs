@@ -34,7 +34,10 @@ use cx_thir::{
 use crate::{
     NamespacePath,
     environment::TypeEnvironment,
-    symbol::resolution::{apply_template, resolve_symbol_inner, resolve_type_symbol},
+    symbol::{
+        resolution::{resolve_symbol_inner, resolve_type_symbol},
+        template::apply_template,
+    },
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
         typechecker::typecheck_expr,

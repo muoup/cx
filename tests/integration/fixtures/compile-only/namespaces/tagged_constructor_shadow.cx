@@ -1,0 +1,11 @@
+enum union Choice {
+    value :: int,
+    empty :: void
+};
+
+typedef int Choice;
+
+union Choice make_choice() {
+    Choice ordinary = 4;
+    return Choice::value(ordinary);
+}

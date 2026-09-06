@@ -144,17 +144,27 @@ impl CompilationUnit {
 }
 
 impl<'a, C: Context> Readable<'a, C> for CompilationUnit {
-    fn read_from<R: speedy::Reader<'a, C>>(_: &mut R) -> Result<Self, C::Error> {
-        todo!()
+    fn read_from<R: speedy::Reader<'a, C>>(reader: &mut R) -> Result<Self, C::Error> {
+        let module = PathBuf::from(String::read_from(reader)?);
+        let namespace = NamespacePath::read_from(reader)?;
+        Ok(Self {
+            module: ModulePath::new(module),
+            namespace,
+        })
     }
 }
 
 impl<C: Context> Writable<C> for CompilationUnit {
-    fn write_to<W>(&self, _: &mut W) -> Result<(), C::Error>
+    fn write_to<W>(&self, writer: &mut W) -> Result<(), C::Error>
     where
         W: ?Sized + speedy::Writer<C>,
     {
-        todo!()
+        self.module
+            .as_path()
+            .to_str()
+            .ok_or_else(|| speedy::Error::custom("Module path is not valid UTF-8"))?
+            .write_to(writer)?;
+        self.namespace.write_to(writer)
     }
 }
 
@@ -168,5 +178,26 @@ impl Hash for CompilationUnit {
 impl Display for CompilationUnit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Unit {}", self.namespace())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use speedy::{Readable, Writable};
+
+    #[test]
+    fn compilation_unit_round_trip_preserves_module_and_namespace() {
+        let module = ModulePath::new(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"));
+        let namespace = NamespacePath::from_str("custom::logical::module");
+        let unit = CompilationUnit::new(
+            Path::new(env!("CARGO_MANIFEST_DIR")),
+            module,
+            Some(namespace),
+        );
+        let encoded = unit.write_to_vec().unwrap();
+        let decoded = CompilationUnit::read_from_buffer(&encoded).unwrap();
+
+        assert_eq!(decoded, unit);
     }
 }

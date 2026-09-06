@@ -3,14 +3,13 @@ use cx_hir::{
     symbols::{HIRSymbolData, HIRSymbolKind},
 };
 use cx_log::CXResult;
-use cx_namespace::{mangling::mangle_namespace_symbol, module::QualifiedName};
+use cx_namespace::module::QualifiedName;
 use cx_thir::thir::{
     data::{
         THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter,
         THIRTemplateInput,
     },
     expression::{THIRExpression, THIRExpressionKind},
-    name_mangling::mangle_template_name,
     r#type::THIRType,
 };
 use cx_tokens::TokenRange;
@@ -18,7 +17,7 @@ use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
     environment::{THIRFunctionGenRequest, TypeEnvironment},
-    symbol::resolution::{apply_template_input, symbol_lexical_namespace},
+    symbol::{resolution::symbol_lexical_namespace, template::apply_template_input},
     type_checking::functions::{typecheck_comptime_function, typecheck_function},
 };
 
@@ -170,7 +169,7 @@ fn realize_fn_template(
 
     let namespace = symbol_lexical_namespace(&name.namespace, &stmt);
     env.symbols.push_local_scope();
-    
+
     let result = (|| {
         apply_template_input(env, &template, input)
             .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
@@ -193,17 +192,15 @@ fn realize_fn_template(
 fn realize_comptime_fn_template(
     env: &mut TypeEnvironment,
     lookup_identifier: &QualifiedName,
-    mut prototype: THIRComptimeFnPrototype,
+    prototype: THIRComptimeFnPrototype,
     input: &THIRTemplateInput,
 ) -> CXResult<()> {
-    let base_mangle = mangle_namespace_symbol(lookup_identifier);
-    let instance_name = mangle_template_name(&env.symbols, base_mangle, input);
-
-    if env.items.request_fulfilled(&instance_name) {
+    if env.items.request_fulfilled(prototype.symbol_name()) {
         return Ok(());
     }
 
-    env.items.mark_request_fulfilled(instance_name.clone());
+    env.items
+        .mark_request_fulfilled(prototype.symbol_name().into());
 
     let resolution = env
         .symbols
@@ -237,8 +234,7 @@ fn realize_comptime_fn_template(
         apply_template_input(env, &template_prototype, input)
             .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
 
-        prototype.map_symbol_name(|_| instance_name.clone());
-        typecheck_comptime_function(env, &namespace, prototype.clone(), &template_data)?;
+        typecheck_comptime_function(env, &namespace, prototype, &template_data)?;
         Ok(())
     })();
     env.symbols.pop_local_scope();

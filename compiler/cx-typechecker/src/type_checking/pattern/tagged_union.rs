@@ -1,6 +1,4 @@
-use cx_hir::ast::{
-    expression::HIRExpression, pattern::HIRPattern, template::HIRTemplateInput, types::HIRTagKind,
-};
+use cx_hir::ast::{expression::HIRExpression, pattern::HIRPattern, template::HIRTemplateInput};
 use cx_log::CXResult;
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_util::identifier::CXIdent;
@@ -54,7 +52,7 @@ pub fn resolve_type_constructor_pattern(
     let union_name = QualifiedName::new(union_namespace, union_name);
 
     let lookup = env
-        .lookup_symbol(namespace, &union_name, Some(HIRTagKind::Union))
+        .lookup_symbol(namespace, &union_name, None)
         .map_err(|error| env.complete_err(error, expr.token_range()))?;
     let union_name = lookup
         .map(|lookup| env.resolve_lookup(namespace, lookup))

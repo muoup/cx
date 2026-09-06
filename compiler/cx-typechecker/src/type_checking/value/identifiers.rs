@@ -1,6 +1,6 @@
 use crate::{
     environment::TypeEnvironment,
-    symbol::{completion::complete_template_input, resolution::apply_template},
+    symbol::{completion::complete_template_input, template::apply_template},
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
         result::{StagedBindingTC, TypecheckResult, TypecheckedBinding},

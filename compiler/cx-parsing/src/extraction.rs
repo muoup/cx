@@ -1,8 +1,8 @@
 use cx_hir::{
     ast::{
+        HIRDefinition, HIRStmt,
         global_var::HIRGlobalVariable,
         template::{HIRTemplateInput, HIRTemplatePrototype},
-        HIRDefinition, HIRStmt,
     },
     symbols::{
         HIRFunctionSymbol, HIRSymbol, HIRSymbolData, HIRSymbolKind, HIRTypeConstructorSymbol,
@@ -125,7 +125,7 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
                 let union_name = QualifiedName::new(base_namespace.clone(), name.clone());
                 let union_type = HIRTypeKind::Identifier {
                     name: union_name,
-                    lookup: HIRTypeLookup::Standard,
+                    lookup: tag.map_or(HIRTypeLookup::Standard, HIRTypeLookup::Tag),
                     template_input: template_prototype
                         .clone()
                         .map(convert_template_proto_to_args),

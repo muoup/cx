@@ -22,7 +22,7 @@ use crate::{
     log::{generate_raw_error, internal_type_error},
     symbol::{
         completion::{complete_template_input, complete_type},
-        resolution::apply_template,
+        template::apply_template,
     },
 };
 
