@@ -170,13 +170,14 @@ pub fn typecheck_comptime_function(
 
     env.function.begin_function(bookkeeping);
     env.push_scope(false, false, body.token_range().clone());
-
-    env.enter_comptime_context(prototype.runtime_return_type().cloned());
+    env.enter_comptime_context();
+    
     let checked = (|| -> CXResult<THIRExpression> {
         let body_expr = typecheck_expr(env, namespace, body, None)?
             .standard_ready_coerce(env, body.token_range())?;
         add_implicit_return(env, namespace, body_expr)
     })();
+    
     env.exit_comptime_context();
     let with_implicit_return = checked?;
 

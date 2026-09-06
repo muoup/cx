@@ -463,7 +463,7 @@ impl Display for THIRDisplay<'_, THIRComptimeFn> {
 
 impl Display for THIRDisplay<'_, THIRComptimeFnPrototype> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} :: ", self.content.pretty_name())?;
+        write!(f, "{} :: ", self.content.symbol_name())?;
 
         write!(
             f,

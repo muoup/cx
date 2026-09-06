@@ -443,13 +443,17 @@ pub(crate) fn complete_named_type(
     let symbol = resolve_type_symbol(env, name, declarations)
         .map_err(|error| env.complete_maybe_err(error, &cx_tokens::TokenRange::internal()))?;
     let tagged = symbol.tag.is_some();
+    
     if let Some(cached) = env.symbols.cached(name, tagged) {
         return Ok(cached.clone());
     }
+    
     let HIRSymbolKind::Type(data) = &symbol.kind else { unreachable!() };
+    
     if matches!(data, HIRSymbolData::Template { .. }) {
         return resolve_symbol_inner(env, &name.namespace, &name.namespace, &name.name, symbol, symbol.tag, true);
     }
+    
     let mut placeholder = THIRType::from(THIRTypeKind::Undefined);
     placeholder.lookup_identifier = Some(name.clone());
     placeholder.strong_identifier = tagged.then(|| mangle_namespace_symbol(name));

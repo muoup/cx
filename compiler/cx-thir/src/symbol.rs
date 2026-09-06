@@ -30,9 +30,6 @@ pub enum MIRSymbol {
         expr: Box<HIRExpression>,
         expected_type: THIRType,
     },
-    /// A local binding holding a parameterized staged value, e.g. a staged
-    /// parameter of a comptime function. The referenced value is supplied by
-    /// the caller at evaluation time; no body is stored here.
     StagedExpressionFunction {
         local_id: THIRLocalID,
         params: Vec<THIRType>,

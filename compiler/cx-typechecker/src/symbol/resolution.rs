@@ -13,7 +13,7 @@ use cx_log::{
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
-use cx_namespace::module::{NamespacePath, QualifiedName};
+use cx_namespace::{mangling::mangle_namespace_symbol, module::{NamespacePath, QualifiedName}};
 use cx_thir::{
     symbol::MIRSymbol,
     thir::{
@@ -24,6 +24,8 @@ use cx_thir::{
         },
         expression::{THIRCoercion, THIRExpression, THIRExpressionKind, THIRLocalID},
         global::THIRGlobalVariable,
+        name_mangling::mangle_template_name,
+        r#type::THIRType,
     },
     type_context::THIRTypeContext,
 };
@@ -33,6 +35,7 @@ use crate::{
     symbol::{
         completion::{
             complete_comptime_prototype, complete_prototype, complete_type, complete_type_id,
+            complete_type_inner,
         },
         r#enum::resolve_enum_block,
     },
@@ -52,7 +55,11 @@ pub fn resolve_symbol(
         );
     };
     if symbols.iter().any(HIRSymbol::is_type) {
-        return super::completion::complete_named_type(env, &QualifiedName::new(symbol_namespace.clone(), name.clone()), symbols);
+        return super::completion::complete_named_type(
+            env,
+            &QualifiedName::new(symbol_namespace.clone(), name.clone()),
+            symbols,
+        );
     }
     let decay_implicit_array = rest.is_empty();
     let resolved = resolve_symbol_inner(
@@ -108,40 +115,80 @@ pub(crate) fn resolve_symbol_inner(
     decay_implicit_array: bool,
 ) -> CXResult<MIRSymbol> {
     let template = match &symbol.kind {
-        HIRSymbolKind::Type(HIRSymbolData::Template { base, template_prototype, .. }) =>
-            Some((HIRSymbolKind::Type(HIRSymbolData::Standard { base: base.clone() }), template_prototype)),
-        HIRSymbolKind::Function(HIRSymbolData::Template { base, template_prototype, .. }) =>
-            Some((HIRSymbolKind::Function(HIRSymbolData::Standard { base: base.clone() }), template_prototype)),
-        HIRSymbolKind::ComptimeFunction(HIRSymbolData::Template { base, template_prototype, .. }) =>
-            Some((HIRSymbolKind::ComptimeFunction(HIRSymbolData::Standard { base: base.clone() }), template_prototype)),
-        HIRSymbolKind::TypeConstructor(HIRSymbolData::Template { base, template_prototype, .. }) =>
-            Some((HIRSymbolKind::TypeConstructor(HIRSymbolData::Standard { base: base.clone() }), template_prototype)),
+        HIRSymbolKind::Type(HIRSymbolData::Template {
+            base,
+            template_prototype,
+            ..
+        }) => Some((
+            HIRSymbolKind::Type(HIRSymbolData::Standard { base: base.clone() }),
+            template_prototype,
+        )),
+        HIRSymbolKind::Function(HIRSymbolData::Template {
+            base,
+            template_prototype,
+            ..
+        }) => Some((
+            HIRSymbolKind::Function(HIRSymbolData::Standard { base: base.clone() }),
+            template_prototype,
+        )),
+        HIRSymbolKind::ComptimeFunction(HIRSymbolData::Template {
+            base,
+            template_prototype,
+            ..
+        }) => Some((
+            HIRSymbolKind::ComptimeFunction(HIRSymbolData::Standard { base: base.clone() }),
+            template_prototype,
+        )),
+        HIRSymbolKind::TypeConstructor(HIRSymbolData::Template {
+            base,
+            template_prototype,
+            ..
+        }) => Some((
+            HIRSymbolKind::TypeConstructor(HIRSymbolData::Standard { base: base.clone() }),
+            template_prototype,
+        )),
         _ => None,
     };
     if let Some((kind, prototype)) = template {
         return Ok(MIRSymbol::Template {
             template_prototype: prototype.clone(),
             name: name.clone(),
-            source: Box::new(HIRSymbol { visibility: symbol.visibility, kind, tag }),
+            source: Box::new(HIRSymbol {
+                visibility: symbol.visibility,
+                kind,
+                tag,
+            }),
             namespace: symbol_namespace.clone(),
             tag,
         });
     }
     match &symbol.kind {
-        HIRSymbolKind::Type(data) => complete_type_id(env, symbol_namespace, data.base()).map(MIRSymbol::Type),
+        HIRSymbolKind::Type(data) => {
+            complete_type_id(env, symbol_namespace, data.base()).map(MIRSymbol::Type)
+        }
         HIRSymbolKind::Function(data) => {
             let namespace = function_lexical_namespace(symbol_namespace, &data.base().kind);
             let prototype = complete_prototype(env, &namespace, data.base())?;
-            env.items.push_generated_function(THIRFunction { prototype: prototype.clone(), body: None });
+            env.items.push_generated_function(THIRFunction {
+                prototype: prototype.clone(),
+                body: None,
+            });
             Ok(MIRSymbol::FunctionReference(prototype))
         }
         HIRSymbolKind::ComptimeFunction(data) => {
             let namespace = function_lexical_namespace(symbol_namespace, &data.base().kind);
             let prototype = complete_comptime_prototype(env, &namespace, data.base())?;
-            Ok(MIRSymbol::ComptimeFunctionReference { prototype, namespace })
+            Ok(MIRSymbol::ComptimeFunctionReference {
+                prototype,
+                namespace,
+            })
         }
         HIRSymbolKind::TypeConstructor(data) => resolve_type_constructor(
-            env, symbol_namespace, name, &data.base().union_type, data.base().variant_index,
+            env,
+            symbol_namespace,
+            name,
+            &data.base().union_type,
+            data.base().variant_index,
         ),
 
         HIRSymbolKind::EnumIdent {
@@ -208,22 +255,38 @@ pub(crate) fn resolve_type_symbol<'a>(
     declarations: &'a [HIRSymbol],
 ) -> CXMaybeRawResult<&'a HIRSymbol> {
     let Some(first) = declarations.first() else {
-        return env.log_error_base(format!("Type '{name}' has no declarations")).map_err(Into::into);
+        return env
+            .log_error_base(format!("Type '{name}' has no declarations"))
+            .map_err(Into::into);
     };
     let mut definition = None;
     for symbol in declarations {
-        let (HIRSymbolKind::Type(data), HIRSymbolKind::Type(first_data)) = (&symbol.kind, &first.kind) else {
-            return env.log_error_base(format!("Symbol '{name}' is not a type")).map_err(Into::into);
+        let (HIRSymbolKind::Type(data), HIRSymbolKind::Type(first_data)) =
+            (&symbol.kind, &first.kind)
+        else {
+            return env
+                .log_error_base(format!("Symbol '{name}' is not a type"))
+                .map_err(Into::into);
         };
         if symbol.tag != first.tag || !type_template_kinds_equivalent(first_data, data) {
-            return env.log_error_base(format!("Symbol '{name}' has incompatible tag declarations")).map_err(Into::into);
+            return env
+                .log_error_base(format!("Symbol '{name}' has incompatible tag declarations"))
+                .map_err(Into::into);
         }
         if let Some(tag) = first.tag {
-            if !is_forward_type_declaration(name, data.base(), tag) && definition.replace(symbol).is_some() {
-                return env.log_error_base(format!("Symbol '{name}' has multiple type definitions")).map_err(Into::into);
+            if !is_forward_type_declaration(name, data.base(), tag)
+                && definition.replace(symbol).is_some()
+            {
+                return env
+                    .log_error_base(format!("Symbol '{name}' has multiple type definitions"))
+                    .map_err(Into::into);
             }
-        } else if !std::ptr::eq(symbol, first) && !type_declarations_equivalent(env, name, first_data, data)? {
-            return env.log_error_base(format!("Symbol '{name}' has multiple type definitions")).map_err(Into::into);
+        } else if !std::ptr::eq(symbol, first)
+            && !type_declarations_equivalent(env, name, first_data, data)?
+        {
+            return env
+                .log_error_base(format!("Symbol '{name}' has multiple type definitions"))
+                .map_err(Into::into);
         }
     }
     Ok(definition.unwrap_or(first))
@@ -325,11 +388,18 @@ fn mir_symbols_equivalent(env: &TypeEnvironment, left: &MIRSymbol, right: &MIRSy
         ) => left.lookup_identifier() == right.lookup_identifier(),
 
         (MIRSymbol::Expression(left), MIRSymbol::Expression(right)) => {
-            env.type_eq(&left._type, &right._type) && match (&left.kind, &right.kind) {
-                (THIRExpressionKind::GlobalVariable { symbol: left }, THIRExpressionKind::GlobalVariable { symbol: right }) => left == right,
-                (THIRExpressionKind::IntLiteral(left), THIRExpressionKind::IntLiteral(right)) => left == right,
-                _ => false,
-            }
+            env.type_eq(&left._type, &right._type)
+                && match (&left.kind, &right.kind) {
+                    (
+                        THIRExpressionKind::GlobalVariable { symbol: left },
+                        THIRExpressionKind::GlobalVariable { symbol: right },
+                    ) => left == right,
+                    (
+                        THIRExpressionKind::IntLiteral(left),
+                        THIRExpressionKind::IntLiteral(right),
+                    ) => left == right,
+                    _ => false,
+                }
         }
 
         _ => false,
@@ -356,10 +426,14 @@ fn resolve_type_constructor(
     };
 
     let mut symbol_name = cx_namespace::mangling::mangle_namespace_symbol(
-        &union_type.lookup_identifier().expect("named union constructor").clone().child(name.clone())
+        &union_type
+            .lookup_identifier()
+            .expect("named union constructor")
+            .clone()
+            .child(name.clone()),
     );
     if let Some(info) = &union_type.template_info {
-        symbol_name = cx_thir::thir::name_mangling::mangle_template_name(&env.symbols, symbol_name, &info.template_input);
+        symbol_name = mangle_template_name(&env.symbols, symbol_name, &info.template_input);
     }
     let prototype = THIRFnPrototype::new(
         symbol_name,
@@ -424,19 +498,25 @@ pub fn apply_template(
         apply_template_input(env, input, &template_input)?;
         if let HIRSymbolKind::Type(data) = &source.kind {
             let lookup_name = QualifiedName::new(namespace.clone(), name.clone());
-            let instance_name = cx_thir::thir::name_mangling::mangle_template_name(
-                &env.symbols, cx_namespace::mangling::mangle_namespace_symbol(&lookup_name), &template_input,
+            let instance_name = mangle_template_name(
+                &env.symbols,
+                mangle_namespace_symbol(&lookup_name),
+                &template_input,
             );
+
             let key = (instance_name.clone(), tag.is_some());
             if let Some(id) = env.symbols.type_instances.get(&key) {
                 return Ok(MIRSymbol::Type(*id));
             }
-            let mut placeholder = cx_thir::thir::data::THIRType::from(cx_thir::thir::data::THIRTypeKind::Undefined);
+
+            let mut placeholder = THIRType::from(cx_thir::thir::data::THIRTypeKind::Undefined);
             placeholder.lookup_identifier = Some(lookup_name);
-            placeholder.strong_identifier = tag.map(|_| instance_name);
+            placeholder.strong_identifier = Some(instance_name.into());
+
             let id = env.symbols.generate_type_id(placeholder);
             env.symbols.type_instances.insert(key.clone(), id);
-            match super::completion::complete_type_inner(env, namespace, data.base()) {
+
+            match complete_type_inner(env, namespace, data.base()) {
                 Ok(ty) => {
                     env.symbols.overwrite_type_id(id, ty);
                     let mut symbol = MIRSymbol::Type(id);
@@ -450,18 +530,18 @@ pub fn apply_template(
                 }
             }
         }
-        resolve_symbol_inner(env, namespace, namespace, name, source, *tag, true).map_err(Into::into)
+        resolve_symbol_inner(env, namespace, namespace, name, source, *tag, true)
+            .map_err(Into::into)
     })?;
+    
     if matches!(symbol, MIRSymbol::Type(_)) {
         return Ok(Some(symbol));
     }
+    
     if let MIRSymbol::ComptimeFunctionReference { prototype, .. } = &mut symbol {
-        let request_prototype = prototype
-            .clone()
-            .with_runtime_return_type(env.materialization_return_type());
         env.items.push_request(THIRFunctionGenRequest::Comptime {
             name: prototype.lookup_identifier().clone(),
-            prototype: request_prototype,
+            prototype: prototype.clone(),
             input: template_input.clone(),
         });
     }
@@ -480,10 +560,7 @@ pub fn apply_template(
     Ok(Some(symbol))
 }
 
-pub fn symbol_lexical_namespace(
-    namespace: &NamespacePath,
-    symbol: &HIRSymbol,
-) -> NamespacePath {
+pub fn symbol_lexical_namespace(namespace: &NamespacePath, symbol: &HIRSymbol) -> NamespacePath {
     match &symbol.kind {
         HIRSymbolKind::Function(data) => function_lexical_namespace(&namespace, &data.base().kind),
         HIRSymbolKind::ComptimeFunction(data) => {
@@ -493,12 +570,10 @@ pub fn symbol_lexical_namespace(
     }
 }
 
-fn function_lexical_namespace(
-    namespace: &NamespacePath,
-    kind: &HIRFunctionKind,
-) -> NamespacePath {
+fn function_lexical_namespace(namespace: &NamespacePath, kind: &HIRFunctionKind) -> NamespacePath {
     match kind {
-        HIRFunctionKind::AssociatedFunction { .. } => namespace.clone()
+        HIRFunctionKind::AssociatedFunction { .. } => namespace
+            .clone()
             .parent_and_name()
             .map(|(parent, _)| parent)
             .unwrap_or_else(|| namespace.clone())
@@ -532,21 +607,26 @@ fn attach_template_metadata(
                 base_name: ty.lookup_identifier.clone(),
                 template_input: input.clone(),
             }));
-            ty.strong_identifier = ty.strong_identifier.as_ref().map(|base| {
-                cx_thir::thir::name_mangling::mangle_template_name(&env.symbols, base.to_string(), &input).into()
-            });
+            ty.strong_identifier = ty
+                .strong_identifier
+                .as_ref()
+                .map(|base| mangle_template_name(&env.symbols, base.to_string(), &input).into());
             env.symbols.overwrite_type_id(*id, ty);
         }
 
         MIRSymbol::FunctionReference(prototype) if prototype.lookup_identifier().is_some() => {
             prototype.map_symbol_name(|name| {
-                cx_thir::thir::name_mangling::mangle_template_name(&env.symbols, name.to_owned(), &input)
+                mangle_template_name(&env.symbols, name.to_owned(), &input)
             });
         }
 
         MIRSymbol::ComptimeFunctionReference { prototype, .. } => {
             prototype.map_symbol_name(|name| {
-                cx_thir::thir::name_mangling::mangle_template_name(&env.symbols, name.to_owned(), &input)
+                cx_thir::thir::name_mangling::mangle_template_name(
+                    &env.symbols,
+                    name.to_owned(),
+                    &input,
+                )
             });
         }
 

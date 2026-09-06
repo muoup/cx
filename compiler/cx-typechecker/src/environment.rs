@@ -3,9 +3,7 @@ use std::borrow::Borrow;
 use cx_log::{
     CXRawResult, CXResult,
     error::{
-        CXError, CXErrorMaybeRaw, CXRawError,
-        context::from_token_range,
-        message::CXStdErrMessage,
+        CXError, CXErrorMaybeRaw, CXRawError, context::from_token_range, message::CXStdErrMessage,
     },
 };
 use cx_namespace::module::{NamespacePath, QualifiedName};
@@ -24,11 +22,11 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 pub use crate::environment::control_flow::{ControlTarget, ScopeEffects};
-use crate::environment::items::ItemRegistry;
 use crate::{
     environment::function_context::{FunctionContext, FunctionModeSnapshot},
     symbol::registry::MIRSymbolRegistry,
 };
+use crate::{environment::items::ItemRegistry, log::generate_type_error};
 
 pub(crate) mod control_flow;
 pub(crate) mod function_context;
@@ -47,7 +45,6 @@ pub struct TypeEnvironment<'a> {
     pub function: FunctionContext,
 
     comptime_emit_bases: Vec<usize>,
-    comptime_runtime_return_types: Vec<Option<THIRType>>,
 
     runtime_emit_depth: usize,
     defer_depth: usize,
@@ -69,7 +66,6 @@ impl TypeEnvironment<'_> {
             items: ItemRegistry::new(),
             function: FunctionContext::default(),
             comptime_emit_bases: Vec::new(),
-            comptime_runtime_return_types: Vec::new(),
             runtime_emit_depth: 0,
             defer_depth: 0,
             staged_contexts: Vec::new(),
@@ -256,21 +252,14 @@ impl TypeEnvironment<'_> {
         self.function.restore_mode(snapshot);
     }
 
-    pub fn enter_comptime_context(
-        &mut self,
-        runtime_return_type: Option<cx_thir::thir::r#type::THIRType>,
-    ) {
+    pub fn enter_comptime_context(&mut self) {
         self.comptime_emit_bases.push(self.runtime_emit_depth);
-        self.comptime_runtime_return_types.push(runtime_return_type);
     }
 
     pub fn exit_comptime_context(&mut self) {
         self.comptime_emit_bases
             .pop()
             .expect("Comptime context stack underflow");
-        self.comptime_runtime_return_types
-            .pop()
-            .expect("Comptime return type stack underflow");
     }
 
     pub fn in_comptime_context(&self) -> bool {
@@ -293,17 +282,8 @@ impl TypeEnvironment<'_> {
             .is_some_and(|base| self.runtime_emit_depth > *base)
     }
 
-    pub fn comptime_runtime_return_type(&self) -> Option<&cx_thir::thir::r#type::THIRType> {
-        self.comptime_runtime_return_types
-            .last()
-            .and_then(Option::as_ref)
-    }
-
     pub fn materialization_return_type(&self) -> Option<THIRType> {
         if let Some(return_type) = self.staged_return_type() {
-            return Some(return_type.clone());
-        }
-        if let Some(return_type) = self.comptime_runtime_return_type() {
             return Some(return_type.clone());
         }
         if self.in_comptime_context() {
@@ -338,7 +318,7 @@ impl TypeEnvironment<'_> {
         range: impl Borrow<TokenRange>,
         message: impl Into<String>,
     ) -> CXError {
-        crate::log::generate_type_error(range.borrow(), message, Vec::new())
+        generate_type_error(range.borrow(), message, Vec::new())
     }
 
     pub(crate) fn log_error_base<T>(&self, message: impl Into<String>) -> CXRawResult<T> {

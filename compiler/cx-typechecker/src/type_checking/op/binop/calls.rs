@@ -409,9 +409,7 @@ fn complete_callee(
         }
         TypecheckResult::Ready(TypecheckedExpr::ComptimeFunction(ComptimeFunctionTC {
             prototype,
-        })) => Ok(CompletedCallee::Comptime(
-            prototype.with_runtime_return_type(env.materialization_return_type()),
-        )),
+        })) => Ok(CompletedCallee::Comptime(prototype)),
         TypecheckResult::IncompleteTemplate(_)
         | TypecheckResult::NeedsExpectedType(_)
         | TypecheckResult::NeedsStagedType(_) => {

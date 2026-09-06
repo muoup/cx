@@ -28,7 +28,6 @@ pub struct THIRComptimeFnPrototype {
     debug_name: Option<CXIdent>,
     lookup_identifier: QualifiedName,
 
-    runtime_return_type: Option<THIRType>,
     return_type: THIRComptimeValueType,
     params: Vec<THIRComptimeParameter>,
 }
@@ -60,7 +59,6 @@ impl THIRComptimeFnPrototype {
             return_type,
             params,
             debug_name: None,
-            runtime_return_type: None,
         }
     }
 
@@ -90,15 +88,6 @@ impl THIRComptimeFnPrototype {
 
     pub fn params(&self) -> &[THIRComptimeParameter] {
         &self.params
-    }
-
-    pub fn runtime_return_type(&self) -> Option<&THIRType> {
-        self.runtime_return_type.as_ref()
-    }
-
-    pub fn with_runtime_return_type(mut self, ty: Option<THIRType>) -> Self {
-        self.runtime_return_type = ty;
-        self
     }
 
     pub fn with_debug_name(mut self, debug_name: CXIdent) -> Self {
