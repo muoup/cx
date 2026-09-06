@@ -17,6 +17,15 @@ pub fn run_binary(path: &Path, working_directory: &Path) -> Result<ExecutionResu
         .output()
         .map_err(|error| format!("failed to run {}: {error}", path.display()))?;
 
+    if output.status.code().is_none() {
+        return Err(format!(
+            "{} terminated with {}:\n{}",
+            path.display(),
+            output.status,
+            String::from_utf8_lossy(&output.stderr),
+        ));
+    }
+
     Ok(ExecutionResult {
         status_code: output.status.code(),
         success: output.status.success(),
