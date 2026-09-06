@@ -1,0 +1,5 @@
+import _resolution_struct as _;
+
+union Local { int value; };
+
+void take(struct Local* value) {}

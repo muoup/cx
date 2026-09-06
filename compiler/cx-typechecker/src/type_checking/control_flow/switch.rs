@@ -4,7 +4,7 @@ use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
 use cx_log::CXResult;
-use cx_thir::NamespacePath;
+use cx_namespace::module::NamespacePath;
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
     expression::THIRExpressionKind,

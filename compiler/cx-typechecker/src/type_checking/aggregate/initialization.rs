@@ -1,7 +1,7 @@
 use cx_hir::ast::expression::{HIRExpression, HIRInitIndex};
 use cx_log::CXResult;
+use cx_namespace::module::NamespacePath;
 use cx_thir::{
-    NamespacePath,
     thir::{
         data::{THIRType, THIRTypeKind},
         expression::{StructInitialization, THIRExpressionKind},

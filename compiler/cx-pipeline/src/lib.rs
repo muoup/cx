@@ -14,6 +14,7 @@ use cx_log::{
     CXResult,
     error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
 };
+use cx_namespace::module::{ModulePath, NamespacePath};
 use cx_pipeline_data::config::{CXProjectConfig, TargetConfig};
 use cx_pipeline_data::db::ModuleData;
 use cx_pipeline_data::internal_storage::resource_path;
@@ -22,7 +23,6 @@ use cx_pipeline_data::{
     CompilationMode, CompilationUnit, CompilerConfig, GlobalCompilationContext,
 };
 use cx_util::format::{with_dump_directory, without_dumps};
-use cx_util::module::NamespacePath;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -54,21 +54,21 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
         linking_files: Mutex::new(HashSet::new()),
     };
 
-    let base_file_str = base_file.to_str().ok_or(pipeline_error(
+    let _base_file_str = base_file.to_str().ok_or(pipeline_error(
         "COMPILATION ERROR",
         "Base file path is not valid UTF-8",
     ))?;
-    let entry_unit =
-        CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory);
-    let entry_unit = if compiler_context.config.module_mode {
+    let entry_unit = CompilationUnit::new(
+        &compiler_context.config.working_directory,
+        ModulePath::new(base_file.to_path_buf()),
+        (!compiler_context.config.module_mode).then(NamespacePath::root),
+    );
+    if compiler_context.config.module_mode {
         compiler_context
             .module_db
             .symbol_registry
-            .set_export_name_mode(entry_unit.to_namespace_path(), ExportNameMode::Root);
-        entry_unit
-    } else {
-        entry_unit.with_namespace(NamespacePath::root())
-    };
+            .set_export_name_mode(entry_unit.namespace().clone(), ExportNameMode::Root);
+    }
 
     let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, entry_unit.clone());
 
@@ -143,18 +143,19 @@ pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) ->
         let initial_jobs = base_files
             .iter()
             .map(|base_file| {
-                let base_file_str = base_file.to_str().ok_or(pipeline_error(
+                let _base_file_str = base_file.to_str().ok_or(pipeline_error(
                     "COMPILATION ERROR",
                     "Source file path is not valid UTF-8",
                 ))?;
-                let entry_unit = CompilationUnit::from_rooted(
-                    base_file_str,
+                let entry_unit = CompilationUnit::new(
                     &compiler_context.config.working_directory,
+                    ModulePath::new(base_file.to_path_buf()),
+                    None,
                 );
                 compiler_context
                     .module_db
                     .symbol_registry
-                    .set_export_name_mode(entry_unit.to_namespace_path(), ExportNameMode::Root);
+                    .set_export_name_mode(entry_unit.namespace().clone(), ExportNameMode::Root);
                 Ok(CompilationJob::new(
                     vec![],
                     CompilationStep::PreParse,
@@ -193,17 +194,20 @@ pub fn library_compilation(
         linking_files: Mutex::new(HashSet::new()),
     };
 
-    let base_file_str = base_file.to_str().ok_or(pipeline_error(
+    let _base_file_str = base_file.to_str().ok_or(pipeline_error(
         "COMPILATION ERROR",
         "Base file path is not valid UTF-8",
     ))?;
 
-    let entry_unit =
-        CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory);
+    let entry_unit = CompilationUnit::new(
+        &compiler_context.config.working_directory,
+        ModulePath::new(base_file.to_path_buf()),
+        None,
+    );
     compiler_context
         .module_db
         .symbol_registry
-        .set_export_name_mode(entry_unit.to_namespace_path(), ExportNameMode::Root);
+        .set_export_name_mode(entry_unit.namespace().clone(), ExportNameMode::Root);
 
     let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, entry_unit.clone());
 
@@ -214,7 +218,7 @@ pub fn library_compilation(
         scheduling_loop(&compiler_context, initial_job, &mut reporter)?;
 
         // Extract exported symbol names from the entry file's LMIR to use as GC roots
-        let entry_lmir = compiler_context.module_db.lmir.get(&entry_unit);
+        let entry_lmir = compiler_context.module_db.lmir.get(entry_unit.namespace());
         let exported_symbols: Vec<String> = entry_lmir
             .fn_defs
             .iter()
@@ -236,7 +240,7 @@ pub fn library_compilation(
     reporter.finish();
 
     // Take only the entry file's LMIR unit (not imports/dependencies)
-    let entry_lmir = compiler_context.module_db.lmir.take(&entry_unit);
+    let entry_lmir = compiler_context.module_db.lmir.take(entry_unit.namespace());
 
     Ok(entry_lmir)
 }

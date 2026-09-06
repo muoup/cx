@@ -12,7 +12,7 @@ use crate::type_checking::staged_expr::into_expression as staged_into_expression
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
-use cx_thir::NamespacePath;
+use cx_namespace::module::NamespacePath;
 use cx_thir::thir::data::{
     THIRComptimeFnPrototype, THIRFloatType, THIRFnSignature, THIRType, THIRTypeKind,
 };

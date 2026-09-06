@@ -1,9 +1,6 @@
 use crate::{
     environment::TypeEnvironment,
-    symbol::{
-        completion::{complete_type, ensure_valid_type_component},
-        name_mangling::mangle_static_symbol,
-    },
+    symbol::completion::{complete_type, ensure_valid_type_component},
     type_checking::{
         coercion::implicit::implicit_cast, result::TypecheckResult, typechecker::typecheck_expr,
     },
@@ -14,8 +11,9 @@ use cx_hir::ast::{
     types::HIRType,
 };
 use cx_log::CXResult;
+use cx_namespace::module::NamespacePath;
+use cx_namespace::module::QualifiedName;
 use cx_thir::{
-    NamespacePath,
     thir::{
         expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
         global::THIRGlobalVariable,
@@ -23,7 +21,7 @@ use cx_thir::{
     type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, module::QualifiedName};
+use cx_util::identifier::CXIdent;
 
 pub(crate) fn typecheck_var_declaration(
     env: &mut TypeEnvironment,
@@ -87,8 +85,8 @@ pub(crate) fn typecheck_var_declaration(
         }
 
         LinkageMode::Static => {
-            let symbol_name =
-                mangle_static_symbol(name.as_str(), env.current_function().symbol_name());
+            let function_name = env.current_function().symbol_name();
+            let symbol_name = format!("_S{}_{}_{}", name.as_str().len(), name, function_name);
             let (global_type, initializer) = match initial_value {
                 Some(initial_value) => {
                     let init_tc = typecheck_expr(env, namespace, initial_value, Some(&ty))?;

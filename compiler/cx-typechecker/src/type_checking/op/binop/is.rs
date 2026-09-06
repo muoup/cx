@@ -8,13 +8,13 @@ use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_checking::value::resolve_indirect_base;
 use cx_hir::ast::{expression::HIRExpression, pattern::HIRPattern};
 use cx_log::CXResult;
-use cx_thir::NamespacePath;
+use cx_namespace::module::NamespacePath;
+use cx_namespace::module::QualifiedName;
 use cx_thir::thir::contextual_eq::TypeContextEqual;
 use cx_thir::thir::data::THIRType;
 use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind, THIRLocalID};
 use cx_thir::thir::pattern::THIRPattern;
 use cx_tokens::TokenRange;
-use cx_util::module::QualifiedName;
 
 pub(crate) fn typecheck_is(
     env: &mut TypeEnvironment,

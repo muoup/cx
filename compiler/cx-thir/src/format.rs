@@ -1,7 +1,11 @@
 use cx_hir::ast::modifiers::{HIR_CONST, HIR_RESTRICT, HIR_VOLATILE, HIRTypeQualifiers};
 use cx_util::identifier::CXIdent;
 
-use crate::thir::data::{THIRFnPrototype, THIRFnSignature, THIRParameter};
+use crate::thir::comptime::THIRComptimeFn;
+use crate::thir::data::{
+    THIRComptimeFnPrototype, THIRComptimeParameter, THIRComptimeValueType, THIRFnPrototype,
+    THIRFnSignature, THIRParameter,
+};
 use crate::thir::expression::{
     THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp,
 };
@@ -58,6 +62,10 @@ impl MIRDisplayable for THIRExpression {}
 impl MIRDisplayable for THIRFunction {}
 impl MIRDisplayable for THIRFnSignature {}
 impl MIRDisplayable for THIRFnPrototype {}
+impl MIRDisplayable for THIRComptimeFn {}
+impl MIRDisplayable for THIRComptimeFnPrototype {}
+impl MIRDisplayable for THIRComptimeParameter {}
+impl MIRDisplayable for THIRComptimeValueType {}
 impl MIRDisplayable for THIRParameter {}
 impl MIRDisplayable for THIRGlobalVariable {}
 
@@ -434,6 +442,74 @@ impl Display for THIRDisplay<'_, THIRExpression> {
     }
 }
 
+impl Display for THIRDisplay<'_, THIRComptimeFn> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "{}",
+            self.content
+                .prototype
+                .display_with_definitions(self.definitions)
+        )?;
+
+        if let Some(body) = &self.content.body {
+            writeln!(f, "Body:")?;
+            MIRExpressionFormatter::with_definitions(body, 1, self.definitions).fmt(f)
+        } else {
+            write!(f, "Declaration")
+        }
+    }
+}
+
+impl Display for THIRDisplay<'_, THIRComptimeFnPrototype> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} :: ", self.content.pretty_name())?;
+
+        write!(
+            f,
+            "fn({}) -> {}",
+            self.content
+                .params()
+                .iter()
+                .map(|param| param.display_with_definitions(self.definitions).to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+            self.content
+                .return_type()
+                .display_with_definitions(self.definitions)
+        )
+    }
+}
+
+impl Display for THIRDisplay<'_, THIRComptimeParameter> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}: {}",
+            self.content.name.as_ref().unwrap_or(&CXIdent::from("<unnamed>")),
+            self.content
+                .value_type
+                .display_with_definitions(self.definitions)
+        )
+    }
+}
+
+impl Display for THIRDisplay<'_, THIRComptimeValueType> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.content.expr {
+            write!(f, "expr ")?;
+        }
+
+        write!(
+            f,
+            "{}",
+            self.content
+                ._type
+                .display_with_definitions(self.definitions)
+        )
+    }
+}
+
 impl Display for THIRDisplay<'_, THIRFunction> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(
@@ -542,6 +618,11 @@ impl Display for THIRDisplay<'_, THIRGlobalVariable> {
 impl Display for THIRDisplay<'_, THIRUnit> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "THIR Unit:")?;
+
+        writeln!(f, "\nComptime Functions:")?;
+        for function in &self.content.comptime_functions {
+            writeln!(f, "{}", function.display_with_definitions(self.definitions))?;
+        }
 
         writeln!(f, "\nFunctions:")?;
         for function in &self.content.functions {

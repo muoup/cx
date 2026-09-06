@@ -30,3 +30,4 @@ cx-thir = { path = "../cx-thir" }
 cx-lmir = { path = "../cx-lmir" }
 cx-c-header = { path = "../cx-c-header" }
 cx-util = { path = "../cx-util" }
+cx-namespace = { path = "../cx-namespace" }

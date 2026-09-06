@@ -1,22 +1,18 @@
 use std::borrow::Borrow;
 
-use cx_hir::ast::modifiers::VisibilityMode;
-use cx_hir::symbols::{HIRSymbol, SymbolResolution};
 use cx_log::{
     CXRawResult, CXResult,
     error::{
         CXError, CXErrorMaybeRaw, CXRawError,
-        context::{CXInternalContext, from_token_range},
+        context::from_token_range,
         message::CXStdErrMessage,
     },
 };
-use cx_namespace::lookup::{QualifiedLookup, QualifiedLookupResult};
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_pipeline_data::db::ModuleData;
 use cx_target::ArchitectureConfig;
 use cx_thir::{
     THIRUnit,
-    symbol::MIRSymbol,
     thir::{
         comptime::THIRStagedEffects,
         contextual_eq::TypeContextEqual,
@@ -29,7 +25,6 @@ use cx_util::identifier::CXIdent;
 
 pub use crate::environment::control_flow::{ControlTarget, ScopeEffects};
 use crate::environment::items::ItemRegistry;
-use crate::symbol::resolution::resolve_symbol;
 use crate::{
     environment::function_context::{FunctionContext, FunctionModeSnapshot},
     symbol::registry::MIRSymbolRegistry,
@@ -57,7 +52,7 @@ pub struct TypeEnvironment<'a> {
     runtime_emit_depth: usize,
     defer_depth: usize,
     staged_contexts: Vec<StagedContext>,
-    staged_expansions: Vec<u64>,
+    pub(crate) staged_expansions: Vec<u64>,
     next_staged_expression_id: u64,
     require_explicit_return: bool,
 }
@@ -90,7 +85,7 @@ impl TypeEnvironment<'_> {
 
     pub fn get_intrinsic_type(&self, name: &str) -> THIRType {
         self.symbols
-            .get_preresolved_symbol(&QualifiedName::new_raw(CXIdent::from(name)))
+            .cached(&QualifiedName::new_raw(CXIdent::from(name)), false)
             .unwrap_or_else(|| panic!("intrinsic type {} not found", name))
             .as_type_id()
             .map(|id| self.symbols.resolve_type_id(id).clone())
@@ -332,87 +327,6 @@ impl TypeEnvironment<'_> {
         self.staged_expansions
             .pop()
             .expect("Staged expression expansion stack underflow");
-    }
-
-    pub fn get_symbol(
-        &mut self,
-        namespace: &NamespacePath,
-        name: &QualifiedName,
-    ) -> CXResult<Option<MIRSymbol>> {
-        let lookup = self.lookup_symbol(namespace, name).map_err(|err| {
-            CXError::new(
-                err,
-                CXInternalContext::error(
-                    "symbol lookup failed before a source range was available",
-                ),
-            )
-        })?;
-
-        lookup
-            .map(|lookup| self.resolve_lookup(namespace, lookup))
-            .transpose()
-    }
-
-    fn symbol_visible_from(
-        &self,
-        namespace: &NamespacePath,
-        candidate: &QualifiedName,
-        symbol: &HIRSymbol,
-    ) -> bool {
-        match symbol.visibility {
-            VisibilityMode::Public => true,
-            VisibilityMode::Package | VisibilityMode::Private => {
-                if &candidate.namespace == namespace {
-                    return true;
-                }
-
-                if self
-                    .symbols
-                    .get_global_registry()
-                    .namespaces_are_friends(namespace, &candidate.namespace)
-                {
-                    return true;
-                }
-
-                if matches!(symbol.visibility, VisibilityMode::Package) {
-                    return candidate.namespace.clone().strip_prefix(namespace).is_some();
-                }
-
-                false
-            }
-        }
-    }
-
-    pub(crate) fn resolve_lookup(
-        &mut self,
-        namespace: &NamespacePath,
-        lookup: SymbolLookup,
-    ) -> CXResult<MIRSymbol> {
-        let resolved_name = lookup.resolved_name;
-        if let SymbolLookupKind::Resolved(symbol) = lookup.kind {
-            return Ok(symbol);
-        }
-
-        let SymbolLookupKind::Untyped(untyped_symbol) = lookup.kind else {
-            unreachable!("resolved lookup was handled above")
-        };
-
-        if let Some(symbol) = self.symbols.get_preresolved_symbol(&resolved_name)
-            && matches!(symbol, MIRSymbol::Expression(_))
-        {
-            return Ok(symbol.clone());
-        }
-
-        let symbol = resolve_symbol(
-            self,
-            namespace,
-            &resolved_name.namespace,
-            &resolved_name.name,
-            &untyped_symbol,
-        )?;
-
-        self.symbols.insert_symbol(resolved_name, symbol.clone());
-        Ok(symbol)
     }
 
     pub fn type_eq(&self, type1: &THIRType, type2: &THIRType) -> bool {

@@ -1,4 +1,7 @@
-use std::{fmt::Display, path::{Path, PathBuf}};
+use std::{
+    fmt::Display,
+    path::{Path, PathBuf},
+};
 
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
@@ -25,7 +28,7 @@ impl AsRef<Path> for ModulePath {
 
 impl ModulePath {
     pub fn new(path: PathBuf) -> Self {
-        Self(path.canonicalize().expect("ModulePath::new: Failed to canonicalize path"))
+        Self(path.canonicalize().unwrap_or(path))
     }
 
     pub fn from_source_path(path: &str) -> Self {
@@ -50,7 +53,9 @@ impl NamespacePath {
     }
 
     pub fn root() -> Self {
-        Self { segments: Vec::new() }
+        Self {
+            segments: Vec::new(),
+        }
     }
 
     pub fn is_root(&self) -> bool {
@@ -94,7 +99,7 @@ impl NamespacePath {
 
         let segments = self.segments[prefix.segments.len()..].to_vec();
         Some(Self { segments })
-    } 
+    }
 
     pub fn parent_and_name(self) -> Option<(Self, CXIdent)> {
         if self.segments.is_empty() {
@@ -107,10 +112,7 @@ impl NamespacePath {
     }
 
     pub fn from_str(s: &str) -> Self {
-        let segments = s
-            .split("::")
-            .map(|s| CXIdent::new(s))
-            .collect();
+        let segments = s.split("::").map(|s| CXIdent::new(s)).collect();
         Self { segments }
     }
 }
@@ -170,7 +172,7 @@ impl Display for NamespacePath {
             write!(f, "{}", segment)?;
         }
         Ok(())
-    }    
+    }
 }
 
 impl Display for QualifiedName {

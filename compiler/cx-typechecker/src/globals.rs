@@ -31,6 +31,7 @@ pub(crate) fn lower_global(
     let symbol_name = mangle_rootable_name(
         env.symbols.get_global_registry(),
         &QualifiedName::new(namespace.clone(), name.clone()),
+        name_scheme,
     );
     let previous_type = env
         .items

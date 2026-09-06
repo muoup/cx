@@ -5,7 +5,7 @@ use crate::type_checking::value::{IndirectBase, resolve_indirect_base};
 use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
 use cx_hir::ast::modifiers::HIR_CONST;
 use cx_log::CXResult;
-use cx_thir::NamespacePath;
+use cx_namespace::module::NamespacePath;
 use cx_thir::thir::data::THIRTypeKind;
 use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
 

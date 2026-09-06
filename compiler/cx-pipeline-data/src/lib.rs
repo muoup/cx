@@ -37,7 +37,7 @@ pub fn compilation_hash() -> u64 {
 pub struct GlobalCompilationContext {
     pub config: CompilerConfig,
     pub module_db: ModuleData,
-    
+
     pub linking_files: Mutex<HashSet<PathBuf>>,
 }
 
@@ -99,17 +99,26 @@ impl CompilationUnit {
     pub fn new(
         project_root: &Path,
         module_path: ModulePath,
+        namespace_override: Option<NamespacePath>,
     ) -> Self {
-        let diff = module_path.as_path()
+        let module_path = if module_path.as_path().is_absolute() {
+            module_path
+        } else {
+            ModulePath::new(project_root.join(module_path.as_path()))
+        };
+        let diff = module_path
+            .as_path()
             .strip_prefix(project_root)
             .unwrap_or(module_path.as_path())
             .with_extension("");
 
-        let namespace = NamespacePath::new(
-            diff.components()
-                .map(|c| CXIdent::from(c.as_os_str().to_string_lossy().to_string()))
-                .collect(),
-        );
+        let namespace = namespace_override.unwrap_or_else(|| {
+            NamespacePath::new(
+                diff.components()
+                    .map(|c| CXIdent::from(c.as_os_str().to_string_lossy().to_string()))
+                    .collect(),
+            )
+        });
 
         CompilationUnit {
             module: module_path,
@@ -126,9 +135,10 @@ impl CompilationUnit {
     }
 
     pub fn is_std_lib(&self) -> bool {
-        self.namespace.segments()
+        self.namespace
+            .segments()
             .get(0)
-            .map(|s| s.as_str() == "root")
+            .map(|s| s.as_str() == "std")
             .unwrap_or(false)
     }
 }

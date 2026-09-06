@@ -12,8 +12,9 @@ use cx_hir::ast::{
     modifiers::HIR_CONST,
 };
 use cx_log::CXResult;
+use cx_namespace::module::NamespacePath;
+use cx_namespace::module::QualifiedName;
 use cx_thir::{
-    NamespacePath,
     thir::{
         data::{THIRType, THIRTypeKind},
         expression::{THIRExpression, THIRExpressionKind, THIRLocalID, THIRUnpackBinding},
@@ -21,7 +22,6 @@ use cx_thir::{
     type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
-use cx_util::module::QualifiedName;
 
 pub(crate) fn typecheck_move(
     env: &mut TypeEnvironment,

@@ -45,7 +45,11 @@ pub struct PreparseNamespaceData {
 
 impl PreparseNamespaceData {
     pub fn insert_symbol(&mut self, symbol: PreparseSymbol) {
-        self.symbols.insert(symbol.name, symbol.kind);
+        self.symbols.entry(symbol.name).and_modify(|kind| {
+            if symbol.kind == PreparseSymbolKind::Type {
+                *kind = PreparseSymbolKind::Type;
+            }
+        }).or_insert(symbol.kind);
     }
 
     pub fn get_symbol(&self, name: &CXIdent) -> Option<PreparseSymbolKind> {

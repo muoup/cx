@@ -1,6 +1,7 @@
 use cx_log::CXResult;
+use cx_namespace::module::NamespacePath;
+use cx_namespace::module::QualifiedName;
 use cx_thir::{
-    NamespacePath,
     thir::{
         expression::{THIRExpression, THIRExpressionKind},
         r#type::THIRType,
@@ -8,7 +9,6 @@ use cx_thir::{
     type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
-use cx_util::module::QualifiedName;
 
 use crate::{
     environment::TypeEnvironment,

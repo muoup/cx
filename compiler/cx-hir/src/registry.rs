@@ -6,8 +6,8 @@ use std::{
 use cx_namespace::module::{NamespacePath, QualifiedName};
 
 use crate::{
-    ast::modifiers::HIRSymbolNameScheme,
-    symbols::{HIRSymbol, HIRSymbolKind, SymbolNamespaceData, SymbolResolution},
+    ast::{global_var::HIREnumDefinition, modifiers::HIRSymbolNameScheme},
+    symbols::{HIRSymbol, HIRSymbolKind, SymbolNamespaceData},
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -94,26 +94,9 @@ impl GlobalSymbolRegistry {
         ExportNameMode::Namespaced
     }
 
-    pub fn resolve(&self, name: &QualifiedName) -> Option<SymbolResolution> {
-        let inner = self
-            .inner
-            .read()
-            .expect("GlobalSymbolRegistry read lock poisoned");
-        inner
-            .namespaces
-            .get(&name.namespace)?
-            .get_standard_symbol(name.name.as_str())
-    }
-
-    pub fn resolve_tag(&self, name: &QualifiedName) -> Option<SymbolResolution> {
-        let inner = self
-            .inner
-            .read()
-            .expect("GlobalSymbolRegistry read lock poisoned");
-        inner
-            .namespaces
-            .get(&name.namespace)?
-            .get_tag_symbol(name.name.as_str())
+    pub fn resolve(&self, name: &QualifiedName, tagged: bool) -> Option<Vec<HIRSymbol>> {
+        let inner = self.inner.read().expect("GlobalSymbolRegistry read lock poisoned");
+        Some(inner.namespaces.get(&name.namespace)?.get_symbol(name.name.as_str(), tagged)?.to_vec())
     }
 
     pub fn resolve_unmangled_global(&self, name: &str) -> Vec<(NamespacePath, HIRSymbol)> {
@@ -126,9 +109,9 @@ impl GlobalSymbolRegistry {
             .namespaces
             .iter()
             .flat_map(|(namespace, data)| {
-                data.get_standard_symbol(name)
+                data.get_symbol(name, false)
                     .into_iter()
-                    .flat_map(SymbolResolution::into_declarations)
+                    .flatten()
                     .filter_map(|symbol| {
                         matches!(
                             &symbol.kind,
@@ -143,36 +126,15 @@ impl GlobalSymbolRegistry {
             .collect()
     }
 
-    pub fn resolve_aliases(
-        &self,
-        lexical_namespace: &NamespacePath,
-        namespace: &NamespacePath,
-    ) -> Option<Vec<NamespacePath>> {
-        let (_, data) = self.get_bucket(lexical_namespace)?;
-
-        Some(data.resolve_aliases(namespace).cloned().collect::<Vec<_>>())
+    pub fn resolve_aliases(&self, lexical_namespace: &NamespacePath, namespace: &NamespacePath) -> Vec<NamespacePath> {
+        let inner = self.inner.read().expect("GlobalSymbolRegistry read lock poisoned");
+        inner.namespaces.get(lexical_namespace)
+            .map(|data| data.resolve_aliases(namespace).cloned().collect())
+            .unwrap_or_default()
     }
 
-    pub fn get_bucket<'b, 'c>(
-        &'b self,
-        namespace: &NamespacePath,
-    ) -> Option<(impl Sized + use<'b>, &'c SymbolNamespaceData)> {
-        let inner = self
-            .inner
-            .read()
-            .expect("GlobalSymbolRegistry read lock poisoned");
-
-        let data = inner.namespaces.get(namespace)?;
-
-        // This is incredibly unnecessary but I thought it was funny. This is my 11:40 PM attempt at
-        // recreating RwLockReadGuard::map that is not current stable.
-        //
-        // Also not sure how to do a true opaque type for locks which we don't want the user to touch,
-        // but impl Sized kinda rocks
-        unsafe {
-            let data = std::mem::transmute(data);
-
-            Some((inner, data))
-        }
+    pub fn enum_block(&self, namespace: &NamespacePath, index: usize) -> Option<HIREnumDefinition> {
+        let inner = self.inner.read().expect("GlobalSymbolRegistry read lock poisoned");
+        inner.namespaces.get(namespace)?.get_enum_block(index).cloned()
     }
 }

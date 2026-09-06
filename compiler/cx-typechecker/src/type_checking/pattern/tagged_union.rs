@@ -1,7 +1,9 @@
-use cx_hir::ast::{expression::HIRExpression, pattern::HIRPattern, template::HIRTemplateInput};
+use cx_hir::ast::{
+    expression::HIRExpression, pattern::HIRPattern, template::HIRTemplateInput, types::HIRTagKind,
+};
 use cx_log::CXResult;
-use cx_thir::NamespacePath;
-use cx_util::{identifier::CXIdent, module::QualifiedName};
+use cx_namespace::module::{NamespacePath, QualifiedName};
+use cx_util::identifier::CXIdent;
 
 use crate::environment::TypeEnvironment;
 
@@ -30,7 +32,8 @@ pub fn resolve_type_constructor_pattern(
         );
     };
 
-    let Some((union_namespace, union_name)) = constructor.namespace.parent_and_name() else {
+    let Some((union_namespace, union_name)) = constructor.namespace.clone().parent_and_name()
+    else {
         return env.log_error(
             expr.token_range(),
             "Expected tagged union variant pattern to name a type member constructor".to_string(),
@@ -50,15 +53,9 @@ pub fn resolve_type_constructor_pattern(
 
     let union_name = QualifiedName::new(union_namespace, union_name);
 
-    let lookup = match env
-        .lookup_symbol(namespace, &union_name)
-        .map_err(|error| env.complete_err(error, expr.token_range()))?
-    {
-        Some(lookup) => Some(lookup),
-        None => env
-            .lookup_tag_symbol(namespace, &union_name)
-            .map_err(|error| env.complete_err(error, expr.token_range()))?,
-    };
+    let lookup = env
+        .lookup_symbol(namespace, &union_name, Some(HIRTagKind::Union))
+        .map_err(|error| env.complete_err(error, expr.token_range()))?;
     let union_name = lookup
         .map(|lookup| env.resolve_lookup(namespace, lookup))
         .transpose()?

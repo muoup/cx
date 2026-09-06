@@ -5,10 +5,7 @@ use cx_log::error::{
 };
 use cx_mir::{MIRDiagnostic, MIRDiagnosticLocation, MIRUnit};
 
-pub(crate) fn mir_diagnostic_error(
-    mir: Option<&MIRUnit>,
-    diagnostic: MIRDiagnostic,
-) -> CXError {
+pub(crate) fn mir_diagnostic_error(mir: Option<&MIRUnit>, diagnostic: MIRDiagnostic) -> CXError {
     let context = match diagnostic.location() {
         MIRDiagnosticLocation::Instruction {
             function,

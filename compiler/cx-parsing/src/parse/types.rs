@@ -172,7 +172,8 @@ fn predeclaration_type(
     }
     .to_type();
 
-    if matches!(predeclaration, HIRTagKind::Struct | HIRTagKind::Union) && is_root_name {
+    if matches!(predeclaration, HIRTagKind::Struct | HIRTagKind::Union) && is_root_name
+        && matches!(data.tokens.peek().map(|token| &token.kind), Some(punctuator!(Semicolon))) {
         data.add_stmt(HIRStmt::TypeDefinition {
             name: Some(definition_name),
             visibility: data.visibility,

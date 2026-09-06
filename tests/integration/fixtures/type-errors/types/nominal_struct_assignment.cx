@@ -1,0 +1,6 @@
+struct Left { int value; };
+struct Right { int value; };
+
+void assign(Left& left, Right right) {
+    left = right;
+}

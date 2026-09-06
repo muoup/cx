@@ -1,4 +1,4 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::HashMap;
 
 use cx_namespace::module::NamespacePath;
 use cx_preparse_data::NamespaceAliases;
@@ -17,11 +17,12 @@ use crate::ast::{
 pub struct HIRSymbol {
     pub visibility: VisibilityMode,
     pub kind: HIRSymbolKind,
+    pub tag: Option<HIRTagKind>,
 }
 
 impl HIRSymbol {
     pub fn new(visibility: VisibilityMode, kind: HIRSymbolKind) -> Self {
-        Self { visibility, kind }
+        Self { visibility, kind, tag: None }
     }
 
     pub fn is_type(&self) -> bool {
@@ -102,67 +103,10 @@ pub enum SymbolIdentifier {
     Tag { kind: HIRTagKind, name: String },
 }
 
-#[derive(Debug, Clone)]
-pub struct SymbolResolution {
-    declarations: Vec<HIRSymbol>,
-    tag_kinds: Option<Vec<HIRTagKind>>,
-}
-
-impl SymbolResolution {
-    pub fn new(symbol: HIRSymbol) -> Self {
-        Self {
-            declarations: vec![symbol],
-            tag_kinds: None,
-        }
-    }
-
-    pub fn new_tagged(tag: HIRTagKind, symbol: HIRSymbol) -> Self {
-        Self {
-            declarations: vec![symbol],
-            tag_kinds: Some(vec![tag]),
-        }
-    }
-
-    pub fn standard(declarations: Vec<HIRSymbol>) -> Self {
-        Self {
-            declarations,
-            tag_kinds: None,
-        }
-    }
-
-    pub fn tagged(declarations: Vec<(HIRTagKind, HIRSymbol)>) -> Self {
-        let (tag_kinds, declarations) = declarations.into_iter().unzip();
-        Self {
-            declarations,
-            tag_kinds: Some(tag_kinds),
-        }
-    }
-
-    pub fn declarations(&self) -> &[HIRSymbol] {
-        &self.declarations
-    }
-
-    pub fn into_declarations(self) -> Vec<HIRSymbol> {
-        self.declarations
-    }
-
-    pub fn tag_kinds(&self) -> Option<&[HIRTagKind]> {
-        self.tag_kinds.as_deref()
-    }
-
-    pub fn filter(&self, mut predicate: impl FnMut(&HIRSymbol) -> bool) -> Option<Self> {
-        self.declarations
-            .iter()
-            .any(&mut predicate)
-            .then(|| self.clone())
-    }
-}
-
 #[derive(Debug, Default, Clone)]
 pub struct SymbolNamespaceData {
     enum_blocks: Vec<HIREnumDefinition>,
-    symbols: HashMap<String, Vec<HIRSymbol>>,
-    tagged_symbols: HashMap<String, Vec<(HIRTagKind, HIRSymbol)>>,
+    symbols: HashMap<(String, bool), Vec<HIRSymbol>>,
     namespace_aliases: NamespaceAliases,
 }
 
@@ -171,7 +115,6 @@ impl SymbolNamespaceData {
         Self {
             enum_blocks: Vec::new(),
             symbols: HashMap::new(),
-            tagged_symbols: HashMap::new(),
             namespace_aliases: HashMap::new(),
         }
     }
@@ -180,26 +123,19 @@ impl SymbolNamespaceData {
         Self {
             enum_blocks: Vec::new(),
             symbols: HashMap::new(),
-            tagged_symbols: HashMap::new(),
             namespace_aliases,
         }
     }
 
-    pub fn insert_symbol(&mut self, identifier: SymbolIdentifier, symbol: HIRSymbol) {
-        match identifier {
-            SymbolIdentifier::Standard(name) => match self.symbols.entry(name) {
-                Entry::Occupied(ref mut entry) => entry.get_mut().push(symbol),
-                Entry::Vacant(entry) => {
-                    entry.insert(vec![symbol]);
-                }
-            },
-            SymbolIdentifier::Tag { kind, name } => match self.tagged_symbols.entry(name) {
-                Entry::Occupied(ref mut entry) => entry.get_mut().push((kind, symbol)),
-                Entry::Vacant(entry) => {
-                    entry.insert(vec![(kind, symbol)]);
-                }
-            },
+    pub fn insert_symbol(&mut self, identifier: SymbolIdentifier, mut symbol: HIRSymbol) {
+        let name = match identifier {
+            SymbolIdentifier::Standard(name) => name,
+            SymbolIdentifier::Tag { kind, name } => {
+                symbol.tag = Some(kind);
+                name
+            }
         };
+        self.symbols.entry((name, symbol.tag.is_some())).or_default().push(symbol);
     }
 
     pub fn insert_enum_block(&mut self, block: HIREnumDefinition) -> EnumBlockIdx {
@@ -207,18 +143,8 @@ impl SymbolNamespaceData {
         self.enum_blocks.len() - 1
     }
 
-    pub fn get_standard_symbol(&self, name: &str) -> Option<SymbolResolution> {
-        self.symbols
-            .get(name)
-            .cloned()
-            .map(SymbolResolution::standard)
-    }
-
-    pub fn get_tag_symbol(&self, name: &str) -> Option<SymbolResolution> {
-        self.tagged_symbols
-            .get(name)
-            .cloned()
-            .map(SymbolResolution::tagged)
+    pub fn get_symbol(&self, name: &str, tagged: bool) -> Option<&[HIRSymbol]> {
+        self.symbols.get(&(name.to_owned(), tagged)).map(Vec::as_slice)
     }
 
     pub fn insert_namespace_alias(&mut self, alias: NamespacePath, target: NamespacePath) {

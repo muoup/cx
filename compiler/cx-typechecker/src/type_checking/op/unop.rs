@@ -3,8 +3,8 @@ use cx_hir::ast::{
     types::HIRType,
 };
 use cx_log::CXResult;
+use cx_namespace::module::NamespacePath;
 use cx_thir::{
-    NamespacePath,
     thir::{
         expression::{THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp},
         r#type::{THIRIntType, THIRType, THIRTypeKind},

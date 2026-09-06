@@ -1,4 +1,5 @@
 use cx_hir::registry::{ExportNameMode, GlobalSymbolRegistry};
+use cx_hir::ast::modifiers::HIRSymbolNameScheme;
 use cx_namespace::{
     mangling::mangle_namespace_symbol,
     module::QualifiedName,
@@ -15,11 +16,12 @@ use crate::{
 pub fn mangle_rootable_name(
     global_registry: &GlobalSymbolRegistry,
     name: &QualifiedName,
+    scheme: HIRSymbolNameScheme,
 ) -> String {
-    if name.namespace.is_root()
+    if scheme == HIRSymbolNameScheme::Unmangled || name.namespace.is_root()
         || global_registry.export_name_mode(&name.namespace) == ExportNameMode::Root
     {
-        return name.to_string();
+        return name.name.to_string();
     }
 
     return mangle_namespace_symbol(name);

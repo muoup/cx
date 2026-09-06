@@ -13,7 +13,8 @@ use crate::type_checking::value::resolve_indirect_base;
 use cx_hir::ast::template::HIRTemplateInput;
 use cx_hir::ast::{expression::HIRExpression, pattern::HIRPattern};
 use cx_log::CXResult;
-use cx_thir::NamespacePath;
+use cx_namespace::module::NamespacePath;
+use cx_namespace::module::QualifiedName;
 use cx_thir::thir::{
     contextual_eq::TypeContextEqual,
     data::{THIRType, THIRTypeKind},
@@ -23,7 +24,6 @@ use cx_thir::thir::{
 use cx_thir::type_context::THIRTypeContext;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
-use cx_util::module::QualifiedName;
 
 pub fn typecheck_match(
     env: &mut TypeEnvironment,

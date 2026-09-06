@@ -8,7 +8,7 @@ use cx_hir::ast::{
         HIRAggregateAttributes, HIRField, HIRMoveSemantics, HIRType, HIRTypeKind, HIRTypeLookup,
     },
 };
-use cx_hir::symbols::{HIRSymbolData, HIRSymbolKind, SymbolResolution};
+use cx_hir::symbols::{HIRSymbol, HIRSymbolData, HIRSymbolKind};
 use cx_log::{
     CXRawResult, CXResult,
     error::{CXErrorMaybeRaw, CXMaybeRawResult},
@@ -33,8 +33,8 @@ use cx_thir::{
 
 use crate::{
     NamespacePath,
-    environment::{SymbolLookupKind, TypeEnvironment},
-    symbol::resolution::{TypeSymbolQuery, apply_template, resolve_symbol, resolve_type_symbol},
+    environment::TypeEnvironment,
+    symbol::resolution::{apply_template, resolve_symbol_inner, resolve_type_symbol},
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
         typechecker::typecheck_expr,
@@ -94,7 +94,7 @@ pub fn complete_type_id(
     }
 }
 
-fn complete_type_inner(
+pub(crate) fn complete_type_inner(
     env: &mut TypeEnvironment,
     namespace: &NamespacePath,
     ty: &HIRType,
@@ -304,20 +304,9 @@ pub fn complete_prototype(
 
     let lookup_identifier = function_lookup_identifier(namespace, &prototype.kind);
     let debug_name = lookup_identifier.name.clone();
-    let symbol_name = match prototype.kind {
-        HIRFunctionKind::Standard(name) => mangle_rootable_name(
-            env.symbols.get_global_registry(),
-            &QualifiedName::new(namespace.clone(), name.clone()),
-        ),
-
-        HIRFunctionKind::AssociatedFunction {
-            namespace: suffix,
-            name,
-        } => mangle_rootable_name(
-            env.symbols.get_global_registry(),
-            &QualifiedName::new(namespace.clone().join(suffix), name),
-        ),
-    };
+    let symbol_name = mangle_rootable_name(
+        env.symbols.get_global_registry(), &lookup_identifier, prototype.symbol_naming,
+    );
 
     Ok(THIRFnPrototype::new(
         symbol_name,
@@ -374,7 +363,7 @@ pub fn complete_comptime_prototype(
 
     let lookup_identifier = function_lookup_identifier(namespace, &prototype.kind);
     let debug_name = lookup_identifier.name.clone();
-    let symbol_name = mangle_rootable_name(env.symbols.get_global_registry(), &lookup_identifier);
+    let symbol_name = mangle_rootable_name(env.symbols.get_global_registry(), &lookup_identifier, HIRSymbolNameScheme::Namespaced);
 
     Ok(
         THIRComptimeFnPrototype::new(symbol_name, lookup_identifier, return_type, params)
@@ -388,7 +377,7 @@ fn function_lookup_identifier(namespace: &NamespacePath, kind: &HIRFunctionKind)
         name,
     } = kind.into_key();
 
-    QualifiedName::new(namespace.join(&relative_namespace), name)
+    QualifiedName::new(namespace.clone().join(relative_namespace), name)
 }
 
 fn complete_explicit_parameters(
@@ -422,10 +411,64 @@ fn complete_identifier_type(
     type_lookup: HIRTypeLookup,
     template_input: &Option<HIRTemplateInput>,
 ) -> CXMaybeRawResult<THIRTypeID> {
-    let symbol = match type_lookup {
-        HIRTypeLookup::Standard => todo!()
-        HIRTypeLookup::Tag(tag) => todo!()
+    let tag = match type_lookup {
+        HIRTypeLookup::Standard => None,
+        HIRTypeLookup::Tag(tag) => Some(tag),
     };
+    let lookup = match env.lookup_symbol(namespace, name, tag)? {
+        Some(lookup) => lookup,
+        None if name.namespace.is_root() && matches!(tag, Some(cx_hir::ast::types::HIRTagKind::Struct | cx_hir::ast::types::HIRTagKind::Union)) => {
+            let resolved_name = QualifiedName::new(namespace.clone(), name.name.clone());
+            let symbol = HIRSymbol {
+                visibility: VisibilityMode::Private,
+                tag,
+                kind: HIRSymbolKind::Type(HIRSymbolData::Standard { base: HIRTypeKind::Identifier {
+                    name: name.clone(), lookup: type_lookup, template_input: None,
+                }.to_type() }),
+            };
+            env.symbols.implicit_tags.insert(resolved_name.clone(), symbol.clone());
+            super::lookup::SymbolLookup { resolved_name, kind: super::lookup::SymbolLookupKind::Untyped(vec![symbol]) }
+        }
+        None => return env.log_error_base(format!("Type not found: {name}")).map_err(Into::into),
+    };
+    let symbol = env.resolve_lookup(namespace, lookup)?;
+    complete_resolved_type_lookup(env, namespace, name, symbol, template_input)
+}
+
+pub(crate) fn complete_named_type(
+    env: &mut TypeEnvironment,
+    name: &QualifiedName,
+    declarations: &[HIRSymbol],
+) -> CXResult<MIRSymbol> {
+    let symbol = resolve_type_symbol(env, name, declarations)
+        .map_err(|error| env.complete_maybe_err(error, &cx_tokens::TokenRange::internal()))?;
+    let tagged = symbol.tag.is_some();
+    if let Some(cached) = env.symbols.cached(name, tagged) {
+        return Ok(cached.clone());
+    }
+    let HIRSymbolKind::Type(data) = &symbol.kind else { unreachable!() };
+    if matches!(data, HIRSymbolData::Template { .. }) {
+        return resolve_symbol_inner(env, &name.namespace, &name.namespace, &name.name, symbol, symbol.tag, true);
+    }
+    let mut placeholder = THIRType::from(THIRTypeKind::Undefined);
+    placeholder.lookup_identifier = Some(name.clone());
+    placeholder.strong_identifier = tagged.then(|| mangle_namespace_symbol(name));
+    let id = env.symbols.generate_type_id(placeholder);
+    env.symbols.insert_symbol(name.clone(), MIRSymbol::Type(id), tagged);
+    if tagged && is_self_predeclaration(data.base(), name) {
+        return Ok(MIRSymbol::Type(id));
+    }
+    match complete_type_inner(env, &name.namespace, data.base()) {
+        Ok(ty) => {
+            env.symbols.overwrite_type_id(id, ty);
+            Ok(MIRSymbol::Type(id))
+        }
+        Err(error) => {
+            env.symbols.remove_symbol(name, tagged);
+            env.symbols.undo_type_id(id);
+            Err(error)
+        }
+    }
 }
 
 fn is_self_predeclaration(definition: &HIRType, name: &QualifiedName) -> bool {

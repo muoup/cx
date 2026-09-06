@@ -1,31 +1,30 @@
 use std::collections::HashMap;
 
-use cx_hir::{ast::expression::HIRExpression, registry::GlobalSymbolRegistry};
-use cx_log::{CXRawResult, CXResult};
-use cx_namespace::lookup::QualifiedLookup;
+use cx_hir::{ast::expression::HIRExpression, registry::GlobalSymbolRegistry, symbols::HIRSymbol};
+use cx_log::CXRawResult;
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_target::ArchitectureConfig;
 use cx_thir::{
-    NamespacePath,
     intrinsic_types::INTRINSIC_TYPES,
     registry::THIRDecomposedRegistry,
     symbol::MIRSymbol,
     thir::{
-        data::THIRFnPrototype,
-        expression::{THIRExpression, THIRLocalID, THIRPureExpression},
+        expression::{THIRExpression, THIRLocalID},
         r#type::{THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
 };
-use cx_util::{identifier::CXIdent, module::QualifiedName, scoped_map::ScopedMap};
+use cx_util::{identifier::CXIdent, scoped_map::ScopedMap};
 
 /// Module-local symbol definitions
 pub struct MIRSymbolRegistry<'a> {
     architecture: ArchitectureConfig,
     global_registry: &'a GlobalSymbolRegistry,
 
-    global_cache: HashMap<QualifiedName, MIRSymbol>,
-    tag_cache: HashMap<QualifiedName, MIRSymbol>,
-    local_symbols: ScopedMap<QualifiedName, MIRSymbol>,
+    global_cache: HashMap<(QualifiedName, bool), MIRSymbol>,
+    pub(crate) local_symbols: ScopedMap<QualifiedName, MIRSymbol>,
+    pub(crate) type_instances: HashMap<(String, bool), THIRTypeID>,
+    pub(crate) implicit_tags: HashMap<QualifiedName, HIRSymbol>,
 
     typeid_defs: HashMap<THIRTypeID, THIRType>,
     next_typeid: usize,
@@ -49,44 +48,11 @@ impl THIRTypeContext for MIRSymbolRegistry<'_> {
     fn type_id_lookup_identifier(&self, id: THIRTypeID) -> Option<&QualifiedName> {
         self.global_cache
             .iter()
-            .find_map(|(name, symbol)| (symbol.as_type_id() == Some(id)).then_some(name))
+            .find_map(|((name, _), symbol)| (symbol.as_type_id() == Some(id)).then_some(name))
             .or_else(|| {
                 self.try_resolve_type_id(id)
                     .and_then(|ty| ty.lookup_identifier())
             })
-    }
-}
-
-impl QualifiedLookup for MIRSymbolRegistry {
-    type Output = MIRSymbol;
-
-    fn lookup_local(
-        &self,
-        lexical_namespace: &NamespacePath,
-        name: &QualifiedName,
-    ) -> Option<Self::Output> {
-        self.local_symbols.get(name).cloned()
-    }
-
-    fn lookup_exact(
-        &self,
-        lexical_namespace: &NamespacePath,
-        name: &QualifiedName,
-    ) -> Option<Self::Output> {
-        self.global_registry
-            .get_bucket(lexical_namespace)
-            .and_then(|bucket| bucket.get(name))
-            .cloned()
-    }
-
-    fn resolve_aliases(
-        &self,
-        lexical_namespace: &NamespacePath,
-        namespace: &NamespacePath,
-    ) -> Vec<NamespacePath> {
-        self.global_registry
-            .resolve_aliases(lexical_namespace, namespace)
-            .unwrap_or_else(|| vec![])
     }
 }
 
@@ -99,8 +65,9 @@ impl<'a> MIRSymbolRegistry<'a> {
             architecture,
             global_registry,
             global_cache: HashMap::new(),
-            tag_cache: HashMap::new(),
             local_symbols: ScopedMap::new_with_starting_scope(),
+            type_instances: HashMap::new(),
+            implicit_tags: HashMap::new(),
 
             typeid_defs: HashMap::new(),
             next_typeid: 0,
@@ -114,7 +81,7 @@ impl<'a> MIRSymbolRegistry<'a> {
             ty.lookup_identifier = Some(name.clone());
             let id = registry.generate_type_id(ty);
 
-            registry.insert_type_symbol(name, id);
+            registry.insert_symbol(name, MIRSymbol::Type(id), false);
         }
 
         registry
@@ -125,7 +92,7 @@ impl<'a> MIRSymbolRegistry<'a> {
             .iter()
             .filter_map(|(name, _)| {
                 self.global_cache
-                    .get(&QualifiedName::new_raw(CXIdent::new(*name)))
+                    .get(&(QualifiedName::new_raw(CXIdent::new(*name)), false))
                     .and_then(MIRSymbol::as_type_id)
                     .map(|id| ((*name).to_owned(), id))
             })
@@ -142,12 +109,8 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.global_registry
     }
 
-    pub fn get_preresolved_symbol(&self, name: &QualifiedName) -> Option<&MIRSymbol> {
-        self.global_cache.get(name)
-    }
-
-    pub fn get_preresolved_tag(&self, name: &QualifiedName) -> Option<&MIRSymbol> {
-        self.tag_cache.get(name)
+    pub fn cached(&self, name: &QualifiedName, tagged: bool) -> Option<&MIRSymbol> {
+        self.global_cache.get(&(name.clone(), tagged))
     }
 
     pub fn generate_type_id(&mut self, ty: THIRType) -> THIRTypeID {
@@ -175,17 +138,6 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.typeid_defs.get(&id)
     }
 
-    pub fn insert_local_type(&mut self, name: String, _type: THIRType) -> CXResult<THIRTypeID> {
-        let type_id = self.generate_type_id(_type);
-
-        self.local_symbols.insert(
-            QualifiedName::new_raw(CXIdent::new(name)),
-            MIRSymbol::Type(type_id),
-        );
-
-        Ok(type_id)
-    }
-
     pub fn insert_local_type_id(&mut self, name: String, type_id: THIRTypeID) -> CXRawResult<()> {
         self.local_symbols.insert(
             QualifiedName::new_raw(CXIdent::new(name)),
@@ -203,49 +155,22 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.local_symbols.pop_scope();
     }
 
-    pub fn get_local_symbol(&self, name: &QualifiedName) -> Option<&MIRSymbol> {
-        self.local_symbols.get(name)
+    pub fn local<'b>(&'b self, name: &'b QualifiedName, active_expansions: &[u64]) -> Option<&'b MIRSymbol> {
+        self.local_symbols.get_multi(name).find(|symbol| {
+            !matches!(symbol, MIRSymbol::StagedExpression { id, .. } if active_expansions.contains(id))
+        })
     }
 
-    pub fn get_local_symbol_at_depth(
-        &self,
-        name: &QualifiedName,
-        depth: usize,
-    ) -> Option<&MIRSymbol> {
-        self.local_symbols.get_at_shadow_depth(name, depth)
+    pub fn insert_symbol(&mut self, name: QualifiedName, symbol: MIRSymbol, tagged: bool) {
+        self.global_cache.insert((name, tagged), symbol);
     }
 
-    pub fn get_local_symbol_avoiding_staged_expansions(
-        &self,
-        name: &QualifiedName,
-        active_expansions: &[u64],
-    ) -> Option<&MIRSymbol> {
-        let mut depth = 0;
-        loop {
-            let symbol = self.get_local_symbol_at_depth(name, depth)?;
-            match symbol {
-                MIRSymbol::StagedExpression { id, .. } if active_expansions.contains(id) => {
-                    depth += 1;
-                }
-                symbol => return Some(symbol),
-            }
-        }
-    }
-
-    pub fn insert_symbol(&mut self, name: QualifiedName, symbol: MIRSymbol) {
-        self.global_cache.insert(name, symbol);
+    pub fn remove_symbol(&mut self, name: &QualifiedName, tagged: bool) {
+        self.global_cache.remove(&(name.clone(), tagged));
     }
 
     pub fn insert_value(&mut self, name: QualifiedName, expr: THIRExpression) {
-        self.insert_symbol(name, MIRSymbol::Expression(expr));
-    }
-
-    pub fn insert_type_symbol(&mut self, name: QualifiedName, id: THIRTypeID) {
-        self.insert_symbol(name, MIRSymbol::Type(id));
-    }
-
-    pub fn insert_tag_type_symbol(&mut self, name: QualifiedName, id: THIRTypeID) {
-        self.tag_cache.insert(name, MIRSymbol::Type(id));
+        self.insert_symbol(name, MIRSymbol::Expression(expr), false);
     }
 
     pub fn insert_local_value(&mut self, name: QualifiedName, expr: THIRExpression) {

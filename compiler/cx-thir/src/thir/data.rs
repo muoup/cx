@@ -23,11 +23,6 @@ pub struct THIRParameter {
 }
 
 #[derive(Debug, Clone)]
-pub struct THIRComptimeFunction {
-    pub name: Option<CXIdent>,
-}
-
-#[derive(Debug, Clone)]
 pub struct THIRComptimeFnPrototype {
     symbol_name: String,
     debug_name: Option<CXIdent>,

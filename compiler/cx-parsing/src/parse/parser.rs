@@ -186,14 +186,6 @@ impl<'a> ParserData<'a> {
 impl QualifiedLookup for ParserData<'_> {
     type Output = PreparseSymbolKind;
 
-    fn lookup_local(
-        &self,
-        _lexical_namespace: &NamespacePath,
-        _name: &QualifiedName,
-    ) -> Option<PreparseSymbolKind> {
-        None
-    }
-
     fn lookup_exact(
         &self,
         _lexical_namespace: &NamespacePath,
@@ -211,5 +203,9 @@ impl QualifiedLookup for ParserData<'_> {
             .get(namespace)
             .cloned()
             .unwrap_or_default()
+    }
+
+    fn priority(&self, lexical_namespace: &NamespacePath, name: &QualifiedName, value: &PreparseSymbolKind) -> (u8, bool) {
+        (if &name.namespace == lexical_namespace { 2 } else { 0 }, *value == PreparseSymbolKind::Type)
     }
 }

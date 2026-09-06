@@ -1,4 +1,3 @@
-use cx_hir::ast::global_var::HIREnumDefinition;
 use cx_log::CXResult;
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_thir::{
@@ -18,41 +17,18 @@ use crate::{
     },
 };
 
-pub struct EnumBlockResolution<'a> {
-    env: &'a TypeEnvironment<'a>,
-    block: &'a HIREnumDefinition,
-    namespace: &'a NamespacePath,
-}
-
-impl<'a> EnumBlockResolution<'a> {
-    pub fn variant_expr(&self, idx: usize) -> Option<&MIRSymbol> {
-        self.block.variants.get(idx).and_then(|variant| {
-            let symbol = QualifiedName::new(self.namespace.clone(), variant.name.clone());
-
-            self.env
-                .symbols
-                .get_preresolved_symbol(&symbol)
-                .or_else(|| {
-                    unreachable!("Expected enum variant {symbol} to be in the global registry")
-                })
-        })
-    }
-}
-
-pub(crate) fn resolve_enum_block<'a, 'b>(
-    env: &'a mut TypeEnvironment<'b>,
-    namespace: &'a NamespacePath,
+pub(crate) fn resolve_enum_block(
+    env: &mut TypeEnvironment,
+    namespace: &NamespacePath,
     block_idx: usize,
-) -> CXResult<EnumBlockResolution<'a>> {
-    let (_, data) = env
-        .symbols
-        .get_global_registry()
-        .get_bucket(namespace)
-        .expect("Expected enum block to be in the global registry");
-
-    let block = data
-        .get_enum_block(block_idx)
-        .expect("Expected enum block to be in the global registry");
+    variant_index: usize,
+) -> CXResult<MIRSymbol> {
+    let block = env.symbols.get_global_registry().enum_block(namespace, block_idx)
+        .expect("Expected enum block in registry");
+    let requested = QualifiedName::new(namespace.clone(), block.variants[variant_index].name.clone());
+    if let Some(symbol) = env.symbols.cached(&requested, false) {
+        return Ok(symbol.clone());
+    }
 
     let integer_type = env.get_intrinsic_type("int");
     let integer_kind = match &integer_type.kind {
@@ -107,9 +83,5 @@ pub(crate) fn resolve_enum_block<'a, 'b>(
         env.symbols.insert_value(symbol, value);
     }
 
-    Ok(EnumBlockResolution {
-        env,
-        block,
-        namespace,
-    })
+    Ok(env.symbols.cached(&requested, false).expect("enum variant completed").clone())
 }

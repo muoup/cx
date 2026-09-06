@@ -3,7 +3,7 @@ use cx_hir::{
     symbols::{HIRSymbolData, HIRSymbolKind},
 };
 use cx_log::CXResult;
-use cx_namespace::{mangling::mangle_namespace_symbol, module::{NamespacePath, QualifiedName}};
+use cx_namespace::{mangling::mangle_namespace_symbol, module::QualifiedName};
 use cx_thir::thir::{
     data::{
         THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter,
@@ -142,7 +142,7 @@ fn realize_fn_template(
     let resolution = env
         .symbols
         .get_global_registry()
-        .resolve(name)
+        .resolve(name, false)
         .unwrap_or_else(|| {
             unreachable!(
                 "Expected function template '{}' to be present in the symbol registry",
@@ -151,7 +151,6 @@ fn realize_fn_template(
         });
 
     let stmt = resolution
-        .declarations()
         .iter()
         .find(|symbol| {
             matches!(
@@ -172,7 +171,7 @@ fn realize_fn_template(
     let namespace = symbol_lexical_namespace(&name.namespace, &stmt);
     env.symbols.push_local_scope();
     let result = (|| {
-        apply_template_input(env, template, input)
+        apply_template_input(env, &template, input)
             .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
 
         if env.items.request_fulfilled(prototype.symbol_name()) {
@@ -181,7 +180,7 @@ fn realize_fn_template(
         env.items
             .mark_request_fulfilled(prototype.symbol_name().into());
 
-        typecheck_function(env, &namespace, prototype, body)?;
+        typecheck_function(env, &namespace, prototype, &body)?;
 
         Ok(())
     })();
@@ -208,7 +207,7 @@ fn realize_comptime_fn_template(
     let resolution = env
         .symbols
         .get_global_registry()
-        .resolve(lookup_identifier)
+        .resolve(lookup_identifier, false)
         .unwrap_or_else(|| {
             unreachable!(
                 "Expected comptime function '{}' to be present in the symbol registry",
@@ -217,7 +216,6 @@ fn realize_comptime_fn_template(
         });
 
     let stmt = resolution
-        .declarations()
         .iter()
         .find(|symbol| matches!(symbol.kind, HIRSymbolKind::ComptimeFunction(_)))
         .expect("Expected comptime function declaration in the symbol registry");
@@ -231,18 +229,15 @@ fn realize_comptime_fn_template(
         unreachable!("Expected comptime function to be a template");
     };
 
-    let namespace = NamespacePath::from(symbol_lexical_namespace(
-        &lookup_identifier.namespace,
-        &stmt,
-    ));
+    let namespace = symbol_lexical_namespace(&lookup_identifier.namespace, &stmt);
 
     env.symbols.push_local_scope();
     let result = (|| -> CXResult<()> {
-        apply_template_input(env, template_prototype, input)
+        apply_template_input(env, &template_prototype, input)
             .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
 
         prototype.map_symbol_name(|_| instance_name.clone());
-        typecheck_comptime_function(env, &namespace, prototype.clone(), template_data)?;
+        typecheck_comptime_function(env, &namespace, prototype.clone(), &template_data)?;
         Ok(())
     })();
     env.symbols.pop_local_scope();

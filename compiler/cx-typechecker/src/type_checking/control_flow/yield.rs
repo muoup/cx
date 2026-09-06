@@ -1,17 +1,14 @@
 use crate::{
     environment::{ControlTarget, TypeEnvironment},
     type_checking::{
-        coercion::implicit::promotion::std_rval_promotion,
-        result::TypecheckResult,
+        coercion::implicit::promotion::std_rval_promotion, result::TypecheckResult,
         typechecker::typecheck_expr,
     },
 };
 use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
-use cx_thir::{
-    NamespacePath,
-    thir::{data::THIRType, expression::THIRExpressionKind},
-};
+use cx_namespace::module::NamespacePath;
+use cx_thir::thir::{data::THIRType, expression::THIRExpressionKind};
 use cx_tokens::TokenRange;
 
 pub fn typecheck_yield(
@@ -44,13 +41,9 @@ pub fn typecheck_yield(
                 );
             }
 
-            let mut expression = typecheck_expr(
-                env,
-                namespace,
-                value,
-                state.expected_type.as_ref(),
-            )?
-            .standard_ready_coerce(env, value.token_range())?;
+            let mut expression =
+                typecheck_expr(env, namespace, value, state.expected_type.as_ref())?
+                    .standard_ready_coerce(env, value.token_range())?;
             if state
                 .expected_type
                 .as_ref()
@@ -96,9 +89,7 @@ pub fn typecheck_yield(
         }
     };
 
-    env.function
-        .flow_mut()
-        .record_yield(yield_type, has_value);
+    env.function.flow_mut().record_yield(yield_type, has_value);
 
     Ok(TypecheckResult::new(
         THIRType::unit(),

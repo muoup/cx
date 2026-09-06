@@ -7,13 +7,12 @@ pub fn resource_path(
     unit: &CompilationUnit,
     data_suffix: &str,
 ) -> PathBuf {
-    let diff = unit.module().as_path()
-        .strip_prefix(&context.config.working_directory)
-        .unwrap_or(unit.module().as_path())
-        .with_extension(data_suffix);
-
-    let complete_path = context.config.internal_directory.join(diff);
-    return complete_path;
+    let relative = if unit.namespace().is_root() {
+        PathBuf::from(unit.module().as_path().file_name().expect("source file name"))
+    } else {
+        unit.namespace().segments().iter().map(|segment| segment.as_str()).collect()
+    };
+    context.config.internal_directory.join(relative).with_extension(data_suffix.trim_start_matches('.'))
 }
 
 pub fn store_text(

@@ -99,13 +99,20 @@ fn run_file_mode(args: args::FileArgs) -> Result<(), ()> {
     let invocation_directory = std::env::current_dir().expect("Failed to get current directory");
 
     if args.compile_only {
+        let internal_directory = setup_internal_directory(&invocation_directory);
         for input_file in &args.input_files {
             let output = args
                 .output_file
                 .as_ref()
                 .map(|output| resolve_invocation_path(&invocation_directory, output))
                 .unwrap_or_else(|| default_object_output(&invocation_directory, input_file));
-            let config = compiler_config(&args, output, CompilationMode::Object);
+            let config = compiler_config_with_dirs(
+                &args,
+                output,
+                CompilationMode::Object,
+                invocation_directory.clone(),
+                internal_directory.clone(),
+            );
             run_standard_compilation(config, Path::new(input_file))?;
         }
         return Ok(());
@@ -118,7 +125,14 @@ fn run_file_mode(args: args::FileArgs) -> Result<(), ()> {
         .unwrap_or_else(|| invocation_directory.join("a.out"));
 
     if args.input_files.len() == 1 {
-        let config = compiler_config(&args, output, CompilationMode::Executable);
+        let internal_directory = setup_internal_directory(&invocation_directory);
+        let config = compiler_config_with_dirs(
+            &args,
+            output,
+            CompilationMode::Executable,
+            invocation_directory.clone(),
+            internal_directory,
+        );
         run_standard_compilation(config, Path::new(&args.input_files[0]))?;
         return Ok(());
     }
