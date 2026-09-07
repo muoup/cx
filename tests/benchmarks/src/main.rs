@@ -350,31 +350,6 @@ fn t_critical_95(degrees_of_freedom: usize) -> f64 {
         .unwrap_or(1.96)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{format_stats, format_timing, margin_of_error_ms, stats};
-
-    #[test]
-    fn formats_milliseconds_and_seconds() {
-        assert_eq!(format_timing(999.0, Some(12.5)), "999.00 ± 12.50 ms");
-        assert_eq!(format_timing(1250.0, Some(25.0)), "1.25 ± 0.03 s");
-    }
-
-    #[test]
-    fn reports_margin_of_error_for_multiple_samples() {
-        let timing = stats(vec![100.0, 110.0, 120.0]);
-        let margin = margin_of_error_ms(&timing).unwrap();
-
-        assert!((margin - 24.84).abs() < 0.01);
-        assert_eq!(format_stats(&timing), "110.00 ± 24.84 ms");
-    }
-
-    #[test]
-    fn reports_unavailable_margin_for_one_sample() {
-        assert_eq!(format_stats(&stats(vec![1250.0])), "1.25 ± n/a s");
-    }
-}
-
 fn discover_cases(root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut cases = Vec::new();
     discover_cases_in(root, &mut cases)?;

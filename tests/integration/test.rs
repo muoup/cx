@@ -64,9 +64,11 @@ fn classify_failure_stage(failure: &CompilationFailure) -> Option<FailureStage> 
     if code.starts_with("PARSER ERROR") || message.starts_with("PARSER ERROR") {
         Some(FailureStage::Parse)
     } else if code.starts_with("TYPE ERROR")
+        || code.starts_with("MIR ERROR")
         || code.starts_with("COMPTIME ERROR")
         || code.starts_with("CONST EVAL ERROR")
         || message.starts_with("TYPE ERROR")
+        || message.starts_with("MIR ERROR")
         || message.starts_with("COMPTIME ERROR")
         || message.starts_with("CONST EVAL ERROR")
     {

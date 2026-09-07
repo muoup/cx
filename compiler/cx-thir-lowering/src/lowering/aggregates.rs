@@ -1,7 +1,5 @@
-use cx_log::{
-    CXResult,
-    error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
-};
+use crate::log::log_mir_error;
+use cx_log::CXResult;
 use cx_mir::{
     MIRAggregateOp, MIRBinaryOp, MIRConstant, MIRInstrKind, MIRIntBinaryOp, MIRIntType,
     MIRPlaceAggregateOp, MIRValue, MIRValueAggregateOp,
@@ -12,6 +10,7 @@ use cx_thir::thir::{
     pattern::THIRPattern,
 };
 use cx_thir::type_context::THIRTypeContext;
+use cx_tokens::TokenRange;
 
 use crate::{
     builder::MIRBuilder,
@@ -129,36 +128,40 @@ pub(super) fn bind_pattern_payload(
         let sum_type_id = lower_type(builder, sum_type)?;
 
         let (payload, instr) = match subject {
-            MIRValue::Copy(place) |
-            MIRValue::Move(place) |
-            MIRValue::PlaceRef(place) => {
+            MIRValue::Copy(place) | MIRValue::Move(place) | MIRValue::PlaceRef(place) => {
                 let out = builder
                     .fun_mut()
                     .new_place(payload_type_id, inner_name.clone(), false);
 
-                (MIRValue::PlaceRef(out), MIRAggregateOp::Place {
-                    out: out.clone(),
-                    op: MIRPlaceAggregateOp::Variant {
-                        base: place,
-                        variant: *variant_index,
-                        sum_type: sum_type_id,
+                (
+                    MIRValue::PlaceRef(out),
+                    MIRAggregateOp::Place {
+                        out: out.clone(),
+                        op: MIRPlaceAggregateOp::Variant {
+                            base: place,
+                            variant: *variant_index,
+                            sum_type: sum_type_id,
+                        },
                     },
-                })
-            },
+                )
+            }
 
             MIRValue::Register(reg) => {
                 let out = builder
                     .fun_mut()
                     .new_register(payload_type_id, inner_name.clone());
 
-                (MIRValue::Register(out), MIRAggregateOp::Value {
-                    out: out.clone(),
-                    op: MIRValueAggregateOp::ProjectVariant {
-                        value: MIRValue::Register(reg),
-                        variant: *variant_index,
-                        sum_type: sum_type_id,
+                (
+                    MIRValue::Register(out),
+                    MIRAggregateOp::Value {
+                        out: out.clone(),
+                        op: MIRValueAggregateOp::ProjectVariant {
+                            value: MIRValue::Register(reg),
+                            variant: *variant_index,
+                            sum_type: sum_type_id,
+                        },
                     },
-                })
+                )
             }
 
             _ => unreachable!(),
@@ -166,13 +169,9 @@ pub(super) fn bind_pattern_payload(
 
         builder.emit(MIRInstrKind::AggregateOp(instr));
 
-        builder
-            .fun_mut()
-            .bind_local(*local_id, payload.clone());
+        builder.fun_mut().bind_local(*local_id, payload.clone());
         if let Some(name) = inner_name {
-            builder
-                .fun_mut()
-                .bind_named_value(name, payload);
+            builder.fun_mut().bind_named_value(name, payload);
         }
     }
     Ok(())
@@ -213,14 +212,11 @@ pub(super) fn constant_from_pattern(pattern: &THIRPattern) -> MIRConstant {
     }
 }
 
-pub fn move_value(value: MIRValue) -> CXResult<MIRValue> {
+pub fn move_value(value: MIRValue, range: &TokenRange) -> CXResult<MIRValue> {
     match value {
         MIRValue::PlaceRef(place) => Ok(MIRValue::Move(place)),
         MIRValue::Move(place) => Ok(MIRValue::Move(place)),
         MIRValue::Register(reg) => Ok(MIRValue::Register(reg)),
-        _ => Err(CXError::new(
-            CXStdErrMessage::error("TYPE ERROR", format!("Cannot move value: {:?}", value)),
-            CXInternalContext::error("IN: move_value"),
-        )),
+        _ => log_mir_error(range, format!("Cannot move value: {:?}", value)),
     }
 }

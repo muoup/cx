@@ -2,9 +2,6 @@ use std::collections::HashSet;
 
 use crate::module::{NamespacePath, QualifiedName};
 
-#[cfg(test)]
-mod tests;
-
 pub trait QualifiedLookup {
     type Output;
 

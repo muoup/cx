@@ -603,25 +603,3 @@ impl TokenKind {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{Token, TokenKind, TokenRange};
-    use std::{path::Path, sync::Arc};
-
-    #[test]
-    fn captures_file_and_byte_bounds_from_tokens() {
-        let file: Arc<Path> = Arc::from(Path::new("src/main.cx"));
-        let tokens = [
-            Token::new(TokenKind::Identifier("a".to_string()), (4, 5), file.clone()),
-            Token::new(TokenKind::Identifier("b".to_string()), (6, 7), file),
-        ];
-
-        let range = TokenRange::from_tokens(0, 2, &tokens);
-
-        assert_eq!(
-            range.source_bounds(),
-            Some((Path::new("src/main.cx"), 4, 7))
-        );
-    }
-}

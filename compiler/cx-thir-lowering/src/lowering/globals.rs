@@ -5,10 +5,7 @@ use cx_mir::{
     MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID, MIRFunctionMode, MIRGlobalID,
     MIRGlobalKind, MIRGlobalState, MIRInstrKind,
 };
-use cx_thir::thir::{
-    expression::THIRExpression,
-    global::THIRGlobalVariable,
-};
+use cx_thir::thir::{expression::THIRExpression, global::THIRGlobalVariable};
 use cx_util::identifier::CXIdent;
 use cx_util::linkage::LinkageMode;
 
@@ -37,6 +34,11 @@ pub(crate) fn predeclare_global(
             },
             is_mutable: global.is_mutable,
         },
+        global
+            .initializer
+            .as_ref()
+            .map(|initializer| &initializer.token_range)
+            .unwrap_or(&cx_tokens::TokenRange::internal()),
     )
 }
 
@@ -63,7 +65,9 @@ pub(crate) fn lower_global(
     let init_id = builder
         .module_mut()
         .declare_function(MIRFnPrototype::new(signature, LinkageMode::Static));
-    builder.module_mut().begin_global_initializer(id, init_id)?;
+    builder
+        .module_mut()
+        .begin_global_initializer(id, init_id, &init.token_range)?;
 
     Ok(Some(MIRGlobalInitRequest {
         global_id: id,
@@ -80,9 +84,7 @@ pub(crate) fn fulfill_init_request(
 
     let value = lower_expression(builder, &request.initializer)?;
     if !builder.fun_mut().current_block_terminated() {
-        builder.emit(MIRInstrKind::Return {
-            value: Some(value),
-        });
+        builder.emit(MIRInstrKind::Return { value: Some(value) });
     }
 
     builder.finish_function();

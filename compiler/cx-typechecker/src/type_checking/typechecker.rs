@@ -59,9 +59,13 @@ fn typecheck_expr_inner(
         } => {
             let handles_yield = *creates_scope
                 && !env.function.flow().at_function_root()
-                && (!env.in_staged_context() || expected_type.is_some());
+                && (!env.in_staged_context()
+                    || expected_type.is_some_and(|ty| !ty.is_void() && !ty.is_unreachable()));
             if handles_yield {
-                env.push_yield_scope(expected_type.cloned());
+                let expected_yield = expected_type
+                    .cloned()
+                    .or_else(|| env.function.flow().yield_state().expected_type);
+                env.push_yield_scope(expected_yield);
             }
 
             let checked = exprs

@@ -1,7 +1,4 @@
-use cx_log::{
-    CXResult,
-    error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
-};
+use cx_log::CXResult;
 use cx_mir::{
     MIRBlockTarget, MIRConstant, MIRInstrKind, MIRScopeID, MIRStagedExitKind, MIRTypeKind,
     MIRValue, ty::interface::MTRegistry,
@@ -15,6 +12,7 @@ use cx_thir::type_context::THIRTypeContext;
 
 use crate::{
     builder::MIRBuilder,
+    log::log_mir_error,
     lowering::{
         aggregates::{self, move_value},
         comptime, lower_expression, materialize_value,
@@ -50,7 +48,12 @@ pub fn auto_cleanup(builder: &mut MIRBuilder, to_scope: MIRScopeID) -> CXResult<
         Ok(())
     })();
     for (id, defers) in pending {
-        if let Some(scope) = builder.fun_mut().scope_stack_mut().iter_mut().find(|scope| scope.id() == id) {
+        if let Some(scope) = builder
+            .fun_mut()
+            .scope_stack_mut()
+            .iter_mut()
+            .find(|scope| scope.id() == id)
+        {
             scope.defered_expressions = defers;
         }
     }
@@ -60,10 +63,9 @@ pub fn auto_cleanup(builder: &mut MIRBuilder, to_scope: MIRScopeID) -> CXResult<
 pub fn lower_control_exit(
     builder: &mut MIRBuilder<'_>,
     kind: MIRStagedExitKind,
-    staged: bool,
 ) -> CXResult<MIRValue> {
-    if staged {
-        assert!(builder.is_capturing());
+    let target = builder.fun().exit_target(kind);
+    if target.is_none() && builder.is_capturing() {
         let root_scope = builder
             .fun()
             .scope_stack()
@@ -75,8 +77,11 @@ pub fn lower_control_exit(
         return Ok(MIRValue::Constant(MIRConstant::Unit));
     }
 
-    let Some((scope, block)) = builder.fun().exit_target(kind) else {
-        unreachable!("control-flow expression has no target scope");
+    let Some((scope, block)) = target else {
+        return log_mir_error(
+            builder.source_range(),
+            "control-flow expression has no target scope",
+        );
     };
 
     auto_cleanup(builder, scope)?;
@@ -338,13 +343,10 @@ pub(super) fn lower_switch(
         let case_value = comptime::evaluate(builder, case)?;
 
         if !matches!(case_value, MIRConstant::Integer { .. }) {
-            return Err(CXError::new(
-                CXStdErrMessage::error(
-                    "COMPTIME ERROR",
-                    "switch case expression must evaluate to an integer",
-                ),
-                CXInternalContext::error("MIR switch case did not produce an integer constant"),
-            ));
+            return log_mir_error(
+                &case.token_range,
+                "switch case expression must evaluate to an integer",
+            );
         }
 
         targets.push((case_value, MIRBlockTarget::new(block)));
@@ -404,7 +406,11 @@ pub(super) fn lower_match(
 
     let subject_value = match (variant_match, consuming_subject) {
         (false, _) => subject_value,
-        (true, true) => materialize_value(builder, move_value(subject_value)?, &condition._type)?,
+        (true, true) => materialize_value(
+            builder,
+            move_value(subject_value, &condition.token_range)?,
+            &condition._type,
+        )?,
         (true, false) => materialize_value(builder, subject_value, &condition._type)?,
     };
 

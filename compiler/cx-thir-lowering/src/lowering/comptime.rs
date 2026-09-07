@@ -1,12 +1,9 @@
-use cx_log::{
-    CXResult,
-    error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
-};
+use cx_log::CXResult;
 use cx_mir::{MIRConstant, MIRFunction};
 use cx_mir_comptime::{ComptimeResolver, InterpretedFunction, MIRComptimeEngine, MIRComptimeValue};
 use cx_thir::thir::expression::THIRExpression;
 
-use crate::builder::MIRBuilder;
+use crate::{builder::MIRBuilder, log::mir_error};
 
 pub trait MIRContext {
     fn comptime_resolver(&self) -> &dyn ComptimeResolver;
@@ -19,18 +16,15 @@ pub(crate) fn evaluate_comptime_expr<T: MIRContext>(
 ) -> CXResult<MIRComptimeValue> {
     let function = context.capture_expression(expr)?;
     let mut engine = MIRComptimeEngine::new(context.comptime_resolver());
-    let entry = InterpretedFunction::new(&function)
-        .expect("captured comptime functions have definitions");
+    let entry =
+        InterpretedFunction::new(&function).expect("captured comptime functions have definitions");
     Ok(MIRComptimeValue::Constant(engine.run(entry, &[])?))
 }
 
-fn constant_error(context: &str) -> CXError {
-    CXError::new(
-        CXStdErrMessage::error(
-            "COMPTIME ERROR",
-            format!("expression in {context} did not evaluate to a MIR constant"),
-        ),
-        CXInternalContext::error("comptime evaluation produced no constant"),
+fn constant_error(expression: &THIRExpression, context: &str) -> cx_log::error::CXError {
+    mir_error(
+        &expression.token_range,
+        format!("expression in {context} did not evaluate to a MIR constant"),
     )
 }
 
@@ -42,9 +36,9 @@ pub(crate) fn evaluate_integer(
     let value = evaluate_comptime_expr(builder, expression)?;
     match value {
         MIRComptimeValue::Constant(MIRConstant::Integer { value, .. }) => {
-            usize::try_from(value).map_err(|_| constant_error(context))
+            usize::try_from(value).map_err(|_| constant_error(expression, context))
         }
-        _ => Err(constant_error(context)),
+        _ => Err(constant_error(expression, context)),
     }
 }
 
@@ -55,6 +49,6 @@ pub(crate) fn evaluate(
     let value = evaluate_comptime_expr(builder, expression)?;
     match value {
         MIRComptimeValue::Constant(value) => Ok(value),
-        MIRComptimeValue::Staged(_) => Err(constant_error("staged expression")),
+        MIRComptimeValue::Staged(_) => Err(constant_error(expression, "staged expression")),
     }
 }

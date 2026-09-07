@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cx_lmir::{
     LMIRBasicBlock, LMIRBlockParameter, LMIRFunction, LMIRFunctionMap, LMIRInstructionKind,
@@ -27,7 +27,8 @@ pub(super) fn lower_function(
     let definition = function
         .definition()
         .expect("MIR declaration cannot be lowered as a function definition");
-    let (blocks, block_indices) = lower_blocks(definition, types);
+    let (order, visited) = block_order(definition);
+    let (blocks, block_indices) = lower_blocks(definition, types, &order);
     let prototype = convert_prototype(function.prototype(), types);
     let mut context = FunctionLoweringContext::new(
         unit,
@@ -42,11 +43,6 @@ pub(super) fn lower_function(
     );
 
     lower_parameters(&mut context);
-    let order = definition
-        .blocks()
-        .iter()
-        .map(|block| block.id)
-        .collect::<Vec<_>>();
     for block_id_value in order {
         context.set_current(context.block_index(block_id_value));
         let instructions = definition
@@ -58,22 +54,58 @@ pub(super) fn lower_function(
             lower_instruction(&mut context, &instruction.kind);
         }
     }
+    for block in definition.blocks() {
+        if !visited.contains(&block.id) {
+            context.set_current(context.block_index(block.id));
+            emit_void(&mut context, LMIRInstructionKind::Unreachable);
+        }
+    }
 
     Ok(context.finish())
+}
+
+fn block_order(
+    definition: &MIRBody,
+) -> (
+    Vec<cx_mir::MIRBasicBlockID>,
+    HashSet<cx_mir::MIRBasicBlockID>,
+) {
+    let mut order = Vec::new();
+    let mut visited = HashSet::new();
+    let mut pending = vec![(definition.entry(), false)];
+    while let Some((id, expanded)) = pending.pop() {
+        if expanded {
+            order.push(id);
+        } else if visited.insert(id) {
+            pending.push((id, true));
+            if let Some(block) = definition.block(id) {
+                pending.extend(
+                    block
+                        .instrs
+                        .iter()
+                        .flat_map(|instruction| instruction.successors())
+                        .map(|successor| (successor, false)),
+                );
+            }
+        }
+    }
+    order.reverse();
+    (order, visited)
 }
 
 fn lower_blocks(
     function: &MIRBody,
     types: &MIRTypeRegistryBuilder,
+    reachable: &[cx_mir::MIRBasicBlockID],
 ) -> (Vec<LMIRBasicBlock>, HashMap<cx_mir::MIRBasicBlockID, usize>) {
-    let entry = function.entry();
-    let mut order = vec![entry];
+    let mut order = reachable.to_vec();
+    let reachable = reachable.iter().copied().collect::<HashSet<_>>();
     order.extend(
         function
             .blocks()
             .iter()
             .map(|block| block.id)
-            .filter(|id| *id != entry),
+            .filter(|id| !reachable.contains(id)),
     );
 
     let mut blocks = Vec::with_capacity(order.len());

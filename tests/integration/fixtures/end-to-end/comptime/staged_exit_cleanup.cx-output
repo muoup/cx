@@ -7,3 +7,5 @@ loop cleanup 1
 stage cleanup
 loop cleanup 2
 dropped return
+stage cleanup
+yielded 9

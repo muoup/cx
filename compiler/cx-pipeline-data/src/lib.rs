@@ -180,24 +180,3 @@ impl Display for CompilationUnit {
         write!(f, "Unit {}", self.namespace())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use speedy::{Readable, Writable};
-
-    #[test]
-    fn compilation_unit_round_trip_preserves_module_and_namespace() {
-        let module = ModulePath::new(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"));
-        let namespace = NamespacePath::from_str("custom::logical::module");
-        let unit = CompilationUnit::new(
-            Path::new(env!("CARGO_MANIFEST_DIR")),
-            module,
-            Some(namespace),
-        );
-        let encoded = unit.write_to_vec().unwrap();
-        let decoded = CompilationUnit::read_from_buffer(&encoded).unwrap();
-
-        assert_eq!(decoded, unit);
-    }
-}

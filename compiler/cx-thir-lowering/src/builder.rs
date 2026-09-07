@@ -28,8 +28,8 @@ mod function;
 mod module;
 
 use crate::lowering::{
-    comptime::MIRContext,
     self,
+    comptime::MIRContext,
     types::{lower_type, lower_type_id},
 };
 use function::FunctionBuilder;
@@ -151,6 +151,10 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub(crate) fn restore_source_range(&mut self, range: TokenRange) {
         self.source_range = range;
+    }
+
+    pub(crate) fn source_range(&self) -> &TokenRange {
+        &self.source_range
     }
 
     pub fn emit(&mut self, instr: MIRInstrKind) {
@@ -435,10 +439,7 @@ impl MIRContext for MIRBuilder<'_> {
         &self.module
     }
 
-    fn capture_expression(
-        &mut self,
-        expression: &THIRExpression,
-    ) -> cx_log::CXResult<MIRFunction> {
+    fn capture_expression(&mut self, expression: &THIRExpression) -> cx_log::CXResult<MIRFunction> {
         use cx_mir::MIRInstrKind;
         use cx_tokens::TokenRange;
 

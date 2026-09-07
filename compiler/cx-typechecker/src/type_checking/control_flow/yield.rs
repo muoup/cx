@@ -44,9 +44,13 @@ pub fn typecheck_yield(
                 );
             }
 
-            let mut expression =
-                typecheck_expr(env, namespace, value, state.expected_type.as_ref())?
-                    .standard_ready_coerce(env, value.token_range())?;
+            let result = typecheck_expr(env, namespace, value, state.expected_type.as_ref())?;
+            let result = if let Some(expected_type) = &state.expected_type {
+                result.apply_expected_type(env, namespace, expected_type)?
+            } else {
+                result
+            };
+            let mut expression = result.standard_ready_coerce(env, value.token_range())?;
             if state
                 .expected_type
                 .as_ref()

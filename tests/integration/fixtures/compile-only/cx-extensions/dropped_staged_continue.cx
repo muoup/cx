@@ -1,0 +1,8 @@
+comptime expr void discard(expr(int) void body) {
+    return emit .{};
+}
+
+int main() {
+    discard() <| |unused| .{ continue; };
+    return 0;
+}

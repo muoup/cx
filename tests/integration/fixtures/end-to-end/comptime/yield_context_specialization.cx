@@ -1,0 +1,36 @@
+#include <stdio.h>
+import std::optional as std;
+
+comptime expr void yield_none() {
+    return emit .{ yield std::opt::none(); };
+}
+
+comptime expr void forward_yield() {
+    return yield_none();
+}
+
+int main() {
+    std::opt<int> integer = match (1) {
+        0 => yield std::opt::some<int>(1);
+        default => {
+            forward_yield();
+            yield std::opt::some<int>(1);
+        }
+    };
+    std::opt<float> floating = match (1) {
+        0 => yield std::opt::some<float>(1.0f);
+        default => {
+            forward_yield();
+            yield std::opt::some<float>(1.0f);
+        }
+    };
+    match (move integer) {
+        std::opt::none() => printf("integer none\n");
+        std::opt::some(value) => printf("integer some\n");
+    }
+    match (move floating) {
+        std::opt::none() => printf("float none\n");
+        std::opt::some(value) => printf("float some\n");
+    }
+    return 0;
+}

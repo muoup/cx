@@ -16,8 +16,8 @@ use cx_thir::thir::{
 };
 use cx_thir::type_context::THIRTypeContext;
 
-use crate::lowering::control_flow::auto_pop_scope;
 use crate::lowering::comptime::evaluate_comptime_expr;
+use crate::lowering::control_flow::auto_pop_scope;
 use crate::lowering::lower_expression;
 use crate::{
     builder::MIRBuilder,
@@ -109,7 +109,10 @@ pub(super) fn lower_call(
         .registry()
         .intern_signature(&function._type)
         .is_some_and(|signature| signature.return_type.is_unreachable());
-    if contract.noreturn || unreachable_return {
+    if contract.noreturn
+        || unreachable_return
+        || matches!(&function.kind, THIRExpressionKind::FunctionReference { name, .. } if name.as_str() == "exit")
+    {
         builder.emit(MIRInstrKind::Unreachable);
     }
     let value = out
@@ -152,7 +155,7 @@ fn lower_comptime_call(
     arguments: &[THIRExpression],
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
-    if builder.fun().mode() == MIRFunctionMode::Comptime {
+    if builder.is_capturing() || builder.fun().mode() == MIRFunctionMode::Comptime {
         let mut args = Vec::with_capacity(arguments.len());
         for (argument, parameter) in arguments.iter().zip(&signature.params) {
             if parameter.staged_params.is_some() {
@@ -165,7 +168,9 @@ fn lower_comptime_call(
                 args.push(lower_expression(builder, argument)?);
             }
         }
-        let out = if (result_type.is_void() || result_type.is_unreachable()) && signature.return_staged_params.is_none() {
+        let out = if (result_type.is_void() || result_type.is_unreachable())
+            && signature.return_staged_params.is_none()
+        {
             None
         } else {
             let ty = lower_type(builder, result_type)?;
@@ -177,6 +182,15 @@ fn lower_comptime_call(
             callee: MIRValue::Constant(MIRConstant::Function(function)),
             args,
         });
+        if builder.is_capturing() && signature.return_staged_params.is_some() {
+            if let Some(out) = out {
+                let targets = super::staged::exits::targets(builder)?;
+                builder.emit(MIRInstrKind::StagedUse {
+                    value: MIRValue::Register(out),
+                    targets,
+                });
+            }
+        }
         return Ok(out
             .map(MIRValue::Register)
             .unwrap_or(MIRValue::Constant(MIRConstant::Unit)));
