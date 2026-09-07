@@ -49,6 +49,9 @@ pub(crate) fn lower_function(
 
     builder.start_function(id);
 
+    builder.outer_return_type = Some(builder.fun().prototype().signature.return_type);
+    builder.outer_yield_type = None;
+
     for (index, parameter) in function.prototype.signature().params.iter().enumerate() {
         let place = MIRPlace::Parameter(MIRParameterID::new(index));
 
@@ -71,6 +74,16 @@ pub(crate) fn lower_function(
         ) {
             builder.emit(MIRInstrKind::Return { value: None });
         } else {
+            if function.require_explicit_return && !function.prototype.signature().return_type.is_unreachable()
+                && builder.fun().current_block_reachable()
+            {
+                return Err(CXError::new(
+                    CXStdErrMessage::error("TYPE ERROR", format!(
+                        "Function '{}' with non-void return type must have an explicit return statement",
+                        function.prototype.pretty_name())),
+                    cx_log::error::context::CXSourceContext::new(body.token_range.clone()),
+                ));
+            }
             builder.emit(MIRInstrKind::Unreachable);
         }
     }
@@ -90,6 +103,10 @@ pub(crate) fn lower_comptime_function(
 
     builder.start_function(id);
     builder.fun_mut().push_scope(body.token_range.clone());
+    builder.outer_return_type = function.context.return_type.as_ref()
+        .map(|ty| lower_type(builder, ty)).transpose()?;
+    builder.outer_yield_type = function.context.yield_type.as_ref()
+        .map(|ty| lower_type(builder, ty)).transpose()?;
 
     for (index, parameter) in function.prototype.params().iter().enumerate() {
         let value = MIRValue::PlaceRef(MIRPlace::Parameter(cx_mir::MIRParameterID::new(index)));
@@ -224,7 +241,7 @@ pub(crate) fn lower_expression(
                     && (expression._type.is_void() || expression._type.is_unreachable())
                     && matches!(value, MIRValue::Register(_))
                 {
-                    let targets = builder.fun().staged_targets();
+                    let targets = crate::lowering::staged::exits::targets(builder)?;
                     builder.emit(MIRInstrKind::StagedUse {
                         value: value.clone(),
                         targets,
@@ -757,11 +774,11 @@ pub(crate) fn lower_expression(
                 MIRValue::Register(out)
             }
 
-            THIRExpressionKind::Break { staged } => {
-                lower_control_exit(builder, MIRStagedExitKind::Break, *staged)?
+            THIRExpressionKind::Break => {
+                lower_control_exit(builder, MIRStagedExitKind::Break)?
             }
-            THIRExpressionKind::Continue { staged } => {
-                lower_control_exit(builder, MIRStagedExitKind::Continue, *staged)?
+            THIRExpressionKind::Continue => {
+                lower_control_exit(builder, MIRStagedExitKind::Continue)?
             }
             THIRExpressionKind::Goto { name } => {
                 let target = if let Some(target) = builder.fun_mut().label(name) {
@@ -889,7 +906,7 @@ pub(crate) fn lower_expression(
                 MIRValue::Constant(MIRConstant::Unit)
             }
 
-            THIRExpressionKind::Yield { value, staged } => {
+            THIRExpressionKind::Yield { value } => {
                 let yield_type = value
                     .as_deref()
                     .map(|value| lower_type(builder, &value._type))
@@ -899,8 +916,9 @@ pub(crate) fn lower_expression(
                     .map(|value| lower_expression(builder, value))
                     .transpose()?;
 
-                if *staged {
-                    assert!(builder.is_capturing());
+                let target = builder.fun().scope_stack().iter().rev()
+                    .find_map(|scope| scope.yield_target.map(|block| (scope.id(), block)));
+                if target.is_none() && builder.is_capturing() {
                     let root_scope = builder
                         .fun()
                         .scope_stack()
@@ -915,14 +933,8 @@ pub(crate) fn lower_expression(
                     return Ok(MIRValue::Constant(MIRConstant::Unit));
                 }
 
-                let Some((scope_id, block_id)) = builder
-                    .fun()
-                    .scope_stack()
-                    .iter()
-                    .rev()
-                    .find_map(|scope| scope.yield_target.map(|t| (scope.id(), t)))
-                else {
-                    unreachable!("yield expression is not inside a yieldable scope");
+                let Some((scope_id, block_id)) = target else {
+                    return Err(staged::staged_error("yield expression is not inside a yieldable scope"));
                 };
 
                 let args = value.into_iter().collect();
@@ -1126,7 +1138,7 @@ pub(crate) fn lower_expression(
                     let ty = lower_type(builder, &expression._type)?;
                     Some(builder.fun_mut().new_register(ty, None))
                 };
-                let targets = builder.fun().staged_targets();
+                let targets = crate::lowering::staged::exits::targets(builder)?;
                 builder.emit(MIRInstrKind::ApplyStaged {
                     out,
                     staged,

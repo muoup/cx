@@ -1,3 +1,5 @@
+pub(crate) mod exits;
+
 use std::collections::{HashMap, HashSet};
 
 use cx_log::{
@@ -14,7 +16,7 @@ use cx_mir_comptime::{MIRComptimeValue, MIRStagedBinding, MIRStagedValue};
 use crate::builder::MIRBuilder;
 use crate::lowering::control_flow::auto_cleanup;
 
-fn staged_error(message: impl Into<String>) -> CXError {
+pub(super) fn staged_error(message: impl Into<String>) -> CXError {
     CXError::new(
         CXStdErrMessage::error("COMPTIME ERROR", message.into()),
         CXInternalContext::error("failed to instantiate a staged MIR template"),
@@ -25,14 +27,14 @@ pub(crate) fn instantiate(
     builder: &mut MIRBuilder<'_>,
     staged: &MIRStagedValue,
 ) -> CXResult<MIRValue> {
-    instantiate_inner(builder, staged, &[], MIRStagedTargets::default())
+    instantiate_inner(builder, staged, MIRStagedTargets::default(), &mut HashSet::new())
 }
 
 fn instantiate_inner(
     builder: &mut MIRBuilder<'_>,
     staged: &MIRStagedValue,
-    escape_prefix: &[MIRInstr],
     targets: MIRStagedTargets,
+    used_targets: &mut HashSet<MIRBasicBlockID>,
 ) -> CXResult<MIRValue> {
     if let Some(origin) = staged.runtime_origin()
         && origin != builder.fun().id()
@@ -177,10 +179,16 @@ fn instantiate_inner(
         target: MIRBlockTarget::new(entry),
     });
 
-    for block in body.blocks() {
+    let mut pending = vec![body.entry()];
+    let mut visited = HashSet::new();
+    while let Some(source_block) = pending.pop() {
+        if !visited.insert(source_block) {
+            continue;
+        }
+        let block = body.block(source_block).ok_or_else(|| staged_error("missing staged block"))?;
         let mapped_block = blocks[&block.id];
         builder.fun_mut().set_current_block(mapped_block);
-        for (instruction_index, instruction) in block.instrs.iter().enumerate() {
+        for instruction in &block.instrs {
             let deferred_callee = match &instruction.kind {
                 MIRInstrKind::ApplyStaged {
                     staged: MIRValue::Register(register),
@@ -200,10 +208,13 @@ fn instantiate_inner(
                 &instruction.kind,
                 &mut values,
                 &mut staged_inputs,
-                escape_prefix,
                 deferred_callee,
                 dependency_targets,
+                used_targets,
             )?;
+            if builder.fun().current_block_terminated() {
+                break;
+            }
             match &instruction.kind {
                 MIRInstrKind::StagedReturn { value } => {
                     let args = if is_void {
@@ -219,11 +230,6 @@ fn instantiate_inner(
                     );
                 }
                 MIRInstrKind::StagedExit { kind } => {
-                    for prefix in escape_prefix {
-                        builder
-                            .fun_mut()
-                            .emit(prefix.kind.clone(), prefix.token_range.clone());
-                    }
                     let local_target = match kind {
                         cx_mir::MIRStagedExitKind::Break => targets.break_target,
                         cx_mir::MIRStagedExitKind::Continue => targets.continue_target,
@@ -242,6 +248,7 @@ fn instantiate_inner(
                             "staged {name} has no target in the materialization context"
                         )));
                     };
+                    used_targets.insert(block);
                     builder.fun_mut().emit(
                         MIRInstrKind::Jump {
                             target: MIRBlockTarget::new(block),
@@ -250,11 +257,6 @@ fn instantiate_inner(
                     );
                 }
                 MIRInstrKind::StagedYield { value, ty } => {
-                    for prefix in escape_prefix {
-                        builder
-                            .fun_mut()
-                            .emit(prefix.kind.clone(), prefix.token_range.clone());
-                    }
                     let block =
                         if let Some(block) = targets.yield_target {
                             block
@@ -277,6 +279,7 @@ fn instantiate_inner(
                         .into_iter()
                         .collect();
                     validate_yield(builder, block, *ty)?;
+                    used_targets.insert(block);
                     builder.fun_mut().emit(
                         MIRInstrKind::Jump {
                             target: MIRBlockTarget::with_args(block, args),
@@ -304,40 +307,9 @@ fn instantiate_inner(
                                 .map(MIRStagedBinding::Value)
                         })
                         .collect::<CXResult<Vec<_>>>()?;
-                    let mut child_escape_prefix = Vec::new();
-                    for suffix in &block.instrs[instruction_index + 1..] {
-                        if suffix.kind.is_terminator() {
-                            break;
-                        }
-                        if matches!(
-                            suffix.kind,
-                            MIRInstrKind::MakeStaged { .. } | MIRInstrKind::ApplyStaged { .. }
-                        ) {
-                            return Err(staged_error(
-                                "nested staged application in a deferred return suffix",
-                            ));
-                        }
-                        if writes_omitted_value(&suffix.kind, &values, &omitted_places) {
-                            continue;
-                        }
-                        child_escape_prefix.push(MIRInstr::new(
-                            map_instruction(
-                                &suffix.kind,
-                                &values,
-                                &places,
-                                &omitted_places,
-                                &blocks,
-                                &block_params,
-                                &scopes,
-                            )?,
-                            suffix.token_range.clone(),
-                        ));
-                    }
-                    child_escape_prefix.extend_from_slice(escape_prefix);
                     let applied = dependency.apply(args);
                     let targets = map_targets(*local_targets, targets, &blocks)?;
-                    let value =
-                        instantiate_inner(builder, &applied, &child_escape_prefix, targets)?;
+                    let value = instantiate_inner(builder, &applied, targets, used_targets)?;
                     if let Some(out) = out {
                         values.insert(*out, value);
                     }
@@ -358,24 +330,19 @@ fn instantiate_inner(
                     values.insert(*out, mapped);
                 }
                 MIRInstrKind::StagedUse { .. } => {}
-                MIRInstrKind::Return { .. } => {
-                    for prefix in escape_prefix {
-                        builder
-                            .fun_mut()
-                            .emit(prefix.kind.clone(), prefix.token_range.clone());
+                MIRInstrKind::Return { value } => {
+                    let value = value.as_ref()
+                        .map(|value| map_value(value, &values, &places, &omitted_places))
+                        .transpose()?;
+                    if let Some(block) = targets.return_target {
+                        used_targets.insert(block);
+                        builder.fun_mut().emit(MIRInstrKind::Jump {
+                            target: MIRBlockTarget::with_args(block, value.into_iter().collect()),
+                        }, instruction.token_range.clone());
+                    } else {
+                        auto_cleanup(builder, builder.fun().scope_stack().first().unwrap().id())?;
+                        builder.fun_mut().emit(MIRInstrKind::Return { value }, instruction.token_range.clone());
                     }
-                    let mapped = map_instruction(
-                        &instruction.kind,
-                        &values,
-                        &places,
-                        &omitted_places,
-                        &blocks,
-                        &block_params,
-                        &scopes,
-                    )?;
-                    builder
-                        .fun_mut()
-                        .emit(mapped, instruction.token_range.clone());
                 }
                 kind => {
                     if writes_omitted_value(kind, &values, &omitted_places) {
@@ -395,6 +362,16 @@ fn instantiate_inner(
                         .emit(mapped, instruction.token_range.clone());
                 }
             }
+            pending.extend(instruction.successors());
+        }
+        pending.extend(blocks.iter().filter_map(|(source, mapped)| {
+            (used_targets.contains(mapped) && !visited.contains(source)).then_some(*source)
+        }));
+    }
+    for (source, mapped) in &blocks {
+        if !visited.contains(source) {
+            builder.fun_mut().set_current_block(*mapped);
+            builder.emit(MIRInstrKind::Unreachable);
         }
     }
 
@@ -432,9 +409,9 @@ fn resolve_dependencies(
     instruction: &MIRInstrKind,
     values: &mut HashMap<MIRRegister, MIRValue>,
     staged_inputs: &mut HashMap<MIRRegister, std::sync::Arc<MIRStagedValue>>,
-    escape_prefix: &[MIRInstr],
     deferred: Option<MIRRegister>,
     targets: MIRStagedTargets,
+    used_targets: &mut HashSet<MIRBasicBlockID>,
 ) -> CXResult<()> {
     let mut inputs = Vec::new();
     MIRInstr::new(instruction.clone(), cx_tokens::TokenRange::internal()).visit_operands(
@@ -458,7 +435,7 @@ fn resolve_dependencies(
                 "parameterized staged value used without an application",
             ));
         }
-        let value = instantiate_inner(builder, &staged, escape_prefix, targets)?;
+        let value = instantiate_inner(builder, &staged, targets, used_targets)?;
         values.insert(input, value);
     }
     Ok(())
@@ -480,6 +457,7 @@ fn map_targets(
             .transpose()
     };
     Ok(MIRStagedTargets {
+        return_target: map(local.return_target)?.or(inherited.return_target),
         break_target: map(local.break_target)?.or(inherited.break_target),
         continue_target: map(local.continue_target)?.or(inherited.continue_target),
         yield_target: map(local.yield_target)?.or(inherited.yield_target),

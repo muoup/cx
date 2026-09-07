@@ -3,7 +3,7 @@ use std::{collections::HashMap, rc::Rc};
 use cx_mir::{
     MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID,
     MIRFunctionMode, MIRInstr, MIRInstrKind, MIRPlace, MIRRegister, MIRScopeID, MIRStagedExitKind,
-    MIRStagedTargets, MIRTypeID, MIRValue,
+    MIRTypeID, MIRValue,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
 use cx_tokens::TokenRange;
@@ -165,6 +165,22 @@ impl FunctionBuilder {
             .is_some_and(|instr| instr.is_terminator())
     }
 
+    pub fn current_block_reachable(&self) -> bool {
+        let mut pending = vec![self.body.entry()];
+        let mut visited = std::collections::HashSet::new();
+        while let Some(block) = pending.pop() {
+            if block == self.current_block {
+                return true;
+            }
+            if visited.insert(block) {
+                if let Some(block) = self.body.block(block) {
+                    pending.extend(block.instrs.iter().flat_map(MIRInstr::successors));
+                }
+            }
+        }
+        false
+    }
+
     pub fn current_block_terminated(&self) -> bool {
         self.active_block()
             .instrs
@@ -317,17 +333,7 @@ impl FunctionBuilder {
         })
     }
 
-    pub fn staged_targets(&self) -> MIRStagedTargets {
-        MIRStagedTargets {
-            break_target: self.exit_target(MIRStagedExitKind::Break).map(|(_, block)| block),
-            continue_target: self
-                .exit_target(MIRStagedExitKind::Continue)
-                .map(|(_, block)| block),
-            yield_target: self
-                .scope_stack
-                .iter()
-                .rev()
-                .find_map(|scope| scope.yield_target),
-        }
+    pub fn scope_stack_mut(&mut self) -> &mut [ScopeContext] {
+        &mut self.scope_stack
     }
 }

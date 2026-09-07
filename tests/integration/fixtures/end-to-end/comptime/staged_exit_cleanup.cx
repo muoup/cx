@@ -1,0 +1,37 @@
+#include <stdio.h>
+
+comptime expr void around(expr(int) void proc) {
+    return emit .{
+        defer printf("stage cleanup\n");
+        proc(1);
+        printf("stage suffix\n");
+    };
+}
+
+int returning() {
+    defer printf("caller cleanup\n");
+    around() <| |unused| .{
+        defer printf("callback cleanup\n");
+        return 7;
+    };
+    printf("caller suffix\n");
+    return 0;
+}
+
+comptime expr void ignore(expr(int) void proc) {
+    return emit .{};
+}
+
+int main() {
+    printf("returned %d\n", returning());
+    int count = 0;
+    while (count < 2) {
+        count += 1;
+        defer printf("loop cleanup %d\n", count);
+        around() <| |unused| .{ continue; };
+        printf("loop suffix\n");
+    }
+    ignore() <| |unused| .{ return 1; };
+    printf("dropped return\n");
+    return 0;
+}

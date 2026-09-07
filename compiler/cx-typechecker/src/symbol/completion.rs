@@ -425,7 +425,7 @@ fn complete_identifier_type(
             let symbol = HIRSymbol {
                 visibility: VisibilityMode::Private,
                 tag,
-                kind: HIRSymbolKind::Type(HIRSymbolData::Standard { base: HIRTypeKind::Identifier {
+                kind: HIRSymbolKind::Type(HIRSymbolData { data: (), template_prototype: None, base: HIRTypeKind::Identifier {
                     name: name.clone(), lookup: type_lookup, template_input: None,
                 }.to_type() }),
             };
@@ -453,7 +453,7 @@ pub(crate) fn complete_named_type(
     
     let HIRSymbolKind::Type(data) = &symbol.kind else { unreachable!() };
     
-    if matches!(data, HIRSymbolData::Template { .. }) {
+    if data.template_prototype.is_some() {
         return resolve_symbol_inner(env, &name.namespace, &name.namespace, &name.name, symbol, symbol.tag, true);
     }
     

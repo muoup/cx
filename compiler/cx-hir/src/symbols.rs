@@ -33,45 +33,30 @@ impl HIRSymbol {
 pub type EnumBlockIdx = usize;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum HIRSymbolData<
+pub struct HIRSymbolData<
     Base: std::fmt::Debug + Clone + PartialEq,
     Data: std::fmt::Debug + Clone + PartialEq,
 > {
-    Standard {
-        base: Base
-    },
-    Template {
-        base: Base,
-        template_data: Data,
-        template_prototype: HIRTemplatePrototype,
-    },
+    pub base: Base,
+    pub data: Data,
+    pub template_prototype: Option<HIRTemplatePrototype>,
 }
 
 impl<Base: std::fmt::Debug + Clone + PartialEq, Data: std::fmt::Debug + Clone + PartialEq>
     HIRSymbolData<Base, Data>
 {
     pub fn new(base: Base, data: Data, template_proto: Option<HIRTemplatePrototype>) -> Self {
-        match template_proto {
-            Some(proto) => Self::Template {
-                base,
-                template_data: data,
-                template_prototype: proto,
-            },
-            None => Self::Standard { base },
-        }
+        Self { base, data, template_prototype: template_proto }
     }
 
     pub fn base(&self) -> &Base {
-        match self {
-            Self::Standard { base, .. } => base,
-            Self::Template { base, .. } => base,
-        }
+        &self.base
     }
 }
 
 pub type HIRTypeSymbol = HIRSymbolData<HIRType, ()>;
 pub type HIRTypeConstructorSymbol = HIRSymbolData<TypeConstructorData, ()>;
-pub type HIRFunctionSymbol = HIRSymbolData<HIRFunctionPrototype, Box<HIRExpression>>;
+pub type HIRFunctionSymbol = HIRSymbolData<HIRFunctionPrototype, Option<Box<HIRExpression>>>;
 pub type HIRComptimeFunctionSymbol = HIRSymbolData<HIRComptimeFnPrototype, Box<HIRExpression>>;
 
 #[derive(Debug, Clone, PartialEq)]

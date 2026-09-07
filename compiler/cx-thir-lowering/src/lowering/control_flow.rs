@@ -34,29 +34,35 @@ pub fn lower_scoped(
 }
 
 pub fn auto_cleanup(builder: &mut MIRBuilder, to_scope: MIRScopeID) -> CXResult<()> {
-    let defers = builder
-        .fun()
-        .scope_stack()
-        .iter()
-        .rev()
-        .take_while(|scope| scope.id() != to_scope)
-        .flat_map(|scope| scope.deferred_expressions().iter().rev().cloned())
-        .collect::<Vec<_>>();
-
-    for defer in defers {
-        lower_expression(builder, defer.as_ref())?;
+    let mut pending = Vec::new();
+    for scope in builder.fun_mut().scope_stack_mut().iter_mut().rev() {
+        if scope.id() == to_scope {
+            break;
+        }
+        pending.push((scope.id(), std::mem::take(&mut scope.defered_expressions)));
     }
-
-    Ok(())
+    let result = (|| {
+        for (_, defers) in &pending {
+            for defer in defers.iter().rev() {
+                lower_expression(builder, defer.as_ref())?;
+            }
+        }
+        Ok(())
+    })();
+    for (id, defers) in pending {
+        if let Some(scope) = builder.fun_mut().scope_stack_mut().iter_mut().find(|scope| scope.id() == id) {
+            scope.defered_expressions = defers;
+        }
+    }
+    result
 }
 
 pub fn lower_control_exit(
     builder: &mut MIRBuilder<'_>,
     kind: MIRStagedExitKind,
-    staged: bool,
 ) -> CXResult<MIRValue> {
-    if staged {
-        assert!(builder.is_capturing());
+    let target = builder.fun().exit_target(kind);
+    if target.is_none() && builder.is_capturing() {
         let root_scope = builder
             .fun()
             .scope_stack()
@@ -68,8 +74,8 @@ pub fn lower_control_exit(
         return Ok(MIRValue::Constant(MIRConstant::Unit));
     }
 
-    let Some((scope, block)) = builder.fun().exit_target(kind) else {
-        unreachable!("control-flow expression has no target scope");
+    let Some((scope, block)) = target else {
+        return Err(crate::lowering::staged::staged_error("control-flow expression has no target scope"));
     };
 
     auto_cleanup(builder, scope)?;

@@ -12,7 +12,6 @@ use cx_target::ArchitectureConfig;
 use cx_thir::{
     THIRUnit,
     thir::{
-        comptime::THIRStagedEffects,
         contextual_eq::TypeContextEqual,
         data::{THIRFnPrototype, THIRType},
     },
@@ -34,9 +33,7 @@ pub(crate) mod items;
 
 pub use items::THIRFunctionGenRequest;
 
-struct StagedContext {
-    return_type: Option<THIRType>,
-}
+pub use cx_thir::thir::comptime::THIRStagingContext as StagingContext;
 
 pub struct TypeEnvironment<'a> {
     pub module_data: &'a ModuleData,
@@ -44,13 +41,10 @@ pub struct TypeEnvironment<'a> {
     pub items: ItemRegistry,
     pub function: FunctionContext,
 
-    comptime_emit_bases: Vec<usize>,
-
     runtime_emit_depth: usize,
     defer_depth: usize,
-    staged_contexts: Vec<StagedContext>,
-    pub(crate) staged_expansions: Vec<u64>,
-    next_staged_expression_id: u64,
+    staged_depth: usize,
+    pub(crate) comptime_context: Option<StagingContext>,
     require_explicit_return: bool,
 }
 
@@ -65,12 +59,10 @@ impl TypeEnvironment<'_> {
             module_data,
             items: ItemRegistry::new(),
             function: FunctionContext::default(),
-            comptime_emit_bases: Vec::new(),
             runtime_emit_depth: 0,
             defer_depth: 0,
-            staged_contexts: Vec::new(),
-            staged_expansions: Vec::new(),
-            next_staged_expression_id: 0,
+            staged_depth: 0,
+            comptime_context: None,
             require_explicit_return,
         }
     }
@@ -110,32 +102,22 @@ impl TypeEnvironment<'_> {
         self.defer_depth > 0
     }
 
-    pub fn in_staged<F, T>(&mut self, f: F) -> CXResult<(T, ScopeEffects)>
+    pub fn in_staged<F, T>(&mut self, f: F) -> CXResult<T>
     where
         F: FnOnce(&mut Self) -> CXResult<T>,
     {
-        let context = StagedContext {
-            return_type: self.materialization_return_type(),
-        };
         self.function.flow_mut().push_staged_scope();
-        self.staged_contexts.push(context);
+        self.staged_depth += 1;
         let result = f(self);
-        self.staged_contexts.pop();
-        let effects = self
-            .function
+        self.staged_depth -= 1;
+        self.function
             .pop_scope()
             .unwrap_or_else(|_| panic!("staged control-flow scope is unbalanced"));
-        result.map(|value| (value, effects))
+        result
     }
 
     pub fn in_staged_context(&self) -> bool {
-        !self.staged_contexts.is_empty()
-    }
-
-    pub fn staged_return_type(&self) -> Option<&THIRType> {
-        self.staged_contexts
-            .last()
-            .and_then(|context| context.return_type.as_ref())
+        self.staged_depth != 0
     }
 
     pub fn finish_thir_unit(self, source_namespace: NamespacePath) -> CXResult<THIRUnit> {
@@ -149,6 +131,7 @@ impl TypeEnvironment<'_> {
             registry: self.symbols.decompose(),
         })
     }
+
 
     pub fn push_scope(
         &mut self,
@@ -173,67 +156,6 @@ impl TypeEnvironment<'_> {
         Ok(effects)
     }
 
-    pub fn staged_effects(&self, effects: &ScopeEffects) -> THIRStagedEffects {
-        THIRStagedEffects {
-            breaks: effects.break_range.is_some(),
-            continues: effects.continue_range.is_some(),
-            yield_type: effects.yield_type.clone(),
-        }
-    }
-
-    pub fn apply_staged_effects(
-        &mut self,
-        effects: &THIRStagedEffects,
-        range: &TokenRange,
-    ) -> CXResult<()> {
-        if effects.breaks {
-            if self.function.flow().break_target() == ControlTarget::Invalid {
-                return self.log_error(
-                    range,
-                    "staged break has no target in the materialization context".to_string(),
-                );
-            }
-            self.function.flow_mut().record_break(range.clone());
-        }
-
-        if effects.continues {
-            if self.function.flow().continue_target() == ControlTarget::Invalid {
-                return self.log_error(
-                    range,
-                    "staged continue has no target in the materialization context".to_string(),
-                );
-            }
-            self.function.flow_mut().record_continue(range.clone());
-        }
-
-        if let Some(yield_type) = &effects.yield_type {
-            let state = self.function.flow().yield_state();
-            if state.target == ControlTarget::Invalid {
-                return self.log_error(
-                    range,
-                    "staged yield has no target in the materialization context".to_string(),
-                );
-            }
-            if let Some(expected_type) = state.expected_type
-                && !self.type_eq(&expected_type, yield_type)
-            {
-                return self.log_error(
-                    range,
-                    format!(
-                        "Staged expression yields {}, but the materialization context expects {}",
-                        yield_type.display_with(&self.symbols),
-                        expected_type.display_with(&self.symbols),
-                    ),
-                );
-            }
-            self.function
-                .flow_mut()
-                .record_yield(yield_type.clone(), !yield_type.is_void());
-        }
-
-        Ok(())
-    }
-
     pub fn push_unsafe(&mut self) {
         self.function.enter_unsafe();
     }
@@ -252,18 +174,8 @@ impl TypeEnvironment<'_> {
         self.function.restore_mode(snapshot);
     }
 
-    pub fn enter_comptime_context(&mut self) {
-        self.comptime_emit_bases.push(self.runtime_emit_depth);
-    }
-
-    pub fn exit_comptime_context(&mut self) {
-        self.comptime_emit_bases
-            .pop()
-            .expect("Comptime context stack underflow");
-    }
-
     pub fn in_comptime_context(&self) -> bool {
-        !self.comptime_emit_bases.is_empty()
+        self.comptime_context.is_some()
     }
 
     pub fn in_runtime_emit<F, T>(&mut self, f: F) -> CXResult<T>
@@ -277,36 +189,20 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn in_runtime_emit_context(&self) -> bool {
-        self.comptime_emit_bases
-            .last()
-            .is_some_and(|base| self.runtime_emit_depth > *base)
+        self.in_comptime_context() && self.runtime_emit_depth != 0
     }
 
-    pub fn materialization_return_type(&self) -> Option<THIRType> {
-        if let Some(return_type) = self.staged_return_type() {
-            return Some(return_type.clone());
+    pub fn staging_context(&self) -> StagingContext {
+        let mut context = self.comptime_context.clone().unwrap_or_else(|| StagingContext {
+            return_type: self.try_current_function().map(|f| f.signature().return_type.clone()),
+            yield_type: None,
+        });
+        if self.try_current_function().is_some()
+            && (!self.in_comptime_context() || self.in_runtime_emit_context())
+        {
+            context.yield_type = self.function.flow().yield_state().expected_type.or(context.yield_type);
         }
-        if self.in_comptime_context() {
-            return None;
-        }
-        self.try_current_function()
-            .map(|function| function.signature().return_type.clone())
-    }
-
-    pub fn next_staged_expression_id(&mut self) -> u64 {
-        let id = self.next_staged_expression_id;
-        self.next_staged_expression_id += 1;
-        id
-    }
-
-    pub fn push_staged_expansion(&mut self, id: u64) {
-        self.staged_expansions.push(id);
-    }
-
-    pub fn pop_staged_expansion(&mut self) {
-        self.staged_expansions
-            .pop()
-            .expect("Staged expression expansion stack underflow");
+        context
     }
 
     pub fn type_eq(&self, type1: &THIRType, type2: &THIRType) -> bool {

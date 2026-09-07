@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use cx_hir::{ast::expression::HIRExpression, registry::GlobalSymbolRegistry, symbols::HIRSymbol};
+use cx_hir::{registry::GlobalSymbolRegistry, symbols::HIRSymbol};
 use cx_log::CXRawResult;
-use cx_namespace::module::{NamespacePath, QualifiedName};
+use cx_namespace::module::QualifiedName;
 use cx_target::ArchitectureConfig;
 use cx_thir::{
     intrinsic_types::INTRINSIC_TYPES,
@@ -155,10 +155,8 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.local_symbols.pop_scope();
     }
 
-    pub fn local<'b>(&'b self, name: &'b QualifiedName, active_expansions: &[u64]) -> Option<&'b MIRSymbol> {
-        self.local_symbols.get_multi(name).find(|symbol| {
-            !matches!(symbol, MIRSymbol::StagedExpression { id, .. } if active_expansions.contains(id))
-        })
+    pub fn local(&self, name: &QualifiedName) -> Option<&MIRSymbol> {
+        self.local_symbols.get(name)
     }
 
     pub fn insert_symbol(&mut self, name: QualifiedName, symbol: MIRSymbol, tagged: bool) {
@@ -175,25 +173,6 @@ impl<'a> MIRSymbolRegistry<'a> {
 
     pub fn insert_local_value(&mut self, name: QualifiedName, expr: THIRExpression) {
         self.local_symbols.insert(name, MIRSymbol::Expression(expr));
-    }
-
-    pub fn insert_local_staged_expression(
-        &mut self,
-        id: u64,
-        name: QualifiedName,
-        namespace: NamespacePath,
-        expr: HIRExpression,
-        expected_type: THIRType,
-    ) {
-        self.local_symbols.insert(
-            name,
-            MIRSymbol::StagedExpression {
-                id,
-                namespace,
-                expr: Box::new(expr),
-                expected_type,
-            },
-        );
     }
 
     pub fn insert_local_staged_expression_function(

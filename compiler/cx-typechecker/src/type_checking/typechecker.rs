@@ -278,7 +278,6 @@ fn typecheck_expr_inner(
                     _type: THIRType::unit(),
                     kind: THIRExpressionKind::Yield {
                         value: Some(Box::new(v)),
-                        staged: false,
                     },
                     token_range: TokenRange::internal(),
                 })?;
@@ -287,7 +286,6 @@ fn typecheck_expr_inner(
                     _type: THIRType::unit(),
                     kind: THIRExpressionKind::Yield {
                         value: Some(Box::new(v)),
-                        staged: false,
                     },
                     token_range: TokenRange::internal(),
                 })?;
@@ -384,14 +382,10 @@ fn typecheck_expr_inner(
                     "'break' used outside of a loop or switch context".to_string(),
                 );
             }
-            env.function
-                .flow_mut()
-                .record_break(expr.token_range().clone());
-            let staged = target == ControlTarget::Staged;
 
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: THIRExpressionKind::Break { staged },
+                kind: THIRExpressionKind::Break,
                 _type: THIRType::unit(),
             })
         }
@@ -411,14 +405,10 @@ fn typecheck_expr_inner(
                     "'continue' used outside of a loop context".to_string(),
                 );
             }
-            env.function
-                .flow_mut()
-                .record_continue(expr.token_range().clone());
-            let staged = target == ControlTarget::Staged;
 
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: THIRExpressionKind::Continue { staged },
+                kind: THIRExpressionKind::Continue,
                 _type: THIRType::unit(),
             })
         }
@@ -457,7 +447,7 @@ fn typecheck_expr_inner(
 
         HIRExprKind::Return { value } => {
             let return_type = if env.in_staged_context() || env.in_runtime_emit_context() {
-                let Some(return_type) = env.materialization_return_type() else {
+                let Some(return_type) = env.staging_context().return_type else {
                     return env.log_error(
                         expr.token_range(),
                         "staged return has no materialization context".to_string(),
@@ -638,16 +628,8 @@ pub fn add_implicit_return(
         }))
     } else if func.signature().return_type.is_void() {
         None
-    } else if !env.require_explicit_return() {
-        return Ok(expr);
     } else {
-        return env.log_error(
-            expr.token_range,
-            format!(
-                "Function '{}' with non-void return type must have an explicit return statement",
-                func.pretty_name()
-            ),
-        );
+        return Ok(expr);
     };
 
     let ret = typecheck_return(

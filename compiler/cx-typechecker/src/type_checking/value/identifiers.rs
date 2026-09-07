@@ -2,9 +2,7 @@ use crate::{
     environment::TypeEnvironment,
     symbol::{completion::complete_template_input, template::apply_template},
     type_checking::{
-        coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
         result::{StagedBindingTC, TypecheckResult, TypecheckedBinding},
-        typechecker::typecheck_expr,
     },
 };
 use cx_hir::ast::{expression::HIRExpression, template::HIRTemplateInput};
@@ -32,53 +30,6 @@ pub(crate) fn typecheck_identifier(
             format!("Identifier '{}' not found", name),
         );
     };
-
-    if let MIRSymbol::StagedExpression {
-        id,
-        namespace,
-        expr: staged_expr,
-        expected_type,
-    } = symbol
-    {
-        env.push_staged_expansion(id);
-        let staged = typecheck_expr(
-            env,
-            &namespace,
-            &staged_expr,
-            (!expected_type.is_unreachable()).then_some(&expected_type),
-        );
-        env.pop_staged_expansion();
-        let staged = staged?;
-        let staged = staged.standard_ready_coerce(env, staged_expr.token_range())?;
-
-        let staged = if expected_type.is_unreachable() {
-            return Ok(TypecheckResult::from(THIRExpression {
-                token_range: staged.token_range.clone(),
-                _type: expected_type,
-                kind: THIRExpressionKind::Block {
-                    statements: vec![
-                        staged,
-                        THIRExpression {
-                            token_range: expr.token_range().clone(),
-                            _type: THIRTypeKind::Void.into(),
-                            kind: THIRExpressionKind::Unreachable,
-                        },
-                    ],
-                    creates_scope: false,
-                    yields: false,
-                },
-            }));
-        } else if env.type_eq(&staged._type, &expected_type) {
-            staged
-        } else if expected_type.is_memory_reference() {
-            implicit_cast(env, staged, &expected_type)?
-        } else {
-            let staged = std_rval_promotion(env, staged)?;
-            implicit_cast(env, staged, &expected_type)?
-        };
-
-        return Ok(TypecheckResult::from(staged));
-    }
 
     // A local staged binding (e.g. a parameterized staged parameter of a
     // comptime function) resolves to an undefined-typed reference that may

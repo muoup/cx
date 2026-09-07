@@ -23,7 +23,7 @@ pub fn typecheck_staged_expr(
     inner: &HIRExpression,
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
-    let (body, effects) = env.in_runtime_emit(|env| {
+    let body = env.in_runtime_emit(|env| {
         env.in_staged(|env| {
             let result = typecheck_expr(env, namespace, inner, expected_type)?;
             let result = if let Some(expected_type) = expected_type {
@@ -35,8 +35,7 @@ pub fn typecheck_staged_expr(
         })
     })?;
 
-    let mut staged = THIRStagedExpr::new(Box::new(body));
-    staged.set_effects(env.staged_effects(&effects));
+    let staged = THIRStagedExpr::new(Box::new(body));
     Ok(TypecheckResult::staged_literal(staged))
 }
 
@@ -88,10 +87,9 @@ pub fn complete_staged_expr(
     });
     env.symbols.pop_local_scope();
 
-    let (body, effects) = body?;
+    let body = body?;
     let mut staged = THIRStagedExpr::new(Box::new(body));
     staged.add_params(params);
-    staged.set_effects(env.staged_effects(&effects));
     Ok(staged)
 }
 

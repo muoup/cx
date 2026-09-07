@@ -599,6 +599,7 @@ pub enum MIRInstrKind {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct MIRStagedTargets {
+    pub return_target: Option<MIRBasicBlockID>,
     pub break_target: Option<MIRBasicBlockID>,
     pub continue_target: Option<MIRBasicBlockID>,
     pub yield_target: Option<MIRBasicBlockID>,

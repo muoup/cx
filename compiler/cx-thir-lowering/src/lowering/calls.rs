@@ -1,5 +1,4 @@
 use cx_log::CXResult;
-use cx_mir_comptime::evaluate_comptime_expr;
 use std::sync::Arc;
 
 use cx_mir::{
@@ -18,6 +17,7 @@ use cx_thir::thir::{
 use cx_thir::type_context::THIRTypeContext;
 
 use crate::lowering::control_flow::auto_pop_scope;
+use crate::lowering::comptime::evaluate_comptime_expr;
 use crate::lowering::lower_expression;
 use crate::{
     builder::MIRBuilder,
@@ -45,7 +45,7 @@ pub(super) fn lower_call(
             let ty = lower_type(builder, result_type)?;
             Some(builder.fun_mut().new_register(ty, None))
         };
-        let targets = builder.fun().staged_targets();
+        let targets = crate::lowering::staged::exits::targets(builder)?;
         builder.emit(MIRInstrKind::ApplyStaged {
             out,
             staged,
@@ -165,7 +165,7 @@ fn lower_comptime_call(
                 args.push(lower_expression(builder, argument)?);
             }
         }
-        let out = if result_type.is_void() || result_type.is_unreachable() {
+        let out = if (result_type.is_void() || result_type.is_unreachable()) && signature.return_staged_params.is_none() {
             None
         } else {
             let ty = lower_type(builder, result_type)?;

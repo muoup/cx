@@ -110,7 +110,7 @@ impl TypeEnvironment<'_> {
         tag: Option<HIRTagKind>,
     ) -> CXRawResult<Option<SymbolLookup>> {
         if tag.is_none() && name.namespace.is_root() {
-            if let Some(symbol) = self.symbols.local(name, &self.staged_expansions) {
+            if let Some(symbol) = self.symbols.local(name) {
                 return Ok(Some(SymbolLookup {
                     resolved_name: name.clone(),
                     kind: SymbolLookupKind::Resolved(symbol.clone()),

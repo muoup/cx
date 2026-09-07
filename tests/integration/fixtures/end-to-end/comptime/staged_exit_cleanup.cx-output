@@ -1,0 +1,9 @@
+callback cleanup
+stage cleanup
+caller cleanup
+returned 7
+stage cleanup
+loop cleanup 1
+stage cleanup
+loop cleanup 2
+dropped return

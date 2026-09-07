@@ -419,7 +419,6 @@ dependencies = [
  "cx-log",
  "cx-mir",
  "cx-target",
- "cx-thir",
  "cx-tokens",
  "cx-util",
 ]

@@ -14,7 +14,7 @@ use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
 use cx_namespace::module::NamespacePath;
 use cx_thir::thir::data::{
-    THIRComptimeFnPrototype, THIRFloatType, THIRFnSignature, THIRType, THIRTypeKind,
+    THIRFloatType, THIRFnSignature, THIRType, THIRTypeKind,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind, THIRFnContract};
 use cx_thir::type_context::THIRTypeContext;
@@ -24,7 +24,7 @@ use cx_util::identifier::CXIdent;
 enum CompletedCallee {
     Runtime(THIRExpression),
     Staged(StagedTC),
-    Comptime(THIRComptimeFnPrototype),
+    Comptime(ComptimeFunctionTC),
 }
 
 pub const BUILTIN_FNS: &[&str] = &[
@@ -143,7 +143,6 @@ pub(crate) fn typecheck_callee_call(
     let raw_args = comma_separated_exprs(rhs);
     let tc_args = if matches!(&callee, TypecheckResult::IncompleteTemplate(_)) {
         env.in_staged(|env| typecheck_args(env, namespace, raw_args.as_slice()))?
-            .0
     } else {
         Vec::new()
     };
@@ -407,9 +406,7 @@ fn complete_callee(
         TypecheckResult::Ready(TypecheckedExpr::Staged(value)) => {
             Ok(CompletedCallee::Staged(value))
         }
-        TypecheckResult::Ready(TypecheckedExpr::ComptimeFunction(ComptimeFunctionTC {
-            prototype,
-        })) => Ok(CompletedCallee::Comptime(prototype)),
+        TypecheckResult::Ready(TypecheckedExpr::ComptimeFunction(function)) => Ok(CompletedCallee::Comptime(function)),
         TypecheckResult::IncompleteTemplate(_)
         | TypecheckResult::NeedsExpectedType(_)
         | TypecheckResult::NeedsStagedType(_) => {
@@ -422,10 +419,20 @@ fn complete_comptime_call(
     env: &mut TypeEnvironment,
     namespace: &NamespacePath,
     expr: &HIRExpression,
-    prototype: THIRComptimeFnPrototype,
+    function: ComptimeFunctionTC,
     implicit_args: &[THIRExpression],
     raw_args: Vec<&HIRExpression>,
 ) -> CXResult<TypecheckResult> {
+    let ComptimeFunctionTC { mut prototype, input } = function;
+    let context = env.staging_context();
+    prototype.map_symbol_name(|name| {
+        cx_thir::thir::name_mangling::mangle_comptime_context(
+            &env.symbols, name.to_owned(), context.return_type.as_ref(), context.yield_type.as_ref(),
+        )
+    });
+    env.items.push_request(crate::environment::THIRFunctionGenRequest::Comptime {
+        prototype: prototype.clone(), input, context,
+    });
     let total = implicit_args.len() + raw_args.len();
     if total != prototype.params().len() {
         return env.log_error(
@@ -482,7 +489,7 @@ fn complete_comptime_call(
                 Some(target_type)
             };
         if value_type.expr {
-            let (result, _) = env.in_staged(|env| {
+            let result = env.in_staged(|env| {
                 let result = typecheck_expr(env, namespace, argument, expected_type)?;
                 let result = if let Some(expected_type) = expected_type {
                     result.apply_expected_type(env, namespace, expected_type)?
@@ -547,7 +554,6 @@ fn complete_staged_call(
 ) -> CXResult<TypecheckResult> {
     let (callee, params, return_type) = match staged {
         StagedTC::Literal(staged) => {
-            env.apply_staged_effects(staged.effects(), expr.token_range())?;
             let params = staged
                 .params()
                 .iter()

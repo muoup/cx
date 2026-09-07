@@ -10,20 +10,19 @@ use crate::thir::{
 pub struct THIRComptimeFn {
     pub prototype: THIRComptimeFnPrototype,
     pub body: Option<THIRExpression>,
+    pub context: THIRStagingContext,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct THIRStagingContext {
+    pub return_type: Option<THIRType>,
+    pub yield_type: Option<THIRType>,
 }
 
 #[derive(Debug, Clone)]
 pub struct THIRStagedExpr {
     expr: Box<THIRExpression>,
     params: Vec<THIRStagedParameter>,
-    effects: THIRStagedEffects,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct THIRStagedEffects {
-    pub breaks: bool,
-    pub continues: bool,
-    pub yield_type: Option<THIRType>,
 }
 
 #[derive(Debug, Clone)]
@@ -38,7 +37,6 @@ impl THIRStagedExpr {
         Self {
             expr,
             params: vec![],
-            effects: THIRStagedEffects::default(),
         }
     }
 
@@ -51,7 +49,6 @@ impl THIRStagedExpr {
         Ok(Self {
             expr: Box::new(expr),
             params: self.params,
-            effects: self.effects,
         })
     }
 
@@ -65,13 +62,5 @@ impl THIRStagedExpr {
 
     pub fn params(&self) -> &[THIRStagedParameter] {
         &self.params
-    }
-
-    pub fn set_effects(&mut self, effects: THIRStagedEffects) {
-        self.effects = effects;
-    }
-
-    pub fn effects(&self) -> &THIRStagedEffects {
-        &self.effects
     }
 }

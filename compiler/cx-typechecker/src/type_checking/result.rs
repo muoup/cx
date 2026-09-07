@@ -7,7 +7,7 @@ use cx_thir::{
     symbol::MIRSymbol,
     thir::{
         comptime::THIRStagedExpr,
-        data::{THIRComptimeFnPrototype, THIRComptimeValueType, THIRType},
+        data::{THIRComptimeFnPrototype, THIRComptimeValueType, THIRTemplateInput, THIRType},
         expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
     },
 };
@@ -67,6 +67,7 @@ impl StandardTC {
 #[derive(Debug, Clone)]
 pub struct ComptimeFunctionTC {
     pub prototype: THIRComptimeFnPrototype,
+    pub input: THIRTemplateInput,
 }
 
 #[derive(Debug, Clone)]
@@ -155,9 +156,10 @@ impl TypecheckResult {
         Self::Ready(TypecheckedExpr::Staged(StagedTC::Binding(value)))
     }
 
-    pub fn comptime_function(prototype: THIRComptimeFnPrototype) -> Self {
+    pub fn comptime_function(prototype: THIRComptimeFnPrototype, input: THIRTemplateInput) -> Self {
         Self::Ready(TypecheckedExpr::ComptimeFunction(ComptimeFunctionTC {
             prototype,
+            input,
         }))
     }
 
@@ -327,8 +329,8 @@ impl TypecheckResult {
     ) -> CXRawResult<Self> {
         match symbol {
             MIRSymbol::Template { .. } => Ok(Self::incomplete_template(name, template_input)),
-            MIRSymbol::ComptimeFunctionReference { prototype, .. } => {
-                Ok(Self::comptime_function(prototype))
+            MIRSymbol::ComptimeFunctionReference { prototype, input } => {
+                Ok(Self::comptime_function(prototype, input))
             }
             _ => symbol.as_expression().map(Self::from),
         }

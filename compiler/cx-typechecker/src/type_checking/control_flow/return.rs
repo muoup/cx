@@ -40,7 +40,7 @@ pub fn typecheck_return(
     }
 
     let return_type = if env.in_staged_context() || env.in_runtime_emit_context() {
-        let Some(return_type) = env.materialization_return_type() else {
+        let Some(return_type) = env.staging_context().return_type else {
             return env.log_error(
                 return_range,
                 "staged return has no materialization context".to_string(),

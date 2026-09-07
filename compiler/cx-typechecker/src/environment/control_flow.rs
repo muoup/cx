@@ -1,6 +1,5 @@
 use cx_log::error::{CXRawResult, message::CXStdErrMessage};
 use cx_thir::thir::r#type::THIRType;
-use cx_tokens::TokenRange;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ControlTarget {
@@ -11,8 +10,6 @@ pub enum ControlTarget {
 
 #[derive(Clone, Default)]
 pub struct ScopeEffects {
-    pub break_range: Option<TokenRange>,
-    pub continue_range: Option<TokenRange>,
     pub yield_type: Option<THIRType>,
     pub yield_has_value: Option<bool>,
 }
@@ -91,12 +88,6 @@ impl ControlFlow {
         if !scope.staged_boundary
             && let Some(parent) = self.scopes.last_mut()
         {
-            if !scope.handles_break && parent.effects.break_range.is_none() {
-                parent.effects.break_range = scope.effects.break_range.clone();
-            }
-            if !scope.handles_continue && parent.effects.continue_range.is_none() {
-                parent.effects.continue_range = scope.effects.continue_range.clone();
-            }
             if !scope.handles_yield && parent.effects.yield_type.is_none() {
                 parent.effects.yield_type = scope.effects.yield_type.clone();
                 parent.effects.yield_has_value = scope.effects.yield_has_value;
@@ -161,18 +152,6 @@ impl ControlFlow {
             expected_type,
             saw_value,
             saw_empty,
-        }
-    }
-
-    pub fn record_break(&mut self, range: TokenRange) {
-        if let Some(scope) = self.scopes.last_mut() {
-            scope.effects.break_range.get_or_insert(range);
-        }
-    }
-
-    pub fn record_continue(&mut self, range: TokenRange) {
-        if let Some(scope) = self.scopes.last_mut() {
-            scope.effects.continue_range.get_or_insert(range);
         }
     }
 

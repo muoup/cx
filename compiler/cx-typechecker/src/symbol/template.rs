@@ -99,7 +99,8 @@ pub fn apply_template(
                 mangle_template_name(&env.symbols, name.to_owned(), &template_input)
             });
         }
-        MIRSymbol::ComptimeFunctionReference { prototype, .. } => {
+        MIRSymbol::ComptimeFunctionReference { prototype, input } => {
+            *input = template_input.clone();
             prototype.map_symbol_name(|name| {
                 mangle_template_name(&env.symbols, name.to_owned(), &template_input)
             });
@@ -107,18 +108,11 @@ pub fn apply_template(
         _ => (),
     }
 
-    if let MIRSymbol::ComptimeFunctionReference { prototype, .. } = &symbol {
-        env.items.push_request(THIRFunctionGenRequest::Comptime {
-            name: prototype.lookup_identifier().clone(),
-            prototype: prototype.clone(),
-            input: template_input.clone(),
-        });
-    }
-
     if let MIRSymbol::FunctionReference(prototype) = &symbol
         && let Some(name) = prototype.lookup_identifier().cloned()
     {
         env.items.push_generated_function(THIRFunction {
+        require_explicit_return: env.require_explicit_return(),
             prototype: prototype.clone(),
             body: None,
         });

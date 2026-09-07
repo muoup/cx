@@ -1,9 +1,7 @@
-use cx_log::CXResult;
 use cx_mir::{
-    MIRConstant, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID,
-    MIRGlobalKind, MIRGlobalState, MIRTypeRegistryBuilder, MIRUnit, MIRValue,
+    MIRConstant, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalKind, MIRGlobalState,
+    MIRTypeRegistryBuilder, MIRUnit,
 };
-use cx_thir::thir::expression::THIRExpression;
 
 pub trait ComptimeResolver {
     fn resolve(&self, id: MIRFunctionID) -> Option<&MIRFunction>;
@@ -57,14 +55,4 @@ impl ComptimeResolver for MIRUnit {
     fn types(&self) -> Option<&MIRTypeRegistryBuilder> {
         Some(self.types())
     }
-}
-
-pub trait MIRContext {
-    fn current_prototype(&self) -> &MIRFnPrototype;
-
-    fn comptime_resolver(&self) -> &dyn ComptimeResolver;
-
-    fn lower_thir(&mut self, expression: &THIRExpression) -> CXResult<MIRValue>;
-
-    fn capture_expression(&mut self, expression: &THIRExpression) -> CXResult<MIRFunction>;
 }

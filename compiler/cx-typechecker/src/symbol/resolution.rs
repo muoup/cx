@@ -83,6 +83,7 @@ pub fn resolve_symbol(
 
     if let MIRSymbol::FunctionReference(prototype) = &resolved {
         env.items.push_generated_function(THIRFunction {
+        require_explicit_return: env.require_explicit_return(),
             prototype: prototype.clone(),
             body: None,
         });
@@ -111,50 +112,19 @@ pub(crate) fn resolve_symbol_inner(
     tag: Option<HIRTagKind>,
     decay_implicit_array: bool,
 ) -> CXResult<MIRSymbol> {
-    let template = match &symbol.kind {
-        HIRSymbolKind::Type(HIRSymbolData::Template {
-            base,
-            template_prototype,
-            ..
-        }) => Some((
-            HIRSymbolKind::Type(HIRSymbolData::Standard { base: base.clone() }),
-            template_prototype,
-        )),
-        HIRSymbolKind::Function(HIRSymbolData::Template {
-            base,
-            template_prototype,
-            ..
-        }) => Some((
-            HIRSymbolKind::Function(HIRSymbolData::Standard { base: base.clone() }),
-            template_prototype,
-        )),
-        HIRSymbolKind::ComptimeFunction(HIRSymbolData::Template {
-            base,
-            template_prototype,
-            ..
-        }) => Some((
-            HIRSymbolKind::ComptimeFunction(HIRSymbolData::Standard { base: base.clone() }),
-            template_prototype,
-        )),
-        HIRSymbolKind::TypeConstructor(HIRSymbolData::Template {
-            base,
-            template_prototype,
-            ..
-        }) => Some((
-            HIRSymbolKind::TypeConstructor(HIRSymbolData::Standard { base: base.clone() }),
-            template_prototype,
-        )),
+    let mut source = symbol.clone();
+    let template = match &mut source.kind {
+        HIRSymbolKind::Type(data) => data.template_prototype.take(),
+        HIRSymbolKind::Function(data) => data.template_prototype.take(),
+        HIRSymbolKind::ComptimeFunction(data) => data.template_prototype.take(),
+        HIRSymbolKind::TypeConstructor(data) => data.template_prototype.take(),
         _ => None,
     };
-    if let Some((kind, prototype)) = template {
+    if let Some(prototype) = template {
         return Ok(MIRSymbol::Template {
-            template_prototype: prototype.clone(),
+            template_prototype: prototype,
             name: name.clone(),
-            source: Box::new(HIRSymbol {
-                visibility: symbol.visibility,
-                kind,
-                tag,
-            }),
+            source: Box::new(source),
             namespace: symbol_namespace.clone(),
             tag,
         });
@@ -172,7 +142,7 @@ pub(crate) fn resolve_symbol_inner(
             let prototype = complete_comptime_prototype(env, &namespace, data.base())?;
             Ok(MIRSymbol::ComptimeFunctionReference {
                 prototype,
-                namespace,
+                input: cx_thir::thir::data::THIRTemplateInput { args: Vec::new() },
             })
         }
         HIRSymbolKind::TypeConstructor(data) => resolve_type_constructor(
@@ -290,27 +260,15 @@ fn type_declarations_equivalent(
     left: &HIRSymbolData<HIRType, ()>,
     right: &HIRSymbolData<HIRType, ()>,
 ) -> CXMaybeRawResult<bool> {
-    match (left, right) {
-        (
-            HIRSymbolData::Template {
-                base: left,
-                template_prototype: left_template,
-                ..
-            },
-            HIRSymbolData::Template {
-                base: right,
-                template_prototype: right_template,
-                ..
-            },
-        ) => {
-            let mut left = left.clone();
-            let mut right = right.clone();
-            left.range = TokenRange::internal();
-            right.range = TokenRange::internal();
-            return Ok(left_template == right_template && left == right);
-        }
-        (HIRSymbolData::Standard { .. }, HIRSymbolData::Standard { .. }) => {}
-        _ => return Ok(false),
+    if left.template_prototype != right.template_prototype {
+        return Ok(false);
+    }
+    if left.template_prototype.is_some() {
+        let mut left = left.base.clone();
+        let mut right = right.base.clone();
+        left.range = TokenRange::internal();
+        right.range = TokenRange::internal();
+        return Ok(left == right);
     }
 
     let namespace = name.namespace.clone();
@@ -323,20 +281,7 @@ fn type_template_kinds_equivalent(
     left: &HIRSymbolData<HIRType, ()>,
     right: &HIRSymbolData<HIRType, ()>,
 ) -> bool {
-    match (left, right) {
-        (HIRSymbolData::Standard { .. }, HIRSymbolData::Standard { .. }) => true,
-        (
-            HIRSymbolData::Template {
-                template_prototype: left,
-                ..
-            },
-            HIRSymbolData::Template {
-                template_prototype: right,
-                ..
-            },
-        ) => left == right,
-        _ => false,
-    }
+    left.template_prototype == right.template_prototype
 }
 
 fn is_forward_type_declaration(name: &QualifiedName, ty: &HIRType, tag: HIRTagKind) -> bool {

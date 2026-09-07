@@ -9,7 +9,7 @@ use cx_mir::{
     MIRInstrKind, MIRPlace, MIRRegister, MIRStagedCapture, MIRStagedTemplate, MIRTypeID,
     MIRTypeRegistryBuilder, MIRUnit, MIRValue,
 };
-use cx_mir_comptime::{ComptimeResolver, context::MIRContext};
+use cx_mir_comptime::ComptimeResolver;
 use cx_thir::{
     THIRUnit,
     registry::THIRDecomposedRegistry,
@@ -28,6 +28,7 @@ mod function;
 mod module;
 
 use crate::lowering::{
+    comptime::MIRContext,
     self,
     types::{lower_type, lower_type_id},
 };
@@ -44,6 +45,8 @@ pub struct MIRBuilder<'thir> {
     ambient_prototype: MIRFnPrototype,
     source_range: TokenRange,
     capture: Option<CaptureContext>,
+    pub(crate) outer_return_type: Option<MIRTypeID>,
+    pub(crate) outer_yield_type: Option<MIRTypeID>,
 }
 
 struct CaptureContext {
@@ -76,6 +79,8 @@ impl<'thir> MIRBuilder<'thir> {
             ),
             source_range: TokenRange::internal(),
             capture: None,
+            outer_return_type: None,
+            outer_yield_type: None,
         };
         builder
             .types
@@ -433,22 +438,8 @@ impl cx_mir_comptime::ComptimeResolver for MIRModuleBuilder {
 }
 
 impl MIRContext for MIRBuilder<'_> {
-    fn current_prototype(&self) -> &MIRFnPrototype {
-        match self.function.as_ref() {
-            Some(function) => function.prototype(),
-            None => &self.ambient_prototype,
-        }
-    }
-
     fn comptime_resolver(&self) -> &dyn ComptimeResolver {
         &self.module
-    }
-
-    fn lower_thir(
-        &mut self,
-        expression: &THIRExpression,
-    ) -> cx_log::CXResult<MIRValue> {
-        crate::lowering::lower_expression(self, expression)
     }
 
     fn capture_expression(

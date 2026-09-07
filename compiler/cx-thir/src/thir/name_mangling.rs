@@ -1,9 +1,6 @@
-use cx_hir::registry::{ExportNameMode, GlobalSymbolRegistry};
 use cx_hir::ast::modifiers::HIRSymbolNameScheme;
-use cx_namespace::{
-    mangling::mangle_namespace_symbol,
-    module::QualifiedName,
-};
+use cx_hir::registry::{ExportNameMode, GlobalSymbolRegistry};
+use cx_namespace::{mangling::mangle_namespace_symbol, module::QualifiedName};
 
 use crate::{
     thir::{
@@ -18,7 +15,8 @@ pub fn mangle_rootable_name(
     name: &QualifiedName,
     scheme: HIRSymbolNameScheme,
 ) -> String {
-    if scheme == HIRSymbolNameScheme::Unmangled || name.namespace.is_root()
+    if scheme == HIRSymbolNameScheme::Unmangled
+        || name.namespace.is_root()
         || global_registry.export_name_mode(&name.namespace) == ExportNameMode::Root
     {
         return name.name.to_string();
@@ -45,6 +43,25 @@ pub fn mangle_template_name(
     }
 
     base
+}
+
+pub fn mangle_comptime_context(
+    definitions: &impl THIRTypeContext,
+    name: String,
+    return_type: Option<&THIRType>,
+    yield_type: Option<&THIRType>,
+) -> String {
+    let mut mangled = format!("_C{}_{}", name.len(), name);
+    for ty in [return_type, yield_type] {
+        match ty {
+            Some(ty) => {
+                let encoded = format!("{}_{}", ty.specifiers, mangle_type_name(definitions, ty));
+                mangled.push_str(format!("_{}{}", encoded.len(), encoded).as_str());
+            }
+            None => mangled.push_str("_0"),
+        }
+    }
+    mangled
 }
 
 fn mangle_type_name(definitions: &impl THIRTypeContext, ty: &THIRType) -> String {

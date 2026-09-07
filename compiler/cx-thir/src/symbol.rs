@@ -1,5 +1,5 @@
 use cx_hir::{
-    ast::{expression::HIRExpression, template::HIRTemplatePrototype, types::HIRTagKind},
+    ast::{template::HIRTemplatePrototype, types::HIRTagKind},
     symbols::HIRSymbol,
 };
 use cx_log::error::{CXRawResult, message::CXStdErrMessage};
@@ -10,7 +10,7 @@ use cx_util::identifier::CXIdent;
 use crate::{
     NamespacePath,
     thir::{
-        data::{THIRComptimeFnPrototype, THIRFnPrototype, THIRType, THIRTypeID, THIRTypeKind},
+        data::{THIRComptimeFnPrototype, THIRFnPrototype, THIRTemplateInput, THIRType, THIRTypeID, THIRTypeKind},
         expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
     },
     type_context::THIRTypeContext,
@@ -22,13 +22,7 @@ pub enum MIRSymbol {
     FunctionReference(THIRFnPrototype),
     ComptimeFunctionReference {
         prototype: THIRComptimeFnPrototype,
-        namespace: NamespacePath,
-    },
-    StagedExpression {
-        id: u64,
-        namespace: NamespacePath,
-        expr: Box<HIRExpression>,
-        expected_type: THIRType,
+        input: THIRTemplateInput,
     },
     StagedExpressionFunction {
         local_id: THIRLocalID,
@@ -95,7 +89,7 @@ impl MIRSymbol {
                 "Comptime function cannot be used in runtime contexts",
             ),
 
-            MIRSymbol::StagedExpression { .. } | MIRSymbol::StagedExpressionFunction { .. } => {
+            MIRSymbol::StagedExpressionFunction { .. } => {
                 CXStdErrMessage::result(
                     "TYPE ERROR",
                     "Staged expression cannot be used in runtime contexts",

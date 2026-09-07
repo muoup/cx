@@ -1,8 +1,8 @@
 use cx_hir::{
     ast::{
-        HIRDefinition, HIRStmt,
         global_var::HIRGlobalVariable,
         template::{HIRTemplateInput, HIRTemplatePrototype},
+        HIRDefinition, HIRStmt,
     },
     symbols::{
         HIRFunctionSymbol, HIRSymbol, HIRSymbolData, HIRSymbolKind, HIRTypeConstructorSymbol,
@@ -140,22 +140,11 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
 
                     let symbol = HIRSymbol::new(
                         *visibility,
-                        HIRSymbolKind::TypeConstructor(match template_prototype.clone() {
-                            Some(prototype) => HIRTypeConstructorSymbol::Template {
-                                base: TypeConstructorData {
-                                    union_type: union_type.clone(),
-                                    variant_index,
-                                },
-                                template_data: (),
-                                template_prototype: prototype,
-                            },
-                            None => HIRTypeConstructorSymbol::Standard {
-                                base: TypeConstructorData {
-                                    union_type: union_type.clone(),
-                                    variant_index,
-                                },
-                            },
-                        }),
+                        HIRSymbolKind::TypeConstructor(HIRTypeConstructorSymbol::new(
+                            TypeConstructorData { union_type: union_type.clone(), variant_index },
+                            (),
+                            template_prototype.clone(),
+                        )),
                     );
 
                     insert_symbol(
@@ -179,28 +168,15 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
                 namespace: q_namespace,
             } = prototype.kind.into_key();
             let namespace = base_namespace.clone().join(q_namespace);
-            let symbol = match template_prototype {
-                Some(input) => {
-                    let Some(body) = body else {
-                        return;
-                    };
-
-                    HIRSymbol::new(
-                        *visibility,
-                        HIRSymbolKind::Function(HIRFunctionSymbol::Template {
-                            base: prototype.clone(),
-                            template_data: body.clone(),
-                            template_prototype: input.clone(),
-                        }),
-                    )
-                }
-                None => HIRSymbol::new(
-                    *visibility,
-                    HIRSymbolKind::Function(HIRFunctionSymbol::Standard {
-                        base: prototype.clone(),
-                    }),
-                ),
-            };
+            if template_prototype.is_some() && body.is_none() {
+                return;
+            }
+            let symbol = HIRSymbol::new(
+                *visibility,
+                HIRSymbolKind::Function(HIRFunctionSymbol::new(
+                    prototype.clone(), body.clone(), template_prototype.clone(),
+                )),
+            );
 
             insert_symbol(
                 env,
@@ -221,24 +197,12 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
                 namespace: q_namespace,
             } = prototype.kind.into_key();
             let namespace = base_namespace.clone().join(q_namespace);
-            let symbol = match template_prototype {
-                Some(input) => HIRSymbol::new(
-                    *visibility,
-                    HIRSymbolKind::ComptimeFunction(HIRSymbolData::new(
-                        prototype.clone(),
-                        body.clone(),
-                        Some(input.clone()),
-                    )),
-                ),
-                None => HIRSymbol::new(
-                    *visibility,
-                    HIRSymbolKind::ComptimeFunction(HIRSymbolData::new(
-                        prototype.clone(),
-                        body.clone(),
-                        None,
-                    )),
-                ),
-            };
+            let symbol = HIRSymbol::new(
+                *visibility,
+                HIRSymbolKind::ComptimeFunction(HIRSymbolData::new(
+                    prototype.clone(), body.clone(), template_prototype.clone(),
+                )),
+            );
 
             insert_symbol(
                 env,

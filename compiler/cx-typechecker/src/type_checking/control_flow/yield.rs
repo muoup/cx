@@ -24,7 +24,10 @@ pub fn typecheck_yield(
         );
     }
 
-    let state = env.function.flow().yield_state();
+    let mut state = env.function.flow().yield_state();
+    if state.target == ControlTarget::Staged {
+        state.expected_type = state.expected_type.or(env.staging_context().yield_type);
+    }
     if state.target == ControlTarget::Invalid {
         return env.log_error(
             yield_range,
@@ -95,7 +98,6 @@ pub fn typecheck_yield(
         THIRType::unit(),
         THIRExpressionKind::Yield {
             value: yielded_value,
-            staged: state.target == ControlTarget::Staged,
         },
     ))
 }

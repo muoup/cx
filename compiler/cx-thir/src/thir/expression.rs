@@ -208,12 +208,8 @@ pub enum THIRExpressionKind {
     },
 
     // Control Flow
-    Break {
-        staged: bool,
-    },
-    Continue {
-        staged: bool,
-    },
+    Break,
+    Continue,
     Goto {
         name: CXIdent,
     },
@@ -259,7 +255,6 @@ pub enum THIRExpressionKind {
     Unreachable,
     Yield {
         value: Option<Box<THIRExpression>>,
-        staged: bool,
     },
 
     Assert {

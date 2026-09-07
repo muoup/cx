@@ -1,0 +1,36 @@
+#include <stdio.h>
+
+import std::optional as std;
+
+comptime expr void make_none<T>() {
+    return emit .{
+        return std::opt::none();
+    };
+}
+
+comptime expr void forward_none<T>() {
+    return make_none<T>();
+}
+
+std::opt<int> int_result() {
+    forward_none<int>();
+    return std::opt::some<int>(123);
+}
+
+std::opt<float> float_result() {
+    forward_none<int>();
+    return std::opt::some<float>(4.5);
+}
+
+int main() {
+    std::opt<int> first = int_result();
+    std::opt<float> second = float_result();
+    match (first) {
+        std::opt::some<int>(value) => printf("int some %d\n", value);
+        std::opt::none<int>() => printf("int none\n");
+    }
+    match (second) {
+        std::opt::some<float>(value) => printf("float some %.1f\n", value);
+        std::opt::none<float>() => printf("float none\n");
+    }
+}

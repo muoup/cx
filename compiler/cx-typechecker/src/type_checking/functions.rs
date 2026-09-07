@@ -1,5 +1,5 @@
 use crate::{
-    environment::TypeEnvironment,
+    environment::{StagingContext, TypeEnvironment},
     symbol::completion::ensure_valid_type_component,
     type_checking::typechecker::{add_implicit_return, typecheck_expr},
 };
@@ -7,15 +7,13 @@ use cx_hir::ast::expression::HIRExpression;
 use cx_hir::ast::function::HIRFunctionContract;
 use cx_log::CXResult;
 use cx_namespace::module::{NamespacePath, QualifiedName};
-use cx_thir::{
-    thir::{
-        comptime::THIRComptimeFn,
-        data::{
-            THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter,
-        },
-        expression::{THIRExpression, THIRExpressionKind},
-        r#type::THIRTypeKind,
+use cx_thir::thir::{
+    comptime::THIRComptimeFn,
+    data::{
+        THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter,
     },
+    expression::{THIRExpression, THIRExpressionKind},
+    r#type::THIRTypeKind,
 };
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
@@ -83,6 +81,7 @@ pub fn typecheck_function(
     env.function.end_function();
 
     env.items.push_generated_function(THIRFunction {
+        require_explicit_return: env.require_explicit_return(),
         prototype,
         body: Some(with_implicit_return),
     });
@@ -95,6 +94,7 @@ pub fn typecheck_comptime_function(
     namespace: &NamespacePath,
     prototype: THIRComptimeFnPrototype,
     body: &HIRExpression,
+    context: StagingContext,
 ) -> CXResult<()> {
     let debug_name = prototype.debug_name().cloned();
     let return_type = prototype.return_type()._type.clone();
@@ -170,15 +170,15 @@ pub fn typecheck_comptime_function(
 
     env.function.begin_function(bookkeeping);
     env.push_scope(false, false, body.token_range().clone());
-    env.enter_comptime_context();
-    
+    let previous_context = env.comptime_context.replace(context.clone());
+
     let checked = (|| -> CXResult<THIRExpression> {
         let body_expr = typecheck_expr(env, namespace, body, None)?
             .standard_ready_coerce(env, body.token_range())?;
         add_implicit_return(env, namespace, body_expr)
     })();
-    
-    env.exit_comptime_context();
+
+    env.comptime_context = previous_context;
     let with_implicit_return = checked?;
 
     if let Some((name, range)) = env.function.unresolved_label() {
@@ -192,6 +192,7 @@ pub fn typecheck_comptime_function(
     env.items.push_generated_comptime_function(THIRComptimeFn {
         prototype,
         body: Some(with_implicit_return),
+        context,
     });
 
     Ok(())
