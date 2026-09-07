@@ -5,6 +5,7 @@ use cx_thir::THIRUnit;
 pub mod builder;
 
 pub(crate) mod lowering;
+pub(crate) mod log;
 
 pub use builder::MIRBuilder;
 
@@ -19,8 +20,7 @@ pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
     let mut global_requests = vec![];
 
     for function in &thir.functions {
-        let prototype =
-            builder.lower_prototype(&function.prototype, MIRFunctionMode::Runtime)?;
+        let prototype = builder.lower_prototype(&function.prototype, MIRFunctionMode::Runtime)?;
         let id = builder.module_mut().declare_function(prototype);
 
         fn_pairs.push((function, id));
@@ -63,10 +63,7 @@ pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
         unit.materialize_global(global_id, constant)
             .map_err(|error| {
                 cx_log::error::CXError::new(
-                    cx_log::error::message::CXStdErrMessage::error(
-                        "COMPTIME ERROR",
-                        error,
-                    ),
+                    cx_log::error::message::CXStdErrMessage::error("COMPTIME ERROR", error),
                     cx_log::error::context::CXInternalContext::error(
                         "failed to materialize a global initializer",
                     ),

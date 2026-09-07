@@ -404,13 +404,6 @@ impl<'thir> MIRBuilder<'thir> {
         ))
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn start_new_function(&mut self, proto: MIRFnPrototype) -> MIRFunctionID {
-        let id = self.module_mut().declare_function(proto);
-        self.start_function(id);
-        id
-    }
-
     pub(crate) fn start_function(&mut self, id: MIRFunctionID) {
         let function = self
             .module
@@ -431,7 +424,7 @@ impl<'thir> MIRBuilder<'thir> {
     }
 }
 
-impl cx_mir_comptime::ComptimeResolver for MIRModuleBuilder {
+impl ComptimeResolver for MIRModuleBuilder {
     fn resolve(&self, id: MIRFunctionID) -> Option<&MIRFunction> {
         self.function(id)
     }

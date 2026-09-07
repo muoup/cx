@@ -28,11 +28,11 @@ use cx_thir::{
     type_context::THIRTypeContext,
 };
 
-use crate::lowering::{
+use crate::{log::log_mir_error, lowering::{
     aggregates::move_value,
     control_flow::{auto_cleanup, auto_pop_scope, lower_control_exit},
     types::lower_float_type,
-};
+}};
 use crate::{
     builder::{MIRBuilder, integer_type},
     lowering::types::lower_type,
@@ -74,16 +74,18 @@ pub(crate) fn lower_function(
         ) {
             builder.emit(MIRInstrKind::Return { value: None });
         } else {
-            if function.require_explicit_return && !function.prototype.signature().return_type.is_unreachable()
+            if function.require_explicit_return
+                && !function.prototype.signature().return_type.is_unreachable()
                 && builder.fun().current_block_reachable()
             {
-                return Err(CXError::new(
-                    CXStdErrMessage::error("TYPE ERROR", format!(
-                        "Function '{}' with non-void return type must have an explicit return statement",
-                        function.prototype.pretty_name())),
-                    cx_log::error::context::CXSourceContext::new(body.token_range.clone()),
-                ));
+                return log_mir_error(
+                    &body.token_range,
+                    format!("Function '{}' with non-void return type must have an explicit return statement",
+                        function.prototype.pretty_name()
+                    )
+                );
             }
+            
             builder.emit(MIRInstrKind::Unreachable);
         }
     }
@@ -103,10 +105,18 @@ pub(crate) fn lower_comptime_function(
 
     builder.start_function(id);
     builder.fun_mut().push_scope(body.token_range.clone());
-    builder.outer_return_type = function.context.return_type.as_ref()
-        .map(|ty| lower_type(builder, ty)).transpose()?;
-    builder.outer_yield_type = function.context.yield_type.as_ref()
-        .map(|ty| lower_type(builder, ty)).transpose()?;
+    builder.outer_return_type = function
+        .context
+        .return_type
+        .as_ref()
+        .map(|ty| lower_type(builder, ty))
+        .transpose()?;
+    builder.outer_yield_type = function
+        .context
+        .yield_type
+        .as_ref()
+        .map(|ty| lower_type(builder, ty))
+        .transpose()?;
 
     for (index, parameter) in function.prototype.params().iter().enumerate() {
         let value = MIRValue::PlaceRef(MIRPlace::Parameter(cx_mir::MIRParameterID::new(index)));
@@ -774,9 +784,7 @@ pub(crate) fn lower_expression(
                 MIRValue::Register(out)
             }
 
-            THIRExpressionKind::Break => {
-                lower_control_exit(builder, MIRStagedExitKind::Break)?
-            }
+            THIRExpressionKind::Break => lower_control_exit(builder, MIRStagedExitKind::Break)?,
             THIRExpressionKind::Continue => {
                 lower_control_exit(builder, MIRStagedExitKind::Continue)?
             }
@@ -916,7 +924,11 @@ pub(crate) fn lower_expression(
                     .map(|value| lower_expression(builder, value))
                     .transpose()?;
 
-                let target = builder.fun().scope_stack().iter().rev()
+                let target = builder
+                    .fun()
+                    .scope_stack()
+                    .iter()
+                    .rev()
                     .find_map(|scope| scope.yield_target.map(|block| (scope.id(), block)));
                 if target.is_none() && builder.is_capturing() {
                     let root_scope = builder
@@ -934,7 +946,9 @@ pub(crate) fn lower_expression(
                 }
 
                 let Some((scope_id, block_id)) = target else {
-                    return Err(staged::staged_error("yield expression is not inside a yieldable scope"));
+                    return Err(staged::staged_error(
+                        "yield expression is not inside a yieldable scope",
+                    ));
                 };
 
                 let args = value.into_iter().collect();

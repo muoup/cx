@@ -60,9 +60,10 @@ pub fn auto_cleanup(builder: &mut MIRBuilder, to_scope: MIRScopeID) -> CXResult<
 pub fn lower_control_exit(
     builder: &mut MIRBuilder<'_>,
     kind: MIRStagedExitKind,
+    staged: bool,
 ) -> CXResult<MIRValue> {
-    let target = builder.fun().exit_target(kind);
-    if target.is_none() && builder.is_capturing() {
+    if staged {
+        assert!(builder.is_capturing());
         let root_scope = builder
             .fun()
             .scope_stack()
@@ -74,8 +75,8 @@ pub fn lower_control_exit(
         return Ok(MIRValue::Constant(MIRConstant::Unit));
     }
 
-    let Some((scope, block)) = target else {
-        return Err(crate::lowering::staged::staged_error("control-flow expression has no target scope"));
+    let Some((scope, block)) = builder.fun().exit_target(kind) else {
+        unreachable!("control-flow expression has no target scope");
     };
 
     auto_cleanup(builder, scope)?;
