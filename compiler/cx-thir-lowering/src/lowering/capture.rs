@@ -28,40 +28,43 @@ pub fn capture_expression(
     builder: &mut MIRBuilder<'_>,
     expression: &THIRExpression,
 ) -> CXResult<MIRFunction> {
-    let in_safe_context = builder.try_fun()
+    let in_safe_context = builder
+        .try_fun()
         .map(|f| f.prototype().signature.safe)
         .unwrap_or(false);
     let mut saved_function = builder.take_current_function();
-    let saved_capture = saved_function
-        .as_mut()
-        .and_then(|function| function.take_capture());
-    let expr_type = lowering::lower_type(builder, &expression._type)?;
+    let result = (|| -> CXResult<()> {
+        let expr_type = lowering::lower_type(builder, &expression._type)?;
+        builder.start_custom_function(
+            MIRFunction::new(
+                MIRFunctionID::new(usize::MAX),
+                capture_prototype(expr_type, in_safe_context),
+                None,
+            ),
+            saved_function.as_ref(),
+        );
+        builder.fun_mut().set_capture(
+            saved_function
+                .as_mut()
+                .and_then(|function| function.take_capture()),
+        );
 
-    builder.start_custom_function(
-        MIRFunction::new(
-            MIRFunctionID::new(usize::MAX),
-            capture_prototype(expr_type, in_safe_context),
-            None,
-        ),
-        saved_function.as_ref(),
-    );
-    builder.fun_mut().set_capture(saved_capture);
+        let value = lowering::lower_expression(builder, expression)?;
+        builder.fun_mut().emit(
+            MIRInstrKind::Return { value: Some(value) },
+            TokenRange::internal(),
+        );
+        Ok(())
+    })();
 
-    let value = lowering::lower_expression(builder, expression)?;
-    builder.fun_mut().emit(
-        MIRInstrKind::Return { value: Some(value) },
-        TokenRange::internal(),
-    );
-
-    let mut func = builder
-        .take_current_function()
-        .expect("capture builder is present (2)");
-
-    let capture = func.take_capture();
+    let mut func = builder.take_current_function();
     if let Some(mut saved_function) = saved_function {
-        saved_function.set_capture(capture);
+        if let Some(func) = func.as_mut() {
+            saved_function.set_capture(func.take_capture());
+        }
         builder.restore_current_function(saved_function);
     }
 
-    Ok(func.finish())
+    result?;
+    Ok(func.expect("capture builder is present").finish())
 }

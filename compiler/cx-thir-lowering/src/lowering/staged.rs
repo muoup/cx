@@ -397,8 +397,9 @@ fn instantiate_inner(
                         mir_error(range, (&catalogue::MIR_COMPTIME_FUNCTION_DEFINITION, ()))
                     })?;
 
+                    let value = evaluate_comptime_function(builder, function, &args)?;
                     if let Some(out) = out {
-                        match evaluate_comptime_function(builder, function, &args)? {
+                        match value {
                             MIRComptimeValue::Constant(value) => {
                                 values.insert(*out, MIRValue::Constant(value));
                             }
