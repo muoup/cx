@@ -9,9 +9,9 @@ use cx_hir::ast::expression::{
 };
 use cx_hir::ast::pattern::HIRPattern;
 use cx_log::CXResult;
-use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
-use cx_tokens::{identifier, keyword, operator, punctuator};
 use cx_namespace::module::QualifiedName;
+use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
+use cx_tokens::{identifier, operator, punctuator};
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::parse::operators::{
@@ -268,10 +268,9 @@ fn parse_va_arg_call(data: &mut ParserData, expr_stack: &mut Vec<HIRExpression>)
         .into_expr(
             data.tokens.index.saturating_sub(1),
             data.tokens.index,
-            callee.range.cover(&data.token_range(
-                data.tokens.index.saturating_sub(1),
-                data.tokens.index,
-            )),
+            callee
+                .range
+                .cover(&data.token_range(data.tokens.index.saturating_sub(1), data.tokens.index)),
         ),
     );
     Ok(())
@@ -694,21 +693,15 @@ pub(crate) fn parse_keyword_expr(
             assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
 
             let mut arms = Vec::new();
-            let mut default_arm = None;
 
             data.change_comma_mode(false);
 
             while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-                if try_next!(data.tokens, keyword!(Default)) {
-                    assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
-                    if default_arm.is_some() {
-                        return parse_point_error(
-                            &data.tokens,
-                            "Multiple default cases in match expression".to_string(),
-                        );
-                    }
-                    default_arm = Some(Box::new(parse_body(data)?));
-                    continue;
+                if matches!(peek_next_kind!(data.tokens)?, TokenKind::Keyword(KeywordType::Default)) {
+                    return parse_point_error(
+                        &data.tokens,
+                        "Match arms use binding patterns; replace 'default' with '_' to discard the binding".to_string(),
+                    );
                 }
 
                 let value = parse_pattern(data)?;
@@ -722,7 +715,6 @@ pub(crate) fn parse_keyword_expr(
             Ok(HIRExprKind::Match {
                 condition: Box::new(expr),
                 arms,
-                default: default_arm,
             })
         }
 

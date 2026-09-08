@@ -486,7 +486,10 @@ impl Display for THIRDisplay<'_, THIRComptimeParameter> {
         write!(
             f,
             "{}: {}",
-            self.content.name.as_ref().unwrap_or(&CXIdent::from("<unnamed>")),
+            self.content
+                .name
+                .as_ref()
+                .unwrap_or(&CXIdent::from("<unnamed>")),
             self.content
                 .value_type
                 .display_with_definitions(self.definitions)
@@ -1185,11 +1188,9 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 condition,
                 subject,
                 arms,
-                default,
-                exhaustive,
                 ..
             } => {
-                write!(f, "Match exhaustive={exhaustive} <'")?;
+                write!(f, "Match <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
                 self.indent(f)?;
@@ -1205,16 +1206,6 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     writeln!(f, "Arm {pattern}:")?;
                     MIRExpressionFormatter {
                         expr: arm_body,
-                        depth: self.depth + 2,
-                        definitions: self.definitions,
-                    }
-                    .fmt(f)?;
-                }
-                if let Some(default) = default {
-                    self.indent(f)?;
-                    writeln!(f, "Default:")?;
-                    MIRExpressionFormatter {
-                        expr: default,
                         depth: self.depth + 2,
                         definitions: self.definitions,
                     }

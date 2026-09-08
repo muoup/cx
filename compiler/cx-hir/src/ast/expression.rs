@@ -1,10 +1,7 @@
 use cx_namespace::module::QualifiedName;
 use cx_tokens::token::{FloatSuffix, IntegerBase, IntegerSuffix};
 use cx_tokens::TokenRange;
-use cx_util::{
-    identifier::CXIdent,
-    unsafe_float::FloatWrapper,
-};
+use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 
 use crate::ast::{
@@ -89,8 +86,7 @@ pub enum HIRExprKind {
 
     Match {
         condition: Box<HIRExpression>,
-        arms: Vec<(HIRPattern, HIRExpression)>, // (value, block)
-        default: Option<Box<HIRExpression>>,
+        arms: Vec<(HIRPattern, HIRExpression)>,
     },
 
     Switch {
@@ -264,10 +260,7 @@ impl HIRExprKind {
             };
         }
 
-        HIRExpression {
-            kind: self,
-            range,
-        }
+        HIRExpression { kind: self, range }
     }
 
     pub fn block_terminating(&self) -> bool {

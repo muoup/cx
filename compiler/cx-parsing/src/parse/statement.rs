@@ -17,7 +17,7 @@ use crate::{
         try_parse_simple_identifier,
         types::{is_type_decl, parse_base_mods, parse_type_base},
     },
-    try_next,
+    peek_next_kind, try_next,
 };
 
 pub(crate) fn parse_stmt(data: &mut ParserData) -> CXResult<HIRExpression> {
@@ -81,10 +81,7 @@ pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<HIRExpres
             return Ok(Some(HIRExprKind::Void.into_expr(
                 data.tokens.index,
                 data.tokens.index,
-                data.token_range(
-                    data.tokens.index.saturating_sub(1),
-                    data.tokens.index,
-                ),
+                data.token_range(data.tokens.index.saturating_sub(1), data.tokens.index),
             )));
         }
 
@@ -209,21 +206,15 @@ pub(crate) fn try_parse_keyword_stmt(
             assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
 
             let mut arms = Vec::new();
-            let mut default_arm = None;
 
             data.change_comma_mode(false);
 
             while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-                if try_next!(data.tokens, keyword!(Default)) {
-                    assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
-                    if default_arm.is_some() {
-                        return parse_point_error(
-                            &data.tokens,
-                            "Multiple default cases in match statement".to_string(),
-                        );
-                    }
-                    default_arm = Some(Box::new(parse_stmt(data)?));
-                    continue;
+                if matches!(peek_next_kind!(data.tokens)?, TokenKind::Keyword(KeywordType::Default)) {
+                    return parse_point_error(
+                        &data.tokens,
+                        "Match arms use binding patterns; replace 'default' with '_' to discard the binding".to_string(),
+                    );
                 }
 
                 let value = parse_pattern(data)?;
@@ -237,7 +228,6 @@ pub(crate) fn try_parse_keyword_stmt(
             Some(HIRExprKind::Match {
                 condition: Box::new(expr),
                 arms,
-                default: default_arm,
             })
         }
 

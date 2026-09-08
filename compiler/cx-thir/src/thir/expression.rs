@@ -244,8 +244,6 @@ pub enum THIRExpressionKind {
         condition: Box<THIRExpression>,
         subject: THIRLocalID,
         arms: Vec<(THIRPattern, Box<THIRExpression>)>,
-        default: Option<Box<THIRExpression>>,
-        exhaustive: bool,
     },
 
     Return {

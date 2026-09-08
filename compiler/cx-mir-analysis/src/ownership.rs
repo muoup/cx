@@ -587,6 +587,22 @@ fn ownership_error(
     place: MIRPlace,
     message: String,
 ) -> MIRAnalysisError {
+    let discarded = match place {
+        MIRPlace::FunctionLocal(id) => function
+            .definition()
+            .and_then(|definition| definition.place(id))
+            .and_then(|declaration| declaration.debug_name.as_ref())
+            .is_some_and(|name| name.as_str() == "_"),
+        _ => false,
+    };
+    let message = if discarded {
+        format!(
+            "{}; '_' is an intentionally unused binding, but it still follows ownership rules; any @nodrop value must be moved or leaked",
+            message
+        )
+    } else {
+        message
+    };
     MIRAnalysisError::OwnershipViolation {
         function: function.id(),
         block,

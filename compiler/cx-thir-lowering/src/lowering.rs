@@ -829,17 +829,7 @@ pub(crate) fn lower_expression(
                 condition,
                 subject,
                 arms,
-                default,
-                exhaustive,
-            } => control_flow::lower_match(
-                builder,
-                condition,
-                *subject,
-                arms,
-                default.as_deref(),
-                *exhaustive,
-                &expression._type,
-            )?,
+            } => control_flow::lower_match(builder, condition, *subject, arms, &expression._type)?,
             THIRExpressionKind::Return {
                 postcondition,
                 value,

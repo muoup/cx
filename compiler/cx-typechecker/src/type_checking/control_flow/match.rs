@@ -2,7 +2,6 @@ use std::collections::HashSet;
 
 use crate::environment::TypeEnvironment;
 use crate::symbol::completion::complete_template_input;
-use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::pattern::tagged_union::{
     TypeConstructor, resolve_type_constructor_pattern,
@@ -30,7 +29,6 @@ pub fn typecheck_match(
     namespace: &NamespacePath,
     condition: &HIRExpression,
     arms: &[(HIRPattern, HIRExpression)],
-    default: Option<&HIRExpression>,
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     let expr_value = typecheck_expr(env, namespace, condition, None)
@@ -42,28 +40,60 @@ pub fn typecheck_match(
     env.push_yield_scope(expected_type.cloned());
 
     let mut arm_flows = Vec::new();
-    let mut match_condition = expr_value.source.clone();
+    let match_condition = expr_value.source.clone();
     let subject = THIRLocalID::fresh();
-    let mut match_is_exhaustive = false;
+    let mut has_binding = false;
+    for (pattern, body) in arms {
+        if has_binding {
+            return env.log_error(
+                body.token_range(),
+                "Unreachable match arm after a catch-all binding".to_string(),
+            );
+        }
+        has_binding = matches!(pattern, HIRPattern::Binding(_));
+    }
 
     let match_arms = match &expr_type.kind {
         THIRTypeKind::Integer { .. } => {
-            match_condition = std_rval_promotion(env, expr_value.source.clone())?;
+            let mut matched_values = HashSet::new();
             let mut result_arms = Vec::new();
 
             for (pattern, body) in arms {
+                if let HIRPattern::Binding(name) = pattern {
+                    let (pattern, body, flow) =
+                        typecheck_arm(env, namespace, body, Some((name, &expr_type)))?;
+                    arm_flows.push(flow);
+                    result_arms.push((pattern.expect("binding pattern"), Box::new(body)));
+                    continue;
+                }
                 let HIRPattern::Integer(pattern_value) = pattern else {
                     return env.log_error(
                         condition.token_range(),
-                        "Match pattern must be an integer literal".to_string(),
+                        "Match pattern must be an integer literal or a catch-all binding"
+                            .to_string(),
                     );
                 };
 
-                let (body, flow) = typecheck_arm(env, namespace, body, "arm")?;
+                if !matched_values.insert(*pattern_value) {
+                    return env.log_error(
+                        body.token_range(),
+                        format!(
+                            "Integer value '{}' already matched in this match",
+                            pattern_value
+                        ),
+                    );
+                }
+                let (_, body, flow) = typecheck_arm(env, namespace, body, None)?;
                 arm_flows.push(flow);
                 result_arms.push((THIRPattern::Integer(*pattern_value), Box::new(body)));
             }
 
+            if !has_binding {
+                return env.log_error(
+                    condition.token_range(),
+                    "Integer match must be exhaustive; add a catch-all binding such as '_ => ...'".to_string(),
+                );
+            }
             result_arms
         }
         THIRTypeKind::TaggedUnion { variants, .. } => {
@@ -81,6 +111,20 @@ pub fn typecheck_match(
             let mut matched_variants = HashSet::new();
 
             for (pattern, body) in arms {
+                if matched_variants.len() == variants.len() {
+                    return env.log_error(
+                        body.token_range(),
+                        "Unreachable match arm: all tagged union variants are already covered"
+                            .to_string(),
+                    );
+                }
+                if let HIRPattern::Binding(name) = pattern {
+                    let (pattern, body, flow) =
+                        typecheck_arm(env, namespace, body, Some((name, &expr_type)))?;
+                    arm_flows.push(flow);
+                    result_arms.push((pattern.expect("binding pattern"), Box::new(body)));
+                    continue;
+                }
                 let TypeConstructor {
                     union_name,
                     variant_name,
@@ -204,7 +248,6 @@ pub fn typecheck_match(
 
                 arm_flows.push(MatchArmFlow {
                     range: body.token_range().clone(),
-                    label: "arm",
                     may_fall_through: expr_may_fall_through(&body_expr),
                 });
                 result_arms.push((
@@ -218,7 +261,19 @@ pub fn typecheck_match(
                 ));
             }
 
-            match_is_exhaustive = matched_variants.len() == variants.len();
+            if !has_binding && matched_variants.len() != variants.len() {
+                let missing = variants
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| !matched_variants.contains(index))
+                    .filter_map(|(_, variant)| variant.name())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return env.log_error(
+                    condition.token_range(),
+                    format!("Match must be exhaustive; missing variants: {}. Add the missing arms or a catch-all binding such as '_ => ...'", missing),
+                );
+            }
             result_arms
         }
         _ => {
@@ -232,15 +287,6 @@ pub fn typecheck_match(
         }
     };
 
-    let default_body = match default {
-        Some(default_expr) => {
-            let (body, flow) = typecheck_arm(env, namespace, default_expr, "default")?;
-            arm_flows.push(flow);
-            Some(Box::new(body))
-        }
-        None => None,
-    };
-
     let effects = env
         .pop_scope()
         .map_err(|error| env.complete_err(error, condition.token_range()))?;
@@ -251,18 +297,10 @@ pub fn typecheck_match(
             if flow.may_fall_through {
                 return env.log_error(
                     &flow.range,
-                    format!(
-                        "Value-producing match {} may fall through without yielding a value",
-                        flow.label
-                    ),
+                    "Value-producing match arm may fall through without yielding a value"
+                        .to_string(),
                 );
             }
-        }
-        if default.is_none() && !match_is_exhaustive {
-            return env.log_error(
-                condition.token_range(),
-                "Value-producing match must be exhaustive or provide a default arm".to_string(),
-            );
         }
     }
 
@@ -272,15 +310,12 @@ pub fn typecheck_match(
             condition: Box::new(match_condition),
             subject,
             arms: match_arms,
-            default: default_body,
-            exhaustive: match_is_exhaustive || default.is_some(),
         },
     ))
 }
 
 struct MatchArmFlow {
     range: TokenRange,
-    label: &'static str,
     may_fall_through: bool,
 }
 
@@ -288,19 +323,37 @@ fn typecheck_arm(
     env: &mut TypeEnvironment,
     namespace: &NamespacePath,
     body: &HIRExpression,
-    label: &'static str,
-) -> CXResult<(THIRExpression, MatchArmFlow)> {
+    binding: Option<(&CXIdent, &THIRType)>,
+) -> CXResult<(Option<THIRPattern>, THIRExpression, MatchArmFlow)> {
     env.push_scope(false, false, body.token_range().clone());
+    let pattern = binding.map(|(name, ty)| {
+        let local_id = THIRLocalID::fresh();
+        let binding_type = env.symbols.mem_ref_to(ty.clone());
+        env.symbols.insert_local_value(
+            QualifiedName::new_raw(name.clone()),
+            THIRExpression {
+                token_range: body.token_range().clone(),
+                kind: THIRExpressionKind::Variable {
+                    name: name.clone(),
+                    local_id,
+                },
+                _type: binding_type,
+            },
+        );
+        THIRPattern::Binding {
+            name: name.clone(),
+            local_id,
+        }
+    });
     let body_expr = typecheck_expr(env, namespace, body, None)?
         .standard_ready_coerce(env, body.token_range())?;
     env.pop_scope()
         .map_err(|error| env.complete_err(error, body.token_range()))?;
     let flow = MatchArmFlow {
         range: body.token_range().clone(),
-        label,
         may_fall_through: expr_may_fall_through(&body_expr),
     };
-    Ok((body_expr, flow))
+    Ok((pattern, body_expr, flow))
 }
 
 fn validate_variant_template_input(

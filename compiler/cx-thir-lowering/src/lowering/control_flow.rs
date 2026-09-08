@@ -1,7 +1,7 @@
 use cx_log::CXResult;
 use cx_mir::{
-    MIRBlockTarget, MIRConstant, MIRInstrKind, MIRScopeID, MIRStagedExitKind, MIRTypeKind,
-    MIRValue, ty::interface::MTRegistry,
+    MIRBlockTarget, MIRCoercion, MIRConstant, MIRInstrKind, MIRScopeID, MIRStagedExitKind,
+    MIRTypeKind, MIRValue, ty::interface::MTRegistry,
 };
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
@@ -16,7 +16,7 @@ use crate::{
     lowering::{
         aggregates::{self, move_value},
         comptime, lower_expression, materialize_value,
-        types::lower_type,
+        types::{lower_int_type, lower_type},
     },
 };
 
@@ -389,8 +389,6 @@ pub(super) fn lower_match(
     condition: &THIRExpression,
     subject: THIRLocalID,
     arms: &[(THIRPattern, Box<THIRExpression>)],
-    default: Option<&THIRExpression>,
-    exhaustive: bool,
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
     let subject_value = lower_expression(builder, condition)?;
@@ -405,7 +403,7 @@ pub(super) fn lower_match(
         variant_match && !matches!(condition._type.kind, THIRTypeKind::MemoryReference { .. });
 
     let subject_value = match (variant_match, consuming_subject) {
-        (false, _) => subject_value,
+        (false, _) => materialize_value(builder, subject_value, &condition._type)?,
         (true, true) => materialize_value(
             builder,
             move_value(subject_value, &condition.token_range)?,
@@ -419,12 +417,6 @@ pub(super) fn lower_match(
     let value_match = !matches!(builder.types().kind(result_type_id), Ok(MIRTypeKind::Void));
 
     let exit = builder.fun_mut().new_block("match.exit");
-    let synthetic_unreachable = default.is_none() && (exhaustive || value_match);
-    let default_block = default
-        .map(|_| builder.fun_mut().new_block("match.default"))
-        .or_else(|| synthetic_unreachable.then(|| builder.fun_mut().new_block("match.unreachable")))
-        .unwrap_or(exit);
-
     let yield_register = if value_match {
         Some(builder.fun_mut().set_yield_recipient(exit, result_type_id))
     } else {
@@ -436,11 +428,17 @@ pub(super) fn lower_match(
         blocks.push(builder.fun_mut().new_block("match.arm"));
     }
 
+    let binding_block = arms.iter().zip(&blocks).find_map(|((pattern, _), block)| {
+        matches!(pattern, THIRPattern::Binding { .. }).then_some(*block)
+    });
+    let default_block =
+        binding_block.unwrap_or_else(|| builder.fun_mut().new_block("match.unreachable"));
     let default_target = Some(MIRBlockTarget::new(default_block));
     if variant_match {
         let cases = arms
             .iter()
             .zip(&blocks)
+            .filter(|((pattern, _), _)| !matches!(pattern, THIRPattern::Binding { .. }))
             .map(|((pattern, _), block)| {
                 let THIRPattern::TaggedUnionVariant { variant_index, .. } = pattern else {
                     panic!("tagged-union match contains a non-variant pattern");
@@ -459,6 +457,7 @@ pub(super) fn lower_match(
         let cases = arms
             .iter()
             .zip(&blocks)
+            .filter(|((pattern, _), _)| !matches!(pattern, THIRPattern::Binding { .. }))
             .map(|((pattern, _), block)| {
                 (
                     aggregates::constant_from_pattern(pattern),
@@ -466,8 +465,45 @@ pub(super) fn lower_match(
                 )
             })
             .collect();
+        let mut value = if condition._type.is_memory_reference() {
+            MIRValue::Copy(super::memory::ensure_place(
+                builder,
+                subject_value.clone(),
+                &condition._type,
+            )?)
+        } else {
+            subject_value.clone()
+        };
+        let int_id = builder
+            .registry()
+            .intrinsic_type_id("int")
+            .expect("THIR registry is missing the intrinsic int type");
+        let int_type = builder.registry().resolve_type_id(int_id).clone();
+        if let (
+            THIRTypeKind::Integer {
+                _type: from,
+                signed,
+            },
+            THIRTypeKind::Integer { _type: to, .. },
+        ) = (&subject_type.kind, &int_type.kind)
+            && from.rank() < to.rank()
+        {
+            let to_type = lower_type(builder, &int_type)?;
+            let out = builder.fun_mut().new_register(to_type, None);
+            builder.emit(MIRInstrKind::Coerce {
+                out,
+                operand: value,
+                coercion: MIRCoercion::Integral {
+                    sign_extend: *signed,
+                    from: lower_int_type(*from),
+                    to: lower_int_type(*to),
+                },
+                to_type,
+            });
+            value = MIRValue::Register(out);
+        }
         builder.emit(MIRInstrKind::IntSwitch {
-            value: subject_value.clone(),
+            value,
             cases,
             default: default_target,
         });
@@ -501,24 +537,7 @@ pub(super) fn lower_match(
         });
     }
 
-    if let Some(default) = default {
-        builder.fun_mut().set_current_block(default_block);
-        let default_value = lower_scoped(builder, default)?;
-        if !builder.fun().current_block_terminated() {
-            builder.emit(MIRInstrKind::Jump {
-                target: MIRBlockTarget::with_args(
-                    exit,
-                    if value_match {
-                        vec![default_value]
-                    } else {
-                        Vec::new()
-                    },
-                ),
-            });
-        }
-    }
-
-    if synthetic_unreachable {
+    if binding_block.is_none() {
         builder.fun_mut().set_current_block(default_block);
         builder.emit(MIRInstrKind::Unreachable);
     }

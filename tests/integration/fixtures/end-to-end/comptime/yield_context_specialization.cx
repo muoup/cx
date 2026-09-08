@@ -12,14 +12,14 @@ comptime expr void forward_yield() {
 int main() {
     std::opt<int> integer = match (1) {
         0 => yield std::opt::some<int>(1);
-        default => {
+        _ => {
             forward_yield();
             yield std::opt::some<int>(1);
         }
     };
     std::opt<float> floating = match (1) {
         0 => yield std::opt::some<float>(1.0f);
-        default => {
+        _ => {
             forward_yield();
             yield std::opt::some<float>(1.0f);
         }

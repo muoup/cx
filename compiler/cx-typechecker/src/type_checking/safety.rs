@@ -167,20 +167,13 @@ pub(crate) fn validate_safe_expression(
                 .map(|_| ())
         }
         THIRExpressionKind::Match {
-            condition,
-            arms,
-            default,
-            ..
+            condition, arms, ..
         } => {
             validate_safe_expression(env, condition)?;
             for (_, body) in arms {
                 validate_safe_expression(env, body)?;
             }
-            default
-                .as_deref()
-                .map(|branch| validate_safe_expression(env, branch))
-                .transpose()
-                .map(|_| ())
+            Ok(())
         }
         THIRExpressionKind::Return {
             postcondition,

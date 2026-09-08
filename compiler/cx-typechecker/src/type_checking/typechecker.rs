@@ -585,18 +585,9 @@ fn typecheck_expr_inner(
             default_case.as_ref(),
         )?,
 
-        HIRExprKind::Match {
-            condition,
-            arms,
-            default,
-        } => typecheck_match(
-            env,
-            namespace,
-            condition,
-            arms,
-            default.as_ref().map(Box::as_ref),
-            expected_type,
-        )?,
+        HIRExprKind::Match { condition, arms } => {
+            typecheck_match(env, namespace, condition, arms, expected_type)?
+        }
 
         HIRExprKind::Taken => unreachable!("Taken expressions should not be typechecked"),
     };

@@ -25,6 +25,12 @@ pub(super) fn lower_pattern_test(
 ) -> CXResult<MIRValue> {
     let lhs_value = super::lower_expression(builder, lhs)?;
     let (tested, constant) = match pattern {
+        THIRPattern::Binding { .. } => {
+            return log_mir_error(
+                &lhs.token_range,
+                "Binding patterns are only supported in match arms".to_string(),
+            );
+        }
         THIRPattern::TaggedUnionVariant {
             sum_type,
             variant_index,
@@ -116,6 +122,20 @@ pub(super) fn bind_pattern_payload(
     subject: MIRValue,
     sum_type: &THIRType,
 ) -> CXResult<()> {
+    if let THIRPattern::Binding { name, local_id } = pattern {
+        let place = if sum_type.is_memory_reference() {
+            memory::ensure_place(builder, subject, sum_type)?
+        } else {
+            memory::assign_operand_to_place(builder, subject, sum_type, Some(name.clone()))?
+        };
+        builder
+            .fun_mut()
+            .bind_local(*local_id, MIRValue::PlaceRef(place));
+        builder
+            .fun_mut()
+            .bind_named_value(name, MIRValue::PlaceRef(place));
+        return Ok(());
+    }
     if let THIRPattern::TaggedUnionVariant {
         variant_index,
         inner_local_id: Some(local_id),
@@ -195,6 +215,7 @@ pub(super) fn sum_variant_type(
 
 pub(super) fn constant_from_pattern(pattern: &THIRPattern) -> MIRConstant {
     match pattern {
+        THIRPattern::Binding { .. } => unreachable!("binding patterns have no case constant"),
         THIRPattern::Integer(value) => MIRConstant::Integer {
             value: *value as i128,
             ty: MIRIntType::I64,

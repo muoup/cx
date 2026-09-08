@@ -41,22 +41,11 @@ pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
                     .map(|branch| expr_may_fall_through(branch))
                     .unwrap_or(true)
         }
-        THIRExpressionKind::Match {
-            arms,
-            default,
-            exhaustive,
-            ..
-        } => {
+        THIRExpressionKind::Match { arms, .. } => {
             arms.iter().any(|(_, branch)| expr_may_fall_through(branch))
-                || default
-                    .as_ref()
-                    .map(|branch| expr_may_fall_through(branch))
-                    .unwrap_or(!exhaustive)
         }
         THIRExpressionKind::CallFunction {
-            function,
-            contract,
-            ..
+            function, contract, ..
         } => {
             !contract.noreturn
                 && !matches!(

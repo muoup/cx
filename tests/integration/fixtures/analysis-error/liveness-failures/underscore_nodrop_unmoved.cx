@@ -1,0 +1,20 @@
+struct Resource : @nodrop {
+    int data;
+};
+
+enum union MaybeResource : @nodrop {
+    none :: void,
+    some :: Resource
+};
+
+void inspect(MaybeResource value) {
+    match (move value) {
+        _ => {}
+    }
+}
+
+int main() {
+    MaybeResource value = MaybeResource::none();
+    inspect(move value);
+    return 0;
+}

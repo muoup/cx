@@ -1,0 +1,16 @@
+enum union Choice {
+    zero :: int,
+    one :: int
+};
+
+void inspect(Choice value) {
+    match (move value) {
+        Choice::zero(inner) => {}
+        Choice::one(other) => {}
+        _ => {}
+    }
+}
+
+int main() {
+    return 0;
+}

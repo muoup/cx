@@ -1,0 +1,27 @@
+struct Resource : @nodrop {
+    int data;
+};
+
+enum union MaybeResource : @nodrop {
+    none :: void,
+    some :: Resource
+};
+
+void Resource::drop(Resource this) safe {
+    @unsafe {
+        @leak(this);
+    };
+}
+
+void discard(MaybeResource value) {
+    match (move value) {
+        MaybeResource::some(resource) => move resource |> Resource::drop();
+        _ => @leak(_);
+    }
+}
+
+int main() {
+    MaybeResource value = MaybeResource::some((Resource) { .data = 7 });
+    discard(move value);
+    return 0;
+}

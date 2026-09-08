@@ -1,0 +1,9 @@
+void inspect(int value) {
+    match (value) {
+        0 => {}
+    }
+}
+
+int main() {
+    return 0;
+}
