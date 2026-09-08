@@ -40,8 +40,6 @@ pub struct MIRBuilder<'thir> {
     registry: &'thir THIRDecomposedRegistry,
     function: Option<MIRFunctionBuilder>,
 
-    pub(crate) lowering_types: HashSet<THIRTypeID>,
-
     source_range: TokenRange,
     capture: Option<CaptureContext>,
 
@@ -54,6 +52,7 @@ pub struct MIRTypeRegistryBuilder {
     architecture: ArchitectureConfig,
     definitions: Vec<Option<MIRType>>,
 
+    lowering_types: HashSet<THIRTypeID>,
     interner: HashMap<MIRType, MIRTypeID>,
     debug_names: HashMap<MIRTypeID, String>,
     next_id: usize,
@@ -72,7 +71,6 @@ impl<'thir> MIRBuilder<'thir> {
             types: MIRTypeRegistryBuilder::new(*thir.registry.architecture()),
             module: MIRModuleBuilder::new(),
             registry: &thir.registry,
-            lowering_types: HashSet::new(),
             function: None,
 
             source_range: TokenRange::internal(),
@@ -471,6 +469,7 @@ impl MIRTypeRegistryBuilder {
             architecture,
             definitions: Vec::new(),
             interner: HashMap::new(),
+            lowering_types: HashSet::new(),
             debug_names: HashMap::new(),
             next_id: 0,
         }
@@ -537,6 +536,18 @@ impl MIRTypeRegistryBuilder {
             }),
         };
         Ok(self.intern(ty))
+    }
+
+    pub fn insert_lowering_type(&mut self, id: THIRTypeID) {
+        self.lowering_types.insert(id);
+    }
+
+    pub fn remove_lowering_type(&mut self, id: &THIRTypeID) {
+        self.lowering_types.remove(id);
+    }
+
+    pub fn is_lowering_type(&self, id: &THIRTypeID) -> bool {
+        self.lowering_types.contains(id)
     }
 
     pub fn finish(self) -> MIRTypeRegistry {
