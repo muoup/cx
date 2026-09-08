@@ -9,14 +9,14 @@ use super::{MIRType, MIRTypeID};
 #[derive(Debug, Clone)]
 pub struct MIRTypeRegistry {
     architecture: ArchitectureConfig,
-    definitions: Vec<MIRType>,
+    definitions: HashMap<MIRTypeID, MIRType>,
     debug_names: HashMap<MIRTypeID, String>,
 }
 
 impl MIRTypeRegistry {
     pub fn new(
         architecture: ArchitectureConfig,
-        definitions: Vec<MIRType>,
+        definitions: HashMap<MIRTypeID, MIRType>,
         debug_names: HashMap<MIRTypeID, String>,
     ) -> Self {
         Self {
@@ -33,20 +33,20 @@ impl MTRegistry for MIRTypeRegistry {
     }
 
     fn definition(&self, id: MIRTypeID) -> Option<&MIRType> {
-        self.definitions.get(id.index())
+        self.definitions.get(&id)
     }
 
     fn find(&self, ty: &MIRType) -> Option<MIRTypeID> {
         self.definitions
             .iter()
-            .position(|t| t == ty)
+            .position(|t| t.1 == ty)
             .map(MIRTypeID::new)
     }
 
     fn find_kind(&self, kind: &super::MIRTypeKind) -> Option<MIRTypeID> {
         self.definitions
             .iter()
-            .position(|t| &t.kind == kind)
+            .position(|t| &t.1.kind == kind)
             .map(MIRTypeID::new)
     }
 

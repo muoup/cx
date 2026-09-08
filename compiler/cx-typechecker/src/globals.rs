@@ -4,6 +4,7 @@ use cx_hir::ast::types::{HIRType, HIRTypeKind};
 use cx_log::CXResult;
 use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::{NamespacePath, QualifiedName};
+use cx_thir::thir::contextual_eq::TypeContextEqual;
 use cx_thir::thir::data::THIRType;
 use cx_thir::thir::expression::{THIRCoercion, THIRExpression, THIRExpressionKind};
 use cx_thir::thir::global::THIRGlobalVariable;
@@ -34,15 +35,27 @@ pub(crate) fn lower_global(
         &QualifiedName::new(namespace.clone(), name.clone()),
         name_scheme,
     );
-    let previous_type = env
-        .items
-        .generated_global(&symbol_name)
-        .map(|global| global._type.clone());
 
-    if let Some(previous_type) = &previous_type
-        && env.type_eq(previous_type, &_type)
-    {
-        _type = previous_type.clone();
+    if let Some(previous) = env.items.generated_global(&symbol_name) {
+        if previous.initializer.is_some() && initializer.is_some() {
+            return env.log_error(
+                hir_type.range(),
+                &catalogue::GLOBAL_REDECLARATION,
+                format!("{}", name),
+            );
+        }
+
+        if !previous._type.contextual_eq(&_type, &env.symbols) {
+            if incomplete_array_declaration_compatible(env, &previous._type, &_type) {
+                _type = previous._type.clone();
+            } else {
+                return env.log_error(
+                    hir_type.range(),
+                    &catalogue::GLOBAL_REDECLARATION,
+                    format!("{}", name),
+                );
+            }
+        }
     }
 
     let (global_type, comptime_init) = initializer
@@ -74,23 +87,6 @@ pub(crate) fn lower_global(
         })
         .transpose()?
         .unwrap_or_else(|| (_type.clone(), None));
-    let global_type = if let Some(previous_type) = previous_type {
-        if env.type_eq(&previous_type, &global_type) {
-            previous_type
-        } else if is_inferred_array
-            && incomplete_array_declaration_compatible(env, &previous_type, &global_type)
-        {
-            global_type
-        } else {
-            return env.log_error(
-                hir_type.range(),
-                &catalogue::ATTEMPTING_TO_REDECLARE_GLOBAL_WITH_A_DIFFERENT_TYPE,
-                format!("{}", name),
-            );
-        }
-    } else {
-        global_type
-    };
 
     if !env.type_eq(&_type, &global_type) {
         let global_value_type = env.symbols.mem_ref_to(global_type.clone());

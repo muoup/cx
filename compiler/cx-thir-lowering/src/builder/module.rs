@@ -48,6 +48,7 @@ pub(crate) struct MIRModuleBuilder {
     global_symbols: HashMap<String, ModuleSymbol<MIRGlobalID>>,
 
     global_order: Vec<MIRGlobalID>,
+    global_initializer: HashMap<MIRGlobalID, MIRFunctionID>,
 
     next_string_literal: usize,
     next_function_id: usize,
@@ -69,7 +70,9 @@ impl MIRModuleBuilder {
             globals: HashMap::new(),
             function_symbols: HashMap::new(),
             global_symbols: HashMap::new(),
+            global_initializer: HashMap::new(),
             global_order: Vec::new(),
+            
             next_string_literal: 0,
             next_function_id: 0,
             next_global_id: 0,
@@ -189,6 +192,14 @@ impl MIRModuleBuilder {
 
     pub(crate) fn function(&self, id: MIRFunctionID) -> Option<&MIRFunction> {
         self.functions.get(&id)
+    }
+
+    pub(crate) fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
+        self.globals.get(&id)
+    }
+
+    pub(crate) fn global_initializer(&self, id: MIRGlobalID) -> Option<MIRFunctionID> {
+        self.global_initializer.get(&id).cloned()
     }
 
     pub(crate) fn global_symbol(&mut self, name: &str) -> Option<MIRGlobalID> {

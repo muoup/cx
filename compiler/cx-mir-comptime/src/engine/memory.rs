@@ -1,9 +1,11 @@
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
-    MIRConstant, MIRFieldLayout, MIRGlobalID, MIRGlobalKind, MIRPlace, MIRTypeID, MIRTypeKind,
-    MIRValue,
-    ty::interface::MTRegistry,
-    ty::layout::{field_layout, layout_of},
+    MIRConstant, MIRFieldLayout, MIRGlobalID, MIRGlobalKind, MIRGlobalState, MIRPlace, MIRTypeID,
+    MIRTypeKind, MIRValue,
+    ty::{
+        interface::MTRegistry,
+        layout::{field_layout, layout_of},
+    },
 };
 use cx_tokens::TokenRange;
 
@@ -27,28 +29,33 @@ pub(super) fn coerce_global_special(
     operand: &MIRValue,
     to_type: MIRTypeID,
 ) -> CXResult<Option<MIRConstant>> {
-    let MIRValue::PlaceRef(MIRPlace::Global(global)) = operand else {
+    let MIRValue::PlaceRef(MIRPlace::Global(global_id)) = operand else {
         return Ok(None);
     };
+
     let Ok(target_kind) = engine.context.types().kind(to_type) else {
         return Ok(None);
     };
 
-    match engine.context.global_kind(*global) {
-        Some(MIRGlobalKind::Variable { ty, .. }) => {
+    let Some(global) = engine.context.global(*global_id) else {
+        return Ok(None);
+    };
+
+    match &global.kind {
+        MIRGlobalKind::Variable { ty, .. } => {
             let decays = matches!(
                 target_kind,
                 MIRTypeKind::PointerTo { .. } | MIRTypeKind::MemoryReference { .. }
             ) && matches!(
-                engine.context.types().kind(ty),
+                engine.context.types().kind(*ty),
                 Ok(MIRTypeKind::Array { .. })
             );
             if decays {
-                return Ok(Some(ops::relocation_constant(*global, 0, ty)));
+                return Ok(Some(ops::relocation_constant(*global_id, 0, *ty)));
             }
             Ok(None)
         }
-        Some(MIRGlobalKind::StringLiteral { value }) => {
+        MIRGlobalKind::StringLiteral { value } => {
             if let MIRTypeKind::Array { length, inner } = target_kind {
                 if let Ok(MIRTypeKind::Integer { ty, signed }) = engine.context.types().kind(*inner)
                 {
@@ -74,9 +81,9 @@ pub(super) fn coerce_global_special(
                     }
                 }
             }
+
             Ok(None)
         }
-        _ => Ok(None),
     }
 }
 
@@ -95,12 +102,14 @@ pub(super) fn address_of(
         return Ok(ops::relocation_constant(global, 0, ty));
     }
 
-    let Some(MIRGlobalKind::Variable { ty: start, .. }) = engine.context.global_kind(global) else {
+    let Some(MIRGlobalKind::Variable { ty: start, .. }) =
+        engine.context.global(global).map(|g| &g.kind)
+    else {
         return comptime_error(range.clone(), (&catalogue::COMPTIME_GLOBAL_PROJECTION, ()));
     };
 
     let mut offset: i64 = 0;
-    let mut ty = start;
+    let mut ty = *start;
     for segment in &path {
         match segment {
             PathSeg::Field(index) => match field_layout(engine.context.types(), ty, *index) {
@@ -166,9 +175,16 @@ pub(super) fn global_address_type(
     global: MIRGlobalID,
     range: &TokenRange,
 ) -> CXResult<MIRTypeID> {
-    match engine.context.global_kind(global) {
-        Some(MIRGlobalKind::Variable { ty, .. }) => Ok(ty),
-        Some(MIRGlobalKind::StringLiteral { .. }) => {
+    let Some(global) = engine.context.global(global) else {
+        return comptime_error(
+            range.clone(),
+            (&catalogue::COMPTIME_UNKNOWN_GLOBAL_ADDRESS, ()),
+        );
+    };
+
+    match global.kind {
+        MIRGlobalKind::Variable { ty, .. } => Ok(ty),
+        MIRGlobalKind::StringLiteral { .. } => {
             let Some(ty) = engine.context.types().find_kind(&MIRTypeKind::Str) else {
                 return comptime_error(
                     range.clone(),
@@ -177,10 +193,6 @@ pub(super) fn global_address_type(
             };
             Ok(ty)
         }
-        None => comptime_error(
-            range.clone(),
-            (&catalogue::COMPTIME_UNKNOWN_GLOBAL_ADDRESS, ()),
-        ),
     }
 }
 
@@ -223,12 +235,26 @@ fn read_global_rvalue(
     engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
     global: MIRGlobalID,
 ) -> CXResult<MIRConstant> {
-    if let Some(MIRGlobalKind::Variable { ty, .. }) = engine.context.global_kind(global)
-        && let Ok(MIRTypeKind::Array { inner, .. }) = engine.context.types().kind(ty)
-    {
-        return Ok(ops::relocation_constant(global, 0, *inner));
+    let Some(global) = engine.context.global(global) else {
+        return comptime_error(
+            TokenRange::internal(),
+            (&catalogue::COMPTIME_UNKNOWN_GLOBAL_ADDRESS, ()),
+        );
+    };
+
+    match &global.kind {
+        MIRGlobalKind::Variable { ty, .. } => {
+            if let Ok(MIRTypeKind::Array { inner, .. }) = engine.context.types().kind(*ty) {
+                return Ok(ops::relocation_constant(global.id, 0, *inner));
+            }
+        }
+        MIRGlobalKind::StringLiteral { .. } => {
+            let ty = global_address_type(engine, global.id, &TokenRange::internal())?;
+            return Ok(ops::relocation_constant(global.id, 0, ty));
+        }
     }
-    read_global(engine, global)
+
+    read_global(engine, global.id)
 }
 
 fn read_place(
@@ -356,9 +382,7 @@ fn read_global(
 
     let result = (|| {
         let resolver = engine.context;
-        if let Some(constant) = resolver.global_constant(global) {
-            return Ok(constant);
-        }
+
         if let Some(initializer) = resolver.global_initializer(global) {
             return match execution::call_function(engine, initializer, &[])? {
                 MIRComptimeValue::Constant(value) => Ok(value),
@@ -368,24 +392,43 @@ fn read_global(
                 ),
             };
         }
-        if matches!(
-            resolver.global_kind(global),
-            Some(MIRGlobalKind::StringLiteral { .. })
-        ) {
-            let range = TokenRange::internal();
-            let ty = global_address_type(engine, global, &range)?;
-            return Ok(ops::relocation_constant(global, 0, ty));
+
+        let Some(var) = resolver.global(global) else {
+            return comptime_error(
+                TokenRange::internal(),
+                (&catalogue::COMPTIME_GLOBAL_UNAVAILABLE, ()),
+            );
+        };
+
+        match &var.kind {
+            MIRGlobalKind::StringLiteral { .. } => {
+                let range = TokenRange::internal();
+                let ty = global_address_type(engine, global, &range)?;
+                return Ok(ops::relocation_constant(global, 0, ty));
+            }
+
+            MIRGlobalKind::Variable { ty, state, .. } => match state {
+                MIRGlobalState::External => {
+                    return comptime_error(
+                        TokenRange::internal(),
+                        (&catalogue::COMPTIME_GLOBAL_UNAVAILABLE, ()),
+                    );
+                }
+                MIRGlobalState::ZeroInitialized => {
+                    return Ok(ops::relocation_constant(global, 0, *ty));
+                }
+                MIRGlobalState::Initialized(constant) => {
+                    return Ok(constant.clone());
+                }
+            },
         }
-        comptime_error(
-            TokenRange::internal(),
-            (&catalogue::COMPTIME_GLOBAL_UNAVAILABLE, ()),
-        )
     })();
 
     engine.evaluating_globals.remove(&global);
 
     let constant = result?;
     engine.globals.insert(global, constant.clone());
+
     Ok(constant)
 }
 

@@ -1,6 +1,6 @@
 use cx_log::catalogue::mir as catalogue;
 
-use crate::log::log_mir_error;
+use crate::{log::log_mir_error, lowering::lower_expression};
 use cx_log::CXResult;
 use cx_mir::{
     MIRAggregateOp, MIRBinaryOp, MIRConstant, MIRInstrKind, MIRIntBinaryOp, MIRIntType,
@@ -25,7 +25,7 @@ pub(super) fn lower_pattern_test(
     pattern: &THIRPattern,
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
-    let lhs_value = super::lower_expression(builder, lhs)?;
+    let lhs_value = lower_expression(builder, lhs)?;
     let (tested, constant) = match pattern {
         THIRPattern::Binding { .. } => {
             return log_mir_error(&lhs.token_range, (&catalogue::MIR_BINDING_PATTERN, ()));

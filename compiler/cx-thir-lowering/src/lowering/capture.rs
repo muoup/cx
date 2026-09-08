@@ -28,12 +28,12 @@ pub fn capture_expression(
     builder: &mut MIRBuilder<'_>,
     expression: &THIRExpression,
 ) -> CXResult<MIRFunction> {
-    let saved_function = builder
-        .take_current_function();
-    let expr_type = lowering::lower_type(builder, &expression._type)?;
     let in_safe_context = builder.try_fun()
         .map(|f| f.prototype().signature.safe)
         .unwrap_or(false);
+    let saved_function = builder
+        .take_current_function();
+    let expr_type = lowering::lower_type(builder, &expression._type)?;
 
     builder.start_custom_function(MIRFunction::new(
         MIRFunctionID::new(usize::MAX),

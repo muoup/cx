@@ -7,7 +7,7 @@ define_errors! {
     TEMPLATE_DEDUCTION: () = "T0017" => |()| "Could not deduce arguments to template".into();
     SYMBOL_NOT_VALUE: () = "T0018" => |()| "Symbol does not refer to a value".into();
     POP_EMPTY_SCOPE: () = "T0019" => |()| "Attempted to pop a scope from an empty scope stack".into();
-    ATTEMPTING_TO_REDECLARE_GLOBAL_WITH_A_DIFFERENT_TYPE: String = "T0020" => |arg0| format!("Attempting to redeclare global '{arg0}' with a different type.");
+    GLOBAL_REDECLARATION: String = "T0020" => |arg0| format!("Attempting to redeclare global '{arg0}'.");
     COMPTIME_DEFINITION_WAS_NOT_FOUND: String = "T0021" => |arg0| format!("Comptime definition '{arg0}' was not found");
     SYMBOL_IS_NOT_A_COMPTIME_FUNCTION: String = "T0022" => |arg0| format!("Symbol '{arg0}' is not a comptime function");
     TYPE_IS_INCOMPLETE: String = "T0023" => |arg0| format!("Type '{arg0}' is incomplete");

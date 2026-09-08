@@ -5,10 +5,7 @@ use std::{
 
 use cx_log::CXResult;
 use cx_mir::{
-    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRFunctionMode,
-    MIRInstrKind, MIRLayoutError, MIRPlace, MIRRegister, MIRStagedCapture, MIRStagedTemplate,
-    MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRUnit, MIRValue,
-    ty::{interface::MTRegistry, registry::MIRTypeRegistry},
+    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRFunctionMode, MIRGlobalID, MIRGlobalVariable, MIRInstrKind, MIRLayoutError, MIRPlace, MIRRegister, MIRStagedCapture, MIRStagedTemplate, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRUnit, MIRValue, ty::{interface::MTRegistry, registry::MIRTypeRegistry}
 };
 use cx_mir_comptime::ComptimeContext;
 use cx_target::ArchitectureConfig;
@@ -40,12 +37,14 @@ pub struct MIRBuilder<'thir> {
     types: MIRTypeRegistryBuilder,
     module: MIRModuleBuilder,
     registry: &'thir THIRDecomposedRegistry,
+    function: Option<MIRFunctionBuilder>,
 
     pub(crate) lowering_types: HashSet<THIRTypeID>,
-    function: Option<MIRFunctionBuilder>,
+
     ambient_prototype: MIRFnPrototype,
     source_range: TokenRange,
     capture: Option<CaptureContext>,
+
     pub(crate) outer_return_type: Option<MIRTypeID>,
     pub(crate) outer_yield_type: Option<MIRTypeID>,
 }
@@ -143,7 +142,7 @@ impl<'thir> MIRBuilder<'thir> {
     pub(crate) fn try_fun(&self) -> Option<&MIRFunctionBuilder> {
         self.function.as_ref()
     }
-    
+
     pub(crate) fn fun(&self) -> &MIRFunctionBuilder {
         self.function
             .as_ref()
@@ -254,7 +253,9 @@ impl<'thir> MIRBuilder<'thir> {
                 .is_some_and(|function| function.mode() != MIRFunctionMode::Comptime);
         let saved_range = std::mem::replace(&mut self.source_range, TokenRange::internal());
 
-        self.function = Some(MIRFunctionBuilder::new(MIRFunction::new(id, prototype, None)));
+        self.function = Some(MIRFunctionBuilder::new(MIRFunction::new(
+            id, prototype, None,
+        )));
         self.capture = Some(CaptureContext {
             source_locals,
             captures: Vec::new(),
@@ -560,10 +561,11 @@ impl MIRTypeRegistryBuilder {
     }
 
     pub fn finish(self) -> MIRTypeRegistry {
-        let definitions: Vec<MIRType> = self
+        let definitions = self
             .definitions
             .into_iter()
-            .map(|opt| opt.expect("all types must be defined before finishing the registry"))
+            .enumerate()
+            .filter_map(|(index, ty)| ty.map(|ty| (MIRTypeID::new(index), ty)))
             .collect();
 
         MIRTypeRegistry::new(self.architecture, definitions, self.debug_names)
@@ -579,6 +581,14 @@ impl ComptimeContext for MIRBuilder<'_> {
 
     fn types(&self) -> &MIRTypeRegistryBuilder {
         self.types()
+    }
+
+    fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
+        self.module().global(id)
+    }
+
+    fn global_initializer(&self, id: MIRGlobalID) -> Option<MIRFunctionID> {
+        self.module().global_initializer(id)
     }
 }
 
