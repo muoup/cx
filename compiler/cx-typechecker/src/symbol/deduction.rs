@@ -1,10 +1,11 @@
+use cx_log::catalogue::typecheck as catalogue;
 use std::collections::HashMap;
 
-use cx_hir::ast::{
+use cx_hir::{ast::{
     function::{HIRComptimeFnPrototype, HIRFunctionPrototype},
     template::{HIRTemplateInput, HIRTemplatePrototype},
     types::{HIRType, HIRTypeKind},
-};
+}, symbols::HIRSymbol};
 use cx_hir::symbols::HIRSymbolKind;
 use cx_log::{
     CXRawResult, CXResult,
@@ -40,26 +41,29 @@ pub(crate) fn complete_templated_callee_maybe(
         .get_symbol(namespace, name)
         .map_err(CXErrorMaybeRaw::from)?
     else {
-        return internal_type_error(format!("Templated function '{}' not found", name))
-            .map_err(CXErrorMaybeRaw::from);
+        return internal_type_error(
+            &catalogue::TEMPLATED_FUNCTION_NOT_FOUND_42,
+            format!("{}", name),
+        )
+        .map_err(CXErrorMaybeRaw::from);
     };
 
     if let Some(input) = template_input {
         let completed_input = complete_template_input(env, namespace, input)?;
         return apply_template(env, &symbol, completed_input)?.ok_or_else(|| {
-            CXErrorMaybeRaw::from(generate_raw_error(format!(
-                "Symbol '{}' does not accept template arguments",
-                name
-            )))
+            CXErrorMaybeRaw::from(generate_raw_error(
+                &catalogue::SYMBOL_DOES_NOT_ACCEPT_TEMPLATE_ARGUMENTS_43,
+                format!("{}", name),
+            ))
         });
     }
 
     deduce_template_symbol(env, namespace, &symbol, arg_types, expected_return_type)?.ok_or_else(
         || {
-            CXErrorMaybeRaw::from(generate_raw_error(format!(
-                "Symbol '{}' is not a template",
-                name
-            )))
+            CXErrorMaybeRaw::from(generate_raw_error(
+                &catalogue::SYMBOL_IS_NOT_A_TEMPLATE,
+                format!("{}", name),
+            ))
         },
     )
 }
@@ -96,7 +100,7 @@ fn deduce_template_input(
     env: &mut TypeEnvironment,
     namespace: &NamespacePath,
     template_prototype: &HIRTemplatePrototype,
-    source: &cx_hir::symbols::HIRSymbol,
+    source: &HIRSymbol,
     arg_types: &[THIRType],
     expected_return_type: Option<&THIRType>,
 ) -> CXMaybeRawResult<THIRTemplateInput> {
@@ -106,21 +110,22 @@ fn deduce_template_input(
         HIRSymbolKind::TypeConstructor(data) => {
             TemplateDeductionShell::TypeConstructor(&data.base().union_type)
         }
+        
         _ => {
-            return crate::log::internal_type_error(
-                "Only function template deduction is implemented",
-            )
-            .map_err(CXErrorMaybeRaw::from);
+            return internal_type_error(&catalogue::TEMPLATE_DEDUCTION, ())
+                .map_err(CXErrorMaybeRaw::from);
         }
     };
 
     let mut bindings = TemplateBindings::new();
     if arg_types.len() > shell.params_len() && !shell.var_args() {
-        return crate::log::internal_type_error(format!(
-            "Function template expects {} arguments, found {}",
-            shell.params_len(),
-            arg_types.len()
-        ))
+        return crate::log::internal_type_error(
+            &catalogue::FUNCTION_TEMPLATE_EXPECTS_ARGUMENTS_FOUND,
+            (
+                format!("{}", shell.params_len()),
+                format!("{}", arg_types.len()),
+            ),
+        )
         .map_err(CXErrorMaybeRaw::from);
     }
 
@@ -159,11 +164,10 @@ fn deduce_template_input(
         .iter()
         .map(|name| {
             let ty = bindings.remove(name.as_str()).ok_or_else(|| {
-                CXErrorMaybeRaw::from(crate::log::generate_raw_error(format!(
-                    "Could not deduce template argument '{}' for function {}",
-                    name,
-                    shell.name()
-                )))
+                CXErrorMaybeRaw::from(crate::log::generate_raw_error(
+                    &catalogue::COULD_NOT_DEDUCE_TEMPLATE_ARGUMENT_FOR_FUNCTION,
+                    (format!("{}", name), format!("{}", shell.name())),
+                ))
             })?;
 
             Ok(env.symbols.generate_type_id(ty))
@@ -278,32 +282,41 @@ fn deduce_from_cx_type(
             ..
         } => {
             let Some(template_info) = actual.get_template_data() else {
-                return crate::log::internal_type_error(format!(
-                    "Expected realized template type '{}' while deducing, found {}",
-                    name,
-                    actual.display_with(&env.symbols)
-                ));
+                return crate::log::internal_type_error(
+                    &catalogue::EXPECTED_REALIZED_TEMPLATE_TYPE_WHILE_DEDUCING_FOUND,
+                    (
+                        format!("{}", name),
+                        format!("{}", actual.display_with(&env.symbols)),
+                    ),
+                );
             };
 
             if !template_base_matches(name, template_info.base_name.as_ref()) {
-                return crate::log::internal_type_error(format!(
-                    "Expected template type '{}', found '{}'",
-                    name,
-                    template_info
-                        .base_name
-                        .as_ref()
-                        .map(|name| name.to_string())
-                        .unwrap_or_else(|| "<anonymous>".to_string())
-                ));
+                return crate::log::internal_type_error(
+                    &catalogue::EXPECTED_TEMPLATE_TYPE_FOUND,
+                    (
+                        format!("{}", name),
+                        format!(
+                            "{}",
+                            template_info
+                                .base_name
+                                .as_ref()
+                                .map(|name| name.to_string())
+                                .unwrap_or_else(|| "<anonymous>".to_string())
+                        ),
+                    ),
+                );
             }
 
             if input.params.len() != template_info.template_input.args.len() {
-                return crate::log::internal_type_error(format!(
-                    "Template arity mismatch for '{}': expected {}, found {}",
-                    name,
-                    input.params.len(),
-                    template_info.template_input.args.len()
-                ));
+                return crate::log::internal_type_error(
+                    &catalogue::TEMPLATE_ARITY_MISMATCH_FOR_EXPECTED_FOUND,
+                    (
+                        format!("{}", name),
+                        format!("{}", input.params.len()),
+                        format!("{}", template_info.template_input.args.len()),
+                    ),
+                );
             }
 
             for (formal_arg, actual_arg) in input
@@ -427,18 +440,23 @@ fn deduce_from_function_signature(
     actual: &THIRFnSignature,
 ) -> CXResult<()> {
     if formal.var_args != actual.var_args {
-        return crate::log::internal_type_error(format!(
-            "Function pointer varargs mismatch during template deduction: expected {}, found {}",
-            formal.var_args, actual.var_args
-        ));
+        return crate::log::internal_type_error(
+            &catalogue::TEMPLATE_DEDUCTION_FN_PTR_VARARGS_MISMATCH,
+            (
+                format!("{}", formal.var_args),
+                format!("{}", actual.var_args),
+            ),
+        );
     }
 
     if formal.params.len() != actual.params.len() {
-        return crate::log::internal_type_error(format!(
-            "Function pointer arity mismatch during template deduction: expected {}, found {}",
-            formal.params.len(),
-            actual.params.len()
-        ));
+        return crate::log::internal_type_error(
+            &catalogue::TEMPLATE_DEDUCTION_FN_PTR_ARITY_MISMATCH,
+            (
+                format!("{}", formal.params.len()),
+                format!("{}", actual.params.len()),
+            ),
+        );
     }
 
     deduce_from_cx_type(
@@ -475,12 +493,14 @@ fn bind_template_argument(
             return Ok(());
         }
 
-        return env.log_error_base(format!(
-            "Conflicting deductions for template argument '{}': {} vs {}",
-            name,
-            existing.display_with(&env.symbols),
-            actual.display_with(&env.symbols)
-        ));
+        return env.log_error_base(
+            &catalogue::CONFLICTING_DEDUCTIONS_FOR_TEMPLATE_ARGUMENT_VS,
+            (
+                format!("{}", name),
+                format!("{}", existing.display_with(&env.symbols)),
+                format!("{}", actual.display_with(&env.symbols)),
+            ),
+        );
     }
 
     bindings.insert(name.to_string(), actual.clone());
@@ -500,9 +520,11 @@ fn concrete_type_mismatch(
     formal: &HIRType,
     actual: &THIRType,
 ) -> CXResult<()> {
-    crate::log::internal_type_error(format!(
-        "Template deduction mismatch: expected {}, found {}",
-        formal,
-        actual.display_with(&env.symbols)
-    ))
+    crate::log::internal_type_error(
+        &catalogue::TEMPLATE_DEDUCTION_MISMATCH_EXPECTED_FOUND,
+        (
+            format!("{}", formal),
+            format!("{}", actual.display_with(&env.symbols)),
+        ),
+    )
 }

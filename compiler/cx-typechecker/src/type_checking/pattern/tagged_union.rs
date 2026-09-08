@@ -1,5 +1,6 @@
 use cx_hir::ast::{expression::HIRExpression, pattern::HIRPattern, template::HIRTemplateInput};
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_util::identifier::CXIdent;
 
@@ -26,7 +27,8 @@ pub fn resolve_type_constructor_pattern(
     else {
         return env.log_error(
             expr.token_range(),
-            "Expected qualified tagged union variant pattern".to_string(),
+            &catalogue::EXPECTED_QUALIFIED_TAGGED_UNION_VARIANT_PATTERN,
+            (),
         );
     };
 
@@ -34,7 +36,8 @@ pub fn resolve_type_constructor_pattern(
     else {
         return env.log_error(
             expr.token_range(),
-            "Expected tagged union variant pattern to name a type member constructor".to_string(),
+            &catalogue::EXPECTED_TAGGED_UNION_VARIANT_PATTERN_TO_NAME_A_TYPE_MEMBER,
+            (),
         );
     };
 
@@ -44,7 +47,8 @@ pub fn resolve_type_constructor_pattern(
         Some(_) => {
             return env.log_error(
                 expr.token_range(),
-                "Tagged union variant payload pattern must be a binding".to_string(),
+                &catalogue::TAGGED_UNION_VARIANT_PAYLOAD_PATTERN_MUST_BE_A_BINDING,
+                (),
             );
         }
     };
@@ -61,7 +65,8 @@ pub fn resolve_type_constructor_pattern(
         .ok_or_else(|| {
             env.error(
                 expr.token_range(),
-                format!("Could not resolve pattern target '{}'", union_name),
+                &catalogue::COULD_NOT_RESOLVE_PATTERN_TARGET,
+                format!("{}", union_name),
             )
         })?;
 

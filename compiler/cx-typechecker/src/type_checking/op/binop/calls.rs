@@ -12,10 +12,9 @@ use crate::type_checking::staged_expr::into_expression as staged_into_expression
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::NamespacePath;
-use cx_thir::thir::data::{
-    THIRFloatType, THIRFnSignature, THIRType, THIRTypeKind,
-};
+use cx_thir::thir::data::{THIRFloatType, THIRFnSignature, THIRType, THIRTypeKind};
 use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind, THIRFnContract};
 use cx_thir::type_context::THIRTypeContext;
 use cx_tokens::TokenRange;
@@ -80,7 +79,12 @@ fn typecheck_internal_method_call(
     if args.len() != expected {
         return env.log_error(
             expr.token_range(),
-            format!("{name} expects {expected} arguments, found {}", args.len()),
+            &catalogue::EXPECTS_ARGUMENTS_FOUND,
+            (
+                format!("{}", name),
+                format!("{}", expected),
+                format!("{}", args.len()),
+            ),
         );
     }
 
@@ -122,10 +126,8 @@ pub(crate) fn typecheck_va_list(
     if !compatible::compatible_types(env, actual, &expected)? {
         return env.log_error(
             expr.token_range(),
-            format!(
-                "expected va_list, found {}",
-                list._type.display_with(&env.symbols)
-            ),
+            &catalogue::EXPECTED_VA_LIST_FOUND,
+            format!("{}", list._type.display_with(&env.symbols)),
         );
     }
     Ok(list)
@@ -223,10 +225,8 @@ fn load_callable(
     else {
         return env.log_error(
             expr.token_range(),
-            format!(
-                "Attempted to call value of non-function type {}",
-                function_type.display_with(&env.symbols)
-            ),
+            &catalogue::ATTEMPTED_TO_CALL_VALUE_OF_NON_FUNCTION_TYPE,
+            format!("{}", function_type.display_with(&env.symbols)),
         );
     };
 
@@ -242,11 +242,11 @@ fn check_argument_count(
     if arg_count != signature.params.len() && !signature.var_args {
         return env.log_error(
             expr.token_range(),
-            format!(
-                "Call to {} expects {} arguments, found {}",
-                signature.display_with(&env.symbols),
-                signature.params.len(),
-                arg_count
+            &catalogue::CALL_TO_EXPECTS_ARGUMENTS_FOUND,
+            (
+                format!("{}", signature.display_with(&env.symbols)),
+                format!("{}", signature.params.len()),
+                format!("{}", arg_count),
             ),
         );
     }
@@ -254,11 +254,11 @@ fn check_argument_count(
     if arg_count < signature.params.len() {
         return env.log_error(
             expr.token_range(),
-            format!(
-                "Call to {} expects at least {} arguments, found {}",
-                signature.display_with(&env.symbols),
-                signature.params.len(),
-                arg_count
+            &catalogue::CALL_TO_EXPECTS_AT_LEAST_ARGUMENTS_FOUND,
+            (
+                format!("{}", signature.display_with(&env.symbols)),
+                format!("{}", signature.params.len()),
+                format!("{}", arg_count),
             ),
         );
     }
@@ -313,10 +313,8 @@ fn complete_vararg_argument(
         _ => {
             return env.log_error(
                 expr.token_range(),
-                format!(
-                    "Cannot pass {} to varargs: expected an intrinsic type or pointer",
-                    arg_type.display_with(&env.symbols)
-                ),
+                &catalogue::CANNOT_PASS_TO_VARARGS_EXPECTED_AN_INTRINSIC_TYPE_OR_POINTER,
+                format!("{}", arg_type.display_with(&env.symbols)),
             );
         }
     }
@@ -394,7 +392,7 @@ fn complete_callee(
             };
 
             TypecheckResult::from_symbol(symbol, parts.name, parts.template_input)
-                .map_err(|err| env.error(expr.token_range(), err.message().to_string()))?
+                .map_err(|err| env.complete_err(err, expr.token_range()))?
         }
         result => result,
     };
@@ -406,11 +404,13 @@ fn complete_callee(
         TypecheckResult::Ready(TypecheckedExpr::Staged(value)) => {
             Ok(CompletedCallee::Staged(value))
         }
-        TypecheckResult::Ready(TypecheckedExpr::ComptimeFunction(function)) => Ok(CompletedCallee::Comptime(function)),
+        TypecheckResult::Ready(TypecheckedExpr::ComptimeFunction(function)) => {
+            Ok(CompletedCallee::Comptime(function))
+        }
         TypecheckResult::IncompleteTemplate(_)
         | TypecheckResult::NeedsExpectedType(_)
         | TypecheckResult::NeedsStagedType(_) => {
-            env.log_error(expr.token_range(), "Could not deduce callee".to_string())
+            env.log_error(expr.token_range(), &catalogue::COULD_NOT_DEDUCE_CALLEE, ())
         }
     }
 }
@@ -423,25 +423,34 @@ fn complete_comptime_call(
     implicit_args: &[THIRExpression],
     raw_args: Vec<&HIRExpression>,
 ) -> CXResult<TypecheckResult> {
-    let ComptimeFunctionTC { mut prototype, input } = function;
+    let ComptimeFunctionTC {
+        mut prototype,
+        input,
+    } = function;
     let context = env.staging_context();
     prototype.map_symbol_name(|name| {
         cx_thir::thir::name_mangling::mangle_comptime_context(
-            &env.symbols, name.to_owned(), context.return_type.as_ref(), context.yield_type.as_ref(),
+            &env.symbols,
+            name.to_owned(),
+            context.return_type.as_ref(),
+            context.yield_type.as_ref(),
         )
     });
-    env.items.push_request(crate::environment::THIRFunctionGenRequest::Comptime {
-        prototype: prototype.clone(), input, context,
-    });
+    env.items
+        .push_request(crate::environment::THIRFunctionGenRequest::Comptime {
+            prototype: prototype.clone(),
+            input,
+            context,
+        });
     let total = implicit_args.len() + raw_args.len();
     if total != prototype.params().len() {
         return env.log_error(
             expr.token_range(),
-            format!(
-                "Call to comptime function {} expects {} arguments, found {}",
-                prototype.pretty_name(),
-                prototype.params().len(),
-                total
+            &catalogue::CALL_TO_COMPTIME_FUNCTION_EXPECTS_ARGUMENTS_FOUND,
+            (
+                format!("{}", prototype.pretty_name()),
+                format!("{}", prototype.params().len()),
+                format!("{}", total),
             ),
         );
     }
@@ -474,7 +483,8 @@ fn complete_comptime_call(
             else {
                 return env.log_error(
                     argument.token_range(),
-                    "Expected a parameterized staged expression".to_string(),
+                    &catalogue::EXPECTED_A_PARAMETERIZED_STAGED_EXPRESSION,
+                    (),
                 );
             };
             arguments.push(staged_into_expression(staged));
@@ -572,11 +582,8 @@ fn complete_staged_call(
     if raw_args.len() != params.len() {
         return env.log_error(
             expr.token_range(),
-            format!(
-                "Staged expression expects {} arguments, found {}",
-                params.len(),
-                raw_args.len()
-            ),
+            &catalogue::STAGED_EXPRESSION_EXPECTS_ARGUMENTS_FOUND,
+            (format!("{}", params.len()), format!("{}", raw_args.len())),
         );
     }
 

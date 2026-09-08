@@ -11,6 +11,7 @@ use cx_hir::ast::{
     template::HIRTemplatePrototype,
     types::HIRType,
 };
+use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
 use cx_namespace::module::QualifiedName;
 use cx_tokens::{
@@ -58,10 +59,7 @@ pub fn try_function_parse(
         HIRFunctionKind::Standard(name.name)
     } else {
         if name.namespace.segments().len() != 1 {
-            return parse_point_error(
-                &data.tokens,
-                "Associated function declarations must have exactly two segments".to_string(),
-            );
+            return parse_point_error(&data.tokens, &ASSOCIATED_FUNCTION, false);
         }
 
         HIRFunctionKind::AssociatedFunction {
@@ -101,14 +99,11 @@ pub fn parse_comptime_function(data: &mut ParserData) -> CXResult<ComptimeFuncti
     assert_token_matches!(data.tokens, keyword!(Comptime), "'comptime'");
     let return_type = parse_comptime_initializer(data)?;
     let Some(name) = return_type.name else {
-        return parse_point_error(&data.tokens, "Expected comptime function name".to_string());
+        return parse_point_error(&data.tokens, &COMPTIME_FUNCTION_NAME, ());
     };
 
     let Some(declaration) = try_comptime_function_parse(data, return_type.value_type, name)? else {
-        return parse_point_error(
-            &data.tokens,
-            "Expected comptime function parameter list".to_string(),
-        );
+        return parse_point_error(&data.tokens, &COMPTIME_FUNCTION_PARAMS, ());
     };
 
     Ok(declaration)
@@ -135,11 +130,7 @@ fn try_comptime_function_parse(
         HIRFunctionKind::Standard(name.name)
     } else {
         if name.namespace.segments().len() != 1 {
-            return parse_point_error(
-                &data.tokens,
-                "Associated comptime function declarations must have exactly two segments"
-                    .to_string(),
-            );
+            return parse_point_error(&data.tokens, &ASSOCIATED_FUNCTION, true);
         }
 
         HIRFunctionKind::AssociatedFunction {
@@ -180,10 +171,7 @@ fn parse_comptime_initializer(data: &mut ParserData) -> CXResult<ComptimeValueIn
         while !try_next!(data.tokens, punctuator!(CloseParen)) {
             let (name, _type, _) = parse_initializer(data)?;
             if name.is_some() {
-                return parse_point_error(
-                    &data.tokens,
-                    "Staged expression parameter types cannot have names".to_string(),
-                );
+                return parse_point_error(&data.tokens, &STAGED_PARAM_TYPE_NAME, ());
             }
             params.push(_type);
 
@@ -248,10 +236,7 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<HIRFunc
         match next {
             keyword!(Precondition) => {
                 if contract.precondition.is_some() {
-                    return parse_point_error(
-                        &data.tokens,
-                        "Precondition already defined in function contract.".to_string(),
-                    );
+                    return parse_point_error(&data.tokens, &DUPLICATE_PRECONDITION, ());
                 }
 
                 data.tokens.next();
@@ -264,10 +249,7 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<HIRFunc
             }
             keyword!(Postcondition) => {
                 if contract.postcondition.is_some() {
-                    return parse_point_error(
-                        &data.tokens,
-                        "Postcondition already defined in function contract.".to_string(),
-                    );
+                    return parse_point_error(&data.tokens, &DUPLICATE_POSTCONDITION, ());
                 }
 
                 data.tokens.next();
@@ -355,10 +337,7 @@ fn skip_optional_parenthesized_tokens(data: &mut ParserData) -> CXResult<()> {
         }
     }
 
-    parse_point_error(
-        &data.tokens,
-        "Unclosed parenthesized declaration suffix".to_string(),
-    )
+    parse_point_error(&data.tokens, &UNCLOSED_DECLARATION, ())
 }
 
 pub(crate) struct ParseParamsResult {

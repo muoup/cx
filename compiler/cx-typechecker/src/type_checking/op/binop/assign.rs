@@ -3,6 +3,7 @@ use cx_hir::ast::{
     modifiers::HIR_CONST,
 };
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_thir::{
     thir::expression::{THIRExpression, THIRExpressionKind},
     type_context::THIRTypeContext,
@@ -30,10 +31,8 @@ pub fn typecheck_assignment(
     let Some(inner) = env.symbols.mem_ref_inner(&lhs_type).cloned() else {
         return env.log_error(
             expr.token_range(),
-            format!(
-                "Cannot assign to non-reference type {}",
-                lhs_type.display_with(&env.symbols)
-            ),
+            &catalogue::CANNOT_ASSIGN_TO_NON_REFERENCE_TYPE,
+            format!("{}", lhs_type.display_with(&env.symbols)),
         );
     };
 
@@ -52,10 +51,7 @@ pub fn typecheck_assignment(
     }
 
     if inner.get_specifier(HIR_CONST) {
-        return env.log_error(
-            expr.token_range(),
-            "Cannot assign to a const type".to_string(),
-        );
+        return env.log_error(expr.token_range(), &catalogue::ASSIGN_TO_CONST, ());
     }
 
     rhs = implicit_cast(env, rhs, &inner)?;

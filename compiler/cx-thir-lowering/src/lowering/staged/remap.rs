@@ -1,3 +1,5 @@
+use cx_log::catalogue::mir as catalogue;
+
 use crate::log::mir_error;
 use cx_log::CXResult;
 use cx_mir::{
@@ -25,7 +27,10 @@ impl Remap<'_> {
             MIRValue::Register(register) => registers.get(register).cloned().ok_or_else(|| {
                 mir_error(
                     self.range,
-                    format!("template register {register:?} has no rewrite"),
+                    (
+                        &catalogue::MIR_TEMPLATE_REGISTER_REWRITE,
+                        format!("{:?}", register),
+                    ),
                 )
             })?,
             MIRValue::PlaceRef(MIRPlace::FunctionLocal(id))
@@ -48,10 +53,10 @@ impl Remap<'_> {
             MIRPlace::FunctionLocal(id) => places
                 .get(&id)
                 .copied()
-                .ok_or_else(|| mir_error(self.range, "template place has no rewrite")),
+                .ok_or_else(|| mir_error(self.range, (&catalogue::MIR_TEMPLATE_PLACE_REWRITE, ()))),
             MIRPlace::Parameter(_) => Err(mir_error(
                 self.range,
-                "staged template retained a comptime function parameter",
+                (&catalogue::MIR_RETAINED_PARAMETER, ()),
             )),
             MIRPlace::Global(id) => Ok(MIRPlace::Global(id)),
         }
@@ -61,9 +66,9 @@ impl Remap<'_> {
         let blocks = self.blocks;
         let block_params = self.block_params;
         Ok(MIRBlockTarget::with_args(
-            *blocks
-                .get(&target.block)
-                .ok_or_else(|| mir_error(self.range, "template block target has no rewrite"))?,
+            *blocks.get(&target.block).ok_or_else(|| {
+                mir_error(self.range, (&catalogue::MIR_TEMPLATE_BLOCK_REWRITE, ()))
+            })?,
             target
                 .args
                 .iter()
@@ -86,7 +91,7 @@ impl Remap<'_> {
             Some(MIRValue::Register(register)) => Ok(*register),
             _ => Err(mir_error(
                 self.range,
-                "instruction output register has no concrete rewrite",
+                (&catalogue::MIR_OUTPUT_REGISTER_REWRITE, ()),
             )),
         }
     }
@@ -98,7 +103,7 @@ impl Remap<'_> {
             Some(MIRValue::Constant(cx_mir::MIRConstant::Unit)) => Ok(None),
             _ => Err(mir_error(
                 self.range,
-                "instruction output register has no concrete rewrite",
+                (&catalogue::MIR_OUTPUT_REGISTER_REWRITE, ()),
             )),
         }
     }
@@ -371,10 +376,7 @@ impl Remap<'_> {
             | MIRInstrKind::StagedExit { .. }
             | MIRInstrKind::StagedMove { .. }
             | MIRInstrKind::StagedUse { .. } => {
-                return Err(mir_error(
-                    self.range,
-                    "nested staged instruction was not expanded",
-                ));
+                return Err(mir_error(self.range, (&catalogue::MIR_NESTED_STAGED, ())));
             }
         })
     }

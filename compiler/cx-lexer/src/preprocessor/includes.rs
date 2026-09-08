@@ -3,10 +3,8 @@ use std::path::PathBuf;
 #[cfg(not(feature = "ignore-system-headers"))]
 use std::sync::OnceLock;
 
-use cx_log::{
-    CXResult,
-    error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
-};
+use cx_log::CXResult;
+use cx_log::catalogue::parse::*;
 use cx_namespace::cx_library_directory;
 
 use crate::{
@@ -48,7 +46,7 @@ fn handle_include_impl(
 
         return frame
             .cursor_view()
-            .log_error(directive_start, "#include requires a file path");
+            .log_error(directive_start, &INCLUDE_PATH, ());
     };
     let _file_name_end = context.current_frame().cursor;
 
@@ -56,13 +54,9 @@ fn handle_include_impl(
         && !(file_name.starts_with('<') && file_name.ends_with('>'))
     {
         let frame = context.current_frame();
-        return frame.cursor_view().log_error(
-            file_name_start,
-            format!(
-                "Invalid include path '{}': expected \"...\" or <...>",
-                file_name
-            ),
-        );
+        return frame
+            .cursor_view()
+            .log_error(file_name_start, &INCLUDE_SYNTAX, file_name);
     }
 
     let current_file = context.current_frame().file_path.clone();
@@ -74,10 +68,9 @@ fn handle_include_impl(
         Some(path) => path,
         None => {
             let frame = context.current_frame();
-            return frame.cursor_view().log_error(
-                file_name_start,
-                format!("Included file not found: {file_name}"),
-            );
+            return frame
+                .cursor_view()
+                .log_error(file_name_start, &INCLUDE_NOT_FOUND, file_name);
         }
     };
 
@@ -87,12 +80,10 @@ fn handle_include_impl(
     }
 
     let source = std::fs::read_to_string(path.as_path()).map_err(|e| {
-        CXError::new(
-            CXStdErrMessage::error(
-                "LEXER ERROR",
-                format!("Failed to read included file {}: {}", path.display(), e),
-            ),
-            CXInternalContext::error("failed to read included source file"),
+        crate::log::internal_error(
+            &READ_INCLUDE,
+            crate::log::file_args(&path, e),
+            "failed to read included source file",
         )
     })?;
 

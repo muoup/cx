@@ -1,6 +1,6 @@
 [package]
 name = "cx-treesitter-grammar"
-version = "0.1.0"
+version = "0.0.0"
 edition = "2021"
 build = "bindings/rust/build.rs"
 include = [

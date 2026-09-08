@@ -1,3 +1,4 @@
+use cx_log::catalogue::ErrorDefinition;
 use cx_tokens::TokenRange;
 
 use crate::{MIRBasicBlockID, MIRFunctionID, MIRScopeID};
@@ -26,14 +27,14 @@ pub struct MIRDiagnostic {
 }
 
 impl MIRDiagnostic {
-    pub fn new(
-        code: impl Into<String>,
-        message: impl Into<String>,
+    pub fn new<T>(
+        definition: &ErrorDefinition<T>,
+        args: T,
         location: MIRDiagnosticLocation,
     ) -> Self {
         Self {
-            code: code.into(),
-            message: message.into(),
+            code: definition.code.to_owned(),
+            message: (definition.message)(args),
             location,
             notes: Vec::new(),
         }

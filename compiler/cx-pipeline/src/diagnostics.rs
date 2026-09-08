@@ -27,11 +27,9 @@ pub(crate) fn mir_diagnostic_error(mir: Option<&MIRUnit>, diagnostic: MIRDiagnos
         MIRDiagnosticLocation::Internal(message) => CXInternalContext::error(message.clone()),
     };
 
-    let mut message = diagnostic.message().to_owned();
-    for note in diagnostic.notes() {
-        message.push_str("\nnote: ");
-        message.push_str(note);
-    }
-
-    CXError::new(CXStdErrMessage::error(diagnostic.code(), message), context)
+    CXError::new(
+        CXStdErrMessage::error(diagnostic.code(), diagnostic.message())
+            .with_notes(diagnostic.notes().to_vec()),
+        context,
+    )
 }

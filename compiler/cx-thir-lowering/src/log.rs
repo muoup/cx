@@ -1,16 +1,17 @@
 use cx_log::{
     CXResult,
-    error::{CXError, context::from_token_range, message::CXStdErrMessage},
+    catalogue::ErrorDefinition,
+    error::{CXError, context::from_token_range},
 };
 use cx_tokens::TokenRange;
 
-pub fn mir_error(token_range: &TokenRange, message: impl Into<String>) -> CXError {
-    CXError::new(
-        CXStdErrMessage::error("MIR ERROR", message.into()),
-        from_token_range(token_range),
-    )
+pub fn mir_error<A>(range: &TokenRange, diagnostic: (&ErrorDefinition<A>, A)) -> CXError {
+    CXError::new(diagnostic.0.bind(diagnostic.1), from_token_range(range))
 }
 
-pub fn log_mir_error<T>(token_range: &TokenRange, message: impl Into<String>) -> CXResult<T> {
-    Err(mir_error(token_range, message))
+pub fn log_mir_error<T, A>(
+    range: &TokenRange,
+    diagnostic: (&ErrorDefinition<A>, A),
+) -> CXResult<T> {
+    Err(mir_error(range, diagnostic))
 }

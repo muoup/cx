@@ -1,7 +1,7 @@
 use crate::error::context::{CXErrorContextTrait, CXSourceSpan};
 use crate::error::message::CXErrorMessage;
 
-pub struct CXRawError(pub Box<dyn CXErrorMessage>);
+pub struct CXRawError(pub Box<dyn CXErrorMessage>, pub(crate) Vec<String>);
 pub type CXErrorContext = Box<dyn CXErrorContextTrait>;
 
 pub enum CXErrorMaybeRaw {
@@ -46,6 +46,10 @@ impl CXError {
         self.error.code()
     }
 
+    pub fn notes(&self) -> &[String] {
+        &self.error.1
+    }
+
     pub fn source_span(&self) -> Option<CXSourceSpan> {
         self.context.source_span()
     }
@@ -56,12 +60,15 @@ impl CXError {
     {
         self.error.0.dump(f)?;
         writeln!(f)?;
+        for note in self.notes() {
+            writeln!(f, "note: {note}")?;
+        }
         self.context.dump(f)?;
 
         Ok(())
     }
 
     pub fn print(&self) -> std::io::Result<()> {
-        self.output(&mut std::io::stdout())
+        self.output(&mut std::io::stderr().lock())
     }
 }

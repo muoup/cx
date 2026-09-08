@@ -1,4 +1,5 @@
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_thir::thir::{data::THIRType, expression::THIRExpression};
 
 use crate::{
@@ -17,10 +18,10 @@ pub(crate) fn explicit_cast(
         CoercionResult::Success { expr, .. } => Ok(expr),
         CoercionResult::Unapplied { expr, .. } => env.log_error(
             expr.token_range,
-            format!(
-                "No explicit cast from {} to {}",
-                from_type.display_with(&env.symbols),
-                to_type.display_with(&env.symbols)
+            &catalogue::NO_EXPLICIT_CAST_FROM_TO,
+            (
+                format!("{}", from_type.display_with(&env.symbols)),
+                format!("{}", to_type.display_with(&env.symbols)),
             ),
         ),
     }

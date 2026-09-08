@@ -1,6 +1,7 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::progress::ProgressReporter;
 use crate::{diagnostics, pipeline_error};
+use cx_log::catalogue::driver as catalogue;
 use cx_log::{CXResult, error::CXError};
 use cx_mir_analysis::{MIRAnalysisOptions, analyze};
 
@@ -136,11 +137,8 @@ fn import_jobs_for_unit(
     for import in import_units(imports, &context.config.working_directory) {
         if !context.config.module_mode && !import.is_std_lib() {
             return Err(pipeline_error(
-                "COMPILATION ERROR",
-                format!(
-                    "Import '{}' is not available in single-file compilation mode. Only compiler library modules under `std::` may be imported here; use `cx build` for project/module imports.",
-                    import
-                ),
+                &catalogue::IMPORT_IS_NOT_AVAILABLE_IN_SINGLE_FILE_COMPILATION,
+                format!("{}", import),
             ));
         }
 
@@ -337,20 +335,17 @@ fn perform_job_with_dump(
     if matches!(job.step, CompilationStep::PreParse) {
         std::fs::create_dir_all(dump_path.parent().unwrap()).map_err(|error| {
             pipeline_error(
-                "COMPILATION ERROR",
-                format!(
-                    "Failed to create dump directory {}: {error}",
-                    dump_path.parent().unwrap().display()
+                &catalogue::FAILED_TO_CREATE_DUMP_DIRECTORY,
+                (
+                    format!("{}", dump_path.parent().unwrap().display()),
+                    format!("{}", error),
                 ),
             )
         })?;
         std::fs::File::create(&dump_path).map_err(|error| {
             pipeline_error(
-                "COMPILATION ERROR",
-                format!(
-                    "Failed to create dump file {}: {error}",
-                    dump_path.display()
-                ),
+                &catalogue::FAILED_TO_CREATE_DUMP_FILE,
+                (format!("{}", dump_path.display()), format!("{}", error)),
             )
         })?;
     }
@@ -368,8 +363,8 @@ pub(crate) fn perform_job(
             let file_path = job.unit.module().as_path().to_path_buf();
             let file_contents = std::fs::read_to_string(&file_path).map_err(|error| {
                 pipeline_error(
-                    "COMPILATION ERROR",
-                    format!("Failed to read {}: {error}", file_path.display()),
+                    &catalogue::FAILED_TO_READ,
+                    (format!("{}", file_path.display()), format!("{}", error)),
                 )
             })?;
 
@@ -456,10 +451,8 @@ pub(crate) fn perform_job(
                     .insert_module(namespace, bucket)
                 {
                     return Err(pipeline_error(
-                        "COMPILATION ERROR",
-                        format!(
-                            "Duplicate module namespace found during decomposition: {namespace}"
-                        ),
+                        &catalogue::DUPLICATE_MODULE_NAMESPACE_FOUND_DURING_DECOMPOSITION,
+                        format!("{}", namespace),
                     ));
                 }
             }
@@ -564,17 +557,14 @@ pub(crate) fn perform_job(
             if let Some(parent) = internal_directory.parent() {
                 std::fs::create_dir_all(parent).map_err(|error| {
                     pipeline_error(
-                        "COMPILATION ERROR",
-                        format!(
-                            "Failed to create object directory '{}': {error}",
-                            parent.display()
-                        ),
+                        &catalogue::FAILED_TO_CREATE_OBJECT_DIRECTORY,
+                        (format!("{}", parent.display()), format!("{}", error)),
                     )
                 })?;
             }
             let internal_directory_str = internal_directory.to_str().ok_or(pipeline_error(
-                "COMPILATION ERROR",
-                "Internal directory path is not valid UTF-8",
+                &catalogue::INTERNAL_DIRECTORY_PATH_IS_NOT_VALID_UTF_8,
+                (),
             ))?;
 
             let buffer = match context.config.backend {
@@ -609,6 +599,7 @@ pub(crate) fn perform_job(
 pub enum LSPErrors {
     SpannedError {
         compilation_unit: std::path::PathBuf,
+        code: String,
         message: String,
         byte_start: usize,
         byte_end: usize,
@@ -616,6 +607,7 @@ pub enum LSPErrors {
     },
     FatalError {
         compilation_unit: std::path::PathBuf,
+        code: String,
         message: String,
         line: Option<usize>,
     },
@@ -712,10 +704,11 @@ fn handle_job_collect_errors(
         let span = error.source_span()?;
         Some(LSPErrors::SpannedError {
             compilation_unit: span.file,
+            code: error.code(),
             message: error.message(),
             byte_start: span.byte_start,
             byte_end: span.byte_end,
-            notes: vec![],
+            notes: error.notes().to_vec(),
         })
     }
 
@@ -725,6 +718,7 @@ fn handle_job_collect_errors(
         Err(e) => {
             let lsp_error = spanned_error(&e).unwrap_or(LSPErrors::FatalError {
                 compilation_unit: job.unit.module().as_path().to_path_buf(),
+                code: e.code(),
                 message: e.message(),
                 line: None,
             });
@@ -744,6 +738,7 @@ fn handle_job_collect_errors(
                 Err(e) => {
                     let lsp_error = spanned_error(&e).unwrap_or(LSPErrors::FatalError {
                         compilation_unit: job.unit.module().as_path().to_path_buf(),
+                        code: e.code(),
                         message: e.message(),
                         line: None,
                     });

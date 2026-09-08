@@ -59,26 +59,17 @@ fn expect_failure(input: &Path, expected_stage: FailureStage) {
 
 fn classify_failure_stage(failure: &CompilationFailure) -> Option<FailureStage> {
     let code = failure.code.as_str();
-    let message = failure.message.as_str();
-
-    if code.starts_with("PARSER ERROR") || message.starts_with("PARSER ERROR") {
-        Some(FailureStage::Parse)
-    } else if code.starts_with("TYPE ERROR")
-        || code.starts_with("MIR ERROR")
-        || code.starts_with("COMPTIME ERROR")
-        || code.starts_with("CONST EVAL ERROR")
-        || message.starts_with("TYPE ERROR")
-        || message.starts_with("MIR ERROR")
-        || message.starts_with("COMPTIME ERROR")
-        || message.starts_with("CONST EVAL ERROR")
-    {
-        Some(FailureStage::Typecheck)
-    } else if code.starts_with("ANALYSIS ERROR") || message.starts_with("ANALYSIS ERROR") {
-        Some(FailureStage::Analysis)
-    } else if code.contains("Linking failed") || message.contains("Linking failed") {
-        Some(FailureStage::Linking)
-    } else {
-        None
+    if code.len() != 5 || !code[1..].bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    match code.as_bytes()[0] {
+        b'P' => Some(FailureStage::Parse),
+        b'T' | b'M' => Some(FailureStage::Typecheck),
+        b'A' => Some(FailureStage::Analysis),
+        b'D' if matches!(code, "D0001" | "D0002" | "D0003" | "D0004") => {
+            Some(FailureStage::Linking)
+        }
+        _ => None,
     }
 }
 

@@ -1,4 +1,5 @@
 use cx_hir::{ast::template::HIRTemplatePrototype, symbols::HIRSymbolKind};
+use cx_log::catalogue::typecheck as catalogue;
 use cx_log::{
     CXRawResult,
     error::{CXErrorMaybeRaw, CXMaybeRawResult},
@@ -33,12 +34,14 @@ pub fn apply_template(
 
     if input.types.len() != template_input.args.len() {
         return env
-            .log_error_base(format!(
-                "Template '{}' expects {} arguments, found {}",
-                name,
-                input.types.len(),
-                template_input.args.len()
-            ))
+            .log_error_base(
+                &catalogue::TEMPLATE_EXPECTS_ARGUMENTS_FOUND,
+                (
+                    format!("{}", name),
+                    format!("{}", input.types.len()),
+                    format!("{}", template_input.args.len()),
+                ),
+            )
             .map_err(CXErrorMaybeRaw::from);
     }
 
@@ -112,7 +115,7 @@ pub fn apply_template(
         && let Some(name) = prototype.lookup_identifier().cloned()
     {
         env.items.push_generated_function(THIRFunction {
-        require_explicit_return: env.require_explicit_return(),
+            require_explicit_return: env.require_explicit_return(),
             prototype: prototype.clone(),
             body: None,
         });

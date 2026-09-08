@@ -1,6 +1,8 @@
 pub mod diagnostic;
 pub mod expr;
 pub mod global;
+pub(crate) mod log;
+pub use log::layout_error;
 pub mod op;
 pub mod staged;
 pub mod ty;

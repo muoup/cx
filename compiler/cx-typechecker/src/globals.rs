@@ -2,6 +2,7 @@ use cx_hir::ast::expression::HIRExpression;
 use cx_hir::ast::modifiers::{HIR_CONST, HIRSymbolNameScheme};
 use cx_hir::ast::types::{HIRType, HIRTypeKind};
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_thir::thir::data::THIRType;
 use cx_thir::thir::expression::{THIRCoercion, THIRExpression, THIRExpressionKind};
@@ -83,10 +84,8 @@ pub(crate) fn lower_global(
         } else {
             return env.log_error(
                 hir_type.range(),
-                format!(
-                    "Attempting to redeclare global '{}' with a different type.",
-                    name
-                ),
+                &catalogue::ATTEMPTING_TO_REDECLARE_GLOBAL_WITH_A_DIFFERENT_TYPE,
+                format!("{}", name),
             );
         }
     } else {

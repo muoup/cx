@@ -2,6 +2,7 @@ use cx_hir::{
     ast::{modifiers::VisibilityMode, types::HIRTagKind},
     symbols::HIRSymbol,
 };
+use cx_log::catalogue::typecheck as catalogue;
 use cx_log::{
     CXRawResult, CXResult,
     error::{CXError, context::CXInternalContext},
@@ -124,9 +125,10 @@ impl TypeEnvironment<'_> {
             } => {
                 if let Some(tag) = tag {
                     if value.iter().any(|symbol| symbol.tag != Some(tag)) {
-                        return self.log_error_base(format!(
-                            "Symbol '{resolved_name}' has incompatible tag declarations"
-                        ));
+                        return self.log_error_base(
+                            &catalogue::SYMBOL_HAS_INCOMPATIBLE_TAG_DECLARATIONS,
+                            format!("{}", resolved_name),
+                        );
                     }
                 }
                 Ok(Some(SymbolLookup {
@@ -145,14 +147,17 @@ impl TypeEnvironment<'_> {
                 resolved_name: name.clone(),
                 kind: SymbolLookupKind::Resolved(symbol.clone()),
             })),
-            QualifiedLookupResult::Ambiguous { candidates } => self.log_error_base(format!(
-                "Ambiguous Symbol Reference, candidates: {}",
-                candidates
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )),
+            QualifiedLookupResult::Ambiguous { candidates } => self.log_error_base(
+                &catalogue::AMBIGUOUS_SYMBOL_REFERENCE_CANDIDATES,
+                format!(
+                    "{}",
+                    candidates
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            ),
         }
     }
 

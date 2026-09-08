@@ -397,6 +397,7 @@ name = "cx-mir"
 version = "0.1.0"
 dependencies = [
  "cx-hir",
+ "cx-log",
  "cx-target",
  "cx-tokens",
  "cx-util",
@@ -405,16 +406,17 @@ dependencies = [
 
 [[package]]
 name = "cx-mir-analysis"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "cx-hir",
+ "cx-log",
  "cx-mir",
  "cx-util",
 ]
 
 [[package]]
 name = "cx-mir-comptime"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "cx-log",
  "cx-mir",
@@ -540,7 +542,7 @@ dependencies = [
 
 [[package]]
 name = "cx-thir-lowering"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "cx-hir",
  "cx-log",
@@ -582,7 +584,7 @@ dependencies = [
 
 [[package]]
 name = "cx-zed-extension"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "zed_extension_api",
 ]

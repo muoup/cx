@@ -1,9 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use cx_log::{
-    CXResult,
-    error::{CXError, context::CXPointingContext, message::CXStdErrMessage},
-};
+use cx_log::CXResult;
 use cx_util::char_iter::CharIter;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -129,15 +126,13 @@ impl<'a> LexCursor<'a> {
         Self { file_path, iter }
     }
 
-    pub(crate) fn log_error<T>(
+    pub(crate) fn log_error<T, A>(
         &self,
         byte_index: usize,
-        message: impl Into<String>,
+        definition: &cx_log::catalogue::ErrorDefinition<A>,
+        args: A,
     ) -> CXResult<T> {
-        Err(CXError::new(
-            CXStdErrMessage::error("LEXER ERROR", message),
-            CXPointingContext::error(self.file_path.to_path_buf(), byte_index),
-        ))
+        crate::log::point_error(self.file_path, byte_index, definition, args)
     }
 
     pub(crate) fn source(&self) -> &'a str {

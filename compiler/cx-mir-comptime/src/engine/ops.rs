@@ -1,4 +1,4 @@
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
     MIRBinaryOp, MIRCoercion, MIRConstant, MIRFloatBinaryOp, MIRGlobalID, MIRIntBinaryOp,
     MIRIntType, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRTypeID, MIRUnaryOp,
@@ -7,7 +7,7 @@ use cx_mir::{
 use cx_tokens::TokenRange;
 use cx_util::unsafe_float::FloatWrapper;
 
-use crate::error::comptime_error;
+use crate::log::comptime_error;
 
 use super::MIRComptimeEngine;
 
@@ -48,7 +48,10 @@ pub(super) fn evaluate_binop(
                 other => {
                     return comptime_error(
                         TokenRange::internal(),
-                        format!("pointer arithmetic on a non-pointer constant: {other:?}"),
+                        (
+                            &catalogue::COMPTIME_INVALID_OPERATION,
+                            format!("Pointer arithmetic on a non-pointer constant: {:?}", other),
+                        ),
                     );
                 }
             };
@@ -56,13 +59,13 @@ pub(super) fn evaluate_binop(
             let Ok(count) = i64::try_from(count) else {
                 return comptime_error(
                     TokenRange::internal(),
-                    "pointer arithmetic overflowed during compile-time evaluation",
+                    (&catalogue::COMPTIME_POINTER_ARITHMETIC_OVERFLOW, ()),
                 );
             };
             let Some(registry) = engine.resolver.types() else {
                 return comptime_error(
                     TokenRange::internal(),
-                    "type layouts are unavailable during comptime evaluation",
+                    (&catalogue::COMPTIME_TYPE_LAYOUTS_UNAVAILABLE, ()),
                 );
             };
             let stride = match layout_of(registry, pointee) {
@@ -70,14 +73,14 @@ pub(super) fn evaluate_binop(
                 Err(_) => {
                     return comptime_error(
                         TokenRange::internal(),
-                        "invalid pointee layout in pointer arithmetic",
+                        (&catalogue::COMPTIME_INVALID_POINTEE_LAYOUT, ()),
                     );
                 }
             };
             let Some(delta) = count.checked_mul(stride) else {
                 return comptime_error(
                     TokenRange::internal(),
-                    "pointer arithmetic overflowed during compile-time evaluation",
+                    (&catalogue::COMPTIME_POINTER_ARITHMETIC_OVERFLOW, ()),
                 );
             };
             let offset = match op {
@@ -87,7 +90,7 @@ pub(super) fn evaluate_binop(
             let Some(offset) = offset else {
                 return comptime_error(
                     TokenRange::internal(),
-                    "pointer arithmetic overflowed during compile-time evaluation",
+                    (&catalogue::COMPTIME_POINTER_ARITHMETIC_OVERFLOW, ()),
                 );
             };
             Ok(relocation_constant(global, offset, pointee))
@@ -103,7 +106,7 @@ pub(super) fn evaluate_binop(
                 | MIRPointerBinaryOp::Ge => {
                     return comptime_error(
                         TokenRange::internal(),
-                        "ordered pointer comparisons are not supported in a comptime context yet",
+                        (&catalogue::COMPTIME_ORDERED_POINTER_COMPARISON, ()),
                     );
                 }
             };
@@ -132,7 +135,7 @@ fn integer_binop(
             if rhs == 0 {
                 return comptime_error(
                     TokenRange::internal(),
-                    "division by zero during compile-time evaluation",
+                    (&catalogue::COMPTIME_DIVISION_BY_ZERO, ()),
                 );
             }
             int(lhs.wrapping_div(rhs))
@@ -141,7 +144,7 @@ fn integer_binop(
             if rhs == 0 {
                 return comptime_error(
                     TokenRange::internal(),
-                    "remainder by zero during compile-time evaluation",
+                    (&catalogue::COMPTIME_REMAINDER_BY_ZERO, ()),
                 );
             }
             int(lhs.wrapping_rem(rhs))
@@ -198,7 +201,7 @@ pub(super) fn evaluate_unop(op: MIRUnaryOp, operand: MIRConstant) -> CXResult<MI
         MIRUnaryOp::Increment { .. } => {
             return comptime_error(
                 TokenRange::internal(),
-                "increment is handled by the execution loop",
+                (&catalogue::COMPTIME_INCREMENT_UNEXPECTED, ()),
             );
         }
     })
@@ -263,7 +266,7 @@ pub(super) fn evaluate_coercion(
             _ => {
                 return comptime_error(
                     TokenRange::internal(),
-                    "pointer-to-integer coercions are not supported in a comptime context yet",
+                    (&catalogue::COMPTIME_POINTER_TO_INTEGER, ()),
                 );
             }
         },
@@ -277,7 +280,7 @@ pub(super) fn evaluate_coercion(
             } else {
                 return comptime_error(
                     TokenRange::internal(),
-                    "non-null pointer coercions are not supported in a comptime context yet",
+                    (&catalogue::COMPTIME_NON_NULL_POINTER, ()),
                 );
             }
         }
@@ -286,7 +289,7 @@ pub(super) fn evaluate_coercion(
             _ => {
                 return comptime_error(
                     TokenRange::internal(),
-                    "cannot coerce a non-function constant to a pointer in a comptime context",
+                    (&catalogue::COMPTIME_NON_FUNCTION_TO_POINTER, ()),
                 );
             }
         },
@@ -315,7 +318,10 @@ fn pointer_constants_equal(lhs: &MIRConstant, rhs: &MIRConstant) -> CXResult<boo
         _ => {
             return comptime_error(
                 TokenRange::internal(),
-                format!("comparison of non-pointer constants {lhs:?} and {rhs:?}"),
+                (
+                    &catalogue::COMPTIME_POINTER_COMPARISON,
+                    format!("{:?} and {:?}", lhs, rhs),
+                ),
             );
         }
     };
@@ -375,7 +381,10 @@ pub(super) fn increment_constant(constant: MIRConstant, amount: i8) -> CXResult<
         }),
         other => comptime_error(
             TokenRange::internal(),
-            format!("increment applied to non-integer constant {other:?}"),
+            (
+                &catalogue::COMPTIME_INCREMENT_NON_INTEGER,
+                format!("{:?}", other),
+            ),
         ),
     }
 }

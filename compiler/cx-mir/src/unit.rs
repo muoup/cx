@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use cx_log::{CXRawResult, catalogue::mir as catalogue};
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -64,21 +65,23 @@ impl MIRUnit {
         self.globals.get(&id)
     }
 
-    pub fn materialize_global(
-        &mut self,
-        id: MIRGlobalID,
-        value: MIRConstant,
-    ) -> Result<(), String> {
+    pub fn materialize_global(&mut self, id: MIRGlobalID, value: MIRConstant) -> CXRawResult<()> {
         let global = self
             .globals
             .get_mut(&id)
-            .ok_or_else(|| format!("global {id} is not present in the MIR unit"))?;
+            .ok_or_else(|| crate::log::raw_error(&catalogue::MIR_GLOBAL_MISSING, id.to_string()))?;
         let MIRGlobalKind::Variable { state, .. } = &mut global.kind else {
-            return Err(format!("global {id} is not a variable"));
+            return crate::log::log_raw_error(
+                &catalogue::MIR_GLOBAL_NOT_VARIABLE,
+                id.to_string(),
+            );
         };
-        let MIRGlobalState::Initializer(_) = state else {
-            return Err(format!("global {id} does not have a pending initializer"));
-        };
+        if !matches!(&*state, MIRGlobalState::Initializer(_)) {
+            return crate::log::log_raw_error(
+                &catalogue::MIR_GLOBAL_NOT_INITIALIZER,
+                id.to_string(),
+            );
+        }
         *state = MIRGlobalState::Initialized(value);
         Ok(())
     }

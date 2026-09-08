@@ -1,4 +1,4 @@
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{MIRConstant, MIRFunction};
 use cx_mir_comptime::{ComptimeResolver, InterpretedFunction, MIRComptimeEngine, MIRComptimeValue};
 use cx_thir::thir::expression::THIRExpression;
@@ -24,7 +24,7 @@ pub(crate) fn evaluate_comptime_expr<T: MIRContext>(
 fn constant_error(expression: &THIRExpression, context: &str) -> cx_log::error::CXError {
     mir_error(
         &expression.token_range,
-        format!("expression in {context} did not evaluate to a MIR constant"),
+        (&mir::MIR_CONSTANT_VALUE, context.to_owned()),
     )
 }
 

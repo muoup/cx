@@ -1,3 +1,4 @@
+use cx_log::catalogue::typecheck as catalogue;
 use std::collections::HashSet;
 
 use cx_hir::ast::{
@@ -66,7 +67,11 @@ pub fn complete_type(
     let id = complete_type_id(env, namespace, ty)?;
 
     let Some(completed) = env.symbols.try_resolve_type_id(id).cloned() else {
-        return env.log_error(ty.range(), format!("Type '{}' is incomplete", ty));
+        return env.log_error(
+            ty.range(),
+            &catalogue::TYPE_IS_INCOMPLETE,
+            format!("{}", ty),
+        );
     };
 
     Ok(completed)
@@ -112,7 +117,11 @@ pub(crate) fn complete_type_inner(
                 .map_err(|err| env.complete_maybe_err(err, ty.range()))?;
 
             let Some(completed) = env.symbols.try_resolve_type_id(id).cloned() else {
-                return env.log_error(ty.range(), format!("Type '{}' is incomplete", ty));
+                return env.log_error(
+                    ty.range(),
+                    &catalogue::TYPE_IS_INCOMPLETE,
+                    format!("{}", ty),
+                );
             };
 
             completed
@@ -220,7 +229,11 @@ pub fn ensure_valid_type_id_component(
     enforce_allocatable: bool,
 ) -> CXResult<()> {
     let Some(ty) = env.symbols.try_resolve_type_id(ty) else {
-        return env.log_error(range, format!("{} type is incomplete", context));
+        return env.log_error(
+            range,
+            &catalogue::TYPE_IS_INCOMPLETE_24,
+            format!("{}", context),
+        );
     };
 
     ensure_valid_type_component(env, range, ty, context, enforce_allocatable)
@@ -236,7 +249,8 @@ pub fn ensure_valid_type_component(
     match &ty.kind {
         THIRTypeKind::Unreachable => env.log_error(
             range,
-            format!("{} type component cannot be 'unreachable'", context),
+            &catalogue::TYPE_COMPONENT_CANNOT_BE_UNREACHABLE,
+            format!("{}", context),
         ),
 
         THIRTypeKind::Function { .. }
@@ -247,10 +261,8 @@ pub fn ensure_valid_type_component(
         {
             env.log_error(
                 range,
-                format!(
-                    "{} type is unsized and cannot be directly allocated",
-                    context
-                ),
+                &catalogue::TYPE_IS_UNSIZED_AND_CANNOT_BE_DIRECTLY_ALLOCATED,
+                format!("{}", context),
             )
         }
 
@@ -308,7 +320,9 @@ pub fn complete_prototype(
     let lookup_identifier = function_lookup_identifier(namespace, &prototype.kind);
     let debug_name = lookup_identifier.name.clone();
     let symbol_name = mangle_rootable_name(
-        env.symbols.get_global_registry(), &lookup_identifier, prototype.symbol_naming,
+        env.symbols.get_global_registry(),
+        &lookup_identifier,
+        prototype.symbol_naming,
     );
 
     Ok(THIRFnPrototype::new(
@@ -366,7 +380,11 @@ pub fn complete_comptime_prototype(
 
     let lookup_identifier = function_lookup_identifier(namespace, &prototype.kind);
     let debug_name = lookup_identifier.name.clone();
-    let symbol_name = mangle_rootable_name(env.symbols.get_global_registry(), &lookup_identifier, HIRSymbolNameScheme::Namespaced);
+    let symbol_name = mangle_rootable_name(
+        env.symbols.get_global_registry(),
+        &lookup_identifier,
+        HIRSymbolNameScheme::Namespaced,
+    );
 
     Ok(
         THIRComptimeFnPrototype::new(symbol_name, lookup_identifier, return_type, params)
@@ -420,19 +438,42 @@ fn complete_identifier_type(
     };
     let lookup = match env.lookup_symbol(namespace, name, tag)? {
         Some(lookup) => lookup,
-        None if name.namespace.is_root() && matches!(tag, Some(cx_hir::ast::types::HIRTagKind::Struct | cx_hir::ast::types::HIRTagKind::Union)) => {
+        None if name.namespace.is_root()
+            && matches!(
+                tag,
+                Some(
+                    cx_hir::ast::types::HIRTagKind::Struct | cx_hir::ast::types::HIRTagKind::Union
+                )
+            ) =>
+        {
             let resolved_name = QualifiedName::new(namespace.clone(), name.name.clone());
             let symbol = HIRSymbol {
                 visibility: VisibilityMode::Private,
                 tag,
-                kind: HIRSymbolKind::Type(HIRSymbolData { data: (), template_prototype: None, base: HIRTypeKind::Identifier {
-                    name: name.clone(), lookup: type_lookup, template_input: None,
-                }.to_type() }),
+                kind: HIRSymbolKind::Type(HIRSymbolData {
+                    data: (),
+                    template_prototype: None,
+                    base: HIRTypeKind::Identifier {
+                        name: name.clone(),
+                        lookup: type_lookup,
+                        template_input: None,
+                    }
+                    .to_type(),
+                }),
             };
-            env.symbols.implicit_tags.insert(resolved_name.clone(), symbol.clone());
-            super::lookup::SymbolLookup { resolved_name, kind: super::lookup::SymbolLookupKind::Untyped(vec![symbol]) }
+            env.symbols
+                .implicit_tags
+                .insert(resolved_name.clone(), symbol.clone());
+            super::lookup::SymbolLookup {
+                resolved_name,
+                kind: super::lookup::SymbolLookupKind::Untyped(vec![symbol]),
+            }
         }
-        None => return env.log_error_base(format!("Type not found: {name}")).map_err(Into::into),
+        None => {
+            return env
+                .log_error_base(&catalogue::TYPE_NOT_FOUND, format!("{}", name))
+                .map_err(Into::into);
+        }
     };
     let symbol = env.resolve_lookup(namespace, lookup)?;
     complete_resolved_type_lookup(env, namespace, name, symbol, template_input)
@@ -446,22 +487,33 @@ pub(crate) fn complete_named_type(
     let symbol = resolve_type_symbol(env, name, declarations)
         .map_err(|error| env.complete_maybe_err(error, &cx_tokens::TokenRange::internal()))?;
     let tagged = symbol.tag.is_some();
-    
+
     if let Some(cached) = env.symbols.cached(name, tagged) {
         return Ok(cached.clone());
     }
-    
-    let HIRSymbolKind::Type(data) = &symbol.kind else { unreachable!() };
-    
+
+    let HIRSymbolKind::Type(data) = &symbol.kind else {
+        unreachable!()
+    };
+
     if data.template_prototype.is_some() {
-        return resolve_symbol_inner(env, &name.namespace, &name.namespace, &name.name, symbol, symbol.tag, true);
+        return resolve_symbol_inner(
+            env,
+            &name.namespace,
+            &name.namespace,
+            &name.name,
+            symbol,
+            symbol.tag,
+            true,
+        );
     }
-    
+
     let mut placeholder = THIRType::from(THIRTypeKind::Undefined);
     placeholder.lookup_identifier = Some(name.clone());
     placeholder.strong_identifier = tagged.then(|| mangle_namespace_symbol(name));
     let id = env.symbols.generate_type_id(placeholder);
-    env.symbols.insert_symbol(name.clone(), MIRSymbol::Type(id), tagged);
+    env.symbols
+        .insert_symbol(name.clone(), MIRSymbol::Type(id), tagged);
     if tagged && is_self_predeclaration(data.base(), name) {
         return Ok(MIRSymbol::Type(id));
     }
@@ -501,8 +553,11 @@ fn complete_resolved_type_lookup(
     match symbol {
         MIRSymbol::Type(id) => {
             if template_input.is_some() {
-                env.log_error_base(format!("Type '{name}' does not accept template arguments"))
-                    .map_err(|e| e.into())
+                env.log_error_base(
+                    &catalogue::TYPE_DOES_NOT_ACCEPT_TEMPLATE_ARGUMENTS,
+                    format!("{}", name),
+                )
+                .map_err(|e| e.into())
             } else {
                 Ok(id)
             }
@@ -512,7 +567,7 @@ fn complete_resolved_type_lookup(
         }
 
         _ => env
-            .log_error_base(format!("Symbol '{name}' is not a type"))
+            .log_error_base(&catalogue::SYMBOL_IS_NOT_A_TYPE, format!("{}", name))
             .map_err(|err| err.into()),
     }
 }
@@ -526,25 +581,29 @@ fn complete_template_type_lookup(
 ) -> CXMaybeRawResult<THIRTypeID> {
     let Some(input) = template_input else {
         return env
-            .log_error_base(format!("Type '{name}' requires template arguments"))
+            .log_error_base(
+                &catalogue::TYPE_REQUIRES_TEMPLATE_ARGUMENTS,
+                format!("{}", name),
+            )
             .map_err(|e| e.into());
     };
     let input = complete_template_input(env, namespace, input)?;
     let Some(symbol) = apply_template(env, mir_symbol, input)? else {
         return env
-            .log_error_base("Failed to apply template arguments".to_string())
+            .log_error_base(&catalogue::FAILED_TO_APPLY_TEMPLATE_ARGUMENTS, ())
             .map_err(|e| e.into());
     };
 
     match symbol {
         MIRSymbol::Type(id) => Ok(id),
         MIRSymbol::Template { .. } => env
-            .log_error_base(format!(
-                "Template arguments did not resolve type '{name}' to a concrete type"
-            ))
+            .log_error_base(
+                &catalogue::TEMPLATE_ARGUMENTS_DID_NOT_RESOLVE_TYPE_TO_A_CONCRETE_TYPE,
+                format!("{}", name),
+            )
             .map_err(|e| e.into()),
         _ => env
-            .log_error_base(format!("Symbol '{name}' is not a type"))
+            .log_error_base(&catalogue::SYMBOL_IS_NOT_A_TYPE, format!("{}", name))
             .map_err(|err| err.into()),
     }
 }
@@ -613,7 +672,10 @@ fn ensure_aggregate_fields_not_recursive(
         let mut visited = HashSet::new();
         if type_contains_by_value(env, field.ty(), aggregate_identifier, &mut visited) {
             let name = field.name().unwrap_or("<anonymous>");
-            return env.log_error_base(format!("Aggregate field '{}' has recursive type", name));
+            return env.log_error_base(
+                &catalogue::AGGREGATE_FIELD_HAS_RECURSIVE_TYPE,
+                format!("{}", name),
+            );
         }
     }
 
@@ -628,19 +690,21 @@ fn ensure_aggregate_fields_complete(
         let id = field.ty();
 
         let Some(_ty) = env.symbols.try_resolve_type_id(id) else {
-            return env.log_error_base(format!(
-                "Aggregate field '{}' has incomplete type",
-                field.name().unwrap_or("<anonymous>")
-            ));
+            return env.log_error_base(
+                &catalogue::AGGREGATE_FIELD_HAS_INCOMPLETE_TYPE,
+                format!("{}", field.name().unwrap_or("<anonymous>")),
+            );
         };
 
         match &_ty.kind {
             THIRTypeKind::Unreachable | THIRTypeKind::Undefined | THIRTypeKind::Str => {
-                return env.log_error_base(format!(
-                    "Aggregate field '{}' has invalid type '{}'",
-                    field.name().unwrap_or("<anonymous>"),
-                    _ty.display_with(&env.symbols)
-                ));
+                return env.log_error_base(
+                    &catalogue::AGGREGATE_FIELD_HAS_INVALID_TYPE,
+                    (
+                        format!("{}", field.name().unwrap_or("<anonymous>")),
+                        format!("{}", _ty.display_with(&env.symbols)),
+                    ),
+                );
             }
 
             _ => (),
@@ -662,24 +726,24 @@ fn ensure_aggregate_move_restrictions(
         let name = field.name().unwrap_or("<anonymous>");
 
         if field_attributes.is_nodrop() && !aggregate_attributes.is_nodrop() {
-            return env.log_error_base(format!(
-                "Aggregate containing nodrop field '{}' must also be marked as @nodrop",
-                name
-            ));
+            return env.log_error_base(
+                &catalogue::DROPPABLE_AGGREGATE_NODROP_FIELD,
+                format!("{}", name),
+            );
         }
 
         if field_attributes.is_nocopy() && !aggregate_attributes.is_nocopy() {
-            return env.log_error_base(format!(
-                "Aggregate containing nocopy field '{}' must also be marked as @nodrop",
-                name
-            ));
+            return env.log_error_base(
+                &catalogue::COPYABLE_AGGREGATE_NOCOPY_FIELD,
+                format!("{}", name),
+            );
         }
 
         if owned_unsafe_move(env, field_type) && !aggregate_unsafe_move {
-            return env.log_error_base(format!(
-                "Aggregate containing unsafe_move field '{}' must also be marked as @unsafe_move",
-                name
-            ));
+            return env.log_error_base(
+                &catalogue::SAFE_MOVE_AGGREGATE_UNSAFE_MOVE_FIELD,
+                format!("{}", name),
+            );
         }
     }
 
@@ -750,15 +814,18 @@ fn resolve_aggregate_move_attributes(
             .map_err(CXErrorMaybeRaw::from)?
         else {
             return env
-                .log_error_base(format!(
-                    "copy_traits target '{}' is not a valid type",
-                    param_name
-                ))
+                .log_error_base(
+                    &catalogue::COPY_TRAITS_TARGET_IS_NOT_A_VALID_TYPE,
+                    format!("{}", param_name),
+                )
                 .map_err(|e| e.into());
         };
         let Some(id) = symbol.as_type_id() else {
             return env
-                .log_error_base(format!("copy_traits target '{}' is not a type", param_name))
+                .log_error_base(
+                    &catalogue::COPY_TRAITS_TARGET_IS_NOT_A_TYPE,
+                    format!("{}", param_name),
+                )
                 .map_err(|e| e.into());
         };
         let source_attributes = owned_move_attributes(env, env.symbols.resolve_type_id(id));
@@ -781,7 +848,8 @@ fn complete_field(
             if !env.symbols.contains_type_id(id) {
                 return env.log_error(
                     _type.range(),
-                    format!("Aggregate field '{}' has incomplete type", name),
+                    &catalogue::AGGREGATE_FIELD_HAS_INCOMPLETE_TYPE,
+                    format!("{}", name),
                 );
             }
 
@@ -798,7 +866,8 @@ fn complete_field(
                 let name = name.as_deref().unwrap_or("<anonymous>");
                 return env.log_error(
                     integer_type.range(),
-                    format!("Bitfield '{}' has incomplete type", name),
+                    &catalogue::BITFIELD_HAS_INCOMPLETE_TYPE,
+                    format!("{}", name),
                 );
             }
 

@@ -1,10 +1,11 @@
 use super::inst_num;
 use crate::attributes::{attr_alignment, attr_byval, attr_sret};
-use crate::error::{LLVMError, LLVMResult};
+use crate::log::{LLVMError, LLVMResult};
 use crate::routines::get_function;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_signature, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{LMIRFunctionSignature, LMIRParameterABI, LMIRReturnABI, LMIRValue};
+use cx_log::catalogue::backend as catalogue;
 use cx_util::identifier::CXIdent;
 use inkwell::attributes::AttributeLoc;
 use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, ValueKind};
@@ -152,7 +153,9 @@ pub(super) fn build_direct_return_from_memory<'a, 'b>(
             .map_err(LLVMError::from_error)?;
         loaded
             .as_instruction_value()
-            .ok_or_else(|| LLVMError::new("LLVM load did not produce an instruction"))?
+            .ok_or_else(|| {
+                LLVMError::new(&catalogue::LLVM_LOAD_DID_NOT_PRODUCE_AN_INSTRUCTION, ())
+            })?
             .set_alignment(slots[0]._type.alignment() as u32)
             .map_err(LLVMError::from_error)?;
         return Ok(loaded);
@@ -193,7 +196,9 @@ pub(super) fn build_direct_return_from_memory<'a, 'b>(
             .map_err(LLVMError::from_error)?;
         field
             .as_instruction_value()
-            .ok_or_else(|| LLVMError::new("LLVM load did not produce an instruction"))?
+            .ok_or_else(|| {
+                LLVMError::new(&catalogue::LLVM_LOAD_DID_NOT_PRODUCE_AN_INSTRUCTION, ())
+            })?
             .set_alignment(slot._type.alignment() as u32)
             .map_err(LLVMError::from_error)?;
         aggregate = function_state
@@ -213,7 +218,7 @@ pub(super) fn generate_get_function_addr<'a>(
     let function_val = global_state
         .module
         .get_function(func)
-        .ok_or_else(|| LLVMError::new(format!("Function {func} was not declared")))?
+        .ok_or_else(|| LLVMError::new(&catalogue::FUNCTION_WAS_NOT_DECLARED, format!("{}", func)))?
         .as_global_value()
         .as_pointer_value();
 

@@ -3,9 +3,7 @@ use std::{
     fmt::{self, Display, Formatter},
 };
 
-use cx_mir::{
-    MIRBasicBlockID, MIRDiagnostic, MIRDiagnosticLocation, MIRFunctionID, MIRPlace, MIRScopeID,
-};
+use cx_mir::{MIRBasicBlockID, MIRDiagnostic, MIRDiagnosticLocation, MIRFunctionID, MIRPlace};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MIRAnalysisOptions {
@@ -31,37 +29,14 @@ pub enum MIRAnalysisError {
         message: Option<String>,
     },
     OwnershipViolation {
-        function: MIRFunctionID,
-        block: MIRBasicBlockID,
-        instruction: usize,
-        scope: Option<MIRScopeID>,
         place: MIRPlace,
-        function_name: String,
-        message: String,
+        diagnostic: MIRDiagnostic,
     },
 }
 
 impl Display for MIRAnalysisError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ProvenFalseAssertion {
-                function, message, ..
-            } => {
-                write!(f, "Assertion in function {function} is provably false")?;
-                if let Some(message) = message {
-                    write!(f, ": {message}")?;
-                }
-                Ok(())
-            }
-            Self::OwnershipViolation {
-                function_name,
-                message,
-                ..
-            } => write!(
-                f,
-                "Ownership error in function '{function_name}': {message}"
-            ),
-        }
+        f.write_str(self.diagnostic().message())
     }
 }
 
@@ -80,35 +55,17 @@ impl MIRAnalysisError {
                 function,
                 block,
                 instruction,
-                ..
-            } => MIRDiagnostic::new(
-                "ANALYSIS ERROR",
-                self.to_string(),
+                message,
+            } => crate::log::error(
+                &cx_log::catalogue::analysis::PROVEN_FALSE_ASSERTION,
+                (function.to_string(), message.clone()),
                 MIRDiagnosticLocation::Instruction {
                     function: *function,
                     block: *block,
                     instruction: *instruction,
                 },
             ),
-            Self::OwnershipViolation {
-                function,
-                block,
-                instruction,
-                scope,
-                ..
-            } => {
-                let location = scope
-                    .map(|scope| MIRDiagnosticLocation::Scope {
-                        function: *function,
-                        scope,
-                    })
-                    .unwrap_or(MIRDiagnosticLocation::Instruction {
-                        function: *function,
-                        block: *block,
-                        instruction: *instruction,
-                    });
-                MIRDiagnostic::new("ANALYSIS ERROR", self.to_string(), location)
-            }
+            Self::OwnershipViolation { diagnostic, .. } => diagnostic.clone(),
         }
     }
 }

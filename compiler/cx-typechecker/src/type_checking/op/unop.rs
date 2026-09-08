@@ -3,6 +3,7 @@ use cx_hir::ast::{
     types::HIRType,
 };
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::NamespacePath;
 use cx_thir::{
     thir::{
@@ -48,10 +49,8 @@ pub fn typecheck_unop(
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
                 return env.log_error(
                     &operand.token_range,
-                    format!(
-                        "Cannot apply pre-increment to non-reference type {}",
-                        operand._type.display_with(&env.symbols)
-                    ),
+                    &catalogue::CANNOT_APPLY_PRE_INCREMENT_TO_NON_REFERENCE_TYPE,
+                    format!("{}", operand._type.display_with(&env.symbols)),
                 );
             };
 
@@ -75,13 +74,7 @@ pub fn typecheck_unop(
                 },
 
                 _ => {
-                    return env.log_error(
-                        &operand.token_range,
-                        format!(
-                            "Pre-increment operator requires an integer or pointer type, found {}",
-                            inner.display_with(&env.symbols)
-                        ),
-                    );
+                    return env.log_error(&operand.token_range, &catalogue::PRE_INCREMENT_OPERATOR_REQUIRES_AN_INTEGER_OR_POINTER_TYPE_FOUND, format!("{}", inner.display_with(&env.symbols)));
                 }
             }
         }
@@ -113,10 +106,8 @@ pub fn typecheck_unop(
             if !operand._type.is_integer() {
                 return env.log_error(
                     &operand.token_range,
-                    format!(
-                        "Bitwise NOT operator requires an integer type, found {}",
-                        operand._type.display_with(&env.symbols)
-                    ),
+                    &catalogue::BITWISE_NOT_OPERATOR_REQUIRES_AN_INTEGER_TYPE_FOUND,
+                    format!("{}", operand._type.display_with(&env.symbols)),
                 );
             }
 
@@ -141,10 +132,8 @@ pub fn typecheck_unop(
                 _ => {
                     return env.log_error(
                         &operand.token_range,
-                        format!(
-                            "Negation operator requires an integer or float type, found {}",
-                            operand.display_with(&env.symbols)
-                        ),
+                        &catalogue::NEGATION_OPERATOR_REQUIRES_AN_INTEGER_OR_FLOAT_TYPE_FOUND,
+                        format!("{}", operand.display_with(&env.symbols)),
                     );
                 }
             };
@@ -165,7 +154,8 @@ pub fn typecheck_unop(
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
                 return env.log_error(
                     &operand.token_range,
-                    "Cannot take the address of a non-reference type".to_string(),
+                    &catalogue::CANNOT_TAKE_THE_ADDRESS_OF_A_NON_REFERENCE_TYPE,
+                    (),
                 );
             };
 
@@ -190,17 +180,16 @@ pub fn typecheck_unop(
             {
                 return env.log_error(
                     &operand.token_range,
-                    "Dereferencing raw pointers is not allowed in safe contexts".to_string(),
+                    &catalogue::SAFE_PTR_DEREFERENCE,
+                    (),
                 );
             }
 
             let Some(inner) = env.symbols.ptr_inner(&operand._type).cloned() else {
                 return env.log_error(
                     &operand.token_range,
-                    format!(
-                        "Cannot dereference non-pointer type {}",
-                        operand._type.display_with(&env.symbols)
-                    ),
+                    &catalogue::CANNOT_DEREFERENCE_NON_POINTER_TYPE,
+                    format!("{}", operand._type.display_with(&env.symbols)),
                 );
             };
 

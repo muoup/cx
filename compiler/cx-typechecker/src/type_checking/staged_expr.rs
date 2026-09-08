@@ -1,5 +1,6 @@
 use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_thir::thir::{
     comptime::{THIRStagedExpr, THIRStagedParameter},
@@ -48,10 +49,10 @@ pub fn complete_staged_expr(
     if deferred.params.len() != value_type.params.len() {
         return env.log_error(
             deferred.body.token_range(),
-            format!(
-                "Staged expression expects {} parameters, found {}",
-                value_type.params.len(),
-                deferred.params.len()
+            &catalogue::STAGED_EXPRESSION_EXPECTS_PARAMETERS_FOUND,
+            (
+                format!("{}", value_type.params.len()),
+                format!("{}", deferred.params.len()),
             ),
         );
     }

@@ -1,5 +1,6 @@
 use crate::codegen::{codegen_fn_prototype, codegen_function};
 use crate::globals::{declare_global, define_global};
+use crate::log::raw;
 use crate::value_type::get_cranelift_type;
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::FuncRef;
@@ -9,8 +10,8 @@ use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
 use cx_lmir::{LMIRABISlot, LMIRFunctionSignature};
 use cx_lmir::{LMIRBlockID, LMIRRegister, LMIRUnit, LMIRValue};
+use cx_log::catalogue::backend::*;
 use cx_log::error::context::CXInternalContext;
-use cx_log::error::message::CXStdErrMessage;
 use cx_log::error::CXError;
 use cx_log::{CXRawResult, CXResult};
 use cx_target::ArchitectureConfig;
@@ -21,6 +22,7 @@ mod codegen;
 mod globals;
 mod inst_calling;
 mod instruction;
+mod log;
 mod routines;
 mod value_type;
 
@@ -95,17 +97,12 @@ impl FunctionState<'_> {
                 .get(*i as usize)
                 .copied()
                 .map(CodegenValue::Value)
-                .ok_or_else(|| {
-                    CXStdErrMessage::error(
-                        "CODEGEN ERROR",
-                        format!("Function parameter index out of bounds: {i}"),
-                    )
-                }),
+                .ok_or_else(|| raw(&CRANELIFT_PARAM_INDEX, i.to_string())),
 
             LMIRValue::FunctionRef(name) => {
-                let (_func_id, func_ref) = self.get_function(name.as_str()).ok_or_else(|| {
-                    CXStdErrMessage::error("CODEGEN ERROR", format!("Function not found: {}", name))
-                })?;
+                let (_func_id, func_ref) = self
+                    .get_function(name.as_str())
+                    .ok_or_else(|| raw(&CRANELIFT_FUNCTION, name.to_string()))?;
                 let as_value = self.builder.ins().func_addr(self.pointer_type, func_ref);
 
                 Ok(CodegenValue::Value(as_value))
@@ -129,18 +126,12 @@ impl FunctionState<'_> {
                     let value = self.builder.ins().f64const(as_f64);
                     Ok(CodegenValue::Value(value))
                 }
-                _ => CXStdErrMessage::result(
-                    "CODEGEN ERROR",
-                    format!("Float immediate has non-float type: {_type:?}"),
-                ),
+                _ => Err(raw(&CRANELIFT_FLOAT, format!("{_type:?}"))),
             },
 
             LMIRValue::Global(id) => {
                 let Some(data_id) = self.global_ids.get(*id as usize).cloned() else {
-                    return CXStdErrMessage::result(
-                        "CODEGEN ERROR",
-                        format!("Global not found: g{id}"),
-                    );
+                    return Err(raw(&CRANELIFT_GLOBAL, format!("g{id}")));
                 };
 
                 let global_ref = self
@@ -157,10 +148,7 @@ impl FunctionState<'_> {
 
             LMIRValue::Register { register, _type } => {
                 let Some(var) = self.variable_table.get(register).cloned() else {
-                    return CXStdErrMessage::result(
-                        "CODEGEN ERROR",
-                        format!("Variable not found in variable table: {:?}", bc_value),
-                    );
+                    return Err(raw(&CRANELIFT_VARIABLE, format!("{:?}", bc_value)));
                 };
 
                 Ok(var)
@@ -178,13 +166,9 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
     let target_pointer_size = isa.frontend_config().pointer_type().bytes() as usize;
     if bc.architecture.pointer_size() != target_pointer_size {
         return Err(CXError::new(
-            CXStdErrMessage::error(
-                "CODEGEN ERROR",
-                format!(
-                    "LMIR target uses pointer size {}, but Cranelift target uses {}",
-                    bc.architecture.pointer_size(),
-                    target_pointer_size,
-                ),
+            raw(
+                &TARGET_POINTER_SIZE,
+                (bc.architecture.pointer_size(), target_pointer_size),
             ),
             CXInternalContext::error("LMIR and Cranelift target configurations disagree"),
         ));
@@ -236,13 +220,7 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
             .cloned()
         else {
             return Err(CXError::new(
-                CXStdErrMessage::error(
-                    "CODEGEN ERROR",
-                    format!(
-                        "Function not found in function map: {}",
-                        func.prototype.name
-                    ),
-                ),
+                raw(&FUNCTION_MAP_NOT_FOUND, func.prototype.name.to_string()),
                 CXInternalContext::error("Failed to look up function during codegen"),
             ));
         };
@@ -259,10 +237,7 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
 
     global_state.object_module.finish().emit().map_err(|err| {
         CXError::new(
-            CXStdErrMessage::error(
-                "CODEGEN ERROR",
-                format!("Failed to emit object file: {err}"),
-            ),
+            raw(&CRANELIFT_EMIT, err.to_string()),
             CXInternalContext::error("Failed to finalize Cranelift object module"),
         )
     })

@@ -5,15 +5,10 @@ mod contextual;
 pub use contextual::MIRDisplay;
 
 use crate::{
-    MIRLayoutError, MIRTypeID,
-    expr::{
+    MIRLayoutError, MIRTypeID, expr::{
         MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRParameterID, MIRPlace, MIRPlaceID,
         MIRRegister, MIRValue,
-    },
-    global::{MIRFnSignature, MIRFunctionID, MIRGlobalID, MIRGlobalState},
-    op::{MIRBinaryOp, MIRCoercion, MIRUnaryOp},
-    ty::MIRIntType,
-    unit::MIRUnit,
+    }, global::{MIRFnSignature, MIRFunctionID, MIRGlobalID, MIRGlobalState}, layout_error, op::{MIRBinaryOp, MIRCoercion, MIRUnaryOp}, ty::MIRIntType, unit::MIRUnit
 };
 
 impl Display for MIRPlaceID {
@@ -230,26 +225,8 @@ impl fmt::Display for MIRTypeID {
     }
 }
 
-impl fmt::Display for MIRLayoutError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidType(id) => write!(f, "invalid MIR type {id}"),
-            Self::DuplicateType(id) => write!(f, "MIR type {id} was defined more than once"),
-            Self::RecursiveType(id) => {
-                write!(f, "cannot compute layout of recursive MIR type {id}")
-            }
-            Self::InvalidBitfieldWidth {
-                width,
-                storage_bits,
-            } => write!(
-                f,
-                "invalid bitfield width: {width} exceeds storage size of {storage_bits} bits"
-            ),
-            Self::InvalidAlignment(alignment) => write!(f, "invalid type alignment {alignment}"),
-            Self::InvalidField { ty, field } => {
-                write!(f, "MIR type {ty} has no field at index {field}")
-            }
-            Self::SizeOverflow => f.write_str("MIR type layout size overflowed usize"),
-        }
+impl std::fmt::Display for MIRLayoutError {
+    fn fmt(&self, output: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        output.write_str(&layout_error(self.clone()).message())
     }
 }

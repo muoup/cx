@@ -1,7 +1,8 @@
+pub(crate) use cx_log::catalogue::parse::{EXPECTED_TOKEN, UNEXPECTED_END_TOKENS};
 use cx_log::{
+    catalogue::ErrorDefinition,
     error::{
-        context::{from_token_range, CXPointingContext},
-        message::CXStdErrMessage,
+        context::{from_token_range, CXInternalContext, CXPointingContext},
         CXError,
     },
     CXResult,
@@ -23,20 +24,30 @@ fn range_context(range: &TokenRange) -> cx_log::error::CXErrorContext {
     from_token_range(range)
 }
 
-fn parse_error(message: impl Into<String>, context: cx_log::error::CXErrorContext) -> CXError {
-    CXError::new(
-        CXStdErrMessage::error("PARSER ERROR", message.into()),
-        context,
-    )
+fn parse_error<A>(
+    definition: &ErrorDefinition<A>,
+    args: A,
+    context: cx_log::error::CXErrorContext,
+) -> CXError {
+    CXError::new(definition.bind(args), context)
 }
 
-pub fn parse_point_error<T>(tokens: &TokenIter<'_>, message: impl Into<String>) -> CXResult<T> {
-    CXResult::Err(parse_error(message, pointing_context(tokens)))
+pub fn parse_point_error<T, A>(
+    tokens: &TokenIter<'_>,
+    definition: &ErrorDefinition<A>,
+    args: A,
+) -> CXResult<T> {
+    Err(parse_error(definition, args, pointing_context(tokens)))
 }
 
-pub fn parse_underline_error<T>(
-    message: impl Into<String>,
+pub fn parse_underline_error<T, A>(
+    definition: &ErrorDefinition<A>,
+    args: A,
     range: &TokenRange,
 ) -> CXResult<T> {
-    CXResult::Err(parse_error(message, range_context(range)))
+    Err(parse_error(definition, args, range_context(range)))
+}
+
+pub fn internal_error<A>(definition: &ErrorDefinition<A>, args: A, context: &str) -> CXError {
+    parse_error(definition, args, CXInternalContext::error(context))
 }

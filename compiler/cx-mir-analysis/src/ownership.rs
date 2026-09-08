@@ -1,3 +1,5 @@
+use crate::log::ownership_error;
+use cx_log::catalogue::{ErrorDefinition, analysis as catalogue};
 use std::collections::VecDeque;
 
 use cx_mir::{
@@ -120,10 +122,8 @@ fn merge_entry(
                 instruction,
                 None,
                 place,
-                format!(
-                    "@nodrop place '{}' is moved on only some control-flow paths",
-                    place_name(unit, function, place)
-                ),
+                &catalogue::PARTIAL_MOVE,
+                place_name(unit, function, place),
             ));
         }
 
@@ -212,10 +212,8 @@ fn transfer_instruction(
                         instruction,
                         Some(*scope),
                         place,
-                        format!(
-                            "@nodrop place '{}' is not moved or leaked before scope exit",
-                            place_name(unit, function, place)
-                        ),
+                        &catalogue::SCOPE_EXIT_NOT_CONSUMED,
+                        place_name(unit, function, place),
                     ));
                 }
                 state.remove(&place);
@@ -431,7 +429,7 @@ fn use_place(
             block,
             instruction,
             place,
-            "used after it was moved",
+            &catalogue::USE_AFTER_MOVE,
             diagnose,
         ),
         PlaceState::Uninitialized => ownership_failure(
@@ -440,7 +438,7 @@ fn use_place(
             block,
             instruction,
             place,
-            "used before it was initialized",
+            &catalogue::USE_BEFORE_INITIALIZATION,
             diagnose,
         ),
     }
@@ -471,7 +469,7 @@ fn consume(
             block,
             instruction,
             place,
-            "moved more than once",
+            &catalogue::REPEATED_MOVE,
             diagnose,
         ),
         PlaceState::Uninitialized => ownership_failure(
@@ -480,7 +478,7 @@ fn consume(
             block,
             instruction,
             place,
-            "moved before it was initialized",
+            &catalogue::MOVE_BEFORE_INITIALIZATION,
             diagnose,
         ),
     };
@@ -524,10 +522,8 @@ fn check_function_exit(
                 instruction,
                 Some(declaration.scope),
                 place,
-                format!(
-                    "@nodrop place '{}' is not moved or leaked before function exit",
-                    place_name(unit, function, place)
-                ),
+                &catalogue::FUNCTION_EXIT_NOT_CONSUMED,
+                place_name(unit, function, place),
             ));
         }
     }
@@ -545,10 +541,8 @@ fn check_function_exit(
                 instruction,
                 root_scope,
                 place,
-                format!(
-                    "@nodrop parameter '{}' is not moved or leaked before function exit",
-                    place_name(unit, function, place)
-                ),
+                &catalogue::PARAMETER_NOT_CONSUMED,
+                place_name(unit, function, place),
             ));
         }
     }
@@ -562,7 +556,7 @@ fn ownership_failure(
     block: cx_mir::MIRBasicBlockID,
     instruction: usize,
     place: MIRPlace,
-    reason: &'static str,
+    definition: &ErrorDefinition<(String, String, bool)>,
     diagnose: bool,
 ) -> Result<(), MIRAnalysisError> {
     if diagnose {
@@ -572,45 +566,11 @@ fn ownership_failure(
             instruction,
             None,
             place,
-            format!("place '{}' {reason}", place_name(unit, function, place)),
+            definition,
+            place_name(unit, function, place),
         ))
     } else {
         Ok(())
-    }
-}
-
-fn ownership_error(
-    function: &MIRFunction,
-    block: cx_mir::MIRBasicBlockID,
-    instruction: usize,
-    scope: Option<cx_mir::MIRScopeID>,
-    place: MIRPlace,
-    message: String,
-) -> MIRAnalysisError {
-    let discarded = match place {
-        MIRPlace::FunctionLocal(id) => function
-            .definition()
-            .and_then(|definition| definition.place(id))
-            .and_then(|declaration| declaration.debug_name.as_ref())
-            .is_some_and(|name| name.as_str() == "_"),
-        _ => false,
-    };
-    let message = if discarded {
-        format!(
-            "{}; '_' is an intentionally unused binding, but it still follows ownership rules; any @nodrop value must be moved or leaked",
-            message
-        )
-    } else {
-        message
-    };
-    MIRAnalysisError::OwnershipViolation {
-        function: function.id(),
-        block,
-        instruction,
-        scope,
-        place,
-        function_name: function.prototype().signature.display_name().to_string(),
-        message,
     }
 }
 

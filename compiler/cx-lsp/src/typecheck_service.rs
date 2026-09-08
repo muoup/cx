@@ -15,7 +15,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tower_lsp::lsp_types::{
-    Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, Range, Url,
+    Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, NumberOrString, Range,
+    Url,
 };
 
 pub struct CheckReport {
@@ -141,6 +142,7 @@ fn lsp_error_to_diagnostic(error: &LSPErrors, file_contents: &str) -> Diagnostic
     match error {
         LSPErrors::SpannedError {
             compilation_unit,
+            code,
             message,
             byte_start,
             byte_end,
@@ -155,14 +157,21 @@ fn lsp_error_to_diagnostic(error: &LSPErrors, file_contents: &str) -> Diagnostic
             Diagnostic {
                 range,
                 severity: Some(DiagnosticSeverity::ERROR),
+                code: (!code.is_empty()).then(|| NumberOrString::String(code.clone())),
                 message: message.clone(),
                 related_information,
                 source: Some("cx".to_string()),
                 ..Default::default()
             }
         }
-        LSPErrors::FatalError { message, line, .. } => Diagnostic {
+        LSPErrors::FatalError {
+            code,
+            message,
+            line,
+            ..
+        } => Diagnostic {
             range: line_range(file_contents, *line),
+            code: (!code.is_empty()).then(|| NumberOrString::String(code.clone())),
             severity: Some(DiagnosticSeverity::ERROR),
             message: message.clone(),
             source: Some("cx".to_string()),
@@ -205,4 +214,50 @@ pub fn group_diagnostics_by_file(errors: &[LSPErrors]) -> HashMap<Url, Vec<Diagn
     }
 
     grouped
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_diagnostics_keep_codes_ranges_and_notes() {
+        let error = LSPErrors::SpannedError {
+            compilation_unit: PathBuf::from("/tmp/catalogue-example.cx"),
+            code: "T0001".to_owned(),
+            message: "Cannot assign to a const type".to_owned(),
+            byte_start: 3,
+            byte_end: 6,
+            notes: vec!["binding declared const".to_owned()],
+        };
+        let diagnostic = lsp_error_to_diagnostic(&error, "abcxyz");
+        assert_eq!(
+            diagnostic.code,
+            Some(NumberOrString::String("T0001".to_owned()))
+        );
+        assert_eq!(diagnostic.range.start.character, 3);
+        assert_eq!(diagnostic.range.end.character, 6);
+        assert_eq!(
+            diagnostic.related_information.unwrap()[0].message,
+            "binding declared const"
+        );
+        assert_eq!(diagnostic.message, "Cannot assign to a const type");
+    }
+
+    #[test]
+    fn fatal_diagnostics_keep_codes_and_omit_empty_codes() {
+        for code in ["D0001", ""] {
+            let error = LSPErrors::FatalError {
+                compilation_unit: PathBuf::from("/tmp/catalogue-example.cx"),
+                code: code.to_owned(),
+                message: "failure".to_owned(),
+                line: None,
+            };
+            let diagnostic = lsp_error_to_diagnostic(&error, "");
+            assert_eq!(
+                diagnostic.code,
+                (!code.is_empty()).then(|| NumberOrString::String(code.to_owned()))
+            );
+        }
+    }
 }

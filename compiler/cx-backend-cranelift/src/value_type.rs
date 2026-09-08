@@ -1,6 +1,8 @@
+use crate::log::raw;
 use cranelift::codegen::ir;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
-use cx_log::{error::message::CXStdErrMessage, CXRawResult};
+use cx_log::catalogue::backend::*;
+use cx_log::CXRawResult;
 
 pub(crate) fn get_cranelift_abi_type(val_type: &LMIRType) -> CXRawResult<ir::AbiParam> {
     get_cranelift_type(val_type).map(ir::AbiParam::new)
@@ -24,12 +26,9 @@ pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> CXRawResult<ir::Type> {
                 LMIRFloatType::F64 => ir::types::F64,
             };
 
-            element.by(*count as u32).ok_or_else(|| {
-                CXStdErrMessage::error(
-                    "CODEGEN ERROR",
-                    format!("Unsupported vector type for codegen: {element} x {count}"),
-                )
-            })?
+            element
+                .by(*count as u32)
+                .ok_or_else(|| raw(&CRANELIFT_VECTOR, format!("{element} x {count}")))?
         }
         // LMIRTypeKind::Float { bytes: 16 } => ir::types::F128,
         //
@@ -42,10 +41,7 @@ pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> CXRawResult<ir::Type> {
         | LMIRTypeKind::Array { .. }
         | LMIRTypeKind::Opaque { .. }
         | LMIRTypeKind::Void => {
-            return CXStdErrMessage::result(
-                "CODEGEN ERROR",
-                format!("Unsupported type for codegen: {val_type:?}"),
-            );
+            return Err(raw(&CRANELIFT_TYPE, format!("{val_type:?}")));
         }
     })
 }

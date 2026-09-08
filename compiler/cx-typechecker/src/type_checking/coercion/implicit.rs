@@ -1,4 +1,5 @@
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_thir::thir::{
     expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
     r#type::THIRType,
@@ -39,10 +40,10 @@ pub fn implicit_cast(
     try_implicit_coercion(env, value, to_type)?.catch_unapplied(|expr, _| {
         env.log_error(
             expr.token_range,
-            format!(
-                "No implicit cast from {} to {}",
-                from_type.display_with(&env.symbols),
-                to_type.display_with(&env.symbols),
+            &catalogue::NO_IMPLICIT_CAST_FROM_TO,
+            (
+                format!("{}", from_type.display_with(&env.symbols)),
+                format!("{}", to_type.display_with(&env.symbols)),
             ),
         )
     })

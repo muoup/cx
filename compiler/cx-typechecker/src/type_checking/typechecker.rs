@@ -1,3 +1,4 @@
+use cx_log::catalogue::typecheck as catalogue;
 use std::ops::Deref;
 
 use crate::environment::{ControlTarget, TypeEnvironment};
@@ -100,7 +101,8 @@ fn typecheck_expr_inner(
             if yields && expr_may_fall_through(&block) {
                 return env.log_error(
                     expr.token_range(),
-                    "A yielding block must yield a value on every path".to_string(),
+                    &catalogue::A_YIELDING_BLOCK_MUST_YIELD_A_VALUE_ON_EVERY_PATH,
+                    (),
                 );
             }
 
@@ -111,13 +113,15 @@ fn typecheck_expr_inner(
             if env.in_defer_context() {
                 return env.log_error(
                     expr.token_range(),
-                    "nested defer is not supported".to_string(),
+                    &catalogue::NESTED_DEFER_IS_NOT_SUPPORTED,
+                    (),
                 );
             }
             if env.in_comptime_context() && !env.in_runtime_emit_context() {
                 return env.log_error(
                     expr.token_range(),
-                    "defer cannot execute while evaluating a comptime function".to_string(),
+                    &catalogue::DEFER_CANNOT_EXECUTE_WHILE_EVALUATING_A_COMPTIME_FUNCTION,
+                    (),
                 );
             }
 
@@ -128,16 +132,15 @@ fn typecheck_expr_inner(
             if !deferred._type.is_void() {
                 return env.log_error(
                     expr.token_range(),
-                    format!(
-                        "deferred expression must have type void, found {}",
-                        deferred._type.display_with(&env.symbols)
-                    ),
+                    &catalogue::DEFERRED_EXPRESSION_MUST_HAVE_TYPE_VOID_FOUND,
+                    format!("{}", deferred._type.display_with(&env.symbols)),
                 );
             }
             if !expr_may_fall_through(&deferred) {
                 return env.log_error(
                     expr.token_range(),
-                    "deferred expression must fall through normally".to_string(),
+                    &catalogue::DEFERRED_EXPRESSION_MUST_FALL_THROUGH_NORMALLY,
+                    (),
                 );
             }
 
@@ -156,7 +159,8 @@ fn typecheck_expr_inner(
         HIRExprKind::Then => {
             return env.log_error(
                 expr.token_range(),
-                "'then' may only capture the remainder of an enclosing block".to_string(),
+                &catalogue::THEN_MAY_ONLY_CAPTURE_THE_REMAINDER_OF_AN_ENCLOSING_BLOCK,
+                (),
             );
         }
 
@@ -375,7 +379,8 @@ fn typecheck_expr_inner(
             if env.in_defer_context() {
                 return env.log_error(
                     expr.token_range(),
-                    "break is not allowed inside a deferred expression".to_string(),
+                    &catalogue::BREAK_IS_NOT_ALLOWED_INSIDE_A_DEFERRED_EXPRESSION,
+                    (),
                 );
             }
 
@@ -383,7 +388,8 @@ fn typecheck_expr_inner(
             if target == ControlTarget::Invalid {
                 return env.log_error(
                     expr.token_range(),
-                    "'break' used outside of a loop or switch context".to_string(),
+                    &catalogue::BREAK_USED_OUTSIDE_OF_A_LOOP_OR_SWITCH_CONTEXT,
+                    (),
                 );
             }
 
@@ -398,7 +404,8 @@ fn typecheck_expr_inner(
             if env.in_defer_context() {
                 return env.log_error(
                     expr.token_range(),
-                    "continue is not allowed inside a deferred expression".to_string(),
+                    &catalogue::CONTINUE_IS_NOT_ALLOWED_INSIDE_A_DEFERRED_EXPRESSION,
+                    (),
                 );
             }
 
@@ -406,7 +413,8 @@ fn typecheck_expr_inner(
             if target == ControlTarget::Invalid {
                 return env.log_error(
                     expr.token_range(),
-                    "'continue' used outside of a loop context".to_string(),
+                    &catalogue::CONTINUE_USED_OUTSIDE_OF_A_LOOP_CONTEXT,
+                    (),
                 );
             }
 
@@ -421,7 +429,8 @@ fn typecheck_expr_inner(
             if env.in_defer_context() {
                 return env.log_error(
                     expr.token_range(),
-                    "goto is not allowed inside a deferred expression".to_string(),
+                    &catalogue::GOTO_IS_NOT_ALLOWED_INSIDE_A_DEFERRED_EXPRESSION,
+                    (),
                 );
             }
             env.function
@@ -435,7 +444,11 @@ fn typecheck_expr_inner(
 
         HIRExprKind::Label { name, statement } => {
             if !env.function.declare_label(name, expr.token_range().clone()) {
-                return env.log_error(expr.token_range(), format!("Duplicate label '{name}'"));
+                return env.log_error(
+                    expr.token_range(),
+                    &catalogue::DUPLICATE_LABEL,
+                    format!("{}", name),
+                );
             }
             let statement = typecheck_expr(env, namespace, statement, None)
                 .and_then(|v| v.standard_ready_coerce(env, statement.token_range()))?;
@@ -454,7 +467,8 @@ fn typecheck_expr_inner(
                 let Some(return_type) = env.staging_context().return_type else {
                     return env.log_error(
                         expr.token_range(),
-                        "staged return has no materialization context".to_string(),
+                        &catalogue::STAGED_RETURN_HAS_NO_MATERIALIZATION_CONTEXT,
+                        (),
                     );
                 };
                 return_type

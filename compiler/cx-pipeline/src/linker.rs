@@ -1,6 +1,7 @@
 use crate::pipeline_error;
 use crate::progress::ProgressReporter;
 use cx_log::CXResult;
+use cx_log::catalogue::driver as catalogue;
 use cx_pipeline_data::GlobalCompilationContext;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -39,22 +40,14 @@ pub(crate) fn link_relocatable(
 
     let output = cmd
         .output()
-        .map_err(|e| pipeline_error("LINK ERROR", format!("Failed to execute linker: {}", e)))?;
+        .map_err(|e| pipeline_error(&catalogue::FAILED_TO_EXECUTE_LINKER, format!("{}", e)))?;
 
     if output.status.success() {
         Ok(())
     } else {
-        eprintln!(
-            "[Linker] Failed to link files: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        eprintln!("[Linker] Command: {cmd:?}");
         Err(pipeline_error(
-            "LINK ERROR",
-            format!(
-                "Relocatable linking failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ),
+            &catalogue::RELOCATABLE_LINKING_FAILED,
+            format!("{}", String::from_utf8_lossy(&output.stderr)),
         ))
     }
 }
@@ -96,8 +89,8 @@ pub(crate) fn link(
             }
             other => {
                 return Err(pipeline_error(
-                    "LINK ERROR",
-                    format!("Unknown link kind '{}' for library '{}'", other, entry.name),
+                    &catalogue::UNKNOWN_LINK_KIND_FOR_LIBRARY,
+                    (format!("{}", other), format!("{}", entry.name)),
                 ));
             }
         }
@@ -105,22 +98,14 @@ pub(crate) fn link(
 
     let output = cmd
         .output()
-        .map_err(|e| pipeline_error("LINK ERROR", format!("Failed to execute linker: {}", e)))?;
+        .map_err(|e| pipeline_error(&catalogue::FAILED_TO_EXECUTE_LINKER, format!("{}", e)))?;
 
     if output.status.success() {
         Ok(())
     } else {
-        eprintln!(
-            "[Linker] Failed to link files: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        eprintln!("[Linker] Command: {cmd:?}");
         Err(pipeline_error(
-            "LINK ERROR",
-            format!(
-                "Linking failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ),
+            &catalogue::LINKING_FAILED,
+            format!("{}", String::from_utf8_lossy(&output.stderr)),
         ))
     }
 }
@@ -133,17 +118,14 @@ pub(crate) fn link_objects(output: &Path, object_files: &[PathBuf]) -> CXResult<
 
     let command_output = cmd
         .output()
-        .map_err(|e| pipeline_error("LINK ERROR", format!("Failed to execute linker: {}", e)))?;
+        .map_err(|e| pipeline_error(&catalogue::FAILED_TO_EXECUTE_LINKER, format!("{}", e)))?;
 
     if command_output.status.success() {
         Ok(())
     } else {
         Err(pipeline_error(
-            "LINK ERROR",
-            format!(
-                "Linking failed: {}",
-                String::from_utf8_lossy(&command_output.stderr)
-            ),
+            &catalogue::LINKING_FAILED,
+            format!("{}", String::from_utf8_lossy(&command_output.stderr)),
         ))
     }
 }

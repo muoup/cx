@@ -1,9 +1,14 @@
+use crate::log::error;
+use cx_log::CXResult;
+
 use cx_pipeline_data::{CompilerBackend, OptimizationLevel};
 
 use crate::help::{self, Topic};
 
 #[derive(Debug)]
 pub enum Command {
+    Help(Topic),
+    Version,
     /// Legacy single-file mode: cx <file.cx> [options]
     CompileFile(FileArgs),
     /// Project build mode: cx build [target] [options]
@@ -94,13 +99,13 @@ pub(crate) fn default_backend_name() -> &'static str {
     }
 }
 
-fn parse_common_flags(args: impl IntoIterator<Item = String>, topic: Topic) -> ParsedCommonArgs {
+fn parse_common_flags(args: impl IntoIterator<Item = String>) -> ParsedCommonArgs {
     let mut common = CommonArgs::default();
     let mut rest = Vec::new();
     let mut args_iter = args.into_iter();
 
     while let Some(arg) = args_iter.next() {
-        if arg == "-o" {
+        if matches!(arg.as_str(), "-o" | "-I" | "-D") {
             rest.push(arg);
             if let Some(path) = args_iter.next() {
                 rest.push(path);
@@ -109,14 +114,6 @@ fn parse_common_flags(args: impl IntoIterator<Item = String>, topic: Topic) -> P
         }
 
         match arg.as_str() {
-            "-h" | "--help" | "-help" => {
-                help::dispatch(topic);
-                std::process::exit(0);
-            }
-            "--version" => {
-                help::print_version();
-                std::process::exit(0);
-            }
             #[cfg(feature = "backend-llvm")]
             "--backend-llvm" => common.backend = Some(CompilerBackend::LLVM),
             "--backend-cranelift" => common.backend = Some(CompilerBackend::Cranelift),
@@ -138,66 +135,78 @@ fn parse_common_flags(args: impl IntoIterator<Item = String>, topic: Topic) -> P
     ParsedCommonArgs { common, rest }
 }
 
-pub fn parse_args() -> Result<Command, String> {
-    let args = std::env::args().skip(1).collect::<Vec<String>>();
+pub fn parse_args(args: impl IntoIterator<Item = String>) -> CXResult<Command> {
     let mut args_iter = args.into_iter();
-
     let Some(first_arg) = args_iter.next() else {
-        help::dispatch(Topic::General);
-        std::process::exit(1);
+        return Err(error(
+            "expected a command or source file",
+            Some(Topic::General),
+        ));
     };
-
-    if first_arg == "build" {
-        return parse_build_args(args_iter);
+    let (topic, mut args) = match first_arg.as_str() {
+        "build" => (Topic::Build, args_iter.collect::<Vec<_>>()),
+        "run" => (Topic::Run, args_iter.collect::<Vec<_>>()),
+        "init" => (Topic::Init, args_iter.collect::<Vec<_>>()),
+        _ if help::is_help_flag(&first_arg) => return Ok(Command::Help(Topic::General)),
+        _ if help::is_version_flag(&first_arg) => return Ok(Command::Version),
+        _ => (
+            Topic::File,
+            std::iter::once(first_arg).chain(args_iter).collect(),
+        ),
+    };
+    let executable_args = if topic == Topic::Run {
+        if let Some(separator) = args.iter().position(|arg| arg == "--") {
+            let executable_args = args.split_off(separator + 1);
+            args.pop();
+            executable_args
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        if topic == Topic::File && matches!(arg.as_str(), "-o" | "-I" | "-D") {
+            iter.next();
+        } else if help::is_help_flag(arg) {
+            return Ok(Command::Help(topic));
+        } else if help::is_version_flag(arg) {
+            return Ok(Command::Version);
+        }
     }
-
-    if first_arg == "run" {
-        return parse_run_args(args_iter);
+    match topic {
+        Topic::Build => Ok(Command::Build(parse_build_args(args, topic)?)),
+        Topic::Run => Ok(Command::Run(RunArgs {
+            build: parse_build_args(args, topic)?,
+            executable_args,
+        })),
+        Topic::Init => parse_init_args(args),
+        Topic::File | Topic::General => parse_file_args(args),
     }
-
-    if first_arg == "init" {
-        return parse_init_args(args_iter);
-    }
-
-    // Check for flags that might come before the file
-    if help::is_help_flag(&first_arg) {
-        help::dispatch(Topic::General);
-        std::process::exit(0);
-    }
-
-    if help::is_version_flag(&first_arg) {
-        help::print_version();
-        std::process::exit(0);
-    }
-
-    // Legacy single-file mode
-    parse_file_args(std::iter::once(first_arg).chain(args_iter))
 }
 
-fn parse_build_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
-    Ok(Command::Build(parse_build_args_inner(args, Topic::Build)?))
-}
-
-fn parse_build_args_inner(
-    args: impl IntoIterator<Item = String>,
-    topic: Topic,
-) -> Result<BuildArgs, String> {
-    let ParsedCommonArgs { common, rest } = parse_common_flags(args, topic);
+fn parse_build_args(args: impl IntoIterator<Item = String>, topic: Topic) -> CXResult<BuildArgs> {
+    let ParsedCommonArgs { common, rest } = parse_common_flags(args);
     let mut target = None;
 
     for arg in rest {
         match arg.as_str() {
-            "-c" => return Err("-c flag is not supported with `cx build`".to_string()),
-            "-o" => return Err("-o flag is not supported with `cx build`".to_string()),
+            "-c" | "-o" => {
+                return Err(error(
+                    format!("option '{arg}' is not supported by '{}'", help::name(topic)),
+                    Some(topic),
+                ))
+            }
             _ => {}
         }
 
         if arg.starts_with('-') {
-            return Err(format!("Unknown flag: {arg}"));
+            return Err(error(format!("unknown option '{arg}'"), Some(topic)));
         }
 
         if target.is_some() {
-            return Err("Multiple targets not supported".to_string());
+            return Err(error("expected at most one target", Some(topic)));
         }
         target = Some(arg);
     }
@@ -213,32 +222,8 @@ fn parse_build_args_inner(
     })
 }
 
-fn parse_run_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
-    let mut build_args = Vec::new();
-    let mut executable_args = Vec::new();
-    let mut after_separator = false;
-
-    for arg in args {
-        if after_separator {
-            executable_args.push(arg);
-            continue;
-        }
-
-        if arg == "--" {
-            after_separator = true;
-        } else {
-            build_args.push(arg);
-        }
-    }
-
-    Ok(Command::Run(RunArgs {
-        build: parse_build_args_inner(build_args, Topic::Run)?,
-        executable_args,
-    }))
-}
-
-fn parse_file_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
-    let ParsedCommonArgs { common, rest } = parse_common_flags(args, Topic::File);
+fn parse_file_args(args: impl IntoIterator<Item = String>) -> CXResult<Command> {
+    let ParsedCommonArgs { common, rest } = parse_common_flags(args);
     let FileSpecificArgs {
         input_files,
         include_dirs,
@@ -248,18 +233,27 @@ fn parse_file_args(args: impl IntoIterator<Item = String>) -> Result<Command, St
     } = parse_file_specific_args(rest)?;
 
     if input_files.is_empty() {
-        return Err("Usage: cx <file.cx|file.c>... [options]".to_string());
+        return Err(error(
+            "expected at least one source file",
+            Some(Topic::File),
+        ));
     }
 
     if input_files
         .iter()
         .any(|file| !file.ends_with(".cx") && !file.ends_with(".c"))
     {
-        return Err("Input files must have a .cx or .c extension".to_string());
+        return Err(error(
+            "input files must have a .cx or .c extension",
+            Some(Topic::File),
+        ));
     }
 
     if compile_only && input_files.len() > 1 && output_file.is_some() {
-        return Err("-o flag is not supported with -c and multiple input files".to_string());
+        return Err(error(
+            "option '-o' cannot be used with '-c' and multiple input files",
+            Some(Topic::File),
+        ));
     }
 
     Ok(Command::CompileFile(FileArgs {
@@ -277,9 +271,7 @@ fn parse_file_args(args: impl IntoIterator<Item = String>) -> Result<Command, St
     }))
 }
 
-fn parse_file_specific_args(
-    args: impl IntoIterator<Item = String>,
-) -> Result<FileSpecificArgs, String> {
+fn parse_file_specific_args(args: impl IntoIterator<Item = String>) -> CXResult<FileSpecificArgs> {
     let mut parsed = FileSpecificArgs::default();
     let mut args_iter = args.into_iter();
 
@@ -290,20 +282,19 @@ fn parse_file_specific_args(
         }
 
         if arg == "-o" {
-            parsed.output_file = Some(
-                args_iter
-                    .next()
-                    .ok_or_else(|| "-o flag requires an output file path".to_string())?,
-            );
+            parsed.output_file = Some(args_iter.next().ok_or_else(|| {
+                error(
+                    "option '-o' requires an output file path",
+                    Some(Topic::File),
+                )
+            })?);
             continue;
         }
 
         if arg == "-I" {
-            parsed.include_dirs.push(
-                args_iter
-                    .next()
-                    .ok_or_else(|| "-I flag requires a directory path".to_string())?,
-            );
+            parsed.include_dirs.push(args_iter.next().ok_or_else(|| {
+                error("option '-I' requires a directory path", Some(Topic::File))
+            })?);
             continue;
         }
 
@@ -315,9 +306,9 @@ fn parse_file_specific_args(
         }
 
         if arg == "-D" {
-            let definition = args_iter
-                .next()
-                .ok_or_else(|| "-D flag requires a macro definition".to_string())?;
+            let definition = args_iter.next().ok_or_else(|| {
+                error("option '-D' requires a macro definition", Some(Topic::File))
+            })?;
             parsed
                 .predefined_macros
                 .push(parse_macro_definition(&definition)?);
@@ -334,7 +325,7 @@ fn parse_file_specific_args(
         }
 
         if arg.starts_with('-') {
-            return Err(format!("Unknown flag: {arg}"));
+            return Err(error(format!("unknown option '{arg}'"), Some(Topic::File)));
         }
 
         parsed.input_files.push(arg);
@@ -343,7 +334,7 @@ fn parse_file_specific_args(
     Ok(parsed)
 }
 
-fn parse_macro_definition(definition: &str) -> Result<(String, String), String> {
+fn parse_macro_definition(definition: &str) -> CXResult<(String, String)> {
     let (name, value) = definition
         .split_once('=')
         .map_or((definition, "1"), |(name, value)| (name, value));
@@ -356,34 +347,33 @@ fn parse_macro_definition(definition: &str) -> Result<(String, String), String> 
         characters.all(|character| character == '_' || character.is_ascii_alphanumeric());
 
     if !valid_start || !valid_rest {
-        return Err(format!("Invalid macro name in -D definition: '{name}'"));
+        return Err(error(
+            format!("invalid macro name in -D definition: '{name}'"),
+            Some(Topic::File),
+        ));
     }
 
     Ok((name.to_string(), value.to_string()))
 }
 
-fn parse_init_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
+fn parse_init_args(args: impl IntoIterator<Item = String>) -> CXResult<Command> {
     let mut args_iter = args.into_iter();
     let project_name = args_iter
         .next()
-        .ok_or_else(|| "Usage: cx init <project-name>".to_string())?;
-
-    if help::is_help_flag(&project_name) {
-        help::dispatch(Topic::Init);
-        std::process::exit(0);
-    }
-
-    if help::is_version_flag(&project_name) {
-        help::print_version();
-        std::process::exit(0);
-    }
+        .ok_or_else(|| error("expected a project name", Some(Topic::Init)))?;
 
     if project_name.starts_with('-') {
-        return Err(format!("Invalid project name: '{project_name}'"));
+        return Err(error(
+            format!("invalid project name: '{project_name}'"),
+            Some(Topic::Init),
+        ));
     }
 
     if args_iter.next().is_some() {
-        return Err("cx init takes exactly one argument: the project name".to_string());
+        return Err(error(
+            "expected exactly one project name",
+            Some(Topic::Init),
+        ));
     }
 
     Ok(Command::Init(InitArgs { project_name }))

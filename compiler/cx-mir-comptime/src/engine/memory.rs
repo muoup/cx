@@ -1,4 +1,4 @@
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
     MIRConstant, MIRFieldLayout, MIRGlobalID, MIRGlobalKind, MIRPlace, MIRTypeID, MIRTypeKind,
     MIRValue,
@@ -7,7 +7,7 @@ use cx_mir::{
 };
 use cx_tokens::TokenRange;
 
-use crate::{error::comptime_error, value::MIRComptimeValue};
+use crate::{log::comptime_error, value::MIRComptimeValue};
 
 use super::{MIRComptimeEngine, execution, ops, state::PathSeg};
 
@@ -86,10 +86,7 @@ pub(super) fn address_of(
 ) -> CXResult<MIRConstant> {
     let (root, path) = resolve_projection(engine, place);
     let MIRPlace::Global(global) = root else {
-        return comptime_error(
-            range.clone(),
-            "cannot take the address of a local value in a comptime context",
-        );
+        return comptime_error(range.clone(), (&catalogue::COMPTIME_LOCAL_ADDRESS, ()));
     };
 
     if path.is_empty() {
@@ -100,15 +97,12 @@ pub(super) fn address_of(
     let Some(registry) = engine.resolver.types() else {
         return comptime_error(
             range.clone(),
-            "type layouts are unavailable during comptime evaluation",
+            (&catalogue::COMPTIME_TYPE_LAYOUTS_UNAVAILABLE, ()),
         );
     };
     let Some(MIRGlobalKind::Variable { ty: start, .. }) = engine.resolver.global_kind(global)
     else {
-        return comptime_error(
-            range.clone(),
-            "cannot project into this global in a comptime context",
-        );
+        return comptime_error(range.clone(), (&catalogue::COMPTIME_GLOBAL_PROJECTION, ()));
     };
 
     let mut offset: i64 = 0;
@@ -126,13 +120,13 @@ pub(super) fn address_of(
                 Ok(MIRFieldLayout::Bitfield { .. }) => {
                     return comptime_error(
                         range.clone(),
-                        "address-of a bitfield is not supported in a comptime context",
+                        (&catalogue::COMPTIME_BITFIELD_ADDRESS, ()),
                     );
                 }
                 Err(_) => {
                     return comptime_error(
                         range.clone(),
-                        "invalid field projection in an address-of computation",
+                        (&catalogue::COMPTIME_INVALID_FIELD_PROJECTION, ()),
                     );
                 }
             },
@@ -142,14 +136,14 @@ pub(super) fn address_of(
                     _ => {
                         return comptime_error(
                             range.clone(),
-                            "index projection on a non-array in an address-of computation",
+                            (&catalogue::COMPTIME_NON_ARRAY_INDEX, ()),
                         );
                     }
                 };
                 if *index < 0 {
                     return comptime_error(
                         range.clone(),
-                        "negative array index in an address-of computation",
+                        (&catalogue::COMPTIME_NEGATIVE_INDEX, ()),
                     );
                 }
                 let stride = match layout_of(registry, inner) {
@@ -157,7 +151,7 @@ pub(super) fn address_of(
                     Err(_) => {
                         return comptime_error(
                             range.clone(),
-                            "invalid element layout in an address-of computation",
+                            (&catalogue::COMPTIME_INVALID_ELEMENT_LAYOUT, ()),
                         );
                     }
                 };
@@ -165,10 +159,7 @@ pub(super) fn address_of(
                 ty = inner;
             }
             PathSeg::Variant(_) => {
-                return comptime_error(
-                    range.clone(),
-                    "variant projections are not supported in address-of computations",
-                );
+                return comptime_error(range.clone(), (&catalogue::COMPTIME_VARIANT_ADDRESS, ()));
             }
         }
     }
@@ -187,18 +178,21 @@ pub(super) fn global_address_type(
             let Some(types) = engine.resolver.types() else {
                 return comptime_error(
                     range.clone(),
-                    "type layouts are unavailable during comptime evaluation",
+                    (&catalogue::COMPTIME_TYPE_LAYOUTS_UNAVAILABLE, ()),
                 );
             };
             let Some(ty) = types.find_kind(&MIRTypeKind::Str) else {
                 return comptime_error(
                     range.clone(),
-                    "the string type is unavailable during comptime evaluation",
+                    (&catalogue::COMPTIME_STRING_TYPE_UNAVAILABLE, ()),
                 );
             };
             Ok(ty)
         }
-        None => comptime_error(range.clone(), "unknown global in an address-of computation"),
+        None => comptime_error(
+            range.clone(),
+            (&catalogue::COMPTIME_UNKNOWN_GLOBAL_ADDRESS, ()),
+        ),
     }
 }
 
@@ -232,7 +226,7 @@ pub(super) fn read_constant(
     match read_value(engine, value)? {
         MIRComptimeValue::Constant(value) => Ok(value),
         MIRComptimeValue::Staged(_) => {
-            comptime_error(range.clone(), "staged value used as a concrete value")
+            comptime_error(range.clone(), (&catalogue::COMPTIME_STAGED_CONCRETE, ()))
         }
     }
 }
@@ -277,7 +271,7 @@ fn read_place(engine: &mut MIRComptimeEngine<'_>, place: MIRPlace) -> CXResult<M
     let MIRComptimeValue::Constant(root) = root else {
         return comptime_error(
             TokenRange::internal(),
-            "cannot project through a staged value",
+            (&catalogue::COMPTIME_STAGED_PROJECTION, ()),
         );
     };
     Ok(MIRComptimeValue::Constant(read_path(&root, &projection.1)))
@@ -293,7 +287,7 @@ pub(super) fn write_place(
         let MIRComptimeValue::Constant(value) = value else {
             return comptime_error(
                 TokenRange::internal(),
-                "cannot store a staged value in a global",
+                (&catalogue::COMPTIME_STAGED_GLOBAL_STORE, ()),
             );
         };
         engine.globals.insert(global, value);
@@ -319,13 +313,13 @@ pub(super) fn write_place(
     let MIRComptimeValue::Constant(current) = current else {
         return comptime_error(
             TokenRange::internal(),
-            "cannot assign through a staged value",
+            (&catalogue::COMPTIME_STAGED_ASSIGNMENT, ()),
         );
     };
     let MIRComptimeValue::Constant(value) = value else {
         return comptime_error(
             TokenRange::internal(),
-            "cannot store a staged value in an aggregate projection",
+            (&catalogue::COMPTIME_STAGED_AGGREGATE_STORE, ()),
         );
     };
     let updated = write_path(&current, &path, value, aggregate_type);
@@ -363,7 +357,7 @@ fn read_global(engine: &mut MIRComptimeEngine<'_>, global: MIRGlobalID) -> CXRes
     if !engine.evaluating_globals.insert(global) {
         return comptime_error(
             TokenRange::internal(),
-            "cyclic dependency between global initializers",
+            (&catalogue::COMPTIME_GLOBAL_CYCLE, ()),
         );
     }
 
@@ -377,7 +371,7 @@ fn read_global(engine: &mut MIRComptimeEngine<'_>, global: MIRGlobalID) -> CXRes
                 MIRComptimeValue::Constant(value) => Ok(value),
                 MIRComptimeValue::Staged(_) => comptime_error(
                     TokenRange::internal(),
-                    "global initializer returned a staged value",
+                    (&catalogue::COMPTIME_STAGED_GLOBAL_RESULT, ()),
                 ),
             };
         }
@@ -391,7 +385,7 @@ fn read_global(engine: &mut MIRComptimeEngine<'_>, global: MIRGlobalID) -> CXRes
         }
         comptime_error(
             TokenRange::internal(),
-            "global is not available during comptime evaluation",
+            (&catalogue::COMPTIME_GLOBAL_UNAVAILABLE, ()),
         )
     })();
 

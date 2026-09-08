@@ -1,3 +1,4 @@
+use cx_log::catalogue::typecheck as catalogue;
 use std::collections::HashSet;
 
 use crate::environment::TypeEnvironment;
@@ -47,7 +48,8 @@ pub fn typecheck_match(
         if has_binding {
             return env.log_error(
                 body.token_range(),
-                "Unreachable match arm after a catch-all binding".to_string(),
+                &catalogue::UNREACHABLE_MATCH_ARM_AFTER_A_CATCH_ALL_BINDING,
+                (),
             );
         }
         has_binding = matches!(pattern, HIRPattern::Binding(_));
@@ -69,18 +71,16 @@ pub fn typecheck_match(
                 let HIRPattern::Integer(pattern_value) = pattern else {
                     return env.log_error(
                         condition.token_range(),
-                        "Match pattern must be an integer literal or a catch-all binding"
-                            .to_string(),
+                        &catalogue::MATCH_PATTERN_MUST_BE_AN_INTEGER_LITERAL_OR_A_CATCH,
+                        (),
                     );
                 };
 
                 if !matched_values.insert(*pattern_value) {
                     return env.log_error(
                         body.token_range(),
-                        format!(
-                            "Integer value '{}' already matched in this match",
-                            pattern_value
-                        ),
+                        &catalogue::INTEGER_VALUE_ALREADY_MATCHED_IN_THIS_MATCH,
+                        format!("{}", pattern_value),
                     );
                 }
                 let (_, body, flow) = typecheck_arm(env, namespace, body, None)?;
@@ -91,7 +91,8 @@ pub fn typecheck_match(
             if !has_binding {
                 return env.log_error(
                     condition.token_range(),
-                    "Integer match must be exhaustive; add a catch-all binding such as '_ => ...'".to_string(),
+                    &catalogue::INTEGER_MATCH_MUST_BE_EXHAUSTIVE_ADD_A_CATCH_ALL_BINDING,
+                    (),
                 );
             }
             result_arms
@@ -112,11 +113,7 @@ pub fn typecheck_match(
 
             for (pattern, body) in arms {
                 if matched_variants.len() == variants.len() {
-                    return env.log_error(
-                        body.token_range(),
-                        "Unreachable match arm: all tagged union variants are already covered"
-                            .to_string(),
-                    );
+                    return env.log_error(body.token_range(), &catalogue::UNREACHABLE_MATCH_ARM_ALL_TAGGED_UNION_VARIANTS_ARE_ALREADY_COVERED, ());
                 }
                 if let HIRPattern::Binding(name) = pattern {
                     let (pattern, body, flow) =
@@ -135,9 +132,10 @@ pub fn typecheck_match(
                 if expected_union_name != &union_name {
                     return env.log_error(
                         condition.token_range(),
-                        format!(
-                            "Tagged union variant does not match the type being matched, found '{}', expected '{}'",
-                            union_name, expected_union_name
+                        &catalogue::TAGGED_UNION_VARIANT_DOES_NOT_MATCH_THE_TYPE_BEING_MATCHED,
+                        (
+                            format!("{}", union_name),
+                            format!("{}", expected_union_name),
                         ),
                     );
                 }
@@ -156,9 +154,10 @@ pub fn typecheck_match(
                 }) else {
                     return env.log_error(
                         condition.token_range(),
-                        format!(
-                            "Variant '{}' not found in tagged union '{}'",
-                            variant_name, expected_union_name
+                        &catalogue::VARIANT_NOT_FOUND_IN_TAGGED_UNION,
+                        (
+                            format!("{}", variant_name),
+                            format!("{}", expected_union_name),
                         ),
                     );
                 };
@@ -166,10 +165,8 @@ pub fn typecheck_match(
                 if !matched_variants.insert(variant_id) {
                     return env.log_error(
                         condition.token_range(),
-                        format!(
-                            "Variant '{}' already matched in this match expression",
-                            variant_name
-                        ),
+                        &catalogue::VARIANT_ALREADY_MATCHED_IN_THIS_MATCH_EXPRESSION,
+                        format!("{}", variant_name),
                     );
                 }
 
@@ -234,9 +231,10 @@ pub fn typecheck_match(
                     if variant_type.is_nodrop() {
                         return env.log_error(
                             condition.token_range(),
-                            format!(
-                                "Variant '{}' of tagged union '{}' has a non-void type, but no inner name was provided in the pattern",
-                                variant_name, expected_union_name
+                            &catalogue::VARIANT_OF_TAGGED_UNION_HAS_A_NON_VOID_TYPE_BUT,
+                            (
+                                format!("{}", variant_name),
+                                format!("{}", expected_union_name),
                             ),
                         );
                     }
@@ -271,7 +269,8 @@ pub fn typecheck_match(
                     .join(", ");
                 return env.log_error(
                     condition.token_range(),
-                    format!("Match must be exhaustive; missing variants: {}. Add the missing arms or a catch-all binding such as '_ => ...'", missing),
+                    &catalogue::MATCH_MUST_BE_EXHAUSTIVE_MISSING_VARIANTS_ADD_THE_MISSING_ARMS,
+                    format!("{}", missing),
                 );
             }
             result_arms
@@ -279,10 +278,8 @@ pub fn typecheck_match(
         _ => {
             return env.log_error(
                 condition.token_range(),
-                format!(
-                    "Match condition must be an integer or tagged union type, found {}",
-                    expr_type.display_with(&env.symbols)
-                ),
+                &catalogue::MATCH_CONDITION_MUST_BE_AN_INTEGER_OR_TAGGED_UNION_TYPE,
+                format!("{}", expr_type.display_with(&env.symbols)),
             );
         }
     };
@@ -297,8 +294,8 @@ pub fn typecheck_match(
             if flow.may_fall_through {
                 return env.log_error(
                     &flow.range,
-                    "Value-producing match arm may fall through without yielding a value"
-                        .to_string(),
+                    &catalogue::VALUE_PRODUCING_MATCH_ARM_MAY_FALL_THROUGH_WITHOUT_YIELDING_A,
+                    (),
                 );
             }
         }
@@ -370,14 +367,16 @@ fn validate_variant_template_input(
     let Some(template_data) = union_type.get_template_data() else {
         return env.log_error(
             condition.token_range(),
-            "Non-templated tagged union pattern may not have template arguments".to_string(),
+            &catalogue::NON_TEMPLATED_TAGGED_UNION_PATTERN_MAY_NOT_HAVE_TEMPLATE_ARGUMENTS,
+            (),
         );
     };
 
     if !completed_input.contextual_eq(&template_data.template_input, &env.symbols) {
         return env.log_error(
             condition.token_range(),
-            "Tagged union pattern template arguments do not match the matched type".to_string(),
+            &catalogue::TAGGED_UNION_PATTERN_TEMPLATE_ARGUMENTS_DO_NOT_MATCH_THE_MATCHED,
+            (),
         );
     }
 

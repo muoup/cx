@@ -2,7 +2,7 @@ use cx_hir::{
     ast::{template::HIRTemplatePrototype, types::HIRTagKind},
     symbols::HIRSymbol,
 };
-use cx_log::error::{CXRawResult, message::CXStdErrMessage};
+use cx_log::{CXRawResult, catalogue::typecheck};
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -10,7 +10,10 @@ use cx_util::identifier::CXIdent;
 use crate::{
     NamespacePath,
     thir::{
-        data::{THIRComptimeFnPrototype, THIRFnPrototype, THIRTemplateInput, THIRType, THIRTypeID, THIRTypeKind},
+        data::{
+            THIRComptimeFnPrototype, THIRFnPrototype, THIRTemplateInput, THIRType, THIRTypeID,
+            THIRTypeKind,
+        },
         expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
     },
     type_context::THIRTypeContext,
@@ -70,7 +73,7 @@ impl MIRSymbol {
 
     pub fn as_expression(&self) -> CXRawResult<THIRExpression> {
         match self {
-            MIRSymbol::FunctionReference(prototype) => CXRawResult::Ok(THIRExpression {
+            MIRSymbol::FunctionReference(prototype) => Ok(THIRExpression {
                 token_range: TokenRange::internal(),
                 _type: THIRTypeKind::Function {
                     signature: Box::new(prototype.signature().clone()),
@@ -84,23 +87,19 @@ impl MIRSymbol {
 
             MIRSymbol::Expression(expr) => CXRawResult::Ok(expr.clone()),
 
-            MIRSymbol::ComptimeFunctionReference { .. } => CXStdErrMessage::result(
-                "TYPE ERROR",
-                "Comptime function cannot be used in runtime contexts",
-            ),
+            // FIXME: We should be able to generate function calls to comptime functions in a runtime function's THIR
+            MIRSymbol::ComptimeFunctionReference { .. } => {
+                crate::log::log_error(&typecheck::COMPTIME_FUNCTION_RUNTIME_CONTEXT, ())
+            }
 
+            // FIXME: Ditto above
             MIRSymbol::StagedExpressionFunction { .. } => {
-                CXStdErrMessage::result(
-                    "TYPE ERROR",
-                    "Staged expression cannot be used in runtime contexts",
-                )
+                crate::log::log_error(&typecheck::STAGED_EXPRESSION_RUNTIME_CONTEXT, ())
             }
 
-            MIRSymbol::Template { .. } => {
-                CXStdErrMessage::result("TYPE ERROR", "Could not deduce arguments to template")
-            }
+            MIRSymbol::Template { .. } => crate::log::log_error(&typecheck::TEMPLATE_DEDUCTION, ()),
 
-            _ => CXStdErrMessage::result("TYPE ERROR", "Symbol does not refer to a value"),
+            _ => crate::log::log_error(&typecheck::SYMBOL_NOT_VALUE, ()),
         }
     }
 }

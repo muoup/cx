@@ -1,10 +1,11 @@
 use crate::GlobalState;
 use crate::attributes::{attr_alignment, attr_byval, get_type_attributes};
-use crate::error::{LLVMError, LLVMResult};
+use crate::log::{LLVMError, LLVMResult};
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{
     LMIRFunctionPrototype, LMIRFunctionSignature, LMIRParameterABI, LMIRReturnABI, LinkageType,
 };
+use cx_log::catalogue::backend as catalogue;
 use cx_target::ArchitectureConfig;
 use inkwell::AddressSpace;
 use inkwell::attributes::AttributeLoc;
@@ -34,9 +35,10 @@ pub(crate) fn any_to_basic_type(any_type: AnyTypeEnum) -> LLVMResult<BasicTypeEn
         AnyTypeEnum::ArrayType(array_type) => Ok(array_type.into()),
         AnyTypeEnum::VectorType(vector_type) => Ok(vector_type.into()),
 
-        any_type => Err(LLVMError::new(format!(
-            "Expected a basic LLVM type, found {any_type:?}"
-        ))),
+        any_type => Err(LLVMError::new(
+            &catalogue::EXPECTED_A_BASIC_LLVM_TYPE_FOUND,
+            format!("{:?}", any_type),
+        )),
     }
 }
 
@@ -49,9 +51,10 @@ pub(crate) fn any_to_basic_val(any_value: AnyValueEnum) -> LLVMResult<BasicValue
         AnyValueEnum::ArrayValue(array_value) => Ok(array_value.into()),
         AnyValueEnum::VectorValue(vector_value) => Ok(vector_value.into()),
 
-        any_value => Err(LLVMError::new(format!(
-            "Expected a basic LLVM value, found {any_value:?}"
-        ))),
+        any_value => Err(LLVMError::new(
+            &catalogue::EXPECTED_A_BASIC_LLVM_VALUE_FOUND_DIAGNOSTIC,
+            format!("{:?}", any_value),
+        )),
     }
 }
 
@@ -192,9 +195,10 @@ pub(crate) fn bc_llvm_signature<'a>(
         AnyTypeEnum::VoidType(void_type) => void_type.fn_type(args.as_slice(), signature.var_args),
 
         ty => {
-            return Err(LLVMError::new(format!(
-                "Invalid LLVM function return type: {ty:?}"
-            )));
+            return Err(LLVMError::new(
+                &catalogue::INVALID_LLVM_FUNCTION_RETURN_TYPE,
+                format!("{:?}", ty),
+            ));
         }
     })
 }

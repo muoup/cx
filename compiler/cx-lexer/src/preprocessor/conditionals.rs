@@ -1,4 +1,5 @@
 use cx_log::CXResult;
+use cx_log::catalogue::parse::*;
 
 use crate::{
     context::LexingContext,
@@ -19,7 +20,8 @@ pub(crate) fn handle_ifdef(
 
         return frame.cursor_view().log_error(
             directive_start,
-            format!("{} requires a macro name", directive),
+            &CONDITIONAL_MACRO,
+            directive.to_string(),
         );
     };
 
@@ -64,7 +66,7 @@ pub(crate) fn handle_elif(
 
             return source
                 .cursor_view()
-                .log_error(directive_start, "#elif after #else");
+                .log_error(directive_start, &ELIF_AFTER_ELSE, ());
         }
         Some(frame) => frame.parent_active && !frame.any_branch_taken,
         None => {
@@ -72,7 +74,7 @@ pub(crate) fn handle_elif(
 
             return source
                 .cursor_view()
-                .log_error(directive_start, "#elif without matching #if");
+                .log_error(directive_start, &ELIF_WITHOUT_IF, ());
         }
     };
 
@@ -101,7 +103,7 @@ pub(crate) fn handle_else(
 
         return source
             .cursor_view()
-            .log_error(directive_start, "#else without matching #if");
+            .log_error(directive_start, &ELSE_WITHOUT_IF, ());
     };
 
     if frame.else_seen {
@@ -109,7 +111,7 @@ pub(crate) fn handle_else(
 
         return source
             .cursor_view()
-            .log_error(directive_start, "Duplicate #else");
+            .log_error(directive_start, &DUPLICATE_ELSE, ());
     }
 
     frame.else_seen = true;
@@ -130,7 +132,7 @@ pub(crate) fn handle_endif(
 
         return source
             .cursor_view()
-            .log_error(directive_start, "#endif without matching #if");
+            .log_error(directive_start, &ENDIF_WITHOUT_IF, ());
     }
     Ok(LexTransition::Continue)
 }
@@ -144,14 +146,9 @@ pub(crate) fn handle_error(
     if context.current_frame().is_active() {
         let frame = context.current_frame();
 
-        return frame.cursor_view().log_error(
-            directive_start,
-            format!(
-                "#error{}{}",
-                if message.trim().is_empty() { "" } else { ": " },
-                message.trim()
-            ),
-        );
+        return frame
+            .cursor_view()
+            .log_error(directive_start, &PREPROCESSOR_ERROR, message);
     }
     Ok(LexTransition::Continue)
 }

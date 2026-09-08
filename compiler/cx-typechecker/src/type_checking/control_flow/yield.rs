@@ -7,6 +7,7 @@ use crate::{
 };
 use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::NamespacePath;
 use cx_thir::thir::{data::THIRType, expression::THIRExpressionKind};
 use cx_tokens::TokenRange;
@@ -20,7 +21,8 @@ pub fn typecheck_yield(
     if env.in_defer_context() {
         return env.log_error(
             yield_range,
-            "yield is not allowed inside a deferred expression".to_string(),
+            &catalogue::YIELD_IS_NOT_ALLOWED_INSIDE_A_DEFERRED_EXPRESSION,
+            (),
         );
     }
 
@@ -31,7 +33,8 @@ pub fn typecheck_yield(
     if state.target == ControlTarget::Invalid {
         return env.log_error(
             yield_range,
-            "'yield' used outside of a yielding context".to_string(),
+            &catalogue::YIELD_USED_OUTSIDE_OF_A_YIELDING_CONTEXT,
+            (),
         );
     }
 
@@ -40,7 +43,8 @@ pub fn typecheck_yield(
             if state.saw_empty {
                 return env.log_error(
                     yield_range,
-                    "A yield context cannot mix value and valueless yields".to_string(),
+                    &catalogue::A_YIELD_CONTEXT_CANNOT_MIX_VALUE_AND_VALUELESS_YIELDS,
+                    (),
                 );
             }
 
@@ -63,10 +67,10 @@ pub fn typecheck_yield(
             {
                 return env.log_error(
                     yield_range,
-                    format!(
-                        "Yield type {} does not match {}",
-                        expression._type.display_with(&env.symbols),
-                        expected_type.display_with(&env.symbols),
+                    &catalogue::YIELD_TYPE_DOES_NOT_MATCH,
+                    (
+                        format!("{}", expression._type.display_with(&env.symbols)),
+                        format!("{}", expected_type.display_with(&env.symbols)),
                     ),
                 );
             }
@@ -78,7 +82,8 @@ pub fn typecheck_yield(
             if state.saw_value {
                 return env.log_error(
                     yield_range,
-                    "A yield context cannot mix value and valueless yields".to_string(),
+                    &catalogue::A_YIELD_CONTEXT_CANNOT_MIX_VALUE_AND_VALUELESS_YIELDS,
+                    (),
                 );
             }
             if let Some(expected_type) = &state.expected_type
@@ -86,10 +91,8 @@ pub fn typecheck_yield(
             {
                 return env.log_error(
                     yield_range,
-                    format!(
-                        "Yield target expects a value of type {}",
-                        expected_type.display_with(&env.symbols)
-                    ),
+                    &catalogue::YIELD_TARGET_EXPECTS_A_VALUE_OF_TYPE,
+                    format!("{}", expected_type.display_with(&env.symbols)),
                 );
             }
             (None, THIRType::unit(), false)

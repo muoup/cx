@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use cx_hir::ast::{
     function::HIRFunctionKind, modifiers::HIRSymbolNameScheme, HIRDefinition, HIRStmt, HIR,
 };
+use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
 use cx_namespace::lookup::{QualifiedLookup, QualifiedLookupResult};
 use cx_namespace::module::{ModulePath, NamespacePath, QualifiedName};
@@ -83,11 +84,7 @@ impl<'a> ParserData<'a> {
         self.expr_commas.pop();
     }
 
-    pub fn token_range(
-        &self,
-        start_token: usize,
-        end_token: usize,
-    ) -> TokenRange {
+    pub fn token_range(&self, start_token: usize, end_token: usize) -> TokenRange {
         TokenRange::from_tokens(start_token, end_token, self.tokens.slice)
     }
 
@@ -116,7 +113,7 @@ impl<'a> ParserData<'a> {
 
     pub fn end_include(&mut self) -> CXResult<()> {
         let Some(state) = self.include_states.pop() else {
-            return parse_point_error(&self.tokens, "Unexpected end of included source");
+            return parse_point_error(&self.tokens, &UNEXPECTED_END_INCLUDED, ());
         };
         self.visibility = state.visibility;
         self.symbol_naming = state.symbol_naming;
@@ -145,14 +142,14 @@ impl<'a> ParserData<'a> {
             QualifiedLookupResult::NotFound => Ok(false),
             QualifiedLookupResult::Ambiguous { candidates } => parse_point_error(
                 &self.tokens,
-                format!(
-                    "Ambiguous identifier '{}', candidates: {}",
-                    name,
+                &AMBIGUOUS_LOOKUP,
+                (
+                    name.to_string(),
                     candidates
                         .iter()
                         .map(|n| n.to_string())
                         .collect::<Vec<_>>()
-                        .join(", ")
+                        .join(", "),
                 ),
             ),
         }
@@ -205,7 +202,19 @@ impl QualifiedLookup for ParserData<'_> {
             .unwrap_or_default()
     }
 
-    fn priority(&self, lexical_namespace: &NamespacePath, name: &QualifiedName, value: &PreparseSymbolKind) -> (u8, bool) {
-        (if &name.namespace == lexical_namespace { 2 } else { 0 }, *value == PreparseSymbolKind::Type)
+    fn priority(
+        &self,
+        lexical_namespace: &NamespacePath,
+        name: &QualifiedName,
+        value: &PreparseSymbolKind,
+    ) -> (u8, bool) {
+        (
+            if &name.namespace == lexical_namespace {
+                2
+            } else {
+                0
+            },
+            *value == PreparseSymbolKind::Type,
+        )
     }
 }

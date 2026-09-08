@@ -1,7 +1,8 @@
-use crate::error::{LLVMError, LLVMResult};
-use crate::typing::{any_to_basic_type, bc_llvm_type, convert_linkage};
 use crate::GlobalState;
+use crate::log::{LLVMError, LLVMResult};
+use crate::typing::{any_to_basic_type, bc_llvm_type, convert_linkage};
 use cx_lmir::{LMIRGlobalInitializer, LMIRGlobalState, LMIRGlobalType, LMIRGlobalValue};
+use cx_log::catalogue::backend as catalogue;
 use inkwell::module::Linkage;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::ArrayValue;
@@ -90,10 +91,12 @@ pub(crate) fn define_global_variable(
         }
         LMIRGlobalState::External => unreachable!(),
     };
-    let global = *state
-        .globals
-        .get(index)
-        .ok_or_else(|| LLVMError::new(format!("Invalid global definition index {index}")))?;
+    let global = *state.globals.get(index).ok_or_else(|| {
+        LLVMError::new(
+            &catalogue::INVALID_GLOBAL_DEFINITION_INDEX,
+            format!("{}", index),
+        )
+    })?;
     let initializer = match global_state {
         LMIRGlobalState::ZeroInitialized => basic_type.const_zero(),
         LMIRGlobalState::Initialized(initializer) => {
@@ -263,9 +266,10 @@ fn global_initializer<'ctx>(
                     .map(|index| -> LLVMResult<_> {
                         let field_type =
                             struct_type.get_field_type_at_index(index).ok_or_else(|| {
-                                LLVMError::new(format!(
-                                    "Invalid field index {index} in LLVM struct initializer"
-                                ))
+                                LLVMError::new(
+                                    &catalogue::INVALID_FIELD_INDEX_IN_LLVM_STRUCT_INITIALIZER,
+                                    format!("{}", index),
+                                )
                             })?;
                         Ok(fields
                             .iter()
@@ -296,7 +300,8 @@ fn global_initializer<'ctx>(
                 Ok(unsafe { ArrayValue::new_const_array(&element_type, &values) }.into())
             }
             _ => Err(LLVMError::new(
-                "Aggregate initializer used with non-aggregate LLVM type",
+                &catalogue::AGGREGATE_INITIALIZER_USED_WITH_NON_AGGREGATE_LLVM_TYPE,
+                (),
             )),
         },
         LMIRGlobalInitializer::Global(global) => {
@@ -305,7 +310,10 @@ fn global_initializer<'ctx>(
                 .globals
                 .get(*global as usize)
                 .ok_or_else(|| {
-                    LLVMError::new(format!("Invalid global initializer reference {global}"))
+                    LLVMError::new(
+                        &catalogue::INVALID_GLOBAL_INITIALIZER_REFERENCE,
+                        format!("{}", global),
+                    )
                 })?
                 .as_pointer_value();
             Ok(value.const_cast(pointer_type).into())
@@ -316,7 +324,10 @@ fn global_initializer<'ctx>(
                 .globals
                 .get(*global as usize)
                 .ok_or_else(|| {
-                    LLVMError::new(format!("Invalid global initializer reference {global}"))
+                    LLVMError::new(
+                        &catalogue::INVALID_GLOBAL_INITIALIZER_REFERENCE,
+                        format!("{}", global),
+                    )
                 })?
                 .as_pointer_value();
             let index = state.context.i64_type().const_int(*offset as u64, true);
@@ -326,7 +337,10 @@ fn global_initializer<'ctx>(
         LMIRGlobalInitializer::Function(function) => {
             let pointer_type = basic_type.into_pointer_type();
             let value = state.module.get_function(function).ok_or_else(|| {
-                LLVMError::new(format!("Invalid function initializer reference {function}"))
+                LLVMError::new(
+                    &catalogue::INVALID_FUNCTION_INITIALIZER_REFERENCE,
+                    format!("{}", function),
+                )
             })?;
             Ok(value
                 .as_global_value()

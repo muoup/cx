@@ -4,8 +4,8 @@ use cx_thir::THIRUnit;
 
 pub mod builder;
 
-pub(crate) mod lowering;
 pub(crate) mod log;
+pub(crate) mod lowering;
 
 pub use builder::MIRBuilder;
 
@@ -63,7 +63,7 @@ pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
         unit.materialize_global(global_id, constant)
             .map_err(|error| {
                 cx_log::error::CXError::new(
-                    cx_log::error::message::CXStdErrMessage::error("COMPTIME ERROR", error),
+                    error,
                     cx_log::error::context::CXInternalContext::error(
                         "failed to materialize a global initializer",
                     ),

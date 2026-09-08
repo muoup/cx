@@ -1,4 +1,5 @@
 use cx_log::CXResult;
+use cx_log::catalogue::parse::DEFINE_MACRO;
 
 use crate::{
     context::{LexingContext, Macro},
@@ -21,7 +22,7 @@ pub(crate) fn handle_define(
         let frame = context.current_frame();
         return frame
             .cursor_view()
-            .log_error(directive_start, "#define requires a macro name");
+            .log_error(directive_start, &DEFINE_MACRO, ());
     };
 
     let rest_of_line = rest_of_logical_directive(context.current_frame_mut());

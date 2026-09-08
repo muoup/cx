@@ -1,6 +1,6 @@
 mod engine;
-pub mod error;
 mod interpretable;
+pub mod log;
 mod value;
 
 pub mod context;

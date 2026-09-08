@@ -1,12 +1,10 @@
 use crate::environment::TypeEnvironment;
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_thir::thir::expression::{
     THIRCoercion, THIRExpression, THIRExpressionKind, THIRFnContract, THIRPostcondition,
 };
 use cx_thir::type_context::THIRTypeContext;
-
-const UNSAFE_EXPRESSION_MESSAGE: &str =
-    "Expression is not supported in safe contexts; wrap it in `@unsafe`";
 
 /// Checks the explicit safe-expression whitelist for one fully typechecked body.
 ///
@@ -257,5 +255,9 @@ fn validate_all(env: &TypeEnvironment, expressions: &[THIRExpression]) -> CXResu
 }
 
 fn reject<T>(env: &TypeEnvironment, expression: &THIRExpression) -> CXResult<T> {
-    env.log_error(&expression.token_range, UNSAFE_EXPRESSION_MESSAGE)
+    env.log_error(
+        &expression.token_range,
+        &catalogue::EXPRESSION_IS_NOT_SUPPORTED_IN_SAFE_CONTEXTS_WRAP_IT_IN,
+        (),
+    )
 }

@@ -2,6 +2,7 @@ use crate::{
     assert_token_matches, log::parse_point_error, next_kind, parse::try_parse_qualified_name,
     try_next,
 };
+use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_pipeline_data::CompilerConfig;
@@ -9,9 +10,7 @@ use cx_preparse_data::{Import, PreparseContents};
 use cx_tokens::{
     identifier, keyword, operator, punctuator, specifier, token::TokenKind, TokenIter,
 };
-use cx_util::{
-    identifier::CXIdent,
-};
+use cx_util::identifier::CXIdent;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PreparseConfig {
@@ -63,7 +62,7 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
 
         cx_tokens::token::TokenKind::IncludeEnd => {
             let Some(state) = data.include_states.pop() else {
-                return parse_point_error(&data.tokens, "Unexpected end of included source");
+                return parse_point_error(&data.tokens, &UNEXPECTED_END_INCLUDED, ());
             };
             data.visibility_mode = state.visibility;
         }
@@ -123,7 +122,8 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
                 if import_namespace == data.contents.module_symbols.namespace {
                     return parse_point_error(
                         &data.tokens,
-                        format!("Cannot import current module '{}'", name),
+                        &CANNOT_IMPORT_CURRENT_MODULE,
+                        (name.to_string(),),
                     );
                 }
 
@@ -214,7 +214,7 @@ fn parse_extern_c_mod(
     let abi = abi.clone();
 
     if abi != "C" {
-        return parse_point_error(&data.tokens, format!("Unsupported extern ABI '{}'", abi));
+        return parse_point_error(&data.tokens, &UNSUPPORTED_EXTERN_ABI, abi);
     }
 
     assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
@@ -265,10 +265,7 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CXResult<Vec<QualifiedName>> {
 
     loop {
         let Some(next_token) = tokens.peek() else {
-            return parse_point_error(
-                tokens,
-                "Reached end of token stream when parsing import!".to_string(),
-            );
+            return parse_point_error(tokens, &IMPORT_END, ());
         };
 
         if frames.len() == 1
@@ -285,10 +282,10 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CXResult<Vec<QualifiedName>> {
                 ImportFrameState::AfterPath => push_import_name(&mut names, frame, tokens),
                 ImportFrameState::AfterGroup => Ok(()),
                 ImportFrameState::ExpectItem if !frame.saw_item => {
-                    parse_point_error(tokens, "Import path cannot be empty")
+                    parse_point_error(tokens, &IMPORT_PATH_EMPTY, ())
                 }
                 ImportFrameState::ExpectItem | ImportFrameState::ExpectPathContinuation => {
-                    parse_point_error(tokens, "Expected import path item")
+                    parse_point_error(tokens, &IMPORT_PATH_ITEM, ())
                 }
             }?;
 
@@ -296,10 +293,7 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CXResult<Vec<QualifiedName>> {
         }
 
         let Some(tok) = tokens.next().cloned() else {
-            return parse_point_error(
-                tokens,
-                "Reached end of token stream when parsing import!".to_string(),
-            );
+            return parse_point_error(tokens, &IMPORT_END, ());
         };
 
         let frame_state = frames
@@ -319,10 +313,7 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CXResult<Vec<QualifiedName>> {
                     frame.saw_item = true;
                 }
                 ImportFrameState::AfterPath | ImportFrameState::AfterGroup => {
-                    return parse_point_error(
-                        tokens,
-                        "Expected ',' or '}' after import path item".to_string(),
-                    );
+                    return parse_point_error(tokens, &IMPORT_SEPARATOR, ());
                 }
             },
 
@@ -353,10 +344,7 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CXResult<Vec<QualifiedName>> {
 
             operator!(Comma) => {
                 if is_root {
-                    return parse_point_error(
-                        tokens,
-                        "Top-level import paths must be enclosed in '{' and '}'".to_string(),
-                    );
+                    return parse_point_error(tokens, &IMPORT_TOP_LEVEL, ());
                 }
 
                 let frame = frames
@@ -369,10 +357,7 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CXResult<Vec<QualifiedName>> {
                     }
                     ImportFrameState::AfterGroup => {}
                     ImportFrameState::ExpectItem | ImportFrameState::ExpectPathContinuation => {
-                        return parse_point_error(
-                            tokens,
-                            "Expected import path item before ','".to_string(),
-                        );
+                        return parse_point_error(tokens, &IMPORT_BEFORE_COMMA, ());
                     }
                 }
 
@@ -382,7 +367,7 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CXResult<Vec<QualifiedName>> {
 
             punctuator!(CloseBrace) => {
                 if is_root {
-                    return parse_point_error(tokens, "Unexpected '}' in import statement");
+                    return parse_point_error(tokens, &IMPORT_UNEXPECTED_CLOSE, ());
                 }
 
                 let frame = frames
@@ -396,10 +381,7 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CXResult<Vec<QualifiedName>> {
                     ImportFrameState::AfterGroup => {}
                     ImportFrameState::ExpectItem if frame.saw_item => {}
                     ImportFrameState::ExpectItem | ImportFrameState::ExpectPathContinuation => {
-                        return parse_point_error(
-                            tokens,
-                            "Expected import path item before '}'".to_string(),
-                        );
+                        return parse_point_error(tokens, &IMPORT_BEFORE_CLOSE, ());
                     }
                 }
 
@@ -411,10 +393,7 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CXResult<Vec<QualifiedName>> {
             }
 
             _ => {
-                return parse_point_error(
-                    tokens,
-                    format!("Reached invalid token in import path: {:?}", tok),
-                );
+                return parse_point_error(tokens, &IMPORT_TOKEN, (format!("{:?}", tok),));
             }
         }
     }
@@ -426,7 +405,7 @@ fn push_import_name(
     tokens: &TokenIter,
 ) -> CXResult<()> {
     if frame.item.is_empty() {
-        return parse_point_error(tokens, "Import path cannot be empty");
+        return parse_point_error(tokens, &IMPORT_PATH_EMPTY, ());
     }
 
     let mut segments = frame.prefix.clone();
@@ -438,7 +417,7 @@ fn push_import_name(
 
 fn parse_import_alias(tokens: &mut TokenIter) -> CXResult<NamespacePath> {
     let Some(ident) = try_parse_qualified_name(tokens)? else {
-        return parse_point_error(tokens, "Expected identifier for import alias".to_string());
+        return parse_point_error(tokens, &IMPORT_ALIAS, ());
     };
 
     if ident.namespace.is_root() && ident.name.as_str() == "_" {

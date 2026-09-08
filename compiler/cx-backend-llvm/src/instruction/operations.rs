@@ -1,10 +1,11 @@
 use super::inst_num;
 use crate::arithmetic::{generate_int_binop, generate_ptr_binop};
-use crate::error::{LLVMError, LLVMResult};
+use crate::log::{LLVMError, LLVMResult};
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::types::{LMIRType, TypeSize};
 use cx_lmir::{LMIRFloatBinOp, LMIRFloatUnOp, LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRValue};
+use cx_log::catalogue::backend as catalogue;
 use inkwell::AddressSpace;
 use inkwell::values::{AnyValue, AnyValueEnum};
 
@@ -147,7 +148,8 @@ pub(super) fn generate_float_binop<'a, 'b>(
                 LMIRFloatBinOp::FGE => inkwell::FloatPredicate::OGE,
                 _ => {
                     return Err(LLVMError::new(
-                        "Invalid floating-point comparison operation",
+                        &catalogue::INVALID_FLOATING_POINT_COMPARISON_OPERATION,
+                        (),
                     ));
                 }
             };

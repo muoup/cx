@@ -1,5 +1,5 @@
 use crate::attributes::*;
-use crate::error::{LLVMError, LLVMResult};
+use crate::log::{LLVMError, LLVMResult};
 use crate::typing::{
     any_to_basic_type, any_to_basic_val, apply_llvm_parameter_attributes, bc_llvm_prototype,
     bc_llvm_type, convert_linkage,
@@ -9,10 +9,8 @@ use cx_lmir::{
     LMIRFunctionMap, LMIRFunctionPrototype, LMIRFunctionSignature, LMIRRegister, LMIRReturnABI,
     LMIRUnit, LMIRValue,
 };
-use cx_log::{
-    CXResult,
-    error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
-};
+use cx_log::CXResult;
+use cx_log::catalogue::backend as catalogue;
 use cx_target::ArchitectureConfig;
 use cx_util::identifier::CXIdent;
 use inkwell::attributes::AttributeLoc;
@@ -35,9 +33,9 @@ use std::collections::HashMap;
 
 mod arithmetic;
 mod attributes;
-mod error;
 mod globals;
 mod instruction;
+mod log;
 mod routines;
 pub(crate) mod typing;
 
@@ -74,10 +72,10 @@ impl<'a> FunctionState<'a, '_> {
                     .function_value
                     .get_nth_param(*index)
                     .ok_or_else(|| {
-                        LLVMError::new(format!(
-                            "Parameter index {index} out of bounds for function {}",
-                            self.current_function
-                        ))
+                        LLVMError::new(
+                            &catalogue::PARAMETER_INDEX_OUT_OF_BOUNDS_FOR_FUNCTION,
+                            (format!("{}", index), format!("{}", self.current_function)),
+                        )
                     })?
                     .as_any_value_enum();
 
@@ -104,25 +102,28 @@ impl<'a> FunctionState<'a, '_> {
                 Ok(CodegenValue::Value(float_val))
             }
 
-            LMIRValue::FunctionRef(function) => Err(LLVMError::new(format!(
-                "Function reference {function} was used where a generated value was expected"
-            ))),
+            LMIRValue::FunctionRef(function) => Err(LLVMError::new(
+                &catalogue::FUNCTION_REFERENCE_WAS_USED_WHERE_A_GENERATED_VALUE_WAS_EXPECTED,
+                format!("{}", function),
+            )),
 
-            LMIRValue::Register { .. } | LMIRValue::Global(..) => self
-                .value_map
-                .get(val)
-                .cloned()
-                .ok_or_else(|| LLVMError::new(format!("Value {val} was not generated"))),
+            LMIRValue::Register { .. } | LMIRValue::Global(..) => {
+                self.value_map.get(val).cloned().ok_or_else(|| {
+                    LLVMError::new(&catalogue::VALUE_WAS_NOT_GENERATED, format!("{}", val))
+                })
+            }
 
             LMIRValue::NULL => Ok(CodegenValue::Null),
         }
     }
 
     pub(crate) fn get_block(&self, block_id: &LMIRBlockID) -> LLVMResult<BasicBlock<'a>> {
-        self.block_map
-            .get(block_id)
-            .copied()
-            .ok_or_else(|| LLVMError::new(format!("Block with ID {block_id} was not generated")))
+        self.block_map.get(block_id).copied().ok_or_else(|| {
+            LLVMError::new(
+                &catalogue::BLOCK_WITH_ID_WAS_NOT_GENERATED,
+                format!("{}", block_id),
+            )
+        })
     }
 
     pub(crate) fn add_block_arguments(
@@ -131,18 +132,20 @@ impl<'a> FunctionState<'a, '_> {
         predecessor: BasicBlock<'a>,
     ) -> LLVMResult<()> {
         let params = self.block_params.get(&target.block).ok_or_else(|| {
-            LLVMError::new(format!(
-                "Block parameters for {} were not generated",
-                target.block
-            ))
+            LLVMError::new(
+                &catalogue::BLOCK_PARAMETERS_FOR_WERE_NOT_GENERATED,
+                format!("{}", target.block),
+            )
         })?;
         if params.len() != target.args.len() {
-            return Err(LLVMError::new(format!(
-                "LMIR edge to {} has {} arguments for {} parameters",
-                target.block,
-                target.args.len(),
-                params.len(),
-            )));
+            return Err(LLVMError::new(
+                &catalogue::LMIR_EDGE_TO_HAS_ARGUMENTS_FOR_PARAMETERS,
+                (
+                    format!("{}", target.block),
+                    format!("{}", target.args.len()),
+                    format!("{}", params.len()),
+                ),
+            ));
         }
 
         for ((_, phi), argument) in params.iter().zip(&target.args) {
@@ -165,18 +168,20 @@ impl<'a> CodegenValue<'a> {
         match self {
             CodegenValue::Value(value) => Ok(*value),
 
-            _ => Err(LLVMError::new(format!(
-                "Expected a scalar LLVM value, found: {self:?}"
-            ))),
+            _ => Err(LLVMError::new(
+                &catalogue::EXPECTED_A_SCALAR_LLVM_VALUE_FOUND,
+                format!("{:?}", self),
+            )),
         }
     }
 
     pub fn as_basic_value(&self) -> LLVMResult<BasicValueEnum<'a>> {
         match self {
             CodegenValue::Value(value) => any_to_basic_val(*value),
-            CodegenValue::AggregateSlots(_) | CodegenValue::Null => Err(LLVMError::new(format!(
-                "Expected a basic LLVM value, found: {self:?}"
-            ))),
+            CodegenValue::AggregateSlots(_) | CodegenValue::Null => Err(LLVMError::new(
+                &catalogue::EXPECTED_A_BASIC_LLVM_VALUE_FOUND,
+                format!("{:?}", self),
+            )),
         }
     }
 }
@@ -208,7 +213,7 @@ pub fn lmir_aot_codegen(
             RelocMode::PIC,
             CodeModel::Default,
         )
-        .ok_or_else(|| LLVMError::new("Failed to create LLVM target machine"))?;
+        .ok_or_else(|| LLVMError::new(&catalogue::FAILED_TO_CREATE_LLVM_TARGET_MACHINE, ()))?;
     let target_data = target_machine.get_target_data();
     let pointer_size = target_data.get_pointer_byte_size(None) as usize;
     let pointer_alignment =
@@ -216,19 +221,16 @@ pub fn lmir_aot_codegen(
     if bytecode.architecture.pointer_size() != pointer_size
         || bytecode.architecture.pointer_alignment() != pointer_alignment
     {
-        return Err(CXError::new(
-            CXStdErrMessage::error(
-                "CODEGEN ERROR",
-                format!(
-                    "LMIR target uses pointer size/alignment {}/{}, but LLVM target uses {}/{}",
-                    bytecode.architecture.pointer_size(),
-                    bytecode.architecture.pointer_alignment(),
-                    pointer_size,
-                    pointer_alignment,
-                ),
+        return Err(LLVMError::new(
+            &catalogue::LLVM_TARGET_LAYOUT,
+            (
+                bytecode.architecture.pointer_size(),
+                bytecode.architecture.pointer_alignment(),
+                pointer_size,
+                pointer_alignment,
             ),
-            CXInternalContext::error("LMIR and LLVM target configurations disagree"),
-        ));
+        )
+        .complete("LMIR and LLVM target configurations disagree"));
     }
 
     let module = context.create_module(output_path);
@@ -299,10 +301,10 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> LLVMRe
         .module
         .get_function(bytecode.prototype.name.as_str())
         .ok_or_else(|| {
-            LLVMError::new(format!(
-                "Function {} was not declared in the LLVM module",
-                bytecode.prototype.name
-            ))
+            LLVMError::new(
+                &catalogue::FUNCTION_WAS_NOT_DECLARED_IN_THE_LLVM_MODULE,
+                format!("{}", bytecode.prototype.name),
+            )
         })?;
     let builder = global_state.context.create_builder();
 
@@ -374,10 +376,10 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> LLVMRe
     }
 
     let first_block = bytecode.blocks.first().ok_or_else(|| {
-        LLVMError::new(format!(
-            "Function {} has no LMIR blocks",
-            bytecode.prototype.name
-        ))
+        LLVMError::new(
+            &catalogue::FUNCTION_HAS_NO_LMIR_BLOCKS,
+            format!("{}", bytecode.prototype.name),
+        )
     })?;
 
     function_state.builder.position_at_end(entry);

@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
     MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState,
     MIRGlobalVariable, global::MIRGlobalKind,
@@ -120,7 +120,7 @@ impl MIRModuleBuilder {
             if !compatible {
                 return Err(mir_error(
                     source_range,
-                    format!("Incompatible global declaration '{name}'"),
+                    (&catalogue::MIR_INCOMPATIBLE_GLOBAL, name.to_string()),
                 ));
             }
 
@@ -212,7 +212,7 @@ impl MIRModuleBuilder {
         let MIRGlobalKind::Variable { state, .. } = &mut global.kind else {
             return Err(mir_error(
                 source_range,
-                format!("Global '{name}' cannot have an initializer"),
+                (&catalogue::MIR_GLOBAL_INITIALIZER, name.to_string()),
             ));
         };
 
@@ -222,7 +222,7 @@ impl MIRModuleBuilder {
         ) {
             return Err(mir_error(
                 source_range,
-                format!("Duplicate global definition '{name}'"),
+                (&catalogue::MIR_DUPLICATE_GLOBAL, name.to_string()),
             ));
         }
 

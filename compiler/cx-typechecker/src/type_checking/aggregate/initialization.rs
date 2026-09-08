@@ -1,5 +1,6 @@
 use cx_hir::ast::expression::{HIRExpression, HIRInitIndex};
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::NamespacePath;
 use cx_thir::{
     thir::{
@@ -86,10 +87,8 @@ pub fn typecheck_initializer_list(
 
         _ => env.log_error(
             expr.token_range(),
-            format!(
-                "Cannot coerce initializer to type {}",
-                to_type.display_with(&env.symbols)
-            ),
+            &catalogue::CANNOT_COERCE_INITIALIZER_TO_TYPE,
+            format!("{}", to_type.display_with(&env.symbols)),
         ),
     }
 }
@@ -104,17 +103,16 @@ fn typecheck_union_initializer(
     let Some(fields) = to_type.aggregate_fields(&env.symbols) else {
         return env.log_error(
             expr.token_range(),
-            format!(
-                "Expected a union type for initializer, found {}",
-                to_type.display_with(&env.symbols)
-            ),
+            &catalogue::EXPECTED_A_UNION_TYPE_FOR_INITIALIZER_FOUND,
+            format!("{}", to_type.display_with(&env.symbols)),
         );
     };
 
     if indices.len() > 1 {
         return env.log_error(
             expr.token_range(),
-            "Union initializer may contain at most one element".to_string(),
+            &catalogue::UNION_INITIALIZER_MAY_CONTAIN_AT_MOST_ONE_ELEMENT,
+            (),
         );
     }
 
@@ -130,7 +128,8 @@ fn typecheck_union_initializer(
             let Some((_, field_type)) = fields.get(field_index) else {
                 return env.log_error(
                     expr.token_range(),
-                    "Union initializer field does not exist".to_string(),
+                    &catalogue::UNION_INITIALIZER_FIELD_DOES_NOT_EXIST,
+                    (),
                 );
             };
             let value = typecheck_expr(env, namespace, &initialization.value, Some(field_type))
@@ -164,7 +163,8 @@ fn typecheck_array_initializer(
         if let Some(name) = &index.name {
             return env.log_error(
                 TokenRange::internal(),
-                format!("Array initializer cannot have named indices, found: {name}"),
+                &catalogue::ARRAY_INITIALIZER_CANNOT_HAVE_NAMED_INDICES_FOUND,
+                format!("{}", name),
             );
         }
     }
@@ -210,10 +210,8 @@ fn typecheck_structured_initializer(
     let Some(fields) = to_type.aggregate_fields(&env.symbols) else {
         return env.log_error(
             expr.token_range(),
-            format!(
-                "Expected a structured type for initializer, found {}",
-                to_type.display_with(&env.symbols)
-            ),
+            &catalogue::EXPECTED_A_STRUCTURED_TYPE_FOR_INITIALIZER_FOUND,
+            format!("{}", to_type.display_with(&env.symbols)),
         );
     };
     let fields = fields.clone();
@@ -231,7 +229,8 @@ fn typecheck_structured_initializer(
             else {
                 return env.log_error(
                     expr.token_range(),
-                    format!("Structured initializer has unexpected field: {name}"),
+                    &catalogue::STRUCTURED_INITIALIZER_HAS_UNEXPECTED_FIELD,
+                    format!("{}", name),
                 );
             };
             counter = found_index;
@@ -240,14 +239,16 @@ fn typecheck_structured_initializer(
         if counter >= fields.len() {
             return env.log_error(
                 expr.token_range(),
-                "Too many elements in struct initializer".to_string(),
+                &catalogue::TOO_MANY_ELEMENTS_IN_STRUCT_INITIALIZER,
+                (),
             );
         }
 
         if initialized_fields[counter] {
             return env.log_error(
                 expr.token_range(),
-                format!("Field '{}' initialized more than once", fields[counter].0),
+                &catalogue::FIELD_INITIALIZED_MORE_THAN_ONCE,
+                format!("{}", fields[counter].0),
             );
         }
 
@@ -260,10 +261,10 @@ fn typecheck_structured_initializer(
         else {
             return env.log_error(
                 value.token_range,
-                format!(
-                    "Could not find field '{}' in type {}",
-                    field_name,
-                    to_type.display_with(&env.symbols)
+                &catalogue::COULD_NOT_FIND_FIELD_IN_TYPE,
+                (
+                    format!("{}", field_name),
+                    format!("{}", to_type.display_with(&env.symbols)),
                 ),
             );
         };

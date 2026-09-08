@@ -1,4 +1,5 @@
 use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
+use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
 use cx_tokens::{
     keyword, punctuator,
@@ -164,10 +165,7 @@ pub(crate) fn try_parse_keyword_stmt(
                         "':'"
                     );
                     if default_case.is_some() {
-                        return parse_point_error(
-                            &data.tokens,
-                            "Multiple default cases in switch statement".to_string(),
-                        );
+                        return parse_point_error(&data.tokens, &MULTIPLE_DEFAULT, ());
                     }
                     default_case = Some(index as usize);
                     continue;
@@ -210,11 +208,11 @@ pub(crate) fn try_parse_keyword_stmt(
             data.change_comma_mode(false);
 
             while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-                if matches!(peek_next_kind!(data.tokens)?, TokenKind::Keyword(KeywordType::Default)) {
-                    return parse_point_error(
-                        &data.tokens,
-                        "Match arms use binding patterns; replace 'default' with '_' to discard the binding".to_string(),
-                    );
+                if matches!(
+                    peek_next_kind!(data.tokens)?,
+                    TokenKind::Keyword(KeywordType::Default)
+                ) {
+                    return parse_point_error(&data.tokens, &MATCH_DEFAULT, ());
                 }
 
                 let value = parse_pattern(data)?;
@@ -264,10 +262,7 @@ pub(crate) fn try_parse_keyword_stmt(
 
         KeywordType::Goto => {
             let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
-                return parse_point_error(
-                    &data.tokens,
-                    "Expected label identifier after 'goto'".to_string(),
-                );
+                return parse_point_error(&data.tokens, &GOTO_LABEL, ());
             };
             assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
             Some(HIRExprKind::Goto { name })
@@ -406,10 +401,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                 data.token_range(start_index, data.tokens.index),
             ));
         } else {
-            return parse_point_error(
-                &data.tokens,
-                "Expected variable name in declaration".to_string(),
-            );
+            return parse_point_error(&data.tokens, &DECLARATION_NAME, ());
         }
 
         if !try_next!(data.tokens, TokenKind::Operator(OperatorType::Comma)) {

@@ -1,4 +1,4 @@
-use cx_log::error::{CXRawResult, message::CXStdErrMessage};
+use cx_log::{CXRawResult, catalogue::typecheck};
 use cx_thir::thir::r#type::THIRType;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,10 +79,7 @@ impl ControlFlow {
 
     pub fn pop_scope(&mut self) -> CXRawResult<ScopeEffects> {
         let Some(scope) = self.scopes.pop() else {
-            return CXStdErrMessage::result(
-                "TYPE ERROR",
-                "Attempted to pop a scope from an empty scope stack".to_string(),
-            );
+            return Err(typecheck::POP_EMPTY_SCOPE.bind(()));
         };
 
         if !scope.staged_boundary

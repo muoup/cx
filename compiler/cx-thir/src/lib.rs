@@ -1,12 +1,9 @@
+mod log;
 use cx_namespace::module::NamespacePath;
 
 use crate::{
     registry::THIRDecomposedRegistry,
-    thir::{
-        comptime::THIRComptimeFn,
-        data::THIRFunction,
-        global::THIRGlobalVariable,
-    },
+    thir::{comptime::THIRComptimeFn, data::THIRFunction, global::THIRGlobalVariable},
 };
 
 pub mod intrinsic_types;

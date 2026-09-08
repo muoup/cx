@@ -1,3 +1,5 @@
+use cx_log::catalogue::mir as catalogue;
+
 use crate::log::log_mir_error;
 use cx_log::CXResult;
 use cx_mir::{
@@ -26,10 +28,7 @@ pub(super) fn lower_pattern_test(
     let lhs_value = super::lower_expression(builder, lhs)?;
     let (tested, constant) = match pattern {
         THIRPattern::Binding { .. } => {
-            return log_mir_error(
-                &lhs.token_range,
-                "Binding patterns are only supported in match arms".to_string(),
-            );
+            return log_mir_error(&lhs.token_range, (&catalogue::MIR_BINDING_PATTERN, ()));
         }
         THIRPattern::TaggedUnionVariant {
             sum_type,
@@ -238,6 +237,6 @@ pub fn move_value(value: MIRValue, range: &TokenRange) -> CXResult<MIRValue> {
         MIRValue::PlaceRef(place) => Ok(MIRValue::Move(place)),
         MIRValue::Move(place) => Ok(MIRValue::Move(place)),
         MIRValue::Register(reg) => Ok(MIRValue::Register(reg)),
-        _ => log_mir_error(range, format!("Cannot move value: {:?}", value)),
+        _ => log_mir_error(range, (&catalogue::MIR_MOVE_VALUE, format!("{:?}", value))),
     }
 }

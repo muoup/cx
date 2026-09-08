@@ -1,10 +1,29 @@
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Topic {
     General,
     File,
     Build,
     Run,
     Init,
+}
+
+pub(crate) fn usage(topic: Topic) -> &'static str {
+    match topic {
+        Topic::General => "cx <file.cx|file.c>... [options]\n       cx build [target] [options]\n       cx run [target] [options] [-- args...]\n       cx init <project-name>",
+        Topic::File => "cx <file.cx|file.c>... [options]",
+        Topic::Build => "cx build [target] [options]",
+        Topic::Run => "cx run [target] [options] [-- args...]",
+        Topic::Init => "cx init <project-name>",
+    }
+}
+
+pub(crate) fn name(topic: Topic) -> &'static str {
+    match topic {
+        Topic::General | Topic::File => "cx",
+        Topic::Build => "cx build",
+        Topic::Run => "cx run",
+        Topic::Init => "cx init",
+    }
 }
 
 pub(crate) fn dispatch(topic: Topic) {
@@ -30,11 +49,7 @@ pub(crate) fn is_version_flag(flag: &str) -> bool {
 }
 
 fn print_general_help() {
-    println!("Usage:");
-    println!("  cx <file.cx|file.c>... [options]");
-    println!("  cx build [target] [options]");
-    println!("  cx run [target] [options] [-- args...]");
-    println!("  cx init <project-name>");
+    println!("Usage: {}", usage(Topic::General));
     println!();
     println!("Commands:");
     println!("  build [target]       Build from cx.toml (all targets or a specific one)");
@@ -52,7 +67,7 @@ fn print_general_help() {
 }
 
 fn print_file_help() {
-    println!("Usage: cx <file.cx|file.c>... [options]");
+    println!("Usage: {}", usage(Topic::File));
     println!();
     println!("Compile source files without using cx.toml.");
     println!();
@@ -64,7 +79,7 @@ fn print_file_help() {
 }
 
 fn print_build_help() {
-    println!("Usage: cx build [target] [options]");
+    println!("Usage: {}", usage(Topic::Build));
     println!();
     println!("Build all project targets, or one target when specified.");
     println!();
@@ -72,7 +87,7 @@ fn print_build_help() {
 }
 
 fn print_run_help() {
-    println!("Usage: cx run [target] [options] [-- args...]");
+    println!("Usage: {}", usage(Topic::Run));
     println!();
     println!("Build and run one project binary. Use -- to pass arguments to the binary.");
     println!();
@@ -80,7 +95,7 @@ fn print_run_help() {
 }
 
 fn print_init_help() {
-    println!("Usage: cx init <project-name>");
+    println!("Usage: {}", usage(Topic::Init));
     println!();
     println!("Create a new CX project in a directory named project-name.");
 }

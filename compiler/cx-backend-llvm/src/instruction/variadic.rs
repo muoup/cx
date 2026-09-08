@@ -1,7 +1,8 @@
-use crate::error::{LLVMError, LLVMResult};
+use crate::log::{LLVMError, LLVMResult};
 use crate::typing::{any_to_basic_type, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{LMIRValue, types::LMIRType};
+use cx_log::catalogue::backend as catalogue;
 use inkwell::intrinsics::Intrinsic;
 use inkwell::values::AnyValue;
 
@@ -20,11 +21,20 @@ fn intrinsic<'a>(
     name: &str,
     parameter_type: inkwell::types::BasicTypeEnum<'a>,
 ) -> LLVMResult<inkwell::values::FunctionValue<'a>> {
-    let intrinsic = Intrinsic::find(name)
-        .ok_or_else(|| LLVMError::new(format!("LLVM intrinsic {name} was not found")))?;
+    let intrinsic = Intrinsic::find(name).ok_or_else(|| {
+        LLVMError::new(
+            &catalogue::LLVM_INTRINSIC_WAS_NOT_FOUND,
+            format!("{}", name),
+        )
+    })?;
     intrinsic
         .get_declaration(&global.module, &[parameter_type])
-        .ok_or_else(|| LLVMError::new(format!("LLVM intrinsic {name} was not declared")))
+        .ok_or_else(|| {
+            LLVMError::new(
+                &catalogue::LLVM_INTRINSIC_WAS_NOT_DECLARED,
+                format!("{}", name),
+            )
+        })
 }
 
 pub(super) fn generate_va_start<'a, 'b>(

@@ -9,7 +9,7 @@ pub(crate) mod aggregates;
 pub(crate) mod globals;
 pub(crate) mod types;
 
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
     MIRAggregateOp, MIRAssignTarget, MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstrKind,
     MIRIntType, MIRParameterID, MIRPlace, MIRPlaceAggregateOp, MIRStagedExitKind, MIRTypeKind,
@@ -80,9 +80,9 @@ pub(crate) fn lower_function(
             {
                 return log_mir_error(
                     &body.token_range,
-                    format!(
-                        "Function '{}' with non-void return type must have an explicit return statement",
-                        function.prototype.pretty_name()
+                    (
+                        &mir::MIR_FUNCTION_RETURN,
+                        function.prototype.pretty_name().to_string(),
                     ),
                 );
             }
@@ -211,8 +211,13 @@ pub(crate) fn lower_expression(
             THIRExpressionKind::Unit => MIRValue::Constant(MIRConstant::Unit),
             THIRExpressionKind::SizeOf { _type } | THIRExpressionKind::AlignOf { _type } => {
                 let type_id = lower_type(builder, _type)?;
-                let layout = cx_mir::ty::layout::layout_of(builder.types(), type_id)
-                    .map_err(|error| mir_error(&expression.token_range, error.to_string()))?;
+                let layout =
+                    cx_mir::ty::layout::layout_of(builder.types(), type_id).map_err(|error| {
+                        cx_log::error::CXError::new(
+                            cx_mir::layout_error(error),
+                            cx_log::error::context::from_token_range(&expression.token_range),
+                        )
+                    })?;
                 MIRValue::Constant(MIRConstant::Integer {
                     value: if matches!(&expression.kind, THIRExpressionKind::SizeOf { .. }) {
                         layout.size as i128
@@ -230,7 +235,7 @@ pub(crate) fn lower_expression(
                     .ok_or_else(|| {
                         mir_error(
                             &expression.token_range,
-                            format!("could not find local id {:?}", local_id),
+                            (&mir::MIR_LOCAL_NOT_FOUND, format!("{:?}", local_id)),
                         )
                     })?;
                 if builder.is_capturing()
@@ -253,7 +258,7 @@ pub(crate) fn lower_expression(
                     .ok_or_else(|| {
                         mir_error(
                             &expression.token_range,
-                            format!("global variable '{}' not found", symbol),
+                            (&mir::MIR_GLOBAL_NOT_FOUND, symbol.to_string()),
                         )
                     })?,
             )),
@@ -279,7 +284,7 @@ pub(crate) fn lower_expression(
                 .ok_or_else(|| {
                     mir_error(
                         &expression.token_range,
-                        format!("function '{}' not found", name),
+                        (&mir::MIR_FUNCTION_NOT_FOUND, name.to_string()),
                     )
                 })
                 .map(|v| MIRValue::Constant(MIRConstant::Function(v)))?,
@@ -363,10 +368,7 @@ pub(crate) fn lower_expression(
                 let value = builder
                     .local_value(*local_id, &expression._type)?
                     .ok_or_else(|| {
-                        mir_error(
-                            &expression.token_range,
-                            "expression depends on a runtime local",
-                        )
+                        mir_error(&expression.token_range, (&mir::MIR_RUNTIME_LOCAL, ()))
                     })?;
                 if builder.is_capturing() && matches!(value, MIRValue::Register(_)) {
                     let ty = lower_type(builder, &expression._type)?;
@@ -715,11 +717,7 @@ pub(crate) fn lower_expression(
                 {
                     return log_mir_error(
                         &expression.token_range,
-                        format!(
-                            "array initializer has {} elements but the array length is {}",
-                            fields.len(),
-                            length
-                        ),
+                        (&mir::MIR_ARRAY_TOO_LONG, (fields.len(), *length)),
                     );
                 }
                 let out = builder.fun_mut().new_register(type_id, None);
@@ -911,10 +909,7 @@ pub(crate) fn lower_expression(
                 }
 
                 let Some((scope_id, block_id)) = target else {
-                    return log_mir_error(
-                        &expression.token_range,
-                        "yield expression is not inside a yieldable scope",
-                    );
+                    return log_mir_error(&expression.token_range, (&mir::MIR_YIELD_SCOPE, ()));
                 };
 
                 let args = value.into_iter().collect();

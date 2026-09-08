@@ -1,3 +1,4 @@
+use cx_log::catalogue::typecheck as catalogue;
 use std::fmt::{Debug, Formatter};
 
 use cx_hir::ast::{expression::HIRExpression, template::HIRTemplateInput};
@@ -202,24 +203,28 @@ impl TypecheckResult {
             Self::Ready(TypecheckedExpr::Standard(_)) => Ok(self),
             Self::Ready(TypecheckedExpr::Staged(_)) => env.log_error(
                 token_range,
-                "Staged expression cannot be used as a runtime expression".to_string(),
+                &catalogue::STAGED_EXPRESSION_CANNOT_BE_USED_AS_A_RUNTIME_EXPRESSION,
+                (),
             ),
             Self::Ready(TypecheckedExpr::ComptimeFunction(_)) => env.log_error(
                 token_range,
-                "Comptime function cannot be used as a value".to_string(),
+                &catalogue::COMPTIME_FUNCTION_CANNOT_BE_USED_AS_A_VALUE,
+                (),
             ),
             Self::IncompleteTemplate(_) => env.log_error(
                 token_range,
-                "Could not deduce templated function parameters".to_string(),
+                &catalogue::COULD_NOT_DEDUCE_TEMPLATED_FUNCTION_PARAMETERS,
+                (),
             ),
             Self::NeedsExpectedType(_) => env.log_error(
                 token_range,
-                "Could not resolve expression, expected type required but not provided".to_string(),
+                &catalogue::COULD_NOT_RESOLVE_EXPRESSION_EXPECTED_TYPE_REQUIRED_BUT_NOT_PROVIDED,
+                (),
             ),
             Self::NeedsStagedType(_) => env.log_error(
                 token_range,
-                "Could not resolve staged expression, staged parameter types required but not provided"
-                    .to_string(),
+                &catalogue::COULD_NOT_RESOLVE_STAGED_EXPRESSION_STAGED_PARAMETER_TYPES_REQUIRED_BUT,
+                (),
             ),
         }
     }

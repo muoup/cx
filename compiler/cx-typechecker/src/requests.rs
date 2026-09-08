@@ -1,8 +1,6 @@
-use cx_hir::{
-    ast::function::HIRFunctionContract,
-    symbols::HIRSymbolKind,
-};
+use cx_hir::{ast::function::HIRFunctionContract, symbols::HIRSymbolKind};
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::QualifiedName;
 use cx_thir::thir::{
     data::{
@@ -16,7 +14,7 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    environment::{THIRFunctionGenRequest, TypeEnvironment, StagingContext},
+    environment::{StagingContext, THIRFunctionGenRequest, TypeEnvironment},
     symbol::{resolution::symbol_lexical_namespace, template::apply_template_input},
     type_checking::functions::{typecheck_comptime_function, typecheck_function},
 };
@@ -45,8 +43,11 @@ pub fn fulfill_requests(env: &mut TypeEnvironment) -> CXResult<()> {
                 input,
             } => realize_fn_template(env, &name, prototype, &input)?,
 
-            THIRFunctionGenRequest::Comptime { prototype, input, context } =>
-                realize_comptime_function(env, prototype, &input, context)?,
+            THIRFunctionGenRequest::Comptime {
+                prototype,
+                input,
+                context,
+            } => realize_comptime_function(env, prototype, &input, context)?,
         }
     }
 
@@ -150,7 +151,9 @@ fn realize_fn_template(
     let stmt = resolution.iter().find(|symbol| {
         matches!(&symbol.kind, HIRSymbolKind::Function(data) if data.template_prototype.is_some() && data.data.is_some())
     }).expect("function template definition is in the registry");
-    let HIRSymbolKind::Function(data) = &stmt.kind else { unreachable!() };
+    let HIRSymbolKind::Function(data) = &stmt.kind else {
+        unreachable!()
+    };
     let template = data.template_prototype.as_ref().unwrap();
     let body = data.data.as_ref().unwrap();
 
@@ -185,13 +188,33 @@ fn realize_comptime_function(
     if env.items.request_fulfilled(prototype.symbol_name()) {
         return Ok(());
     }
-    env.items.mark_request_fulfilled(prototype.symbol_name().into());
+    env.items
+        .mark_request_fulfilled(prototype.symbol_name().into());
     let name = prototype.lookup_identifier();
-    let declarations = env.symbols.get_global_registry().resolve(name, false)
-        .ok_or_else(|| env.error(&TokenRange::internal(), format!("Comptime definition '{name}' was not found")))?;
-    let symbol = declarations.iter().find(|symbol| matches!(symbol.kind, HIRSymbolKind::ComptimeFunction(_)))
-        .ok_or_else(|| env.error(&TokenRange::internal(), format!("Symbol '{name}' is not a comptime function")))?;
-    let HIRSymbolKind::ComptimeFunction(data) = &symbol.kind else { unreachable!() };
+    let declarations = env
+        .symbols
+        .get_global_registry()
+        .resolve(name, false)
+        .ok_or_else(|| {
+            env.error(
+                &TokenRange::internal(),
+                &catalogue::COMPTIME_DEFINITION_WAS_NOT_FOUND,
+                format!("{}", name),
+            )
+        })?;
+    let symbol = declarations
+        .iter()
+        .find(|symbol| matches!(symbol.kind, HIRSymbolKind::ComptimeFunction(_)))
+        .ok_or_else(|| {
+            env.error(
+                &TokenRange::internal(),
+                &catalogue::SYMBOL_IS_NOT_A_COMPTIME_FUNCTION,
+                format!("{}", name),
+            )
+        })?;
+    let HIRSymbolKind::ComptimeFunction(data) = &symbol.kind else {
+        unreachable!()
+    };
     let namespace = symbol_lexical_namespace(&name.namespace, symbol);
     env.in_definition(|env| {
         if let Some(template) = &data.template_prototype {

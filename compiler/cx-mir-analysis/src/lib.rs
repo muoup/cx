@@ -1,4 +1,5 @@
 mod assertions;
+mod log;
 mod ownership;
 mod types;
 

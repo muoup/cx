@@ -2,9 +2,8 @@ use std::borrow::Borrow;
 
 use cx_log::{
     CXRawResult, CXResult,
-    error::{
-        CXError, CXErrorMaybeRaw, CXRawError, context::from_token_range, message::CXStdErrMessage,
-    },
+    catalogue::ErrorDefinition,
+    error::{CXError, CXErrorMaybeRaw, CXRawError, context::from_token_range},
 };
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_pipeline_data::db::ModuleData;
@@ -132,7 +131,6 @@ impl TypeEnvironment<'_> {
         })
     }
 
-
     pub fn push_scope(
         &mut self,
         has_break_merge: bool,
@@ -193,14 +191,24 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn staging_context(&self) -> StagingContext {
-        let mut context = self.comptime_context.clone().unwrap_or_else(|| StagingContext {
-            return_type: self.try_current_function().map(|f| f.signature().return_type.clone()),
-            yield_type: None,
-        });
+        let mut context = self
+            .comptime_context
+            .clone()
+            .unwrap_or_else(|| StagingContext {
+                return_type: self
+                    .try_current_function()
+                    .map(|f| f.signature().return_type.clone()),
+                yield_type: None,
+            });
         if self.try_current_function().is_some()
             && (!self.in_comptime_context() || self.in_runtime_emit_context())
         {
-            context.yield_type = self.function.flow().yield_state().expected_type.or(context.yield_type);
+            context.yield_type = self
+                .function
+                .flow()
+                .yield_state()
+                .expected_type
+                .or(context.yield_type);
         }
         context
     }
@@ -209,24 +217,30 @@ impl TypeEnvironment<'_> {
         type1.contextual_eq(type2, &self.symbols)
     }
 
-    pub(crate) fn error(
+    pub(crate) fn error<A>(
         &self,
         range: impl Borrow<TokenRange>,
-        message: impl Into<String>,
+        definition: &ErrorDefinition<A>,
+        args: A,
     ) -> CXError {
-        generate_type_error(range.borrow(), message, Vec::new())
+        generate_type_error(range.borrow(), definition, args, Vec::new())
     }
 
-    pub(crate) fn log_error_base<T>(&self, message: impl Into<String>) -> CXRawResult<T> {
-        CXStdErrMessage::result("TYPE ERROR", message.into())
+    pub(crate) fn log_error_base<T, A>(
+        &self,
+        definition: &ErrorDefinition<A>,
+        args: A,
+    ) -> CXRawResult<T> {
+        Err(crate::log::generate_raw_error(definition, args))
     }
 
-    pub(crate) fn log_error<T>(
+    pub(crate) fn log_error<T, A>(
         &self,
         range: impl Borrow<TokenRange>,
-        message: impl Into<String>,
+        definition: &ErrorDefinition<A>,
+        args: A,
     ) -> CXResult<T> {
-        Err(self.error(range, message))
+        Err(self.error(range, definition, args))
     }
 
     pub(crate) fn complete_err(&self, err: CXRawError, range: &TokenRange) -> CXError {

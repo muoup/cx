@@ -1,12 +1,11 @@
 use crate::{
     environment::TypeEnvironment,
     symbol::{completion::complete_template_input, template::apply_template},
-    type_checking::{
-        result::{StagedBindingTC, TypecheckResult, TypecheckedBinding},
-    },
+    type_checking::result::{StagedBindingTC, TypecheckResult, TypecheckedBinding},
 };
 use cx_hir::ast::{expression::HIRExpression, template::HIRTemplateInput};
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::NamespacePath;
 use cx_namespace::module::QualifiedName;
 use cx_thir::{
@@ -27,7 +26,8 @@ pub(crate) fn typecheck_identifier(
     let Some(mut symbol) = env.get_symbol(namespace, name)? else {
         return env.log_error(
             expr.token_range(),
-            format!("Identifier '{}' not found", name),
+            &catalogue::IDENTIFIER_NOT_FOUND,
+            format!("{}", name),
         );
     };
 
@@ -64,7 +64,7 @@ pub(crate) fn typecheck_identifier(
     }
 
     let result = TypecheckResult::from_symbol(symbol, name.clone(), template_input.cloned())
-        .map_err(|err| env.error(expr.token_range(), err.message().to_string()))?;
+        .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
     if env.function.in_safe_context()
         && let Some(expression) = result.ready_expression()
@@ -78,9 +78,8 @@ pub(crate) fn typecheck_identifier(
         let display_name = debug_name.as_ref().unwrap_or(symbol_name);
         return env.log_error(
             expr.token_range(),
-            format!(
-                "References to unsafe function `{display_name}` may not be used in safe contexts"
-            ),
+            &catalogue::REFERENCES_TO_UNSAFE_FUNCTION_MAY_NOT_BE_USED_IN_SAFE,
+            format!("{}", display_name),
         );
     }
 

@@ -1,4 +1,5 @@
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_thir::{
     thir::{
         expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
@@ -37,7 +38,8 @@ pub fn try_explicit_cast(
         {
             return env.log_error(
                 expr.token_range,
-                "Dereferencing raw pointers is not allowed in safe contexts".to_string(),
+                &catalogue::SAFE_PTR_DEREFERENCE,
+                (),
             );
         }
 

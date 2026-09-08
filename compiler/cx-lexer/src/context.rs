@@ -3,12 +3,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use cx_log::{
-    CXResult,
-    error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
-};
-use cx_tokens::token::{PunctuatorType, Token, TokenKind};
+use cx_log::CXResult;
+use cx_log::catalogue::parse::{READ_BUILTIN, UNCLOSED_CONDITIONAL};
 use cx_namespace::cx_library_directory;
+use cx_tokens::token::{PunctuatorType, Token, TokenKind};
 
 use crate::{
     lexer::{
@@ -61,16 +59,10 @@ impl LexingContext {
     ) -> CXResult<Self> {
         let builtin_path = PathBuf::from(cx_library_directory("libc/internal/__builtins.h"));
         let builtin_source = std::fs::read_to_string(&builtin_path).map_err(|e| {
-            CXError::new(
-                CXStdErrMessage::error(
-                    "LEXER ERROR",
-                    format!(
-                        "Failed to read internal builtin header {}: {}",
-                        builtin_path.display(),
-                        e
-                    ),
-                ),
-                CXInternalContext::error("failed to initialize lexer builtin source"),
+            crate::log::internal_error(
+                &READ_BUILTIN,
+                crate::log::file_args(&builtin_path, e),
+                "failed to initialize lexer builtin source",
             )
         })?;
 
@@ -180,14 +172,13 @@ impl LexingContext {
         if let Some(conditional) = frame.conditionals.last() {
             return frame.cursor_view().log_error(
                 frame.cursor,
-                format!(
-                    "Unclosed preprocessor conditional starting in {} branch",
-                    if conditional.parent_active {
-                        "active"
-                    } else {
-                        "inactive"
-                    }
-                ),
+                &UNCLOSED_CONDITIONAL,
+                if conditional.parent_active {
+                    "active"
+                } else {
+                    "inactive"
+                }
+                .to_string(),
             );
         }
 

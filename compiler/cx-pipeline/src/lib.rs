@@ -1,6 +1,9 @@
+use cx_log::catalogue::driver as catalogue;
 mod backends;
 mod diagnostics;
 mod linker;
+mod log;
+use log::pipeline_error;
 pub mod progress;
 mod scheduler;
 mod sources;
@@ -10,10 +13,7 @@ use crate::progress::ProgressReporter;
 use crate::scheduler::scheduling_loop_collect_errors;
 use crate::scheduler::{scheduling_loop, scheduling_loop_many};
 use cx_hir::registry::ExportNameMode;
-use cx_log::{
-    CXResult,
-    error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
-};
+use cx_log::CXResult;
 use cx_namespace::module::{ModulePath, NamespacePath};
 use cx_pipeline_data::config::{CXProjectConfig, TargetConfig};
 use cx_pipeline_data::db::ModuleData;
@@ -39,13 +39,6 @@ pub fn link_object_files(output: &Path, object_files: &[PathBuf]) -> CXResult<()
     link_objects(output, object_files)
 }
 
-pub(crate) fn pipeline_error(code: impl Into<String>, message: impl Into<String>) -> CXError {
-    CXError::new(
-        CXStdErrMessage::error(code, message),
-        CXInternalContext::error("pipeline operation failed outside source context"),
-    )
-}
-
 pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResult<()> {
     let verbose = config.verbose;
     let compiler_context = GlobalCompilationContext {
@@ -55,8 +48,8 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
     };
 
     let _base_file_str = base_file.to_str().ok_or(pipeline_error(
-        "COMPILATION ERROR",
-        "Base file path is not valid UTF-8",
+        &catalogue::BASE_FILE_PATH_IS_NOT_VALID_UTF_8,
+        (),
     ))?;
     let entry_unit = CompilationUnit::new(
         &compiler_context.config.working_directory,
@@ -85,22 +78,17 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
                 if let Some(parent) = compiler_context.config.output.parent() {
                     std::fs::create_dir_all(parent).map_err(|e| {
                         pipeline_error(
-                            "COMPILATION ERROR",
-                            format!(
-                                "Failed to create object output directory {}: {}",
-                                parent.display(),
-                                e
-                            ),
+                            &catalogue::FAILED_TO_CREATE_OBJECT_OUTPUT_DIRECTORY,
+                            (format!("{}", parent.display()), format!("{}", e)),
                         )
                     })?;
                 }
                 std::fs::copy(&object_path, &compiler_context.config.output).map_err(|e| {
                     pipeline_error(
-                        "COMPILATION ERROR",
-                        format!(
-                            "Failed to write object file {}: {}",
-                            compiler_context.config.output.display(),
-                            e
+                        &catalogue::FAILED_TO_WRITE_OBJECT_FILE,
+                        (
+                            format!("{}", compiler_context.config.output.display()),
+                            format!("{}", e),
                         ),
                     )
                 })?;
@@ -125,8 +113,8 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
 pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) -> CXResult<()> {
     if base_files.is_empty() {
         return Err(pipeline_error(
-            "COMPILATION ERROR",
-            "No source files were selected for compilation",
+            &catalogue::NO_SOURCE_FILES_WERE_SELECTED_FOR_COMPILATION,
+            (),
         ));
     }
 
@@ -144,8 +132,8 @@ pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) ->
             .iter()
             .map(|base_file| {
                 let _base_file_str = base_file.to_str().ok_or(pipeline_error(
-                    "COMPILATION ERROR",
-                    "Source file path is not valid UTF-8",
+                    &catalogue::SOURCE_FILE_PATH_IS_NOT_VALID_UTF_8,
+                    (),
                 ))?;
                 let entry_unit = CompilationUnit::new(
                     &compiler_context.config.working_directory,
@@ -168,8 +156,8 @@ pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) ->
         match compiler_context.config.compilation_mode {
             CompilationMode::Executable => link(&compiler_context, &mut reporter),
             CompilationMode::Object | CompilationMode::Library => Err(pipeline_error(
-                "COMPILATION ERROR",
-                "Multi-file compilation only supports executable output",
+                &catalogue::MULTI_FILE_COMPILATION_ONLY_SUPPORTS_EXECUTABLE_OUTPUT,
+                (),
             )),
         }
     });
@@ -195,8 +183,8 @@ pub fn library_compilation(
     };
 
     let _base_file_str = base_file.to_str().ok_or(pipeline_error(
-        "COMPILATION ERROR",
-        "Base file path is not valid UTF-8",
+        &catalogue::BASE_FILE_PATH_IS_NOT_VALID_UTF_8,
+        (),
     ))?;
 
     let entry_unit = CompilationUnit::new(
@@ -251,15 +239,15 @@ pub fn project_compilation(
     target_filter: Option<&str>,
 ) -> CXResult<Vec<PathBuf>> {
     let workspace = project_config.workspace.as_ref().ok_or(pipeline_error(
-        "COMPILATION ERROR",
-        "cx.toml has no [workspace] section",
+        &catalogue::CX_TOML_HAS_NO_WORKSPACE_SECTION,
+        (),
     ))?;
 
     let filter_name;
     let targets: Vec<(&String, &TargetConfig)> = if let Some(filter) = target_filter {
         let target = workspace.targets.get(filter).ok_or(pipeline_error(
-            "COMPILATION ERROR",
-            format!("Target '{}' not found in cx.toml", filter),
+            &catalogue::TARGET_NOT_FOUND_IN_CX_TOML,
+            format!("{}", filter),
         ))?;
         filter_name = filter.to_string();
         vec![(&filter_name, target)]
@@ -306,12 +294,8 @@ pub fn project_compilation(
             .join(target_name);
         std::fs::create_dir_all(&output_dir).map_err(|e| {
             pipeline_error(
-                "COMPILATION ERROR",
-                format!(
-                    "Failed to create output directory {}: {}",
-                    output_dir.display(),
-                    e
-                ),
+                &catalogue::FAILED_TO_CREATE_OUTPUT_DIRECTORY,
+                (format!("{}", output_dir.display()), format!("{}", e)),
             )
         })?;
 
@@ -336,8 +320,7 @@ pub fn project_compilation(
                     }
                     (_, Some(patterns)) => {
                         let mut sources =
-                            sources::expand_patterns(&base_config.working_directory, patterns)
-                                .map_err(|error| pipeline_error("COMPILATION ERROR", error))?;
+                            sources::expand_patterns(&base_config.working_directory, patterns)?;
                         sources::prepend_entry(&mut sources, binary.entry.as_deref());
                         eprintln!(
                             "Building binary '{}' (target: {}, {} sources)",
@@ -349,8 +332,8 @@ pub fn project_compilation(
                     }
                     (None, None) => {
                         return Err(pipeline_error(
-                            "COMPILATION ERROR",
-                            format!("Binary '{}' must define 'entry' or 'match'", binary.name),
+                            &catalogue::BINARY_MUST_DEFINE_ENTRY_OR_MATCH,
+                            format!("{}", binary.name),
                         ));
                     }
                 }
@@ -392,8 +375,8 @@ pub fn project_compilation(
                 let header_path = output_dir.join(format!("{}.h", library.name));
                 std::fs::write(&header_path, header).map_err(|e| {
                     pipeline_error(
-                        "COMPILATION ERROR",
-                        format!("Failed to write header {}: {}", header_path.display(), e),
+                        &catalogue::FAILED_TO_WRITE_HEADER,
+                        (format!("{}", header_path.display()), format!("{}", e)),
                     )
                 })?;
 

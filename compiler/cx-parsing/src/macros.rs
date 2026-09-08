@@ -5,12 +5,14 @@ macro_rules! assert_token_matches {
     };
 
     ($data:expr, $pattern:pat, $expected:expr) => {
+        let token_index = $data.index;
         let Some($pattern) = &$data.next().map(|t| &t.kind) else {
-            $data.back();
+            $data.index = token_index;
 
             return $crate::log::parse_point_error(
                 &$data,
-                format!("Expected {}\n Found: {}", $expected, $data.peek().unwrap()),
+                &$crate::log::EXPECTED_TOKEN,
+                ($expected.to_string(), $data.peek().map(ToString::to_string)),
             );
         };
     };
@@ -50,10 +52,7 @@ macro_rules! next_kind {
     ($data:expr) => {{
         match $data.next().map(|k| &k.kind) {
             Some(tok) => Ok(tok),
-            None => {
-                $data.back();
-                $crate::log::parse_point_error(&$data, "Unexpected end of tokens")
-            }
+            None => $crate::log::parse_point_error(&$data, &$crate::log::UNEXPECTED_END_TOKENS, ()),
         }
     }};
 }
@@ -63,10 +62,53 @@ macro_rules! peek_next_kind {
     ($data:expr) => {
         match $data.peek().map(|k| &k.kind) {
             Some(tok) => Ok(tok),
-            None => {
-                $data.back();
-                $crate::log::parse_point_error(&$data, "Unexpected end of tokens")
-            }
+            None => $crate::log::parse_point_error(&$data, &$crate::log::UNEXPECTED_END_TOKENS, ()),
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use cx_log::CXResult;
+    use cx_tokens::{
+        token::{Token, TokenKind},
+        TokenIter,
+    };
+
+    fn expect_identifier(tokens: &mut TokenIter<'_>) -> CXResult<()> {
+        assert_token_matches!(*tokens, TokenKind::Identifier(_), "identifier");
+        Ok(())
+    }
+
+    fn next(tokens: &mut TokenIter<'_>) -> CXResult<()> {
+        next_kind!(*tokens)?;
+        Ok(())
+    }
+
+    fn peek(tokens: &mut TokenIter<'_>) -> CXResult<()> {
+        peek_next_kind!(*tokens)?;
+        Ok(())
+    }
+
+    #[test]
+    fn empty_input_returns_diagnostics_without_rewinding() {
+        let mut tokens = TokenIter::new(&[], "empty.cx".into());
+        let error = expect_identifier(&mut tokens).unwrap_err();
+        assert_eq!(error.code(), "P0072");
+        assert!(error.message().contains("end of input"));
+        assert_eq!(tokens.index, 0);
+        assert_eq!(next(&mut tokens).unwrap_err().code(), "P0073");
+        assert_eq!(peek(&mut tokens).unwrap_err().code(), "P0073");
+        assert_eq!(tokens.index, 0);
+    }
+
+    #[test]
+    fn exhausted_input_does_not_report_the_previous_token_as_found() {
+        let source = [Token::new_unknown(TokenKind::Identifier("name".into()))];
+        let mut tokens = TokenIter::new(&source, "example.cx".into());
+        tokens.next();
+        let error = expect_identifier(&mut tokens).unwrap_err();
+        assert!(error.message().contains("end of input"));
+        assert_eq!(tokens.index, 1);
+    }
 }

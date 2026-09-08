@@ -1,3 +1,7 @@
+use crate::{help::Topic, log::error};
+use cx_log::CXResult;
+use std::process::ExitCode;
+
 use cx_pipeline::project_compilation;
 use cx_pipeline_data::{
     config::find_and_load_config, ArchitectureConfig, CompilationMode, CompilerBackend,
@@ -11,84 +15,74 @@ use crate::{
     setup_internal_directory,
 };
 
-pub(crate) fn run_project(args: RunArgs) {
-    let binaries_built = build_project(args.build);
-
+pub(crate) fn run_project(args: RunArgs) -> CXResult<ExitCode> {
+    let binaries_built = build_project(args.build, Topic::Run)?;
     let executable = match binaries_built.as_slice() {
         [executable] => executable,
         [] => {
-            eprintln!("Error: `cx run` did not build any executable binaries.");
-            std::process::exit(1);
+            return Err(error(
+                "'cx run' did not build any executable binaries",
+                Some(Topic::Run),
+            ))
         }
         _ => {
-            eprintln!(
-                "Error: `cx run` built multiple executable binaries. Pass a target to select one."
-            );
-            for binary in &binaries_built {
-                eprintln!("  {}", binary.display());
-            }
-            std::process::exit(1);
+            let binaries = binaries_built
+                .iter()
+                .map(|binary| format!("  {}", binary.display()))
+                .collect::<Vec<_>>()
+                .join("\n");
+            return Err(error(format!("'cx run' built multiple executable binaries; pass a target to select one\n{binaries}"), Some(Topic::Run)));
         }
     };
-
     let status = ProcessCommand::new(executable)
         .args(&args.executable_args)
         .status()
-        .unwrap_or_else(|err| {
-            eprintln!("Error: Failed to run {}: {}", executable.display(), err);
-            std::process::exit(1);
-        });
-
-    std::process::exit(status.code().unwrap_or(1));
+        .map_err(|err| {
+            error(
+                format!("failed to run {}: {err}", executable.display()),
+                None,
+            )
+        })?;
+    Ok(ExitCode::from(status.code().unwrap_or(1) as u8))
 }
 
-pub fn build_project(args: BuildArgs) -> Vec<PathBuf> {
-    let invocation_directory = std::env::current_dir().expect("Failed to get current directory");
-
-    let (project_root, config) = match find_and_load_config(&invocation_directory) {
-        Ok(Some(config)) => config,
-        Ok(None) => {
-            eprintln!("Error: No cx.toml found. `cx build` requires a cx.toml project file.");
-            std::process::exit(1);
-        }
-        Err(error) => {
-            eprintln!("Error: {error}");
-            std::process::exit(1);
-        }
-    };
+pub fn build_project(args: BuildArgs, topic: Topic) -> CXResult<Vec<PathBuf>> {
+    let invocation_directory = std::env::current_dir()
+        .map_err(|err| error(format!("failed to get current directory: {err}"), None))?;
+    let (project_root, config) = find_and_load_config(&invocation_directory)
+        .map_err(|err| error(err, None))?
+        .ok_or_else(|| {
+            error(
+                "no cx.toml found; this command requires a project file",
+                Some(topic),
+            )
+        })?;
 
     // Resolve build settings: CLI overrides cx.toml [build] section
     let build_section = config.build.as_ref();
 
-    let backend = args.backend.unwrap_or_else(|| {
-        build_section
-            .and_then(|b| b.backend.as_ref())
-            .map(|s| {
-                parse_backend(s).unwrap_or_else(|e| {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                })
-            })
-            .unwrap_or_else(args::default_backend)
-    });
-
-    let optimization_level = args.optimization_level.unwrap_or_else(|| {
-        build_section
-            .and_then(|b| b.optimization.as_ref())
-            .map(|s| {
-                parse_optimization(s).unwrap_or_else(|e| {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                })
-            })
-            .unwrap_or_default()
-    });
+    let backend = match args.backend {
+        Some(backend) => backend,
+        None => build_section
+            .and_then(|build| build.backend.as_deref())
+            .map(parse_backend)
+            .transpose()?
+            .unwrap_or_else(args::default_backend),
+    };
+    let optimization_level = match args.optimization_level {
+        Some(level) => level,
+        None => build_section
+            .and_then(|build| build.optimization.as_deref())
+            .map(parse_optimization)
+            .transpose()?
+            .unwrap_or_default(),
+    };
 
     let require_explicit_return = args
         .require_explicit_return
         .or_else(|| build_section.and_then(|build| build.require_explicit_return));
 
-    let internal_directory = setup_internal_directory(&project_root);
+    let internal_directory = setup_internal_directory(&project_root)?;
 
     let base_config = CompilerConfig {
         architecture: ArchitectureConfig::native(),
@@ -112,28 +106,27 @@ pub fn build_project(args: BuildArgs) -> Vec<PathBuf> {
         predefined_macros: vec![],
     };
 
-    project_compilation(base_config, &config, args.target.as_deref()).unwrap_or_else(|err| {
-        err.print().unwrap();
-
-        std::process::exit(1);
-    })
+    project_compilation(base_config, &config, args.target.as_deref())
 }
 
-fn parse_backend(s: &str) -> Result<CompilerBackend, String> {
+fn parse_backend(s: &str) -> CXResult<CompilerBackend> {
     match s {
         "cranelift" => Ok(CompilerBackend::Cranelift),
         #[cfg(feature = "backend-llvm")]
         "llvm" => Ok(CompilerBackend::LLVM),
         #[cfg(not(feature = "backend-llvm"))]
-        "llvm" => Err(
-            "LLVM backend is not enabled in this build. Recompile cx with the `backend-llvm` feature to use backend = \"llvm\"."
-                .to_string(),
-        ),
-        other => Err(format!("Unknown backend in cx.toml: '{}'", other)),
+        "llvm" => Err(error(
+            "LLVM backend is not enabled in this build; rebuild cx with the 'backend-llvm' feature",
+            None,
+        )),
+        other => Err(error(
+            format!("unknown backend in cx.toml: '{other}'"),
+            None,
+        )),
     }
 }
 
-fn parse_optimization(s: &str) -> Result<OptimizationLevel, String> {
+fn parse_optimization(s: &str) -> CXResult<OptimizationLevel> {
     match s {
         "O0" => Ok(OptimizationLevel::O0),
         "O1" => Ok(OptimizationLevel::O1),
@@ -141,9 +134,9 @@ fn parse_optimization(s: &str) -> Result<OptimizationLevel, String> {
         "O3" => Ok(OptimizationLevel::O3),
         "Osize" => Ok(OptimizationLevel::Osize),
         "Ofast" => Ok(OptimizationLevel::Ofast),
-        other => Err(format!(
-            "Unknown optimization level in cx.toml: '{}'",
-            other
+        other => Err(error(
+            format!("unknown optimization level in cx.toml: '{other}'"),
+            None,
         )),
     }
 }

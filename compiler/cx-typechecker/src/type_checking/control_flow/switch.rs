@@ -4,6 +4,7 @@ use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::NamespacePath;
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
@@ -62,10 +63,8 @@ pub fn typecheck_switch(
     let THIRTypeKind::Integer { .. } = condition_value.get_type().kind else {
         return env.log_error(
             &condition_value.token_range,
-            format!(
-                "Switch condition must be an integer type, found {}",
-                condition_value.get_type().display_with(&env.symbols)
-            ),
+            &catalogue::SWITCH_CONDITION_MUST_BE_AN_INTEGER_TYPE_FOUND,
+            format!("{}", condition_value.get_type().display_with(&env.symbols)),
         );
     };
     let condition_type = condition_value.get_type().clone();
@@ -78,11 +77,8 @@ pub fn typecheck_switch(
         if case_index > block.len() {
             return env.log_error(
                 &condition_value.token_range,
-                format!(
-                    "Switch case index {} out of bounds (block has {} expressions)",
-                    case_index,
-                    block.len()
-                ),
+                &catalogue::SWITCH_CASE_INDEX_OUT_OF_BOUNDS_BLOCK_HAS_EXPRESSIONS,
+                (format!("{}", case_index), format!("{}", block.len())),
             );
         }
         let case_end = next_case_boundary(block.len(), case_index, cases, default_case);
@@ -105,11 +101,8 @@ pub fn typecheck_switch(
             if idx > block.len() {
                 return env.log_error(
                     condition_value.token_range,
-                    format!(
-                        "Switch default case index {} out of bounds (block has {} expressions)",
-                        idx,
-                        block.len()
-                    ),
+                    &catalogue::SWITCH_DEFAULT_CASE_INDEX_OUT_OF_BOUNDS_BLOCK_HAS_EXPRESSIONS,
+                    (format!("{}", idx), format!("{}", block.len())),
                 );
             }
             let end = next_case_boundary(block.len(), idx, cases, default_case);

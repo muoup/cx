@@ -1,17 +1,19 @@
 use cx_hir::ast::{
-    HIRStmt,
     expression::{HIRExprKind, HIRExpression},
     function::HIRFunctionPrototype,
     global_var::HIRGlobalVariable,
     modifiers::{HIRSymbolNameScheme, LinkageMode},
     template::HIRTemplatePrototype,
     types::{HIRTypeKind, HIRTypeLookup},
+    HIRStmt,
 };
+use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
 use cx_preparse_data::VisibilityMode;
 use cx_tokens::{
-    TokenIter, keyword, operator, punctuator, specifier,
+    keyword, operator, punctuator, specifier,
     token::{OperatorType, PunctuatorType, SpecifierType, TokenKind},
+    TokenIter,
 };
 use cx_util::identifier::CXIdent;
 
@@ -120,7 +122,7 @@ fn parse_extern_c_mod(data: &mut ParserData) -> CXResult<()> {
     let abi = abi.clone();
 
     if abi != "C" {
-        return parse_point_error(&data.tokens, format!("Unsupported extern ABI '{}'", abi));
+        return parse_point_error(&data.tokens, &UNSUPPORTED_EXTERN_ABI, abi);
     }
 
     assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
@@ -149,10 +151,7 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
         }
 
         _ => {
-            return parse_point_error(
-                &data.tokens,
-                "Unexpected specifier in global scope".to_string(),
-            );
+            return parse_point_error(&data.tokens, &UNEXPECTED_SPECIFIER, ());
         }
     };
 
@@ -196,10 +195,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
     let (name, _type) = parse_typedef_initializer(data)?;
 
     let Some(name) = name else {
-        return parse_point_error(
-            &data.tokens.with_index(start_index),
-            "Typedef must have a name!".to_string(),
-        );
+        return parse_point_error(&data.tokens.with_index(start_index), &TYPEDEF_NAME, ());
     };
 
     assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
@@ -251,10 +247,7 @@ fn parse_fn_merge(
 ) -> CXResult<()> {
     if try_next!(data.tokens, punctuator!(Semicolon)) {
         if template_prototype.is_some() {
-            return parse_point_error(
-                &data.tokens,
-                "Templated functions must be defined in place.".to_string(),
-            );
+            return parse_point_error(&data.tokens, &TEMPLATED_FUNCTION_BODY, ());
         }
 
         if inherited_external {
@@ -319,10 +312,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
     };
 
     if !data.tokens.has_next() {
-        return parse_point_error(
-            &data.tokens,
-            "Reached end of token stream when parsing global expression!".to_string(),
-        );
+        return parse_point_error(&data.tokens, &GLOBAL_END, ());
     }
 
     if let Some(func) = try_function_parse(
@@ -384,10 +374,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
             loop {
                 let (next_name, next_type) = parse_base_mods(data, return_type.clone())?;
                 let Some(next_name) = next_name else {
-                    return parse_point_error(
-                        &data.tokens,
-                        "Expected variable name after ','".to_string(),
-                    );
+                    return parse_point_error(&data.tokens, &VARIABLE_AFTER_COMMA, ());
                 };
                 let initializer = if try_next!(data.tokens, TokenKind::Assignment(_)) {
                     Some(parse_expr(data)?)
@@ -409,10 +396,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
                     TokenKind::Operator(OperatorType::Comma) => {}
                     TokenKind::Punctuator(PunctuatorType::Semicolon) => break,
                     _ => {
-                        return parse_point_error(
-                            &data.tokens,
-                            "Expected ',' or ';' after global declaration".to_string(),
-                        );
+                        return parse_point_error(&data.tokens, &GLOBAL_SEPARATOR, ());
                     }
                 }
             }
@@ -421,10 +405,8 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
         _ => {
             return parse_point_error(
                 &data.tokens,
-                format!(
-                    "Unexpected token in global expression: {:#?}",
-                    data.tokens.peek()
-                ),
+                &GLOBAL_TOKEN,
+                (format!("{:#?}", data.tokens.peek()),),
             );
         }
     }
@@ -483,16 +465,10 @@ fn parse_block_statements(data: &mut ParserData) -> CXResult<Vec<HIRExpression>>
         let then_count = count_then_markers(&statement);
         let capturing_then_count = count_capturing_then_markers(&statement);
         if then_count != capturing_then_count {
-            return parse_point_error(
-                &data.tokens,
-                "'then' must be the direct body of a staged expression".to_string(),
-            );
+            return parse_point_error(&data.tokens, &THEN_DIRECT_BODY, ());
         }
         if then_count > 1 {
-            return parse_point_error(
-                &data.tokens,
-                "A statement may contain only one 'then' continuation".to_string(),
-            );
+            return parse_point_error(&data.tokens, &ONE_THEN, ());
         }
 
         if then_count == 1 {
@@ -537,7 +513,11 @@ pub(crate) fn count_then_markers(expr: &HIRExpression) -> usize {
 
 pub(crate) fn count_capturing_then_markers(expr: &HIRExpression) -> usize {
     match &expr.kind {
-        HIRExprKind::ParamStagedExpression { body, .. } if matches!(body.kind, HIRExprKind::Then) => 1,
+        HIRExprKind::ParamStagedExpression { body, .. }
+            if matches!(body.kind, HIRExprKind::Then) =>
+        {
+            1
+        }
         HIRExprKind::ParamStagedExpression { body, .. } => count_capturing_then_markers(body),
         HIRExprKind::BinOp { lhs, rhs, .. } => {
             count_capturing_then_markers(lhs) + count_capturing_then_markers(rhs)
@@ -604,7 +584,7 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     }
 
     if ss.is_empty() {
-        return parse_point_error(tokens, "Expected intrinsic identifier".to_string());
+        return parse_point_error(tokens, &INTRINSIC_IDENTIFIER, ());
     }
 
     ss.pop();

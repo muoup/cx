@@ -2,10 +2,11 @@ use crate::parse::ParserData;
 use crate::{assert_token_matches, log::parse_point_error, peek_kind, try_next};
 use cx_hir::ast::template::{HIRTemplateInput, HIRTemplatePrototype};
 use cx_hir::ast::types::{HIRType, HIRTypeKind, HIRTypeLookup};
+use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
 use cx_namespace::module::{NamespacePath, QualifiedName};
-use cx_tokens::{TokenIter, identifier, operator};
-use cx_util::{identifier::CXIdent};
+use cx_tokens::{identifier, operator, TokenIter};
+use cx_util::identifier::CXIdent;
 
 use crate::parse::types::parse_initializer;
 
@@ -88,10 +89,7 @@ pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<HIRTemplate
 
     loop {
         let (None, _type, _) = parse_initializer(data)? else {
-            return parse_point_error(
-                &data.tokens,
-                "Expected type declaration in template arguments!".to_string(),
-            );
+            return parse_point_error(&data.tokens, &TEMPLATE_TYPE, ());
         };
 
         inputtype_s.push(_type);

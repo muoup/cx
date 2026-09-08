@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::log::mir_error;
 use cx_log::CXResult;
+use cx_log::catalogue::mir as catalogue;
 use cx_mir::{
     MIRBasicBlockID, MIRBlockTarget, MIRInstr, MIRInstrKind, MIRRegister, MIRStagedCapture,
     MIRStagedTargets, MIRTypeKind, MIRValue, ty::interface::MTRegistry,
@@ -39,7 +40,7 @@ fn instantiate_inner(
     {
         return Err(mir_error(
             &range,
-            "a staged value with runtime captures escaped its originating function",
+            (&catalogue::MIR_RUNTIME_CAPTURE_ESCAPE, ()),
         ));
     }
 
@@ -49,7 +50,7 @@ fn instantiate_inner(
     {
         return Err(mir_error(
             &range,
-            "staged value binding count does not match its template",
+            (&catalogue::MIR_STAGED_BINDING_COUNT, ()),
         ));
     }
 
@@ -70,7 +71,7 @@ fn instantiate_inner(
                 _ => {
                     return Err(mir_error(
                         &range,
-                        "staged place capture is not a place reference",
+                        (&catalogue::MIR_STAGED_CAPTURE_PLACE, ()),
                     ));
                 }
             },
@@ -102,7 +103,7 @@ fn instantiate_inner(
         let scope = scopes
             .get(&place.scope)
             .copied()
-            .ok_or_else(|| mir_error(&range, "template place refers to an unknown scope"))?;
+            .ok_or_else(|| mir_error(&range, (&catalogue::MIR_TEMPLATE_UNKNOWN_SCOPE, ())))?;
         let mapped = builder.fun_mut().body_mut().add_place(
             place.ty,
             place.debug_name.clone(),
@@ -137,9 +138,9 @@ fn instantiate_inner(
         );
         let mut retained_params = Vec::with_capacity(block.params.len());
         for source_param in &block.params {
-            let declaration = body
-                .register(*source_param)
-                .ok_or_else(|| mir_error(&range, "template block parameter has no declaration"))?;
+            let declaration = body.register(*source_param).ok_or_else(|| {
+                mir_error(&range, (&catalogue::MIR_TEMPLATE_PARAMETER_DECLARATION, ()))
+            })?;
             if matches!(builder.types().kind(declaration.ty), Ok(MIRTypeKind::Void)) {
                 values.insert(*source_param, MIRValue::Constant(cx_mir::MIRConstant::Unit));
                 retained_params.push(false);
@@ -175,7 +176,7 @@ fn instantiate_inner(
     let entry = blocks
         .get(&body.entry())
         .copied()
-        .ok_or_else(|| mir_error(&range, "staged template has no entry block"))?;
+        .ok_or_else(|| mir_error(&range, (&catalogue::MIR_STAGED_ENTRY_BLOCK, ())))?;
     builder.emit(MIRInstrKind::Jump {
         target: MIRBlockTarget::new(entry),
     });
@@ -188,7 +189,7 @@ fn instantiate_inner(
         }
         let block = body
             .block(source_block)
-            .ok_or_else(|| mir_error(&range, "missing staged block"))?;
+            .ok_or_else(|| mir_error(&range, (&catalogue::MIR_MISSING_STAGED_BLOCK, ())))?;
         let mapped_block = blocks[&block.id];
         builder.fun_mut().set_current_block(mapped_block);
         for instruction in &block.instrs {
@@ -268,7 +269,7 @@ fn instantiate_inner(
                         };
                         return Err(mir_error(
                             &range,
-                            format!("staged {name} has no target in the materialization context"),
+                            (&catalogue::MIR_STAGED_TARGET_NAME, name.to_string()),
                         ));
                     };
                     used_targets.insert(block);
@@ -280,22 +281,20 @@ fn instantiate_inner(
                     );
                 }
                 MIRInstrKind::StagedYield { value, ty } => {
-                    let block =
-                        if let Some(block) = targets.yield_target {
-                            block
-                        } else if let Some((scope, block)) =
-                            builder.fun().scope_stack().iter().rev().find_map(|scope| {
-                                scope.yield_target.map(|block| (scope.id(), block))
-                            })
-                        {
-                            auto_cleanup(builder, scope)?;
-                            block
-                        } else {
-                            return Err(mir_error(
-                                &range,
-                                "staged yield has no target in the materialization context",
-                            ));
-                        };
+                    let block = if let Some(block) = targets.yield_target {
+                        block
+                    } else if let Some((scope, block)) = builder
+                        .fun()
+                        .scope_stack()
+                        .iter()
+                        .rev()
+                        .find_map(|scope| scope.yield_target.map(|block| (scope.id(), block)))
+                    {
+                        auto_cleanup(builder, scope)?;
+                        block
+                    } else {
+                        return Err(mir_error(&range, (&catalogue::MIR_STAGED_YIELD_TARGET, ())));
+                    };
                     let args: Vec<MIRValue> = value
                         .as_ref()
                         .map(|value| remap.value(value))
@@ -318,10 +317,10 @@ fn instantiate_inner(
                     targets: local_targets,
                 } => {
                     let MIRValue::Register(source) = staged else {
-                        return Err(mir_error(&range, "staged callee is not a template input"));
+                        return Err(mir_error(&range, (&catalogue::MIR_STAGED_CALLEE_INPUT, ())));
                     };
                     let dependency = staged_inputs.get(source).cloned().ok_or_else(|| {
-                        mir_error(&range, "staged callee has no dependency binding")
+                        mir_error(&range, (&catalogue::MIR_STAGED_DEPENDENCY, ()))
                     })?;
                     let args = args
                         .iter()
@@ -370,7 +369,10 @@ fn instantiate_inner(
                     let MIRValue::Constant(cx_mir::MIRConstant::Function(function)) =
                         remap.value(callee)?
                     else {
-                        return Err(mir_error(range, "comptime callee has no function binding"));
+                        return Err(mir_error(
+                            range,
+                            (&catalogue::MIR_COMPTIME_CALLEE_BINDING, ()),
+                        ));
                     };
                     let args = args
                         .iter()
@@ -384,7 +386,7 @@ fn instantiate_inner(
                                 MIRValue::Constant(value) => Ok(MIRComptimeValue::Constant(value)),
                                 _ => Err(mir_error(
                                     range,
-                                    "comptime argument depends on a runtime value",
+                                    (&catalogue::MIR_COMPTIME_RUNTIME_ARGUMENT, ()),
                                 )),
                             }
                         })
@@ -394,7 +396,7 @@ fn instantiate_inner(
                         .function(function)
                         .and_then(cx_mir_comptime::InterpretedFunction::new)
                         .ok_or_else(|| {
-                            mir_error(range, "comptime function has no MIR definition")
+                            mir_error(range, (&catalogue::MIR_COMPTIME_FUNCTION_DEFINITION, ()))
                         })?;
                     let mut engine = cx_mir_comptime::MIRComptimeEngine::new(builder.module());
                     let value = engine.run_values(function, &args)?;
@@ -525,7 +527,7 @@ fn resolve_dependencies(
         if !staged.template().params().is_empty() {
             return Err(mir_error(
                 &range,
-                "parameterized staged value used without an application",
+                (&catalogue::MIR_PARAMETERIZED_STAGED_USE, ()),
             ));
         }
         let value = instantiate_inner(builder, &staged, targets, used_targets)?;
@@ -546,7 +548,7 @@ fn map_targets(
                 blocks
                     .get(&target)
                     .copied()
-                    .ok_or_else(|| mir_error(&range, "staged target refers to an unknown block"))
+                    .ok_or_else(|| mir_error(&range, (&catalogue::MIR_STAGED_TARGET_BLOCK, ())))
             })
             .transpose()
     };
@@ -571,18 +573,12 @@ fn validate_yield(
         .and_then(|block| block.params.first())
         .and_then(|register| builder.fun().register_type(*register));
     if expected.is_some() != actual.is_some() {
-        return Err(mir_error(
-            &range,
-            "staged yield value does not match the materialization context",
-        ));
+        return Err(mir_error(&range, (&catalogue::MIR_STAGED_YIELD_VALUE, ())));
     }
     if let (Some(expected), Some(actual)) = (expected, actual)
         && !builder.types().same_type(expected, actual)
     {
-        return Err(mir_error(
-            &range,
-            "staged yield type does not match the materialization context",
-        ));
+        return Err(mir_error(&range, (&catalogue::MIR_STAGED_YIELD_TYPE, ())));
     }
     Ok(())
 }

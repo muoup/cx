@@ -11,6 +11,7 @@ use cx_hir::ast::{
     types::HIRType,
 };
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::NamespacePath;
 use cx_namespace::module::QualifiedName;
 use cx_thir::{
@@ -49,10 +50,8 @@ pub(crate) fn typecheck_var_declaration(
                 if !env.type_eq(&mem_type, &sym_expr._type) {
                     return env.log_error(
                         expr.token_range(),
-                        format!(
-                            "Attempting to redeclare variable '{}' with a different type.",
-                            name
-                        ),
+                        &catalogue::ATTEMPTING_TO_REDECLARE_VARIABLE_WITH_A_DIFFERENT_TYPE,
+                        format!("{}", name),
                     );
                 }
 

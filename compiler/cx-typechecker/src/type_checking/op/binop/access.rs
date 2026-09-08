@@ -5,6 +5,7 @@ use crate::type_checking::value::{IndirectBase, resolve_indirect_base};
 use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
 use cx_hir::ast::modifiers::HIR_CONST;
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::NamespacePath;
 use cx_thir::thir::data::THIRTypeKind;
 use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
@@ -23,7 +24,11 @@ fn resolve_access_base(
             | THIRTypeKind::Union { .. }
             | THIRTypeKind::TaggedUnion { .. }
     ) {
-        return env.log_error(expr.token_range(), format!("Expected a struct or union type on the left-hand side of an access expression, found {}", lhs.source_type.display_with(&env.symbols)));
+        return env.log_error(
+            expr.token_range(),
+            &catalogue::EXPECTED_A_STRUCT_OR_UNION_TYPE_ON_THE_LEFT_HAND,
+            format!("{}", lhs.source_type.display_with(&env.symbols)),
+        );
     }
 
     Ok(lhs)
@@ -53,14 +58,16 @@ pub fn typecheck_access(
     else {
         return env.log_error(
             rhs.token_range(),
-            "Invalid right-hand side of access expression: expected an identifier".to_string(),
+            &catalogue::INVALID_RIGHT_HAND_SIDE_OF_ACCESS_EXPRESSION_EXPECTED_AN_IDENTIFIER,
+            (),
         );
     };
 
     let Some(rhs_name) = name.root_name_ref() else {
         return env.log_error(
             rhs.token_range(),
-            "Invalid right-hand side of access expression: expected an identifier".to_string(),
+            &catalogue::INVALID_RIGHT_HAND_SIDE_OF_ACCESS_EXPRESSION_EXPECTED_AN_IDENTIFIER,
+            (),
         );
     };
 
@@ -68,7 +75,8 @@ pub fn typecheck_access(
     else {
         return env.log_error(
             rhs.token_range(),
-            "Invalid right-hand side of access expression: expected an identifier".to_string(),
+            &catalogue::INVALID_RIGHT_HAND_SIDE_OF_ACCESS_EXPRESSION_EXPECTED_AN_IDENTIFIER,
+            (),
         );
     };
 

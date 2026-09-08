@@ -7,6 +7,7 @@ use crate::{
 };
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::NamespacePath;
 use cx_thir::thir::{data::THIRType, expression::THIRExpression};
 
@@ -29,7 +30,8 @@ pub fn try_typecheck_special_binop(
             let Some(rewritten) = append_call_argument(lhs, rhs, expr) else {
                 return env.log_error(
                     expr.token_range(),
-                    "The left side of '<|' must be a function call".to_string(),
+                    &catalogue::THE_LEFT_SIDE_OF_MUST_BE_A_FUNCTION_CALL,
+                    (),
                 );
             };
             Some(typecheck_expr(env, namespace, &rewritten, expected_type)?)
@@ -60,7 +62,8 @@ pub fn try_typecheck_special_binop(
                 _ => {
                     return env.log_error(
                         expr.token_range(),
-                        "The right side of '|>' must be a method call".to_string(),
+                        &catalogue::THE_RIGHT_SIDE_OF_MUST_BE_A_METHOD_CALL,
+                        (),
                     );
                 }
             }

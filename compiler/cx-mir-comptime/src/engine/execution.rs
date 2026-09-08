@@ -1,4 +1,4 @@
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
     MIRAggregateOp, MIRAssignTarget, MIRBlockTarget, MIRConstant, MIRFunctionID, MIRFunctionMode,
     MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRUnaryOp, MIRValue,
@@ -6,8 +6,8 @@ use cx_mir::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    error::comptime_error,
     interpretable::{ComptimeInterpretable, InterpretedFunction},
+    log::comptime_error,
     value::{MIRComptimeValue, MIRStagedBinding, MIRStagedValue},
 };
 
@@ -52,10 +52,7 @@ fn run_top_frame(engine: &mut MIRComptimeEngine<'_>) -> CXResult<MIRComptimeValu
         if engine.steps > engine.limits.max_steps {
             return comptime_error(
                 TokenRange::internal(),
-                format!(
-                    "comptime evaluation exceeded {} steps",
-                    engine.limits.max_steps
-                ),
+                (&catalogue::COMPTIME_STEP_LIMIT, engine.limits.max_steps),
             );
         }
 
@@ -69,7 +66,7 @@ fn run_top_frame(engine: &mut MIRComptimeEngine<'_>) -> CXResult<MIRComptimeValu
                 None => {
                     return comptime_error(
                         TokenRange::internal(),
-                        "block fell through without a terminating instruction",
+                        (&catalogue::COMPTIME_BLOCK_FELL_THROUGH, ()),
                     );
                 }
             }
@@ -105,10 +102,7 @@ fn run_top_frame(engine: &mut MIRComptimeEngine<'_>) -> CXResult<MIRComptimeValu
                     .insert(out, MIRComptimeValue::Constant(constant));
             }
             MIRInstrKind::Dereference { .. } => {
-                return comptime_error(
-                    range,
-                    "dereference is not supported in a comptime context yet",
-                );
+                return comptime_error(range, (&catalogue::COMPTIME_DEREFERENCE, ()));
             }
             MIRInstrKind::AggregateOp(op) => execute_aggregate_op(engine, op)?,
             MIRInstrKind::Call {
@@ -120,7 +114,10 @@ fn run_top_frame(engine: &mut MIRComptimeEngine<'_>) -> CXResult<MIRComptimeValu
                     other => {
                         return comptime_error(
                             range,
-                            format!("cannot call non-function comptime value {other:?}"),
+                            (
+                                &catalogue::COMPTIME_NON_FUNCTION_CALL,
+                                format!("{:?}", other),
+                            ),
                         );
                     }
                 };
@@ -137,7 +134,7 @@ fn run_top_frame(engine: &mut MIRComptimeEngine<'_>) -> CXResult<MIRComptimeValu
             MIRInstrKind::VaStart { .. }
             | MIRInstrKind::VaEnd { .. }
             | MIRInstrKind::VaArg { .. } => {
-                return comptime_error(range, "variadic operations are not comptime-capable");
+                return comptime_error(range, (&catalogue::COMPTIME_VARIADIC, ()));
             }
             MIRInstrKind::BinOp { out, op, lhs, rhs } => {
                 let lhs = memory::read_constant(engine, &lhs, &range)?;
@@ -213,10 +210,7 @@ fn run_top_frame(engine: &mut MIRComptimeEngine<'_>) -> CXResult<MIRComptimeValu
             MIRInstrKind::Assert { condition, message } => {
                 let condition = memory::read_constant(engine, &condition, &range)?;
                 if !ops::is_truthy(&condition) {
-                    return comptime_error(
-                        range,
-                        message.unwrap_or_else(|| "assertion failed at compile time".into()),
-                    );
+                    return comptime_error(range, (&catalogue::COMPTIME_ASSERTION, message));
                 }
             }
             MIRInstrKind::Assume { condition } => {
@@ -260,7 +254,7 @@ fn run_top_frame(engine: &mut MIRComptimeEngine<'_>) -> CXResult<MIRComptimeValu
                 match taken {
                     Some(target) => jump_to(engine, target)?,
                     None => {
-                        return comptime_error(range, "integer switch fell through all cases");
+                        return comptime_error(range, (&catalogue::COMPTIME_INTEGER_SWITCH, ()));
                     }
                 }
             }
@@ -282,12 +276,12 @@ fn run_top_frame(engine: &mut MIRComptimeEngine<'_>) -> CXResult<MIRComptimeValu
                 match taken {
                     Some(target) => jump_to(engine, target)?,
                     None => {
-                        return comptime_error(range, "variant switch fell through all cases");
+                        return comptime_error(range, (&catalogue::COMPTIME_VARIANT_SWITCH, ()));
                     }
                 }
             }
             MIRInstrKind::Unreachable => {
-                return comptime_error(range, "unreachable code executed at compile time");
+                return comptime_error(range, (&catalogue::COMPTIME_UNREACHABLE, ()));
             }
             MIRInstrKind::MakeStaged {
                 out,
@@ -310,7 +304,7 @@ fn run_top_frame(engine: &mut MIRComptimeEngine<'_>) -> CXResult<MIRComptimeValu
                 out, staged, args, ..
             } => {
                 let MIRComptimeValue::Staged(staged) = memory::read_value(engine, &staged)? else {
-                    return comptime_error(range, "attempted to apply a non-staged value");
+                    return comptime_error(range, (&catalogue::COMPTIME_APPLY_NON_STAGED, ()));
                 };
                 let mut bindings = Vec::with_capacity(args.len());
                 for arg in args {
@@ -327,19 +321,19 @@ fn run_top_frame(engine: &mut MIRComptimeEngine<'_>) -> CXResult<MIRComptimeValu
                 }
             }
             MIRInstrKind::StagedReturn { .. } => {
-                return comptime_error(range, "staged template executed as a function");
+                return comptime_error(range, (&catalogue::COMPTIME_STAGED_TEMPLATE_CALL, ()));
             }
             MIRInstrKind::StagedExit { .. } => {
-                return comptime_error(range, "staged exit executed as a function");
+                return comptime_error(range, (&catalogue::COMPTIME_STAGED_EXIT_CALL, ()));
             }
             MIRInstrKind::StagedYield { .. } => {
-                return comptime_error(range, "staged yield executed as a function");
+                return comptime_error(range, (&catalogue::COMPTIME_STAGED_YIELD_CALL, ()));
             }
             MIRInstrKind::StagedMove { .. } => {
-                return comptime_error(range, "staged move executed as a function");
+                return comptime_error(range, (&catalogue::COMPTIME_STAGED_MOVE_CALL, ()));
             }
             MIRInstrKind::StagedUse { .. } => {
-                return comptime_error(range, "staged use executed as a function");
+                return comptime_error(range, (&catalogue::COMPTIME_STAGED_USE_CALL, ()));
             }
         }
     }
@@ -372,9 +366,9 @@ pub(super) fn call_function(
     if engine.frames.len() >= engine.limits.max_call_depth {
         return comptime_error(
             TokenRange::internal(),
-            format!(
-                "comptime call depth exceeded {}",
-                engine.limits.max_call_depth
+            (
+                &catalogue::COMPTIME_CALL_DEPTH,
+                engine.limits.max_call_depth,
             ),
         );
     }
@@ -383,7 +377,10 @@ pub(super) fn call_function(
     let Some(function) = resolver.resolve(function_id) else {
         return comptime_error(
             TokenRange::internal(),
-            format!("function {function_id:?} is not available during comptime evaluation"),
+            (
+                &catalogue::COMPTIME_FUNCTION_UNAVAILABLE,
+                format!("{:?}", function_id),
+            ),
         );
     };
 
@@ -391,7 +388,7 @@ pub(super) fn call_function(
         MIRFunctionMode::Runtime => {
             return comptime_error(
                 TokenRange::internal(),
-                "runtime functions cannot be executed at compile time",
+                (&catalogue::COMPTIME_RUNTIME_FUNCTION, ()),
             );
         }
         MIRFunctionMode::Constexpr | MIRFunctionMode::Comptime => {}
@@ -400,7 +397,10 @@ pub(super) fn call_function(
     let Some(entry) = InterpretedFunction::new(function) else {
         return comptime_error(
             TokenRange::internal(),
-            format!("function {function_id:?} has no definition to interpret"),
+            (
+                &catalogue::COMPTIME_FUNCTION_UNDEFINED,
+                format!("{:?}", function_id),
+            ),
         );
     };
 
@@ -426,7 +426,7 @@ fn execute_aggregate_op(engine: &mut MIRComptimeEngine<'_>, op: MIRAggregateOp) 
                         other => {
                             return comptime_error(
                                 TokenRange::internal(),
-                                format!("array index is not an integer constant: {other:?}"),
+                                (&catalogue::COMPTIME_ARRAY_INDEX, format!("{:?}", other)),
                             );
                         }
                     };

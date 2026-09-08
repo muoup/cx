@@ -1,9 +1,10 @@
 use super::calls::build_direct_return_from_memory;
 use super::inst_num;
-use crate::error::{LLVMError, LLVMResult};
+use crate::log::{LLVMError, LLVMResult};
 use crate::typing::any_to_basic_val;
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{LMIRBlockTarget, LMIRReturnABI, LMIRValue};
+use cx_log::catalogue::backend as catalogue;
 use inkwell::basic_block::BasicBlock;
 use inkwell::values::AnyValueEnum;
 
@@ -46,7 +47,7 @@ pub(super) fn generate_jump<'a, 'b>(
     let predecessor = function_state
         .builder
         .get_insert_block()
-        .ok_or_else(|| LLVMError::new("No LLVM insertion block for jump"))?;
+        .ok_or_else(|| LLVMError::new(&catalogue::NO_LLVM_INSERTION_BLOCK_FOR_JUMP, ()))?;
     function_state.add_block_arguments(target, predecessor)?;
     function_state
         .builder
@@ -70,7 +71,8 @@ pub(super) fn generate_branch<'a, 'b>(
             .map_err(LLVMError::from_error)?,
         _ => {
             return Err(LLVMError::new(
-                "LLVM branch condition is not an integer or pointer",
+                &catalogue::LLVM_BRANCH_CONDITION_IS_NOT_AN_INTEGER_OR_POINTER,
+                (),
             ));
         }
     };

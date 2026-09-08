@@ -80,7 +80,7 @@ pub fn lower_control_exit(
     let Some((scope, block)) = target else {
         return log_mir_error(
             builder.source_range(),
-            "control-flow expression has no target scope",
+            (&cx_log::catalogue::mir::MIR_CONTROL_FLOW_TARGET, ()),
         );
     };
 
@@ -345,7 +345,7 @@ pub(super) fn lower_switch(
         if !matches!(case_value, MIRConstant::Integer { .. }) {
             return log_mir_error(
                 &case.token_range,
-                "switch case expression must evaluate to an integer",
+                (&cx_log::catalogue::mir::MIR_SWITCH_INTEGER, ()),
             );
         }
 

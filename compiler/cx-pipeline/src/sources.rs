@@ -1,8 +1,10 @@
+use crate::log::pipeline_error;
+use cx_log::{CXResult, catalogue::driver as catalogue};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub(crate) fn expand_patterns(base: &Path, patterns: &[String]) -> Result<Vec<PathBuf>, String> {
+pub(crate) fn expand_patterns(base: &Path, patterns: &[String]) -> CXResult<Vec<PathBuf>> {
     let mut selected = BTreeSet::new();
 
     for raw_pattern in patterns {
@@ -12,10 +14,10 @@ pub(crate) fn expand_patterns(base: &Path, patterns: &[String]) -> Result<Vec<Pa
         };
         let pattern = normalize_pattern(raw_pattern);
         if pattern.is_empty() {
-            return Err("match pattern cannot be empty".to_string());
+            return Err(pipeline_error(&catalogue::EMPTY_MATCH_PATTERN, ()));
         }
         if Path::new(pattern.as_str()).is_absolute() {
-            return Err(format!("match pattern must be relative: {pattern}"));
+            return Err(pipeline_error(&catalogue::ABSOLUTE_MATCH_PATTERN, pattern));
         }
 
         let root = search_root(base, pattern.as_str());
@@ -33,9 +35,9 @@ pub(crate) fn expand_patterns(base: &Path, patterns: &[String]) -> Result<Vec<Pa
     }
 
     if selected.is_empty() {
-        return Err(format!(
-            "match patterns selected no source files: {}",
-            patterns.join(", ")
+        return Err(pipeline_error(
+            &catalogue::NO_MATCHED_SOURCES,
+            patterns.join(", "),
         ));
     }
 
@@ -83,20 +85,21 @@ fn collect_matches(
     current: &Path,
     pattern: &str,
     matches: &mut BTreeSet<PathBuf>,
-) -> Result<(), String> {
+) -> CXResult<()> {
     if current.is_file() {
         add_match(base, current, pattern, matches)?;
         return Ok(());
     }
 
     let entries = fs::read_dir(current).map_err(|error| {
-        format!(
-            "failed to read match directory {}: {error}",
-            current.display()
+        pipeline_error(
+            &catalogue::READ_MATCH_DIRECTORY,
+            (current.display().to_string(), error.to_string()),
         )
     })?;
     for entry in entries {
-        let entry = entry.map_err(|error| format!("failed to read match entry: {error}"))?;
+        let entry = entry
+            .map_err(|error| pipeline_error(&catalogue::READ_MATCH_ENTRY, error.to_string()))?;
         let path = entry.path();
         if path.is_dir() {
             collect_matches(base, &path, pattern, matches)?;
@@ -113,12 +116,15 @@ fn add_match(
     path: &Path,
     pattern: &str,
     matches: &mut BTreeSet<PathBuf>,
-) -> Result<(), String> {
+) -> CXResult<()> {
     let relative = path.strip_prefix(base).map_err(|error| {
-        format!(
-            "failed to make {} relative to {}: {error}",
-            path.display(),
-            base.display()
+        pipeline_error(
+            &catalogue::RELATIVE_MATCH_PATH,
+            (
+                path.display().to_string(),
+                base.display().to_string(),
+                error.to_string(),
+            ),
         )
     })?;
     let relative = relative.to_string_lossy().replace('\\', "/");

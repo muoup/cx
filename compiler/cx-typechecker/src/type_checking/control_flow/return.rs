@@ -1,4 +1,5 @@
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::NamespacePath;
 use cx_namespace::module::QualifiedName;
 use cx_thir::{
@@ -35,7 +36,8 @@ pub fn typecheck_return(
     if env.in_defer_context() {
         return env.log_error(
             return_range,
-            "return is not allowed inside a deferred expression".to_string(),
+            &catalogue::RETURN_IS_NOT_ALLOWED_INSIDE_A_DEFERRED_EXPRESSION,
+            (),
         );
     }
 
@@ -43,7 +45,8 @@ pub fn typecheck_return(
         let Some(return_type) = env.staging_context().return_type else {
             return env.log_error(
                 return_range,
-                "staged return has no materialization context".to_string(),
+                &catalogue::STAGED_RETURN_HAS_NO_MATERIALIZATION_CONTEXT,
+                (),
             );
         };
         return_type
@@ -54,10 +57,8 @@ pub fn typecheck_return(
     if return_type.is_unreachable() {
         return env.log_error(
             return_range,
-            format!(
-                "Function {} cannot return because its return type is 'unreachable'",
-                env.current_function().pretty_name()
-            ),
+            &catalogue::FUNCTION_CANNOT_RETURN_BECAUSE_ITS_RETURN_TYPE_IS_UNREACHABLE,
+            format!("{}", env.current_function().pretty_name()),
         );
     }
 
@@ -92,20 +93,16 @@ pub fn typecheck_return(
         (Some(value), _) => {
             return env.log_error(
                 value.token_range,
-                format!(
-                    "Cannot return from function {} with a void return type",
-                    env.current_function().pretty_name()
-                ),
+                &catalogue::CANNOT_RETURN_FROM_FUNCTION_WITH_A_VOID_RETURN_TYPE,
+                format!("{}", env.current_function().pretty_name()),
             );
         }
 
         (None, _) => {
             return env.log_error(
                 return_range,
-                format!(
-                    "Function {} expects a return value, but none was provided",
-                    env.current_function().pretty_name()
-                ),
+                &catalogue::FUNCTION_EXPECTS_A_RETURN_VALUE_BUT_NONE_WAS_PROVIDED,
+                format!("{}", env.current_function().pretty_name()),
             );
         }
     };
@@ -120,8 +117,8 @@ pub fn typecheck_return(
         if ret_name.is_some() && return_type.is_void() {
             return env.log_error(
                 return_range,
-                "Cannot have a named return variable in a function with void return type"
-                    .to_string(),
+                &catalogue::CANNOT_HAVE_A_NAMED_RETURN_VARIABLE_IN_A_FUNCTION_WITH,
+                (),
             );
         }
 

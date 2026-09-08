@@ -5,6 +5,7 @@ use cx_hir::{
     },
     symbols::{HIRSymbol, HIRSymbolData, HIRSymbolKind},
 };
+use cx_log::catalogue::typecheck as catalogue;
 use cx_log::{CXResult, error::CXMaybeRawResult};
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
@@ -42,7 +43,8 @@ pub fn resolve_symbol(
     let Some((first, rest)) = symbols.split_first() else {
         return env.log_error(
             TokenRange::internal(),
-            format!("Symbol '{}' has no declarations", name),
+            &catalogue::SYMBOL_HAS_NO_DECLARATIONS,
+            format!("{}", name),
         );
     };
     if symbols.iter().any(HIRSymbol::is_type) {
@@ -76,14 +78,15 @@ pub fn resolve_symbol(
         if !mir_symbols_equivalent(env, &resolved, &candidate) {
             return env.log_error(
                 symbol_range(declaration),
-                format!("Symbol '{}' has incompatible declarations", name),
+                &catalogue::SYMBOL_HAS_INCOMPATIBLE_DECLARATIONS,
+                format!("{}", name),
             );
         }
     }
 
     if let MIRSymbol::FunctionReference(prototype) = &resolved {
         env.items.push_generated_function(THIRFunction {
-        require_explicit_return: env.require_explicit_return(),
+            require_explicit_return: env.require_explicit_return(),
             prototype: prototype.clone(),
             body: None,
         });
@@ -218,7 +221,7 @@ pub(crate) fn resolve_type_symbol<'a>(
 ) -> CXMaybeRawResult<&'a HIRSymbol> {
     let Some(first) = declarations.first() else {
         return env
-            .log_error_base(format!("Type '{name}' has no declarations"))
+            .log_error_base(&catalogue::TYPE_HAS_NO_DECLARATIONS, format!("{}", name))
             .map_err(Into::into);
     };
     let mut definition = None;
@@ -227,12 +230,15 @@ pub(crate) fn resolve_type_symbol<'a>(
             (&symbol.kind, &first.kind)
         else {
             return env
-                .log_error_base(format!("Symbol '{name}' is not a type"))
+                .log_error_base(&catalogue::SYMBOL_IS_NOT_A_TYPE, format!("{}", name))
                 .map_err(Into::into);
         };
         if symbol.tag != first.tag || !type_template_kinds_equivalent(first_data, data) {
             return env
-                .log_error_base(format!("Symbol '{name}' has incompatible tag declarations"))
+                .log_error_base(
+                    &catalogue::SYMBOL_HAS_INCOMPATIBLE_TAG_DECLARATIONS,
+                    format!("{}", name),
+                )
                 .map_err(Into::into);
         }
         if let Some(tag) = first.tag {
@@ -240,14 +246,20 @@ pub(crate) fn resolve_type_symbol<'a>(
                 && definition.replace(symbol).is_some()
             {
                 return env
-                    .log_error_base(format!("Symbol '{name}' has multiple type definitions"))
+                    .log_error_base(
+                        &catalogue::SYMBOL_HAS_MULTIPLE_TYPE_DEFINITIONS,
+                        format!("{}", name),
+                    )
                     .map_err(Into::into);
             }
         } else if !std::ptr::eq(symbol, first)
             && !type_declarations_equivalent(env, name, first_data, data)?
         {
             return env
-                .log_error_base(format!("Symbol '{name}' has multiple type definitions"))
+                .log_error_base(
+                    &catalogue::SYMBOL_HAS_MULTIPLE_TYPE_DEFINITIONS,
+                    format!("{}", name),
+                )
                 .map_err(Into::into);
         }
     }
@@ -352,14 +364,18 @@ fn resolve_type_constructor(
 ) -> CXResult<MIRSymbol> {
     let range = union_type.range().clone();
     let union_type = complete_type(env, namespace, union_type)?;
-    let variants = union_type
-        .aggregate_fields(&env.symbols)
-        .ok_or_else(|| env.error(&range, "Type constructor target is not a tagged union"))?;
+    let variants = union_type.aggregate_fields(&env.symbols).ok_or_else(|| {
+        env.error(
+            &range,
+            &catalogue::TYPE_CONSTRUCTOR_TARGET_IS_NOT_A_TAGGED_UNION,
+            (),
+        )
+    })?;
     let Some((_, variant_type)) = variants.get(variant_index).cloned() else {
-        return crate::log::internal_type_error(format!(
-            "Type constructor variant index {} is out of bounds",
-            variant_index
-        ));
+        return crate::log::internal_type_error(
+            &catalogue::TYPE_CONSTRUCTOR_VARIANT_INDEX_IS_OUT_OF_BOUNDS,
+            format!("{}", variant_index),
+        );
     };
 
     let mut symbol_name = cx_namespace::mangling::mangle_namespace_symbol(
