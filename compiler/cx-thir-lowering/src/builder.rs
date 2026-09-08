@@ -5,7 +5,11 @@ use std::{
 
 use cx_log::CXResult;
 use cx_mir::{
-    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRFunctionMode, MIRGlobalID, MIRGlobalVariable, MIRInstrKind, MIRLayoutError, MIRPlace, MIRRegister, MIRStagedCapture, MIRStagedTemplate, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRUnit, MIRValue, ty::{interface::MTRegistry, registry::MIRTypeRegistry}
+    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRFunctionMode,
+    MIRGlobalID, MIRGlobalVariable, MIRInstrKind, MIRLayoutError, MIRPlace, MIRRegister,
+    MIRStagedCapture, MIRStagedTemplate, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRUnit,
+    MIRValue,
+    ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
 use cx_mir_comptime::ComptimeContext;
 use cx_target::ArchitectureConfig;
@@ -26,10 +30,7 @@ use cx_util::linkage::LinkageMode;
 mod function;
 mod module;
 
-use crate::lowering::{
-    self,
-    types::{lower_type, lower_type_id},
-};
+use crate::lowering::{self, types::lower_type};
 use function::MIRFunctionBuilder;
 use module::{MIRModuleBuilder, ModuleParts};
 
@@ -41,7 +42,6 @@ pub struct MIRBuilder<'thir> {
 
     pub(crate) lowering_types: HashSet<THIRTypeID>,
 
-    ambient_prototype: MIRFnPrototype,
     source_range: TokenRange,
     capture: Option<CaptureContext>,
 
@@ -75,37 +75,16 @@ impl<'thir> MIRBuilder<'thir> {
             lowering_types: HashSet::new(),
             function: None,
 
-            ambient_prototype: MIRFnPrototype::new(
-                MIRFnSignature::new(
-                    CXIdent::from("__cx_ambient".to_string()),
-                    None,
-                    Vec::new(),
-                    MIRTypeID::new(0),
-                    MIRFunctionMode::Comptime,
-                    false,
-                    true,
-                ),
-                LinkageMode::Static,
-            ),
             source_range: TokenRange::internal(),
             capture: None,
             outer_return_type: None,
             outer_yield_type: None,
         };
+
         builder
             .types
             .reserve_id_space(thir.registry.type_id_bound());
 
-        let unit = thir
-            .registry
-            .intrinsic_type_id("void")
-            .expect("THIR registry is missing the intrinsic void type");
-
-        let void_type = match lower_type_id(&mut builder, unit) {
-            Ok(id) => id,
-            Err(_) => unreachable!("intrinsic void type must lower"),
-        };
-        builder.ambient_prototype.signature.return_type = void_type;
         builder
     }
 
