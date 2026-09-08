@@ -13,7 +13,7 @@ pub(crate) fn targets(builder: &mut MIRBuilder<'_>) -> CXResult<MIRStagedTargets
     let result = (|| {
         let block = builder.fun_mut().new_block("staged.return_cleanup");
         targets.return_target = Some(block);
-        let ty = builder.outer_return_type;
+        let ty = builder.fun().outer_return_type;
         let value = ty
             .filter(|ty| !matches!(builder.types().kind(*ty), Ok(MIRTypeKind::Void)))
             .map(|ty| MIRValue::Register(builder.fun_mut().block_param(block, ty, None)));
@@ -48,7 +48,7 @@ pub(crate) fn targets(builder: &mut MIRBuilder<'_>) -> CXResult<MIRStagedTargets
             .and_then(|(_, block)| builder.fun().body().block(block))
             .and_then(|block| block.params.first())
             .and_then(|register| builder.fun().register_type(*register))
-            .or(builder.outer_yield_type)
+            .or(builder.fun().outer_yield_type)
             .filter(|ty| !matches!(builder.types().kind(*ty), Ok(MIRTypeKind::Void)));
         let block = builder.fun_mut().new_block("staged.yield_cleanup");
         targets.yield_target = Some(block);

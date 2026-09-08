@@ -4,9 +4,6 @@ mod help;
 mod init;
 mod log;
 
-#[cfg(test)]
-mod tests;
-
 use crate::log::error;
 use args::Command;
 use cx_log::CXResult;

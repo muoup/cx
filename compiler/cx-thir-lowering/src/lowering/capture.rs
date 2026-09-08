@@ -31,15 +31,21 @@ pub fn capture_expression(
     let in_safe_context = builder.try_fun()
         .map(|f| f.prototype().signature.safe)
         .unwrap_or(false);
-    let saved_function = builder
-        .take_current_function();
+    let mut saved_function = builder.take_current_function();
+    let saved_capture = saved_function
+        .as_mut()
+        .and_then(|function| function.take_capture());
     let expr_type = lowering::lower_type(builder, &expression._type)?;
 
-    builder.start_custom_function(MIRFunction::new(
-        MIRFunctionID::new(usize::MAX),
-        capture_prototype(expr_type, in_safe_context),
-        None,
-    ));
+    builder.start_custom_function(
+        MIRFunction::new(
+            MIRFunctionID::new(usize::MAX),
+            capture_prototype(expr_type, in_safe_context),
+            None,
+        ),
+        saved_function.as_ref(),
+    );
+    builder.fun_mut().set_capture(saved_capture);
 
     let value = lowering::lower_expression(builder, expression)?;
     builder.fun_mut().emit(
@@ -47,11 +53,13 @@ pub fn capture_expression(
         TokenRange::internal(),
     );
 
-    let func = builder
+    let mut func = builder
         .take_current_function()
         .expect("capture builder is present (2)");
 
-    if let Some(saved_function) = saved_function {
+    let capture = func.take_capture();
+    if let Some(mut saved_function) = saved_function {
+        saved_function.set_capture(capture);
         builder.restore_current_function(saved_function);
     }
 

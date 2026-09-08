@@ -6,9 +6,8 @@ use std::{
 use cx_log::CXResult;
 use cx_mir::{
     MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRFunctionMode,
-    MIRGlobalID, MIRGlobalVariable, MIRInstrKind, MIRLayoutError, MIRPlace, MIRRegister,
-    MIRStagedCapture, MIRStagedTemplate, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRUnit,
-    MIRValue,
+    MIRGlobalID, MIRGlobalVariable, MIRInstrKind, MIRLayoutError, MIRPlace, MIRStagedCapture,
+    MIRStagedTemplate, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRUnit, MIRValue,
     ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
 use cx_mir_comptime::ComptimeContext;
@@ -30,8 +29,11 @@ use cx_util::linkage::LinkageMode;
 mod function;
 mod module;
 
+#[cfg(test)]
+mod capture_tests;
+
 use crate::lowering::{self, types::lower_type};
-use function::MIRFunctionBuilder;
+use function::{CaptureContext, MIRFunctionBuilder};
 use module::{MIRModuleBuilder, ModuleParts};
 
 pub struct MIRBuilder<'thir> {
@@ -39,12 +41,6 @@ pub struct MIRBuilder<'thir> {
     module: MIRModuleBuilder,
     registry: &'thir THIRDecomposedRegistry,
     function: Option<MIRFunctionBuilder>,
-
-    source_range: TokenRange,
-    capture: Option<CaptureContext>,
-
-    pub(crate) outer_return_type: Option<MIRTypeID>,
-    pub(crate) outer_yield_type: Option<MIRTypeID>,
 }
 
 #[derive(Debug, Clone)]
@@ -58,13 +54,6 @@ pub struct MIRTypeRegistryBuilder {
     next_id: usize,
 }
 
-struct CaptureContext {
-    source_locals: HashMap<THIRLocalID, MIRValue>,
-    captures: Vec<(MIRStagedCapture, MIRValue)>,
-    params: Vec<MIRRegister>,
-    runtime_places: bool,
-}
-
 impl<'thir> MIRBuilder<'thir> {
     pub fn new(thir: &'thir THIRUnit) -> Self {
         let mut builder = Self {
@@ -72,11 +61,6 @@ impl<'thir> MIRBuilder<'thir> {
             module: MIRModuleBuilder::new(),
             registry: &thir.registry,
             function: None,
-
-            source_range: TokenRange::internal(),
-            capture: None,
-            outer_return_type: None,
-            outer_yield_type: None,
         };
 
         builder
@@ -138,23 +122,24 @@ impl<'thir> MIRBuilder<'thir> {
     }
 
     pub(crate) fn is_capturing(&self) -> bool {
-        self.capture.is_some()
+        self.try_fun()
+            .is_some_and(|function| function.capture.is_some())
     }
 
     pub(crate) fn set_source_range(&mut self, range: TokenRange) -> TokenRange {
-        std::mem::replace(&mut self.source_range, range)
+        self.fun_mut().set_source_range(range)
     }
 
     pub(crate) fn restore_source_range(&mut self, range: TokenRange) {
-        self.source_range = range;
+        self.fun_mut().restore_source_range(range);
     }
 
     pub(crate) fn source_range(&self) -> &TokenRange {
-        &self.source_range
+        self.fun().source_range()
     }
 
     pub fn emit(&mut self, instr: MIRInstrKind) {
-        let range = self.source_range.clone();
+        let range = self.fun().source_range().clone();
 
         self.fun_mut().emit(instr, range);
     }
@@ -174,7 +159,7 @@ impl<'thir> MIRBuilder<'thir> {
             return Ok(Some(value));
         }
 
-        let Some(capture) = self.capture.as_ref() else {
+        let Some(capture) = self.fun().capture.as_ref() else {
             return Ok(None);
         };
         let Some(source) = capture.source_locals.get(&local).cloned() else {
@@ -207,7 +192,11 @@ impl<'thir> MIRBuilder<'thir> {
             }
         };
         self.fun_mut().bind_local(local, value.clone());
-        let capture = self.capture.as_mut().expect("capture context is active");
+        let capture = self
+            .fun_mut()
+            .capture
+            .as_mut()
+            .expect("capture context is active");
         capture.captures.push((input, source));
         Ok(Some(value))
     }
@@ -223,28 +212,30 @@ impl<'thir> MIRBuilder<'thir> {
         let prototype = self.fun().prototype().clone();
         let source_locals = self.fun().locals();
         let saved_function = self.function.take();
-        let saved_capture = self.capture.take();
-        let runtime_places = saved_capture.is_some()
+        let runtime_places = saved_function
+            .as_ref()
+            .is_some_and(|function| function.capture.is_some())
             || saved_function
                 .as_ref()
                 .is_some_and(|function| function.mode() != MIRFunctionMode::Comptime);
-        let saved_range = std::mem::replace(&mut self.source_range, TokenRange::internal());
-
-        self.function = Some(MIRFunctionBuilder::new(MIRFunction::new(
-            id, prototype, None,
-        )));
-        self.capture = Some(CaptureContext {
+        self.function = Some(MIRFunctionBuilder::new(
+            MIRFunction::new(id, prototype, None),
+            saved_function.as_ref(),
+        ));
+        self.fun_mut().restore_source_range(TokenRange::internal());
+        self.fun_mut().set_capture(Some(CaptureContext {
             source_locals,
             captures: Vec::new(),
             params: Vec::new(),
             runtime_places,
-        });
+        }));
 
         for (local, ty) in params {
             let ty = lower_type(self, ty)?;
             let input = self.fun_mut().new_register(ty, None);
             self.fun_mut().bind_local(*local, MIRValue::Register(input));
-            self.capture
+            self.fun_mut()
+                .capture
                 .as_mut()
                 .expect("capture context is active")
                 .params
@@ -260,16 +251,12 @@ impl<'thir> MIRBuilder<'thir> {
             Ok(result_type)
         })();
 
-        let scratch = self.function.take();
-        let capture = self.capture.take().expect("capture context is present");
+        let mut scratch = self.function.take().expect("capture builder is present");
+        let capture = scratch.take_capture().expect("capture context is present");
         self.function = saved_function;
-        self.capture = saved_capture;
-        self.restore_source_range(saved_range);
 
         let result_type = lowered?;
-        let (_, body) = scratch
-            .expect("capture builder is present")
-            .concise_finish();
+        let (_, body) = scratch.concise_finish();
         let (inputs, values): (Vec<_>, Vec<_>) = capture.captures.into_iter().unzip();
         Ok((
             Arc::new(MIRStagedTemplate::new(
@@ -415,8 +402,12 @@ impl<'thir> MIRBuilder<'thir> {
         ))
     }
 
-    pub(crate) fn start_custom_function(&mut self, function: MIRFunction) {
-        self.function = Some(MIRFunctionBuilder::new(function));
+    pub(crate) fn start_custom_function(
+        &mut self,
+        function: MIRFunction,
+        parent: Option<&MIRFunctionBuilder>,
+    ) {
+        self.function = Some(MIRFunctionBuilder::new(function, parent));
     }
 
     pub(crate) fn start_function(&mut self, id: MIRFunctionID) {
@@ -426,7 +417,7 @@ impl<'thir> MIRBuilder<'thir> {
             .cloned()
             .expect("function context must be declared in the module before starting");
 
-        self.function = Some(MIRFunctionBuilder::new(function));
+        self.function = Some(MIRFunctionBuilder::new(function, None));
     }
 
     pub(crate) fn finish_function(&mut self) {

@@ -50,8 +50,8 @@ pub(crate) fn lower_function(
 
     builder.start_function(id);
 
-    builder.outer_return_type = Some(builder.fun().prototype().signature.return_type);
-    builder.outer_yield_type = None;
+    builder.fun_mut().outer_return_type = Some(builder.fun().prototype().signature.return_type);
+    builder.fun_mut().outer_yield_type = None;
 
     for (index, parameter) in function.prototype.signature().params.iter().enumerate() {
         let place = MIRPlace::Parameter(MIRParameterID::new(index));
@@ -107,13 +107,13 @@ pub(crate) fn lower_comptime_function(
 
     builder.start_function(id);
     builder.fun_mut().push_scope(body.token_range.clone());
-    builder.outer_return_type = function
+    builder.fun_mut().outer_return_type = function
         .context
         .return_type
         .as_ref()
         .map(|ty| lower_type(builder, ty))
         .transpose()?;
-    builder.outer_yield_type = function
+    builder.fun_mut().outer_yield_type = function
         .context
         .yield_type
         .as_ref()
