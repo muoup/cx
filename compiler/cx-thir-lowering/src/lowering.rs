@@ -8,6 +8,7 @@ mod staged;
 pub(crate) mod aggregates;
 pub(crate) mod globals;
 pub(crate) mod types;
+pub(crate) mod capture;
 
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{

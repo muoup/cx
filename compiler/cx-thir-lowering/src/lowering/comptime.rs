@@ -1,18 +1,17 @@
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::MIRConstant;
-use cx_mir_comptime::{InterpretedFunction, MIRComptimeEngine, MIRComptimeValue};
+use cx_mir_comptime::{MIRComptimeValue, evaluate_comptime_function};
 use cx_thir::thir::expression::THIRExpression;
 
-use crate::{builder::MIRBuilder, log::mir_error};
+use crate::{builder::MIRBuilder, log::mir_error, lowering::capture::capture_expression};
 
 pub(crate) fn evaluate_comptime_expr(
     context: &mut MIRBuilder,
     expr: &THIRExpression,
 ) -> CXResult<MIRComptimeValue> {
-    let function = context.capture_expression(expr)?;
-    let mut engine = MIRComptimeEngine::new(context.comptime_resolver());
-    let entry = InterpretedFunction::new(&function);
-    Ok(MIRComptimeValue::Constant(engine.run(entry, &[])?))
+    let captured = capture_expression(context, expr)?;
+
+    evaluate_comptime_function(context, &captured, &[])
 }
 
 fn constant_error(expression: &THIRExpression, context: &str) -> cx_log::error::CXError {

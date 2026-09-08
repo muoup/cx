@@ -1,13 +1,11 @@
 use std::collections::HashMap;
 
-use cx_log::{CXRawResult, catalogue::mir as catalogue};
 use cx_tokens::TokenRange;
 
 use crate::{
-    MIRBasicBlockID, MIRConstant, MIRScopeID,
-    global::{
-        MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalKind, MIRGlobalState, MIRGlobalVariable,
-    }, ty::registry::MIRTypeRegistry
+    MIRBasicBlockID, MIRScopeID,
+    global::{MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalVariable},
+    ty::registry::MIRTypeRegistry,
 };
 
 #[derive(Debug, Clone)]
@@ -55,24 +53,6 @@ impl MIRUnit {
 
     pub fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
         self.globals.get(&id)
-    }
-
-    pub fn materialize_global(&mut self, id: MIRGlobalID, value: MIRConstant) -> CXRawResult<()> {
-        let global = self
-            .globals
-            .get_mut(&id)
-            .ok_or_else(|| crate::log::raw_error(&catalogue::MIR_GLOBAL_MISSING, id.to_string()))?;
-        let MIRGlobalKind::Variable { state, .. } = &mut global.kind else {
-            return crate::log::log_raw_error(&catalogue::MIR_GLOBAL_NOT_VARIABLE, id.to_string());
-        };
-        if !matches!(&*state, MIRGlobalState::Initializer(_)) {
-            return crate::log::log_raw_error(
-                &catalogue::MIR_GLOBAL_NOT_INITIALIZER,
-                id.to_string(),
-            );
-        }
-        *state = MIRGlobalState::Initialized(value);
-        Ok(())
     }
 
     pub fn instruction_range(

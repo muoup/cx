@@ -2,10 +2,10 @@ use crate::builder::MIRBuilder;
 use crate::lowering::{lower_expression, types::lower_type};
 use cx_log::CXResult;
 use cx_mir::{
-    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID, MIRFunctionMode, MIRGlobalID,
-    MIRGlobalKind, MIRGlobalState, MIRInstrKind,
+    MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID, MIRFunctionMode,
+    MIRGlobalID, MIRGlobalKind, MIRGlobalState, MIRInstrKind,
 };
-use cx_mir_comptime::InterpretedFunction;
+use cx_mir_comptime::evaluate_comptime_function;
 use cx_thir::thir::{expression::THIRExpression, global::THIRGlobalVariable};
 use cx_util::identifier::CXIdent;
 use cx_util::linkage::LinkageMode;
@@ -14,28 +14,6 @@ pub struct MIRGlobalInitRequest {
     global_id: MIRGlobalID,
     init_id: MIRFunctionID,
     initializer: THIRExpression,
-}
-
-pub(crate) fn lower_unit_globals(builder: &mut MIRBuilder<'_>) -> CXResult<()> {
-    for global in builder.module().globals_in_order() {
-        let MIRGlobalKind::Variable { state, .. } = &global.kind else {
-            continue;
-        };
-        let MIRGlobalState::Initializer(function_id) = state else {
-            continue;
-        };
-        let Some(function) = builder.module().function(*function_id) else {
-            continue;
-        };
-        let Some(entry) = InterpretedFunction::new(function) else {
-            continue;
-        };
-
-        let constant = engine.run(entry, &[])?;
-        evaluated.push((global.id, constant));
-    }
-
-    Ok(())
 }
 
 pub(crate) fn predeclare_global(
@@ -90,7 +68,7 @@ pub(crate) fn lower_global(
         .declare_function(MIRFnPrototype::new(signature, LinkageMode::Static));
     builder
         .module_mut()
-        .begin_global_initializer(id, init_id, &init.token_range)?;
+        .begin_global_initializer(id, &init.token_range)?;
 
     Ok(Some(MIRGlobalInitRequest {
         global_id: id,
@@ -101,7 +79,7 @@ pub(crate) fn lower_global(
 
 pub(crate) fn fulfill_init_request(
     builder: &mut MIRBuilder<'_>,
-    request: MIRGlobalInitRequest,
+    request: &MIRGlobalInitRequest,
 ) -> CXResult<()> {
     builder.start_function(request.init_id);
 
@@ -113,8 +91,27 @@ pub(crate) fn fulfill_init_request(
     builder.finish_function();
     builder.module_mut().set_global_state(
         request.global_id,
-        MIRGlobalState::Initializer(request.init_id),
+        MIRGlobalState::Initialized(MIRConstant::Undefined),
     );
+
+    Ok(())
+}
+
+pub(crate) fn execute_request(
+    builder: &mut MIRBuilder<'_>,
+    request: &MIRGlobalInitRequest,
+) -> CXResult<()> {
+    let Some(func) = builder.module().function(request.init_id) else {
+        unreachable!("Function for global init request not found");
+    };
+
+    let result = evaluate_comptime_function(builder, func, &[])?
+        .constant()
+        .ok_or_else(|| todo!("Expected a constant result from global initializer"))?;
+
+    builder
+        .module_mut()
+        .set_global_state(request.global_id, MIRGlobalState::Initialized(result));
 
     Ok(())
 }

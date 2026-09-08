@@ -1,5 +1,5 @@
 use cx_log::CXResult;
-use cx_mir::{MIRFunctionMode, MIRGlobalKind, MIRGlobalState, MIRUnit};
+use cx_mir::{MIRFunctionMode, MIRUnit};
 use cx_thir::THIRUnit;
 
 pub mod builder;
@@ -9,7 +9,10 @@ pub(crate) mod lowering;
 
 pub use builder::MIRBuilder;
 
-use crate::lowering::{globals, lower_comptime_function, lower_function};
+use crate::lowering::{
+    globals::{self},
+    lower_comptime_function, lower_function,
+};
 
 pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
     let mut builder = MIRBuilder::new(thir);
@@ -44,7 +47,7 @@ pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
         }
     }
 
-    for request in global_requests.into_iter() {
+    for request in global_requests.iter() {
         globals::fulfill_init_request(&mut builder, request)?;
     }
 
@@ -52,21 +55,13 @@ pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
         lower_comptime_function(&mut builder, id, comptime_fn)?;
     }
 
+    for request in global_requests.into_iter() {
+        globals::execute_request(&mut builder, &request)?;
+    }
+
     for (function, id) in fn_pairs.into_iter() {
         lower_function(&mut builder, id, function)?;
     }
 
-    for global in builder.module().globals_in_order() {
-        match global.kind {
-            MIRGlobalKind::Variable { state, .. } => {
-                if let MIRGlobalState::Initializer(
-            },
-
-            _ => {}
-        }
-    }
-
-    let mut unit = builder.finish();
-
-    Ok(unit)
+    Ok(builder.finish())
 }

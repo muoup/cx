@@ -33,7 +33,7 @@ use crate::lowering::{
     self,
     types::{lower_type, lower_type_id},
 };
-use function::FunctionBuilder;
+use function::MIRFunctionBuilder;
 use module::{MIRModuleBuilder, ModuleParts};
 
 pub struct MIRBuilder<'thir> {
@@ -42,7 +42,7 @@ pub struct MIRBuilder<'thir> {
     registry: &'thir THIRDecomposedRegistry,
 
     pub(crate) lowering_types: HashSet<THIRTypeID>,
-    function: Option<FunctionBuilder>,
+    function: Option<MIRFunctionBuilder>,
     ambient_prototype: MIRFnPrototype,
     source_range: TokenRange,
     capture: Option<CaptureContext>,
@@ -140,13 +140,22 @@ impl<'thir> MIRBuilder<'thir> {
         Some((id, prototype))
     }
 
-    pub(crate) fn fun(&self) -> &FunctionBuilder {
+    pub(crate) fn try_fun(&self) -> Option<&MIRFunctionBuilder> {
+        self.function.as_ref()
+    }
+    
+    pub(crate) fn fun(&self) -> &MIRFunctionBuilder {
         self.function
             .as_ref()
             .expect("no MIR function is currently active")
     }
 
-    pub(crate) fn fun_mut(&mut self) -> &mut FunctionBuilder {
+    #[allow(dead_code)]
+    pub(crate) fn try_fun_mut(&mut self) -> Option<&mut MIRFunctionBuilder> {
+        self.function.as_mut()
+    }
+
+    pub(crate) fn fun_mut(&mut self) -> &mut MIRFunctionBuilder {
         self.function
             .as_mut()
             .expect("no MIR function is currently active")
@@ -227,6 +236,7 @@ impl<'thir> MIRBuilder<'thir> {
         Ok(Some(value))
     }
 
+    // TODO: Is this needed?
     pub(crate) fn capture_staged(
         &mut self,
         expression: &THIRExpression,
@@ -244,7 +254,7 @@ impl<'thir> MIRBuilder<'thir> {
                 .is_some_and(|function| function.mode() != MIRFunctionMode::Comptime);
         let saved_range = std::mem::replace(&mut self.source_range, TokenRange::internal());
 
-        self.function = Some(FunctionBuilder::new(MIRFunction::new(id, prototype, None)));
+        self.function = Some(MIRFunctionBuilder::new(MIRFunction::new(id, prototype, None)));
         self.capture = Some(CaptureContext {
             source_locals,
             captures: Vec::new(),
@@ -293,6 +303,14 @@ impl<'thir> MIRBuilder<'thir> {
             )),
             values,
         ))
+    }
+
+    pub(crate) fn take_current_function(&mut self) -> Option<MIRFunctionBuilder> {
+        self.function.take()
+    }
+
+    pub(crate) fn restore_current_function(&mut self, function: MIRFunctionBuilder) {
+        self.function = Some(function);
     }
 
     pub fn finish(self) -> MIRUnit {
@@ -419,6 +437,10 @@ impl<'thir> MIRBuilder<'thir> {
         ))
     }
 
+    pub(crate) fn start_custom_function(&mut self, function: MIRFunction) {
+        self.function = Some(MIRFunctionBuilder::new(function));
+    }
+
     pub(crate) fn start_function(&mut self, id: MIRFunctionID) {
         let function = self
             .module
@@ -426,7 +448,7 @@ impl<'thir> MIRBuilder<'thir> {
             .cloned()
             .expect("function context must be declared in the module before starting");
 
-        self.function = Some(FunctionBuilder::new(function));
+        self.function = Some(MIRFunctionBuilder::new(function));
     }
 
     pub(crate) fn finish_function(&mut self) {

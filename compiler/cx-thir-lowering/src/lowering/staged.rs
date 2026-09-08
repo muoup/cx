@@ -11,7 +11,9 @@ use cx_mir::{
     MIRBasicBlockID, MIRBlockTarget, MIRInstr, MIRInstrKind, MIRRegister, MIRStagedCapture,
     MIRStagedTargets, MIRTypeKind, MIRValue, ty::interface::MTRegistry,
 };
-use cx_mir_comptime::{MIRComptimeValue, MIRStagedBinding, MIRStagedValue};
+use cx_mir_comptime::{
+    MIRComptimeValue, MIRStagedBinding, MIRStagedValue, evaluate_comptime_function,
+};
 
 use crate::builder::MIRBuilder;
 use crate::lowering::control_flow::auto_cleanup;
@@ -391,23 +393,19 @@ fn instantiate_inner(
                             }
                         })
                         .collect::<CXResult<Vec<_>>>()?;
-                    let function = builder
-                        .module()
-                        .function(function)
-                        .and_then(cx_mir_comptime::InterpretedFunction::new)
-                        .ok_or_else(|| {
-                            mir_error(range, (&catalogue::MIR_COMPTIME_FUNCTION_DEFINITION, ()))
-                        })?;
-                    let mut engine = cx_mir_comptime::MIRComptimeEngine::new(builder.module());
-                    let value = engine.run_values(function, &args)?;
+                    let function = builder.module().function(function).ok_or_else(|| {
+                        mir_error(range, (&catalogue::MIR_COMPTIME_FUNCTION_DEFINITION, ()))
+                    })?;
+
                     if let Some(out) = out {
-                        match value {
+                        match evaluate_comptime_function(builder, function, &args)? {
                             MIRComptimeValue::Constant(value) => {
                                 values.insert(*out, MIRValue::Constant(value));
                             }
+
                             MIRComptimeValue::Staged(value) => {
                                 staged_inputs.insert(*out, value);
-                                values.remove(out);
+                                values.remove(&out);
                             }
                         }
                     }

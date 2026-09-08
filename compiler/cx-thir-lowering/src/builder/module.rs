@@ -201,7 +201,6 @@ impl MIRModuleBuilder {
     pub(crate) fn begin_global_initializer(
         &mut self,
         id: MIRGlobalID,
-        init_id: MIRFunctionID,
         source_range: &TokenRange,
     ) -> CXResult<()> {
         let global = self
@@ -209,6 +208,7 @@ impl MIRModuleBuilder {
             .get_mut(&id)
             .expect("global symbol points to a missing global");
         let name = global.name.clone();
+        
         let MIRGlobalKind::Variable { state, .. } = &mut global.kind else {
             return Err(mir_error(
                 source_range,
@@ -216,17 +216,13 @@ impl MIRModuleBuilder {
             ));
         };
 
-        if matches!(
-            state,
-            MIRGlobalState::Initializer(_) | MIRGlobalState::Initialized(_)
-        ) {
+        if matches!(state, MIRGlobalState::Initialized(_)) {
             return Err(mir_error(
                 source_range,
                 (&catalogue::MIR_DUPLICATE_GLOBAL, name.to_string()),
             ));
         }
 
-        *state = MIRGlobalState::Initializer(init_id);
         Ok(())
     }
 
@@ -247,14 +243,6 @@ impl MIRModuleBuilder {
         };
 
         *s = state;
-    }
-
-    pub fn globals_in_order(&self) -> impl ExactSizeIterator<Item = &MIRGlobalVariable> {
-        self.global_order.iter().map(|id| {
-            self.globals
-                .get(id)
-                .expect("MIR global order contains an invalid ID")
-        })
     }
 
     pub(crate) fn into_parts(self) -> ModuleParts {

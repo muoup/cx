@@ -10,7 +10,7 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 #[derive(Debug)]
-pub(crate) struct FunctionBuilder {
+pub(crate) struct MIRFunctionBuilder {
     id: MIRFunctionID,
     prototype: MIRFnPrototype,
     mode: MIRFunctionMode,
@@ -73,7 +73,7 @@ impl ScopeContext {
     }
 }
 
-impl FunctionBuilder {
+impl MIRFunctionBuilder {
     pub(crate) fn new(func: MIRFunction) -> Self {
         let mut body = MIRBody::new();
         let entry = body.add_block();

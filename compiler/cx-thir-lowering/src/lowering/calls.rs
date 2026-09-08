@@ -6,7 +6,7 @@ use cx_mir::{
     MIRStagedTemplate, MIRValue,
 };
 use cx_mir_comptime::{
-    InterpretedFunction, MIRComptimeEngine, MIRComptimeValue, MIRStagedBinding, MIRStagedValue,
+    MIRComptimeValue, MIRStagedBinding, MIRStagedValue, evaluate_comptime_function,
 };
 use cx_thir::thir::expression::THIRFnContract;
 use cx_thir::thir::{
@@ -19,6 +19,7 @@ use cx_thir::type_context::THIRTypeContext;
 use crate::lowering::comptime::evaluate_comptime_expr;
 use crate::lowering::control_flow::auto_pop_scope;
 use crate::lowering::lower_expression;
+use crate::lowering::staged::instantiate;
 use crate::{
     builder::MIRBuilder,
     lowering::types::{lower_type, lower_type_id},
@@ -211,24 +212,19 @@ fn lower_comptime_call(
             ))));
         } else {
             let value = evaluate_comptime_expr(builder, argument)?;
+            
             args.push(value);
         }
     }
 
-    let value = {
-        let function = builder
-            .module()
-            .function(function)
-            .expect("resolved comptime function exists");
-        
-        let entry = InterpretedFunction::new(function);
-        let mut engine = MIRComptimeEngine::new(builder.module());
-        engine.run_values(entry, &args)?
-    };
+    let function = builder
+        .module()
+        .function(function)
+        .expect("resolved comptime function exists");
 
-    match value {
+    match evaluate_comptime_function(builder, function, &args)? {
         MIRComptimeValue::Constant(value) => Ok(MIRValue::Constant(value)),
-        MIRComptimeValue::Staged(value) => super::staged::instantiate(builder, &value),
+        MIRComptimeValue::Staged(value) => instantiate(builder, &value),
     }
 }
 
