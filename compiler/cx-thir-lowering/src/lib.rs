@@ -1,5 +1,5 @@
 use cx_log::CXResult;
-use cx_mir::{MIRFunctionMode, MIRUnit};
+use cx_mir::{MIRFunctionMode, MIRGlobalKind, MIRGlobalState, MIRUnit};
 use cx_thir::THIRUnit;
 
 pub mod builder;
@@ -56,20 +56,17 @@ pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
         lower_function(&mut builder, id, function)?;
     }
 
-    let mut unit = builder.finish();
+    for global in builder.module().globals_in_order() {
+        match global.kind {
+            MIRGlobalKind::Variable { state, .. } => {
+                if let MIRGlobalState::Initializer(
+            },
 
-    let evaluated = cx_mir_comptime::evaluate_unit_globals(&unit)?;
-    for (global_id, constant) in evaluated {
-        unit.materialize_global(global_id, constant)
-            .map_err(|error| {
-                cx_log::error::CXError::new(
-                    error,
-                    cx_log::error::context::CXInternalContext::error(
-                        "failed to materialize a global initializer",
-                    ),
-                )
-            })?;
+            _ => {}
+        }
     }
+
+    let mut unit = builder.finish();
 
     Ok(unit)
 }

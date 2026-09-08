@@ -6,7 +6,8 @@ use cx_lmir::{
 };
 use cx_log::CXResult;
 use cx_mir::ty::interface::MTRegistry;
-use cx_mir::{MIRBody, MIRFunction, MIRGlobalID, MIRPlace, MIRTypeRegistryBuilder};
+use cx_mir::ty::registry::MIRTypeRegistry;
+use cx_mir::{MIRBody, MIRFunction, MIRGlobalID, MIRPlace};
 
 use crate::context::FunctionLoweringContext;
 
@@ -19,7 +20,7 @@ use super::typing::{convert_prototype, convert_type};
 pub(super) fn lower_function(
     unit: &cx_mir::MIRUnit,
     function: &MIRFunction,
-    types: &MIRTypeRegistryBuilder,
+    types: &MIRTypeRegistry,
     prototypes: &LMIRFunctionMap,
     global_indices: &HashMap<MIRGlobalID, u32>,
     globals: &mut Vec<cx_lmir::LMIRGlobalValue>,
@@ -95,7 +96,7 @@ fn block_order(
 
 fn lower_blocks(
     function: &MIRBody,
-    types: &MIRTypeRegistryBuilder,
+    types: &MIRTypeRegistry,
     reachable: &[cx_mir::MIRBasicBlockID],
 ) -> (Vec<LMIRBasicBlock>, HashMap<cx_mir::MIRBasicBlockID, usize>) {
     let mut order = reachable.to_vec();

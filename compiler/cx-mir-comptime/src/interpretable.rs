@@ -21,14 +21,15 @@ pub struct InterpretedFunction<'code> {
 }
 
 impl<'code> InterpretedFunction<'code> {
-    pub fn new(function: &'code MIRFunction) -> Option<Self> {
+    pub fn new(function: &'code MIRFunction) -> Self {
         let definition = function
             .definition()
             .expect("interpreted function has a definition");
-        Some(Self {
+        
+        Self {
             function,
             cursor: (definition.entry(), 0),
-        })
+        }
     }
 }
 

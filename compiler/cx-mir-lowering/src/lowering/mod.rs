@@ -4,7 +4,8 @@ use cx_lmir::compiler_functions::ASSERTION;
 use cx_lmir::{LMIRFunctionMap, LMIRUnit, LinkageType};
 use cx_log::CXResult;
 use cx_mir::ty::interface::MTRegistry;
-use cx_mir::{MIRFunctionMode, MIRTypeRegistryBuilder, MIRUnit};
+use cx_mir::ty::registry::MIRTypeRegistry;
+use cx_mir::{MIRFunctionMode, MIRUnit};
 
 mod functions;
 mod globals;
@@ -13,7 +14,7 @@ mod memory;
 mod output;
 mod typing;
 
-pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistryBuilder) -> CXResult<LMIRUnit> {
+pub(crate) fn lower_unit(mir: &MIRUnit, types: &MIRTypeRegistry) -> CXResult<LMIRUnit> {
     let mut prototypes = LMIRFunctionMap::new();
 
     for function in mir.functions() {

@@ -7,12 +7,12 @@ use cx_mir::{
 use cx_tokens::TokenRange;
 use cx_util::unsafe_float::FloatWrapper;
 
-use crate::log::comptime_error;
+use crate::{ComptimeContext, log::comptime_error};
 
 use super::MIRComptimeEngine;
 
 pub(super) fn evaluate_binop(
-    engine: &MIRComptimeEngine<'_>,
+    engine: &MIRComptimeEngine<'_, impl ComptimeContext>,
     op: MIRBinaryOp,
     lhs: MIRConstant,
     rhs: MIRConstant,
@@ -62,13 +62,7 @@ pub(super) fn evaluate_binop(
                     (&catalogue::COMPTIME_POINTER_ARITHMETIC_OVERFLOW, ()),
                 );
             };
-            let Some(registry) = engine.resolver.types() else {
-                return comptime_error(
-                    TokenRange::internal(),
-                    (&catalogue::COMPTIME_TYPE_LAYOUTS_UNAVAILABLE, ()),
-                );
-            };
-            let stride = match layout_of(registry, pointee) {
+            let stride = match layout_of(engine.context.types(), pointee) {
                 Ok(layout) => layout.size as i64,
                 Err(_) => {
                     return comptime_error(

@@ -7,12 +7,12 @@ use cx_mir::{
 };
 use cx_tokens::TokenRange;
 
-use crate::{log::comptime_error, value::MIRComptimeValue};
+use crate::{ComptimeContext, log::comptime_error, value::MIRComptimeValue};
 
 use super::{MIRComptimeEngine, execution, ops, state::PathSeg};
 
 pub(super) fn resolve_projection(
-    engine: &MIRComptimeEngine<'_>,
+    engine: &MIRComptimeEngine<'_, impl ComptimeContext>,
     place: MIRPlace,
 ) -> (MIRPlace, Vec<PathSeg>) {
     engine
@@ -23,26 +23,26 @@ pub(super) fn resolve_projection(
 }
 
 pub(super) fn coerce_global_special(
-    engine: &MIRComptimeEngine<'_>,
+    engine: &MIRComptimeEngine<'_, impl ComptimeContext>,
     operand: &MIRValue,
     to_type: MIRTypeID,
 ) -> CXResult<Option<MIRConstant>> {
     let MIRValue::PlaceRef(MIRPlace::Global(global)) = operand else {
         return Ok(None);
     };
-    let Some(registry) = engine.resolver.types() else {
-        return Ok(None);
-    };
-    let Ok(target_kind) = registry.kind(to_type) else {
+    let Ok(target_kind) = engine.context.types().kind(to_type) else {
         return Ok(None);
     };
 
-    match engine.resolver.global_kind(*global) {
+    match engine.context.global_kind(*global) {
         Some(MIRGlobalKind::Variable { ty, .. }) => {
             let decays = matches!(
                 target_kind,
                 MIRTypeKind::PointerTo { .. } | MIRTypeKind::MemoryReference { .. }
-            ) && matches!(registry.kind(ty), Ok(MIRTypeKind::Array { .. }));
+            ) && matches!(
+                engine.context.types().kind(ty),
+                Ok(MIRTypeKind::Array { .. })
+            );
             if decays {
                 return Ok(Some(ops::relocation_constant(*global, 0, ty)));
             }
@@ -50,7 +50,8 @@ pub(super) fn coerce_global_special(
         }
         Some(MIRGlobalKind::StringLiteral { value }) => {
             if let MIRTypeKind::Array { length, inner } = target_kind {
-                if let Ok(MIRTypeKind::Integer { ty, signed }) = registry.kind(*inner) {
+                if let Ok(MIRTypeKind::Integer { ty, signed }) = engine.context.types().kind(*inner)
+                {
                     if ty.bytes() == 1 {
                         let bytes = value.as_bytes();
                         let fields = (0..*length)
@@ -80,7 +81,7 @@ pub(super) fn coerce_global_special(
 }
 
 pub(super) fn address_of(
-    engine: &MIRComptimeEngine<'_>,
+    engine: &MIRComptimeEngine<'_, impl ComptimeContext>,
     place: MIRPlace,
     range: &TokenRange,
 ) -> CXResult<MIRConstant> {
@@ -94,14 +95,7 @@ pub(super) fn address_of(
         return Ok(ops::relocation_constant(global, 0, ty));
     }
 
-    let Some(registry) = engine.resolver.types() else {
-        return comptime_error(
-            range.clone(),
-            (&catalogue::COMPTIME_TYPE_LAYOUTS_UNAVAILABLE, ()),
-        );
-    };
-    let Some(MIRGlobalKind::Variable { ty: start, .. }) = engine.resolver.global_kind(global)
-    else {
+    let Some(MIRGlobalKind::Variable { ty: start, .. }) = engine.context.global_kind(global) else {
         return comptime_error(range.clone(), (&catalogue::COMPTIME_GLOBAL_PROJECTION, ()));
     };
 
@@ -109,7 +103,7 @@ pub(super) fn address_of(
     let mut ty = start;
     for segment in &path {
         match segment {
-            PathSeg::Field(index) => match field_layout(registry, ty, *index) {
+            PathSeg::Field(index) => match field_layout(engine.context.types(), ty, *index) {
                 Ok(MIRFieldLayout::Standard {
                     offset: field_offset,
                     ty: field_ty,
@@ -131,7 +125,7 @@ pub(super) fn address_of(
                 }
             },
             PathSeg::Index(index) => {
-                let inner = match registry.kind(ty) {
+                let inner = match engine.context.types().kind(ty) {
                     Ok(MIRTypeKind::Array { inner, .. }) => *inner,
                     _ => {
                         return comptime_error(
@@ -146,7 +140,7 @@ pub(super) fn address_of(
                         (&catalogue::COMPTIME_NEGATIVE_INDEX, ()),
                     );
                 }
-                let stride = match layout_of(registry, inner) {
+                let stride = match layout_of(engine.context.types(), inner) {
                     Ok(layout) => layout.size as i64,
                     Err(_) => {
                         return comptime_error(
@@ -168,20 +162,14 @@ pub(super) fn address_of(
 }
 
 pub(super) fn global_address_type(
-    engine: &MIRComptimeEngine<'_>,
+    engine: &MIRComptimeEngine<'_, impl ComptimeContext>,
     global: MIRGlobalID,
     range: &TokenRange,
 ) -> CXResult<MIRTypeID> {
-    match engine.resolver.global_kind(global) {
+    match engine.context.global_kind(global) {
         Some(MIRGlobalKind::Variable { ty, .. }) => Ok(ty),
         Some(MIRGlobalKind::StringLiteral { .. }) => {
-            let Some(types) = engine.resolver.types() else {
-                return comptime_error(
-                    range.clone(),
-                    (&catalogue::COMPTIME_TYPE_LAYOUTS_UNAVAILABLE, ()),
-                );
-            };
-            let Some(ty) = types.find_kind(&MIRTypeKind::Str) else {
+            let Some(ty) = engine.context.types().find_kind(&MIRTypeKind::Str) else {
                 return comptime_error(
                     range.clone(),
                     (&catalogue::COMPTIME_STRING_TYPE_UNAVAILABLE, ()),
@@ -197,7 +185,7 @@ pub(super) fn global_address_type(
 }
 
 pub(super) fn read_value(
-    engine: &mut MIRComptimeEngine<'_>,
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
     value: &MIRValue,
 ) -> CXResult<MIRComptimeValue> {
     Ok(match value {
@@ -219,7 +207,7 @@ pub(super) fn read_value(
 }
 
 pub(super) fn read_constant(
-    engine: &mut MIRComptimeEngine<'_>,
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
     value: &MIRValue,
     range: &TokenRange,
 ) -> CXResult<MIRConstant> {
@@ -232,19 +220,21 @@ pub(super) fn read_constant(
 }
 
 fn read_global_rvalue(
-    engine: &mut MIRComptimeEngine<'_>,
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
     global: MIRGlobalID,
 ) -> CXResult<MIRConstant> {
-    if let Some(MIRGlobalKind::Variable { ty, .. }) = engine.resolver.global_kind(global)
-        && let Some(registry) = engine.resolver.types()
-        && let Ok(MIRTypeKind::Array { inner, .. }) = registry.kind(ty)
+    if let Some(MIRGlobalKind::Variable { ty, .. }) = engine.context.global_kind(global)
+        && let Ok(MIRTypeKind::Array { inner, .. }) = engine.context.types().kind(ty)
     {
         return Ok(ops::relocation_constant(global, 0, *inner));
     }
     read_global(engine, global)
 }
 
-fn read_place(engine: &mut MIRComptimeEngine<'_>, place: MIRPlace) -> CXResult<MIRComptimeValue> {
+fn read_place(
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
+    place: MIRPlace,
+) -> CXResult<MIRComptimeValue> {
     if let MIRPlace::Global(global) = place {
         return Ok(MIRComptimeValue::Constant(read_global(engine, global)?));
     }
@@ -278,7 +268,7 @@ fn read_place(engine: &mut MIRComptimeEngine<'_>, place: MIRPlace) -> CXResult<M
 }
 
 pub(super) fn write_place(
-    engine: &mut MIRComptimeEngine<'_>,
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
     place: MIRPlace,
     value: MIRComptimeValue,
     aggregate_type: Option<MIRTypeID>,
@@ -338,7 +328,7 @@ pub(super) fn write_place(
 }
 
 pub(super) fn write_direct_cell(
-    engine: &mut MIRComptimeEngine<'_>,
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
     place: MIRPlace,
     value: MIRComptimeValue,
 ) {
@@ -350,7 +340,10 @@ pub(super) fn write_direct_cell(
     frame.cells.insert(place, value);
 }
 
-fn read_global(engine: &mut MIRComptimeEngine<'_>, global: MIRGlobalID) -> CXResult<MIRConstant> {
+fn read_global(
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
+    global: MIRGlobalID,
+) -> CXResult<MIRConstant> {
     if let Some(cached) = engine.globals.get(&global) {
         return Ok(cached.clone());
     }
@@ -362,7 +355,7 @@ fn read_global(engine: &mut MIRComptimeEngine<'_>, global: MIRGlobalID) -> CXRes
     }
 
     let result = (|| {
-        let resolver = engine.resolver;
+        let resolver = engine.context;
         if let Some(constant) = resolver.global_constant(global) {
             return Ok(constant);
         }

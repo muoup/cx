@@ -249,6 +249,14 @@ impl MIRModuleBuilder {
         *s = state;
     }
 
+    pub fn globals_in_order(&self) -> impl ExactSizeIterator<Item = &MIRGlobalVariable> {
+        self.global_order.iter().map(|id| {
+            self.globals
+                .get(id)
+                .expect("MIR global order contains an invalid ID")
+        })
+    }
+
     pub(crate) fn into_parts(self) -> ModuleParts {
         ModuleParts {
             used_functions: self

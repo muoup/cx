@@ -11,6 +11,7 @@ pub trait MTRegistry: Sized {
     fn architecture(&self) -> &ArchitectureConfig;
     fn definition(&self, id: MIRTypeID) -> Option<&MIRType>;
     fn find(&self, ty: &MIRType) -> Option<MIRTypeID>;
+    fn find_kind(&self, kind: &MIRTypeKind) -> Option<MIRTypeID>;
     fn debug_name(&self, id: MIRTypeID) -> Option<&str>;
 
     fn unit(&self) -> MIRTypeID {

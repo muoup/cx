@@ -1,10 +1,12 @@
 use cx_mir::{
-    MIRConstant, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalKind, MIRGlobalState,
-    MIRTypeRegistryBuilder, MIRUnit,
+    MIRConstant, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalKind, ty::interface::MTRegistry,
 };
 
-pub trait ComptimeResolver {
+pub trait ComptimeContext {
+    type Registry: MTRegistry;
+    
     fn resolve(&self, id: MIRFunctionID) -> Option<&MIRFunction>;
+    fn types(&self) -> &Self::Registry;
 
     fn global_constant(&self, _id: MIRGlobalID) -> Option<MIRConstant> {
         None
@@ -16,43 +18,5 @@ pub trait ComptimeResolver {
 
     fn global_kind(&self, _id: MIRGlobalID) -> Option<MIRGlobalKind> {
         None
-    }
-
-    fn types(&self) -> Option<&MIRTypeRegistryBuilder> {
-        None
-    }
-}
-
-impl ComptimeResolver for MIRUnit {
-    fn resolve(&self, id: MIRFunctionID) -> Option<&MIRFunction> {
-        self.function(id)
-    }
-
-    fn global_constant(&self, id: MIRGlobalID) -> Option<MIRConstant> {
-        match &self.global(id)?.kind {
-            MIRGlobalKind::Variable {
-                state: MIRGlobalState::Initialized(value),
-                ..
-            } => Some(value.clone()),
-            _ => None,
-        }
-    }
-
-    fn global_initializer(&self, id: MIRGlobalID) -> Option<MIRFunctionID> {
-        match &self.global(id)?.kind {
-            MIRGlobalKind::Variable {
-                state: MIRGlobalState::Initializer(function),
-                ..
-            } => Some(*function),
-            _ => None,
-        }
-    }
-
-    fn global_kind(&self, id: MIRGlobalID) -> Option<MIRGlobalKind> {
-        Some(self.global(id)?.kind.clone())
-    }
-
-    fn types(&self) -> Option<&MIRTypeRegistryBuilder> {
-        Some(self.types())
     }
 }

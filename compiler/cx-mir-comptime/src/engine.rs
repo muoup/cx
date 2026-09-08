@@ -5,12 +5,11 @@ mod state;
 
 use std::collections::{HashMap, HashSet};
 
+use crate::{
+    context::ComptimeContext, interpretable::InterpretedFunction, value::MIRComptimeValue,
+};
 use cx_log::CXResult;
 use cx_mir::{MIRConstant, MIRGlobalID};
-
-use crate::{
-    context::ComptimeResolver, interpretable::InterpretedFunction, value::MIRComptimeValue,
-};
 
 use self::state::Frame;
 
@@ -32,8 +31,9 @@ impl Default for EngineLimits {
     }
 }
 
-pub struct MIRComptimeEngine<'ctx> {
-    resolver: &'ctx dyn ComptimeResolver,
+pub struct MIRComptimeEngine<'ctx, Context: ComptimeContext> {
+    context: &'ctx Context,
+
     limits: EngineLimits,
     frames: Vec<Frame<'ctx>>,
     globals: HashMap<MIRGlobalID, MIRConstant>,
@@ -41,15 +41,16 @@ pub struct MIRComptimeEngine<'ctx> {
     steps: u64,
 }
 
-impl<'ctx> MIRComptimeEngine<'ctx> {
-    pub fn new(resolver: &'ctx dyn ComptimeResolver) -> Self {
+impl<'ctx, Context: ComptimeContext> MIRComptimeEngine<'ctx, Context> {
+    pub fn new(resolver: &'ctx Context) -> Self {
         Self::with_limits(resolver, EngineLimits::default())
     }
 
-    pub fn with_limits(resolver: &'ctx dyn ComptimeResolver, limits: EngineLimits) -> Self {
+    pub fn with_limits(context: &'ctx Context, limits: EngineLimits) -> Self {
         Self {
-            resolver,
+            context,
             limits,
+
             frames: Vec::new(),
             globals: HashMap::new(),
             evaluating_globals: HashSet::new(),
@@ -58,25 +59,6 @@ impl<'ctx> MIRComptimeEngine<'ctx> {
     }
 
     pub fn run(
-        &mut self,
-        entry: InterpretedFunction<'ctx>,
-        args: &[MIRConstant],
-    ) -> CXResult<MIRConstant> {
-        let args = args
-            .iter()
-            .cloned()
-            .map(MIRComptimeValue::Constant)
-            .collect::<Vec<_>>();
-        self.run_values(entry, &args)?.constant().ok_or_else(|| {
-            crate::log::internal_error(
-                &cx_log::catalogue::mir::MIR_EXPECTED_CONSTANT,
-                (),
-                "staged value escaped a constant evaluation",
-            )
-        })
-    }
-
-    pub fn run_values(
         &mut self,
         entry: InterpretedFunction<'ctx>,
         args: &[MIRComptimeValue],

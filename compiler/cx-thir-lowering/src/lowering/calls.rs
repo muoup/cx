@@ -220,8 +220,8 @@ fn lower_comptime_call(
             .module()
             .function(function)
             .expect("resolved comptime function exists");
-        let entry = InterpretedFunction::new(function)
-            .expect("comptime function has an MIR definition before runtime lowering");
+        
+        let entry = InterpretedFunction::new(function);
         let mut engine = MIRComptimeEngine::new(builder.module());
         engine.run_values(entry, &args)?
     };

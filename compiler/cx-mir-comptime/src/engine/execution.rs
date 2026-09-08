@@ -6,6 +6,7 @@ use cx_mir::{
 use cx_tokens::TokenRange;
 
 use crate::{
+    ComptimeContext,
     interpretable::{ComptimeInterpretable, InterpretedFunction},
     log::comptime_error,
     value::{MIRComptimeValue, MIRStagedBinding, MIRStagedValue},
@@ -17,7 +18,7 @@ use super::{
 };
 
 pub(super) fn run<'ctx>(
-    engine: &mut MIRComptimeEngine<'ctx>,
+    engine: &mut MIRComptimeEngine<'ctx, impl ComptimeContext>,
     entry: InterpretedFunction<'ctx>,
     args: &[MIRComptimeValue],
 ) -> CXResult<MIRComptimeValue> {
@@ -26,7 +27,7 @@ pub(super) fn run<'ctx>(
 }
 
 fn push_frame<'ctx>(
-    engine: &mut MIRComptimeEngine<'ctx>,
+    engine: &mut MIRComptimeEngine<'ctx, impl ComptimeContext>,
     code: InterpretedFunction<'ctx>,
     args: &[MIRComptimeValue],
 ) {
@@ -46,7 +47,9 @@ fn push_frame<'ctx>(
     engine.frames.push(frame);
 }
 
-fn run_top_frame(engine: &mut MIRComptimeEngine<'_>) -> CXResult<MIRComptimeValue> {
+fn run_top_frame(
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
+) -> CXResult<MIRComptimeValue> {
     loop {
         engine.steps += 1;
         if engine.steps > engine.limits.max_steps {
@@ -339,7 +342,10 @@ fn run_top_frame(engine: &mut MIRComptimeEngine<'_>) -> CXResult<MIRComptimeValu
     }
 }
 
-fn jump_to(engine: &mut MIRComptimeEngine<'_>, target: MIRBlockTarget) -> CXResult<()> {
+fn jump_to(
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
+    target: MIRBlockTarget,
+) -> CXResult<()> {
     let params = {
         let frame = engine.frames.last().expect("active frame");
         frame.code.block_params(target.block).to_vec()
@@ -359,7 +365,7 @@ fn jump_to(engine: &mut MIRComptimeEngine<'_>, target: MIRBlockTarget) -> CXResu
 }
 
 pub(super) fn call_function(
-    engine: &mut MIRComptimeEngine<'_>,
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
     function_id: MIRFunctionID,
     args: &[MIRComptimeValue],
 ) -> CXResult<MIRComptimeValue> {
@@ -373,7 +379,7 @@ pub(super) fn call_function(
         );
     }
 
-    let resolver = engine.resolver;
+    let resolver = engine.context;
     let Some(function) = resolver.resolve(function_id) else {
         return comptime_error(
             TokenRange::internal(),
@@ -394,21 +400,16 @@ pub(super) fn call_function(
         MIRFunctionMode::Constexpr | MIRFunctionMode::Comptime => {}
     }
 
-    let Some(entry) = InterpretedFunction::new(function) else {
-        return comptime_error(
-            TokenRange::internal(),
-            (
-                &catalogue::COMPTIME_FUNCTION_UNDEFINED,
-                format!("{:?}", function_id),
-            ),
-        );
-    };
+    let entry = InterpretedFunction::new(function);
 
     push_frame(engine, entry, args);
     run_top_frame(engine)
 }
 
-fn execute_aggregate_op(engine: &mut MIRComptimeEngine<'_>, op: MIRAggregateOp) -> CXResult<()> {
+fn execute_aggregate_op(
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
+    op: MIRAggregateOp,
+) -> CXResult<()> {
     match op {
         MIRAggregateOp::Place { out, op } => {
             use cx_mir::MIRPlaceAggregateOp as Op;

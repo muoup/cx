@@ -11,3 +11,4 @@ cx-mir-comptime = { path = "../cx-mir-comptime" }
 cx-thir = { path = "../cx-thir" }
 cx-util = { path = "../cx-util" }
 cx-tokens = { path = "../cx-tokens" }
+cx-target = { path = "../cx-target" }

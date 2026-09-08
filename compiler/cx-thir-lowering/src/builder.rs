@@ -6,17 +6,19 @@ use std::{
 use cx_log::CXResult;
 use cx_mir::{
     MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRFunctionMode,
-    MIRInstrKind, MIRPlace, MIRRegister, MIRStagedCapture, MIRStagedTemplate, MIRTypeID,
-    MIRTypeRegistryBuilder, MIRUnit, MIRValue,
+    MIRInstrKind, MIRLayoutError, MIRPlace, MIRRegister, MIRStagedCapture, MIRStagedTemplate,
+    MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRUnit, MIRValue,
+    ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
-use cx_mir_comptime::ComptimeResolver;
+use cx_mir_comptime::ComptimeContext;
+use cx_target::ArchitectureConfig;
 use cx_thir::{
     THIRUnit,
     registry::THIRDecomposedRegistry,
     thir::{
         data::{THIRComptimeFnPrototype, THIRFnPrototype},
         expression::{THIRExpression, THIRLocalID},
-        r#type::{THIRType, THIRTypeID},
+        r#type::{THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
 };
@@ -29,7 +31,6 @@ mod module;
 
 use crate::lowering::{
     self,
-    comptime::MIRContext,
     types::{lower_type, lower_type_id},
 };
 use function::FunctionBuilder;
@@ -47,6 +48,16 @@ pub struct MIRBuilder<'thir> {
     capture: Option<CaptureContext>,
     pub(crate) outer_return_type: Option<MIRTypeID>,
     pub(crate) outer_yield_type: Option<MIRTypeID>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MIRTypeRegistryBuilder {
+    architecture: ArchitectureConfig,
+    definitions: Vec<Option<MIRType>>,
+
+    interner: HashMap<MIRType, MIRTypeID>,
+    debug_names: HashMap<MIRTypeID, String>,
+    next_id: usize,
 }
 
 struct CaptureContext {
@@ -313,7 +324,7 @@ impl<'thir> MIRBuilder<'thir> {
             .filter(|id| globals.contains_key(id))
             .collect();
 
-        MIRUnit::new(self.types, functions, globals, global_order)
+        MIRUnit::new(self.types.finish(), functions, globals, global_order)
     }
 
     pub(crate) fn lower_prototype(
@@ -428,64 +439,128 @@ impl<'thir> MIRBuilder<'thir> {
     }
 }
 
-impl ComptimeResolver for MIRModuleBuilder {
-    fn resolve(&self, id: MIRFunctionID) -> Option<&MIRFunction> {
-        self.function(id)
+impl MTRegistry for MIRTypeRegistryBuilder {
+    fn architecture(&self) -> &ArchitectureConfig {
+        &self.architecture
+    }
+
+    fn definition(&self, id: MIRTypeID) -> Option<&MIRType> {
+        self.definitions.get(id.index()).and_then(Option::as_ref)
+    }
+
+    fn find(&self, ty: &MIRType) -> Option<MIRTypeID> {
+        self.interner.get(ty).copied()
+    }
+
+    fn find_kind(&self, kind: &MIRTypeKind) -> Option<MIRTypeID> {
+        self.interner
+            .iter()
+            .find_map(|(ty, id)| if &ty.kind == kind { Some(*id) } else { None })
+    }
+
+    fn debug_name(&self, id: MIRTypeID) -> Option<&str> {
+        self.debug_names.get(&id).map(|s| s.as_str())
     }
 }
 
-impl MIRContext for MIRBuilder<'_> {
-    fn comptime_resolver(&self) -> &dyn ComptimeResolver {
-        &self.module
+impl MIRTypeRegistryBuilder {
+    pub fn new(architecture: ArchitectureConfig) -> Self {
+        Self {
+            architecture,
+            definitions: Vec::new(),
+            interner: HashMap::new(),
+            debug_names: HashMap::new(),
+            next_id: 0,
+        }
     }
 
-    fn capture_expression(&mut self, expression: &THIRExpression) -> cx_log::CXResult<MIRFunction> {
-        use cx_mir::MIRInstrKind;
-        use cx_tokens::TokenRange;
+    pub fn intern(&mut self, definition: MIRType) -> MIRTypeID {
+        if let Some(id) = self.interner.get(&definition).copied() {
+            return id;
+        }
 
-        let id = self.module_mut().allocate_function_id();
-        let prototype = match self.function.as_ref() {
-            Some(active) => active.prototype().clone(),
-            None => self.ambient_prototype.clone(),
+        let id = MIRTypeID::new(self.next_id);
+        self.next_id += 1;
+        self.ensure_capacity(id.index());
+        self.definitions[id.index()] = Some(definition.clone());
+        self.interner.insert(definition, id);
+        id
+    }
+
+    pub fn set_debug_name(&mut self, id: MIRTypeID, name: String) {
+        self.debug_names.insert(id, name);
+    }
+
+    pub fn reserve_id_space(&mut self, end: usize) {
+        self.next_id = self.next_id.max(end);
+        let end = end;
+
+        if self.definitions.len() < end {
+            self.definitions.resize_with(end, || None);
+        }
+    }
+
+    pub fn find(&self, definition: &MIRType) -> Option<MIRTypeID> {
+        self.interner.get(definition).copied()
+    }
+
+    pub fn define(&mut self, id: MIRTypeID, definition: MIRType) -> Result<(), MIRLayoutError> {
+        self.ensure_capacity(id.index());
+        self.next_id = self.next_id.max(id.index() + 1);
+        let slot = &mut self.definitions[id.index()];
+        if slot.is_some() {
+            return Err(MIRLayoutError::DuplicateType(id));
+        }
+        *slot = Some(definition.clone());
+        self.interner.entry(definition).or_insert(id);
+        Ok(())
+    }
+
+    fn ensure_capacity(&mut self, index: usize) {
+        if self.definitions.len() <= index {
+            let len = index + 1;
+            self.definitions.resize_with(len, || None);
+        }
+    }
+
+    pub fn reference_to(&mut self, id: MIRTypeID) -> Result<MIRTypeID, MIRLayoutError> {
+        let ty = MIRType {
+            kind: MIRTypeKind::MemoryReference {
+                inner: id,
+                bitfield: None,
+            },
+            layout: Some(MIRTypeLayout {
+                size: self.architecture().pointer_size(),
+                alignment: self.architecture().pointer_alignment(),
+            }),
         };
+        Ok(self.intern(ty))
+    }
 
-        let saved_function = self.function.take();
-        let saved_range = std::mem::replace(&mut self.source_range, TokenRange::internal());
+    pub fn finish(self) -> MIRTypeRegistry {
+        let definitions: Vec<MIRType> = self
+            .definitions
+            .into_iter()
+            .map(|opt| opt.expect("all types must be defined before finishing the registry"))
+            .collect();
 
-        self.function = Some(FunctionBuilder::new(MIRFunction::new(
-            id,
-            prototype.clone(),
-            None,
-        )));
-
-        let result = (|| -> cx_log::CXResult<()> {
-            let value = lowering::lower_expression(self, expression)?;
-            if !self.fun_mut().current_block_terminated() {
-                let frame = self.fun_mut();
-                frame.emit(
-                    MIRInstrKind::Return { value: Some(value) },
-                    TokenRange::internal(),
-                );
-            }
-            Ok(())
-        })();
-
-        let scratch = self.function.take();
-        self.function = saved_function;
-        self.restore_source_range(saved_range);
-
-        result?;
-
-        let (id, body) = scratch
-            .expect("capture builder is present")
-            .concise_finish();
-        Ok(MIRFunction::new(id, prototype, Some(body)))
+        MIRTypeRegistry::new(self.architecture, definitions, self.debug_names)
     }
 }
 
-pub(crate) fn integer_type(ty: &cx_thir::thir::r#type::THIRType) -> (cx_mir::MIRIntType, bool) {
-    use cx_thir::thir::r#type::{THIRIntType, THIRTypeKind};
+impl ComptimeContext for MIRBuilder<'_> {
+    type Registry = MIRTypeRegistryBuilder;
 
+    fn resolve(&self, id: MIRFunctionID) -> Option<&MIRFunction> {
+        self.module().function(id)
+    }
+
+    fn types(&self) -> &MIRTypeRegistryBuilder {
+        self.types()
+    }
+}
+
+pub(crate) fn integer_type(ty: &THIRType) -> (cx_mir::MIRIntType, bool) {
     match ty.kind {
         THIRTypeKind::Integer { _type, signed } => (
             match _type {

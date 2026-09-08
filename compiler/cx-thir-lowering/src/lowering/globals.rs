@@ -5,6 +5,7 @@ use cx_mir::{
     MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID, MIRFunctionMode, MIRGlobalID,
     MIRGlobalKind, MIRGlobalState, MIRInstrKind,
 };
+use cx_mir_comptime::InterpretedFunction;
 use cx_thir::thir::{expression::THIRExpression, global::THIRGlobalVariable};
 use cx_util::identifier::CXIdent;
 use cx_util::linkage::LinkageMode;
@@ -13,6 +14,28 @@ pub struct MIRGlobalInitRequest {
     global_id: MIRGlobalID,
     init_id: MIRFunctionID,
     initializer: THIRExpression,
+}
+
+pub(crate) fn lower_unit_globals(builder: &mut MIRBuilder<'_>) -> CXResult<()> {
+    for global in builder.module().globals_in_order() {
+        let MIRGlobalKind::Variable { state, .. } = &global.kind else {
+            continue;
+        };
+        let MIRGlobalState::Initializer(function_id) = state else {
+            continue;
+        };
+        let Some(function) = builder.module().function(*function_id) else {
+            continue;
+        };
+        let Some(entry) = InterpretedFunction::new(function) else {
+            continue;
+        };
+
+        let constant = engine.run(entry, &[])?;
+        evaluated.push((global.id, constant));
+    }
+
+    Ok(())
 }
 
 pub(crate) fn predeclare_global(

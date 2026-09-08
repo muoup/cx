@@ -7,13 +7,12 @@ use crate::{
     MIRBasicBlockID, MIRConstant, MIRScopeID,
     global::{
         MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalKind, MIRGlobalState, MIRGlobalVariable,
-    },
-    ty::registry::MIRTypeRegistryBuilder,
+    }, ty::registry::MIRTypeRegistry
 };
 
 #[derive(Debug, Clone)]
 pub struct MIRUnit {
-    types: MIRTypeRegistryBuilder,
+    types: MIRTypeRegistry,
     functions: HashMap<MIRFunctionID, MIRFunction>,
     globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
     global_order: Vec<MIRGlobalID>,
@@ -21,7 +20,7 @@ pub struct MIRUnit {
 
 impl MIRUnit {
     pub fn new(
-        types: MIRTypeRegistryBuilder,
+        types: MIRTypeRegistry,
         functions: HashMap<MIRFunctionID, MIRFunction>,
         globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
         global_order: Vec<MIRGlobalID>,
@@ -34,7 +33,7 @@ impl MIRUnit {
         }
     }
 
-    pub fn types(&self) -> &MIRTypeRegistryBuilder {
+    pub fn types(&self) -> &MIRTypeRegistry {
         &self.types
     }
 
@@ -48,13 +47,6 @@ impl MIRUnit {
 
     pub fn global_order(&self) -> &[MIRGlobalID] {
         &self.global_order
-    }
-
-    pub fn globals_in_order(&self) -> impl ExactSizeIterator<Item = &MIRGlobalVariable> {
-        self.global_order.iter().map(|id| {
-            self.global(*id)
-                .expect("MIR global order contains an invalid ID")
-        })
     }
 
     pub fn function(&self, id: MIRFunctionID) -> Option<&MIRFunction> {
@@ -71,10 +63,7 @@ impl MIRUnit {
             .get_mut(&id)
             .ok_or_else(|| crate::log::raw_error(&catalogue::MIR_GLOBAL_MISSING, id.to_string()))?;
         let MIRGlobalKind::Variable { state, .. } = &mut global.kind else {
-            return crate::log::log_raw_error(
-                &catalogue::MIR_GLOBAL_NOT_VARIABLE,
-                id.to_string(),
-            );
+            return crate::log::log_raw_error(&catalogue::MIR_GLOBAL_NOT_VARIABLE, id.to_string());
         };
         if !matches!(&*state, MIRGlobalState::Initializer(_)) {
             return crate::log::log_raw_error(
