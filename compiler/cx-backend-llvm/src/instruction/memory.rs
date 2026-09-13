@@ -1,9 +1,10 @@
 use super::inst_num;
-use crate::error::{LLVMError, LLVMResult};
+use crate::log::{LLVMError, LLVMResult};
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::LMIRValue;
 use cx_lmir::types::LMIRType;
+use cx_log::catalogue::backend as catalogue;
 use cx_util::identifier::CXIdent;
 use inkwell::AddressSpace;
 use inkwell::types::AnyTypeEnum;
@@ -21,13 +22,13 @@ pub(super) fn generate_allocate<'a, 'b>(
     let previous_block = function_state
         .builder
         .get_insert_block()
-        .ok_or_else(|| LLVMError::new("No LLVM insertion block while allocating memory"))?;
+        .unwrap_or_else(|| unreachable!("no LLVM insertion block while allocating memory"));
     let entry = function_state.get_block(&CXIdent::from("entry"))?;
     function_state.builder.position_before(
         entry
             .get_first_instruction()
             .as_ref()
-            .ok_or_else(|| LLVMError::new("LLVM entry block has no instruction"))?,
+            .unwrap_or_else(|| unreachable!("LLVM entry block has no instruction")),
     );
 
     let value = function_state
@@ -36,7 +37,7 @@ pub(super) fn generate_allocate<'a, 'b>(
         .map_err(LLVMError::from_error)?;
     value
         .as_instruction()
-        .ok_or_else(|| LLVMError::new("LLVM alloca did not produce an instruction"))?
+        .unwrap_or_else(|| unreachable!("LLVM alloca did not produce an instruction"))
         .set_alignment(alignment as u32)
         .map_err(LLVMError::from_error)?;
     function_state.builder.position_at_end(previous_block);
@@ -53,9 +54,14 @@ pub(super) fn generate_struct_access<'a, 'b>(
     let struct_type = match bc_llvm_type(function_state.context, struct_type)? {
         AnyTypeEnum::StructType(struct_type) => struct_type,
         llvm_type => {
-            return Err(LLVMError::new(format!(
-                "Expected struct type for struct access, found {llvm_type:?}"
-            )));
+            return Err(LLVMError::new(
+                &catalogue::ENTITY_REQUIREMENT,
+                (
+                    "struct access base".into(),
+                    "a struct type".into(),
+                    Some(format!("{llvm_type:?}")),
+                ),
+            ));
         }
     };
     let struct_ptr = function_state
@@ -190,7 +196,7 @@ pub(super) fn generate_load<'a, 'b>(
         .map_err(LLVMError::from_error)?;
     loaded
         .as_instruction_value()
-        .ok_or_else(|| LLVMError::new("LLVM load did not produce an instruction"))?
+        .unwrap_or_else(|| unreachable!("LLVM load did not produce an instruction"))
         .set_alignment(_type.alignment() as u32)
         .map_err(LLVMError::from_error)?;
     Ok(CodegenValue::Value(loaded.as_any_value_enum()))

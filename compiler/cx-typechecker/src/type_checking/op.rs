@@ -1,16 +1,15 @@
 use crate::{
     environment::TypeEnvironment,
     type_checking::{
-        op::binop::calls::typecheck_callee_method_call, result::TypecheckResult,
+        op::binop::calls::typecheck_callee_call, result::TypecheckResult,
         typechecker::typecheck_expr,
     },
 };
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
-use cx_thir::{
-    EnvironmentNamespace,
-    thir::{data::THIRType, expression::THIRExpression},
-};
+use cx_log::catalogue::typecheck as catalogue;
+use cx_namespace::module::NamespacePath;
+use cx_thir::thir::{data::THIRType, expression::THIRExpression};
 
 pub use unop::typecheck_unop;
 
@@ -19,7 +18,7 @@ pub mod unop;
 
 pub fn try_typecheck_special_binop(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     op: &HIRBinOp,
     expr: &HIRExpression,
     lhs: &HIRExpression,
@@ -31,9 +30,11 @@ pub fn try_typecheck_special_binop(
             let Some(rewritten) = append_call_argument(lhs, rhs, expr) else {
                 return env.log_error(
                     expr.token_range(),
-                    "The left side of '<|' must be a function call".to_string(),
+                    &catalogue::INVALID_FORM,
+                    ("non-function call".into(), "left-hand side of backward pipe operator".into())
                 );
             };
+            
             Some(typecheck_expr(env, namespace, &rewritten, expected_type)?)
         }
         HIRBinOp::Pipe => {
@@ -48,7 +49,7 @@ pub fn try_typecheck_special_binop(
                 } => {
                     let callee = typecheck_expr(env, namespace, lhs, None)?;
 
-                    Some(typecheck_callee_method_call(
+                    Some(typecheck_callee_call(
                         env,
                         namespace,
                         callee,
@@ -59,7 +60,13 @@ pub fn try_typecheck_special_binop(
                     )?)
                 }
 
-                _ => None,
+                _ => {
+                    return env.log_error(
+                        expr.token_range(),
+                        &catalogue::INVALID_FORM,
+                        ("non-function call".into(), "right-hand side of pipe operator".into())
+                    );
+                }
             }
         }
 

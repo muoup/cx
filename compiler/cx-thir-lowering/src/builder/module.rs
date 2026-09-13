@@ -1,14 +1,14 @@
 use std::collections::{HashMap, HashSet};
 
-use cx_log::{
-    CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
-};
+use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
     MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState,
     MIRGlobalVariable, global::MIRGlobalKind,
 };
+use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
+
+use crate::log::mir_error;
 
 #[derive(Debug)]
 struct ModuleSymbol<T: Clone> {
@@ -48,7 +48,8 @@ pub(crate) struct MIRModuleBuilder {
     global_symbols: HashMap<String, ModuleSymbol<MIRGlobalID>>,
 
     global_order: Vec<MIRGlobalID>,
-    
+    global_initializer: HashMap<MIRGlobalID, MIRFunctionID>,
+
     next_string_literal: usize,
     next_function_id: usize,
     next_global_id: usize,
@@ -69,7 +70,9 @@ impl MIRModuleBuilder {
             globals: HashMap::new(),
             function_symbols: HashMap::new(),
             global_symbols: HashMap::new(),
+            global_initializer: HashMap::new(),
             global_order: Vec::new(),
+            
             next_string_literal: 0,
             next_function_id: 0,
             next_global_id: 0,
@@ -102,6 +105,7 @@ impl MIRModuleBuilder {
         name: CXIdent,
         linkage: LinkageMode,
         kind: MIRGlobalKind,
+        source_range: &TokenRange,
     ) -> CXResult<MIRGlobalID> {
         let name_string = name.as_string();
         if let Some(id) = self.global_symbols.get(&name_string).map(ModuleSymbol::id) {
@@ -117,12 +121,9 @@ impl MIRModuleBuilder {
                 _ => false,
             };
             if !compatible {
-                return Err(CXErr::new(
-                    CXStdErrMessage::error(
-                        "TYPE ERROR",
-                        format!("Incompatible global declaration '{name}'"),
-                    ),
-                    CXInternalContext::error("incompatible global declaration during MIR lowering"),
+                return Err(mir_error(
+                    source_range,
+                    (&catalogue::INCOMPATIBLE_GLOBAL, name.to_string()),
                 ));
             }
 
@@ -177,6 +178,7 @@ impl MIRModuleBuilder {
             MIRGlobalKind::StringLiteral {
                 value: value.to_owned(),
             },
+            &TokenRange::internal(),
         )
     }
 
@@ -192,6 +194,14 @@ impl MIRModuleBuilder {
         self.functions.get(&id)
     }
 
+    pub(crate) fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
+        self.globals.get(&id)
+    }
+
+    pub(crate) fn global_initializer(&self, id: MIRGlobalID) -> Option<MIRFunctionID> {
+        self.global_initializer.get(&id).cloned()
+    }
+
     pub(crate) fn global_symbol(&mut self, name: &str) -> Option<MIRGlobalID> {
         self.global_symbols
             .get_mut(name)
@@ -202,42 +212,44 @@ impl MIRModuleBuilder {
     pub(crate) fn begin_global_initializer(
         &mut self,
         id: MIRGlobalID,
-        init_id: MIRFunctionID,
+        source_range: &TokenRange,
     ) -> CXResult<()> {
         let global = self
             .globals
             .get_mut(&id)
             .expect("global symbol points to a missing global");
         let name = global.name.clone();
+        
         let MIRGlobalKind::Variable { state, .. } = &mut global.kind else {
-            return Err(CXErr::new(
-                CXStdErrMessage::error(
-                    "TYPE ERROR",
-                    format!("Global '{name}' cannot have an initializer"),
+            return Err(mir_error(
+                source_range,
+                (
+                    &catalogue::ENTITY_REQUIREMENT,
+                    (
+                        format!("global '{name}' initializer"),
+                        "a variable global".into(),
+                        Some("a string literal global".into()),
+                    ),
                 ),
-                CXInternalContext::error("non-variable global initializer during MIR lowering"),
             ));
         };
 
-        if matches!(
-            state,
-            MIRGlobalState::Initializer(_) | MIRGlobalState::Initialized(_)
-        ) {
-            return Err(CXErr::new(
-                CXStdErrMessage::error(
-                    "TYPE ERROR",
-                    format!("Duplicate global definition '{name}'"),
+        if matches!(state, MIRGlobalState::Initialized(_)) {
+            return Err(mir_error(
+                source_range,
+                (
+                    &catalogue::DUPLICATE_ENTITY,
+                    (format!("global '{name}'"), "MIR module".into()),
                 ),
-                CXInternalContext::error("duplicate global initializer during MIR lowering"),
             ));
         }
 
-        *state = MIRGlobalState::Initializer(init_id);
         Ok(())
     }
 
     pub(crate) fn function_symbol(&mut self, name: &str) -> Option<MIRFunctionID> {
-        self.function_symbols.get_mut(name)
+        self.function_symbols
+            .get_mut(name)
             .map(ModuleSymbol::get)
             .map(|id| *id)
     }

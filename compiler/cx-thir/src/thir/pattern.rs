@@ -9,6 +9,10 @@ use crate::thir::{
 
 #[derive(Clone, Debug)]
 pub enum THIRPattern {
+    Binding {
+        name: CXIdent,
+        local_id: THIRLocalID,
+    },
     Integer(i64),
     Float(FloatWrapper, THIRFloatType),
     TaggedUnionVariant {
@@ -22,6 +26,7 @@ pub enum THIRPattern {
 impl Display for THIRPattern {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
+            THIRPattern::Binding { name, .. } => write!(f, "{name}"),
             THIRPattern::Integer(value) => write!(f, "{value}"),
             THIRPattern::Float(value, _type) => write!(f, "{_type} {value}"),
             THIRPattern::TaggedUnionVariant {

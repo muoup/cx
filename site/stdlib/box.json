@@ -82,8 +82,7 @@
         {"name": "this", "type": "box<T>", "description": "The box to destroy."},
         {"name": "drop_value", "type": "void(*)(T)", "description": "The function used to destroy the value."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     },
     {
       "name": "drop",
@@ -93,8 +92,7 @@
       "parameters": [
         {"name": "this", "type": "box<T>", "description": "The box to release."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     }
   ]
 }

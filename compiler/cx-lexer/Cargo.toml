@@ -13,3 +13,4 @@ cx-tokens = { path = "../cx-tokens" }
 cx-pipeline-data = { path = "../cx-pipeline-data" }
 
 cx-util = { path = "../cx-util" }
+cx-namespace = { path = "../cx-namespace" }

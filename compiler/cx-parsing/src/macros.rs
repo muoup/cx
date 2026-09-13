@@ -5,12 +5,21 @@ macro_rules! assert_token_matches {
     };
 
     ($data:expr, $pattern:pat, $expected:expr) => {
+        let token_index = $data.index;
         let Some($pattern) = &$data.next().map(|t| &t.kind) else {
-            $data.back();
+            $data.index = token_index;
 
             return $crate::log::parse_point_error(
                 &$data,
-                format!("Expected {}\n Found: {}", $expected, $data.peek().unwrap()),
+                &$crate::log::EXPECTED_SYNTAX,
+                (
+                    $expected.to_string(),
+                    None,
+                    $data
+                        .peek()
+                        .map(ToString::to_string)
+                        .or_else(|| Some("end of input".into())),
+                ),
             );
         };
     };
@@ -50,10 +59,7 @@ macro_rules! next_kind {
     ($data:expr) => {{
         match $data.next().map(|k| &k.kind) {
             Some(tok) => Ok(tok),
-            None => {
-                $data.back();
-                $crate::log::parse_point_error(&$data, "Unexpected end of tokens")
-            }
+            None => $crate::log::parse_point_error(&$data, &$crate::log::UNEXPECTED_END, None),
         }
     }};
 }
@@ -63,10 +69,7 @@ macro_rules! peek_next_kind {
     ($data:expr) => {
         match $data.peek().map(|k| &k.kind) {
             Some(tok) => Ok(tok),
-            None => {
-                $data.back();
-                $crate::log::parse_point_error(&$data, "Unexpected end of tokens")
-            }
+            None => $crate::log::parse_point_error(&$data, &$crate::log::UNEXPECTED_END, None),
         }
     };
 }

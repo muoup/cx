@@ -1,0 +1,18 @@
+import _resolution_import as _;
+import _resolution_import as merged;
+import _resolution_import as merged;
+
+struct Local { int member; };
+typedef int Remote;
+struct Both { int member; };
+typedef int Both;
+
+int imported_tag(struct Shared value) {
+    return value.member;
+}
+
+int inspect(Local value, Remote number, Both ordinary, struct Both tagged,
+            merged::Shared first, merged::Shared second) {
+    first = second;
+    return value.member + number + ordinary + tagged.member + first.member;
+}

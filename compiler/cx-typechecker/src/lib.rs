@@ -1,6 +1,6 @@
 use cx_hir::ast::{HIR, HIRStmt, global_var::HIRGlobalVariable};
 use cx_log::CXResult;
-use cx_thir::EnvironmentNamespace;
+use cx_namespace::module::NamespacePath;
 use cx_thir::thir::data::THIRFunction;
 
 pub mod environment;
@@ -14,13 +14,12 @@ mod type_checking;
 
 use crate::globals::lower_global;
 use crate::requests::fulfill_requests;
-use crate::symbol::completion::{complete_comptime_prototype, complete_prototype};
-use crate::type_checking::functions::typecheck_comptime_function;
+use crate::symbol::completion::complete_prototype;
 use crate::{environment::TypeEnvironment, type_checking::functions::typecheck_function};
 
 pub fn typecheck(env: &mut TypeEnvironment, ast: &HIR) -> CXResult<()> {
     for definition in &ast.definition_stmts {
-        let namespace = EnvironmentNamespace::from(definition.namespace.clone());
+        let namespace = NamespacePath::from(definition.namespace.clone());
 
         match &definition.stmt {
             HIRStmt::FunctionDefinition {
@@ -34,18 +33,12 @@ pub fn typecheck(env: &mut TypeEnvironment, ast: &HIR) -> CXResult<()> {
                 match body {
                     Some(body) => typecheck_function(env, &namespace, prototype, body)?,
                     None => env.items.push_generated_function(THIRFunction {
+        require_explicit_return: env.require_explicit_return(),
                         prototype,
                         body: None,
                     }),
                 };
-            },
-
-            HIRStmt::ComptimeFunctionDefinition { prototype, body, template_prototype, .. } => {
-                if template_prototype.is_some() { continue };
-
-                let prototype = complete_comptime_prototype(env, &namespace, prototype)?;
-                typecheck_comptime_function(env, &namespace, prototype, body.as_ref())?;
-            },
+            }
 
             HIRStmt::GlobalVariableDefinition {
                 variable:

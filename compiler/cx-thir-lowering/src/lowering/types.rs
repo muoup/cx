@@ -8,7 +8,10 @@ use cx_thir::{
     type_context::THIRTypeContext,
 };
 
-use crate::{MIRBuilder, lowering::calls::lower_field};
+use crate::{
+    MIRBuilder,
+    lowering::{calls::lower_field, comptime::evaluate_integer},
+};
 
 pub fn lower_type(builder: &mut MIRBuilder, ty: &THIRType) -> CXResult<MIRTypeID> {
     if let Some(id) = builder.registry().type_id(ty) {
@@ -17,9 +20,7 @@ pub fn lower_type(builder: &mut MIRBuilder, ty: &THIRType) -> CXResult<MIRTypeID
 
     let kind = lower_type_kind(builder, &ty.kind)?;
     let debug_name = builder.registry().type_debug_name(ty);
-    let id = builder
-        .types_mut()
-        .intern(MIRType { kind, layout: None });
+    let id = builder.types_mut().intern(MIRType { kind, layout: None });
     if builder.types().debug_name(id).is_none()
         && let Some(debug_name) = debug_name
     {
@@ -30,11 +31,13 @@ pub fn lower_type(builder: &mut MIRBuilder, ty: &THIRType) -> CXResult<MIRTypeID
 
 pub fn lower_type_id(builder: &mut MIRBuilder, id: THIRTypeID) -> CXResult<MIRTypeID> {
     let mir_id = MIRTypeID::new(id.index());
-    if builder.types().definition(mir_id).is_some() || builder.lowering_types.contains(&id) {
+    
+    if builder.types().definition(mir_id).is_some() || builder.types().is_lowering_type(&id) {
         return Ok(mir_id);
     }
 
-    builder.lowering_types.insert(id);
+    builder.types_mut().insert_lowering_type(id);
+    
     let result = (|| {
         let Some(ty) = builder.registry().try_resolve_type_id(id).cloned() else {
             assert!(
@@ -61,7 +64,8 @@ pub fn lower_type_id(builder: &mut MIRBuilder, id: THIRTypeID) -> CXResult<MIRTy
         }
         Ok(mir_id)
     })();
-    builder.lowering_types.remove(&id);
+    
+    builder.types_mut().remove_lowering_type(&id);
     result
 }
 
@@ -114,7 +118,7 @@ pub(crate) fn lower_type_kind(
             }),
         },
         THIRTypeKind::Array { length, inner_type } => MIRTypeKind::Array {
-            length: super::comptime::evaluate_integer(builder, length, "array length")?,
+            length: evaluate_integer(builder, length, "array length")?,
             inner: lower_type_id(builder, *inner_type)?,
         },
         THIRTypeKind::Function { signature } => MIRTypeKind::Function {

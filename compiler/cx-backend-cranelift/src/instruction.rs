@@ -1,6 +1,7 @@
 use crate::inst_calling::{
     get_func_ref, get_method_return, prepare_function_sig, prepare_method_call, prepare_parameters,
 };
+use crate::log::raw;
 use crate::routines::get_function;
 use crate::value_type::get_cranelift_type;
 use crate::{CodegenValue, FunctionState};
@@ -14,7 +15,8 @@ use cx_lmir::{
     LMIRBlockTarget, LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction,
     LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRReturnABI,
 };
-use cx_log::error::{message::CXStdErrMessage, CXRawResult};
+use cx_log::catalogue::backend::*;
+use cx_log::error::CXRawResult;
 
 fn block_arguments(
     context: &mut FunctionState,
@@ -115,10 +117,10 @@ pub(crate) fn codegen_instruction(
         LMIRInstructionKind::VaStart { .. }
         | LMIRInstructionKind::VaEnd { .. }
         | LMIRInstructionKind::VaArg { .. } => {
-            return CXStdErrMessage::result(
-                "UNIMPLEMENTED",
-                "Cranelift lowering of variadic builtins is not implemented",
-            )
+            return Err(raw(
+                &UNSUPPORTED_FEATURE,
+                ("variadic builtins".into(), "Cranelift lowering".into()),
+            ))
         }
 
         LMIRInstructionKind::Return { value } => {
@@ -547,10 +549,10 @@ pub(crate) fn codegen_instruction(
                     }
                 }
                 CodegenValue::Null => {
-                    return CXStdErrMessage::result(
-                        "CODEGEN ERROR",
-                        "LMIR attempted to store a value with no runtime representation",
-                    );
+                    return Err(raw(
+                        &ENTITY_REQUIREMENT,
+                        ("LMIR value".into(), "a runtime representation".into(), None),
+                    ));
                 }
                 value => {
                     context

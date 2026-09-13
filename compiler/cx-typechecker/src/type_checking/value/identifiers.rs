@@ -1,27 +1,24 @@
 use crate::{
     environment::TypeEnvironment,
-    symbol::{completion::complete_template_input, resolution::apply_template},
-    type_checking::{
-        coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
-        result::{TypecheckResult, TypecheckedBinding},
-        typechecker::typecheck_expr,
-    },
+    symbol::{completion::complete_template_input, template::apply_template},
+    type_checking::result::{StagedBindingTC, TypecheckResult, TypecheckedBinding},
 };
 use cx_hir::ast::{expression::HIRExpression, template::HIRTemplateInput};
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
+use cx_namespace::module::NamespacePath;
+use cx_namespace::module::QualifiedName;
 use cx_thir::{
-    EnvironmentNamespace,
     symbol::MIRSymbol,
     thir::{
         data::THIRTypeKind,
         expression::{THIRExpression, THIRExpressionKind},
     },
 };
-use cx_util::namespace::QualifiedName;
 
 pub(crate) fn typecheck_identifier(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     name: &QualifiedName,
     template_input: Option<&HIRTemplateInput>,
@@ -29,55 +26,10 @@ pub(crate) fn typecheck_identifier(
     let Some(mut symbol) = env.get_symbol(namespace, name)? else {
         return env.log_error(
             expr.token_range(),
-            format!("Identifier '{}' not found", name),
+            &catalogue::UNKNOWN_SYMBOL,
+            format!("{}", name),
         );
     };
-
-    if let MIRSymbol::StagedExpression {
-        id,
-        namespace,
-        expr: staged_expr,
-        expected_type,
-    } = symbol
-    {
-        env.push_staged_expansion(id);
-        let staged = typecheck_expr(
-            env,
-            &namespace,
-            &staged_expr,
-            (!expected_type.is_unreachable()).then_some(&expected_type),
-        );
-        env.pop_staged_expansion();
-        let staged = staged?;
-        let staged = staged.standard_ready_coerce(env, staged_expr.token_range())?;
-
-        let staged = if expected_type.is_unreachable() {
-            return Ok(TypecheckResult::from(THIRExpression {
-                token_range: staged.token_range.clone(),
-                _type: expected_type,
-                kind: THIRExpressionKind::Block {
-                    statements: vec![
-                        staged,
-                        THIRExpression {
-                            token_range: expr.token_range().clone(),
-                            _type: THIRTypeKind::Void.into(),
-                            kind: THIRExpressionKind::Unreachable,
-                        },
-                    ],
-                    creates_scope: false,
-                },
-            }));
-        } else if env.type_eq(&staged._type, &expected_type) {
-            staged
-        } else if expected_type.is_memory_reference() {
-            implicit_cast(env, staged, &expected_type)?
-        } else {
-            let staged = std_rval_promotion(env, staged)?;
-            implicit_cast(env, staged, &expected_type)?
-        };
-
-        return Ok(TypecheckResult::from(staged));
-    }
 
     // A local staged binding (e.g. a parameterized staged parameter of a
     // comptime function) resolves to an undefined-typed reference that may
@@ -88,20 +40,18 @@ pub(crate) fn typecheck_identifier(
         return_type,
     } = symbol
     {
-        return Ok(TypecheckResult::staged(
-            crate::type_checking::result::StagedValue {
-                reference: THIRExpression {
-                    token_range: expr.token_range().clone(),
-                    kind: THIRExpressionKind::Variable {
-                        name: name.name.clone(),
-                        local_id,
-                    },
-                    _type: THIRTypeKind::Undefined.into(),
+        return Ok(TypecheckResult::staged_binding(StagedBindingTC {
+            reference: THIRExpression {
+                token_range: expr.token_range().clone(),
+                kind: THIRExpressionKind::Variable {
+                    name: name.name.clone(),
+                    local_id,
                 },
-                params,
-                return_type,
+                _type: THIRTypeKind::Undefined.into(),
             },
-        ));
+            params,
+            return_type,
+        }));
     }
 
     if let Some(completed_input) = template_input
@@ -114,7 +64,7 @@ pub(crate) fn typecheck_identifier(
     }
 
     let result = TypecheckResult::from_symbol(symbol, name.clone(), template_input.cloned())
-        .map_err(|err| env.error(expr.token_range(), err.message().to_string()))?;
+        .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
     if env.function.in_safe_context()
         && let Some(expression) = result.ready_expression()
@@ -128,9 +78,8 @@ pub(crate) fn typecheck_identifier(
         let display_name = debug_name.as_ref().unwrap_or(symbol_name);
         return env.log_error(
             expr.token_range(),
-            format!(
-                "References to unsafe function `{display_name}` may not be used in safe contexts"
-            ),
+            &catalogue::UNSAFE_OPERATION,
+            format!("call to unsafe function '{}'", display_name),
         );
     }
 

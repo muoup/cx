@@ -1,4 +1,4 @@
-use crate::error::{CXErrMsg, CXRawResult};
+use crate::error::{CXRawError, CXRawResult};
 
 pub trait CXErrorMessage {
     fn code(&self) -> String;
@@ -6,7 +6,12 @@ pub trait CXErrorMessage {
     fn message(&self) -> String;
 
     fn dump(&self, f: &mut dyn std::io::Write) -> std::io::Result<()> {
-        write!(f, "{}: {}", self.code(), self.message())
+        let code = self.code();
+        if code.is_empty() {
+            write!(f, "error: {}", self.message())
+        } else {
+            write!(f, "error[{code}]: {}", self.message())
+        }
     }
 }
 
@@ -15,7 +20,12 @@ pub struct CXStdErrMessage {
     message: String,
 }
 
-impl CXErrMsg {
+impl CXRawError {
+    pub fn with_notes(mut self, notes: Vec<String>) -> Self {
+        self.1.extend(notes);
+        self
+    }
+
     pub fn code(&self) -> String {
         self.0.code()
     }
@@ -33,12 +43,12 @@ impl CXStdErrMessage {
         }
     }
 
-    pub fn error(code: impl Into<String>, message: impl Into<String>) -> CXErrMsg {
-        CXErrMsg(Box::new(Self::new(code, message)))
+    pub fn error(code: impl Into<String>, message: impl Into<String>) -> CXRawError {
+        CXRawError(Box::new(Self::new(code, message)), Vec::new())
     }
 
     pub fn result<T>(code: impl Into<String>, message: impl Into<String>) -> CXRawResult<T> {
-        Err(CXErrMsg(Box::new(Self::new(code, message))))
+        Err(CXRawError(Box::new(Self::new(code, message)), Vec::new()))
     }
 }
 

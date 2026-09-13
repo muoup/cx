@@ -1,46 +1,40 @@
 use crate::{
-    environment::TypeEnvironment,
+    environment::{StagingContext, TypeEnvironment},
     symbol::completion::ensure_valid_type_component,
     type_checking::typechecker::{add_implicit_return, typecheck_expr},
 };
 use cx_hir::ast::expression::HIRExpression;
 use cx_hir::ast::function::HIRFunctionContract;
 use cx_log::CXResult;
-use cx_thir::{
-    EnvironmentNamespace,
-    thir::{
-        comptime::THIRComptimeFn,
-        data::{
-            THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter,
-        },
-        expression::{THIRExpression, THIRExpressionKind},
-        r#type::THIRTypeKind,
+use cx_log::catalogue::typecheck as catalogue;
+use cx_namespace::module::{NamespacePath, QualifiedName};
+use cx_thir::thir::{
+    comptime::THIRComptimeFn,
+    data::{
+        THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter,
     },
+    expression::{THIRExpression, THIRExpressionKind},
+    r#type::THIRTypeKind,
 };
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, linkage::LinkageMode, namespace::QualifiedName};
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 pub fn typecheck_function(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     prototype: THIRFnPrototype,
     body: &HIRExpression,
 ) -> CXResult<()> {
     if prototype.signature().contract.safe && prototype.signature().var_args {
         return env.log_error(
             body.token_range(),
-            format!(
-                "Safe function '{}' may not use varargs",
-                prototype.pretty_name()
-            ),
+            &catalogue::INVALID_CONTEXT,
+            ("Varargs".into(), "a safe function".into())
         );
     }
 
     env.function.begin_function(prototype.clone());
-    env.push_scope(false, false);
-    env.function.set_scope_anchor(body);
-    env.function
-        .configure_merge_scope(body, Some("fallthrough"));
+    env.push_scope(false, false, body.token_range().clone());
 
     for THIRParameter {
         name,
@@ -74,7 +68,7 @@ pub fn typecheck_function(
     let with_implicit_return = add_implicit_return(env, namespace, body_expr)?;
 
     if let Some((name, range)) = env.function.unresolved_label() {
-        return env.log_error(range, format!("Undefined label '{name}'"));
+        return env.log_error(range, &catalogue::UNKNOWN_SYMBOL, name.into());
     }
 
     if prototype.signature().contract.safe {
@@ -86,6 +80,7 @@ pub fn typecheck_function(
     env.function.end_function();
 
     env.items.push_generated_function(THIRFunction {
+        require_explicit_return: env.require_explicit_return(),
         prototype,
         body: Some(with_implicit_return),
     });
@@ -93,18 +88,12 @@ pub fn typecheck_function(
     Ok(())
 }
 
-/// Typechecks a comptime function body and emits it into the completed THIR.
-///
-/// Comptime functions are checked mostly like normal functions. Plain
-/// parameters and non-parameterized staged parameters (`expr T`) behave like
-/// normal typed locals; parameterized staged parameters (`expr(P) T`) bind as
-/// staged values that carry no static type and may only be called or passed
-/// to other staged parameters.
 pub fn typecheck_comptime_function(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     prototype: THIRComptimeFnPrototype,
     body: &HIRExpression,
+    context: StagingContext,
 ) -> CXResult<()> {
     let debug_name = prototype.debug_name().cloned();
     let return_type = prototype.return_type()._type.clone();
@@ -179,22 +168,20 @@ pub fn typecheck_comptime_function(
     .with_debug_name(debug_name.unwrap_or_else(|| CXIdent::new(prototype.pretty_name())));
 
     env.function.begin_function(bookkeeping);
-    env.push_scope(false, false);
-    env.function.set_scope_anchor(body);
-    env.function
-        .configure_merge_scope(body, Some("fallthrough"));
+    env.push_scope(false, false, body.token_range().clone());
+    let previous_context = env.comptime_context.replace(context.clone());
 
-    env.enter_comptime_context(prototype.runtime_return_type().cloned());
     let checked = (|| -> CXResult<THIRExpression> {
         let body_expr = typecheck_expr(env, namespace, body, None)?
             .standard_ready_coerce(env, body.token_range())?;
         add_implicit_return(env, namespace, body_expr)
     })();
-    env.exit_comptime_context();
+
+    env.comptime_context = previous_context;
     let with_implicit_return = checked?;
 
     if let Some((name, range)) = env.function.unresolved_label() {
-        return env.log_error(range, format!("Undefined label '{name}'"));
+        return env.log_error(range, &catalogue::UNKNOWN_SYMBOL, name.into());
     }
 
     env.pop_scope()
@@ -204,6 +191,7 @@ pub fn typecheck_comptime_function(
     env.items.push_generated_comptime_function(THIRComptimeFn {
         prototype,
         body: Some(with_implicit_return),
+        context,
     });
 
     Ok(())

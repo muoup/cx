@@ -1,6 +1,9 @@
+use cx_log::catalogue::driver as catalogue;
 mod backends;
 mod diagnostics;
 mod linker;
+mod log;
+use log::pipeline_error;
 pub mod progress;
 mod scheduler;
 mod sources;
@@ -10,10 +13,8 @@ use crate::progress::ProgressReporter;
 use crate::scheduler::scheduling_loop_collect_errors;
 use crate::scheduler::{scheduling_loop, scheduling_loop_many};
 use cx_hir::registry::ExportNameMode;
-use cx_log::{
-    CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
-};
+use cx_log::CXResult;
+use cx_namespace::module::{ModulePath, NamespacePath};
 use cx_pipeline_data::config::{CXProjectConfig, TargetConfig};
 use cx_pipeline_data::db::ModuleData;
 use cx_pipeline_data::internal_storage::resource_path;
@@ -22,7 +23,6 @@ use cx_pipeline_data::{
     CompilationMode, CompilationUnit, CompilerConfig, GlobalCompilationContext,
 };
 use cx_util::format::{with_dump_directory, without_dumps};
-use cx_util::namespace::EnvironmentNamespace;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -39,13 +39,6 @@ pub fn link_object_files(output: &Path, object_files: &[PathBuf]) -> CXResult<()
     link_objects(output, object_files)
 }
 
-pub(crate) fn pipeline_error(code: impl Into<String>, message: impl Into<String>) -> CXErr {
-    CXErr::new(
-        CXStdErrMessage::error(code, message),
-        CXInternalContext::error("pipeline operation failed outside source context"),
-    )
-}
-
 pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResult<()> {
     let verbose = config.verbose;
     let compiler_context = GlobalCompilationContext {
@@ -54,27 +47,28 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
         linking_files: Mutex::new(HashSet::new()),
     };
 
-    let base_file_str = base_file.to_str().ok_or(pipeline_error(
-        "COMPILATION ERROR",
-        "Base file path is not valid UTF-8",
+    let _base_file_str = base_file.to_str().ok_or(pipeline_error(
+        &catalogue::PATH_ENCODING,
+        "base file".into(),
     ))?;
-    let entry_unit =
-        CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory);
-    let entry_unit = if compiler_context.config.module_mode {
+    let entry_unit = CompilationUnit::new(
+        &compiler_context.config.working_directory,
+        ModulePath::new(base_file.to_path_buf()),
+        (!compiler_context.config.module_mode).then(NamespacePath::root),
+    );
+    if compiler_context.config.module_mode {
         compiler_context
             .module_db
             .symbol_registry
-            .set_export_name_mode(entry_unit.to_namespace_path(), ExportNameMode::Root);
-        entry_unit
-    } else {
-        entry_unit.with_namespace(EnvironmentNamespace::root())
-    };
+            .set_export_name_mode(entry_unit.namespace().clone(), ExportNameMode::Root);
+    }
 
     let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, entry_unit.clone());
 
     let mut reporter = ProgressReporter::new(verbose);
 
-    let result = with_dump_directory(compiler_context.config.internal_directory.clone(), || {
+    let dump_directory = compiler_context.config.internal_directory.clone();
+    let result = with_dump_directory(dump_directory, compiler_context.config.dump, || {
         scheduling_loop(&compiler_context, initial_job, &mut reporter)?;
 
         match compiler_context.config.compilation_mode {
@@ -84,22 +78,27 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
                 if let Some(parent) = compiler_context.config.output.parent() {
                     std::fs::create_dir_all(parent).map_err(|e| {
                         pipeline_error(
-                            "COMPILATION ERROR",
-                            format!(
-                                "Failed to create object output directory {}: {}",
-                                parent.display(),
-                                e
+                            &catalogue::FILE_OPERATION,
+                            (
+                                "create".into(),
+                                "object output directory".into(),
+                                Some(format!("{}", parent.display())),
+                                format!("{}", e),
                             ),
                         )
                     })?;
                 }
                 std::fs::copy(&object_path, &compiler_context.config.output).map_err(|e| {
                     pipeline_error(
-                        "COMPILATION ERROR",
-                        format!(
-                            "Failed to write object file {}: {}",
-                            compiler_context.config.output.display(),
-                            e
+                        &catalogue::FILE_OPERATION,
+                        (
+                            "write".into(),
+                            "object file".into(),
+                            Some(format!(
+                                "{}",
+                                compiler_context.config.output.display()
+                            )),
+                            format!("{}", e),
                         ),
                     )
                 })?;
@@ -123,10 +122,7 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
 
 pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) -> CXResult<()> {
     if base_files.is_empty() {
-        return Err(pipeline_error(
-            "COMPILATION ERROR",
-            "No source files were selected for compilation",
-        ));
+        return Err(pipeline_error(&catalogue::NO_SOURCES, None));
     }
 
     let verbose = config.verbose;
@@ -137,22 +133,24 @@ pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) ->
     };
 
     let mut reporter = ProgressReporter::new(verbose);
-    let result = with_dump_directory(compiler_context.config.internal_directory.clone(), || {
+    let dump_directory = compiler_context.config.internal_directory.clone();
+    let result = with_dump_directory(dump_directory, compiler_context.config.dump, || {
         let initial_jobs = base_files
             .iter()
             .map(|base_file| {
-                let base_file_str = base_file.to_str().ok_or(pipeline_error(
-                    "COMPILATION ERROR",
-                    "Source file path is not valid UTF-8",
-                ))?;
-                let entry_unit = CompilationUnit::from_rooted(
-                    base_file_str,
+    let _base_file_str = base_file.to_str().ok_or(pipeline_error(
+        &catalogue::PATH_ENCODING,
+        "source file".into(),
+    ))?;
+                let entry_unit = CompilationUnit::new(
                     &compiler_context.config.working_directory,
+                    ModulePath::new(base_file.to_path_buf()),
+                    None,
                 );
                 compiler_context
                     .module_db
                     .symbol_registry
-                    .set_export_name_mode(entry_unit.to_namespace_path(), ExportNameMode::Root);
+                    .set_export_name_mode(entry_unit.namespace().clone(), ExportNameMode::Root);
                 Ok(CompilationJob::new(
                     vec![],
                     CompilationStep::PreParse,
@@ -165,8 +163,11 @@ pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) ->
         match compiler_context.config.compilation_mode {
             CompilationMode::Executable => link(&compiler_context, &mut reporter),
             CompilationMode::Object | CompilationMode::Library => Err(pipeline_error(
-                "COMPILATION ERROR",
-                "Multi-file compilation only supports executable output",
+                &catalogue::UNSUPPORTED_FEATURE,
+                (
+                    "non-executable output".into(),
+                    "multi-file compilation".into(),
+                ),
             )),
         }
     });
@@ -191,27 +192,31 @@ pub fn library_compilation(
         linking_files: Mutex::new(HashSet::new()),
     };
 
-    let base_file_str = base_file.to_str().ok_or(pipeline_error(
-        "COMPILATION ERROR",
-        "Base file path is not valid UTF-8",
+    let _base_file_str = base_file.to_str().ok_or(pipeline_error(
+        &catalogue::PATH_ENCODING,
+        "base file".into(),
     ))?;
 
-    let entry_unit =
-        CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory);
+    let entry_unit = CompilationUnit::new(
+        &compiler_context.config.working_directory,
+        ModulePath::new(base_file.to_path_buf()),
+        None,
+    );
     compiler_context
         .module_db
         .symbol_registry
-        .set_export_name_mode(entry_unit.to_namespace_path(), ExportNameMode::Root);
+        .set_export_name_mode(entry_unit.namespace().clone(), ExportNameMode::Root);
 
     let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, entry_unit.clone());
 
     let mut reporter = ProgressReporter::new(verbose);
 
-    let result = with_dump_directory(compiler_context.config.internal_directory.clone(), || {
+    let dump_directory = compiler_context.config.internal_directory.clone();
+    let result = with_dump_directory(dump_directory, compiler_context.config.dump, || {
         scheduling_loop(&compiler_context, initial_job, &mut reporter)?;
 
         // Extract exported symbol names from the entry file's LMIR to use as GC roots
-        let entry_lmir = compiler_context.module_db.lmir.get(&entry_unit);
+        let entry_lmir = compiler_context.module_db.lmir.get(entry_unit.namespace());
         let exported_symbols: Vec<String> = entry_lmir
             .fn_defs
             .iter()
@@ -233,7 +238,7 @@ pub fn library_compilation(
     reporter.finish();
 
     // Take only the entry file's LMIR unit (not imports/dependencies)
-    let entry_lmir = compiler_context.module_db.lmir.take(&entry_unit);
+    let entry_lmir = compiler_context.module_db.lmir.take(entry_unit.namespace());
 
     Ok(entry_lmir)
 }
@@ -244,15 +249,15 @@ pub fn project_compilation(
     target_filter: Option<&str>,
 ) -> CXResult<Vec<PathBuf>> {
     let workspace = project_config.workspace.as_ref().ok_or(pipeline_error(
-        "COMPILATION ERROR",
-        "cx.toml has no [workspace] section",
+        &catalogue::MISSING_CONFIG,
+        ("[workspace] section".into(), "cx.toml".into()),
     ))?;
 
     let filter_name;
     let targets: Vec<(&String, &TargetConfig)> = if let Some(filter) = target_filter {
         let target = workspace.targets.get(filter).ok_or(pipeline_error(
-            "COMPILATION ERROR",
-            format!("Target '{}' not found in cx.toml", filter),
+            &catalogue::MISSING_CONFIG,
+            (format!("target '{filter}'"), "cx.toml".into()),
         ))?;
         filter_name = filter.to_string();
         vec![(&filter_name, target)]
@@ -299,11 +304,12 @@ pub fn project_compilation(
             .join(target_name);
         std::fs::create_dir_all(&output_dir).map_err(|e| {
             pipeline_error(
-                "COMPILATION ERROR",
-                format!(
-                    "Failed to create output directory {}: {}",
-                    output_dir.display(),
-                    e
+                &catalogue::FILE_OPERATION,
+                (
+                    "create".into(),
+                    "output directory".into(),
+                    Some(format!("{}", output_dir.display())),
+                    format!("{}", e),
                 ),
             )
         })?;
@@ -329,8 +335,7 @@ pub fn project_compilation(
                     }
                     (_, Some(patterns)) => {
                         let mut sources =
-                            sources::expand_patterns(&base_config.working_directory, patterns)
-                                .map_err(|error| pipeline_error("COMPILATION ERROR", error))?;
+                            sources::expand_patterns(&base_config.working_directory, patterns)?;
                         sources::prepend_entry(&mut sources, binary.entry.as_deref());
                         eprintln!(
                             "Building binary '{}' (target: {}, {} sources)",
@@ -342,8 +347,8 @@ pub fn project_compilation(
                     }
                     (None, None) => {
                         return Err(pipeline_error(
-                            "COMPILATION ERROR",
-                            format!("Binary '{}' must define 'entry' or 'match'", binary.name),
+                            &catalogue::BINARY_SOURCES,
+                            format!("{}", binary.name),
                         ));
                     }
                 }
@@ -385,8 +390,13 @@ pub fn project_compilation(
                 let header_path = output_dir.join(format!("{}.h", library.name));
                 std::fs::write(&header_path, header).map_err(|e| {
                     pipeline_error(
-                        "COMPILATION ERROR",
-                        format!("Failed to write header {}: {}", header_path.display(), e),
+                        &catalogue::FILE_OPERATION,
+                        (
+                            "write".into(),
+                            "header".into(),
+                            Some(format!("{}", header_path.display())),
+                            format!("{}", e),
+                        ),
                     )
                 })?;
 

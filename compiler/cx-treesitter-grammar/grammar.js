@@ -167,6 +167,11 @@ module.exports = grammar({
 
     word: ($) => $.identifier,
 
+    reserved: {
+        global: (_) => [],
+        match: (_) => ["default"],
+    },
+
     conflicts: ($) => [
         [$.declaration_specifier, $.access_section],
         [$.compiler_attribute, $.primary_expression],
@@ -607,10 +612,18 @@ module.exports = grammar({
         import_declaration: ($) =>
             seq(
                 keyword($, "import"),
-                $.qualified_name,
+                $.import_path,
                 optional(seq(keyword($, "as"), $.qualified_name)),
                 ";",
             ),
+
+        import_path: ($) =>
+            seq(
+                repeat(seq($.identifier, op($, "::"))),
+                choice($.identifier, $.import_group),
+            ),
+
+        import_group: ($) => seq("{", commaSep1($.import_path), "}"),
 
         access_section: ($) =>
             seq(
@@ -731,7 +744,25 @@ module.exports = grammar({
         match_arm: ($) =>
             prec.right(seq($.match_pattern, op($, "=>"), $._statement)),
 
-        match_pattern: ($) => choice($.expression, keyword($, "default")),
+        match_pattern: ($) =>
+            choice(
+                $.number_literal,
+                reserved("match", $.identifier),
+                $.variant_pattern,
+            ),
+
+        variant_pattern: ($) =>
+            seq(
+                alias(
+                    seq(
+                        reserved("match", $.identifier),
+                        repeat1(seq(op($, "::"), $.identifier)),
+                    ),
+                    $.qualified_name,
+                ),
+                optional($.template_arguments),
+                optional(seq("(", optional(reserved("match", $.identifier)), ")")),
+            ),
 
         defer_statement: ($) =>
             seq(

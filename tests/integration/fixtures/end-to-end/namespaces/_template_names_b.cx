@@ -1,0 +1,9 @@
+public:
+
+T value<T>(T input) {
+    return input + 2;
+}
+
+comptime expr T staged<T>(expr T input) {
+    return emit input;
+}

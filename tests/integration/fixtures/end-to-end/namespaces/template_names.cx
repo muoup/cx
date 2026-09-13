@@ -1,0 +1,24 @@
+import _template_names_a as a;
+import _template_names_a as again;
+import _template_names_b as b;
+
+#include <stdio.h>
+
+T value<T>(T input) {
+    return input + 3;
+}
+
+comptime expr T staged<T>(expr T input) {
+    return emit input;
+}
+
+int main() {
+    int (*first)(int) = a::value<int>;
+    int (*second)(int) = b::value<int>;
+    int (*local)(int) = value<int>;
+    a::Box<int> box = { 7 };
+    printf("%d %d %d %d %d\n", first(10), second(10), local(10),
+        again::value(10), box |> a::Box::read<int>());
+    printf("%d %d %d\n", a::staged<int>(21), b::staged<int>(22), staged<int>(23));
+    return 0;
+}

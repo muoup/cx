@@ -1,15 +1,19 @@
 use cx_hir::{
-    ast::{expression::HIRExpression, template::HIRTemplatePrototype, types::HIRTagKind},
+    ast::{template::HIRTemplatePrototype, types::HIRTagKind},
     symbols::HIRSymbol,
 };
-use cx_log::error::{CXRawResult, message::CXStdErrMessage};
+use cx_log::{CXRawResult, catalogue::typecheck};
+use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_util::identifier::CXIdent;
 
 use crate::{
-    EnvironmentNamespace,
+    NamespacePath,
     thir::{
-        data::{THIRComptimeFnPrototype, THIRFnPrototype, THIRType, THIRTypeID, THIRTypeKind},
+        data::{
+            THIRComptimeFnPrototype, THIRFnPrototype, THIRTemplateInput, THIRType, THIRTypeID,
+            THIRTypeKind,
+        },
         expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
     },
     type_context::THIRTypeContext,
@@ -21,18 +25,8 @@ pub enum MIRSymbol {
     FunctionReference(THIRFnPrototype),
     ComptimeFunctionReference {
         prototype: THIRComptimeFnPrototype,
-        namespace: EnvironmentNamespace,
-        template_bindings: Vec<(CXIdent, THIRTypeID)>,
+        input: THIRTemplateInput,
     },
-    StagedExpression {
-        id: u64,
-        namespace: EnvironmentNamespace,
-        expr: Box<HIRExpression>,
-        expected_type: THIRType,
-    },
-    /// A local binding holding a parameterized staged value, e.g. a staged
-    /// parameter of a comptime function. The referenced value is supplied by
-    /// the caller at evaluation time; no body is stored here.
     StagedExpressionFunction {
         local_id: THIRLocalID,
         params: Vec<THIRType>,
@@ -42,7 +36,7 @@ pub enum MIRSymbol {
     Template {
         template_prototype: HIRTemplatePrototype,
         name: CXIdent,
-        namespace: EnvironmentNamespace,
+        namespace: NamespacePath,
         source: Box<HIRSymbol>,
         tag: Option<HIRTagKind>,
     },
@@ -67,10 +61,7 @@ impl MIRSymbol {
                 ..
             } => {
                 if source.is_type() {
-                    Some(QualifiedName::new(
-                        namespace.as_namespace_path().clone(),
-                        name.clone(),
-                    ))
+                    Some(QualifiedName::new(namespace.clone(), name.clone()))
                 } else {
                     None
                 }
@@ -82,7 +73,7 @@ impl MIRSymbol {
 
     pub fn as_expression(&self) -> CXRawResult<THIRExpression> {
         match self {
-            MIRSymbol::FunctionReference(prototype) => CXRawResult::Ok(THIRExpression {
+            MIRSymbol::FunctionReference(prototype) => Ok(THIRExpression {
                 token_range: TokenRange::internal(),
                 _type: THIRTypeKind::Function {
                     signature: Box::new(prototype.signature().clone()),
@@ -96,23 +87,31 @@ impl MIRSymbol {
 
             MIRSymbol::Expression(expr) => CXRawResult::Ok(expr.clone()),
 
-            MIRSymbol::ComptimeFunctionReference { .. } => CXStdErrMessage::result(
-                "TYPE ERROR",
-                "Comptime function cannot be used in runtime contexts",
-            ),
-
-            MIRSymbol::StagedExpression { .. } | MIRSymbol::StagedExpressionFunction { .. } => {
-                CXStdErrMessage::result(
-                    "TYPE ERROR",
-                    "Staged expression cannot be used in runtime contexts",
+            // FIXME: We should be able to generate function calls to comptime functions in a runtime function's THIR
+            MIRSymbol::ComptimeFunctionReference { .. } => {
+                crate::log::log_error(
+                    &typecheck::INVALID_CONTEXT,
+                    ("comptime function".into(), "runtime expressions".into()),
                 )
             }
 
-            MIRSymbol::Template { .. } => {
-                CXStdErrMessage::result("TYPE ERROR", "Could not deduce arguments to template")
+            // FIXME: Ditto above
+            MIRSymbol::StagedExpressionFunction { .. } => {
+                crate::log::log_error(
+                    &typecheck::INVALID_CONTEXT,
+                    ("staged expression".into(), "runtime expressions".into()),
+                )
             }
 
-            _ => CXStdErrMessage::result("TYPE ERROR", "Symbol does not refer to a value"),
+            MIRSymbol::Template { .. } => crate::log::log_error(
+                &typecheck::TEMPLATE_DEDUCTION,
+                "template arguments".into(),
+            ),
+
+            MIRSymbol::Type(..) => crate::log::log_error(
+                &typecheck::INVALID_CONTEXT,
+                ("type".into(), "runtime expressions".into()),
+            ),
         }
     }
 }

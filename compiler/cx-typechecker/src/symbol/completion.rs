@@ -1,3 +1,4 @@
+use cx_log::catalogue::typecheck as catalogue;
 use std::collections::HashSet;
 
 use cx_hir::ast::{
@@ -8,13 +9,14 @@ use cx_hir::ast::{
         HIRAggregateAttributes, HIRField, HIRMoveSemantics, HIRType, HIRTypeKind, HIRTypeLookup,
     },
 };
-use cx_hir::symbols::{HIRSymbolData, HIRSymbolKind, SymbolResolution};
+use cx_hir::symbols::{HIRSymbol, HIRSymbolData, HIRSymbolKind};
 use cx_log::{
     CXRawResult, CXResult,
-    error::{CXMaybeRawErr, CXMaybeRawResult},
+    error::{CXErrorMaybeRaw, CXMaybeRawResult},
 };
+use cx_namespace::{mangling::mangle_namespace_symbol, module::QualifiedName};
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_util::identifier::CXIdent;
 
 use cx_thir::{
     symbol::MIRSymbol,
@@ -24,17 +26,19 @@ use cx_thir::{
             THIRFnSignature, THIRParameter, THIRTemplateInput, THIRTypeAttributes,
         },
         expression::THIRLocalID,
+        name_mangling::mangle_rootable_name,
         r#type::{THIRField, THIRMoveSemantics, THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
 };
 
 use crate::{
-    EnvironmentNamespace,
-    environment::{SymbolLookupKind, TypeEnvironment},
+    NamespacePath,
+    environment::TypeEnvironment,
     symbol::{
-        name_mangling::mangle_qualified_name,
-        resolution::{TypeSymbolQuery, apply_template, resolve_symbol, resolve_type_symbol},
+        lookup::{SymbolLookup, SymbolLookupKind},
+        resolution::{resolve_symbol_inner, resolve_type_symbol},
+        template::apply_template,
     },
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
@@ -44,7 +48,7 @@ use crate::{
 
 pub fn complete_template_input(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     input: &HIRTemplateInput,
 ) -> CXResult<THIRTemplateInput> {
     let args = input
@@ -58,13 +62,17 @@ pub fn complete_template_input(
 
 pub fn complete_type(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     ty: &HIRType,
 ) -> CXResult<THIRType> {
     let id = complete_type_id(env, namespace, ty)?;
 
     let Some(completed) = env.symbols.try_resolve_type_id(id).cloned() else {
-        return env.log_error(ty.range(), format!("Type '{}' is incomplete", ty));
+        return env.log_error(
+            ty.range(),
+            &catalogue::INCOMPLETE_TYPE,
+            format!("{}", ty),
+        );
     };
 
     Ok(completed)
@@ -72,7 +80,7 @@ pub fn complete_type(
 
 pub fn complete_type_id(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     ty: &HIRType,
 ) -> CXResult<THIRTypeID> {
     match &ty.kind {
@@ -95,9 +103,9 @@ pub fn complete_type_id(
     }
 }
 
-fn complete_type_inner(
+pub(crate) fn complete_type_inner(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     ty: &HIRType,
 ) -> CXResult<THIRType> {
     let mut completed = match &ty.kind {
@@ -110,7 +118,11 @@ fn complete_type_inner(
                 .map_err(|err| env.complete_maybe_err(err, ty.range()))?;
 
             let Some(completed) = env.symbols.try_resolve_type_id(id).cloned() else {
-                return env.log_error(ty.range(), format!("Type '{}' is incomplete", ty));
+                return env.log_error(
+                    ty.range(),
+                    &catalogue::INCOMPLETE_TYPE,
+                    format!("{}", ty),
+                );
             };
 
             completed
@@ -218,7 +230,11 @@ pub fn ensure_valid_type_id_component(
     enforce_allocatable: bool,
 ) -> CXResult<()> {
     let Some(ty) = env.symbols.try_resolve_type_id(ty) else {
-        return env.log_error(range, format!("{} type is incomplete", context));
+        return env.log_error(
+            range,
+            &catalogue::INCOMPLETE_TYPE,
+            format!("{}", context),
+        );
     };
 
     ensure_valid_type_component(env, range, ty, context, enforce_allocatable)
@@ -234,7 +250,8 @@ pub fn ensure_valid_type_component(
     match &ty.kind {
         THIRTypeKind::Unreachable => env.log_error(
             range,
-            format!("{} type component cannot be 'unreachable'", context),
+            &catalogue::TYPE_REQUIREMENT,
+            (format!("type component {context}"), "a reachable type".into(), None),
         ),
 
         THIRTypeKind::Function { .. }
@@ -245,10 +262,8 @@ pub fn ensure_valid_type_component(
         {
             env.log_error(
                 range,
-                format!(
-                    "{} type is unsized and cannot be directly allocated",
-                    context
-                ),
+                &catalogue::TYPE_REQUIREMENT,
+                (context.into(), "an allocatable type".into(), Some("an unsized type".into())),
             )
         }
 
@@ -276,7 +291,7 @@ fn apply_type_specifiers(
 
 pub fn complete_prototype(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     prototype: &HIRFunctionPrototype,
 ) -> CXResult<THIRFnPrototype> {
     let return_type_id = complete_type_id(env, namespace, &prototype.return_type)?;
@@ -305,8 +320,11 @@ pub fn complete_prototype(
 
     let lookup_identifier = function_lookup_identifier(namespace, &prototype.kind);
     let debug_name = lookup_identifier.name.clone();
-    let symbol_name =
-        completed_function_name(env, namespace, &prototype.kind, prototype.symbol_naming)?;
+    let symbol_name = mangle_rootable_name(
+        env.symbols.get_global_registry(),
+        &lookup_identifier,
+        prototype.symbol_naming,
+    );
 
     Ok(THIRFnPrototype::new(
         symbol_name,
@@ -327,7 +345,7 @@ pub fn complete_prototype(
 
 pub fn complete_comptime_prototype(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     prototype: &HIRComptimeFnPrototype,
 ) -> CXResult<THIRComptimeFnPrototype> {
     let return_type = THIRComptimeValueType {
@@ -363,7 +381,11 @@ pub fn complete_comptime_prototype(
 
     let lookup_identifier = function_lookup_identifier(namespace, &prototype.kind);
     let debug_name = lookup_identifier.name.clone();
-    let symbol_name = completed_comptime_symbol_name(env, &lookup_identifier);
+    let symbol_name = mangle_rootable_name(
+        env.symbols.get_global_registry(),
+        &lookup_identifier,
+        HIRSymbolNameScheme::Namespaced,
+    );
 
     Ok(
         THIRComptimeFnPrototype::new(symbol_name, lookup_identifier, return_type, params)
@@ -371,31 +393,18 @@ pub fn complete_comptime_prototype(
     )
 }
 
-fn completed_comptime_symbol_name(
-    env: &TypeEnvironment,
-    lookup_identifier: &QualifiedName,
-) -> String {
-    crate::symbol::name_mangling::mangle_qualified_name(
-        env.symbols.get_global_registry(),
-        lookup_identifier,
-    )
-}
-
-fn function_lookup_identifier(
-    namespace: &EnvironmentNamespace,
-    kind: &HIRFunctionKind,
-) -> QualifiedName {
+fn function_lookup_identifier(namespace: &NamespacePath, kind: &HIRFunctionKind) -> QualifiedName {
     let QualifiedName {
         namespace: relative_namespace,
         name,
     } = kind.into_key();
 
-    QualifiedName::new(namespace.join(&relative_namespace), name)
+    QualifiedName::new(namespace.clone().join(relative_namespace), name)
 }
 
 fn complete_explicit_parameters(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     prototype: &HIRFunctionPrototype,
 ) -> CXResult<Vec<THIRParameter>> {
     prototype
@@ -419,114 +428,129 @@ fn complete_explicit_parameters(
 
 fn complete_identifier_type(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     name: &QualifiedName,
     type_lookup: HIRTypeLookup,
     template_input: &Option<HIRTemplateInput>,
 ) -> CXMaybeRawResult<THIRTypeID> {
-    let (lookup, query, is_tag_lookup) = match type_lookup {
-        HIRTypeLookup::Standard => match env.lookup_symbol(namespace, name)? {
-            Some(lookup) => (Some(lookup), TypeSymbolQuery::Standard, false),
-            None => (
-                env.lookup_tag_symbol(namespace, name)?,
-                TypeSymbolQuery::WildcardTag,
-                true,
-            ),
-        },
-        HIRTypeLookup::Tag(tag) => (
-            env.lookup_tag_symbol(namespace, name)?,
-            TypeSymbolQuery::Tag(tag),
-            true,
-        ),
-    };
-    let Some(lookup) = lookup else {
-        return env
-            .log_error_base(format!("Type not found: {}", name))
-            .map_err(|err| err.into());
+    let tag = match type_lookup {
+        HIRTypeLookup::Standard => None,
+        HIRTypeLookup::Tag(tag) => Some(tag),
     };
 
-    let resolved_name = lookup.resolved_name;
+    let lookup = match env.lookup_symbol(namespace, name, tag)? {
+        Some(lookup) => lookup,
+        None if name.namespace.is_root() && tag.is_some() => {
+            // If we have some `[struct/union/enum] T` type identifier that doesn't correspond to any definition,
+            // C allows this to correspond to an 'undefined' implicit definition, used indirectly via a pointer (or reference).
+            //
+            let resolved_name = QualifiedName::new(namespace.clone(), name.name.clone());
+            let symbol = HIRSymbol {
+                visibility: VisibilityMode::Private,
+                tag,
+                kind: HIRSymbolKind::Type(HIRSymbolData {
+                    data: (),
+                    template_prototype: None,
+                    base: HIRTypeKind::Identifier {
+                        name: name.clone(),
+                        lookup: type_lookup,
+                        template_input: None,
+                    }
+                    .to_type(),
+                }),
+            };
 
-    let resolution = match lookup.kind {
-        SymbolLookupKind::Resolved(symbol) => {
-            return complete_resolved_type_lookup(env, namespace, name, symbol, template_input);
+            env.symbols
+                .implicit_tags
+                .insert(resolved_name.clone(), symbol.clone());
+
+            SymbolLookup {
+                resolved_name,
+                kind: SymbolLookupKind::Untyped(vec![symbol]),
+            }
         }
-        SymbolLookupKind::Untyped(resolution) => resolution,
+        None => {
+            return env
+                .log_error_base(&catalogue::UNKNOWN_SYMBOL, format!("{}", name))
+                .map_err(Into::into);
+        }
     };
 
-    let resolved = resolve_type_symbol(env, name, query, &resolution)?;
-    let symbol = resolved.symbol;
-    let tag = resolved.tag;
-    let HIRSymbolKind::Type(type_symbol) = &symbol.kind else {
-        unreachable!("type symbol resolution returned a non-type declaration")
-    };
-    let cacheable =
-        matches!(type_symbol, HIRSymbolData::Standard { .. }) && template_input.is_none();
-    let cached = if is_tag_lookup {
-        env.symbols.get_preresolved_tag(&resolved_name)
-    } else {
-        env.symbols.get_preresolved_symbol(&resolved_name)
-    };
-    if cacheable && let Some(MIRSymbol::Type(id)) = cached {
-        return Ok(*id);
+    let symbol = env.resolve_lookup(namespace, lookup)?;
+
+    match symbol {
+        MIRSymbol::Type(id) => {
+            if template_input.is_some() {
+                env.log_error_base(
+                    &catalogue::TEMPLATE_ARGUMENTS,
+                    (format!("{}", name), false),
+                )
+                .map_err(|e| e.into())
+            } else {
+                Ok(id)
+            }
+        }
+
+        MIRSymbol::Template { .. } => {
+            complete_template_type_lookup(env, namespace, name, &symbol, template_input)
+        }
+
+        _ => env
+            .log_error_base(
+                &catalogue::UNEXPECTED_SYMBOL,
+                (name.into(), "a type".into()),
+            )
+            .map_err(|err| err.into()),
+    }
+}
+
+pub(crate) fn complete_named_type(
+    env: &mut TypeEnvironment,
+    name: &QualifiedName,
+    declarations: &[HIRSymbol],
+) -> CXResult<MIRSymbol> {
+    let symbol = resolve_type_symbol(env, name, declarations)
+        .map_err(|error| env.complete_maybe_err(error, &cx_tokens::TokenRange::internal()))?;
+    let tagged = symbol.tag.is_some();
+
+    if let Some(cached) = env.symbols.cached(name, tagged) {
+        return Ok(cached.clone());
     }
 
-    match type_symbol {
-        HIRSymbolData::Standard {
-            base: definition, ..
-        } => {
-            if template_input.is_some() {
-                return env
-                    .log_error_base(format!("Type '{name}' does not accept template arguments"))
-                    .map_err(|err| err.into());
-            }
+    let HIRSymbolKind::Type(data) = &symbol.kind else {
+        unreachable!()
+    };
 
-            let mangled_name =
-                mangle_qualified_name(env.symbols.get_global_registry(), &resolved_name);
-            let dummy_type = THIRType::from(THIRTypeKind::Undefined)
-                .with_strong_identifier(CXIdent::from(mangled_name));
-            let prereserved_id = env.symbols.reserve_type_id();
-            if cacheable {
-                if is_tag_lookup {
-                    env.symbols
-                        .insert_tag_type_symbol(resolved_name.clone(), prereserved_id);
-                } else {
-                    env.symbols
-                        .insert_type_symbol(resolved_name.clone(), prereserved_id);
-                }
-            }
-            env.symbols.overwrite_type_id(prereserved_id, dummy_type);
+    if data.template_prototype.is_some() {
+        return resolve_symbol_inner(
+            env,
+            &name.namespace,
+            &name.namespace,
+            &name.name,
+            symbol,
+            symbol.tag,
+            true,
+        );
+    }
 
-            if tag.is_some() && is_self_predeclaration(definition, &resolved_name) {
-                return Ok(prereserved_id);
-            }
-
-            let ty = complete_type_inner(
-                env,
-                &EnvironmentNamespace::from(&resolved_name.namespace),
-                definition,
-            )
-            .map_err(CXMaybeRawErr::Complete)?;
-
-            env.symbols.overwrite_type_id(prereserved_id, ty);
-
-            Ok(prereserved_id)
+    let mut placeholder = THIRType::from(THIRTypeKind::Undefined);
+    placeholder.lookup_identifier = Some(name.clone());
+    placeholder.strong_identifier = tagged.then(|| mangle_namespace_symbol(name));
+    let id = env.symbols.generate_type_id(placeholder);
+    env.symbols
+        .insert_symbol(name.clone(), MIRSymbol::Type(id), tagged);
+    if tagged && is_self_predeclaration(data.base(), name) {
+        return Ok(MIRSymbol::Type(id));
+    }
+    match complete_type_inner(env, &name.namespace, data.base()) {
+        Ok(ty) => {
+            env.symbols.overwrite_type_id(id, ty);
+            Ok(MIRSymbol::Type(id))
         }
-
-        HIRSymbolData::Template { .. } => {
-            let resolution = tag.map_or_else(
-                || SymbolResolution::new(symbol.clone()),
-                |tag| SymbolResolution::new_tagged(tag, symbol.clone()),
-            );
-            let mir_symbol = resolve_symbol(
-                env,
-                namespace,
-                &EnvironmentNamespace::from(&resolved_name.namespace),
-                &resolved_name.name,
-                &resolution,
-            )?;
-
-            complete_template_type_lookup(env, namespace, name, &mir_symbol, template_input)
+        Err(error) => {
+            env.symbols.remove_symbol(name, tagged);
+            env.symbols.undo_type_id(id);
+            Err(error)
         }
     }
 }
@@ -544,67 +568,45 @@ fn is_self_predeclaration(definition: &HIRType, name: &QualifiedName) -> bool {
     definition_name.namespace.is_root() && definition_name.name == name.name
 }
 
-fn complete_resolved_type_lookup(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    name: &QualifiedName,
-    symbol: MIRSymbol,
-    template_input: &Option<HIRTemplateInput>,
-) -> CXMaybeRawResult<THIRTypeID> {
-    match symbol {
-        MIRSymbol::Type(id) => {
-            if template_input.is_some() {
-                env.log_error_base(format!("Type '{name}' does not accept template arguments"))
-                    .map_err(|e| e.into())
-            } else {
-                Ok(id)
-            }
-        }
-        MIRSymbol::Template { .. } => {
-            complete_template_type_lookup(env, namespace, name, &symbol, template_input)
-        }
-
-        _ => env
-            .log_error_base(format!("Symbol '{name}' is not a type"))
-            .map_err(|err| err.into()),
-    }
-}
-
 fn complete_template_type_lookup(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     name: &QualifiedName,
     mir_symbol: &MIRSymbol,
     template_input: &Option<HIRTemplateInput>,
 ) -> CXMaybeRawResult<THIRTypeID> {
     let Some(input) = template_input else {
         return env
-            .log_error_base(format!("Type '{name}' requires template arguments"))
+            .log_error_base(&catalogue::TEMPLATE_ARGUMENTS, (name.into(), true))
             .map_err(|e| e.into());
     };
     let input = complete_template_input(env, namespace, input)?;
     let Some(symbol) = apply_template(env, mir_symbol, input)? else {
         return env
-            .log_error_base("Failed to apply template arguments".to_string())
+            .log_error_base(&catalogue::TEMPLATE_APPLICATION, ())
             .map_err(|e| e.into());
     };
 
     match symbol {
         MIRSymbol::Type(id) => Ok(id),
         MIRSymbol::Template { .. } => env
-            .log_error_base(format!(
-                "Template arguments did not resolve type '{name}' to a concrete type"
-            ))
+            .log_error_base(
+                &catalogue::TEMPLATE_NOT_CONCRETE,
+                name.into(),
+            )
             .map_err(|e| e.into()),
         _ => env
-            .log_error_base(format!("Symbol '{name}' is not a type"))
+            .log_error_base(
+                &catalogue::UNEXPECTED_SYMBOL,
+                (name.into(), "a type".into()),
+            )
             .map_err(|err| err.into()),
     }
 }
 
 fn make_aggregate_type<F>(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     ty: &HIRType,
     name: Option<CXIdent>,
     attributes: Option<&HIRAggregateAttributes>,
@@ -632,8 +634,7 @@ where
         .as_ref()
         .map(|name| {
             let lookup_identifier = QualifiedName::new(namespace.clone(), name.clone());
-            let strong_identifier =
-                mangle_qualified_name(env.symbols.get_global_registry(), &lookup_identifier);
+            let strong_identifier = mangle_namespace_symbol(&lookup_identifier);
             (Some(strong_identifier), Some(lookup_identifier))
         })
         .unwrap_or((None, None));
@@ -667,7 +668,10 @@ fn ensure_aggregate_fields_not_recursive(
         let mut visited = HashSet::new();
         if type_contains_by_value(env, field.ty(), aggregate_identifier, &mut visited) {
             let name = field.name().unwrap_or("<anonymous>");
-            return env.log_error_base(format!("Aggregate field '{}' has recursive type", name));
+            return env.log_error_base(
+                &catalogue::RECURSIVE_TYPE,
+                format!("aggregate field {}", name),
+            );
         }
     }
 
@@ -682,19 +686,22 @@ fn ensure_aggregate_fields_complete(
         let id = field.ty();
 
         let Some(_ty) = env.symbols.try_resolve_type_id(id) else {
-            return env.log_error_base(format!(
-                "Aggregate field '{}' has incomplete type",
-                field.name().unwrap_or("<anonymous>")
-            ));
+            return env.log_error_base(
+                &catalogue::INCOMPLETE_TYPE,
+                format!("aggregate field {}", field.name().unwrap_or("<anonymous>")),
+            );
         };
 
         match &_ty.kind {
             THIRTypeKind::Unreachable | THIRTypeKind::Undefined | THIRTypeKind::Str => {
-                return env.log_error_base(format!(
-                    "Aggregate field '{}' has invalid type '{}'",
-                    field.name().unwrap_or("<anonymous>"),
-                    _ty.display_with(&env.symbols)
-                ));
+                return env.log_error_base(
+                    &catalogue::TYPE_REQUIREMENT,
+                    (
+                        format!("aggregate field {}", field.name().unwrap_or("<anonymous>")),
+                        "a valid field type".into(),
+                        Some(format!("{}", _ty.display_with(&env.symbols))),
+                    ),
+                );
             }
 
             _ => (),
@@ -716,24 +723,24 @@ fn ensure_aggregate_move_restrictions(
         let name = field.name().unwrap_or("<anonymous>");
 
         if field_attributes.is_nodrop() && !aggregate_attributes.is_nodrop() {
-            return env.log_error_base(format!(
-                "Aggregate containing nodrop field '{}' must also be marked as @nodrop",
-                name
-            ));
+            return env.log_error_base(
+                &catalogue::FIELD_TRAIT,
+                (name.to_string(), "@nodrop field".into(), "@nodrop".into()),
+            );
         }
 
         if field_attributes.is_nocopy() && !aggregate_attributes.is_nocopy() {
-            return env.log_error_base(format!(
-                "Aggregate containing nocopy field '{}' must also be marked as @nodrop",
-                name
-            ));
+            return env.log_error_base(
+                &catalogue::FIELD_TRAIT,
+                (name.to_string(), "@nocopy field".into(), "@nocopy".into()),
+            );
         }
 
         if owned_unsafe_move(env, field_type) && !aggregate_unsafe_move {
-            return env.log_error_base(format!(
-                "Aggregate containing unsafe_move field '{}' must also be marked as @unsafe_move",
-                name
-            ));
+            return env.log_error_base(
+                &catalogue::FIELD_TRAIT,
+                (name.to_string(), "@unsafe_move field".into(), "@unsafe_move".into()),
+            );
         }
     }
 
@@ -784,7 +791,7 @@ fn type_contains_by_value(
 
 fn resolve_aggregate_move_attributes(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     attributes: Option<&HIRAggregateAttributes>,
 ) -> CXMaybeRawResult<THIRMoveSemantics> {
     let Some(attributes) = attributes else {
@@ -801,18 +808,15 @@ fn resolve_aggregate_move_attributes(
         let name = QualifiedName::new_raw(CXIdent::new(param_name.as_str()));
         let Some(symbol) = env
             .get_symbol(namespace, &name)
-            .map_err(CXMaybeRawErr::from)?
+            .map_err(CXErrorMaybeRaw::from)?
         else {
             return env
-                .log_error_base(format!(
-                    "copy_traits target '{}' is not a valid type",
-                    param_name
-                ))
+                .log_error_base(&catalogue::UNKNOWN_SYMBOL, param_name.into())
                 .map_err(|e| e.into());
         };
         let Some(id) = symbol.as_type_id() else {
             return env
-                .log_error_base(format!("copy_traits target '{}' is not a type", param_name))
+                .log_error_base(&catalogue::UNKNOWN_SYMBOL, param_name.into())
                 .map_err(|e| e.into());
         };
         let source_attributes = owned_move_attributes(env, env.symbols.resolve_type_id(id));
@@ -825,17 +829,18 @@ fn resolve_aggregate_move_attributes(
 
 fn complete_field(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     field: &HIRField,
 ) -> CXResult<THIRField> {
     match field {
         HIRField::Standard { name, _type } => {
             let id = complete_type_id(env, namespace, _type)?;
 
-            if !env.symbols.contains(id) {
+            if !env.symbols.contains_type_id(id) {
                 return env.log_error(
                     _type.range(),
-                    format!("Aggregate field '{}' has incomplete type", name),
+                    &catalogue::INCOMPLETE_TYPE,
+                    format!("{}", name),
                 );
             }
 
@@ -848,11 +853,12 @@ fn complete_field(
             width,
         } => {
             let id = complete_type_id(env, namespace, integer_type)?;
-            if !env.symbols.contains(id) {
+            if !env.symbols.contains_type_id(id) {
                 let name = name.as_deref().unwrap_or("<anonymous>");
                 return env.log_error(
                     integer_type.range(),
-                    format!("Bitfield '{}' has incomplete type", name),
+                    &catalogue::INCOMPLETE_TYPE,
+                    format!("{}", name),
                 );
             }
 
@@ -886,45 +892,5 @@ fn owned_unsafe_move(env: &TypeEnvironment, ty: &THIRType) -> bool {
             owned_unsafe_move(env, env.symbols.resolve_type_id(*inner_type))
         }
         _ => false,
-    }
-}
-
-fn completed_function_name(
-    env: &TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    kind: &HIRFunctionKind,
-    symbol_naming: HIRSymbolNameScheme,
-) -> CXResult<String> {
-    if symbol_naming == HIRSymbolNameScheme::Unmangled {
-        return Ok(kind.into_key().name.to_string());
-    }
-
-    let name = match kind {
-        HIRFunctionKind::Standard(name) => mangle_qualified_name(
-            env.symbols.get_global_registry(),
-            &QualifiedName::new(namespace.clone(), name.clone()),
-        ),
-        HIRFunctionKind::AssociatedFunction {
-            namespace: associated_namespace,
-            name,
-        } => cx_util::namespace::mangle_namespace_symbol(&QualifiedName::new(
-            namespace.child(associated_namespace.clone()),
-            name.clone(),
-        )),
-    };
-
-    Ok(name)
-}
-
-pub(crate) fn completed_symbol_name(
-    env: &TypeEnvironment,
-    name: QualifiedName,
-    symbol_naming: HIRSymbolNameScheme,
-) -> String {
-    match symbol_naming {
-        HIRSymbolNameScheme::Namespaced => {
-            mangle_qualified_name(env.symbols.get_global_registry(), &name)
-        }
-        HIRSymbolNameScheme::Unmangled => name.name.to_string(),
     }
 }

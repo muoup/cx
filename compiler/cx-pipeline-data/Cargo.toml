@@ -21,4 +21,6 @@ cx-thir = { path = "../cx-thir" }
 cx-mir = { path = "../cx-mir" }
 cx-lmir = { path = "../cx-lmir" }
 cx-target = { path = "../cx-target" }
+
 cx-util = { path = "../cx-util" }
+cx-namespace = { path = "../cx-namespace" }

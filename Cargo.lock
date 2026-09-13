@@ -353,6 +353,7 @@ name = "cx-lexer"
 version = "0.0.0"
 dependencies = [
  "cx-log",
+ "cx-namespace",
  "cx-pipeline-data",
  "cx-tokens",
  "cx-util",
@@ -362,6 +363,7 @@ dependencies = [
 name = "cx-lmir"
 version = "0.0.0"
 dependencies = [
+ "cx-namespace",
  "cx-target",
  "cx-util",
 ]
@@ -379,6 +381,7 @@ version = "0.0.0"
 dependencies = [
  "cx-lexer",
  "cx-log",
+ "cx-namespace",
  "cx-parsing",
  "cx-pipeline",
  "cx-pipeline-data",
@@ -394,6 +397,7 @@ name = "cx-mir"
 version = "0.1.0"
 dependencies = [
  "cx-hir",
+ "cx-log",
  "cx-target",
  "cx-tokens",
  "cx-util",
@@ -402,21 +406,21 @@ dependencies = [
 
 [[package]]
 name = "cx-mir-analysis"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "cx-hir",
+ "cx-log",
  "cx-mir",
  "cx-util",
 ]
 
 [[package]]
 name = "cx-mir-comptime"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "cx-log",
  "cx-mir",
  "cx-target",
- "cx-thir",
  "cx-tokens",
  "cx-util",
 ]
@@ -438,6 +442,7 @@ name = "cx-namespace"
 version = "0.0.0"
 dependencies = [
  "cx-util",
+ "speedy",
 ]
 
 [[package]]
@@ -468,6 +473,7 @@ dependencies = [
  "cx-mir",
  "cx-mir-analysis",
  "cx-mir-lowering",
+ "cx-namespace",
  "cx-parsing",
  "cx-pipeline-data",
  "cx-preparse-data",
@@ -488,6 +494,7 @@ dependencies = [
  "cx-lmir",
  "cx-log",
  "cx-mir",
+ "cx-namespace",
  "cx-preparse-data",
  "cx-target",
  "cx-thir",
@@ -502,6 +509,7 @@ dependencies = [
 name = "cx-preparse-data"
 version = "0.0.0"
 dependencies = [
+ "cx-namespace",
  "cx-util",
  "speedy",
 ]
@@ -524,6 +532,7 @@ version = "0.0.0"
 dependencies = [
  "cx-hir",
  "cx-log",
+ "cx-namespace",
  "cx-target",
  "cx-tokens",
  "cx-util",
@@ -533,12 +542,13 @@ dependencies = [
 
 [[package]]
 name = "cx-thir-lowering"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "cx-hir",
  "cx-log",
  "cx-mir",
  "cx-mir-comptime",
+ "cx-target",
  "cx-thir",
  "cx-tokens",
  "cx-util",
@@ -575,7 +585,7 @@ dependencies = [
 
 [[package]]
 name = "cx-zed-extension"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "zed_extension_api",
 ]

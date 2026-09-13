@@ -1,41 +1,41 @@
-use crate::error::context::{CXErrorContext, CXSourceSpan};
+use crate::error::context::{CXErrorContextTrait, CXSourceSpan};
 use crate::error::message::CXErrorMessage;
 
-pub struct CXErrMsg(pub Box<dyn CXErrorMessage>);
-pub type CXErrContext = Box<dyn CXErrorContext>;
+pub struct CXRawError(pub Box<dyn CXErrorMessage>, pub(crate) Vec<String>);
+pub type CXErrorContext = Box<dyn CXErrorContextTrait>;
 
-pub enum CXMaybeRawErr {
-    Raw(CXErrMsg),
-    Complete(CXErr),
+pub enum CXErrorMaybeRaw {
+    Raw(CXRawError),
+    Complete(CXError),
 }
 
-impl From<CXErrMsg> for CXMaybeRawErr {
-    fn from(value: CXErrMsg) -> Self {
+impl From<CXRawError> for CXErrorMaybeRaw {
+    fn from(value: CXRawError) -> Self {
         Self::Raw(value)
     }
 }
 
-impl From<CXErr> for CXMaybeRawErr {
-    fn from(value: CXErr) -> Self {
+impl From<CXError> for CXErrorMaybeRaw {
+    fn from(value: CXError) -> Self {
         Self::Complete(value)
     }
 }
 
-pub type CXResult<T> = Result<T, CXErr>;
-pub type CXRawResult<T> = Result<T, CXErrMsg>;
-pub type CXMaybeRawResult<T> = Result<T, CXMaybeRawErr>;
+pub type CXResult<T> = Result<T, CXError>;
+pub type CXRawResult<T> = Result<T, CXRawError>;
+pub type CXMaybeRawResult<T> = Result<T, CXErrorMaybeRaw>;
 
 pub mod context;
 pub mod message;
 
-pub struct CXErr {
-    error: CXErrMsg,
-    context: CXErrContext,
+pub struct CXError {
+    error: CXRawError,
+    context: CXErrorContext,
 }
 
-impl CXErr {
-    pub fn new(error: CXErrMsg, context: CXErrContext) -> Self {
-        CXErr { error, context }
+impl CXError {
+    pub fn new(error: CXRawError, context: CXErrorContext) -> Self {
+        CXError { error, context }
     }
 
     pub fn message(&self) -> String {
@@ -44,6 +44,10 @@ impl CXErr {
 
     pub fn code(&self) -> String {
         self.error.code()
+    }
+
+    pub fn notes(&self) -> &[String] {
+        &self.error.1
     }
 
     pub fn source_span(&self) -> Option<CXSourceSpan> {
@@ -56,12 +60,15 @@ impl CXErr {
     {
         self.error.0.dump(f)?;
         writeln!(f)?;
+        for note in self.notes() {
+            writeln!(f, "note: {note}")?;
+        }
         self.context.dump(f)?;
 
         Ok(())
     }
 
     pub fn print(&self) -> std::io::Result<()> {
-        self.output(&mut std::io::stdout())
+        self.output(&mut std::io::stderr().lock())
     }
 }

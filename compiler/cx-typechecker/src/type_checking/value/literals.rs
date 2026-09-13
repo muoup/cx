@@ -1,5 +1,6 @@
 use crate::{environment::TypeEnvironment, type_checking::result::TypecheckResult};
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
     expression::{THIRExpression, THIRExpressionKind},
@@ -45,10 +46,12 @@ pub(crate) fn typecheck_int_literal(
         .iter()
         .map(|name| env.get_intrinsic_type(name))
         .find(|candidate| integer_type_can_represent(candidate, magnitude));
+    
     let Some(literal_type) = literal_type else {
         return env.log_error(
             token_range,
-            format!("Integer literal {magnitude} does not fit any permitted type"),
+            &catalogue::INTEGER_LITERAL_RANGE,
+            ()
         );
     };
 
@@ -81,7 +84,8 @@ pub(crate) fn typecheck_float_literal(
     if suffix == FloatSuffix::LongDouble {
         return env.log_error(
             token_range,
-            "Long double literals are not supported by the current MIR".to_string(),
+            &catalogue::UNSUPPORTED_FEATURE,
+            "Long double literals".into()
         );
     }
 

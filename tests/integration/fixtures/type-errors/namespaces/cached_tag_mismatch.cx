@@ -1,0 +1,4 @@
+import _resolution_struct as imported;
+
+void first(struct imported::Local* value) {}
+void second(union imported::Local* value) {}

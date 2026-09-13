@@ -4,17 +4,19 @@
 //! into LSP diagnostics format.
 
 use crate::position::{byte_range, line_range};
+use cx_namespace::module::ModulePath;
 use cx_pipeline::LSPErrors;
 use cx_pipeline_data::config::CXProjectConfig;
 use cx_pipeline_data::{
-    ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, GlobalCompilationContext,
-    OptimizationLevel,
+    ArchitectureConfig, CompilationMode, CompilationUnit, CompilerBackend, CompilerConfig,
+    GlobalCompilationContext, OptimizationLevel,
 };
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tower_lsp::lsp_types::{
-    Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, Range, Url,
+    Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, NumberOrString, Range,
+    Url,
 };
 
 pub struct CheckReport {
@@ -63,13 +65,7 @@ fn load_project_settings(project_root: &Path) -> Result<ProjectSettings, String>
 }
 
 pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckReport, String> {
-    let unit_identifier = file_path
-        .strip_prefix(project_root)
-        .unwrap_or(file_path)
-        .to_string_lossy()
-        .to_string();
-
-    let unit = cx_pipeline_data::CompilationUnit::from_rooted(&unit_identifier, project_root);
+    let unit = CompilationUnit::new(project_root, ModulePath::new(file_path.to_path_buf()), None);
     let internal_directory = project_root.join(".internal").join("cx-lsp");
     let ProjectSettings {
         config,
@@ -88,6 +84,7 @@ pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckRepo
             module_mode: true,
             unsafe_mode: false,
             verbose: false,
+            dump: false,
 
             project_config: config,
             include_dirs,
@@ -145,6 +142,7 @@ fn lsp_error_to_diagnostic(error: &LSPErrors, file_contents: &str) -> Diagnostic
     match error {
         LSPErrors::SpannedError {
             compilation_unit,
+            code,
             message,
             byte_start,
             byte_end,
@@ -159,14 +157,21 @@ fn lsp_error_to_diagnostic(error: &LSPErrors, file_contents: &str) -> Diagnostic
             Diagnostic {
                 range,
                 severity: Some(DiagnosticSeverity::ERROR),
+                code: (!code.is_empty()).then(|| NumberOrString::String(code.clone())),
                 message: message.clone(),
                 related_information,
                 source: Some("cx".to_string()),
                 ..Default::default()
             }
         }
-        LSPErrors::FatalError { message, line, .. } => Diagnostic {
+        LSPErrors::FatalError {
+            code,
+            message,
+            line,
+            ..
+        } => Diagnostic {
             range: line_range(file_contents, *line),
+            code: (!code.is_empty()).then(|| NumberOrString::String(code.clone())),
             severity: Some(DiagnosticSeverity::ERROR),
             message: message.clone(),
             source: Some("cx".to_string()),

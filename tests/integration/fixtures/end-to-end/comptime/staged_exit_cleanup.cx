@@ -1,0 +1,53 @@
+#include <stdio.h>
+
+void trace(const char* text) {
+    printf("%s\n", text);
+}
+
+void trace_count(int count) {
+    printf("loop cleanup %d\n", count);
+}
+
+comptime expr void around(expr(int) void proc) {
+    return emit .{
+        defer trace("stage cleanup");
+        proc(1);
+        printf("stage suffix\n");
+    };
+}
+
+int returning() {
+    defer trace("caller cleanup");
+    around() <| |unused| .{
+        defer trace("callback cleanup");
+        return 7;
+    };
+    printf("caller suffix\n");
+    return 0;
+}
+
+comptime expr void ignore(expr(int) void proc) {
+    return emit .{};
+}
+
+int main() {
+    printf("returned %d\n", returning());
+    int count = 0;
+    while (count < 2) {
+        count += 1;
+        defer trace_count(count);
+        around() <| |unused| .{ continue; };
+        printf("loop suffix\n");
+    }
+    ignore() <| |unused| .{ return 1; };
+    printf("dropped return\n");
+    int yielded = match (1) {
+        0 => yield 0;
+        _ => {
+            around() <| |unused| .{ yield 9; };
+            yield 0;
+        }
+    };
+    printf("yielded %d\n", yielded);
+    return 0;
+}

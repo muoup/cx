@@ -1,0 +1,11 @@
+struct Item { int member; };
+
+int Item::read(Item& this) {
+    return this.member;
+}
+
+int call() {
+    Item item = { 7 };
+    int Item = 1;
+    return item |> Item::read();
+}

@@ -2,24 +2,36 @@ use std::{collections::HashMap, rc::Rc};
 
 use cx_mir::{
     MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID,
-    MIRFunctionMode, MIRInstr, MIRInstrKind, MIRPlace, MIRRegister, MIRScopeID, MIRStagedExitKind,
-    MIRTypeID, MIRValue,
+    MIRFunctionMode, MIRInstr, MIRInstrKind, MIRPlace, MIRRegister, MIRScopeID, MIRStagedCapture,
+    MIRStagedExitKind, MIRTypeID, MIRValue,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 #[derive(Debug)]
-pub(crate) struct FunctionBuilder {
+pub(crate) struct CaptureContext {
+    pub(crate) source_locals: HashMap<THIRLocalID, MIRValue>,
+    pub(crate) captures: Vec<(MIRStagedCapture, MIRValue)>,
+    pub(crate) params: Vec<MIRRegister>,
+    pub(crate) runtime_places: bool,
+}
+
+#[derive(Debug)]
+pub(crate) struct MIRFunctionBuilder {
     id: MIRFunctionID,
     prototype: MIRFnPrototype,
     mode: MIRFunctionMode,
+    pub(crate) outer_return_type: Option<MIRTypeID>,
+    pub(crate) outer_yield_type: Option<MIRTypeID>,
+    source_range: TokenRange,
 
     body: MIRBody,
     current_block: MIRBasicBlockID,
 
     local_values: HashMap<THIRLocalID, MIRValue>,
     labels: HashMap<String, MIRBasicBlockID>,
+    pub(crate) capture: Option<CaptureContext>,
 
     scope_stack: Vec<ScopeContext>,
 }
@@ -73,8 +85,8 @@ impl ScopeContext {
     }
 }
 
-impl FunctionBuilder {
-    pub(crate) fn new(func: MIRFunction) -> Self {
+impl MIRFunctionBuilder {
+    pub(crate) fn new(func: MIRFunction, parent: Option<&Self>) -> Self {
         let mut body = MIRBody::new();
         let entry = body.add_block();
         let root_scope = body.add_scope(TokenRange::internal());
@@ -83,11 +95,17 @@ impl FunctionBuilder {
             id: func.id(),
             mode: func.mode(),
             prototype: func.prototype().clone(),
+            outer_return_type: parent.and_then(|parent| parent.outer_return_type),
+            outer_yield_type: parent.and_then(|parent| parent.outer_yield_type),
+            source_range: parent
+                .map(|parent| parent.source_range.clone())
+                .unwrap_or_else(TokenRange::internal),
 
             current_block: entry,
 
             local_values: HashMap::new(),
             labels: HashMap::new(),
+            capture: None,
 
             scope_stack: vec![ScopeContext::new(root_scope)],
 
@@ -111,6 +129,18 @@ impl FunctionBuilder {
 
     pub fn id(&self) -> MIRFunctionID {
         self.id
+    }
+
+    pub(crate) fn set_source_range(&mut self, range: TokenRange) -> TokenRange {
+        std::mem::replace(&mut self.source_range, range)
+    }
+
+    pub(crate) fn restore_source_range(&mut self, range: TokenRange) {
+        self.source_range = range;
+    }
+
+    pub(crate) fn source_range(&self) -> &TokenRange {
+        &self.source_range
     }
 
     pub fn prototype(&self) -> &MIRFnPrototype {
@@ -163,6 +193,22 @@ impl FunctionBuilder {
             .instrs
             .last()
             .is_some_and(|instr| instr.is_terminator())
+    }
+
+    pub fn current_block_reachable(&self) -> bool {
+        let mut pending = vec![self.body.entry()];
+        let mut visited = std::collections::HashSet::new();
+        while let Some(block) = pending.pop() {
+            if block == self.current_block {
+                return true;
+            }
+            if visited.insert(block) {
+                if let Some(block) = self.body.block(block) {
+                    pending.extend(block.instrs.iter().flat_map(MIRInstr::successors));
+                }
+            }
+        }
+        false
     }
 
     pub fn current_block_terminated(&self) -> bool {
@@ -236,6 +282,14 @@ impl FunctionBuilder {
 
     pub fn locals(&self) -> HashMap<THIRLocalID, MIRValue> {
         self.local_values.clone()
+    }
+
+    pub(crate) fn take_capture(&mut self) -> Option<CaptureContext> {
+        self.capture.take()
+    }
+
+    pub(crate) fn set_capture(&mut self, capture: Option<CaptureContext>) {
+        self.capture = capture;
     }
 
     pub fn bind_local(&mut self, local: THIRLocalID, value: MIRValue) {
@@ -315,5 +369,9 @@ impl FunctionBuilder {
             }?;
             Some((scope.id(), block))
         })
+    }
+
+    pub fn scope_stack_mut(&mut self) -> &mut [ScopeContext] {
+        &mut self.scope_stack
     }
 }

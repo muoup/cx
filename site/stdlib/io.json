@@ -23,8 +23,7 @@
       "parameters": [
         {"name": "s", "type": "const _str&", "description": "The string to write."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     },
     {
       "name": "println",
@@ -33,8 +32,7 @@
       "parameters": [
         {"name": "s", "type": "const _str&", "description": "The string to write."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     },
     {
       "name": "print_char",
@@ -43,8 +41,7 @@
       "parameters": [
         {"name": "c", "type": "i32", "description": "The character value to write."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     }
   ]
 }

@@ -71,17 +71,7 @@ impl<'a> TokenIter<'a> {
         while let Some(token) = self.next() {
             match token.kind {
                 TokenKind::Punctuator(PunctuatorType::OpenBrace) => bracket_stack += 1,
-                TokenKind::Punctuator(PunctuatorType::CloseBrace) => {
-                    bracket_stack -= 1;
-
-                    if bracket_stack == 0 {
-                        if matches!(self.peek(), Some(t) if t.kind == TokenKind::Punctuator(PunctuatorType::Semicolon))
-                        {
-                            self.next();
-                        }
-                        break;
-                    }
-                }
+                TokenKind::Punctuator(PunctuatorType::CloseBrace) => bracket_stack -= 1,
                 TokenKind::Punctuator(PunctuatorType::Semicolon) if bracket_stack == 0 => break,
 
                 _ => (),

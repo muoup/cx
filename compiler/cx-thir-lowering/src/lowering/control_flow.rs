@@ -1,10 +1,7 @@
-use cx_log::{
-    CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
-};
+use cx_log::CXResult;
 use cx_mir::{
-    MIRBlockTarget, MIRConstant, MIRInstrKind, MIRScopeID, MIRStagedExitKind, MIRTypeKind,
-    MIRValue, ty::interface::MTRegistry,
+    MIRBlockTarget, MIRCoercion, MIRConstant, MIRInstrKind, MIRScopeID, MIRStagedExitKind,
+    MIRTypeKind, MIRValue, ty::interface::MTRegistry,
 };
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
@@ -15,10 +12,11 @@ use cx_thir::type_context::THIRTypeContext;
 
 use crate::{
     builder::MIRBuilder,
+    log::log_mir_error,
     lowering::{
         aggregates::{self, move_value},
         comptime, lower_expression, materialize_value,
-        types::lower_type,
+        types::{lower_int_type, lower_type},
     },
 };
 
@@ -34,29 +32,40 @@ pub fn lower_scoped(
 }
 
 pub fn auto_cleanup(builder: &mut MIRBuilder, to_scope: MIRScopeID) -> CXResult<()> {
-    let defers = builder
-        .fun()
-        .scope_stack()
-        .iter()
-        .rev()
-        .take_while(|scope| scope.id() != to_scope)
-        .flat_map(|scope| scope.deferred_expressions().iter().rev().cloned())
-        .collect::<Vec<_>>();
-
-    for defer in defers {
-        lower_expression(builder, defer.as_ref())?;
+    let mut pending = Vec::new();
+    for scope in builder.fun_mut().scope_stack_mut().iter_mut().rev() {
+        if scope.id() == to_scope {
+            break;
+        }
+        pending.push((scope.id(), std::mem::take(&mut scope.defered_expressions)));
     }
-
-    Ok(())
+    let result = (|| {
+        for (_, defers) in &pending {
+            for defer in defers.iter().rev() {
+                lower_expression(builder, defer.as_ref())?;
+            }
+        }
+        Ok(())
+    })();
+    for (id, defers) in pending {
+        if let Some(scope) = builder
+            .fun_mut()
+            .scope_stack_mut()
+            .iter_mut()
+            .find(|scope| scope.id() == id)
+        {
+            scope.defered_expressions = defers;
+        }
+    }
+    result
 }
 
 pub fn lower_control_exit(
     builder: &mut MIRBuilder<'_>,
     kind: MIRStagedExitKind,
-    staged: bool,
 ) -> CXResult<MIRValue> {
-    if staged {
-        assert!(builder.is_capturing());
+    let target = builder.fun().exit_target(kind);
+    if target.is_none() && builder.is_capturing() {
         let root_scope = builder
             .fun()
             .scope_stack()
@@ -68,8 +77,14 @@ pub fn lower_control_exit(
         return Ok(MIRValue::Constant(MIRConstant::Unit));
     }
 
-    let Some((scope, block)) = builder.fun().exit_target(kind) else {
-        unreachable!("control-flow expression has no target scope");
+    let Some((scope, block)) = target else {
+        return log_mir_error(
+            builder.source_range(),
+            (
+                &cx_log::catalogue::mir::MISSING_ENTITY,
+                ("control-flow target".into(), "MIR function".into()),
+            ),
+        );
     };
 
     auto_cleanup(builder, scope)?;
@@ -331,13 +346,13 @@ pub(super) fn lower_switch(
         let case_value = comptime::evaluate(builder, case)?;
 
         if !matches!(case_value, MIRConstant::Integer { .. }) {
-            return Err(CXErr::new(
-                CXStdErrMessage::error(
-                    "COMPTIME ERROR",
-                    "switch case expression must evaluate to an integer",
+            return log_mir_error(
+                &case.token_range,
+                (
+                    &cx_log::catalogue::mir::ENTITY_REQUIREMENT,
+                    ("switch case".into(), "an integer constant".into(), None),
                 ),
-                CXInternalContext::error("MIR switch case did not produce an integer constant"),
-            ));
+            );
         }
 
         targets.push((case_value, MIRBlockTarget::new(block)));
@@ -380,8 +395,6 @@ pub(super) fn lower_match(
     condition: &THIRExpression,
     subject: THIRLocalID,
     arms: &[(THIRPattern, Box<THIRExpression>)],
-    default: Option<&THIRExpression>,
-    exhaustive: bool,
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
     let subject_value = lower_expression(builder, condition)?;
@@ -396,8 +409,12 @@ pub(super) fn lower_match(
         variant_match && !matches!(condition._type.kind, THIRTypeKind::MemoryReference { .. });
 
     let subject_value = match (variant_match, consuming_subject) {
-        (false, _) => subject_value,
-        (true, true) => materialize_value(builder, move_value(subject_value)?, &condition._type)?,
+        (false, _) => materialize_value(builder, subject_value, &condition._type)?,
+        (true, true) => materialize_value(
+            builder,
+            move_value(subject_value, &condition.token_range)?,
+            &condition._type,
+        )?,
         (true, false) => materialize_value(builder, subject_value, &condition._type)?,
     };
 
@@ -406,12 +423,6 @@ pub(super) fn lower_match(
     let value_match = !matches!(builder.types().kind(result_type_id), Ok(MIRTypeKind::Void));
 
     let exit = builder.fun_mut().new_block("match.exit");
-    let synthetic_unreachable = default.is_none() && (exhaustive || value_match);
-    let default_block = default
-        .map(|_| builder.fun_mut().new_block("match.default"))
-        .or_else(|| synthetic_unreachable.then(|| builder.fun_mut().new_block("match.unreachable")))
-        .unwrap_or(exit);
-
     let yield_register = if value_match {
         Some(builder.fun_mut().set_yield_recipient(exit, result_type_id))
     } else {
@@ -423,11 +434,17 @@ pub(super) fn lower_match(
         blocks.push(builder.fun_mut().new_block("match.arm"));
     }
 
+    let binding_block = arms.iter().zip(&blocks).find_map(|((pattern, _), block)| {
+        matches!(pattern, THIRPattern::Binding { .. }).then_some(*block)
+    });
+    let default_block =
+        binding_block.unwrap_or_else(|| builder.fun_mut().new_block("match.unreachable"));
     let default_target = Some(MIRBlockTarget::new(default_block));
     if variant_match {
         let cases = arms
             .iter()
             .zip(&blocks)
+            .filter(|((pattern, _), _)| !matches!(pattern, THIRPattern::Binding { .. }))
             .map(|((pattern, _), block)| {
                 let THIRPattern::TaggedUnionVariant { variant_index, .. } = pattern else {
                     panic!("tagged-union match contains a non-variant pattern");
@@ -446,6 +463,7 @@ pub(super) fn lower_match(
         let cases = arms
             .iter()
             .zip(&blocks)
+            .filter(|((pattern, _), _)| !matches!(pattern, THIRPattern::Binding { .. }))
             .map(|((pattern, _), block)| {
                 (
                     aggregates::constant_from_pattern(pattern),
@@ -453,8 +471,45 @@ pub(super) fn lower_match(
                 )
             })
             .collect();
+        let mut value = if condition._type.is_memory_reference() {
+            MIRValue::Copy(super::memory::ensure_place(
+                builder,
+                subject_value.clone(),
+                &condition._type,
+            )?)
+        } else {
+            subject_value.clone()
+        };
+        let int_id = builder
+            .registry()
+            .intrinsic_type_id("int")
+            .expect("THIR registry is missing the intrinsic int type");
+        let int_type = builder.registry().resolve_type_id(int_id).clone();
+        if let (
+            THIRTypeKind::Integer {
+                _type: from,
+                signed,
+            },
+            THIRTypeKind::Integer { _type: to, .. },
+        ) = (&subject_type.kind, &int_type.kind)
+            && from.rank() < to.rank()
+        {
+            let to_type = lower_type(builder, &int_type)?;
+            let out = builder.fun_mut().new_register(to_type, None);
+            builder.emit(MIRInstrKind::Coerce {
+                out,
+                operand: value,
+                coercion: MIRCoercion::Integral {
+                    sign_extend: *signed,
+                    from: lower_int_type(*from),
+                    to: lower_int_type(*to),
+                },
+                to_type,
+            });
+            value = MIRValue::Register(out);
+        }
         builder.emit(MIRInstrKind::IntSwitch {
-            value: subject_value.clone(),
+            value,
             cases,
             default: default_target,
         });
@@ -488,24 +543,7 @@ pub(super) fn lower_match(
         });
     }
 
-    if let Some(default) = default {
-        builder.fun_mut().set_current_block(default_block);
-        let default_value = lower_scoped(builder, default)?;
-        if !builder.fun().current_block_terminated() {
-            builder.emit(MIRInstrKind::Jump {
-                target: MIRBlockTarget::with_args(
-                    exit,
-                    if value_match {
-                        vec![default_value]
-                    } else {
-                        Vec::new()
-                    },
-                ),
-            });
-        }
-    }
-
-    if synthetic_unreachable {
+    if binding_block.is_none() {
         builder.fun_mut().set_current_block(default_block);
         builder.emit(MIRInstrKind::Unreachable);
     }

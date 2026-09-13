@@ -2,11 +2,11 @@ use cx_log::CXResult;
 use std::sync::Arc;
 
 use cx_mir::{
-    MIRCallKind, MIRConstant, MIRField, MIRFunctionID, MIRFunctionMode, MIRInstrKind, MIRValue,
+    MIRCallKind, MIRConstant, MIRField, MIRFunctionID, MIRFunctionMode, MIRInstrKind,
+    MIRStagedTemplate, MIRValue,
 };
 use cx_mir_comptime::{
-    InterpretedFunction, MIRComptimeEngine, MIRComptimeValue, MIRStagedBinding, MIRStagedValue,
-    context::MIRContext,
+    MIRComptimeValue, MIRStagedBinding, MIRStagedValue, evaluate_comptime_function,
 };
 use cx_thir::thir::expression::THIRFnContract;
 use cx_thir::thir::{
@@ -16,8 +16,10 @@ use cx_thir::thir::{
 };
 use cx_thir::type_context::THIRTypeContext;
 
+use crate::lowering::comptime::evaluate_comptime_expr;
 use crate::lowering::control_flow::auto_pop_scope;
 use crate::lowering::lower_expression;
+use crate::lowering::staged::instantiate;
 use crate::{
     builder::MIRBuilder,
     lowering::types::{lower_type, lower_type_id},
@@ -44,7 +46,13 @@ pub(super) fn lower_call(
             let ty = lower_type(builder, result_type)?;
             Some(builder.fun_mut().new_register(ty, None))
         };
-        builder.emit(MIRInstrKind::ApplyStaged { out, staged, args });
+        let targets = crate::lowering::staged::exits::targets(builder)?;
+        builder.emit(MIRInstrKind::ApplyStaged {
+            out,
+            staged,
+            args,
+            targets,
+        });
         return Ok(out
             .map(MIRValue::Register)
             .unwrap_or(MIRValue::Constant(MIRConstant::Unit)));
@@ -102,7 +110,10 @@ pub(super) fn lower_call(
         .registry()
         .intern_signature(&function._type)
         .is_some_and(|signature| signature.return_type.is_unreachable());
-    if contract.noreturn || unreachable_return {
+    if contract.noreturn
+        || unreachable_return
+        || matches!(&function.kind, THIRExpressionKind::FunctionReference { name, .. } if name.as_str() == "exit")
+    {
         builder.emit(MIRInstrKind::Unreachable);
     }
     let value = out
@@ -145,7 +156,7 @@ fn lower_comptime_call(
     arguments: &[THIRExpression],
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
-    if builder.fun().mode() == MIRFunctionMode::Comptime {
+    if builder.is_capturing() || builder.fun().mode() == MIRFunctionMode::Comptime {
         let mut args = Vec::with_capacity(arguments.len());
         for (argument, parameter) in arguments.iter().zip(&signature.params) {
             if parameter.staged_params.is_some() {
@@ -158,7 +169,9 @@ fn lower_comptime_call(
                 args.push(lower_expression(builder, argument)?);
             }
         }
-        let out = if result_type.is_void() || result_type.is_unreachable() {
+        let out = if (result_type.is_void() || result_type.is_unreachable())
+            && signature.return_staged_params.is_none()
+        {
             None
         } else {
             let ty = lower_type(builder, result_type)?;
@@ -170,6 +183,15 @@ fn lower_comptime_call(
             callee: MIRValue::Constant(MIRConstant::Function(function)),
             args,
         });
+        if builder.is_capturing() && signature.return_staged_params.is_some() {
+            if let Some(out) = out {
+                let targets = super::staged::exits::targets(builder)?;
+                builder.emit(MIRInstrKind::StagedUse {
+                    value: MIRValue::Register(out),
+                    targets,
+                });
+            }
+        }
         return Ok(out
             .map(MIRValue::Register)
             .unwrap_or(MIRValue::Constant(MIRConstant::Unit)));
@@ -189,31 +211,20 @@ fn lower_comptime_call(
                 runtime_origin,
             ))));
         } else {
-            let value = lower_expression(builder, argument)?;
-            let MIRValue::Constant(value) = value else {
-                return builder.log_error(
-                    argument.token_range.clone(),
-                    "non-staged comptime arguments must currently be constants",
-                );
-            };
-            args.push(MIRComptimeValue::Constant(value));
+            let value = evaluate_comptime_expr(builder, argument)?;
+            
+            args.push(value);
         }
     }
 
-    let value = {
-        let function = builder
-            .module()
-            .function(function)
-            .expect("resolved comptime function exists");
-        let entry = InterpretedFunction::new(function)
-            .expect("comptime function has an MIR definition before runtime lowering");
-        let mut engine = MIRComptimeEngine::new(builder.module());
-        engine.run_values(entry, &args)?
-    };
+    let function = builder
+        .module()
+        .function(function)
+        .expect("resolved comptime function exists");
 
-    match value {
+    match evaluate_comptime_function(builder, function, &args)? {
         MIRComptimeValue::Constant(value) => Ok(MIRValue::Constant(value)),
-        MIRComptimeValue::Staged(value) => super::staged::instantiate(builder, &value),
+        MIRComptimeValue::Staged(value) => instantiate(builder, &value),
     }
 }
 
@@ -236,14 +247,15 @@ fn capture_staged_argument(
     builder: &mut MIRBuilder<'_>,
     argument: &THIRExpression,
     diverges: bool,
-) -> CXResult<(Arc<cx_mir::MIRStagedTemplate>, Vec<MIRValue>)> {
+) -> CXResult<(Arc<MIRStagedTemplate>, Vec<MIRValue>)> {
     match &argument.kind {
-        THIRExpressionKind::StagedExpression { params, body } => {
-            let params = params
+        THIRExpressionKind::StagedExpression(staged) => {
+            let params = staged
+                .params()
                 .iter()
-                .map(|(_, local, ty)| (*local, ty))
+                .map(|parameter| (parameter.local_id, &parameter.ty))
                 .collect::<Vec<_>>();
-            builder.capture_staged(body, &params, Some(diverges))
+            builder.capture_staged(staged.expr(), &params, Some(diverges))
         }
         THIRExpressionKind::Variable { local_id, .. } => {
             let _ = builder.local_value(*local_id, &argument._type)?;
@@ -253,10 +265,7 @@ fn capture_staged_argument(
     }
 }
 
-pub fn lower_field(
-    builder: &mut MIRBuilder,
-    field: &cx_thir::thir::r#type::THIRField,
-) -> cx_log::CXResult<MIRField> {
+pub fn lower_field(builder: &mut MIRBuilder, field: &THIRField) -> CXResult<MIRField> {
     match field {
         THIRField::Standard { name, type_id } => Ok(MIRField::named(
             name.clone(),

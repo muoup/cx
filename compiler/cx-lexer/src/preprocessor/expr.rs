@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use cx_log::CXResult;
+use cx_log::catalogue::parse::EVAL_EXPRESSION;
 use cx_tokens::token::{OperatorType, PunctuatorType, Token, TokenKind};
 
 use crate::{
@@ -26,10 +27,9 @@ pub(crate) fn eval(
 
     match parser.parse_expression() {
         Some(value) => Ok(value != 0),
-        None => frame.cursor_view().log_error(
-            directive_start,
-            "Failed to evaluate preprocessor expression",
-        ),
+        None => frame
+            .cursor_view()
+            .log_error(directive_start, &EVAL_EXPRESSION, ()),
     }
 }
 
