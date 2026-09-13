@@ -226,9 +226,6 @@ fn write_global<T: MTRegistry>(
             match &state {
                 MIRGlobalState::External => f.write_str(";")?,
                 MIRGlobalState::ZeroInitialized => f.write_str(" = zero;")?,
-                MIRGlobalState::Initializer(function) => {
-                    write!(f, " = comptime initializer {function};")?;
-                }
                 MIRGlobalState::Initialized(value) => {
                     f.write_str(" = ")?;
                     write_constant(f, unit, value)?;

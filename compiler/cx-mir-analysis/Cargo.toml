@@ -1,9 +1,10 @@
 [package]
 name = "cx-mir-analysis"
-version = "0.1.0"
+version = "0.0.0"
 edition = "2024"
 
 [dependencies]
+cx-log = { path = "../cx-log" }
 cx-mir = { path = "../cx-mir" }
 
 [dev-dependencies]

@@ -34,7 +34,7 @@ void print_output(Output out) {
         Output::fp(d) => printf("Float: %f\n", d);
         Output::string(s) => printf("String: %s\n", s);
         Output::data(data) => printf("Data: a=%d, b=%f, c=%c\n", data.a, data.b, data.c);
-        default => printf("Unknown type\n");
+        Output::error() => printf("Unknown type\n");
     }
 }
 

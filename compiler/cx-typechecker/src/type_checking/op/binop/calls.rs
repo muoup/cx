@@ -12,10 +12,9 @@ use crate::type_checking::staged_expr::into_expression as staged_into_expression
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
-use cx_thir::EnvironmentNamespace;
-use cx_thir::thir::data::{
-    THIRComptimeFnPrototype, THIRFloatType, THIRFnSignature, THIRType, THIRTypeKind,
-};
+use cx_log::catalogue::typecheck as catalogue;
+use cx_namespace::module::NamespacePath;
+use cx_thir::thir::data::{THIRFloatType, THIRFnSignature, THIRType, THIRTypeKind};
 use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind, THIRFnContract};
 use cx_thir::type_context::THIRTypeContext;
 use cx_tokens::TokenRange;
@@ -24,7 +23,7 @@ use cx_util::identifier::CXIdent;
 enum CompletedCallee {
     Runtime(THIRExpression),
     Staged(StagedTC),
-    Comptime(THIRComptimeFnPrototype),
+    Comptime(ComptimeFunctionTC),
 }
 
 pub const BUILTIN_FNS: &[&str] = &[
@@ -38,7 +37,7 @@ pub const BUILTIN_FNS: &[&str] = &[
 
 pub(crate) fn typecheck_method_call(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     lhs: &HIRExpression,
     rhs: &HIRExpression,
     expr: &HIRExpression,
@@ -69,7 +68,7 @@ pub(crate) fn typecheck_method_call(
 
 fn typecheck_internal_method_call(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     name: &str,
     rhs: &HIRExpression,
     expr: &HIRExpression,
@@ -80,7 +79,8 @@ fn typecheck_internal_method_call(
     if args.len() != expected {
         return env.log_error(
             expr.token_range(),
-            format!("{name} expects {expected} arguments, found {}", args.len()),
+            &catalogue::ARGUMENT_COUNT,
+            (format!("{}", name), expected, args.len(), false),
         );
     }
 
@@ -108,7 +108,7 @@ fn typecheck_internal_method_call(
 
 pub(crate) fn typecheck_va_list(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
 ) -> CXResult<THIRExpression> {
     let list = typecheck_expr(env, namespace, expr, None)?
@@ -122,10 +122,12 @@ pub(crate) fn typecheck_va_list(
     if !compatible::compatible_types(env, actual, &expected)? {
         return env.log_error(
             expr.token_range(),
-            format!(
-                "expected va_list, found {}",
-                list._type.display_with(&env.symbols)
-            ),
+            &catalogue::TYPE_MISMATCH,
+            (
+                "va_list expression".into(),
+                format!("{}", expected.display_with(&env.symbols)),
+                format!("{}", actual.display_with(&env.symbols)),
+            )
         );
     }
     Ok(list)
@@ -133,7 +135,7 @@ pub(crate) fn typecheck_va_list(
 
 pub(crate) fn typecheck_callee_call(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     callee: TypecheckResult,
     implicit_args: Vec<THIRExpression>,
     rhs: &HIRExpression,
@@ -143,7 +145,6 @@ pub(crate) fn typecheck_callee_call(
     let raw_args = comma_separated_exprs(rhs);
     let tc_args = if matches!(&callee, TypecheckResult::IncompleteTemplate(_)) {
         env.in_staged(|env| typecheck_args(env, namespace, raw_args.as_slice()))?
-            .0
     } else {
         Vec::new()
     };
@@ -201,7 +202,7 @@ pub(crate) fn typecheck_callee_call(
 
 fn typecheck_args<'a>(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     args: &[&'a HIRExpression],
 ) -> CXResult<Vec<(&'a HIRExpression, TypecheckResult)>> {
     args.iter()
@@ -224,10 +225,12 @@ fn load_callable(
     else {
         return env.log_error(
             expr.token_range(),
-            format!(
-                "Attempted to call value of non-function type {}",
-                function_type.display_with(&env.symbols)
-            ),
+            &catalogue::TYPE_MISMATCH,
+            (
+                "call expression".into(),
+                "callable type".into(),
+                format!("{}", function_type.display_with(&env.symbols)),
+            )
         );
     };
 
@@ -240,26 +243,17 @@ fn check_argument_count(
     signature: &THIRFnSignature,
     arg_count: usize,
 ) -> CXResult<()> {
-    if arg_count != signature.params.len() && !signature.var_args {
+    if arg_count != signature.params.len() && !signature.var_args 
+        || arg_count < signature.params.len()
+    {
         return env.log_error(
             expr.token_range(),
-            format!(
-                "Call to {} expects {} arguments, found {}",
-                signature.display_with(&env.symbols),
+            &catalogue::ARGUMENT_COUNT,
+            (
+                "Function".into(),
                 signature.params.len(),
-                arg_count
-            ),
-        );
-    }
-
-    if arg_count < signature.params.len() {
-        return env.log_error(
-            expr.token_range(),
-            format!(
-                "Call to {} expects at least {} arguments, found {}",
-                signature.display_with(&env.symbols),
-                signature.params.len(),
-                arg_count
+                arg_count,
+                signature.var_args,
             ),
         );
     }
@@ -308,16 +302,20 @@ fn complete_vararg_argument(
                 .into(),
             )?;
         }
+        
         THIRTypeKind::Float {
             _type: THIRFloatType::F64,
         } => {}
+        
         _ => {
             return env.log_error(
                 expr.token_range(),
-                format!(
-                    "Cannot pass {} to varargs: expected an intrinsic type or pointer",
-                    arg_type.display_with(&env.symbols)
-                ),
+                &catalogue::TYPE_MISMATCH,
+                (
+                    "vararg argument".into(),
+                    "arithmetic type".into(),
+                    format!("{}", arg_type.display_with(&env.symbols)),
+                )
             );
         }
     }
@@ -327,7 +325,7 @@ fn complete_vararg_argument(
 
 fn complete_call_arguments(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     signature: &THIRFnSignature,
     args: Vec<TypecheckResult>,
 ) -> CXResult<Vec<TypecheckResult>> {
@@ -366,7 +364,7 @@ fn coerce_call_arguments(
 
 fn complete_callee(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     function: TypecheckResult,
     implicit_args: &[THIRExpression],
@@ -395,7 +393,7 @@ fn complete_callee(
             };
 
             TypecheckResult::from_symbol(symbol, parts.name, parts.template_input)
-                .map_err(|err| env.error(expr.token_range(), err.message().to_string()))?
+                .map_err(|err| env.complete_err(err, expr.token_range()))?
         }
         result => result,
     };
@@ -407,36 +405,56 @@ fn complete_callee(
         TypecheckResult::Ready(TypecheckedExpr::Staged(value)) => {
             Ok(CompletedCallee::Staged(value))
         }
-        TypecheckResult::Ready(TypecheckedExpr::ComptimeFunction(ComptimeFunctionTC {
-            prototype,
-        })) => Ok(CompletedCallee::Comptime(
-            prototype.with_runtime_return_type(env.materialization_return_type()),
-        )),
+        TypecheckResult::Ready(TypecheckedExpr::ComptimeFunction(function)) => {
+            Ok(CompletedCallee::Comptime(function))
+        }
         TypecheckResult::IncompleteTemplate(_)
         | TypecheckResult::NeedsExpectedType(_)
-        | TypecheckResult::NeedsStagedType(_) => {
-            env.log_error(expr.token_range(), "Could not deduce callee".to_string())
-        }
+        | TypecheckResult::NeedsStagedType(_) => env.log_error(
+            expr.token_range(),
+            &catalogue::TEMPLATE_DEDUCTION,
+            "expression".into(),
+        ),
     }
 }
 
 fn complete_comptime_call(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
-    prototype: THIRComptimeFnPrototype,
+    function: ComptimeFunctionTC,
     implicit_args: &[THIRExpression],
     raw_args: Vec<&HIRExpression>,
 ) -> CXResult<TypecheckResult> {
+    let ComptimeFunctionTC {
+        mut prototype,
+        input,
+    } = function;
+    let context = env.staging_context();
+    prototype.map_symbol_name(|name| {
+        cx_thir::thir::name_mangling::mangle_comptime_context(
+            &env.symbols,
+            name.to_owned(),
+            context.return_type.as_ref(),
+            context.yield_type.as_ref(),
+        )
+    });
+    env.items
+        .push_request(crate::environment::THIRFunctionGenRequest::Comptime {
+            prototype: prototype.clone(),
+            input,
+            context,
+        });
     let total = implicit_args.len() + raw_args.len();
     if total != prototype.params().len() {
         return env.log_error(
             expr.token_range(),
-            format!(
-                "Call to comptime function {} expects {} arguments, found {}",
-                prototype.pretty_name(),
+            &catalogue::ARGUMENT_COUNT,
+            (
+                prototype.pretty_name().into(),
                 prototype.params().len(),
-                total
+                total,
+                false
             ),
         );
     }
@@ -465,13 +483,20 @@ fn complete_comptime_call(
         if value_type.expr && !value_type.params.is_empty() {
             let result = typecheck_expr(env, namespace, argument, None)?
                 .apply_staged_type(env, namespace, value_type)?;
+            
             let TypecheckResult::Ready(TypecheckedExpr::Staged(StagedTC::Literal(staged))) = result
             else {
                 return env.log_error(
                     argument.token_range(),
-                    "Expected a parameterized staged expression".to_string(),
+                    &catalogue::TYPE_MISMATCH,
+                    (
+                        "staged typed argument".into(),
+                        "staged expression".into(),
+                        "non-staged expression".into()
+                    )
                 );
             };
+            
             arguments.push(staged_into_expression(staged));
             continue;
         }
@@ -484,7 +509,7 @@ fn complete_comptime_call(
                 Some(target_type)
             };
         if value_type.expr {
-            let (result, _) = env.in_staged(|env| {
+            let result = env.in_staged(|env| {
                 let result = typecheck_expr(env, namespace, argument, expected_type)?;
                 let result = if let Some(expected_type) = expected_type {
                     result.apply_expected_type(env, namespace, expected_type)?
@@ -542,14 +567,13 @@ fn complete_comptime_call(
 
 fn complete_staged_call(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     staged: StagedTC,
     raw_args: Vec<&HIRExpression>,
 ) -> CXResult<TypecheckResult> {
     let (callee, params, return_type) = match staged {
         StagedTC::Literal(staged) => {
-            env.apply_staged_effects(staged.effects(), expr.token_range())?;
             let params = staged
                 .params()
                 .iter()
@@ -568,10 +592,12 @@ fn complete_staged_call(
     if raw_args.len() != params.len() {
         return env.log_error(
             expr.token_range(),
-            format!(
-                "Staged expression expects {} arguments, found {}",
-                params.len(),
-                raw_args.len()
+            &catalogue::ARGUMENT_COUNT,
+            (
+                "staged expression".into(),
+                params.len(), 
+                raw_args.len(),
+                false
             ),
         );
     }

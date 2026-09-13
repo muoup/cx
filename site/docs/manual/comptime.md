@@ -29,7 +29,7 @@ comptime expr T opt::try(expr opt<T> this) {
     return emit match (move this) {
         opt::some(val) => val;
         opt::none => return opt::none();
-    };exposed
+    };
 }
 ```
 
@@ -40,19 +40,11 @@ std::opt<int> parse_integer(const str&_ input) { ... }
 
 int i = parse_integer(string)
     |> std::opt::try();
-
-// or equivalently,
-
-int i = std::opt::try(parse_integer(string));
 ```
 
 For a more technical explanation, expressions are lowered eagerly to derive their value-producing semantic instructions which are implicitly inserted into the function body. 'emit' defers this, allowing the compiler to lower the expression and store its semantic instructions separately in a 'templated'-like form, only inserted into the function body at materialization point -- i.e. where the compiler lowers a staged expression, either through a variable reference or directly as an rvalue. This enables staged expressions to defer things like the target of a break/continue expression as well so that it properly aligns with the context in which the instructions are inserted.
 
 In the future, runtime functions will be able to store comptime variables and as such will need to use the 'emit' operator to stage the initialization rather than evaluate it directly to a value. This however is to-be-implemented.
-
-```cx
-
-```
 
 ## Block Expressions
 
@@ -112,9 +104,9 @@ resource_handle |> with_resource() <| |resource| {
 The main use-case for the 'then' keyword is to avoid excess indentation. If the example say was:
 
 ```cx
-resource_handle1 |> with_resource() <| |resource1|
-resource_handle2 |> with_resource() <| |resource2|
-resource_handle3 |> with_resource() <| |resource3|
+resource_handle1 |> with_resource() <| |resource1| then
+resource_handle2 |> with_resource() <| |resource2| then
+resource_handle3 |> with_resource() <| |resource3| then
 
 action1(resource1, resource2);
 action2(resource3, resource1);

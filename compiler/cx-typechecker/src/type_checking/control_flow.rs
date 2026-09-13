@@ -12,13 +12,12 @@ pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
     match &expr.kind {
         THIRExpressionKind::Return { .. }
         | THIRExpressionKind::Yield { .. }
-        | THIRExpressionKind::Break { .. }
-        | THIRExpressionKind::Continue { .. }
+        | THIRExpressionKind::Break
+        | THIRExpressionKind::Continue
         | THIRExpressionKind::Unreachable => false,
         THIRExpressionKind::Goto { .. } => true,
         THIRExpressionKind::Label { statement, .. } => expr_may_fall_through(statement),
         THIRExpressionKind::Unsafe { expression, .. } => expr_may_fall_through(expression),
-        THIRExpressionKind::StagedExpression(staged) => expr_may_fall_through(staged.expr()),
         THIRExpressionKind::Block { statements, .. } => {
             statements.last().map(expr_may_fall_through).unwrap_or(true)
         }
@@ -42,30 +41,13 @@ pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
                     .map(|branch| expr_may_fall_through(branch))
                     .unwrap_or(true)
         }
-        THIRExpressionKind::Match {
-            arms,
-            default,
-            exhaustive,
-            ..
-        } => {
+        THIRExpressionKind::Match { arms, .. } => {
             arms.iter().any(|(_, branch)| expr_may_fall_through(branch))
-                || default
-                    .as_ref()
-                    .map(|branch| expr_may_fall_through(branch))
-                    .unwrap_or(!exhaustive)
         }
         THIRExpressionKind::CallFunction {
-            function,
-            arguments,
-            contract,
+            function, contract, ..
         } => {
             !contract.noreturn
-                && arguments.iter().all(|argument| match &argument.kind {
-                    THIRExpressionKind::StagedExpression(staged) => {
-                        expr_may_fall_through(staged.expr())
-                    }
-                    _ => true,
-                })
                 && !matches!(
                     &function.kind,
                     THIRExpressionKind::FunctionReference { name, .. }

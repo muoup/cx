@@ -4,8 +4,9 @@ use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use std::collections::HashMap;
 
 pub mod compiler_functions;
-mod format;
 pub mod types;
+
+mod format;
 
 pub type LMIRFunctionMap = HashMap<String, LMIRFunctionPrototype>;
 

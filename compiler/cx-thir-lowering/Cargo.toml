@@ -1,6 +1,6 @@
 [package]
 name = "cx-thir-lowering"
-version = "0.1.0"
+version = "0.0.0"
 edition = "2024"
 
 [dependencies]
@@ -11,3 +11,4 @@ cx-mir-comptime = { path = "../cx-mir-comptime" }
 cx-thir = { path = "../cx-thir" }
 cx-util = { path = "../cx-util" }
 cx-tokens = { path = "../cx-tokens" }
+cx-target = { path = "../cx-target" }

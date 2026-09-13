@@ -8,11 +8,9 @@ mod staged;
 pub(crate) mod aggregates;
 pub(crate) mod globals;
 pub(crate) mod types;
+pub(crate) mod capture;
 
-use cx_log::{
-    CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
-};
+use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
     MIRAggregateOp, MIRAssignTarget, MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstrKind,
     MIRIntType, MIRParameterID, MIRPlace, MIRPlaceAggregateOp, MIRStagedExitKind, MIRTypeKind,
@@ -28,14 +26,17 @@ use cx_thir::{
     type_context::THIRTypeContext,
 };
 
-use crate::lowering::{
-    aggregates::move_value,
-    control_flow::{auto_cleanup, auto_pop_scope, lower_control_exit},
-    types::lower_float_type,
-};
 use crate::{
     builder::{MIRBuilder, integer_type},
     lowering::types::lower_type,
+};
+use crate::{
+    log::{log_mir_error, mir_error},
+    lowering::{
+        aggregates::move_value,
+        control_flow::{auto_cleanup, auto_pop_scope, lower_control_exit},
+        types::lower_float_type,
+    },
 };
 
 pub(crate) fn lower_function(
@@ -48,6 +49,9 @@ pub(crate) fn lower_function(
     };
 
     builder.start_function(id);
+
+    builder.fun_mut().outer_return_type = Some(builder.fun().prototype().signature.return_type);
+    builder.fun_mut().outer_yield_type = None;
 
     for (index, parameter) in function.prototype.signature().params.iter().enumerate() {
         let place = MIRPlace::Parameter(MIRParameterID::new(index));
@@ -71,6 +75,19 @@ pub(crate) fn lower_function(
         ) {
             builder.emit(MIRInstrKind::Return { value: None });
         } else {
+            if function.require_explicit_return
+                && !function.prototype.signature().return_type.is_unreachable()
+                && builder.fun().current_block_reachable()
+            {
+                return log_mir_error(
+                    &body.token_range,
+                    (
+                        &mir::FUNCTION_RETURN,
+                        function.prototype.pretty_name().to_string(),
+                    ),
+                );
+            }
+
             builder.emit(MIRInstrKind::Unreachable);
         }
     }
@@ -90,6 +107,18 @@ pub(crate) fn lower_comptime_function(
 
     builder.start_function(id);
     builder.fun_mut().push_scope(body.token_range.clone());
+    builder.fun_mut().outer_return_type = function
+        .context
+        .return_type
+        .as_ref()
+        .map(|ty| lower_type(builder, ty))
+        .transpose()?;
+    builder.fun_mut().outer_yield_type = function
+        .context
+        .yield_type
+        .as_ref()
+        .map(|ty| lower_type(builder, ty))
+        .transpose()?;
 
     for (index, parameter) in function.prototype.params().iter().enumerate() {
         let value = MIRValue::PlaceRef(MIRPlace::Parameter(cx_mir::MIRParameterID::new(index)));
@@ -185,14 +214,9 @@ pub(crate) fn lower_expression(
                 let type_id = lower_type(builder, _type)?;
                 let layout =
                     cx_mir::ty::layout::layout_of(builder.types(), type_id).map_err(|error| {
-                        cx_log::error::CXErr::new(
-                            cx_log::error::message::CXStdErrMessage::error(
-                                "MIRLayoutError",
-                                error.to_string(),
-                            ),
-                            cx_log::error::context::CXInternalContext::error(
-                                "failed to calculate type layout during MIR lowering",
-                            ),
+                        cx_log::error::CXError::new(
+                            cx_mir::layout_error(error),
+                            cx_log::error::context::from_token_range(&expression.token_range),
                         )
                     })?;
                 MIRValue::Constant(MIRConstant::Integer {
@@ -210,21 +234,19 @@ pub(crate) fn lower_expression(
                 let value = builder
                     .local_value(*local_id, &expression._type)?
                     .ok_or_else(|| {
-                        CXErr::new(
-                            CXStdErrMessage::error(
-                                "MIR ERROR",
-                                format!("could not find local id {:?}", local_id),
-                            ),
-                            CXInternalContext::error(
-                                "runtime local is unavailable in an thir lowering context",
+                        mir_error(
+                            &expression.token_range,
+                            (
+                                &mir::MISSING_ENTITY,
+                                (format!("local {:?}", local_id), "MIR lowering context".into()),
                             ),
                         )
                     })?;
                 if builder.is_capturing()
-                    && (expression._type.is_void() || expression._type.is_unreachable())
                     && matches!(value, MIRValue::Register(_))
+                    && !matches!(expression._type.kind, THIRTypeKind::Undefined)
                 {
-                    let targets = builder.fun().staged_targets();
+                    let targets = crate::lowering::staged::exits::targets(builder)?;
                     builder.emit(MIRInstrKind::StagedUse {
                         value: value.clone(),
                         targets,
@@ -238,12 +260,12 @@ pub(crate) fn lower_expression(
                     .module_mut()
                     .global_symbol(symbol.as_str())
                     .ok_or_else(|| {
-                        CXErr::new(
-                            CXStdErrMessage::error(
-                                "MissingGlobalVariable",
-                                format!("global variable '{}' not found", symbol),
+                        mir_error(
+                            &expression.token_range,
+                            (
+                                &mir::MISSING_ENTITY,
+                                (format!("global '{symbol}'"), "MIR lowering context".into()),
                             ),
-                            CXInternalContext::error("failed to lower global variable reference"),
                         )
                     })?,
             )),
@@ -267,12 +289,12 @@ pub(crate) fn lower_expression(
                 .module_mut()
                 .function_symbol(name.as_str())
                 .ok_or_else(|| {
-                    CXErr::new(
-                        CXStdErrMessage::error(
-                            "MissingFunction",
-                            format!("function '{}' not found", name),
+                    mir_error(
+                        &expression.token_range,
+                        (
+                            &mir::MISSING_ENTITY,
+                            (format!("function '{name}'"), "MIR lowering context".into()),
                         ),
-                        CXInternalContext::error("failed to lower function reference"),
                     )
                 })
                 .map(|v| MIRValue::Constant(MIRConstant::Function(v)))?,
@@ -356,12 +378,12 @@ pub(crate) fn lower_expression(
                 let value = builder
                     .local_value(*local_id, &expression._type)?
                     .ok_or_else(|| {
-                        CXErr::new(
-                            CXStdErrMessage::error(
-                                "COMPTIME ERROR",
-                                "expression depends on a runtime local",
+                        mir_error(
+                            &expression.token_range,
+                            (
+                                &mir::INVALID_CONTEXT,
+                                ("runtime local".into(), "comptime evaluation".into()),
                             ),
-                            CXInternalContext::error("THIRExpressionKind::Move"),
                         )
                     })?;
                 if builder.is_capturing() && matches!(value, MIRValue::Register(_)) {
@@ -370,7 +392,7 @@ pub(crate) fn lower_expression(
                     builder.emit(MIRInstrKind::StagedMove { out, value });
                     MIRValue::Register(out)
                 } else {
-                    move_value(value)?
+                    move_value(value, &expression.token_range)?
                 }
             }
 
@@ -709,19 +731,10 @@ pub(crate) fn lower_expression(
                 if let Ok(MIRTypeKind::Array { length, .. }) = builder.types().kind(type_id)
                     && fields.len() > *length
                 {
-                    return Err(cx_log::error::CXErr::new(
-                        cx_log::error::message::CXStdErrMessage::error(
-                            "MIR ARRAY ERROR",
-                            format!(
-                                "array initializer has {} elements but the array length is {}",
-                                fields.len(),
-                                length
-                            ),
-                        ),
-                        cx_log::error::context::CXInternalContext::error(
-                            "array initializer exceeds its concrete MIR array type",
-                        ),
-                    ));
+                    return log_mir_error(
+                        &expression.token_range,
+                        (&mir::ARRAY_TOO_LONG, (fields.len(), *length)),
+                    );
                 }
                 let out = builder.fun_mut().new_register(type_id, None);
                 builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Value {
@@ -757,11 +770,9 @@ pub(crate) fn lower_expression(
                 MIRValue::Register(out)
             }
 
-            THIRExpressionKind::Break { staged } => {
-                lower_control_exit(builder, MIRStagedExitKind::Break, *staged)?
-            }
-            THIRExpressionKind::Continue { staged } => {
-                lower_control_exit(builder, MIRStagedExitKind::Continue, *staged)?
+            THIRExpressionKind::Break => lower_control_exit(builder, MIRStagedExitKind::Break)?,
+            THIRExpressionKind::Continue => {
+                lower_control_exit(builder, MIRStagedExitKind::Continue)?
             }
             THIRExpressionKind::Goto { name } => {
                 let target = if let Some(target) = builder.fun_mut().label(name) {
@@ -832,17 +843,7 @@ pub(crate) fn lower_expression(
                 condition,
                 subject,
                 arms,
-                default,
-                exhaustive,
-            } => control_flow::lower_match(
-                builder,
-                condition,
-                *subject,
-                arms,
-                default.as_deref(),
-                *exhaustive,
-                &expression._type,
-            )?,
+            } => control_flow::lower_match(builder, condition, *subject, arms, &expression._type)?,
             THIRExpressionKind::Return {
                 postcondition,
                 value,
@@ -889,18 +890,26 @@ pub(crate) fn lower_expression(
                 MIRValue::Constant(MIRConstant::Unit)
             }
 
-            THIRExpressionKind::Yield { value, staged } => {
+            THIRExpressionKind::Yield { value } => {
                 let yield_type = value
                     .as_deref()
                     .map(|value| lower_type(builder, &value._type))
                     .transpose()?;
                 let value = value
                     .as_deref()
-                    .map(|value| lower_expression(builder, value))
+                    .map(|value| {
+                        let lowered = lower_expression(builder, value)?;
+                        materialize_value(builder, lowered, &value._type)
+                    })
                     .transpose()?;
 
-                if *staged {
-                    assert!(builder.is_capturing());
+                let target = builder
+                    .fun()
+                    .scope_stack()
+                    .iter()
+                    .rev()
+                    .find_map(|scope| scope.yield_target.map(|block| (scope.id(), block)));
+                if target.is_none() && builder.is_capturing() {
                     let root_scope = builder
                         .fun()
                         .scope_stack()
@@ -915,14 +924,14 @@ pub(crate) fn lower_expression(
                     return Ok(MIRValue::Constant(MIRConstant::Unit));
                 }
 
-                let Some((scope_id, block_id)) = builder
-                    .fun()
-                    .scope_stack()
-                    .iter()
-                    .rev()
-                    .find_map(|scope| scope.yield_target.map(|t| (scope.id(), t)))
-                else {
-                    unreachable!("yield expression is not inside a yieldable scope");
+                let Some((scope_id, block_id)) = target else {
+                    return log_mir_error(
+                        &expression.token_range,
+                        (
+                            &mir::REQUIRED_CONTEXT,
+                            ("yield".into(), "a yieldable scope".into()),
+                        ),
+                    );
                 };
 
                 let args = value.into_iter().collect();
@@ -1126,7 +1135,7 @@ pub(crate) fn lower_expression(
                     let ty = lower_type(builder, &expression._type)?;
                     Some(builder.fun_mut().new_register(ty, None))
                 };
-                let targets = builder.fun().staged_targets();
+                let targets = crate::lowering::staged::exits::targets(builder)?;
                 builder.emit(MIRInstrKind::ApplyStaged {
                     out,
                     staged,

@@ -1,54 +1,70 @@
+use cx_hir::ast::modifiers::HIRSymbolNameScheme;
 use cx_hir::registry::{ExportNameMode, GlobalSymbolRegistry};
-use cx_thir::thir::data::{THIRType, THIRTypeKind};
-use cx_thir::thir::r#type::THIRField;
-use cx_thir::type_context::THIRTypeContext;
-use cx_util::namespace::{QualifiedName, mangle_namespace_symbol};
+use cx_namespace::{mangling::mangle_namespace_symbol, module::QualifiedName};
 
-pub fn mangle_static_symbol(symbol_name: &str, function_name: &str) -> String {
-    format!("_S{}_{}_{}", symbol_name.len(), symbol_name, function_name)
-}
+use crate::{
+    thir::{
+        data::{THIRTemplateInput, THIRType, THIRTypeKind},
+        r#type::THIRField,
+    },
+    type_context::THIRTypeContext,
+};
 
-pub fn mangle_qualified_name(
+pub fn mangle_rootable_name(
     global_registry: &GlobalSymbolRegistry,
     name: &QualifiedName,
+    scheme: HIRSymbolNameScheme,
 ) -> String {
-    if name.namespace.is_root()
+    if scheme == HIRSymbolNameScheme::Unmangled
+        || name.namespace.is_root()
         || global_registry.export_name_mode(&name.namespace) == ExportNameMode::Root
     {
-        return name.name.as_str().to_string();
+        return name.name.to_string();
     }
 
-    mangle_namespace_symbol(name)
+    return mangle_namespace_symbol(name);
 }
 
-pub fn base_mangle_templated_name<'a>(
+pub fn mangle_template_name(
     definitions: &impl THIRTypeContext,
-    name: &str,
-    template_args: impl ExactSizeIterator<Item = &'a THIRType>,
+    name: String,
+    input: &THIRTemplateInput,
 ) -> String {
-    let mut mangled = String::from("_T");
-    push_component(&mut mangled, template_args.len().to_string().as_str());
-    push_component(&mut mangled, name);
-    for arg in template_args {
-        let argument = type_mangle(definitions, arg);
-        push_component(&mut mangled, argument.as_str());
+    let mut base = format!("_T{}_{}_{}_", input.args.len(), name.len(), name);
+
+    for arg in &input.args {
+        base.push_str(
+            format!(
+                "{}_",
+                mangle_type_name(definitions, definitions.resolve_type_id(*arg))
+            )
+            .as_str(),
+        );
+    }
+
+    base
+}
+
+pub fn mangle_comptime_context(
+    definitions: &impl THIRTypeContext,
+    name: String,
+    return_type: Option<&THIRType>,
+    yield_type: Option<&THIRType>,
+) -> String {
+    let mut mangled = format!("_C{}_{}", name.len(), name);
+    for ty in [return_type, yield_type] {
+        match ty {
+            Some(ty) => {
+                let encoded = format!("{}_{}", ty.specifiers, mangle_type_name(definitions, ty));
+                mangled.push_str(format!("_{}{}", encoded.len(), encoded).as_str());
+            }
+            None => mangled.push_str("_0"),
+        }
     }
     mangled
 }
 
-pub fn base_mangle_member(
-    definitions: &impl THIRTypeContext,
-    name: &str,
-    member_type: &THIRType,
-) -> String {
-    let mut mangled = String::from("_M");
-    let member_type = type_mangle(definitions, member_type);
-    push_component(&mut mangled, member_type.as_str());
-    push_component(&mut mangled, name);
-    mangled
-}
-
-pub(crate) fn type_mangle(definitions: &impl THIRTypeContext, ty: &THIRType) -> String {
+fn mangle_type_name(definitions: &impl THIRTypeContext, ty: &THIRType) -> String {
     if let Some(name) = ty.strong_identifier() {
         let mut mangled = String::from("n");
         push_component(&mut mangled, name);
@@ -69,7 +85,7 @@ pub(crate) fn type_mangle(definitions: &impl THIRTypeContext, ty: &THIRType) -> 
         THIRTypeKind::PointerTo { inner_type } => {
             let inner_type = definitions.resolve_type_id(*inner_type);
             let mut mangled = String::from("p");
-            let inner_type = type_mangle(definitions, inner_type);
+            let inner_type = mangle_type_name(definitions, inner_type);
             push_component(&mut mangled, inner_type.as_str());
             mangled
         }
@@ -82,7 +98,7 @@ pub(crate) fn type_mangle(definitions: &impl THIRTypeContext, ty: &THIRType) -> 
                 mangled.push('1');
                 push_component(&mut mangled, bitfield.bit_offset.to_string().as_str());
                 push_component(&mut mangled, bitfield.bit_width.to_string().as_str());
-                let storage_type = type_mangle(
+                let storage_type = mangle_type_name(
                     definitions,
                     definitions.resolve_type_id(bitfield.storage_type),
                 );
@@ -91,7 +107,8 @@ pub(crate) fn type_mangle(definitions: &impl THIRTypeContext, ty: &THIRType) -> 
             } else {
                 mangled.push('0');
             }
-            let inner_type = type_mangle(definitions, definitions.resolve_type_id(*inner_type));
+            let inner_type =
+                mangle_type_name(definitions, definitions.resolve_type_id(*inner_type));
             push_component(&mut mangled, inner_type.as_str());
             mangled
         }
@@ -108,17 +125,18 @@ pub(crate) fn type_mangle(definitions: &impl THIRTypeContext, ty: &THIRType) -> 
             let mut mangled = String::from("a");
             let size = size.display_with(definitions).to_string();
             push_component(&mut mangled, size.as_str());
-            let inner_type = type_mangle(definitions, definitions.resolve_type_id(*inner_type));
+            let inner_type =
+                mangle_type_name(definitions, definitions.resolve_type_id(*inner_type));
             push_component(&mut mangled, inner_type.as_str());
             mangled
         }
         THIRTypeKind::Function { signature } => {
             let mut mangled = String::from("f");
-            let return_type = type_mangle(definitions, &signature.return_type);
+            let return_type = mangle_type_name(definitions, &signature.return_type);
             push_component(&mut mangled, return_type.as_str());
             push_component(&mut mangled, signature.params.len().to_string().as_str());
             for param in &signature.params {
-                let param_type = type_mangle(definitions, &param._type);
+                let param_type = mangle_type_name(definitions, &param._type);
                 push_component(&mut mangled, param_type.as_str());
             }
             push_component(&mut mangled, if signature.var_args { "1" } else { "0" });
@@ -173,7 +191,7 @@ fn push_aggregate_fields(
             mangled.push('f');
         }
         let field_type = definitions.resolve_type_id(field_id);
-        let field_type = type_mangle(definitions, field_type);
+        let field_type = mangle_type_name(definitions, field_type);
         push_component(mangled, field_type.as_str());
     }
 }

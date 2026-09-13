@@ -8,10 +8,11 @@ use cx_hir::ast::expression::{
     HIRBinOp, HIRExprKind, HIRExpression, HIRInitIndex, HIRUnpackBinding,
 };
 use cx_hir::ast::pattern::HIRPattern;
+use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
+use cx_namespace::module::QualifiedName;
 use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
-use cx_tokens::{identifier, keyword, operator, punctuator};
-use cx_util::namespace::QualifiedName;
+use cx_tokens::{identifier, operator, punctuator};
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::parse::operators::{
@@ -45,7 +46,7 @@ fn parse_at_intrinsic_expr(
             .into_expr(
                 start_index,
                 data.tokens.index,
-                data.file_origin_for_range(start_index, data.tokens.index),
+                data.token_range(start_index, data.tokens.index),
             ))
         }
 
@@ -60,7 +61,7 @@ fn parse_at_intrinsic_expr(
             .into_expr(
                 start_index,
                 data.tokens.index,
-                data.file_origin_for_range(start_index, data.tokens.index),
+                data.token_range(start_index, data.tokens.index),
             ))
         }
 
@@ -75,7 +76,7 @@ fn parse_at_intrinsic_expr(
             .into_expr(
                 start_index,
                 data.tokens.index,
-                data.file_origin_for_range(start_index, data.tokens.index),
+                data.token_range(start_index, data.tokens.index),
             ))
         }
 
@@ -88,17 +89,11 @@ fn parse_at_intrinsic_expr(
             let mut bindings = Vec::new();
             while !try_next!(data.tokens, punctuator!(CloseBrace)) {
                 let Some(field) = try_parse_simple_identifier(&mut data.tokens) else {
-                    return parse_point_error(
-                        &data.tokens,
-                        "Expected field name in @unpack binding".to_string(),
-                    );
+                    return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a field identifier".into(), Some("in @unpack binding".into()), None));
                 };
                 assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
                 let Some(binding) = try_parse_simple_identifier(&mut data.tokens) else {
-                    return parse_point_error(
-                        &data.tokens,
-                        "Expected binding name in @unpack binding".to_string(),
-                    );
+                    return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a binding identifier".into(), Some("in @unpack binding".into()), None));
                 };
 
                 bindings.push(HIRUnpackBinding { field, binding });
@@ -116,17 +111,14 @@ fn parse_at_intrinsic_expr(
             .into_expr(
                 start_index,
                 data.tokens.index,
-                data.file_origin_for_range(start_index, data.tokens.index),
+                data.token_range(start_index, data.tokens.index),
             ))
         }
 
         _ => {
             data.tokens.back();
 
-            parse_point_error(
-                &data.tokens,
-                format!("Unknown intrinsic expression '{}'", ident),
-            )
+            parse_point_error(&data.tokens, &UNKNOWN_NAME, ("intrinsic".into(), ident.to_string()))
         }
     }
 }
@@ -147,14 +139,13 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<HIRExpression> {
         )?;
 
         let Some(condition) = expr_stack.pop() else {
-            return parse_point_error(&data.tokens, "Expected expression before '?'".to_string());
+            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an expression".into(), Some("before '?'".into()), None));
         };
 
-        let start_index = condition.range.start_token().unwrap_or(data.tokens.index);
         let then_branch = parse_expr(data)?;
         assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
         let else_branch = parse_expr(data)?;
-        let end_index = else_branch.range.end_token().unwrap_or(data.tokens.index);
+        let range = condition.range.cover(&else_branch.range);
 
         Some(
             HIRExprKind::Ternary {
@@ -163,9 +154,9 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<HIRExpression> {
                 else_branch: Box::new(else_branch),
             }
             .into_expr(
-                start_index,
-                end_index,
-                data.file_origin_for_range(start_index, end_index),
+                data.tokens.index.saturating_sub(1),
+                data.tokens.index,
+                range,
             ),
         )
     } else {
@@ -181,30 +172,24 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<HIRExpression> {
     let Some(expr) = expr_stack.pop() else {
         return parse_point_error(
             &data.tokens,
-            format!(
-                "Failed to parse expression value after operator: {:#?}",
-                data.tokens.peek()
-            ),
+            &EXPECTED_SYNTAX,
+            ("an expression".into(), Some("after operator".into()), data.tokens.peek().map(|token| format!("{token:#?}"))),
         );
     };
 
     if !expr_stack.is_empty() {
         return parse_point_error(
             &data.tokens,
-            format!(
-                "Expression stack is not empty after parsing expression: {:#?} {:#?}",
-                expr_stack, op_stack
-            ),
+            &STACK_STATE,
+            ("expression".into(), "empty".into(), format!("{:#?}", expr_stack)),
         );
     }
 
     if !op_stack.is_empty() {
         return parse_point_error(
             &data.tokens,
-            format!(
-                "Operator stack is not empty after parsing expression: {:#?} {:#?}",
-                expr_stack, op_stack
-            ),
+            &STACK_STATE,
+            ("operator".into(), "empty".into(), format!("{:#?}", op_stack)),
         );
     }
 
@@ -253,8 +238,6 @@ fn parse_va_arg_call(data: &mut ParserData, expr_stack: &mut Vec<HIRExpression>)
     let callee = expr_stack
         .pop()
         .expect("va_arg callee missing from expression stack");
-    let start_index = callee.range.start_token().unwrap_or(data.tokens.index);
-
     assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
     data.change_comma_mode(false);
     let list = parse_expr(data)?;
@@ -269,9 +252,11 @@ fn parse_va_arg_call(data: &mut ParserData, expr_stack: &mut Vec<HIRExpression>)
             _type,
         }
         .into_expr(
-            start_index,
+            data.tokens.index.saturating_sub(1),
             data.tokens.index,
-            data.file_origin_for_range(start_index, data.tokens.index),
+            callee
+                .range
+                .cover(&data.token_range(data.tokens.index.saturating_sub(1), data.tokens.index)),
         ),
     );
     Ok(())
@@ -298,10 +283,7 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<HIRPattern> {
 
             if ident.name.namespace.is_root() {
                 if ident.template_input.is_some() {
-                    return parse_point_error(
-                        &data.tokens,
-                        "Binding patterns may not have template input".to_string(),
-                    );
+                    return parse_point_error(&data.tokens, &INVALID_CONTEXT, ("template arguments".into(), "binding patterns".into()));
                 }
 
                 Ok(HIRPattern::Binding(ident.name.root_name().unwrap()))
@@ -328,7 +310,7 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<HIRPattern> {
             }
         }
 
-        _ => parse_point_error(&data.tokens, "Expected pattern value".to_string()),
+        _ => parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a pattern value".into(), None, None)),
     }
 }
 
@@ -338,18 +320,13 @@ fn compress_one_expr(
     op_stack: &mut Vec<PrecOperator>,
 ) -> CXResult<HIRExpression> {
     let Some(op) = op_stack.pop() else {
-        return parse_point_error(
-            &data.tokens,
-            "Operator stack is empty when trying to compress expression".to_string(),
-        );
+        return parse_point_error(&data.tokens, &STACK_STATE, ("operator".into(), "valid".into(), format!("{op_stack:?}")));
     };
 
     match op {
         PrecOperator::UnOp(un_op) => {
             let rhs = expr_stack.pop().unwrap();
-
-            let start_index = rhs.range.start_token().unwrap_or(data.tokens.index);
-            let end_index = rhs.range.end_token().unwrap_or(data.tokens.index);
+            let range = rhs.range.clone();
 
             let acc = HIRExprKind::UnOp {
                 operator: un_op,
@@ -357,17 +334,15 @@ fn compress_one_expr(
             };
 
             Ok(acc.into_expr(
-                start_index,
-                end_index,
-                data.file_origin_for_range(start_index, end_index),
+                data.tokens.index.saturating_sub(1),
+                data.tokens.index,
+                range,
             ))
         }
         PrecOperator::BinOp(bin_op) => {
             let rhs = expr_stack.pop().unwrap();
             let lhs = expr_stack.pop().unwrap();
-
-            let start_index = lhs.range.start_token().unwrap_or(data.tokens.index);
-            let end_index = rhs.range.end_token().unwrap_or(data.tokens.index);
+            let range = lhs.range.cover(&rhs.range);
 
             let acc = HIRExprKind::BinOp {
                 lhs: Box::new(lhs),
@@ -376,9 +351,9 @@ fn compress_one_expr(
             };
 
             Ok(acc.into_expr(
-                start_index,
-                end_index,
-                data.file_origin_for_range(start_index, end_index),
+                data.tokens.index.saturating_sub(1),
+                data.tokens.index,
+                range,
             ))
         }
     }
@@ -431,10 +406,7 @@ pub(crate) fn parse_expr_val(
 
         TokenKind::Operator(OperatorType::Access) => {
             if !try_next!(data.tokens, punctuator!(OpenBrace)) {
-                return parse_point_error(
-                    &data.tokens,
-                    "Expected '{' after '.' in expression".to_string(),
-                );
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("'{'".into(), Some("after '.'".into()), None));
             }
 
             data.tokens.back();
@@ -445,10 +417,7 @@ pub(crate) fn parse_expr_val(
             let mut params = Vec::new();
             loop {
                 let Some(param) = try_parse_simple_identifier(&mut data.tokens) else {
-                    return parse_point_error(
-                        &data.tokens,
-                        "Expected staged expression parameter name".to_string(),
-                    );
+                    return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a staged parameter".into(), None, None));
                 };
                 params.push(param);
 
@@ -500,11 +469,7 @@ pub(crate) fn parse_expr_val(
                 // A common type error is of the form `A b` where A is not a recognized type, this would be picked up
                 // as an "found unknown token identifer" error but can be far more accurately diagnosed as a missing
                 // type error. There is no valid syntax of an identifier followed by another identifier otherwise
-                return parse_underline_error(
-                    &data.tokens,
-                    "Could not resolve type for variable declaration".to_string(),
-                    expr.token_range(),
-                );
+                return parse_underline_error(&UNRESOLVED_VARIABLE_TYPE, (), expr.token_range());
             }
 
             expr.kind
@@ -523,7 +488,7 @@ pub(crate) fn parse_expr_val(
                 expr_stack.push(HIRExprKind::Void.into_expr(
                     start_index,
                     data.tokens.index,
-                    data.file_origin_for_range(start_index, data.tokens.index),
+                    data.token_range(start_index, data.tokens.index),
                 ));
                 return Ok(());
             }
@@ -557,7 +522,7 @@ pub(crate) fn parse_expr_val(
                 expr_stack.push(HIRExprKind::Void.into_expr(
                     start_index,
                     data.tokens.index,
-                    data.file_origin_for_range(start_index, data.tokens.index),
+                    data.token_range(start_index, data.tokens.index),
                 ));
                 return Ok(());
             }
@@ -574,13 +539,13 @@ pub(crate) fn parse_expr_val(
 
         _ => {
             data.back();
-            return parse_point_error(&data.tokens, "Expected expression value".to_string());
+            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an expression value".into(), None, None));
         }
     }
     .into_expr(
         start_index,
         data.tokens.index,
-        data.file_origin_for_range(start_index, data.tokens.index),
+        data.token_range(start_index, data.tokens.index),
     );
 
     expr_stack.push(acc);
@@ -598,13 +563,13 @@ pub(crate) fn parse_expr_val(
 pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CXResult<HIRExpression> {
     let start_index = data.tokens.index;
     let Some(ident) = try_parse_identifier(data)? else {
-        return parse_point_error(&data.tokens, "Expected identifier".to_string());
+        return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an identifier".into(), None, None));
     };
 
     Ok(ident.into_expr(
         start_index,
         data.tokens.index,
-        data.file_origin_for_range(start_index, data.tokens.index),
+        data.token_range(start_index, data.tokens.index),
     ))
 }
 
@@ -629,14 +594,16 @@ pub(crate) fn parse_keyword_expr(
                 let (None, _type, _) = parse_initializer(data)? else {
                     return parse_point_error(
                         &data.tokens,
-                        format!(
-                            "Failed to parse type declaration for {}",
-                            match keyword_type {
-                                KeywordType::Sizeof => "sizeof",
-                                KeywordType::Alignof => "alignof",
-                                _ => unreachable!(),
-                            }
-                        ),
+                        &EXPECTED_SYNTAX,
+                        (match keyword_type {
+                            KeywordType::Sizeof => "sizeof",
+                            KeywordType::Alignof => "alignof",
+                            _ => unreachable!(),
+                        }
+                        .to_string(),
+                        Some("unnamed type".into()),
+                        None,
+                    ),
                     );
                 };
 
@@ -699,21 +666,15 @@ pub(crate) fn parse_keyword_expr(
             assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
 
             let mut arms = Vec::new();
-            let mut default_arm = None;
 
             data.change_comma_mode(false);
 
             while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-                if try_next!(data.tokens, keyword!(Default)) {
-                    assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
-                    if default_arm.is_some() {
-                        return parse_point_error(
-                            &data.tokens,
-                            "Multiple default cases in match expression".to_string(),
-                        );
-                    }
-                    default_arm = Some(Box::new(parse_body(data)?));
-                    continue;
+                if matches!(
+                    peek_next_kind!(data.tokens)?,
+                    TokenKind::Keyword(KeywordType::Default)
+                ) {
+                    return parse_point_error(&data.tokens, &MATCH_DEFAULT, ());
                 }
 
                 let value = parse_pattern(data)?;
@@ -727,18 +688,11 @@ pub(crate) fn parse_keyword_expr(
             Ok(HIRExprKind::Match {
                 condition: Box::new(expr),
                 arms,
-                default: default_arm,
             })
         }
 
-        KeywordType::Comptime => parse_point_error(
-            &data.tokens,
-            "'comptime' is reserved but is not implemented yet".to_string(),
-        ),
-        KeywordType::Expr => parse_point_error(
-            &data.tokens,
-            "'expr' is reserved but is not implemented yet".to_string(),
-        ),
+        KeywordType::Comptime => parse_point_error(&data.tokens, &RESERVED_KEYWORD, "comptime".into()),
+        KeywordType::Expr => parse_point_error(&data.tokens, &RESERVED_KEYWORD, "expr".into()),
         KeywordType::Emit => {
             let expr = parse_expr(data)?;
 
@@ -751,14 +705,14 @@ pub(crate) fn parse_keyword_expr(
         _ => {
             data.tokens.back();
 
-            return parse_point_error(&data.tokens, "Unexpected token".to_string());
+            return parse_point_error(&data.tokens, &UNEXPECTED_TOKEN, (None, None));
         }
     }
     .map(|e| {
         e.into_expr(
             start_index,
             data.tokens.index,
-            data.file_origin_for_range(start_index, data.tokens.index),
+            data.token_range(start_index, data.tokens.index),
         )
     })
 }
@@ -806,6 +760,6 @@ pub(crate) fn parse_structured_initialization(data: &mut ParserData) -> CXResult
     Ok(HIRExprKind::InitializerList { indices: inits }.into_expr(
         init_index,
         data.tokens.index,
-        data.file_origin_for_range(init_index, data.tokens.index),
+        data.token_range(init_index, data.tokens.index),
     ))
 }

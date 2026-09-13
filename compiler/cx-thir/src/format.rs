@@ -1,7 +1,11 @@
 use cx_hir::ast::modifiers::{HIR_CONST, HIR_RESTRICT, HIR_VOLATILE, HIRTypeQualifiers};
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_util::identifier::CXIdent;
 
-use crate::thir::data::{THIRFnPrototype, THIRFnSignature, THIRParameter};
+use crate::thir::comptime::THIRComptimeFn;
+use crate::thir::data::{
+    THIRComptimeFnPrototype, THIRComptimeParameter, THIRComptimeValueType, THIRFnPrototype,
+    THIRFnSignature, THIRParameter,
+};
 use crate::thir::expression::{
     THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp,
 };
@@ -58,6 +62,10 @@ impl MIRDisplayable for THIRExpression {}
 impl MIRDisplayable for THIRFunction {}
 impl MIRDisplayable for THIRFnSignature {}
 impl MIRDisplayable for THIRFnPrototype {}
+impl MIRDisplayable for THIRComptimeFn {}
+impl MIRDisplayable for THIRComptimeFnPrototype {}
+impl MIRDisplayable for THIRComptimeParameter {}
+impl MIRDisplayable for THIRComptimeValueType {}
 impl MIRDisplayable for THIRParameter {}
 impl MIRDisplayable for THIRGlobalVariable {}
 
@@ -215,8 +223,7 @@ fn write_type_base_name(
         .or_else(|| ty.lookup_identifier())
         .or_else(|| id.and_then(|id| definitions.type_id_lookup_identifier(id)))
     {
-        write_qualified_name(f, name)?;
-        return Ok(true);
+        return write!(f, "{name}").map(|_| true);
     }
 
     Ok(false)
@@ -228,10 +235,6 @@ fn has_type_name(definitions: &dyn THIRTypeContext, ty: &THIRType, id: Option<TH
         .or_else(|| ty.lookup_identifier())
         .or_else(|| id.and_then(|id| definitions.type_id_lookup_identifier(id)))
         .is_some()
-}
-
-fn write_qualified_name(f: &mut Formatter<'_>, name: &QualifiedName) -> std::fmt::Result {
-    write!(f, "{name}")
 }
 
 fn write_type_root(
@@ -439,6 +442,77 @@ impl Display for THIRDisplay<'_, THIRExpression> {
     }
 }
 
+impl Display for THIRDisplay<'_, THIRComptimeFn> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "{}",
+            self.content
+                .prototype
+                .display_with_definitions(self.definitions)
+        )?;
+
+        if let Some(body) = &self.content.body {
+            writeln!(f, "Body:")?;
+            MIRExpressionFormatter::with_definitions(body, 1, self.definitions).fmt(f)
+        } else {
+            write!(f, "Declaration")
+        }
+    }
+}
+
+impl Display for THIRDisplay<'_, THIRComptimeFnPrototype> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} :: ", self.content.symbol_name())?;
+
+        write!(
+            f,
+            "fn({}) -> {}",
+            self.content
+                .params()
+                .iter()
+                .map(|param| param.display_with_definitions(self.definitions).to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+            self.content
+                .return_type()
+                .display_with_definitions(self.definitions)
+        )
+    }
+}
+
+impl Display for THIRDisplay<'_, THIRComptimeParameter> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}: {}",
+            self.content
+                .name
+                .as_ref()
+                .unwrap_or(&CXIdent::from("<unnamed>")),
+            self.content
+                .value_type
+                .display_with_definitions(self.definitions)
+        )
+    }
+}
+
+impl Display for THIRDisplay<'_, THIRComptimeValueType> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.content.expr {
+            write!(f, "expr ")?;
+        }
+
+        write!(
+            f,
+            "{}",
+            self.content
+                ._type
+                .display_with_definitions(self.definitions)
+        )
+    }
+}
+
 impl Display for THIRDisplay<'_, THIRFunction> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(
@@ -547,6 +621,11 @@ impl Display for THIRDisplay<'_, THIRGlobalVariable> {
 impl Display for THIRDisplay<'_, THIRUnit> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "THIR Unit:")?;
+
+        writeln!(f, "\nComptime Functions:")?;
+        for function in &self.content.comptime_functions {
+            writeln!(f, "{}", function.display_with_definitions(self.definitions))?;
+        }
 
         writeln!(f, "\nFunctions:")?;
         for function in &self.content.functions {
@@ -1109,11 +1188,9 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 condition,
                 subject,
                 arms,
-                default,
-                exhaustive,
                 ..
             } => {
-                write!(f, "Match exhaustive={exhaustive} <'")?;
+                write!(f, "Match <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
                 self.indent(f)?;
@@ -1129,16 +1206,6 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     writeln!(f, "Arm {pattern}:")?;
                     MIRExpressionFormatter {
                         expr: arm_body,
-                        depth: self.depth + 2,
-                        definitions: self.definitions,
-                    }
-                    .fmt(f)?;
-                }
-                if let Some(default) = default {
-                    self.indent(f)?;
-                    writeln!(f, "Default:")?;
-                    MIRExpressionFormatter {
-                        expr: default,
                         depth: self.depth + 2,
                         definitions: self.definitions,
                     }
@@ -1185,10 +1252,10 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }
-            THIRExpressionKind::Yield { value, staged } => {
+            THIRExpressionKind::Yield { value } => {
                 write!(f, "Yield <'")?;
                 self.write_type(f, &self.expr._type)?;
-                writeln!(f, "> staged={staged}")?;
+                writeln!(f, ">")?;
                 if let Some(value) = value {
                     MIRExpressionFormatter {
                         expr: value,
@@ -1418,12 +1485,12 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::Break { .. } => {
+            THIRExpressionKind::Break => {
                 write!(f, "Break <type='")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, "'>")
             }
-            THIRExpressionKind::Continue { .. } => {
+            THIRExpressionKind::Continue => {
                 write!(f, "Continue <type='")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, "'>")

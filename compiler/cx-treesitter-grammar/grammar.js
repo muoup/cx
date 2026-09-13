@@ -167,6 +167,11 @@ module.exports = grammar({
 
     word: ($) => $.identifier,
 
+    reserved: {
+        global: (_) => [],
+        match: (_) => ["default"],
+    },
+
     conflicts: ($) => [
         [$.declaration_specifier, $.access_section],
         [$.compiler_attribute, $.primary_expression],
@@ -739,7 +744,25 @@ module.exports = grammar({
         match_arm: ($) =>
             prec.right(seq($.match_pattern, op($, "=>"), $._statement)),
 
-        match_pattern: ($) => choice($.expression, keyword($, "default")),
+        match_pattern: ($) =>
+            choice(
+                $.number_literal,
+                reserved("match", $.identifier),
+                $.variant_pattern,
+            ),
+
+        variant_pattern: ($) =>
+            seq(
+                alias(
+                    seq(
+                        reserved("match", $.identifier),
+                        repeat1(seq(op($, "::"), $.identifier)),
+                    ),
+                    $.qualified_name,
+                ),
+                optional($.template_arguments),
+                optional(seq("(", optional(reserved("match", $.identifier)), ")")),
+            ),
 
         defer_statement: ($) =>
             seq(

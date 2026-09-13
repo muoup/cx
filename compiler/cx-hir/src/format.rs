@@ -41,7 +41,14 @@ impl<'a> HIRExprFormatter<'a> {
 
 impl Display for HIR {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        writeln!(f, "HIR for file: {}", self.module_path)?;
+        writeln!(
+            f,
+            "HIR for file: {}",
+            self.module_path
+                .as_path()
+                .to_str()
+                .unwrap_or("Cannot print file path")
+        )?;
 
         for def in self.definition_stmts.iter() {
             writeln!(f, "{}", def)?;
@@ -378,22 +385,13 @@ impl<'a> Display for HIRExprFormatter<'a> {
                 writeln!(f, "AlignOfType ({_type})")
             }
             HIRExprKind::Void => writeln!(f, "Unit"),
-            HIRExprKind::Match {
-                condition,
-                arms,
-                default,
-            } => {
+            HIRExprKind::Match { condition, arms } => {
                 writeln!(f, "Match")?;
                 HIRExprFormatter::new(condition, self.depth + 1).fmt(f)?;
                 for (pattern, arm_expr) in arms {
                     self.indent_plus_one(f)?;
                     writeln!(f, "Pattern: {}", pattern)?;
                     HIRExprFormatter::new(arm_expr, self.depth + 1).fmt(f)?;
-                }
-                if let Some(default_expr) = default {
-                    self.indent_plus_one(f)?;
-                    writeln!(f, "Default:")?;
-                    HIRExprFormatter::new(default_expr, self.depth + 1).fmt(f)?;
                 }
                 Ok(())
             }

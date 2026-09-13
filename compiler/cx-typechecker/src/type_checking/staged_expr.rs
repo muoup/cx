@@ -1,15 +1,13 @@
 use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
-use cx_thir::{
-    EnvironmentNamespace,
-    thir::{
-        comptime::{THIRStagedExpr, THIRStagedParameter},
-        data::{THIRComptimeValueType, THIRType},
-        expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
-    },
+use cx_log::catalogue::typecheck as catalogue;
+use cx_namespace::module::{NamespacePath, QualifiedName};
+use cx_thir::thir::{
+    comptime::{THIRStagedExpr, THIRStagedParameter},
+    data::{THIRComptimeValueType, THIRType},
+    expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
 };
 use cx_tokens::TokenRange;
-use cx_util::namespace::QualifiedName;
 
 use crate::{
     environment::TypeEnvironment,
@@ -22,11 +20,11 @@ use crate::{
 
 pub fn typecheck_staged_expr(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     inner: &HIRExpression,
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
-    let (body, effects) = env.in_runtime_emit(|env| {
+    let body = env.in_runtime_emit(|env| {
         env.in_staged(|env| {
             let result = typecheck_expr(env, namespace, inner, expected_type)?;
             let result = if let Some(expected_type) = expected_type {
@@ -38,24 +36,25 @@ pub fn typecheck_staged_expr(
         })
     })?;
 
-    let mut staged = THIRStagedExpr::new(Box::new(body));
-    staged.set_effects(env.staged_effects(&effects));
+    let staged = THIRStagedExpr::new(Box::new(body));
     Ok(TypecheckResult::staged_literal(staged))
 }
 
 pub fn complete_staged_expr(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     deferred: DeferredStagedExpr,
     value_type: &THIRComptimeValueType,
 ) -> CXResult<THIRStagedExpr> {
     if deferred.params.len() != value_type.params.len() {
         return env.log_error(
             deferred.body.token_range(),
-            format!(
-                "Staged expression expects {} parameters, found {}",
+            &catalogue::ARGUMENT_COUNT,
+            (
+                "Staged expression".into(),
                 value_type.params.len(),
-                deferred.params.len()
+                deferred.params.len(),
+                false
             ),
         );
     }
@@ -91,10 +90,9 @@ pub fn complete_staged_expr(
     });
     env.symbols.pop_local_scope();
 
-    let (body, effects) = body?;
+    let body = body?;
     let mut staged = THIRStagedExpr::new(Box::new(body));
     staged.add_params(params);
-    staged.set_effects(env.staged_effects(&effects));
     Ok(staged)
 }
 

@@ -1,35 +1,30 @@
 use std::borrow::Borrow;
 
-use cx_hir::ast::modifiers::VisibilityMode;
-use cx_hir::symbols::{HIRSymbol, SymbolResolution};
 use cx_log::{
     CXRawResult, CXResult,
-    error::{CXErr, CXErrMsg, CXMaybeRawErr, context::CXInternalContext, message::CXStdErrMessage},
+    catalogue::ErrorDefinition,
+    error::{CXError, CXErrorMaybeRaw, CXRawError, context::from_token_range},
 };
-use cx_namespace::{QualifiedLookup, result::QualifiedLookupResult};
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_pipeline_data::db::ModuleData;
 use cx_target::ArchitectureConfig;
 use cx_thir::{
-    EnvironmentNamespace, THIRUnit,
-    symbol::MIRSymbol,
+    THIRUnit,
     thir::{
-        comptime::THIRStagedEffects,
         contextual_eq::TypeContextEqual,
         data::{THIRFnPrototype, THIRType},
     },
     type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
-use cx_util::namespace::QualifiedName;
-use cx_util::{identifier::CXIdent, namespace::NamespacePath};
+use cx_util::identifier::CXIdent;
 
 pub use crate::environment::control_flow::{ControlTarget, ScopeEffects};
-use crate::environment::items::ItemRegistry;
-use crate::symbol::resolution::resolve_symbol;
 use crate::{
     environment::function_context::{FunctionContext, FunctionModeSnapshot},
     symbol::registry::MIRSymbolRegistry,
 };
+use crate::{environment::items::ItemRegistry, log::generate_type_error};
 
 pub(crate) mod control_flow;
 pub(crate) mod function_context;
@@ -37,9 +32,7 @@ pub(crate) mod items;
 
 pub use items::THIRFunctionGenRequest;
 
-struct StagedContext {
-    return_type: Option<THIRType>,
-}
+pub use cx_thir::thir::comptime::THIRStagingContext as StagingContext;
 
 pub struct TypeEnvironment<'a> {
     pub module_data: &'a ModuleData,
@@ -47,14 +40,10 @@ pub struct TypeEnvironment<'a> {
     pub items: ItemRegistry,
     pub function: FunctionContext,
 
-    comptime_emit_bases: Vec<usize>,
-    comptime_runtime_return_types: Vec<Option<THIRType>>,
-
     runtime_emit_depth: usize,
     defer_depth: usize,
-    staged_contexts: Vec<StagedContext>,
-    staged_expansions: Vec<u64>,
-    next_staged_expression_id: u64,
+    staged_depth: usize,
+    pub(crate) comptime_context: Option<StagingContext>,
     require_explicit_return: bool,
 }
 
@@ -69,13 +58,10 @@ impl TypeEnvironment<'_> {
             module_data,
             items: ItemRegistry::new(),
             function: FunctionContext::default(),
-            comptime_emit_bases: Vec::new(),
-            comptime_runtime_return_types: Vec::new(),
             runtime_emit_depth: 0,
             defer_depth: 0,
-            staged_contexts: Vec::new(),
-            staged_expansions: Vec::new(),
-            next_staged_expression_id: 0,
+            staged_depth: 0,
+            comptime_context: None,
             require_explicit_return,
         }
     }
@@ -86,7 +72,7 @@ impl TypeEnvironment<'_> {
 
     pub fn get_intrinsic_type(&self, name: &str) -> THIRType {
         self.symbols
-            .get_preresolved_symbol(&QualifiedName::new_raw(CXIdent::from(name)))
+            .cached(&QualifiedName::new_raw(CXIdent::from(name)), false)
             .unwrap_or_else(|| panic!("intrinsic type {} not found", name))
             .as_type_id()
             .map(|id| self.symbols.resolve_type_id(id).clone())
@@ -115,35 +101,25 @@ impl TypeEnvironment<'_> {
         self.defer_depth > 0
     }
 
-    pub fn in_staged<F, T>(&mut self, f: F) -> CXResult<(T, ScopeEffects)>
+    pub fn in_staged<F, T>(&mut self, f: F) -> CXResult<T>
     where
         F: FnOnce(&mut Self) -> CXResult<T>,
     {
-        let context = StagedContext {
-            return_type: self.materialization_return_type(),
-        };
         self.function.flow_mut().push_staged_scope();
-        self.staged_contexts.push(context);
+        self.staged_depth += 1;
         let result = f(self);
-        self.staged_contexts.pop();
-        let effects = self
-            .function
+        self.staged_depth -= 1;
+        self.function
             .pop_scope()
             .unwrap_or_else(|_| panic!("staged control-flow scope is unbalanced"));
-        result.map(|value| (value, effects))
+        result
     }
 
     pub fn in_staged_context(&self) -> bool {
-        !self.staged_contexts.is_empty()
+        self.staged_depth != 0
     }
 
-    pub fn staged_return_type(&self) -> Option<&THIRType> {
-        self.staged_contexts
-            .last()
-            .and_then(|context| context.return_type.as_ref())
-    }
-
-    pub fn finish_thir_unit(self, source_namespace: EnvironmentNamespace) -> CXResult<THIRUnit> {
+    pub fn finish_thir_unit(self, source_namespace: NamespacePath) -> CXResult<THIRUnit> {
         let (functions, comptime_functions, globals) = self.items.drain_generated_items();
 
         Ok(THIRUnit {
@@ -178,67 +154,6 @@ impl TypeEnvironment<'_> {
         Ok(effects)
     }
 
-    pub fn staged_effects(&self, effects: &ScopeEffects) -> THIRStagedEffects {
-        THIRStagedEffects {
-            breaks: effects.break_range.is_some(),
-            continues: effects.continue_range.is_some(),
-            yield_type: effects.yield_type.clone(),
-        }
-    }
-
-    pub fn apply_staged_effects(
-        &mut self,
-        effects: &THIRStagedEffects,
-        range: &TokenRange,
-    ) -> CXResult<()> {
-        if effects.breaks {
-            if self.function.flow().break_target() == ControlTarget::Invalid {
-                return self.log_error(
-                    range,
-                    "staged break has no target in the materialization context".to_string(),
-                );
-            }
-            self.function.flow_mut().record_break(range.clone());
-        }
-
-        if effects.continues {
-            if self.function.flow().continue_target() == ControlTarget::Invalid {
-                return self.log_error(
-                    range,
-                    "staged continue has no target in the materialization context".to_string(),
-                );
-            }
-            self.function.flow_mut().record_continue(range.clone());
-        }
-
-        if let Some(yield_type) = &effects.yield_type {
-            let state = self.function.flow().yield_state();
-            if state.target == ControlTarget::Invalid {
-                return self.log_error(
-                    range,
-                    "staged yield has no target in the materialization context".to_string(),
-                );
-            }
-            if let Some(expected_type) = state.expected_type
-                && !self.type_eq(&expected_type, yield_type)
-            {
-                return self.log_error(
-                    range,
-                    format!(
-                        "Staged expression yields {}, but the materialization context expects {}",
-                        yield_type.display_with(&self.symbols),
-                        expected_type.display_with(&self.symbols),
-                    ),
-                );
-            }
-            self.function
-                .flow_mut()
-                .record_yield(yield_type.clone(), !yield_type.is_void());
-        }
-
-        Ok(())
-    }
-
     pub fn push_unsafe(&mut self) {
         self.function.enter_unsafe();
     }
@@ -257,25 +172,8 @@ impl TypeEnvironment<'_> {
         self.function.restore_mode(snapshot);
     }
 
-    pub fn enter_comptime_context(
-        &mut self,
-        runtime_return_type: Option<cx_thir::thir::r#type::THIRType>,
-    ) {
-        self.comptime_emit_bases.push(self.runtime_emit_depth);
-        self.comptime_runtime_return_types.push(runtime_return_type);
-    }
-
-    pub fn exit_comptime_context(&mut self) {
-        self.comptime_emit_bases
-            .pop()
-            .expect("Comptime context stack underflow");
-        self.comptime_runtime_return_types
-            .pop()
-            .expect("Comptime return type stack underflow");
-    }
-
     pub fn in_comptime_context(&self) -> bool {
-        !self.comptime_emit_bases.is_empty()
+        self.comptime_context.is_some()
     }
 
     pub fn in_runtime_emit<F, T>(&mut self, f: F) -> CXResult<T>
@@ -289,300 +187,70 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn in_runtime_emit_context(&self) -> bool {
-        self.comptime_emit_bases
-            .last()
-            .is_some_and(|base| self.runtime_emit_depth > *base)
+        self.in_comptime_context() && self.runtime_emit_depth != 0
     }
 
-    pub fn comptime_runtime_return_type(&self) -> Option<&cx_thir::thir::r#type::THIRType> {
-        self.comptime_runtime_return_types
-            .last()
-            .and_then(Option::as_ref)
-    }
-
-    pub fn materialization_return_type(&self) -> Option<THIRType> {
-        if let Some(return_type) = self.staged_return_type() {
-            return Some(return_type.clone());
-        }
-        if let Some(return_type) = self.comptime_runtime_return_type() {
-            return Some(return_type.clone());
-        }
-        if self.in_comptime_context() {
-            return None;
-        }
-        self.try_current_function()
-            .map(|function| function.signature().return_type.clone())
-    }
-
-    pub fn next_staged_expression_id(&mut self) -> u64 {
-        let id = self.next_staged_expression_id;
-        self.next_staged_expression_id += 1;
-        id
-    }
-
-    pub fn push_staged_expansion(&mut self, id: u64) {
-        self.staged_expansions.push(id);
-    }
-
-    pub fn pop_staged_expansion(&mut self) {
-        self.staged_expansions
-            .pop()
-            .expect("Staged expression expansion stack underflow");
-    }
-
-    pub fn get_symbol(
-        &mut self,
-        namespace: &EnvironmentNamespace,
-        name: &QualifiedName,
-    ) -> CXResult<Option<MIRSymbol>> {
-        let lookup = self.lookup_symbol(namespace, name).map_err(|err| {
-            CXErr::new(
-                err,
-                CXInternalContext::error(
-                    "symbol lookup failed before a source range was available",
-                ),
-            )
-        })?;
-
-        lookup
-            .map(|lookup| self.resolve_lookup(namespace, lookup))
-            .transpose()
-    }
-
-    pub fn lookup_symbol(
-        &mut self,
-        namespace: &EnvironmentNamespace,
-        name: &QualifiedName,
-    ) -> CXRawResult<Option<SymbolLookup>> {
-        finish_qualified_lookup(
-            QualifiedSymbolLookup {
-                env: self,
-                table: SymbolTable::Standard,
-            }
-            .qualified_lookup(namespace, name),
-        )
-    }
-
-    pub fn lookup_tag_symbol(
-        &self,
-        namespace: &EnvironmentNamespace,
-        name: &QualifiedName,
-    ) -> CXRawResult<Option<SymbolLookup>> {
-        finish_qualified_lookup(
-            QualifiedSymbolLookup {
-                env: self,
-                table: SymbolTable::Tag,
-            }
-            .qualified_lookup(namespace, name),
-        )
-    }
-
-    fn symbol_visible_from(
-        &self,
-        namespace: &EnvironmentNamespace,
-        candidate: &QualifiedName,
-        symbol: &HIRSymbol,
-    ) -> bool {
-        match symbol.visibility {
-            VisibilityMode::Public => true,
-            VisibilityMode::Package | VisibilityMode::Private => {
-                if &candidate.namespace == namespace.as_namespace_path() {
-                    return true;
-                }
-
-                if self
-                    .symbols
-                    .get_global_registry()
-                    .namespaces_are_friends(namespace, &candidate.namespace)
-                {
-                    return true;
-                }
-
-                if matches!(symbol.visibility, VisibilityMode::Package) {
-                    return candidate.namespace.strip(namespace).is_some();
-                }
-
-                false
-            }
-        }
-    }
-
-    pub(crate) fn resolve_lookup(
-        &mut self,
-        namespace: &EnvironmentNamespace,
-        lookup: SymbolLookup,
-    ) -> CXResult<MIRSymbol> {
-        let resolved_name = lookup.resolved_name;
-        if let SymbolLookupKind::Resolved(symbol) = lookup.kind {
-            return Ok(symbol);
-        }
-
-        let SymbolLookupKind::Untyped(untyped_symbol) = lookup.kind else {
-            unreachable!("resolved lookup was handled above")
-        };
-
-        if let Some(symbol) = self.symbols.get_preresolved_symbol(&resolved_name)
-            && matches!(symbol, MIRSymbol::Expression(_))
+    pub fn staging_context(&self) -> StagingContext {
+        let mut context = self
+            .comptime_context
+            .clone()
+            .unwrap_or_else(|| StagingContext {
+                return_type: self
+                    .try_current_function()
+                    .map(|f| f.signature().return_type.clone()),
+                yield_type: None,
+            });
+        if self.try_current_function().is_some()
+            && (!self.in_comptime_context() || self.in_runtime_emit_context())
         {
-            return Ok(symbol.clone());
+            context.yield_type = self
+                .function
+                .flow()
+                .yield_state()
+                .expected_type
+                .or(context.yield_type);
         }
-
-        let symbol = resolve_symbol(
-            self,
-            namespace,
-            &EnvironmentNamespace::from(&resolved_name.namespace),
-            &resolved_name.name,
-            &untyped_symbol,
-        )?;
-
-        self.symbols.insert_symbol(resolved_name, symbol.clone());
-        Ok(symbol)
+        context
     }
 
     pub fn type_eq(&self, type1: &THIRType, type2: &THIRType) -> bool {
         type1.contextual_eq(type2, &self.symbols)
     }
 
-    pub(crate) fn error(
+    pub(crate) fn error<A>(
         &self,
         range: impl Borrow<TokenRange>,
-        message: impl Into<String>,
-    ) -> CXErr {
-        crate::log::produce_(self.module_data, range.borrow(), message, Vec::new())
+        definition: &ErrorDefinition<A>,
+        args: A,
+    ) -> CXError {
+        generate_type_error(range.borrow(), definition, args, Vec::new())
     }
 
-    pub(crate) fn log_error_base<T>(&self, message: impl Into<String>) -> CXRawResult<T> {
-        CXStdErrMessage::result("TYPE ERROR", message.into())
+    pub(crate) fn log_error_base<T, A>(
+        &self,
+        definition: &ErrorDefinition<A>,
+        args: A,
+    ) -> CXRawResult<T> {
+        Err(crate::log::generate_raw_error(definition, args))
     }
 
-    pub(crate) fn log_error<T>(
+    pub(crate) fn log_error<T, A>(
         &self,
         range: impl Borrow<TokenRange>,
-        message: impl Into<String>,
+        definition: &ErrorDefinition<A>,
+        args: A,
     ) -> CXResult<T> {
-        Err(self.error(range, message))
+        Err(self.error(range, definition, args))
     }
 
-    pub(crate) fn complete_err(&self, err: CXErrMsg, range: &TokenRange) -> CXErr {
-        CXErr::new(err, self.module_data.convert_token_range(range))
+    pub(crate) fn complete_err(&self, err: CXRawError, range: &TokenRange) -> CXError {
+        CXError::new(err, from_token_range(range))
     }
 
-    pub(crate) fn complete_maybe_err(&self, err: CXMaybeRawErr, range: &TokenRange) -> CXErr {
+    pub(crate) fn complete_maybe_err(&self, err: CXErrorMaybeRaw, range: &TokenRange) -> CXError {
         match err {
-            CXMaybeRawErr::Complete(value) => value,
-            CXMaybeRawErr::Raw(err) => self.complete_err(err, range),
+            CXErrorMaybeRaw::Complete(value) => value,
+            CXErrorMaybeRaw::Raw(err) => self.complete_err(err, range),
         }
     }
-}
-
-#[derive(Clone, Copy)]
-enum SymbolTable {
-    Standard,
-    Tag,
-}
-
-struct QualifiedSymbolLookup<'a, 'b> {
-    env: &'a TypeEnvironment<'b>,
-    table: SymbolTable,
-}
-
-impl QualifiedLookup for QualifiedSymbolLookup<'_, '_> {
-    type Output = SymbolLookup;
-
-    fn lookup_local(
-        &self,
-        _lexical_namespace: &NamespacePath,
-        name: &QualifiedName,
-    ) -> Option<Self::Output> {
-        if matches!(self.table, SymbolTable::Tag) {
-            return None;
-        }
-
-        self.env
-            .symbols
-            .get_local_symbol_avoiding_staged_expansions(name, &self.env.staged_expansions)
-            .map(|sym| SymbolLookup {
-                resolved_name: name.clone(),
-                kind: SymbolLookupKind::Resolved(sym.clone()),
-            })
-    }
-
-    fn lookup_exact(
-        &self,
-        lexical_namespace: &NamespacePath,
-        name: &QualifiedName,
-    ) -> Option<Self::Output> {
-        let resolution = match self.table {
-            SymbolTable::Standard => self.env.symbols.get_global_registry().resolve(name),
-            SymbolTable::Tag => self.env.symbols.get_global_registry().resolve_tag(name),
-        };
-
-        if let Some(resolution) = resolution.and_then(|resolution| {
-            resolution.filter(|symbol| {
-                self.env.symbol_visible_from(
-                    &EnvironmentNamespace::from(lexical_namespace),
-                    name,
-                    symbol,
-                )
-            })
-        }) {
-            return Some(SymbolLookup {
-                resolved_name: name.clone(),
-                kind: SymbolLookupKind::Untyped(resolution),
-            });
-        }
-
-        let cached = match self.table {
-            SymbolTable::Standard => self.env.symbols.get_preresolved_symbol(name),
-            SymbolTable::Tag => self.env.symbols.get_preresolved_tag(name),
-        };
-        cached.map(|sym| SymbolLookup {
-            resolved_name: name.clone(),
-            kind: SymbolLookupKind::Resolved(sym.clone()),
-        })
-    }
-
-    fn resolve_aliases(
-        &self,
-        lexical_namespace: &NamespacePath,
-        namespace: &NamespacePath,
-    ) -> Vec<NamespacePath> {
-        self.env
-            .symbols
-            .get_global_registry()
-            .resolve_aliases(lexical_namespace, namespace)
-            .unwrap_or_else(|| {
-                panic!("failed to resolve namespace aliases for '{lexical_namespace}'")
-            })
-    }
-}
-
-fn finish_qualified_lookup(
-    lookup: QualifiedLookupResult<SymbolLookup>,
-) -> CXRawResult<Option<SymbolLookup>> {
-    match lookup {
-        QualifiedLookupResult::Found { value, .. } => CXRawResult::Ok(Some(value)),
-        QualifiedLookupResult::NotFound => CXRawResult::Ok(None),
-        QualifiedLookupResult::Ambiguous { candidates } => CXStdErrMessage::result(
-            "TYPE ERROR",
-            format!(
-                "Ambiguous Symbol Reference, candidates: {}",
-                candidates
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-        ),
-    }
-}
-
-pub struct SymbolLookup {
-    pub resolved_name: QualifiedName,
-    pub kind: SymbolLookupKind,
-}
-
-pub enum SymbolLookupKind {
-    Resolved(MIRSymbol),
-    Untyped(SymbolResolution),
 }

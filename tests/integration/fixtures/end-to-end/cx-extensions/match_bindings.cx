@@ -1,0 +1,82 @@
+/* CX-STDOUT: borrowed zero 7 */
+/* CX-STDOUT-NEXT: borrowed catch-all 10 */
+/* CX-STDOUT-NEXT: borrowed changed 11 */
+/* CX-STDOUT-NEXT: owned zero 8 */
+/* CX-STDOUT-NEXT: owned catch-all 10 */
+/* CX-STDOUT-NEXT: u8 catch-all 9 */
+/* CX-STDOUT-NEXT: char catch-all 65 */
+/* CX-STDOUT-NEXT: u8 max catch-all 2 */
+
+#include <stdio.h>
+
+enum union Choice {
+    zero :: int,
+    one :: int
+};
+
+int borrowed_choice(Choice& value) {
+    return match (value) {
+        Choice::zero(inner) => yield inner;
+        other => {
+            int changed = match (other) {
+                Choice::one(inner) => {
+                    inner += 1;
+                    yield inner;
+                }
+                _ => yield 20;
+            };
+            yield changed;
+        }
+    };
+}
+
+int owned_choice(Choice value) {
+    return match (move value) {
+        Choice::zero(inner) => yield inner;
+        other => {
+            int selected = match (move other) {
+                Choice::one(inner) => yield inner;
+                _ => yield 30;
+            };
+            yield selected;
+        }
+    };
+}
+
+int match_u8(u8 value) {
+    return match (move value) {
+        0 => yield 1;
+        other => yield other;
+    };
+}
+
+int match_char(char value) {
+    return match (move value) {
+        0 => yield 1;
+        other => yield other;
+    };
+}
+
+int match_u8_max(u8 value) {
+    return match (value) {
+        511 => yield 1;
+        _ => yield 2;
+    };
+}
+
+int main() {
+    Choice borrowed_zero = Choice::zero(7);
+    Choice borrowed_one = Choice::one(9);
+    Choice owned_zero = Choice::zero(8);
+    Choice owned_one = Choice::one(10);
+
+    printf("borrowed zero %d\n", borrowed_choice(borrowed_zero));
+    printf("borrowed catch-all %d\n", borrowed_choice(borrowed_one));
+    printf("borrowed changed %d\n", borrowed_choice(borrowed_one));
+    printf("owned zero %d\n", owned_choice(move owned_zero));
+    printf("owned catch-all %d\n", owned_choice(move owned_one));
+    printf("u8 catch-all %d\n", match_u8(9));
+    printf("char catch-all %d\n", match_char(65));
+    printf("u8 max catch-all %d\n", match_u8_max(255));
+    return 0;
+}

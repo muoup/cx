@@ -6,8 +6,10 @@ pub mod staged;
 pub mod ty;
 pub mod unit;
 
+pub(crate) mod log;
 pub(crate) mod format;
 
+pub use log::layout_error;
 pub use format::MIRDisplay;
 
 pub use diagnostic::{MIRDiagnostic, MIRDiagnosticLocation};
@@ -29,6 +31,6 @@ pub use op::{
 pub use staged::{MIRStagedCapture, MIRStagedTemplate};
 pub use ty::{
     MIRBitfieldAccess, MIRField, MIRFieldLayout, MIRFloatType, MIRFunctionType, MIRIntType,
-    MIRLayoutError, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRTypeRegistryBuilder,
+    MIRLayoutError, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout,
 };
 pub use unit::MIRUnit;

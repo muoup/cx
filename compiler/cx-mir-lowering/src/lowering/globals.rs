@@ -8,9 +8,10 @@ use cx_lmir::{
     LMIRParameterABI, LMIRReturnABI, LinkageType,
 };
 use cx_mir::ty::interface::MTRegistry;
+use cx_mir::ty::registry::MIRTypeRegistry;
 use cx_mir::{
     global::MIRGlobalKind, MIRConstant, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRTypeID,
-    MIRTypeKind, MIRTypeRegistryBuilder, MIRUnit,
+    MIRTypeKind, MIRUnit,
 };
 use cx_util::identifier::CXIdent;
 
@@ -19,7 +20,7 @@ use super::typing::{convert_float_type, convert_integer_type, convert_linkage, c
 pub(super) fn lower_global(
     mir: &MIRUnit,
     global: &MIRGlobalVariable,
-    types: &MIRTypeRegistryBuilder,
+    types: &MIRTypeRegistry,
     global_indices: &HashMap<MIRGlobalID, u32>,
 ) -> LMIRGlobalValue {
     let (linkage, lowered) = match &global.kind {
@@ -44,9 +45,6 @@ pub(super) fn lower_global(
                     _type: lowered_type,
                     state: LoweredGlobalState::ZeroInitialized,
                 },
-                MIRGlobalState::Initializer(function) => {
-                    panic!("unresolved comptime initializer function {function}")
-                }
                 MIRGlobalState::Initialized(constant) => LMIRGlobalType::Variable {
                     _type: lowered_type,
                     state: LoweredGlobalState::Initialized(lower_global_initializer(
@@ -67,7 +65,7 @@ pub(super) fn lower_global(
     }
 }
 
-pub(super) fn global_type(global: &MIRGlobalVariable, types: &MIRTypeRegistryBuilder) -> MIRTypeID {
+pub(super) fn global_type(global: &MIRGlobalVariable, types: &MIRTypeRegistry) -> MIRTypeID {
     match &global.kind {
         MIRGlobalKind::StringLiteral { .. } => types.find_kind(&MIRTypeKind::Str).unwrap(),
         MIRGlobalKind::Variable { ty, .. } => *ty,
@@ -146,7 +144,7 @@ fn is_zero_constant(constant: &MIRConstant) -> bool {
     }
 }
 
-pub(super) fn assertion_prototype(types: &MIRTypeRegistryBuilder) -> LMIRFunctionPrototype {
+pub(super) fn assertion_prototype(types: &MIRTypeRegistry) -> LMIRFunctionPrototype {
     let pointer = LMIRType::default_pointer(types.architecture());
     LMIRFunctionPrototype {
         name: CXIdent::new(ASSERTION.symbol_name()),

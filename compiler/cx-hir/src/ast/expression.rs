@@ -1,10 +1,7 @@
+use cx_namespace::module::QualifiedName;
 use cx_tokens::token::{FloatSuffix, IntegerBase, IntegerSuffix};
 use cx_tokens::TokenRange;
-use cx_util::{
-    identifier::CXIdent,
-    namespace::{EnvironmentNamespace, QualifiedName},
-    unsafe_float::FloatWrapper,
-};
+use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 
 use crate::ast::{
@@ -89,8 +86,7 @@ pub enum HIRExprKind {
 
     Match {
         condition: Box<HIRExpression>,
-        arms: Vec<(HIRPattern, HIRExpression)>, // (value, block)
-        default: Option<Box<HIRExpression>>,
+        arms: Vec<(HIRPattern, HIRExpression)>,
     },
 
     Switch {
@@ -255,21 +251,16 @@ impl HIRExprKind {
         self,
         start_index: usize,
         end_index: usize,
-        namespace: EnvironmentNamespace,
+        range: TokenRange,
     ) -> HIRExpression {
-        let (start_index, end_index) = if start_index > end_index {
+        if start_index > end_index {
             return HIRExpression {
                 kind: self,
                 range: TokenRange::error("Expression range start is after range end"),
             };
-        } else {
-            (start_index, end_index)
-        };
-
-        HIRExpression {
-            kind: self,
-            range: TokenRange::new(start_index, end_index, namespace),
         }
+
+        HIRExpression { kind: self, range }
     }
 
     pub fn block_terminating(&self) -> bool {

@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use cx_namespace::module::QualifiedName;
 use cx_thir::thir::comptime::THIRComptimeFn;
 use cx_thir::thir::data::THIRComptimeFnPrototype;
 use cx_thir::thir::data::THIRFnPrototype;
@@ -7,7 +8,7 @@ use cx_thir::thir::data::THIRFunction;
 use cx_thir::thir::data::THIRTemplateInput;
 use cx_thir::thir::global::THIRGlobalVariable;
 use cx_thir::thir::r#type::THIRType;
-use cx_util::{identifier::CXIdent, linkage::LinkageMode, namespace::QualifiedName};
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 #[derive(Debug)]
 pub enum THIRFunctionGenRequest {
@@ -17,9 +18,9 @@ pub enum THIRFunctionGenRequest {
         input: THIRTemplateInput,
     },
     Comptime {
-        name: QualifiedName,
         prototype: THIRComptimeFnPrototype,
         input: THIRTemplateInput,
+        context: super::StagingContext,
     },
     TypeConstructor {
         symbol_name: String,

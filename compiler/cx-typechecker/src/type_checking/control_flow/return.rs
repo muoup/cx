@@ -1,6 +1,8 @@
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
+use cx_namespace::module::NamespacePath;
+use cx_namespace::module::QualifiedName;
 use cx_thir::{
-    EnvironmentNamespace,
     thir::{
         expression::{THIRExpression, THIRExpressionKind},
         r#type::THIRType,
@@ -8,7 +10,6 @@ use cx_thir::{
     type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
-use cx_util::namespace::QualifiedName;
 
 use crate::{
     environment::TypeEnvironment,
@@ -28,22 +29,23 @@ fn typechange_can_forward_region(return_type: &THIRType) -> bool {
 
 pub fn typecheck_return(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     return_range: &TokenRange,
     value: Option<THIRExpression>,
 ) -> CXResult<TypecheckResult> {
     if env.in_defer_context() {
-        return env.log_error(
-            return_range,
-            "return is not allowed inside a deferred expression".to_string(),
-        );
+        return env.log_error(return_range, &catalogue::DEFER_FALLTHROUGH, ());
     }
 
     let return_type = if env.in_staged_context() || env.in_runtime_emit_context() {
-        let Some(return_type) = env.materialization_return_type() else {
+        let Some(return_type) = env.staging_context().return_type else {
             return env.log_error(
                 return_range,
-                "staged return has no materialization context".to_string(),
+                &catalogue::INVALID_CONTEXT,
+                (
+                    "Return statements".into(),
+                    "global variable initializers; use a yield statement instead".into(),
+                ),
             );
         };
         return_type
@@ -54,9 +56,10 @@ pub fn typecheck_return(
     if return_type.is_unreachable() {
         return env.log_error(
             return_range,
-            format!(
-                "Function {} cannot return because its return type is 'unreachable'",
-                env.current_function().pretty_name()
+            &catalogue::INVALID_CONTEXT,
+            (
+                "Return statements".into(),
+                "unreachable returning function".into(),
             ),
         );
     }
@@ -92,9 +95,13 @@ pub fn typecheck_return(
         (Some(value), _) => {
             return env.log_error(
                 value.token_range,
-                format!(
-                    "Cannot return from function {} with a void return type",
-                    env.current_function().pretty_name()
+                &catalogue::INVALID_CONTEXT,
+                (
+                    "Return statements with a value".into(),
+                    format!(
+                        "function {} which returns void",
+                        env.current_function().pretty_name()
+                    ),
                 ),
             );
         }
@@ -102,9 +109,14 @@ pub fn typecheck_return(
         (None, _) => {
             return env.log_error(
                 return_range,
-                format!(
-                    "Function {} expects a return value, but none was provided",
-                    env.current_function().pretty_name()
+                &catalogue::INVALID_CONTEXT,
+                (
+                    "Return statements without a value".into(),
+                    format!(
+                        "function {} which returns {}",
+                        env.current_function().pretty_name(),
+                        return_type.display_with(&env.symbols)
+                    ),
                 ),
             );
         }
@@ -120,8 +132,8 @@ pub fn typecheck_return(
         if ret_name.is_some() && return_type.is_void() {
             return env.log_error(
                 return_range,
-                "Cannot have a named return variable in a function with void return type"
-                    .to_string(),
+                &catalogue::INVALID_CONTEXT,
+                ("Post-conditions capturing a return value".into(), "void returning function".into())
             );
         }
 

@@ -1,18 +1,19 @@
+use cx_log::catalogue::typecheck as catalogue;
 use std::fmt::{Debug, Formatter};
 
 use cx_hir::ast::{expression::HIRExpression, template::HIRTemplateInput};
 use cx_log::{CXRawResult, CXResult};
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_thir::{
-    EnvironmentNamespace,
     symbol::MIRSymbol,
     thir::{
         comptime::THIRStagedExpr,
-        data::{THIRComptimeFnPrototype, THIRComptimeValueType, THIRType},
+        data::{THIRComptimeFnPrototype, THIRComptimeValueType, THIRTemplateInput, THIRType},
         expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
     },
 };
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_util::identifier::CXIdent;
 
 use crate::environment::TypeEnvironment;
 
@@ -67,6 +68,7 @@ impl StandardTC {
 #[derive(Debug, Clone)]
 pub struct ComptimeFunctionTC {
     pub prototype: THIRComptimeFnPrototype,
+    pub input: THIRTemplateInput,
 }
 
 #[derive(Debug, Clone)]
@@ -102,7 +104,7 @@ pub struct DeferredStagedExpr {
 }
 
 type ExpectedTypeResolver<T> =
-    dyn FnOnce(&mut TypeEnvironment, &EnvironmentNamespace, &THIRType) -> CXResult<T>;
+    dyn FnOnce(&mut TypeEnvironment, &NamespacePath, &THIRType) -> CXResult<T>;
 
 pub enum TypecheckResult<T = TypecheckedExpr> {
     Ready(T),
@@ -155,9 +157,10 @@ impl TypecheckResult {
         Self::Ready(TypecheckedExpr::Staged(StagedTC::Binding(value)))
     }
 
-    pub fn comptime_function(prototype: THIRComptimeFnPrototype) -> Self {
+    pub fn comptime_function(prototype: THIRComptimeFnPrototype, input: THIRTemplateInput) -> Self {
         Self::Ready(TypecheckedExpr::ComptimeFunction(ComptimeFunctionTC {
             prototype,
+            input,
         }))
     }
 
@@ -173,11 +176,7 @@ impl TypecheckResult {
 
     pub fn needs_expected_type<F>(resolver: F) -> Self
     where
-        F: FnOnce(
-                &mut TypeEnvironment,
-                &EnvironmentNamespace,
-                &THIRType,
-            ) -> CXResult<THIRExpression>
+        F: FnOnce(&mut TypeEnvironment, &NamespacePath, &THIRType) -> CXResult<THIRExpression>
             + 'static,
     {
         Self::NeedsExpectedType(Box::new(move |env, namespace, expected_type| {
@@ -204,24 +203,28 @@ impl TypecheckResult {
             Self::Ready(TypecheckedExpr::Standard(_)) => Ok(self),
             Self::Ready(TypecheckedExpr::Staged(_)) => env.log_error(
                 token_range,
-                "Staged expression cannot be used as a runtime expression".to_string(),
+                &catalogue::INVALID_CONTEXT,
+                ("staged expression".into(), "runtime value context".into())
             ),
             Self::Ready(TypecheckedExpr::ComptimeFunction(_)) => env.log_error(
                 token_range,
-                "Comptime function cannot be used as a value".to_string(),
+                &catalogue::INVALID_CONTEXT,
+                ("comptime function".into(), "runtime value context".into())
             ),
             Self::IncompleteTemplate(_) => env.log_error(
                 token_range,
-                "Could not deduce templated function parameters".to_string(),
+                &catalogue::TEMPLATE_DEDUCTION,
+                "expression".into()
             ),
             Self::NeedsExpectedType(_) => env.log_error(
                 token_range,
-                "Could not resolve expression, expected type required but not provided".to_string(),
+                &catalogue::TEMPLATE_DEDUCTION,
+                "expression".into()
             ),
             Self::NeedsStagedType(_) => env.log_error(
                 token_range,
-                "Could not resolve staged expression, staged parameter types required but not provided"
-                    .to_string(),
+                &catalogue::TEMPLATE_DEDUCTION,
+                "expression".into()
             ),
         }
     }
@@ -296,7 +299,7 @@ impl TypecheckResult {
     pub fn apply_expected_type(
         self,
         env: &mut TypeEnvironment,
-        namespace: &EnvironmentNamespace,
+        namespace: &NamespacePath,
         expected_type: &THIRType,
     ) -> CXResult<Self> {
         match self {
@@ -310,7 +313,7 @@ impl TypecheckResult {
     pub fn apply_staged_type(
         self,
         env: &mut TypeEnvironment,
-        namespace: &EnvironmentNamespace,
+        namespace: &NamespacePath,
         value_type: &THIRComptimeValueType,
     ) -> CXResult<Self> {
         match self {
@@ -331,8 +334,8 @@ impl TypecheckResult {
     ) -> CXRawResult<Self> {
         match symbol {
             MIRSymbol::Template { .. } => Ok(Self::incomplete_template(name, template_input)),
-            MIRSymbol::ComptimeFunctionReference { prototype, .. } => {
-                Ok(Self::comptime_function(prototype))
+            MIRSymbol::ComptimeFunctionReference { prototype, input } => {
+                Ok(Self::comptime_function(prototype, input))
             }
             _ => symbol.as_expression().map(Self::from),
         }

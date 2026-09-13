@@ -1,17 +1,18 @@
 use cx_hir::{
     ast::{
-        HIRDefinition, HIRStmt,
         global_var::HIRGlobalVariable,
         template::{HIRTemplateInput, HIRTemplatePrototype},
+        HIRDefinition, HIRStmt,
     },
     symbols::{
-        HIRFunctionSymbol, HIRSymbol, HIRSymbolData, HIRSymbolKind, HIRTypeConstructorSymbol, SymbolIdentifier, SymbolNamespaceData, TypeConstructorData
+        HIRFunctionSymbol, HIRSymbol, HIRSymbolData, HIRSymbolKind, HIRTypeConstructorSymbol,
+        SymbolIdentifier, SymbolNamespaceData, TypeConstructorData,
     },
 };
 
 use cx_hir::ast::types::{HIRType, HIRTypeKind, HIRTypeLookup};
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_preparse_data::NamespaceAliases;
-use cx_util::namespace::{NamespacePath, QualifiedName};
 
 pub struct ExtractionEnv<'a> {
     namespace: &'a NamespacePath,
@@ -49,7 +50,7 @@ impl<'a> ExtractionEnv<'a> {
             return &mut self.symbol_buckets[idx].1;
         };
 
-        if !namespace.is_root() && namespace.strip(self.namespace).is_none() {
+        if !namespace.is_root() && namespace.clone().strip_prefix(self.namespace).is_none() {
             panic!(
                 "Namespace {} is not a child of current namespace {}",
                 namespace, self.namespace
@@ -124,13 +125,13 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
                 let union_name = QualifiedName::new(base_namespace.clone(), name.clone());
                 let union_type = HIRTypeKind::Identifier {
                     name: union_name,
-                    lookup: HIRTypeLookup::Standard,
+                    lookup: tag.map_or(HIRTypeLookup::Standard, HIRTypeLookup::Tag),
                     template_input: template_prototype
                         .clone()
                         .map(convert_template_proto_to_args),
                 }
                 .to_type();
-                let variant_namespace = base_namespace.child(name.clone());
+                let variant_namespace = base_namespace.clone().child(name.clone());
 
                 for (variant_index, variant) in variants.iter().enumerate() {
                     let Some((variant_name, _)) = variant.standard_parts() else {
@@ -139,22 +140,11 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
 
                     let symbol = HIRSymbol::new(
                         *visibility,
-                        HIRSymbolKind::TypeConstructor(match template_prototype.clone() {
-                            Some(prototype) => HIRTypeConstructorSymbol::Template {
-                                base: TypeConstructorData {
-                                    union_type: union_type.clone(),
-                                    variant_index,
-                                },
-                                template_data: (),
-                                template_prototype: prototype,
-                            },
-                            None => HIRTypeConstructorSymbol::Standard {
-                                base: TypeConstructorData {
-                                    union_type: union_type.clone(),
-                                    variant_index,
-                                }
-                            },
-                        }),
+                        HIRSymbolKind::TypeConstructor(HIRTypeConstructorSymbol::new(
+                            TypeConstructorData { union_type: union_type.clone(), variant_index },
+                            (),
+                            template_prototype.clone(),
+                        )),
                     );
 
                     insert_symbol(
@@ -177,29 +167,16 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
                 name,
                 namespace: q_namespace,
             } = prototype.kind.into_key();
-            let namespace = base_namespace.join(&q_namespace);
-            let symbol = match template_prototype {
-                Some(input) => {
-                    let Some(body) = body else {
-                        return;
-                    };
-
-                    HIRSymbol::new(
-                        *visibility,
-                        HIRSymbolKind::Function(HIRFunctionSymbol::Template {
-                            base: prototype.clone(),
-                            template_data: body.clone(),
-                            template_prototype: input.clone(),
-                        })
-                    )
-                }
-                None => HIRSymbol::new(
-                    *visibility,
-                    HIRSymbolKind::Function(HIRFunctionSymbol::Standard {
-                        base: prototype.clone()
-                    })
-                )
-            };
+            let namespace = base_namespace.clone().join(q_namespace);
+            if template_prototype.is_some() && body.is_none() {
+                return;
+            }
+            let symbol = HIRSymbol::new(
+                *visibility,
+                HIRSymbolKind::Function(HIRFunctionSymbol::new(
+                    prototype.clone(), body.clone(), template_prototype.clone(),
+                )),
+            );
 
             insert_symbol(
                 env,
@@ -219,25 +196,13 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
                 name,
                 namespace: q_namespace,
             } = prototype.kind.into_key();
-            let namespace = base_namespace.join(&q_namespace);
-            let symbol = match template_prototype {
-                Some(input) => HIRSymbol::new(
-                    *visibility,
-                    HIRSymbolKind::ComptimeFunction(HIRSymbolData::new(
-                        prototype.clone(),
-                        body.clone(),
-                        Some(input.clone()),
-                    )),
-                ),
-                None => HIRSymbol::new(
-                    *visibility,
-                    HIRSymbolKind::ComptimeFunction(HIRSymbolData::new(
-                        prototype.clone(),
-                        body.clone(),
-                        None,
-                    )),
-                ),
-            };
+            let namespace = base_namespace.clone().join(q_namespace);
+            let symbol = HIRSymbol::new(
+                *visibility,
+                HIRSymbolKind::ComptimeFunction(HIRSymbolData::new(
+                    prototype.clone(), body.clone(), template_prototype.clone(),
+                )),
+            );
 
             insert_symbol(
                 env,

@@ -1,14 +1,15 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::progress::ProgressReporter;
 use crate::{diagnostics, pipeline_error};
-use cx_log::{CXResult, error::CXErr};
+use cx_log::catalogue::driver as catalogue;
+use cx_log::{CXResult, error::CXError};
 use cx_mir_analysis::{MIRAnalysisOptions, analyze};
 
 use cx_mir_lowering::generate_lmir;
+use cx_namespace::module::{ModulePath, NamespacePath, QualifiedName};
 use cx_parsing::preparse::PreparseConfig;
 use cx_parsing::{ast_extract_symbols, parse_ast, preparse};
 use cx_pipeline_data::db::ModuleMap;
-use cx_pipeline_data::directories::internal_directory;
 use cx_pipeline_data::internal_storage::{resource_path, retrieve_data};
 use cx_pipeline_data::jobs::{
     CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue,
@@ -22,9 +23,8 @@ use cx_thir_lowering::generate_mir;
 use cx_tokens::TokenIter;
 use cx_typechecker::environment::TypeEnvironment;
 use cx_typechecker::typecheck;
-use cx_util::format::{dump_data, with_dump_file};
-use cx_util::module_path::ModulePath;
-use cx_util::namespace::{NamespacePath, QualifiedName};
+use cx_util::format::{dump_data, dumps_enabled, with_dump_file};
+use cx_util::identifier::CXIdent;
 use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::{HashMap, HashSet};
@@ -85,7 +85,6 @@ pub(crate) fn scheduling_loop_many(
             reporter.skip_step(&job.unit.to_string());
             reporter.complete_step();
             queue.complete_all_unit_jobs(&job.unit);
-            context.module_db.set_no_reexport(&job.unit);
             context
                 .linking_files
                 .lock()
@@ -135,21 +134,18 @@ fn import_jobs_for_unit(
 ) -> CXResult<Vec<CompilationJob>> {
     let mut jobs = Vec::new();
 
-    for import in import_module_paths(imports) {
-        if !context.config.module_mode && !import.is_library_module() {
+    for import in import_units(imports, &context.config.working_directory) {
+        if !context.config.module_mode && !import.is_std_lib() {
             return Err(pipeline_error(
-                "COMPILATION ERROR",
-                format!(
-                    "Import '{}' is not available in single-file compilation mode. Only compiler library modules under `std::` may be imported here; use `cx build` for project/module imports.",
-                    import.as_str().replace('/', "::")
-                ),
+                &catalogue::SINGLE_FILE_IMPORT,
+                format!("{}", import),
             ));
         }
 
         jobs.push(CompilationJob::new(
             vec![],
             CompilationStep::PreParse,
-            CompilationUnit::from_module_path(import.clone(), &context.config.working_directory),
+            import,
         ));
     }
 
@@ -162,12 +158,9 @@ fn import_requirements_for_unit(
     step: CompilationStep,
     shallow: bool,
 ) -> Vec<CompilationJobRequirement> {
-    import_module_paths(imports)
+    import_units(imports, &context.config.working_directory)
         .map(|import| CompilationJobRequirement {
-            unit: CompilationUnit::from_module_path(
-                import.clone(),
-                &context.config.working_directory,
-            ),
+            unit: import,
             step,
             shallow,
         })
@@ -182,31 +175,54 @@ fn import_units_for_unit(
         .module_db
         .preparse_base
         .lock()
-        .get(&unit.namespace().clone())
+        .get(&unit.namespace())
         .map(|preparse| {
-            import_module_paths(&preparse.imports)
-                .map(|import| {
-                    CompilationUnit::from_module_path(
-                        import.clone(),
-                        &context.config.working_directory,
-                    )
-                })
-                .collect()
+            import_units(&preparse.imports, &context.config.working_directory).collect()
         })
 }
 
-fn import_module_paths(imports: &[Import]) -> impl Iterator<Item = ModulePath> + '_ {
-    imports.iter().flat_map(|import| {
-        import
-            .names
-            .iter()
-            .map(|name| ModulePath::from_import_path(&name.as_flat_name()))
-    })
+fn import_units<'a>(
+    imports: &'a [Import],
+    working_directory: &'a std::path::Path,
+) -> impl Iterator<Item = CompilationUnit> + 'a {
+    imports
+        .iter()
+        .flat_map(move |import| {
+            import.names.iter().map(move |name| {
+                let mut path = std::path::PathBuf::new();
+                for segment in name.namespace.segments() {
+                    path.push(segment.as_str());
+                }
+                path.push(name.name.as_str());
+                let namespace = name.namespace.clone().child(name.name.clone());
+                let module_path = if namespace
+                    .segments()
+                    .first()
+                    .is_some_and(|s| s.as_str() == "std")
+                {
+                    ModulePath::new(std::path::PathBuf::from(
+                        cx_namespace::cx_library_directory(&format!(
+                            "{}.cx",
+                            path.to_string_lossy()
+                        )),
+                    ))
+                } else {
+                    ModulePath::new(working_directory.join(path).with_extension("cx"))
+                };
+                CompilationUnit::new(working_directory, module_path, Some(namespace))
+            })
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
 }
 
 fn import_from_module_path(path: ModulePath) -> Import {
-    let namespace = NamespacePath::from(path);
-    let (namespace, name) = namespace
+    let segments = path
+        .as_path()
+        .components()
+        .map(|component| CXIdent::new(component.as_os_str().to_string_lossy().as_ref()))
+        .collect::<Vec<_>>();
+    let (namespace, name) = NamespacePath::new(segments)
         .parent_and_name()
         .expect("compiler-injected import path should have a name");
 
@@ -252,7 +268,7 @@ pub(crate) fn handle_job(
 
     match job.step {
         CompilationStep::PreParse => {
-            let pp_data = context.module_db.preparse_base.get(&job.unit);
+            let pp_data = context.module_db.preparse_base.get(&job.unit.namespace());
             let mut new_jobs = import_jobs_for_unit(context, &pp_data.imports)?;
 
             job.step = CompilationStep::Parse;
@@ -287,7 +303,7 @@ fn load_precompiled_data(
         T: Clone + Readable<'a, LittleEndian> + Writable<LittleEndian>,
     {
         if let Some(data) = retrieve_data::<T>(context, unit, &map.storage_extension) {
-            map.insert(unit.clone(), data);
+            map.insert(unit.namespace().clone(), data);
             Some(())
         } else {
             None
@@ -312,14 +328,30 @@ fn perform_job_with_dump(
     job: &CompilationJob,
     retain_lmir: bool,
 ) -> CXResult<JobResult> {
+    if !dumps_enabled() {
+        return perform_job(context, job, retain_lmir);
+    }
     let dump_path = resource_path(context, &job.unit, ".dump");
     if matches!(job.step, CompilationStep::PreParse) {
+        std::fs::create_dir_all(dump_path.parent().unwrap()).map_err(|error| {
+            pipeline_error(
+                &catalogue::FILE_OPERATION,
+                (
+                    "create".into(),
+                    "dump directory".into(),
+                    Some(format!("{}", dump_path.parent().unwrap().display())),
+                    format!("{}", error),
+                ),
+            )
+        })?;
         std::fs::File::create(&dump_path).map_err(|error| {
             pipeline_error(
-                "COMPILATION ERROR",
-                format!(
-                    "Failed to create dump file {}: {error}",
-                    dump_path.display()
+                &catalogue::FILE_OPERATION,
+                (
+                    "create".into(),
+                    "dump file".into(),
+                    Some(format!("{}", dump_path.display())),
+                    format!("{}", error),
                 ),
             )
         })?;
@@ -335,11 +367,16 @@ pub(crate) fn perform_job(
 ) -> CXResult<JobResult> {
     match job.step {
         CompilationStep::PreParse => {
-            let file_path = job.unit.as_path().to_path_buf();
+            let file_path = job.unit.module().as_path().to_path_buf();
             let file_contents = std::fs::read_to_string(&file_path).map_err(|error| {
                 pipeline_error(
-                    "COMPILATION ERROR",
-                    format!("Failed to read {}: {error}", file_path.display()),
+                    &catalogue::FILE_OPERATION,
+                    (
+                        "read".into(),
+                        "source file".into(),
+                        Some(format!("{}", file_path.display())),
+                        format!("{}", error),
+                    ),
                 )
             })?;
 
@@ -366,9 +403,9 @@ pub(crate) fn perform_job(
             let preparse_config = PreparseConfig::from_compiler_config(&context.config);
             let mut output = preparse(
                 &preparse_config,
-                TokenIter::new(&tokens, file_path),
-                job.unit.to_string(),
-                job.unit.namespace().as_namespace_path().clone(),
+                TokenIter::new(&tokens, file_path.clone()),
+                file_path.to_string_lossy().into_owned(),
+                job.unit.namespace().clone(),
             )?;
 
             if !job.unit.is_std_lib() {
@@ -385,11 +422,11 @@ pub(crate) fn perform_job(
             context
                 .module_db
                 .lex_tokens
-                .insert(job.unit.clone(), tokens.into_boxed_slice());
+                .insert(job.unit.namespace().clone(), tokens.into_boxed_slice());
             context
                 .module_db
                 .preparse_base
-                .insert(job.unit.clone(), output);
+                .insert(job.unit.namespace().clone(), output);
 
             return Ok(JobResult::StandardSuccess);
 
@@ -403,11 +440,11 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::Parse => {
-            let pp_data = context.module_db.preparse_base.get(&job.unit);
-            let lexemes = context.module_db.lex_tokens.get(&job.unit);
+            let pp_data = context.module_db.preparse_base.get(job.unit.namespace());
+            let lexemes = context.module_db.lex_tokens.get(job.unit.namespace());
 
             let parsed_ast = parse_ast(
-                TokenIter::new(&lexemes, job.unit.as_path().to_path_buf()),
+                TokenIter::new(&lexemes, job.unit.module().as_path().to_path_buf()),
                 pp_data.as_ref(),
                 &context.module_db.preparse_registry,
             )?;
@@ -416,7 +453,7 @@ pub(crate) fn perform_job(
                 dump_data(&parsed_ast);
             }
 
-            let namespace = job.unit.namespace().as_namespace_path().clone();
+            let namespace = job.unit.namespace().clone();
             let decomposition = ast_extract_symbols(&namespace, &parsed_ast);
 
             for (namespace, bucket) in decomposition.symbol_buckets {
@@ -426,10 +463,8 @@ pub(crate) fn perform_job(
                     .insert_module(namespace, bucket)
                 {
                     return Err(pipeline_error(
-                        "COMPILATION ERROR",
-                        format!(
-                            "Duplicate module namespace found during decomposition: {namespace}"
-                        ),
+                        &catalogue::DUPLICATE_NAMESPACE,
+                        format!("{}", namespace),
                     ));
                 }
             }
@@ -441,16 +476,20 @@ pub(crate) fn perform_job(
                     .insert_namespace_friend(namespace, friend);
             }
 
-            context.module_db.hir.insert(job.unit.clone(), parsed_ast);
+            context
+                .module_db
+                .hir
+                .insert(job.unit.namespace().clone(), parsed_ast);
         }
 
         CompilationStep::Typechecking => {
-            let self_ast = context.module_db.hir.get(&job.unit);
+            let self_ast = context.module_db.hir.get(&job.unit.namespace());
             let namespace = job.unit.namespace().clone();
 
             let require_explicit_return =
                 context.config.require_explicit_return.unwrap_or_else(|| {
                     job.unit
+                        .module()
                         .as_path()
                         .extension()
                         .and_then(|extension| extension.to_str())
@@ -470,11 +509,14 @@ pub(crate) fn perform_job(
                 dump_data(&thir.display_pretty());
             }
 
-            context.module_db.thir.insert(job.unit.clone(), thir);
+            context
+                .module_db
+                .thir
+                .insert(job.unit.namespace().clone(), thir);
         }
 
         CompilationStep::MIRGen => {
-            let thir = context.module_db.thir.get(&job.unit);
+            let thir = context.module_db.thir.get(job.unit.namespace());
             let mir = generate_mir(thir.as_ref())?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
@@ -482,54 +524,64 @@ pub(crate) fn perform_job(
             }
 
             if !context.config.unsafe_mode {
-                let analysis = analyze(
+                analyze(
                     &mir,
                     MIRAnalysisOptions {
-                        validate: !context.config.unsafe_mode,
                         check_assertions: !context.config.unsafe_mode,
                     },
                 )
                 .map_err(|error| {
-                    diagnostics::mir_diagnostic_error(
-                        &context.module_db,
-                        Some(&mir),
-                        error.diagnostic(),
-                    )
+                    diagnostics::mir_diagnostic_error(Some(&mir), error.diagnostic())
                 })?;
-
-                if !job.unit.is_std_lib() || context.config.verbose {
-                    dump_data(&analysis);
-                }
             }
 
-            context.module_db.mir.insert(job.unit.clone(), mir);
+            context
+                .module_db
+                .mir
+                .insert(job.unit.namespace().clone(), mir);
         }
 
         CompilationStep::LMIRGen => {
-            let mir = context.module_db.mir.get(&job.unit);
+            let mir = context.module_db.mir.get(job.unit.namespace());
             let lmir = generate_lmir(mir.as_ref())?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&lmir);
             }
 
-            context.module_db.lmir.insert(job.unit.clone(), lmir);
+            context
+                .module_db
+                .lmir
+                .insert(job.unit.namespace().clone(), lmir);
         }
 
         CompilationStep::Codegen => {
             let lmir_arc;
             let lmir_owned;
             let lmir: &cx_lmir::LMIRUnit = if retain_lmir {
-                lmir_arc = context.module_db.lmir.get(&job.unit);
+                lmir_arc = context.module_db.lmir.get(job.unit.namespace());
                 &lmir_arc
             } else {
-                lmir_owned = context.module_db.lmir.take(&job.unit);
+                lmir_owned = context.module_db.lmir.take(job.unit.namespace());
                 &lmir_owned
             };
-            let internal_directory = internal_directory(context, &job.unit).with_extension("o");
+            let internal_directory = resource_path(context, &job.unit, ".o");
+            if let Some(parent) = internal_directory.parent() {
+                std::fs::create_dir_all(parent).map_err(|error| {
+                    pipeline_error(
+                        &catalogue::FILE_OPERATION,
+                        (
+                            "create".into(),
+                            "object directory".into(),
+                            Some(format!("{}", parent.display())),
+                            format!("{}", error),
+                        ),
+                    )
+                })?;
+            }
             let internal_directory_str = internal_directory.to_str().ok_or(pipeline_error(
-                "COMPILATION ERROR",
-                "Internal directory path is not valid UTF-8",
+                &catalogue::PATH_ENCODING,
+                "internal directory".into(),
             ))?;
 
             let buffer = match context.config.backend {
@@ -564,6 +616,7 @@ pub(crate) fn perform_job(
 pub enum LSPErrors {
     SpannedError {
         compilation_unit: std::path::PathBuf,
+        code: String,
         message: String,
         byte_start: usize,
         byte_end: usize,
@@ -571,6 +624,7 @@ pub enum LSPErrors {
     },
     FatalError {
         compilation_unit: std::path::PathBuf,
+        code: String,
         message: String,
         line: Option<usize>,
     },
@@ -611,7 +665,7 @@ pub(crate) fn scheduling_loop_collect_errors(
             continue;
         }
 
-        checked_files.insert(job.unit.as_path().to_path_buf());
+        checked_files.insert(job.unit.module().as_path().to_path_buf());
         match handle_job_collect_errors(context, &job, error_collector)? {
             HandleJobResult::Success(new_jobs) => {
                 queue.complete_job(&job);
@@ -663,14 +717,15 @@ fn handle_job_collect_errors(
         .into()
     };
 
-    fn spanned_error(error: &CXErr) -> Option<LSPErrors> {
+    fn spanned_error(error: &CXError) -> Option<LSPErrors> {
         let span = error.source_span()?;
         Some(LSPErrors::SpannedError {
             compilation_unit: span.file,
+            code: error.code(),
             message: error.message(),
             byte_start: span.byte_start,
             byte_end: span.byte_end,
-            notes: vec![],
+            notes: error.notes().to_vec(),
         })
     }
 
@@ -679,7 +734,8 @@ fn handle_job_collect_errors(
         Ok(_) => {}
         Err(e) => {
             let lsp_error = spanned_error(&e).unwrap_or(LSPErrors::FatalError {
-                compilation_unit: job.unit.as_path().to_path_buf(),
+                compilation_unit: job.unit.module().as_path().to_path_buf(),
+                code: e.code(),
                 message: e.message(),
                 line: None,
             });
@@ -692,13 +748,14 @@ fn handle_job_collect_errors(
     // Generate next jobs based on the completed step
     match job.step {
         CompilationStep::PreParse => {
-            let pp_data = context.module_db.preparse_base.get(&job.unit);
+            let pp_data = context.module_db.preparse_base.get(job.unit.namespace());
 
             let mut new_jobs = match import_jobs_for_unit(context, &pp_data.imports) {
                 Ok(jobs) => jobs,
                 Err(e) => {
                     let lsp_error = spanned_error(&e).unwrap_or(LSPErrors::FatalError {
-                        compilation_unit: job.unit.as_path().to_path_buf(),
+                        compilation_unit: job.unit.module().as_path().to_path_buf(),
+                        code: e.code(),
                         message: e.message(),
                         line: None,
                     });

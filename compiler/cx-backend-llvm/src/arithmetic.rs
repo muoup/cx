@@ -1,4 +1,4 @@
-use crate::error::{LLVMError, LLVMResult};
+use crate::log::{LLVMError, LLVMResult};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{LMIRIntBinOp, LMIRPtrBinOp};
 use inkwell::values::{AnyValue, AnyValueEnum, IntValue};

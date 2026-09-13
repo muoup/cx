@@ -15,7 +15,7 @@ std::opt<file> file::open(const char* path, const char* mode) {
     FILE* handle = fopen(path, mode);
     
     if (handle == NULL) {
-        return std::optional::opt::none<file>();
+        return std::optional::opt::none();
     }
     
     return std::opt::some<file>((file) { .handle = handle });

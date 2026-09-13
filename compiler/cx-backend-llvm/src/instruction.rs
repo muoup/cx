@@ -6,7 +6,7 @@ mod variadic;
 
 use std::cell::Cell;
 
-use crate::error::LLVMResult;
+use crate::log::LLVMResult;
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{LMIRInstruction, LMIRInstructionKind};
 

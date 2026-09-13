@@ -1,6 +1,8 @@
+
+use cx_namespace::module::{ModulePath, NamespacePath};
 pub use cx_preparse_data::Import as HIRImport;
 use cx_preparse_data::NamespaceAliases;
-use cx_util::{identifier::CXIdent, module_path::ModulePath, namespace::NamespacePath};
+use cx_util::{identifier::CXIdent};
 
 use crate::ast::{
     expression::HIRExpression,

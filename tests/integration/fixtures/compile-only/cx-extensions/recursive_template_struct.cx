@@ -1,0 +1,8 @@
+struct Node<T> {
+    T value;
+    Node<T>* next;
+};
+
+int read_node(Node<int>* node) {
+    return node->next->value;
+}

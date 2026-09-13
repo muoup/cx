@@ -6,4 +6,5 @@ autotests = false
 
 [dependencies]
 cx-target = { path = "../cx-target" }
+cx-namespace = { path = "../cx-namespace" }
 cx-util = { path = "../cx-util" }

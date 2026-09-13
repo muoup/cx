@@ -1,7 +1,8 @@
 use cx_hir::ast::expression::{HIRExpression, HIRInitIndex};
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
+use cx_namespace::module::NamespacePath;
 use cx_thir::{
-    EnvironmentNamespace,
     thir::{
         data::{THIRType, THIRTypeKind},
         expression::{StructInitialization, THIRExpressionKind},
@@ -20,7 +21,7 @@ use crate::{
 
 pub fn typecheck_initializer_list(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     indices: &[HIRInitIndex],
     to_type: Option<&THIRType>,
@@ -86,17 +87,15 @@ pub fn typecheck_initializer_list(
 
         _ => env.log_error(
             expr.token_range(),
-            format!(
-                "Cannot coerce initializer to type {}",
-                to_type.display_with(&env.symbols)
-            ),
+            &catalogue::TYPE_REQUIREMENT,
+            ("initializer".into(), "the target type".into(), Some(format!("{}", to_type.display_with(&env.symbols)))),
         ),
     }
 }
 
 fn typecheck_union_initializer(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     indices: &[HIRInitIndex],
     to_type: &THIRType,
@@ -104,17 +103,16 @@ fn typecheck_union_initializer(
     let Some(fields) = to_type.aggregate_fields(&env.symbols) else {
         return env.log_error(
             expr.token_range(),
-            format!(
-                "Expected a union type for initializer, found {}",
-                to_type.display_with(&env.symbols)
-            ),
+            &catalogue::TYPE_REQUIREMENT,
+            ("initializer".into(), "a union type".into(), Some(format!("{}", to_type.display_with(&env.symbols)))),
         );
     };
 
     if indices.len() > 1 {
         return env.log_error(
             expr.token_range(),
-            "Union initializer may contain at most one element".to_string(),
+            &catalogue::INITIALIZER_LIMIT,
+            ("union".into(), Some(1)),
         );
     }
 
@@ -130,7 +128,8 @@ fn typecheck_union_initializer(
             let Some((_, field_type)) = fields.get(field_index) else {
                 return env.log_error(
                     expr.token_range(),
-                    "Union initializer field does not exist".to_string(),
+                    &catalogue::UNKNOWN_MEMBER,
+                    (format!("union {}", to_type.display_with(&env.symbols)), "initializer field".into()),
                 );
             };
             let value = typecheck_expr(env, namespace, &initialization.value, Some(field_type))
@@ -154,17 +153,18 @@ fn typecheck_union_initializer(
 
 fn typecheck_array_initializer(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     indices: &[HIRInitIndex],
     inner_type: &THIRType,
     size: Option<&cx_thir::thir::expression::THIRExpression>,
     _to_type: &THIRType,
 ) -> CXResult<TypecheckResult> {
     for index in indices {
-        if let Some(name) = &index.name {
+        if index.name.is_some() {
             return env.log_error(
                 TokenRange::internal(),
-                format!("Array initializer cannot have named indices, found: {name}"),
+                &catalogue::INVALID_FORM,
+                ("array initializer".into(), "unnamed indices".into()),
             );
         }
     }
@@ -202,7 +202,7 @@ fn typecheck_array_initializer(
 
 fn typecheck_structured_initializer(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     indices: &[HIRInitIndex],
     to_type: &THIRType,
@@ -210,10 +210,8 @@ fn typecheck_structured_initializer(
     let Some(fields) = to_type.aggregate_fields(&env.symbols) else {
         return env.log_error(
             expr.token_range(),
-            format!(
-                "Expected a structured type for initializer, found {}",
-                to_type.display_with(&env.symbols)
-            ),
+            &catalogue::TYPE_REQUIREMENT,
+            ("initializer".into(), "a structured type".into(), Some(format!("{}", to_type.display_with(&env.symbols)))),
         );
     };
     let fields = fields.clone();
@@ -231,7 +229,8 @@ fn typecheck_structured_initializer(
             else {
                 return env.log_error(
                     expr.token_range(),
-                    format!("Structured initializer has unexpected field: {name}"),
+                    &catalogue::UNKNOWN_MEMBER,
+                    (format!("{}", to_type.display_with(&env.symbols)), format!("{name}")),
                 );
             };
             counter = found_index;
@@ -240,14 +239,16 @@ fn typecheck_structured_initializer(
         if counter >= fields.len() {
             return env.log_error(
                 expr.token_range(),
-                "Too many elements in struct initializer".to_string(),
+                &catalogue::INITIALIZER_LIMIT,
+                ("struct".into(), Some(fields.len())),
             );
         }
 
         if initialized_fields[counter] {
             return env.log_error(
                 expr.token_range(),
-                format!("Field '{}' initialized more than once", fields[counter].0),
+                &catalogue::DUPLICATE_ITEM,
+                (format!("field '{}'", fields[counter].0), "struct initializer".into()),
             );
         }
 
@@ -260,11 +261,8 @@ fn typecheck_structured_initializer(
         else {
             return env.log_error(
                 value.token_range,
-                format!(
-                    "Could not find field '{}' in type {}",
-                    field_name,
-                    to_type.display_with(&env.symbols)
-                ),
+                &catalogue::UNKNOWN_MEMBER,
+                (format!("{}", to_type.display_with(&env.symbols)), format!("{field_name}")),
             );
         };
 

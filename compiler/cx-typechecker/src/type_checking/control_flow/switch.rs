@@ -4,7 +4,8 @@ use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
 use cx_log::CXResult;
-use cx_thir::EnvironmentNamespace;
+use cx_log::catalogue::typecheck as catalogue;
+use cx_namespace::module::NamespacePath;
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
     expression::THIRExpressionKind,
@@ -49,7 +50,7 @@ fn next_case_boundary(
 
 pub fn typecheck_switch(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     condition: &HIRExpression,
     block: &[HIRExpression],
@@ -59,15 +60,19 @@ pub fn typecheck_switch(
     let condition_value = typecheck_expr(env, namespace, condition, None)
         .and_then(|v| v.standard_ready_coerce(env, condition.token_range()))
         .and_then(|v| std_rval_promotion(env, v))?;
+
     let THIRTypeKind::Integer { .. } = condition_value.get_type().kind else {
         return env.log_error(
             &condition_value.token_range,
-            format!(
-                "Switch condition must be an integer type, found {}",
-                condition_value.get_type().display_with(&env.symbols)
+            &catalogue::TYPE_MISMATCH,
+            (
+                "switch condition".into(),
+                "integer type".into(),
+                format!("{}", condition_value.display_with(&env.symbols)),
             ),
         );
     };
+
     let condition_type = condition_value.get_type().clone();
     env.push_scope(true, false, expr.token_range().clone());
 
@@ -75,16 +80,6 @@ pub fn typecheck_switch(
 
     for (case_expr, case_index) in cases {
         let case_index = *case_index;
-        if case_index > block.len() {
-            return env.log_error(
-                &condition_value.token_range,
-                format!(
-                    "Switch case index {} out of bounds (block has {} expressions)",
-                    case_index,
-                    block.len()
-                ),
-            );
-        }
         let case_end = next_case_boundary(block.len(), case_index, cases, default_case);
         let case_body = case_body_expression(block, case_index, case_end, case_expr.token_range());
 
@@ -102,16 +97,6 @@ pub fn typecheck_switch(
     // Handle default case
     let default_body = match default_case {
         Some(&idx) => {
-            if idx > block.len() {
-                return env.log_error(
-                    condition_value.token_range,
-                    format!(
-                        "Switch default case index {} out of bounds (block has {} expressions)",
-                        idx,
-                        block.len()
-                    ),
-                );
-            }
             let end = next_case_boundary(block.len(), idx, cases, default_case);
             let expr = case_body_expression(block, idx, end, &condition_value.token_range);
             let body_expr = typecheck_expr(env, namespace, &expr, None)

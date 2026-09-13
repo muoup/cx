@@ -208,12 +208,8 @@ pub enum THIRExpressionKind {
     },
 
     // Control Flow
-    Break {
-        staged: bool,
-    },
-    Continue {
-        staged: bool,
-    },
+    Break,
+    Continue,
     Goto {
         name: CXIdent,
     },
@@ -248,8 +244,6 @@ pub enum THIRExpressionKind {
         condition: Box<THIRExpression>,
         subject: THIRLocalID,
         arms: Vec<(THIRPattern, Box<THIRExpression>)>,
-        default: Option<Box<THIRExpression>>,
-        exhaustive: bool,
     },
 
     Return {
@@ -259,7 +253,6 @@ pub enum THIRExpressionKind {
     Unreachable,
     Yield {
         value: Option<Box<THIRExpression>>,
-        staged: bool,
     },
 
     Assert {

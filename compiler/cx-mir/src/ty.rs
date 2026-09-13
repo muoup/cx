@@ -6,7 +6,6 @@ pub mod registry;
 use cx_util::dense_id;
 
 pub use layout::{MIRFieldLayout, MIRLayoutError, MIRTypeLayout};
-pub use registry::MIRTypeRegistryBuilder;
 
 dense_id!(MIRTypeID);
 

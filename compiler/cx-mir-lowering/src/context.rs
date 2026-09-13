@@ -5,7 +5,8 @@ use cx_lmir::{
     LMIRInstruction, LMIRValue,
 };
 use cx_mir::{
-    MIRBasicBlockID, MIRFunction, MIRGlobalID, MIRPlace, MIRRegister, MIRTypeID, MIRUnit,
+    ty::registry::MIRTypeRegistry, MIRBasicBlockID, MIRFunction, MIRGlobalID, MIRPlace,
+    MIRRegister, MIRTypeID, MIRUnit,
 };
 
 #[derive(Clone)]
@@ -26,7 +27,7 @@ pub(crate) enum PlaceBinding {
 pub(crate) struct FunctionLoweringContext<'a> {
     unit: &'a MIRUnit,
     function: &'a MIRFunction,
-    types: &'a cx_mir::MIRTypeRegistryBuilder,
+    types: &'a MIRTypeRegistry,
     prototypes: &'a LMIRFunctionMap,
     global_indices: &'a HashMap<MIRGlobalID, u32>,
     globals: &'a mut Vec<LMIRGlobalValue>,
@@ -42,7 +43,7 @@ impl<'a> FunctionLoweringContext<'a> {
     pub(crate) fn new(
         unit: &'a MIRUnit,
         function: &'a MIRFunction,
-        types: &'a cx_mir::MIRTypeRegistryBuilder,
+        types: &'a MIRTypeRegistry,
         prototypes: &'a LMIRFunctionMap,
         global_indices: &'a HashMap<MIRGlobalID, u32>,
         globals: &'a mut Vec<LMIRGlobalValue>,
@@ -81,7 +82,7 @@ impl<'a> FunctionLoweringContext<'a> {
         self.function
     }
 
-    pub(crate) fn types(&self) -> &'a cx_mir::MIRTypeRegistryBuilder {
+    pub(crate) fn types(&self) -> &'a MIRTypeRegistry {
         self.types
     }
 

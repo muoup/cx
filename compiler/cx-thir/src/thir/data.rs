@@ -1,5 +1,6 @@
 use cx_hir::ast::function::HIRFunctionContract;
-use cx_util::{identifier::CXIdent, linkage::LinkageMode, namespace::QualifiedName};
+use cx_namespace::module::QualifiedName;
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::thir::contextual_eq::{TypeComparisonState, TypeContextEqual, compare_ordered};
 use crate::thir::expression::{THIRExpression, THIRLocalID};
@@ -10,6 +11,7 @@ use crate::type_context::THIRTypeContext;
 
 #[derive(Debug, Clone)]
 pub struct THIRFunction {
+    pub require_explicit_return: bool,
     pub prototype: THIRFnPrototype,
     pub body: Option<THIRExpression>,
 }
@@ -22,17 +24,11 @@ pub struct THIRParameter {
 }
 
 #[derive(Debug, Clone)]
-pub struct THIRComptimeFunction {
-    pub name: Option<CXIdent>,
-}
-
-#[derive(Debug, Clone)]
 pub struct THIRComptimeFnPrototype {
     symbol_name: String,
     debug_name: Option<CXIdent>,
     lookup_identifier: QualifiedName,
 
-    runtime_return_type: Option<THIRType>,
     return_type: THIRComptimeValueType,
     params: Vec<THIRComptimeParameter>,
 }
@@ -64,7 +60,6 @@ impl THIRComptimeFnPrototype {
             return_type,
             params,
             debug_name: None,
-            runtime_return_type: None,
         }
     }
 
@@ -94,15 +89,6 @@ impl THIRComptimeFnPrototype {
 
     pub fn params(&self) -> &[THIRComptimeParameter] {
         &self.params
-    }
-
-    pub fn runtime_return_type(&self) -> Option<&THIRType> {
-        self.runtime_return_type.as_ref()
-    }
-
-    pub fn with_runtime_return_type(mut self, ty: Option<THIRType>) -> Self {
-        self.runtime_return_type = ty;
-        self
     }
 
     pub fn with_debug_name(mut self, debug_name: CXIdent) -> Self {
