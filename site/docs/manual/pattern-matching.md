@@ -6,6 +6,19 @@ title: Pattern Matching
 
 CX provides `is` for testing one tagged-union variant and `match` for branching over integer values or tagged-union variants.
 
+## Patterns
+
+Patterns are value skeletons that may be applied to a given value of the appropriate type to determine if it matches the given 'pattern'. They take on the following shapes:
+
+```cx
+T::variant(val)     // A pattern to match against a given variant of a tagged union, 
+                    // and a named capture over its inner value
+1                   // A single number to match an integer against
+binding             // Matches anything and bindings the value to a new identifier
+```
+
+Note that in the case of tagged union patterns, while the type constructor to build a tagged union, in the case of a templated type, takes on the form of `T::variant<U, V, W, X>(inner)`, the template arguments must be elided in the case of a pattern, i.e. one must use the pattern `T::variant(inner)`. As a pattern is always used to match against a value, the template instantiation can always be deduced.
+
 ## The `is` Operator
 
 The simplest method to determine whether a tagged union contains a given variant is the `is` operator. Given a value `val` of type `T`, the expression `val is T::variant(inner)` returns a boolean value and binds `inner` to the payload with the type declared by `T::variant`.
