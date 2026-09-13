@@ -208,8 +208,8 @@ fn realize_comptime_function(
         .ok_or_else(|| {
             env.error(
                 &TokenRange::internal(),
-                &catalogue::SYMBOL_IS_NOT_A_COMPTIME_FUNCTION,
-                format!("{}", name),
+                &catalogue::UNEXPECTED_SYMBOL,
+                (format!("{}", name), "a comptime function".into()),
             )
         })?;
     let HIRSymbolKind::ComptimeFunction(data) = &symbol.kind else {

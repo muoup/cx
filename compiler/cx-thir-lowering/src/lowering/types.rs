@@ -31,11 +31,13 @@ pub fn lower_type(builder: &mut MIRBuilder, ty: &THIRType) -> CXResult<MIRTypeID
 
 pub fn lower_type_id(builder: &mut MIRBuilder, id: THIRTypeID) -> CXResult<MIRTypeID> {
     let mir_id = MIRTypeID::new(id.index());
+    
     if builder.types().definition(mir_id).is_some() || builder.types().is_lowering_type(&id) {
         return Ok(mir_id);
     }
 
     builder.types_mut().insert_lowering_type(id);
+    
     let result = (|| {
         let Some(ty) = builder.registry().try_resolve_type_id(id).cloned() else {
             assert!(

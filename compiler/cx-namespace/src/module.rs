@@ -163,6 +163,12 @@ impl QualifiedName {
     }
 }
 
+impl Into<String> for &QualifiedName {
+    fn into(self) -> String {
+        format!("{}", self)
+    }    
+}
+
 impl Display for NamespacePath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, segment) in self.segments.iter().enumerate() {

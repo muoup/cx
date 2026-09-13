@@ -36,6 +36,7 @@ use crate::{
     NamespacePath,
     environment::TypeEnvironment,
     symbol::{
+        lookup::{SymbolLookup, SymbolLookupKind},
         resolution::{resolve_symbol_inner, resolve_type_symbol},
         template::apply_template,
     },
@@ -436,16 +437,13 @@ fn complete_identifier_type(
         HIRTypeLookup::Standard => None,
         HIRTypeLookup::Tag(tag) => Some(tag),
     };
+
     let lookup = match env.lookup_symbol(namespace, name, tag)? {
         Some(lookup) => lookup,
-        None if name.namespace.is_root()
-            && matches!(
-                tag,
-                Some(
-                    cx_hir::ast::types::HIRTagKind::Struct | cx_hir::ast::types::HIRTagKind::Union
-                )
-            ) =>
-        {
+        None if name.namespace.is_root() && tag.is_some() => {
+            // If we have some `[struct/union/enum] T` type identifier that doesn't correspond to any definition,
+            // C allows this to correspond to an 'undefined' implicit definition, used indirectly via a pointer (or reference).
+            //
             let resolved_name = QualifiedName::new(namespace.clone(), name.name.clone());
             let symbol = HIRSymbol {
                 visibility: VisibilityMode::Private,
@@ -461,22 +459,49 @@ fn complete_identifier_type(
                     .to_type(),
                 }),
             };
+
             env.symbols
                 .implicit_tags
                 .insert(resolved_name.clone(), symbol.clone());
-            super::lookup::SymbolLookup {
+
+            SymbolLookup {
                 resolved_name,
-                kind: super::lookup::SymbolLookupKind::Untyped(vec![symbol]),
+                kind: SymbolLookupKind::Untyped(vec![symbol]),
             }
         }
         None => {
             return env
-                .log_error_base(&catalogue::TYPE_NOT_FOUND, format!("{}", name))
+                .log_error_base(&catalogue::UNKNOWN_SYMBOL, format!("{}", name))
                 .map_err(Into::into);
         }
     };
+
     let symbol = env.resolve_lookup(namespace, lookup)?;
-    complete_resolved_type_lookup(env, namespace, name, symbol, template_input)
+
+    match symbol {
+        MIRSymbol::Type(id) => {
+            if template_input.is_some() {
+                env.log_error_base(
+                    &catalogue::TYPE_DOES_NOT_ACCEPT_TEMPLATE_ARGUMENTS,
+                    format!("{}", name),
+                )
+                .map_err(|e| e.into())
+            } else {
+                Ok(id)
+            }
+        }
+
+        MIRSymbol::Template { .. } => {
+            complete_template_type_lookup(env, namespace, name, &symbol, template_input)
+        }
+
+        _ => env
+            .log_error_base(
+                &catalogue::UNEXPECTED_SYMBOL,
+                (name.into(), "a type".into()),
+            )
+            .map_err(|err| err.into()),
+    }
 }
 
 pub(crate) fn complete_named_type(
@@ -543,35 +568,6 @@ fn is_self_predeclaration(definition: &HIRType, name: &QualifiedName) -> bool {
     definition_name.namespace.is_root() && definition_name.name == name.name
 }
 
-fn complete_resolved_type_lookup(
-    env: &mut TypeEnvironment,
-    namespace: &NamespacePath,
-    name: &QualifiedName,
-    symbol: MIRSymbol,
-    template_input: &Option<HIRTemplateInput>,
-) -> CXMaybeRawResult<THIRTypeID> {
-    match symbol {
-        MIRSymbol::Type(id) => {
-            if template_input.is_some() {
-                env.log_error_base(
-                    &catalogue::TYPE_DOES_NOT_ACCEPT_TEMPLATE_ARGUMENTS,
-                    format!("{}", name),
-                )
-                .map_err(|e| e.into())
-            } else {
-                Ok(id)
-            }
-        }
-        MIRSymbol::Template { .. } => {
-            complete_template_type_lookup(env, namespace, name, &symbol, template_input)
-        }
-
-        _ => env
-            .log_error_base(&catalogue::SYMBOL_IS_NOT_A_TYPE, format!("{}", name))
-            .map_err(|err| err.into()),
-    }
-}
-
 fn complete_template_type_lookup(
     env: &mut TypeEnvironment,
     namespace: &NamespacePath,
@@ -581,10 +577,7 @@ fn complete_template_type_lookup(
 ) -> CXMaybeRawResult<THIRTypeID> {
     let Some(input) = template_input else {
         return env
-            .log_error_base(
-                &catalogue::TYPE_REQUIRES_TEMPLATE_ARGUMENTS,
-                format!("{}", name),
-            )
+            .log_error_base(&catalogue::TYPE_REQUIRES_TEMPLATE_ARGUMENTS, name.into())
             .map_err(|e| e.into());
     };
     let input = complete_template_input(env, namespace, input)?;
@@ -599,11 +592,14 @@ fn complete_template_type_lookup(
         MIRSymbol::Template { .. } => env
             .log_error_base(
                 &catalogue::TEMPLATE_ARGUMENTS_DID_NOT_RESOLVE_TYPE_TO_A_CONCRETE_TYPE,
-                format!("{}", name),
+                name.into(),
             )
             .map_err(|e| e.into()),
         _ => env
-            .log_error_base(&catalogue::SYMBOL_IS_NOT_A_TYPE, format!("{}", name))
+            .log_error_base(
+                &catalogue::UNEXPECTED_SYMBOL,
+                (name.into(), "a type".into()),
+            )
             .map_err(|err| err.into()),
     }
 }
@@ -814,18 +810,12 @@ fn resolve_aggregate_move_attributes(
             .map_err(CXErrorMaybeRaw::from)?
         else {
             return env
-                .log_error_base(
-                    &catalogue::COPY_TRAITS_TARGET_IS_NOT_A_VALID_TYPE,
-                    format!("{}", param_name),
-                )
+                .log_error_base(&catalogue::UNKNOWN_SYMBOL, param_name.into())
                 .map_err(|e| e.into());
         };
         let Some(id) = symbol.as_type_id() else {
             return env
-                .log_error_base(
-                    &catalogue::COPY_TRAITS_TARGET_IS_NOT_A_TYPE,
-                    format!("{}", param_name),
-                )
+                .log_error_base(&catalogue::UNKNOWN_SYMBOL, param_name.into())
                 .map_err(|e| e.into());
         };
         let source_attributes = owned_move_attributes(env, env.symbols.resolve_type_id(id));

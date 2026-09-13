@@ -1,12 +1,15 @@
 use cx_log::catalogue::typecheck as catalogue;
 use std::collections::HashMap;
 
-use cx_hir::{ast::{
-    function::{HIRComptimeFnPrototype, HIRFunctionPrototype},
-    template::{HIRTemplateInput, HIRTemplatePrototype},
-    types::{HIRType, HIRTypeKind},
-}, symbols::HIRSymbol};
 use cx_hir::symbols::HIRSymbolKind;
+use cx_hir::{
+    ast::{
+        function::{HIRComptimeFnPrototype, HIRFunctionPrototype},
+        template::{HIRTemplateInput, HIRTemplatePrototype},
+        types::{HIRType, HIRTypeKind},
+    },
+    symbols::HIRSymbol,
+};
 use cx_log::{
     CXRawResult, CXResult,
     error::{CXErrorMaybeRaw, CXMaybeRawResult},
@@ -41,11 +44,8 @@ pub(crate) fn complete_templated_callee_maybe(
         .get_symbol(namespace, name)
         .map_err(CXErrorMaybeRaw::from)?
     else {
-        return internal_type_error(
-            &catalogue::TEMPLATED_FUNCTION_NOT_FOUND_42,
-            format!("{}", name),
-        )
-        .map_err(CXErrorMaybeRaw::from);
+        return internal_type_error(&catalogue::UNKNOWN_SYMBOL, name.into())
+            .map_err(CXErrorMaybeRaw::from);
     };
 
     if let Some(input) = template_input {
@@ -53,7 +53,7 @@ pub(crate) fn complete_templated_callee_maybe(
         return apply_template(env, &symbol, completed_input)?.ok_or_else(|| {
             CXErrorMaybeRaw::from(generate_raw_error(
                 &catalogue::SYMBOL_DOES_NOT_ACCEPT_TEMPLATE_ARGUMENTS_43,
-                format!("{}", name),
+                name.into(),
             ))
         });
     }
@@ -61,8 +61,8 @@ pub(crate) fn complete_templated_callee_maybe(
     deduce_template_symbol(env, namespace, &symbol, arg_types, expected_return_type)?.ok_or_else(
         || {
             CXErrorMaybeRaw::from(generate_raw_error(
-                &catalogue::SYMBOL_IS_NOT_A_TEMPLATE,
-                format!("{}", name),
+                &catalogue::UNEXPECTED_SYMBOL,
+                (name.into(), "a template".into()),
             ))
         },
     )
@@ -110,7 +110,7 @@ fn deduce_template_input(
         HIRSymbolKind::TypeConstructor(data) => {
             TemplateDeductionShell::TypeConstructor(&data.base().union_type)
         }
-        
+
         _ => {
             return internal_type_error(&catalogue::TEMPLATE_DEDUCTION, ())
                 .map_err(CXErrorMaybeRaw::from);

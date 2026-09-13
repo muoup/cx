@@ -230,7 +230,7 @@ pub(crate) fn resolve_type_symbol<'a>(
             (&symbol.kind, &first.kind)
         else {
             return env
-                .log_error_base(&catalogue::SYMBOL_IS_NOT_A_TYPE, format!("{}", name))
+                .log_error_base(&catalogue::UNEXPECTED_SYMBOL, (name.into(), "a type".into()))
                 .map_err(Into::into);
         };
         if symbol.tag != first.tag || !type_template_kinds_equivalent(first_data, data) {

@@ -1,7 +1,10 @@
 use super::define_errors;
 
 define_errors! {
-    ASSIGN_TO_CONST: () = "T0001" => |()| "Cannot assign to a const type".into();
+    UNKNOWN_SYMBOL: String = "T0001" => |name| format!("Unknown symbol '{name}'");
+    UNEXPECTED_SYMBOL: (String, String) = "T0002" => |(name, expected)| format!("Unexpected symbol '{name}', expected {expected}");
+
+    ASSIGN_TO_CONST: () = "T0005" => |()| "Cannot assign to a const type".into();
     COMPTIME_FUNCTION_RUNTIME_CONTEXT: () = "T0015" => |()| "Comptime function cannot be used in runtime contexts".into();
     STAGED_EXPRESSION_RUNTIME_CONTEXT: () = "T0016" => |()| "Staged expression cannot be used in runtime contexts".into();
     TEMPLATE_DEDUCTION: () = "T0017" => |()| "Could not deduce arguments to template".into();
@@ -9,14 +12,11 @@ define_errors! {
     POP_EMPTY_SCOPE: () = "T0019" => |()| "Attempted to pop a scope from an empty scope stack".into();
     GLOBAL_REDECLARATION: String = "T0020" => |arg0| format!("Attempting to redeclare global '{arg0}'.");
     COMPTIME_DEFINITION_WAS_NOT_FOUND: String = "T0021" => |arg0| format!("Comptime definition '{arg0}' was not found");
-    SYMBOL_IS_NOT_A_COMPTIME_FUNCTION: String = "T0022" => |arg0| format!("Symbol '{arg0}' is not a comptime function");
     TYPE_IS_INCOMPLETE: String = "T0023" => |arg0| format!("Type '{arg0}' is incomplete");
     TYPE_IS_INCOMPLETE_24: String = "T0024" => |arg0| format!("{arg0} type is incomplete");
     TYPE_COMPONENT_CANNOT_BE_UNREACHABLE: String = "T0025" => |arg0| format!("{arg0} type component cannot be 'unreachable'");
     TYPE_IS_UNSIZED_AND_CANNOT_BE_DIRECTLY_ALLOCATED: String = "T0026" => |arg0| format!("{arg0} type is unsized and cannot be directly allocated");
-    TYPE_NOT_FOUND: String = "T0027" => |arg0| format!("Type not found: {arg0}");
     TYPE_DOES_NOT_ACCEPT_TEMPLATE_ARGUMENTS: String = "T0028" => |arg0| format!("Type '{arg0}' does not accept template arguments");
-    SYMBOL_IS_NOT_A_TYPE: String = "T0029" => |arg0| format!("Symbol '{arg0}' is not a type");
     TYPE_REQUIRES_TEMPLATE_ARGUMENTS: String = "T0030" => |arg0| format!("Type '{arg0}' requires template arguments");
     FAILED_TO_APPLY_TEMPLATE_ARGUMENTS: () = "T0031" => |()| "Failed to apply template arguments".into();
     TEMPLATE_ARGUMENTS_DID_NOT_RESOLVE_TYPE_TO_A_CONCRETE_TYPE: String = "T0032" => |arg0| format!("Template arguments did not resolve type '{arg0}' to a concrete type");
@@ -26,12 +26,8 @@ define_errors! {
     DROPPABLE_AGGREGATE_NODROP_FIELD: String = "T0036" => |arg0| format!("Aggregate containing nodrop field '{arg0}' must also be marked as @nodrop");
     COPYABLE_AGGREGATE_NOCOPY_FIELD: String = "T0037" => |arg0| format!("Aggregate containing nocopy field '{arg0}' must also be marked as @nodrop");
     SAFE_MOVE_AGGREGATE_UNSAFE_MOVE_FIELD: String = "T0038" => |arg0| format!("Aggregate containing unsafe_move field '{arg0}' must also be marked as @unsafe_move");
-    COPY_TRAITS_TARGET_IS_NOT_A_VALID_TYPE: String = "T0039" => |arg0| format!("copy_traits target '{arg0}' is not a valid type");
-    COPY_TRAITS_TARGET_IS_NOT_A_TYPE: String = "T0040" => |arg0| format!("copy_traits target '{arg0}' is not a type");
     BITFIELD_HAS_INCOMPLETE_TYPE: String = "T0041" => |arg0| format!("Bitfield '{arg0}' has incomplete type");
-    TEMPLATED_FUNCTION_NOT_FOUND_42: String = "T0042" => |arg0| format!("Templated function '{arg0}' not found");
     SYMBOL_DOES_NOT_ACCEPT_TEMPLATE_ARGUMENTS_43: String = "T0043" => |arg0| format!("Symbol '{arg0}' does not accept template arguments");
-    SYMBOL_IS_NOT_A_TEMPLATE: String = "T0044" => |arg0| format!("Symbol '{arg0}' is not a template");
     FUNCTION_TEMPLATE_EXPECTS_ARGUMENTS_FOUND: (String, String) = "T0045" => |(arg0, arg1)| format!("Function template expects {arg0} arguments, found {arg1}");
     COULD_NOT_DEDUCE_TEMPLATE_ARGUMENT_FOR_FUNCTION: (String, String) = "T0046" => |(arg0, arg1)| format!("Could not deduce template argument '{arg0}' for function {arg1}");
     EXPECTED_REALIZED_TEMPLATE_TYPE_WHILE_DEDUCING_FOUND: (String, String) = "T0047" => |(arg0, arg1)| format!("Expected realized template type '{arg0}' while deducing, found {arg1}");
