@@ -44,7 +44,6 @@ std::opt<std::net::udp_socket> try_serve(u16 port) {
     socket 
         |> std::net::udp_socket::bind(addr)`,
 "        |> std::opt::try();",`
-
     std::span<const u8> buffer = std::span::str_as_bytes("Hello, world!");
     socket 
         |> std::net::udp_socket::send_to(buffer, addr)
