@@ -19,7 +19,10 @@ impl LLVMError {
     }
 
     pub(crate) fn from_error(error: impl Display) -> Self {
-        Self::new(&backend::LLVM_OPERATION_FAILED, error.to_string())
+        Self::new(
+            &backend::OPERATION_FAILED,
+            ("execute LLVM operation".into(), Some(error.to_string())),
+        )
     }
 }
 

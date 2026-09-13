@@ -153,9 +153,7 @@ pub(super) fn build_direct_return_from_memory<'a, 'b>(
             .map_err(LLVMError::from_error)?;
         loaded
             .as_instruction_value()
-            .ok_or_else(|| {
-                LLVMError::new(&catalogue::LLVM_LOAD_DID_NOT_PRODUCE_AN_INSTRUCTION, ())
-            })?
+            .unwrap_or_else(|| unreachable!("LLVM load did not produce an instruction"))
             .set_alignment(slots[0]._type.alignment() as u32)
             .map_err(LLVMError::from_error)?;
         return Ok(loaded);
@@ -196,9 +194,7 @@ pub(super) fn build_direct_return_from_memory<'a, 'b>(
             .map_err(LLVMError::from_error)?;
         field
             .as_instruction_value()
-            .ok_or_else(|| {
-                LLVMError::new(&catalogue::LLVM_LOAD_DID_NOT_PRODUCE_AN_INSTRUCTION, ())
-            })?
+            .unwrap_or_else(|| unreachable!("LLVM load did not produce an instruction"))
             .set_alignment(slot._type.alignment() as u32)
             .map_err(LLVMError::from_error)?;
         aggregate = function_state
@@ -218,7 +214,12 @@ pub(super) fn generate_get_function_addr<'a>(
     let function_val = global_state
         .module
         .get_function(func)
-        .ok_or_else(|| LLVMError::new(&catalogue::FUNCTION_WAS_NOT_DECLARED, format!("{}", func)))?
+        .ok_or_else(|| {
+            LLVMError::new(
+                &catalogue::MISSING_ENTITY,
+                (format!("function '{func}'"), "LLVM module".into()),
+            )
+        })?
         .as_global_value()
         .as_pointer_value();
 

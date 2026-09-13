@@ -93,8 +93,8 @@ pub(crate) fn define_global_variable(
     };
     let global = *state.globals.get(index).ok_or_else(|| {
         LLVMError::new(
-            &catalogue::INVALID_GLOBAL_DEFINITION_INDEX,
-            format!("{}", index),
+            &catalogue::INDEX_BOUNDS,
+            ("global definition".into(), format!("{index}")),
         )
     })?;
     let initializer = match global_state {
@@ -267,8 +267,8 @@ fn global_initializer<'ctx>(
                         let field_type =
                             struct_type.get_field_type_at_index(index).ok_or_else(|| {
                                 LLVMError::new(
-                                    &catalogue::INVALID_FIELD_INDEX_IN_LLVM_STRUCT_INITIALIZER,
-                                    format!("{}", index),
+                                    &catalogue::INDEX_BOUNDS,
+                                    ("struct field".into(), format!("{index}")),
                                 )
                             })?;
                         Ok(fields
@@ -300,8 +300,12 @@ fn global_initializer<'ctx>(
                 Ok(unsafe { ArrayValue::new_const_array(&element_type, &values) }.into())
             }
             _ => Err(LLVMError::new(
-                &catalogue::AGGREGATE_INITIALIZER_USED_WITH_NON_AGGREGATE_LLVM_TYPE,
-                (),
+                &catalogue::ENTITY_REQUIREMENT,
+                (
+                    "aggregate initializer".into(),
+                    "an aggregate LLVM type".into(),
+                    Some(format!("{basic_type:?}")),
+                ),
             )),
         },
         LMIRGlobalInitializer::Global(global) => {
@@ -311,8 +315,8 @@ fn global_initializer<'ctx>(
                 .get(*global as usize)
                 .ok_or_else(|| {
                     LLVMError::new(
-                        &catalogue::INVALID_GLOBAL_INITIALIZER_REFERENCE,
-                        format!("{}", global),
+                        &catalogue::MISSING_ENTITY,
+                        (format!("global g{global}"), "LLVM global table".into()),
                     )
                 })?
                 .as_pointer_value();
@@ -325,8 +329,8 @@ fn global_initializer<'ctx>(
                 .get(*global as usize)
                 .ok_or_else(|| {
                     LLVMError::new(
-                        &catalogue::INVALID_GLOBAL_INITIALIZER_REFERENCE,
-                        format!("{}", global),
+                        &catalogue::MISSING_ENTITY,
+                        (format!("global g{global}"), "LLVM global table".into()),
                     )
                 })?
                 .as_pointer_value();
@@ -338,8 +342,11 @@ fn global_initializer<'ctx>(
             let pointer_type = basic_type.into_pointer_type();
             let value = state.module.get_function(function).ok_or_else(|| {
                 LLVMError::new(
-                    &catalogue::INVALID_FUNCTION_INITIALIZER_REFERENCE,
-                    format!("{}", function),
+                    &catalogue::MISSING_ENTITY,
+                    (
+                        format!("function '{function}'"),
+                        "LLVM module".into(),
+                    ),
                 )
             })?;
             Ok(value

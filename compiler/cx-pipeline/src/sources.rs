@@ -36,8 +36,8 @@ pub(crate) fn expand_patterns(base: &Path, patterns: &[String]) -> CXResult<Vec<
 
     if selected.is_empty() {
         return Err(pipeline_error(
-            &catalogue::NO_MATCHED_SOURCES,
-            patterns.join(", "),
+            &catalogue::NO_SOURCES,
+            Some(patterns.join(", ")),
         ));
     }
 
@@ -93,13 +93,28 @@ fn collect_matches(
 
     let entries = fs::read_dir(current).map_err(|error| {
         pipeline_error(
-            &catalogue::READ_MATCH_DIRECTORY,
-            (current.display().to_string(), error.to_string()),
+            &catalogue::FILE_OPERATION,
+            (
+                "read".into(),
+                "match directory".into(),
+                Some(current.display().to_string()),
+                error.to_string(),
+            ),
         )
     })?;
     for entry in entries {
         let entry = entry
-            .map_err(|error| pipeline_error(&catalogue::READ_MATCH_ENTRY, error.to_string()))?;
+            .map_err(|error| {
+                pipeline_error(
+                    &catalogue::FILE_OPERATION,
+                    (
+                        "read".into(),
+                        "match entry".into(),
+                        None,
+                        error.to_string(),
+                    ),
+                )
+            })?;
         let path = entry.path();
         if path.is_dir() {
             collect_matches(base, &path, pattern, matches)?;

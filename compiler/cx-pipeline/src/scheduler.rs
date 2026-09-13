@@ -137,7 +137,7 @@ fn import_jobs_for_unit(
     for import in import_units(imports, &context.config.working_directory) {
         if !context.config.module_mode && !import.is_std_lib() {
             return Err(pipeline_error(
-                &catalogue::IMPORT_IS_NOT_AVAILABLE_IN_SINGLE_FILE_COMPILATION,
+                &catalogue::SINGLE_FILE_IMPORT,
                 format!("{}", import),
             ));
         }
@@ -335,17 +335,24 @@ fn perform_job_with_dump(
     if matches!(job.step, CompilationStep::PreParse) {
         std::fs::create_dir_all(dump_path.parent().unwrap()).map_err(|error| {
             pipeline_error(
-                &catalogue::FAILED_TO_CREATE_DUMP_DIRECTORY,
+                &catalogue::FILE_OPERATION,
                 (
-                    format!("{}", dump_path.parent().unwrap().display()),
+                    "create".into(),
+                    "dump directory".into(),
+                    Some(format!("{}", dump_path.parent().unwrap().display())),
                     format!("{}", error),
                 ),
             )
         })?;
         std::fs::File::create(&dump_path).map_err(|error| {
             pipeline_error(
-                &catalogue::FAILED_TO_CREATE_DUMP_FILE,
-                (format!("{}", dump_path.display()), format!("{}", error)),
+                &catalogue::FILE_OPERATION,
+                (
+                    "create".into(),
+                    "dump file".into(),
+                    Some(format!("{}", dump_path.display())),
+                    format!("{}", error),
+                ),
             )
         })?;
     }
@@ -363,8 +370,13 @@ pub(crate) fn perform_job(
             let file_path = job.unit.module().as_path().to_path_buf();
             let file_contents = std::fs::read_to_string(&file_path).map_err(|error| {
                 pipeline_error(
-                    &catalogue::FAILED_TO_READ,
-                    (format!("{}", file_path.display()), format!("{}", error)),
+                    &catalogue::FILE_OPERATION,
+                    (
+                        "read".into(),
+                        "source file".into(),
+                        Some(format!("{}", file_path.display())),
+                        format!("{}", error),
+                    ),
                 )
             })?;
 
@@ -451,7 +463,7 @@ pub(crate) fn perform_job(
                     .insert_module(namespace, bucket)
                 {
                     return Err(pipeline_error(
-                        &catalogue::DUPLICATE_MODULE_NAMESPACE_FOUND_DURING_DECOMPOSITION,
+                        &catalogue::DUPLICATE_NAMESPACE,
                         format!("{}", namespace),
                     ));
                 }
@@ -557,14 +569,19 @@ pub(crate) fn perform_job(
             if let Some(parent) = internal_directory.parent() {
                 std::fs::create_dir_all(parent).map_err(|error| {
                     pipeline_error(
-                        &catalogue::FAILED_TO_CREATE_OBJECT_DIRECTORY,
-                        (format!("{}", parent.display()), format!("{}", error)),
+                        &catalogue::FILE_OPERATION,
+                        (
+                            "create".into(),
+                            "object directory".into(),
+                            Some(format!("{}", parent.display())),
+                            format!("{}", error),
+                        ),
                     )
                 })?;
             }
             let internal_directory_str = internal_directory.to_str().ok_or(pipeline_error(
-                &catalogue::INTERNAL_DIRECTORY_PATH_IS_NOT_VALID_UTF_8,
-                (),
+                &catalogue::PATH_ENCODING,
+                "internal directory".into(),
             ))?;
 
             let buffer = match context.config.backend {

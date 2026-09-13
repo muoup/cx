@@ -47,7 +47,7 @@ pub(super) fn generate_jump<'a, 'b>(
     let predecessor = function_state
         .builder
         .get_insert_block()
-        .ok_or_else(|| LLVMError::new(&catalogue::NO_LLVM_INSERTION_BLOCK_FOR_JUMP, ()))?;
+        .unwrap_or_else(|| unreachable!("no LLVM insertion block for jump"));
     function_state.add_block_arguments(target, predecessor)?;
     function_state
         .builder
@@ -71,8 +71,12 @@ pub(super) fn generate_branch<'a, 'b>(
             .map_err(LLVMError::from_error)?,
         _ => {
             return Err(LLVMError::new(
-                &catalogue::LLVM_BRANCH_CONDITION_IS_NOT_AN_INTEGER_OR_POINTER,
-                (),
+                &catalogue::ENTITY_REQUIREMENT,
+                (
+                    "branch condition".into(),
+                    "an integer or pointer value".into(),
+                    None,
+                ),
             ));
         }
     };

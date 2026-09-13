@@ -36,8 +36,12 @@ pub(crate) fn any_to_basic_type(any_type: AnyTypeEnum) -> LLVMResult<BasicTypeEn
         AnyTypeEnum::VectorType(vector_type) => Ok(vector_type.into()),
 
         any_type => Err(LLVMError::new(
-            &catalogue::EXPECTED_A_BASIC_LLVM_TYPE_FOUND,
-            format!("{:?}", any_type),
+            &catalogue::ENTITY_REQUIREMENT,
+            (
+                "LLVM type".into(),
+                "a basic LLVM type".into(),
+                Some(format!("{:?}", any_type)),
+            ),
         )),
     }
 }
@@ -52,8 +56,12 @@ pub(crate) fn any_to_basic_val(any_value: AnyValueEnum) -> LLVMResult<BasicValue
         AnyValueEnum::VectorValue(vector_value) => Ok(vector_value.into()),
 
         any_value => Err(LLVMError::new(
-            &catalogue::EXPECTED_A_BASIC_LLVM_VALUE_FOUND_DIAGNOSTIC,
-            format!("{:?}", any_value),
+            &catalogue::ENTITY_REQUIREMENT,
+            (
+                "LLVM value".into(),
+                "a basic LLVM value".into(),
+                Some(format!("{:?}", any_value)),
+            ),
         )),
     }
 }
@@ -196,8 +204,12 @@ pub(crate) fn bc_llvm_signature<'a>(
 
         ty => {
             return Err(LLVMError::new(
-                &catalogue::INVALID_LLVM_FUNCTION_RETURN_TYPE,
-                format!("{:?}", ty),
+                &catalogue::ENTITY_REQUIREMENT,
+                (
+                    "LLVM function return type".into(),
+                    "a codegen-compatible return type".into(),
+                    Some(format!("{:?}", ty)),
+                ),
             ));
         }
     })

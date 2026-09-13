@@ -19,18 +19,16 @@ pub(super) fn generate_allocate<'a, 'b>(
         .context
         .i8_type()
         .array_type(usize::from(_type.size()) as u32);
-    let previous_block = function_state.builder.get_insert_block().ok_or_else(|| {
-        LLVMError::new(
-            &catalogue::NO_LLVM_INSERTION_BLOCK_WHILE_ALLOCATING_MEMORY,
-            (),
-        )
-    })?;
+    let previous_block = function_state
+        .builder
+        .get_insert_block()
+        .unwrap_or_else(|| unreachable!("no LLVM insertion block while allocating memory"));
     let entry = function_state.get_block(&CXIdent::from("entry"))?;
     function_state.builder.position_before(
         entry
             .get_first_instruction()
             .as_ref()
-            .ok_or_else(|| LLVMError::new(&catalogue::LLVM_ENTRY_BLOCK_HAS_NO_INSTRUCTION, ()))?,
+            .unwrap_or_else(|| unreachable!("LLVM entry block has no instruction")),
     );
 
     let value = function_state
@@ -39,7 +37,7 @@ pub(super) fn generate_allocate<'a, 'b>(
         .map_err(LLVMError::from_error)?;
     value
         .as_instruction()
-        .ok_or_else(|| LLVMError::new(&catalogue::LLVM_ALLOCA_DID_NOT_PRODUCE_AN_INSTRUCTION, ()))?
+        .unwrap_or_else(|| unreachable!("LLVM alloca did not produce an instruction"))
         .set_alignment(alignment as u32)
         .map_err(LLVMError::from_error)?;
     function_state.builder.position_at_end(previous_block);
@@ -57,8 +55,12 @@ pub(super) fn generate_struct_access<'a, 'b>(
         AnyTypeEnum::StructType(struct_type) => struct_type,
         llvm_type => {
             return Err(LLVMError::new(
-                &catalogue::EXPECTED_STRUCT_TYPE_FOR_STRUCT_ACCESS_FOUND,
-                format!("{:?}", llvm_type),
+                &catalogue::ENTITY_REQUIREMENT,
+                (
+                    "struct access base".into(),
+                    "a struct type".into(),
+                    Some(format!("{llvm_type:?}")),
+                ),
             ));
         }
     };
@@ -194,7 +196,7 @@ pub(super) fn generate_load<'a, 'b>(
         .map_err(LLVMError::from_error)?;
     loaded
         .as_instruction_value()
-        .ok_or_else(|| LLVMError::new(&catalogue::LLVM_LOAD_DID_NOT_PRODUCE_AN_INSTRUCTION, ()))?
+        .unwrap_or_else(|| unreachable!("LLVM load did not produce an instruction"))
         .set_alignment(_type.alignment() as u32)
         .map_err(LLVMError::from_error)?;
     Ok(CodegenValue::Value(loaded.as_any_value_enum()))

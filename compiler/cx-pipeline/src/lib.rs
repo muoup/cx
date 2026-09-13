@@ -48,8 +48,8 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
     };
 
     let _base_file_str = base_file.to_str().ok_or(pipeline_error(
-        &catalogue::BASE_FILE_PATH_IS_NOT_VALID_UTF_8,
-        (),
+        &catalogue::PATH_ENCODING,
+        "base file".into(),
     ))?;
     let entry_unit = CompilationUnit::new(
         &compiler_context.config.working_directory,
@@ -78,16 +78,26 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
                 if let Some(parent) = compiler_context.config.output.parent() {
                     std::fs::create_dir_all(parent).map_err(|e| {
                         pipeline_error(
-                            &catalogue::FAILED_TO_CREATE_OBJECT_OUTPUT_DIRECTORY,
-                            (format!("{}", parent.display()), format!("{}", e)),
+                            &catalogue::FILE_OPERATION,
+                            (
+                                "create".into(),
+                                "object output directory".into(),
+                                Some(format!("{}", parent.display())),
+                                format!("{}", e),
+                            ),
                         )
                     })?;
                 }
                 std::fs::copy(&object_path, &compiler_context.config.output).map_err(|e| {
                     pipeline_error(
-                        &catalogue::FAILED_TO_WRITE_OBJECT_FILE,
+                        &catalogue::FILE_OPERATION,
                         (
-                            format!("{}", compiler_context.config.output.display()),
+                            "write".into(),
+                            "object file".into(),
+                            Some(format!(
+                                "{}",
+                                compiler_context.config.output.display()
+                            )),
                             format!("{}", e),
                         ),
                     )
@@ -112,10 +122,7 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
 
 pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) -> CXResult<()> {
     if base_files.is_empty() {
-        return Err(pipeline_error(
-            &catalogue::NO_SOURCE_FILES_WERE_SELECTED_FOR_COMPILATION,
-            (),
-        ));
+        return Err(pipeline_error(&catalogue::NO_SOURCES, None));
     }
 
     let verbose = config.verbose;
@@ -131,10 +138,10 @@ pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) ->
         let initial_jobs = base_files
             .iter()
             .map(|base_file| {
-                let _base_file_str = base_file.to_str().ok_or(pipeline_error(
-                    &catalogue::SOURCE_FILE_PATH_IS_NOT_VALID_UTF_8,
-                    (),
-                ))?;
+    let _base_file_str = base_file.to_str().ok_or(pipeline_error(
+        &catalogue::PATH_ENCODING,
+        "source file".into(),
+    ))?;
                 let entry_unit = CompilationUnit::new(
                     &compiler_context.config.working_directory,
                     ModulePath::new(base_file.to_path_buf()),
@@ -156,8 +163,11 @@ pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) ->
         match compiler_context.config.compilation_mode {
             CompilationMode::Executable => link(&compiler_context, &mut reporter),
             CompilationMode::Object | CompilationMode::Library => Err(pipeline_error(
-                &catalogue::MULTI_FILE_COMPILATION_ONLY_SUPPORTS_EXECUTABLE_OUTPUT,
-                (),
+                &catalogue::UNSUPPORTED_FEATURE,
+                (
+                    "non-executable output".into(),
+                    "multi-file compilation".into(),
+                ),
             )),
         }
     });
@@ -183,8 +193,8 @@ pub fn library_compilation(
     };
 
     let _base_file_str = base_file.to_str().ok_or(pipeline_error(
-        &catalogue::BASE_FILE_PATH_IS_NOT_VALID_UTF_8,
-        (),
+        &catalogue::PATH_ENCODING,
+        "base file".into(),
     ))?;
 
     let entry_unit = CompilationUnit::new(
@@ -239,15 +249,15 @@ pub fn project_compilation(
     target_filter: Option<&str>,
 ) -> CXResult<Vec<PathBuf>> {
     let workspace = project_config.workspace.as_ref().ok_or(pipeline_error(
-        &catalogue::CX_TOML_HAS_NO_WORKSPACE_SECTION,
-        (),
+        &catalogue::MISSING_CONFIG,
+        ("[workspace] section".into(), "cx.toml".into()),
     ))?;
 
     let filter_name;
     let targets: Vec<(&String, &TargetConfig)> = if let Some(filter) = target_filter {
         let target = workspace.targets.get(filter).ok_or(pipeline_error(
-            &catalogue::TARGET_NOT_FOUND_IN_CX_TOML,
-            format!("{}", filter),
+            &catalogue::MISSING_CONFIG,
+            (format!("target '{filter}'"), "cx.toml".into()),
         ))?;
         filter_name = filter.to_string();
         vec![(&filter_name, target)]
@@ -294,8 +304,13 @@ pub fn project_compilation(
             .join(target_name);
         std::fs::create_dir_all(&output_dir).map_err(|e| {
             pipeline_error(
-                &catalogue::FAILED_TO_CREATE_OUTPUT_DIRECTORY,
-                (format!("{}", output_dir.display()), format!("{}", e)),
+                &catalogue::FILE_OPERATION,
+                (
+                    "create".into(),
+                    "output directory".into(),
+                    Some(format!("{}", output_dir.display())),
+                    format!("{}", e),
+                ),
             )
         })?;
 
@@ -332,7 +347,7 @@ pub fn project_compilation(
                     }
                     (None, None) => {
                         return Err(pipeline_error(
-                            &catalogue::BINARY_MUST_DEFINE_ENTRY_OR_MATCH,
+                            &catalogue::BINARY_SOURCES,
                             format!("{}", binary.name),
                         ));
                     }
@@ -375,8 +390,13 @@ pub fn project_compilation(
                 let header_path = output_dir.join(format!("{}.h", library.name));
                 std::fs::write(&header_path, header).map_err(|e| {
                     pipeline_error(
-                        &catalogue::FAILED_TO_WRITE_HEADER,
-                        (format!("{}", header_path.display()), format!("{}", e)),
+                        &catalogue::FILE_OPERATION,
+                        (
+                            "write".into(),
+                            "header".into(),
+                            Some(format!("{}", header_path.display())),
+                            format!("{}", e),
+                        ),
                     )
                 })?;
 

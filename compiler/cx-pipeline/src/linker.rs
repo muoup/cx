@@ -40,14 +40,17 @@ pub(crate) fn link_relocatable(
 
     let output = cmd
         .output()
-        .map_err(|e| pipeline_error(&catalogue::FAILED_TO_EXECUTE_LINKER, format!("{}", e)))?;
+        .map_err(|e| pipeline_error(&catalogue::LINKER_EXECUTION, format!("{}", e)))?;
 
     if output.status.success() {
         Ok(())
     } else {
         Err(pipeline_error(
-            &catalogue::RELOCATABLE_LINKING_FAILED,
-            format!("{}", String::from_utf8_lossy(&output.stderr)),
+            &catalogue::LINKING_FAILED,
+            (
+                "relocatable".into(),
+                format!("{}", String::from_utf8_lossy(&output.stderr)),
+            ),
         ))
     }
 }
@@ -89,7 +92,7 @@ pub(crate) fn link(
             }
             other => {
                 return Err(pipeline_error(
-                    &catalogue::UNKNOWN_LINK_KIND_FOR_LIBRARY,
+                    &catalogue::UNKNOWN_LINK_KIND,
                     (format!("{}", other), format!("{}", entry.name)),
                 ));
             }
@@ -98,14 +101,17 @@ pub(crate) fn link(
 
     let output = cmd
         .output()
-        .map_err(|e| pipeline_error(&catalogue::FAILED_TO_EXECUTE_LINKER, format!("{}", e)))?;
+        .map_err(|e| pipeline_error(&catalogue::LINKER_EXECUTION, format!("{}", e)))?;
 
     if output.status.success() {
         Ok(())
     } else {
         Err(pipeline_error(
             &catalogue::LINKING_FAILED,
-            format!("{}", String::from_utf8_lossy(&output.stderr)),
+            (
+                "executable".into(),
+                format!("{}", String::from_utf8_lossy(&output.stderr)),
+            ),
         ))
     }
 }
@@ -118,14 +124,17 @@ pub(crate) fn link_objects(output: &Path, object_files: &[PathBuf]) -> CXResult<
 
     let command_output = cmd
         .output()
-        .map_err(|e| pipeline_error(&catalogue::FAILED_TO_EXECUTE_LINKER, format!("{}", e)))?;
+        .map_err(|e| pipeline_error(&catalogue::LINKER_EXECUTION, format!("{}", e)))?;
 
     if command_output.status.success() {
         Ok(())
     } else {
         Err(pipeline_error(
             &catalogue::LINKING_FAILED,
-            format!("{}", String::from_utf8_lossy(&command_output.stderr)),
+            (
+                "executable".into(),
+                format!("{}", String::from_utf8_lossy(&command_output.stderr)),
+            ),
         ))
     }
 }

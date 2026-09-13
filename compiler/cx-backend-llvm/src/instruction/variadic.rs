@@ -23,16 +23,19 @@ fn intrinsic<'a>(
 ) -> LLVMResult<inkwell::values::FunctionValue<'a>> {
     let intrinsic = Intrinsic::find(name).ok_or_else(|| {
         LLVMError::new(
-            &catalogue::LLVM_INTRINSIC_WAS_NOT_FOUND,
-            format!("{}", name),
+            &catalogue::MISSING_ENTITY,
+            (format!("intrinsic '{name}'"), "LLVM intrinsic table".into()),
         )
     })?;
     intrinsic
         .get_declaration(&global.module, &[parameter_type])
         .ok_or_else(|| {
             LLVMError::new(
-                &catalogue::LLVM_INTRINSIC_WAS_NOT_DECLARED,
-                format!("{}", name),
+                &catalogue::MISSING_ENTITY,
+                (
+                    format!("declaration for intrinsic '{name}'"),
+                    "LLVM module".into(),
+                ),
             )
         })
 }
