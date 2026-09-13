@@ -27,7 +27,3 @@ pub(crate) fn internal_error<A>(
 ) -> CXError {
     CXError::new(definition.bind(args), CXInternalContext::error(context))
 }
-
-pub(crate) fn file_args(path: &Path, error: impl std::fmt::Display) -> (String, String) {
-    (path.display().to_string(), error.to_string())
-}

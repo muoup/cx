@@ -18,17 +18,23 @@ pub fn raw_error<T>(definition: &ErrorDefinition<T>, args: T) -> CXRawError {
 
 pub fn layout_error(error: MIRLayoutError) -> CXRawError {
     match error {
-        MIRLayoutError::InvalidType(id) => mir::MIR_INVALID_TYPE.bind(id.to_string()),
-        MIRLayoutError::DuplicateType(id) => mir::MIR_DUPLICATE_TYPE.bind(id.to_string()),
-        MIRLayoutError::RecursiveType(id) => mir::MIR_RECURSIVE_TYPE.bind(id.to_string()),
+        MIRLayoutError::InvalidType(id) => mir::ENTITY_REQUIREMENT.bind((
+            format!("MIR type {id}"),
+            "a valid type".into(),
+            None,
+        )),
+        MIRLayoutError::DuplicateType(id) => mir::DUPLICATE_ENTITY
+            .bind((format!("MIR type {id}"), "type registry".into())),
+        MIRLayoutError::RecursiveType(id) => mir::RECURSIVE_TYPE.bind(id.to_string()),
         MIRLayoutError::InvalidBitfieldWidth {
             width,
             storage_bits,
-        } => mir::MIR_INVALID_BITFIELD_WIDTH.bind((width, storage_bits)),
-        MIRLayoutError::InvalidAlignment(alignment) => mir::MIR_INVALID_ALIGNMENT.bind(alignment),
+        } => mir::INVALID_BITFIELD_WIDTH.bind((width, storage_bits)),
+        MIRLayoutError::InvalidAlignment(alignment) => mir::INVALID_LAYOUT
+            .bind(("MIR type".into(), "a valid alignment".into(), Some(alignment.to_string()))),
         MIRLayoutError::InvalidField { ty, field } => {
-            mir::MIR_INVALID_FIELD.bind((ty.to_string(), field))
+            mir::MISSING_ENTITY.bind((format!("field '{field}'"), format!("MIR type {ty}")))
         }
-        MIRLayoutError::SizeOverflow => mir::MIR_SIZE_OVERFLOW.bind(()),
+        MIRLayoutError::SizeOverflow => mir::SIZE_OVERFLOW.bind(()),
     }
 }

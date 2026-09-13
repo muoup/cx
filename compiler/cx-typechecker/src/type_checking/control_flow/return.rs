@@ -34,19 +34,18 @@ pub fn typecheck_return(
     value: Option<THIRExpression>,
 ) -> CXResult<TypecheckResult> {
     if env.in_defer_context() {
-        return env.log_error(
-            return_range,
-            &catalogue::RETURN_IS_NOT_ALLOWED_INSIDE_A_DEFERRED_EXPRESSION,
-            (),
-        );
+        return env.log_error(return_range, &catalogue::DEFER_FALLTHROUGH, ());
     }
 
     let return_type = if env.in_staged_context() || env.in_runtime_emit_context() {
         let Some(return_type) = env.staging_context().return_type else {
             return env.log_error(
                 return_range,
-                &catalogue::STAGED_RETURN_HAS_NO_MATERIALIZATION_CONTEXT,
-                (),
+                &catalogue::INVALID_CONTEXT,
+                (
+                    "Return statements".into(),
+                    "global variable initializers; use a yield statement instead".into(),
+                ),
             );
         };
         return_type
@@ -57,8 +56,11 @@ pub fn typecheck_return(
     if return_type.is_unreachable() {
         return env.log_error(
             return_range,
-            &catalogue::FUNCTION_CANNOT_RETURN_BECAUSE_ITS_RETURN_TYPE_IS_UNREACHABLE,
-            format!("{}", env.current_function().pretty_name()),
+            &catalogue::INVALID_CONTEXT,
+            (
+                "Return statements".into(),
+                "unreachable returning function".into(),
+            ),
         );
     }
 
@@ -93,16 +95,29 @@ pub fn typecheck_return(
         (Some(value), _) => {
             return env.log_error(
                 value.token_range,
-                &catalogue::CANNOT_RETURN_FROM_FUNCTION_WITH_A_VOID_RETURN_TYPE,
-                format!("{}", env.current_function().pretty_name()),
+                &catalogue::INVALID_CONTEXT,
+                (
+                    "Return statements with a value".into(),
+                    format!(
+                        "function {} which returns void",
+                        env.current_function().pretty_name()
+                    ),
+                ),
             );
         }
 
         (None, _) => {
             return env.log_error(
                 return_range,
-                &catalogue::FUNCTION_EXPECTS_A_RETURN_VALUE_BUT_NONE_WAS_PROVIDED,
-                format!("{}", env.current_function().pretty_name()),
+                &catalogue::INVALID_CONTEXT,
+                (
+                    "Return statements without a value".into(),
+                    format!(
+                        "function {} which returns {}",
+                        env.current_function().pretty_name(),
+                        return_type.display_with(&env.symbols)
+                    ),
+                ),
             );
         }
     };
@@ -117,8 +132,8 @@ pub fn typecheck_return(
         if ret_name.is_some() && return_type.is_void() {
             return env.log_error(
                 return_range,
-                &catalogue::CANNOT_HAVE_A_NAMED_RETURN_VARIABLE_IN_A_FUNCTION_WITH,
-                (),
+                &catalogue::INVALID_CONTEXT,
+                ("Post-conditions capturing a return value".into(), "void returning function".into())
             );
         }
 

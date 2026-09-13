@@ -203,28 +203,28 @@ impl TypecheckResult {
             Self::Ready(TypecheckedExpr::Standard(_)) => Ok(self),
             Self::Ready(TypecheckedExpr::Staged(_)) => env.log_error(
                 token_range,
-                &catalogue::STAGED_EXPRESSION_CANNOT_BE_USED_AS_A_RUNTIME_EXPRESSION,
-                (),
+                &catalogue::INVALID_CONTEXT,
+                ("staged expression".into(), "runtime value context".into())
             ),
             Self::Ready(TypecheckedExpr::ComptimeFunction(_)) => env.log_error(
                 token_range,
-                &catalogue::COMPTIME_FUNCTION_CANNOT_BE_USED_AS_A_VALUE,
-                (),
+                &catalogue::INVALID_CONTEXT,
+                ("comptime function".into(), "runtime value context".into())
             ),
             Self::IncompleteTemplate(_) => env.log_error(
                 token_range,
-                &catalogue::COULD_NOT_DEDUCE_TEMPLATED_FUNCTION_PARAMETERS,
-                (),
+                &catalogue::TEMPLATE_DEDUCTION,
+                "expression".into()
             ),
             Self::NeedsExpectedType(_) => env.log_error(
                 token_range,
-                &catalogue::COULD_NOT_RESOLVE_EXPRESSION_EXPECTED_TYPE_REQUIRED_BUT_NOT_PROVIDED,
-                (),
+                &catalogue::TEMPLATE_DEDUCTION,
+                "expression".into()
             ),
             Self::NeedsStagedType(_) => env.log_error(
                 token_range,
-                &catalogue::COULD_NOT_RESOLVE_STAGED_EXPRESSION_STAGED_PARAMETER_TYPES_REQUIRED_BUT,
-                (),
+                &catalogue::TEMPLATE_DEDUCTION,
+                "expression".into()
             ),
         }
     }

@@ -31,8 +31,12 @@ pub fn typecheck_assignment(
     let Some(inner) = env.symbols.mem_ref_inner(&lhs_type).cloned() else {
         return env.log_error(
             expr.token_range(),
-            &catalogue::CANNOT_ASSIGN_TO_NON_REFERENCE_TYPE,
-            format!("{}", lhs_type.display_with(&env.symbols)),
+            &catalogue::TYPE_MISMATCH,
+            (
+                "assignment expression".into(),
+                "memory reference type".into(),
+                format!("{}", lhs_type.display_with(&env.symbols)),
+            )
         );
     };
 

@@ -40,7 +40,7 @@ pub(crate) fn lower_global(
         if previous.initializer.is_some() && initializer.is_some() {
             return env.log_error(
                 hir_type.range(),
-                &catalogue::GLOBAL_REDECLARATION,
+                &catalogue::VARIABLE_REDECLARATION,
                 format!("{}", name),
             );
         }
@@ -51,7 +51,7 @@ pub(crate) fn lower_global(
             } else {
                 return env.log_error(
                     hir_type.range(),
-                    &catalogue::GLOBAL_REDECLARATION,
+                    &catalogue::VARIABLE_REDECLARATION,
                     format!("{}", name),
                 );
             }

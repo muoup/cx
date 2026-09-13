@@ -30,10 +30,11 @@ pub fn try_typecheck_special_binop(
             let Some(rewritten) = append_call_argument(lhs, rhs, expr) else {
                 return env.log_error(
                     expr.token_range(),
-                    &catalogue::THE_LEFT_SIDE_OF_MUST_BE_A_FUNCTION_CALL,
-                    (),
+                    &catalogue::INVALID_FORM,
+                    ("non-function call".into(), "left-hand side of backward pipe operator".into())
                 );
             };
+            
             Some(typecheck_expr(env, namespace, &rewritten, expected_type)?)
         }
         HIRBinOp::Pipe => {
@@ -62,8 +63,8 @@ pub fn try_typecheck_special_binop(
                 _ => {
                     return env.log_error(
                         expr.token_range(),
-                        &catalogue::THE_RIGHT_SIDE_OF_MUST_BE_A_METHOD_CALL,
-                        (),
+                        &catalogue::INVALID_FORM,
+                        ("non-function call".into(), "right-hand side of pipe operator".into())
                     );
                 }
             }

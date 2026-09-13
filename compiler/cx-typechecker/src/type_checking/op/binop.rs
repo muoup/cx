@@ -66,7 +66,7 @@ pub(crate) fn resolve_logical(
     if !valid_logical_operand(&lhs) || !valid_logical_operand(&rhs) {
         return env.log_error(
             &lhs.token_range,
-            &catalogue::INVALID_OPERANDS_TO_LOGICAL_OPERATION_AND,
+            &catalogue::INVALID_BINARY_OPERANDS,
             (
                 format!("{:?}", op),
                 format!("{}", lhs._type.display_with(&env.symbols)),
@@ -115,7 +115,7 @@ pub(crate) fn resolve_std_arithmetic(
     } else {
         env.log_error(
             &lhs.token_range,
-            &catalogue::INVALID_BINARY_OPERATION_FOR_TYPES_AND,
+            &catalogue::INVALID_BINARY_OPERANDS,
             (
                 format!("{}", op),
                 format!("{}", lhs.get_type().display_with(&env.symbols)),
@@ -166,7 +166,7 @@ fn coerce_float_binop(
         _ => {
             return env.log_error(
                 &lhs.token_range,
-                &catalogue::INVALID_FLOAT_BINARY_OPERATION_FOR_TYPES_AND,
+                &catalogue::INVALID_BINARY_OPERANDS,
                 (
                     format!("{}", op),
                     format!("{}", lhs.get_type().display_with(&env.symbols)),
@@ -260,8 +260,12 @@ fn coerce_pointer_binop(
             _ => {
                 return env.log_error(
                     &lhs.token_range,
-                    &catalogue::INVALID_BINARY_OPERATION_FOR_POINTER_TYPES,
-                    format!("{}", op),
+                    &catalogue::INVALID_BINARY_OPERANDS,
+                    (
+                        format!("{}", op),
+                        format!("{}", lhs.get_type().display_with(&env.symbols)),
+                        format!("{}", rhs.get_type().display_with(&env.symbols)),
+                    )
                 );
             }
         };
@@ -345,8 +349,12 @@ fn coerce_pointer_binop(
         _ => {
             return env.log_error(
                 &lhs.token_range,
-                &catalogue::INVALID_BINARY_OPERATION_FOR_POINTER_AND_NON_POINTER_TYPES,
-                format!("{}", op),
+                &catalogue::INVALID_BINARY_OPERANDS,
+                (
+                    format!("{}", op),
+                    format!("{}", lhs.get_type().display_with(&env.symbols)),
+                    format!("{}", rhs.get_type().display_with(&env.symbols)),
+                )
             );
         }
     };
@@ -402,11 +410,11 @@ fn coerce_integral_binop(
         _ => {
             return env.log_error(
                 &lhs.token_range,
-                &catalogue::INVALID_INTEGER_BINARY_OPERATION_FOR_TYPES_AND,
+                &catalogue::INVALID_BINARY_OPERANDS,
                 (
                     format!("{}", op),
                     format!("{}", lhs.get_type().display_with(&env.symbols)),
-                    format!("{}", rhs.get_type().display_with(&env.symbols)),
+                    format!("{}", rhs.get_type().display_with(&env.symbols))
                 ),
             );
         }
@@ -420,11 +428,11 @@ fn coerce_integral_binop(
     let Some(op) = lower_int_binop(op, signed) else {
         return env.log_error(
             &lhs.token_range,
-            &catalogue::INVALID_INTEGER_BINARY_OPERATION_FOR_TYPES_AND,
+            &catalogue::INVALID_BINARY_OPERANDS,
             (
                 format!("{}", op),
                 format!("{}", lhs.get_type().display_with(&env.symbols)),
-                format!("{}", rhs.get_type().display_with(&env.symbols)),
+                format!("{}", rhs.get_type().display_with(&env.symbols))
             ),
         );
     };

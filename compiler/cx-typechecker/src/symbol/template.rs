@@ -35,12 +35,8 @@ pub fn apply_template(
     if input.types.len() != template_input.args.len() {
         return env
             .log_error_base(
-                &catalogue::TEMPLATE_EXPECTS_ARGUMENTS_FOUND,
-                (
-                    format!("{}", name),
-                    format!("{}", input.types.len()),
-                    format!("{}", template_input.args.len()),
-                ),
+                &catalogue::ARGUMENT_COUNT,
+                (format!("template '{name}'"), template_input.args.len(), input.types.len(), false),
             )
             .map_err(CXErrorMaybeRaw::from);
     }

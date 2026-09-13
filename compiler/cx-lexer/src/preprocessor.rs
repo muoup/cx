@@ -6,7 +6,7 @@ pub mod includes;
 
 use cx_log::CXResult;
 use cx_log::catalogue::parse::{
-    EXPECTED_DIRECTIVE, EXPECTED_DIRECTIVE_HASH, UNIMPLEMENTED_DIRECTIVE,
+    EXPECTED_SYNTAX, UNSUPPORTED_FEATURE,
 };
 
 use crate::{
@@ -31,7 +31,7 @@ impl Preprocessor {
 
             return frame
                 .cursor_view()
-                .log_error(directive_start, &EXPECTED_DIRECTIVE, ());
+                .log_error(directive_start, &EXPECTED_SYNTAX, ("a preprocessor directive".into(), None, None));
         };
 
         let mut directive = directive;
@@ -41,8 +41,8 @@ impl Preprocessor {
 
                 return frame.cursor_view().log_error(
                     directive_start,
-                    &EXPECTED_DIRECTIVE_HASH,
-                    (),
+                    &EXPECTED_SYNTAX,
+                    ("a directive name".into(), Some("after '#'".into()), None),
                 );
             };
             directive.push_str(&name);
@@ -77,8 +77,8 @@ impl Preprocessor {
 
                 frame.cursor_view().log_error(
                     directive_start,
-                    &UNIMPLEMENTED_DIRECTIVE,
-                    dir.to_string(),
+                    &UNSUPPORTED_FEATURE,
+                    (format!("preprocessor directive '{dir}'"), "the lexer".into()),
                 )
             }
         }

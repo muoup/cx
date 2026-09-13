@@ -31,8 +31,12 @@ pub fn lex_with_context(
 pub fn lex_file(source_path: &Path, include_dirs: &[PathBuf]) -> CXResult<Vec<Token>> {
     let source = std::fs::read_to_string(source_path).map_err(|e| {
         crate::log::internal_error(
-            &cx_log::catalogue::parse::READ_SOURCE,
-            crate::log::file_args(source_path, e),
+            &cx_log::catalogue::parse::READ_FILE,
+            (
+                "source file".into(),
+                source_path.display().to_string(),
+                e.to_string(),
+            ),
             "failed to read lexer source file",
         )
     })?;

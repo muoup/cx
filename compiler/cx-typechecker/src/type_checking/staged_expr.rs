@@ -49,10 +49,12 @@ pub fn complete_staged_expr(
     if deferred.params.len() != value_type.params.len() {
         return env.log_error(
             deferred.body.token_range(),
-            &catalogue::STAGED_EXPRESSION_EXPECTS_PARAMETERS_FOUND,
+            &catalogue::ARGUMENT_COUNT,
             (
-                format!("{}", value_type.params.len()),
-                format!("{}", deferred.params.len()),
+                "Staged expression".into(),
+                value_type.params.len(),
+                deferred.params.len(),
+                false
             ),
         );
     }

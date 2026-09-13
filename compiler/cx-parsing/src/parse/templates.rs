@@ -89,7 +89,7 @@ pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<HIRTemplate
 
     loop {
         let (None, _type, _) = parse_initializer(data)? else {
-            return parse_point_error(&data.tokens, &TEMPLATE_TYPE, ());
+            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a template type".into(), None, None));
         };
 
         inputtype_s.push(_type);

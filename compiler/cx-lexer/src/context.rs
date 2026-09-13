@@ -4,7 +4,7 @@ use std::{
 };
 
 use cx_log::CXResult;
-use cx_log::catalogue::parse::{READ_BUILTIN, UNCLOSED_CONDITIONAL};
+use cx_log::catalogue::parse::{READ_FILE, UNCLOSED_SYNTAX};
 use cx_namespace::cx_library_directory;
 use cx_tokens::token::{PunctuatorType, Token, TokenKind};
 
@@ -60,8 +60,12 @@ impl LexingContext {
         let builtin_path = PathBuf::from(cx_library_directory("libc/internal/__builtins.h"));
         let builtin_source = std::fs::read_to_string(&builtin_path).map_err(|e| {
             crate::log::internal_error(
-                &READ_BUILTIN,
-                crate::log::file_args(&builtin_path, e),
+                &READ_FILE,
+                (
+                    "internal builtin header".into(),
+                    builtin_path.display().to_string(),
+                    e.to_string(),
+                ),
                 "failed to initialize lexer builtin source",
             )
         })?;
@@ -172,13 +176,12 @@ impl LexingContext {
         if let Some(conditional) = frame.conditionals.last() {
             return frame.cursor_view().log_error(
                 frame.cursor,
-                &UNCLOSED_CONDITIONAL,
-                if conditional.parent_active {
+                &UNCLOSED_SYNTAX,
+                format!("preprocessor conditional starting in {} branch", if conditional.parent_active {
                     "active"
                 } else {
                     "inactive"
-                }
-                .to_string(),
+                }),
             );
         }
 

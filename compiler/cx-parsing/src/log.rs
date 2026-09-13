@@ -1,4 +1,4 @@
-pub(crate) use cx_log::catalogue::parse::{EXPECTED_TOKEN, UNEXPECTED_END_TOKENS};
+pub(crate) use cx_log::catalogue::parse::{EXPECTED_SYNTAX, UNEXPECTED_END};
 use cx_log::{
     catalogue::ErrorDefinition,
     error::{

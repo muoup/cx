@@ -57,8 +57,8 @@ impl ParsedIdentifier {
     pub(crate) fn into_qualified_name(self) -> CXResult<QualifiedName> {
         if self.template_input.is_some() {
             return Err(crate::log::internal_error(
-                &NON_TEMPLATED_IDENTIFIER,
-                (),
+                &EXPECTED_SYNTAX,
+                ("a non-templated identifier".into(), None, None),
                 "non-templated identifier conversion has no active parser token context",
             ));
         }
@@ -123,7 +123,7 @@ pub(crate) fn try_parse_qualified_name(tokens: &mut TokenIter) -> CXResult<Optio
 
     loop {
         let TokenKind::Identifier(ident) = next_kind!(tokens)? else {
-            return parse_point_error(tokens, &QUALIFIED_IDENTIFIER, ());
+            return parse_point_error(tokens, &EXPECTED_SYNTAX, ("a qualified identifier".into(), None, None));
         };
 
         segments.push(CXIdent::new(ident.clone()));

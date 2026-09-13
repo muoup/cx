@@ -20,8 +20,8 @@ pub(crate) fn handle_ifdef(
 
         return frame.cursor_view().log_error(
             directive_start,
-            &CONDITIONAL_MACRO,
-            directive.to_string(),
+            &EXPECTED_SYNTAX,
+            ("a macro name".into(), Some(format!("after '{directive}'")), None),
         );
     };
 
@@ -66,7 +66,7 @@ pub(crate) fn handle_elif(
 
             return source
                 .cursor_view()
-                .log_error(directive_start, &ELIF_AFTER_ELSE, ());
+                .log_error(directive_start, &INVALID_CONTEXT, ("#elif".into(), "a conditional that already has #else".into()));
         }
         Some(frame) => frame.parent_active && !frame.any_branch_taken,
         None => {
@@ -74,7 +74,7 @@ pub(crate) fn handle_elif(
 
             return source
                 .cursor_view()
-                .log_error(directive_start, &ELIF_WITHOUT_IF, ());
+                .log_error(directive_start, &REQUIRED_CONTEXT, ("#elif".into(), "a matching #if".into()));
         }
     };
 
@@ -103,7 +103,7 @@ pub(crate) fn handle_else(
 
         return source
             .cursor_view()
-            .log_error(directive_start, &ELSE_WITHOUT_IF, ());
+            .log_error(directive_start, &REQUIRED_CONTEXT, ("#else".into(), "a matching #if".into()));
     };
 
     if frame.else_seen {
@@ -111,7 +111,7 @@ pub(crate) fn handle_else(
 
         return source
             .cursor_view()
-            .log_error(directive_start, &DUPLICATE_ELSE, ());
+            .log_error(directive_start, &DUPLICATE_ITEM, ("#else".into(), "preprocessor conditional".into()));
     }
 
     frame.else_seen = true;
@@ -132,7 +132,7 @@ pub(crate) fn handle_endif(
 
         return source
             .cursor_view()
-            .log_error(directive_start, &ENDIF_WITHOUT_IF, ());
+            .log_error(directive_start, &REQUIRED_CONTEXT, ("#endif".into(), "a matching #if".into()));
     }
     Ok(LexTransition::Continue)
 }

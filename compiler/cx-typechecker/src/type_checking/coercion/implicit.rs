@@ -40,8 +40,9 @@ pub fn implicit_cast(
     try_implicit_coercion(env, value, to_type)?.catch_unapplied(|expr, _| {
         env.log_error(
             expr.token_range,
-            &catalogue::NO_IMPLICIT_CAST_FROM_TO,
+            &catalogue::INVALID_CAST,
             (
+                "implicit".into(),
                 format!("{}", from_type.display_with(&env.symbols)),
                 format!("{}", to_type.display_with(&env.symbols)),
             ),

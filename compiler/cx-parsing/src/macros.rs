@@ -11,8 +11,15 @@ macro_rules! assert_token_matches {
 
             return $crate::log::parse_point_error(
                 &$data,
-                &$crate::log::EXPECTED_TOKEN,
-                ($expected.to_string(), $data.peek().map(ToString::to_string)),
+                &$crate::log::EXPECTED_SYNTAX,
+                (
+                    $expected.to_string(),
+                    None,
+                    $data
+                        .peek()
+                        .map(ToString::to_string)
+                        .or_else(|| Some("end of input".into())),
+                ),
             );
         };
     };
@@ -52,7 +59,7 @@ macro_rules! next_kind {
     ($data:expr) => {{
         match $data.next().map(|k| &k.kind) {
             Some(tok) => Ok(tok),
-            None => $crate::log::parse_point_error(&$data, &$crate::log::UNEXPECTED_END_TOKENS, ()),
+            None => $crate::log::parse_point_error(&$data, &$crate::log::UNEXPECTED_END, None),
         }
     }};
 }
@@ -62,7 +69,7 @@ macro_rules! peek_next_kind {
     ($data:expr) => {
         match $data.peek().map(|k| &k.kind) {
             Some(tok) => Ok(tok),
-            None => $crate::log::parse_point_error(&$data, &$crate::log::UNEXPECTED_END_TOKENS, ()),
+            None => $crate::log::parse_point_error(&$data, &$crate::log::UNEXPECTED_END, None),
         }
     };
 }

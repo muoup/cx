@@ -43,8 +43,8 @@ pub fn resolve_symbol(
     let Some((first, rest)) = symbols.split_first() else {
         return env.log_error(
             TokenRange::internal(),
-            &catalogue::SYMBOL_HAS_NO_DECLARATIONS,
-            format!("{}", name),
+            &catalogue::MISSING_ENTITY,
+            ("declarations".into(), format!("symbol '{name}'")),
         );
     };
     if symbols.iter().any(HIRSymbol::is_type) {
@@ -78,8 +78,8 @@ pub fn resolve_symbol(
         if !mir_symbols_equivalent(env, &resolved, &candidate) {
             return env.log_error(
                 symbol_range(declaration),
-                &catalogue::SYMBOL_HAS_INCOMPATIBLE_DECLARATIONS,
-                format!("{}", name),
+                &catalogue::INCOMPATIBLE_DECLARATION,
+                ("symbol".into(), format!("{}", name)),
             );
         }
     }
@@ -221,7 +221,7 @@ pub(crate) fn resolve_type_symbol<'a>(
 ) -> CXMaybeRawResult<&'a HIRSymbol> {
     let Some(first) = declarations.first() else {
         return env
-            .log_error_base(&catalogue::TYPE_HAS_NO_DECLARATIONS, format!("{}", name))
+            .log_error_base(&catalogue::MISSING_ENTITY, ("declarations".into(), format!("type '{name}'")))
             .map_err(Into::into);
     };
     let mut definition = None;
@@ -236,8 +236,8 @@ pub(crate) fn resolve_type_symbol<'a>(
         if symbol.tag != first.tag || !type_template_kinds_equivalent(first_data, data) {
             return env
                 .log_error_base(
-                    &catalogue::SYMBOL_HAS_INCOMPATIBLE_TAG_DECLARATIONS,
-                    format!("{}", name),
+                    &catalogue::INCOMPATIBLE_DECLARATION,
+                    ("tag".into(), format!("{}", name)),
                 )
                 .map_err(Into::into);
         }
@@ -247,8 +247,8 @@ pub(crate) fn resolve_type_symbol<'a>(
             {
                 return env
                     .log_error_base(
-                        &catalogue::SYMBOL_HAS_MULTIPLE_TYPE_DEFINITIONS,
-                        format!("{}", name),
+                        &catalogue::DUPLICATE_ITEM,
+                        ("type definition".into(), "symbol".into()),
                     )
                     .map_err(Into::into);
             }
@@ -257,8 +257,8 @@ pub(crate) fn resolve_type_symbol<'a>(
         {
             return env
                 .log_error_base(
-                    &catalogue::SYMBOL_HAS_MULTIPLE_TYPE_DEFINITIONS,
-                    format!("{}", name),
+                    &catalogue::DUPLICATE_ITEM,
+                    ("type definition".into(), "symbol".into()),
                 )
                 .map_err(Into::into);
         }
@@ -367,14 +367,14 @@ fn resolve_type_constructor(
     let variants = union_type.aggregate_fields(&env.symbols).ok_or_else(|| {
         env.error(
             &range,
-            &catalogue::TYPE_CONSTRUCTOR_TARGET_IS_NOT_A_TAGGED_UNION,
-            (),
+            &catalogue::TYPE_REQUIREMENT,
+            ("type constructor target".into(), "a tagged union".into(), None),
         )
     })?;
     let Some((_, variant_type)) = variants.get(variant_index).cloned() else {
         return crate::log::internal_type_error(
-            &catalogue::TYPE_CONSTRUCTOR_VARIANT_INDEX_IS_OUT_OF_BOUNDS,
-            format!("{}", variant_index),
+            &catalogue::INDEX_BOUNDS,
+            ("tagged union variant".into(), format!("{variant_index}"), Some(variants.len().to_string())),
         );
     };
 

@@ -70,7 +70,7 @@ pub fn complete_type(
     let Some(completed) = env.symbols.try_resolve_type_id(id).cloned() else {
         return env.log_error(
             ty.range(),
-            &catalogue::TYPE_IS_INCOMPLETE,
+            &catalogue::INCOMPLETE_TYPE,
             format!("{}", ty),
         );
     };
@@ -120,7 +120,7 @@ pub(crate) fn complete_type_inner(
             let Some(completed) = env.symbols.try_resolve_type_id(id).cloned() else {
                 return env.log_error(
                     ty.range(),
-                    &catalogue::TYPE_IS_INCOMPLETE,
+                    &catalogue::INCOMPLETE_TYPE,
                     format!("{}", ty),
                 );
             };
@@ -232,7 +232,7 @@ pub fn ensure_valid_type_id_component(
     let Some(ty) = env.symbols.try_resolve_type_id(ty) else {
         return env.log_error(
             range,
-            &catalogue::TYPE_IS_INCOMPLETE_24,
+            &catalogue::INCOMPLETE_TYPE,
             format!("{}", context),
         );
     };
@@ -250,8 +250,8 @@ pub fn ensure_valid_type_component(
     match &ty.kind {
         THIRTypeKind::Unreachable => env.log_error(
             range,
-            &catalogue::TYPE_COMPONENT_CANNOT_BE_UNREACHABLE,
-            format!("{}", context),
+            &catalogue::TYPE_REQUIREMENT,
+            (format!("type component {context}"), "a reachable type".into(), None),
         ),
 
         THIRTypeKind::Function { .. }
@@ -262,8 +262,8 @@ pub fn ensure_valid_type_component(
         {
             env.log_error(
                 range,
-                &catalogue::TYPE_IS_UNSIZED_AND_CANNOT_BE_DIRECTLY_ALLOCATED,
-                format!("{}", context),
+                &catalogue::TYPE_REQUIREMENT,
+                (context.into(), "an allocatable type".into(), Some("an unsized type".into())),
             )
         }
 
@@ -482,8 +482,8 @@ fn complete_identifier_type(
         MIRSymbol::Type(id) => {
             if template_input.is_some() {
                 env.log_error_base(
-                    &catalogue::TYPE_DOES_NOT_ACCEPT_TEMPLATE_ARGUMENTS,
-                    format!("{}", name),
+                    &catalogue::TEMPLATE_ARGUMENTS,
+                    (format!("{}", name), false),
                 )
                 .map_err(|e| e.into())
             } else {
@@ -577,13 +577,13 @@ fn complete_template_type_lookup(
 ) -> CXMaybeRawResult<THIRTypeID> {
     let Some(input) = template_input else {
         return env
-            .log_error_base(&catalogue::TYPE_REQUIRES_TEMPLATE_ARGUMENTS, name.into())
+            .log_error_base(&catalogue::TEMPLATE_ARGUMENTS, (name.into(), true))
             .map_err(|e| e.into());
     };
     let input = complete_template_input(env, namespace, input)?;
     let Some(symbol) = apply_template(env, mir_symbol, input)? else {
         return env
-            .log_error_base(&catalogue::FAILED_TO_APPLY_TEMPLATE_ARGUMENTS, ())
+            .log_error_base(&catalogue::TEMPLATE_APPLICATION, ())
             .map_err(|e| e.into());
     };
 
@@ -591,7 +591,7 @@ fn complete_template_type_lookup(
         MIRSymbol::Type(id) => Ok(id),
         MIRSymbol::Template { .. } => env
             .log_error_base(
-                &catalogue::TEMPLATE_ARGUMENTS_DID_NOT_RESOLVE_TYPE_TO_A_CONCRETE_TYPE,
+                &catalogue::TEMPLATE_NOT_CONCRETE,
                 name.into(),
             )
             .map_err(|e| e.into()),
@@ -669,8 +669,8 @@ fn ensure_aggregate_fields_not_recursive(
         if type_contains_by_value(env, field.ty(), aggregate_identifier, &mut visited) {
             let name = field.name().unwrap_or("<anonymous>");
             return env.log_error_base(
-                &catalogue::AGGREGATE_FIELD_HAS_RECURSIVE_TYPE,
-                format!("{}", name),
+                &catalogue::RECURSIVE_TYPE,
+                format!("aggregate field {}", name),
             );
         }
     }
@@ -687,18 +687,19 @@ fn ensure_aggregate_fields_complete(
 
         let Some(_ty) = env.symbols.try_resolve_type_id(id) else {
             return env.log_error_base(
-                &catalogue::AGGREGATE_FIELD_HAS_INCOMPLETE_TYPE,
-                format!("{}", field.name().unwrap_or("<anonymous>")),
+                &catalogue::INCOMPLETE_TYPE,
+                format!("aggregate field {}", field.name().unwrap_or("<anonymous>")),
             );
         };
 
         match &_ty.kind {
             THIRTypeKind::Unreachable | THIRTypeKind::Undefined | THIRTypeKind::Str => {
                 return env.log_error_base(
-                    &catalogue::AGGREGATE_FIELD_HAS_INVALID_TYPE,
+                    &catalogue::TYPE_REQUIREMENT,
                     (
-                        format!("{}", field.name().unwrap_or("<anonymous>")),
-                        format!("{}", _ty.display_with(&env.symbols)),
+                        format!("aggregate field {}", field.name().unwrap_or("<anonymous>")),
+                        "a valid field type".into(),
+                        Some(format!("{}", _ty.display_with(&env.symbols))),
                     ),
                 );
             }
@@ -723,22 +724,22 @@ fn ensure_aggregate_move_restrictions(
 
         if field_attributes.is_nodrop() && !aggregate_attributes.is_nodrop() {
             return env.log_error_base(
-                &catalogue::DROPPABLE_AGGREGATE_NODROP_FIELD,
-                format!("{}", name),
+                &catalogue::FIELD_TRAIT,
+                (name.to_string(), "@nodrop field".into(), "@nodrop".into()),
             );
         }
 
         if field_attributes.is_nocopy() && !aggregate_attributes.is_nocopy() {
             return env.log_error_base(
-                &catalogue::COPYABLE_AGGREGATE_NOCOPY_FIELD,
-                format!("{}", name),
+                &catalogue::FIELD_TRAIT,
+                (name.to_string(), "@nocopy field".into(), "@nocopy".into()),
             );
         }
 
         if owned_unsafe_move(env, field_type) && !aggregate_unsafe_move {
             return env.log_error_base(
-                &catalogue::SAFE_MOVE_AGGREGATE_UNSAFE_MOVE_FIELD,
-                format!("{}", name),
+                &catalogue::FIELD_TRAIT,
+                (name.to_string(), "@unsafe_move field".into(), "@unsafe_move".into()),
             );
         }
     }
@@ -838,7 +839,7 @@ fn complete_field(
             if !env.symbols.contains_type_id(id) {
                 return env.log_error(
                     _type.range(),
-                    &catalogue::AGGREGATE_FIELD_HAS_INCOMPLETE_TYPE,
+                    &catalogue::INCOMPLETE_TYPE,
                     format!("{}", name),
                 );
             }
@@ -856,7 +857,7 @@ fn complete_field(
                 let name = name.as_deref().unwrap_or("<anonymous>");
                 return env.log_error(
                     integer_type.range(),
-                    &catalogue::BITFIELD_HAS_INCOMPLETE_TYPE,
+                    &catalogue::INCOMPLETE_TYPE,
                     format!("{}", name),
                 );
             }

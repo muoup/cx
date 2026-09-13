@@ -113,7 +113,7 @@ impl<'a> ParserData<'a> {
 
     pub fn end_include(&mut self) -> CXResult<()> {
         let Some(state) = self.include_states.pop() else {
-            return parse_point_error(&self.tokens, &UNEXPECTED_END_INCLUDED, ());
+            return parse_point_error(&self.tokens, &UNEXPECTED_END, Some("included source".into()));
         };
         self.visibility = state.visibility;
         self.symbol_naming = state.symbol_naming;

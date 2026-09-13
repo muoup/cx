@@ -122,7 +122,7 @@ fn parse_extern_c_mod(data: &mut ParserData) -> CXResult<()> {
     let abi = abi.clone();
 
     if abi != "C" {
-        return parse_point_error(&data.tokens, &UNSUPPORTED_EXTERN_ABI, abi);
+        return parse_point_error(&data.tokens, &UNSUPPORTED_FEATURE, (format!("extern ABI '{abi}'"), "the parser".into()));
     }
 
     assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
@@ -151,7 +151,7 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
         }
 
         _ => {
-            return parse_point_error(&data.tokens, &UNEXPECTED_SPECIFIER, ());
+        return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a declaration".into(), Some("in global scope".into()), None));
         }
     };
 
@@ -195,7 +195,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
     let (name, _type) = parse_typedef_initializer(data)?;
 
     let Some(name) = name else {
-        return parse_point_error(&data.tokens.with_index(start_index), &TYPEDEF_NAME, ());
+        return parse_point_error(&data.tokens.with_index(start_index), &EXPECTED_SYNTAX, ("a typedef name".into(), None, None));
     };
 
     assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
@@ -247,7 +247,7 @@ fn parse_fn_merge(
 ) -> CXResult<()> {
     if try_next!(data.tokens, punctuator!(Semicolon)) {
         if template_prototype.is_some() {
-            return parse_point_error(&data.tokens, &TEMPLATED_FUNCTION_BODY, ());
+        return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a function body".into(), None, None));
         }
 
         if inherited_external {
@@ -312,7 +312,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
     };
 
     if !data.tokens.has_next() {
-        return parse_point_error(&data.tokens, &GLOBAL_END, ());
+        return parse_point_error(&data.tokens, &UNEXPECTED_END, Some("global declaration".into()));
     }
 
     if let Some(func) = try_function_parse(
@@ -374,7 +374,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
             loop {
                 let (next_name, next_type) = parse_base_mods(data, return_type.clone())?;
                 let Some(next_name) = next_name else {
-                    return parse_point_error(&data.tokens, &VARIABLE_AFTER_COMMA, ());
+                    return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a variable declaration".into(), Some("after ','".into()), None));
                 };
                 let initializer = if try_next!(data.tokens, TokenKind::Assignment(_)) {
                     Some(parse_expr(data)?)
@@ -396,7 +396,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
                     TokenKind::Operator(OperatorType::Comma) => {}
                     TokenKind::Punctuator(PunctuatorType::Semicolon) => break,
                     _ => {
-                        return parse_point_error(&data.tokens, &GLOBAL_SEPARATOR, ());
+                        return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a global separator".into(), None, None));
                     }
                 }
             }
@@ -405,8 +405,8 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
         _ => {
             return parse_point_error(
                 &data.tokens,
-                &GLOBAL_TOKEN,
-                (format!("{:#?}", data.tokens.peek()),),
+                &EXPECTED_SYNTAX,
+                ("a global declaration".into(), None, data.tokens.peek().map(|token| format!("{token:#?}"))),
             );
         }
     }
@@ -465,10 +465,10 @@ fn parse_block_statements(data: &mut ParserData) -> CXResult<Vec<HIRExpression>>
         let then_count = count_then_markers(&statement);
         let capturing_then_count = count_capturing_then_markers(&statement);
         if then_count != capturing_then_count {
-            return parse_point_error(&data.tokens, &THEN_DIRECT_BODY, ());
+            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a direct body".into(), Some("after 'then'".into()), None));
         }
         if then_count > 1 {
-            return parse_point_error(&data.tokens, &ONE_THEN, ());
+            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("at most one 'then' marker".into(), None, None));
         }
 
         if then_count == 1 {
@@ -584,7 +584,7 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     }
 
     if ss.is_empty() {
-        return parse_point_error(tokens, &INTRINSIC_IDENTIFIER, ());
+        return parse_point_error(tokens, &EXPECTED_SYNTAX, ("an intrinsic identifier".into(), None, None));
     }
 
     ss.pop();

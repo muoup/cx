@@ -192,8 +192,8 @@ fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<HIRBinOp> {
         _ => {
             return parse_point_error(
                 &data.tokens,
-                &INVALID_BINARY_OPERATOR,
-                (format!("{:?}", op),),
+                &EXPECTED_SYNTAX,
+                ("a supported binary operator".into(), None, Some(format!("{:?}", op))),
             );
         }
     })
@@ -206,7 +206,7 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<HIRBinOp> {
                 op_to_binop(data, OperatorType::Comma)?
             } else {
                 data.tokens.back();
-                return parse_point_error(&data.tokens, &BINARY_OPERATOR_COMMA, ());
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an expression operator".into(), Some("in this expression".into()), None));
             }
         }
         // Handle >> as shift operator (two consecutive Greater tokens)
@@ -245,8 +245,8 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<HIRBinOp> {
                 _ => {
                     return parse_point_error(
                         &data.tokens,
-                        &INVALID_BINARY_OPERATOR,
-                        (format!("{:?}", punc),),
+                        &EXPECTED_SYNTAX,
+                        ("a supported binary operator".into(), None, Some(format!("{:?}", punc))),
                     );
                 }
             }
@@ -262,7 +262,7 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<HIRBinOp> {
 
         _ => {
             data.tokens.back();
-            return parse_point_error(&data.tokens, &BINARY_OPERATOR_COMMA, ());
+            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an expression operator".into(), Some("in this expression".into()), None));
         }
     })
 }

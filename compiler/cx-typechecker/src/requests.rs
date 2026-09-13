@@ -198,8 +198,8 @@ fn realize_comptime_function(
         .ok_or_else(|| {
             env.error(
                 &TokenRange::internal(),
-                &catalogue::COMPTIME_DEFINITION_WAS_NOT_FOUND,
-                format!("{}", name),
+                &catalogue::MISSING_ENTITY,
+                ("comptime definition".into(), format!("{name}")),
             )
         })?;
     let symbol = declarations

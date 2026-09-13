@@ -1,32 +1,31 @@
 use super::define_errors;
 
 define_errors! {
-    FAILED_TO_EXECUTE_LINKER: String = "D0001" => |arg0| format!("Failed to execute linker: {arg0}");
-    RELOCATABLE_LINKING_FAILED: String = "D0002" => |arg0| format!("Relocatable linking failed: {arg0}");
-    UNKNOWN_LINK_KIND_FOR_LIBRARY: (String, String) = "D0003" => |(arg0, arg1)| format!("Unknown link kind '{arg0}' for library '{arg1}'");
-    LINKING_FAILED: String = "D0004" => |arg0| format!("Linking failed: {arg0}");
-    BASE_FILE_PATH_IS_NOT_VALID_UTF_8: () = "D0005" => |()| "Base file path is not valid UTF-8".into();
-    FAILED_TO_CREATE_OBJECT_OUTPUT_DIRECTORY: (String, String) = "D0006" => |(arg0, arg1)| format!("Failed to create object output directory {arg0}: {arg1}");
-    FAILED_TO_WRITE_OBJECT_FILE: (String, String) = "D0007" => |(arg0, arg1)| format!("Failed to write object file {arg0}: {arg1}");
-    NO_SOURCE_FILES_WERE_SELECTED_FOR_COMPILATION: () = "D0008" => |()| "No source files were selected for compilation".into();
-    SOURCE_FILE_PATH_IS_NOT_VALID_UTF_8: () = "D0009" => |()| "Source file path is not valid UTF-8".into();
-    MULTI_FILE_COMPILATION_ONLY_SUPPORTS_EXECUTABLE_OUTPUT: () = "D0010" => |()| "Multi-file compilation only supports executable output".into();
-    CX_TOML_HAS_NO_WORKSPACE_SECTION: () = "D0011" => |()| "cx.toml has no [workspace] section".into();
-    TARGET_NOT_FOUND_IN_CX_TOML: String = "D0012" => |arg0| format!("Target '{arg0}' not found in cx.toml");
-    FAILED_TO_CREATE_OUTPUT_DIRECTORY: (String, String) = "D0013" => |(arg0, arg1)| format!("Failed to create output directory {arg0}: {arg1}");
-    BINARY_MUST_DEFINE_ENTRY_OR_MATCH: String = "D0014" => |arg0| format!("Binary '{arg0}' must define 'entry' or 'match'");
-    FAILED_TO_WRITE_HEADER: (String, String) = "D0015" => |(arg0, arg1)| format!("Failed to write header {arg0}: {arg1}");
-    IMPORT_IS_NOT_AVAILABLE_IN_SINGLE_FILE_COMPILATION: String = "D0016" => |arg0| format!("Import '{arg0}' is not available in single-file compilation mode. Only compiler library modules under `std::` may be imported here; use `cx build` for project/module imports.");
-    FAILED_TO_CREATE_DUMP_DIRECTORY: (String, String) = "D0017" => |(arg0, arg1)| format!("Failed to create dump directory {arg0}: {arg1}");
-    FAILED_TO_CREATE_DUMP_FILE: (String, String) = "D0018" => |(arg0, arg1)| format!("Failed to create dump file {arg0}: {arg1}");
-    FAILED_TO_READ: (String, String) = "D0019" => |(arg0, arg1)| format!("Failed to read {arg0}: {arg1}");
-    DUPLICATE_MODULE_NAMESPACE_FOUND_DURING_DECOMPOSITION: String = "D0020" => |arg0| format!("Duplicate module namespace found during decomposition: {arg0}");
-    FAILED_TO_CREATE_OBJECT_DIRECTORY: (String, String) = "D0021" => |(arg0, arg1)| format!("Failed to create object directory '{arg0}': {arg1}");
-    INTERNAL_DIRECTORY_PATH_IS_NOT_VALID_UTF_8: () = "D0022" => |()| "Internal directory path is not valid UTF-8".into();
-    EMPTY_MATCH_PATTERN: () = "D0023" => |()| "match pattern cannot be empty".into();
-    ABSOLUTE_MATCH_PATTERN: String = "D0024" => |pattern| format!("match pattern must be relative: {pattern}");
-    NO_MATCHED_SOURCES: String = "D0025" => |patterns| format!("match patterns selected no source files: {patterns}");
-    READ_MATCH_DIRECTORY: (String, String) = "D0026" => |(path, error)| format!("failed to read match directory {path}: {error}");
-    READ_MATCH_ENTRY: String = "D0027" => |error| format!("failed to read match entry: {error}");
-    RELATIVE_MATCH_PATH: (String, String, String) = "D0028" => |(path, base, error)| format!("failed to make {path} relative to {base}: {error}");
+    LINKER_EXECUTION: String = "D0001" => |error| format!("Failed to execute linker: {error}");
+    LINKING_FAILED: (String, String) = "D0002" => |(kind, error)| format!("{kind} linking failed: {error}");
+    UNKNOWN_LINK_KIND: (String, String) = "D0003" => |(kind, library)| format!("Unknown link kind '{kind}' for library '{library}'");
+    PATH_ENCODING: String = "D0004" => |kind| format!("{kind} path is not valid UTF-8");
+    FILE_OPERATION: (String, String, Option<String>, String) = "D0005" => |(operation, resource, path, error)| {
+        let mut message = format!("Failed to {operation} {resource}");
+        if let Some(path) = path {
+            message.push_str(&format!(" '{path}'"));
+        }
+        message.push_str(&format!(": {error}"));
+        message
+    };
+    NO_SOURCES: Option<String> = "D0006" => |patterns| {
+        let mut message = "No source files were selected for compilation".to_owned();
+        if let Some(patterns) = patterns {
+            message.push_str(&format!(" by match patterns: {patterns}"));
+        }
+        message
+    };
+    UNSUPPORTED_FEATURE: (String, String) = "D0007" => |(feature, context)| format!("{feature} is not supported in {context}");
+    MISSING_CONFIG: (String, String) = "D0008" => |(item, context)| format!("Missing {item} in {context}");
+    BINARY_SOURCES: String = "D0009" => |name| format!("Binary '{name}' must define 'entry' or 'match'");
+    SINGLE_FILE_IMPORT: String = "D0010" => |name| format!("Import '{name}' is not available in single-file compilation mode. Only compiler library modules under `std::` may be imported here; use `cx build` for project/module imports.");
+    DUPLICATE_NAMESPACE: String = "D0011" => |namespace| format!("Duplicate module namespace found during decomposition: {namespace}");
+    EMPTY_MATCH_PATTERN: () = "D0012" => |()| "Match pattern cannot be empty".into();
+    ABSOLUTE_MATCH_PATTERN: String = "D0013" => |pattern| format!("Match pattern must be relative: {pattern}");
+    RELATIVE_MATCH_PATH: (String, String, String) = "D0014" => |(path, base, error)| format!("Failed to make {path} relative to {base}: {error}");
 }

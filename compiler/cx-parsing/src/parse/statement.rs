@@ -165,7 +165,7 @@ pub(crate) fn try_parse_keyword_stmt(
                         "':'"
                     );
                     if default_case.is_some() {
-                        return parse_point_error(&data.tokens, &MULTIPLE_DEFAULT, ());
+                        return parse_point_error(&data.tokens, &DUPLICATE_ITEM, ("default match arm".into(), "match".into()));
                     }
                     default_case = Some(index as usize);
                     continue;
@@ -212,7 +212,7 @@ pub(crate) fn try_parse_keyword_stmt(
                     peek_next_kind!(data.tokens)?,
                     TokenKind::Keyword(KeywordType::Default)
                 ) {
-                    return parse_point_error(&data.tokens, &MATCH_DEFAULT, ());
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("'_' match binding".into(), Some("in match patterns".into()), None));
                 }
 
                 let value = parse_pattern(data)?;
@@ -262,7 +262,7 @@ pub(crate) fn try_parse_keyword_stmt(
 
         KeywordType::Goto => {
             let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
-                return parse_point_error(&data.tokens, &GOTO_LABEL, ());
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a goto label".into(), None, None));
             };
             assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
             Some(HIRExprKind::Goto { name })
@@ -401,7 +401,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                 data.token_range(start_index, data.tokens.index),
             ));
         } else {
-            return parse_point_error(&data.tokens, &DECLARATION_NAME, ());
+            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a declaration name".into(), None, None));
         }
 
         if !try_next!(data.tokens, TokenKind::Operator(OperatorType::Comma)) {

@@ -79,12 +79,8 @@ fn typecheck_internal_method_call(
     if args.len() != expected {
         return env.log_error(
             expr.token_range(),
-            &catalogue::EXPECTS_ARGUMENTS_FOUND,
-            (
-                format!("{}", name),
-                format!("{}", expected),
-                format!("{}", args.len()),
-            ),
+            &catalogue::ARGUMENT_COUNT,
+            (format!("{}", name), expected, args.len(), false),
         );
     }
 
@@ -126,8 +122,12 @@ pub(crate) fn typecheck_va_list(
     if !compatible::compatible_types(env, actual, &expected)? {
         return env.log_error(
             expr.token_range(),
-            &catalogue::EXPECTED_VA_LIST_FOUND,
-            format!("{}", list._type.display_with(&env.symbols)),
+            &catalogue::TYPE_MISMATCH,
+            (
+                "va_list expression".into(),
+                format!("{}", expected.display_with(&env.symbols)),
+                format!("{}", actual.display_with(&env.symbols)),
+            )
         );
     }
     Ok(list)
@@ -225,8 +225,12 @@ fn load_callable(
     else {
         return env.log_error(
             expr.token_range(),
-            &catalogue::ATTEMPTED_TO_CALL_VALUE_OF_NON_FUNCTION_TYPE,
-            format!("{}", function_type.display_with(&env.symbols)),
+            &catalogue::TYPE_MISMATCH,
+            (
+                "call expression".into(),
+                "callable type".into(),
+                format!("{}", function_type.display_with(&env.symbols)),
+            )
         );
     };
 
@@ -239,26 +243,17 @@ fn check_argument_count(
     signature: &THIRFnSignature,
     arg_count: usize,
 ) -> CXResult<()> {
-    if arg_count != signature.params.len() && !signature.var_args {
+    if arg_count != signature.params.len() && !signature.var_args 
+        || arg_count < signature.params.len()
+    {
         return env.log_error(
             expr.token_range(),
-            &catalogue::CALL_TO_EXPECTS_ARGUMENTS_FOUND,
+            &catalogue::ARGUMENT_COUNT,
             (
-                format!("{}", signature.display_with(&env.symbols)),
-                format!("{}", signature.params.len()),
-                format!("{}", arg_count),
-            ),
-        );
-    }
-
-    if arg_count < signature.params.len() {
-        return env.log_error(
-            expr.token_range(),
-            &catalogue::CALL_TO_EXPECTS_AT_LEAST_ARGUMENTS_FOUND,
-            (
-                format!("{}", signature.display_with(&env.symbols)),
-                format!("{}", signature.params.len()),
-                format!("{}", arg_count),
+                "Function".into(),
+                signature.params.len(),
+                arg_count,
+                signature.var_args,
             ),
         );
     }
@@ -307,14 +302,20 @@ fn complete_vararg_argument(
                 .into(),
             )?;
         }
+        
         THIRTypeKind::Float {
             _type: THIRFloatType::F64,
         } => {}
+        
         _ => {
             return env.log_error(
                 expr.token_range(),
-                &catalogue::CANNOT_PASS_TO_VARARGS_EXPECTED_AN_INTRINSIC_TYPE_OR_POINTER,
-                format!("{}", arg_type.display_with(&env.symbols)),
+                &catalogue::TYPE_MISMATCH,
+                (
+                    "vararg argument".into(),
+                    "arithmetic type".into(),
+                    format!("{}", arg_type.display_with(&env.symbols)),
+                )
             );
         }
     }
@@ -409,9 +410,11 @@ fn complete_callee(
         }
         TypecheckResult::IncompleteTemplate(_)
         | TypecheckResult::NeedsExpectedType(_)
-        | TypecheckResult::NeedsStagedType(_) => {
-            env.log_error(expr.token_range(), &catalogue::COULD_NOT_DEDUCE_CALLEE, ())
-        }
+        | TypecheckResult::NeedsStagedType(_) => env.log_error(
+            expr.token_range(),
+            &catalogue::TEMPLATE_DEDUCTION,
+            "expression".into(),
+        ),
     }
 }
 
@@ -446,11 +449,12 @@ fn complete_comptime_call(
     if total != prototype.params().len() {
         return env.log_error(
             expr.token_range(),
-            &catalogue::CALL_TO_COMPTIME_FUNCTION_EXPECTS_ARGUMENTS_FOUND,
+            &catalogue::ARGUMENT_COUNT,
             (
-                format!("{}", prototype.pretty_name()),
-                format!("{}", prototype.params().len()),
-                format!("{}", total),
+                prototype.pretty_name().into(),
+                prototype.params().len(),
+                total,
+                false
             ),
         );
     }
@@ -479,14 +483,20 @@ fn complete_comptime_call(
         if value_type.expr && !value_type.params.is_empty() {
             let result = typecheck_expr(env, namespace, argument, None)?
                 .apply_staged_type(env, namespace, value_type)?;
+            
             let TypecheckResult::Ready(TypecheckedExpr::Staged(StagedTC::Literal(staged))) = result
             else {
                 return env.log_error(
                     argument.token_range(),
-                    &catalogue::EXPECTED_A_PARAMETERIZED_STAGED_EXPRESSION,
-                    (),
+                    &catalogue::TYPE_MISMATCH,
+                    (
+                        "staged typed argument".into(),
+                        "staged expression".into(),
+                        "non-staged expression".into()
+                    )
                 );
             };
+            
             arguments.push(staged_into_expression(staged));
             continue;
         }
@@ -582,8 +592,13 @@ fn complete_staged_call(
     if raw_args.len() != params.len() {
         return env.log_error(
             expr.token_range(),
-            &catalogue::STAGED_EXPRESSION_EXPECTS_ARGUMENTS_FOUND,
-            (format!("{}", params.len()), format!("{}", raw_args.len())),
+            &catalogue::ARGUMENT_COUNT,
+            (
+                "staged expression".into(),
+                params.len(), 
+                raw_args.len(),
+                false
+            ),
         );
     }
 

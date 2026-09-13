@@ -1,5 +1,5 @@
 use cx_log::CXResult;
-use cx_log::catalogue::parse::INVALID_NUMBER;
+use cx_log::catalogue::parse::INVALID_LITERAL;
 use cx_tokens::token::{
     FloatLiteral, FloatSuffix, IntegerBase, IntegerLength, IntegerLiteral, IntegerSuffix, TokenKind,
 };
@@ -153,7 +153,7 @@ fn hexadecimal_float_literal(iter: &mut LexCursor<'_>, start_index: usize) -> CX
     let number = &iter.source()[start_index..number_end];
     let value = match parse_hexadecimal_float(number) {
         Ok(value) => value,
-        Err(_) => return iter.log_error(start_index, &INVALID_NUMBER, number.to_string()),
+        Err(_) => return iter.log_error(start_index, &INVALID_LITERAL, ("numeric".into(), Some(number.to_string()))),
     };
 
     let value = match suffix {
@@ -244,7 +244,7 @@ fn parse_float_literal(iter: &mut LexCursor<'_>, start_index: usize) -> CXResult
     };
     match value {
         Ok(value) => Ok(TokenKind::FloatLiteral(FloatLiteral { value, suffix })),
-        Err(_) => iter.log_error(start_index, &INVALID_NUMBER, num.to_string()),
+        Err(_) => iter.log_error(start_index, &INVALID_LITERAL, ("numeric".into(), Some(num.to_string()))),
     }
 }
 
@@ -265,8 +265,8 @@ fn parse_integer_literal(
         })),
         Err(_) => iter.log_error(
             digits_start,
-            &INVALID_NUMBER,
-            iter.source()[digits_start..iter.cursor()].to_string(),
+            &INVALID_LITERAL,
+            ("numeric".into(), Some(iter.source()[digits_start..iter.cursor()].to_string())),
         ),
     }
 }
@@ -337,8 +337,8 @@ fn consume_numeric_tail(iter: &mut LexCursor<'_>) {
 fn invalid_numeric_literal(iter: &LexCursor<'_>, start_index: usize) -> CXResult<TokenKind> {
     iter.log_error(
         start_index,
-        &INVALID_NUMBER,
-        iter.source()[start_index..iter.cursor()].to_string(),
+        &INVALID_LITERAL,
+        ("numeric".into(), Some(iter.source()[start_index..iter.cursor()].to_string())),
     )
 }
 

@@ -116,7 +116,12 @@ pub(crate) fn codegen_instruction(
 
         LMIRInstructionKind::VaStart { .. }
         | LMIRInstructionKind::VaEnd { .. }
-        | LMIRInstructionKind::VaArg { .. } => return Err(raw(&VARIADIC_UNIMPLEMENTED, ())),
+        | LMIRInstructionKind::VaArg { .. } => {
+            return Err(raw(
+                &UNSUPPORTED_FEATURE,
+                ("variadic builtins".into(), "Cranelift lowering".into()),
+            ))
+        }
 
         LMIRInstructionKind::Return { value } => {
             match value {
@@ -544,7 +549,10 @@ pub(crate) fn codegen_instruction(
                     }
                 }
                 CodegenValue::Null => {
-                    return Err(raw(&NULL_RUNTIME_VALUE, ()));
+                    return Err(raw(
+                        &ENTITY_REQUIREMENT,
+                        ("LMIR value".into(), "a runtime representation".into(), None),
+                    ));
                 }
                 value => {
                     context

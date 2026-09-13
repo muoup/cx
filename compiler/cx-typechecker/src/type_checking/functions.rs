@@ -28,8 +28,8 @@ pub fn typecheck_function(
     if prototype.signature().contract.safe && prototype.signature().var_args {
         return env.log_error(
             body.token_range(),
-            &catalogue::SAFE_FUNCTION_MAY_NOT_USE_VARARGS,
-            format!("{}", prototype.pretty_name()),
+            &catalogue::INVALID_CONTEXT,
+            ("Varargs".into(), "a safe function".into())
         );
     }
 
@@ -68,7 +68,7 @@ pub fn typecheck_function(
     let with_implicit_return = add_implicit_return(env, namespace, body_expr)?;
 
     if let Some((name, range)) = env.function.unresolved_label() {
-        return env.log_error(range, &catalogue::UNDEFINED_LABEL, format!("{}", name));
+        return env.log_error(range, &catalogue::UNKNOWN_SYMBOL, name.into());
     }
 
     if prototype.signature().contract.safe {
@@ -181,7 +181,7 @@ pub fn typecheck_comptime_function(
     let with_implicit_return = checked?;
 
     if let Some((name, range)) = env.function.unresolved_label() {
-        return env.log_error(range, &catalogue::UNDEFINED_LABEL, format!("{}", name));
+        return env.log_error(range, &catalogue::UNKNOWN_SYMBOL, name.into());
     }
 
     env.pop_scope()

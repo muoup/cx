@@ -49,8 +49,12 @@ pub fn typecheck_unop(
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
                 return env.log_error(
                     &operand.token_range,
-                    &catalogue::CANNOT_APPLY_PRE_INCREMENT_TO_NON_REFERENCE_TYPE,
-                    format!("{}", operand._type.display_with(&env.symbols)),
+                    &catalogue::TYPE_MISMATCH,
+                    (
+                        "increment operator".into(),
+                        "reference type".into(),
+                        format!("{}", operand._type.display_with(&env.symbols)),
+                    ),
                 );
             };
 
@@ -74,7 +78,15 @@ pub fn typecheck_unop(
                 },
 
                 _ => {
-                    return env.log_error(&operand.token_range, &catalogue::PRE_INCREMENT_OPERATOR_REQUIRES_AN_INTEGER_OR_POINTER_TYPE_FOUND, format!("{}", inner.display_with(&env.symbols)));
+                    return env.log_error(
+                        &operand.token_range,
+                        &catalogue::TYPE_MISMATCH,
+                        (
+                            "increment operator".into(),
+                            "pointer or integer type".into(),
+                            format!("{}", inner.display_with(&env.symbols)),
+                        ),
+                    );
                 }
             }
         }
@@ -106,8 +118,12 @@ pub fn typecheck_unop(
             if !operand._type.is_integer() {
                 return env.log_error(
                     &operand.token_range,
-                    &catalogue::BITWISE_NOT_OPERATOR_REQUIRES_AN_INTEGER_TYPE_FOUND,
-                    format!("{}", operand._type.display_with(&env.symbols)),
+                    &catalogue::TYPE_MISMATCH,
+                    (
+                        "bitwise not operator".into(),
+                        "integer type".into(),
+                        format!("{}", operand._type.display_with(&env.symbols)),
+                    )
                 );
             }
 
@@ -132,8 +148,12 @@ pub fn typecheck_unop(
                 _ => {
                     return env.log_error(
                         &operand.token_range,
-                        &catalogue::NEGATION_OPERATOR_REQUIRES_AN_INTEGER_OR_FLOAT_TYPE_FOUND,
-                        format!("{}", operand.display_with(&env.symbols)),
+                        &catalogue::TYPE_MISMATCH,
+                        (
+                            "negation operator".into(),
+                            "numeric type".into(),
+                            format!("{}", operand._type.display_with(&env.symbols)),
+                        )
                     );
                 }
             };
@@ -154,8 +174,12 @@ pub fn typecheck_unop(
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
                 return env.log_error(
                     &operand.token_range,
-                    &catalogue::CANNOT_TAKE_THE_ADDRESS_OF_A_NON_REFERENCE_TYPE,
-                    (),
+                    &catalogue::TYPE_MISMATCH,
+                    (
+                        "address-of operator".into(),
+                        "reference type".into(),
+                        format!("{}", operand._type.display_with(&env.symbols)),
+                    )
                 );
             };
 
@@ -178,18 +202,18 @@ pub fn typecheck_unop(
             if env.function.in_safe_context()
                 && matches!(operand._type.kind, THIRTypeKind::PointerTo { .. })
             {
-                return env.log_error(
-                    &operand.token_range,
-                    &catalogue::SAFE_PTR_DEREFERENCE,
-                    (),
-                );
+                return env.log_error(&operand.token_range, &catalogue::UNSAFE_OPERATION, "Deferencing a pointer".into());
             }
 
             let Some(inner) = env.symbols.ptr_inner(&operand._type).cloned() else {
                 return env.log_error(
                     &operand.token_range,
-                    &catalogue::CANNOT_DEREFERENCE_NON_POINTER_TYPE,
-                    format!("{}", operand._type.display_with(&env.symbols)),
+                    &catalogue::TYPE_MISMATCH,
+                    (
+                        "dereference operator".into(),
+                        "pointer type".into(),
+                        format!("{}", operand._type.display_with(&env.symbols)),
+                    )
                 );
             };
 

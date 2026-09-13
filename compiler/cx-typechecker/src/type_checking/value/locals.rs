@@ -50,7 +50,7 @@ pub(crate) fn typecheck_var_declaration(
                 if !env.type_eq(&mem_type, &sym_expr._type) {
                     return env.log_error(
                         expr.token_range(),
-                        &catalogue::ATTEMPTING_TO_REDECLARE_VARIABLE_WITH_A_DIFFERENT_TYPE,
+                        &catalogue::VARIABLE_REDECLARATION,
                         format!("{}", name),
                     );
                 }

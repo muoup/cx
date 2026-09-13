@@ -89,17 +89,29 @@ impl MIRSymbol {
 
             // FIXME: We should be able to generate function calls to comptime functions in a runtime function's THIR
             MIRSymbol::ComptimeFunctionReference { .. } => {
-                crate::log::log_error(&typecheck::COMPTIME_FUNCTION_RUNTIME_CONTEXT, ())
+                crate::log::log_error(
+                    &typecheck::INVALID_CONTEXT,
+                    ("comptime function".into(), "runtime expressions".into()),
+                )
             }
 
             // FIXME: Ditto above
             MIRSymbol::StagedExpressionFunction { .. } => {
-                crate::log::log_error(&typecheck::STAGED_EXPRESSION_RUNTIME_CONTEXT, ())
+                crate::log::log_error(
+                    &typecheck::INVALID_CONTEXT,
+                    ("staged expression".into(), "runtime expressions".into()),
+                )
             }
 
-            MIRSymbol::Template { .. } => crate::log::log_error(&typecheck::TEMPLATE_DEDUCTION, ()),
+            MIRSymbol::Template { .. } => crate::log::log_error(
+                &typecheck::TEMPLATE_DEDUCTION,
+                "template arguments".into(),
+            ),
 
-            _ => crate::log::log_error(&typecheck::SYMBOL_NOT_VALUE, ()),
+            MIRSymbol::Type(..) => crate::log::log_error(
+                &typecheck::INVALID_CONTEXT,
+                ("type".into(), "runtime expressions".into()),
+            ),
         }
     }
 }

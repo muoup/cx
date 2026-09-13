@@ -82,7 +82,7 @@ pub(crate) fn lower_function(
                 return log_mir_error(
                     &body.token_range,
                     (
-                        &mir::MIR_FUNCTION_RETURN,
+                        &mir::FUNCTION_RETURN,
                         function.prototype.pretty_name().to_string(),
                     ),
                 );
@@ -236,7 +236,10 @@ pub(crate) fn lower_expression(
                     .ok_or_else(|| {
                         mir_error(
                             &expression.token_range,
-                            (&mir::MIR_LOCAL_NOT_FOUND, format!("{:?}", local_id)),
+                            (
+                                &mir::MISSING_ENTITY,
+                                (format!("local {:?}", local_id), "MIR lowering context".into()),
+                            ),
                         )
                     })?;
                 if builder.is_capturing()
@@ -259,7 +262,10 @@ pub(crate) fn lower_expression(
                     .ok_or_else(|| {
                         mir_error(
                             &expression.token_range,
-                            (&mir::MIR_GLOBAL_NOT_FOUND, symbol.to_string()),
+                            (
+                                &mir::MISSING_ENTITY,
+                                (format!("global '{symbol}'"), "MIR lowering context".into()),
+                            ),
                         )
                     })?,
             )),
@@ -285,7 +291,10 @@ pub(crate) fn lower_expression(
                 .ok_or_else(|| {
                     mir_error(
                         &expression.token_range,
-                        (&mir::MIR_FUNCTION_NOT_FOUND, name.to_string()),
+                        (
+                            &mir::MISSING_ENTITY,
+                            (format!("function '{name}'"), "MIR lowering context".into()),
+                        ),
                     )
                 })
                 .map(|v| MIRValue::Constant(MIRConstant::Function(v)))?,
@@ -369,7 +378,13 @@ pub(crate) fn lower_expression(
                 let value = builder
                     .local_value(*local_id, &expression._type)?
                     .ok_or_else(|| {
-                        mir_error(&expression.token_range, (&mir::MIR_RUNTIME_LOCAL, ()))
+                        mir_error(
+                            &expression.token_range,
+                            (
+                                &mir::INVALID_CONTEXT,
+                                ("runtime local".into(), "comptime evaluation".into()),
+                            ),
+                        )
                     })?;
                 if builder.is_capturing() && matches!(value, MIRValue::Register(_)) {
                     let ty = lower_type(builder, &expression._type)?;
@@ -718,7 +733,7 @@ pub(crate) fn lower_expression(
                 {
                     return log_mir_error(
                         &expression.token_range,
-                        (&mir::MIR_ARRAY_TOO_LONG, (fields.len(), *length)),
+                        (&mir::ARRAY_TOO_LONG, (fields.len(), *length)),
                     );
                 }
                 let out = builder.fun_mut().new_register(type_id, None);
@@ -910,7 +925,13 @@ pub(crate) fn lower_expression(
                 }
 
                 let Some((scope_id, block_id)) = target else {
-                    return log_mir_error(&expression.token_range, (&mir::MIR_YIELD_SCOPE, ()));
+                    return log_mir_error(
+                        &expression.token_range,
+                        (
+                            &mir::REQUIRED_CONTEXT,
+                            ("yield".into(), "a yieldable scope".into()),
+                        ),
+                    );
                 };
 
                 let args = value.into_iter().collect();

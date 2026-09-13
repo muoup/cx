@@ -17,7 +17,7 @@ pub(crate) fn evaluate_comptime_expr(
 fn constant_error(expression: &THIRExpression, context: &str) -> cx_log::error::CXError {
     mir_error(
         &expression.token_range,
-        (&mir::MIR_CONSTANT_VALUE, context.to_owned()),
+        (&mir::EXPECTED_CONSTANT, context.to_owned()),
     )
 }
 

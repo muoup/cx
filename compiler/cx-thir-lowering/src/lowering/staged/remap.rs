@@ -28,8 +28,8 @@ impl Remap<'_> {
                 mir_error(
                     self.range,
                     (
-                        &catalogue::MIR_TEMPLATE_REGISTER_REWRITE,
-                        format!("{:?}", register),
+                        &catalogue::MISSING_MAPPING,
+                        (format!("register {:?}", register), "template register".into()),
                     ),
                 )
             })?,
@@ -53,10 +53,10 @@ impl Remap<'_> {
             MIRPlace::FunctionLocal(id) => places
                 .get(&id)
                 .copied()
-                .ok_or_else(|| mir_error(self.range, (&catalogue::MIR_TEMPLATE_PLACE_REWRITE, ()))),
+                .ok_or_else(|| mir_error(self.range, (&catalogue::MISSING_MAPPING, ("place".into(), "template place".into())))),
             MIRPlace::Parameter(_) => Err(mir_error(
                 self.range,
-                (&catalogue::MIR_RETAINED_PARAMETER, ()),
+                (&catalogue::RETAINED_PARAMETER, ()),
             )),
             MIRPlace::Global(id) => Ok(MIRPlace::Global(id)),
         }
@@ -67,7 +67,7 @@ impl Remap<'_> {
         let block_params = self.block_params;
         Ok(MIRBlockTarget::with_args(
             *blocks.get(&target.block).ok_or_else(|| {
-                mir_error(self.range, (&catalogue::MIR_TEMPLATE_BLOCK_REWRITE, ()))
+                mir_error(self.range, (&catalogue::MISSING_MAPPING, ("block".into(), "template block".into())))
             })?,
             target
                 .args
@@ -91,7 +91,7 @@ impl Remap<'_> {
             Some(MIRValue::Register(register)) => Ok(*register),
             _ => Err(mir_error(
                 self.range,
-                (&catalogue::MIR_OUTPUT_REGISTER_REWRITE, ()),
+                (&catalogue::MISSING_MAPPING, ("output register".into(), "template output register".into())),
             )),
         }
     }
@@ -103,7 +103,7 @@ impl Remap<'_> {
             Some(MIRValue::Constant(cx_mir::MIRConstant::Unit)) => Ok(None),
             _ => Err(mir_error(
                 self.range,
-                (&catalogue::MIR_OUTPUT_REGISTER_REWRITE, ()),
+                (&catalogue::MISSING_MAPPING, ("output register".into(), "template output register".into())),
             )),
         }
     }
@@ -376,7 +376,7 @@ impl Remap<'_> {
             | MIRInstrKind::StagedExit { .. }
             | MIRInstrKind::StagedMove { .. }
             | MIRInstrKind::StagedUse { .. } => {
-                return Err(mir_error(self.range, (&catalogue::MIR_NESTED_STAGED, ())));
+                return Err(mir_error(self.range, (&catalogue::UNEXPANDED_STAGED, ())));
             }
         })
     }

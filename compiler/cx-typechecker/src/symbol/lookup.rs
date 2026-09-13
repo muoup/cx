@@ -126,8 +126,8 @@ impl TypeEnvironment<'_> {
                 if let Some(tag) = tag {
                     if value.iter().any(|symbol| symbol.tag != Some(tag)) {
                         return self.log_error_base(
-                            &catalogue::SYMBOL_HAS_INCOMPATIBLE_TAG_DECLARATIONS,
-                            format!("{}", resolved_name),
+                            &catalogue::INCOMPATIBLE_DECLARATION,
+                            ("tag".into(), format!("{}", resolved_name)),
                         );
                     }
                 }
@@ -148,7 +148,7 @@ impl TypeEnvironment<'_> {
                 kind: SymbolLookupKind::Resolved(symbol.clone()),
             })),
             QualifiedLookupResult::Ambiguous { candidates } => self.log_error_base(
-                &catalogue::AMBIGUOUS_SYMBOL_REFERENCE_CANDIDATES,
+                &catalogue::AMBIGUOUS_SYMBOL,
                 format!(
                     "{}",
                     candidates

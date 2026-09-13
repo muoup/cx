@@ -1,5 +1,5 @@
 use cx_log::CXResult;
-use cx_log::catalogue::parse::{INVALID_CHAR, UNTERMINATED_CHAR};
+use cx_log::catalogue::parse::{INVALID_LITERAL, UNEXPECTED_END};
 use cx_tokens::{
     punctuator,
     token::{IntegerLiteral, OperatorType, PunctuatorType, TokenKind},
@@ -204,7 +204,7 @@ fn char_literal(iter: &mut LexCursor<'_>) -> CXResult<TokenKind> {
     assert_eq!(iter.next(), Some('\''));
 
     let Some(c) = iter.next() else {
-        return iter.log_error(start_index, &UNTERMINATED_CHAR, ());
+        return iter.log_error(start_index, &UNEXPECTED_END, Some("character literal".into()));
     };
 
     let Some(kind) = (match iter.next() {
@@ -229,7 +229,7 @@ fn char_literal(iter: &mut LexCursor<'_>) -> CXResult<TokenKind> {
         }
         _ => None,
     }) else {
-        return iter.log_error(start_index, &INVALID_CHAR, ());
+        return iter.log_error(start_index, &INVALID_LITERAL, ("character".into(), None));
     };
 
     Ok(kind)

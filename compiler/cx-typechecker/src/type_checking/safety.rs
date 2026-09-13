@@ -31,7 +31,7 @@ pub(crate) fn validate_safe_expression(
         | THIRExpressionKind::LifetimeEnd { .. } => Ok(()),
 
         THIRExpressionKind::Unpack { .. } => Ok(()),
-        THIRExpressionKind::LeakLifetime { .. } => reject(env, expression),
+        THIRExpressionKind::LeakLifetime { .. } => reject(env, expression, "@leak"),
 
         THIRExpressionKind::FunctionReference { .. } => validate_callable(env, expression),
 
@@ -63,7 +63,7 @@ pub(crate) fn validate_safe_expression(
 
         THIRExpressionKind::Typechange(inner) => {
             if inner._type.is_pointer() {
-                reject(env, expression)
+                reject(env, expression, "Typechange to pointer type")
             } else {
                 validate_safe_expression(env, inner)
             }
@@ -78,7 +78,7 @@ pub(crate) fn validate_safe_expression(
                     | THIRCoercion::IntToPtr { .. }
                     | THIRCoercion::GetFnPtr
             ) {
-                reject(env, expression)
+                reject(env, expression, "Unsafe type conversion")
             } else {
                 validate_safe_expression(env, operand)
             }
@@ -226,7 +226,7 @@ fn validate_callable(env: &TypeEnvironment, expression: &THIRExpression) -> CXRe
     {
         Ok(())
     } else {
-        reject(env, expression)
+        reject(env, expression, "Non-safe function call")
     }
 }
 
@@ -254,10 +254,10 @@ fn validate_all(env: &TypeEnvironment, expressions: &[THIRExpression]) -> CXResu
     Ok(())
 }
 
-fn reject<T>(env: &TypeEnvironment, expression: &THIRExpression) -> CXResult<T> {
+fn reject<T>(env: &TypeEnvironment, expression: &THIRExpression, context: &str) -> CXResult<T> {
     env.log_error(
         &expression.token_range,
-        &catalogue::EXPRESSION_IS_NOT_SUPPORTED_IN_SAFE_CONTEXTS_WRAP_IT_IN,
-        (),
+        &catalogue::UNSAFE_OPERATION,
+        context.into()
     )
 }

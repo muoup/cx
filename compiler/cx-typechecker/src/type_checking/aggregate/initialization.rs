@@ -87,8 +87,8 @@ pub fn typecheck_initializer_list(
 
         _ => env.log_error(
             expr.token_range(),
-            &catalogue::CANNOT_COERCE_INITIALIZER_TO_TYPE,
-            format!("{}", to_type.display_with(&env.symbols)),
+            &catalogue::TYPE_REQUIREMENT,
+            ("initializer".into(), "the target type".into(), Some(format!("{}", to_type.display_with(&env.symbols)))),
         ),
     }
 }
@@ -103,16 +103,16 @@ fn typecheck_union_initializer(
     let Some(fields) = to_type.aggregate_fields(&env.symbols) else {
         return env.log_error(
             expr.token_range(),
-            &catalogue::EXPECTED_A_UNION_TYPE_FOR_INITIALIZER_FOUND,
-            format!("{}", to_type.display_with(&env.symbols)),
+            &catalogue::TYPE_REQUIREMENT,
+            ("initializer".into(), "a union type".into(), Some(format!("{}", to_type.display_with(&env.symbols)))),
         );
     };
 
     if indices.len() > 1 {
         return env.log_error(
             expr.token_range(),
-            &catalogue::UNION_INITIALIZER_MAY_CONTAIN_AT_MOST_ONE_ELEMENT,
-            (),
+            &catalogue::INITIALIZER_LIMIT,
+            ("union".into(), Some(1)),
         );
     }
 
@@ -128,8 +128,8 @@ fn typecheck_union_initializer(
             let Some((_, field_type)) = fields.get(field_index) else {
                 return env.log_error(
                     expr.token_range(),
-                    &catalogue::UNION_INITIALIZER_FIELD_DOES_NOT_EXIST,
-                    (),
+                    &catalogue::UNKNOWN_MEMBER,
+                    (format!("union {}", to_type.display_with(&env.symbols)), "initializer field".into()),
                 );
             };
             let value = typecheck_expr(env, namespace, &initialization.value, Some(field_type))
@@ -160,11 +160,11 @@ fn typecheck_array_initializer(
     _to_type: &THIRType,
 ) -> CXResult<TypecheckResult> {
     for index in indices {
-        if let Some(name) = &index.name {
+        if index.name.is_some() {
             return env.log_error(
                 TokenRange::internal(),
-                &catalogue::ARRAY_INITIALIZER_CANNOT_HAVE_NAMED_INDICES_FOUND,
-                format!("{}", name),
+                &catalogue::INVALID_FORM,
+                ("array initializer".into(), "unnamed indices".into()),
             );
         }
     }
@@ -210,8 +210,8 @@ fn typecheck_structured_initializer(
     let Some(fields) = to_type.aggregate_fields(&env.symbols) else {
         return env.log_error(
             expr.token_range(),
-            &catalogue::EXPECTED_A_STRUCTURED_TYPE_FOR_INITIALIZER_FOUND,
-            format!("{}", to_type.display_with(&env.symbols)),
+            &catalogue::TYPE_REQUIREMENT,
+            ("initializer".into(), "a structured type".into(), Some(format!("{}", to_type.display_with(&env.symbols)))),
         );
     };
     let fields = fields.clone();
@@ -229,8 +229,8 @@ fn typecheck_structured_initializer(
             else {
                 return env.log_error(
                     expr.token_range(),
-                    &catalogue::STRUCTURED_INITIALIZER_HAS_UNEXPECTED_FIELD,
-                    format!("{}", name),
+                    &catalogue::UNKNOWN_MEMBER,
+                    (format!("{}", to_type.display_with(&env.symbols)), format!("{name}")),
                 );
             };
             counter = found_index;
@@ -239,16 +239,16 @@ fn typecheck_structured_initializer(
         if counter >= fields.len() {
             return env.log_error(
                 expr.token_range(),
-                &catalogue::TOO_MANY_ELEMENTS_IN_STRUCT_INITIALIZER,
-                (),
+                &catalogue::INITIALIZER_LIMIT,
+                ("struct".into(), Some(fields.len())),
             );
         }
 
         if initialized_fields[counter] {
             return env.log_error(
                 expr.token_range(),
-                &catalogue::FIELD_INITIALIZED_MORE_THAN_ONCE,
-                format!("{}", fields[counter].0),
+                &catalogue::DUPLICATE_ITEM,
+                (format!("field '{}'", fields[counter].0), "struct initializer".into()),
             );
         }
 
@@ -261,11 +261,8 @@ fn typecheck_structured_initializer(
         else {
             return env.log_error(
                 value.token_range,
-                &catalogue::COULD_NOT_FIND_FIELD_IN_TYPE,
-                (
-                    format!("{}", field_name),
-                    format!("{}", to_type.display_with(&env.symbols)),
-                ),
+                &catalogue::UNKNOWN_MEMBER,
+                (format!("{}", to_type.display_with(&env.symbols)), format!("{field_name}")),
             );
         };
 

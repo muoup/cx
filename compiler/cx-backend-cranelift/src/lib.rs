@@ -97,12 +97,17 @@ impl FunctionState<'_> {
                 .get(*i as usize)
                 .copied()
                 .map(CodegenValue::Value)
-                .ok_or_else(|| raw(&CRANELIFT_PARAM_INDEX, i.to_string())),
+                .ok_or_else(|| raw(&INDEX_BOUNDS, ("function parameter".into(), i.to_string()))),
 
             LMIRValue::FunctionRef(name) => {
                 let (_func_id, func_ref) = self
                     .get_function(name.as_str())
-                    .ok_or_else(|| raw(&CRANELIFT_FUNCTION, name.to_string()))?;
+                    .ok_or_else(|| {
+                        raw(
+                            &MISSING_ENTITY,
+                            (format!("function '{name}'"), "Cranelift function map".into()),
+                        )
+                    })?;
                 let as_value = self.builder.ins().func_addr(self.pointer_type, func_ref);
 
                 Ok(CodegenValue::Value(as_value))
@@ -126,12 +131,22 @@ impl FunctionState<'_> {
                     let value = self.builder.ins().f64const(as_f64);
                     Ok(CodegenValue::Value(value))
                 }
-                _ => Err(raw(&CRANELIFT_FLOAT, format!("{_type:?}"))),
+                _ => Err(raw(
+                    &ENTITY_REQUIREMENT,
+                    (
+                        "float immediate".into(),
+                        "a float type".into(),
+                        Some(format!("{_type:?}")),
+                    ),
+                )),
             },
 
             LMIRValue::Global(id) => {
                 let Some(data_id) = self.global_ids.get(*id as usize).cloned() else {
-                    return Err(raw(&CRANELIFT_GLOBAL, format!("g{id}")));
+                    return Err(raw(
+                        &MISSING_ENTITY,
+                        (format!("global g{id}"), "Cranelift global table".into()),
+                    ));
                 };
 
                 let global_ref = self
@@ -148,7 +163,13 @@ impl FunctionState<'_> {
 
             LMIRValue::Register { register, _type } => {
                 let Some(var) = self.variable_table.get(register).cloned() else {
-                    return Err(raw(&CRANELIFT_VARIABLE, format!("{:?}", bc_value)));
+                    return Err(raw(
+                        &MISSING_ENTITY,
+                        (
+                            format!("variable {:?}", bc_value),
+                            "Cranelift variable table".into(),
+                        ),
+                    ));
                 };
 
                 Ok(var)
@@ -167,8 +188,13 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
     if bc.architecture.pointer_size() != target_pointer_size {
         return Err(CXError::new(
             raw(
-                &TARGET_POINTER_SIZE,
-                (bc.architecture.pointer_size(), target_pointer_size),
+                &TARGET_LAYOUT,
+                (
+                    "Cranelift".into(),
+                    "pointer size".into(),
+                    bc.architecture.pointer_size().to_string(),
+                    target_pointer_size.to_string(),
+                ),
             ),
             CXInternalContext::error("LMIR and Cranelift target configurations disagree"),
         ));
@@ -220,7 +246,13 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
             .cloned()
         else {
             return Err(CXError::new(
-                raw(&FUNCTION_MAP_NOT_FOUND, func.prototype.name.to_string()),
+                raw(
+                    &MISSING_ENTITY,
+                    (
+                        format!("function '{}'", func.prototype.name),
+                        "Cranelift function map".into(),
+                    ),
+                ),
                 CXInternalContext::error("Failed to look up function during codegen"),
             ));
         };
@@ -237,7 +269,7 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
 
     global_state.object_module.finish().emit().map_err(|err| {
         CXError::new(
-            raw(&CRANELIFT_EMIT, err.to_string()),
+            raw(&OPERATION_FAILED, ("emit object file".into(), Some(err.to_string()))),
             CXInternalContext::error("Failed to finalize Cranelift object module"),
         )
     })

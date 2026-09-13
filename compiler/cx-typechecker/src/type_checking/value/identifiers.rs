@@ -26,7 +26,7 @@ pub(crate) fn typecheck_identifier(
     let Some(mut symbol) = env.get_symbol(namespace, name)? else {
         return env.log_error(
             expr.token_range(),
-            &catalogue::IDENTIFIER_NOT_FOUND,
+            &catalogue::UNKNOWN_SYMBOL,
             format!("{}", name),
         );
     };
@@ -78,8 +78,8 @@ pub(crate) fn typecheck_identifier(
         let display_name = debug_name.as_ref().unwrap_or(symbol_name);
         return env.log_error(
             expr.token_range(),
-            &catalogue::REFERENCES_TO_UNSAFE_FUNCTION_MAY_NOT_BE_USED_IN_SAFE,
-            format!("{}", display_name),
+            &catalogue::UNSAFE_OPERATION,
+            format!("call to unsafe function '{}'", display_name),
         );
     }
 

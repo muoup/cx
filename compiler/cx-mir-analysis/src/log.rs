@@ -10,15 +10,19 @@ pub(crate) fn error<T>(
     MIRDiagnostic::new(definition, args, location)
 }
 
-pub(crate) fn ownership_error(
+pub(crate) fn ownership_error<T, F>(
     function: &MIRFunction,
     block: cx_mir::MIRBasicBlockID,
     instruction: usize,
     scope: Option<cx_mir::MIRScopeID>,
     place: MIRPlace,
-    definition: &ErrorDefinition<(String, String, bool)>,
+    definition: &ErrorDefinition<T>,
     name: String,
-) -> MIRAnalysisError {
+    make_args: F,
+) -> MIRAnalysisError
+where
+    F: FnOnce(String, String, bool) -> T,
+{
     let discarded = match place {
         MIRPlace::FunctionLocal(id) => function
             .definition()
@@ -41,7 +45,7 @@ pub(crate) fn ownership_error(
         place,
         diagnostic: error(
             definition,
-            (
+            make_args(
                 function.prototype().signature.display_name().to_string(),
                 name,
                 discarded,

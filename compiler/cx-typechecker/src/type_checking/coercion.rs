@@ -38,8 +38,8 @@ pub fn try_explicit_cast(
         {
             return env.log_error(
                 expr.token_range,
-                &catalogue::SAFE_PTR_DEREFERENCE,
-                (),
+                &catalogue::UNSAFE_OPERATION,
+                "Deferencing a pointer".into()
             );
         }
 

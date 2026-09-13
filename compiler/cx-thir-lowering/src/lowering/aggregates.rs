@@ -28,7 +28,13 @@ pub(super) fn lower_pattern_test(
     let lhs_value = lower_expression(builder, lhs)?;
     let (tested, constant) = match pattern {
         THIRPattern::Binding { .. } => {
-            return log_mir_error(&lhs.token_range, (&catalogue::MIR_BINDING_PATTERN, ()));
+            return log_mir_error(
+                &lhs.token_range,
+                (
+                    &catalogue::REQUIRED_CONTEXT,
+                    ("binding patterns".into(), "match arms".into()),
+                ),
+            );
         }
         THIRPattern::TaggedUnionVariant {
             sum_type,
@@ -237,6 +243,6 @@ pub fn move_value(value: MIRValue, range: &TokenRange) -> CXResult<MIRValue> {
         MIRValue::PlaceRef(place) => Ok(MIRValue::Move(place)),
         MIRValue::Move(place) => Ok(MIRValue::Move(place)),
         MIRValue::Register(reg) => Ok(MIRValue::Register(reg)),
-        _ => log_mir_error(range, (&catalogue::MIR_MOVE_VALUE, format!("{:?}", value))),
+        _ => log_mir_error(range, (&catalogue::MOVE_VALUE, format!("{:?}", value))),
     }
 }

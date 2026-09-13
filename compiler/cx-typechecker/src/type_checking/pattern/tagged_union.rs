@@ -27,8 +27,8 @@ pub fn resolve_type_constructor_pattern(
     else {
         return env.log_error(
             expr.token_range(),
-            &catalogue::EXPECTED_QUALIFIED_TAGGED_UNION_VARIANT_PATTERN,
-            (),
+            &catalogue::INVALID_FORM,
+            ("pattern".into(), "tagged union variant pattern".into())
         );
     };
 
@@ -36,8 +36,8 @@ pub fn resolve_type_constructor_pattern(
     else {
         return env.log_error(
             expr.token_range(),
-            &catalogue::EXPECTED_TAGGED_UNION_VARIANT_PATTERN_TO_NAME_A_TYPE_MEMBER,
-            (),
+            &catalogue::INVALID_FORM,
+            ("pattern".into(), "tagged union variant pattern".into())
         );
     };
 
@@ -47,8 +47,8 @@ pub fn resolve_type_constructor_pattern(
         Some(_) => {
             return env.log_error(
                 expr.token_range(),
-                &catalogue::TAGGED_UNION_VARIANT_PAYLOAD_PATTERN_MUST_BE_A_BINDING,
-                (),
+                &catalogue::INVALID_FORM,
+                ("pattern".into(), "tagged union variant pattern with binding".into())
             );
         }
     };
@@ -65,8 +65,11 @@ pub fn resolve_type_constructor_pattern(
         .ok_or_else(|| {
             env.error(
                 expr.token_range(),
-                &catalogue::COULD_NOT_RESOLVE_PATTERN_TARGET,
-                format!("{}", union_name),
+                &catalogue::UNKNOWN_MEMBER,
+                (
+                    format!("{}", union_name),
+                    "tagged union type".into(),
+                )
             )
         })?;
 

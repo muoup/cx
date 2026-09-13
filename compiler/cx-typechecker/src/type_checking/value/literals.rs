@@ -46,12 +46,9 @@ pub(crate) fn typecheck_int_literal(
         .iter()
         .map(|name| env.get_intrinsic_type(name))
         .find(|candidate| integer_type_can_represent(candidate, magnitude));
+    
     let Some(literal_type) = literal_type else {
-        return env.log_error(
-            token_range,
-            &catalogue::INTEGER_LITERAL_DOES_NOT_FIT_ANY_PERMITTED_TYPE,
-            format!("{}", magnitude),
-        );
+        unreachable!("integer literal magnitude {} cannot be represented by any of the candidate types {:?}", magnitude, candidates);
     };
 
     Ok(TypecheckResult::from(THIRExpression {
@@ -83,8 +80,8 @@ pub(crate) fn typecheck_float_literal(
     if suffix == FloatSuffix::LongDouble {
         return env.log_error(
             token_range,
-            &catalogue::LONG_DOUBLE_LITERALS_ARE_NOT_SUPPORTED_BY_THE_CURRENT_MIR,
-            (),
+            &catalogue::UNSUPPORTED_FEATURE,
+            "Long double literals".into()
         );
     }
 

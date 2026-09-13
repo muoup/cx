@@ -44,13 +44,10 @@ pub fn typecheck_match(
     let match_condition = expr_value.source.clone();
     let subject = THIRLocalID::fresh();
     let mut has_binding = false;
+
     for (pattern, body) in arms {
         if has_binding {
-            return env.log_error(
-                body.token_range(),
-                &catalogue::UNREACHABLE_MATCH_ARM_AFTER_A_CATCH_ALL_BINDING,
-                (),
-            );
+            return env.log_error(body.token_range(), &catalogue::UNREACHABLE_MATCH_ARM, ());
         }
         has_binding = matches!(pattern, HIRPattern::Binding(_));
     }
@@ -68,19 +65,16 @@ pub fn typecheck_match(
                     result_arms.push((pattern.expect("binding pattern"), Box::new(body)));
                     continue;
                 }
+
                 let HIRPattern::Integer(pattern_value) = pattern else {
-                    return env.log_error(
-                        condition.token_range(),
-                        &catalogue::MATCH_PATTERN_MUST_BE_AN_INTEGER_LITERAL_OR_A_CATCH,
-                        (),
-                    );
+                    return env.log_error(condition.token_range(), &catalogue::INVALID_PATTERN, ());
                 };
 
                 if !matched_values.insert(*pattern_value) {
                     return env.log_error(
                         body.token_range(),
-                        &catalogue::INTEGER_VALUE_ALREADY_MATCHED_IN_THIS_MATCH,
-                        format!("{}", pattern_value),
+                        &catalogue::UNREACHABLE_MATCH_ARM,
+                        (),
                     );
                 }
                 let (_, body, flow) = typecheck_arm(env, namespace, body, None)?;
@@ -91,10 +85,11 @@ pub fn typecheck_match(
             if !has_binding {
                 return env.log_error(
                     condition.token_range(),
-                    &catalogue::INTEGER_MATCH_MUST_BE_EXHAUSTIVE_ADD_A_CATCH_ALL_BINDING,
-                    (),
+                    &catalogue::NONEXHAUSTIVE_MATCH,
+                    None,
                 );
             }
+
             result_arms
         }
         THIRTypeKind::TaggedUnion { variants, .. } => {
@@ -113,8 +108,13 @@ pub fn typecheck_match(
 
             for (pattern, body) in arms {
                 if matched_variants.len() == variants.len() {
-                    return env.log_error(body.token_range(), &catalogue::UNREACHABLE_MATCH_ARM_ALL_TAGGED_UNION_VARIANTS_ARE_ALREADY_COVERED, ());
+                    return env.log_error(
+                        body.token_range(),
+                        &catalogue::UNREACHABLE_MATCH_ARM,
+                        (),
+                    );
                 }
+
                 if let HIRPattern::Binding(name) = pattern {
                     let (pattern, body, flow) =
                         typecheck_arm(env, namespace, body, Some((name, &expr_type)))?;
@@ -122,6 +122,7 @@ pub fn typecheck_match(
                     result_arms.push((pattern.expect("binding pattern"), Box::new(body)));
                     continue;
                 }
+
                 let TypeConstructor {
                     union_name,
                     variant_name,
@@ -130,14 +131,7 @@ pub fn typecheck_match(
                 } = resolve_type_constructor_pattern(env, namespace, condition, pattern)?;
 
                 if expected_union_name != &union_name {
-                    return env.log_error(
-                        condition.token_range(),
-                        &catalogue::TAGGED_UNION_VARIANT_DOES_NOT_MATCH_THE_TYPE_BEING_MATCHED,
-                        (
-                            format!("{}", union_name),
-                            format!("{}", expected_union_name),
-                        ),
-                    );
+                    return env.log_error(condition.token_range(), &catalogue::INVALID_PATTERN, ());
                 }
                 validate_variant_template_input(
                     env,
@@ -154,7 +148,7 @@ pub fn typecheck_match(
                 }) else {
                     return env.log_error(
                         condition.token_range(),
-                        &catalogue::VARIANT_NOT_FOUND_IN_TAGGED_UNION,
+                        &catalogue::UNKNOWN_MEMBER,
                         (
                             format!("{}", variant_name),
                             format!("{}", expected_union_name),
@@ -165,8 +159,8 @@ pub fn typecheck_match(
                 if !matched_variants.insert(variant_id) {
                     return env.log_error(
                         condition.token_range(),
-                        &catalogue::VARIANT_ALREADY_MATCHED_IN_THIS_MATCH_EXPRESSION,
-                        format!("{}", variant_name),
+                        &catalogue::UNREACHABLE_MATCH_ARM,
+                        (),
                     );
                 }
 
@@ -231,7 +225,7 @@ pub fn typecheck_match(
                     if variant_type.is_nodrop() {
                         return env.log_error(
                             condition.token_range(),
-                            &catalogue::VARIANT_OF_TAGGED_UNION_HAS_A_NON_VOID_TYPE_BUT,
+                            &catalogue::MATCH_PAYLOAD_BINDING,
                             (
                                 format!("{}", variant_name),
                                 format!("{}", expected_union_name),
@@ -269,17 +263,22 @@ pub fn typecheck_match(
                     .join(", ");
                 return env.log_error(
                     condition.token_range(),
-                    &catalogue::MATCH_MUST_BE_EXHAUSTIVE_MISSING_VARIANTS_ADD_THE_MISSING_ARMS,
-                    format!("{}", missing),
+                    &catalogue::NONEXHAUSTIVE_MATCH,
+                    Some(missing),
                 );
             }
             result_arms
         }
+
         _ => {
             return env.log_error(
                 condition.token_range(),
-                &catalogue::MATCH_CONDITION_MUST_BE_AN_INTEGER_OR_TAGGED_UNION_TYPE,
-                format!("{}", expr_type.display_with(&env.symbols)),
+                &catalogue::TYPE_REQUIREMENT,
+                (
+                    "A match statement".into(),
+                    "a tagged union or integer condition".into(),
+                    Some(format!("{}", expr_type.display_with(&env.symbols))),
+                ),
             );
         }
     };
@@ -294,8 +293,11 @@ pub fn typecheck_match(
             if flow.may_fall_through {
                 return env.log_error(
                     &flow.range,
-                    &catalogue::VALUE_PRODUCING_MATCH_ARM_MAY_FALL_THROUGH_WITHOUT_YIELDING_A,
-                    (),
+                    &catalogue::MIXED_YIELDS,
+                    (
+                        None,
+                        Some(format!("{}", result_type.display_with(&env.symbols))),
+                    ),
                 );
             }
         }
@@ -363,21 +365,18 @@ fn validate_variant_template_input(
     let Some(template_input) = template_input else {
         return Ok(());
     };
+
     let completed_input = complete_template_input(env, namespace, template_input)?;
     let Some(template_data) = union_type.get_template_data() else {
         return env.log_error(
             condition.token_range(),
-            &catalogue::NON_TEMPLATED_TAGGED_UNION_PATTERN_MAY_NOT_HAVE_TEMPLATE_ARGUMENTS,
-            (),
+            &catalogue::TEMPLATE_ARGUMENTS,
+            ("a tagged union pattern".into(), false),
         );
     };
 
     if !completed_input.contextual_eq(&template_data.template_input, &env.symbols) {
-        return env.log_error(
-            condition.token_range(),
-            &catalogue::TAGGED_UNION_PATTERN_TEMPLATE_ARGUMENTS_DO_NOT_MATCH_THE_MATCHED,
-            (),
-        );
+        return env.log_error(condition.token_range(), &catalogue::INVALID_PATTERN, ());
     }
 
     Ok(())

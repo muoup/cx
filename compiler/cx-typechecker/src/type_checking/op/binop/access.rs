@@ -26,8 +26,12 @@ fn resolve_access_base(
     ) {
         return env.log_error(
             expr.token_range(),
-            &catalogue::EXPECTED_A_STRUCT_OR_UNION_TYPE_ON_THE_LEFT_HAND,
-            format!("{}", lhs.source_type.display_with(&env.symbols)),
+            &catalogue::TYPE_MISMATCH,
+            (
+                "access expression".into(),
+                "structured type".into(),
+                format!("{}", lhs.source_type.display_with(&env.symbols)),
+            ),
         );
     }
 
@@ -58,16 +62,16 @@ pub fn typecheck_access(
     else {
         return env.log_error(
             rhs.token_range(),
-            &catalogue::INVALID_RIGHT_HAND_SIDE_OF_ACCESS_EXPRESSION_EXPECTED_AN_IDENTIFIER,
-            (),
+            &catalogue::INVALID_FORM,
+            ("non-identifier".into(), "right-hand side of access expression".into())
         );
     };
 
     let Some(rhs_name) = name.root_name_ref() else {
         return env.log_error(
             rhs.token_range(),
-            &catalogue::INVALID_RIGHT_HAND_SIDE_OF_ACCESS_EXPRESSION_EXPECTED_AN_IDENTIFIER,
-            (),
+            &catalogue::INVALID_FORM,
+            ("non-identifier".into(), "right-hand side of access expression".into())
         );
     };
 
@@ -75,8 +79,8 @@ pub fn typecheck_access(
     else {
         return env.log_error(
             rhs.token_range(),
-            &catalogue::INVALID_RIGHT_HAND_SIDE_OF_ACCESS_EXPRESSION_EXPECTED_AN_IDENTIFIER,
-            (),
+            &catalogue::UNKNOWN_MEMBER,
+            (format!("{}", base.source_type.display_with(&env.symbols)), rhs_name.as_str().into())
         );
     };
 

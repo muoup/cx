@@ -52,8 +52,8 @@ pub(crate) fn complete_templated_callee_maybe(
         let completed_input = complete_template_input(env, namespace, input)?;
         return apply_template(env, &symbol, completed_input)?.ok_or_else(|| {
             CXErrorMaybeRaw::from(generate_raw_error(
-                &catalogue::SYMBOL_DOES_NOT_ACCEPT_TEMPLATE_ARGUMENTS_43,
-                name.into(),
+                &catalogue::TEMPLATE_ARGUMENTS,
+                (name.into(), false),
             ))
         });
     }
@@ -112,7 +112,7 @@ fn deduce_template_input(
         }
 
         _ => {
-            return internal_type_error(&catalogue::TEMPLATE_DEDUCTION, ())
+            return internal_type_error(&catalogue::TEMPLATE_DEDUCTION, "template arguments".into())
                 .map_err(CXErrorMaybeRaw::from);
         }
     };
@@ -120,10 +120,12 @@ fn deduce_template_input(
     let mut bindings = TemplateBindings::new();
     if arg_types.len() > shell.params_len() && !shell.var_args() {
         return crate::log::internal_type_error(
-            &catalogue::FUNCTION_TEMPLATE_EXPECTS_ARGUMENTS_FOUND,
+            &catalogue::ARGUMENT_COUNT,
             (
-                format!("{}", shell.params_len()),
-                format!("{}", arg_types.len()),
+                shell.name().to_string(),
+                shell.params_len(),
+                arg_types.len(),
+                false,
             ),
         )
         .map_err(CXErrorMaybeRaw::from);
@@ -165,8 +167,8 @@ fn deduce_template_input(
         .map(|name| {
             let ty = bindings.remove(name.as_str()).ok_or_else(|| {
                 CXErrorMaybeRaw::from(crate::log::generate_raw_error(
-                    &catalogue::COULD_NOT_DEDUCE_TEMPLATE_ARGUMENT_FOR_FUNCTION,
-                    (format!("{}", name), format!("{}", shell.name())),
+                    &catalogue::TEMPLATE_DEDUCTION,
+                    format!("template argument '{name}' for function {}", shell.name()),
                 ))
             })?;
 
@@ -283,38 +285,41 @@ fn deduce_from_cx_type(
         } => {
             let Some(template_info) = actual.get_template_data() else {
                 return crate::log::internal_type_error(
-                    &catalogue::EXPECTED_REALIZED_TEMPLATE_TYPE_WHILE_DEDUCING_FOUND,
+                    &catalogue::TYPE_REQUIREMENT,
                     (
-                        format!("{}", name),
-                        format!("{}", actual.display_with(&env.symbols)),
+                        format!("template '{name}'"),
+                        "a realized template type".into(),
+                        Some(format!("{}", actual.display_with(&env.symbols))),
                     ),
                 );
             };
 
             if !template_base_matches(name, template_info.base_name.as_ref()) {
                 return crate::log::internal_type_error(
-                    &catalogue::EXPECTED_TEMPLATE_TYPE_FOUND,
+                    &catalogue::TYPE_REQUIREMENT,
                     (
-                        format!("{}", name),
-                        format!(
+                        "template type".into(),
+                        format!("'{name}'"),
+                        Some(format!(
                             "{}",
                             template_info
                                 .base_name
                                 .as_ref()
                                 .map(|name| name.to_string())
                                 .unwrap_or_else(|| "<anonymous>".to_string())
-                        ),
+                        )),
                     ),
                 );
             }
 
             if input.params.len() != template_info.template_input.args.len() {
                 return crate::log::internal_type_error(
-                    &catalogue::TEMPLATE_ARITY_MISMATCH_FOR_EXPECTED_FOUND,
+                    &catalogue::ARGUMENT_COUNT,
                     (
                         format!("{}", name),
-                        format!("{}", input.params.len()),
-                        format!("{}", template_info.template_input.args.len()),
+                        input.params.len(),
+                        template_info.template_input.args.len(),
+                        false,
                     ),
                 );
             }
@@ -441,8 +446,9 @@ fn deduce_from_function_signature(
 ) -> CXResult<()> {
     if formal.var_args != actual.var_args {
         return crate::log::internal_type_error(
-            &catalogue::TEMPLATE_DEDUCTION_FN_PTR_VARARGS_MISMATCH,
+            &catalogue::TYPE_MISMATCH,
             (
+                "function pointer varargs".into(),
                 format!("{}", formal.var_args),
                 format!("{}", actual.var_args),
             ),
@@ -451,8 +457,9 @@ fn deduce_from_function_signature(
 
     if formal.params.len() != actual.params.len() {
         return crate::log::internal_type_error(
-            &catalogue::TEMPLATE_DEDUCTION_FN_PTR_ARITY_MISMATCH,
+            &catalogue::TYPE_MISMATCH,
             (
+                "function pointer parameters".into(),
                 format!("{}", formal.params.len()),
                 format!("{}", actual.params.len()),
             ),
@@ -494,7 +501,7 @@ fn bind_template_argument(
         }
 
         return env.log_error_base(
-            &catalogue::CONFLICTING_DEDUCTIONS_FOR_TEMPLATE_ARGUMENT_VS,
+            &catalogue::CONFLICTING_DEDUCTIONS,
             (
                 format!("{}", name),
                 format!("{}", existing.display_with(&env.symbols)),
@@ -521,8 +528,9 @@ fn concrete_type_mismatch(
     actual: &THIRType,
 ) -> CXResult<()> {
     crate::log::internal_type_error(
-        &catalogue::TEMPLATE_DEDUCTION_MISMATCH_EXPECTED_FOUND,
+        &catalogue::TYPE_MISMATCH,
         (
+            "template deduction".into(),
             format!("{}", formal),
             format!("{}", actual.display_with(&env.symbols)),
         ),

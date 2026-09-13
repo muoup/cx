@@ -80,7 +80,10 @@ pub fn lower_control_exit(
     let Some((scope, block)) = target else {
         return log_mir_error(
             builder.source_range(),
-            (&cx_log::catalogue::mir::MIR_CONTROL_FLOW_TARGET, ()),
+            (
+                &cx_log::catalogue::mir::MISSING_ENTITY,
+                ("control-flow target".into(), "MIR function".into()),
+            ),
         );
     };
 
@@ -345,7 +348,10 @@ pub(super) fn lower_switch(
         if !matches!(case_value, MIRConstant::Integer { .. }) {
             return log_mir_error(
                 &case.token_range,
-                (&cx_log::catalogue::mir::MIR_SWITCH_INTEGER, ()),
+                (
+                    &cx_log::catalogue::mir::ENTITY_REQUIREMENT,
+                    ("switch case".into(), "an integer constant".into(), None),
+                ),
             );
         }
 

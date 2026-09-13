@@ -124,6 +124,7 @@ fn merge_entry(
                 place,
                 &catalogue::PARTIAL_MOVE,
                 place_name(unit, function, place),
+                |function, name, discarded| (function, name, discarded),
             ));
         }
 
@@ -212,8 +213,11 @@ fn transfer_instruction(
                         instruction,
                         Some(*scope),
                         place,
-                        &catalogue::SCOPE_EXIT_NOT_CONSUMED,
+                        &catalogue::VALUE_NOT_CONSUMED,
                         place_name(unit, function, place),
+                        |function, name, discarded| {
+                            (function, "local variable".into(), name, "scope".into(), discarded)
+                        },
                     ));
                 }
                 state.remove(&place);
@@ -429,7 +433,8 @@ fn use_place(
             block,
             instruction,
             place,
-            &catalogue::USE_AFTER_MOVE,
+            &catalogue::AFTER_MOVE,
+            "used".into(),
             diagnose,
         ),
         PlaceState::Uninitialized => ownership_failure(
@@ -438,7 +443,8 @@ fn use_place(
             block,
             instruction,
             place,
-            &catalogue::USE_BEFORE_INITIALIZATION,
+            &catalogue::BEFORE_INITIALIZATION,
+            "used".into(),
             diagnose,
         ),
     }
@@ -469,7 +475,8 @@ fn consume(
             block,
             instruction,
             place,
-            &catalogue::REPEATED_MOVE,
+            &catalogue::AFTER_MOVE,
+            "moved".into(),
             diagnose,
         ),
         PlaceState::Uninitialized => ownership_failure(
@@ -478,7 +485,8 @@ fn consume(
             block,
             instruction,
             place,
-            &catalogue::MOVE_BEFORE_INITIALIZATION,
+            &catalogue::BEFORE_INITIALIZATION,
+            "moved".into(),
             diagnose,
         ),
     };
@@ -522,8 +530,11 @@ fn check_function_exit(
                 instruction,
                 Some(declaration.scope),
                 place,
-                &catalogue::FUNCTION_EXIT_NOT_CONSUMED,
+                &catalogue::VALUE_NOT_CONSUMED,
                 place_name(unit, function, place),
+                |function, name, discarded| {
+                    (function, "local variable".into(), name, "function".into(), discarded)
+                },
             ));
         }
     }
@@ -541,8 +552,11 @@ fn check_function_exit(
                 instruction,
                 root_scope,
                 place,
-                &catalogue::PARAMETER_NOT_CONSUMED,
+                &catalogue::VALUE_NOT_CONSUMED,
                 place_name(unit, function, place),
+                |function, name, discarded| {
+                    (function, "parameter".into(), name, "function".into(), discarded)
+                },
             ));
         }
     }
@@ -556,7 +570,8 @@ fn ownership_failure(
     block: cx_mir::MIRBasicBlockID,
     instruction: usize,
     place: MIRPlace,
-    definition: &ErrorDefinition<(String, String, bool)>,
+    definition: &ErrorDefinition<(String, String, String, bool)>,
+    operation: String,
     diagnose: bool,
 ) -> Result<(), MIRAnalysisError> {
     if diagnose {
@@ -568,6 +583,7 @@ fn ownership_failure(
             place,
             definition,
             place_name(unit, function, place),
+            move |function, name, discarded| (function, name, operation, discarded),
         ))
     } else {
         Ok(())

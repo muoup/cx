@@ -123,7 +123,7 @@ impl MIRModuleBuilder {
             if !compatible {
                 return Err(mir_error(
                     source_range,
-                    (&catalogue::MIR_INCOMPATIBLE_GLOBAL, name.to_string()),
+                    (&catalogue::INCOMPATIBLE_GLOBAL, name.to_string()),
                 ));
             }
 
@@ -223,14 +223,24 @@ impl MIRModuleBuilder {
         let MIRGlobalKind::Variable { state, .. } = &mut global.kind else {
             return Err(mir_error(
                 source_range,
-                (&catalogue::MIR_GLOBAL_INITIALIZER, name.to_string()),
+                (
+                    &catalogue::ENTITY_REQUIREMENT,
+                    (
+                        format!("global '{name}' initializer"),
+                        "a variable global".into(),
+                        Some("a string literal global".into()),
+                    ),
+                ),
             ));
         };
 
         if matches!(state, MIRGlobalState::Initialized(_)) {
             return Err(mir_error(
                 source_range,
-                (&catalogue::MIR_DUPLICATE_GLOBAL, name.to_string()),
+                (
+                    &catalogue::DUPLICATE_ENTITY,
+                    (format!("global '{name}'"), "MIR module".into()),
+                ),
             ));
         }
 

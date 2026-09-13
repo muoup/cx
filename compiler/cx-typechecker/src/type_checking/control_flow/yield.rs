@@ -21,8 +21,8 @@ pub fn typecheck_yield(
     if env.in_defer_context() {
         return env.log_error(
             yield_range,
-            &catalogue::YIELD_IS_NOT_ALLOWED_INSIDE_A_DEFERRED_EXPRESSION,
-            (),
+            &catalogue::INVALID_CONTEXT,
+            ("Yield statement".into(), "defer context".into()),
         );
     }
 
@@ -33,22 +33,28 @@ pub fn typecheck_yield(
     if state.target == ControlTarget::Invalid {
         return env.log_error(
             yield_range,
-            &catalogue::YIELD_USED_OUTSIDE_OF_A_YIELDING_CONTEXT,
-            (),
+            &catalogue::INVALID_CONTEXT,
+            ("Yield statement".into(), "a non-yielding context".into())
         );
     }
 
     let (yielded_value, yield_type, has_value) = match value {
         Some(value) => {
+            let result = typecheck_expr(env, namespace, value, state.expected_type.as_ref())?;
+
             if state.saw_empty {
+                let result_type = result.standard_ready_coerce(env, value.token_range())?._type;
+
                 return env.log_error(
                     yield_range,
-                    &catalogue::A_YIELD_CONTEXT_CANNOT_MIX_VALUE_AND_VALUELESS_YIELDS,
-                    (),
+                    &catalogue::MIXED_YIELDS,
+                    (
+                        Some(format!("{}", result_type.display_with(&env.symbols))),
+                        None
+                    )
                 );
             }
 
-            let result = typecheck_expr(env, namespace, value, state.expected_type.as_ref())?;
             let result = if let Some(expected_type) = &state.expected_type {
                 result.apply_expected_type(env, namespace, expected_type)?
             } else {
@@ -67,10 +73,10 @@ pub fn typecheck_yield(
             {
                 return env.log_error(
                     yield_range,
-                    &catalogue::YIELD_TYPE_DOES_NOT_MATCH,
+                    &catalogue::MIXED_YIELDS,
                     (
-                        format!("{}", expression._type.display_with(&env.symbols)),
-                        format!("{}", expected_type.display_with(&env.symbols)),
+                        Some(format!("{}", expression._type.display_with(&env.symbols))),
+                        Some(format!("{}", expected_type.display_with(&env.symbols))),
                     ),
                 );
             }
@@ -82,17 +88,18 @@ pub fn typecheck_yield(
             if state.saw_value {
                 return env.log_error(
                     yield_range,
-                    &catalogue::A_YIELD_CONTEXT_CANNOT_MIX_VALUE_AND_VALUELESS_YIELDS,
-                    (),
+                    &catalogue::MIXED_YIELDS,
+                    (None, Some(state.expected_type.unwrap().display_with(&env.symbols).to_string()))
                 );
             }
+
             if let Some(expected_type) = &state.expected_type
                 && !expected_type.is_void()
             {
                 return env.log_error(
                     yield_range,
-                    &catalogue::YIELD_TARGET_EXPECTS_A_VALUE_OF_TYPE,
-                    format!("{}", expected_type.display_with(&env.symbols)),
+                    &catalogue::MIXED_YIELDS,
+                    (None, Some(expected_type.display_with(&env.symbols).to_string()))
                 );
             }
             (None, THIRType::unit(), false)

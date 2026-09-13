@@ -90,8 +90,8 @@ fn parse_type_attributes(
                 _ => {
                     return parse_point_error(
                         &data.tokens,
-                        &ATTRIBUTE,
-                        (kind_name.to_owned(), attr.to_string()),
+                        &UNKNOWN_NAME,
+                        (format!("{kind_name} attribute"), format!("@{attr}")),
                     );
                 }
             }
@@ -114,7 +114,7 @@ fn aggregate_field_from_decl(
         let width = match next_kind!(data.tokens)? {
             TokenKind::IntLiteral(literal) => literal.magnitude as usize,
             _ => {
-                return parse_point_error(&data.tokens, &BITFIELD_WIDTH, ());
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a non-negative integer literal".into(), Some("as bitfield width".into()), None));
             }
         };
 
@@ -126,7 +126,7 @@ fn aggregate_field_from_decl(
     }
 
     let Some(name) = name else {
-        return parse_point_error(&data.tokens, &NAMELESS_MEMBER, (_type.to_string(),));
+        return parse_point_error(&data.tokens, &UNSUPPORTED_FEATURE, (format!("nameless member of {_type}"), "the parser".into()));
     };
 
     Ok(HIRField::standard(name.to_string(), _type))
@@ -156,7 +156,7 @@ fn predeclaration_type(
     template_prototype: Option<HIRTemplatePrototype>,
 ) -> CXResult<HIRType> {
     let Some(name) = name else {
-        return parse_point_error(&data.tokens, &PREDECLARATION_NAME, ());
+        return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a type name".into(), Some("for a predeclaration".into()), None));
     };
     let is_root_name = name.namespace.is_root();
     let definition_name = name.name.clone();
@@ -247,7 +247,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<HIRType> {
         Some(name) => match name.root_name() {
             Some(name) => Some(name),
             None => {
-                return parse_point_error(&data.tokens, &STRUCT_NAME, ());
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a struct name".into(), None, None));
             }
         },
     };
@@ -288,7 +288,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<HIRType> {
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
         let Some(variant_name) = try_parse_simple_identifier(&mut data.tokens) else {
-            return parse_point_error(&data.tokens, &ENUM_VARIANT, ());
+            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an enum variant".into(), None, None));
         };
 
         let value = if try_next!(data.tokens, TokenKind::Assignment(None)) {
@@ -316,7 +316,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<HIRType> {
         Some(name) => match name.root_name() {
             Some(name) => Some(name),
             None => {
-                return parse_point_error(&data.tokens, &QUALIFIED_TYPE_NAME, ());
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a simple identifier".into(), Some("as a qualified type name".into()), None));
             }
         },
     };
@@ -348,7 +348,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<HIRType>
     assert_token_matches!(data.tokens, keyword!(Union), "'union'");
 
     let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
-        return parse_point_error(&data.tokens, &TAGGED_UNION_NAME, ());
+        return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a tagged union name".into(), None, None));
     };
 
     let template_prototype = try_parse_template(&mut data.tokens)?;
@@ -360,7 +360,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<HIRType>
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
         let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
-            return parse_point_error(&data.tokens, &TAGGED_VARIANT_NAME, ());
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a tagged union variant name".into(), None, None));
         };
 
         assert_token_matches!(data.tokens, operator!(ScopeRes), "'::'");
@@ -370,11 +370,11 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<HIRType>
             Ok((None, _type, _)) => variants.push(HIRField::standard(name.to_string(), _type)),
 
             Ok((Some(_), _, _)) => {
-                return parse_point_error(&data.tokens, &TAGGED_VARIANT_NAMED, ());
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an unnamed type".into(), Some("for tagged union variant".into()), None));
             }
 
             _ => {
-                return parse_point_error(&data.tokens, &TAGGED_VARIANT_TYPE, ());
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a tagged union variant type".into(), None, None));
             }
         }
 
@@ -420,7 +420,7 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<HIRType> {
         Some(name) => match name.root_name() {
             Some(name) => Some(name),
             None => {
-                return parse_point_error(&data.tokens, &UNION_NAME, ());
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a union name".into(), None, None));
             }
         },
     };
@@ -640,7 +640,7 @@ pub(crate) fn parse_type_suffix_mod(
 pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<HIRType> {
     let start_index = data.tokens.index;
     let Some(next_token) = data.tokens.peek() else {
-        return parse_point_error(&data.tokens, &TYPE_BASE_END, ());
+        return parse_point_error(&data.tokens, &UNEXPECTED_END, Some("type".into()));
     };
 
     let _type = match &next_token.kind {
@@ -664,7 +664,7 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<HIRType> {
         keyword!(Union) => parse_union_def(data),
 
         tok => {
-            return parse_point_error(&data.tokens, &TYPE_BASE_TOKEN, tok.to_string());
+            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a type".into(), None, Some(tok.to_string())));
         }
     };
 

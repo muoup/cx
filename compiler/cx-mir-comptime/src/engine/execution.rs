@@ -69,7 +69,7 @@ fn run_top_frame(
                 None => {
                     return comptime_error(
                         TokenRange::internal(),
-                        (&catalogue::COMPTIME_BLOCK_FELL_THROUGH, ()),
+                        (&catalogue::MISSING_ENTITY, ("terminating instruction".into(), "comptime block".into())),
                     );
                 }
             }
@@ -105,7 +105,7 @@ fn run_top_frame(
                     .insert(out, MIRComptimeValue::Constant(constant));
             }
             MIRInstrKind::Dereference { .. } => {
-                return comptime_error(range, (&catalogue::COMPTIME_DEREFERENCE, ()));
+                return comptime_error(range, (&catalogue::COMPTIME_INVALID_OPERATION, "dereference".into()));
             }
             MIRInstrKind::AggregateOp(op) => execute_aggregate_op(engine, op)?,
             MIRInstrKind::Call {
@@ -118,8 +118,8 @@ fn run_top_frame(
                         return comptime_error(
                             range,
                             (
-                                &catalogue::COMPTIME_NON_FUNCTION_CALL,
-                                format!("{:?}", other),
+                                &catalogue::ENTITY_REQUIREMENT,
+                                ("call".into(), "a function value".into(), Some(format!("{:?}", other))),
                             ),
                         );
                     }
@@ -137,7 +137,7 @@ fn run_top_frame(
             MIRInstrKind::VaStart { .. }
             | MIRInstrKind::VaEnd { .. }
             | MIRInstrKind::VaArg { .. } => {
-                return comptime_error(range, (&catalogue::COMPTIME_VARIADIC, ()));
+                return comptime_error(range, (&catalogue::COMPTIME_INVALID_OPERATION, "variadic operation".into()));
             }
             MIRInstrKind::BinOp { out, op, lhs, rhs } => {
                 let lhs = memory::read_constant(engine, &lhs, &range)?;
@@ -257,7 +257,7 @@ fn run_top_frame(
                 match taken {
                     Some(target) => jump_to(engine, target)?,
                     None => {
-                        return comptime_error(range, (&catalogue::COMPTIME_INTEGER_SWITCH, ()));
+                        return comptime_error(range, (&catalogue::MISSING_ENTITY, ("matching case".into(), "comptime integer switch".into())));
                     }
                 }
             }
@@ -279,12 +279,12 @@ fn run_top_frame(
                 match taken {
                     Some(target) => jump_to(engine, target)?,
                     None => {
-                        return comptime_error(range, (&catalogue::COMPTIME_VARIANT_SWITCH, ()));
+                        return comptime_error(range, (&catalogue::MISSING_ENTITY, ("matching case".into(), "comptime variant switch".into())));
                     }
                 }
             }
             MIRInstrKind::Unreachable => {
-                return comptime_error(range, (&catalogue::COMPTIME_UNREACHABLE, ()));
+                return comptime_error(range, (&catalogue::COMPTIME_INVALID_OPERATION, "unreachable code".into()));
             }
             MIRInstrKind::MakeStaged {
                 out,
@@ -307,7 +307,7 @@ fn run_top_frame(
                 out, staged, args, ..
             } => {
                 let MIRComptimeValue::Staged(staged) = memory::read_value(engine, &staged)? else {
-                    return comptime_error(range, (&catalogue::COMPTIME_APPLY_NON_STAGED, ()));
+                    return comptime_error(range, (&catalogue::ENTITY_REQUIREMENT, ("staged application".into(), "a staged value".into(), Some("non-staged value".into()))));
                 };
                 let mut bindings = Vec::with_capacity(args.len());
                 for arg in args {
@@ -324,19 +324,19 @@ fn run_top_frame(
                 }
             }
             MIRInstrKind::StagedReturn { .. } => {
-                return comptime_error(range, (&catalogue::COMPTIME_STAGED_TEMPLATE_CALL, ()));
+                return comptime_error(range, (&catalogue::COMPTIME_INVALID_OPERATION, "staged template as a function".into()));
             }
             MIRInstrKind::StagedExit { .. } => {
-                return comptime_error(range, (&catalogue::COMPTIME_STAGED_EXIT_CALL, ()));
+                return comptime_error(range, (&catalogue::COMPTIME_INVALID_OPERATION, "staged exit as a function".into()));
             }
             MIRInstrKind::StagedYield { .. } => {
-                return comptime_error(range, (&catalogue::COMPTIME_STAGED_YIELD_CALL, ()));
+                return comptime_error(range, (&catalogue::COMPTIME_INVALID_OPERATION, "staged yield as a function".into()));
             }
             MIRInstrKind::StagedMove { .. } => {
-                return comptime_error(range, (&catalogue::COMPTIME_STAGED_MOVE_CALL, ()));
+                return comptime_error(range, (&catalogue::COMPTIME_INVALID_OPERATION, "staged move as a function".into()));
             }
             MIRInstrKind::StagedUse { .. } => {
-                return comptime_error(range, (&catalogue::COMPTIME_STAGED_USE_CALL, ()));
+                return comptime_error(range, (&catalogue::COMPTIME_INVALID_OPERATION, "staged use as a function".into()));
             }
         }
     }
@@ -384,8 +384,8 @@ pub(super) fn call_function(
         return comptime_error(
             TokenRange::internal(),
             (
-                &catalogue::COMPTIME_FUNCTION_UNAVAILABLE,
-                format!("{:?}", function_id),
+                &catalogue::COMPTIME_UNAVAILABLE,
+                format!("function {:?}", function_id),
             ),
         );
     };
@@ -394,7 +394,7 @@ pub(super) fn call_function(
         MIRFunctionMode::Runtime => {
             return comptime_error(
                 TokenRange::internal(),
-                (&catalogue::COMPTIME_RUNTIME_FUNCTION, ()),
+                (&catalogue::COMPTIME_INVALID_OPERATION, "runtime function".into()),
             );
         }
         MIRFunctionMode::Constexpr | MIRFunctionMode::Comptime => {}
@@ -427,7 +427,7 @@ fn execute_aggregate_op(
                         other => {
                             return comptime_error(
                                 TokenRange::internal(),
-                                (&catalogue::COMPTIME_ARRAY_INDEX, format!("{:?}", other)),
+                                (&catalogue::ENTITY_REQUIREMENT, ("array index".into(), "an integer constant".into(), Some(format!("{:?}", other)))),
                             );
                         }
                     };

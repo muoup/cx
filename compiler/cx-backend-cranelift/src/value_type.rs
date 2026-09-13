@@ -28,7 +28,12 @@ pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> CXRawResult<ir::Type> {
 
             element
                 .by(*count as u32)
-                .ok_or_else(|| raw(&CRANELIFT_VECTOR, format!("{element} x {count}")))?
+                .ok_or_else(|| {
+                    raw(
+                        &UNSUPPORTED_FEATURE,
+                        (format!("vector type {element} x {count}"), "Cranelift codegen".into()),
+                    )
+                })?
         }
         // LMIRTypeKind::Float { bytes: 16 } => ir::types::F128,
         //
@@ -41,7 +46,10 @@ pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> CXRawResult<ir::Type> {
         | LMIRTypeKind::Array { .. }
         | LMIRTypeKind::Opaque { .. }
         | LMIRTypeKind::Void => {
-            return Err(raw(&CRANELIFT_TYPE, format!("{val_type:?}")));
+            return Err(raw(
+                &UNSUPPORTED_FEATURE,
+                (format!("type {val_type:?}"), "Cranelift codegen".into()),
+            ));
         }
     })
 }
