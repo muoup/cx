@@ -3,12 +3,12 @@ import std::optional;
 int main() {
     std::optional::opt<int> value = std::optional::opt::some<int>(1);
 
-    if (value is std::optional::opt::some<int>(inner)) {
+    if (value is std::optional::opt::some(inner)) {
         return inner;
     }
 
     std::optional::opt<int> later = std::optional::opt::none<int>();
-    if (later is std::optional::opt::none<int>(_)) {
+    if (later is std::optional::opt::none(_)) {
         return 0;
     }
 

@@ -36,7 +36,7 @@ define_errors! {
     REQUIRED_CONTEXT: (String, String) = "T0018" => |(feature, context)| format!("{feature} requires {context}");
     INVALID_FORM: (String, String) = "T0019" => |(subject, invalid)| format!("Unexpected {invalid} in {subject}");
     MISSING_RETURN_VALUE: String = "T0020" => |function| format!("Invalid unvalued return in a non-void returning function {function}");
-    INTEGER_LITERAL_RANGE: String = "T0021" => |value| format!("Integer literal {value} does not fit any permitted type");
+    INTEGER_LITERAL_RANGE: () = "T0021" => |_| format!("Integer literal does not fit any permitted type");
     TEMPLATE_ARGUMENTS: (String, bool) = "T0022" => |(subject, required)| {
         let requirement = if required { "requires" } else { "does not accept" };
         format!("{subject} {requirement} template arguments")

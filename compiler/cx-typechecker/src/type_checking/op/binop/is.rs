@@ -18,9 +18,9 @@ use cx_tokens::TokenRange;
 pub(crate) fn typecheck_is(
     env: &mut TypeEnvironment,
     namespace: &NamespacePath,
-    lhs: &HIRExpression,
-    pattern: &HIRPattern,
     expr: &HIRExpression,
+    pattern: &HIRPattern,
+    lhs: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     let tc_lhs = typecheck_expr(env, namespace, lhs, None)
         .and_then(|v| v.standard_ready_coerce(env, lhs.token_range()))

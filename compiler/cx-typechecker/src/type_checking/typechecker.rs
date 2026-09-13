@@ -527,7 +527,7 @@ fn typecheck_expr_inner(
         } => typecheck_unpack(env, namespace, expr, inner, bindings)?,
 
         HIRExprKind::UnOp { operator, operand } => {
-            op::typecheck_unop(env, namespace, operator, operand)?
+            op::typecheck_unop(env, namespace, expr, operator, operand)?
         }
 
         HIRExprKind::BinOp {

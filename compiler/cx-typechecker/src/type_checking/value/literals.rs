@@ -48,7 +48,11 @@ pub(crate) fn typecheck_int_literal(
         .find(|candidate| integer_type_can_represent(candidate, magnitude));
     
     let Some(literal_type) = literal_type else {
-        unreachable!("integer literal magnitude {} cannot be represented by any of the candidate types {:?}", magnitude, candidates);
+        return env.log_error(
+            token_range,
+            &catalogue::INTEGER_LITERAL_RANGE,
+            ()
+        );
     };
 
     Ok(TypecheckResult::from(THIRExpression {

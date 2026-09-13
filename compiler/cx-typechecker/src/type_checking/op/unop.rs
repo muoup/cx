@@ -35,6 +35,7 @@ use crate::{
 pub fn typecheck_unop(
     env: &mut TypeEnvironment,
     namespace: &NamespacePath,
+    expr: &HIRExpression,
     op: &HIRUnOp,
     operand: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
@@ -235,7 +236,7 @@ pub fn typecheck_unop(
             TypecheckResult::from(explicit_cast(env, operand, &to_type)?)
         }
 
-        HIRUnOp::Is(pattern) => typecheck_is(env, namespace, operand, pattern, operand)?,
+        HIRUnOp::Is(pattern) => typecheck_is(env, namespace, expr, pattern, operand)?,
     })
 }
 

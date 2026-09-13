@@ -6,7 +6,7 @@ import std::optional;
 
 int main() {
     std::optional::opt<int> value = std::optional::opt::some<int>(7);
-    if (value is std::optional::opt::some<int>(inner)) {
+    if (value is std::optional::opt::some(inner)) {
         printf("%d\n", inner);
     }
     return 0;

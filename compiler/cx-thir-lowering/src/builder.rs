@@ -29,9 +29,6 @@ use cx_util::linkage::LinkageMode;
 mod function;
 mod module;
 
-#[cfg(test)]
-mod capture_tests;
-
 use crate::lowering::{self, types::lower_type};
 use function::{CaptureContext, MIRFunctionBuilder};
 use module::{MIRModuleBuilder, ModuleParts};
