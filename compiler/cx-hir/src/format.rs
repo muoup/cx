@@ -526,7 +526,18 @@ impl Display for HIRTypeKind {
             }
             HIRTypeKind::ExplicitSizedArray(inner, size) => write!(f, "[{inner}; {size}]"),
             HIRTypeKind::ImplicitSizedArray(inner) => write!(f, "[{inner}]"),
-            HIRTypeKind::MemoryReference { inner_type } => write!(f, "&{inner_type}"),
+            HIRTypeKind::MemoryReference {
+                inner_type,
+                lifetime,
+            } => {
+                write!(f, "&")?;
+
+                if let Some(lifetime) = lifetime {
+                    write!(f, "'{lifetime} ")?;
+                }
+
+                write!(f, "{inner_type}")
+            },
             HIRTypeKind::PointerTo { inner_type } => {
                 write!(f, "*{}", inner_type)
             }

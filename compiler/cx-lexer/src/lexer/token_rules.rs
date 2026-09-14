@@ -67,6 +67,7 @@ pub(crate) fn operator(iter: &mut LexCursor<'_>) -> Option<TokenKind> {
             }
             _ => try_assignment(iter, OperatorType::Minus),
         },
+        '\'' => Some(TokenKind::Punctuator(PunctuatorType::Apostrophe)),
         '&' => match iter.peek() {
             Some('&') => {
                 iter.next();

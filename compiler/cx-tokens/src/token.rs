@@ -377,6 +377,8 @@ pub enum PunctuatorType {
     QuestionMark,
     Hash,
 
+    Apostrophe,
+
     ThickArrow, /* (=>) */
 }
 

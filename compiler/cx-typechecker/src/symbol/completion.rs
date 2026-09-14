@@ -153,6 +153,7 @@ pub(crate) fn complete_type_inner(
 
         HIRTypeKind::MemoryReference { inner_type } => {
             let inner_type = complete_type_id(env, namespace, inner_type)?;
+            
             ensure_valid_type_id_component(
                 env,
                 ty.range(),

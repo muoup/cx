@@ -114,7 +114,15 @@ fn aggregate_field_from_decl(
         let width = match next_kind!(data.tokens)? {
             TokenKind::IntLiteral(literal) => literal.magnitude as usize,
             _ => {
-                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a non-negative integer literal".into(), Some("as bitfield width".into()), None));
+                return parse_point_error(
+                    &data.tokens,
+                    &EXPECTED_SYNTAX,
+                    (
+                        "a non-negative integer literal".into(),
+                        Some("as bitfield width".into()),
+                        None,
+                    ),
+                );
             }
         };
 
@@ -126,7 +134,11 @@ fn aggregate_field_from_decl(
     }
 
     let Some(name) = name else {
-        return parse_point_error(&data.tokens, &UNSUPPORTED_FEATURE, (format!("nameless member of {_type}"), "the parser".into()));
+        return parse_point_error(
+            &data.tokens,
+            &UNSUPPORTED_FEATURE,
+            (format!("nameless member of {_type}"), "the parser".into()),
+        );
     };
 
     Ok(HIRField::standard(name.to_string(), _type))
@@ -156,7 +168,15 @@ fn predeclaration_type(
     template_prototype: Option<HIRTemplatePrototype>,
 ) -> CXResult<HIRType> {
     let Some(name) = name else {
-        return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a type name".into(), Some("for a predeclaration".into()), None));
+        return parse_point_error(
+            &data.tokens,
+            &EXPECTED_SYNTAX,
+            (
+                "a type name".into(),
+                Some("for a predeclaration".into()),
+                None,
+            ),
+        );
     };
     let is_root_name = name.namespace.is_root();
     let definition_name = name.name.clone();
@@ -247,7 +267,11 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<HIRType> {
         Some(name) => match name.root_name() {
             Some(name) => Some(name),
             None => {
-                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a struct name".into(), None, None));
+                return parse_point_error(
+                    &data.tokens,
+                    &EXPECTED_SYNTAX,
+                    ("a struct name".into(), None, None),
+                );
             }
         },
     };
@@ -288,7 +312,11 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<HIRType> {
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
         let Some(variant_name) = try_parse_simple_identifier(&mut data.tokens) else {
-            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an enum variant".into(), None, None));
+            return parse_point_error(
+                &data.tokens,
+                &EXPECTED_SYNTAX,
+                ("an enum variant".into(), None, None),
+            );
         };
 
         let value = if try_next!(data.tokens, TokenKind::Assignment(None)) {
@@ -316,7 +344,15 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<HIRType> {
         Some(name) => match name.root_name() {
             Some(name) => Some(name),
             None => {
-                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a simple identifier".into(), Some("as a qualified type name".into()), None));
+                return parse_point_error(
+                    &data.tokens,
+                    &EXPECTED_SYNTAX,
+                    (
+                        "a simple identifier".into(),
+                        Some("as a qualified type name".into()),
+                        None,
+                    ),
+                );
             }
         },
     };
@@ -348,7 +384,11 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<HIRType>
     assert_token_matches!(data.tokens, keyword!(Union), "'union'");
 
     let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
-        return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a tagged union name".into(), None, None));
+        return parse_point_error(
+            &data.tokens,
+            &EXPECTED_SYNTAX,
+            ("a tagged union name".into(), None, None),
+        );
     };
 
     let template_prototype = try_parse_template(&mut data.tokens)?;
@@ -360,7 +400,11 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<HIRType>
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
         let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
-                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a tagged union variant name".into(), None, None));
+            return parse_point_error(
+                &data.tokens,
+                &EXPECTED_SYNTAX,
+                ("a tagged union variant name".into(), None, None),
+            );
         };
 
         assert_token_matches!(data.tokens, operator!(ScopeRes), "'::'");
@@ -370,11 +414,23 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<HIRType>
             Ok((None, _type, _)) => variants.push(HIRField::standard(name.to_string(), _type)),
 
             Ok((Some(_), _, _)) => {
-                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an unnamed type".into(), Some("for tagged union variant".into()), None));
+                return parse_point_error(
+                    &data.tokens,
+                    &EXPECTED_SYNTAX,
+                    (
+                        "an unnamed type".into(),
+                        Some("for tagged union variant".into()),
+                        None,
+                    ),
+                );
             }
 
             _ => {
-                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a tagged union variant type".into(), None, None));
+                return parse_point_error(
+                    &data.tokens,
+                    &EXPECTED_SYNTAX,
+                    ("a tagged union variant type".into(), None, None),
+                );
             }
         }
 
@@ -420,7 +476,11 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<HIRType> {
         Some(name) => match name.root_name() {
             Some(name) => Some(name),
             None => {
-                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a union name".into(), None, None));
+                return parse_point_error(
+                    &data.tokens,
+                    &EXPECTED_SYNTAX,
+                    ("a union name".into(), None, None),
+                );
             }
         },
     };
@@ -502,15 +562,35 @@ pub(crate) fn parse_type_mods(
             parse_type_mods(data, acc_type)
         }
 
+        punctuator!(Apostrophe) => {
+            data.tokens.next();
+
+            assert_token_matches!(data.tokens, identifier!(lifetime), "a lifetime identifier");
+            let lifetime = CXIdent::from(lifetime.as_str());
+
+            assert_token_matches!(data.tokens, punctuator!(Apostrophe), "a closing apostrophe");
+
+            let range = acc_type.range.clone();
+            let ref_type = HIRTypeKind::MemoryReference {
+                inner_type: Box::new(acc_type),
+                lifetime: Some(lifetime),
+            }
+            .to_type()
+            .with_range(range);
+
+            parse_type_mods(data, ref_type)
+        }
+
         operator!(Ampersand) => {
             data.tokens.next();
 
             let range = acc_type.range.clone();
-            let mut ref_type = HIRTypeKind::MemoryReference {
+            let ref_type = HIRTypeKind::MemoryReference {
                 inner_type: Box::new(acc_type),
+                lifetime: None,
             }
-            .to_type();
-            ref_type.range = range;
+            .to_type()
+            .with_range(range);
 
             parse_type_mods(data, ref_type)
         }
@@ -620,19 +700,6 @@ pub(crate) fn parse_type_suffix_mod(
             Ok(acc_type)
         }
 
-        operator!(Ampersand) => {
-            data.tokens.next();
-
-            let range = acc_type.range.clone();
-            let mut ref_type = HIRTypeKind::MemoryReference {
-                inner_type: Box::new(acc_type),
-            }
-            .to_type();
-            ref_type.range = range;
-
-            parse_type_suffix_mod(data, ref_type)
-        }
-
         _ => Ok(acc_type),
     }
 }
@@ -664,7 +731,11 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<HIRType> {
         keyword!(Union) => parse_union_def(data),
 
         tok => {
-            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a type".into(), None, Some(tok.to_string())));
+            return parse_point_error(
+                &data.tokens,
+                &EXPECTED_SYNTAX,
+                ("a type".into(), None, Some(tok.to_string())),
+            );
         }
     };
 

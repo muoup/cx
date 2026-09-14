@@ -79,6 +79,7 @@ pub enum HIRTypeKind {
 
     MemoryReference {
         inner_type: Box<HIRType>,
+        lifetime: Option<CXIdent>,
     },
     PointerTo {
         inner_type: Box<HIRType>,
