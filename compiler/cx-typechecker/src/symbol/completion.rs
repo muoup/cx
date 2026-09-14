@@ -151,7 +151,7 @@ pub(crate) fn complete_type_inner(
             THIRTypeKind::PointerTo { inner_type: id }.into()
         }
 
-        HIRTypeKind::MemoryReference { inner_type } => {
+        HIRTypeKind::MemoryReference { inner_type, .. } => {
             let inner_type = complete_type_id(env, namespace, inner_type)?;
             
             ensure_valid_type_id_component(

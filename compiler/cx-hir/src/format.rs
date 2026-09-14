@@ -530,13 +530,13 @@ impl Display for HIRTypeKind {
                 inner_type,
                 lifetime,
             } => {
-                write!(f, "&")?;
+                write!(f, "{inner_type}")?;
 
                 if let Some(lifetime) = lifetime {
-                    write!(f, "'{lifetime} ")?;
+                    write!(f, " '{lifetime}&")
+                } else {
+                    write!(f, "&")
                 }
-
-                write!(f, "{inner_type}")
             },
             HIRTypeKind::PointerTo { inner_type } => {
                 write!(f, "*{}", inner_type)

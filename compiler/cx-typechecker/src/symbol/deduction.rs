@@ -343,7 +343,7 @@ fn deduce_from_cx_type(
             Ok(())
         }
 
-        HIRTypeKind::MemoryReference { inner_type } => {
+        HIRTypeKind::MemoryReference { inner_type, .. } => {
             let THIRTypeKind::MemoryReference {
                 inner_type: actual_inner,
                 ..

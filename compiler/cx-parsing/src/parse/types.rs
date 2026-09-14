@@ -565,10 +565,24 @@ pub(crate) fn parse_type_mods(
         punctuator!(Apostrophe) => {
             data.tokens.next();
 
-            assert_token_matches!(data.tokens, identifier!(lifetime), "a lifetime identifier");
-            let lifetime = CXIdent::from(lifetime.as_str());
+            let lifetime_kind = next_kind!(data.tokens)?.clone();
+            let lifetime = match lifetime_kind {
+                TokenKind::Identifier(lifetime) => CXIdent::from(lifetime.as_str()),
+                TokenKind::Specifier(SpecifierType::Static) => CXIdent::new("static"),
+                kind => {
+                    return parse_point_error(
+                        &data.tokens,
+                        &EXPECTED_SYNTAX,
+                        (
+                            "a lifetime identifier".into(),
+                            None,
+                            Some(kind.to_string()),
+                        ),
+                    );
+                }
+            };
 
-            assert_token_matches!(data.tokens, punctuator!(Apostrophe), "a closing apostrophe");
+            assert_token_matches!(data.tokens, operator!(Ampersand), "'&'");
 
             let range = acc_type.range.clone();
             let ref_type = HIRTypeKind::MemoryReference {

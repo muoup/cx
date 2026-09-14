@@ -282,7 +282,11 @@ module.exports = grammar({
                 optional($.type_qualifier),
             ),
 
-        reference_modifier: ($) => op($, "&"),
+        reference_modifier: ($) =>
+            seq(optional($.lifetime_modifier), op($, "&")),
+
+        lifetime_modifier: ($) =>
+            seq("'", choice($.identifier, keyword($, "static"))),
 
         array_modifier: ($) => seq("[", optional($.expression), "]"),
 
