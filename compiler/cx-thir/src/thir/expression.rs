@@ -12,7 +12,7 @@ thread_local! {
     static NEXT_LOCAL_ID: Cell<u64> = const { Cell::new(0) };
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Readable, Writable)]
 pub struct THIRLocalID(pub u64);
 
 impl THIRLocalID {
@@ -427,7 +427,7 @@ pub enum THIRUnOp {
     PostIncrement(i8),
 }
 
-#[derive(Clone, Copy, Debug, Readable, Writable)]
+#[derive(Clone, Debug, Readable, Writable)]
 pub enum THIRCoercion {
     // Any integer to any integer conversion
     Integral {
@@ -466,12 +466,17 @@ pub enum THIRCoercion {
     // Decay of function designator to a pointer value
     GetFnPtr,
 
-    // Conversions between types that have the same semantic meaning
-    // in assembly, this is typically a no-op, but proves useful for type checking and verification
+    // Converts an ephemeral reference to a bounded reference
+    ReferenceBounding(Vec<THIRLocalID>),
+
+    // Conversions between types that have the same semantic meaning, 
+    // this is typically a no-op, but proves useful for type checking and verification
     Typechange,
 
     // A similar no-op operation like Typechange, but represents conversions that *do* change the semantic
     // meaning of the bits, such as converting from an f32 to an i32
+    // 
+    // Converting from a bounded / ephemeral reference to a free reference (non-safe operation) also falls under this category
     ReinterpretBits,
     Unreachable,
 }

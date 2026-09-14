@@ -77,7 +77,9 @@ fn run_top_frame(
 
         match kind {
             MIRInstrKind::ScopeEnter { .. } | MIRInstrKind::ScopeExit { .. } => {}
-            MIRInstrKind::Initialize { .. } | MIRInstrKind::Leak { .. } => {}
+            MIRInstrKind::Initialize { .. } | MIRInstrKind::Invalidate { .. } => {}
+            MIRInstrKind::Bind { .. } => {}
+            
             MIRInstrKind::Create { out, ty } => {
                 let frame = engine.frames.last_mut().expect("active frame");
                 frame

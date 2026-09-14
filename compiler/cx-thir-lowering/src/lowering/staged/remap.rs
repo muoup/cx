@@ -124,7 +124,7 @@ impl Remap<'_> {
     pub(super) fn omitted(&self, kind: &MIRInstrKind) -> bool {
         match kind {
             MIRInstrKind::Initialize { place }
-            | MIRInstrKind::Leak { place }
+            | MIRInstrKind::Invalidate { place, .. }
             | MIRInstrKind::Create { out: place, .. }
             | MIRInstrKind::Dereference { out: place, .. } => self.omitted_place(*place),
             MIRInstrKind::Assign { target, .. } => match target {
@@ -152,6 +152,7 @@ impl Remap<'_> {
         let register = |register| self.register(register);
         let target = |target: &MIRBlockTarget| self.target(target);
         let scopes = self.scopes;
+        
         Ok(match kind {
             MIRInstrKind::ScopeEnter { scope } => MIRInstrKind::ScopeEnter {
                 scope: scopes[scope],
@@ -162,8 +163,13 @@ impl Remap<'_> {
             MIRInstrKind::Initialize { place: output } => MIRInstrKind::Initialize {
                 place: place(*output)?,
             },
-            MIRInstrKind::Leak { place: output } => MIRInstrKind::Leak {
+            MIRInstrKind::Bind { place: output, to } => MIRInstrKind::Bind {
                 place: place(*output)?,
+                to: place(*to)?
+            },
+            MIRInstrKind::Invalidate { place: output, leak } => MIRInstrKind::Invalidate {
+                place: place(*output)?,
+                leak: *leak,
             },
             MIRInstrKind::Create { out, ty } => MIRInstrKind::Create {
                 out: place(*out)?,

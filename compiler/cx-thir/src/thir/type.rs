@@ -93,6 +93,14 @@ impl THIRField {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
+pub enum THIRReferenceLifetime {
+    Free,
+    Ephemeral,
+    Static,
+    Bounded(CXIdent)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]
 pub struct THIRBitfieldAccess {
     pub storage_type: THIRTypeID,

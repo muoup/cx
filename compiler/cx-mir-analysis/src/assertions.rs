@@ -197,6 +197,9 @@ fn transfer_instruction(environment: &mut ConstEnvironment, kind: &MIRInstrKind)
         | MIRInstrKind::Dereference { out: place, .. } => {
             environment.places.insert(*place, ConstValue::Unknown);
         }
+        MIRInstrKind::Bind { place, .. } => {
+            environment.places.insert(*place, ConstValue::Unknown);
+        }
         MIRInstrKind::Assign { target, value, .. } => {
             let value = environment.value(value);
             match target {
@@ -251,7 +254,7 @@ fn transfer_instruction(environment: &mut ConstEnvironment, kind: &MIRInstrKind)
         }
         MIRInstrKind::ScopeEnter { .. }
         | MIRInstrKind::ScopeExit { .. }
-        | MIRInstrKind::Leak { .. }
+        | MIRInstrKind::Invalidate { .. }
         | MIRInstrKind::Assert { .. }
         | MIRInstrKind::Assume { .. }
         | MIRInstrKind::Return { .. }

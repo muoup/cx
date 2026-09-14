@@ -353,6 +353,11 @@ impl MIRInstr {
                 }
             },
 
+            MIRInstrKind::Bind { place, to } => {
+                visit(MIRInstrOperand::Place(*place));
+                visit(MIRInstrOperand::Place(*to));
+            },
+
             MIRInstrKind::Dereference { pointer, .. } => {
                 visit(MIRInstrOperand::Value(pointer));
             }
@@ -438,7 +443,7 @@ impl MIRInstr {
                 }
                 visit(MIRInstrOperand::Value(subject));
             }
-            MIRInstrKind::Leak { place } | MIRInstrKind::AddressOf { place, .. } => {
+            MIRInstrKind::Invalidate { place, .. } | MIRInstrKind::AddressOf { place, .. } => {
                 visit(MIRInstrOperand::Place(*place));
             }
             MIRInstrKind::Initialize { .. }
@@ -470,11 +475,18 @@ pub enum MIRInstrKind {
     ScopeExit {
         scope: MIRScopeID,
     },
+    
     Initialize {
         place: MIRPlace,
     },
-    Leak {
+    Bind {
         place: MIRPlace,
+        to: MIRPlace,
+    },
+    
+    Invalidate {
+        place: MIRPlace,
+        leak: bool
     },
 
     Create {

@@ -27,8 +27,7 @@ use cx_thir::{
 };
 
 use crate::{
-    builder::{MIRBuilder, integer_type},
-    lowering::types::lower_type,
+    builder::{MIRBuilder, integer_type}, lowering::{operators::lower_coercion, types::lower_type},
 };
 use crate::{
     log::{log_mir_error, mir_error},
@@ -1056,37 +1055,12 @@ pub(crate) fn lower_expression(
                             builder.emit(MIRInstrKind::AddressOf { out, place });
                             MIRValue::Register(out)
                         }
-                        value => {
-                            let out = builder.fun_mut().new_register(type_id, None);
-                            builder.emit(MIRInstrKind::Coerce {
-                                out,
-                                operand: value,
-                                coercion: operators::lower_coercion(
-                                    conversion,
-                                    &operand._type,
-                                    &expression._type,
-                                ),
-                                to_type: type_id,
-                            });
-                            MIRValue::Register(out)
-                        }
+                        value => lower_coercion(builder, value, conversion, &operand._type, &expression._type)?,
                     });
                 }
 
                 let value = lower_expression(builder, operand)?;
-                let type_id = lower_type(builder, &expression._type)?;
-                let out = builder.fun_mut().new_register(type_id, None);
-                builder.emit(MIRInstrKind::Coerce {
-                    out,
-                    operand: value,
-                    coercion: operators::lower_coercion(
-                        conversion,
-                        &operand._type,
-                        &expression._type,
-                    ),
-                    to_type: type_id,
-                });
-                MIRValue::Register(out)
+                lower_coercion(builder, value, conversion, &operand._type, &expression._type)?
             }
 
             THIRExpressionKind::LifetimeStart { variable, _type } => {
@@ -1101,7 +1075,7 @@ pub(crate) fn lower_expression(
             THIRExpressionKind::LeakLifetime { expression: inner } => {
                 let value = lower_expression(builder, inner)?;
                 if let MIRValue::PlaceRef(place) = value {
-                    builder.emit(MIRInstrKind::Leak { place });
+                    builder.emit(MIRInstrKind::Invalidate { place, leak: true });
                     MIRValue::PlaceRef(place)
                 } else {
                     value

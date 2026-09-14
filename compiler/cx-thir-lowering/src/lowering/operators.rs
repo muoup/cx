@@ -1,7 +1,6 @@
 use cx_log::CXResult;
 use cx_mir::{
-    MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRIntBinaryOp, MIRPointerBinaryOp,
-    MIRPointerOffsetOp, MIRUnaryOp,
+    MIRAssignTarget, MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRInstrKind, MIRIntBinaryOp, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRUnaryOp, MIRValue,
 };
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
@@ -121,50 +120,95 @@ pub(super) fn lower_unary_op(op: &THIRUnOp, operand_type: &THIRType) -> MIRUnary
 }
 
 pub(super) fn lower_coercion(
+    builder: &mut MIRBuilder<'_>,
+    operand: MIRValue,
     coercion: &THIRCoercion,
     from_type: &THIRType,
-    _to_type: &THIRType,
-) -> MIRCoercion {
+    to_type: &THIRType,
+) -> CXResult<MIRValue> {
+    let to_type = lower_type(builder, to_type)?;
+
+    let mut emit_coercion = |operand: MIRValue, coercion: MIRCoercion| {
+        let out = builder.fun_mut().new_register(to_type, None);
+
+        builder.emit(MIRInstrKind::Coerce {
+            out,
+            operand,
+            coercion,
+            to_type,
+        });
+
+        Ok(MIRValue::Register(out))
+    };
+
     match coercion {
         THIRCoercion::Integral {
             sextend,
             from_type,
             to_type,
-        } => MIRCoercion::Integral {
+        } => emit_coercion(operand, MIRCoercion::Integral {
             sign_extend: *sextend,
             from: lower_int_type(*from_type),
             to: lower_int_type(*to_type),
-        },
-        THIRCoercion::FloatCast { to_type } => MIRCoercion::FloatCast {
+        }),
+        THIRCoercion::FloatCast { to_type } => emit_coercion(operand, MIRCoercion::FloatCast {
             from: match from_type.kind {
                 THIRTypeKind::Float { _type } => lower_float_type(_type),
                 _ => cx_mir::MIRFloatType::F64,
             },
             to: lower_float_type(*to_type),
-        },
-        THIRCoercion::IntToFloat { to_type, sextend } => MIRCoercion::IntToFloat {
+        }),
+        THIRCoercion::IntToFloat { to_type, sextend } => emit_coercion(operand, MIRCoercion::IntToFloat {
             from: integer_type(from_type).0,
             to: lower_float_type(*to_type),
             signed: *sextend,
-        },
-        THIRCoercion::FloatToInt { to_type, sextend } => MIRCoercion::FloatToInt {
+        }),
+        THIRCoercion::FloatToInt { to_type, sextend } => emit_coercion(operand, MIRCoercion::FloatToInt {
             from: match from_type.kind {
                 THIRTypeKind::Float { _type } => lower_float_type(_type),
                 _ => cx_mir::MIRFloatType::F64,
             },
             to: lower_int_type(*to_type),
             signed: *sextend,
-        },
-        THIRCoercion::PtrToInt { to_type } => MIRCoercion::PointerToInt {
+        }),
+        THIRCoercion::PtrToInt { to_type } => emit_coercion(operand, MIRCoercion::PointerToInt {
             to: lower_int_type(*to_type),
-        },
-        THIRCoercion::IntToPtr { sextend } => MIRCoercion::IntToPointer {
+        }),
+        THIRCoercion::IntToPtr { sextend } => emit_coercion(operand, MIRCoercion::IntToPointer {
             from: integer_type(from_type).0,
             sign_extend: *sextend,
-        },
-        THIRCoercion::GetFnPtr => MIRCoercion::FunctionToPointer,
-        THIRCoercion::Typechange => MIRCoercion::TypeChange,
-        THIRCoercion::ReinterpretBits => MIRCoercion::ReinterpretBits,
+        }),
+        THIRCoercion::GetFnPtr => emit_coercion(operand, MIRCoercion::FunctionToPointer),
+        THIRCoercion::Typechange => emit_coercion(operand, MIRCoercion::TypeChange),
+        THIRCoercion::ReinterpretBits => emit_coercion(operand, MIRCoercion::ReinterpretBits),
+
+        THIRCoercion::ReferenceBounding(bounded) => {
+            let place = builder.fun_mut().new_place(to_type, None, false);
+
+            builder.emit(MIRInstrKind::Assign {
+                target: MIRAssignTarget::Place(place),
+                value: operand,
+                ty: to_type,
+            });
+
+            for bound in bounded {
+                let Some(value) = builder.fun().local(*bound) else {
+                    unreachable!("bound local not found")
+                };
+
+                let MIRValue::PlaceRef(bound_place) = value else {
+                    unreachable!("bound local is not a place")
+                };
+
+                builder.emit(MIRInstrKind::Bind {
+                    place: place,
+                    to: bound_place,
+                });
+            }
+
+            Ok(MIRValue::PlaceRef(place))
+        }
+
         THIRCoercion::Unreachable => {
             unreachable!("unreachable coercions do not reach MIR coercion lowering")
         }

@@ -226,7 +226,11 @@ fn transfer_instruction(
         MIRInstrKind::Initialize { place } | MIRInstrKind::Create { out: place, .. } => {
             set_available(state, *place);
         }
-        MIRInstrKind::Leak { place } => {
+        MIRInstrKind::Bind { place, to } => {
+            use_place(unit, function, block, instruction, *to, state, diagnose)?;
+            set_available(state, *place);
+        }
+        MIRInstrKind::Invalidate { place, .. } => {
             consume(unit, function, block, instruction, *place, state, diagnose)?;
         }
         MIRInstrKind::Assign { target, value, .. } => {

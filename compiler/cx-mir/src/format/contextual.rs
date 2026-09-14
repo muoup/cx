@@ -344,8 +344,18 @@ fn write_instruction<T: MTRegistry>(
             f.write_str("initialize ")?;
             write_place_name(f, unit, function, *place)
         }
-        MIRInstrKind::Leak { place } => {
-            f.write_str("leak ")?;
+        MIRInstrKind::Bind { place, to } => {
+            f.write_str("bind ")?;
+            write_place_name(f, unit, function, *place)?;
+            f.write_str(" to ")?;
+            write_place_name(f, unit, function, *to)
+        },
+        MIRInstrKind::Invalidate { place, leak } => {
+            if *leak {
+                f.write_str("leak ")?;
+            } else {
+                f.write_str("invalidate ")?;
+            }
             write_place_name(f, unit, function, *place)
         }
         MIRInstrKind::Create { out, .. } => {

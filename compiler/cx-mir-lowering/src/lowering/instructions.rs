@@ -185,7 +185,8 @@ pub(super) fn lower_instruction(
         MIRInstrKind::ScopeEnter { .. }
         | MIRInstrKind::ScopeExit { .. }
         | MIRInstrKind::Initialize { .. }
-        | MIRInstrKind::Leak { .. }
+        | MIRInstrKind::Bind { .. }
+        | MIRInstrKind::Invalidate { .. }
         | MIRInstrKind::MakeStaged { .. }
         | MIRInstrKind::ApplyStaged { .. }
         | MIRInstrKind::StagedReturn { .. }
@@ -193,6 +194,7 @@ pub(super) fn lower_instruction(
         | MIRInstrKind::StagedYield { .. }
         | MIRInstrKind::StagedMove { .. }
         | MIRInstrKind::StagedUse { .. } => {}
+        
         MIRInstrKind::Create { out, ty } => {
             let lowered = lowered_type(context, *ty);
             let layout = mir_layout(context, *ty);
@@ -205,6 +207,7 @@ pub(super) fn lower_instruction(
                 },
             );
         }
+        
         MIRInstrKind::Assign { target, value, ty } => {
             let value = lower_value(context, value);
             match target {
