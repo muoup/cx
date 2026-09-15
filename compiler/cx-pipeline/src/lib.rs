@@ -1,6 +1,5 @@
 use cx_log::catalogue::driver as catalogue;
 mod backends;
-mod diagnostics;
 mod linker;
 mod log;
 use log::pipeline_error;

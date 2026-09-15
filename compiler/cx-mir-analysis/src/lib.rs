@@ -1,19 +1,8 @@
-mod assertions;
-mod instruction;
+pub mod framework;
 mod log;
-mod ownership;
-mod types;
+mod options;
+pub mod passes;
+mod pipeline;
 
-pub use types::{MIRAnalysisError, MIRAnalysisOptions};
-
-use cx_mir::MIRUnit;
-
-pub fn analyze(unit: &MIRUnit, options: MIRAnalysisOptions) -> Result<(), MIRAnalysisError> {
-    ownership::check(unit)?;
-
-    if options.check_assertions {
-        assertions::check(unit)?;
-    }
-
-    Ok(())
-}
+pub use options::MIRAnalysisOptions;
+pub use pipeline::Pipeline;

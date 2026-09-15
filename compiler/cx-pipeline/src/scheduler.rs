@@ -1,9 +1,9 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::progress::ProgressReporter;
-use crate::{diagnostics, pipeline_error};
+use crate::pipeline_error;
 use cx_log::catalogue::driver as catalogue;
 use cx_log::{CXResult, error::CXError};
-use cx_mir_analysis::{MIRAnalysisOptions, analyze};
+use cx_mir_analysis::{MIRAnalysisOptions, Pipeline};
 
 use cx_mir_lowering::generate_lmir;
 use cx_namespace::module::{ModulePath, NamespacePath, QualifiedName};
@@ -524,15 +524,7 @@ pub(crate) fn perform_job(
             }
 
             if !context.config.unsafe_mode {
-                analyze(
-                    &mir,
-                    MIRAnalysisOptions {
-                        check_assertions: !context.config.unsafe_mode,
-                    },
-                )
-                .map_err(|error| {
-                    diagnostics::mir_diagnostic_error(Some(&mir), error.diagnostic())
-                })?;
+                Pipeline::new(MIRAnalysisOptions::default()).analyze(&mir)?;
             }
 
             context
