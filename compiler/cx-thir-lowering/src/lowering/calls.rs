@@ -18,7 +18,7 @@ use cx_thir::type_context::THIRTypeContext;
 
 use crate::lowering::comptime::evaluate_comptime_expr;
 use crate::lowering::control_flow::auto_pop_scope;
-use crate::lowering::lower_expression;
+use crate::lowering::{lower_expression, materialize_value};
 use crate::lowering::staged::exits::{self, targets};
 use crate::lowering::staged::instantiate;
 use crate::{
@@ -33,46 +33,69 @@ pub(super) fn lower_call(
     contract: &THIRFnContract,
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
-    if let THIRExpressionKind::Variable { .. } = &function.kind
-        && matches!(function._type.kind, THIRTypeKind::Undefined)
-    {
-        let staged = lower_expression(builder, function)?;
-        let mut args = Vec::with_capacity(arguments.len());
-        for argument in arguments {
-            let value = lower_expression(builder, argument)?;
-            args.push(crate::lowering::materialize_value(builder, value, &argument._type)?);
+    match function.kind {
+        THIRExpressionKind::StagedReference { name, local_id } => {
+            let staged = lower_expression(builder, function)?;
+            let mut args = Vec::with_capacity(arguments.len());
+
+            for argument in arguments {
+                let value = lower_expression(builder, argument)?;
+
+                args.push(materialize_value(
+                    builder,
+                    value,
+                    &argument._type,
+                )?);
+            }
+
+            let out = if result_type.is_void() || result_type.is_unreachable() {
+                None
+            } else {
+                let ty = lower_type(builder, result_type)?;
+                Some(builder.fun_mut().new_register(ty, None))
+            };
+
+            let targets = exits::targets(builder)?;
+            builder.emit(MIRComptimeOp::ApplyStaged {
+                out,
+                staged,
+                args,
+                targets,
+            });
+
+            return Ok(out
+                .map(MIRValue::Register)
+                .unwrap_or(MIRValue::Constant(MIRConstant::Unit)));
         }
-        let out = if result_type.is_void() || result_type.is_unreachable() {
-            None
-        } else {
-            let ty = lower_type(builder, result_type)?;
-            Some(builder.fun_mut().new_register(ty, None))
-        };
-        let targets = exits::targets(builder)?;
-        builder.emit(MIRComptimeOp::ApplyStaged {
-            out,
-            staged,
-            args,
-            targets,
-        });
-        return Ok(out
-            .map(MIRValue::Register)
-            .unwrap_or(MIRValue::Constant(MIRConstant::Unit)));
-    }
 
-    if let THIRExpressionKind::FunctionReference { name, .. } = &function.kind
-        && let Some((id, prototype)) = builder.resolve_function(name.as_str())
-        && prototype.signature.mode == MIRFunctionMode::Comptime
-    {
-        return lower_comptime_call(builder, id, &prototype.signature, arguments, result_type);
-    }
+        THIRExpressionKind::FunctionReference { name, .. }
+            if let Some((id, prototype)) = builder.resolve_function(name.as_str())
+                && prototype.signature.mode == MIRFunctionMode::Staged =>
+        {
+            return lower_comptime_call(builder, id, &prototype.signature, arguments, result_type);
+        }
 
+        _ => lower_runtime_call(builder, function, arguments, contract, result_type),
+    }
+}
+
+fn lower_runtime_call(
+    builder: &mut MIRBuilder<'_>,
+    function: &THIRExpression,
+    arguments: &[THIRExpression],
+    contract: &THIRFnContract,
+    result_type: &THIRType,
+) -> CXResult<MIRValue> {
     let lowered_callee = lower_expression(builder, function)?;
     let callee = crate::lowering::materialize_value(builder, lowered_callee, &function._type)?;
     let mut args = Vec::with_capacity(arguments.len());
     for argument in arguments {
         let value = lower_expression(builder, argument)?;
-        args.push(crate::lowering::materialize_value(builder, value, &argument._type)?);
+        args.push(crate::lowering::materialize_value(
+            builder,
+            value,
+            &argument._type,
+        )?);
     }
 
     if let Some(precondition) = &contract.precondition {
@@ -170,7 +193,11 @@ fn lower_comptime_call(
                 )?);
             } else {
                 let value = lower_expression(builder, argument)?;
-                args.push(crate::lowering::materialize_value(builder, value, &argument._type)?);
+                args.push(crate::lowering::materialize_value(
+                    builder,
+                    value,
+                    &argument._type,
+                )?);
             }
         }
         let out = if (result_type.is_void() || result_type.is_unreachable())
@@ -215,7 +242,7 @@ fn lower_comptime_call(
             ))));
         } else {
             let value = evaluate_comptime_expr(builder, argument)?;
-            
+
             args.push(value);
         }
     }

@@ -173,7 +173,6 @@ macro_rules! traversal {
             match instruction {
                 MIRStagedInstrKind::Standard(kind) => $core(visitor, kind)?,
                 MIRStagedInstrKind::Comptime(kind) => $comptime(visitor, kind)?,
-                MIRStagedInstrKind::Complete { value } => visitor.value(value)?,
                 MIRStagedInstrKind::CallerReturn { value } => { if let Some(value) = value { visitor.value(value)?; } }
                 MIRStagedInstrKind::Move { out, value } => { visitor.value(value)?; visitor.register(out, MIRVisitRole::Define)?; }
                 MIRStagedInstrKind::ScopeExit { .. } => {}

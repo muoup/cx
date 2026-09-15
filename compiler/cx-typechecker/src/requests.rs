@@ -215,7 +215,9 @@ fn realize_comptime_function(
     let HIRSymbolKind::ComptimeFunction(data) = &symbol.kind else {
         unreachable!()
     };
+
     let namespace = symbol_lexical_namespace(&name.namespace, symbol);
+    
     env.in_definition(|env| {
         if let Some(template) = &data.template_prototype {
             apply_template_input(env, template, input)

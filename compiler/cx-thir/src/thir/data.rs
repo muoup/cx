@@ -11,9 +11,10 @@ use crate::type_context::THIRTypeContext;
 
 #[derive(Debug, Clone)]
 pub struct THIRFunction {
-    pub require_explicit_return: bool,
     pub prototype: THIRFnPrototype,
     pub body: Option<THIRExpression>,
+
+    pub require_explicit_return: bool,
 }
 
 #[derive(Debug, Clone)]

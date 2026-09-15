@@ -103,13 +103,12 @@ pub fn typecheck_comptime_function(
         let Some(name) = param.name.clone() else {
             continue;
         };
-        let local_id = param.local_id;
         let is_parameterized_staged = param.value_type.expr && !param.value_type.params.is_empty();
 
         if is_parameterized_staged {
             env.symbols.insert_local_staged_expression_function(
                 QualifiedName::new_raw(name.clone()),
-                local_id,
+                param.local_id,
                 param.value_type.params.clone(),
                 param.value_type._type.clone(),
             );

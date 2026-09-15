@@ -32,7 +32,7 @@ use crate::{
 
 type TemplateBindings = HashMap<String, THIRType>;
 
-pub(crate) fn complete_templated_callee_maybe(
+pub(crate) fn complete_templated_callee(
     env: &mut TypeEnvironment,
     namespace: &NamespacePath,
     name: &QualifiedName,

@@ -106,8 +106,7 @@ impl MIRInstructionKind for MIRStagedInstrKind {
     fn is_terminator(&self) -> bool {
         match self {
             Self::Standard(kind) => kind.is_terminator(),
-            Self::Exit { .. }
-            | Self::CallerReturn { .. }
+            Self::CallerReturn { .. }
             | Self::ScopeExit { .. }
             | Self::Yield { .. } => true,
             Self::Comptime(_) | Self::Move { .. } | Self::Use { .. } => false,

@@ -1013,17 +1013,20 @@ pub(crate) fn lower_expression(
                 arguments,
                 contract,
             } => calls::lower_call(builder, function, arguments, contract, &expression._type)?,
+            
             THIRExpressionKind::VaStart { list, last } => {
                 let list = lower_expression(builder, list)?;
                 let last = lower_expression(builder, last)?;
                 builder.emit(MIRInstrKind::VaStart { list, last });
                 MIRValue::Constant(MIRConstant::Unit)
             }
+            
             THIRExpressionKind::VaEnd { list } => {
                 let list = lower_expression(builder, list)?;
                 builder.emit(MIRInstrKind::VaEnd { list });
                 MIRValue::Constant(MIRConstant::Unit)
             }
+            
             THIRExpressionKind::VaArg { list, _type } => {
                 let list = lower_expression(builder, list)?;
                 let ty = lower_type(builder, _type)?;
@@ -1031,6 +1034,7 @@ pub(crate) fn lower_expression(
                 builder.emit(MIRInstrKind::VaArg { out, list, ty });
                 MIRValue::Register(out)
             }
+            
             THIRExpressionKind::TypeConversion {
                 operand,
                 conversion,
