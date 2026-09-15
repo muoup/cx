@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{MIRBody, MIRPlaceID, MIRRegister, MIRTypeID};
+use crate::{MIRBasicBlockID, MIRBody, MIRInstr, MIRPlaceID, MIRRegister, MIRStagedExitKind, MIRStagedTargets, MIRTypeID, MIRValue};
 
 #[derive(Debug, Clone, Copy)]
 pub enum MIRStagedCapture {
@@ -53,4 +53,34 @@ impl MIRStagedTemplate {
     pub fn diverges(&self) -> bool {
         self.diverges
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct MIRStagedBasicBlock {
+    id: MIRBasicBlockID,
+    instrs: Vec<MIRStagedInstr>,
+}
+
+#[derive(Debug, Clone)]
+pub enum MIRStagedInstr {
+    Standard(MIRInstr),
+    
+    Return {
+        value: MIRValue,
+    },
+    StagedMove {
+        out: MIRRegister,
+        value: MIRValue,
+    },
+    StagedScopeExit {
+        kind: MIRStagedExitKind,
+    },
+    StagedYield {
+        value: Option<MIRValue>,
+        ty: Option<MIRTypeID>,
+    },
+    StagedUse {
+        value: MIRValue,
+        targets: MIRStagedTargets,
+    },
 }

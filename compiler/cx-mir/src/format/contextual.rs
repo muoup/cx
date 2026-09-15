@@ -3,11 +3,11 @@ use std::fmt::{self, Display, Formatter};
 use cx_util::linkage::LinkageMode;
 
 use crate::MIRGlobalVariable;
-use crate::expr::{
-    MIRAggregateOp, MIRBasicBlock, MIRConstant, MIRInstrKind, MIRPlace, MIRPlaceAggregateOp,
-    MIRStagedExitKind, MIRValue, MIRValueAggregateOp,
-};
 use crate::global::{MIRFunction, MIRGlobalKind, MIRGlobalState};
+use crate::instruction::{
+    MIRAggregateOp, MIRBasicBlock, MIRConstant, MIRInstrKind, MIRPlace, MIRPlaceAggregateOp,
+    MIRValue, MIRValueAggregateOp,
+};
 use crate::op::{
     MIRBinaryOp, MIRFloatBinaryOp, MIRIntBinaryOp, MIRPointerBinaryOp, MIRPointerOffsetOp,
     MIRUnaryOp,
@@ -340,16 +340,19 @@ fn write_instruction<T: MTRegistry>(
     match instruction {
         MIRInstrKind::ScopeEnter { scope } => write!(f, "scope.enter {scope:?}"),
         MIRInstrKind::ScopeExit { scope } => write!(f, "scope.exit {scope:?}"),
+
         MIRInstrKind::Initialize { place } => {
             f.write_str("initialize ")?;
             write_place_name(f, unit, function, *place)
         }
+
         MIRInstrKind::Bind { place, to } => {
             f.write_str("bind ")?;
             write_place_name(f, unit, function, *place)?;
             f.write_str(" to ")?;
             write_place_name(f, unit, function, *to)
-        },
+        }
+
         MIRInstrKind::Invalidate { place, leak } => {
             if *leak {
                 f.write_str("leak ")?;
@@ -358,35 +361,39 @@ fn write_instruction<T: MTRegistry>(
             }
             write_place_name(f, unit, function, *place)
         }
+
         MIRInstrKind::Create { out, .. } => {
             f.write_str("create ")?;
             write_place_name(f, unit, function, *out)
         }
+
         MIRInstrKind::Assign { target, value, .. } => {
             match target {
-                crate::MIRAssignTarget::Place(place) => {
-                    write_place_name(f, unit, function, *place)?
-                }
-                crate::MIRAssignTarget::Register(register) => {
+                crate::MIRTarget::Place(place) => write_place_name(f, unit, function, *place)?,
+                crate::MIRTarget::Register(register) => {
                     write_register_name(f, function, *register)?;
                 }
             }
             f.write_str(" = ")?;
             write_value(f, unit, function, value)
         }
+
         MIRInstrKind::AddressOf { out, place } => {
             write_register_name(f, function, *out)?;
             f.write_str(" = &")?;
             write_place_name(f, unit, function, *place)
         }
+
         MIRInstrKind::Dereference { out, pointer, .. } => {
             write_place_name(f, unit, function, *out)?;
             f.write_str(" = *")?;
             write_value(f, unit, function, pointer)
         }
+
         MIRInstrKind::AggregateOp(operation) => {
             write_aggregate(f, unit, function, operation, types)
         }
+
         MIRInstrKind::Call {
             out,
             kind,
@@ -405,6 +412,7 @@ fn write_instruction<T: MTRegistry>(
             write_values(f, unit, function, args)?;
             f.write_str(")")
         }
+
         MIRInstrKind::VaStart { list, last } => {
             f.write_str("va_start(")?;
             write_value(f, unit, function, list)?;
@@ -412,11 +420,13 @@ fn write_instruction<T: MTRegistry>(
             write_value(f, unit, function, last)?;
             f.write_str(")")
         }
+
         MIRInstrKind::VaEnd { list } => {
             f.write_str("va_end(")?;
             write_value(f, unit, function, list)?;
             f.write_str(")")
         }
+
         MIRInstrKind::VaArg { out, list, ty } => {
             write_register_name(f, function, *out)?;
             f.write_str(" = va_arg(")?;
@@ -425,6 +435,7 @@ fn write_instruction<T: MTRegistry>(
             types.write(f, *ty)?;
             f.write_str(")")
         }
+
         MIRInstrKind::BinOp { out, op, lhs, rhs } => {
             write_register_name(f, function, *out)?;
             write!(f, " = ")?;
@@ -432,6 +443,7 @@ fn write_instruction<T: MTRegistry>(
             write!(f, " {} ", binary_operator(op))?;
             write_value(f, unit, function, rhs)
         }
+
         MIRInstrKind::UnOp { out, op, operand } => {
             write_register_name(f, function, *out)?;
             f.write_str(" = ")?;
@@ -464,6 +476,7 @@ fn write_instruction<T: MTRegistry>(
                 }
             }
         }
+
         MIRInstrKind::Coerce {
             out,
             operand,
@@ -476,6 +489,7 @@ fn write_instruction<T: MTRegistry>(
             f.write_str(" as ")?;
             types.write(f, *to_type)
         }
+
         MIRInstrKind::Assert { condition, message } => {
             f.write_str("assert ")?;
             write_value(f, unit, function, condition)?;
@@ -484,10 +498,12 @@ fn write_instruction<T: MTRegistry>(
             }
             Ok(())
         }
+
         MIRInstrKind::Assume { condition } => {
             f.write_str("assume ")?;
             write_value(f, unit, function, condition)
         }
+
         MIRInstrKind::Return { value } => {
             f.write_str("return")?;
             if let Some(value) = value {
@@ -496,10 +512,12 @@ fn write_instruction<T: MTRegistry>(
             }
             Ok(())
         }
+
         MIRInstrKind::Jump { target } => {
             f.write_str("goto ")?;
             write_target(f, unit, function, target)
         }
+
         MIRInstrKind::Branch {
             cond,
             true_target,
@@ -512,6 +530,7 @@ fn write_instruction<T: MTRegistry>(
             f.write_str(" else goto ")?;
             write_target(f, unit, function, false_target)
         }
+
         MIRInstrKind::IntSwitch {
             value,
             cases,
@@ -536,6 +555,7 @@ fn write_instruction<T: MTRegistry>(
             }
             f.write_str(" }")
         }
+
         MIRInstrKind::VariantSwitch {
             subject,
             sum_type,
@@ -564,7 +584,9 @@ fn write_instruction<T: MTRegistry>(
             }
             f.write_str(" }")
         }
+
         MIRInstrKind::Unreachable => f.write_str("unreachable"),
+
         MIRInstrKind::MakeStaged { out, captures, .. } => {
             write_register_name(f, function, *out)?;
             f.write_str(" = staged[")?;
@@ -576,6 +598,7 @@ fn write_instruction<T: MTRegistry>(
             }
             f.write_str("]")
         }
+
         MIRInstrKind::ApplyStaged {
             out, staged, args, ..
         } => {
@@ -593,31 +616,6 @@ fn write_instruction<T: MTRegistry>(
                 write_value(f, unit, function, arg)?;
             }
             f.write_str(")")
-        }
-        MIRInstrKind::StagedReturn { value } => {
-            f.write_str("staged.return ")?;
-            write_value(f, unit, function, value)
-        }
-        MIRInstrKind::StagedExit { kind } => match kind {
-            MIRStagedExitKind::Break => f.write_str("staged.break"),
-            MIRStagedExitKind::Continue => f.write_str("staged.continue"),
-        },
-        MIRInstrKind::StagedYield { value, .. } => {
-            f.write_str("staged.yield")?;
-            if let Some(value) = value {
-                f.write_str(" ")?;
-                write_value(f, unit, function, value)?;
-            }
-            Ok(())
-        }
-        MIRInstrKind::StagedMove { out, value } => {
-            write_register_name(f, function, *out)?;
-            f.write_str(" = staged.move ")?;
-            write_value(f, unit, function, value)
-        }
-        MIRInstrKind::StagedUse { value, .. } => {
-            f.write_str("staged.use ")?;
-            write_value(f, unit, function, value)
         }
     }
 }
@@ -712,7 +710,7 @@ fn write_target(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
     function: &MIRFunction,
-    target: &crate::expr::MIRBlockTarget,
+    target: &crate::instruction::MIRBlockTarget,
 ) -> fmt::Result {
     write!(f, "bb{}", target.block.index())?;
     if !target.args.is_empty() {
@@ -809,7 +807,7 @@ fn write_place_name(
 fn write_register_name(
     f: &mut Formatter<'_>,
     function: &MIRFunction,
-    register: crate::expr::MIRRegister,
+    register: crate::instruction::MIRRegister,
 ) -> fmt::Result {
     if let Some(register_decl) = function
         .definition()

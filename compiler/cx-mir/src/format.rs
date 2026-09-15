@@ -5,7 +5,7 @@ mod contextual;
 pub use contextual::MIRDisplay;
 
 use crate::{
-    MIRLayoutError, MIRTypeID, expr::{
+    MIRLayoutError, MIRTypeID, instruction::{
         MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRParameterID, MIRPlace, MIRPlaceID,
         MIRRegister, MIRValue,
     }, global::{MIRFnSignature, MIRFunctionID, MIRGlobalID, MIRGlobalState}, layout_error, op::{MIRBinaryOp, MIRCoercion, MIRUnaryOp}, ty::MIRIntType, unit::MIRUnit
@@ -84,7 +84,6 @@ impl Display for MIRConstant {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unit => f.write_str("()"),
-            Self::Bool(value) => Display::fmt(value, f),
             Self::String(value) => write!(f, "{:?}", value),
             Self::Integer { value, ty, signed } => write!(
                 f,
@@ -93,7 +92,7 @@ impl Display for MIRConstant {
                 int_width(*ty)
             ),
             Self::Float { value, ty } => write!(f, "{value}:{ty:?}"),
-            Self::Null { ty } => write!(f, "null:{ty}"),
+            Self::Nullptr => write!(f, "null"),
             Self::Aggregate { fields, .. } => {
                 f.write_str("{")?;
                 for (index, value) in fields.iter().enumerate() {
@@ -104,12 +103,17 @@ impl Display for MIRConstant {
                 }
                 f.write_str("}")
             }
-            Self::Global { global, .. } => write!(f, "global {global}"),
-            Self::GlobalOffset { global, offset, .. } => {
-                write!(f, "global {global} + {offset}")
+            Self::Global { global, offset, .. } => {
+                write!(f, "global {global}")?;
+
+                if *offset != 0 {
+                    write!(f, " + {offset}")?;
+                }
+
+                Ok(())
             }
             Self::Function(function) => write!(f, "fn {function}"),
-            Self::Undefined => f.write_str("undef"),
+            Self::Undefined => f.write_str("undefined")
         }
     }
 }

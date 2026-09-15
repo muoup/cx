@@ -1,5 +1,5 @@
 pub mod diagnostic;
-pub mod expr;
+pub mod instruction;
 pub mod global;
 pub mod op;
 pub mod staged;
@@ -13,9 +13,9 @@ pub use log::layout_error;
 pub use format::MIRDisplay;
 
 pub use diagnostic::{MIRDiagnostic, MIRDiagnosticLocation};
-pub use expr::{
-    MIRAggregateOp, MIRAssignTarget, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget, MIRCallKind,
-    MIRConstant, MIRInstr, MIRInstrKind, MIRInstrOperand, MIRParameterID, MIRPlace,
+pub use instruction::{
+    MIRAggregateOp, MIRTarget, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget, MIRCallKind,
+    MIRConstant, MIRInstr, MIRInstrKind, MIRParameterID, MIRPlace,
     MIRPlaceAggregateOp, MIRPlaceID, MIRRegister, MIRScopeID, MIRStagedExitKind, MIRStagedTargets,
     MIRValue, MIRValueAggregateOp,
 };

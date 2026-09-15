@@ -160,9 +160,10 @@ pub(super) fn lower_constant(
                 .symbol_name
                 .clone(),
         ),
-        MIRConstant::Null { ty } => {
+        MIRConstant::Nullptr => {
             let pointer_integer = convert_integer_type(context.types().pointer_integer_type());
             let zero = int_constant(context, 0, pointer_integer);
+            
             emit_temp(
                 context,
                 LMIRInstructionKind::Coercion {

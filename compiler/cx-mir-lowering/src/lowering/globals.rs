@@ -106,7 +106,7 @@ fn lower_global_initializer(
                 })
                 .collect(),
         },
-        MIRConstant::Null { .. } => LMIRGlobalInitializer::Null,
+        MIRConstant::Nullptr { .. } => LMIRGlobalInitializer::Null,
         MIRConstant::Global { global, .. } => LMIRGlobalInitializer::Global(
             *global_indices
                 .get(global)
@@ -136,7 +136,7 @@ fn is_zero_constant(constant: &MIRConstant) -> bool {
     match constant {
         MIRConstant::Bool(value) => !value,
         MIRConstant::Integer { value, .. } => *value == 0,
-        MIRConstant::Null { .. } => true,
+        MIRConstant::Nullptr { .. } => true,
         MIRConstant::Aggregate { fields, .. } => {
             fields.iter().all(|(_, value)| is_zero_constant(value))
         }

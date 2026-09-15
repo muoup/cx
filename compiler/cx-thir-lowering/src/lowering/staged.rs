@@ -528,6 +528,7 @@ fn resolve_dependencies(
 ) -> CXResult<()> {
     let range = builder.source_range().clone();
     let mut inputs = Vec::new();
+    
     MIRInstr::new(instruction.clone(), cx_tokens::TokenRange::internal()).visit_operands(
         |operand| {
             if let Some(register) = operand.register()

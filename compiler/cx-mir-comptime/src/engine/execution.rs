@@ -1,6 +1,6 @@
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
-    MIRAggregateOp, MIRAssignTarget, MIRBlockTarget, MIRConstant, MIRFunctionID, MIRFunctionMode,
+    MIRAggregateOp, MIRTarget, MIRBlockTarget, MIRConstant, MIRFunctionID, MIRFunctionMode,
     MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRUnaryOp, MIRValue,
 };
 use cx_tokens::TokenRange;
@@ -90,11 +90,11 @@ fn run_top_frame(
             MIRInstrKind::Assign { target, value, ty } => {
                 let value = memory::read_value(engine, &value)?;
                 match target {
-                    MIRAssignTarget::Register(register) => {
+                    MIRTarget::Register(register) => {
                         let frame = engine.frames.last_mut().expect("active frame");
                         frame.registers.insert(register, value);
                     }
-                    MIRAssignTarget::Place(place) => {
+                    MIRTarget::Place(place) => {
                         memory::write_place(engine, place, value, Some(ty))?;
                     }
                 }

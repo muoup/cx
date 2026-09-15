@@ -1,5 +1,5 @@
 use cx_log::CXResult;
-use cx_mir::{MIRAssignTarget, MIRInstrKind, MIRValue};
+use cx_mir::{MIRTarget, MIRInstrKind, MIRValue};
 use cx_thir::thir::data::THIRType;
 use cx_thir::type_context::THIRTypeContext;
 
@@ -15,7 +15,7 @@ pub(super) fn assign_operand_to_place(
     let type_id = lower_type(builder, ty)?;
     let place = builder.create(type_id, name, ty.is_nodrop());
     builder.emit(MIRInstrKind::Assign {
-        target: MIRAssignTarget::Place(place),
+        target: MIRTarget::Place(place),
         value,
         ty: type_id,
     });

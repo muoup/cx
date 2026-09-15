@@ -3,7 +3,7 @@ use cx_log::catalogue::mir as catalogue;
 use crate::log::mir_error;
 use cx_log::CXResult;
 use cx_mir::{
-    MIRAggregateOp, MIRAssignTarget, MIRBasicBlockID, MIRBlockTarget, MIRInstrKind, MIRPlace,
+    MIRAggregateOp, MIRTarget, MIRBasicBlockID, MIRBlockTarget, MIRInstrKind, MIRPlace,
     MIRPlaceAggregateOp, MIRPlaceID, MIRRegister, MIRScopeID, MIRValue, MIRValueAggregateOp,
 };
 use cx_tokens::TokenRange;
@@ -128,8 +128,8 @@ impl Remap<'_> {
             | MIRInstrKind::Create { out: place, .. }
             | MIRInstrKind::Dereference { out: place, .. } => self.omitted_place(*place),
             MIRInstrKind::Assign { target, .. } => match target {
-                MIRAssignTarget::Place(place) => self.omitted_place(*place),
-                MIRAssignTarget::Register(register) => self.omitted_register(*register),
+                MIRTarget::Place(place) => self.omitted_place(*place),
+                MIRTarget::Register(register) => self.omitted_register(*register),
             },
             MIRInstrKind::AddressOf { out, .. }
             | MIRInstrKind::VaArg { out, .. }
@@ -181,9 +181,9 @@ impl Remap<'_> {
                 ty,
             } => MIRInstrKind::Assign {
                 target: match output {
-                    MIRAssignTarget::Place(output) => MIRAssignTarget::Place(place(*output)?),
-                    MIRAssignTarget::Register(output) => {
-                        MIRAssignTarget::Register(register(*output)?)
+                    MIRTarget::Place(output) => MIRTarget::Place(place(*output)?),
+                    MIRTarget::Register(output) => {
+                        MIRTarget::Register(register(*output)?)
                     }
                 },
                 value: value(input)?,

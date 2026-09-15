@@ -3,7 +3,7 @@ use cx_log::catalogue::{ErrorDefinition, analysis as catalogue};
 use std::collections::VecDeque;
 
 use cx_mir::{
-    MIRAggregateOp, MIRAssignTarget, MIRBasicBlockID, MIRFunction, MIRInstrKind, MIRPlace,
+    MIRAggregateOp, MIRTarget, MIRBasicBlockID, MIRFunction, MIRInstrKind, MIRPlace,
     MIRPlaceAggregateOp, MIRUnit, MIRValue, MIRValueAggregateOp,
 };
 
@@ -235,7 +235,7 @@ fn transfer_instruction(
         }
         MIRInstrKind::Assign { target, value, .. } => {
             use_value(unit, function, block, instruction, value, state, diagnose)?;
-            if let MIRAssignTarget::Place(dest) = target {
+            if let MIRTarget::Place(dest) = target {
                 set_available(state, *dest);
             }
         }

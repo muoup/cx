@@ -8,10 +8,10 @@ use cx_lmir::{
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::tagged_union_tag_offset;
 use cx_mir::{
-    MIRAggregateOp, MIRAssignTarget, MIRBinaryOp, MIRCallKind, MIRCoercion, MIRConstant,
-    MIRFloatBinaryOp, MIRFnParam, MIRFnSignature, MIRFunctionMode, MIRFunctionType, MIRInstrKind,
-    MIRIntBinaryOp, MIRIntType, MIRPlaceAggregateOp, MIRPointerBinaryOp, MIRPointerOffsetOp,
-    MIRRegister, MIRTypeID, MIRTypeKind, MIRUnaryOp, MIRValue, MIRValueAggregateOp,
+    MIRAggregateOp, MIRBinaryOp, MIRCallKind, MIRCoercion, MIRConstant, MIRFloatBinaryOp,
+    MIRFnParam, MIRFnSignature, MIRFunctionMode, MIRFunctionType, MIRInstrKind, MIRIntBinaryOp,
+    MIRIntType, MIRPlaceAggregateOp, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister,
+    MIRTarget, MIRTypeID, MIRTypeKind, MIRUnaryOp, MIRValue, MIRValueAggregateOp,
 };
 use cx_util::identifier::CXIdent;
 
@@ -103,26 +103,6 @@ fn value_type(context: &FunctionLoweringContext<'_>, value: &MIRValue) -> Option
     }
 }
 
-fn value_is_pointer(context: &FunctionLoweringContext<'_>, value: &MIRValue) -> bool {
-    let ty = match value {
-        MIRValue::Constant(
-            MIRConstant::Null { ty }
-            | MIRConstant::Global { ty, .. }
-            | MIRConstant::GlobalOffset { ty, .. },
-        ) => *ty,
-        MIRValue::Constant(_) => return false,
-        _ => match value_type(context, value) {
-            Some(ty) => ty,
-            None => return false,
-        },
-    };
-
-    matches!(
-        context.types().kind(ty),
-        Ok(MIRTypeKind::PointerTo { .. } | MIRTypeKind::MemoryReference { .. })
-    )
-}
-
 fn switch_constant(constant: &MIRConstant) -> u64 {
     match constant {
         MIRConstant::Bool(value) => u64::from(*value),
@@ -194,7 +174,7 @@ pub(super) fn lower_instruction(
         | MIRInstrKind::StagedYield { .. }
         | MIRInstrKind::StagedMove { .. }
         | MIRInstrKind::StagedUse { .. } => {}
-        
+
         MIRInstrKind::Create { out, ty } => {
             let lowered = lowered_type(context, *ty);
             let layout = mir_layout(context, *ty);
@@ -207,14 +187,14 @@ pub(super) fn lower_instruction(
                 },
             );
         }
-        
+
         MIRInstrKind::Assign { target, value, ty } => {
             let value = lower_value(context, value);
             match target {
-                MIRAssignTarget::Place(place) => {
+                MIRTarget::Place(place) => {
                     store_binding(context, binding_for_place(context, *place), value, *ty);
                 }
-                MIRAssignTarget::Register(register) => {
+                MIRTarget::Register(register) => {
                     emit_to(context, *register, LMIRInstructionKind::Alias { value });
                 }
             }
@@ -654,32 +634,22 @@ fn lower_binary(
     lhs: &MIRValue,
     rhs: &MIRValue,
 ) {
-    let (lhs, rhs) = if matches!(
-        op,
-        MIRBinaryOp::PointerOffset {
-            op: MIRPointerOffsetOp::Add,
-            ..
-        }
-    ) && !value_is_pointer(context, lhs)
-        && value_is_pointer(context, rhs)
-    {
-        (rhs, lhs)
-    } else {
-        (lhs, rhs)
-    };
     let lhs = lower_value(context, lhs);
     let rhs = lower_value(context, rhs);
+
     let kind = match op {
         MIRBinaryOp::Integer { op, .. } => LMIRInstructionKind::IntegerBinOp {
             op: lower_int_binop(*op),
             left: lhs,
             right: rhs,
         },
+
         MIRBinaryOp::Float { op, .. } => LMIRInstructionKind::FloatBinOp {
             op: lower_float_binop(*op),
             left: lhs,
             right: rhs,
         },
+
         MIRBinaryOp::PointerOffset { op, pointee } => LMIRInstructionKind::PointerBinOp {
             op: match op {
                 MIRPointerOffsetOp::Add => LMIRPtrBinOp::ADD,
@@ -690,6 +660,7 @@ fn lower_binary(
             left: lhs,
             right: rhs,
         },
+
         MIRBinaryOp::Pointer(op) => LMIRInstructionKind::PointerBinOp {
             op: match op {
                 MIRPointerBinaryOp::Eq => LMIRPtrBinOp::EQ,
@@ -705,6 +676,7 @@ fn lower_binary(
             right: rhs,
         },
     };
+
     emit_to(context, out, kind);
 }
 
@@ -1028,6 +1000,7 @@ fn lower_return(context: &mut FunctionLoweringContext<'_>, value: Option<&MIRVal
             );
             emit_void(context, LMIRInstructionKind::Return { value: None });
         }
+
         (_, value) => {
             let value = value.map(|value| lower_value(context, value));
             emit_void(context, LMIRInstructionKind::Return { value });

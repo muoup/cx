@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cx_mir::{
-    MIRAggregateOp, MIRAssignTarget, MIRBasicBlock, MIRBinaryOp, MIRBlockTarget, MIRCoercion,
-    MIRConstant, MIRFunction, MIRInstrKind, MIRIntBinaryOp, MIRIntType, MIRPlace,
-    MIRPointerBinaryOp, MIRRegister, MIRUnaryOp, MIRUnit, MIRValue,
+    MIRAggregateOp, MIRTarget, MIRBasicBlock, MIRBinaryOp, MIRBlockTarget, MIRCoercion,
+    MIRConstant, MIRFunction, MIRInstr, MIRInstrKind, MIRInstrOperand, MIRIntBinaryOp, MIRIntType,
+    MIRPlace, MIRPointerBinaryOp, MIRRegister, MIRUnaryOp, MIRUnit, MIRValue,
 };
 
 use crate::types::MIRAnalysisError;
@@ -136,7 +136,7 @@ fn check_function(function: &MIRFunction) -> Result<(), MIRAnalysisError> {
         };
         for (instruction_index, instruction) in block.instrs.iter().enumerate() {
             if let MIRInstrKind::Assert { condition, message } = &instruction.kind
-                && is_false(&environment.value(condition))
+                && matches!(environment.value(condition), ConstValue::Bool(false) | ConstValue::Int(0))
             {
                 return Err(MIRAnalysisError::ProvenFalseAssertion {
                     function: function.id(),
@@ -145,7 +145,7 @@ fn check_function(function: &MIRFunction) -> Result<(), MIRAnalysisError> {
                     message: message.clone(),
                 });
             }
-            transfer_instruction(&mut environment, &instruction.kind);
+            transfer_instruction(&mut environment, &instruction);
         }
     }
 
@@ -157,7 +157,7 @@ fn transfer_block(
     mut environment: ConstEnvironment,
 ) -> (ConstEnvironment, Vec<&MIRBlockTarget>) {
     for instruction in &block.instrs {
-        transfer_instruction(&mut environment, &instruction.kind);
+        transfer_instruction(&mut environment, &instruction);
     }
 
     let targets = block
@@ -168,131 +168,19 @@ fn transfer_block(
     (environment, targets)
 }
 
-fn instruction_targets(kind: &MIRInstrKind) -> Vec<&MIRBlockTarget> {
-    match kind {
-        MIRInstrKind::Jump { target } => vec![target],
-        MIRInstrKind::Branch {
-            true_target,
-            false_target,
-            ..
-        } => vec![true_target, false_target],
-        MIRInstrKind::IntSwitch { cases, default, .. } => cases
-            .iter()
-            .map(|(_, target)| target)
-            .chain(default.iter())
-            .collect(),
-        MIRInstrKind::VariantSwitch { cases, default, .. } => cases
-            .iter()
-            .map(|(_, target)| target)
-            .chain(default.iter())
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-fn transfer_instruction(environment: &mut ConstEnvironment, kind: &MIRInstrKind) {
-    match kind {
-        MIRInstrKind::Initialize { place }
-        | MIRInstrKind::Create { out: place, .. }
-        | MIRInstrKind::Dereference { out: place, .. } => {
-            environment.places.insert(*place, ConstValue::Unknown);
-        }
-        MIRInstrKind::Bind { place, .. } => {
-            environment.places.insert(*place, ConstValue::Unknown);
-        }
-        MIRInstrKind::Assign { target, value, .. } => {
-            let value = environment.value(value);
-            match target {
-                MIRAssignTarget::Place(dest) => {
-                    environment.places.insert(*dest, value);
-                }
-                MIRAssignTarget::Register(out) => {
-                    environment.registers.insert(*out, value);
-                }
-            }
-        }
-        MIRInstrKind::AddressOf { out, .. } => {
-            environment.registers.insert(*out, ConstValue::Unknown);
-        }
-        MIRInstrKind::AggregateOp(operation) => match operation {
-            MIRAggregateOp::Place { out, .. } => {
-                environment.places.insert(*out, ConstValue::Unknown);
-            }
-            MIRAggregateOp::Value { out, .. } => {
-                environment.registers.insert(*out, ConstValue::Unknown);
-            }
-        },
-        MIRInstrKind::Call { out, .. } => {
-            if let Some(out) = out {
-                environment.registers.insert(*out, ConstValue::Unknown);
-            }
-        }
-        MIRInstrKind::VaArg { out, .. } => {
-            environment.registers.insert(*out, ConstValue::Unknown);
-        }
-        MIRInstrKind::BinOp { out, op, lhs, rhs } => {
-            let lhs = environment.value(lhs);
-            let rhs = environment.value(rhs);
-            environment
-                .registers
-                .insert(*out, eval_binary(op, lhs, rhs));
-        }
-        MIRInstrKind::UnOp { out, op, operand } => {
-            let operand = environment.value(operand);
-            environment.registers.insert(*out, eval_unary(op, operand));
-        }
-        MIRInstrKind::Coerce {
-            out,
-            operand,
-            coercion,
-            ..
-        } => {
-            let operand = environment.value(operand);
-            environment
-                .registers
-                .insert(*out, eval_coercion(coercion, operand));
-        }
-        MIRInstrKind::ScopeEnter { .. }
-        | MIRInstrKind::ScopeExit { .. }
-        | MIRInstrKind::Invalidate { .. }
-        | MIRInstrKind::Assert { .. }
-        | MIRInstrKind::Assume { .. }
-        | MIRInstrKind::Return { .. }
-        | MIRInstrKind::Jump { .. }
-        | MIRInstrKind::Branch { .. }
-        | MIRInstrKind::IntSwitch { .. }
-        | MIRInstrKind::VariantSwitch { .. }
-        | MIRInstrKind::VaStart { .. }
-        | MIRInstrKind::VaEnd { .. }
-        | MIRInstrKind::Unreachable
-        | MIRInstrKind::MakeStaged { .. }
-        | MIRInstrKind::ApplyStaged { .. }
-        | MIRInstrKind::StagedReturn { .. }
-        | MIRInstrKind::StagedExit { .. }
-        | MIRInstrKind::StagedYield { .. }
-        | MIRInstrKind::StagedMove { .. }
-        | MIRInstrKind::StagedUse { .. } => {}
-    }
-}
-
 fn constant_value(constant: &MIRConstant) -> ConstValue {
     match constant {
         MIRConstant::Unit => ConstValue::Unit,
-        MIRConstant::Bool(value) => ConstValue::Bool(*value),
         MIRConstant::Integer { value, .. } => ConstValue::Int(*value),
         MIRConstant::Float { value, .. } => ConstValue::Float(value.into()),
-        MIRConstant::Null { .. } => ConstValue::Int(0),
-        MIRConstant::Aggregate { .. } => ConstValue::Unknown,
+        MIRConstant::Nullptr => ConstValue::Int(0),
+
         MIRConstant::String(_)
+        | MIRConstant::Aggregate { .. }
         | MIRConstant::Global { .. }
-        | MIRConstant::GlobalOffset { .. }
         | MIRConstant::Function(_)
         | MIRConstant::Undefined => ConstValue::Unknown,
     }
-}
-
-fn is_false(value: &ConstValue) -> bool {
-    matches!(value, ConstValue::Bool(false) | ConstValue::Int(0))
 }
 
 fn as_int(value: ConstValue) -> Option<i128> {

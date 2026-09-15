@@ -252,7 +252,7 @@ pub(super) fn evaluate_coercion(
             }
         }
         MIRCoercion::PointerToInt { .. } => match &operand {
-            MIRConstant::Null { .. } => MIRConstant::Integer {
+            MIRConstant::Nullptr { .. } => MIRConstant::Integer {
                 value: 0,
                 ty: MIRIntType::I64,
                 signed: false,
@@ -265,21 +265,18 @@ pub(super) fn evaluate_coercion(
             }
         },
         MIRCoercion::IntToPointer { .. } => {
-            let is_null = matches!(
-                operand,
-                MIRConstant::Integer { value: 0, .. } | MIRConstant::Bool(false)
-            );
-            if is_null {
-                MIRConstant::Null { ty: to_type }
-            } else {
-                return comptime_error(
+            match operand {
+                MIRConstant::Integer { value: 0, .. } => MIRConstant::Nullptr,
+
+                _ => return comptime_error(
                     TokenRange::internal(),
                     (&catalogue::ENTITY_REQUIREMENT, ("integer-to-pointer coercion".into(), "a null integer".into(), Some("non-zero integer".into()))),
-                );
+                ),
             }
         }
         MIRCoercion::FunctionToPointer => match &operand {
-            MIRConstant::Function(_) | MIRConstant::Null { .. } => operand.clone(),
+            MIRConstant::Function(_) | MIRConstant::Nullptr => operand.clone(),
+            
             _ => {
                 return comptime_error(
                     TokenRange::internal(),
@@ -291,17 +288,9 @@ pub(super) fn evaluate_coercion(
     })
 }
 
-pub(super) fn relocation_constant(global: MIRGlobalID, offset: i64, ty: MIRTypeID) -> MIRConstant {
-    if offset == 0 {
-        MIRConstant::Global { global, ty }
-    } else {
-        MIRConstant::GlobalOffset { global, offset, ty }
-    }
-}
-
 fn pointer_constants_equal(lhs: &MIRConstant, rhs: &MIRConstant) -> CXResult<bool> {
     let as_address = |constant: &MIRConstant| match constant {
-        MIRConstant::Null { .. } => Some(None),
+        MIRConstant::Nullptr { .. } => Some(None),
         MIRConstant::Global { global, .. } => Some(Some((*global, 0i64))),
         MIRConstant::GlobalOffset { global, offset, .. } => Some(Some((*global, *offset))),
         _ => None,
@@ -331,7 +320,7 @@ pub(super) fn is_truthy(constant: &MIRConstant) -> bool {
     match constant {
         MIRConstant::Bool(value) => *value,
         MIRConstant::Integer { value, .. } => *value != 0,
-        MIRConstant::Null { .. } | MIRConstant::Undefined => false,
+        MIRConstant::Nullptr { .. } | MIRConstant::Undefined => false,
         _ => true,
     }
 }

@@ -1,6 +1,6 @@
 use cx_log::CXResult;
 use cx_mir::{
-    MIRAssignTarget, MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRInstrKind, MIRIntBinaryOp, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRUnaryOp, MIRValue,
+    MIRTarget, MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRInstrKind, MIRIntBinaryOp, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRUnaryOp, MIRValue,
 };
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
@@ -186,7 +186,7 @@ pub(super) fn lower_coercion(
             let place = builder.fun_mut().new_place(to_type, None, false);
 
             builder.emit(MIRInstrKind::Assign {
-                target: MIRAssignTarget::Place(place),
+                target: MIRTarget::Place(place),
                 value: operand,
                 ty: to_type,
             });

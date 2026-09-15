@@ -12,7 +12,7 @@ pub(crate) mod capture;
 
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRAggregateOp, MIRAssignTarget, MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstrKind,
+    MIRAggregateOp, MIRTarget, MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstrKind,
     MIRIntType, MIRParameterID, MIRPlace, MIRPlaceAggregateOp, MIRStagedExitKind, MIRTypeKind,
     MIRValue, MIRValueAggregateOp, ty::interface::MTRegistry,
 };
@@ -163,7 +163,7 @@ pub(super) fn materialize_value(
     let out = builder.fun_mut().new_register(type_id, None);
 
     builder.emit(MIRInstrKind::Assign {
-        target: MIRAssignTarget::Register(out),
+        target: MIRTarget::Register(out),
         value: if moves {
             MIRValue::Move(place)
         } else {
@@ -385,14 +385,8 @@ pub(crate) fn lower_expression(
                             ),
                         )
                     })?;
-                if builder.is_capturing() && matches!(value, MIRValue::Register(_)) {
-                    let ty = lower_type(builder, &expression._type)?;
-                    let out = builder.fun_mut().new_register(ty, None);
-                    builder.emit(MIRInstrKind::StagedMove { out, value });
-                    MIRValue::Register(out)
-                } else {
-                    move_value(value, &expression.token_range)?
-                }
+                
+                move_value(value, &expression.token_range)?
             }
 
             THIRExpressionKind::CreateLocalVariable {
@@ -441,7 +435,7 @@ pub(crate) fn lower_expression(
                     let place = builder.create(type_id, Some(name.clone()), _type.is_nodrop());
                     if let Some(value) = initial_value {
                         builder.emit(MIRInstrKind::Assign {
-                            target: MIRAssignTarget::Place(place),
+                            target: MIRTarget::Place(place),
                             value,
                             ty: type_id,
                         });
@@ -468,7 +462,7 @@ pub(crate) fn lower_expression(
 
                 builder.set_source_range(target.token_range.clone());
                 builder.emit(MIRInstrKind::Assign {
-                    target: MIRAssignTarget::Place(ptarget),
+                    target: MIRTarget::Place(ptarget),
                     value: mvalue,
                     ty: assignment_type,
                 });
@@ -592,7 +586,7 @@ pub(crate) fn lower_expression(
                 let base = builder.create(struct_type_id, None, false);
 
                 builder.emit(MIRInstrKind::Assign {
-                    target: MIRAssignTarget::Place(base),
+                    target: MIRTarget::Place(base),
                     value: MIRValue::Move(target),
                     ty: struct_type_id,
                 });
@@ -696,7 +690,7 @@ pub(crate) fn lower_expression(
                     },
                 }));
                 builder.emit(MIRInstrKind::Assign {
-                    target: MIRAssignTarget::Place(target),
+                    target: MIRTarget::Place(target),
                     value: MIRValue::Register(constructed),
                     ty: sum_type_id,
                 });

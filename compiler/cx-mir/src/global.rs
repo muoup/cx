@@ -2,7 +2,7 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    expr::{
+    instruction::{
         MIRBasicBlock, MIRBasicBlockID, MIRConstant, MIRPlace, MIRPlaceID, MIRRegister, MIRScopeID,
     },
     ty::MIRTypeID,
