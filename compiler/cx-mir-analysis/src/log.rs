@@ -25,7 +25,7 @@ where
 {
     let discarded = match place {
         MIRPlace::FunctionLocal(id) => function
-            .definition()
+            .body()
             .and_then(|definition| definition.place(id))
             .and_then(|declaration| declaration.debug_name.as_ref())
             .is_some_and(|name| name.as_str() == "_"),

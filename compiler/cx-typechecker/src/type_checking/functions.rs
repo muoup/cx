@@ -29,7 +29,7 @@ pub fn typecheck_function(
         return env.log_error(
             body.token_range(),
             &catalogue::INVALID_CONTEXT,
-            ("Varargs".into(), "a safe function".into())
+            ("Varargs".into(), "a safe function".into()),
         );
     }
 
@@ -134,7 +134,7 @@ pub fn typecheck_comptime_function(
                     token_range: TokenRange::internal(),
                     kind: THIRExpressionKind::Variable {
                         name: name.clone(),
-                        local_id,
+                        local_id: param.local_id,
                     },
                     _type: local_type,
                 },
@@ -143,7 +143,7 @@ pub fn typecheck_comptime_function(
 
         bookkeeping_params.push(THIRParameter {
             name: Some(name),
-            local_id,
+            local_id: param.local_id,
             _type: if is_parameterized_staged {
                 THIRTypeKind::Undefined.into()
             } else {

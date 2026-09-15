@@ -142,12 +142,6 @@ pub enum MIRValueAggregateOp {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MIRCallKind {
-    Runtime,
-    Comptime,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MIRStagedExitKind {
     Break,

@@ -66,5 +66,5 @@ pub fn capture_expression(
     }
 
     result?;
-    Ok(func.expect("capture builder is present").finish())
+    Ok(func.expect("capture builder is present").finish()?)
 }

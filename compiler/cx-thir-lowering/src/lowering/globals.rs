@@ -88,7 +88,7 @@ pub(crate) fn fulfill_init_request(
         builder.emit(MIRInstrKind::Return { value: Some(value) });
     }
 
-    builder.finish_function();
+    builder.finish_function()?;
     builder.module_mut().set_global_state(
         request.global_id,
         MIRGlobalState::Initialized(MIRConstant::Undefined),

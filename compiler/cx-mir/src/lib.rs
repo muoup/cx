@@ -24,9 +24,9 @@ pub use global::{
     MIRRegisterDecl, MIRScopeDecl,
 };
 pub use instruction::{
-    MIRAggregateOp, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget, MIRCallKind, MIRConstant,
-    MIRInstr, MIRInstrKind, MIRInstructionKind, MIRParameterID, MIRPlace, MIRPlaceAggregateOp,
-    MIRPlaceID, MIRRegister, MIRScopeID, MIRStagedExitKind, MIRStagedTargets, MIRTarget, MIRValue,
+    MIRAggregateOp, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRInstr,
+    MIRInstrKind, MIRInstructionKind, MIRParameterID, MIRPlace, MIRPlaceAggregateOp, MIRPlaceID,
+    MIRRegister, MIRScopeID, MIRStagedExitKind, MIRStagedTargets, MIRTarget, MIRValue,
     MIRValueAggregateOp,
 };
 pub use op::{

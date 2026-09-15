@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use crate::{
-    MIRBasicBlock, MIRBody, MIRComptimeBody, MIRComptimeInstrKind, MIRComptimeOp, MIRInstr,
-    MIRInstrKind, MIRInstructionKind, MIRPlaceID, MIRRegister, MIRStagedExitKind, MIRStagedTargets,
-    MIRTypeID, MIRValue,
+    MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRComptimeBody, MIRComptimeInstrKind, MIRComptimeOp,
+    MIRInstr, MIRInstrKind, MIRInstructionKind, MIRPlaceID, MIRRegister, MIRStagedExitKind,
+    MIRStagedTargets, MIRTypeID, MIRValue,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -18,6 +18,7 @@ pub struct MIRStagedTemplate {
     captures: Arc<[MIRStagedCapture]>,
     params: Arc<[MIRRegister]>,
     result_type: MIRTypeID,
+    result_block: MIRBasicBlockID,
     diverges: bool,
 }
 
@@ -27,6 +28,7 @@ impl MIRStagedTemplate {
         captures: Vec<MIRStagedCapture>,
         params: Vec<MIRRegister>,
         result_type: MIRTypeID,
+        result_block: MIRBasicBlockID,
         diverges: bool,
     ) -> Self {
         Self {
@@ -34,6 +36,7 @@ impl MIRStagedTemplate {
             captures: captures.into(),
             params: params.into(),
             result_type,
+            result_block,
             diverges,
         }
     }
@@ -52,6 +55,10 @@ impl MIRStagedTemplate {
 
     pub fn result_type(&self) -> MIRTypeID {
         self.result_type
+    }
+
+    pub fn result_block(&self) -> MIRBasicBlockID {
+        self.result_block
     }
 
     pub fn diverges(&self) -> bool {
@@ -106,9 +113,7 @@ impl MIRInstructionKind for MIRStagedInstrKind {
     fn is_terminator(&self) -> bool {
         match self {
             Self::Standard(kind) => kind.is_terminator(),
-            Self::CallerReturn { .. }
-            | Self::ScopeExit { .. }
-            | Self::Yield { .. } => true,
+            Self::CallerReturn { .. } | Self::ScopeExit { .. } | Self::Yield { .. } => true,
             Self::Comptime(_) | Self::Move { .. } | Self::Use { .. } => false,
         }
     }

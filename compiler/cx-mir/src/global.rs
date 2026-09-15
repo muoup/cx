@@ -341,6 +341,13 @@ impl MIRFunctionBody {
         }
     }
 
+    pub fn scopes(&self) -> &[MIRScopeDecl] {
+        match self {
+            Self::Runtime(body) => body.scopes(),
+            Self::Comptime(body) => body.scopes(),
+        }
+    }
+
     pub fn scope(&self, scope: MIRScopeID) -> Option<&MIRScopeDecl> {
         match self {
             Self::Runtime(body) => body.scope(scope),

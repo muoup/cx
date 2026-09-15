@@ -768,6 +768,11 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }
+            THIRExpressionKind::StagedReference { name, .. } => {
+                write!(f, "StagedReference {} <'", name)?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, ">")
+            }
             THIRExpressionKind::ContractVariable { name, .. } => {
                 write!(f, "ContractVariable \"{name}\" <'")?;
                 self.write_type(f, &self.expr._type)?;

@@ -3,11 +3,11 @@ use std::{
     sync::Arc,
 };
 
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
     MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionBody, MIRFunctionID, MIRFunctionMode,
     MIRGlobalID, MIRGlobalVariable, MIRInstrKind, MIRLayoutError, MIRPlace, MIRStagedCapture,
-    MIRStagedInstrKind, MIRStagedTemplate, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRUnit, MIRValue,
+    MIRStagedTemplate, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRUnit, MIRValue,
     ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
 use cx_mir_comptime::ComptimeContext;
@@ -30,6 +30,7 @@ mod function;
 mod module;
 
 use crate::lowering::{self, types::lower_type};
+use crate::log::mir_error;
 use function::{CaptureContext, MIRFunctionBuilder};
 use module::{MIRModuleBuilder, ModuleParts};
 
@@ -227,32 +228,41 @@ impl<'thir> MIRBuilder<'thir> {
             runtime_places,
         }));
 
-        for (local, ty) in params {
-            let ty = lower_type(self, ty)?;
-            let input = self.fun_mut().new_register(ty, None);
-            self.fun_mut().bind_local(*local, MIRValue::Register(input));
-            self.fun_mut()
-                .capture
-                .as_mut()
-                .expect("capture context is active")
-                .params
-                .push(input);
-        }
-
-        let lowered = (|| -> CXResult<MIRTypeID> {
+        let lowered = (|| -> CXResult<(MIRTypeID, cx_mir::MIRBasicBlockID)> {
+            for (local, ty) in params {
+                let ty = lower_type(self, ty)?;
+                let input = self.fun_mut().new_register(ty, None);
+                self.fun_mut().bind_local(*local, MIRValue::Register(input));
+                self.fun_mut()
+                    .capture
+                    .as_mut()
+                    .expect("capture context is active")
+                    .params
+                    .push(input);
+            }
             let value = lowering::lower_expression(self, expression)?;
             let result_type = lower_type(self, &expression._type)?;
-            if !self.fun().current_block_terminated() {
-                self.emit(MIRStagedInstrKind::Exit { value });
+            let result_block = self.fun_mut().new_block("staged_result");
+            let has_value = !expression._type.is_void() && !expression._type.is_unreachable();
+            if has_value {
+                self.fun_mut().block_param(result_block, result_type, None);
             }
-            Ok(result_type)
+            if !self.fun().current_block_terminated() {
+                self.emit(MIRInstrKind::Jump {
+                    target: cx_mir::MIRBlockTarget::with_args(
+                        result_block,
+                        if has_value { vec![value] } else { Vec::new() },
+                    ),
+                });
+            }
+            Ok((result_type, result_block))
         })();
 
         let mut scratch = self.function.take().expect("capture builder is present");
         let capture = scratch.take_capture().expect("capture context is present");
         self.function = saved_function;
 
-        let result_type = lowered?;
+        let (result_type, result_block) = lowered?;
         let (_, body) = scratch.concise_finish();
         let (inputs, values): (Vec<_>, Vec<_>) = capture.captures.into_iter().unzip();
         Ok((
@@ -261,6 +271,7 @@ impl<'thir> MIRBuilder<'thir> {
                 inputs,
                 capture.params,
                 result_type,
+                result_block,
                 diverges.unwrap_or_else(|| expression._type.is_unreachable()),
             )),
             values,
@@ -417,7 +428,7 @@ impl<'thir> MIRBuilder<'thir> {
         self.function = Some(MIRFunctionBuilder::new(function, None));
     }
 
-    pub(crate) fn finish_function(&mut self) {
+    pub(crate) fn finish_function(&mut self) -> CXResult<()> {
         let Some(fn_builder) = self.function.take() else {
             unreachable!("No function context available at finish_function");
         };
@@ -425,16 +436,27 @@ impl<'thir> MIRBuilder<'thir> {
         let mode = fn_builder.mode();
         let (id, body) = fn_builder.concise_finish();
         let body = match mode {
-            MIRFunctionMode::Runtime | MIRFunctionMode::Constexpr => MIRFunctionBody::Runtime(
-                body.into_runtime()
-                    .expect("runtime function contains unresolved staged instructions"),
-            ),
-            MIRFunctionMode::Comptime => MIRFunctionBody::Comptime(
-                body.into_comptime()
-                    .expect("comptime function contains unresolved template instructions"),
-            ),
+            MIRFunctionMode::Runtime | MIRFunctionMode::Constexpr => match body.into_runtime() {
+                Ok(body) => MIRFunctionBody::Runtime(body),
+                Err(instruction) => {
+                    return Err(mir_error(
+                        &instruction.token_range,
+                        (&catalogue::UNEXPANDED_STAGED, ()),
+                    ));
+                }
+            },
+            MIRFunctionMode::Comptime => match body.into_comptime() {
+                Ok(body) => MIRFunctionBody::Comptime(body),
+                Err(instruction) => {
+                    return Err(mir_error(
+                        &instruction.token_range,
+                        (&catalogue::UNEXPANDED_STAGED, ()),
+                    ));
+                }
+            },
         };
         self.module.define_function(id, body);
+        Ok(())
     }
 }
 

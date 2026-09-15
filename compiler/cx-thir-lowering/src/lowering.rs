@@ -91,8 +91,7 @@ pub(crate) fn lower_function(
         }
     }
 
-    builder.finish_function();
-    Ok(())
+    builder.finish_function()
 }
 
 pub(crate) fn lower_comptime_function(
@@ -144,9 +143,7 @@ pub(crate) fn lower_comptime_function(
     }
 
     auto_pop_scope(builder)?;
-    builder.finish_function();
-
-    Ok(())
+    builder.finish_function()
 }
 
 pub(super) fn materialize_value(
@@ -233,7 +230,8 @@ pub(crate) fn lower_expression(
                 })
             }
 
-            THIRExpressionKind::Variable { local_id, .. } => {
+            THIRExpressionKind::Variable { local_id, .. }
+            | THIRExpressionKind::StagedReference { local_id, .. } => {
                 let value = builder
                     .local_value(*local_id, &expression._type)?
                     .ok_or_else(|| {
@@ -392,7 +390,14 @@ pub(crate) fn lower_expression(
                         )
                     })?;
                 
-                move_value(value, &expression.token_range)?
+                if builder.fun().capture.is_some() && matches!(value, MIRValue::Register(_)) {
+                    let ty = lower_type(builder, &expression._type)?;
+                    let out = builder.fun_mut().new_register(ty, None);
+                    builder.emit(cx_mir::MIRStagedInstrKind::Move { out, value });
+                    MIRValue::Register(out)
+                } else {
+                    move_value(value, &expression.token_range)?
+                }
             }
 
             THIRExpressionKind::CreateLocalVariable {

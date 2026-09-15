@@ -23,16 +23,16 @@ pub(crate) fn validate_safe_expression(
         | THIRExpressionKind::SizeOf { .. }
         | THIRExpressionKind::AlignOf { .. }
         | THIRExpressionKind::Variable { .. }
+        | THIRExpressionKind::StagedReference { .. }
         | THIRExpressionKind::GlobalVariable { .. }
         | THIRExpressionKind::ContractVariable { .. }
         | THIRExpressionKind::Unsafe { .. }
         | THIRExpressionKind::Move { .. }
+        | THIRExpressionKind::Unpack { .. }
         | THIRExpressionKind::LifetimeStart { .. }
         | THIRExpressionKind::LifetimeEnd { .. } => Ok(()),
-
-        THIRExpressionKind::Unpack { .. } => Ok(()),
+        
         THIRExpressionKind::LeakLifetime { .. } => reject(env, expression, "@leak"),
-
         THIRExpressionKind::FunctionReference { .. } => validate_callable(env, expression),
 
         THIRExpressionKind::VaStart { list, last } => {
@@ -258,6 +258,6 @@ fn reject<T>(env: &TypeEnvironment, expression: &THIRExpression, context: &str) 
     env.log_error(
         &expression.token_range,
         &catalogue::UNSAFE_OPERATION,
-        context.into()
+        context.into(),
     )
 }

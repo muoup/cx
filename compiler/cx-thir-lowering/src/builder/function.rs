@@ -1,5 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
+use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
     MIRBasicBlock, MIRBasicBlockID, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRFunctionMode,
     MIRFunctionBody, MIRInstr, MIRPlace, MIRRegister, MIRScopeID, MIRStagedBody,
@@ -8,6 +9,8 @@ use cx_mir::{
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
+
+use crate::log::mir_error;
 
 #[derive(Debug)]
 pub(crate) struct CaptureContext {
@@ -114,25 +117,33 @@ impl MIRFunctionBuilder {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn finish(self) -> MIRFunction {
+    pub(crate) fn finish(self) -> CXResult<MIRFunction> {
         assert!(
             self.scope_stack.len() == 1,
             "scope stack is unbalanced at function end"
         );
 
         let body = match self.mode {
-            MIRFunctionMode::Runtime | MIRFunctionMode::Constexpr => MIRFunctionBody::Runtime(
-                self.body
-                    .into_runtime()
-                    .expect("runtime function contains unresolved staged instructions"),
-            ),
-            MIRFunctionMode::Comptime => MIRFunctionBody::Comptime(
-                self.body
-                    .into_comptime()
-                    .expect("comptime function contains unresolved template instructions"),
-            ),
+            MIRFunctionMode::Runtime | MIRFunctionMode::Constexpr => match self.body.into_runtime() {
+                Ok(body) => MIRFunctionBody::Runtime(body),
+                Err(instruction) => {
+                    return Err(mir_error(
+                        &instruction.token_range,
+                        (&catalogue::UNEXPANDED_STAGED, ()),
+                    ));
+                }
+            },
+            MIRFunctionMode::Comptime => match self.body.into_comptime() {
+                Ok(body) => MIRFunctionBody::Comptime(body),
+                Err(instruction) => {
+                    return Err(mir_error(
+                        &instruction.token_range,
+                        (&catalogue::UNEXPANDED_STAGED, ()),
+                    ));
+                }
+            },
         };
-        MIRFunction::new(self.id, self.prototype, Some(body))
+        Ok(MIRFunction::new(self.id, self.prototype, Some(body)))
     }
 
     pub(crate) fn concise_finish(self) -> (MIRFunctionID, MIRStagedBody) {
@@ -378,6 +389,7 @@ impl MIRFunctionBuilder {
             let block = match kind {
                 MIRStagedExitKind::Break => scope.break_target,
                 MIRStagedExitKind::Continue => scope.continue_target,
+                MIRStagedExitKind::Expr => None,
             }?;
             
             Some((scope.id(), block))

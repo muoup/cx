@@ -29,6 +29,7 @@ pub(crate) fn targets(builder: &mut MIRBuilder<'_>) -> CXResult<MIRStagedTargets
             match kind {
                 MIRStagedExitKind::Break => targets.break_target = Some(block),
                 MIRStagedExitKind::Continue => targets.continue_target = Some(block),
+                MIRStagedExitKind::Expr => continue,
             }
             
             builder.fun_mut().set_current_block(block);

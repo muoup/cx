@@ -183,20 +183,13 @@ fn instantiate_inner(
         block_params.insert(block.id, retained_params);
     }
 
-    let is_void = matches!(
-        builder.types().kind(template.result_type()),
-        Ok(MIRTypeKind::Void)
-    );
-    let continuation = builder.fun_mut().new_block("staged_continuation");
-    let result = if is_void {
-        None
-    } else {
-        Some(
-            builder
-                .fun_mut()
-                .block_param(continuation, template.result_type(), None),
-        )
-    };
+    let continuation = blocks[&template.result_block()];
+    let result = builder
+        .fun()
+        .body()
+        .block(continuation)
+        .and_then(|block| block.params.first())
+        .copied();
 
     let entry = blocks
         .get(&body.entry())
@@ -209,7 +202,7 @@ fn instantiate_inner(
     let mut pending = vec![body.entry()];
     let mut visited = HashSet::new();
     while let Some(source_block) = pending.pop() {
-        if !visited.insert(source_block) {
+        if source_block == template.result_block() || !visited.insert(source_block) {
             continue;
         }
         let block = body
@@ -238,17 +231,15 @@ fn instantiate_inner(
                 MIRStagedInstrKind::Comptime(MIRComptimeOp::MakeStaged { .. })
                     | MIRStagedInstrKind::Comptime(MIRComptimeOp::Call { .. })
             ) {
-                if let MIRStagedInstrKind::Standard(kind) = &instruction.kind {
-                    resolve_dependencies(
-                        builder,
-                        kind,
-                        &mut values,
-                        &mut staged_inputs,
-                        deferred_callee,
-                        dependency_targets,
-                        used_targets,
-                    )?;
-                }
+                resolve_dependencies(
+                    builder,
+                    &instruction.kind,
+                    &mut values,
+                    &mut staged_inputs,
+                    deferred_callee,
+                    dependency_targets,
+                    used_targets,
+                )?;
             }
             if builder.fun().current_block_terminated() {
                 break;
@@ -263,25 +254,18 @@ fn instantiate_inner(
                 range,
             };
             match &instruction.kind {
-                MIRStagedInstrKind::Exit { value } => {
-                    let args = if is_void {
-                        Vec::new()
-                    } else {
-                        vec![remap.value(value)?]
-                    };
-                    
-                    builder.fun_mut().emit(
-                        MIRInstrKind::Jump {
-                            target: MIRBlockTarget::with_args(continuation, args),
-                        },
-                        instruction.token_range.clone(),
-                    );
-                }
                 MIRStagedInstrKind::ScopeExit { kind } => {
                     let local_target = match kind {
                         cx_mir::MIRStagedExitKind::Break => targets.break_target,
                         cx_mir::MIRStagedExitKind::Continue => targets.continue_target,
+                        cx_mir::MIRStagedExitKind::Expr => Some(continuation),
                     };
+                    if matches!(kind, cx_mir::MIRStagedExitKind::Expr) && result.is_some() {
+                        return Err(mir_error(
+                            &range,
+                            (&catalogue::REQUIRED_CONTEXT, ("staged expression exit".into(), "a staged return value".into())),
+                        ));
+                    }
                     let block = if let Some(block) = local_target {
                         block
                     } else if let Some((scope, block)) = builder.fun().exit_target(*kind) {
@@ -291,6 +275,7 @@ fn instantiate_inner(
                         let name = match kind {
                             cx_mir::MIRStagedExitKind::Break => "break",
                             cx_mir::MIRStagedExitKind::Continue => "continue",
+                            cx_mir::MIRStagedExitKind::Expr => "expression",
                         };
                         return Err(mir_error(
                             &range,
@@ -483,7 +468,7 @@ fn instantiate_inner(
         }));
     }
     for (source, mapped) in &blocks {
-        if !visited.contains(source) {
+        if *source != template.result_block() && !visited.contains(source) {
             builder.fun_mut().set_current_block(*mapped);
             builder.emit(MIRInstrKind::Unreachable);
         }
@@ -520,7 +505,7 @@ fn bind_input(
 
 fn resolve_dependencies(
     builder: &mut MIRBuilder<'_>,
-    instruction: &MIRInstrKind,
+    instruction: &MIRStagedInstrKind,
     values: &mut HashMap<MIRRegister, MIRValue>,
     staged_inputs: &mut HashMap<MIRRegister, std::sync::Arc<MIRStagedValue>>,
     deferred: Option<MIRRegister>,

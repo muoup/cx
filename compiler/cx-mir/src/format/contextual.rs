@@ -1,3 +1,4 @@
+use crate::{MIRBody, MIRComptimeInstrKind, MIRComptimeOp, MIRFunctionBody, MIRInstructionKind};
 use std::fmt::{self, Display, Formatter};
 
 use cx_util::linkage::LinkageMode;
@@ -274,11 +275,97 @@ fn write_function<T: MTRegistry>(
         function.prototype().signature.symbol_name
     )?;
 
-    let Some(definition) = function.definition() else {
-        f.write_str(";")?;
-        return Ok(());
-    };
+    match function.body() {
+        Some(MIRFunctionBody::Runtime(body)) => {
+            write_body(f, unit, function, body, types, write_instruction)
+        }
+        Some(MIRFunctionBody::Comptime(body)) => write_body(
+            f,
+            unit,
+            function,
+            body,
+            types,
+            |f, unit, function, kind, types| match kind {
+                MIRComptimeInstrKind::Standard(kind) => {
+                    write_instruction(f, unit, function, kind, types)
+                }
+                MIRComptimeInstrKind::Comptime(kind) => {
+                    f.write_str("comptime ")?;
+                    match kind {
+                        MIRComptimeOp::Call { out, callee, args } => {
+                            if let Some(out) = out {
+                                write_register_name(f, function, *out)?;
+                                f.write_str(" = ")?;
+                            }
+                            f.write_str("call ")?;
+                            write_value(f, unit, function, callee)?;
+                            f.write_str("(")?;
+                            for (index, arg) in args.iter().enumerate() {
+                                if index != 0 {
+                                    f.write_str(", ")?;
+                                }
+                                write_value(f, unit, function, arg)?;
+                            }
+                            f.write_str(")")
+                        }
+                        MIRComptimeOp::MakeStaged {
+                            out,
+                            template,
+                            captures,
+                        } => {
+                            write_register_name(f, function, *out)?;
+                            write!(f, " = staged<{} blocks>(", template.body().blocks().len())?;
+                            for (index, value) in captures.iter().enumerate() {
+                                if index != 0 {
+                                    f.write_str(", ")?;
+                                }
+                                write_value(f, unit, function, value)?;
+                            }
+                            f.write_str(")")
+                        }
+                        MIRComptimeOp::ApplyStaged {
+                            out,
+                            staged,
+                            args,
+                            targets,
+                        } => {
+                            if let Some(out) = out {
+                                write_register_name(f, function, *out)?;
+                                f.write_str(" = ")?;
+                            }
+                            f.write_str("apply ")?;
+                            write_value(f, unit, function, staged)?;
+                            f.write_str("(")?;
+                            for (index, value) in args.iter().enumerate() {
+                                if index != 0 {
+                                    f.write_str(", ")?;
+                                }
+                                write_value(f, unit, function, value)?;
+                            }
+                            write!(f, ") {targets:?}")
+                        }
+                    }
+                }
+            },
+        ),
+        None => f.write_str(";"),
+    }
+}
 
+fn write_body<T: MTRegistry, K: MIRInstructionKind>(
+    f: &mut Formatter<'_>,
+    unit: &MIRUnit,
+    function: &MIRFunction,
+    definition: &MIRBody<K>,
+    types: &mut TypePrinter<'_, T>,
+    write_kind: impl Fn(
+        &mut Formatter<'_>,
+        &MIRUnit,
+        &MIRFunction,
+        &K,
+        &mut TypePrinter<'_, T>,
+    ) -> fmt::Result,
+) -> fmt::Result {
     f.write_str(" {\n")?;
     for place in definition.places() {
         f.write_str("    let ")?;
@@ -295,17 +382,24 @@ fn write_function<T: MTRegistry>(
         f.write_str(";\n")?;
     }
     for block in definition.blocks() {
-        write_block(f, unit, function, block, types)?;
+        write_block(f, unit, function, block, types, &write_kind)?;
     }
     f.write_str("}")
 }
 
-fn write_block<T: MTRegistry>(
+fn write_block<T: MTRegistry, K>(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
     function: &MIRFunction,
-    block: &MIRBasicBlock,
+    block: &MIRBasicBlock<K>,
     types: &mut TypePrinter<'_, T>,
+    write_kind: &impl Fn(
+        &mut Formatter<'_>,
+        &MIRUnit,
+        &MIRFunction,
+        &K,
+        &mut TypePrinter<'_, T>,
+    ) -> fmt::Result,
 ) -> fmt::Result {
     write!(f, "    bb{}", block.id.index())?;
     if !block.params.is_empty() {
@@ -324,7 +418,7 @@ fn write_block<T: MTRegistry>(
     f.write_str(":\n")?;
     for instruction in &block.instrs {
         f.write_str("        ")?;
-        write_instruction(f, unit, function, &instruction.kind, types)?;
+        write_kind(f, unit, function, &instruction.kind, types)?;
         f.write_str(";\n")?;
     }
     Ok(())
@@ -578,7 +672,6 @@ fn write_instruction<T: MTRegistry>(
         }
 
         MIRInstrKind::Unreachable => f.write_str("unreachable"),
-
     }
 }
 
@@ -740,9 +833,7 @@ fn write_place_name(
 ) -> fmt::Result {
     match place {
         MIRPlace::FunctionLocal(id) => {
-            if let Some(place) = function
-                .definition()
-                .and_then(|definition| definition.place(id))
+            if let Some(place) = function.body().and_then(|definition| definition.place(id))
                 && let Some(name) = &place.debug_name
             {
                 return Display::fmt(name, f);
@@ -772,7 +863,7 @@ fn write_register_name(
     register: crate::instruction::MIRRegister,
 ) -> fmt::Result {
     if let Some(register_decl) = function
-        .definition()
+        .body()
         .and_then(|definition| definition.register(register))
         && let Some(name) = &register_decl.debug_name
     {

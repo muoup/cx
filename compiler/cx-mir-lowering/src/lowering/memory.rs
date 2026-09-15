@@ -1,7 +1,7 @@
 use cx_lmir::types::{LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{
     LMIRBasicBlock, LMIRBlockTarget, LMIRCoercionType, LMIRInstruction, LMIRInstructionKind,
-    LMIRIntBinOp, LMIRValue,
+    LMIRIntBinOp, LMIRPtrBinOp, LMIRValue,
 };
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::{field_layout, tagged_union_tag_offset};
@@ -162,7 +162,7 @@ pub(super) fn lower_constant(
         MIRConstant::Nullptr { ty } => {
             let pointer_integer = convert_integer_type(context.types().pointer_integer_type());
             let zero = int_constant(context, 0, pointer_integer);
-            
+
             emit_temp(
                 context,
                 LMIRInstructionKind::Coercion {
@@ -175,7 +175,26 @@ pub(super) fn lower_constant(
                 lowered_type(context, *ty),
             )
         }
-        MIRConstant::Global { global, .. } => LMIRValue::Global(global_index(context, *global)),
+        MIRConstant::Global { global, offset, ty } => {
+            let base = LMIRValue::Global(global_index(context, *global));
+            if *offset == 0 {
+                return base;
+            }
+            let integer = convert_integer_type(context.types().pointer_integer_type());
+            let right = int_constant(context, i128::from(*offset), integer);
+            let pointer_type = lowered_type(context, *ty);
+            emit_temp(
+                context,
+                LMIRInstructionKind::PointerBinOp {
+                    op: LMIRPtrBinOp::ADD,
+                    ptr_type: pointer_type.clone(),
+                    type_size: 1usize.into(),
+                    left: base,
+                    right,
+                },
+                pointer_type,
+            )
+        }
         MIRConstant::Aggregate { .. } => {
             panic!("aggregate constants must be lowered as globals")
         }

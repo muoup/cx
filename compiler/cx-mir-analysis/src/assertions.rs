@@ -1,4 +1,8 @@
+use crate::instruction::AnalysisInstruction;
+use cx_mir::visit::{MIRVisitRole, MIRVisitor};
+use cx_mir::{MIRBody, MIRFunctionBody, MIRTarget};
 use std::collections::{BTreeMap, BTreeSet};
+use std::convert::Infallible;
 
 use cx_mir::{
     MIRBasicBlock, MIRBinaryOp, MIRBlockTarget, MIRCoercion, MIRConstant, MIRFunction,
@@ -75,17 +79,21 @@ fn merge_map<K: Ord + Copy>(
 
 pub(crate) fn check(unit: &MIRUnit) -> Result<(), MIRAnalysisError> {
     for function in unit.functions() {
-        if function.prototype().signature.safe {
-            check_function(function)?;
+        if !function.prototype().signature.safe { continue; }
+
+        match function.body() {
+            Some(MIRFunctionBody::Runtime(body)) => check_body(function, body)?,
+            Some(MIRFunctionBody::Comptime(body)) => check_body(function, body)?,
+            None => {}
         }
     }
     Ok(())
 }
 
-fn check_function(function: &MIRFunction) -> Result<(), MIRAnalysisError> {
-    let Some(definition) = function.definition() else {
-        return Ok(());
-    };
+fn check_body<K: AnalysisInstruction>(
+    function: &MIRFunction,
+    definition: &MIRBody<K>,
+) -> Result<(), MIRAnalysisError> {
     let entry = definition.entry();
     if entry.index() >= definition.blocks().len() {
         return Ok(());
@@ -135,7 +143,7 @@ fn check_function(function: &MIRFunction) -> Result<(), MIRAnalysisError> {
             continue;
         };
         for (instruction_index, instruction) in block.instrs.iter().enumerate() {
-            if let MIRInstrKind::Assert { condition, message } = &instruction.kind
+            if let Some(MIRInstrKind::Assert { condition, message }) = instruction.kind.standard()
                 && matches!(
                     environment.value(condition),
                     ConstValue::Bool(false) | ConstValue::Int(0)
@@ -149,27 +157,122 @@ fn check_function(function: &MIRFunction) -> Result<(), MIRAnalysisError> {
                 });
             }
 
-            transfer_instruction(&mut environment, &instruction);
+            transfer_instruction(&mut environment, &instruction.kind);
         }
     }
 
     Ok(())
 }
 
-fn transfer_block(
-    block: &MIRBasicBlock,
+fn transfer_block<K: AnalysisInstruction>(
+    block: &MIRBasicBlock<K>,
     mut environment: ConstEnvironment,
 ) -> (ConstEnvironment, Vec<&MIRBlockTarget>) {
     for instruction in &block.instrs {
-        transfer_instruction(&mut environment, &instruction);
+        transfer_instruction(&mut environment, &instruction.kind);
     }
 
     let targets = block
         .instrs
         .last()
-        .map(|instruction| instruction_targets(&instruction.kind))
+        .map(|instruction| {
+            let mut targets = Targets(Vec::new());
+            let Ok(()) = instruction.visit(&mut targets);
+            targets.0
+        })
         .unwrap_or_default();
     (environment, targets)
+}
+
+struct Targets<'ir>(Vec<&'ir MIRBlockTarget>);
+
+impl<'ir> MIRVisitor<'ir> for Targets<'ir> {
+    type Error = Infallible;
+    fn target(&mut self, target: &'ir MIRBlockTarget) -> Result<(), Infallible> {
+        self.0.push(target);
+        Ok(())
+    }
+}
+
+fn transfer_instruction<K: AnalysisInstruction>(environment: &mut ConstEnvironment, kind: &K) {
+    let result = match kind.standard() {
+        Some(MIRInstrKind::Assign { target, value, .. }) => {
+            Some((*target, environment.value(value)))
+        }
+        Some(MIRInstrKind::BinOp { out, op, lhs, rhs }) => Some((
+            MIRTarget::Register(*out),
+            eval_binary(op, environment.value(lhs), environment.value(rhs)),
+        )),
+        Some(MIRInstrKind::UnOp { out, op, operand }) => Some((
+            MIRTarget::Register(*out),
+            eval_unary(op, environment.value(operand)),
+        )),
+        Some(MIRInstrKind::Coerce {
+            out,
+            coercion,
+            operand,
+            ..
+        }) => Some((
+            MIRTarget::Register(*out),
+            eval_coercion(coercion, environment.value(operand)),
+        )),
+        _ => None,
+    };
+    struct Invalidate<'a>(&'a mut ConstEnvironment);
+    impl<'ir> MIRVisitor<'ir> for Invalidate<'_> {
+        type Error = Infallible;
+        fn register(
+            &mut self,
+            register: &MIRRegister,
+            role: MIRVisitRole,
+        ) -> Result<(), Infallible> {
+            if role == MIRVisitRole::Define {
+                self.0.registers.insert(*register, ConstValue::Unknown);
+            }
+            Ok(())
+        }
+        fn place(&mut self, place: &MIRPlace, role: MIRVisitRole) -> Result<(), Infallible> {
+            if matches!(
+                role,
+                MIRVisitRole::Define
+                    | MIRVisitRole::Write
+                    | MIRVisitRole::Invalidate
+                    | MIRVisitRole::Move
+                    | MIRVisitRole::Address
+            ) {
+                self.0.places.insert(*place, ConstValue::Unknown);
+            }
+            Ok(())
+        }
+    }
+    let Ok(()) = kind.visit(&mut Invalidate(environment));
+    if kind.standard().is_none()
+        || matches!(
+            kind.standard(),
+            Some(
+                MIRInstrKind::Call { .. }
+                    | MIRInstrKind::Assign {
+                        target: MIRTarget::Place(_),
+                        ..
+                    }
+            )
+        )
+    {
+        environment
+            .places
+            .values_mut()
+            .for_each(|value| *value = ConstValue::Unknown);
+    }
+    if let Some((target, value)) = result {
+        match target {
+            MIRTarget::Register(out) => {
+                environment.registers.insert(out, value);
+            }
+            MIRTarget::Place(place) => {
+                environment.places.insert(place, value);
+            }
+        }
+    }
 }
 
 fn constant_value(constant: &MIRConstant) -> ConstValue {

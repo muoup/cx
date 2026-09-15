@@ -66,7 +66,7 @@ fn run_top_frame(
                 .last_mut()
                 .expect("engine ran without a frame");
             match frame.code.next_instruction() {
-                Some(instruction) => (instruction.kind.clone(), instruction.token_range.clone()),
+                Some(instruction) => (instruction.kind, instruction.token_range),
                 None => {
                     return comptime_error(
                         TokenRange::internal(),

@@ -12,14 +12,14 @@ use cx_thir::thir::expression::THIRFnContract;
 use cx_thir::thir::{
     data::THIRType,
     expression::{THIRExpression, THIRExpressionKind},
-    r#type::{THIRField, THIRTypeKind},
+    r#type::THIRField,
 };
 use cx_thir::type_context::THIRTypeContext;
 
 use crate::lowering::comptime::evaluate_comptime_expr;
 use crate::lowering::control_flow::auto_pop_scope;
 use crate::lowering::{lower_expression, materialize_value};
-use crate::lowering::staged::exits::{self, targets};
+use crate::lowering::staged::exits;
 use crate::lowering::staged::instantiate;
 use crate::{
     builder::MIRBuilder,
@@ -33,8 +33,8 @@ pub(super) fn lower_call(
     contract: &THIRFnContract,
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
-    match function.kind {
-        THIRExpressionKind::StagedReference { name, local_id } => {
+    match &function.kind {
+        THIRExpressionKind::StagedReference { .. } => {
             let staged = lower_expression(builder, function)?;
             let mut args = Vec::with_capacity(arguments.len());
 
@@ -70,7 +70,7 @@ pub(super) fn lower_call(
 
         THIRExpressionKind::FunctionReference { name, .. }
             if let Some((id, prototype)) = builder.resolve_function(name.as_str())
-                && prototype.signature.mode == MIRFunctionMode::Staged =>
+                && prototype.signature.mode == MIRFunctionMode::Comptime =>
         {
             return lower_comptime_call(builder, id, &prototype.signature, arguments, result_type);
         }

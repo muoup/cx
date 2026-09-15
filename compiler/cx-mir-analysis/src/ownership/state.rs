@@ -1,3 +1,5 @@
+use crate::instruction::AnalysisInstruction;
+use cx_mir::MIRBody;
 use std::{collections::BTreeMap, rc::Rc};
 
 use cx_mir::{
@@ -20,16 +22,16 @@ pub(super) struct OwnershipState {
 }
 
 impl OwnershipState {
-    pub(super) fn new(function: &MIRFunction) -> Self {
-        let definition = function
-            .definition()
-            .expect("ownership requires a definition");
+    pub(super) fn new<K: AnalysisInstruction>(
+        function: &MIRFunction,
+        definition: &MIRBody<K>,
+    ) -> Self {
         let projections = definition
             .blocks()
             .iter()
             .flat_map(|block| block.instrs.iter())
-            .filter_map(|instruction| match &instruction.kind {
-                MIRInstrKind::AggregateOp(MIRAggregateOp::Place { out, op }) => {
+            .filter_map(|instruction| match instruction.kind.standard() {
+                Some(MIRInstrKind::AggregateOp(MIRAggregateOp::Place { out, op })) => {
                     let base = match op {
                         MIRPlaceAggregateOp::Field { base, .. }
                         | MIRPlaceAggregateOp::Index { base, .. }
