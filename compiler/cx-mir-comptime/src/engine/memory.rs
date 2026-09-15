@@ -11,7 +11,7 @@ use cx_tokens::TokenRange;
 
 use crate::{ComptimeContext, log::comptime_error, value::MIRComptimeValue};
 
-use super::{MIRComptimeEngine, execution, ops, state::PathSeg};
+use super::{MIRComptimeEngine, execution, state::PathSeg};
 
 pub(super) fn resolve_projection(
     engine: &MIRComptimeEngine<'_, impl ComptimeContext>,
@@ -112,7 +112,7 @@ pub(super) fn address_of(
 
     if path.is_empty() {
         let ty = global_address_type(engine, global, range)?;
-        return Ok(ops::relocation_constant(global, 0, ty));
+        return Ok(MIRConstant::Global { global, offset: 0, ty });
     }
 
     let Some(MIRGlobalKind::Variable { ty: start, .. }) =
@@ -207,7 +207,7 @@ pub(super) fn address_of(
         }
     }
 
-    Ok(ops::relocation_constant(global, offset, ty))
+    Ok(MIRConstant::Global { global, offset, ty })
 }
 
 pub(super) fn global_address_type(
@@ -299,12 +299,12 @@ fn read_global_rvalue(
     match &global.kind {
         MIRGlobalKind::Variable { ty, .. } => {
             if let Ok(MIRTypeKind::Array { inner, .. }) = engine.context.types().kind(*ty) {
-                return Ok(ops::relocation_constant(global.id, 0, *inner));
+                return Ok(MIRConstant::Global { global: global.id, offset: 0, ty: *inner });
             }
         }
         MIRGlobalKind::StringLiteral { .. } => {
             let ty = global_address_type(engine, global.id, &TokenRange::internal())?;
-            return Ok(ops::relocation_constant(global.id, 0, ty));
+            return Ok(MIRConstant::Global { global: global.id, offset: 0, ty });
         }
     }
 
@@ -477,7 +477,7 @@ fn read_global(
             MIRGlobalKind::StringLiteral { .. } => {
                 let range = TokenRange::internal();
                 let ty = global_address_type(engine, global, &range)?;
-                return Ok(ops::relocation_constant(global, 0, ty));
+                return Ok(MIRConstant::Global { global, offset: 0, ty });
             }
 
             MIRGlobalKind::Variable { ty, state, .. } => match state {
@@ -488,7 +488,7 @@ fn read_global(
                     );
                 }
                 MIRGlobalState::ZeroInitialized => {
-                    return Ok(ops::relocation_constant(global, 0, *ty));
+                    return Ok(MIRConstant::Global { global, offset: 0, ty: *ty });
                 }
                 MIRGlobalState::Initialized(constant) => {
                     return Ok(constant.clone());

@@ -1,10 +1,7 @@
 use cx_tokens::TokenRange;
 use cx_util::{dense_id, identifier::CXIdent, unsafe_float::FloatWrapper};
 
-use std::sync::Arc;
-
 use crate::{
-    MIRStagedTemplate,
     global::{MIRFunctionID, MIRGlobalID},
     op::{MIRBinaryOp, MIRCoercion, MIRUnaryOp},
     ty::{MIRFloatType, MIRIntType, MIRTypeID},
@@ -26,7 +23,6 @@ pub enum MIRPlace {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRConstant {
     Unit,
-    String(String),
     Integer {
         value: i128,
         ty: MIRIntType,
@@ -45,8 +41,10 @@ pub enum MIRConstant {
         offset: i64,
         ty: MIRTypeID,
     },
-    
-    Nullptr,
+
+    Nullptr {
+        ty: MIRTypeID,
+    },
     Function(MIRFunctionID),
     Undefined,
 }
@@ -154,17 +152,18 @@ pub enum MIRCallKind {
 pub enum MIRStagedExitKind {
     Break,
     Continue,
+    Expr,
 }
 
 #[derive(Debug, Clone)]
-pub struct MIRBasicBlock {
+pub struct MIRBasicBlock<K = MIRInstrKind> {
     pub id: MIRBasicBlockID,
     pub debug_name: Option<CXIdent>,
     pub params: Vec<MIRRegister>,
-    pub instrs: Vec<MIRInstr>,
+    pub instrs: Vec<MIRInstr<K>>,
 }
 
-impl MIRBasicBlock {
+impl<K: MIRInstructionKind> MIRBasicBlock<K> {
     pub fn new(id: MIRBasicBlockID) -> Self {
         Self {
             id,
@@ -174,7 +173,7 @@ impl MIRBasicBlock {
         }
     }
 
-    pub fn push(&mut self, kind: MIRInstrKind) -> &mut MIRInstr {
+    pub fn push(&mut self, kind: K) -> &mut MIRInstr<K> {
         self.instrs
             .push(MIRInstr::new(kind, TokenRange::internal()));
         self.instrs
@@ -182,7 +181,7 @@ impl MIRBasicBlock {
             .expect("an instruction was just pushed")
     }
 
-    pub fn terminator(&self) -> Option<&MIRInstr> {
+    pub fn terminator(&self) -> Option<&MIRInstr<K>> {
         self.instrs
             .last()
             .filter(|instr| instr.kind.is_terminator())
@@ -190,13 +189,13 @@ impl MIRBasicBlock {
 }
 
 #[derive(Debug, Clone)]
-pub struct MIRInstr {
-    pub kind: MIRInstrKind,
+pub struct MIRInstr<K = MIRInstrKind> {
+    pub kind: K,
     pub token_range: TokenRange,
 }
 
-impl MIRInstr {
-    pub fn new(kind: MIRInstrKind, token_range: TokenRange) -> Self {
+impl<K: MIRInstructionKind> MIRInstr<K> {
+    pub fn new(kind: K, token_range: TokenRange) -> Self {
         Self { kind, token_range }
     }
 
@@ -251,7 +250,6 @@ pub enum MIRInstrKind {
 
     Call {
         out: Option<MIRRegister>,
-        kind: MIRCallKind,
         callee: MIRValue,
         args: Vec<MIRValue>,
     },
@@ -316,19 +314,6 @@ pub enum MIRInstrKind {
         default: Option<MIRBlockTarget>,
     },
     Unreachable,
-
-    MakeStaged {
-        out: MIRRegister,
-        template: Arc<MIRStagedTemplate>,
-        captures: Vec<MIRValue>,
-    },
-    ApplyStaged {
-        out: Option<MIRRegister>,
-        staged: MIRValue,
-        args: Vec<MIRValue>,
-        targets: MIRStagedTargets,
-    },
-    
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -339,8 +324,12 @@ pub struct MIRStagedTargets {
     pub yield_target: Option<MIRBasicBlockID>,
 }
 
-impl MIRInstrKind {
-    pub fn is_terminator(&self) -> bool {
+pub trait MIRInstructionKind {
+    fn is_terminator(&self) -> bool;
+}
+
+impl MIRInstructionKind for MIRInstrKind {
+    fn is_terminator(&self) -> bool {
         matches!(
             self,
             Self::Return { .. }

@@ -1,9 +1,9 @@
 use std::{collections::HashMap, rc::Rc};
 
 use cx_mir::{
-    MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID,
-    MIRFunctionMode, MIRInstr, MIRInstrKind, MIRPlace, MIRRegister, MIRScopeID, MIRStagedCapture,
-    MIRStagedExitKind, MIRTypeID, MIRValue,
+    MIRBasicBlock, MIRBasicBlockID, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRFunctionMode,
+    MIRFunctionBody, MIRInstr, MIRPlace, MIRRegister, MIRScopeID, MIRStagedBody,
+    MIRStagedCapture, MIRStagedExitKind, MIRStagedInstrKind, MIRTypeID, MIRValue,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
 use cx_tokens::TokenRange;
@@ -26,7 +26,7 @@ pub(crate) struct MIRFunctionBuilder {
     pub(crate) outer_yield_type: Option<MIRTypeID>,
     source_range: TokenRange,
 
-    body: MIRBody,
+    body: MIRStagedBody,
     current_block: MIRBasicBlockID,
 
     local_values: HashMap<THIRLocalID, MIRValue>,
@@ -87,7 +87,7 @@ impl ScopeContext {
 
 impl MIRFunctionBuilder {
     pub(crate) fn new(func: MIRFunction, parent: Option<&Self>) -> Self {
-        let mut body = MIRBody::new();
+        let mut body = MIRStagedBody::new();
         let entry = body.add_block();
         let root_scope = body.add_scope(TokenRange::internal());
 
@@ -120,10 +120,22 @@ impl MIRFunctionBuilder {
             "scope stack is unbalanced at function end"
         );
 
-        MIRFunction::new(self.id, self.prototype, Some(self.body))
+        let body = match self.mode {
+            MIRFunctionMode::Runtime | MIRFunctionMode::Constexpr => MIRFunctionBody::Runtime(
+                self.body
+                    .into_runtime()
+                    .expect("runtime function contains unresolved staged instructions"),
+            ),
+            MIRFunctionMode::Comptime => MIRFunctionBody::Comptime(
+                self.body
+                    .into_comptime()
+                    .expect("comptime function contains unresolved template instructions"),
+            ),
+        };
+        MIRFunction::new(self.id, self.prototype, Some(body))
     }
 
-    pub(crate) fn concise_finish(self) -> (MIRFunctionID, MIRBody) {
+    pub(crate) fn concise_finish(self) -> (MIRFunctionID, MIRStagedBody) {
         (self.id, self.body)
     }
 
@@ -151,21 +163,21 @@ impl MIRFunctionBuilder {
         self.mode
     }
 
-    pub fn body(&self) -> &MIRBody {
+    pub fn body(&self) -> &MIRStagedBody {
         &self.body
     }
 
-    pub fn body_mut(&mut self) -> &mut MIRBody {
+    pub fn body_mut(&mut self) -> &mut MIRStagedBody {
         &mut self.body
     }
 
-    fn active_block(&self) -> &MIRBasicBlock {
+    fn active_block(&self) -> &MIRBasicBlock<MIRStagedInstrKind> {
         self.body
             .block(self.current_block)
             .expect("current block must exist")
     }
 
-    fn active_block_mut(&mut self) -> &mut MIRBasicBlock {
+    fn active_block_mut(&mut self) -> &mut MIRBasicBlock<MIRStagedInstrKind> {
         let block = self.current_block;
         self.body
             .block_mut(block)
@@ -230,14 +242,14 @@ impl MIRFunctionBuilder {
         self.labels.insert(name.to_string(), id);
     }
 
-    pub fn emit(&mut self, instruction: MIRInstrKind, range: TokenRange) {
+    pub fn emit(&mut self, instruction: impl Into<MIRStagedInstrKind>, range: TokenRange) {
         if self.current_block_terminated() {
             return;
         }
 
         self.active_block_mut()
             .instrs
-            .push(MIRInstr::new(instruction, range));
+            .push(MIRInstr::new(instruction.into(), range));
     }
 
     pub fn new_register(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>) -> MIRRegister {
@@ -367,6 +379,7 @@ impl MIRFunctionBuilder {
                 MIRStagedExitKind::Break => scope.break_target,
                 MIRStagedExitKind::Continue => scope.continue_target,
             }?;
+            
             Some((scope.id(), block))
         })
     }

@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cx_mir::{
-    MIRAggregateOp, MIRTarget, MIRBasicBlock, MIRBinaryOp, MIRBlockTarget, MIRCoercion,
-    MIRConstant, MIRFunction, MIRInstr, MIRInstrKind, MIRInstrOperand, MIRIntBinaryOp, MIRIntType,
-    MIRPlace, MIRPointerBinaryOp, MIRRegister, MIRUnaryOp, MIRUnit, MIRValue,
+    MIRBasicBlock, MIRBinaryOp, MIRBlockTarget, MIRCoercion, MIRConstant, MIRFunction,
+    MIRInstrKind, MIRIntBinaryOp, MIRIntType, MIRPlace, MIRPointerBinaryOp, MIRRegister,
+    MIRUnaryOp, MIRUnit, MIRValue,
 };
 
 use crate::types::MIRAnalysisError;
@@ -136,7 +136,10 @@ fn check_function(function: &MIRFunction) -> Result<(), MIRAnalysisError> {
         };
         for (instruction_index, instruction) in block.instrs.iter().enumerate() {
             if let MIRInstrKind::Assert { condition, message } = &instruction.kind
-                && matches!(environment.value(condition), ConstValue::Bool(false) | ConstValue::Int(0))
+                && matches!(
+                    environment.value(condition),
+                    ConstValue::Bool(false) | ConstValue::Int(0)
+                )
             {
                 return Err(MIRAnalysisError::ProvenFalseAssertion {
                     function: function.id(),
@@ -145,6 +148,7 @@ fn check_function(function: &MIRFunction) -> Result<(), MIRAnalysisError> {
                     message: message.clone(),
                 });
             }
+
             transfer_instruction(&mut environment, &instruction);
         }
     }
@@ -173,10 +177,9 @@ fn constant_value(constant: &MIRConstant) -> ConstValue {
         MIRConstant::Unit => ConstValue::Unit,
         MIRConstant::Integer { value, .. } => ConstValue::Int(*value),
         MIRConstant::Float { value, .. } => ConstValue::Float(value.into()),
-        MIRConstant::Nullptr => ConstValue::Int(0),
+        MIRConstant::Nullptr { .. } => ConstValue::Int(0),
 
-        MIRConstant::String(_)
-        | MIRConstant::Aggregate { .. }
+        MIRConstant::Aggregate { .. }
         | MIRConstant::Global { .. }
         | MIRConstant::Function(_)
         | MIRConstant::Undefined => ConstValue::Unknown,

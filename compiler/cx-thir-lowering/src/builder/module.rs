@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
-    MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState,
+    MIRFnPrototype, MIRFunction, MIRFunctionBody, MIRFunctionID, MIRGlobalID, MIRGlobalState,
     MIRGlobalVariable, global::MIRGlobalKind,
 };
 use cx_tokens::TokenRange;
@@ -182,7 +182,7 @@ impl MIRModuleBuilder {
         )
     }
 
-    pub(crate) fn define_function(&mut self, id: MIRFunctionID, def: MIRBody) {
+    pub(crate) fn define_function(&mut self, id: MIRFunctionID, def: MIRFunctionBody) {
         let Some(function) = self.functions.get_mut(&id) else {
             unreachable!("Could not define function id: {}", id);
         };

@@ -182,7 +182,11 @@ pub(crate) fn lower_expression(
     let previous_range = builder.set_source_range(expression.token_range.clone());
     let result = (|| -> CXResult<MIRValue> {
         let value = match &expression.kind {
-            THIRExpressionKind::BoolLiteral(value) => MIRValue::Constant(MIRConstant::Bool(*value)),
+            THIRExpressionKind::BoolLiteral(value) => MIRValue::Constant(MIRConstant::Integer {
+                value: *value as i128,
+                ty: MIRIntType::I1,
+                signed: false,
+            }),
             THIRExpressionKind::IntLiteral(value) => {
                 let (ty, signed) = integer_type(&expression._type);
                 MIRValue::Constant(MIRConstant::Integer {
@@ -246,7 +250,7 @@ pub(crate) fn lower_expression(
                     && !matches!(expression._type.kind, THIRTypeKind::Undefined)
                 {
                     let targets = crate::lowering::staged::exits::targets(builder)?;
-                    builder.emit(MIRInstrKind::StagedUse {
+                    builder.emit(cx_mir::MIRStagedInstrKind::Use {
                         value: value.clone(),
                         targets,
                     });
@@ -308,16 +312,18 @@ pub(crate) fn lower_expression(
                 ) {
                     control_flow::lower_short_circuit(builder, lhs, rhs, op, &expression._type)?
                 } else {
-                    let lhs = lower_expression(builder, lhs)?;
-                    let rhs = lower_expression(builder, rhs)?;
+                    let lhs_value = lower_expression(builder, lhs)?;
+                    let lhs_value = materialize_value(builder, lhs_value, &lhs._type)?;
+                    let rhs_value = lower_expression(builder, rhs)?;
+                    let rhs_value = materialize_value(builder, rhs_value, &rhs._type)?;
                     let type_id = lower_type(builder, &expression._type)?;
                     let out = builder.fun_mut().new_register(type_id, None);
                     let lowered_op = operators::lower_binary_op(builder, op)?;
                     builder.emit(MIRInstrKind::BinOp {
                         out,
                         op: lowered_op,
-                        lhs,
-                        rhs,
+                        lhs: lhs_value,
+                        rhs: rhs_value,
                     });
                     MIRValue::Register(out)
                 }
@@ -910,7 +916,7 @@ pub(crate) fn lower_expression(
                         .expect("captured function has no root scope")
                         .id();
                     auto_cleanup(builder, root_scope)?;
-                    builder.emit(MIRInstrKind::StagedYield {
+                    builder.emit(cx_mir::MIRStagedInstrKind::Yield {
                         value,
                         ty: yield_type,
                     });
@@ -1084,7 +1090,7 @@ pub(crate) fn lower_expression(
                     .collect::<Vec<_>>();
                 let (template, captures) = builder.capture_staged(staged.expr(), &params, None)?;
                 let out = builder.fun_mut().new_register(template.result_type(), None);
-                builder.emit(MIRInstrKind::MakeStaged {
+                builder.emit(cx_mir::MIRComptimeOp::MakeStaged {
                     out,
                     template,
                     captures,
@@ -1104,7 +1110,7 @@ pub(crate) fn lower_expression(
                     Some(builder.fun_mut().new_register(ty, None))
                 };
                 let targets = crate::lowering::staged::exits::targets(builder)?;
-                builder.emit(MIRInstrKind::ApplyStaged {
+                builder.emit(cx_mir::MIRComptimeOp::ApplyStaged {
                     out,
                     staged,
                     args,

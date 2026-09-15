@@ -8,9 +8,11 @@ use crate::log::mir_error;
 use cx_log::CXResult;
 use cx_log::catalogue::mir as catalogue;
 use cx_mir::{
-    MIRBasicBlockID, MIRBlockTarget, MIRInstr, MIRInstrKind, MIRRegister, MIRStagedCapture,
-    MIRStagedTargets, MIRTypeKind, MIRValue, ty::interface::MTRegistry,
+    MIRBasicBlockID, MIRBlockTarget, MIRComptimeOp, MIRInstrKind, MIRRegister,
+    MIRStagedCapture, MIRStagedInstrKind, MIRStagedTargets, MIRTypeKind, MIRValue,
+    ty::interface::MTRegistry,
 };
+use cx_mir::visit::{MIRVisitRole, MIRVisitor, MIRWalk};
 use cx_mir_comptime::{
     MIRComptimeValue, MIRStagedBinding, MIRStagedValue, evaluate_comptime_function,
 };
@@ -218,36 +220,35 @@ fn instantiate_inner(
         for instruction in &block.instrs {
             let range = &instruction.token_range;
             let deferred_callee = match &instruction.kind {
-                MIRInstrKind::ApplyStaged {
+                MIRStagedInstrKind::Comptime(MIRComptimeOp::ApplyStaged {
                     staged: MIRValue::Register(register),
                     ..
-                } => Some(*register),
+                }) => Some(*register),
                 _ => None,
             };
             let dependency_targets = match &instruction.kind {
-                MIRInstrKind::ApplyStaged { targets: local, .. }
-                | MIRInstrKind::StagedUse { targets: local, .. } => {
+                MIRStagedInstrKind::Comptime(MIRComptimeOp::ApplyStaged { targets: local, .. })
+                | MIRStagedInstrKind::Use { targets: local, .. } => {
                     map_targets(*local, targets, &blocks, range)?
                 }
                 _ => targets,
             };
             if !matches!(
                 instruction.kind,
-                MIRInstrKind::MakeStaged { .. }
-                    | MIRInstrKind::Call {
-                        kind: cx_mir::MIRCallKind::Comptime,
-                        ..
-                    }
+                MIRStagedInstrKind::Comptime(MIRComptimeOp::MakeStaged { .. })
+                    | MIRStagedInstrKind::Comptime(MIRComptimeOp::Call { .. })
             ) {
-                resolve_dependencies(
-                    builder,
-                    &instruction.kind,
-                    &mut values,
-                    &mut staged_inputs,
-                    deferred_callee,
-                    dependency_targets,
-                    used_targets,
-                )?;
+                if let MIRStagedInstrKind::Standard(kind) = &instruction.kind {
+                    resolve_dependencies(
+                        builder,
+                        kind,
+                        &mut values,
+                        &mut staged_inputs,
+                        deferred_callee,
+                        dependency_targets,
+                        used_targets,
+                    )?;
+                }
             }
             if builder.fun().current_block_terminated() {
                 break;
@@ -262,12 +263,13 @@ fn instantiate_inner(
                 range,
             };
             match &instruction.kind {
-                MIRInstrKind::StagedReturn { value } => {
+                MIRStagedInstrKind::Exit { value } => {
                     let args = if is_void {
                         Vec::new()
                     } else {
                         vec![remap.value(value)?]
                     };
+                    
                     builder.fun_mut().emit(
                         MIRInstrKind::Jump {
                             target: MIRBlockTarget::with_args(continuation, args),
@@ -275,7 +277,7 @@ fn instantiate_inner(
                         instruction.token_range.clone(),
                     );
                 }
-                MIRInstrKind::StagedExit { kind } => {
+                MIRStagedInstrKind::ScopeExit { kind } => {
                     let local_target = match kind {
                         cx_mir::MIRStagedExitKind::Break => targets.break_target,
                         cx_mir::MIRStagedExitKind::Continue => targets.continue_target,
@@ -303,7 +305,7 @@ fn instantiate_inner(
                         instruction.token_range.clone(),
                     );
                 }
-                MIRInstrKind::StagedYield { value, ty } => {
+                MIRStagedInstrKind::Yield { value, ty } => {
                     let block = if let Some(block) = targets.yield_target {
                         block
                     } else if let Some((scope, block)) = builder
@@ -333,12 +335,12 @@ fn instantiate_inner(
                         instruction.token_range.clone(),
                     );
                 }
-                MIRInstrKind::ApplyStaged {
+                MIRStagedInstrKind::Comptime(MIRComptimeOp::ApplyStaged {
                     out,
                     staged,
                     args,
                     targets: local_targets,
-                } => {
+                }) => {
                     let MIRValue::Register(source) = staged else {
                         return Err(mir_error(&range, (&catalogue::ENTITY_REQUIREMENT, ("staged callee".into(), "a template input".into(), None))));
                     };
@@ -356,11 +358,11 @@ fn instantiate_inner(
                         values.insert(*out, value);
                     }
                 }
-                MIRInstrKind::MakeStaged {
+                MIRStagedInstrKind::Comptime(MIRComptimeOp::MakeStaged {
                     out,
                     template,
                     captures,
-                } => {
+                }) => {
                     let captures = captures
                         .iter()
                         .map(|value| {
@@ -383,12 +385,11 @@ fn instantiate_inner(
                     staged_inputs.insert(*out, std::sync::Arc::new(value));
                     values.remove(out);
                 }
-                MIRInstrKind::Call {
+                MIRStagedInstrKind::Comptime(MIRComptimeOp::Call {
                     out,
-                    kind: cx_mir::MIRCallKind::Comptime,
                     callee,
                     args,
-                } => {
+                }) => {
                     let MIRValue::Constant(cx_mir::MIRConstant::Function(function)) =
                         remap.value(callee)?
                     else {
@@ -432,7 +433,7 @@ fn instantiate_inner(
                         }
                     }
                 }
-                MIRInstrKind::StagedMove { out, value } => {
+                MIRStagedInstrKind::Move { out, value } => {
                     let mapped = remap.value(value)?;
                     let mapped = match mapped {
                         MIRValue::PlaceRef(place)
@@ -442,8 +443,8 @@ fn instantiate_inner(
                     };
                     values.insert(*out, mapped);
                 }
-                MIRInstrKind::StagedUse { .. } => {}
-                MIRInstrKind::Return { value } => {
+                MIRStagedInstrKind::Use { .. } => {}
+                MIRStagedInstrKind::CallerReturn { value } => {
                     let value = value.as_ref().map(|value| remap.value(value)).transpose()?;
                     if let Some(block) = targets.return_target {
                         used_targets.insert(block);
@@ -464,7 +465,7 @@ fn instantiate_inner(
                         );
                     }
                 }
-                kind => {
+                MIRStagedInstrKind::Standard(kind) => {
                     if remap.omitted(kind) {
                         continue;
                     }
@@ -527,19 +528,33 @@ fn resolve_dependencies(
     used_targets: &mut HashSet<MIRBasicBlockID>,
 ) -> CXResult<()> {
     let range = builder.source_range().clone();
-    let mut inputs = Vec::new();
-    
-    MIRInstr::new(instruction.clone(), cx_tokens::TokenRange::internal()).visit_operands(
-        |operand| {
-            if let Some(register) = operand.register()
-                && Some(register) != deferred
-                && staged_inputs.contains_key(&register)
-                && !inputs.contains(&register)
+    struct DependencyVisitor<'a> {
+        staged_inputs: &'a HashMap<MIRRegister, std::sync::Arc<MIRStagedValue>>,
+        deferred: Option<MIRRegister>,
+        inputs: Vec<MIRRegister>,
+    }
+    impl MIRVisitor<'_> for DependencyVisitor<'_> {
+        type Error = std::convert::Infallible;
+
+        fn register(&mut self, register: &MIRRegister, role: MIRVisitRole) -> Result<(), Self::Error> {
+            if matches!(role, MIRVisitRole::Read | MIRVisitRole::Copy | MIRVisitRole::Move)
+                && Some(*register) != self.deferred
+                && self.staged_inputs.contains_key(register)
+                && !self.inputs.contains(register)
             {
-                inputs.push(register);
+                self.inputs.push(*register);
             }
-        },
-    );
+            Ok(())
+        }
+    }
+
+    let mut visitor = DependencyVisitor {
+        staged_inputs,
+        deferred,
+        inputs: Vec::new(),
+    };
+    instruction.visit(&mut visitor).expect("dependency visitor is infallible");
+    let inputs = visitor.inputs;
 
     for input in inputs {
         let staged = staged_inputs

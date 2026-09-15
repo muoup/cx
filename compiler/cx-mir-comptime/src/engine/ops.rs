@@ -1,6 +1,6 @@
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
-    MIRBinaryOp, MIRCoercion, MIRConstant, MIRFloatBinaryOp, MIRGlobalID, MIRIntBinaryOp,
+    MIRBinaryOp, MIRCoercion, MIRConstant, MIRFloatBinaryOp, MIRIntBinaryOp,
     MIRIntType, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRTypeID, MIRUnaryOp,
     ty::layout::layout_of,
 };
@@ -29,12 +29,12 @@ pub(super) fn evaluate_binop(
                 MIRFloatBinaryOp::Sub => lhs - rhs,
                 MIRFloatBinaryOp::Mul => lhs * rhs,
                 MIRFloatBinaryOp::Div => lhs / rhs,
-                MIRFloatBinaryOp::Eq => return Ok(MIRConstant::Bool(lhs == rhs)),
-                MIRFloatBinaryOp::Ne => return Ok(MIRConstant::Bool(lhs != rhs)),
-                MIRFloatBinaryOp::Lt => return Ok(MIRConstant::Bool(lhs < rhs)),
-                MIRFloatBinaryOp::Le => return Ok(MIRConstant::Bool(lhs <= rhs)),
-                MIRFloatBinaryOp::Gt => return Ok(MIRConstant::Bool(lhs > rhs)),
-                MIRFloatBinaryOp::Ge => return Ok(MIRConstant::Bool(lhs >= rhs)),
+                MIRFloatBinaryOp::Eq => return Ok(bool_constant(lhs == rhs)),
+                MIRFloatBinaryOp::Ne => return Ok(bool_constant(lhs != rhs)),
+                MIRFloatBinaryOp::Lt => return Ok(bool_constant(lhs < rhs)),
+                MIRFloatBinaryOp::Le => return Ok(bool_constant(lhs <= rhs)),
+                MIRFloatBinaryOp::Gt => return Ok(bool_constant(lhs > rhs)),
+                MIRFloatBinaryOp::Ge => return Ok(bool_constant(lhs >= rhs)),
             };
             Ok(MIRConstant::Float {
                 value: FloatWrapper::from(result),
@@ -43,8 +43,7 @@ pub(super) fn evaluate_binop(
         }
         MIRBinaryOp::PointerOffset { op, pointee } => {
             let (global, base_offset) = match &lhs {
-                MIRConstant::Global { global, .. } => (*global, 0i64),
-                MIRConstant::GlobalOffset { global, offset, .. } => (*global, *offset),
+                MIRConstant::Global { global, offset, .. } => (*global, *offset),
                 other => {
                     return comptime_error(
                         TokenRange::internal(),
@@ -87,7 +86,7 @@ pub(super) fn evaluate_binop(
                     (&catalogue::COMPTIME_POINTER_OVERFLOW, ()),
                 );
             };
-            Ok(relocation_constant(global, offset, pointee))
+            Ok(MIRConstant::Global { global, offset, ty: pointee })
         }
         MIRBinaryOp::Pointer(op) => {
             let equal = pointer_constants_equal(&lhs, &rhs)?;
@@ -104,7 +103,7 @@ pub(super) fn evaluate_binop(
                     );
                 }
             };
-            Ok(MIRConstant::Bool(result))
+            Ok(bool_constant(result))
         }
     }
 }
@@ -119,7 +118,7 @@ fn integer_binop(
     use MIRIntBinaryOp as Op;
 
     let int = |value: i128| MIRConstant::Integer { value, ty, signed };
-    let boolean = |value: bool| MIRConstant::Bool(value);
+    let boolean = bool_constant;
 
     Ok(match op {
         Op::Add => int(lhs.wrapping_add(rhs)),
@@ -191,7 +190,7 @@ pub(super) fn evaluate_unop(op: MIRUnaryOp, operand: MIRConstant) -> CXResult<MI
             ty,
             signed: false,
         },
-        MIRUnaryOp::LogicalNot => MIRConstant::Bool(!is_truthy(&operand)),
+        MIRUnaryOp::LogicalNot => bool_constant(!is_truthy(&operand)),
         MIRUnaryOp::Increment { .. } => {
             return comptime_error(
                 TokenRange::internal(),
@@ -266,7 +265,7 @@ pub(super) fn evaluate_coercion(
         },
         MIRCoercion::IntToPointer { .. } => {
             match operand {
-                MIRConstant::Integer { value: 0, .. } => MIRConstant::Nullptr,
+                MIRConstant::Integer { value: 0, .. } => MIRConstant::Nullptr { ty: to_type },
 
                 _ => return comptime_error(
                     TokenRange::internal(),
@@ -275,7 +274,7 @@ pub(super) fn evaluate_coercion(
             }
         }
         MIRCoercion::FunctionToPointer => match &operand {
-            MIRConstant::Function(_) | MIRConstant::Nullptr => operand.clone(),
+            MIRConstant::Function(_) | MIRConstant::Nullptr { .. } => operand.clone(),
             
             _ => {
                 return comptime_error(
@@ -292,7 +291,7 @@ fn pointer_constants_equal(lhs: &MIRConstant, rhs: &MIRConstant) -> CXResult<boo
     let as_address = |constant: &MIRConstant| match constant {
         MIRConstant::Nullptr { .. } => Some(None),
         MIRConstant::Global { global, .. } => Some(Some((*global, 0i64))),
-        MIRConstant::GlobalOffset { global, offset, .. } => Some(Some((*global, *offset))),
+
         _ => None,
     };
 
@@ -318,7 +317,6 @@ fn pointer_constants_equal(lhs: &MIRConstant, rhs: &MIRConstant) -> CXResult<boo
 
 pub(super) fn is_truthy(constant: &MIRConstant) -> bool {
     match constant {
-        MIRConstant::Bool(value) => *value,
         MIRConstant::Integer { value, .. } => *value != 0,
         MIRConstant::Nullptr { .. } | MIRConstant::Undefined => false,
         _ => true,
@@ -335,7 +333,6 @@ pub(super) fn constant_equals(lhs: &MIRConstant, rhs: &MIRConstant) -> bool {
 fn as_integer(constant: &MIRConstant) -> i128 {
     match constant {
         MIRConstant::Integer { value, .. } => *value,
-        MIRConstant::Bool(value) => *value as i128,
         _ => 0,
     }
 }
@@ -378,5 +375,13 @@ fn width_masked(value: i128, ty: MIRIntType) -> i128 {
         value
     } else {
         value & ((1i128 << bits) - 1)
+    }
+}
+
+fn bool_constant(value: bool) -> MIRConstant {
+    MIRConstant::Integer {
+        value: value as i128,
+        ty: MIRIntType::I1,
+        signed: false,
     }
 }

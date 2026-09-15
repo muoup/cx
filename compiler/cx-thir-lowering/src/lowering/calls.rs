@@ -2,8 +2,8 @@ use cx_log::CXResult;
 use std::sync::Arc;
 
 use cx_mir::{
-    MIRCallKind, MIRConstant, MIRField, MIRFunctionID, MIRFunctionMode, MIRInstrKind,
-    MIRStagedTemplate, MIRValue,
+    MIRComptimeOp, MIRConstant, MIRField, MIRFunctionID, MIRFunctionMode, MIRInstrKind,
+    MIRStagedInstrKind, MIRStagedTemplate, MIRValue,
 };
 use cx_mir_comptime::{
     MIRComptimeValue, MIRStagedBinding, MIRStagedValue, evaluate_comptime_function,
@@ -19,6 +19,7 @@ use cx_thir::type_context::THIRTypeContext;
 use crate::lowering::comptime::evaluate_comptime_expr;
 use crate::lowering::control_flow::auto_pop_scope;
 use crate::lowering::lower_expression;
+use crate::lowering::staged::exits::{self, targets};
 use crate::lowering::staged::instantiate;
 use crate::{
     builder::MIRBuilder,
@@ -38,7 +39,8 @@ pub(super) fn lower_call(
         let staged = lower_expression(builder, function)?;
         let mut args = Vec::with_capacity(arguments.len());
         for argument in arguments {
-            args.push(lower_expression(builder, argument)?);
+            let value = lower_expression(builder, argument)?;
+            args.push(crate::lowering::materialize_value(builder, value, &argument._type)?);
         }
         let out = if result_type.is_void() || result_type.is_unreachable() {
             None
@@ -46,8 +48,8 @@ pub(super) fn lower_call(
             let ty = lower_type(builder, result_type)?;
             Some(builder.fun_mut().new_register(ty, None))
         };
-        let targets = crate::lowering::staged::exits::targets(builder)?;
-        builder.emit(MIRInstrKind::ApplyStaged {
+        let targets = exits::targets(builder)?;
+        builder.emit(MIRComptimeOp::ApplyStaged {
             out,
             staged,
             args,
@@ -65,10 +67,12 @@ pub(super) fn lower_call(
         return lower_comptime_call(builder, id, &prototype.signature, arguments, result_type);
     }
 
-    let callee = lower_expression(builder, function)?;
+    let lowered_callee = lower_expression(builder, function)?;
+    let callee = crate::lowering::materialize_value(builder, lowered_callee, &function._type)?;
     let mut args = Vec::with_capacity(arguments.len());
     for argument in arguments {
-        args.push(lower_expression(builder, argument)?);
+        let value = lower_expression(builder, argument)?;
+        args.push(crate::lowering::materialize_value(builder, value, &argument._type)?);
     }
 
     if let Some(precondition) = &contract.precondition {
@@ -102,7 +106,6 @@ pub(super) fn lower_call(
     };
     builder.emit(MIRInstrKind::Call {
         out,
-        kind: MIRCallKind::Runtime,
         callee,
         args: args.clone(),
     });
@@ -166,7 +169,8 @@ fn lower_comptime_call(
                     parameter.staged_diverges,
                 )?);
             } else {
-                args.push(lower_expression(builder, argument)?);
+                let value = lower_expression(builder, argument)?;
+                args.push(crate::lowering::materialize_value(builder, value, &argument._type)?);
             }
         }
         let out = if (result_type.is_void() || result_type.is_unreachable())
@@ -177,16 +181,15 @@ fn lower_comptime_call(
             let ty = lower_type(builder, result_type)?;
             Some(builder.fun_mut().new_register(ty, None))
         };
-        builder.emit(MIRInstrKind::Call {
+        builder.emit(MIRComptimeOp::Call {
             out,
-            kind: MIRCallKind::Comptime,
             callee: MIRValue::Constant(MIRConstant::Function(function)),
             args,
         });
         if builder.is_capturing() && signature.return_staged_params.is_some() {
             if let Some(out) = out {
-                let targets = super::staged::exits::targets(builder)?;
-                builder.emit(MIRInstrKind::StagedUse {
+                let targets = exits::targets(builder)?;
+                builder.emit(MIRStagedInstrKind::Use {
                     value: MIRValue::Register(out),
                     targets,
                 });
@@ -235,7 +238,7 @@ fn lower_staged_argument(
 ) -> CXResult<MIRValue> {
     let (template, captures) = capture_staged_argument(builder, argument, diverges)?;
     let out = builder.fun_mut().new_register(template.result_type(), None);
-    builder.emit(MIRInstrKind::MakeStaged {
+    builder.emit(MIRComptimeOp::MakeStaged {
         out,
         template,
         captures,

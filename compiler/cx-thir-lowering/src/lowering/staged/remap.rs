@@ -277,7 +277,6 @@ impl Remap<'_> {
             }),
             MIRInstrKind::Call {
                 out,
-                kind,
                 callee,
                 args,
             } => MIRInstrKind::Call {
@@ -285,7 +284,6 @@ impl Remap<'_> {
                     .map(|out| self.optional_register(out))
                     .transpose()?
                     .flatten(),
-                kind: *kind,
                 callee: value(callee)?,
                 args: args.iter().map(value).collect::<CXResult<Vec<_>>>()?,
             },
@@ -331,10 +329,6 @@ impl Remap<'_> {
             MIRInstrKind::Return { value: returned } => MIRInstrKind::Return {
                 value: returned.as_ref().map(value).transpose()?,
             },
-            MIRInstrKind::StagedYield { value: yielded, ty } => MIRInstrKind::StagedYield {
-                value: yielded.as_ref().map(value).transpose()?,
-                ty: *ty,
-            },
             MIRInstrKind::Jump {
                 target: destination,
             } => MIRInstrKind::Jump {
@@ -376,14 +370,6 @@ impl Remap<'_> {
                 default: default.as_ref().map(target).transpose()?,
             },
             MIRInstrKind::Unreachable => MIRInstrKind::Unreachable,
-            MIRInstrKind::MakeStaged { .. }
-            | MIRInstrKind::ApplyStaged { .. }
-            | MIRInstrKind::StagedReturn { .. }
-            | MIRInstrKind::StagedExit { .. }
-            | MIRInstrKind::StagedMove { .. }
-            | MIRInstrKind::StagedUse { .. } => {
-                return Err(mir_error(self.range, (&catalogue::UNEXPANDED_STAGED, ())));
-            }
         })
     }
 }

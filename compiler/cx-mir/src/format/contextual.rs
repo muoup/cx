@@ -394,18 +394,10 @@ fn write_instruction<T: MTRegistry>(
             write_aggregate(f, unit, function, operation, types)
         }
 
-        MIRInstrKind::Call {
-            out,
-            kind,
-            callee,
-            args,
-        } => {
+        MIRInstrKind::Call { out, callee, args } => {
             if let Some(out) = out {
                 write_register_name(f, function, *out)?;
                 f.write_str(" = ")?;
-            }
-            if *kind == crate::MIRCallKind::Comptime {
-                f.write_str("comptime ")?;
             }
             write_value(f, unit, function, callee)?;
             f.write_str("(")?;
@@ -587,36 +579,6 @@ fn write_instruction<T: MTRegistry>(
 
         MIRInstrKind::Unreachable => f.write_str("unreachable"),
 
-        MIRInstrKind::MakeStaged { out, captures, .. } => {
-            write_register_name(f, function, *out)?;
-            f.write_str(" = staged[")?;
-            for (index, capture) in captures.iter().enumerate() {
-                if index != 0 {
-                    f.write_str(", ")?;
-                }
-                write_value(f, unit, function, capture)?;
-            }
-            f.write_str("]")
-        }
-
-        MIRInstrKind::ApplyStaged {
-            out, staged, args, ..
-        } => {
-            if let Some(out) = out {
-                write_register_name(f, function, *out)?;
-                f.write_str(" = ")?;
-            }
-            f.write_str("apply ")?;
-            write_value(f, unit, function, staged)?;
-            f.write_str("(")?;
-            for (index, arg) in args.iter().enumerate() {
-                if index != 0 {
-                    f.write_str(", ")?;
-                }
-                write_value(f, unit, function, arg)?;
-            }
-            f.write_str(")")
-        }
     }
 }
 

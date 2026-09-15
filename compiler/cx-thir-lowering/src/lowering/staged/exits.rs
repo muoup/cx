@@ -1,6 +1,6 @@
 use cx_log::CXResult;
 use cx_mir::{
-    MIRBlockTarget, MIRInstrKind, MIRStagedExitKind, MIRStagedTargets, MIRTypeKind, MIRValue,
+    MIRBlockTarget, MIRInstrKind, MIRStagedExitKind, MIRStagedInstrKind, MIRStagedTargets, MIRTypeKind, MIRValue,
     ty::interface::MTRegistry,
 };
 
@@ -10,6 +10,7 @@ pub(crate) fn targets(builder: &mut MIRBuilder<'_>) -> CXResult<MIRStagedTargets
     let current = builder.fun().current_block();
     let root = builder.fun().scope_stack().first().unwrap().id();
     let mut targets = MIRStagedTargets::default();
+    
     let result = (|| {
         let block = builder.fun_mut().new_block("staged.return_cleanup");
         targets.return_target = Some(block);
@@ -24,17 +25,19 @@ pub(crate) fn targets(builder: &mut MIRBuilder<'_>) -> CXResult<MIRStagedTargets
         for kind in [MIRStagedExitKind::Break, MIRStagedExitKind::Continue] {
             let destination = builder.fun().exit_target(kind);
             let block = builder.fun_mut().new_block("staged.loop_cleanup");
+            
             match kind {
                 MIRStagedExitKind::Break => targets.break_target = Some(block),
                 MIRStagedExitKind::Continue => targets.continue_target = Some(block),
             }
+            
             builder.fun_mut().set_current_block(block);
             auto_cleanup(builder, destination.map_or(root, |(scope, _)| scope))?;
             builder.emit(match destination {
-                Some((_, block)) => MIRInstrKind::Jump {
+                Some((_, block)) => MIRStagedInstrKind::Standard(MIRInstrKind::Jump {
                     target: MIRBlockTarget::new(block),
-                },
-                None => MIRInstrKind::StagedExit { kind },
+                }),
+                None => MIRStagedInstrKind::ScopeExit { kind },
             });
         }
 
@@ -56,13 +59,14 @@ pub(crate) fn targets(builder: &mut MIRBuilder<'_>) -> CXResult<MIRStagedTargets
         builder.fun_mut().set_current_block(block);
         auto_cleanup(builder, destination.map_or(root, |(scope, _)| scope))?;
         builder.emit(match destination {
-            Some((_, block)) => MIRInstrKind::Jump {
+            Some((_, block)) => MIRStagedInstrKind::Standard(MIRInstrKind::Jump {
                 target: MIRBlockTarget::with_args(block, value.into_iter().collect()),
-            },
-            None => MIRInstrKind::StagedYield { value, ty },
+            }),
+            None => MIRStagedInstrKind::Yield { value, ty },
         });
         Ok(targets)
     })();
+    
     builder.fun_mut().set_current_block(current);
     result
 }

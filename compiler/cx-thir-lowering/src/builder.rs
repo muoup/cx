@@ -5,9 +5,9 @@ use std::{
 
 use cx_log::CXResult;
 use cx_mir::{
-    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRFunctionMode,
+    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionBody, MIRFunctionID, MIRFunctionMode,
     MIRGlobalID, MIRGlobalVariable, MIRInstrKind, MIRLayoutError, MIRPlace, MIRStagedCapture,
-    MIRStagedTemplate, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRUnit, MIRValue,
+    MIRStagedInstrKind, MIRStagedTemplate, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRUnit, MIRValue,
     ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
 use cx_mir_comptime::ComptimeContext;
@@ -135,7 +135,7 @@ impl<'thir> MIRBuilder<'thir> {
         self.fun().source_range()
     }
 
-    pub fn emit(&mut self, instr: MIRInstrKind) {
+    pub fn emit(&mut self, instr: impl Into<cx_mir::MIRStagedInstrKind>) {
         let range = self.fun().source_range().clone();
 
         self.fun_mut().emit(instr, range);
@@ -243,7 +243,7 @@ impl<'thir> MIRBuilder<'thir> {
             let value = lowering::lower_expression(self, expression)?;
             let result_type = lower_type(self, &expression._type)?;
             if !self.fun().current_block_terminated() {
-                self.emit(MIRInstrKind::StagedReturn { value });
+                self.emit(MIRStagedInstrKind::Exit { value });
             }
             Ok(result_type)
         })();
@@ -422,7 +422,18 @@ impl<'thir> MIRBuilder<'thir> {
             unreachable!("No function context available at finish_function");
         };
 
+        let mode = fn_builder.mode();
         let (id, body) = fn_builder.concise_finish();
+        let body = match mode {
+            MIRFunctionMode::Runtime | MIRFunctionMode::Constexpr => MIRFunctionBody::Runtime(
+                body.into_runtime()
+                    .expect("runtime function contains unresolved staged instructions"),
+            ),
+            MIRFunctionMode::Comptime => MIRFunctionBody::Comptime(
+                body.into_comptime()
+                    .expect("comptime function contains unresolved template instructions"),
+            ),
+        };
         self.module.define_function(id, body);
     }
 }

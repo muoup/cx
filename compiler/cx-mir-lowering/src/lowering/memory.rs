@@ -139,7 +139,6 @@ pub(super) fn lower_constant(
 ) -> LMIRValue {
     match constant {
         MIRConstant::Unit => LMIRValue::NULL,
-        MIRConstant::Bool(value) => int_constant(context, i128::from(*value), LMIRIntegerType::I1),
         MIRConstant::Integer { value, ty, .. } => {
             int_constant(context, *value, convert_integer_type(*ty))
         }
@@ -160,7 +159,7 @@ pub(super) fn lower_constant(
                 .symbol_name
                 .clone(),
         ),
-        MIRConstant::Nullptr => {
+        MIRConstant::Nullptr { ty } => {
             let pointer_integer = convert_integer_type(context.types().pointer_integer_type());
             let zero = int_constant(context, 0, pointer_integer);
             
@@ -177,10 +176,6 @@ pub(super) fn lower_constant(
             )
         }
         MIRConstant::Global { global, .. } => LMIRValue::Global(global_index(context, *global)),
-        MIRConstant::GlobalOffset { .. } => {
-            panic!("global offset constants must be lowered as initializers")
-        }
-        MIRConstant::String(_) => panic!("string constants must be lowered as globals"),
         MIRConstant::Aggregate { .. } => {
             panic!("aggregate constants must be lowered as globals")
         }

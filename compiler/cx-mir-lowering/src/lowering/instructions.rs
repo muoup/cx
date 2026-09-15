@@ -8,7 +8,7 @@ use cx_lmir::{
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::tagged_union_tag_offset;
 use cx_mir::{
-    MIRAggregateOp, MIRBinaryOp, MIRCallKind, MIRCoercion, MIRConstant, MIRFloatBinaryOp,
+    MIRAggregateOp, MIRBinaryOp, MIRCoercion, MIRConstant, MIRFloatBinaryOp,
     MIRFnParam, MIRFnSignature, MIRFunctionMode, MIRFunctionType, MIRInstrKind, MIRIntBinaryOp,
     MIRIntType, MIRPlaceAggregateOp, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister,
     MIRTarget, MIRTypeID, MIRTypeKind, MIRUnaryOp, MIRValue, MIRValueAggregateOp,
@@ -105,7 +105,6 @@ fn value_type(context: &FunctionLoweringContext<'_>, value: &MIRValue) -> Option
 
 fn switch_constant(constant: &MIRConstant) -> u64 {
     match constant {
-        MIRConstant::Bool(value) => u64::from(*value),
         MIRConstant::Integer { value, .. } => *value as u64,
         _ => panic!("non-integer MIR switch constant"),
     }
@@ -166,14 +165,7 @@ pub(super) fn lower_instruction(
         | MIRInstrKind::ScopeExit { .. }
         | MIRInstrKind::Initialize { .. }
         | MIRInstrKind::Bind { .. }
-        | MIRInstrKind::Invalidate { .. }
-        | MIRInstrKind::MakeStaged { .. }
-        | MIRInstrKind::ApplyStaged { .. }
-        | MIRInstrKind::StagedReturn { .. }
-        | MIRInstrKind::StagedExit { .. }
-        | MIRInstrKind::StagedYield { .. }
-        | MIRInstrKind::StagedMove { .. }
-        | MIRInstrKind::StagedUse { .. } => {}
+        | MIRInstrKind::Invalidate { .. } => {}
 
         MIRInstrKind::Create { out, ty } => {
             let lowered = lowered_type(context, *ty);
@@ -222,16 +214,7 @@ pub(super) fn lower_instruction(
             );
         }
         MIRInstrKind::AggregateOp(operation) => lower_aggregate(context, operation),
-        MIRInstrKind::Call {
-            out,
-            kind: MIRCallKind::Runtime,
-            callee,
-            args,
-        } => lower_call(context, *out, callee, args),
-        MIRInstrKind::Call {
-            kind: MIRCallKind::Comptime,
-            ..
-        } => panic!("unresolved comptime call reached LMIR lowering"),
+        MIRInstrKind::Call { out, callee, args } => lower_call(context, *out, callee, args),
         MIRInstrKind::VaStart { list, last } => {
             let list = lower_value(context, list);
             let last = lower_value(context, last);

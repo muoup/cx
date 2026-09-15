@@ -1,7 +1,7 @@
 use cx_log::CXResult;
 use cx_mir::{
     MIRBlockTarget, MIRCoercion, MIRConstant, MIRInstrKind, MIRScopeID, MIRStagedExitKind,
-    MIRTypeKind, MIRValue, ty::interface::MTRegistry,
+    MIRStagedInstrKind, MIRTypeKind, MIRValue, ty::interface::MTRegistry,
 };
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
@@ -73,7 +73,7 @@ pub fn lower_control_exit(
             .expect("captured function has no root scope")
             .id();
         auto_cleanup(builder, root_scope)?;
-        builder.emit(MIRInstrKind::StagedExit { kind });
+        builder.emit(MIRStagedInstrKind::ScopeExit { kind });
         return Ok(MIRValue::Constant(MIRConstant::Unit));
     }
 

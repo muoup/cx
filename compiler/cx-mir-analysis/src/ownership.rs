@@ -3,8 +3,8 @@ use cx_log::catalogue::{ErrorDefinition, analysis as catalogue};
 use std::collections::VecDeque;
 
 use cx_mir::{
-    MIRAggregateOp, MIRTarget, MIRBasicBlockID, MIRFunction, MIRInstrKind, MIRPlace,
-    MIRPlaceAggregateOp, MIRUnit, MIRValue, MIRValueAggregateOp,
+    MIRAggregateOp, MIRBasicBlockID, MIRFunction, MIRInstrKind, MIRPlace, MIRPlaceAggregateOp,
+    MIRTarget, MIRUnit, MIRValue, MIRValueAggregateOp,
 };
 
 use crate::types::MIRAnalysisError;
@@ -216,7 +216,13 @@ fn transfer_instruction(
                         &catalogue::VALUE_NOT_CONSUMED,
                         place_name(unit, function, place),
                         |function, name, discarded| {
-                            (function, "local variable".into(), name, "scope".into(), discarded)
+                            (
+                                function,
+                                "local variable".into(),
+                                name,
+                                "scope".into(),
+                                discarded,
+                            )
                         },
                     ));
                 }
@@ -360,32 +366,6 @@ fn transfer_instruction(
                     use_value(unit, function, block, instruction, value, state, diagnose)?;
                 }
             }
-        }
-        MIRInstrKind::MakeStaged { captures, .. } => {
-            for value in captures {
-                use_value(unit, function, block, instruction, value, state, diagnose)?;
-            }
-        }
-        MIRInstrKind::ApplyStaged { staged, args, .. } => {
-            use_value(unit, function, block, instruction, staged, state, diagnose)?;
-            for value in args {
-                use_value(unit, function, block, instruction, value, state, diagnose)?;
-            }
-        }
-        MIRInstrKind::StagedReturn { value } => {
-            use_value(unit, function, block, instruction, value, state, diagnose)?;
-        }
-        MIRInstrKind::StagedExit { .. } => {}
-        MIRInstrKind::StagedYield { value, .. } => {
-            if let Some(value) = value {
-                use_value(unit, function, block, instruction, value, state, diagnose)?;
-            }
-        }
-        MIRInstrKind::StagedMove { value, .. } => {
-            use_value(unit, function, block, instruction, value, state, diagnose)?;
-        }
-        MIRInstrKind::StagedUse { value, .. } => {
-            use_value(unit, function, block, instruction, value, state, diagnose)?;
         }
         MIRInstrKind::Unreachable => {}
     }
@@ -537,7 +517,13 @@ fn check_function_exit(
                 &catalogue::VALUE_NOT_CONSUMED,
                 place_name(unit, function, place),
                 |function, name, discarded| {
-                    (function, "local variable".into(), name, "function".into(), discarded)
+                    (
+                        function,
+                        "local variable".into(),
+                        name,
+                        "function".into(),
+                        discarded,
+                    )
                 },
             ));
         }
@@ -559,7 +545,13 @@ fn check_function_exit(
                 &catalogue::VALUE_NOT_CONSUMED,
                 place_name(unit, function, place),
                 |function, name, discarded| {
-                    (function, "parameter".into(), name, "function".into(), discarded)
+                    (
+                        function,
+                        "parameter".into(),
+                        name,
+                        "function".into(),
+                        discarded,
+                    )
                 },
             ));
         }

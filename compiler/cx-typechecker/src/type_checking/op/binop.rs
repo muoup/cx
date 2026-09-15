@@ -280,6 +280,18 @@ fn coerce_pointer_binop(
         ));
     }
 
+    if matches!(op, HIRBinOp::Subtract) && !lhs._type.is_pointer() {
+        return env.log_error(
+            &lhs.token_range,
+            &catalogue::INVALID_BINARY_OPERANDS,
+            (
+                format!("{}", op),
+                format!("{}", lhs.get_type().display_with(&env.symbols)),
+                format!("{}", rhs.get_type().display_with(&env.symbols)),
+            ),
+        );
+    }
+
     let (pointer, non_pointer) = if lhs._type.is_pointer() {
         (&mut lhs, &mut rhs)
     } else {
@@ -358,6 +370,53 @@ fn coerce_pointer_binop(
             );
         }
     };
+
+    if matches!(op, THIRBinOp::PtrDiff { .. }) && rhs._type.is_pointer() {
+        let range = lhs.token_range.clone();
+        let offset_type = lhs._type.clone();
+        let reference_type = env.symbols.mem_ref_to(offset_type.clone());
+        let local_id = cx_thir::thir::expression::THIRLocalID::fresh();
+        let name = cx_util::identifier::CXIdent::from("__pointer_offset");
+        let offset = THIRExpression {
+            token_range: range.clone(),
+            _type: reference_type.clone(),
+            kind: THIRExpressionKind::CreateLocalVariable {
+                name: name.clone(),
+                local_id,
+                _type: offset_type.clone(),
+                initial_value: Some(Box::new(lhs)),
+                adopting: false,
+            },
+        };
+        let offset_value = THIRExpression {
+            token_range: range.clone(),
+            _type: offset_type,
+            kind: THIRExpressionKind::Copy {
+                source: Box::new(THIRExpression {
+                    token_range: range.clone(),
+                    _type: reference_type,
+                    kind: THIRExpressionKind::Variable { name, local_id },
+                }),
+            },
+        };
+        let operation = THIRExpression {
+            token_range: range,
+            _type: return_type.clone(),
+            kind: THIRExpressionKind::BinaryOperation {
+                op,
+                lhs: Box::new(rhs),
+                rhs: Box::new(offset_value),
+            },
+        };
+        return Ok(TypecheckResult::new(
+            return_type,
+            THIRExpressionKind::Block {
+                statements: vec![offset, operation],
+                creates_scope: true,
+                yields: false,
+            },
+        ));
+    }
 
     Ok(TypecheckResult::new(
         return_type,

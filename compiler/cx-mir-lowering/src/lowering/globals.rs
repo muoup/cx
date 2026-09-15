@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use cx_lmir::compiler_functions::ASSERTION;
-use cx_lmir::types::{LMIRIntegerType, LMIRType};
+use cx_lmir::types::LMIRType;
 use cx_lmir::{
     LMIRABISlot, LMIRFunctionPrototype, LMIRFunctionSignature, LMIRGlobalInitializer,
     LMIRGlobalState as LoweredGlobalState, LMIRGlobalType, LMIRGlobalValue, LMIRParameter,
@@ -78,11 +78,6 @@ fn lower_global_initializer(
     global_indices: &HashMap<MIRGlobalID, u32>,
 ) -> LMIRGlobalInitializer {
     match constant {
-        MIRConstant::Bool(value) => LMIRGlobalInitializer::Integer {
-            value: i128::from(*value),
-            _type: LMIRIntegerType::I1,
-            signed: false,
-        },
         MIRConstant::Integer { value, ty, signed } => LMIRGlobalInitializer::Integer {
             value: *value,
             _type: convert_integer_type(*ty),
@@ -107,17 +102,19 @@ fn lower_global_initializer(
                 .collect(),
         },
         MIRConstant::Nullptr { .. } => LMIRGlobalInitializer::Null,
-        MIRConstant::Global { global, .. } => LMIRGlobalInitializer::Global(
-            *global_indices
+        MIRConstant::Global { global, offset, .. } => {
+            let global = *global_indices
                 .get(global)
-                .expect("global initializer references a filtered global"),
-        ),
-        MIRConstant::GlobalOffset { global, offset, .. } => LMIRGlobalInitializer::GlobalOffset {
-            global: *global_indices
-                .get(global)
-                .expect("global initializer references a filtered global"),
-            offset: *offset,
-        },
+                .expect("global initializer references a filtered global");
+            if *offset == 0 {
+                LMIRGlobalInitializer::Global(global)
+            } else {
+                LMIRGlobalInitializer::GlobalOffset {
+                    global,
+                    offset: *offset,
+                }
+            }
+        }
         MIRConstant::Function(function) => LMIRGlobalInitializer::Function(
             mir.function(*function)
                 .expect("invalid MIR function constant")
@@ -126,7 +123,7 @@ fn lower_global_initializer(
                 .symbol_name
                 .to_string(),
         ),
-        MIRConstant::Unit | MIRConstant::String(_) | MIRConstant::Undefined => {
+        MIRConstant::Unit | MIRConstant::Undefined => {
             panic!("unsupported MIR global initializer: {constant:?}")
         }
     }
@@ -134,7 +131,6 @@ fn lower_global_initializer(
 
 fn is_zero_constant(constant: &MIRConstant) -> bool {
     match constant {
-        MIRConstant::Bool(value) => !value,
         MIRConstant::Integer { value, .. } => *value == 0,
         MIRConstant::Nullptr { .. } => true,
         MIRConstant::Aggregate { fields, .. } => {

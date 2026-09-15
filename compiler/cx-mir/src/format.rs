@@ -84,7 +84,6 @@ impl Display for MIRConstant {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unit => f.write_str("()"),
-            Self::String(value) => write!(f, "{:?}", value),
             Self::Integer { value, ty, signed } => write!(
                 f,
                 "{value}:{}{}",
@@ -92,7 +91,7 @@ impl Display for MIRConstant {
                 int_width(*ty)
             ),
             Self::Float { value, ty } => write!(f, "{value}:{ty:?}"),
-            Self::Nullptr => write!(f, "null"),
+            Self::Nullptr { .. } => write!(f, "null"),
             Self::Aggregate { fields, .. } => {
                 f.write_str("{")?;
                 for (index, value) in fields.iter().enumerate() {

@@ -1,7 +1,8 @@
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
-    MIRAggregateOp, MIRTarget, MIRBlockTarget, MIRConstant, MIRFunctionID, MIRFunctionMode,
-    MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace, MIRUnaryOp, MIRValue,
+    MIRAggregateOp, MIRComptimeInstrKind, MIRComptimeOp, MIRTarget, MIRBlockTarget, MIRConstant,
+    MIRFunctionID, MIRFunctionMode, MIRInstrKind, MIRIntType, MIRParameterID, MIRPlace,
+    MIRUnaryOp, MIRValue,
 };
 use cx_tokens::TokenRange;
 
@@ -76,6 +77,7 @@ fn run_top_frame(
         };
 
         match kind {
+            MIRComptimeInstrKind::Standard(kind) => match kind {
             MIRInstrKind::ScopeEnter { .. } | MIRInstrKind::ScopeExit { .. } => {}
             MIRInstrKind::Initialize { .. } | MIRInstrKind::Invalidate { .. } => {}
             MIRInstrKind::Bind { .. } => {}
@@ -111,30 +113,9 @@ fn run_top_frame(
             }
             MIRInstrKind::AggregateOp(op) => execute_aggregate_op(engine, op)?,
             MIRInstrKind::Call {
-                out, callee, args, ..
+                out, callee, args
             } => {
-                let callee_value = memory::read_constant(engine, &callee, &range)?;
-                let function_id = match callee_value {
-                    MIRConstant::Function(id) => id,
-                    other => {
-                        return comptime_error(
-                            range,
-                            (
-                                &catalogue::ENTITY_REQUIREMENT,
-                                ("call".into(), "a function value".into(), Some(format!("{:?}", other))),
-                            ),
-                        );
-                    }
-                };
-                let mut arguments = Vec::with_capacity(args.len());
-                for argument in args {
-                    arguments.push(memory::read_value(engine, &argument)?);
-                }
-                let result = call_function(engine, function_id, &arguments)?;
-                if let Some(out) = out {
-                    let frame = engine.frames.last_mut().expect("active frame");
-                    frame.registers.insert(out, result);
-                }
+                execute_call(engine, out, callee, args, range)?;
             }
             MIRInstrKind::VaStart { .. }
             | MIRInstrKind::VaEnd { .. }
@@ -288,11 +269,12 @@ fn run_top_frame(
             MIRInstrKind::Unreachable => {
                 return comptime_error(range, (&catalogue::COMPTIME_INVALID_OPERATION, "unreachable code".into()));
             }
-            MIRInstrKind::MakeStaged {
+            },
+            MIRComptimeInstrKind::Comptime(MIRComptimeOp::MakeStaged {
                 out,
                 template,
                 captures,
-            } => {
+            }) => {
                 let mut bindings = Vec::with_capacity(captures.len());
                 for capture in captures {
                     bindings.push(MIRStagedBinding::Comptime(memory::read_value(
@@ -305,9 +287,9 @@ fn run_top_frame(
                     .registers
                     .insert(out, MIRComptimeValue::Staged(std::sync::Arc::new(staged)));
             }
-            MIRInstrKind::ApplyStaged {
+            MIRComptimeInstrKind::Comptime(MIRComptimeOp::ApplyStaged {
                 out, staged, args, ..
-            } => {
+            }) => {
                 let MIRComptimeValue::Staged(staged) = memory::read_value(engine, &staged)? else {
                     return comptime_error(range, (&catalogue::ENTITY_REQUIREMENT, ("staged application".into(), "a staged value".into(), Some("non-staged value".into()))));
                 };
@@ -325,23 +307,43 @@ fn run_top_frame(
                     );
                 }
             }
-            MIRInstrKind::StagedReturn { .. } => {
-                return comptime_error(range, (&catalogue::COMPTIME_INVALID_OPERATION, "staged template as a function".into()));
-            }
-            MIRInstrKind::StagedExit { .. } => {
-                return comptime_error(range, (&catalogue::COMPTIME_INVALID_OPERATION, "staged exit as a function".into()));
-            }
-            MIRInstrKind::StagedYield { .. } => {
-                return comptime_error(range, (&catalogue::COMPTIME_INVALID_OPERATION, "staged yield as a function".into()));
-            }
-            MIRInstrKind::StagedMove { .. } => {
-                return comptime_error(range, (&catalogue::COMPTIME_INVALID_OPERATION, "staged move as a function".into()));
-            }
-            MIRInstrKind::StagedUse { .. } => {
-                return comptime_error(range, (&catalogue::COMPTIME_INVALID_OPERATION, "staged use as a function".into()));
+            MIRComptimeInstrKind::Comptime(MIRComptimeOp::Call { out, callee, args }) => {
+                execute_call(engine, out, callee, args, range)?;
             }
         }
     }
+}
+
+fn execute_call(
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
+    out: Option<cx_mir::MIRRegister>,
+    callee: MIRValue,
+    args: Vec<MIRValue>,
+    range: TokenRange,
+) -> CXResult<()> {
+    let callee_value = memory::read_constant(engine, &callee, &range)?;
+    let function_id = match callee_value {
+        MIRConstant::Function(id) => id,
+        other => {
+            return comptime_error(
+                range,
+                (
+                    &catalogue::ENTITY_REQUIREMENT,
+                    ("call".into(), "a function value".into(), Some(format!("{:?}", other))),
+                ),
+            );
+        }
+    };
+    let mut arguments = Vec::with_capacity(args.len());
+    for argument in args {
+        arguments.push(memory::read_value(engine, &argument)?);
+    }
+    let result = call_function(engine, function_id, &arguments)?;
+    if let Some(out) = out {
+        let frame = engine.frames.last_mut().expect("active frame");
+        frame.registers.insert(out, result);
+    }
+    Ok(())
 }
 
 fn jump_to(

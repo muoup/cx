@@ -1,34 +1,42 @@
+pub mod body;
+pub mod comptime;
 pub mod diagnostic;
-pub mod instruction;
 pub mod global;
+pub mod instruction;
 pub mod op;
 pub mod staged;
 pub mod ty;
 pub mod unit;
+pub mod visit;
 
-pub(crate) mod log;
 pub(crate) mod format;
+pub(crate) mod log;
 
-pub use log::layout_error;
 pub use format::MIRDisplay;
+pub use log::layout_error;
 
+pub use body::MIRBody;
+pub use comptime::{MIRComptimeBody, MIRComptimeInstr, MIRComptimeInstrKind, MIRComptimeOp};
 pub use diagnostic::{MIRDiagnostic, MIRDiagnosticLocation};
-pub use instruction::{
-    MIRAggregateOp, MIRTarget, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget, MIRCallKind,
-    MIRConstant, MIRInstr, MIRInstrKind, MIRParameterID, MIRPlace,
-    MIRPlaceAggregateOp, MIRPlaceID, MIRRegister, MIRScopeID, MIRStagedExitKind, MIRStagedTargets,
-    MIRValue, MIRValueAggregateOp,
-};
 pub use global::{
-    MIRBody, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID,
+    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionBody, MIRFunctionID,
     MIRFunctionMode, MIRGlobalID, MIRGlobalKind, MIRGlobalState, MIRGlobalVariable, MIRPlaceDecl,
     MIRRegisterDecl, MIRScopeDecl,
+};
+pub use instruction::{
+    MIRAggregateOp, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget, MIRCallKind, MIRConstant,
+    MIRInstr, MIRInstrKind, MIRInstructionKind, MIRParameterID, MIRPlace, MIRPlaceAggregateOp,
+    MIRPlaceID, MIRRegister, MIRScopeID, MIRStagedExitKind, MIRStagedTargets, MIRTarget, MIRValue,
+    MIRValueAggregateOp,
 };
 pub use op::{
     MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRIntBinaryOp, MIRPointerBinaryOp,
     MIRPointerOffsetOp, MIRUnaryOp,
 };
-pub use staged::{MIRStagedCapture, MIRStagedTemplate};
+pub use staged::{
+    MIRStagedBasicBlock, MIRStagedBody, MIRStagedCapture, MIRStagedInstr, MIRStagedInstrKind,
+    MIRStagedTemplate,
+};
 pub use ty::{
     MIRBitfieldAccess, MIRField, MIRFieldLayout, MIRFloatType, MIRFunctionType, MIRIntType,
     MIRLayoutError, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout,
