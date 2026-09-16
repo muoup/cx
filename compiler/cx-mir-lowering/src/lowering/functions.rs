@@ -1,30 +1,23 @@
 use std::collections::{HashMap, HashSet};
 
 use cx_lmir::{
-    LMIRBasicBlock, LMIRBlockParameter, LMIRFunction, LMIRFunctionMap, LMIRInstructionKind,
-    LMIRParameterABI, LMIRValue,
+    LMIRBasicBlock, LMIRBlockParameter, LMIRFunction, LMIRFunctionMap, LMIRGlobalValue, LMIRInstructionKind, LMIRParameterABI, LMIRValue,
 };
 use cx_log::CXResult;
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::registry::MIRTypeRegistry;
 use cx_mir::visit::MIRWalk;
-use cx_mir::{MIRBody, MIRFunction, MIRGlobalID};
+use cx_mir::{MIRBody, MIRFnPrototype};
 
-use crate::context::FunctionLoweringContext;
+use crate::context::{LMIRFunctionContext, LMIRGlobalContext};
 
 use super::instructions::lower_instruction;
-use super::output::{
-    allocate_temp, emit_void, lowered_type, mir_layout, offset_address, register_id,
-};
 use super::typing::{convert_prototype, convert_type};
 
 pub(super) fn lower_function(
-    unit: &cx_mir::MIRUnit,
-    function: &MIRFunction,
-    types: &MIRTypeRegistry,
-    prototypes: &LMIRFunctionMap,
-    global_indices: &HashMap<MIRGlobalID, u32>,
-    globals: &mut Vec<cx_lmir::LMIRGlobalValue>,
+    context: &mut LMIRGlobalContext,
+    prototype: &MIRFnPrototype,
+    body: &MIRBody
 ) -> CXResult<LMIRFunction> {
     let definition = function
         .definition()
@@ -32,18 +25,7 @@ pub(super) fn lower_function(
     let (order, visited) = block_order(definition);
     let (blocks, block_indices) = lower_blocks(definition, types, &order);
     let prototype = convert_prototype(function.prototype(), types);
-    let mut context = FunctionLoweringContext::new(
-        unit,
-        function,
-        types,
-        prototypes,
-        global_indices,
-        globals,
-        prototype,
-        blocks,
-        block_indices,
-    );
-
+    
     lower_parameters(&mut context);
     for declaration in definition.places() {
         if definition.parameters().contains(&declaration.id) {
@@ -153,7 +135,7 @@ fn lower_blocks(
     (blocks, block_indices)
 }
 
-fn lower_parameters(context: &mut FunctionLoweringContext<'_>) {
+fn lower_parameters(context: &mut LMIRFunctionContext<'_>) {
     let mut abi_index = usize::from(context.prototype().signature.has_indirect_return_param());
     for (index, parameter) in context
         .function()

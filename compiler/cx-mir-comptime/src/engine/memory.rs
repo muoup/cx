@@ -451,7 +451,7 @@ fn read_at(
             .get(&target)
             .cloned()
             .unwrap_or(MIRComptimeValue::Constant(MIRConstant::Undefined))),
-        MIRTarget::Indirect(register) => {
+        MIRTarget::Register(register) => {
             let (frame, target) = indirect_target(engine, frame, register)?;
             read_at(engine, frame, target)
         }
@@ -521,7 +521,7 @@ fn write_at(
         MIRTarget::Place(_) => {
             engine.frames[frame].cells.insert(target, value);
         }
-        MIRTarget::Indirect(register) => {
+        MIRTarget::Register(register) => {
             let (frame, target) = indirect_target(engine, frame, register)?;
             write_at(engine, frame, target, value, aggregate_type)?;
         }

@@ -59,7 +59,7 @@ pub(super) fn lower_pattern_test(
 
                 builder.fun_mut().bind_local(
                     *local_id,
-                    MIRValue::Reference(cx_mir::MIRTarget::Indirect(payload)),
+                    MIRValue::Reference(cx_mir::MIRTarget::Register(payload)),
                 );
             }
             let tag_type = lower_type(
@@ -165,7 +165,7 @@ pub(super) fn bind_pattern_payload(
                 let out = memory::target_register(builder, payload_type_id);
 
                 (
-                    MIRValue::Reference(cx_mir::MIRTarget::Indirect(out)),
+                    MIRValue::Reference(cx_mir::MIRTarget::Register(out)),
                     MIRAggregateOp::Target {
                         out,
                         op: MIRTargetAggregateOp::Variant {

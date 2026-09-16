@@ -17,7 +17,7 @@ pub trait Mergeable: Clone {
 
     fn merge(
         &mut self,
-        context: &Context,
+        context: &Self::Context,
         other: &Self,
         place: MIRPlaceID,
     ) -> CXResult<LatticeState<Self>>
@@ -42,7 +42,7 @@ impl<T: Mergeable> LatticeState<T> {
             }
             (LatticeState::Known(value), LatticeState::Bottom) => {}
             (LatticeState::Known(value), LatticeState::Known(other_value)) => {
-                let merged = value.merge(env, other_value, place)?;
+                let merged = value.merge(context, other_value, place)?;
                 *self = merged;
             }
             (LatticeState::Known(_), LatticeState::Top) => {

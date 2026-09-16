@@ -110,7 +110,8 @@ impl Display for MIRValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Register(value) => Display::fmt(value, f),
-            Self::Reference(value) => write!(f, "&{:?}", value),
+            Self::Place(value) => Display::fmt(value, f),
+            Self::Global(value) => Display::fmt(value, f),
             Self::Constant(value) => Display::fmt(value, f),
         }
     }

@@ -5,9 +5,25 @@ use cx_mir::{
     MIRPointerBinaryOp, MIRRegister, MIRTarget, MIRUnaryOp, MIRValue,
 };
 
-use crate::framework::environment::{Analysis, Context, Environment, Location};
-use crate::framework::instruction::Instruction;
-use crate::framework::state::{Fact, State, Table};
+#[derive(Clone, Debug)]
+enum ConstValue {
+    Unit,
+    Bool(bool),
+    Int(i128),
+    Float(f64),
+}
+
+impl PartialEq for ConstValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Unit, Self::Unit) => true,
+            (Self::Bool(left), Self::Bool(right)) => left == right,
+            (Self::Int(left), Self::Int(right)) => left == right,
+            (Self::Float(left), Self::Float(right)) => left.to_bits() == right.to_bits(),
+            _ => false,
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 enum TrackedTarget {
@@ -260,26 +276,6 @@ impl<T> FactExt<T> for Fact<T> {
         match self {
             Fact::Known(value) => Fact::Known(value),
             Fact::Bottom | Fact::Top => Fact::Top,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-enum ConstValue {
-    Unit,
-    Bool(bool),
-    Int(i128),
-    Float(f64),
-}
-
-impl PartialEq for ConstValue {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Unit, Self::Unit) => true,
-            (Self::Bool(left), Self::Bool(right)) => left == right,
-            (Self::Int(left), Self::Int(right)) => left == right,
-            (Self::Float(left), Self::Float(right)) => left.to_bits() == right.to_bits(),
-            _ => false,
         }
     }
 }

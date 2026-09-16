@@ -74,18 +74,22 @@ pub fn try_function_parse(
     };
 
     let args = parse_params(data)?;
+    
     let contract = HIRFunctionContract {
         noreturn,
         ..args.contract
     };
+    
     let prototype = HIRFunctionPrototype {
         return_type,
         kind,
-        params: args.params,
-        var_args: args.var_args,
         contract,
         linkage,
         symbol_naming,
+        
+        params: args.params,
+        var_args: args.var_args,
+
         range: data.token_range(range_start, data.tokens.index),
     };
 

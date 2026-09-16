@@ -5,10 +5,7 @@ use crate::framework::pipeline::AnalysisPass;
 use crate::framework::state::{LatticeState, Mergeable, StateTable};
 use cx_log::CXResult;
 
-use cx_mir::{MIRBasicBlockID, MIRInstruction, MIRPlaceID, MIRValue};
-
-mod log;
-mod state;
+use cx_mir::{MIRBasicBlockID, MIRInstrKind, MIRInstruction, MIRPlaceID};
 
 pub struct Ownership {
     nodrop: HashSet<MIRPlaceID>,
@@ -32,22 +29,52 @@ impl Ownership {
 }
 
 impl AnalysisPass for Ownership {
+    fn function_entry(&mut self, env: &AnalysisEnvironment) -> CXResult<()> {
+        self.table.clear();
+        self.nodrop.clear();
+
+        for place in env.function().places() {
+            if place.is_nodrop() {
+                self.nodrop.insert(place.id());
+            }
+        }
+
+        Ok(())
+    }
+
     fn analyze_instruction(
         &mut self,
         env: &AnalysisEnvironment,
         instruction: &MIRInstruction,
     ) -> CXResult<()> {
-        let operands: Vec<&MIRValue> = todo!();
+        match &instruction.kind {
+            MIRInstrKind::Initialize { place, .. } => {
+                self.table.set(place.id(), LatticeState::Known(OwnershipState::Available));
+            }
 
-        for operand in operands {}
+            MIRInstrKind::Invalidate { place, leak } => {
+                let nodrop = self.nodrop.contains(place);
+
+                if *leak && nodrop {
+                    todo!("Nodrop error message");
+                }
+
+                self.table.set(place.id(), LatticeState::Known(OwnershipState::Moved));
+            }
+
+            _ => {}
+        }
+
+        Ok(())
     }
 
-    fn merge(&mut self, env: &AnalysisEnvironment, other: MIRBasicBlockID) {
-        self.table.merge(other);
+    fn merge(&mut self, env: &AnalysisEnvironment, other: MIRBasicBlockID) -> CXResult<()> {
+        self.table.merge(env, self, other)
     }
 
-    fn reload_block(&mut self, env: &AnalysisEnvironment, block: MIRBasicBlockID) {
+    fn reload_block(&mut self, env: &AnalysisEnvironment, block: MIRBasicBlockID) -> CXResult<()> {
         self.table.reload_block(block);
+        Ok(())
     }
 }
 
@@ -57,11 +84,11 @@ impl Mergeable for OwnershipState {
     fn merge(
         &mut self,
         context: &Ownership,
-        other: Self,
+        other: &Self,
         place: MIRPlaceID,
     ) -> CXResult<LatticeState<Self>> {
         Ok(match (self, other) {
-            (_, _) if *self == other => LatticeState::Known(*self),
+            (_, _) if *self == *other => LatticeState::Known(*self),
 
             (OwnershipState::Uninitialized, OwnershipState::Moved)
             | (OwnershipState::Moved, OwnershipState::Uninitialized) => {

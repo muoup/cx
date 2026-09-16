@@ -101,6 +101,7 @@ fn run_top_frame(
                     } else {
                         memory::read_target(engine, source)?
                     };
+                    
                     engine
                         .frames
                         .last_mut()
@@ -108,18 +109,10 @@ fn run_top_frame(
                         .registers
                         .insert(out, value);
                 }
+                
                 MIRInstrKind::Store { target, value, ty } => {
                     let value = memory::read_value(engine, &value)?;
                     memory::write_target(engine, target, value, Some(ty))?;
-                }
-                MIRInstrKind::Let { out, value } => {
-                    let value = memory::read_value(engine, &value)?;
-                    engine
-                        .frames
-                        .last_mut()
-                        .expect("active frame")
-                        .registers
-                        .insert(out, value);
                 }
                 MIRInstrKind::AggregateOp(op) => execute_aggregate_op(engine, op)?,
                 MIRInstrKind::Call { out, callee, args } => {
@@ -521,12 +514,12 @@ fn execute_aggregate_op(
             };
 
             let frame = engine.frames.last_mut().expect("active frame");
-            frame.derived.insert(MIRTarget::Indirect(out), (root, path));
+            frame.derived.insert(MIRTarget::Register(out), (root, path));
             frame.registers.insert(
                 out,
                 MIRComptimeValue::Reference {
                     frame: frame.id,
-                    target: MIRTarget::Indirect(out),
+                    target: MIRTarget::Register(out),
                 },
             );
             Ok(())

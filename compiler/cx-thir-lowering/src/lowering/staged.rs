@@ -264,7 +264,7 @@ fn instantiate_inner(
                 break;
             }
             for (target, _) in instruction.targets() {
-                let cx_mir::MIRTarget::Indirect(source) = target else {
+                let cx_mir::MIRTarget::Register(source) = target else {
                     continue;
                 };
                 let Some(MIRValue::Constant(value)) = values.get(&source) else {

@@ -51,8 +51,8 @@ impl Remap<'_> {
         match target {
             MIRTarget::Place(place) => Ok(MIRTarget::Place(self.place(place)?)),
             MIRTarget::Global(_) => Ok(target),
-            MIRTarget::Indirect(register) => match self.registers.get(&register) {
-                Some(MIRValue::Register(register)) => Ok(MIRTarget::Indirect(*register)),
+            MIRTarget::Register(register) => match self.registers.get(&register) {
+                Some(MIRValue::Register(register)) => Ok(MIRTarget::Register(*register)),
                 Some(MIRValue::Reference(target)) => Ok(*target),
                 Some(MIRValue::Constant(cx_mir::MIRConstant::Global {
                     global, offset: 0, ..

@@ -72,7 +72,7 @@ pub(super) fn ensure_place(
                     register
                 }
             };
-            Ok(MIRTarget::Indirect(register))
+            Ok(MIRTarget::Register(register))
         }
         value => assign_operand_to_place(builder, value, ty, None).map(MIRTarget::Place),
     }
@@ -103,7 +103,7 @@ pub(super) fn move_value(
 fn root(builder: &MIRBuilder<'_>, mut target: MIRTarget) -> Option<MIRTarget> {
     use cx_mir::{MIRAggregateOp, MIRStagedInstrKind, MIRTargetAggregateOp};
     let mut visited = std::collections::HashSet::new();
-    while let MIRTarget::Indirect(register) = target {
+    while let MIRTarget::Register(register) = target {
         if !visited.insert(register) {
             return None;
         }
@@ -129,7 +129,7 @@ fn root(builder: &MIRBuilder<'_>, mut target: MIRTarget) -> Option<MIRTarget> {
                     ..
                 }) if *out == register => match value {
                     MIRValue::Reference(target) => Some(*target),
-                    MIRValue::Register(register) => Some(MIRTarget::Indirect(*register)),
+                    MIRValue::Register(register) => Some(MIRTarget::Register(*register)),
                     _ => None,
                 },
                 _ => None,

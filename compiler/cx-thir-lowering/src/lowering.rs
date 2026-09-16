@@ -497,7 +497,7 @@ pub(crate) fn lower_expression(
                         aggregate_type: aggregate_type_id,
                     },
                 }));
-                MIRValue::Reference(cx_mir::MIRTarget::Indirect(out))
+                MIRValue::Reference(cx_mir::MIRTarget::Register(out))
             }
 
             THIRExpressionKind::ArrayAccess {
@@ -523,7 +523,7 @@ pub(crate) fn lower_expression(
                         element_type: element_type_id,
                     },
                 }));
-                MIRValue::Reference(cx_mir::MIRTarget::Indirect(out))
+                MIRValue::Reference(cx_mir::MIRTarget::Register(out))
             }
 
             THIRExpressionKind::PatternIs { lhs, pattern } => {
@@ -565,7 +565,7 @@ pub(crate) fn lower_expression(
                     }));
                     builder.fun_mut().bind_local(
                         binding.binding_local_id,
-                        MIRValue::Reference(MIRTarget::Indirect(field_place)),
+                        MIRValue::Reference(MIRTarget::Register(field_place)),
                     );
                 }
 
@@ -616,7 +616,7 @@ pub(crate) fn lower_expression(
                                 sum_type: sum_type_id,
                             },
                         }));
-                        MIRValue::Reference(MIRTarget::Indirect(out))
+                        MIRValue::Reference(MIRTarget::Register(out))
                     }
                     value => {
                         let out = builder.fun_mut().new_register(variant_type_id, None);

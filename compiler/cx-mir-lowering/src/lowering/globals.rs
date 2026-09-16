@@ -1,11 +1,8 @@
 use std::collections::HashMap;
 
-use cx_lmir::compiler_functions::ASSERTION;
-use cx_lmir::types::LMIRType;
 use cx_lmir::{
-    LMIRABISlot, LMIRFunctionPrototype, LMIRFunctionSignature, LMIRGlobalInitializer,
-    LMIRGlobalState as LoweredGlobalState, LMIRGlobalType, LMIRGlobalValue, LMIRParameter,
-    LMIRParameterABI, LMIRReturnABI, LinkageType,
+    LMIRGlobalInitializer,
+    LMIRGlobalState as LoweredGlobalState, LMIRGlobalType, LMIRGlobalValue, LinkageType,
 };
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::registry::MIRTypeRegistry;
@@ -13,7 +10,6 @@ use cx_mir::{
     global::MIRGlobalKind, MIRConstant, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRTypeID,
     MIRTypeKind, MIRUnit,
 };
-use cx_util::identifier::CXIdent;
 
 use super::typing::{convert_float_type, convert_integer_type, convert_linkage, convert_type};
 
@@ -137,40 +133,5 @@ fn is_zero_constant(constant: &MIRConstant) -> bool {
             fields.iter().all(|(_, value)| is_zero_constant(value))
         }
         _ => false,
-    }
-}
-
-pub(super) fn assertion_prototype(types: &MIRTypeRegistry) -> LMIRFunctionPrototype {
-    let pointer = LMIRType::default_pointer(types.architecture());
-    LMIRFunctionPrototype {
-        name: CXIdent::new(ASSERTION.symbol_name()),
-        linkage: LinkageType::External,
-        signature: LMIRFunctionSignature {
-            return_type: LMIRType::unit(),
-            return_abi: LMIRReturnABI::Void,
-            params: vec![
-                LMIRParameter {
-                    name: Some(CXIdent::new("condition")),
-                    _type: LMIRType::bool(),
-                    abi: LMIRParameterABI::Direct {
-                        slots: vec![LMIRABISlot {
-                            _type: LMIRType::bool(),
-                            offset: 0,
-                        }],
-                    },
-                },
-                LMIRParameter {
-                    name: Some(CXIdent::new("message")),
-                    _type: pointer.clone(),
-                    abi: LMIRParameterABI::Direct {
-                        slots: vec![LMIRABISlot {
-                            _type: pointer,
-                            offset: 0,
-                        }],
-                    },
-                },
-            ],
-            var_args: false,
-        },
     }
 }

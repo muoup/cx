@@ -466,11 +466,6 @@ fn write_instruction<T: MTRegistry>(
             f.write_str(" = ")?;
             write_value(f, unit, function, value)
         }
-        MIRInstrKind::Let { out, value } => {
-            write_register_name(f, function, *out)?;
-            f.write_str(" = let ")?;
-            write_value(f, unit, function, value)
-        }
 
         MIRInstrKind::AggregateOp(operation) => {
             write_aggregate(f, unit, function, operation, types)
@@ -787,7 +782,8 @@ fn write_value(
 ) -> fmt::Result {
     match value {
         MIRValue::Register(register) => write_register_name(f, function, *register),
-        MIRValue::Reference(target) => write_target(f, unit, function, *target),
+        MIRValue::Global(global) => write_target(f, unit, function, MIRTarget::Global(*global)),
+        MIRValue::Place(place) => write_target(f, unit, function, MIRTarget::Place(*place)),
         MIRValue::Constant(constant) => write_constant(f, unit, constant),
     }
 }
@@ -836,7 +832,10 @@ fn write_target(
                 write!(f, "global{}", id.index())
             }
         }
-        MIRTarget::Indirect(register) => write_register_name(f, function, register),
+        MIRTarget::Indirect(register) => {
+            f.write_str("*")?;
+            write_register_name(f, function, register)
+        }
     }
 }
 

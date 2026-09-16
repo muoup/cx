@@ -15,7 +15,8 @@ use cx_mir::{
 };
 use cx_util::identifier::CXIdent;
 
-use crate::context::{FunctionLoweringContext, PlaceBinding};
+use crate::context::{LMIRFunctionContext, PlaceBinding};
+use crate::lowering::memory;
 
 use super::memory::{
     address, binding_for_target, binding_type, field_binding, is_address_valued, load_binding,
@@ -23,13 +24,13 @@ use super::memory::{
     value_as_binding,
 };
 use super::output::{
-    allocate_temp, emit_kind_to, emit_temp, emit_to, emit_void, int_constant, integer_kind,
+    allocate_temp, int_constant, integer_kind,
     lowered_type, mir_layout, offset_address, place_decl_type, register_decl_type, register_value,
 };
 use super::typing::{classify_signature, convert_float_type, convert_integer_type};
 
 fn call_signature(
-    context: &FunctionLoweringContext<'_>,
+    context: &LMIRFunctionContext<'_>,
     callee: &MIRValue,
 ) -> LMIRFunctionSignature {
     if let MIRValue::Constant(MIRConstant::Function(id)) = callee {
@@ -46,14 +47,13 @@ fn call_signature(
     let ty = value_type(context, callee).expect("indirect callee has no type");
     let signature = callable_type(context, ty).expect("indirect callee is not callable");
     let mir_signature = MIRFnSignature {
-        symbol_name: CXIdent::new("<indirect>"),
-        debug_name: None,
         params: signature
             .params
             .iter()
             .copied()
             .map(MIRFnParam::new)
             .collect(),
+        
         return_type: signature.return_type,
         variadic: signature.variadic,
         safe: false,
@@ -64,7 +64,7 @@ fn call_signature(
 }
 
 fn callable_type<'a>(
-    context: &'a FunctionLoweringContext<'_>,
+    context: &'a LMIRFunctionContext<'_>,
     ty: MIRTypeID,
 ) -> Option<&'a MIRFunctionType> {
     match context.types().kind(ty).unwrap() {
@@ -76,7 +76,7 @@ fn callable_type<'a>(
     }
 }
 
-fn value_type(context: &FunctionLoweringContext<'_>, value: &MIRValue) -> Option<MIRTypeID> {
+fn value_type(context: &LMIRFunctionContext<'_>, value: &MIRValue) -> Option<MIRTypeID> {
     match value {
         MIRValue::Register(register) => Some(register_decl_type(context, *register)),
         MIRValue::Reference(MIRTarget::Place(place)) => Some(place_decl_type(context, *place)),
@@ -102,13 +102,6 @@ fn value_type(context: &FunctionLoweringContext<'_>, value: &MIRValue) -> Option
                 .find_kind(&MIRTypeKind::Function { signature })
         }
         _ => None,
-    }
-}
-
-fn switch_constant(constant: &MIRConstant) -> u64 {
-    match constant {
-        MIRConstant::Integer { value, .. } => *value as u64,
-        _ => panic!("non-integer MIR switch constant"),
     }
 }
 
@@ -159,7 +152,7 @@ fn lower_float_binop(op: MIRFloatBinaryOp) -> LMIRFloatBinOp {
 }
 
 pub(super) fn lower_instruction(
-    context: &mut FunctionLoweringContext<'_>,
+    context: &mut LMIRFunctionContext<'_>,
     instruction: &MIRInstrKind,
 ) {
     match instruction {
@@ -170,17 +163,15 @@ pub(super) fn lower_instruction(
         | MIRInstrKind::Invalidate { .. } => {}
 
         MIRInstrKind::Copy { out, source, ty } => {
-            let value = super::memory::copy_target(context, *source, *ty);
+            let value = memory::copy_target(context, *source, *ty);
             emit_to(context, *out, LMIRInstructionKind::Alias { value });
         }
+        
         MIRInstrKind::Store { target, value, ty } => {
             let value = lower_value(context, value);
             store_binding(context, binding_for_target(context, *target), value, *ty);
         }
-        MIRInstrKind::Let { out, value } => {
-            let value = lower_value(context, value);
-            emit_to(context, *out, LMIRInstructionKind::Alias { value });
-        }
+        
         MIRInstrKind::AggregateOp(operation) => lower_aggregate(context, operation),
         MIRInstrKind::Call { out, callee, args } => lower_call(context, *out, callee, args),
         MIRInstrKind::Intrinsic(cx_mir::MIRIntrinsic::VaStart { list, last }) => {
@@ -295,7 +286,7 @@ pub(super) fn lower_instruction(
     }
 }
 
-fn lower_aggregate(context: &mut FunctionLoweringContext<'_>, operation: &MIRAggregateOp) {
+fn lower_aggregate(context: &mut LMIRFunctionContext<'_>, operation: &MIRAggregateOp) {
     match operation {
         MIRAggregateOp::Target { out, op } => {
             let binding = match op {
@@ -398,7 +389,7 @@ struct AggregateTarget {
     by_value: bool,
 }
 
-fn aggregate_target(context: &FunctionLoweringContext<'_>, ty: MIRTypeID) -> AggregateTarget {
+fn aggregate_target(context: &LMIRFunctionContext<'_>, ty: MIRTypeID) -> AggregateTarget {
     match context
         .types()
         .kind(ty)
@@ -413,7 +404,7 @@ fn aggregate_target(context: &FunctionLoweringContext<'_>, ty: MIRTypeID) -> Agg
 }
 
 fn lower_construct(
-    context: &mut FunctionLoweringContext<'_>,
+    context: &mut LMIRFunctionContext<'_>,
     out: MIRRegister,
     ty: MIRTypeID,
     fields: &[(usize, MIRValue)],
@@ -481,7 +472,7 @@ fn lower_construct(
 }
 
 fn lower_variant_construct(
-    context: &mut FunctionLoweringContext<'_>,
+    context: &mut LMIRFunctionContext<'_>,
     out: MIRRegister,
     variant: usize,
     value: &MIRValue,
@@ -530,7 +521,7 @@ fn lower_variant_construct(
 }
 
 fn lower_variant_project(
-    context: &mut FunctionLoweringContext<'_>,
+    context: &mut LMIRFunctionContext<'_>,
     out: MIRRegister,
     variant: usize,
     value: &MIRValue,
@@ -585,7 +576,7 @@ fn lower_variant_project(
 }
 
 fn lower_binary(
-    context: &mut FunctionLoweringContext<'_>,
+    context: &mut LMIRFunctionContext<'_>,
     out: MIRRegister,
     op: &MIRBinaryOp,
     lhs: &MIRValue,
@@ -638,7 +629,7 @@ fn lower_binary(
 }
 
 fn lower_unary(
-    context: &mut FunctionLoweringContext<'_>,
+    context: &mut LMIRFunctionContext<'_>,
     out: MIRRegister,
     op: &MIRUnaryOp,
     operand: &MIRValue,
@@ -719,7 +710,7 @@ fn lower_unary(
 }
 
 fn lower_coercion(
-    context: &mut FunctionLoweringContext<'_>,
+    context: &mut LMIRFunctionContext<'_>,
     out: MIRRegister,
     operand: &MIRValue,
     coercion: &MIRCoercion,
@@ -798,7 +789,7 @@ fn lower_coercion(
 }
 
 fn lower_call(
-    context: &mut FunctionLoweringContext<'_>,
+    context: &mut LMIRFunctionContext<'_>,
     out: Option<MIRRegister>,
     callee: &MIRValue,
     args: &[MIRValue],
@@ -877,7 +868,7 @@ fn lower_call(
 }
 
 fn lower_call_argument(
-    context: &mut FunctionLoweringContext<'_>,
+    context: &mut LMIRFunctionContext<'_>,
     argument: &MIRValue,
     parameter: &LMIRParameter,
 ) -> Vec<LMIRValue> {
@@ -935,7 +926,7 @@ fn lower_call_argument(
     }
 }
 
-fn lower_return(context: &mut FunctionLoweringContext<'_>, value: Option<&MIRValue>) {
+fn lower_return(context: &mut LMIRFunctionContext<'_>, value: Option<&MIRValue>) {
     let return_abi = context.prototype().signature.return_abi.clone();
     match (return_abi, value) {
         (LMIRReturnABI::IndirectSret { alignment }, Some(value)) => {
@@ -966,7 +957,7 @@ fn lower_return(context: &mut FunctionLoweringContext<'_>, value: Option<&MIRVal
 }
 
 fn lower_assert(
-    context: &mut FunctionLoweringContext<'_>,
+    context: &mut LMIRFunctionContext<'_>,
     condition: &MIRValue,
     message: Option<&str>,
 ) {

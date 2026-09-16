@@ -46,13 +46,18 @@ impl Pipeline {
 }
 
 pub trait AnalysisPass {
+    fn function_entry(
+        &mut self,
+        env: &AnalysisEnvironment,
+    ) -> CXResult<()>;
+    
     fn analyze_instruction(
         &mut self,
         env: &AnalysisEnvironment,
         instruction: &MIRInstruction,
     ) -> CXResult<()>;
 
-    fn merge(&mut self, env: &AnalysisEnvironment, other: MIRBasicBlockID);
+    fn merge(&mut self, env: &AnalysisEnvironment, other: MIRBasicBlockID) -> CXResult<()>;
 
-    fn reload_block(&mut self, env: &AnalysisEnvironment, block: MIRBasicBlockID);
+    fn reload_block(&mut self, env: &AnalysisEnvironment, block: MIRBasicBlockID) -> CXResult<()>;
 }

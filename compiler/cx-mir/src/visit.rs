@@ -49,7 +49,8 @@ macro_rules! traversal {
         pub fn $value<'ir, V: $visitor<'ir> + ?Sized>(visitor: &mut V, value: &'ir $($mutable)* MIRValue) -> Result<(), V::Error> {
             match value {
                 MIRValue::Register(register) => visitor.register(register, MIRVisitRole::Read),
-                MIRValue::Reference(target) => visitor.storage(target, MIRVisitRole::Address),
+                MIRValue::Place(place) => visitor.place(place, MIRVisitRole::Read),
+                MIRValue::Global(global) => visitor.global(global),
                 MIRValue::Constant(constant) => visitor.constant(constant),
             }
         }
@@ -80,9 +81,6 @@ macro_rules! traversal {
                 }
                 MIRInstrKind::Store { target, value, ty } => {
                     visitor.value(value)?; visitor.storage(target, Write)?; visitor.ty(ty)?;
-                }
-                MIRInstrKind::Let { out, value } => {
-                    visitor.value(value)?; visitor.register(out, Define)?;
                 }
                 MIRInstrKind::AggregateOp(operation) => match operation {
                     MIRAggregateOp::Target { out, op } => {

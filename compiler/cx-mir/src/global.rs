@@ -149,9 +149,6 @@ impl MIRFnParam {
 
 #[derive(Debug, Clone)]
 pub struct MIRFnSignature {
-    pub symbol_name: CXIdent,
-    pub debug_name: Option<CXIdent>,
-
     pub return_type: MIRTypeID,
     pub params: Vec<MIRFnParam>,
 
@@ -195,6 +192,9 @@ impl MIRFnSignature {
 
 #[derive(Debug, Clone)]
 pub struct MIRFnPrototype {
+    pub symbol_name: CXIdent,
+    pub debug_name: Option<CXIdent>,
+    
     pub signature: MIRFnSignature,
     pub linkage: LinkageMode,
 }

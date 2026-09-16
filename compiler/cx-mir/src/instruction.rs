@@ -44,7 +44,8 @@ pub enum MIRConstant {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRValue {
     Register(MIRRegister),
-    Reference(MIRTarget),
+    Place(MIRPlaceID),
+    Global(MIRGlobalID),
     Constant(MIRConstant),
 }
 
@@ -52,7 +53,7 @@ pub enum MIRValue {
 pub enum MIRTarget {
     Place(MIRPlaceID),
     Global(MIRGlobalID),
-    Indirect(MIRRegister),
+    Indirect(MIRRegister)
 }
 
 #[derive(Debug, Clone)]
@@ -221,10 +222,6 @@ pub enum MIRInstrKind {
         target: MIRTarget,
         value: MIRValue,
         ty: MIRTypeID,
-    },
-    Let {
-        out: MIRRegister,
-        value: MIRValue,
     },
 
     AggregateOp(MIRAggregateOp),

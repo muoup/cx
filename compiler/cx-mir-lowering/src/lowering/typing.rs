@@ -8,7 +8,6 @@ use cx_mir::ty::layout::{self, layout_of};
 use cx_mir::ty::registry::MIRTypeRegistry;
 use cx_mir::{
     MIRField, MIRFloatType, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRTypeID, MIRTypeKind,
-    MIRTypeLayout,
 };
 use cx_target::ArchitectureConfig;
 use cx_util::linkage::LinkageMode;
@@ -96,6 +95,7 @@ fn classify_param(
         }
     } else {
         let layout = layout(types, ty);
+        
         if let Some(slots) = direct_aggregate_slots(architecture, &lowered, layout.size) {
             LMIRParameterABI::Direct { slots }
         } else if aggregate_value {
@@ -215,16 +215,6 @@ fn lower_union(variants: &[MIRField], types: &MIRTypeRegistry) -> LMIRType {
             (size.max(layout.size), alignment.max(layout.alignment))
         });
     LMIRType::new(LMIRTypeKind::Opaque { bytes: size }, alignment as u8)
-}
-
-pub(super) fn layout(types: &MIRTypeRegistry, ty: MIRTypeID) -> MIRTypeLayout {
-    types
-        .layout(ty)
-        .ok()
-        .flatten()
-        .copied()
-        .or_else(|| layout::layout_of(types, ty).ok())
-        .unwrap_or_else(|| panic!("MIR type {ty} has no layout"))
 }
 
 fn integer_slot_type(architecture: &ArchitectureConfig, size: usize) -> Option<LMIRType> {
