@@ -8,10 +8,7 @@ use cx_lmir::{
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::tagged_union_tag_offset;
 use cx_mir::{
-    MIRAggregateOp, MIRBinaryOp, MIRCoercion, MIRConstant, MIRFloatBinaryOp, MIRFnParam,
-    MIRFnSignature, MIRFunctionMode, MIRFunctionType, MIRInstrKind, MIRIntBinaryOp, MIRIntType,
-    MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister, MIRTarget, MIRTypeID, MIRTypeKind,
-    MIRUnaryOp, MIRValue, MIRValueAggregateOp,
+    MIRAggregateOp, MIRBinaryOp, MIRCoercion, MIRConstant, MIRFloatBinaryOp, MIRFnParam, MIRFnSignature, MIRFunctionMode, MIRFunctionType, MIRInstrKind, MIRInstruction, MIRIntBinaryOp, MIRIntType, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister, MIRTarget, MIRTypeID, MIRTypeKind, MIRUnaryOp, MIRValue, MIRValueAggregateOp,
 };
 use cx_util::identifier::CXIdent;
 
@@ -153,9 +150,9 @@ fn lower_float_binop(op: MIRFloatBinaryOp) -> LMIRFloatBinOp {
 
 pub(super) fn lower_instruction(
     context: &mut LMIRFunctionContext<'_>,
-    instruction: &MIRInstrKind,
+    instruction: &MIRInstruction,
 ) {
-    match instruction {
+    match &instruction.kind {
         MIRInstrKind::ScopeEnter { .. }
         | MIRInstrKind::ScopeExit { .. }
         | MIRInstrKind::Initialize { .. }

@@ -250,7 +250,7 @@ fn write_function<T: MTRegistry>(
     } else if function.prototype().linkage == LinkageMode::Extern {
         f.write_str("extern ")?;
     }
-    write!(f, "fn {} (", function.prototype().signature.display_name())?;
+    write!(f, "fn {} (", function.prototype().display_name())?;
     for (index, parameter) in function.prototype().signature.params.iter().enumerate() {
         if index != 0 {
             f.write_str(", ")?;
@@ -272,7 +272,7 @@ fn write_function<T: MTRegistry>(
         f,
         ") -> {} /* {} */",
         function.prototype().signature.return_type,
-        function.prototype().signature.symbol_name
+        function.prototype().symbol_name
     )?;
 
     match function.body() {
@@ -792,7 +792,7 @@ fn write_constant(f: &mut Formatter<'_>, unit: &MIRUnit, constant: &MIRConstant)
     match constant {
         MIRConstant::Function(function_id) => {
             if let Some(function) = unit.function(*function_id) {
-                write!(f, "fn {}", function.prototype().signature.display_name())
+                write!(f, "fn {}", function.prototype().display_name())
             } else {
                 write!(f, "fn f{}", function_id.index())
             }

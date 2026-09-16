@@ -7,7 +7,7 @@ use cx_util::identifier::CXIdent;
 
 use crate::{LMIRABISlot, LMIRFunctionPrototype, LMIRFunctionSignature, LMIRParameter, LMIRParameterABI, LMIRReturnABI, LinkageType, types::LMIRType};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct LMIRCompilerFunction {
     pub module_path: &'static str,
     pub name: &'static str,

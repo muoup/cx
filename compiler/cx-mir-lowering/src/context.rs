@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use cx_lmir::{
-    LMIRBasicBlock, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype, LMIRGlobalValue,
-    LMIRInstruction, LMIRValue,
+    LMIRBasicBlock, LMIRBlockParameter, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype, LMIRGlobalValue, LMIRInstruction, LMIRRegister, LMIRValue,
 };
-use cx_mir::{ty::registry::MIRTypeRegistry, MIRBasicBlockID, MIRGlobalID, MIRTypeID, MIRUnit};
+use cx_mir::{MIRBasicBlockID, MIRGlobalID, MIRRegister, MIRTypeID, MIRUnit, ty::registry::MIRTypeRegistry};
+use cx_util::identifier::CXIdent;
 
 #[derive(Clone)]
 pub(crate) enum PlaceBinding {
@@ -78,6 +78,7 @@ pub(crate) struct LMIRFunctionContext<'global> {
     block_indices: HashMap<MIRBasicBlockID, usize>,
 
     current_block: usize,
+    current_register: usize,
 }
 
 impl<'global> LMIRFunctionContext<'global> {
@@ -93,6 +94,7 @@ impl<'global> LMIRFunctionContext<'global> {
             block_indices: HashMap::new(),
 
             current_block: 0,
+            current_register: 0
         }
     }
 
@@ -130,12 +132,27 @@ impl<'global> LMIRFunctionContext<'global> {
             .expect("MIR block has no LMIR block index")
     }
 
+    pub(crate) fn lower_register(&mut self, register: &MIRRegister) -> LMIRRegister {
+        LMIRRegister::new(format!("mir.{}", register.0))
+    }
+
+    pub(crate) fn new_register(&mut self) -> LMIRRegister {
+        let register = LMIRRegister::new(format!("lmir.{}", self.current_register));
+        self.current_register += 1;
+        register
+    }
+
     pub(crate) fn push_block(
         &mut self,
-        block: LMIRBasicBlock,
+        args: Vec<LMIRBlockParameter>,
+        debug_name: Option<CXIdent>,
         binding: Option<MIRBasicBlockID>,
     ) -> usize {
-        self.blocks.push(block);
+        self.blocks.push(LMIRBlock {
+            args,
+            body: Vec::new(),
+            debug_name,
+        });
         let index = self.blocks.len() - 1;
 
         if let Some(binding) = binding {

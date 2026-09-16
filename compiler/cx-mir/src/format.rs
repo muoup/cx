@@ -172,8 +172,7 @@ fn write_values(f: &mut Formatter<'_>, values: &[MIRValue]) -> fmt::Result {
 
 impl Display for MIRFnSignature {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "fn {}(", self.display_name())?;
-        f.write_str("(")?;
+        write!(f, "fn (")?;
         for (i, param) in self.params.iter().enumerate() {
             if i != 0 {
                 f.write_str(", ")?;
@@ -189,7 +188,7 @@ impl Display for MIRFnSignature {
             }
             f.write_str("...")?;
         }
-        write!(f, ") -> {} /* {} * /", self.return_type, self.symbol_name)
+        write!(f, ") -> {}", self.return_type)
     }
 }
 

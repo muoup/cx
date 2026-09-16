@@ -160,8 +160,6 @@ pub struct MIRFnSignature {
 
 impl MIRFnSignature {
     pub fn new(
-        symbol_name: CXIdent,
-        debug_name: Option<CXIdent>,
         params: Vec<MIRFnParam>,
         return_type: MIRTypeID,
         mode: MIRFunctionMode,
@@ -169,8 +167,6 @@ impl MIRFnSignature {
         safe: bool,
     ) -> Self {
         Self {
-            symbol_name,
-            debug_name,
             params,
             return_type,
             mode,
@@ -178,10 +174,6 @@ impl MIRFnSignature {
             safe,
             return_staged_params: None,
         }
-    }
-
-    pub fn display_name(&self) -> &CXIdent {
-        self.debug_name.as_ref().unwrap_or(&self.symbol_name)
     }
 
     pub fn with_staged_return(mut self, params: Option<Vec<MIRTypeID>>) -> Self {
@@ -192,16 +184,30 @@ impl MIRFnSignature {
 
 #[derive(Debug, Clone)]
 pub struct MIRFnPrototype {
+    pub signature: MIRFnSignature,
+
     pub symbol_name: CXIdent,
     pub debug_name: Option<CXIdent>,
-    
-    pub signature: MIRFnSignature,
     pub linkage: LinkageMode,
 }
 
 impl MIRFnPrototype {
-    pub fn new(signature: MIRFnSignature, linkage: LinkageMode) -> Self {
-        Self { signature, linkage }
+    pub fn new(
+        signature: MIRFnSignature,
+        symbol_name: CXIdent,
+        linkage: LinkageMode,
+        debug_name: Option<CXIdent>,
+    ) -> Self {
+        Self {
+            signature,
+            linkage,
+            symbol_name,
+            debug_name,
+        }
+    }
+
+    pub fn display_name(&self) -> &CXIdent {
+        self.debug_name.as_ref().unwrap_or(&self.symbol_name)
     }
 }
 
@@ -287,7 +293,7 @@ impl MIRFunction {
         assert!(
             self.body.is_none(),
             "Attempt to redefine function: {}",
-            self.prototype().signature.display_name()
+            self.prototype().display_name()
         );
         assert_eq!(
             matches!(def, MIRFunctionBody::Comptime(_)),

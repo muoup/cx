@@ -99,6 +99,7 @@ pub enum LMIRValue {
 pub struct LMIRRegister {
     pub name: CXIdent,
 }
+
 pub type LMIRBlockID = CXIdent;
 
 impl LMIRRegister {
