@@ -1,7 +1,3 @@
-use crate::{
-    MIRBody, MIRInstrKind, MIRInstruction, MIRInstructionLike, MIRRegister, MIRStagedTargets,
-    MIRStagedTemplate, MIRValue,
-};
 use std::sync::Arc;
 
 pub type MIRComptimeBody = MIRBody<MIRComptimeInstrKind>;

@@ -1,10 +1,7 @@
-use crate::global::{MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl};
-use crate::{
-    MIRBasicBlock, MIRBasicBlockID, MIRInstrKind, MIRInstruction, MIRInstructionLike, MIRPlaceID,
-    MIRRegister, MIRScopeID, MIRTypeID,
-};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
+
+use crate::{expr::instruction::MIRInstrKind, unit::MIRBasicBlockID};
 
 #[derive(Debug, Clone)]
 pub struct MIRBody<K = MIRInstrKind> {

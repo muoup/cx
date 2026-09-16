@@ -97,7 +97,7 @@ impl Environment for ValueEnvironment {
     ) -> CXResult<()> {
         if diagnose
             && let Some(MIRInstrKind::Assert { condition, message }) = instruction.standard()
-            && is_false(self.value(context, condition))
+            && is_false(self.value(context, &condition))
         {
             return Err(crate::log::analysis_error(
                 context.function,

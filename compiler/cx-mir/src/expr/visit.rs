@@ -76,9 +76,6 @@ macro_rules! traversal {
                 MIRInstrKind::Initialize { place } => visitor.place(place, Define)?,
                 MIRInstrKind::Bind { place, to } => { visitor.storage(to, Address)?; visitor.place(place, Define)?; }
                 MIRInstrKind::Invalidate { place, .. } => visitor.place(place, Invalidate)?,
-                MIRInstrKind::Copy { out, source, ty } => {
-                    visitor.storage(source, Copy)?; visitor.register(out, Define)?; visitor.ty(ty)?;
-                }
                 MIRInstrKind::Store { target, value, ty } => {
                     visitor.value(value)?; visitor.storage(target, Write)?; visitor.ty(ty)?;
                 }

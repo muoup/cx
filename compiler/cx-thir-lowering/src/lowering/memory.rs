@@ -33,12 +33,6 @@ pub(super) fn target_register(builder: &mut MIRBuilder<'_>, ty: MIRTypeID) -> MI
     builder.fun_mut().new_register(reference, None)
 }
 
-pub(super) fn copy(builder: &mut MIRBuilder<'_>, source: MIRTarget, ty: MIRTypeID) -> MIRValue {
-    let out = builder.fun_mut().new_register(ty, None);
-    builder.emit(MIRInstrKind::Copy { out, source, ty });
-    MIRValue::Register(out)
-}
-
 pub(super) fn ensure_place(
     builder: &mut MIRBuilder<'_>,
     value: MIRValue,

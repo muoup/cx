@@ -1,8 +1,5 @@
 use std::convert::Infallible;
 
-use crate::visit::{MIRVisitRole, MIRVisitor, MIRWalk};
-use crate::{MIRBlockTarget, MIRPlaceID, MIRRegister, MIRTarget, MIRValue};
-
 pub(crate) fn operands(instruction: &impl MIRWalk) -> Vec<&MIRValue> {
     struct Operands<'ir>(Vec<&'ir MIRValue>);
     impl<'ir> MIRVisitor<'ir> for Operands<'ir> {
