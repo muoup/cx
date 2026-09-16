@@ -1,6 +1,7 @@
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::mir as catalogue};
 use std::sync::Arc;
 
+use crate::log::mir_error;
 use cx_mir::{
     MIRComptimeOp, MIRConstant, MIRField, MIRFunctionID, MIRFunctionMode, MIRInstrKind,
     MIRStagedInstrKind, MIRStagedTemplate, MIRValue,
@@ -15,10 +16,11 @@ use cx_thir::thir::{
     r#type::THIRField,
 };
 use cx_thir::type_context::THIRTypeContext;
+use cx_tokens::TokenRange;
 
 use crate::lowering::comptime::evaluate_comptime_expr;
 use crate::lowering::control_flow::auto_pop_scope;
-use crate::lowering::{lower_expression, materialize_value};
+use crate::lowering::lower_expression;
 use crate::lowering::staged::exits;
 use crate::lowering::staged::instantiate;
 use crate::{
@@ -41,11 +43,7 @@ pub(super) fn lower_call(
             for argument in arguments {
                 let value = lower_expression(builder, argument)?;
 
-                args.push(materialize_value(
-                    builder,
-                    value,
-                    &argument._type,
-                )?);
+                args.push(value);
             }
 
             let out = if result_type.is_void() || result_type.is_unreachable() {
@@ -87,15 +85,11 @@ fn lower_runtime_call(
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
     let lowered_callee = lower_expression(builder, function)?;
-    let callee = crate::lowering::materialize_value(builder, lowered_callee, &function._type)?;
+    let callee = lowered_callee;
     let mut args = Vec::with_capacity(arguments.len());
     for argument in arguments {
         let value = lower_expression(builder, argument)?;
-        args.push(crate::lowering::materialize_value(
-            builder,
-            value,
-            &argument._type,
-        )?);
+        args.push(value);
     }
 
     if let Some(precondition) = &contract.precondition {
@@ -193,11 +187,7 @@ fn lower_comptime_call(
                 )?);
             } else {
                 let value = lower_expression(builder, argument)?;
-                args.push(crate::lowering::materialize_value(
-                    builder,
-                    value,
-                    &argument._type,
-                )?);
+                args.push(value);
             }
         }
         let out = if (result_type.is_void() || result_type.is_unreachable())
@@ -255,6 +245,13 @@ fn lower_comptime_call(
     match evaluate_comptime_function(builder, function, &args)? {
         MIRComptimeValue::Constant(value) => Ok(MIRValue::Constant(value)),
         MIRComptimeValue::Staged(value) => instantiate(builder, &value),
+        MIRComptimeValue::Reference { .. } => Err(mir_error(
+            &TokenRange::internal(),
+            (
+                &catalogue::INVALID_CONTEXT,
+                ("reference value".into(), "constant value".into()),
+            ),
+        )),
     }
 }
 

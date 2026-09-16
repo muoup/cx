@@ -8,17 +8,9 @@ use crate::{
 };
 
 dense_id!(MIRPlaceID);
-dense_id!(MIRParameterID);
 dense_id!(MIRRegister);
 dense_id!(MIRBasicBlockID);
 dense_id!(MIRScopeID);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum MIRPlace {
-    FunctionLocal(MIRPlaceID),
-    Parameter(MIRParameterID),
-    Global(MIRGlobalID),
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRConstant {
@@ -52,16 +44,15 @@ pub enum MIRConstant {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRValue {
     Register(MIRRegister),
-    PlaceRef(MIRPlace),
-    Copy(MIRPlace),
-    Move(MIRPlace),
+    Reference(MIRTarget),
     Constant(MIRConstant),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MIRTarget {
-    Place(MIRPlace),
-    Register(MIRRegister),
+    Place(MIRPlaceID),
+    Global(MIRGlobalID),
+    Indirect(MIRRegister),
 }
 
 #[derive(Debug, Clone)]
@@ -91,9 +82,9 @@ impl From<MIRBasicBlockID> for MIRBlockTarget {
 
 #[derive(Debug, Clone)]
 pub enum MIRAggregateOp {
-    Place {
-        out: MIRPlace,
-        op: MIRPlaceAggregateOp,
+    Target {
+        out: MIRRegister,
+        op: MIRTargetAggregateOp,
     },
     Value {
         out: MIRRegister,
@@ -102,19 +93,19 @@ pub enum MIRAggregateOp {
 }
 
 #[derive(Debug, Clone)]
-pub enum MIRPlaceAggregateOp {
+pub enum MIRTargetAggregateOp {
     Field {
-        base: MIRPlace,
+        base: MIRTarget,
         field: usize,
         aggregate_type: MIRTypeID,
     },
     Index {
-        base: MIRPlace,
+        base: MIRTarget,
         index: MIRValue,
         element_type: MIRTypeID,
     },
     Variant {
-        base: MIRPlace,
+        base: MIRTarget,
         variant: usize,
         sum_type: MIRTypeID,
     },
@@ -157,7 +148,7 @@ pub struct MIRBasicBlock<K = MIRInstrKind> {
     pub instrs: Vec<MIRInstruction<K>>,
 }
 
-impl<K: MIRInstructionKind> MIRBasicBlock<K> {
+impl<K: MIRInstructionLike> MIRBasicBlock<K> {
     pub fn new(id: MIRBasicBlockID) -> Self {
         Self {
             id,
@@ -188,7 +179,7 @@ pub struct MIRInstruction<K = MIRInstrKind> {
     pub token_range: TokenRange,
 }
 
-impl<K: MIRInstructionKind> MIRInstruction<K> {
+impl<K: MIRInstructionLike> MIRInstruction<K> {
     pub fn new(kind: K, token_range: TokenRange) -> Self {
         Self { kind, token_range }
     }
@@ -210,34 +201,30 @@ pub enum MIRInstrKind {
     },
 
     Initialize {
-        place: MIRPlace,
+        place: MIRPlaceID,
     },
     Bind {
-        place: MIRPlace,
-        to: MIRPlace,
+        place: MIRPlaceID,
+        to: MIRTarget,
     },
     Invalidate {
-        place: MIRPlace,
+        place: MIRPlaceID,
         leak: bool,
     },
 
-    Create {
-        out: MIRPlace,
+    Copy {
+        out: MIRRegister,
+        source: MIRTarget,
         ty: MIRTypeID,
     },
-    Assign {
+    Store {
         target: MIRTarget,
         value: MIRValue,
         ty: MIRTypeID,
     },
-    AddressOf {
+    Let {
         out: MIRRegister,
-        place: MIRPlace,
-    },
-    Dereference {
-        out: MIRPlace,
-        pointer: MIRValue,
-        pointee_type: MIRTypeID,
+        value: MIRValue,
     },
 
     AggregateOp(MIRAggregateOp),
@@ -247,18 +234,7 @@ pub enum MIRInstrKind {
         callee: MIRValue,
         args: Vec<MIRValue>,
     },
-    VaStart {
-        list: MIRValue,
-        last: MIRValue,
-    },
-    VaEnd {
-        list: MIRValue,
-    },
-    VaArg {
-        out: MIRRegister,
-        list: MIRValue,
-        ty: MIRTypeID,
-    },
+    Intrinsic(MIRIntrinsic),
 
     BinOp {
         out: MIRRegister,
@@ -318,11 +294,11 @@ pub struct MIRStagedTargets {
     pub yield_target: Option<MIRBasicBlockID>,
 }
 
-pub trait MIRInstructionKind {
+pub trait MIRInstructionLike {
     fn is_terminator(&self) -> bool;
 }
 
-impl MIRInstructionKind for MIRInstrKind {
+impl MIRInstructionLike for MIRInstrKind {
     fn is_terminator(&self) -> bool {
         matches!(
             self,
@@ -334,4 +310,20 @@ impl MIRInstructionKind for MIRInstrKind {
                 | Self::Unreachable
         )
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum MIRIntrinsic {
+    VaStart {
+        list: MIRValue,
+        last: MIRValue,
+    },
+    VaEnd {
+        list: MIRValue,
+    },
+    VaArg {
+        out: MIRRegister,
+        list: MIRValue,
+        ty: MIRTypeID,
+    },
 }

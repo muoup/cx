@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRComptimeBody, MIRComptimeInstrKind, MIRComptimeOp,
-    MIRInstruction, MIRInstrKind, MIRInstructionKind, MIRPlaceID, MIRRegister, MIRStagedExitKind,
+    MIRInstrKind, MIRInstruction, MIRInstructionLike, MIRPlaceID, MIRRegister, MIRStagedExitKind,
     MIRStagedTargets, MIRTypeID, MIRValue,
 };
 
@@ -109,7 +109,7 @@ impl From<MIRComptimeOp> for MIRStagedInstrKind {
     }
 }
 
-impl MIRInstructionKind for MIRStagedInstrKind {
+impl MIRInstructionLike for MIRStagedInstrKind {
     fn is_terminator(&self) -> bool {
         match self {
             Self::Standard(kind) => kind.is_terminator(),

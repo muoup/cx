@@ -1,9 +1,10 @@
 use std::{collections::HashMap, rc::Rc};
 
 use cx_log::{CXResult, catalogue::mir as catalogue};
+use cx_mir::visit::MIRWalk;
 use cx_mir::{
-    MIRBasicBlock, MIRBasicBlockID, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRFunctionMode,
-    MIRFunctionBody, MIRInstruction, MIRPlace, MIRRegister, MIRScopeID, MIRStagedBody,
+    MIRBasicBlock, MIRBasicBlockID, MIRFnPrototype, MIRFunction, MIRFunctionBody, MIRFunctionID,
+    MIRFunctionMode, MIRInstruction, MIRPlaceID, MIRRegister, MIRScopeID, MIRStagedBody,
     MIRStagedCapture, MIRStagedExitKind, MIRStagedInstrKind, MIRTypeID, MIRValue,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
@@ -124,7 +125,8 @@ impl MIRFunctionBuilder {
         );
 
         let body = match self.mode {
-            MIRFunctionMode::Runtime | MIRFunctionMode::Constexpr => match self.body.into_runtime() {
+            MIRFunctionMode::Runtime | MIRFunctionMode::Constexpr => match self.body.into_runtime()
+            {
                 Ok(body) => MIRFunctionBody::Runtime(body),
                 Err(instruction) => {
                     return Err(mir_error(
@@ -227,7 +229,9 @@ impl MIRFunctionBuilder {
             }
             if visited.insert(block) {
                 if let Some(block) = self.body.block(block) {
-                    pending.extend(block.instrs.iter().flat_map(MIRInstruction::successors));
+                    pending.extend(block.instrs.iter().flat_map(|instruction| {
+                        instruction.successors().map(|target| target.block)
+                    }));
                 }
             }
         }
@@ -289,7 +293,7 @@ impl MIRFunctionBuilder {
         ty: MIRTypeID,
         debug_name: Option<CXIdent>,
         nodrop: bool,
-    ) -> MIRPlace {
+    ) -> MIRPlaceID {
         let scope = self
             .scope_stack
             .last()
@@ -391,7 +395,7 @@ impl MIRFunctionBuilder {
                 MIRStagedExitKind::Continue => scope.continue_target,
                 MIRStagedExitKind::Expr => None,
             }?;
-            
+
             Some((scope.id(), block))
         })
     }

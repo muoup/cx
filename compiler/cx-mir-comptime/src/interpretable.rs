@@ -4,6 +4,10 @@ use cx_mir::{
 };
 
 pub trait ComptimeInterpretable {
+    fn parameters(&self) -> &[cx_mir::MIRPlaceID];
+
+    fn places(&self) -> &[cx_mir::MIRPlaceDecl];
+
     fn prototype(&self) -> &MIRFnPrototype;
 
     fn function_id(&self) -> MIRFunctionID;
@@ -25,19 +29,32 @@ pub struct InterpretedFunction<'code> {
 
 impl<'code> InterpretedFunction<'code> {
     pub fn new(function: &'code MIRFunction) -> Self {
-        let body = function.body().expect("interpreted function has a definition");
-        
+        let body = function
+            .body()
+            .expect("interpreted function has a definition");
+
         Self {
             function,
-            cursor: (match body {
-                MIRFunctionBody::Runtime(body) => body.entry(),
-                MIRFunctionBody::Comptime(body) => body.entry(),
-            }, 0),
+            cursor: (
+                match body {
+                    MIRFunctionBody::Runtime(body) => body.entry(),
+                    MIRFunctionBody::Comptime(body) => body.entry(),
+                },
+                0,
+            ),
         }
     }
 }
 
 impl ComptimeInterpretable for InterpretedFunction<'_> {
+    fn parameters(&self) -> &[cx_mir::MIRPlaceID] {
+        self.function.body().expect("interpreted body").parameters()
+    }
+
+    fn places(&self) -> &[cx_mir::MIRPlaceDecl] {
+        self.function.body().expect("interpreted body").places()
+    }
+
     fn prototype(&self) -> &MIRFnPrototype {
         self.function.prototype()
     }
@@ -53,13 +70,17 @@ impl ComptimeInterpretable for InterpretedFunction<'_> {
     fn next_instruction(&mut self) -> Option<MIRComptimeInstr> {
         let index = self.cursor.1;
         let instr = match self.function.body()? {
-            MIRFunctionBody::Runtime(body) => body.block(self.cursor.0)?.instrs.get(index).map(|instr| {
-                cx_mir::MIRInstruction::new(
-                    MIRComptimeInstrKind::Standard(instr.kind.clone()),
-                    instr.token_range.clone(),
-                )
-            }),
-            MIRFunctionBody::Comptime(body) => body.block(self.cursor.0)?.instrs.get(index).cloned(),
+            MIRFunctionBody::Runtime(body) => {
+                body.block(self.cursor.0)?.instrs.get(index).map(|instr| {
+                    cx_mir::MIRInstruction::new(
+                        MIRComptimeInstrKind::Standard(instr.kind.clone()),
+                        instr.token_range.clone(),
+                    )
+                })
+            }
+            MIRFunctionBody::Comptime(body) => {
+                body.block(self.cursor.0)?.instrs.get(index).cloned()
+            }
         }?;
         self.cursor.1 = index + 1;
         Some(instr)
@@ -73,8 +94,12 @@ impl ComptimeInterpretable for InterpretedFunction<'_> {
         self.function
             .body()
             .and_then(|body| match body {
-                MIRFunctionBody::Runtime(body) => body.block(block).map(|block| block.params.as_slice()),
-                MIRFunctionBody::Comptime(body) => body.block(block).map(|block| block.params.as_slice()),
+                MIRFunctionBody::Runtime(body) => {
+                    body.block(block).map(|block| block.params.as_slice())
+                }
+                MIRFunctionBody::Comptime(body) => {
+                    body.block(block).map(|block| block.params.as_slice())
+                }
             })
             .unwrap_or(&[])
     }

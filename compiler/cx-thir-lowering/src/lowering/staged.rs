@@ -7,15 +7,15 @@ use std::collections::{HashMap, HashSet};
 use crate::log::mir_error;
 use cx_log::CXResult;
 use cx_log::catalogue::mir as catalogue;
-use cx_mir::{
-    MIRBasicBlockID, MIRBlockTarget, MIRComptimeOp, MIRInstrKind, MIRRegister,
-    MIRStagedCapture, MIRStagedInstrKind, MIRStagedTargets, MIRTypeKind, MIRValue,
-    ty::interface::MTRegistry,
-};
 use cx_mir::visit::{MIRVisitRole, MIRVisitor, MIRWalk};
+use cx_mir::{
+    MIRBasicBlockID, MIRBlockTarget, MIRComptimeOp, MIRInstrKind, MIRRegister, MIRStagedCapture,
+    MIRStagedInstrKind, MIRStagedTargets, MIRTypeKind, MIRValue, ty::interface::MTRegistry,
+};
 use cx_mir_comptime::{
     MIRComptimeValue, MIRStagedBinding, MIRStagedValue, evaluate_comptime_function,
 };
+use cx_tokens::TokenRange;
 
 use crate::builder::MIRBuilder;
 use crate::lowering::control_flow::auto_cleanup;
@@ -42,10 +42,7 @@ fn instantiate_inner(
     if let Some(origin) = staged.runtime_origin()
         && origin != builder.fun().id()
     {
-        return Err(mir_error(
-            &range,
-            (&catalogue::RUNTIME_CAPTURE_ESCAPE, ()),
-        ));
+        return Err(mir_error(&range, (&catalogue::RUNTIME_CAPTURE_ESCAPE, ())));
     }
 
     let template = staged.template();
@@ -58,8 +55,16 @@ fn instantiate_inner(
                 &catalogue::ENTITY_REQUIREMENT,
                 (
                     "staged value bindings".into(),
-                    format!("{} captures and {} parameters", template.captures().len(), template.params().len()),
-                    Some(format!("{} captures and {} parameters", staged.captures().len(), staged.args().len())),
+                    format!(
+                        "{} captures and {} parameters",
+                        template.captures().len(),
+                        template.params().len()
+                    ),
+                    Some(format!(
+                        "{} captures and {} parameters",
+                        staged.captures().len(),
+                        staged.args().len()
+                    )),
                 ),
             ),
         ));
@@ -74,9 +79,7 @@ fn instantiate_inner(
                 bind_input(*input, binding, &mut values, &mut staged_inputs)?;
             }
             MIRStagedCapture::Place(input) => match binding {
-                MIRStagedBinding::Value(
-                    MIRValue::PlaceRef(place) | MIRValue::Copy(place) | MIRValue::Move(place),
-                ) => {
+                MIRStagedBinding::Value(MIRValue::Reference(cx_mir::MIRTarget::Place(place))) => {
                     places.insert(*input, *place);
                 }
                 _ => {
@@ -114,15 +117,15 @@ fn instantiate_inner(
             omitted_places.insert(place.id);
             continue;
         }
-        let scope = scopes
-            .get(&place.scope)
-            .copied()
-            .ok_or_else(|| {
-                mir_error(
-                    &range,
-                    (&catalogue::MISSING_ENTITY, ("template scope".into(), "staged template".into())),
-                )
-            })?;
+        let scope = scopes.get(&place.scope).copied().ok_or_else(|| {
+            mir_error(
+                &range,
+                (
+                    &catalogue::MISSING_ENTITY,
+                    ("template scope".into(), "staged template".into()),
+                ),
+            )
+        })?;
         let mapped = builder.fun_mut().body_mut().add_place(
             place.ty,
             place.debug_name.clone(),
@@ -162,7 +165,10 @@ fn instantiate_inner(
                     &range,
                     (
                         &catalogue::MISSING_ENTITY,
-                        ("template block parameter declaration".into(), "staged template".into()),
+                        (
+                            "template block parameter declaration".into(),
+                            "staged template".into(),
+                        ),
                     ),
                 )
             })?;
@@ -191,10 +197,15 @@ fn instantiate_inner(
         .and_then(|block| block.params.first())
         .copied();
 
-    let entry = blocks
-        .get(&body.entry())
-        .copied()
-        .ok_or_else(|| mir_error(&range, (&catalogue::MISSING_ENTITY, ("entry block".into(), "staged template".into()))))?;
+    let entry = blocks.get(&body.entry()).copied().ok_or_else(|| {
+        mir_error(
+            &range,
+            (
+                &catalogue::MISSING_ENTITY,
+                ("entry block".into(), "staged template".into()),
+            ),
+        )
+    })?;
     builder.emit(MIRInstrKind::Jump {
         target: MIRBlockTarget::new(entry),
     });
@@ -205,9 +216,15 @@ fn instantiate_inner(
         if source_block == template.result_block() || !visited.insert(source_block) {
             continue;
         }
-        let block = body
-            .block(source_block)
-            .ok_or_else(|| mir_error(&range, (&catalogue::MISSING_ENTITY, ("staged block".into(), "staged template".into()))))?;
+        let block = body.block(source_block).ok_or_else(|| {
+            mir_error(
+                &range,
+                (
+                    &catalogue::MISSING_ENTITY,
+                    ("staged block".into(), "staged template".into()),
+                ),
+            )
+        })?;
         let mapped_block = blocks[&block.id];
         builder.fun_mut().set_current_block(mapped_block);
         for instruction in &block.instrs {
@@ -220,7 +237,9 @@ fn instantiate_inner(
                 _ => None,
             };
             let dependency_targets = match &instruction.kind {
-                MIRStagedInstrKind::Comptime(MIRComptimeOp::ApplyStaged { targets: local, .. })
+                MIRStagedInstrKind::Comptime(MIRComptimeOp::ApplyStaged {
+                    targets: local, ..
+                })
                 | MIRStagedInstrKind::Use { targets: local, .. } => {
                     map_targets(*local, targets, &blocks, range)?
                 }
@@ -244,6 +263,27 @@ fn instantiate_inner(
             if builder.fun().current_block_terminated() {
                 break;
             }
+            for (target, _) in instruction.targets() {
+                let cx_mir::MIRTarget::Indirect(source) = target else {
+                    continue;
+                };
+                let Some(MIRValue::Constant(value)) = values.get(&source) else {
+                    continue;
+                };
+                if matches!(value, cx_mir::MIRConstant::Global { offset: 0, .. }) {
+                    continue;
+                }
+                let value = MIRValue::Constant(value.clone());
+                let register = builder.fun_mut().new_register(
+                    body.register(source).expect("template target register").ty,
+                    None,
+                );
+                builder.emit(MIRInstrKind::Let {
+                    out: register,
+                    value,
+                });
+                values.insert(source, MIRValue::Register(register));
+            }
             let remap = Remap {
                 registers: &values,
                 places: &places,
@@ -263,7 +303,13 @@ fn instantiate_inner(
                     if matches!(kind, cx_mir::MIRStagedExitKind::Expr) && result.is_some() {
                         return Err(mir_error(
                             &range,
-                            (&catalogue::REQUIRED_CONTEXT, ("staged expression exit".into(), "a staged return value".into())),
+                            (
+                                &catalogue::REQUIRED_CONTEXT,
+                                (
+                                    "staged expression exit".into(),
+                                    "a staged return value".into(),
+                                ),
+                            ),
                         ));
                     }
                     let block = if let Some(block) = local_target {
@@ -279,7 +325,13 @@ fn instantiate_inner(
                         };
                         return Err(mir_error(
                             &range,
-                            (&catalogue::MISSING_ENTITY, (format!("{name} target"), "staged materialization context".into())),
+                            (
+                                &catalogue::MISSING_ENTITY,
+                                (
+                                    format!("{name} target"),
+                                    "staged materialization context".into(),
+                                ),
+                            ),
                         ));
                     };
                     used_targets.insert(block);
@@ -291,20 +343,28 @@ fn instantiate_inner(
                     );
                 }
                 MIRStagedInstrKind::Yield { value, ty } => {
-                    let block = if let Some(block) = targets.yield_target {
-                        block
-                    } else if let Some((scope, block)) = builder
-                        .fun()
-                        .scope_stack()
-                        .iter()
-                        .rev()
-                        .find_map(|scope| scope.yield_target.map(|block| (scope.id(), block)))
-                    {
-                        auto_cleanup(builder, scope)?;
-                        block
-                    } else {
-                        return Err(mir_error(&range, (&catalogue::MISSING_ENTITY, ("yield target".into(), "staged materialization context".into()))));
-                    };
+                    let block =
+                        if let Some(block) = targets.yield_target {
+                            block
+                        } else if let Some((scope, block)) =
+                            builder.fun().scope_stack().iter().rev().find_map(|scope| {
+                                scope.yield_target.map(|block| (scope.id(), block))
+                            })
+                        {
+                            auto_cleanup(builder, scope)?;
+                            block
+                        } else {
+                            return Err(mir_error(
+                                &range,
+                                (
+                                    &catalogue::MISSING_ENTITY,
+                                    (
+                                        "yield target".into(),
+                                        "staged materialization context".into(),
+                                    ),
+                                ),
+                            ));
+                        };
                     let args: Vec<MIRValue> = value
                         .as_ref()
                         .map(|value| remap.value(value))
@@ -327,10 +387,22 @@ fn instantiate_inner(
                     targets: local_targets,
                 }) => {
                     let MIRValue::Register(source) = staged else {
-                        return Err(mir_error(&range, (&catalogue::ENTITY_REQUIREMENT, ("staged callee".into(), "a template input".into(), None))));
+                        return Err(mir_error(
+                            &range,
+                            (
+                                &catalogue::ENTITY_REQUIREMENT,
+                                ("staged callee".into(), "a template input".into(), None),
+                            ),
+                        ));
                     };
                     let dependency = staged_inputs.get(source).cloned().ok_or_else(|| {
-                        mir_error(&range, (&catalogue::MISSING_ENTITY, ("staged dependency".into(), "staged callee".into())))
+                        mir_error(
+                            &range,
+                            (
+                                &catalogue::MISSING_ENTITY,
+                                ("staged dependency".into(), "staged callee".into()),
+                            ),
+                        )
                     })?;
                     let args = args
                         .iter()
@@ -370,17 +442,16 @@ fn instantiate_inner(
                     staged_inputs.insert(*out, std::sync::Arc::new(value));
                     values.remove(out);
                 }
-                MIRStagedInstrKind::Comptime(MIRComptimeOp::Call {
-                    out,
-                    callee,
-                    args,
-                }) => {
+                MIRStagedInstrKind::Comptime(MIRComptimeOp::Call { out, callee, args }) => {
                     let MIRValue::Constant(cx_mir::MIRConstant::Function(function)) =
                         remap.value(callee)?
                     else {
                         return Err(mir_error(
                             range,
-                            (&catalogue::MISSING_ENTITY, ("comptime callee binding".into(), "staged template".into())),
+                            (
+                                &catalogue::MISSING_ENTITY,
+                                ("comptime callee binding".into(), "staged template".into()),
+                            ),
                         ));
                     };
                     let args = args
@@ -395,13 +466,26 @@ fn instantiate_inner(
                                 MIRValue::Constant(value) => Ok(MIRComptimeValue::Constant(value)),
                                 _ => Err(mir_error(
                                     range,
-                                    (&catalogue::ENTITY_REQUIREMENT, ("comptime argument".into(), "a compile-time value".into(), Some("runtime value".into()))),
+                                    (
+                                        &catalogue::ENTITY_REQUIREMENT,
+                                        (
+                                            "comptime argument".into(),
+                                            "a compile-time value".into(),
+                                            Some("runtime value".into()),
+                                        ),
+                                    ),
                                 )),
                             }
                         })
                         .collect::<CXResult<Vec<_>>>()?;
                     let function = builder.module().function(function).ok_or_else(|| {
-                        mir_error(range, (&catalogue::MISSING_ENTITY, ("comptime function definition".into(), "MIR module".into())))
+                        mir_error(
+                            range,
+                            (
+                                &catalogue::MISSING_ENTITY,
+                                ("comptime function definition".into(), "MIR module".into()),
+                            ),
+                        )
                     })?;
 
                     let value = evaluate_comptime_function(builder, function, &args)?;
@@ -415,17 +499,22 @@ fn instantiate_inner(
                                 staged_inputs.insert(*out, value);
                                 values.remove(&out);
                             }
+                            MIRComptimeValue::Reference { .. } => {
+                                return Err(mir_error(
+                                    range,
+                                    (
+                                        &catalogue::INVALID_CONTEXT,
+                                        ("reference value".into(), "staged value".into()),
+                                    ),
+                                ));
+                            }
                         }
                     }
                 }
                 MIRStagedInstrKind::Move { out, value } => {
                     let mapped = remap.value(value)?;
-                    let mapped = match mapped {
-                        MIRValue::PlaceRef(place)
-                        | MIRValue::Copy(place)
-                        | MIRValue::Move(place) => MIRValue::Move(place),
-                        value => value,
-                    };
+                    let ty = body.register(*out).expect("staged move output").ty;
+                    let mapped = super::memory::move_value(builder, mapped, ty, range)?;
                     values.insert(*out, mapped);
                 }
                 MIRStagedInstrKind::Use { .. } => {}
@@ -460,7 +549,7 @@ fn instantiate_inner(
                         .emit(mapped, instruction.token_range.clone());
                 }
             }
-            pending.extend(instruction.successors());
+            pending.extend(instruction.successors().map(|target| target.block));
         }
         pending.extend(body.blocks().iter().filter_map(|block| {
             (used_targets.contains(&blocks[&block.id]) && !visited.contains(&block.id))
@@ -499,6 +588,15 @@ fn bind_input(
         MIRStagedBinding::Comptime(MIRComptimeValue::Staged(staged)) => {
             staged_inputs.insert(input, staged.clone());
         }
+        MIRStagedBinding::Comptime(MIRComptimeValue::Reference { .. }) => {
+            return Err(mir_error(
+                &TokenRange::internal(),
+                (
+                    &catalogue::INVALID_CONTEXT,
+                    ("reference value".into(), "staged input".into()),
+                ),
+            ));
+        }
     }
     Ok(())
 }
@@ -521,8 +619,12 @@ fn resolve_dependencies(
     impl MIRVisitor<'_> for DependencyVisitor<'_> {
         type Error = std::convert::Infallible;
 
-        fn register(&mut self, register: &MIRRegister, role: MIRVisitRole) -> Result<(), Self::Error> {
-            if matches!(role, MIRVisitRole::Read | MIRVisitRole::Copy | MIRVisitRole::Move)
+        fn register(
+            &mut self,
+            register: &MIRRegister,
+            role: MIRVisitRole,
+        ) -> Result<(), Self::Error> {
+            if matches!(role, MIRVisitRole::Read | MIRVisitRole::Copy)
                 && Some(*register) != self.deferred
                 && self.staged_inputs.contains_key(register)
                 && !self.inputs.contains(register)
@@ -538,7 +640,9 @@ fn resolve_dependencies(
         deferred,
         inputs: Vec::new(),
     };
-    instruction.visit(&mut visitor).expect("dependency visitor is infallible");
+    instruction
+        .visit(&mut visitor)
+        .expect("dependency visitor is infallible");
     let inputs = visitor.inputs;
 
     for input in inputs {
@@ -548,7 +652,13 @@ fn resolve_dependencies(
         if !staged.template().params().is_empty() {
             return Err(mir_error(
                 &range,
-                (&catalogue::REQUIRED_CONTEXT, ("parameterized staged values".into(), "an application".into())),
+                (
+                    &catalogue::REQUIRED_CONTEXT,
+                    (
+                        "parameterized staged values".into(),
+                        "an application".into(),
+                    ),
+                ),
             ));
         }
         let value = instantiate_inner(builder, &staged, targets, used_targets)?;
@@ -566,10 +676,18 @@ fn map_targets(
     let map = |target: Option<MIRBasicBlockID>| {
         target
             .map(|target| {
-                blocks
-                    .get(&target)
-                    .copied()
-                    .ok_or_else(|| mir_error(&range, (&catalogue::MISSING_ENTITY, ("staged target block".into(), "staged materialization context".into()))))
+                blocks.get(&target).copied().ok_or_else(|| {
+                    mir_error(
+                        &range,
+                        (
+                            &catalogue::MISSING_ENTITY,
+                            (
+                                "staged target block".into(),
+                                "staged materialization context".into(),
+                            ),
+                        ),
+                    )
+                })
             })
             .transpose()
     };
@@ -594,12 +712,27 @@ fn validate_yield(
         .and_then(|block| block.params.first())
         .and_then(|register| builder.fun().register_type(*register));
     if expected.is_some() != actual.is_some() {
-        return Err(mir_error(&range, (&catalogue::ENTITY_MISMATCH, ("staged yield value".into(), "materialization context".into()))));
+        return Err(mir_error(
+            &range,
+            (
+                &catalogue::ENTITY_MISMATCH,
+                (
+                    "staged yield value".into(),
+                    "materialization context".into(),
+                ),
+            ),
+        ));
     }
     if let (Some(expected), Some(actual)) = (expected, actual)
         && !builder.types().same_type(expected, actual)
     {
-        return Err(mir_error(&range, (&catalogue::ENTITY_MISMATCH, ("staged yield type".into(), "yield target type".into()))));
+        return Err(mir_error(
+            &range,
+            (
+                &catalogue::ENTITY_MISMATCH,
+                ("staged yield type".into(), "yield target type".into()),
+            ),
+        ));
     }
     Ok(())
 }

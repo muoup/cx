@@ -5,12 +5,16 @@ use cx_lmir::{
     LMIRInstruction, LMIRValue,
 };
 use cx_mir::{
-    ty::registry::MIRTypeRegistry, MIRBasicBlockID, MIRFunction, MIRGlobalID, MIRPlace,
-    MIRRegister, MIRTypeID, MIRUnit,
+    MIRBasicBlockID, MIRFunction, MIRGlobalID, MIRPlaceID, MIRRegister, MIRTypeID, MIRUnit,
+    ty::registry::MIRTypeRegistry,
 };
 
 #[derive(Clone)]
 pub(crate) enum PlaceBinding {
+    Reference {
+        value: LMIRValue,
+        ty: MIRTypeID,
+    },
     Address {
         value: LMIRValue,
         ty: MIRTypeID,
@@ -34,7 +38,8 @@ pub(crate) struct FunctionLoweringContext<'a> {
     prototype: LMIRFunctionPrototype,
     blocks: Vec<LMIRBasicBlock>,
     block_indices: HashMap<MIRBasicBlockID, usize>,
-    places: HashMap<MIRPlace, PlaceBinding>,
+    places: HashMap<MIRPlaceID, PlaceBinding>,
+    targets: HashMap<MIRRegister, PlaceBinding>,
     current: usize,
     temp: usize,
 }
@@ -62,6 +67,7 @@ impl<'a> FunctionLoweringContext<'a> {
             blocks,
             block_indices,
             places: HashMap::new(),
+            targets: HashMap::new(),
             current: 0,
             temp: 0,
         }
@@ -125,7 +131,15 @@ impl<'a> FunctionLoweringContext<'a> {
             .expect("MIR block has no LMIR block index")
     }
 
-    pub(crate) fn bind_place(&mut self, place: MIRPlace, binding: PlaceBinding) {
+    pub(crate) fn bind_target(&mut self, register: MIRRegister, binding: PlaceBinding) {
+        self.targets.insert(register, binding);
+    }
+
+    pub(crate) fn target_binding(&self, register: MIRRegister) -> Option<PlaceBinding> {
+        self.targets.get(&register).cloned()
+    }
+
+    pub(crate) fn bind_place(&mut self, place: MIRPlaceID, binding: PlaceBinding) {
         self.places.insert(place, binding);
     }
 
@@ -139,7 +153,7 @@ impl<'a> FunctionLoweringContext<'a> {
         self.blocks.push(block);
     }
 
-    pub(crate) fn place_binding(&self, place: MIRPlace) -> Option<PlaceBinding> {
+    pub(crate) fn place_binding(&self, place: MIRPlaceID) -> Option<PlaceBinding> {
         self.places.get(&place).cloned()
     }
 

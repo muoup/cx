@@ -39,6 +39,7 @@ pub struct MIRComptimeEngine<'ctx, Context: ComptimeContext> {
     globals: HashMap<MIRGlobalID, MIRConstant>,
     evaluating_globals: HashSet<MIRGlobalID>,
     steps: u64,
+    next_frame: usize,
 }
 
 impl<'ctx, Context: ComptimeContext> MIRComptimeEngine<'ctx, Context> {
@@ -55,6 +56,7 @@ impl<'ctx, Context: ComptimeContext> MIRComptimeEngine<'ctx, Context> {
             globals: HashMap::new(),
             evaluating_globals: HashSet::new(),
             steps: 0,
+            next_frame: 0,
         }
     }
 

@@ -4,7 +4,7 @@ use crate::{log::log_mir_error, lowering::lower_expression};
 use cx_log::CXResult;
 use cx_mir::{
     MIRAggregateOp, MIRBinaryOp, MIRConstant, MIRInstrKind, MIRIntBinaryOp, MIRIntType,
-    MIRPlaceAggregateOp, MIRValue, MIRValueAggregateOp,
+    MIRTargetAggregateOp, MIRValue, MIRValueAggregateOp,
 };
 use cx_thir::thir::{
     data::{THIRIntType, THIRType, THIRTypeKind},
@@ -12,7 +12,6 @@ use cx_thir::thir::{
     pattern::THIRPattern,
 };
 use cx_thir::type_context::THIRTypeContext;
-use cx_tokens::TokenRange;
 
 use crate::{
     builder::MIRBuilder,
@@ -40,30 +39,28 @@ pub(super) fn lower_pattern_test(
             sum_type,
             variant_index,
             inner_local_id,
-            inner_name,
+            inner_name: _,
         } => {
             let base = memory::ensure_place(builder, lhs_value.clone(), &lhs._type)?;
             if let Some(local_id) = inner_local_id {
                 let payload_type = sum_variant_type(builder, sum_type, *variant_index);
                 let payload_type_id = lower_type(builder, &payload_type)?;
-                let payload =
-                    builder
-                        .fun_mut()
-                        .new_place(payload_type_id, inner_name.clone(), false);
+                let payload = memory::target_register(builder, payload_type_id);
                 let sum_type_id = lower_type(builder, sum_type)?;
 
-                builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Place {
+                builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Target {
                     out: payload,
-                    op: MIRPlaceAggregateOp::Variant {
+                    op: MIRTargetAggregateOp::Variant {
                         base,
                         variant: *variant_index,
                         sum_type: sum_type_id,
                     },
                 }));
 
-                builder
-                    .fun_mut()
-                    .bind_local(*local_id, MIRValue::PlaceRef(payload));
+                builder.fun_mut().bind_local(
+                    *local_id,
+                    MIRValue::Reference(cx_mir::MIRTarget::Indirect(payload)),
+                );
             }
             let tag_type = lower_type(
                 builder,
@@ -131,14 +128,19 @@ pub(super) fn bind_pattern_payload(
         let place = if sum_type.is_memory_reference() {
             memory::ensure_place(builder, subject, sum_type)?
         } else {
-            memory::assign_operand_to_place(builder, subject, sum_type, Some(name.clone()))?
+            cx_mir::MIRTarget::Place(memory::assign_operand_to_place(
+                builder,
+                subject,
+                sum_type,
+                Some(name.clone()),
+            )?)
         };
         builder
             .fun_mut()
-            .bind_local(*local_id, MIRValue::PlaceRef(place));
+            .bind_local(*local_id, MIRValue::Reference(place));
         builder
             .fun_mut()
-            .bind_named_value(name, MIRValue::PlaceRef(place));
+            .bind_named_value(name, MIRValue::Reference(place));
         return Ok(());
     }
     if let THIRPattern::TaggedUnionVariant {
@@ -152,18 +154,22 @@ pub(super) fn bind_pattern_payload(
         let payload_type_id = lower_type(builder, &payload_type)?;
         let sum_type_id = lower_type(builder, sum_type)?;
 
+        let subject = if sum_type.is_memory_reference() {
+            MIRValue::Reference(memory::ensure_place(builder, subject, sum_type)?)
+        } else {
+            subject
+        };
+
         let (payload, instr) = match subject {
-            MIRValue::Copy(place) | MIRValue::Move(place) | MIRValue::PlaceRef(place) => {
-                let out = builder
-                    .fun_mut()
-                    .new_place(payload_type_id, inner_name.clone(), false);
+            MIRValue::Reference(target) => {
+                let out = memory::target_register(builder, payload_type_id);
 
                 (
-                    MIRValue::PlaceRef(out),
-                    MIRAggregateOp::Place {
-                        out: out.clone(),
-                        op: MIRPlaceAggregateOp::Variant {
-                            base: place,
+                    MIRValue::Reference(cx_mir::MIRTarget::Indirect(out)),
+                    MIRAggregateOp::Target {
+                        out,
+                        op: MIRTargetAggregateOp::Variant {
+                            base: target,
                             variant: *variant_index,
                             sum_type: sum_type_id,
                         },
@@ -235,14 +241,5 @@ pub(super) fn constant_from_pattern(pattern: &THIRPattern) -> MIRConstant {
             ty: MIRIntType::I8,
             signed: false,
         },
-    }
-}
-
-pub fn move_value(value: MIRValue, range: &TokenRange) -> CXResult<MIRValue> {
-    match value {
-        MIRValue::PlaceRef(place) => Ok(MIRValue::Move(place)),
-        MIRValue::Move(place) => Ok(MIRValue::Move(place)),
-        MIRValue::Register(reg) => Ok(MIRValue::Register(reg)),
-        _ => log_mir_error(range, (&catalogue::MOVE_VALUE, format!("{:?}", value))),
     }
 }

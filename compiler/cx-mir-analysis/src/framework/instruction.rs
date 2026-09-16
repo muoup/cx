@@ -1,5 +1,5 @@
 use cx_mir::visit::{MIRVisitor, MIRWalk};
-use cx_mir::{MIRComptimeInstrKind, MIRComptimeOp, MIRInstrKind, MIRInstructionKind};
+use cx_mir::{MIRComptimeInstrKind, MIRComptimeOp, MIRInstrKind, MIRInstructionLike};
 
 #[derive(Clone, Copy)]
 pub enum Instruction<'a> {
@@ -23,7 +23,7 @@ impl Instruction<'_> {
     }
 }
 
-pub(crate) trait AnalysisInstruction: MIRWalk + MIRInstructionKind {
+pub(crate) trait AnalysisInstruction: MIRWalk + MIRInstructionLike {
     fn view(&self) -> Instruction<'_>;
 }
 

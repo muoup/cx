@@ -7,7 +7,8 @@ use cx_lmir::{
 use cx_log::CXResult;
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::registry::MIRTypeRegistry;
-use cx_mir::{MIRBody, MIRFunction, MIRGlobalID, MIRPlace};
+use cx_mir::visit::MIRWalk;
+use cx_mir::{MIRBody, MIRFunction, MIRGlobalID};
 
 use crate::context::FunctionLoweringContext;
 
@@ -44,6 +45,21 @@ pub(super) fn lower_function(
     );
 
     lower_parameters(&mut context);
+    for declaration in definition.places() {
+        if definition.parameters().contains(&declaration.id) {
+            continue;
+        }
+        let ty = lowered_type(&context, declaration.ty);
+        let alignment = mir_layout(&context, declaration.ty).alignment as u8;
+        let value = allocate_temp(&mut context, &ty, alignment);
+        context.bind_place(
+            declaration.id,
+            crate::context::PlaceBinding::Address {
+                value,
+                ty: declaration.ty,
+            },
+        );
+    }
     for block_id_value in order {
         context.set_current(context.block_index(block_id_value));
         let instructions = definition
@@ -85,7 +101,7 @@ fn block_order(
                         .instrs
                         .iter()
                         .flat_map(|instruction| instruction.successors())
-                        .map(|successor| (successor, false)),
+                        .map(|successor| (successor.block, false)),
                 );
             }
         }
@@ -147,7 +163,11 @@ fn lower_parameters(context: &mut FunctionLoweringContext<'_>) {
         .iter()
         .enumerate()
     {
-        let place = MIRPlace::Parameter(cx_mir::MIRParameterID::new(index));
+        let place = context
+            .function()
+            .definition()
+            .expect("runtime function has body")
+            .parameters()[index];
         let lowered_type = lowered_type(context, parameter.ty);
         let layout = mir_layout(context, parameter.ty);
         let abi = context.prototype().signature.params[index].abi.clone();
@@ -190,7 +210,7 @@ fn lower_parameters(context: &mut FunctionLoweringContext<'_>) {
                 debug_assert_eq!(slots.len(), 1);
                 context.bind_place(
                     place,
-                    crate::context::PlaceBinding::Address {
+                    crate::context::PlaceBinding::Reference {
                         value: LMIRValue::ParameterRef(abi_index as u32),
                         ty: context
                             .types()

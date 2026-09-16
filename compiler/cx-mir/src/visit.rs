@@ -1,11 +1,9 @@
 use crate::*;
-use std::convert::Infallible;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MIRVisitRole {
     Read,
     Copy,
-    Move,
     Define,
     Write,
     Address,
@@ -17,9 +15,13 @@ macro_rules! traversal {
         pub trait $visitor<'ir> {
             type Error;
             fn register(&mut self, _: &'ir $($mutable)* MIRRegister, _: MIRVisitRole) -> Result<(), Self::Error> { Ok(()) }
-            fn place(&mut self, place: &'ir $($mutable)* MIRPlace, _: MIRVisitRole) -> Result<(), Self::Error> {
-                if let MIRPlace::Global(global) = place { self.global(global)?; }
-                Ok(())
+            fn place(&mut self, _: &'ir $($mutable)* MIRPlaceID, _: MIRVisitRole) -> Result<(), Self::Error> { Ok(()) }
+            fn storage(&mut self, target: &'ir $($mutable)* MIRTarget, role: MIRVisitRole) -> Result<(), Self::Error> {
+                match target {
+                    MIRTarget::Place(place) => self.place(place, role),
+                    MIRTarget::Global(global) => self.global(global),
+                    MIRTarget::Indirect(register) => self.register(register, MIRVisitRole::Read),
+                }
             }
             fn block(&mut self, _: &'ir $($mutable)* MIRBasicBlockID) -> Result<(), Self::Error> { Ok(()) }
             fn continuation(&mut self, _: &'ir $($mutable)* MIRBasicBlockID) -> Result<(), Self::Error> { Ok(()) }
@@ -47,9 +49,7 @@ macro_rules! traversal {
         pub fn $value<'ir, V: $visitor<'ir> + ?Sized>(visitor: &mut V, value: &'ir $($mutable)* MIRValue) -> Result<(), V::Error> {
             match value {
                 MIRValue::Register(register) => visitor.register(register, MIRVisitRole::Read),
-                MIRValue::PlaceRef(place) => visitor.place(place, MIRVisitRole::Address),
-                MIRValue::Copy(place) => visitor.place(place, MIRVisitRole::Copy),
-                MIRValue::Move(place) => visitor.place(place, MIRVisitRole::Move),
+                MIRValue::Reference(target) => visitor.storage(target, MIRVisitRole::Address),
                 MIRValue::Constant(constant) => visitor.constant(constant),
             }
         }
@@ -73,31 +73,27 @@ macro_rules! traversal {
             match instruction {
                 MIRInstrKind::ScopeEnter { scope } | MIRInstrKind::ScopeExit { scope } => visitor.scope(scope)?,
                 MIRInstrKind::Initialize { place } => visitor.place(place, Define)?,
-                MIRInstrKind::Bind { place, to } => { visitor.place(to, Address)?; visitor.place(place, Define)?; }
+                MIRInstrKind::Bind { place, to } => { visitor.storage(to, Address)?; visitor.place(place, Define)?; }
                 MIRInstrKind::Invalidate { place, .. } => visitor.place(place, Invalidate)?,
-                MIRInstrKind::Create { out, ty } => { visitor.place(out, Define)?; visitor.ty(ty)?; }
-                MIRInstrKind::Assign { target, value, ty } => {
-                    visitor.value(value)?;
-                    match target {
-                        MIRTarget::Place(place) => visitor.place(place, Write)?,
-                        MIRTarget::Register(register) => visitor.register(register, Define)?,
-                    }
-                    visitor.ty(ty)?;
+                MIRInstrKind::Copy { out, source, ty } => {
+                    visitor.storage(source, Copy)?; visitor.register(out, Define)?; visitor.ty(ty)?;
                 }
-                MIRInstrKind::AddressOf { out, place } => { visitor.place(place, Address)?; visitor.register(out, Define)?; }
-                MIRInstrKind::Dereference { out, pointer, pointee_type } => {
-                    visitor.value(pointer)?; visitor.place(out, Define)?; visitor.ty(pointee_type)?;
+                MIRInstrKind::Store { target, value, ty } => {
+                    visitor.value(value)?; visitor.storage(target, Write)?; visitor.ty(ty)?;
+                }
+                MIRInstrKind::Let { out, value } => {
+                    visitor.value(value)?; visitor.register(out, Define)?;
                 }
                 MIRInstrKind::AggregateOp(operation) => match operation {
-                    MIRAggregateOp::Place { out, op } => {
+                    MIRAggregateOp::Target { out, op } => {
                         match op {
-                            MIRPlaceAggregateOp::Field { base, aggregate_type, .. } => { visitor.place(base, Address)?; visitor.ty(aggregate_type)?; }
-                            MIRPlaceAggregateOp::Variant { base, sum_type, .. } => { visitor.place(base, Address)?; visitor.ty(sum_type)?; }
-                            MIRPlaceAggregateOp::Index { base, index, element_type } => {
-                                visitor.place(base, Address)?; visitor.value(index)?; visitor.ty(element_type)?;
+                            MIRTargetAggregateOp::Field { base, aggregate_type, .. } => { visitor.storage(base, Address)?; visitor.ty(aggregate_type)?; }
+                            MIRTargetAggregateOp::Variant { base, sum_type, .. } => { visitor.storage(base, Address)?; visitor.ty(sum_type)?; }
+                            MIRTargetAggregateOp::Index { base, index, element_type } => {
+                                visitor.storage(base, Address)?; visitor.value(index)?; visitor.ty(element_type)?;
                             }
                         }
-                        visitor.place(out, Define)?;
+                        visitor.register(out, Define)?;
                     }
                     MIRAggregateOp::Value { out, op } => {
                         match op {
@@ -117,9 +113,11 @@ macro_rules! traversal {
                     for arg in args { visitor.value(arg)?; }
                     if let Some(out) = out { visitor.register(out, Define)?; }
                 }
-                MIRInstrKind::VaStart { list, last } => { visitor.value(list)?; visitor.value(last)?; }
-                MIRInstrKind::VaEnd { list } => visitor.value(list)?,
-                MIRInstrKind::VaArg { out, list, ty } => { visitor.value(list)?; visitor.register(out, Define)?; visitor.ty(ty)?; }
+                MIRInstrKind::Intrinsic(intrinsic) => match intrinsic {
+                    MIRIntrinsic::VaStart { list, last } => { visitor.value(list)?; visitor.value(last)?; }
+                    MIRIntrinsic::VaEnd { list } => visitor.value(list)?,
+                    MIRIntrinsic::VaArg { out, list, ty } => { visitor.value(list)?; visitor.register(out, Define)?; visitor.ty(ty)?; }
+                },
                 MIRInstrKind::BinOp { out, op, lhs, rhs } => {
                     visitor.value(lhs)?; visitor.value(rhs)?; visitor.register(out, Define)?;
                     if let MIRBinaryOp::PointerOffset { pointee, .. } = op { visitor.ty(pointee)?; }
@@ -199,8 +197,43 @@ traversal!(
 traversal!(MIRVisitorMut, walk_instruction_mut, walk_comptime_mut, walk_staged_mut, walk_value_mut, walk_constant_mut, [mut]);
 
 pub trait MIRWalk {
+    fn operands(&self) -> impl Iterator<Item = &MIRValue>
+    where
+        Self: Sized,
+    {
+        crate::query::operands(self).into_iter()
+    }
+
+    fn successors(&self) -> impl Iterator<Item = &MIRBlockTarget>
+    where
+        Self: Sized,
+    {
+        crate::query::successors(self).into_iter()
+    }
+
+    fn places(&self) -> impl Iterator<Item = (MIRPlaceID, MIRVisitRole)>
+    where
+        Self: Sized,
+    {
+        crate::query::places(self).into_iter()
+    }
+
+    fn targets(&self) -> impl Iterator<Item = (MIRTarget, MIRVisitRole)>
+    where
+        Self: Sized,
+    {
+        crate::query::targets(self).into_iter()
+    }
+
+    fn registers(&self) -> impl Iterator<Item = (MIRRegister, MIRVisitRole)>
+    where
+        Self: Sized,
+    {
+        crate::query::registers(self).into_iter()
+    }
+
     fn visit<'ir, V: MIRVisitor<'ir>>(&'ir self, visitor: &mut V) -> Result<(), V::Error>;
-    
+
     fn visit_mut<'ir, V: MIRVisitorMut<'ir>>(
         &'ir mut self,
         visitor: &mut V,
@@ -244,29 +277,15 @@ impl MIRWalk for MIRComptimeInstrKind {
     }
 }
 
-impl<K: MIRWalk> MIRInstruction<K> {
-    pub fn visit<'ir, V: MIRVisitor<'ir>>(&'ir self, visitor: &mut V) -> Result<(), V::Error> {
+impl<K: MIRWalk> MIRWalk for MIRInstruction<K> {
+    fn visit<'ir, V: MIRVisitor<'ir>>(&'ir self, visitor: &mut V) -> Result<(), V::Error> {
         self.kind.visit(visitor)
     }
-    
-    pub fn visit_mut<'ir, V: MIRVisitorMut<'ir>>(
+
+    fn visit_mut<'ir, V: MIRVisitorMut<'ir>>(
         &'ir mut self,
         visitor: &mut V,
     ) -> Result<(), V::Error> {
         self.kind.visit_mut(visitor)
-    }
-    
-    pub fn successors(&self) -> impl Iterator<Item = MIRBasicBlockID> {
-        struct Edges(Vec<MIRBasicBlockID>);
-        impl<'ir> MIRVisitor<'ir> for Edges {
-            type Error = Infallible;
-            fn block(&mut self, block: &MIRBasicBlockID) -> Result<(), Infallible> {
-                self.0.push(*block);
-                Ok(())
-            }
-        }
-        let mut edges = Edges(Vec::new());
-        let Ok(()) = self.visit(&mut edges);
-        edges.0.into_iter()
     }
 }

@@ -1,5 +1,5 @@
-use cx_log::CXResult;
-use cx_mir::{MIRTarget, MIRInstrKind, MIRValue};
+use cx_log::{CXResult, catalogue::mir};
+use cx_mir::{MIRInstrKind, MIRRegister, MIRTarget, MIRType, MIRTypeID, MIRTypeKind, MIRValue};
 use cx_thir::thir::data::THIRType;
 use cx_thir::type_context::THIRTypeContext;
 
@@ -11,10 +11,10 @@ pub(super) fn assign_operand_to_place(
     value: MIRValue,
     ty: &THIRType,
     name: Option<cx_util::identifier::CXIdent>,
-) -> CXResult<cx_mir::MIRPlace> {
+) -> CXResult<cx_mir::MIRPlaceID> {
     let type_id = lower_type(builder, ty)?;
     let place = builder.create(type_id, name, ty.is_nodrop());
-    builder.emit(MIRInstrKind::Assign {
+    builder.emit(MIRInstrKind::Store {
         target: MIRTarget::Place(place),
         value,
         ty: type_id,
@@ -22,27 +22,118 @@ pub(super) fn assign_operand_to_place(
     Ok(place)
 }
 
+pub(super) fn target_register(builder: &mut MIRBuilder<'_>, ty: MIRTypeID) -> MIRRegister {
+    let reference = builder.types_mut().intern(MIRType {
+        kind: MIRTypeKind::MemoryReference {
+            inner: ty,
+            bitfield: None,
+        },
+        layout: None,
+    });
+    builder.fun_mut().new_register(reference, None)
+}
+
+pub(super) fn copy(builder: &mut MIRBuilder<'_>, source: MIRTarget, ty: MIRTypeID) -> MIRValue {
+    let out = builder.fun_mut().new_register(ty, None);
+    builder.emit(MIRInstrKind::Copy { out, source, ty });
+    MIRValue::Register(out)
+}
+
 pub(super) fn ensure_place(
     builder: &mut MIRBuilder<'_>,
     value: MIRValue,
     ty: &THIRType,
-) -> CXResult<cx_mir::MIRPlace> {
+) -> CXResult<MIRTarget> {
     match value {
-        MIRValue::PlaceRef(place) => Ok(place),
-        value if ty.is_memory_reference() => {
-            let inner_type = ty
-                .mem_ref_inner()
-                .expect("memory reference is missing its pointee type");
-            let pointee = builder.registry().resolve_type_id(inner_type).clone();
-            let pointee_type = lower_type(builder, &pointee)?;
-            let out = builder.fun_mut().new_place(pointee_type, None, false);
-            builder.emit(MIRInstrKind::Dereference {
-                out,
-                pointer: value,
-                pointee_type,
-            });
-            Ok(out)
+        MIRValue::Reference(target) => Ok(target),
+        value
+            if ty.is_memory_reference()
+                || matches!(ty.kind, cx_thir::thir::data::THIRTypeKind::PointerTo { .. }) =>
+        {
+            if let Some(inner) = ty.mem_ref_inner()
+                && let MIRValue::Register(register) = &value
+            {
+                let pointee = builder.registry().resolve_type_id(inner).clone();
+                let pointee_type = lower_type(builder, &pointee)?;
+                if builder.fun().register_type(*register) == Some(pointee_type) {
+                    return assign_operand_to_place(builder, value, &pointee, None)
+                        .map(MIRTarget::Place);
+                }
+            }
+            let type_id = lower_type(builder, ty)?;
+            let register = match value {
+                MIRValue::Register(register) => register,
+                value => {
+                    let register = builder.fun_mut().new_register(type_id, None);
+                    builder.emit(MIRInstrKind::Let {
+                        out: register,
+                        value,
+                    });
+                    register
+                }
+            };
+            Ok(MIRTarget::Indirect(register))
         }
-        value => assign_operand_to_place(builder, value, ty, None),
+        value => assign_operand_to_place(builder, value, ty, None).map(MIRTarget::Place),
     }
+}
+
+pub(super) fn move_value(
+    builder: &mut MIRBuilder<'_>,
+    value: MIRValue,
+    ty: MIRTypeID,
+    range: &cx_tokens::TokenRange,
+) -> CXResult<MIRValue> {
+    let source = match value {
+        MIRValue::Reference(source) => source,
+        MIRValue::Register(_) => return Ok(value),
+        _ => return crate::log::log_mir_error(range, (&mir::MOVE_VALUE, format!("{value:?}"))),
+    };
+    let root = root(builder, source);
+    if matches!(root, Some(MIRTarget::Global(_))) {
+        return crate::log::log_mir_error(range, (&mir::MOVE_VALUE, "global storage".into()));
+    }
+    let value = copy(builder, source, ty);
+    if let Some(MIRTarget::Place(place)) = root {
+        builder.emit(MIRInstrKind::Invalidate { place, leak: false });
+    }
+    Ok(value)
+}
+
+fn root(builder: &MIRBuilder<'_>, mut target: MIRTarget) -> Option<MIRTarget> {
+    use cx_mir::{MIRAggregateOp, MIRStagedInstrKind, MIRTargetAggregateOp};
+    let mut visited = std::collections::HashSet::new();
+    while let MIRTarget::Indirect(register) = target {
+        if !visited.insert(register) {
+            return None;
+        }
+        target = builder
+            .fun()
+            .body()
+            .blocks()
+            .iter()
+            .flat_map(|block| &block.instrs)
+            .find_map(|instruction| match &instruction.kind {
+                MIRStagedInstrKind::Standard(MIRInstrKind::AggregateOp(
+                    MIRAggregateOp::Target { out, op },
+                )) if *out == register => Some(match op {
+                    MIRTargetAggregateOp::Field { base, .. }
+                    | MIRTargetAggregateOp::Variant { base, .. }
+                    | MIRTargetAggregateOp::Index { base, .. } => *base,
+                }),
+                MIRStagedInstrKind::Standard(MIRInstrKind::Let { out, value })
+                | MIRStagedInstrKind::Standard(MIRInstrKind::Coerce {
+                    out,
+                    operand: value,
+                    coercion: cx_mir::MIRCoercion::TypeChange,
+                    ..
+                }) if *out == register => match value {
+                    MIRValue::Reference(target) => Some(*target),
+                    MIRValue::Register(register) => Some(MIRTarget::Indirect(*register)),
+                    _ => None,
+                },
+                _ => None,
+            })?;
+    }
+    Some(target)
 }

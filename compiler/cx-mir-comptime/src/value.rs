@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
-use cx_mir::{MIRConstant, MIRFunctionID, MIRStagedTemplate, MIRValue};
+use cx_mir::{MIRConstant, MIRFunctionID, MIRStagedTemplate, MIRTarget, MIRValue};
 
 #[derive(Debug, Clone)]
 pub enum MIRComptimeValue {
+    Reference { frame: usize, target: MIRTarget },
     Constant(MIRConstant),
     Staged(Arc<MIRStagedValue>),
 }
@@ -12,7 +13,7 @@ impl MIRComptimeValue {
     pub fn constant(self) -> Option<MIRConstant> {
         match self {
             Self::Constant(value) => Some(value),
-            Self::Staged(_) => None,
+            Self::Staged(_) | Self::Reference { .. } => None,
         }
     }
 }

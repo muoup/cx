@@ -1,5 +1,5 @@
 use crate::{
-    MIRBody, MIRInstruction, MIRInstrKind, MIRInstructionKind, MIRRegister, MIRStagedTargets,
+    MIRBody, MIRInstrKind, MIRInstruction, MIRInstructionLike, MIRRegister, MIRStagedTargets,
     MIRStagedTemplate, MIRValue,
 };
 use std::sync::Arc;
@@ -33,7 +33,7 @@ pub enum MIRComptimeInstrKind {
     Comptime(MIRComptimeOp),
 }
 
-impl MIRInstructionKind for MIRComptimeInstrKind {
+impl MIRInstructionLike for MIRComptimeInstrKind {
     fn is_terminator(&self) -> bool {
         match self {
             Self::Standard(kind) => kind.is_terminator(),

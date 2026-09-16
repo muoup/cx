@@ -4,6 +4,7 @@ pub mod diagnostic;
 pub mod global;
 pub mod instruction;
 pub mod op;
+mod query;
 pub mod staged;
 pub mod ty;
 pub mod unit;
@@ -24,9 +25,9 @@ pub use global::{
     MIRRegisterDecl, MIRScopeDecl,
 };
 pub use instruction::{
-    MIRAggregateOp, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRInstruction,
-    MIRInstrKind, MIRInstructionKind, MIRParameterID, MIRPlace, MIRPlaceAggregateOp, MIRPlaceID,
-    MIRRegister, MIRScopeID, MIRStagedExitKind, MIRStagedTargets, MIRTarget, MIRValue,
+    MIRAggregateOp, MIRBasicBlock, MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRInstrKind,
+    MIRInstruction, MIRInstructionLike, MIRIntrinsic, MIRPlaceID, MIRRegister, MIRScopeID,
+    MIRStagedExitKind, MIRStagedTargets, MIRTarget, MIRTargetAggregateOp, MIRValue,
     MIRValueAggregateOp,
 };
 pub use op::{

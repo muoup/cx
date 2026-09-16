@@ -1,6 +1,7 @@
 use cx_log::CXResult;
 use cx_mir::{
-    MIRTarget, MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRInstrKind, MIRIntBinaryOp, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRUnaryOp, MIRValue,
+    MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRInstrKind, MIRIntBinaryOp, MIRPointerBinaryOp,
+    MIRPointerOffsetOp, MIRTarget, MIRUnaryOp, MIRValue,
 };
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
@@ -146,38 +147,56 @@ pub(super) fn lower_coercion(
             sextend,
             from_type,
             to_type,
-        } => emit_coercion(operand, MIRCoercion::Integral {
-            sign_extend: *sextend,
-            from: lower_int_type(*from_type),
-            to: lower_int_type(*to_type),
-        }),
-        THIRCoercion::FloatCast { to_type } => emit_coercion(operand, MIRCoercion::FloatCast {
-            from: match from_type.kind {
-                THIRTypeKind::Float { _type } => lower_float_type(_type),
-                _ => cx_mir::MIRFloatType::F64,
+        } => emit_coercion(
+            operand,
+            MIRCoercion::Integral {
+                sign_extend: *sextend,
+                from: lower_int_type(*from_type),
+                to: lower_int_type(*to_type),
             },
-            to: lower_float_type(*to_type),
-        }),
-        THIRCoercion::IntToFloat { to_type, sextend } => emit_coercion(operand, MIRCoercion::IntToFloat {
-            from: integer_type(from_type).0,
-            to: lower_float_type(*to_type),
-            signed: *sextend,
-        }),
-        THIRCoercion::FloatToInt { to_type, sextend } => emit_coercion(operand, MIRCoercion::FloatToInt {
-            from: match from_type.kind {
-                THIRTypeKind::Float { _type } => lower_float_type(_type),
-                _ => cx_mir::MIRFloatType::F64,
+        ),
+        THIRCoercion::FloatCast { to_type } => emit_coercion(
+            operand,
+            MIRCoercion::FloatCast {
+                from: match from_type.kind {
+                    THIRTypeKind::Float { _type } => lower_float_type(_type),
+                    _ => cx_mir::MIRFloatType::F64,
+                },
+                to: lower_float_type(*to_type),
             },
-            to: lower_int_type(*to_type),
-            signed: *sextend,
-        }),
-        THIRCoercion::PtrToInt { to_type } => emit_coercion(operand, MIRCoercion::PointerToInt {
-            to: lower_int_type(*to_type),
-        }),
-        THIRCoercion::IntToPtr { sextend } => emit_coercion(operand, MIRCoercion::IntToPointer {
-            from: integer_type(from_type).0,
-            sign_extend: *sextend,
-        }),
+        ),
+        THIRCoercion::IntToFloat { to_type, sextend } => emit_coercion(
+            operand,
+            MIRCoercion::IntToFloat {
+                from: integer_type(from_type).0,
+                to: lower_float_type(*to_type),
+                signed: *sextend,
+            },
+        ),
+        THIRCoercion::FloatToInt { to_type, sextend } => emit_coercion(
+            operand,
+            MIRCoercion::FloatToInt {
+                from: match from_type.kind {
+                    THIRTypeKind::Float { _type } => lower_float_type(_type),
+                    _ => cx_mir::MIRFloatType::F64,
+                },
+                to: lower_int_type(*to_type),
+                signed: *sextend,
+            },
+        ),
+        THIRCoercion::PtrToInt { to_type } => emit_coercion(
+            operand,
+            MIRCoercion::PointerToInt {
+                to: lower_int_type(*to_type),
+            },
+        ),
+        THIRCoercion::IntToPtr { sextend } => emit_coercion(
+            operand,
+            MIRCoercion::IntToPointer {
+                from: integer_type(from_type).0,
+                sign_extend: *sextend,
+            },
+        ),
         THIRCoercion::GetFnPtr => emit_coercion(operand, MIRCoercion::FunctionToPointer),
         THIRCoercion::Typechange => emit_coercion(operand, MIRCoercion::TypeChange),
         THIRCoercion::ReinterpretBits => emit_coercion(operand, MIRCoercion::ReinterpretBits),
@@ -185,7 +204,7 @@ pub(super) fn lower_coercion(
         THIRCoercion::ReferenceBounding(bounded) => {
             let place = builder.fun_mut().new_place(to_type, None, false);
 
-            builder.emit(MIRInstrKind::Assign {
+            builder.emit(MIRInstrKind::Store {
                 target: MIRTarget::Place(place),
                 value: operand,
                 ty: to_type,
@@ -196,17 +215,14 @@ pub(super) fn lower_coercion(
                     unreachable!("bound local not found")
                 };
 
-                let MIRValue::PlaceRef(bound_place) = value else {
-                    unreachable!("bound local is not a place")
+                let MIRValue::Reference(target) = value else {
+                    unreachable!("bound local is not a target")
                 };
 
-                builder.emit(MIRInstrKind::Bind {
-                    place: place,
-                    to: bound_place,
-                });
+                builder.emit(MIRInstrKind::Bind { place, to: target });
             }
 
-            Ok(MIRValue::PlaceRef(place))
+            Ok(MIRValue::Reference(cx_mir::MIRTarget::Place(place)))
         }
 
         THIRCoercion::Unreachable => {

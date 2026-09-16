@@ -1,7 +1,7 @@
 use cx_log::CXResult;
 use cx_mir::visit::{MIRVisitRole, MIRVisitor};
 use cx_mir::{
-    MIRBinaryOp, MIRCoercion, MIRConstant, MIRInstrKind, MIRIntBinaryOp, MIRIntType, MIRPlace,
+    MIRBinaryOp, MIRCoercion, MIRConstant, MIRInstrKind, MIRIntBinaryOp, MIRIntType, MIRPlaceID,
     MIRPointerBinaryOp, MIRRegister, MIRTarget, MIRUnaryOp, MIRValue,
 };
 
@@ -10,6 +10,11 @@ use crate::framework::instruction::Instruction;
 use crate::framework::state::{Fact, State, Table};
 
 #[derive(Clone, Debug)]
+enum TrackedTarget {
+    Place(MIRPlaceID),
+    Register(MIRRegister),
+}
+
 pub struct ValueTracking;
 
 #[derive(Clone, Debug, Default)]
@@ -116,24 +121,15 @@ impl Environment for ValueEnvironment {
         for (parameter, value) in params.iter().zip(values) {
             self.registers.insert(parameter.index(), value);
         }
-        for argument in args {
-            if let MIRValue::Move(place) = argument {
-                self.places.insert(context.place_index(*place), Fact::Top);
-            }
-        }
         Ok(())
     }
 }
 
 impl ValueEnvironment {
-    fn value(&self, context: &Context<'_>, value: &MIRValue) -> Fact<ConstValue> {
+    fn value(&self, _context: &Context<'_>, value: &MIRValue) -> Fact<ConstValue> {
         match value {
             MIRValue::Register(register) => self.registers.get(register.index()).clone().into_top(),
-            MIRValue::PlaceRef(place) | MIRValue::Copy(place) | MIRValue::Move(place) => self
-                .places
-                .get(context.place_index(*place))
-                .clone()
-                .into_top(),
+            MIRValue::Reference(_) => Fact::Top,
             MIRValue::Constant(constant) => constant_value(constant),
         }
     }
@@ -167,13 +163,12 @@ impl ValueEnvironment {
                 Ok(())
             }
 
-            fn place(&mut self, place: &MIRPlace, role: MIRVisitRole) -> Result<(), Self::Error> {
+            fn place(&mut self, place: &MIRPlaceID, role: MIRVisitRole) -> Result<(), Self::Error> {
                 if matches!(
                     role,
                     MIRVisitRole::Define
                         | MIRVisitRole::Write
                         | MIRVisitRole::Invalidate
-                        | MIRVisitRole::Move
                         | MIRVisitRole::Address
                 ) {
                     self.places
@@ -193,13 +188,7 @@ impl ValueEnvironment {
         if instruction.standard().is_none()
             || matches!(
                 instruction.standard(),
-                Some(
-                    MIRInstrKind::Call { .. }
-                        | MIRInstrKind::Assign {
-                            target: MIRTarget::Place(_),
-                            ..
-                        }
-                )
+                Some(MIRInstrKind::Call { .. } | MIRInstrKind::Store { .. })
             )
         {
             self.places.invalidate();
@@ -207,8 +196,10 @@ impl ValueEnvironment {
 
         if let Some((target, value)) = result {
             match target {
-                MIRTarget::Register(register) => self.registers.insert(register.index(), value),
-                MIRTarget::Place(place) => self.places.insert(context.place_index(place), value),
+                TrackedTarget::Register(register) => self.registers.insert(register.index(), value),
+                TrackedTarget::Place(place) => {
+                    self.places.insert(context.place_index(place), value)
+                }
             }
         }
     }
@@ -217,17 +208,33 @@ impl ValueEnvironment {
         &self,
         context: &Context<'_>,
         kind: &MIRInstrKind,
-    ) -> Option<(MIRTarget, Fact<ConstValue>)> {
+    ) -> Option<(TrackedTarget, Fact<ConstValue>)> {
         match kind {
-            MIRInstrKind::Assign { target, value, .. } => {
-                Some((*target, self.value(context, value)))
+            MIRInstrKind::Copy { out, source, .. } => Some((
+                TrackedTarget::Register(*out),
+                match source {
+                    MIRTarget::Place(place) => self
+                        .places
+                        .get(context.place_index(*place))
+                        .clone()
+                        .into_top(),
+                    _ => Fact::Top,
+                },
+            )),
+            MIRInstrKind::Store {
+                target: MIRTarget::Place(place),
+                value,
+                ..
+            } => Some((TrackedTarget::Place(*place), self.value(context, value))),
+            MIRInstrKind::Let { out, value } => {
+                Some((TrackedTarget::Register(*out), self.value(context, value)))
             }
             MIRInstrKind::BinOp { out, op, lhs, rhs } => Some((
-                MIRTarget::Register(*out),
+                TrackedTarget::Register(*out),
                 eval_binary(op, self.value(context, lhs), self.value(context, rhs)),
             )),
             MIRInstrKind::UnOp { out, op, operand } => Some((
-                MIRTarget::Register(*out),
+                TrackedTarget::Register(*out),
                 eval_unary(op, self.value(context, operand)),
             )),
             MIRInstrKind::Coerce {
@@ -236,7 +243,7 @@ impl ValueEnvironment {
                 operand,
                 ..
             } => Some((
-                MIRTarget::Register(*out),
+                TrackedTarget::Register(*out),
                 eval_coercion(coercion, self.value(context, operand)),
             )),
             _ => None,

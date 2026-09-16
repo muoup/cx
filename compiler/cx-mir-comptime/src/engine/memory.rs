@@ -1,6 +1,6 @@
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
-    MIRConstant, MIRFieldLayout, MIRGlobalID, MIRGlobalKind, MIRGlobalState, MIRPlace, MIRTypeID,
+    MIRConstant, MIRFieldLayout, MIRGlobalID, MIRGlobalKind, MIRGlobalState, MIRTarget, MIRTypeID,
     MIRTypeKind, MIRValue,
     ty::{
         interface::MTRegistry,
@@ -12,11 +12,12 @@ use cx_tokens::TokenRange;
 use crate::{ComptimeContext, log::comptime_error, value::MIRComptimeValue};
 
 use super::{MIRComptimeEngine, execution, state::PathSeg};
+use crate::interpretable::ComptimeInterpretable;
 
 pub(super) fn resolve_projection(
     engine: &MIRComptimeEngine<'_, impl ComptimeContext>,
-    place: MIRPlace,
-) -> (MIRPlace, Vec<PathSeg>) {
+    place: MIRTarget,
+) -> (MIRTarget, Vec<PathSeg>) {
     engine
         .frames
         .last()
@@ -29,7 +30,7 @@ pub(super) fn coerce_global_special(
     operand: &MIRValue,
     to_type: MIRTypeID,
 ) -> CXResult<Option<MIRConstant>> {
-    let MIRValue::PlaceRef(MIRPlace::Global(global_id)) = operand else {
+    let MIRValue::Reference(MIRTarget::Global(global_id)) = operand else {
         return Ok(None);
     };
 
@@ -50,7 +51,7 @@ pub(super) fn coerce_global_special(
                 engine.context.types().kind(*ty),
                 Ok(MIRTypeKind::Array { .. })
             );
-            
+
             if decays {
                 return Ok(Some(MIRConstant::Global {
                     global: *global_id,
@@ -58,10 +59,10 @@ pub(super) fn coerce_global_special(
                     ty: *ty,
                 }));
             }
-            
+
             Ok(None)
         }
-        
+
         MIRGlobalKind::StringLiteral { value } => {
             if let MIRTypeKind::Array { length, inner } = target_kind {
                 if let Ok(MIRTypeKind::Integer { ty, signed }) = engine.context.types().kind(*inner)
@@ -96,11 +97,11 @@ pub(super) fn coerce_global_special(
 
 pub(super) fn address_of(
     engine: &MIRComptimeEngine<'_, impl ComptimeContext>,
-    place: MIRPlace,
+    place: MIRTarget,
     range: &TokenRange,
 ) -> CXResult<MIRConstant> {
     let (root, path) = resolve_projection(engine, place);
-    let MIRPlace::Global(global) = root else {
+    let MIRTarget::Global(global) = root else {
         return comptime_error(
             range.clone(),
             (
@@ -112,7 +113,11 @@ pub(super) fn address_of(
 
     if path.is_empty() {
         let ty = global_address_type(engine, global, range)?;
-        return Ok(MIRConstant::Global { global, offset: 0, ty });
+        return Ok(MIRConstant::Global {
+            global,
+            offset: 0,
+            ty,
+        });
     }
 
     let Some(MIRGlobalKind::Variable { ty: start, .. }) =
@@ -251,14 +256,64 @@ pub(super) fn read_value(
             .and_then(|frame| frame.registers.get(register))
             .cloned()
             .unwrap_or(MIRComptimeValue::Constant(MIRConstant::Undefined)),
-        MIRValue::PlaceRef(place) | MIRValue::Copy(place) | MIRValue::Move(place) => {
-            if let MIRPlace::Global(global) = place {
-                MIRComptimeValue::Constant(read_global_rvalue(engine, *global)?)
+        MIRValue::Reference(target) => {
+            let frame = engine.frames.len() - 1;
+            if reference_parameter(engine, frame, *target) {
+                return Ok(engine.frames[frame].cells[target].clone());
+            }
+            let (root, _) = resolve_projection(engine, *target);
+            if matches!(root, MIRTarget::Global(_)) {
+                MIRComptimeValue::Constant(address_of(engine, *target, &TokenRange::internal())?)
             } else {
-                read_place(engine, *place)?
+                MIRComptimeValue::Reference {
+                    frame: engine.frames.last().expect("active frame").id,
+                    target: *target,
+                }
             }
         }
     })
+}
+
+pub(super) fn read_target(
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
+    target: MIRTarget,
+) -> CXResult<MIRComptimeValue> {
+    read_at(engine, engine.frames.len() - 1, target)
+}
+
+pub(super) fn write_target(
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
+    target: MIRTarget,
+    value: MIRComptimeValue,
+    aggregate_type: Option<MIRTypeID>,
+) -> CXResult<()> {
+    write_at(
+        engine,
+        engine.frames.len() - 1,
+        target,
+        value,
+        aggregate_type,
+    )
+}
+
+pub(super) fn read_aggregate(
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
+    value: &MIRValue,
+) -> CXResult<MIRConstant> {
+    let value = match value {
+        MIRValue::Reference(target) => read_target(engine, *target)?,
+        _ => read_value(engine, value)?,
+    };
+    match value {
+        MIRComptimeValue::Constant(value) => Ok(value),
+        _ => comptime_error(
+            TokenRange::internal(),
+            (
+                &catalogue::COMPTIME_INVALID_OPERATION,
+                "read a nonconstant aggregate".into(),
+            ),
+        ),
+    }
 }
 
 pub(super) fn read_constant(
@@ -268,168 +323,210 @@ pub(super) fn read_constant(
 ) -> CXResult<MIRConstant> {
     match read_value(engine, value)? {
         MIRComptimeValue::Constant(value) => Ok(value),
-        MIRComptimeValue::Staged(_) => comptime_error(
+        MIRComptimeValue::Staged(_) | MIRComptimeValue::Reference { .. } => comptime_error(
             range.clone(),
             (
                 &catalogue::ENTITY_REQUIREMENT,
                 (
                     "staged value".into(),
                     "a concrete value".into(),
-                    Some("staged value".into()),
+                    Some("nonconstant value".into()),
                 ),
             ),
         ),
     }
 }
 
-fn read_global_rvalue(
-    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
-    global: MIRGlobalID,
-) -> CXResult<MIRConstant> {
-    let Some(global) = engine.context.global(global) else {
-        return comptime_error(
-            TokenRange::internal(),
-            (
-                &catalogue::MISSING_ENTITY,
-                ("global".into(), "comptime global value".into()),
-            ),
-        );
+pub(super) fn reference_parameter(
+    engine: &MIRComptimeEngine<'_, impl ComptimeContext>,
+    frame: usize,
+    target: MIRTarget,
+) -> bool {
+    let MIRTarget::Place(place) = target else {
+        return false;
     };
-
-    match &global.kind {
-        MIRGlobalKind::Variable { ty, .. } => {
-            if let Ok(MIRTypeKind::Array { inner, .. }) = engine.context.types().kind(*ty) {
-                return Ok(MIRConstant::Global { global: global.id, offset: 0, ty: *inner });
-            }
-        }
-        MIRGlobalKind::StringLiteral { .. } => {
-            let ty = global_address_type(engine, global.id, &TokenRange::internal())?;
-            return Ok(MIRConstant::Global { global: global.id, offset: 0, ty });
-        }
-    }
-
-    read_global(engine, global.id)
+    let Some(state) = engine.frames.get(frame) else {
+        return false;
+    };
+    let Some(index) = state
+        .code
+        .parameters()
+        .iter()
+        .position(|parameter| *parameter == place)
+    else {
+        return false;
+    };
+    state.code.prototype().signature.params[index]
+        .staged_params
+        .is_none()
+        && state.code.places().get(place.index()).is_some_and(|decl| {
+            engine
+                .context
+                .types()
+                .is_reference_type(decl.ty)
+                .unwrap_or(false)
+        })
 }
 
-fn read_place(
+fn reference_target(
+    engine: &MIRComptimeEngine<'_, impl ComptimeContext>,
+    frame: usize,
+    value: Option<&MIRComptimeValue>,
+) -> CXResult<(usize, MIRTarget)> {
+    match value {
+        Some(MIRComptimeValue::Reference { frame, target }) => {
+            match engine.frames.iter().position(|state| state.id == *frame) {
+                Some(index) => Ok((index, *target)),
+                None => comptime_error(
+                    TokenRange::internal(),
+                    (
+                        &catalogue::COMPTIME_INVALID_OPERATION,
+                        "dereference an expired comptime frame".into(),
+                    ),
+                ),
+            }
+        }
+        Some(MIRComptimeValue::Constant(MIRConstant::Global {
+            global, offset: 0, ..
+        })) => Ok((frame, MIRTarget::Global(*global))),
+        _ => comptime_error(
+            TokenRange::internal(),
+            (
+                &catalogue::COMPTIME_INVALID_OPERATION,
+                "dereference an unsupported comptime target".into(),
+            ),
+        ),
+    }
+}
+
+fn indirect_target(
+    engine: &MIRComptimeEngine<'_, impl ComptimeContext>,
+    frame: usize,
+    register: cx_mir::MIRRegister,
+) -> CXResult<(usize, MIRTarget)> {
+    reference_target(
+        engine,
+        frame,
+        engine
+            .frames
+            .get(frame)
+            .and_then(|frame| frame.registers.get(&register)),
+    )
+}
+
+fn read_at(
     engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
-    place: MIRPlace,
+    frame: usize,
+    target: MIRTarget,
 ) -> CXResult<MIRComptimeValue> {
-    if let MIRPlace::Global(global) = place {
-        return Ok(MIRComptimeValue::Constant(read_global(engine, global)?));
-    }
-
-    let projection = resolve_projection(engine, place);
-    if projection.1.is_empty() {
-        return Ok(engine
-            .frames
-            .last()
-            .and_then(|frame| frame.cells.get(&place))
-            .cloned()
-            .unwrap_or(MIRComptimeValue::Constant(MIRConstant::Undefined)));
-    }
-
-    let root = match &projection.0 {
-        MIRPlace::Global(global) => MIRComptimeValue::Constant(read_global(engine, *global)?),
-        other => engine
-            .frames
-            .last()
-            .and_then(|frame| frame.cells.get(other))
-            .cloned()
-            .unwrap_or(MIRComptimeValue::Constant(MIRConstant::Undefined)),
-    };
-    let MIRComptimeValue::Constant(root) = root else {
+    let Some(state) = engine.frames.get(frame) else {
         return comptime_error(
             TokenRange::internal(),
             (
                 &catalogue::COMPTIME_INVALID_OPERATION,
-                "projection through a staged value".into(),
+                "read a reference to an expired comptime frame".into(),
             ),
         );
     };
-    Ok(MIRComptimeValue::Constant(read_path(&root, &projection.1)))
+    if reference_parameter(engine, frame, target) {
+        let (frame, target) = reference_target(engine, frame, state.cells.get(&target))?;
+        return read_at(engine, frame, target);
+    }
+    if let Some((root, path)) = state.derived.get(&target).cloned() {
+        let MIRComptimeValue::Constant(value) = read_at(engine, frame, root)? else {
+            return comptime_error(
+                TokenRange::internal(),
+                (
+                    &catalogue::COMPTIME_INVALID_OPERATION,
+                    "project a nonconstant comptime value".into(),
+                ),
+            );
+        };
+        return Ok(MIRComptimeValue::Constant(read_path(&value, &path)));
+    }
+    match target {
+        MIRTarget::Global(global) => Ok(MIRComptimeValue::Constant(read_global(engine, global)?)),
+        MIRTarget::Place(_) => Ok(state
+            .cells
+            .get(&target)
+            .cloned()
+            .unwrap_or(MIRComptimeValue::Constant(MIRConstant::Undefined))),
+        MIRTarget::Indirect(register) => {
+            let (frame, target) = indirect_target(engine, frame, register)?;
+            read_at(engine, frame, target)
+        }
+    }
 }
 
-pub(super) fn write_place(
+fn write_at(
     engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
-    place: MIRPlace,
+    frame: usize,
+    target: MIRTarget,
     value: MIRComptimeValue,
     aggregate_type: Option<MIRTypeID>,
 ) -> CXResult<()> {
-    if let MIRPlace::Global(global) = place {
+    let Some(state) = engine.frames.get(frame) else {
+        return comptime_error(
+            TokenRange::internal(),
+            (
+                &catalogue::COMPTIME_INVALID_OPERATION,
+                "write a reference to an expired comptime frame".into(),
+            ),
+        );
+    };
+    if reference_parameter(engine, frame, target) {
+        let (frame, target) = reference_target(engine, frame, state.cells.get(&target))?;
+        return write_at(engine, frame, target, value, aggregate_type);
+    }
+    if let Some((root, path)) = state.derived.get(&target).cloned() {
+        let MIRComptimeValue::Constant(current) = read_at(engine, frame, root)? else {
+            return comptime_error(
+                TokenRange::internal(),
+                (
+                    &catalogue::COMPTIME_INVALID_OPERATION,
+                    "assign through a nonconstant comptime value".into(),
+                ),
+            );
+        };
         let MIRComptimeValue::Constant(value) = value else {
             return comptime_error(
                 TokenRange::internal(),
                 (
                     &catalogue::COMPTIME_INVALID_OPERATION,
-                    "store a staged value in a global".into(),
+                    "store a nonconstant value in an aggregate projection".into(),
                 ),
             );
         };
-        engine.globals.insert(global, value);
-        return Ok(());
-    }
-
-    let projection = resolve_projection(engine, place);
-    if projection.1.is_empty() {
-        write_direct_cell(engine, place, value);
-        return Ok(());
-    }
-
-    let (root, path) = projection;
-    let current = match &root {
-        MIRPlace::Global(global) => MIRComptimeValue::Constant(read_global(engine, *global)?),
-        other => engine
-            .frames
-            .last()
-            .and_then(|frame| frame.cells.get(other))
-            .cloned()
-            .unwrap_or(MIRComptimeValue::Constant(MIRConstant::Undefined)),
-    };
-    let MIRComptimeValue::Constant(current) = current else {
-        return comptime_error(
-            TokenRange::internal(),
-            (
-                &catalogue::COMPTIME_INVALID_OPERATION,
-                "assign through a staged value".into(),
-            ),
+        return write_at(
+            engine,
+            frame,
+            root,
+            MIRComptimeValue::Constant(write_path(&current, &path, value, aggregate_type)),
+            aggregate_type,
         );
-    };
-    let MIRComptimeValue::Constant(value) = value else {
-        return comptime_error(
-            TokenRange::internal(),
-            (
-                &catalogue::COMPTIME_INVALID_OPERATION,
-                "store a staged value in an aggregate projection".into(),
-            ),
-        );
-    };
-    let updated = write_path(&current, &path, value, aggregate_type);
-    match root {
-        MIRPlace::Global(global) => {
-            engine.globals.insert(global, updated);
+    }
+    match target {
+        MIRTarget::Global(global) => {
+            let MIRComptimeValue::Constant(value) = value else {
+                return comptime_error(
+                    TokenRange::internal(),
+                    (
+                        &catalogue::COMPTIME_INVALID_OPERATION,
+                        "store a nonconstant value in a global".into(),
+                    ),
+                );
+            };
+            engine.globals.insert(global, value);
         }
-        other => {
-            let frame = engine.frames.last_mut().expect("active frame");
-            frame
-                .cells
-                .insert(other, MIRComptimeValue::Constant(updated));
+        MIRTarget::Place(_) => {
+            engine.frames[frame].cells.insert(target, value);
+        }
+        MIRTarget::Indirect(register) => {
+            let (frame, target) = indirect_target(engine, frame, register)?;
+            write_at(engine, frame, target, value, aggregate_type)?;
         }
     }
     Ok(())
-}
-
-pub(super) fn write_direct_cell(
-    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
-    place: MIRPlace,
-    value: MIRComptimeValue,
-) {
-    debug_assert!(
-        !matches!(place, MIRPlace::Global(_)),
-        "globals are handled by write_place"
-    );
-    let frame = engine.frames.last_mut().expect("active frame");
-    frame.cells.insert(place, value);
 }
 
 fn read_global(
@@ -452,14 +549,14 @@ fn read_global(
         if let Some(initializer) = resolver.global_initializer(global) {
             return match execution::call_function(engine, initializer, &[])? {
                 MIRComptimeValue::Constant(value) => Ok(value),
-                MIRComptimeValue::Staged(_) => comptime_error(
+                MIRComptimeValue::Staged(_) | MIRComptimeValue::Reference { .. } => comptime_error(
                     TokenRange::internal(),
                     (
                         &catalogue::ENTITY_REQUIREMENT,
                         (
                             "global initializer".into(),
                             "a compile-time value".into(),
-                            Some("staged value".into()),
+                            Some("nonconstant value".into()),
                         ),
                     ),
                 ),
@@ -477,7 +574,11 @@ fn read_global(
             MIRGlobalKind::StringLiteral { .. } => {
                 let range = TokenRange::internal();
                 let ty = global_address_type(engine, global, &range)?;
-                return Ok(MIRConstant::Global { global, offset: 0, ty });
+                return Ok(MIRConstant::Global {
+                    global,
+                    offset: 0,
+                    ty,
+                });
             }
 
             MIRGlobalKind::Variable { ty, state, .. } => match state {
@@ -488,7 +589,11 @@ fn read_global(
                     );
                 }
                 MIRGlobalState::ZeroInitialized => {
-                    return Ok(MIRConstant::Global { global, offset: 0, ty: *ty });
+                    return Ok(MIRConstant::Global {
+                        global,
+                        offset: 0,
+                        ty: *ty,
+                    });
                 }
                 MIRGlobalState::Initialized(constant) => {
                     return Ok(constant.clone());

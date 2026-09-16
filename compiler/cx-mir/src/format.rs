@@ -5,31 +5,20 @@ mod contextual;
 pub use contextual::MIRDisplay;
 
 use crate::{
-    MIRLayoutError, MIRTypeID, instruction::{
-        MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRParameterID, MIRPlace, MIRPlaceID,
-        MIRRegister, MIRValue,
-    }, global::{MIRFnSignature, MIRFunctionID, MIRGlobalID, MIRGlobalState}, layout_error, op::{MIRBinaryOp, MIRCoercion, MIRUnaryOp}, ty::MIRIntType, unit::MIRUnit
+    MIRLayoutError, MIRTypeID,
+    global::{MIRFnSignature, MIRFunctionID, MIRGlobalID, MIRGlobalState},
+    instruction::{
+        MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRPlaceID, MIRRegister, MIRValue,
+    },
+    layout_error,
+    op::{MIRBinaryOp, MIRCoercion, MIRUnaryOp},
+    ty::MIRIntType,
+    unit::MIRUnit,
 };
 
 impl Display for MIRPlaceID {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "%p{}", self.index())
-    }
-}
-
-impl Display for MIRParameterID {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "%arg{}", self.index())
-    }
-}
-
-impl Display for MIRPlace {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::FunctionLocal(id) => Display::fmt(id, f),
-            Self::Parameter(id) => Display::fmt(id, f),
-            Self::Global(id) => Display::fmt(id, f),
-        }
     }
 }
 
@@ -112,7 +101,7 @@ impl Display for MIRConstant {
                 Ok(())
             }
             Self::Function(function) => write!(f, "fn {function}"),
-            Self::Undefined => f.write_str("undefined")
+            Self::Undefined => f.write_str("undefined"),
         }
     }
 }
@@ -121,9 +110,7 @@ impl Display for MIRValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Register(value) => Display::fmt(value, f),
-            Self::PlaceRef(value) => write!(f, "&{value}"),
-            Self::Copy(place) => write!(f, "copy {place}"),
-            Self::Move(place) => write!(f, "move {place}"),
+            Self::Reference(value) => write!(f, "&{:?}", value),
             Self::Constant(value) => Display::fmt(value, f),
         }
     }

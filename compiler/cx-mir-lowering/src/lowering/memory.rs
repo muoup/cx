@@ -6,7 +6,7 @@ use cx_lmir::{
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::{field_layout, tagged_union_tag_offset};
 use cx_mir::{
-    MIRBlockTarget, MIRConstant, MIRFieldLayout, MIRPlace, MIRRegister, MIRTypeID, MIRTypeKind,
+    MIRBlockTarget, MIRConstant, MIRFieldLayout, MIRRegister, MIRTarget, MIRTypeID, MIRTypeKind,
     MIRValue,
 };
 use cx_util::identifier::CXIdent;
@@ -19,27 +19,44 @@ use super::output::{
 };
 use super::typing::{convert_float_type, convert_integer_type};
 
-pub(super) fn binding_for_place(
+pub(super) fn binding_for_target(
     context: &FunctionLoweringContext<'_>,
-    place: MIRPlace,
+    place: MIRTarget,
 ) -> PlaceBinding {
     match place {
-        MIRPlace::Global(global) => PlaceBinding::Address {
+        MIRTarget::Global(global) => PlaceBinding::Address {
             value: LMIRValue::Global(global_index(context, global)),
             ty: super::globals::global_type(
                 context.unit().global(global).expect("invalid global place"),
                 context.types(),
             ),
         },
-        _ => context
+        MIRTarget::Place(place) => context
             .place_binding(place)
             .unwrap_or_else(|| panic!("MIR place {place:?} used before its storage was lowered")),
+        MIRTarget::Indirect(register) => context.target_binding(register).unwrap_or_else(|| {
+            let register_type = context.register_type(register);
+            let ty = match context
+                .types()
+                .kind(register_type)
+                .expect("invalid target type")
+            {
+                MIRTypeKind::MemoryReference { inner, .. } | MIRTypeKind::PointerTo { inner } => {
+                    *inner
+                }
+                _ => panic!("indirect target register is not a reference or pointer"),
+            };
+            PlaceBinding::Address {
+                value: register_value(context, register),
+                ty,
+            }
+        }),
     }
 }
 
 pub(super) fn address(_context: &FunctionLoweringContext<'_>, binding: PlaceBinding) -> LMIRValue {
     match binding {
-        PlaceBinding::Address { value, .. } => value,
+        PlaceBinding::Address { value, .. } | PlaceBinding::Reference { value, .. } => value,
         PlaceBinding::Bitfield { .. } => {
             panic!("bitfield has no independently addressable value")
         }
@@ -51,7 +68,7 @@ pub(super) fn binding_type(
     binding: &PlaceBinding,
 ) -> MIRTypeID {
     match binding {
-        PlaceBinding::Address { ty, .. } => *ty,
+        PlaceBinding::Address { ty, .. } | PlaceBinding::Reference { ty, .. } => *ty,
         PlaceBinding::Bitfield { value_type, .. } => *value_type,
     }
 }
@@ -60,57 +77,31 @@ pub(super) fn is_address_valued(context: &FunctionLoweringContext<'_>, ty: MIRTy
     matches!(context.types().kind(ty), Ok(MIRTypeKind::Str))
 }
 
-fn is_direct_reference_parameter(context: &FunctionLoweringContext<'_>, place: MIRPlace) -> bool {
-    let MIRPlace::Parameter(parameter) = place else {
-        return false;
-    };
-    matches!(
-        context
-            .function()
-            .prototype()
-            .signature
-            .params
-            .get(parameter.index())
-            .and_then(|parameter| context.types().kind(parameter.ty).ok()),
-        Some(MIRTypeKind::MemoryReference { .. })
-    )
-}
-
 pub(super) fn lower_value(
     context: &mut FunctionLoweringContext<'_>,
     value: &MIRValue,
 ) -> LMIRValue {
     match value {
         MIRValue::Register(register) => register_value(context, *register),
-        MIRValue::PlaceRef(place) => lower_reference(context, *place),
-        MIRValue::Copy(place) => copy_place(context, *place),
-        MIRValue::Move(place) => move_place(context, *place),
         MIRValue::Constant(constant) => lower_constant(context, constant),
+        MIRValue::Reference(target) => lower_reference(context, *target),
     }
 }
 
-fn lower_reference(context: &FunctionLoweringContext<'_>, place: MIRPlace) -> LMIRValue {
-    address(context, binding_for_place(context, place))
+fn lower_reference(context: &FunctionLoweringContext<'_>, target: MIRTarget) -> LMIRValue {
+    address(context, binding_for_target(context, target))
 }
 
-fn move_place(context: &mut FunctionLoweringContext<'_>, place: MIRPlace) -> LMIRValue {
-    let binding = binding_for_place(context, place);
-    let ty = binding_type(context, &binding);
-
-    if is_direct_reference_parameter(context, place)
-        || is_address_valued(context, ty)
-        || lowered_type(context, ty).is_memory_resident()
+pub(super) fn copy_target(
+    context: &mut FunctionLoweringContext<'_>,
+    target: MIRTarget,
+    ty: MIRTypeID,
+) -> LMIRValue {
+    let binding = binding_for_target(context, target);
+    if is_address_valued(context, ty)
+        || (matches!(binding, PlaceBinding::Reference { .. })
+            && context.types().is_reference_type(ty).unwrap())
     {
-        address(context, binding)
-    } else {
-        load_binding(context, binding, ty, None)
-    }
-}
-
-fn copy_place(context: &mut FunctionLoweringContext<'_>, place: MIRPlace) -> LMIRValue {
-    let binding = binding_for_place(context, place);
-    let ty = binding_type(context, &binding);
-    if is_direct_reference_parameter(context, place) || is_address_valued(context, ty) {
         return address(context, binding);
     }
     let lowered = lowered_type(context, ty);
@@ -210,6 +201,10 @@ pub(super) fn load_binding(
 ) -> LMIRValue {
     match binding {
         PlaceBinding::Address {
+            value,
+            ty: binding_type,
+        }
+        | PlaceBinding::Reference {
             value,
             ty: binding_type,
         } => {
@@ -316,7 +311,10 @@ pub(super) fn store_binding(
     ty: MIRTypeID,
 ) {
     match binding {
-        PlaceBinding::Address { value: address, .. } => store_address(context, address, value, ty),
+        PlaceBinding::Address { value: address, .. }
+        | PlaceBinding::Reference { value: address, .. } => {
+            store_address(context, address, value, ty)
+        }
         PlaceBinding::Bitfield {
             address,
             storage_type,
@@ -448,7 +446,7 @@ pub(super) fn value_as_binding(
     ty: MIRTypeID,
 ) -> PlaceBinding {
     match value {
-        MIRValue::PlaceRef(place) => binding_for_place(context, *place),
+        MIRValue::Reference(target) => binding_for_target(context, *target),
         _ => PlaceBinding::Address {
             value: lower_value(context, value),
             ty,

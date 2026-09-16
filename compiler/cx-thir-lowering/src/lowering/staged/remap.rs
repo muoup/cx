@@ -5,8 +5,8 @@ use cx_log::catalogue::mir as catalogue;
 use cx_log::error::CXError;
 use cx_mir::visit::{MIRVisitRole, MIRVisitorMut, MIRWalk};
 use cx_mir::{
-    MIRAggregateOp, MIRBasicBlockID, MIRBlockTarget, MIRInstrKind, MIRPlace, MIRPlaceID,
-    MIRRegister, MIRScopeID, MIRTarget, MIRValue,
+    MIRAggregateOp, MIRBasicBlockID, MIRBlockTarget, MIRInstrKind, MIRPlaceID, MIRRegister,
+    MIRScopeID, MIRTarget, MIRValue,
 };
 use cx_tokens::TokenRange;
 
@@ -14,7 +14,7 @@ use crate::log::mir_error;
 
 pub(super) struct Remap<'a> {
     pub registers: &'a HashMap<MIRRegister, MIRValue>,
-    pub places: &'a HashMap<MIRPlaceID, MIRPlace>,
+    pub places: &'a HashMap<MIRPlaceID, MIRPlaceID>,
     pub omitted_places: &'a HashSet<MIRPlaceID>,
     pub blocks: &'a HashMap<MIRBasicBlockID, MIRBasicBlockID>,
     pub block_params: &'a HashMap<MIRBasicBlockID, Vec<bool>>,
@@ -39,36 +39,45 @@ impl Remap<'_> {
                     )
                 })?
             }
-            MIRValue::PlaceRef(MIRPlace::FunctionLocal(id))
-            | MIRValue::Copy(MIRPlace::FunctionLocal(id))
-            | MIRValue::Move(MIRPlace::FunctionLocal(id))
-                if self.omitted_places.contains(id) =>
-            {
+            MIRValue::Reference(MIRTarget::Place(id)) if self.omitted_places.contains(id) => {
                 MIRValue::Constant(cx_mir::MIRConstant::Unit)
             }
-            MIRValue::PlaceRef(place) => MIRValue::PlaceRef(self.place(*place)?),
-            MIRValue::Copy(place) => MIRValue::Copy(self.place(*place)?),
-            MIRValue::Move(place) => MIRValue::Move(self.place(*place)?),
+            MIRValue::Reference(target) => MIRValue::Reference(self.storage(*target)?),
             MIRValue::Constant(value) => MIRValue::Constant(value.clone()),
         })
     }
 
-    fn place(&self, place: MIRPlace) -> CXResult<MIRPlace> {
-        match place {
-            MIRPlace::FunctionLocal(id) => self.places.get(&id).copied().ok_or_else(|| {
-                mir_error(
+    fn storage(&self, target: MIRTarget) -> CXResult<MIRTarget> {
+        match target {
+            MIRTarget::Place(place) => Ok(MIRTarget::Place(self.place(place)?)),
+            MIRTarget::Global(_) => Ok(target),
+            MIRTarget::Indirect(register) => match self.registers.get(&register) {
+                Some(MIRValue::Register(register)) => Ok(MIRTarget::Indirect(*register)),
+                Some(MIRValue::Reference(target)) => Ok(*target),
+                Some(MIRValue::Constant(cx_mir::MIRConstant::Global {
+                    global, offset: 0, ..
+                })) => Ok(MIRTarget::Global(*global)),
+                _ => Err(mir_error(
                     self.range,
                     (
                         &catalogue::MISSING_MAPPING,
-                        ("place".into(), "template place".into()),
+                        ("indirect target".into(), "template register".into()),
                     ),
-                )
-            }),
-            MIRPlace::Parameter(_) => {
-                Err(mir_error(self.range, (&catalogue::RETAINED_PARAMETER, ())))
-            }
-            MIRPlace::Global(id) => Ok(MIRPlace::Global(id)),
+                )),
+            },
         }
+    }
+
+    fn place(&self, id: MIRPlaceID) -> CXResult<MIRPlaceID> {
+        self.places.get(&id).copied().ok_or_else(|| {
+            mir_error(
+                self.range,
+                (
+                    &catalogue::MISSING_MAPPING,
+                    ("place".into(), "template place".into()),
+                ),
+            )
+        })
     }
 
     fn target(&self, target: &MIRBlockTarget) -> CXResult<MIRBlockTarget> {
@@ -112,8 +121,8 @@ impl Remap<'_> {
         }
     }
 
-    fn omitted_place(&self, place: MIRPlace) -> bool {
-        matches!(place, MIRPlace::FunctionLocal(id) if self.omitted_places.contains(&id))
+    fn omitted_place(&self, place: MIRPlaceID) -> bool {
+        self.omitted_places.contains(&place)
     }
 
     fn omitted_register(&self, register: MIRRegister) -> bool {
@@ -126,20 +135,20 @@ impl Remap<'_> {
     pub(super) fn omitted(&self, kind: &MIRInstrKind) -> bool {
         match kind {
             MIRInstrKind::Initialize { place }
-            | MIRInstrKind::Invalidate { place, .. }
-            | MIRInstrKind::Create { out: place, .. }
-            | MIRInstrKind::Dereference { out: place, .. } => self.omitted_place(*place),
-            MIRInstrKind::Assign { target, .. } => match target {
-                MIRTarget::Place(place) => self.omitted_place(*place),
-                MIRTarget::Register(register) => self.omitted_register(*register),
-            },
-            MIRInstrKind::AddressOf { out, .. }
-            | MIRInstrKind::VaArg { out, .. }
+            | MIRInstrKind::Bind { place, .. }
+            | MIRInstrKind::Store {
+                target: MIRTarget::Place(place),
+                ..
+            }
+            | MIRInstrKind::Invalidate { place, .. } => self.omitted_place(*place),
+            MIRInstrKind::Copy { out, .. }
+            | MIRInstrKind::Let { out, .. }
+            | MIRInstrKind::Intrinsic(cx_mir::MIRIntrinsic::VaArg { out, .. })
             | MIRInstrKind::BinOp { out, .. }
             | MIRInstrKind::UnOp { out, .. }
             | MIRInstrKind::Coerce { out, .. } => self.omitted_register(*out),
-            MIRInstrKind::AggregateOp(MIRAggregateOp::Place { out, .. }) => {
-                self.omitted_place(*out)
+            MIRInstrKind::AggregateOp(MIRAggregateOp::Target { out, .. }) => {
+                self.omitted_register(*out)
             }
             MIRInstrKind::AggregateOp(MIRAggregateOp::Value { out, .. }) => {
                 self.omitted_register(*out)
@@ -179,7 +188,12 @@ impl MIRVisitorMut<'_> for StructuralRemapper<'_> {
         Ok(())
     }
 
-    fn place(&mut self, place: &mut MIRPlace, _role: MIRVisitRole) -> Result<(), Self::Error> {
+    fn storage(&mut self, target: &mut MIRTarget, _role: MIRVisitRole) -> Result<(), Self::Error> {
+        *target = self.remap.storage(*target)?;
+        Ok(())
+    }
+
+    fn place(&mut self, place: &mut MIRPlaceID, _role: MIRVisitRole) -> Result<(), Self::Error> {
         *place = self.remap.place(*place)?;
         Ok(())
     }

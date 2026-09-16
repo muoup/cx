@@ -5,13 +5,13 @@ use crate::framework::pipeline::AnalysisPass;
 use crate::framework::state::{LatticeState, Mergeable, StateTable};
 use cx_log::CXResult;
 
-use cx_mir::{MIRBasicBlockID, MIRInstruction, MIRPlace, MIRValue};
+use cx_mir::{MIRBasicBlockID, MIRInstruction, MIRPlaceID, MIRValue};
 
 mod log;
 mod state;
 
 pub struct Ownership {
-    nodrop: HashSet<MIRPlace>,
+    nodrop: HashSet<MIRPlaceID>,
     table: StateTable<OwnershipState>,
 }
 
@@ -58,7 +58,7 @@ impl Mergeable for OwnershipState {
         &mut self,
         context: &Ownership,
         other: Self,
-        place: MIRPlace,
+        place: MIRPlaceID,
     ) -> CXResult<LatticeState<Self>> {
         Ok(match (self, other) {
             (_, _) if *self == other => LatticeState::Known(*self),

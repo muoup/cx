@@ -8,17 +8,17 @@ use cx_lmir::{
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::tagged_union_tag_offset;
 use cx_mir::{
-    MIRAggregateOp, MIRBinaryOp, MIRCoercion, MIRConstant, MIRFloatBinaryOp,
-    MIRFnParam, MIRFnSignature, MIRFunctionMode, MIRFunctionType, MIRInstrKind, MIRIntBinaryOp,
-    MIRIntType, MIRPlaceAggregateOp, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister,
-    MIRTarget, MIRTypeID, MIRTypeKind, MIRUnaryOp, MIRValue, MIRValueAggregateOp,
+    MIRAggregateOp, MIRBinaryOp, MIRCoercion, MIRConstant, MIRFloatBinaryOp, MIRFnParam,
+    MIRFnSignature, MIRFunctionMode, MIRFunctionType, MIRInstrKind, MIRIntBinaryOp, MIRIntType,
+    MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister, MIRTarget, MIRTypeID, MIRTypeKind,
+    MIRUnaryOp, MIRValue, MIRValueAggregateOp,
 };
 use cx_util::identifier::CXIdent;
 
 use crate::context::{FunctionLoweringContext, PlaceBinding};
 
 use super::memory::{
-    address, binding_for_place, binding_type, field_binding, is_address_valued, load_binding,
+    address, binding_for_target, binding_type, field_binding, is_address_valued, load_binding,
     load_discriminant, lower_target, lower_value, store_address, store_binding, unreachable_target,
     value_as_binding,
 };
@@ -79,9 +79,11 @@ fn callable_type<'a>(
 fn value_type(context: &FunctionLoweringContext<'_>, value: &MIRValue) -> Option<MIRTypeID> {
     match value {
         MIRValue::Register(register) => Some(register_decl_type(context, *register)),
-        MIRValue::PlaceRef(place) | MIRValue::Copy(place) | MIRValue::Move(place) => {
-            Some(place_decl_type(context, *place))
-        }
+        MIRValue::Reference(MIRTarget::Place(place)) => Some(place_decl_type(context, *place)),
+        MIRValue::Reference(MIRTarget::Global(global)) => Some(super::globals::global_type(
+            context.unit().global(*global).unwrap(),
+            context.types(),
+        )),
         MIRValue::Constant(MIRConstant::Function(id)) => {
             let function = context.unit().function(*id)?;
             let signature = MIRFunctionType {
@@ -167,64 +169,30 @@ pub(super) fn lower_instruction(
         | MIRInstrKind::Bind { .. }
         | MIRInstrKind::Invalidate { .. } => {}
 
-        MIRInstrKind::Create { out, ty } => {
-            let lowered = lowered_type(context, *ty);
-            let layout = mir_layout(context, *ty);
-            let address = allocate_temp(context, &lowered, layout.alignment as u8);
-            context.bind_place(
-                *out,
-                PlaceBinding::Address {
-                    value: address,
-                    ty: *ty,
-                },
-            );
+        MIRInstrKind::Copy { out, source, ty } => {
+            let value = super::memory::copy_target(context, *source, *ty);
+            emit_to(context, *out, LMIRInstructionKind::Alias { value });
         }
-
-        MIRInstrKind::Assign { target, value, ty } => {
+        MIRInstrKind::Store { target, value, ty } => {
             let value = lower_value(context, value);
-            match target {
-                MIRTarget::Place(place) => {
-                    store_binding(context, binding_for_place(context, *place), value, *ty);
-                }
-                MIRTarget::Register(register) => {
-                    emit_to(context, *register, LMIRInstructionKind::Alias { value });
-                }
-            }
+            store_binding(context, binding_for_target(context, *target), value, *ty);
         }
-        MIRInstrKind::AddressOf { out, place } => {
-            let binding = binding_for_place(context, *place);
-            let address = match binding {
-                PlaceBinding::Address { value, .. } => value,
-                PlaceBinding::Bitfield { .. } => panic!("cannot take address of bitfield"),
-            };
-            emit_to(context, *out, LMIRInstructionKind::Alias { value: address });
-        }
-        MIRInstrKind::Dereference {
-            out,
-            pointer,
-            pointee_type,
-        } => {
-            let value = lower_value(context, pointer);
-            context.bind_place(
-                *out,
-                PlaceBinding::Address {
-                    value,
-                    ty: *pointee_type,
-                },
-            );
+        MIRInstrKind::Let { out, value } => {
+            let value = lower_value(context, value);
+            emit_to(context, *out, LMIRInstructionKind::Alias { value });
         }
         MIRInstrKind::AggregateOp(operation) => lower_aggregate(context, operation),
         MIRInstrKind::Call { out, callee, args } => lower_call(context, *out, callee, args),
-        MIRInstrKind::VaStart { list, last } => {
+        MIRInstrKind::Intrinsic(cx_mir::MIRIntrinsic::VaStart { list, last }) => {
             let list = lower_value(context, list);
             let last = lower_value(context, last);
             emit_void(context, LMIRInstructionKind::VaStart { list, last });
         }
-        MIRInstrKind::VaEnd { list } => {
+        MIRInstrKind::Intrinsic(cx_mir::MIRIntrinsic::VaEnd { list }) => {
             let list = lower_value(context, list);
             emit_void(context, LMIRInstructionKind::VaEnd { list });
         }
-        MIRInstrKind::VaArg { out, list, ty } => {
+        MIRInstrKind::Intrinsic(cx_mir::MIRIntrinsic::VaArg { out, list, ty }) => {
             let list = lower_value(context, list);
             emit_to(
                 context,
@@ -329,9 +297,9 @@ pub(super) fn lower_instruction(
 
 fn lower_aggregate(context: &mut FunctionLoweringContext<'_>, operation: &MIRAggregateOp) {
     match operation {
-        MIRAggregateOp::Place { out, op } => {
+        MIRAggregateOp::Target { out, op } => {
             let binding = match op {
-                MIRPlaceAggregateOp::Field {
+                cx_mir::MIRTargetAggregateOp::Field {
                     base,
                     field,
                     aggregate_type,
@@ -339,17 +307,17 @@ fn lower_aggregate(context: &mut FunctionLoweringContext<'_>, operation: &MIRAgg
                     let target = aggregate_target(context, *aggregate_type);
                     field_binding(
                         context,
-                        binding_for_place(context, *base),
+                        binding_for_target(context, *base),
                         target.ty,
                         *field,
                     )
                 }
-                MIRPlaceAggregateOp::Index {
+                cx_mir::MIRTargetAggregateOp::Index {
                     base,
                     index,
                     element_type,
                 } => {
-                    let base = address(context, binding_for_place(context, *base));
+                    let base = address(context, binding_for_target(context, *base));
                     let index = lower_value(context, index);
                     let element = lowered_type(context, *element_type);
                     let address = emit_temp(
@@ -368,12 +336,12 @@ fn lower_aggregate(context: &mut FunctionLoweringContext<'_>, operation: &MIRAgg
                         ty: *element_type,
                     }
                 }
-                MIRPlaceAggregateOp::Variant {
+                cx_mir::MIRTargetAggregateOp::Variant {
                     base,
                     variant,
                     sum_type,
                 } => {
-                    let base = address(context, binding_for_place(context, *base));
+                    let base = address(context, binding_for_target(context, *base));
                     let target = aggregate_target(context, *sum_type);
                     let MIRTypeKind::TaggedUnion { variants } = context
                         .types()
@@ -389,7 +357,11 @@ fn lower_aggregate(context: &mut FunctionLoweringContext<'_>, operation: &MIRAgg
                     }
                 }
             };
-            context.bind_place(*out, binding);
+            if !matches!(binding, PlaceBinding::Bitfield { .. }) {
+                let value = address(context, binding.clone());
+                emit_to(context, *out, LMIRInstructionKind::Alias { value });
+            }
+            context.bind_target(*out, binding);
         }
         MIRAggregateOp::Value { out, op } => match op {
             MIRValueAggregateOp::Discriminant { value, sum_type } => {
@@ -476,7 +448,9 @@ fn lower_construct(
                 );
 
                 match binding {
-                    PlaceBinding::Address { value, ty } => (value, ty),
+                    PlaceBinding::Address { value, ty } | PlaceBinding::Reference { value, ty } => {
+                        (value, ty)
+                    }
                     bitfield @ PlaceBinding::Bitfield { .. } => {
                         let value = lower_value(context, value);
                         store_binding(context, bitfield, value, register_decl_type(context, out));
@@ -671,10 +645,10 @@ fn lower_unary(
 ) {
     if let MIRUnaryOp::Increment { amount, post } = op {
         let place_id = match operand {
-            MIRValue::PlaceRef(place) => *place,
+            MIRValue::Reference(target) => *target,
             _ => panic!("increment requires a place operand"),
         };
-        let place = binding_for_place(context, place_id);
+        let place = binding_for_target(context, place_id);
         let ty = binding_type(context, &place);
         let previous = load_binding(context, place.clone(), ty, None);
         let amount = i128::from(*amount);
@@ -712,7 +686,7 @@ fn lower_unary(
                 .unwrap(),
             MIRTypeKind::MemoryReference { .. }
         ) {
-            address(context, binding_for_place(context, place_id))
+            address(context, binding_for_target(context, place_id))
         } else if *post {
             previous
         } else {
@@ -927,7 +901,7 @@ fn lower_call_argument(
         }
         LMIRParameterABI::Indirect { alignment } | LMIRParameterABI::ByValue { alignment } => {
             let source = lower_value(context, argument);
-            if matches!(argument, MIRValue::PlaceRef(_)) {
+            if matches!(argument, MIRValue::Reference(_)) {
                 let copy = emit_temp(
                     context,
                     LMIRInstructionKind::Allocate {

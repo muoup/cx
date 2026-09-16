@@ -5,9 +5,10 @@ use std::{
 
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
-    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionBody, MIRFunctionID, MIRFunctionMode,
-    MIRGlobalID, MIRGlobalVariable, MIRInstrKind, MIRLayoutError, MIRPlace, MIRStagedCapture,
-    MIRStagedTemplate, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRUnit, MIRValue,
+    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionBody, MIRFunctionID,
+    MIRFunctionMode, MIRGlobalID, MIRGlobalVariable, MIRInstrKind, MIRLayoutError, MIRPlaceID,
+    MIRStagedCapture, MIRStagedTemplate, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRUnit,
+    MIRValue,
     ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
 use cx_mir_comptime::ComptimeContext;
@@ -29,8 +30,8 @@ use cx_util::linkage::LinkageMode;
 mod function;
 mod module;
 
-use crate::lowering::{self, types::lower_type};
 use crate::log::mir_error;
+use crate::lowering::{self, types::lower_type};
 use function::{CaptureContext, MIRFunctionBuilder};
 use module::{MIRModuleBuilder, ModuleParts};
 
@@ -142,10 +143,13 @@ impl<'thir> MIRBuilder<'thir> {
         self.fun_mut().emit(instr, range);
     }
 
-    pub fn create(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>, nodrop: bool) -> MIRPlace {
-        let place = self.fun_mut().new_place(ty, debug_name, nodrop);
-        self.emit(MIRInstrKind::Create { out: place, ty });
-        place
+    pub fn create(
+        &mut self,
+        ty: MIRTypeID,
+        debug_name: Option<CXIdent>,
+        nodrop: bool,
+    ) -> MIRPlaceID {
+        self.fun_mut().new_place(ty, debug_name, nodrop)
     }
 
     pub(crate) fn local_value(
@@ -165,19 +169,16 @@ impl<'thir> MIRBuilder<'thir> {
         };
         let runtime_places = capture.runtime_places;
         let (input, value) = match &source {
-            MIRValue::PlaceRef(_) if runtime_places => {
+            MIRValue::Reference(_) if runtime_places => {
                 let pointee = ty
                     .mem_ref_inner()
                     .map(|pointee| self.registry.resolve_type_id(pointee).clone())
                     .unwrap_or_else(|| ty.clone());
                 let ty = lower_type(self, &pointee)?;
-                let MIRPlace::FunctionLocal(place) = self.fun_mut().new_place(ty, None, true)
-                else {
-                    unreachable!("captured place placeholder is not function-local");
-                };
+                let place = self.fun_mut().new_place(ty, None, true);
                 (
                     MIRStagedCapture::Place(place),
-                    MIRValue::PlaceRef(MIRPlace::FunctionLocal(place)),
+                    MIRValue::Reference(cx_mir::MIRTarget::Place(place)),
                 )
             }
             _ => {

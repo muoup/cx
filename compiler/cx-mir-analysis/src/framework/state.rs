@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use cx_log::CXResult;
-use cx_mir::{MIRBasicBlockID, MIRPlace, MIRPlaceID};
+use cx_mir::{MIRBasicBlockID, MIRPlaceID};
 
 use crate::framework::environment::AnalysisEnvironment;
 
@@ -19,7 +19,7 @@ pub trait Mergeable: Clone {
         &mut self,
         context: &Context,
         other: &Self,
-        place: MIRPlace,
+        place: MIRPlaceID,
     ) -> CXResult<LatticeState<Self>>
     where
         Self: Sized;
@@ -30,7 +30,7 @@ impl<T: Mergeable> LatticeState<T> {
         &mut self,
         context: &T::Context,
         other: &LatticeState<T>,
-        place: MIRPlace,
+        place: MIRPlaceID,
     ) -> CXResult<()> {
         match (self, other) {
             (LatticeState::Bottom, LatticeState::Bottom) => {}
@@ -57,10 +57,10 @@ impl<T: Mergeable> LatticeState<T> {
 
 #[derive(Debug, Clone)]
 pub struct StateTable<State: Mergeable> {
-    snapshots: HashMap<MIRBasicBlockID, Box<[(MIRPlace, LatticeState<State>)]>>,
+    snapshots: HashMap<MIRBasicBlockID, Box<[(MIRPlaceID, LatticeState<State>)]>>,
 
-    places: Vec<(MIRPlace, LatticeState<State>)>,
-    place_map: HashMap<MIRPlace, usize>,
+    places: Vec<(MIRPlaceID, LatticeState<State>)>,
+    place_map: HashMap<MIRPlaceID, usize>,
 }
 
 impl<State: Clone + Mergeable> StateTable<State> {
@@ -106,12 +106,12 @@ impl<State: Clone + Mergeable> StateTable<State> {
         Ok(())
     }
 
-    pub fn get(&self, block: MIRPlace) -> Option<&LatticeState<State>> {
+    pub fn get(&self, block: MIRPlaceID) -> Option<&LatticeState<State>> {
         let index = self.place_map.get(&block)?;
         self.places.get(*index).map(|(_, state)| state)
     }
 
-    pub fn get_mut(&mut self, block: MIRPlace) -> &mut LatticeState<State> {
+    pub fn get_mut(&mut self, block: MIRPlaceID) -> &mut LatticeState<State> {
         let index = self.place_map.entry(block).or_insert_with(|| {
             let index = self.places.len();
             self.places.push((block, LatticeState::Bottom));

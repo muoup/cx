@@ -304,6 +304,13 @@ pub enum MIRFunctionBody {
 }
 
 impl MIRFunctionBody {
+    pub fn parameters(&self) -> &[MIRPlaceID] {
+        match self {
+            Self::Runtime(body) => body.parameters(),
+            Self::Comptime(body) => body.parameters(),
+        }
+    }
+
     pub fn places(&self) -> &[MIRPlaceDecl] {
         match self {
             Self::Runtime(body) => body.places(),

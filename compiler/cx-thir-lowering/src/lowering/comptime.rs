@@ -43,5 +43,6 @@ pub(crate) fn evaluate(
     match value {
         MIRComptimeValue::Constant(value) => Ok(value),
         MIRComptimeValue::Staged(_) => Err(constant_error(expression, "staged expression")),
+        MIRComptimeValue::Reference { .. } => Err(constant_error(expression, "reference value")),
     }
 }

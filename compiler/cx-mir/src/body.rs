@@ -1,7 +1,7 @@
 use crate::global::{MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl};
 use crate::{
-    MIRBasicBlock, MIRBasicBlockID, MIRInstruction, MIRInstrKind, MIRInstructionKind, MIRPlace,
-    MIRPlaceID, MIRRegister, MIRScopeID, MIRTypeID,
+    MIRBasicBlock, MIRBasicBlockID, MIRInstrKind, MIRInstruction, MIRInstructionLike, MIRPlaceID,
+    MIRRegister, MIRScopeID, MIRTypeID,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -12,16 +12,18 @@ pub struct MIRBody<K = MIRInstrKind> {
 
     blocks: Vec<MIRBasicBlock<K>>,
     places: Vec<MIRPlaceDecl>,
+    parameters: Vec<MIRPlaceID>,
     registers: Vec<MIRRegisterDecl>,
     scopes: Vec<MIRScopeDecl>,
 }
 
-impl<K: MIRInstructionKind> MIRBody<K> {
+impl<K: MIRInstructionLike> MIRBody<K> {
     pub fn new() -> Self {
         Self {
             entry: MIRBasicBlockID::new(0),
             blocks: Vec::new(),
             places: Vec::new(),
+            parameters: Vec::new(),
             registers: Vec::new(),
             scopes: Vec::new(),
         }
@@ -121,7 +123,7 @@ impl<K: MIRInstructionKind> MIRBody<K> {
         debug_name: Option<CXIdent>,
         nodrop: bool,
         scope: MIRScopeID,
-    ) -> MIRPlace {
+    ) -> MIRPlaceID {
         let id = MIRPlaceID::new(self.places.len());
         self.places.push(MIRPlaceDecl {
             id,
@@ -130,7 +132,26 @@ impl<K: MIRInstructionKind> MIRBody<K> {
             nodrop,
             scope,
         });
-        MIRPlace::FunctionLocal(id)
+        id
+    }
+
+    pub fn parameters(&self) -> &[MIRPlaceID] {
+        &self.parameters
+    }
+
+    pub fn add_parameter(
+        &mut self,
+        parameter: &crate::MIRFnParam,
+        scope: MIRScopeID,
+    ) -> MIRPlaceID {
+        let place = self.add_place(
+            parameter.ty,
+            parameter.name.clone(),
+            parameter.nodrop,
+            scope,
+        );
+        self.parameters.push(place);
+        place
     }
 
     pub fn registers(&self) -> &[MIRRegisterDecl] {
@@ -140,7 +161,7 @@ impl<K: MIRInstructionKind> MIRBody<K> {
     pub fn register(&self, id: MIRRegister) -> Option<&MIRRegisterDecl> {
         self.registers().get(id.index())
     }
-    pub fn try_map<L: MIRInstructionKind, E>(
+    pub fn try_map<L: MIRInstructionLike, E>(
         self,
         mut map: impl FnMut(MIRInstruction<K>) -> Result<MIRInstruction<L>, E>,
     ) -> Result<MIRBody<L>, E> {
@@ -164,6 +185,7 @@ impl<K: MIRInstructionKind> MIRBody<K> {
             entry: self.entry,
             blocks,
             places: self.places,
+            parameters: self.parameters,
             registers: self.registers,
             scopes: self.scopes,
         })

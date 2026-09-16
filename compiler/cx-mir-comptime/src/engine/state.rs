@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use cx_mir::{MIRPlace, MIRRegister};
+use cx_mir::{MIRRegister, MIRTarget};
 
 use crate::{interpretable::InterpretedFunction, value::MIRComptimeValue};
 
@@ -21,15 +21,17 @@ impl PathSeg {
 }
 
 pub(super) struct Frame<'ctx> {
+    pub(super) id: usize,
     pub(super) code: InterpretedFunction<'ctx>,
     pub(super) registers: HashMap<MIRRegister, MIRComptimeValue>,
-    pub(super) cells: HashMap<MIRPlace, MIRComptimeValue>,
-    pub(super) derived: HashMap<MIRPlace, (MIRPlace, Vec<PathSeg>)>,
+    pub(super) cells: HashMap<MIRTarget, MIRComptimeValue>,
+    pub(super) derived: HashMap<MIRTarget, (MIRTarget, Vec<PathSeg>)>,
 }
 
 impl<'ctx> Frame<'ctx> {
-    pub(super) fn new(code: InterpretedFunction<'ctx>) -> Self {
+    pub(super) fn new(code: InterpretedFunction<'ctx>, id: usize) -> Self {
         Self {
+            id,
             code,
             registers: HashMap::new(),
             cells: HashMap::new(),

@@ -14,8 +14,7 @@ use crate::{
     builder::MIRBuilder,
     log::log_mir_error,
     lowering::{
-        aggregates::{self, move_value},
-        comptime, lower_expression, materialize_value,
+        aggregates, comptime, lower_expression,
         types::{lower_int_type, lower_type},
     },
 };
@@ -409,13 +408,12 @@ pub(super) fn lower_match(
         variant_match && !matches!(condition._type.kind, THIRTypeKind::MemoryReference { .. });
 
     let subject_value = match (variant_match, consuming_subject) {
-        (false, _) => materialize_value(builder, subject_value, &condition._type)?,
-        (true, true) => materialize_value(
-            builder,
-            move_value(subject_value, &condition.token_range)?,
-            &condition._type,
-        )?,
-        (true, false) => materialize_value(builder, subject_value, &condition._type)?,
+        (false, _) => subject_value,
+        (true, true) => {
+            let type_id = super::types::lower_type(builder, &condition._type)?;
+            super::memory::move_value(builder, subject_value, type_id, &condition.token_range)?
+        }
+        (true, false) => subject_value,
     };
 
     builder.fun_mut().bind_local(subject, subject_value.clone());
@@ -472,11 +470,10 @@ pub(super) fn lower_match(
             })
             .collect();
         let mut value = if condition._type.is_memory_reference() {
-            MIRValue::Copy(super::memory::ensure_place(
-                builder,
-                subject_value.clone(),
-                &condition._type,
-            )?)
+            let target =
+                super::memory::ensure_place(builder, subject_value.clone(), &condition._type)?;
+            let ty = lower_type(builder, &subject_type)?;
+            super::memory::copy(builder, target, ty)
         } else {
             subject_value.clone()
         };
