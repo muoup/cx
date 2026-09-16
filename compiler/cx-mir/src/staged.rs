@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRComptimeBody, MIRComptimeInstrKind, MIRComptimeOp,
-    MIRInstr, MIRInstrKind, MIRInstructionKind, MIRPlaceID, MIRRegister, MIRStagedExitKind,
+    MIRInstruction, MIRInstrKind, MIRInstructionKind, MIRPlaceID, MIRRegister, MIRStagedExitKind,
     MIRStagedTargets, MIRTypeID, MIRValue,
 };
 
@@ -68,7 +68,7 @@ impl MIRStagedTemplate {
 
 pub type MIRStagedBody = MIRBody<MIRStagedInstrKind>;
 pub type MIRStagedBasicBlock = MIRBasicBlock<MIRStagedInstrKind>;
-pub type MIRStagedInstr = MIRInstr<MIRStagedInstrKind>;
+pub type MIRStagedInstr = MIRInstruction<MIRStagedInstrKind>;
 
 #[derive(Debug, Clone)]
 pub enum MIRStagedInstrKind {
@@ -127,7 +127,7 @@ impl MIRStagedBody {
                 MIRStagedInstrKind::CallerReturn { value } => MIRInstrKind::Return { value },
                 _ => return Err(instruction),
             };
-            Ok(MIRInstr::new(kind, instruction.token_range))
+            Ok(MIRInstruction::new(kind, instruction.token_range))
         })
     }
 
@@ -141,7 +141,7 @@ impl MIRStagedBody {
                 MIRStagedInstrKind::Comptime(kind) => MIRComptimeInstrKind::Comptime(kind),
                 _ => return Err(instruction),
             };
-            Ok(MIRInstr::new(kind, instruction.token_range))
+            Ok(MIRInstruction::new(kind, instruction.token_range))
         })
     }
 }

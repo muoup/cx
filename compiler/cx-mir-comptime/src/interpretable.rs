@@ -54,7 +54,7 @@ impl ComptimeInterpretable for InterpretedFunction<'_> {
         let index = self.cursor.1;
         let instr = match self.function.body()? {
             MIRFunctionBody::Runtime(body) => body.block(self.cursor.0)?.instrs.get(index).map(|instr| {
-                cx_mir::MIRInstr::new(
+                cx_mir::MIRInstruction::new(
                     MIRComptimeInstrKind::Standard(instr.kind.clone()),
                     instr.token_range.clone(),
                 )

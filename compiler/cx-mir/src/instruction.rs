@@ -154,7 +154,7 @@ pub struct MIRBasicBlock<K = MIRInstrKind> {
     pub id: MIRBasicBlockID,
     pub debug_name: Option<CXIdent>,
     pub params: Vec<MIRRegister>,
-    pub instrs: Vec<MIRInstr<K>>,
+    pub instrs: Vec<MIRInstruction<K>>,
 }
 
 impl<K: MIRInstructionKind> MIRBasicBlock<K> {
@@ -167,15 +167,15 @@ impl<K: MIRInstructionKind> MIRBasicBlock<K> {
         }
     }
 
-    pub fn push(&mut self, kind: K) -> &mut MIRInstr<K> {
+    pub fn push(&mut self, kind: K) -> &mut MIRInstruction<K> {
         self.instrs
-            .push(MIRInstr::new(kind, TokenRange::internal()));
+            .push(MIRInstruction::new(kind, TokenRange::internal()));
         self.instrs
             .last_mut()
             .expect("an instruction was just pushed")
     }
 
-    pub fn terminator(&self) -> Option<&MIRInstr<K>> {
+    pub fn terminator(&self) -> Option<&MIRInstruction<K>> {
         self.instrs
             .last()
             .filter(|instr| instr.kind.is_terminator())
@@ -183,12 +183,12 @@ impl<K: MIRInstructionKind> MIRBasicBlock<K> {
 }
 
 #[derive(Debug, Clone)]
-pub struct MIRInstr<K = MIRInstrKind> {
+pub struct MIRInstruction<K = MIRInstrKind> {
     pub kind: K,
     pub token_range: TokenRange,
 }
 
-impl<K: MIRInstructionKind> MIRInstr<K> {
+impl<K: MIRInstructionKind> MIRInstruction<K> {
     pub fn new(kind: K, token_range: TokenRange) -> Self {
         Self { kind, token_range }
     }

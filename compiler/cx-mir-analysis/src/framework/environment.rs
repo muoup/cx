@@ -1,59 +1,88 @@
 use cx_log::CXResult;
-use cx_mir::{MIRBasicBlockID, MIRFunction, MIRPlace, MIRRegister, MIRUnit, MIRValue};
+use cx_mir::{MIRBasicBlockID, MIRFunction, MIRFunctionBody, MIRUnit};
 
-use super::{instruction::Instruction, state::State};
+use crate::{Pipeline, framework::instruction::AnalysisInstruction, options::MIRAnalysisOptions};
 
-pub struct Context<'a> {
-    pub unit: &'a MIRUnit,
-    pub function: &'a MIRFunction,
+pub struct AnalysisEnvironment<'mir> {
+    unit: &'mir MIRUnit,
+    options: MIRAnalysisOptions,
 }
 
-impl Context<'_> {
-    pub fn place_index(&self, place: MIRPlace) -> usize {
-        let locals = self.function.body().map_or(0, |body| body.places().len());
-        match place {
-            MIRPlace::FunctionLocal(id) => id.index(),
-            MIRPlace::Parameter(id) => locals + id.index(),
-            MIRPlace::Global(id) => {
-                locals + self.function.prototype().signature.params.len() + id.index()
+impl AnalysisEnvironment<'_> {
+    pub fn new(unit: &MIRUnit, options: MIRAnalysisOptions) -> Self {
+        Self {
+            unit,
+            options,
+        }
+    }
+
+    pub fn analyze(&mut self, unit: &MIRUnit) -> CXResult<()> {
+        for function in unit.functions() {
+            self.analyze_function(function)?;
+        }
+        
+        Ok(())
+    }
+
+    pub fn analyze_function(&mut self, function: &MIRFunction) -> CXResult<()> {
+        let mut pipeline = Pipeline::new(self.options);
+        
+        if pipeline.is_empty() {
+            return Ok(());
+        }
+
+        run(self, function, &mut pipeline)?;
+        
+        Ok(())
+    }
+}
+
+fn run<K: AnalysisInstruction>(
+    env: &mut AnalysisEnvironment<'_>,
+    function: &MIRFunction,
+    pipeline: &mut Pipeline,
+) -> CXResult<()> {
+    let body = match function.body() {
+        Some(MIRFunctionBody::Runtime(body)) => body,
+        
+        _ => return Ok(()),
+    };
+    
+    let entry = body.entry().index();
+    if entry >= body.blocks().len() {
+        return Ok(());
+    }
+
+    let mut current_block = entry;
+    let mut current_instruction = 0;
+
+    let mut reloads = Vec::new();
+
+    loop {
+        let instruction = body.block(MIRBasicBlockID(current_block))
+            .map(|b| b.instruction(current_instruction))
+            .unwrap();
+
+        pipeline.analyze_instruction(env, instruction)?;
+
+        for successor in instruction.successors() {
+            pipeline.merge(env, successor);
+            reloads.push(successor);
+        }
+
+        if instruction.is_terminator() && let Some(next_target) = reloads.pop() {
+            current_block = next_target.index();
+            current_instruction = 0;
+
+            pipeline.reload_block(env, MIRBasicBlockID(current_block));
+        } else {
+            current_instruction += 1;
+
+            if current_instruction == body.block(MIRBasicBlockID(current_block)).unwrap().instrs().len() {
+                break;
             }
         }
     }
-}
-
-#[derive(Clone, Copy)]
-pub struct Location {
-    pub block: MIRBasicBlockID,
-    pub instruction: usize,
-}
-
-pub trait Analysis: 'static {
-    type Environment: Environment;
-    fn create(&self, context: &Context<'_>) -> Option<Self::Environment>;
-}
-
-pub trait Environment: 'static {
-    type State: State;
-    fn snapshot(&self) -> Self::State;
-    fn restore(&mut self, state: &Self::State);
-    fn instruction(
-        &mut self,
-        context: &Context<'_>,
-        location: Location,
-        instruction: Instruction<'_>,
-        diagnose: bool,
-    ) -> CXResult<()>;
-    fn edge(
-        &mut self,
-        _context: &Context<'_>,
-        _location: Location,
-        _args: &[MIRValue],
-        _params: &[MIRRegister],
-        _diagnose: bool,
-    ) -> CXResult<()> {
-        Ok(())
-    }
-    fn validate(&self, _context: &Context<'_>, _location: Location) -> CXResult<()> {
-        Ok(())
-    }
+    
+    Ok(())
 }

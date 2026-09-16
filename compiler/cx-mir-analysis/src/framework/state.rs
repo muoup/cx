@@ -1,95 +1,123 @@
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Fact<T> {
-    #[default]
+use std::collections::HashMap;
+
+use cx_log::CXResult;
+use cx_mir::{MIRBasicBlockID, MIRPlace, MIRPlaceID};
+
+use crate::framework::environment::AnalysisEnvironment;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LatticeState<T: Clone> {
     Bottom,
     Known(T),
     Top,
 }
 
-impl<T: Clone + PartialEq> Fact<T> {
-    pub fn merge(&mut self, incoming: &Self) -> bool {
-        match (&*self, incoming) {
-            (_, Self::Bottom) | (Self::Top, _) => false,
-            (Self::Bottom, _) => {
-                *self = incoming.clone();
-                true
+pub trait Mergeable: Clone {
+    type Context;
+
+    fn merge(
+        &mut self,
+        context: &Context,
+        other: &Self,
+        place: MIRPlace,
+    ) -> CXResult<LatticeState<Self>>
+    where
+        Self: Sized;
+}
+
+impl<T: Mergeable> LatticeState<T> {
+    pub fn merge(
+        &mut self,
+        context: &T::Context,
+        other: &LatticeState<T>,
+        place: MIRPlace,
+    ) -> CXResult<()> {
+        match (self, other) {
+            (LatticeState::Bottom, LatticeState::Bottom) => {}
+            (LatticeState::Bottom, LatticeState::Known(value)) => {
+                *self = LatticeState::Known(value.clone());
             }
-            (Self::Known(left), Self::Known(right)) if left == right => false,
-            _ => {
-                *self = Self::Top;
-                true
+            (LatticeState::Bottom, LatticeState::Top) => {
+                *self = LatticeState::Top;
             }
-        }
-    }
-}
-
-pub trait State: Clone + Default + 'static {
-    fn merge(&mut self, incoming: &Self) -> bool;
-}
-
-#[derive(Debug)]
-pub struct Table<T> {
-    entries: Vec<Fact<T>>,
-}
-
-impl<T: Clone> Clone for Table<T> {
-    fn clone(&self) -> Self {
-        Self {
-            entries: self.entries.clone(),
-        }
-    }
-    fn clone_from(&mut self, source: &Self) {
-        self.entries.clone_from(&source.entries);
-    }
-}
-
-impl<T> Default for Table<T> {
-    fn default() -> Self {
-        Self {
-            entries: Vec::new(),
-        }
-    }
-}
-
-impl<T: Clone + PartialEq + 'static> Table<T> {
-    pub fn get(&self, index: usize) -> &Fact<T> {
-        self.entries.get(index).unwrap_or(&Fact::Bottom)
-    }
-
-    pub fn insert(&mut self, index: usize, value: Fact<T>) {
-        if index >= self.entries.len() {
-            if matches!(value, Fact::Bottom) {
-                return;
+            (LatticeState::Known(value), LatticeState::Bottom) => {}
+            (LatticeState::Known(value), LatticeState::Known(other_value)) => {
+                let merged = value.merge(env, other_value, place)?;
+                *self = merged;
             }
-            self.entries.resize(index + 1, Fact::Bottom);
-        }
-        self.entries[index] = value;
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, &Fact<T>)> {
-        self.entries
-            .iter()
-            .enumerate()
-            .filter(|(_, value)| !matches!(value, Fact::Bottom))
-    }
-
-    pub fn invalidate(&mut self) {
-        for value in &mut self.entries {
-            if !matches!(value, Fact::Bottom) {
-                *value = Fact::Top;
+            (LatticeState::Known(_), LatticeState::Top) => {
+                *self = LatticeState::Top;
             }
+            (LatticeState::Top, _) => {}
         }
+
+        Ok(())
     }
 }
 
-impl<T: Clone + PartialEq + 'static> State for Table<T> {
-    fn merge(&mut self, incoming: &Self) -> bool {
-        self.entries
-            .resize(self.entries.len().max(incoming.entries.len()), Fact::Bottom);
-        let mut changed = false;
-        for (target, source) in self.entries.iter_mut().zip(&incoming.entries) {
-            changed |= target.merge(source);
+#[derive(Debug, Clone)]
+pub struct StateTable<State: Mergeable> {
+    snapshots: HashMap<MIRBasicBlockID, Box<[(MIRPlace, LatticeState<State>)]>>,
+
+    places: Vec<(MIRPlace, LatticeState<State>)>,
+    place_map: HashMap<MIRPlace, usize>,
+}
+
+impl<State: Clone + Mergeable> StateTable<State> {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn reload_block(&mut self, block: MIRBasicBlockID) {
+        let Some(snapshot) = self.snapshots.get(&block) else {
+            unreachable!("No snapshot found for block {:?}", block);
+        };
+
+        self.places.clear();
+        self.place_map.clear();
+
+        for (place, state) in snapshot.iter() {
+            let index = self.places.len();
+            self.places.push((*place, state.clone()));
+            self.place_map.insert(*place, index);
         }
-        changed
+    }
+
+    pub fn merge(
+        &mut self,
+        env: &AnalysisEnvironment,
+        context: &State::Context,
+        other: MIRBasicBlockID,
+    ) -> CXResult<()> {
+        let Some(other) = self.snapshots.get(&other) else {
+            unreachable!("No snapshot found for block {:?}", other);
+        };
+
+        for (place, state) in &other.places {
+            let index = self.place_map.entry(*place).or_insert_with(|| {
+                let index = self.places.len();
+                self.places.push((*place, LatticeState::Bottom));
+                index
+            });
+
+            self.places[*index].1.merge(context, state, place)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn get(&self, block: MIRPlace) -> Option<&LatticeState<State>> {
+        let index = self.place_map.get(&block)?;
+        self.places.get(*index).map(|(_, state)| state)
+    }
+
+    pub fn get_mut(&mut self, block: MIRPlace) -> &mut LatticeState<State> {
+        let index = self.place_map.entry(block).or_insert_with(|| {
+            let index = self.places.len();
+            self.places.push((block, LatticeState::Bottom));
+            index
+        });
+
+        &mut self.places[*index].1
     }
 }

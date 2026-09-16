@@ -1,525 +1,82 @@
-use self::log::ownership_error;
-use crate::framework::environment::{Analysis, Context, Environment, Location};
-use crate::framework::instruction::Instruction;
-use crate::framework::state::{Fact, Table};
-use cx_log::CXResult;
-use cx_log::error::CXError;
+use std::collections::HashSet;
 
-use cx_log::catalogue::{ErrorDefinition, analysis as catalogue};
-use cx_mir::visit::MIRVisitor;
-use cx_mir::{
-    MIRAggregateOp, MIRFunction, MIRInstrKind, MIRPlace, MIRPlaceAggregateOp, MIRRegister,
-    MIRTarget, MIRUnit, MIRValue, MIRValueAggregateOp,
-};
+use crate::framework::environment::AnalysisEnvironment;
+use crate::framework::pipeline::AnalysisPass;
+use crate::framework::state::{LatticeState, Mergeable, StateTable};
+use cx_log::CXResult;
+
+use cx_mir::{MIRBasicBlockID, MIRInstruction, MIRPlace, MIRValue};
 
 mod log;
 mod state;
-use state::Availability;
-pub use state::OwnershipEnvironment;
 
-pub struct Ownership;
+pub struct Ownership {
+    nodrop: HashSet<MIRPlace>,
+    table: StateTable<OwnershipState>,
+}
 
-impl Analysis for Ownership {
-    type Environment = OwnershipEnvironment;
-    fn create(&self, context: &Context<'_>) -> Option<Self::Environment> {
-        Some(OwnershipEnvironment::new(context))
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OwnershipState {
+    Available,
+    Moved,
+    Uninitialized,
+}
+
+impl Ownership {
+    pub fn new() -> Self {
+        Self {
+            nodrop: HashSet::new(),
+            table: StateTable::new(),
+        }
     }
 }
 
-impl Environment for OwnershipEnvironment {
-    type State = Table<Availability>;
-    fn snapshot(&self) -> Self::State {
-        self.places.clone()
-    }
-    fn restore(&mut self, state: &Self::State) {
-        self.places.clone_from(state);
-    }
-    fn instruction(
+impl AnalysisPass for Ownership {
+    fn analyze_instruction(
         &mut self,
-        context: &Context<'_>,
-        location: Location,
-        instruction: Instruction<'_>,
-        diagnose: bool,
+        env: &AnalysisEnvironment,
+        instruction: &MIRInstruction,
     ) -> CXResult<()> {
-        if let Some(kind) = instruction.standard() {
-            transfer_instruction(
-                context.unit,
-                context.function,
-                location.block,
-                location.instruction,
-                kind,
-                self,
-                diagnose,
-            )
-        } else {
-            struct Inputs<'a> {
-                context: &'a Context<'a>,
-                location: Location,
-                state: &'a mut OwnershipEnvironment,
-                diagnose: bool,
-            }
-            impl MIRVisitor<'_> for Inputs<'_> {
-                type Error = CXError;
-                fn value(&mut self, value: &MIRValue) -> CXResult<()> {
-                    use_value(
-                        self.context.unit,
-                        self.context.function,
-                        self.location.block,
-                        self.location.instruction,
-                        value,
-                        self.state,
-                        self.diagnose,
-                    )
-                }
-            }
-            instruction.visit(&mut Inputs {
-                context,
-                location,
-                state: self,
-                diagnose,
-            })
-        }
+        let operands: Vec<&MIRValue> = todo!();
+
+        for operand in operands {}
     }
-    fn edge(
+
+    fn merge(&mut self, env: &AnalysisEnvironment, other: MIRBasicBlockID) {
+        self.table.merge(other);
+    }
+
+    fn reload_block(&mut self, env: &AnalysisEnvironment, block: MIRBasicBlockID) {
+        self.table.reload_block(block);
+    }
+}
+
+impl Mergeable for OwnershipState {
+    type Context = Ownership;
+
+    fn merge(
         &mut self,
-        context: &Context<'_>,
-        location: Location,
-        args: &[MIRValue],
-        _params: &[MIRRegister],
-        diagnose: bool,
-    ) -> CXResult<()> {
-        for value in args {
-            use_value(
-                context.unit,
-                context.function,
-                location.block,
-                location.instruction,
-                value,
-                self,
-                diagnose,
-            )?;
-        }
-        Ok(())
-    }
-    fn validate(&self, context: &Context<'_>, location: Location) -> CXResult<()> {
-        for (index, fact) in self.places.iter() {
-            let place = self.place(index);
-            if matches!(fact, Fact::Top) && is_nodrop(context.function, place) {
-                return Err(ownership_error(
-                    context.function,
-                    location.block,
-                    location.instruction,
-                    None,
-                    place,
-                    &catalogue::PARTIAL_MOVE,
-                    place_name(context.unit, context.function, place),
-                    |function, name, discarded| (function, name, discarded),
-                ));
+        context: &Ownership,
+        other: Self,
+        place: MIRPlace,
+    ) -> CXResult<LatticeState<Self>> {
+        Ok(match (self, other) {
+            (_, _) if *self == other => LatticeState::Known(*self),
+
+            (OwnershipState::Uninitialized, OwnershipState::Moved)
+            | (OwnershipState::Moved, OwnershipState::Uninitialized) => {
+                LatticeState::Known(OwnershipState::Uninitialized)
             }
-        }
-        Ok(())
-    }
-}
 
-fn is_nodrop(function: &MIRFunction, place: MIRPlace) -> bool {
-    match place {
-        MIRPlace::FunctionLocal(id) => function
-            .body()
-            .and_then(|body| body.place(id))
-            .is_some_and(|place| place.nodrop),
-        MIRPlace::Parameter(id) => function
-            .prototype()
-            .signature
-            .params
-            .get(id.index())
-            .is_some_and(|param| param.nodrop),
-        MIRPlace::Global(_) => false,
-    }
-}
-
-fn transfer_instruction(
-    unit: &MIRUnit,
-    function: &MIRFunction,
-    block: cx_mir::MIRBasicBlockID,
-    instruction: usize,
-    kind: &MIRInstrKind,
-    state: &mut OwnershipEnvironment,
-    diagnose: bool,
-) -> CXResult<()> {
-    let definition = function
-        .body()
-        .expect("ownership analysis reached a MIR declaration");
-    match kind {
-        MIRInstrKind::ScopeEnter { .. } => {}
-        MIRInstrKind::ScopeExit { scope } => {
-            for declaration in definition.places() {
-                if declaration.scope != *scope {
-                    continue;
+            (OwnershipState::Available, _) | (_, OwnershipState::Available) => {
+                if context.nodrop.contains(&place) {
+                    todo!("Nodrop error message");
+                } else {
+                    LatticeState::Known(OwnershipState::Available)
                 }
-
-                let place = MIRPlace::FunctionLocal(declaration.id);
-                if declaration.nodrop
-                    && matches!(
-                        state.get(&place),
-                        Some(Fact::Known(Availability::Available))
-                    )
-                    && diagnose
-                {
-                    return Err(ownership_error(
-                        function,
-                        block,
-                        instruction,
-                        Some(*scope),
-                        place,
-                        &catalogue::VALUE_NOT_CONSUMED,
-                        place_name(unit, function, place),
-                        |function, name, discarded| {
-                            (
-                                function,
-                                "local variable".into(),
-                                name,
-                                "scope".into(),
-                                discarded,
-                            )
-                        },
-                    ));
-                }
-                state.remove(&place);
             }
-        }
-        MIRInstrKind::Initialize { place } | MIRInstrKind::Create { out: place, .. } => {
-            set_available(state, *place);
-        }
-        MIRInstrKind::Bind { place, to } => {
-            use_place(unit, function, block, instruction, *to, state, diagnose)?;
-            set_available(state, *place);
-        }
-        MIRInstrKind::Invalidate { place, .. } => {
-            consume(unit, function, block, instruction, *place, state, diagnose)?;
-        }
-        MIRInstrKind::Assign { target, value, .. } => {
-            use_value(unit, function, block, instruction, value, state, diagnose)?;
-            if let MIRTarget::Place(dest) = target {
-                set_available(state, *dest);
-            }
-        }
-        MIRInstrKind::AddressOf { place, .. } => {
-            use_place(unit, function, block, instruction, *place, state, diagnose)?;
-        }
-        MIRInstrKind::Dereference { out, pointer, .. } => {
-            use_value(unit, function, block, instruction, pointer, state, diagnose)?;
-            set_available(state, *out);
-        }
-        MIRInstrKind::AggregateOp(operation) => match operation {
-            MIRAggregateOp::Place { out, op } => {
-                match op {
-                    MIRPlaceAggregateOp::Field { base, .. }
-                    | MIRPlaceAggregateOp::Variant { base, .. } => {
-                        use_place(unit, function, block, instruction, *base, state, diagnose)?
-                    }
-                    MIRPlaceAggregateOp::Index { base, index, .. } => {
-                        use_place(unit, function, block, instruction, *base, state, diagnose)?;
-                        use_value(unit, function, block, instruction, index, state, diagnose)?;
-                    }
-                }
-                set_available(state, *out);
-            }
-            MIRAggregateOp::Value { out: _, op } => match op {
-                MIRValueAggregateOp::Discriminant { value, .. }
-                | MIRValueAggregateOp::Variant { value, .. }
-                | MIRValueAggregateOp::ProjectVariant { value, .. } => {
-                    use_value(unit, function, block, instruction, value, state, diagnose)?
-                }
-                MIRValueAggregateOp::Construct { fields, .. } => {
-                    for (_, value) in fields {
-                        use_value(unit, function, block, instruction, value, state, diagnose)?;
-                    }
-                }
-            },
-        },
-        MIRInstrKind::Call { callee, args, .. } => {
-            use_value(unit, function, block, instruction, callee, state, diagnose)?;
-            for arg in args {
-                use_value(unit, function, block, instruction, arg, state, diagnose)?;
-            }
-        }
-        MIRInstrKind::VaStart { list, last } => {
-            use_value(unit, function, block, instruction, list, state, diagnose)?;
-            use_value(unit, function, block, instruction, last, state, diagnose)?;
-        }
-        MIRInstrKind::VaEnd { list } => {
-            use_value(unit, function, block, instruction, list, state, diagnose)?;
-        }
-        MIRInstrKind::VaArg { list, .. } => {
-            use_value(unit, function, block, instruction, list, state, diagnose)?;
-        }
-        MIRInstrKind::BinOp { lhs, rhs, .. } => {
-            use_value(unit, function, block, instruction, lhs, state, diagnose)?;
-            use_value(unit, function, block, instruction, rhs, state, diagnose)?;
-        }
-        MIRInstrKind::UnOp { operand, .. }
-        | MIRInstrKind::Coerce { operand, .. }
-        | MIRInstrKind::Assert {
-            condition: operand, ..
-        }
-        | MIRInstrKind::Assume { condition: operand } => {
-            use_value(unit, function, block, instruction, operand, state, diagnose)?;
-        }
-        MIRInstrKind::Return { value } => {
-            if let Some(value) = value {
-                use_value(unit, function, block, instruction, value, state, diagnose)?;
-            }
-            check_function_exit(unit, function, block, instruction, state, diagnose)?;
-        }
-        MIRInstrKind::Jump { .. } => {}
-        MIRInstrKind::Branch { cond, .. } => {
-            use_value(unit, function, block, instruction, cond, state, diagnose)?;
-        }
-        MIRInstrKind::IntSwitch { value, .. }
-        | MIRInstrKind::VariantSwitch { subject: value, .. } => {
-            use_value(unit, function, block, instruction, value, state, diagnose)?;
-        }
-        MIRInstrKind::Unreachable => {}
-    }
-    Ok(())
-}
 
-fn use_value(
-    unit: &MIRUnit,
-    function: &MIRFunction,
-    block: cx_mir::MIRBasicBlockID,
-    instruction: usize,
-    value: &MIRValue,
-    state: &mut OwnershipEnvironment,
-    diagnose: bool,
-) -> CXResult<()> {
-    match value {
-        MIRValue::PlaceRef(place) | MIRValue::Copy(place) => {
-            use_place(unit, function, block, instruction, *place, state, diagnose)
-        }
-        MIRValue::Move(place) => {
-            consume(unit, function, block, instruction, *place, state, diagnose)
-        }
-        MIRValue::Register(_) | MIRValue::Constant(_) => Ok(()),
-    }
-}
-
-fn use_place(
-    unit: &MIRUnit,
-    function: &MIRFunction,
-    block: cx_mir::MIRBasicBlockID,
-    instruction: usize,
-    place: MIRPlace,
-    state: &mut OwnershipEnvironment,
-    diagnose: bool,
-) -> CXResult<()> {
-    if matches!(place, MIRPlace::Global(_)) {
-        return Ok(());
-    }
-
-    match state
-        .get(&place)
-        .cloned()
-        .unwrap_or(Fact::Known(Availability::Uninitialized))
-    {
-        Fact::Known(Availability::Available) => Ok(()),
-        Fact::Known(Availability::Moved) | Fact::Top => ownership_failure(
-            unit,
-            function,
-            block,
-            instruction,
-            place,
-            &catalogue::AFTER_MOVE,
-            "used".into(),
-            diagnose,
-        ),
-        Fact::Known(Availability::Uninitialized) | Fact::Bottom => ownership_failure(
-            unit,
-            function,
-            block,
-            instruction,
-            place,
-            &catalogue::BEFORE_INITIALIZATION,
-            "used".into(),
-            diagnose,
-        ),
-    }
-}
-
-fn consume(
-    unit: &MIRUnit,
-    function: &MIRFunction,
-    block: cx_mir::MIRBasicBlockID,
-    instruction: usize,
-    place: MIRPlace,
-    state: &mut OwnershipEnvironment,
-    diagnose: bool,
-) -> CXResult<()> {
-    if matches!(place, MIRPlace::Global(_)) {
-        return Ok(());
-    }
-
-    let current = state
-        .get(&place)
-        .cloned()
-        .unwrap_or(Fact::Known(Availability::Uninitialized));
-    let result = match current {
-        Fact::Known(Availability::Available) => Ok(()),
-        Fact::Known(Availability::Moved) | Fact::Top => ownership_failure(
-            unit,
-            function,
-            block,
-            instruction,
-            place,
-            &catalogue::AFTER_MOVE,
-            "moved".into(),
-            diagnose,
-        ),
-        Fact::Known(Availability::Uninitialized) | Fact::Bottom => ownership_failure(
-            unit,
-            function,
-            block,
-            instruction,
-            place,
-            &catalogue::BEFORE_INITIALIZATION,
-            "moved".into(),
-            diagnose,
-        ),
-    };
-
-    state.mark_moved(place);
-    result
-}
-
-fn set_available(state: &mut OwnershipEnvironment, place: MIRPlace) {
-    if !matches!(place, MIRPlace::Global(_)) {
-        state.insert(place, Fact::Known(Availability::Available));
-    }
-}
-
-fn check_function_exit(
-    unit: &MIRUnit,
-    function: &MIRFunction,
-    block: cx_mir::MIRBasicBlockID,
-    instruction: usize,
-    state: &OwnershipEnvironment,
-    diagnose: bool,
-) -> CXResult<()> {
-    if !diagnose {
-        return Ok(());
-    }
-
-    let definition = function
-        .body()
-        .expect("ownership analysis reached a MIR declaration");
-    let root_scope = definition.scopes().first().map(|scope| scope.id);
-
-    for declaration in definition.places() {
-        if !declaration.nodrop {
-            continue;
-        }
-        let place = MIRPlace::FunctionLocal(declaration.id);
-        if let Some(Fact::Known(Availability::Available)) = state.get(&place).cloned() {
-            return Err(ownership_error(
-                function,
-                block,
-                instruction,
-                Some(declaration.scope),
-                place,
-                &catalogue::VALUE_NOT_CONSUMED,
-                place_name(unit, function, place),
-                |function, name, discarded| {
-                    (
-                        function,
-                        "local variable".into(),
-                        name,
-                        "function".into(),
-                        discarded,
-                    )
-                },
-            ));
-        }
-    }
-
-    for (index, parameter) in function.prototype().signature.params.iter().enumerate() {
-        if !parameter.nodrop {
-            continue;
-        }
-
-        let place = MIRPlace::Parameter(cx_mir::MIRParameterID::new(index));
-        if matches!(
-            state.get(&place),
-            Some(Fact::Known(Availability::Available))
-        ) {
-            return Err(ownership_error(
-                function,
-                block,
-                instruction,
-                root_scope,
-                place,
-                &catalogue::VALUE_NOT_CONSUMED,
-                place_name(unit, function, place),
-                |function, name, discarded| {
-                    (
-                        function,
-                        "parameter".into(),
-                        name,
-                        "function".into(),
-                        discarded,
-                    )
-                },
-            ));
-        }
-    }
-
-    Ok(())
-}
-
-fn ownership_failure(
-    unit: &MIRUnit,
-    function: &MIRFunction,
-    block: cx_mir::MIRBasicBlockID,
-    instruction: usize,
-    place: MIRPlace,
-    definition: &ErrorDefinition<(String, String, String, bool)>,
-    operation: String,
-    diagnose: bool,
-) -> CXResult<()> {
-    if diagnose {
-        Err(ownership_error(
-            function,
-            block,
-            instruction,
-            None,
-            place,
-            definition,
-            place_name(unit, function, place),
-            move |function, name, discarded| (function, name, operation, discarded),
-        ))
-    } else {
-        Ok(())
-    }
-}
-
-fn place_name(unit: &MIRUnit, function: &MIRFunction, place: MIRPlace) -> String {
-    match place {
-        MIRPlace::FunctionLocal(id) => function
-            .body()
-            .and_then(|definition| definition.place(id))
-            .and_then(|declaration| declaration.debug_name.as_ref())
-            .map(ToString::to_string)
-            .unwrap_or_else(|| "temporary".to_string()),
-        MIRPlace::Parameter(id) => function
-            .prototype()
-            .signature
-            .params
-            .get(id.index())
-            .and_then(|parameter| parameter.name.as_ref())
-            .map(ToString::to_string)
-            .unwrap_or_else(|| "parameter".to_string()),
-        MIRPlace::Global(id) => unit
-            .global(id)
-            .map(|global| global.name.to_string())
-            .unwrap_or_else(|| "global".to_string()),
+            _ => LatticeState::Top,
+        })
     }
 }

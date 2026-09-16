@@ -1,6 +1,6 @@
 use crate::global::{MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl};
 use crate::{
-    MIRBasicBlock, MIRBasicBlockID, MIRInstr, MIRInstrKind, MIRInstructionKind, MIRPlace,
+    MIRBasicBlock, MIRBasicBlockID, MIRInstruction, MIRInstrKind, MIRInstructionKind, MIRPlace,
     MIRPlaceID, MIRRegister, MIRScopeID, MIRTypeID,
 };
 use cx_tokens::TokenRange;
@@ -60,7 +60,7 @@ impl<K: MIRInstructionKind> MIRBody<K> {
     }
 
     pub fn push_instr_at(&mut self, block: MIRBasicBlockID, kind: K, token_range: TokenRange) {
-        let instr = crate::MIRInstr::new(kind, token_range);
+        let instr = crate::MIRInstruction::new(kind, token_range);
         self.block_mut(block)
             .expect("instruction pushed to unknown block")
             .instrs
@@ -142,7 +142,7 @@ impl<K: MIRInstructionKind> MIRBody<K> {
     }
     pub fn try_map<L: MIRInstructionKind, E>(
         self,
-        mut map: impl FnMut(MIRInstr<K>) -> Result<MIRInstr<L>, E>,
+        mut map: impl FnMut(MIRInstruction<K>) -> Result<MIRInstruction<L>, E>,
     ) -> Result<MIRBody<L>, E> {
         let blocks = self
             .blocks

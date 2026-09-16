@@ -1,4 +1,4 @@
-use crate::{framework::environment::Location, log::analysis_error};
+use crate::{log::analysis_error};
 use cx_log::{catalogue::ErrorDefinition, error::CXError};
 use cx_mir::{MIRFunction, MIRPlace};
 

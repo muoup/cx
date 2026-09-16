@@ -200,6 +200,7 @@ traversal!(MIRVisitorMut, walk_instruction_mut, walk_comptime_mut, walk_staged_m
 
 pub trait MIRWalk {
     fn visit<'ir, V: MIRVisitor<'ir>>(&'ir self, visitor: &mut V) -> Result<(), V::Error>;
+    
     fn visit_mut<'ir, V: MIRVisitorMut<'ir>>(
         &'ir mut self,
         visitor: &mut V,
@@ -243,16 +244,18 @@ impl MIRWalk for MIRComptimeInstrKind {
     }
 }
 
-impl<K: MIRWalk> MIRInstr<K> {
+impl<K: MIRWalk> MIRInstruction<K> {
     pub fn visit<'ir, V: MIRVisitor<'ir>>(&'ir self, visitor: &mut V) -> Result<(), V::Error> {
         self.kind.visit(visitor)
     }
+    
     pub fn visit_mut<'ir, V: MIRVisitorMut<'ir>>(
         &'ir mut self,
         visitor: &mut V,
     ) -> Result<(), V::Error> {
         self.kind.visit_mut(visitor)
     }
+    
     pub fn successors(&self) -> impl Iterator<Item = MIRBasicBlockID> {
         struct Edges(Vec<MIRBasicBlockID>);
         impl<'ir> MIRVisitor<'ir> for Edges {

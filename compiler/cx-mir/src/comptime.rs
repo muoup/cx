@@ -1,11 +1,11 @@
 use crate::{
-    MIRBody, MIRInstr, MIRInstrKind, MIRInstructionKind, MIRRegister, MIRStagedTargets,
+    MIRBody, MIRInstruction, MIRInstrKind, MIRInstructionKind, MIRRegister, MIRStagedTargets,
     MIRStagedTemplate, MIRValue,
 };
 use std::sync::Arc;
 
 pub type MIRComptimeBody = MIRBody<MIRComptimeInstrKind>;
-pub type MIRComptimeInstr = MIRInstr<MIRComptimeInstrKind>;
+pub type MIRComptimeInstr = MIRInstruction<MIRComptimeInstrKind>;
 
 #[derive(Debug, Clone)]
 pub enum MIRComptimeOp {

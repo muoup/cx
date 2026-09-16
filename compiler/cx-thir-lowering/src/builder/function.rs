@@ -3,7 +3,7 @@ use std::{collections::HashMap, rc::Rc};
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
     MIRBasicBlock, MIRBasicBlockID, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRFunctionMode,
-    MIRFunctionBody, MIRInstr, MIRPlace, MIRRegister, MIRScopeID, MIRStagedBody,
+    MIRFunctionBody, MIRInstruction, MIRPlace, MIRRegister, MIRScopeID, MIRStagedBody,
     MIRStagedCapture, MIRStagedExitKind, MIRStagedInstrKind, MIRTypeID, MIRValue,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
@@ -227,7 +227,7 @@ impl MIRFunctionBuilder {
             }
             if visited.insert(block) {
                 if let Some(block) = self.body.block(block) {
-                    pending.extend(block.instrs.iter().flat_map(MIRInstr::successors));
+                    pending.extend(block.instrs.iter().flat_map(MIRInstruction::successors));
                 }
             }
         }
@@ -260,7 +260,7 @@ impl MIRFunctionBuilder {
 
         self.active_block_mut()
             .instrs
-            .push(MIRInstr::new(instruction.into(), range));
+            .push(MIRInstruction::new(instruction.into(), range));
     }
 
     pub fn new_register(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>) -> MIRRegister {
