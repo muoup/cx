@@ -1,6 +1,9 @@
-use cx_util::dense_id;
+use cx_util::{dense_id, unsafe_float::FloatWrapper};
 
-use crate::unit::{MIRBasicBlockID, MIRGlobalID};
+use crate::{
+    ty::{MIRFloatType, MIRIntType, MIRTypeID},
+    unit::{MIRBasicBlockID, MIRFunctionID, MIRGlobalID},
+};
 
 dense_id!(MIRPlaceID);
 dense_id!(MIRTemporaryID);

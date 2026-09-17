@@ -1,9 +1,13 @@
 use std::collections::HashMap;
 
 use cx_tokens::TokenRange;
-use cx_util::dense_id;
+use cx_util::{dense_id, identifier::CXIdent, linkage::LinkageMode};
 
-use crate::{ty::registry::MIRTypeRegistry, value::MIRConstant};
+use crate::{
+    expr::{body::MIRBody, comptime::MIRComptimeBody, instruction::MIRScopeID},
+    ty::{MIRTypeID, registry::MIRTypeRegistry},
+    value::{MIRConstant, MIRPlaceID, MIRRegisterID as MIRRegister},
+};
 
 dense_id!(MIRFunctionID);
 dense_id!(MIRGlobalID);

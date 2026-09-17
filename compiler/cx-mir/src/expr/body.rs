@@ -1,7 +1,14 @@
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use crate::{expr::instruction::MIRInstrKind, unit::MIRBasicBlockID};
+use crate::{
+    expr::instruction::{
+        MIRBasicBlock, MIRInstrKind, MIRInstruction, MIRInstructionLike, MIRScopeID,
+    },
+    ty::MIRTypeID,
+    unit::{MIRBasicBlockID, MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl},
+    value::{MIRPlaceID, MIRRegisterID as MIRRegister},
+};
 
 #[derive(Debug, Clone)]
 pub struct MIRBody<K = MIRInstrKind> {

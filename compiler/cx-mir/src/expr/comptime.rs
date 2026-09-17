@@ -1,5 +1,14 @@
 use std::sync::Arc;
 
+use crate::{
+    expr::{
+        body::MIRBody,
+        instruction::{MIRInstrKind, MIRInstruction, MIRInstructionLike, MIRStagedTargets},
+        staged::MIRStagedTemplate,
+    },
+    value::{MIRRegisterID as MIRRegister, MIRValue},
+};
+
 pub type MIRComptimeBody = MIRBody<MIRComptimeInstrKind>;
 pub type MIRComptimeInstr = MIRInstruction<MIRComptimeInstrKind>;
 

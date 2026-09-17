@@ -1,5 +1,19 @@
 use std::sync::Arc;
 
+use crate::{
+    expr::{
+        body::MIRBody,
+        comptime::{MIRComptimeBody, MIRComptimeInstrKind, MIRComptimeOp},
+        instruction::{
+            MIRBasicBlock, MIRInstrKind, MIRInstruction, MIRInstructionLike, MIRStagedExitKind,
+            MIRStagedTargets,
+        },
+    },
+    ty::MIRTypeID,
+    unit::MIRBasicBlockID,
+    value::{MIRPlaceID, MIRRegisterID as MIRRegister, MIRValue},
+};
+
 #[derive(Debug, Clone, Copy)]
 pub enum MIRStagedCapture {
     Register(MIRRegister),

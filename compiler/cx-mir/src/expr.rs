@@ -5,4 +5,4 @@ pub mod intrinsic;
 pub mod staged;
 
 pub(crate) mod query;
-pub(crate) mod visit;
+pub mod visit;
