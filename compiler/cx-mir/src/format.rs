@@ -122,7 +122,7 @@ impl Display for MIRValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Register(value) => Display::fmt(value, f),
-            Self::Place(value) => Display::fmt(value, f),
+            Self::PlaceRef(value) => Display::fmt(value, f),
             Self::Global(value) => Display::fmt(value, f),
             Self::Constant(value) => Display::fmt(value, f),
         }
@@ -547,7 +547,7 @@ fn write_instruction<T: MTRegistry>(
             f.write_str(" = lift ")?;
             write_place_name(f, unit, function, *place)
         }
-        MIRInstrKind::BindLifetime { place, to } => {
+        MIRInstrKind::BindLifetime { bind: place, bind_to: to } => {
             f.write_str("bind ")?;
             write_place_name(f, unit, function, *place)?;
             f.write_str(" to ")?;
@@ -715,7 +715,7 @@ fn write_intrinsic_unary<T: MTRegistry>(
     function: &MIRFunction,
     types: &mut TypePrinter<'_, T>,
     path: &str,
-    out: MIRRegisterID,
+    out: MIRTarget,
     value: &MIRValue,
 ) -> fmt::Result {
     write_intrinsic_call(
@@ -1317,7 +1317,7 @@ fn write_value(
     match value {
         MIRValue::Register(register) => write_register_name(f, function, *register),
         MIRValue::Global(global) => write_global_name(f, unit, *global),
-        MIRValue::Place(place) => write_place_name(f, unit, function, *place),
+        MIRValue::PlaceRef(place) => write_place_name(f, unit, function, *place),
         MIRValue::Constant(constant) => write_constant(f, unit, constant),
     }
 }

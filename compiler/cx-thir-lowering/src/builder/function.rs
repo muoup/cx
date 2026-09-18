@@ -26,8 +26,6 @@ pub(crate) struct MIRFunctionBuilder {
     id: MIRFunctionID,
     prototype: MIRFnPrototype,
     mode: MIRFunctionMode,
-    pub(crate) outer_return_type: Option<MIRTypeID>,
-    pub(crate) outer_yield_type: Option<MIRTypeID>,
     source_range: TokenRange,
 
     body: MIRStagedBody,
@@ -35,9 +33,12 @@ pub(crate) struct MIRFunctionBuilder {
 
     local_values: HashMap<THIRLocalID, MIRValue>,
     labels: HashMap<String, MIRBasicBlockID>,
-    pub(crate) capture: Option<CaptureContext>,
 
     scope_stack: Vec<ScopeContext>,
+    
+    pub(crate) outer_return_type: Option<MIRTypeID>,
+    pub(crate) outer_yield_type: Option<MIRTypeID>,
+    pub(crate) capture: Option<CaptureContext>,
 }
 
 #[derive(Debug)]

@@ -6,7 +6,6 @@ use crate::{
 };
 
 dense_id!(MIRPlaceID);
-dense_id!(MIRTemporaryID);
 dense_id!(MIRRegisterID);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -39,15 +38,22 @@ pub enum MIRConstant {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRValue {
     Register(MIRRegisterID),
-    Place(MIRPlaceID),
+    PlaceRef(MIRPlaceID),
     Global(MIRGlobalID),
     Constant(MIRConstant),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MIRBindable {
+    Register(MIRRegisterID),
+    Place(MIRPlaceID)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MIRTarget {
     Place(MIRPlaceID),
     Global(MIRGlobalID),
+    Register(MIRGlobalID),
     Indirect(MIRRegisterID),
 }
 

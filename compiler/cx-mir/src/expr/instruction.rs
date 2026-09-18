@@ -2,10 +2,7 @@ use cx_tokens::TokenRange;
 use cx_util::{dense_id, identifier::CXIdent};
 
 use crate::{
-    expr::intrinsic::MIRIntrinsic,
-    ty::MIRTypeID,
-    unit::MIRBasicBlockID,
-    value::{MIRBlockTarget, MIRPlaceID, MIRRegisterID, MIRTemporaryID, MIRValue},
+    expr::intrinsic::MIRIntrinsic, ty::MIRTypeID, unit::MIRBasicBlockID, value::{MIRBindable, MIRBlockTarget, MIRPlaceID, MIRRegisterID, MIRValue},
 };
 
 dense_id!(MIRScopeID);
@@ -83,19 +80,21 @@ pub enum MIRInstrKind {
     },
     // Marks a place as no longer live for ownership analysis
     Invalidate {
-        place: MIRPlaceID,
+        place: MIRBindable,
         leak: bool,
     },
-    // Lifts a value out of a place into a temporary, if this temporary is untouched before use, it can avoid the need for a true
+    
+    // Lifts a value out of a place into a register, if the register is untouched before use, it can avoid the need for a true
     // intermediate copy.
     LiftPlace {
-        out: MIRTemporaryID,
+        out: MIRRegisterID,
         place: MIRPlaceID,
     },
-    // Declares (for analysis) that 'place' must live at least as long as 'to' for ownership analysis
+    // Declares (for analysis) that a register or place must live at least as long as 'bind_to' for ownership analysis
+    // registe
     BindLifetime {
-        place: MIRPlaceID,
-        to: MIRPlaceID,
+        bind: MIRBindable,
+        bind_to: MIRPlaceID,
     },
 
     Store {
@@ -152,7 +151,6 @@ impl MIRInstructionLike for MIRInstrKind {
                 | Self::Jump { .. }
                 | Self::Branch { .. }
                 | Self::CaseBranch { .. }
-                | Self::VariantSwitch { .. }
                 | Self::Unreachable
         )
     }

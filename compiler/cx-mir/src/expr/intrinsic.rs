@@ -1,4 +1,4 @@
-use crate::{MIRFloatType, MIRTypeID, unit::MIRFunctionID, value::{MIRRegisterID, MIRTemporaryID, MIRValue}};
+use crate::{MIRFloatType, MIRPlaceID, MIRTarget, MIRTypeID, unit::MIRFunctionID, value::MIRValue};
 
 #[derive(Debug, Clone)]
 pub enum MIRIntrinsic {
@@ -13,91 +13,91 @@ pub enum MIRIntrinsic {
 
 #[derive(Debug, Clone)]
 pub enum MIRIntIntrinsic {
-    Neg         { out: MIRRegisterID, value: MIRValue },
-    LNot        { out: MIRRegisterID, value: MIRValue },
-    BNot        { out: MIRRegisterID, value: MIRValue },
+    Neg         { out: MIRTarget, value: MIRValue },
+    LNot        { out: MIRTarget, value: MIRValue },
+    BNot        { out: MIRTarget, value: MIRValue },
 
-    ToFloat     { out: MIRRegisterID, value: MIRValue, target_ty: MIRTypeID },
-    ToPtr       { out: MIRRegisterID, value: MIRValue, target_ty: MIRTypeID },
-    IntCast     { out: MIRRegisterID, value: MIRValue, target_ty: MIRTypeID, sign_extend: bool },
+    ToFloat     { out: MIRTarget, value: MIRValue, target_ty: MIRTypeID },
+    ToPtr       { out: MIRTarget, value: MIRValue, target_ty: MIRTypeID },
+    IntCast     { out: MIRTarget, value: MIRValue, target_ty: MIRTypeID, sign_extend: bool },
     
-    Add         { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    Sub         { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
+    Add         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    Sub         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
 
-    UMul        { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    SMul        { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    UDiv        { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    SDiv        { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    UMod        { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    SMod        { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
+    UMul        { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    SMul        { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    UDiv        { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    SDiv        { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    UMod        { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    SMod        { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
     
-    Eq          { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    Neq         { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    ULt         { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    SLt         { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    ULe         { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    SLe         { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    UGt         { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    SGt         { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    UGe         { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    SGe         { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
+    Eq          { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    Neq         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    ULt         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    SLt         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    ULe         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    SLe         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    UGt         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    SGt         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    UGe         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    SGe         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
 
-    LAnd        { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    LOr         { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    BAnd        { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    BOr         { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    BXor        { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
+    LAnd        { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    LOr         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    BAnd        { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    BOr         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    BXor        { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
 
-    LShift      { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    ARShift     { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    LRShift     { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
+    LShift      { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    ARShift     { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    LRShift     { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
 }
 
 #[derive(Debug, Clone)]
 pub enum MIRFloatIntrinsic {
-    Neg         { out: MIRRegisterID, value: MIRValue },
-    ToInt       { out: MIRRegisterID, value: MIRValue, target_ty: MIRTypeID },
-    FloatCast   { out: MIRRegisterID, value: MIRValue, float_ty: MIRFloatType },
+    Neg         { out: MIRTarget, value: MIRValue },
+    ToInt       { out: MIRTarget, value: MIRValue, target_ty: MIRTypeID },
+    FloatCast   { out: MIRTarget, value: MIRValue, float_ty: MIRFloatType },
     
-    Eq          { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    Neq         { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    Lt          { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    Le          { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    Gt          { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    Geq         { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
+    Eq          { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    Neq         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    Lt          { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    Le          { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    Gt          { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    Geq         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
 }
 
 #[derive(Debug, Clone)]
 pub enum MIRPtrIntrinsic {
-    ToInt       { out: MIRRegisterID, ptr: MIRValue, target_ty: MIRTypeID },
+    ToInt       { out: MIRTarget, ptr: MIRValue, target_ty: MIRTypeID },
 
-    Add         { out: MIRRegisterID, ptr: MIRValue, offset: MIRValue },
-    Sub         { out: MIRRegisterID, ptr: MIRValue, offset: MIRValue },
+    Add         { out: MIRTarget, ptr: MIRValue, offset: MIRValue },
+    Sub         { out: MIRTarget, ptr: MIRValue, offset: MIRValue },
 
-    Diff        { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    Eq          { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    Neq         { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    Lt          { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    Leq         { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    Gt          { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
-    Geq         { out: MIRRegisterID, lhs: MIRValue, rhs: MIRValue },
+    Diff        { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    Eq          { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    Neq         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    Lt          { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    Leq         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    Gt          { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    Geq         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
 }
 
 pub enum MIRAggregateIntrinsic {
-    SumIndex    { out: MIRRegisterID, value: MIRValue, sum_ty: MIRTypeID },
-    SumVariant  { out: MIRRegisterID, base: MIRValue, variant: usize, sum_ty: MIRTypeID },
-    SumVariantL { out: MIRTemporaryID, base: MIRValue, variant: usize, sum_ty: MIRTypeID },
+    SumIndex    { out: MIRTarget, value: MIRValue, sum_ty: MIRTypeID },
+    SumVariant  { out: MIRTarget, base: MIRPlaceID, variant: usize, sum_ty: MIRTypeID },
+    SumVariantL { out: MIRTarget, base: MIRValue, variant: usize, sum_ty: MIRTypeID },
     
-    StructInit  { out: MIRRegisterID, ty: MIRTypeID, fields: Vec<(usize, MIRValue)> },
-    StructField { out: MIRRegisterID, base: MIRValue, field: usize, struct_ty: MIRTypeID },
+    StructInit  { out: MIRTarget, ty: MIRTypeID, fields: Vec<(usize, MIRValue)> },
+    StructField { out: MIRTarget, base: MIRValue, field: usize, struct_ty: MIRTypeID },
     
-    ArrayIndex  { out: MIRRegisterID, base: MIRValue, index: MIRValue, element_ty: MIRTypeID },
+    ArrayIndex  { out: MIRTarget, base: MIRValue, index: MIRValue, element_ty: MIRTypeID },
 }
 
 #[derive(Debug, Clone)]
 pub enum MIRInternalIntrinsic {
-    GetFnPtr    { out: MIRRegisterID, fn_id: MIRFunctionID },
-    Bitcast     { out: MIRRegisterID, value: MIRValue, target_ty: MIRTypeID },
+    GetFnPtr    { out: MIRTarget, fn_id: MIRFunctionID },
+    Bitcast     { out: MIRTarget, value: MIRValue, target_ty: MIRTypeID },
     
     Assert      { condition: MIRValue, message: Option<String> },
     Assume      { condition: MIRValue },
@@ -107,5 +107,5 @@ pub enum MIRInternalIntrinsic {
 pub enum MIRVAIntrinsic {
     VaStart     { list: MIRValue, last: MIRValue },
     VaEnd       { list: MIRValue },
-    VaArg       { out: MIRRegisterID, list: MIRValue, ty: MIRTypeID },
+    VaArg       { out: MIRTarget, list: MIRValue, ty: MIRTypeID },
 }
