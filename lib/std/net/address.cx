@@ -1,0 +1,47 @@
+import std::optional as std;
+
+extern "C":
+
+u32 inet_addr(const char* cp);
+u16 htons(u16 hostshort);
+
+public:
+
+struct endpoint {
+    sockaddr_in address;
+    u32 length;
+};
+
+enum {
+    LINUX_AF_INET = 2
+};
+
+struct in_addr {
+    u32 s_addr;
+};
+
+struct sockaddr_in {
+    u16 sin_family;
+    u16 sin_port;
+    in_addr sin_addr;
+    char sin_zero[8];
+};
+
+std::opt<endpoint> endpoint::ipv4(const _str& address, u16 port) {
+    u32 raw_address = inet_addr(address);
+
+    if (raw_address == 0xFFFFFFFF) {
+        return std::opt::none<endpoint>();
+    }
+
+    endpoint value = (endpoint) {
+        .address = (sockaddr_in) {
+            .sin_family = LINUX_AF_INET,
+            .sin_port = htons(port),
+            .sin_addr = (in_addr) { .s_addr = raw_address },
+        },
+        .length = (u32) sizeof(sockaddr_in)
+    };
+
+    return std::opt::some<endpoint>(value);
+}

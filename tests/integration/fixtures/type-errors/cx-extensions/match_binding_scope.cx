@@ -1,0 +1,10 @@
+int select(int value) {
+    int result = match (value) {
+        _ => yield 1;
+    };
+    return other;
+}
+
+int main() {
+    return select(0);
+}

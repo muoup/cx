@@ -1,5 +1,5 @@
 use crate::GlobalState;
-use crate::error::LLVMResult;
+use crate::log::LLVMResult;
 use crate::typing::{apply_llvm_parameter_attributes, bc_llvm_signature};
 use cx_lmir::LMIRFunctionSignature;
 use inkwell::values::FunctionValue;

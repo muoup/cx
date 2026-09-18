@@ -7,7 +7,7 @@ use std::sync::Mutex;
 thread_local! {
     static DUMP_DIRECTORY: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
     static DUMP_FILE: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
-    static DUMP_ENABLED: Cell<bool> = const { Cell::new(true) };
+    static DUMP_ENABLED: Cell<bool> = const { Cell::new(false) };
 }
 
 struct DumpDirectoryGuard(Option<PathBuf>);
@@ -38,7 +38,9 @@ impl Drop for DumpEnabledGuard {
     }
 }
 
-pub fn with_dump_directory<T>(path: PathBuf, f: impl FnOnce() -> T) -> T {
+pub fn with_dump_directory<T>(path: PathBuf, enabled: bool, f: impl FnOnce() -> T) -> T {
+    let previous_enabled = DUMP_ENABLED.with(|cell| cell.replace(enabled));
+    let _enabled_guard = DumpEnabledGuard(previous_enabled);
     let previous = DUMP_DIRECTORY.with(|cell| cell.replace(Some(path)));
     let _guard = DumpDirectoryGuard(previous);
     f()
@@ -56,7 +58,7 @@ pub fn without_dumps<T>(f: impl FnOnce() -> T) -> T {
     f()
 }
 
-fn dumps_enabled() -> bool {
+pub fn dumps_enabled() -> bool {
     DUMP_ENABLED.with(Cell::get)
 }
 

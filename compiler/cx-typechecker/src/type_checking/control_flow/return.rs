@@ -1,6 +1,8 @@
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
+use cx_namespace::module::NamespacePath;
+use cx_namespace::module::QualifiedName;
 use cx_thir::{
-    EnvironmentNamespace,
     thir::{
         expression::{THIRExpression, THIRExpressionKind},
         r#type::THIRType,
@@ -8,13 +10,11 @@ use cx_thir::{
     type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
-use cx_util::namespace::QualifiedName;
 
 use crate::{
-    environment::{ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment},
+    environment::TypeEnvironment,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
-        control_flow::enqueue_jump_arrow,
         result::TypecheckResult,
         typechecker::typecheck_expr,
     },
@@ -29,21 +29,26 @@ fn typechange_can_forward_region(return_type: &THIRType) -> bool {
 
 pub fn typecheck_return(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    return_range: &cx_tokens::TokenRange,
+    namespace: &NamespacePath,
+    return_range: &TokenRange,
     value: Option<THIRExpression>,
 ) -> CXResult<TypecheckResult> {
     if env.in_defer_context() {
-        return env.log_error(
-            return_range,
-            "return is not allowed inside a deferred expression".to_string(),
-        );
+        return env.log_error(return_range, &catalogue::DEFER_FALLTHROUGH, ());
     }
 
-    let return_type = if env.in_runtime_emit_context() {
-        env.comptime_runtime_return_type()
-            .cloned()
-            .unwrap_or_else(|| env.current_function().signature().return_type.clone())
+    let return_type = if env.in_staged_context() || env.in_runtime_emit_context() {
+        let Some(return_type) = env.staging_context().return_type else {
+            return env.log_error(
+                return_range,
+                &catalogue::INVALID_CONTEXT,
+                (
+                    "Return statements".into(),
+                    "global variable initializers; use a yield statement instead".into(),
+                ),
+            );
+        };
+        return_type
     } else {
         env.current_function().signature().return_type.clone()
     };
@@ -51,9 +56,10 @@ pub fn typecheck_return(
     if return_type.is_unreachable() {
         return env.log_error(
             return_range,
-            format!(
-                "Function {} cannot return because its return type is 'unreachable'",
-                env.current_function().pretty_name()
+            &catalogue::INVALID_CONTEXT,
+            (
+                "Return statements".into(),
+                "unreachable returning function".into(),
             ),
         );
     }
@@ -89,9 +95,13 @@ pub fn typecheck_return(
         (Some(value), _) => {
             return env.log_error(
                 value.token_range,
-                format!(
-                    "Cannot return from function {} with a void return type",
-                    env.current_function().pretty_name()
+                &catalogue::INVALID_CONTEXT,
+                (
+                    "Return statements with a value".into(),
+                    format!(
+                        "function {} which returns void",
+                        env.current_function().pretty_name()
+                    ),
                 ),
             );
         }
@@ -99,22 +109,18 @@ pub fn typecheck_return(
         (None, _) => {
             return env.log_error(
                 return_range,
-                format!(
-                    "Function {} expects a return value, but none was provided",
-                    env.current_function().pretty_name()
+                &catalogue::INVALID_CONTEXT,
+                (
+                    "Return statements without a value".into(),
+                    format!(
+                        "function {} which returns {}",
+                        env.current_function().pretty_name(),
+                        return_type.display_with(&env.symbols)
+                    ),
                 ),
             );
         }
     };
-
-    enqueue_jump_arrow(
-        env,
-        &ScopeExitTarget {
-            target_scope: ScopeId::new(0),
-            sink: ScopeArrowSink::Merge,
-            label: "return".to_string(),
-        },
-    );
 
     if let Some((ret_name, ret_contract)) = env
         .current_function()
@@ -126,12 +132,12 @@ pub fn typecheck_return(
         if ret_name.is_some() && return_type.is_void() {
             return env.log_error(
                 return_range,
-                "Cannot have a named return variable in a function with void return type"
-                    .to_string(),
+                &catalogue::INVALID_CONTEXT,
+                ("Post-conditions capturing a return value".into(), "void returning function".into())
             );
         }
 
-        env.push_scope(false, false);
+        env.push_scope(false, false, return_range.clone());
 
         for param in env.current_function().signature().params.clone() {
             let Some(name) = param.name else {

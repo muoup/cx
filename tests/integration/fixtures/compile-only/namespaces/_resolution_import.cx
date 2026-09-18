@@ -1,0 +1,5 @@
+public:
+
+typedef int Local;
+struct Remote { int member; };
+struct Shared { int member; };

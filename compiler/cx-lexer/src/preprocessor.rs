@@ -5,6 +5,9 @@ pub mod expr;
 pub mod includes;
 
 use cx_log::CXResult;
+use cx_log::catalogue::parse::{
+    EXPECTED_SYNTAX, UNSUPPORTED_FEATURE,
+};
 
 use crate::{
     context::LexingContext,
@@ -28,7 +31,7 @@ impl Preprocessor {
 
             return frame
                 .cursor_view()
-                .log_error(directive_start, "Expected preprocessor directive");
+                .log_error(directive_start, &EXPECTED_SYNTAX, ("a preprocessor directive".into(), None, None));
         };
 
         let mut directive = directive;
@@ -36,9 +39,11 @@ impl Preprocessor {
             let Some(name) = context.current_frame_mut().next_word() else {
                 let frame = context.current_frame();
 
-                return frame
-                    .cursor_view()
-                    .log_error(directive_start, "Expected preprocessor directive after '#'");
+                return frame.cursor_view().log_error(
+                    directive_start,
+                    &EXPECTED_SYNTAX,
+                    ("a directive name".into(), Some("after '#'".into()), None),
+                );
             };
             directive.push_str(&name);
         }
@@ -72,7 +77,8 @@ impl Preprocessor {
 
                 frame.cursor_view().log_error(
                     directive_start,
-                    format!("Preprocessor directive '{}' is not yet implemented", dir),
+                    &UNSUPPORTED_FEATURE,
+                    (format!("preprocessor directive '{dir}'"), "the lexer".into()),
                 )
             }
         }

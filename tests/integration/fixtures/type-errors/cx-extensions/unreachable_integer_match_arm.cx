@@ -1,0 +1,11 @@
+int select(int value) {
+    return match (value) {
+        1 => yield 10;
+        _ => yield 20;
+        2 => yield 30;
+    };
+}
+
+int main() {
+    return select(1);
+}

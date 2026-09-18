@@ -1,5 +1,6 @@
 use cx_hir::ast::expression::HIRBinOp;
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_thir::{
     thir::{
         expression::{
@@ -44,6 +45,7 @@ fn resolve_comma(lhs: THIRExpression, rhs: THIRExpression) -> CXResult<Typecheck
         THIRExpressionKind::Block {
             statements: vec![lhs, rhs],
             creates_scope: false,
+            yields: false,
         },
     ))
 }
@@ -64,11 +66,11 @@ pub(crate) fn resolve_logical(
     if !valid_logical_operand(&lhs) || !valid_logical_operand(&rhs) {
         return env.log_error(
             &lhs.token_range,
-            format!(
-                "Invalid operands to logical operation {:?}, {} and {}",
-                op,
-                lhs._type.display_with(&env.symbols),
-                rhs._type.display_with(&env.symbols)
+            &catalogue::INVALID_BINARY_OPERANDS,
+            (
+                format!("{:?}", op),
+                format!("{}", lhs._type.display_with(&env.symbols)),
+                format!("{}", rhs._type.display_with(&env.symbols)),
             ),
         );
     }
@@ -113,10 +115,11 @@ pub(crate) fn resolve_std_arithmetic(
     } else {
         env.log_error(
             &lhs.token_range,
-            format!(
-                "Invalid binary operation {op} for types {} and {}",
-                lhs.get_type().display_with(&env.symbols),
-                rhs.get_type().display_with(&env.symbols)
+            &catalogue::INVALID_BINARY_OPERANDS,
+            (
+                format!("{}", op),
+                format!("{}", lhs.get_type().display_with(&env.symbols)),
+                format!("{}", rhs.get_type().display_with(&env.symbols)),
             ),
         )
     }
@@ -163,10 +166,11 @@ fn coerce_float_binop(
         _ => {
             return env.log_error(
                 &lhs.token_range,
-                format!(
-                    "Invalid float binary operation {op} for types {} and {}",
-                    lhs.get_type().display_with(&env.symbols),
-                    rhs.get_type().display_with(&env.symbols)
+                &catalogue::INVALID_BINARY_OPERANDS,
+                (
+                    format!("{}", op),
+                    format!("{}", lhs.get_type().display_with(&env.symbols)),
+                    format!("{}", rhs.get_type().display_with(&env.symbols)),
                 ),
             );
         }
@@ -256,7 +260,12 @@ fn coerce_pointer_binop(
             _ => {
                 return env.log_error(
                     &lhs.token_range,
-                    format!("Invalid binary operation {op} for pointer types"),
+                    &catalogue::INVALID_BINARY_OPERANDS,
+                    (
+                        format!("{}", op),
+                        format!("{}", lhs.get_type().display_with(&env.symbols)),
+                        format!("{}", rhs.get_type().display_with(&env.symbols)),
+                    )
                 );
             }
         };
@@ -340,7 +349,12 @@ fn coerce_pointer_binop(
         _ => {
             return env.log_error(
                 &lhs.token_range,
-                format!("Invalid binary operation {op} for pointer and non-pointer types"),
+                &catalogue::INVALID_BINARY_OPERANDS,
+                (
+                    format!("{}", op),
+                    format!("{}", lhs.get_type().display_with(&env.symbols)),
+                    format!("{}", rhs.get_type().display_with(&env.symbols)),
+                )
             );
         }
     };
@@ -396,10 +410,11 @@ fn coerce_integral_binop(
         _ => {
             return env.log_error(
                 &lhs.token_range,
-                format!(
-                    "Invalid integer binary operation {op} for types {} and {}",
-                    lhs.get_type().display_with(&env.symbols),
-                    rhs.get_type().display_with(&env.symbols)
+                &catalogue::INVALID_BINARY_OPERANDS,
+                (
+                    format!("{}", op),
+                    format!("{}", lhs.get_type().display_with(&env.symbols)),
+                    format!("{}", rhs.get_type().display_with(&env.symbols))
                 ),
             );
         }
@@ -413,10 +428,11 @@ fn coerce_integral_binop(
     let Some(op) = lower_int_binop(op, signed) else {
         return env.log_error(
             &lhs.token_range,
-            format!(
-                "Invalid integer binary operation {op} for types {} and {}",
-                lhs.get_type().display_with(&env.symbols),
-                rhs.get_type().display_with(&env.symbols)
+            &catalogue::INVALID_BINARY_OPERANDS,
+            (
+                format!("{}", op),
+                format!("{}", lhs.get_type().display_with(&env.symbols)),
+                format!("{}", rhs.get_type().display_with(&env.symbols))
             ),
         );
     };

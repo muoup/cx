@@ -75,6 +75,7 @@ pub fn compiler_config(
         unsafe_mode: false,
         compilation_mode,
         verbose: false,
+        dump: false,
         working_directory: working_directory.to_path_buf(),
         internal_directory: internal_directory.to_path_buf(),
         module_mode: true,

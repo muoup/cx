@@ -1,5 +1,4 @@
 use crate::environment::TypeEnvironment;
-use crate::symbol::completion::complete_template_input;
 use crate::type_checking::pattern::tagged_union::{
     TypeConstructor, resolve_type_constructor_pattern,
 };
@@ -8,20 +7,20 @@ use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_checking::value::resolve_indirect_base;
 use cx_hir::ast::{expression::HIRExpression, pattern::HIRPattern};
 use cx_log::CXResult;
-use cx_thir::EnvironmentNamespace;
-use cx_thir::thir::contextual_eq::TypeContextEqual;
+use cx_log::catalogue::typecheck::{self as catalogue};
+use cx_namespace::module::NamespacePath;
+use cx_namespace::module::QualifiedName;
 use cx_thir::thir::data::THIRType;
 use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind, THIRLocalID};
 use cx_thir::thir::pattern::THIRPattern;
 use cx_tokens::TokenRange;
-use cx_util::namespace::QualifiedName;
 
 pub(crate) fn typecheck_is(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    lhs: &HIRExpression,
-    pattern: &HIRPattern,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
+    pattern: &HIRPattern,
+    lhs: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     let tc_lhs = typecheck_expr(env, namespace, lhs, None)
         .and_then(|v| v.standard_ready_coerce(env, lhs.token_range()))
@@ -31,10 +30,12 @@ pub(crate) fn typecheck_is(
     let Some(variants) = union_type.aggregate_fields(&env.symbols) else {
         return env.log_error(
             expr.token_range(),
-            format!(
-                "'is' operator requires a tagged union on the left-hand side, found {}",
-                union_type.display_with(&env.symbols)
-            ),
+            &catalogue::TYPE_MISMATCH,
+            (
+                "is operator".into(),
+                "tagged union type".into(),
+                format!("{}", union_type.display_with(&env.symbols)),
+            )
         );
     };
     let variants = variants.clone();
@@ -47,11 +48,25 @@ pub(crate) fn typecheck_is(
         inner_name,
     } = resolve_type_constructor_pattern(env, namespace, expr, pattern)?;
 
-    if expected_union_name != &union_name {
-        return env.log_error(expr.token_range(), format!("'is' operator left-hand side tagged union type {} does not match right-hand side tagged union type {}", expected_union_name, union_name));
+    if template_input.is_some() {
+        return env.log_error(
+            expr.token_range(),
+            &catalogue::INVALID_FORM,
+            ("template arguments".into(), "pattern".into()),
+        );
     }
-    validate_variant_template_input(env, namespace, union_type, template_input.as_ref(), expr)?;
 
+    if expected_union_name != &union_name {
+        return env.log_error(
+            expr.token_range(),
+            &catalogue::UNKNOWN_MEMBER,
+            (
+                format!("{}", expected_union_name),
+                format!("{}", union_name),
+            ),
+        );
+    }
+    
     let Some((expected_tag, variant_type)) = variants
         .iter()
         .enumerate()
@@ -60,10 +75,8 @@ pub(crate) fn typecheck_is(
     else {
         return env.log_error(
             expr.token_range(),
-            format!(
-                "'is' operator variant name '{}' not found in tagged union {}",
-                variant_name, union_name
-            ),
+            &catalogue::UNKNOWN_MEMBER,
+            (format!("{}", variant_name), format!("{}", union_name)),
         );
     };
     let inner_local_id = inner_name.as_ref().map(|_| THIRLocalID::fresh());
@@ -94,33 +107,4 @@ pub(crate) fn typecheck_is(
             },
         },
     ))
-}
-
-fn validate_variant_template_input(
-    env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
-    union_type: &THIRType,
-    template_input: Option<&cx_hir::ast::template::HIRTemplateInput>,
-    expr: &HIRExpression,
-) -> CXResult<()> {
-    let Some(template_input) = template_input else {
-        return Ok(());
-    };
-    let completed_input = complete_template_input(env, namespace, template_input)?;
-    let Some(template_data) = union_type.get_template_data() else {
-        return env.log_error(
-            expr.token_range(),
-            "Non-templated tagged union pattern may not have template arguments".to_string(),
-        );
-    };
-
-    if !completed_input.contextual_eq(&template_data.template_input, &env.symbols) {
-        return env.log_error(
-            expr.token_range(),
-            "Tagged union pattern template arguments do not match the left-hand side type"
-                .to_string(),
-        );
-    }
-
-    Ok(())
 }

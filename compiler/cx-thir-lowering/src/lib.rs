@@ -3,11 +3,16 @@ use cx_mir::{MIRFunctionMode, MIRUnit};
 use cx_thir::THIRUnit;
 
 pub mod builder;
+
+pub(crate) mod log;
 pub(crate) mod lowering;
 
 pub use builder::MIRBuilder;
 
-use crate::lowering::{globals, lower_comptime_function, lower_function};
+use crate::lowering::{
+    globals::{self},
+    lower_comptime_function, lower_function,
+};
 
 pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
     let mut builder = MIRBuilder::new(thir);
@@ -18,15 +23,14 @@ pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
     let mut global_requests = vec![];
 
     for function in &thir.functions {
-        let prototype =
-            builder.convert_prototype(&function.prototype, MIRFunctionMode::Runtime)?;
+        let prototype = builder.lower_prototype(&function.prototype, MIRFunctionMode::Runtime)?;
         let id = builder.module_mut().declare_function(prototype);
 
         fn_pairs.push((function, id));
     }
 
     for comptime_fn in &thir.comptime_functions {
-        let prototype = builder.convert_comptime_prototype(&comptime_fn.prototype)?;
+        let prototype = builder.lower_comptime_prototype(&comptime_fn.prototype)?;
         let id = builder.module_mut().declare_function(prototype);
 
         comptime_pairs.push((comptime_fn, id));
@@ -43,7 +47,7 @@ pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
         }
     }
 
-    for request in global_requests.into_iter() {
+    for request in global_requests.iter() {
         globals::fulfill_init_request(&mut builder, request)?;
     }
 
@@ -51,27 +55,13 @@ pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
         lower_comptime_function(&mut builder, id, comptime_fn)?;
     }
 
+    for request in global_requests.into_iter() {
+        globals::execute_request(&mut builder, &request)?;
+    }
+
     for (function, id) in fn_pairs.into_iter() {
         lower_function(&mut builder, id, function)?;
     }
 
-    let mut unit = builder.finish();
-
-    let evaluated = cx_mir_comptime::evaluate_unit_globals(&unit)?;
-    for (global_id, constant) in evaluated {
-        unit.materialize_global(global_id, constant)
-            .map_err(|error| {
-                cx_log::error::CXErr::new(
-                    cx_log::error::message::CXStdErrMessage::error(
-                        "COMPTIME ERROR",
-                        error,
-                    ),
-                    cx_log::error::context::CXInternalContext::error(
-                        "failed to materialize a global initializer",
-                    ),
-                )
-            })?;
-    }
-
-    Ok(unit)
+    Ok(builder.finish())
 }

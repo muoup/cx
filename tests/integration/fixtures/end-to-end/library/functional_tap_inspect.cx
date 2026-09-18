@@ -1,0 +1,25 @@
+/* CX-STDOUT: tapped 5 */
+/* CX-STDOUT-NEXT: inspected 5 */
+
+#include <stdio.h>
+
+import std::functional as std;
+
+int read(int& value) {
+    return value;
+}
+
+int main() {
+    int input = 4;
+    int tapped = read(input) |> std::tap<int>(|value| .{
+        value += 1;
+    });
+    printf("tapped %d\n", tapped);
+
+    int observed = 0;
+    int inspected = move tapped |> std::inspect<int>(|value| .{
+        observed = value;
+    });
+    printf("inspected %d\n", observed);
+    return inspected - 5;
+}

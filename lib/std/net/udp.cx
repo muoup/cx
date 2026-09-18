@@ -2,72 +2,34 @@ import std::optional as std;
 import std::span as std;
 import std::io as std;
 
+import std::net::address as std::net;
+
 extern "C":
 
 i32 socket(int domain, int type, int protocol);
 i32 bind(int sockfd, const void* addr, u32 addrlen);
 i32 listen(int sockfd, int backlog);
-i64 sendto(int sockfd, const void* buf, size_t len, int flags, const void* dest_addr, u32 addrlen);
-i64 recvfrom(int sockfd, void* buf, size_t len, int flags, void* src_addr, u32* addrlen);
-u32 inet_addr(const char* cp);
-u16 htons(u16 hostshort);
+i64 sendto(int sockfd, const void* buf, usize len, int flags, const void* dest_addr, u32 addrlen);
+i64 recvfrom(int sockfd, void* buf, usize len, int flags, void* src_addr, u32* addrlen);
 i32 close(int fd);
 
 enum {
-    LINUX_AF_INET = 2,
     LINUX_SOCK_DGRAM = 2,
-};
-
-struct in_addr {
-    u32 s_addr;
-};
-
-struct sockaddr_in {
-    u16 sin_family;
-    u16 sin_port;
-    in_addr sin_addr;
-    char sin_zero[8];
 };
 
 public:
 
-struct endpoint {
-    sockaddr_in address;
-    u32 length;
-};
-
 struct datagram {
     u64 length;
-    endpoint source;
+    std::net::endpoint source;
 };
 
 struct udp_socket : @nodrop {
     i32 fd;
 };
 
-std::opt<endpoint> endpoint::ipv4(const char* address, u16 port) {
-    u32 raw_address = inet_addr(address);
-
-    if (raw_address == 0xFFFFFFFF) {
-        return std::opt::none<endpoint>();
-    }
-
-    endpoint value = (endpoint) {
-        .address = (sockaddr_in) {
-            .sin_family = LINUX_AF_INET,
-            .sin_port = htons(port),
-            .sin_addr = (in_addr) { .s_addr = raw_address },
-        },
-        .length = (u32) sizeof(sockaddr_in)
-    };
-
-    return std::opt::some<endpoint>(value);
-}
-
 std::opt<udp_socket> udp_socket::open() {
-    i32 fd = socket(LINUX_AF_INET, LINUX_SOCK_DGRAM, 0);
-
-    printf("Opened socket with fd %d\n", fd);
+    i32 fd = socket(std::net::LINUX_AF_INET, LINUX_SOCK_DGRAM, 0);
 
     if (fd < 0) {
         return std::opt::none<udp_socket>();
@@ -76,7 +38,7 @@ std::opt<udp_socket> udp_socket::open() {
     return std::opt::some<udp_socket>((udp_socket) { .fd = fd });
 }
 
-std::opt<void> udp_socket::bind(udp_socket& this, endpoint addr) {
+std::opt<void> udp_socket::bind(udp_socket& this, std::net::endpoint addr) {
     if (bind(this.fd, &addr.address, addr.length) < 0) {
         return std::opt::none();
     }
@@ -84,7 +46,7 @@ std::opt<void> udp_socket::bind(udp_socket& this, endpoint addr) {
     return std::opt::some();
 }
 
-std::opt<u64> udp_socket::send_to(udp_socket& this, const std::span<const u8> buffer, endpoint& remote) {
+std::opt<u64> udp_socket::send_to(udp_socket& this, const std::span<const u8> buffer, std::net::endpoint& remote) {
     i64 sent = sendto(this.fd, buffer.data, buffer.length, 0, &remote.address, remote.length);
 
     if (sent < 0) {
@@ -95,8 +57,8 @@ std::opt<u64> udp_socket::send_to(udp_socket& this, const std::span<const u8> bu
 }
 
 std::opt<datagram> udp_socket::recv_from(udp_socket& this, void* buffer, u64 capacity) {
-    endpoint source;
-    source.length = (u32) sizeof(sockaddr_in);
+    std::net::endpoint source;
+    source.length = (u32) sizeof(std::net::sockaddr_in);
 
     i64 received = recvfrom(this.fd, buffer, capacity, 0, &source.address, &source.length);
 

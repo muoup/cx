@@ -4,14 +4,12 @@ use crate::{
 };
 use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
-use cx_thir::{
-    EnvironmentNamespace,
-    thir::{data::THIRType, expression::THIRExpressionKind},
-};
+use cx_namespace::module::NamespacePath;
+use cx_thir::thir::{data::THIRType, expression::THIRExpressionKind};
 
 pub(crate) fn typecheck_unsafe(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     inner: &HIRExpression,
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {

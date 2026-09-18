@@ -6,6 +6,8 @@ pub mod functions;
 pub mod op;
 pub mod pattern;
 pub mod result;
-pub(crate) mod safety;
 pub mod typechecker;
 pub mod value;
+pub mod staged_expr;
+
+pub(crate) mod safety;

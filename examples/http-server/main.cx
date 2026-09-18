@@ -1,10 +1,6 @@
-import std::io as std;
-import std::optional as std;
-import std::span as std;
-import std::string as std;
-import std::functional as std;
+import std::{io, optional, span, string, functional} as std;
 
-import std::net::tcp as std::net;
+import std::net::{tcp, address} as std::net;
 
 int main() {
     std::net::endpoint addr = std::net::endpoint::ipv4("0.0.0.0", 8080)

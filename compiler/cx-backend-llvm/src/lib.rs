@@ -1,5 +1,5 @@
 use crate::attributes::*;
-use crate::error::{LLVMError, LLVMResult};
+use crate::log::{LLVMError, LLVMResult};
 use crate::typing::{
     any_to_basic_type, any_to_basic_val, apply_llvm_parameter_attributes, bc_llvm_prototype,
     bc_llvm_type, convert_linkage,
@@ -9,10 +9,8 @@ use cx_lmir::{
     LMIRFunctionMap, LMIRFunctionPrototype, LMIRFunctionSignature, LMIRRegister, LMIRReturnABI,
     LMIRUnit, LMIRValue,
 };
-use cx_log::{
-    error::{context::CXInternalContext, message::CXStdErrMessage, CXErr},
-    CXResult,
-};
+use cx_log::CXResult;
+use cx_log::catalogue::backend as catalogue;
 use cx_target::ArchitectureConfig;
 use cx_util::identifier::CXIdent;
 use inkwell::attributes::AttributeLoc;
@@ -29,15 +27,15 @@ use inkwell::values::{
 use crate::globals::{declare_global_variable, define_global_variable};
 use crate::instruction::reset_num;
 use cx_pipeline_data::OptimizationLevel;
-use cx_util::format::dump_data;
+use cx_util::format::{dump_data, dumps_enabled};
 use inkwell::basic_block::BasicBlock;
 use std::collections::HashMap;
 
 mod arithmetic;
 mod attributes;
-mod error;
 mod globals;
 mod instruction;
+mod log;
 mod routines;
 pub(crate) mod typing;
 
@@ -74,10 +72,13 @@ impl<'a> FunctionState<'a, '_> {
                     .function_value
                     .get_nth_param(*index)
                     .ok_or_else(|| {
-                        LLVMError::new(format!(
-                            "Parameter index {index} out of bounds for function {}",
-                            self.current_function
-                        ))
+                        LLVMError::new(
+                            &catalogue::INDEX_BOUNDS,
+                            (
+                                format!("parameter of function '{}'", self.current_function),
+                                format!("{}", index),
+                            ),
+                        )
                     })?
                     .as_any_value_enum();
 
@@ -104,25 +105,35 @@ impl<'a> FunctionState<'a, '_> {
                 Ok(CodegenValue::Value(float_val))
             }
 
-            LMIRValue::FunctionRef(function) => Err(LLVMError::new(format!(
-                "Function reference {function} was used where a generated value was expected"
-            ))),
+            LMIRValue::FunctionRef(function) => Err(LLVMError::new(
+                &catalogue::ENTITY_REQUIREMENT,
+                (
+                    format!("function reference '{function}'"),
+                    "a generated value".into(),
+                    None,
+                ),
+            )),
 
-            LMIRValue::Register { .. } | LMIRValue::Global(..) => self
-                .value_map
-                .get(val)
-                .cloned()
-                .ok_or_else(|| LLVMError::new(format!("Value {val} was not generated"))),
+            LMIRValue::Register { .. } | LMIRValue::Global(..) => {
+                self.value_map.get(val).cloned().ok_or_else(|| {
+                    LLVMError::new(
+                        &catalogue::MISSING_ENTITY,
+                        (format!("value '{val}'"), "LLVM value map".into()),
+                    )
+                })
+            }
 
             LMIRValue::NULL => Ok(CodegenValue::Null),
         }
     }
 
     pub(crate) fn get_block(&self, block_id: &LMIRBlockID) -> LLVMResult<BasicBlock<'a>> {
-        self.block_map
-            .get(block_id)
-            .copied()
-            .ok_or_else(|| LLVMError::new(format!("Block with ID {block_id} was not generated")))
+        self.block_map.get(block_id).copied().ok_or_else(|| {
+            LLVMError::new(
+                &catalogue::MISSING_ENTITY,
+                (format!("block '{block_id}'"), "LLVM block map".into()),
+            )
+        })
     }
 
     pub(crate) fn add_block_arguments(
@@ -131,18 +142,23 @@ impl<'a> FunctionState<'a, '_> {
         predecessor: BasicBlock<'a>,
     ) -> LLVMResult<()> {
         let params = self.block_params.get(&target.block).ok_or_else(|| {
-            LLVMError::new(format!(
-                "Block parameters for {} were not generated",
-                target.block
-            ))
+            LLVMError::new(
+                &catalogue::MISSING_ENTITY,
+                (
+                    format!("block parameters for '{}'", target.block),
+                    "LLVM block map".into(),
+                ),
+            )
         })?;
         if params.len() != target.args.len() {
-            return Err(LLVMError::new(format!(
-                "LMIR edge to {} has {} arguments for {} parameters",
-                target.block,
-                target.args.len(),
-                params.len(),
-            )));
+            return Err(LLVMError::new(
+                &catalogue::ARGUMENT_COUNT,
+                (
+                    format!("LMIR edge to '{}'", target.block),
+                    format!("{}", params.len()),
+                    format!("{}", target.args.len()),
+                ),
+            ));
         }
 
         for ((_, phi), argument) in params.iter().zip(&target.args) {
@@ -165,18 +181,28 @@ impl<'a> CodegenValue<'a> {
         match self {
             CodegenValue::Value(value) => Ok(*value),
 
-            _ => Err(LLVMError::new(format!(
-                "Expected a scalar LLVM value, found: {self:?}"
-            ))),
+            _ => Err(LLVMError::new(
+                &catalogue::ENTITY_REQUIREMENT,
+                (
+                    "LLVM value".into(),
+                    "a scalar value".into(),
+                    Some(format!("{:?}", self)),
+                ),
+            )),
         }
     }
 
     pub fn as_basic_value(&self) -> LLVMResult<BasicValueEnum<'a>> {
         match self {
             CodegenValue::Value(value) => any_to_basic_val(*value),
-            CodegenValue::AggregateSlots(_) | CodegenValue::Null => Err(LLVMError::new(format!(
-                "Expected a basic LLVM value, found: {self:?}"
-            ))),
+            CodegenValue::AggregateSlots(_) | CodegenValue::Null => Err(LLVMError::new(
+                &catalogue::ENTITY_REQUIREMENT,
+                (
+                    "LLVM value".into(),
+                    "a basic LLVM value".into(),
+                    Some(format!("{:?}", self)),
+                ),
+            )),
         }
     }
 }
@@ -208,7 +234,12 @@ pub fn lmir_aot_codegen(
             RelocMode::PIC,
             CodeModel::Default,
         )
-        .ok_or_else(|| LLVMError::new("Failed to create LLVM target machine"))?;
+        .ok_or_else(|| {
+            LLVMError::new(
+                &catalogue::OPERATION_FAILED,
+                ("create LLVM target machine".into(), None),
+            )
+        })?;
     let target_data = target_machine.get_target_data();
     let pointer_size = target_data.get_pointer_byte_size(None) as usize;
     let pointer_alignment =
@@ -216,19 +247,20 @@ pub fn lmir_aot_codegen(
     if bytecode.architecture.pointer_size() != pointer_size
         || bytecode.architecture.pointer_alignment() != pointer_alignment
     {
-        return Err(CXErr::new(
-            CXStdErrMessage::error(
-                "CODEGEN ERROR",
+        return Err(LLVMError::new(
+            &catalogue::TARGET_LAYOUT,
+            (
+                "LLVM".into(),
+                "pointer size/alignment".into(),
                 format!(
-                    "LMIR target uses pointer size/alignment {}/{}, but LLVM target uses {}/{}",
+                    "{}/{}",
                     bytecode.architecture.pointer_size(),
-                    bytecode.architecture.pointer_alignment(),
-                    pointer_size,
-                    pointer_alignment,
+                    bytecode.architecture.pointer_alignment()
                 ),
+                format!("{pointer_size}/{pointer_alignment}"),
             ),
-            CXInternalContext::error("LMIR and LLVM target configurations disagree"),
-        ));
+        )
+        .complete("LMIR and LLVM target configurations disagree"));
     }
 
     let module = context.create_module(output_path);
@@ -264,7 +296,9 @@ pub fn lmir_aot_codegen(
     }
 
     if let Err(error) = global_state.module.verify() {
-        dump_data(&global_state.module.print_to_string().to_string_lossy());
+        if dumps_enabled() {
+            dump_data(&global_state.module.print_to_string().to_string_lossy());
+        }
         return Err(LLVMError::from_error(error).into());
     }
     global_state
@@ -276,7 +310,7 @@ pub fn lmir_aot_codegen(
         )
         .map_err(LLVMError::from_error)?;
 
-    if !output_path.contains("std/") {
+    if dumps_enabled() && !output_path.contains("std/") {
         dump_data(&format!(
             "{}",
             global_state.module.print_to_string().to_string_lossy()
@@ -297,10 +331,13 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> LLVMRe
         .module
         .get_function(bytecode.prototype.name.as_str())
         .ok_or_else(|| {
-            LLVMError::new(format!(
-                "Function {} was not declared in the LLVM module",
-                bytecode.prototype.name
-            ))
+            LLVMError::new(
+                &catalogue::MISSING_ENTITY,
+                (
+                    format!("function '{}'", bytecode.prototype.name),
+                    "LLVM module".into(),
+                ),
+            )
         })?;
     let builder = global_state.context.create_builder();
 
@@ -372,10 +409,13 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> LLVMRe
     }
 
     let first_block = bytecode.blocks.first().ok_or_else(|| {
-        LLVMError::new(format!(
-            "Function {} has no LMIR blocks",
-            bytecode.prototype.name
-        ))
+        LLVMError::new(
+            &catalogue::MISSING_ENTITY,
+            (
+                format!("blocks for function '{}'", bytecode.prototype.name),
+                "LMIR function".into(),
+            ),
+        )
     })?;
 
     function_state.builder.position_at_end(entry);

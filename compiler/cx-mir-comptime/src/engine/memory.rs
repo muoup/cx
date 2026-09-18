@@ -1,18 +1,20 @@
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
-    MIRConstant, MIRFieldLayout, MIRGlobalID, MIRGlobalKind, MIRPlace, MIRTypeID, MIRTypeKind,
-    MIRValue,
-    ty::interface::MTRegistry,
-    ty::layout::{field_layout, layout_of},
+    MIRConstant, MIRFieldLayout, MIRGlobalID, MIRGlobalKind, MIRGlobalState, MIRPlace, MIRTypeID,
+    MIRTypeKind, MIRValue,
+    ty::{
+        interface::MTRegistry,
+        layout::{field_layout, layout_of},
+    },
 };
 use cx_tokens::TokenRange;
 
-use crate::{error::comptime_error, value::MIRComptimeValue};
+use crate::{ComptimeContext, log::comptime_error, value::MIRComptimeValue};
 
 use super::{MIRComptimeEngine, execution, ops, state::PathSeg};
 
 pub(super) fn resolve_projection(
-    engine: &MIRComptimeEngine<'_>,
+    engine: &MIRComptimeEngine<'_, impl ComptimeContext>,
     place: MIRPlace,
 ) -> (MIRPlace, Vec<PathSeg>) {
     engine
@@ -23,34 +25,40 @@ pub(super) fn resolve_projection(
 }
 
 pub(super) fn coerce_global_special(
-    engine: &MIRComptimeEngine<'_>,
+    engine: &MIRComptimeEngine<'_, impl ComptimeContext>,
     operand: &MIRValue,
     to_type: MIRTypeID,
 ) -> CXResult<Option<MIRConstant>> {
-    let MIRValue::PlaceRef(MIRPlace::Global(global)) = operand else {
-        return Ok(None);
-    };
-    let Some(registry) = engine.resolver.types() else {
-        return Ok(None);
-    };
-    let Ok(target_kind) = registry.kind(to_type) else {
+    let MIRValue::PlaceRef(MIRPlace::Global(global_id)) = operand else {
         return Ok(None);
     };
 
-    match engine.resolver.global_kind(*global) {
-        Some(MIRGlobalKind::Variable { ty, .. }) => {
+    let Ok(target_kind) = engine.context.types().kind(to_type) else {
+        return Ok(None);
+    };
+
+    let Some(global) = engine.context.global(*global_id) else {
+        return Ok(None);
+    };
+
+    match &global.kind {
+        MIRGlobalKind::Variable { ty, .. } => {
             let decays = matches!(
                 target_kind,
                 MIRTypeKind::PointerTo { .. } | MIRTypeKind::MemoryReference { .. }
-            ) && matches!(registry.kind(ty), Ok(MIRTypeKind::Array { .. }));
+            ) && matches!(
+                engine.context.types().kind(*ty),
+                Ok(MIRTypeKind::Array { .. })
+            );
             if decays {
-                return Ok(Some(ops::relocation_constant(*global, 0, ty)));
+                return Ok(Some(ops::relocation_constant(*global_id, 0, *ty)));
             }
             Ok(None)
         }
-        Some(MIRGlobalKind::StringLiteral { value }) => {
+        MIRGlobalKind::StringLiteral { value } => {
             if let MIRTypeKind::Array { length, inner } = target_kind {
-                if let Ok(MIRTypeKind::Integer { ty, signed }) = registry.kind(*inner) {
+                if let Ok(MIRTypeKind::Integer { ty, signed }) = engine.context.types().kind(*inner)
+                {
                     if ty.bytes() == 1 {
                         let bytes = value.as_bytes();
                         let fields = (0..*length)
@@ -73,23 +81,20 @@ pub(super) fn coerce_global_special(
                     }
                 }
             }
+
             Ok(None)
         }
-        _ => Ok(None),
     }
 }
 
 pub(super) fn address_of(
-    engine: &MIRComptimeEngine<'_>,
+    engine: &MIRComptimeEngine<'_, impl ComptimeContext>,
     place: MIRPlace,
     range: &TokenRange,
 ) -> CXResult<MIRConstant> {
     let (root, path) = resolve_projection(engine, place);
     let MIRPlace::Global(global) = root else {
-        return comptime_error(
-            range.clone(),
-            "cannot take the address of a local value in a comptime context",
-        );
+        return comptime_error(range.clone(), (&catalogue::COMPTIME_INVALID_OPERATION, "address of a local value".into()));
     };
 
     if path.is_empty() {
@@ -97,25 +102,17 @@ pub(super) fn address_of(
         return Ok(ops::relocation_constant(global, 0, ty));
     }
 
-    let Some(registry) = engine.resolver.types() else {
-        return comptime_error(
-            range.clone(),
-            "type layouts are unavailable during comptime evaluation",
-        );
-    };
-    let Some(MIRGlobalKind::Variable { ty: start, .. }) = engine.resolver.global_kind(global)
+    let Some(MIRGlobalKind::Variable { ty: start, .. }) =
+        engine.context.global(global).map(|g| &g.kind)
     else {
-        return comptime_error(
-            range.clone(),
-            "cannot project into this global in a comptime context",
-        );
+        return comptime_error(range.clone(), (&catalogue::COMPTIME_INVALID_OPERATION, "projection into a global".into()));
     };
 
     let mut offset: i64 = 0;
-    let mut ty = start;
+    let mut ty = *start;
     for segment in &path {
         match segment {
-            PathSeg::Field(index) => match field_layout(registry, ty, *index) {
+            PathSeg::Field(index) => match field_layout(engine.context.types(), ty, *index) {
                 Ok(MIRFieldLayout::Standard {
                     offset: field_offset,
                     ty: field_ty,
@@ -126,38 +123,38 @@ pub(super) fn address_of(
                 Ok(MIRFieldLayout::Bitfield { .. }) => {
                     return comptime_error(
                         range.clone(),
-                        "address-of a bitfield is not supported in a comptime context",
+                        (&catalogue::COMPTIME_INVALID_OPERATION, "address of a bitfield".into()),
                     );
                 }
                 Err(_) => {
                     return comptime_error(
                         range.clone(),
-                        "invalid field projection in an address-of computation",
+                        (&catalogue::INVALID_LAYOUT, ("field projection".into(), "a valid layout".into(), None)),
                     );
                 }
             },
             PathSeg::Index(index) => {
-                let inner = match registry.kind(ty) {
+                let inner = match engine.context.types().kind(ty) {
                     Ok(MIRTypeKind::Array { inner, .. }) => *inner,
                     _ => {
                         return comptime_error(
                             range.clone(),
-                            "index projection on a non-array in an address-of computation",
+                            (&catalogue::COMPTIME_INVALID_OPERATION, "index projection on a non-array".into()),
                         );
                     }
                 };
                 if *index < 0 {
                     return comptime_error(
                         range.clone(),
-                        "negative array index in an address-of computation",
+                        (&catalogue::INDEX_BOUNDS, ("array".into(), index.to_string())),
                     );
                 }
-                let stride = match layout_of(registry, inner) {
+                let stride = match layout_of(engine.context.types(), inner) {
                     Ok(layout) => layout.size as i64,
                     Err(_) => {
                         return comptime_error(
                             range.clone(),
-                            "invalid element layout in an address-of computation",
+                            (&catalogue::INVALID_LAYOUT, ("array element".into(), "a valid layout".into(), None)),
                         );
                     }
                 };
@@ -165,10 +162,7 @@ pub(super) fn address_of(
                 ty = inner;
             }
             PathSeg::Variant(_) => {
-                return comptime_error(
-                    range.clone(),
-                    "variant projections are not supported in address-of computations",
-                );
+                return comptime_error(range.clone(), (&catalogue::COMPTIME_INVALID_OPERATION, "variant projection in an address-of computation".into()));
             }
         }
     }
@@ -177,33 +171,33 @@ pub(super) fn address_of(
 }
 
 pub(super) fn global_address_type(
-    engine: &MIRComptimeEngine<'_>,
+    engine: &MIRComptimeEngine<'_, impl ComptimeContext>,
     global: MIRGlobalID,
     range: &TokenRange,
 ) -> CXResult<MIRTypeID> {
-    match engine.resolver.global_kind(global) {
-        Some(MIRGlobalKind::Variable { ty, .. }) => Ok(ty),
-        Some(MIRGlobalKind::StringLiteral { .. }) => {
-            let Some(types) = engine.resolver.types() else {
+    let Some(global) = engine.context.global(global) else {
+        return comptime_error(
+            range.clone(),
+            (&catalogue::MISSING_ENTITY, ("global".into(), "comptime address computation".into())),
+        );
+    };
+
+    match global.kind {
+        MIRGlobalKind::Variable { ty, .. } => Ok(ty),
+        MIRGlobalKind::StringLiteral { .. } => {
+            let Some(ty) = engine.context.types().find_kind(&MIRTypeKind::Str) else {
                 return comptime_error(
                     range.clone(),
-                    "type layouts are unavailable during comptime evaluation",
-                );
-            };
-            let Some(ty) = types.find_kind(&MIRTypeKind::Str) else {
-                return comptime_error(
-                    range.clone(),
-                    "the string type is unavailable during comptime evaluation",
+                    (&catalogue::COMPTIME_UNAVAILABLE, "string type".into()),
                 );
             };
             Ok(ty)
         }
-        None => comptime_error(range.clone(), "unknown global in an address-of computation"),
     }
 }
 
 pub(super) fn read_value(
-    engine: &mut MIRComptimeEngine<'_>,
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
     value: &MIRValue,
 ) -> CXResult<MIRComptimeValue> {
     Ok(match value {
@@ -225,32 +219,48 @@ pub(super) fn read_value(
 }
 
 pub(super) fn read_constant(
-    engine: &mut MIRComptimeEngine<'_>,
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
     value: &MIRValue,
     range: &TokenRange,
 ) -> CXResult<MIRConstant> {
     match read_value(engine, value)? {
         MIRComptimeValue::Constant(value) => Ok(value),
         MIRComptimeValue::Staged(_) => {
-            comptime_error(range.clone(), "staged value used as a concrete value")
+            comptime_error(range.clone(), (&catalogue::ENTITY_REQUIREMENT, ("staged value".into(), "a concrete value".into(), Some("staged value".into()))))
         }
     }
 }
 
 fn read_global_rvalue(
-    engine: &mut MIRComptimeEngine<'_>,
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
     global: MIRGlobalID,
 ) -> CXResult<MIRConstant> {
-    if let Some(MIRGlobalKind::Variable { ty, .. }) = engine.resolver.global_kind(global)
-        && let Some(registry) = engine.resolver.types()
-        && let Ok(MIRTypeKind::Array { inner, .. }) = registry.kind(ty)
-    {
-        return Ok(ops::relocation_constant(global, 0, *inner));
+    let Some(global) = engine.context.global(global) else {
+        return comptime_error(
+            TokenRange::internal(),
+            (&catalogue::MISSING_ENTITY, ("global".into(), "comptime global value".into())),
+        );
+    };
+
+    match &global.kind {
+        MIRGlobalKind::Variable { ty, .. } => {
+            if let Ok(MIRTypeKind::Array { inner, .. }) = engine.context.types().kind(*ty) {
+                return Ok(ops::relocation_constant(global.id, 0, *inner));
+            }
+        }
+        MIRGlobalKind::StringLiteral { .. } => {
+            let ty = global_address_type(engine, global.id, &TokenRange::internal())?;
+            return Ok(ops::relocation_constant(global.id, 0, ty));
+        }
     }
-    read_global(engine, global)
+
+    read_global(engine, global.id)
 }
 
-fn read_place(engine: &mut MIRComptimeEngine<'_>, place: MIRPlace) -> CXResult<MIRComptimeValue> {
+fn read_place(
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
+    place: MIRPlace,
+) -> CXResult<MIRComptimeValue> {
     if let MIRPlace::Global(global) = place {
         return Ok(MIRComptimeValue::Constant(read_global(engine, global)?));
     }
@@ -277,14 +287,14 @@ fn read_place(engine: &mut MIRComptimeEngine<'_>, place: MIRPlace) -> CXResult<M
     let MIRComptimeValue::Constant(root) = root else {
         return comptime_error(
             TokenRange::internal(),
-            "cannot project through a staged value",
+            (&catalogue::COMPTIME_INVALID_OPERATION, "projection through a staged value".into()),
         );
     };
     Ok(MIRComptimeValue::Constant(read_path(&root, &projection.1)))
 }
 
 pub(super) fn write_place(
-    engine: &mut MIRComptimeEngine<'_>,
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
     place: MIRPlace,
     value: MIRComptimeValue,
     aggregate_type: Option<MIRTypeID>,
@@ -293,7 +303,7 @@ pub(super) fn write_place(
         let MIRComptimeValue::Constant(value) = value else {
             return comptime_error(
                 TokenRange::internal(),
-                "cannot store a staged value in a global",
+                (&catalogue::COMPTIME_INVALID_OPERATION, "store a staged value in a global".into()),
             );
         };
         engine.globals.insert(global, value);
@@ -319,13 +329,13 @@ pub(super) fn write_place(
     let MIRComptimeValue::Constant(current) = current else {
         return comptime_error(
             TokenRange::internal(),
-            "cannot assign through a staged value",
+            (&catalogue::COMPTIME_INVALID_OPERATION, "assign through a staged value".into()),
         );
     };
     let MIRComptimeValue::Constant(value) = value else {
         return comptime_error(
             TokenRange::internal(),
-            "cannot store a staged value in an aggregate projection",
+            (&catalogue::COMPTIME_INVALID_OPERATION, "store a staged value in an aggregate projection".into()),
         );
     };
     let updated = write_path(&current, &path, value, aggregate_type);
@@ -344,7 +354,7 @@ pub(super) fn write_place(
 }
 
 pub(super) fn write_direct_cell(
-    engine: &mut MIRComptimeEngine<'_>,
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
     place: MIRPlace,
     value: MIRComptimeValue,
 ) {
@@ -356,49 +366,69 @@ pub(super) fn write_direct_cell(
     frame.cells.insert(place, value);
 }
 
-fn read_global(engine: &mut MIRComptimeEngine<'_>, global: MIRGlobalID) -> CXResult<MIRConstant> {
+fn read_global(
+    engine: &mut MIRComptimeEngine<'_, impl ComptimeContext>,
+    global: MIRGlobalID,
+) -> CXResult<MIRConstant> {
     if let Some(cached) = engine.globals.get(&global) {
         return Ok(cached.clone());
     }
     if !engine.evaluating_globals.insert(global) {
         return comptime_error(
             TokenRange::internal(),
-            "cyclic dependency between global initializers",
+            (&catalogue::COMPTIME_GLOBAL_CYCLE, ()),
         );
     }
 
     let result = (|| {
-        let resolver = engine.resolver;
-        if let Some(constant) = resolver.global_constant(global) {
-            return Ok(constant);
-        }
+        let resolver = engine.context;
+
         if let Some(initializer) = resolver.global_initializer(global) {
             return match execution::call_function(engine, initializer, &[])? {
                 MIRComptimeValue::Constant(value) => Ok(value),
                 MIRComptimeValue::Staged(_) => comptime_error(
                     TokenRange::internal(),
-                    "global initializer returned a staged value",
+                    (&catalogue::ENTITY_REQUIREMENT, ("global initializer".into(), "a compile-time value".into(), Some("staged value".into()))),
                 ),
             };
         }
-        if matches!(
-            resolver.global_kind(global),
-            Some(MIRGlobalKind::StringLiteral { .. })
-        ) {
-            let range = TokenRange::internal();
-            let ty = global_address_type(engine, global, &range)?;
-            return Ok(ops::relocation_constant(global, 0, ty));
+
+        let Some(var) = resolver.global(global) else {
+            return comptime_error(
+                TokenRange::internal(),
+                (&catalogue::COMPTIME_UNAVAILABLE, "global".into()),
+            );
+        };
+
+        match &var.kind {
+            MIRGlobalKind::StringLiteral { .. } => {
+                let range = TokenRange::internal();
+                let ty = global_address_type(engine, global, &range)?;
+                return Ok(ops::relocation_constant(global, 0, ty));
+            }
+
+            MIRGlobalKind::Variable { ty, state, .. } => match state {
+                MIRGlobalState::External => {
+                    return comptime_error(
+                        TokenRange::internal(),
+                        (&catalogue::COMPTIME_UNAVAILABLE, "global".into()),
+                    );
+                }
+                MIRGlobalState::ZeroInitialized => {
+                    return Ok(ops::relocation_constant(global, 0, *ty));
+                }
+                MIRGlobalState::Initialized(constant) => {
+                    return Ok(constant.clone());
+                }
+            },
         }
-        comptime_error(
-            TokenRange::internal(),
-            "global is not available during comptime evaluation",
-        )
     })();
 
     engine.evaluating_globals.remove(&global);
 
     let constant = result?;
     engine.globals.insert(global, constant.clone());
+
     Ok(constant)
 }
 

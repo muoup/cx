@@ -5,19 +5,11 @@
   "summary": "Minimal UDP socket wrappers for IPv4 datagrams.",
   "types": [
     {
-      "name": "struct endpoint",
-      "description": "A struct that stores an IPv4 socket address and its native length.",
-      "fields": [
-        {"name": "address", "type": "sockaddr_in", "description": "The native IPv4 address value."},
-        {"name": "length", "type": "u32", "description": "The native address length."}
-      ]
-    },
-    {
       "name": "struct datagram",
       "description": "A struct that describes one received UDP datagram.",
       "fields": [
         {"name": "length", "type": "u64", "description": "Number of bytes received."},
-        {"name": "source", "type": "endpoint", "description": "The sender endpoint."}
+        {"name": "source", "type": "std::net::endpoint", "description": "The sender endpoint."}
       ]
     },
     {
@@ -31,18 +23,6 @@
   ],
   "functions": [
     {
-      "name": "ipv4",
-      "owner": "endpoint",
-      "signature": "std::opt<endpoint> endpoint::ipv4(const char* address, u16 port)",
-      "description": "Builds an IPv4 endpoint from a dotted address and port.",
-      "parameters": [
-        {"name": "address", "type": "const char*", "description": "The dotted IPv4 address."},
-        {"name": "port", "type": "u16", "description": "The UDP port."}
-      ],
-      "returnType": "std::opt<endpoint>",
-      "returnDescription": "Some endpoint when the address is valid."
-    },
-    {
       "name": "open",
       "owner": "udp_socket",
       "signature": "std::opt<udp_socket> udp_socket::open()",
@@ -54,11 +34,11 @@
     {
       "name": "bind",
       "owner": "udp_socket",
-      "signature": "std::opt<void> udp_socket::bind(udp_socket& this, endpoint addr)",
+      "signature": "std::opt<void> udp_socket::bind(udp_socket& this, std::net::endpoint addr)",
       "description": "Binds a UDP socket to an endpoint.",
       "parameters": [
         {"name": "this", "type": "udp_socket&", "description": "The socket to bind."},
-        {"name": "addr", "type": "endpoint", "description": "The local endpoint."}
+        {"name": "addr", "type": "std::net::endpoint", "description": "The local endpoint."}
       ],
       "returnType": "std::opt<void>",
       "returnDescription": "Some void on success or none on failure."
@@ -66,12 +46,12 @@
     {
       "name": "send_to",
       "owner": "udp_socket",
-      "signature": "std::opt<u64> udp_socket::send_to(udp_socket& this, const std::span<const u8> buffer, endpoint& remote)",
+      "signature": "std::opt<u64> udp_socket::send_to(udp_socket& this, const std::span<const u8> buffer, std::net::endpoint& remote)",
       "description": "Sends a byte span to a remote UDP endpoint.",
       "parameters": [
         {"name": "this", "type": "udp_socket&", "description": "The socket to send from."},
         {"name": "buffer", "type": "const std::span<const u8>", "description": "The bytes to send."},
-        {"name": "remote", "type": "endpoint&", "description": "The destination endpoint."}
+        {"name": "remote", "type": "std::net::endpoint&", "description": "The destination endpoint."}
       ],
       "returnType": "std::opt<u64>",
       "returnDescription": "Some number of bytes sent or none on failure."
@@ -97,8 +77,7 @@
       "parameters": [
         {"name": "this", "type": "udp_socket", "description": "The socket to close."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     }
   ]
 }

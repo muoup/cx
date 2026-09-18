@@ -3,8 +3,9 @@ use cx_hir::ast::{
     types::HIRType,
 };
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
+use cx_namespace::module::NamespacePath;
 use cx_thir::{
-    EnvironmentNamespace,
     thir::{
         expression::{THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp},
         r#type::{THIRIntType, THIRType, THIRTypeKind},
@@ -33,7 +34,8 @@ use crate::{
 
 pub fn typecheck_unop(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
+    expr: &HIRExpression,
     op: &HIRUnOp,
     operand: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
@@ -48,9 +50,11 @@ pub fn typecheck_unop(
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
                 return env.log_error(
                     &operand.token_range,
-                    format!(
-                        "Cannot apply pre-increment to non-reference type {}",
-                        operand._type.display_with(&env.symbols)
+                    &catalogue::TYPE_MISMATCH,
+                    (
+                        "increment operator".into(),
+                        "reference type".into(),
+                        format!("{}", operand._type.display_with(&env.symbols)),
                     ),
                 );
             };
@@ -77,9 +81,11 @@ pub fn typecheck_unop(
                 _ => {
                     return env.log_error(
                         &operand.token_range,
-                        format!(
-                            "Pre-increment operator requires an integer or pointer type, found {}",
-                            inner.display_with(&env.symbols)
+                        &catalogue::TYPE_MISMATCH,
+                        (
+                            "increment operator".into(),
+                            "pointer or integer type".into(),
+                            format!("{}", inner.display_with(&env.symbols)),
                         ),
                     );
                 }
@@ -113,10 +119,12 @@ pub fn typecheck_unop(
             if !operand._type.is_integer() {
                 return env.log_error(
                     &operand.token_range,
-                    format!(
-                        "Bitwise NOT operator requires an integer type, found {}",
-                        operand._type.display_with(&env.symbols)
-                    ),
+                    &catalogue::TYPE_MISMATCH,
+                    (
+                        "bitwise not operator".into(),
+                        "integer type".into(),
+                        format!("{}", operand._type.display_with(&env.symbols)),
+                    )
                 );
             }
 
@@ -141,10 +149,12 @@ pub fn typecheck_unop(
                 _ => {
                     return env.log_error(
                         &operand.token_range,
-                        format!(
-                            "Negation operator requires an integer or float type, found {}",
-                            operand.display_with(&env.symbols)
-                        ),
+                        &catalogue::TYPE_MISMATCH,
+                        (
+                            "negation operator".into(),
+                            "numeric type".into(),
+                            format!("{}", operand._type.display_with(&env.symbols)),
+                        )
                     );
                 }
             };
@@ -165,7 +175,12 @@ pub fn typecheck_unop(
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
                 return env.log_error(
                     &operand.token_range,
-                    "Cannot take the address of a non-reference type".to_string(),
+                    &catalogue::TYPE_MISMATCH,
+                    (
+                        "address-of operator".into(),
+                        "reference type".into(),
+                        format!("{}", operand._type.display_with(&env.symbols)),
+                    )
                 );
             };
 
@@ -188,19 +203,18 @@ pub fn typecheck_unop(
             if env.function.in_safe_context()
                 && matches!(operand._type.kind, THIRTypeKind::PointerTo { .. })
             {
-                return env.log_error(
-                    &operand.token_range,
-                    "Dereferencing raw pointers is not allowed in safe contexts".to_string(),
-                );
+                return env.log_error(&operand.token_range, &catalogue::UNSAFE_OPERATION, "Deferencing a pointer".into());
             }
 
             let Some(inner) = env.symbols.ptr_inner(&operand._type).cloned() else {
                 return env.log_error(
                     &operand.token_range,
-                    format!(
-                        "Cannot dereference non-pointer type {}",
-                        operand._type.display_with(&env.symbols)
-                    ),
+                    &catalogue::TYPE_MISMATCH,
+                    (
+                        "dereference operator".into(),
+                        "pointer type".into(),
+                        format!("{}", operand._type.display_with(&env.symbols)),
+                    )
                 );
             };
 
@@ -222,13 +236,13 @@ pub fn typecheck_unop(
             TypecheckResult::from(explicit_cast(env, operand, &to_type)?)
         }
 
-        HIRUnOp::Is(pattern) => typecheck_is(env, namespace, operand, pattern, operand)?,
+        HIRUnOp::Is(pattern) => typecheck_is(env, namespace, expr, pattern, operand)?,
     })
 }
 
 pub(crate) fn typecheck_sizeof_type(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     _expr: &HIRExpression,
     ty: &HIRType,
 ) -> CXResult<TypecheckResult> {
@@ -239,7 +253,7 @@ pub(crate) fn typecheck_sizeof_type(
 
 pub(crate) fn typecheck_alignof_type(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
     ty: &HIRType,
 ) -> CXResult<TypecheckResult> {
@@ -249,7 +263,7 @@ pub(crate) fn typecheck_alignof_type(
 
 pub(crate) fn typecheck_alignof_expr(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     let tc_expr = typecheck_expr(env, namespace, expr, None)
@@ -261,7 +275,7 @@ pub(crate) fn typecheck_alignof_expr(
 
 pub(crate) fn typecheck_sizeof_expr(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     let tc_expr = typecheck_expr(env, namespace, expr, None)

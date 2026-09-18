@@ -5,13 +5,14 @@ use crate::type_checking::value::{IndirectBase, resolve_indirect_base};
 use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
 use cx_hir::ast::modifiers::HIR_CONST;
 use cx_log::CXResult;
-use cx_thir::EnvironmentNamespace;
+use cx_log::catalogue::typecheck as catalogue;
+use cx_namespace::module::NamespacePath;
 use cx_thir::thir::data::THIRTypeKind;
 use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
 
 fn resolve_access_base(
     env: &mut TypeEnvironment,
-    _: &EnvironmentNamespace,
+    _: &NamespacePath,
     expr: &HIRExpression,
     lhs: THIRExpression,
 ) -> CXResult<IndirectBase> {
@@ -23,7 +24,15 @@ fn resolve_access_base(
             | THIRTypeKind::Union { .. }
             | THIRTypeKind::TaggedUnion { .. }
     ) {
-        return env.log_error(expr.token_range(), format!("Expected a struct or union type on the left-hand side of an access expression, found {}", lhs.source_type.display_with(&env.symbols)));
+        return env.log_error(
+            expr.token_range(),
+            &catalogue::TYPE_MISMATCH,
+            (
+                "access expression".into(),
+                "structured type".into(),
+                format!("{}", lhs.source_type.display_with(&env.symbols)),
+            ),
+        );
     }
 
     Ok(lhs)
@@ -31,7 +40,7 @@ fn resolve_access_base(
 
 pub fn typecheck_access(
     env: &mut TypeEnvironment,
-    namespace: &EnvironmentNamespace,
+    namespace: &NamespacePath,
     lhs: TypecheckResult,
     rhs: &HIRExpression,
     expr: &HIRExpression,
@@ -53,14 +62,16 @@ pub fn typecheck_access(
     else {
         return env.log_error(
             rhs.token_range(),
-            "Invalid right-hand side of access expression: expected an identifier".to_string(),
+            &catalogue::INVALID_FORM,
+            ("non-identifier".into(), "right-hand side of access expression".into())
         );
     };
 
     let Some(rhs_name) = name.root_name_ref() else {
         return env.log_error(
             rhs.token_range(),
-            "Invalid right-hand side of access expression: expected an identifier".to_string(),
+            &catalogue::INVALID_FORM,
+            ("non-identifier".into(), "right-hand side of access expression".into())
         );
     };
 
@@ -68,7 +79,8 @@ pub fn typecheck_access(
     else {
         return env.log_error(
             rhs.token_range(),
-            "Invalid right-hand side of access expression: expected an identifier".to_string(),
+            &catalogue::UNKNOWN_MEMBER,
+            (format!("{}", base.source_type.display_with(&env.symbols)), rhs_name.as_str().into())
         );
     };
 

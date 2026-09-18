@@ -1,12 +1,9 @@
-pub use cx_util::namespace::EnvironmentNamespace;
+mod log;
+use cx_namespace::module::NamespacePath;
 
 use crate::{
     registry::THIRDecomposedRegistry,
-    thir::{
-        comptime::THIRComptimeFn,
-        data::THIRFunction,
-        global::THIRGlobalVariable,
-    },
+    thir::{comptime::THIRComptimeFn, data::THIRFunction, global::THIRGlobalVariable},
 };
 
 pub mod intrinsic_types;
@@ -19,7 +16,7 @@ mod format;
 
 #[derive(Debug, Clone)]
 pub struct THIRUnit {
-    pub source_namespace: EnvironmentNamespace,
+    pub source_namespace: NamespacePath,
     pub registry: THIRDecomposedRegistry,
 
     pub functions: Vec<THIRFunction>,

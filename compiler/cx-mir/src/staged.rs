@@ -1,11 +1,17 @@
 use std::sync::Arc;
 
-use crate::{MIRBody, MIRRegister, MIRTypeID};
+use crate::{MIRBody, MIRPlaceID, MIRRegister, MIRTypeID};
+
+#[derive(Debug, Clone, Copy)]
+pub enum MIRStagedCapture {
+    Register(MIRRegister),
+    Place(MIRPlaceID),
+}
 
 #[derive(Debug, Clone)]
 pub struct MIRStagedTemplate {
     body: MIRBody,
-    captures: Arc<[MIRRegister]>,
+    captures: Arc<[MIRStagedCapture]>,
     params: Arc<[MIRRegister]>,
     result_type: MIRTypeID,
     diverges: bool,
@@ -14,7 +20,7 @@ pub struct MIRStagedTemplate {
 impl MIRStagedTemplate {
     pub fn new(
         body: MIRBody,
-        captures: Vec<MIRRegister>,
+        captures: Vec<MIRStagedCapture>,
         params: Vec<MIRRegister>,
         result_type: MIRTypeID,
         diverges: bool,
@@ -32,7 +38,7 @@ impl MIRStagedTemplate {
         &self.body
     }
 
-    pub fn captures(&self) -> &[MIRRegister] {
+    pub fn captures(&self) -> &[MIRStagedCapture] {
         &self.captures
     }
 

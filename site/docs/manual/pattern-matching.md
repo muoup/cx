@@ -6,6 +6,19 @@ title: Pattern Matching
 
 CX provides `is` for testing one tagged-union variant and `match` for branching over integer values or tagged-union variants.
 
+## Patterns
+
+Patterns are value skeletons that may be applied to a given value of the appropriate type to determine if it matches the given 'pattern'. They take on the following shapes:
+
+```cx
+T::variant(val)     // A pattern to match against a given variant of a tagged union, 
+                    // and a named capture over its inner value
+1                   // A single number to match an integer against
+binding             // Matches anything and bindings the value to a new identifier
+```
+
+Note that in the case of tagged union patterns, while the type constructor to build a tagged union, in the case of a templated type, takes on the form of `T::variant<U, V, W, X>(inner)`, the template arguments must be elided in the case of a pattern, i.e. one must use the pattern `T::variant(inner)`. As a pattern is always used to match against a value, the template instantiation can always be deduced.
+
 ## The `is` Operator
 
 The simplest method to determine whether a tagged union contains a given variant is the `is` operator. Given a value `val` of type `T`, the expression `val is T::variant(inner)` returns a boolean value and binds `inner` to the payload with the type declared by `T::variant`.
@@ -24,7 +37,7 @@ float get_rectangle_area(shape& s) {
 
 ## Match Statements
 
-Match statements are an alternative to C's `switch` statements that forbid fall-through. Each arm contains a pattern on the left and a single statement or scoped block on the right. Integer matches use integer-literal patterns, while tagged-union matches use variant patterns with an optional payload binding.
+Match statements are an alternative to C's `switch` statements that forbid fall-through. Each arm contains a pattern on the left and a single statement or scoped block on the right. Integer matches use integer-literal patterns, while tagged-union matches use variant patterns with an optional payload binding. A bare name is a catch-all pattern that binds the whole matched value within its arm; use `_` when the binding is intentionally unused. Bindings borrow an existing value or own an owned match subject, including one passed with `move`. Discarding a binding does not waive ownership or `@nodrop` requirements.
 
 ```cx
 void print_number(int i) {
@@ -39,7 +52,7 @@ void print_number(int i) {
 }
 ```
 
-Tagged-union patterns name the variant and may bind its payload inside the corresponding arm. A match listing every variant is exhaustive; `_` can handle all variants or integer values that were not listed explicitly.
+Tagged-union patterns name the variant and may bind its payload inside the corresponding arm. Every match must be exhaustive. A tagged-union match must list every variant or end with a catch-all binding; an integer match must end with a catch-all binding. Arms after a catch-all or complete variant coverage are unreachable and rejected, as are duplicate literal or variant patterns. Only top-level variants and payload bindings are supported.
 
 ```cx
 float get_area(shape& s) {
@@ -65,4 +78,4 @@ int value = match (maybe) {
 };
 ```
 
-Every arm that can complete in a value-producing match must yield a compatible value. The match must also list every tagged-union variant or provide a `default` arm so that every runtime path produces a result.
+Every arm that can complete in a value-producing match must yield a compatible value. As with statement matches, every possible input must be covered so that every runtime path produces a result.

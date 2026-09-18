@@ -2,25 +2,39 @@ mod args;
 mod build;
 mod help;
 mod init;
+mod log;
 
+use crate::log::error;
 use args::Command;
+use cx_log::CXResult;
 use cx_pipeline::{link_object_files, standard_compilation};
 use cx_pipeline_data::{ArchitectureConfig, CompilationMode, CompilerConfig};
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 use crate::{
     build::{build_project, run_project},
     init::init_project,
 };
 
-fn setup_internal_directory(working_directory: &Path) -> PathBuf {
+fn setup_internal_directory(working_directory: &Path) -> CXResult<PathBuf> {
     let internal_directory = working_directory.join(".internal");
-    std::fs::create_dir_all(&internal_directory).expect("Failed to create internal directory");
+    std::fs::create_dir_all(&internal_directory).map_err(|err| {
+        error(
+            format!("failed to create {}: {err}", internal_directory.display()),
+            None,
+        )
+    })?;
     let legacy_dump = internal_directory.join("compiler-dump.data");
     if legacy_dump.exists() {
-        std::fs::remove_file(legacy_dump).expect("Failed to remove legacy dump file");
+        std::fs::remove_file(&legacy_dump).map_err(|err| {
+            error(
+                format!("failed to remove {}: {err}", legacy_dump.display()),
+                None,
+            )
+        })?;
     }
-    internal_directory
+    Ok(internal_directory)
 }
 
 fn resolve_invocation_path(invocation_directory: &Path, path: impl Into<PathBuf>) -> PathBuf {
@@ -54,18 +68,6 @@ fn intermediate_object_output(
         .join(format!("{index}-{stem}.o"))
 }
 
-fn compiler_config(
-    args: &args::FileArgs,
-    output: PathBuf,
-    mode: CompilationMode,
-) -> CompilerConfig {
-    let invocation_directory = std::env::current_dir().expect("Failed to get current directory");
-    let working_directory = invocation_directory.clone();
-    let internal_directory = setup_internal_directory(&working_directory);
-
-    compiler_config_with_dirs(args, output, mode, working_directory, internal_directory)
-}
-
 fn compiler_config_with_dirs(
     args: &args::FileArgs,
     output: PathBuf,
@@ -86,6 +88,7 @@ fn compiler_config_with_dirs(
         output,
         unsafe_mode: args.unsafe_mode,
         verbose: args.verbose,
+        dump: args.dump,
         working_directory,
         internal_directory,
         compilation_mode: mode,
@@ -100,24 +103,26 @@ fn compiler_config_with_dirs(
     }
 }
 
-fn run_standard_compilation(config: CompilerConfig, path: &Path) -> Result<(), ()> {
-    standard_compilation(config, path).map_err(|err| {
-        err.print().expect("Failed to write error message");
-    })
-}
-
-fn run_file_mode(args: args::FileArgs) -> Result<(), ()> {
-    let invocation_directory = std::env::current_dir().expect("Failed to get current directory");
+fn run_file_mode(args: args::FileArgs) -> CXResult<()> {
+    let invocation_directory = std::env::current_dir()
+        .map_err(|err| error(format!("failed to get current directory: {err}"), None))?;
 
     if args.compile_only {
+        let internal_directory = setup_internal_directory(&invocation_directory)?;
         for input_file in &args.input_files {
             let output = args
                 .output_file
                 .as_ref()
                 .map(|output| resolve_invocation_path(&invocation_directory, output))
                 .unwrap_or_else(|| default_object_output(&invocation_directory, input_file));
-            let config = compiler_config(&args, output, CompilationMode::Object);
-            run_standard_compilation(config, Path::new(input_file))?;
+            let config = compiler_config_with_dirs(
+                &args,
+                output,
+                CompilationMode::Object,
+                invocation_directory.clone(),
+                internal_directory.clone(),
+            );
+            standard_compilation(config, Path::new(input_file))?;
         }
         return Ok(());
     }
@@ -129,13 +134,20 @@ fn run_file_mode(args: args::FileArgs) -> Result<(), ()> {
         .unwrap_or_else(|| invocation_directory.join("a.out"));
 
     if args.input_files.len() == 1 {
-        let config = compiler_config(&args, output, CompilationMode::Executable);
-        run_standard_compilation(config, Path::new(&args.input_files[0]))?;
+        let internal_directory = setup_internal_directory(&invocation_directory)?;
+        let config = compiler_config_with_dirs(
+            &args,
+            output,
+            CompilationMode::Executable,
+            invocation_directory.clone(),
+            internal_directory,
+        );
+        standard_compilation(config, Path::new(&args.input_files[0]))?;
         return Ok(());
     }
 
     let working_directory = invocation_directory.clone();
-    let internal_directory = setup_internal_directory(&working_directory);
+    let internal_directory = setup_internal_directory(&working_directory)?;
     let mut object_files = Vec::with_capacity(args.input_files.len());
 
     for (index, input_file) in args.input_files.iter().enumerate() {
@@ -148,36 +160,42 @@ fn run_file_mode(args: args::FileArgs) -> Result<(), ()> {
             internal_directory.clone(),
         );
 
-        run_standard_compilation(config, Path::new(input_file))?;
+        standard_compilation(config, Path::new(input_file))?;
         object_files.push(object_output);
     }
 
-    link_object_files(&output, &object_files).map_err(|err| {
-        err.print().expect("Failed to write error message");
-    })?;
+    link_object_files(&output, &object_files)?;
 
     Ok(())
 }
 
-fn main() {
-    let command = match args::parse_args() {
-        Ok(cmd) => cmd,
+fn execute(command: Command) -> CXResult<ExitCode> {
+    match command {
+        Command::Help(topic) => help::dispatch(topic),
+        Command::Version => help::print_version(),
+        Command::CompileFile(args) => run_file_mode(args)?,
+        Command::Build(args) => {
+            build_project(args, help::Topic::Build)?;
+        }
+        Command::Run(args) => return run_project(args),
+        Command::Init(args) => init_project(args)?,
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn main() -> ExitCode {
+    let command = match args::parse_args(std::env::args().skip(1)) {
+        Ok(command) => command,
         Err(err) => {
-            eprintln!("Error: {err}");
-            std::process::exit(1);
+            let _ = err.print();
+            return ExitCode::from(2);
         }
     };
-
-    match command {
-        Command::CompileFile(args) => {
-            if run_file_mode(args).is_err() {
-                std::process::exit(1);
-            }
+    match execute(command) {
+        Ok(status) => status,
+        Err(err) => {
+            let _ = err.print();
+            ExitCode::FAILURE
         }
-        Command::Build(args) => {
-            build_project(args);
-        }
-        Command::Run(args) => run_project(args),
-        Command::Init(args) => init_project(args),
     }
 }

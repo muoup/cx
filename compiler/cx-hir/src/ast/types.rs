@@ -1,5 +1,6 @@
+use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, namespace::QualifiedName};
+use cx_util::{identifier::CXIdent};
 
 use crate::ast::{
     expression::HIRExpression, function::HIRFunctionPrototype, modifiers::HIRTypeQualifiers,

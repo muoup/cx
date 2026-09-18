@@ -1,4 +1,5 @@
 use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
+use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
 use cx_tokens::{
     keyword, punctuator,
@@ -17,7 +18,7 @@ use crate::{
         try_parse_simple_identifier,
         types::{is_type_decl, parse_base_mods, parse_type_base},
     },
-    try_next,
+    peek_next_kind, try_next,
 };
 
 pub(crate) fn parse_stmt(data: &mut ParserData) -> CXResult<HIRExpression> {
@@ -60,7 +61,11 @@ pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<HIRExpres
                 name,
                 statement: Box::new(statement),
             }
-            .into_expr(label_start, data.tokens.index, data.file_origin.clone()),
+            .into_expr(
+                label_start,
+                data.tokens.index,
+                data.token_range(label_start, data.tokens.index),
+            ),
         ));
     }
 
@@ -77,7 +82,7 @@ pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<HIRExpres
             return Ok(Some(HIRExprKind::Void.into_expr(
                 data.tokens.index,
                 data.tokens.index,
-                data.file_origin.clone(),
+                data.token_range(data.tokens.index.saturating_sub(1), data.tokens.index),
             )));
         }
 
@@ -160,10 +165,7 @@ pub(crate) fn try_parse_keyword_stmt(
                         "':'"
                     );
                     if default_case.is_some() {
-                        return parse_point_error(
-                            &data.tokens,
-                            "Multiple default cases in switch statement".to_string(),
-                        );
+                        return parse_point_error(&data.tokens, &DUPLICATE_ITEM, ("default match arm".into(), "match".into()));
                     }
                     default_case = Some(index as usize);
                     continue;
@@ -202,21 +204,15 @@ pub(crate) fn try_parse_keyword_stmt(
             assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
 
             let mut arms = Vec::new();
-            let mut default_arm = None;
 
             data.change_comma_mode(false);
 
             while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-                if try_next!(data.tokens, keyword!(Default)) {
-                    assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
-                    if default_arm.is_some() {
-                        return parse_point_error(
-                            &data.tokens,
-                            "Multiple default cases in match statement".to_string(),
-                        );
-                    }
-                    default_arm = Some(Box::new(parse_stmt(data)?));
-                    continue;
+                if matches!(
+                    peek_next_kind!(data.tokens)?,
+                    TokenKind::Keyword(KeywordType::Default)
+                ) {
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("'_' match binding".into(), Some("in match patterns".into()), None));
                 }
 
                 let value = parse_pattern(data)?;
@@ -230,7 +226,6 @@ pub(crate) fn try_parse_keyword_stmt(
             Some(HIRExprKind::Match {
                 condition: Box::new(expr),
                 arms,
-                default: default_arm,
             })
         }
 
@@ -267,10 +262,7 @@ pub(crate) fn try_parse_keyword_stmt(
 
         KeywordType::Goto => {
             let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
-                return parse_point_error(
-                    &data.tokens,
-                    "Expected label identifier after 'goto'".to_string(),
-                );
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a goto label".into(), None, None));
             };
             assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
             Some(HIRExprKind::Goto { name })
@@ -292,7 +284,7 @@ pub(crate) fn try_parse_keyword_stmt(
                 .into_expr(
                     data.tokens.index,
                     data.tokens.index,
-                    data.file_origin_for_range(data.tokens.index, data.tokens.index),
+                    data.token_range(data.tokens.index, data.tokens.index),
                 )
             } else {
                 parse_expr(data)?
@@ -306,7 +298,7 @@ pub(crate) fn try_parse_keyword_stmt(
                 HIRExprKind::Void.into_expr(
                     data.tokens.index,
                     data.tokens.index,
-                    data.file_origin_for_range(data.tokens.index, data.tokens.index),
+                    data.token_range(data.tokens.index, data.tokens.index),
                 )
             } else {
                 parse_expr(data)?
@@ -329,7 +321,7 @@ pub(crate) fn try_parse_keyword_stmt(
         kind.into_expr(
             start,
             data.tokens.index,
-            data.file_origin_for_range(start, data.tokens.index),
+            data.token_range(start, data.tokens.index),
         )
     }))
 }
@@ -374,7 +366,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                     return Ok(HIRExprKind::Void.into_expr(
                         start_index,
                         data.tokens.index,
-                        data.file_origin_for_range(start_index, data.tokens.index),
+                        data.token_range(start_index, data.tokens.index),
                     ));
                 }
             }
@@ -399,20 +391,17 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                 .into_expr(
                     start_index,
                     data.tokens.index,
-                    data.file_origin_for_range(start_index, data.tokens.index),
+                    data.token_range(start_index, data.tokens.index),
                 ),
             );
         } else if decls.is_empty() {
             return Ok(HIRExprKind::Void.into_expr(
                 start_index,
                 data.tokens.index,
-                data.file_origin_for_range(start_index, data.tokens.index),
+                data.token_range(start_index, data.tokens.index),
             ));
         } else {
-            return parse_point_error(
-                &data.tokens,
-                "Expected variable name in declaration".to_string(),
-            );
+            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a declaration name".into(), None, None));
         }
 
         if !try_next!(data.tokens, TokenKind::Operator(OperatorType::Comma)) {
@@ -432,7 +421,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
         .into_expr(
             start_index,
             data.tokens.index,
-            data.file_origin_for_range(start_index, data.tokens.index),
+            data.token_range(start_index, data.tokens.index),
         ))
     }
 }

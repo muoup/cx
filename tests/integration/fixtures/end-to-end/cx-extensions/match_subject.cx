@@ -12,7 +12,7 @@ int main() {
     int selected = match (make_subject()) {
         1 => yield 10;
         2 => yield 20;
-        default => yield 30;
+        _ => yield 30;
     };
 
     printf("selected %d\n", selected);

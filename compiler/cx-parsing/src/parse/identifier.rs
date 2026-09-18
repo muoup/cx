@@ -3,18 +3,15 @@ use cx_hir::ast::{
     template::HIRTemplateInput,
     types::{HIRType, HIRTypeKind, HIRTypeLookup},
 };
-use cx_log::{
-    CXResult,
-    error::{CXErr, context::CXInternalContext, message::CXStdErrMessage},
-};
+use cx_log::catalogue::parse::*;
+use cx_log::CXResult;
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_tokens::{
-    TokenIter, operator,
+    operator,
     token::{OperatorType, TokenKind},
+    TokenIter, TokenRange,
 };
-use cx_util::{
-    identifier::CXIdent,
-    namespace::{EnvironmentNamespace, NamespacePath, QualifiedName},
-};
+use cx_util::identifier::CXIdent;
 
 use crate::{log::parse_point_error, next_kind, try_next};
 
@@ -47,23 +44,22 @@ impl ParsedIdentifier {
         self,
         start_index: usize,
         end_index: usize,
-        file_origin: EnvironmentNamespace,
+        range: TokenRange,
     ) -> HIRExpression {
         HIRExprKind::Identifier {
             name: self.name,
             template_input: self.template_input,
         }
-        .into_expr(start_index, end_index, file_origin)
+        .into_expr(start_index, end_index, range)
     }
 
     #[allow(dead_code)]
     pub(crate) fn into_qualified_name(self) -> CXResult<QualifiedName> {
         if self.template_input.is_some() {
-            return Err(CXErr::new(
-                CXStdErrMessage::error("PARSER ERROR", "Expected non-templated identifier"),
-                CXInternalContext::error(
-                    "non-templated identifier conversion has no active parser token context",
-                ),
+            return Err(crate::log::internal_error(
+                &EXPECTED_SYNTAX,
+                ("a non-templated identifier".into(), None, None),
+                "non-templated identifier conversion has no active parser token context",
             ));
         }
 
@@ -127,10 +123,7 @@ pub(crate) fn try_parse_qualified_name(tokens: &mut TokenIter) -> CXResult<Optio
 
     loop {
         let TokenKind::Identifier(ident) = next_kind!(tokens)? else {
-            return parse_point_error(
-                tokens,
-                "Expected identifier after '::' in qualified name".to_string(),
-            );
+            return parse_point_error(tokens, &EXPECTED_SYNTAX, ("a qualified identifier".into(), None, None));
         };
 
         segments.push(CXIdent::new(ident.clone()));

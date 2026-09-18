@@ -1,5 +1,6 @@
 use crate::ast::template::HIRTemplateInput;
-use cx_util::{identifier::CXIdent, namespace::QualifiedName, unsafe_float::FloatWrapper};
+use cx_namespace::module::QualifiedName;
+use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HIRPattern {

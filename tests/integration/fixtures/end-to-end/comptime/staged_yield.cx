@@ -1,0 +1,14 @@
+/* CX-STDOUT: yielded 42 */
+
+#include <stdio.h>
+
+import std::optional as std;
+
+int main() {
+    std::opt<int> value = std::opt::none<int>();
+    int result = move value |> std::opt::unwrap_or_else(.{
+        yield 42;
+    });
+    printf("yielded %d\n", result);
+    return 0;
+}

@@ -1,0 +1,8 @@
+comptime void divide(int divisor) {
+    int result = 1 / divisor;
+}
+
+int main() {
+    divide(0);
+    return 0;
+}

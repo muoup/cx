@@ -1,5 +1,6 @@
 use crate::symbol_data::{PreparseModuleSymbols, PreparseNamespaceData, PreparseSymbolKind};
-use cx_util::{identifier::CXIdent, namespace::NamespacePath};
+use cx_namespace::module::NamespacePath;
+use cx_util::{identifier::CXIdent};
 use std::collections::HashMap;
 use std::sync::RwLock;
 

@@ -23,7 +23,7 @@ void interpret(lisp_node& node) {
 
 void run(const _str& source) {
     parser::parse(source)
-        |> std::tap<ast::lisp_node>(interpret)
+        |> std::tap<ast::lisp_node>(|t| interpret(t))
         |> lisp_node::drop();
 }
 
@@ -73,7 +73,7 @@ lisp_node* interpreter::find_function(interpreter& this, _str& name) {
                     return node;
                 }
             }
-            default => {}
+            _ => {}
         }
     }
 
@@ -116,7 +116,7 @@ f64 interpreter::call_function(interpreter& this, _str& name, std::span<lisp_nod
 
             std::vector::drop<binding>(move call_locals);
         }
-        default => {}
+        _ => {}
     }
 
     return result;

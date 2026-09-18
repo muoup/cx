@@ -1,0 +1,13 @@
+comptime expr void invoke(expr(int&) int proc) {
+    return emit .{
+        int value = 1;
+        proc(value);
+    };
+}
+
+int main() {
+    invoke(|value| .{
+        value += 1;
+    });
+    return 0;
+}

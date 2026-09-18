@@ -1,6 +1,7 @@
 use crate::parse::ParserData;
 use crate::{log::parse_point_error, next_kind};
 use cx_hir::ast::expression::{HIRBinOp, HIRUnOp};
+use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
 use cx_tokens::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_tokens::{operator, punctuator};
@@ -188,7 +189,13 @@ fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<HIRBinOp> {
         OperatorType::Pipe => HIRBinOp::Pipe,
         OperatorType::BackwardPipe => HIRBinOp::BackwardPipe,
 
-        _ => return parse_point_error(&data.tokens, format!("Invalid binary operator: {:?}", op)),
+        _ => {
+            return parse_point_error(
+                &data.tokens,
+                &EXPECTED_SYNTAX,
+                ("a supported binary operator".into(), None, Some(format!("{:?}", op))),
+            );
+        }
     })
 }
 
@@ -199,10 +206,7 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<HIRBinOp> {
                 op_to_binop(data, OperatorType::Comma)?
             } else {
                 data.tokens.back();
-                return parse_point_error(
-                    &data.tokens,
-                    "Invalid token: expected binary operator, found comma".to_string(),
-                );
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an expression operator".into(), Some("in this expression".into()), None));
             }
         }
         // Handle >> as shift operator (two consecutive Greater tokens)
@@ -241,8 +245,9 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<HIRBinOp> {
                 _ => {
                     return parse_point_error(
                         &data.tokens,
-                        format!("Invalid binary operator: {:?}", punc),
-                    )
+                        &EXPECTED_SYNTAX,
+                        ("a supported binary operator".into(), None, Some(format!("{:?}", punc))),
+                    );
                 }
             }
         }
@@ -257,7 +262,7 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<HIRBinOp> {
 
         _ => {
             data.tokens.back();
-            return parse_point_error(&data.tokens, "Expected binary operator".to_string());
+            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an expression operator".into(), Some("in this expression".into()), None));
         }
     })
 }

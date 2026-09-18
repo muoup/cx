@@ -39,7 +39,6 @@ pub enum MIRFunctionMode {
 pub enum MIRGlobalState {
     External,
     ZeroInitialized,
-    Initializer(MIRFunctionID),
     Initialized(MIRConstant),
 }
 

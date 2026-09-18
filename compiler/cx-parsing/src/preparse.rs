@@ -1,11 +1,16 @@
 use crate::{
     assert_token_matches, log::parse_point_error, next_kind, parse::try_parse_qualified_name,
+    try_next,
 };
+use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_pipeline_data::CompilerConfig;
-use cx_preparse_data::PreparseContents;
-use cx_tokens::{identifier, keyword, operator, punctuator, specifier, TokenIter};
-use cx_util::{identifier::CXIdent, module_path::ModulePath, namespace::NamespacePath};
+use cx_preparse_data::{Import, PreparseContents};
+use cx_tokens::{
+    identifier, keyword, operator, punctuator, specifier, token::TokenKind, TokenIter,
+};
+use cx_util::identifier::CXIdent;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PreparseConfig {
@@ -57,7 +62,7 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
 
         cx_tokens::token::TokenKind::IncludeEnd => {
             let Some(state) = data.include_states.pop() else {
-                return parse_point_error(&data.tokens, "Unexpected end of included source");
+                return parse_point_error(&data.tokens, &UNEXPECTED_END, Some("included source".into()));
             };
             data.visibility_mode = state.visibility;
         }
@@ -109,23 +114,26 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
 
         keyword!(Import) => {
             data.tokens.back();
-            let ParsedImport { path, alias } = parse_import(&mut data.tokens)?;
-            let import_namespace = NamespacePath::from(path.clone());
+            let import = parse_import(&mut data.tokens)?;
 
-            if import_namespace == data.contents.module_symbols.namespace {
-                return parse_point_error(
-                    &data.tokens,
-                    format!("Cannot import current module '{}'", path),
-                );
+            for name in &import.names {
+                let import_namespace = name.namespace.clone().child(name.name.clone());
+
+                if import_namespace == data.contents.module_symbols.namespace {
+                    return parse_point_error(
+                        &data.tokens,
+                        &CANNOT_IMPORT_CURRENT_MODULE,
+                        (name.to_string(),),
+                    );
+                }
+
+                if let Some(alias) = &import.alias {
+                    data.contents
+                        .add_namespace_alias(alias.clone(), import_namespace);
+                }
             }
 
-            if let Some(alias) = alias {
-                data.contents
-                    .add_namespace_alias(alias, import_namespace.clone());
-            }
-
-            let import_path = path;
-            data.contents.imports.push(import_path);
+            data.contents.imports.push(import);
         }
 
         specifier!(Public) if is_extern_c_section_after_access(data) => {
@@ -206,7 +214,7 @@ fn parse_extern_c_mod(
     let abi = abi.clone();
 
     if abi != "C" {
-        return parse_point_error(&data.tokens, format!("Unsupported extern ABI '{}'", abi));
+        return parse_point_error(&data.tokens, &UNSUPPORTED_FEATURE, (format!("extern ABI '{abi}'"), "the parser".into()));
     }
 
     assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
@@ -216,57 +224,200 @@ fn parse_extern_c_mod(
     Ok(())
 }
 
-struct ParsedImport {
-    path: ModulePath,
-    alias: Option<NamespacePath>,
+#[derive(Debug, Clone, Copy)]
+enum ImportFrameState {
+    ExpectItem,
+    AfterPath,
+    ExpectPathContinuation,
+    AfterGroup,
 }
 
-fn parse_import(tokens: &mut TokenIter) -> CXResult<ParsedImport> {
+struct ImportFrame {
+    prefix: Vec<CXIdent>,
+    item: Vec<CXIdent>,
+    state: ImportFrameState,
+    saw_item: bool,
+}
+
+fn parse_import(tokens: &mut TokenIter) -> CXResult<Import> {
     assert_token_matches!(tokens, keyword!(Import), "'import'");
 
-    let mut import_path = String::new();
-    let mut alias = None;
+    let names = parse_import_tree(tokens)?;
+    let alias = if try_next!(tokens, keyword!(As)) {
+        Some(parse_import_alias(tokens)?)
+    } else {
+        None
+    };
+
+    assert_token_matches!(tokens, punctuator!(Semicolon), "';'");
+
+    Ok(Import { names, alias })
+}
+
+fn parse_import_tree(tokens: &mut TokenIter) -> CXResult<Vec<QualifiedName>> {
+    let mut names = Vec::new();
+    let mut frames = vec![ImportFrame {
+        prefix: Vec::new(),
+        item: Vec::new(),
+        state: ImportFrameState::ExpectItem,
+        saw_item: false,
+    }];
 
     loop {
-        let Some(tok) = tokens.next().cloned() else {
-            return parse_point_error(
-                tokens,
-                "Reached end of token stream when parsing import!".to_string(),
-            );
+        let Some(next_token) = tokens.peek() else {
+            return parse_point_error(tokens, &UNEXPECTED_END, Some("import".into()));
         };
 
+        if frames.len() == 1
+            && matches!(
+                &next_token.kind,
+                TokenKind::Keyword(cx_tokens::token::KeywordType::As)
+                    | TokenKind::Punctuator(cx_tokens::token::PunctuatorType::Semicolon)
+            )
+        {
+            let frame = frames
+                .first()
+                .expect("import parser should have a root frame");
+            match frame.state {
+                ImportFrameState::AfterPath => push_import_name(&mut names, frame, tokens),
+                ImportFrameState::AfterGroup => Ok(()),
+                ImportFrameState::ExpectItem if !frame.saw_item => {
+                    parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path segment".into(), Some("in import path".into()), None))
+                }
+                ImportFrameState::ExpectItem | ImportFrameState::ExpectPathContinuation => {
+                    parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path segment".into(), Some("in import path".into()), None))
+                }
+            }?;
+
+            return Ok(names);
+        }
+
+        let Some(tok) = tokens.next().cloned() else {
+            return parse_point_error(tokens, &UNEXPECTED_END, Some("import".into()));
+        };
+
+        let frame_state = frames
+            .last()
+            .expect("import parser should have an active frame")
+            .state;
+        let is_root = frames.len() == 1;
+
         match &tok.kind {
-            punctuator!(Semicolon) => break,
-            keyword!(As) => {
-                alias = Some(parse_import_alias(tokens)?);
-                assert_token_matches!(tokens, punctuator!(Semicolon), "';'");
-                break;
+            identifier!(ident) => match frame_state {
+                ImportFrameState::ExpectItem | ImportFrameState::ExpectPathContinuation => {
+                    let frame = frames
+                        .last_mut()
+                        .expect("import parser should have an active frame");
+                    frame.item.push(CXIdent::new(ident.as_str()));
+                    frame.state = ImportFrameState::AfterPath;
+                    frame.saw_item = true;
+                }
+                ImportFrameState::AfterPath | ImportFrameState::AfterGroup => {
+                    return parse_point_error(tokens, &EXPECTED_SYNTAX, ("',' or '}'".into(), Some("after import path item".into()), None));
+                }
+            },
+
+            operator!(ScopeRes) if matches!(frame_state, ImportFrameState::AfterPath) => {
+                let frame = frames
+                    .last_mut()
+                    .expect("import parser should have an active frame");
+                frame.state = ImportFrameState::ExpectPathContinuation;
             }
-            operator!(ScopeRes) => import_path.push('/'),
-            identifier!(ident) => import_path.push_str(ident),
+
+            punctuator!(OpenBrace)
+                if matches!(frame_state, ImportFrameState::ExpectPathContinuation) =>
+            {
+                let frame = frames
+                    .last_mut()
+                    .expect("import parser should have an active frame");
+                let mut prefix = frame.prefix.clone();
+                prefix.extend(frame.item.drain(..));
+                frame.state = ImportFrameState::AfterGroup;
+
+                frames.push(ImportFrame {
+                    prefix,
+                    item: Vec::new(),
+                    state: ImportFrameState::ExpectItem,
+                    saw_item: false,
+                });
+            }
+
+            operator!(Comma) => {
+                if is_root {
+                    return parse_point_error(tokens, &REQUIRED_CONTEXT, ("top-level import paths".into(), "'{' and '}'".into()));
+                }
+
+                let frame = frames
+                    .last_mut()
+                    .expect("import parser should have an active frame");
+
+                match frame_state {
+                    ImportFrameState::AfterPath => {
+                        push_import_name(&mut names, frame, tokens)?;
+                    }
+                    ImportFrameState::AfterGroup => {}
+                    ImportFrameState::ExpectItem | ImportFrameState::ExpectPathContinuation => {
+                        return parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path item".into(), Some("before ','".into()), None));
+                    }
+                }
+
+                frame.item.clear();
+                frame.state = ImportFrameState::ExpectItem;
+            }
+
+            punctuator!(CloseBrace) => {
+                if is_root {
+                return parse_point_error(tokens, &UNEXPECTED_TOKEN, (Some("}".into()), Some("import".into())));
+                }
+
+                let frame = frames
+                    .pop()
+                    .expect("import parser should have a nested frame");
+
+                match frame_state {
+                    ImportFrameState::AfterPath => {
+                        push_import_name(&mut names, &frame, tokens)?;
+                    }
+                    ImportFrameState::AfterGroup => {}
+                    ImportFrameState::ExpectItem if frame.saw_item => {}
+                    ImportFrameState::ExpectItem | ImportFrameState::ExpectPathContinuation => {
+                        return parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path item".into(), Some("before '}'".into()), None));
+                    }
+                }
+
+                let parent = frames
+                    .last_mut()
+                    .expect("import parser should have a parent frame");
+                parent.item.clear();
+                parent.state = ImportFrameState::AfterGroup;
+            }
 
             _ => {
-                return parse_point_error(
-                    tokens,
-                    format!("Reached invalid token in import path: {:?}", tok),
-                );
+                return parse_point_error(tokens, &UNEXPECTED_TOKEN, (Some(tok.to_string()), Some("import".into())));
             }
         }
     }
+}
 
-    if import_path.is_empty() {
-        return parse_point_error(tokens, "Import path cannot be empty".to_string());
+fn push_import_name(
+    names: &mut Vec<QualifiedName>,
+    frame: &ImportFrame,
+    tokens: &TokenIter,
+) -> CXResult<()> {
+    if frame.item.is_empty() {
+        return parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path".into(), None, None));
     }
 
-    Ok(ParsedImport {
-        path: ModulePath::new(import_path),
-        alias,
-    })
+    let mut segments = frame.prefix.clone();
+    segments.extend(frame.item.iter().cloned());
+    let name = segments.pop().expect("import path should have a name");
+    names.push(QualifiedName::new(NamespacePath::new(segments), name));
+    Ok(())
 }
 
 fn parse_import_alias(tokens: &mut TokenIter) -> CXResult<NamespacePath> {
     let Some(ident) = try_parse_qualified_name(tokens)? else {
-        return parse_point_error(tokens, "Expected identifier for import alias".to_string());
+        return parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import alias".into(), None, None));
     };
 
     if ident.namespace.is_root() && ident.name.as_str() == "_" {

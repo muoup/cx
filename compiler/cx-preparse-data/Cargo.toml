@@ -7,3 +7,4 @@ edition = "2024"
 speedy = { version = "0.8.7" }
 
 cx-util = { path = "../cx-util" }
+cx-namespace = { path = "../cx-namespace" }

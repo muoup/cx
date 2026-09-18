@@ -33,8 +33,7 @@
       "parameters": [
         {"name": "this", "type": "vector<T>", "description": "The vector to release."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     },
     {
       "name": "drop_with",
@@ -45,8 +44,7 @@
         {"name": "this", "type": "vector<T>", "description": "The vector to destroy."},
         {"name": "destructor", "type": "void(*)(T)", "description": "The element destructor."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     },
     {
       "name": "with_capacity",
@@ -68,8 +66,7 @@
         {"name": "this", "type": "vector<T>&", "description": "The vector to modify."},
         {"name": "object", "type": "T", "description": "The value to append."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     },
     {
       "name": "pop",

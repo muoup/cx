@@ -1,0 +1,14 @@
+comptime void divide(int divisor) {
+    int result = 1 / divisor;
+}
+
+comptime expr void deferred_divide() {
+    return emit .{
+        divide(0);
+    };
+}
+
+int main() {
+    deferred_divide();
+    return 0;
+}

@@ -76,8 +76,7 @@
         {"name": "this", "type": "string&", "description": "The destination string."},
         {"name": "s", "type": "const _str&", "description": "The text to append."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     },
     {
       "name": "append_char",
@@ -88,8 +87,7 @@
         {"name": "this", "type": "string&", "description": "The destination string."},
         {"name": "c", "type": "char", "description": "The character to append."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     },
     {
       "name": "drop",
@@ -99,8 +97,7 @@
       "parameters": [
         {"name": "this", "type": "string", "description": "The string to release."}
       ],
-      "returnType": "void",
-      "returnDescription": "Nothing."
+      "returnType": "void"
     },
     {
       "name": "as_str",

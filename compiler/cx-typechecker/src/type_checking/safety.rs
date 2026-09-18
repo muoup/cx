@@ -1,12 +1,10 @@
 use crate::environment::TypeEnvironment;
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_thir::thir::expression::{
     THIRCoercion, THIRExpression, THIRExpressionKind, THIRFnContract, THIRPostcondition,
 };
 use cx_thir::type_context::THIRTypeContext;
-
-const UNSAFE_EXPRESSION_MESSAGE: &str =
-    "Expression is not supported in safe contexts; wrap it in `@unsafe`";
 
 /// Checks the explicit safe-expression whitelist for one fully typechecked body.
 ///
@@ -33,7 +31,7 @@ pub(crate) fn validate_safe_expression(
         | THIRExpressionKind::LifetimeEnd { .. } => Ok(()),
 
         THIRExpressionKind::Unpack { .. } => Ok(()),
-        THIRExpressionKind::LeakLifetime { .. } => reject(env, expression),
+        THIRExpressionKind::LeakLifetime { .. } => reject(env, expression, "@leak"),
 
         THIRExpressionKind::FunctionReference { .. } => validate_callable(env, expression),
 
@@ -65,7 +63,7 @@ pub(crate) fn validate_safe_expression(
 
         THIRExpressionKind::Typechange(inner) => {
             if inner._type.is_pointer() {
-                reject(env, expression)
+                reject(env, expression, "Typechange to pointer type")
             } else {
                 validate_safe_expression(env, inner)
             }
@@ -80,7 +78,7 @@ pub(crate) fn validate_safe_expression(
                     | THIRCoercion::IntToPtr { .. }
                     | THIRCoercion::GetFnPtr
             ) {
-                reject(env, expression)
+                reject(env, expression, "Unsafe type conversion")
             } else {
                 validate_safe_expression(env, operand)
             }
@@ -167,20 +165,13 @@ pub(crate) fn validate_safe_expression(
                 .map(|_| ())
         }
         THIRExpressionKind::Match {
-            condition,
-            arms,
-            default,
-            ..
+            condition, arms, ..
         } => {
             validate_safe_expression(env, condition)?;
             for (_, body) in arms {
                 validate_safe_expression(env, body)?;
             }
-            default
-                .as_deref()
-                .map(|branch| validate_safe_expression(env, branch))
-                .transpose()
-                .map(|_| ())
+            Ok(())
         }
         THIRExpressionKind::Return {
             postcondition,
@@ -195,7 +186,7 @@ pub(crate) fn validate_safe_expression(
             }
             Ok(())
         }
-        THIRExpressionKind::Yield { value } => {
+        THIRExpressionKind::Yield { value, .. } => {
             value
                 .as_deref()
                 .map(|value| validate_safe_expression(env, value))
@@ -203,9 +194,14 @@ pub(crate) fn validate_safe_expression(
             Ok(())
         }
         THIRExpressionKind::Defer { expression } => validate_safe_expression(env, expression),
-        THIRExpressionKind::StagedExpression { body, .. } => validate_safe_expression(env, body),
-        THIRExpressionKind::Emit(inner)
-        | THIRExpressionKind::Assert {
+        THIRExpressionKind::StagedExpression(staged) => {
+            validate_safe_expression(env, staged.expr())
+        }
+        THIRExpressionKind::MaterializeStagedExpression { expr, with_params } => {
+            validate_safe_expression(env, expr)?;
+            validate_all(env, with_params)
+        }
+        THIRExpressionKind::Assert {
             condition: inner, ..
         } => validate_safe_expression(env, inner),
         THIRExpressionKind::Block { statements, .. } => validate_all(env, statements),
@@ -230,7 +226,7 @@ fn validate_callable(env: &TypeEnvironment, expression: &THIRExpression) -> CXRe
     {
         Ok(())
     } else {
-        reject(env, expression)
+        reject(env, expression, "Non-safe function call")
     }
 }
 
@@ -258,6 +254,10 @@ fn validate_all(env: &TypeEnvironment, expressions: &[THIRExpression]) -> CXResu
     Ok(())
 }
 
-fn reject<T>(env: &TypeEnvironment, expression: &THIRExpression) -> CXResult<T> {
-    env.log_error(&expression.token_range, UNSAFE_EXPRESSION_MESSAGE)
+fn reject<T>(env: &TypeEnvironment, expression: &THIRExpression, context: &str) -> CXResult<T> {
+    env.log_error(
+        &expression.token_range,
+        &catalogue::UNSAFE_OPERATION,
+        context.into()
+    )
 }
