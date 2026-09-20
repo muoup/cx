@@ -5,23 +5,18 @@ use cx_util::linkage::LinkageMode;
 use crate::{
     expr::{
         body::MIRBody,
-        comptime::{MIRComptimeInstrKind, MIRComptimeOp},
-        instruction::{
-            MIRBasicBlock, MIRInstrKind, MIRInstructionLike, MIRScopeID, MIRStagedTargets,
-        },
+        instruction::{MIRBasicBlock, MIRInstrKind, MIRScopeID, MIRStagedTargets},
         intrinsic::{
             MIRAggregateIntrinsic, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic,
             MIRIntrinsic, MIRPtrIntrinsic, MIRVAIntrinsic,
         },
     },
-    layout_error,
     ty::{
         MIRField, MIRFloatType, MIRIntType, MIRLayoutError, MIRTypeID, MIRTypeKind,
         interface::MTRegistry,
     },
     unit::{
-        MIRBasicBlockID, MIRFnSignature, MIRFunction, MIRFunctionBody, MIRFunctionID, MIRGlobalID,
-        MIRGlobalKind, MIRGlobalState, MIRGlobalVariable, MIRUnit,
+        MIRBasicBlockID, MIRGlobalID, MIRGlobalKind, MIRGlobalState, MIRGlobalVariable, MIRUnit,
     },
     value::{
         MIRBlockTarget, MIRConstant, MIRPlaceID, MIRRegisterID, MIRTarget, MIRTemporaryID, MIRValue,
@@ -512,7 +507,7 @@ fn write_block<T: MTRegistry, K>(
         write!(f, " /* {name} */")?;
     }
     f.write_str(":\n")?;
-    for instruction in &block.instrs {
+    for instruction in &block.instructions {
         f.write_str("        ")?;
         write_kind(f, unit, function, &instruction.kind, types)?;
         f.write_str(";\n")?;
@@ -547,7 +542,10 @@ fn write_instruction<T: MTRegistry>(
             f.write_str(" = lift ")?;
             write_place_name(f, unit, function, *place)
         }
-        MIRInstrKind::BindLifetime { bind: place, bind_to: to } => {
+        MIRInstrKind::BindLifetime {
+            bind: place,
+            bind_to: to,
+        } => {
             f.write_str("bind ")?;
             write_place_name(f, unit, function, *place)?;
             f.write_str(" to ")?;

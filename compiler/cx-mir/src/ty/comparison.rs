@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::{MIRField, MIRTypeID, MIRTypeKind, ty::interface::MTRegistry};
+use crate::ty::{MIRTypeID, MIRTypeKind, interface::MTRegistry};
 
 pub(crate) fn same_type_inner<T: MTRegistry>(
     registry: &T,

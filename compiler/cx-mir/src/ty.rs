@@ -1,18 +1,21 @@
 pub mod comparison;
+pub mod comptime;
 pub mod interface;
 pub mod layout;
 pub mod registry;
 
 use cx_util::dense_id;
 
-pub use layout::{MIRFieldLayout, MIRLayoutError, MIRTypeLayout};
+pub use layout::{MIRFieldLayout, MIRTypeLayout};
+
+use crate::unit::function::MIRFnSignature;
 
 dense_id!(MIRTypeID);
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MIRType {
-    pub kind: MIRTypeKind,
-    pub layout: Option<MIRTypeLayout>,
+    kind: MIRTypeKind,
+    layout: Option<MIRTypeLayout>,
 }
 
 impl MIRType {
@@ -23,8 +26,16 @@ impl MIRType {
     pub fn undefined() -> Self {
         Self {
             kind: MIRTypeKind::Undefined,
-            layout: None
+            layout: None,
         }
+    }
+
+    pub fn kind(&self) -> &MIRTypeKind {
+        &self.kind
+    }
+
+    pub fn layout(&self) -> Option<MIRTypeLayout> {
+        self.layout
     }
 }
 
@@ -122,21 +133,14 @@ impl MIRField {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MIRBitfieldAccess {
     pub bit_offset: usize,
     pub bit_width: usize,
     pub signed: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct MIRFunctionType {
-    pub params: Vec<MIRTypeID>,
-    pub return_type: MIRTypeID,
-    pub variadic: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MIRTypeKind {
     Void,
     Integer {
@@ -167,7 +171,7 @@ pub enum MIRTypeKind {
         inner: MIRTypeID,
     },
     Function {
-        signature: MIRFunctionType,
+        signature: MIRFnSignature,
     },
     Opaque {
         size: usize,

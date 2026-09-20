@@ -4,8 +4,6 @@ use cx_log::{
     error::CXRawError,
 };
 
-use crate::MIRLayoutError;
-
 #[allow(dead_code)]
 pub fn log_raw_error<T, U>(definition: &ErrorDefinition<T>, args: T) -> CXRawResult<U> {
     Err(definition.bind(args))

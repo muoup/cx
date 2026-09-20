@@ -2,59 +2,53 @@ use cx_tokens::TokenRange;
 use cx_util::{dense_id, identifier::CXIdent};
 
 use crate::{
-    expr::intrinsic::MIRIntrinsic, ty::MIRTypeID, unit::MIRBasicBlockID, value::{MIRBindable, MIRBlockTarget, MIRPlaceID, MIRRegisterID, MIRValue},
+    expr::intrinsic::MIRIntrinsic,
+    ty::MIRTypeID,
+    unit::MIRBasicBlockID,
+    value::{MIRBindable, MIRBlockTarget, MIRPlaceID, MIRRegisterID, MIRValue},
 };
 
 dense_id!(MIRScopeID);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MIRStagedExitKind {
-    Break,
-    Continue,
-    Expr,
-}
-
 #[derive(Debug, Clone)]
-pub struct MIRBasicBlock<K = MIRInstrKind> {
+pub struct MIRBasicBlock {
     pub id: MIRBasicBlockID,
     pub debug_name: Option<CXIdent>,
     pub params: Vec<MIRRegisterID>,
-    pub instrs: Vec<MIRInstruction<K>>,
+    pub instructions: Vec<MIRInstruction>,
 }
 
-impl<K: MIRInstructionLike> MIRBasicBlock<K> {
+impl MIRBasicBlock {
     pub fn new(id: MIRBasicBlockID) -> Self {
         Self {
             id,
             params: Vec::new(),
             debug_name: None,
-            instrs: Vec::new(),
+            instructions: Vec::new(),
         }
     }
 
-    pub fn push(&mut self, kind: K) -> &mut MIRInstruction<K> {
-        self.instrs
-            .push(MIRInstruction::new(kind, TokenRange::internal()));
-        self.instrs
-            .last_mut()
-            .expect("an instruction was just pushed")
+    pub fn push(&mut self, instr: MIRInstruction) -> &mut MIRInstruction {
+        self.instructions.push(instr);
+        self.instructions.last_mut()
+            .unwrap()
     }
 
-    pub fn terminator(&self) -> Option<&MIRInstruction<K>> {
-        self.instrs
+    pub fn terminator(&self) -> Option<&MIRInstruction> {
+        self.instructions
             .last()
             .filter(|instr| instr.kind.is_terminator())
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct MIRInstruction<K = MIRInstrKind> {
-    pub kind: K,
+pub struct MIRInstruction {
+    pub kind: MIRInstrKind,
     pub token_range: TokenRange,
 }
 
-impl<K: MIRInstructionLike> MIRInstruction<K> {
-    pub fn new(kind: K, token_range: TokenRange) -> Self {
+impl MIRInstruction {
+    pub fn new(kind: MIRInstrKind, token_range: TokenRange) -> Self {
         Self { kind, token_range }
     }
 
@@ -83,7 +77,7 @@ pub enum MIRInstrKind {
         place: MIRBindable,
         leak: bool,
     },
-    
+
     // Lifts a value out of a place into a register, if the register is untouched before use, it can avoid the need for a true
     // intermediate copy.
     LiftPlace {
@@ -131,22 +125,10 @@ pub enum MIRInstrKind {
     Unreachable,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct MIRStagedTargets {
-    pub return_target: Option<MIRBasicBlockID>,
-    pub break_target: Option<MIRBasicBlockID>,
-    pub continue_target: Option<MIRBasicBlockID>,
-    pub yield_target: Option<MIRBasicBlockID>,
-}
-
-pub trait MIRInstructionLike {
-    fn is_terminator(&self) -> bool;
-}
-
-impl MIRInstructionLike for MIRInstrKind {
+impl MIRInstruction {
     fn is_terminator(&self) -> bool {
         matches!(
-            self,
+            self.kind,
             Self::Return { .. }
                 | Self::Jump { .. }
                 | Self::Branch { .. }

@@ -1,4 +1,4 @@
-use crate::{MIRFloatType, MIRPlaceID, MIRTarget, MIRTypeID, unit::MIRFunctionID, value::MIRValue};
+use crate::{ty::{MIRFloatType, MIRTypeID}, unit::function::MIRFunctionID, value::{MIRPlaceID, MIRTarget, MIRValue}};
 
 #[derive(Debug, Clone)]
 pub enum MIRIntrinsic {

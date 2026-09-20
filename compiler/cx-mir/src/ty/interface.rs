@@ -2,18 +2,19 @@ use std::collections::HashSet;
 
 use cx_target::ArchitectureConfig;
 
-use crate::{
-    MIRIntType, MIRLayoutError, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout,
-    ty::comparison::same_type_inner,
-};
+use crate::ty::{MIRIntType, MIRType, MIRTypeID, MIRTypeKind, comparison::same_type_inner};
 
 pub trait MTRegistry: Sized {
+    // --- INTERFACE ---
+    
     fn architecture(&self) -> &ArchitectureConfig;
     fn definition(&self, id: MIRTypeID) -> Option<&MIRType>;
     fn find(&self, ty: &MIRType) -> Option<MIRTypeID>;
     fn find_kind(&self, kind: &MIRTypeKind) -> Option<MIRTypeID>;
     fn debug_name(&self, id: MIRTypeID) -> Option<&str>;
 
+    // --- HELPERS ---
+    
     fn unit(&self) -> MIRTypeID {
         MIRTypeID::new(0)
     }
@@ -27,8 +28,7 @@ pub trait MTRegistry: Sized {
     }
 
     fn layout(&self, id: MIRTypeID) -> Result<Option<&MIRTypeLayout>, MIRLayoutError> {
-        self.resolve_type_id(id)
-            .map(|ty| ty.layout.as_ref())
+        self.resolve_type_id(id).map(|ty| ty.layout.as_ref())
     }
 
     fn pointer_integer_type(&self) -> MIRIntType {

@@ -2,26 +2,21 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    expr::instruction::{
-        MIRBasicBlock, MIRInstrKind, MIRInstruction, MIRInstructionLike, MIRScopeID,
-    },
-    ty::MIRTypeID,
-    unit::{MIRBasicBlockID, MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl},
-    value::{MIRPlaceID, MIRRegisterID as MIRRegister},
+    expr::instruction::{MIRBasicBlock, MIRInstrKind, MIRInstruction, MIRScopeID}, ty::MIRTypeID, unit::{MIRBasicBlockID, MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl, function::MIRFnParam}, value::{MIRPlaceID, MIRRegisterID as MIRRegister},
 };
 
 #[derive(Debug, Clone)]
-pub struct MIRBody<K = MIRInstrKind> {
+pub struct MIRBody {
     entry: MIRBasicBlockID,
 
-    blocks: Vec<MIRBasicBlock<K>>,
+    blocks: Vec<MIRBasicBlock>,
     places: Vec<MIRPlaceDecl>,
     parameters: Vec<MIRPlaceID>,
     registers: Vec<MIRRegisterDecl>,
     scopes: Vec<MIRScopeDecl>,
 }
 
-impl<K: MIRInstructionLike> MIRBody<K> {
+impl MIRBody {
     pub fn new() -> Self {
         Self {
             entry: MIRBasicBlockID::new(0),
@@ -65,23 +60,24 @@ impl<K: MIRInstructionLike> MIRBody<K> {
         register
     }
 
-    pub fn push_instr_at(&mut self, block: MIRBasicBlockID, kind: K, token_range: TokenRange) {
-        let instr = crate::MIRInstruction::new(kind, token_range);
+    pub fn push_instr_at(&mut self, block: MIRBasicBlockID, kind: MIRInstrKind, token_range: TokenRange) {
+        let instr = MIRInstruction::new(kind, token_range);
+
         self.block_mut(block)
             .expect("instruction pushed to unknown block")
-            .instrs
+            .instructions
             .push(instr);
     }
 
-    pub fn blocks(&self) -> &[MIRBasicBlock<K>] {
+    pub fn blocks(&self) -> &[MIRBasicBlock] {
         &self.blocks
     }
 
-    pub fn block(&self, id: MIRBasicBlockID) -> Option<&MIRBasicBlock<K>> {
+    pub fn block(&self, id: MIRBasicBlockID) -> Option<&MIRBasicBlock> {
         self.blocks().get(id.index())
     }
 
-    pub fn block_mut(&mut self, id: MIRBasicBlockID) -> Option<&mut MIRBasicBlock<K>> {
+    pub fn block_mut(&mut self, id: MIRBasicBlockID) -> Option<&mut MIRBasicBlock> {
         self.blocks.get_mut(id.index())
     }
 
@@ -145,13 +141,13 @@ impl<K: MIRInstructionLike> MIRBody<K> {
 
     pub fn add_parameter(
         &mut self,
-        parameter: &crate::MIRFnParam,
+        parameter: &MIRFnParam,
         scope: MIRScopeID,
     ) -> MIRPlaceID {
         let place = self.add_place(
-            parameter.ty,
-            parameter.name.clone(),
-            parameter.nodrop,
+            parameter.ty(),
+            parameter.name().cloned(),
+            parameter.nodrop(),
             scope,
         );
         self.parameters.push(place);
@@ -164,34 +160,5 @@ impl<K: MIRInstructionLike> MIRBody<K> {
 
     pub fn register(&self, id: MIRRegister) -> Option<&MIRRegisterDecl> {
         self.registers().get(id.index())
-    }
-    pub fn try_map<L: MIRInstructionLike, E>(
-        self,
-        mut map: impl FnMut(MIRInstruction<K>) -> Result<MIRInstruction<L>, E>,
-    ) -> Result<MIRBody<L>, E> {
-        let blocks = self
-            .blocks
-            .into_iter()
-            .map(|block| {
-                Ok(MIRBasicBlock {
-                    id: block.id,
-                    debug_name: block.debug_name,
-                    params: block.params,
-                    instrs: block
-                        .instrs
-                        .into_iter()
-                        .map(&mut map)
-                        .collect::<Result<_, E>>()?,
-                })
-            })
-            .collect::<Result<_, E>>()?;
-        Ok(MIRBody {
-            entry: self.entry,
-            blocks,
-            places: self.places,
-            parameters: self.parameters,
-            registers: self.registers,
-            scopes: self.scopes,
-        })
     }
 }

@@ -321,34 +321,30 @@ impl<'thir> MIRBuilder<'thir> {
 
     pub(crate) fn lower_prototype(
         &mut self,
-        prototype: &THIRFnPrototype,
-        mode: MIRFunctionMode,
+        prototype: &THIRFnPrototype
     ) -> CXResult<MIRFnPrototype> {
         let signature = prototype.signature();
 
-        let mut params = Vec::with_capacity(signature.params.len());
-        for parameter in &signature.params {
-            let ty = lower_type(self, &parameter._type)?;
-            let param = match parameter.name.clone() {
-                Some(name) => MIRFnParam::named(name, ty),
-                None => MIRFnParam::new(ty),
-            };
-            params.push(param);
-        }
-
         let return_type = lower_type(self, &signature.return_type)?;
+        let mut params = signature.params.iter()
+            .map(|parameter| {
+                let ty = lower_type(self, &parameter._type)?;
+
+                MIRFnParam::new(parameter.name.clone(), ty, parameter._type.is_nodrop())
+            })
+            .collect::<Vec<_>>();
 
         Ok(MIRFnPrototype::new(
             MIRFnSignature::new(
-                CXIdent::from(prototype.symbol_name().to_string()),
-                prototype.debug_name().cloned(),
                 params,
                 return_type,
                 mode,
                 signature.var_args,
                 signature.contract.safe,
             ),
+            CXIdent::from(prototype.symbol_name().to_string()),
             prototype.linkage(),
+            prototype.debug_name().cloned(),
         ))
     }
 
@@ -357,6 +353,7 @@ impl<'thir> MIRBuilder<'thir> {
         prototype: &THIRComptimeFnPrototype,
     ) -> CXResult<MIRFnPrototype> {
         let mut params = Vec::with_capacity(prototype.params().len());
+        
         for parameter in prototype.params() {
             let ty = lower_type(self, &parameter.value_type._type)?;
             let staged_params = if parameter.value_type.expr {

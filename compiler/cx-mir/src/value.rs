@@ -1,8 +1,7 @@
 use cx_util::{dense_id, unsafe_float::FloatWrapper};
 
 use crate::{
-    ty::{MIRFloatType, MIRIntType, MIRTypeID},
-    unit::{MIRBasicBlockID, MIRFunctionID, MIRGlobalID},
+    ty::{MIRFloatType, MIRIntType, MIRTypeID}, unit::{MIRBasicBlockID, MIRGlobalID, function::MIRFunctionID},
 };
 
 dense_id!(MIRPlaceID);
@@ -46,7 +45,7 @@ pub enum MIRValue {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRBindable {
     Register(MIRRegisterID),
-    Place(MIRPlaceID)
+    Place(MIRPlaceID),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
