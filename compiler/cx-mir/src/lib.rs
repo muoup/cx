@@ -4,4 +4,3 @@ pub mod unit;
 pub mod value;
 
 pub(crate) mod format;
-pub(crate) mod log;
