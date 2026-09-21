@@ -3,7 +3,7 @@ use std::{collections::HashMap, rc::Rc};
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::visit::MIRWalk;
 use cx_mir::{
-    MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionBody, MIRFunctionID, MIRFunctionMode, MIRInstruction, MIRPlaceID, MIRRegister, MIRScopeID, MIRStagedBody, MIRStagedCapture, MIRStagedExitKind, MIRStagedInstrKind, MIRTypeID, MIRValue,
+    MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRComptimeBody, MIRFnPrototype, MIRFunction, MIRFunctionBody, MIRFunctionID, MIRFunctionMode, MIRInstruction, MIRPlaceID, MIRRegister, MIRScopeID, MIRStagedBody, MIRStagedCapture, MIRStagedExitKind, MIRStagedInstrKind, MIRTypeID, MIRValue,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
 use cx_tokens::TokenRange;
@@ -20,12 +20,12 @@ pub(crate) struct CaptureContext {
 }
 
 #[derive(Debug)]
-pub(crate) struct MIRFunctionBuilder<Body> {
+pub(crate) struct MIRFunctionBuilder {
     id: MIRFunctionID,
     prototype: MIRFnPrototype,
     source_range: TokenRange,
 
-    body: Body,
+    body: MIRFunctionBody,
     current_block: MIRBasicBlockID,
 
     local_values: HashMap<THIRLocalID, MIRValue>,
@@ -86,8 +86,31 @@ impl ScopeContext {
 }
 
 impl MIRFunctionBuilder {
-    pub(crate) fn new(func: MIRFunction, parent: Option<&Self>) -> Self {
-        let mut body = MIRStagedBody::new();
+    pub(crate) fn new_runtime(func: MIRFunction, parent: Option<&Self>) -> Self {
+        let mut body = MIRBody::new();
+        let entry = body.add_block();
+        let root_scope = body.add_scope(TokenRange::internal());
+
+        Self {
+            id: func.id(),
+            prototype: func.prototype().clone(),
+            source_range: parent
+                .map(|parent| parent.source_range.clone())
+                .unwrap_or_else(TokenRange::internal),
+
+            current_block: entry,
+
+            local_values: HashMap::new(),
+            labels: HashMap::new(),
+
+            scope_stack: vec![ScopeContext::new(root_scope)],
+
+            body,
+        }
+    }
+
+    pub(crate) fn new_comptime(func: MIRFunction, parent: Option<&Self>) -> Self {
+        let mut body = MIRComptimeBody::new();
         let entry = body.add_block();
         let root_scope = body.add_scope(TokenRange::internal());
 
@@ -141,19 +164,6 @@ impl MIRFunctionBuilder {
         &mut self.body
     }
 
-    fn active_block(&self) -> &MIRBasicBlock<MIRStagedInstrKind> {
-        self.body
-            .block(self.current_block)
-            .expect("current block must exist")
-    }
-
-    fn active_block_mut(&mut self) -> &mut MIRBasicBlock<MIRStagedInstrKind> {
-        let block = self.current_block;
-        self.body
-            .block_mut(block)
-            .expect("current block must exist")
-    }
-
     #[allow(dead_code)]
     pub fn current_block(&self) -> MIRBasicBlockID {
         self.current_block
@@ -185,6 +195,10 @@ impl MIRFunctionBuilder {
 
     pub fn register_type(&self, register: MIRRegister) -> Option<MIRTypeID> {
         self.body.register(register).map(|decl| decl.ty)
+    }
+
+    pub fn emit(&self, instr: MIRInstruction) {
+        
     }
 
     pub fn new_block(&mut self, name: impl Into<CXIdent>) -> MIRBasicBlockID {

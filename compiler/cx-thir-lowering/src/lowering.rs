@@ -11,9 +11,7 @@ pub(crate) mod types;
 
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRAggregateOp, MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstrKind, MIRIntType,
-    MIRStagedExitKind, MIRTarget, MIRTargetAggregateOp, MIRTypeKind, MIRValue, MIRValueAggregateOp,
-    ty::interface::MTRegistry,
+    MIRAggregateOp, MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstrKind, MIRIntType, MIRStagedExitKind, MIRTarget, MIRTargetAggregateOp, MIRTypeKind, MIRValue, MIRValueAggregateOp, ty::{interface::MTRegistry, layout::calculate_type_layout},
 };
 use cx_thir::{
     thir::{
@@ -25,8 +23,7 @@ use cx_thir::{
 };
 
 use crate::{
-    builder::{MIRBuilder, integer_type},
-    lowering::{memory::allocate_variable, operators::lower_coercion, types::lower_type},
+    builder::{MIRBuilder, integer_type}, lowering::{memory::allocate_variable, operators::{lower_binary_op, lower_coercion}, types::lower_type},
 };
 use crate::{
     log::{log_mir_error, mir_error},
@@ -47,11 +44,8 @@ pub(crate) fn lower_function(
 
     builder.start_function(id);
 
-    builder.fun_mut().outer_return_type = Some(builder.fun().prototype().signature.return_type);
-    builder.fun_mut().outer_yield_type = None;
-
     for (index, parameter) in function.prototype.signature().params.iter().enumerate() {
-        let declaration = builder.fun().prototype().signature.params[index].clone();
+        let declaration = builder.fun().prototype().signature().params[index].clone();
         let scope = builder.fun().current_scope_id();
         let place = builder
             .fun_mut()
@@ -107,23 +101,11 @@ pub(crate) fn lower_comptime_function(
         return Ok(());
     };
 
-    builder.start_function(id);
+    builder.start_comptime_function(id);
     builder.fun_mut().push_scope(body.token_range.clone());
-    builder.fun_mut().outer_return_type = function
-        .context
-        .return_type
-        .as_ref()
-        .map(|ty| lower_type(builder, ty))
-        .transpose()?;
-    builder.fun_mut().outer_yield_type = function
-        .context
-        .yield_type
-        .as_ref()
-        .map(|ty| lower_type(builder, ty))
-        .transpose()?;
 
     for (index, parameter) in function.prototype.params().iter().enumerate() {
-        let declaration = builder.fun().prototype().signature.params[index].clone();
+        let declaration = builder.fun().prototype().signature().params[index].clone();
         let scope = builder.fun().current_scope_id();
         let place = builder
             .fun_mut()
@@ -198,22 +180,19 @@ pub(crate) fn lower_expression(
 
                 MIRValue::Constant(MIRConstant::String(value.clone()))
             }
+            
             THIRExpressionKind::Unit => MIRValue::Constant(MIRConstant::Unit),
+           
             THIRExpressionKind::SizeOf { _type } | THIRExpressionKind::AlignOf { _type } => {
                 let type_id = lower_type(builder, _type)?;
-                let layout =
-                    cx_mir::ty::layout::layout_of(builder.types(), type_id).map_err(|error| {
-                        cx_log::error::CXError::new(
-                            cx_mir::layout_error(error),
-                            cx_log::error::context::from_token_range(&expression.token_range),
-                        )
-                    })?;
+                let layout = calculate_type_layout(builder.registry(), type_id)?;
 
                 MIRValue::Constant(MIRConstant::Integer {
-                    value: if matches!(&expression.kind, THIRExpressionKind::SizeOf { .. }) {
-                        layout.size as i128
-                    } else {
-                        layout.alignment as i128
+                    value: match expression.kind {
+                        THIRExpressionKind::SizeOf { .. } => layout.size as i128,
+                        THIRExpressionKind::AlignOf { .. } => layout.align as i128,
+
+                        _ => unreachable!(),
                     },
                     ty: MIRIntType::I64,
                 })
@@ -293,32 +272,8 @@ pub(crate) fn lower_expression(
                 })
                 .map(|v| MIRValue::Constant(MIRConstant::Function(v)))?,
 
-            THIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
-                if matches!(
-                    op,
-                    THIRBinOp::Integer {
-                        op: THIRIntBinOp::LAND | THIRIntBinOp::LOR,
-                        ..
-                    }
-                ) {
-                    control_flow::lower_short_circuit(builder, lhs, rhs, op, &expression._type)?
-                } else {
-                    let lhs_value = lower_expression(builder, lhs)?;
-                    let lhs_value = lhs_value;
-                    let rhs_value = lower_expression(builder, rhs)?;
-                    let rhs_value = rhs_value;
-                    let type_id = lower_type(builder, &expression._type)?;
-                    let out = builder.fun_mut().new_register(type_id, None);
-                    let lowered_op = operators::lower_binary_op(builder, op)?;
-                    builder.emit(MIRInstrKind::BinOp {
-                        out,
-                        op: lowered_op,
-                        lhs: lhs_value,
-                        rhs: rhs_value,
-                    });
-                    MIRValue::Register(out)
-                }
-            }
+            THIRExpressionKind::BinaryOperation { lhs, rhs, op } => lower_binary_op(builder, expr, lhs, rhs, op)?,
+            
             THIRExpressionKind::UnaryOperation { operand, op } => {
                 let lowered = lower_expression(builder, operand)?;
                 let lowered = if operand._type.is_memory_reference() {

@@ -384,8 +384,7 @@ fn coerce_pointer_binop(
                 name: name.clone(),
                 local_id,
                 _type: offset_type.clone(),
-                initial_value: Some(Box::new(lhs)),
-                adopting: false,
+                initial_value: Some(Box::new(lhs))
             },
         };
         let offset_value = THIRExpression {

@@ -181,7 +181,7 @@ fn lower_comptime_call(
 ) -> CXResult<MIRValue> {
     if builder.is_capturing() || builder.fun().mode() == MIRFunctionMode::Comptime {
         let mut args = Vec::with_capacity(arguments.len());
-        for (argument, parameter) in arguments.iter().zip(&signature.params) {
+        for (argument, parameter) in arguments.iter().zip(&signature.params()) {
             if parameter.staged_params.is_some() {
                 args.push(lower_staged_argument(
                     builder,
@@ -292,7 +292,7 @@ fn capture_staged_argument(
             builder.capture_staged(staged.expr(), &params, Some(diverges))
         }
         THIRExpressionKind::Variable { local_id, .. } => {
-            let _ = builder.local_value(*local_id, &argument._type)?;
+            let _ = builder.local_value(*local_id)?;
             builder.capture_staged(argument, &[], Some(diverges))
         }
         _ => builder.capture_staged(argument, &[], Some(diverges)),

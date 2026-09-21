@@ -1,100 +1,85 @@
 use cx_log::CXResult;
 use cx_mir::{
-    MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRInstrKind, MIRIntBinaryOp, MIRPointerBinaryOp,
-    MIRPointerOffsetOp, MIRTarget, MIRUnaryOp, MIRValue,
+    MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRInstrKind, MIRInstruction, MIRIntBinaryOp,
+    MIRIntIntrinsic, MIRIntrinsic, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRTarget, MIRUnaryOp,
+    MIRValue,
 };
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
     expression::{
-        THIRBinOp, THIRCoercion, THIRFloatBinOp, THIRIntBinOp, THIRPtrBinOp, THIRPtrDiffBinOp,
-        THIRUnOp,
+        THIRBinOp, THIRCoercion, THIRExpression, THIRFloatBinOp, THIRIntBinOp, THIRPtrBinOp,
+        THIRPtrDiffBinOp, THIRUnOp,
     },
 };
 
 use super::types::{lower_float_type, lower_int_type};
 use crate::{
-    builder::{MIRBuilder, integer_type},
-    lowering::types::lower_type,
+    builder::{MIRBuilder, integer_type}, lowering::{control_flow::lower_short_circuit, lower_expression, types::lower_type},
 };
 
 pub(super) fn lower_binary_op(
     builder: &mut MIRBuilder<'_>,
+    expr: &THIRExpression,
+    lhs: &THIRExpression,
+    rhs: &THIRExpression,
     op: &THIRBinOp,
-) -> CXResult<MIRBinaryOp> {
-    Ok(match op {
-        THIRBinOp::Integer { itype, op } => MIRBinaryOp::Integer {
-            ty: lower_int_type(*itype),
-            signed: matches!(
-                op,
-                THIRIntBinOp::IMUL
-                    | THIRIntBinOp::IDIV
-                    | THIRIntBinOp::IMOD
-                    | THIRIntBinOp::ILT
-                    | THIRIntBinOp::ILE
-                    | THIRIntBinOp::IGT
-                    | THIRIntBinOp::IGE
-                    | THIRIntBinOp::ASHR
-            ),
-            op: match op {
-                THIRIntBinOp::ADD => MIRIntBinaryOp::Add,
-                THIRIntBinOp::SUB => MIRIntBinaryOp::Sub,
-                THIRIntBinOp::MUL => MIRIntBinaryOp::Mul,
-                THIRIntBinOp::DIV => MIRIntBinaryOp::Div,
-                THIRIntBinOp::MOD => MIRIntBinaryOp::Mod,
-                THIRIntBinOp::IMUL => MIRIntBinaryOp::SignedMul,
-                THIRIntBinOp::IDIV => MIRIntBinaryOp::SignedDiv,
-                THIRIntBinOp::IMOD => MIRIntBinaryOp::SignedMod,
-                THIRIntBinOp::EQ => MIRIntBinaryOp::Eq,
-                THIRIntBinOp::NE => MIRIntBinaryOp::Ne,
-                THIRIntBinOp::LT => MIRIntBinaryOp::Lt,
-                THIRIntBinOp::LE => MIRIntBinaryOp::Le,
-                THIRIntBinOp::GT => MIRIntBinaryOp::Gt,
-                THIRIntBinOp::GE => MIRIntBinaryOp::Ge,
-                THIRIntBinOp::ILT => MIRIntBinaryOp::SignedLt,
-                THIRIntBinOp::ILE => MIRIntBinaryOp::SignedLe,
-                THIRIntBinOp::IGT => MIRIntBinaryOp::SignedGt,
-                THIRIntBinOp::IGE => MIRIntBinaryOp::SignedGe,
-                THIRIntBinOp::LAND => MIRIntBinaryOp::LogicalAnd,
-                THIRIntBinOp::LOR => MIRIntBinaryOp::LogicalOr,
-                THIRIntBinOp::BAND => MIRIntBinaryOp::BitAnd,
-                THIRIntBinOp::BOR => MIRIntBinaryOp::BitOr,
-                THIRIntBinOp::BXOR => MIRIntBinaryOp::BitXor,
-                THIRIntBinOp::SHL => MIRIntBinaryOp::ShiftLeft,
-                THIRIntBinOp::ASHR => MIRIntBinaryOp::ArithmeticShiftRight,
-                THIRIntBinOp::LSHR => MIRIntBinaryOp::LogicalShiftRight,
-            },
+) -> CXResult<MIRValue> {
+    if matches!(
+        op,
+        THIRBinOp::Integer {
+            op: THIRIntBinOp::LAND | THIRIntBinOp::LOR,
+            ..
+        }
+    ) {
+        return lower_short_circuit(builder, expr, lhs, rhs, op);
+    }
+
+    todo!()
+}
+
+pub(crate) fn lower_short_circuit(
+    builder: &mut MIRBuilder<'_>,
+    expr: &THIRExpression,
+    lhs: &THIRExpression,
+    rhs: &THIRExpression,
+    op: &THIRBinOp,
+) -> CXResult<MIRValue> {
+    let lhs_value = lower_expression(builder, lhs)?;
+    let rhs_block = builder.fun_mut().new_block("logical.rhs");
+    let merge_block = builder.fun_mut().new_block("logical.merge");
+    let result_type_id = lower_type(builder, result_type)?;
+    let result = builder
+        .fun_mut()
+        .block_param(merge_block, result_type_id, None);
+    let is_and = matches!(
+        op,
+        THIRBinOp::Integer {
+            op: THIRIntBinOp::LAND,
+            ..
+        }
+    );
+    let rhs_target = MIRBlockTarget::new(rhs_block);
+    let merge_target = MIRBlockTarget::with_args(merge_block, vec![lhs_value.clone()]);
+    builder.emit(MIRInstrKind::Branch {
+        cond: lhs_value,
+        true_target: if is_and {
+            rhs_target.clone()
+        } else {
+            merge_target.clone()
         },
-        THIRBinOp::Float { ftype, op } => MIRBinaryOp::Float {
-            ty: lower_float_type(*ftype),
-            op: match op {
-                THIRFloatBinOp::FADD => MIRFloatBinaryOp::Add,
-                THIRFloatBinOp::FSUB => MIRFloatBinaryOp::Sub,
-                THIRFloatBinOp::FMUL => MIRFloatBinaryOp::Mul,
-                THIRFloatBinOp::FDIV => MIRFloatBinaryOp::Div,
-                THIRFloatBinOp::FEQ => MIRFloatBinaryOp::Eq,
-                THIRFloatBinOp::FNE => MIRFloatBinaryOp::Ne,
-                THIRFloatBinOp::FLT => MIRFloatBinaryOp::Lt,
-                THIRFloatBinOp::FLE => MIRFloatBinaryOp::Le,
-                THIRFloatBinOp::FGT => MIRFloatBinaryOp::Gt,
-                THIRFloatBinOp::FGE => MIRFloatBinaryOp::Ge,
-            },
-        },
-        THIRBinOp::PtrDiff { op, ptr_inner } => MIRBinaryOp::PointerOffset {
-            op: match op {
-                THIRPtrDiffBinOp::ADD => MIRPointerOffsetOp::Add,
-                THIRPtrDiffBinOp::SUB => MIRPointerOffsetOp::Sub,
-            },
-            pointee: lower_type(builder, ptr_inner.as_ref())?,
-        },
-        THIRBinOp::Pointer { op } => MIRBinaryOp::Pointer(match op {
-            THIRPtrBinOp::EQ => MIRPointerBinaryOp::Eq,
-            THIRPtrBinOp::NE => MIRPointerBinaryOp::Ne,
-            THIRPtrBinOp::LT => MIRPointerBinaryOp::Lt,
-            THIRPtrBinOp::LE => MIRPointerBinaryOp::Le,
-            THIRPtrBinOp::GT => MIRPointerBinaryOp::Gt,
-            THIRPtrBinOp::GE => MIRPointerBinaryOp::Ge,
-        }),
-    })
+        false_target: if is_and { merge_target } else { rhs_target },
+    });
+
+    builder.fun_mut().set_current_block(rhs_block);
+    let rhs_value = lower_expression(builder, rhs)?;
+    if !builder.fun().current_block_terminated() {
+        builder.emit(MIRInstrKind::Jump {
+            target: MIRBlockTarget::with_args(merge_block, vec![rhs_value]),
+        });
+    }
+
+    builder.fun_mut().set_current_block(merge_block);
+    Ok(MIRValue::Register(result))
 }
 
 pub(super) fn lower_unary_op(op: &THIRUnOp, operand_type: &THIRType) -> MIRUnaryOp {
@@ -122,24 +107,18 @@ pub(super) fn lower_unary_op(op: &THIRUnOp, operand_type: &THIRType) -> MIRUnary
 
 pub(super) fn lower_coercion(
     builder: &mut MIRBuilder<'_>,
+    expr: &THIRExpression,
     operand: MIRValue,
     coercion: &THIRCoercion,
     from_type: &THIRType,
     to_type: &THIRType,
 ) -> CXResult<MIRValue> {
-    let to_type = lower_type(builder, to_type)?;
-
-    let mut emit_coercion = |operand: MIRValue, coercion: MIRCoercion| {
-        let out = builder.fun_mut().new_register(to_type, None);
-
-        builder.emit(MIRInstrKind::Coerce {
-            out,
-            operand,
-            coercion,
-            to_type,
-        });
-
-        Ok(MIRValue::Register(out))
+    let mir_to_type = lower_type(builder, to_type)?;
+    let emit_intrinsic = |intrinsic: MIRCoercion| {
+        builder.fun_mut().emit(MIRInstruction::new(
+            MIRInstrKind::IntrinsicOp(intrinsic),
+            expr.token_range.clone(),
+        ))
     };
 
     match coercion {
@@ -147,14 +126,23 @@ pub(super) fn lower_coercion(
             sextend,
             from_type,
             to_type,
-        } => emit_coercion(
-            operand,
-            MIRCoercion::Integral {
-                sign_extend: *sextend,
-                from: lower_int_type(*from_type),
-                to: lower_int_type(*to_type),
-            },
-        ),
+        } => {
+            let out = builder.fun_mut().new_register(mir_to_type, None);
+            let to_type = lower_int_type(*to_type);
+
+            builder
+                .fun_mut()
+                .emit(MIRInstruction::new(MIRInstrKind::IntrinsicOp(
+                    MIRIntrinsic::Int(MIRIntIntrinsic::IntCast {
+                        out: MIRTarget::Register(out),
+                        value: operand,
+                        target: to_type,
+                        sign_extend: *sextend,
+                    }),
+                )))?;
+
+            Ok(MIRValue::Register(out))
+        }
         THIRCoercion::FloatCast { to_type } => emit_coercion(
             operand,
             MIRCoercion::FloatCast {
@@ -202,12 +190,12 @@ pub(super) fn lower_coercion(
         THIRCoercion::ReinterpretBits => emit_coercion(operand, MIRCoercion::ReinterpretBits),
 
         THIRCoercion::ReferenceBounding(bounded) => {
-            let place = builder.fun_mut().new_place(to_type, None, false);
+            let place = builder.fun_mut().new_place(mir_to_type, None, false);
 
             builder.emit(MIRInstrKind::Store {
                 target: MIRTarget::Place(place),
                 value: operand,
-                ty: to_type,
+                ty: mir_to_type,
             });
 
             for bound in bounded {

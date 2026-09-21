@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
-    MIRComptimeFnPrototype, MIRComptimeFunction, MIRConstant, MIRConstantID, MIRFnPrototype, MIRFunction, MIRFunctionBody, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, global::MIRGlobalKind,
+    MIRComptimeFnPrototype, MIRComptimeFunction, MIRConstant, MIRConstantID, MIRFnPrototype, MIRFunction, MIRFunctionBody, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, constant::MIRStagedExprPool, global::MIRGlobalKind,
 };
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
@@ -43,6 +43,8 @@ pub(crate) struct MIRModuleBuilder {
     functions: HashMap<MIRFunctionID, MIRFunction>,
     comptime_functions: HashMap<MIRFunctionID, MIRComptimeFunction>,
     globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
+
+    staged_expressions: MIRStagedExprPool,
     
     function_symbols: HashMap<String, ModuleSymbol<MIRFunctionID>>,
     global_symbols: HashMap<String, ModuleSymbol<MIRGlobalID>>,
@@ -58,6 +60,7 @@ pub(crate) struct MIRModuleBuilder {
 pub(crate) struct ModuleParts {
     pub functions: HashMap<MIRFunctionID, MIRFunction>,
     pub comptime_functions: HashMap<MIRFunctionID, MIRFunctionBody>,
+    pub staged_expressions: MIRStagedExprPool,
     
     pub globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
     pub global_order: Vec<MIRGlobalID>,
@@ -71,8 +74,11 @@ impl MIRModuleBuilder {
         Self {
             functions: HashMap::new(),
             comptime_functions: HashMap::new(),
+            staged_expressions: MIRStagedExprPool::new(),
+            
             globals: HashMap::new(),
             function_symbols: HashMap::new(),
+
             global_symbols: HashMap::new(),
             global_initializer: HashMap::new(),
             global_order: Vec::new(),
@@ -145,6 +151,10 @@ impl MIRModuleBuilder {
 
     pub(crate) fn function(&self, id: MIRFunctionID) -> Option<&MIRFunction> {
         self.functions.get(&id)
+    }
+
+    pub(crate) fn comptime_function(&self, id: MIRFunctionID) -> Option<&MIRComptimeFunction> {
+        self.comptime_functions.get(&id)
     }
 
     pub(crate) fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
@@ -233,6 +243,7 @@ impl MIRModuleBuilder {
                 .filter(|symbol| symbol.is_used())
                 .map(|symbol| symbol.id())
                 .collect(),
+            staged_expressions: self.staged_expressions,
             functions: self.functions,
             comptime_functions: self.comptime_functions,
             globals: self.globals,

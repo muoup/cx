@@ -110,7 +110,7 @@ pub enum MIRInstrKind {
 
     // Marks a place as live for ownership analysis
     Initialize {
-        place: MIRPlaceID,
+        place: MIRBindable,
     },
     // Marks a place as no longer live for ownership analysis
     Invalidate {

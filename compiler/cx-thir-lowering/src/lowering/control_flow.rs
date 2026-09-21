@@ -185,51 +185,6 @@ pub(super) fn lower_if(
     });
 }
 
-pub(super) fn lower_short_circuit(
-    builder: &mut MIRBuilder<'_>,
-    lhs: &THIRExpression,
-    rhs: &THIRExpression,
-    op: &THIRBinOp,
-    result_type: &THIRType,
-) -> CXResult<MIRValue> {
-    let lhs_value = lower_expression(builder, lhs)?;
-    let rhs_block = builder.fun_mut().new_block("logical.rhs");
-    let merge_block = builder.fun_mut().new_block("logical.merge");
-    let result_type_id = lower_type(builder, result_type)?;
-    let result = builder
-        .fun_mut()
-        .block_param(merge_block, result_type_id, None);
-    let is_and = matches!(
-        op,
-        THIRBinOp::Integer {
-            op: THIRIntBinOp::LAND,
-            ..
-        }
-    );
-    let rhs_target = MIRBlockTarget::new(rhs_block);
-    let merge_target = MIRBlockTarget::with_args(merge_block, vec![lhs_value.clone()]);
-    builder.emit(MIRInstrKind::Branch {
-        cond: lhs_value,
-        true_target: if is_and {
-            rhs_target.clone()
-        } else {
-            merge_target.clone()
-        },
-        false_target: if is_and { merge_target } else { rhs_target },
-    });
-
-    builder.fun_mut().set_current_block(rhs_block);
-    let rhs_value = super::lower_expression(builder, rhs)?;
-    if !builder.fun().current_block_terminated() {
-        builder.emit(MIRInstrKind::Jump {
-            target: MIRBlockTarget::with_args(merge_block, vec![rhs_value]),
-        });
-    }
-
-    builder.fun_mut().set_current_block(merge_block);
-    Ok(MIRValue::Register(result))
-}
-
 pub(super) fn lower_while(
     builder: &mut MIRBuilder<'_>,
     condition: &THIRExpression,

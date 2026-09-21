@@ -1,4 +1,4 @@
-use crate::{constant::MIRConstantID, ty::{MIRFloatType, MIRTypeID}, unit::function::MIRFunctionID, value::{MIRPlaceID, MIRTarget, MIRValue}};
+use crate::{MIRIntType, constant::MIRConstantID, ty::{MIRFloatType, MIRTypeID}, unit::function::MIRFunctionID, value::{MIRPlaceID, MIRTarget, MIRValue}};
 
 #[derive(Debug, Clone)]
 pub enum MIRIntrinsic {
@@ -18,9 +18,9 @@ pub enum MIRIntIntrinsic {
     LNot        { out: MIRTarget, value: MIRValue },
     BNot        { out: MIRTarget, value: MIRValue },
 
-    ToFloat     { out: MIRTarget, value: MIRValue, target_ty: MIRTypeID },
-    ToPtr       { out: MIRTarget, value: MIRValue, target_ty: MIRTypeID },
-    IntCast     { out: MIRTarget, value: MIRValue, target_ty: MIRTypeID, sign_extend: bool },
+    ToFloat     { out: MIRTarget, value: MIRValue, target: MIRFloatType },
+    IntCast     { out: MIRTarget, value: MIRValue, target: MIRIntType, sign_extend: bool },
+    ToPtr       { out: MIRTarget, value: MIRValue },
     
     Add         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
     Sub         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
