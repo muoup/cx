@@ -99,87 +99,20 @@ impl MIRModuleBuilder {
         id
     }
 
-    pub(crate) fn declare_global(
-        &mut self,
-        pre_used: bool,
-        name: CXIdent,
-        linkage: LinkageMode,
-        kind: MIRGlobalKind,
-        source_range: &TokenRange,
-    ) -> CXResult<MIRGlobalID> {
-        let name_string = name.as_string();
-        if let Some(id) = self.global_symbols.get(&name_string).map(ModuleSymbol::id) {
-            let compatible = match (self.globals.get(&id).map(|global| &global.kind), &kind) {
-                (
-                    Some(MIRGlobalKind::Variable {
-                        ty: existing_ty, ..
-                    }),
-                    MIRGlobalKind::Variable {
-                        ty: incoming_ty, ..
-                    },
-                ) => existing_ty == incoming_ty,
-                _ => false,
-            };
-            if !compatible {
-                return Err(mir_error(
-                    source_range,
-                    (&catalogue::INCOMPATIBLE_GLOBAL, name.to_string()),
-                ));
-            }
-
-            let existing_is_external = self.globals.get(&id).is_some_and(|global| {
-                matches!(
-                    &global.kind,
-                    MIRGlobalKind::Variable {
-                        state: MIRGlobalState::External,
-                        ..
-                    }
-                )
-            });
-            let incoming_is_external = matches!(
-                &kind,
-                MIRGlobalKind::Variable {
-                    state: MIRGlobalState::External,
-                    ..
-                }
-            );
-
-            if existing_is_external && !incoming_is_external {
-                let global = self
-                    .globals
-                    .get_mut(&id)
-                    .expect("global symbol points to a missing global");
-                global.linkage = linkage;
-                global.kind = kind;
-            }
-            if pre_used && let Some(symbol) = self.global_symbols.get_mut(&name_string) {
-                symbol.used = true;
-            }
-            return Ok(id);
-        }
-
+    pub(crate) fn allocate_global_id(&mut self) -> MIRGlobalID {
         let id = MIRGlobalID::new(self.next_global_id);
         self.next_global_id += 1;
-        let global = MIRGlobalVariable::new(id, name, linkage, kind);
-        self.globals.insert(id, global);
-        self.global_order.push(id);
-        self.global_symbols
-            .insert(name_string, ModuleSymbol::new(id).with_used(pre_used));
-        Ok(id)
+        id
     }
 
-    pub(crate) fn add_string_literal(&mut self, value: &str) -> CXResult<MIRGlobalID> {
-        let name = CXIdent::from(format!("__anon_str_{}", self.next_string_literal));
-        self.next_string_literal += 1;
-        self.declare_global(
-            true,
-            name,
-            LinkageMode::Static,
-            MIRGlobalKind::StringLiteral {
-                value: value.to_owned(),
-            },
-            &TokenRange::internal(),
-        )
+    pub(crate) fn declare_global(
+        &mut self,
+        var: MIRGlobalVariable
+    ) -> CXResult<MIRGlobalID> {
+        let id = self.allocate_global_id();
+        self.globals.insert(id, var);
+
+        Ok(id)
     }
 
     pub(crate) fn define_function(&mut self, id: MIRFunctionID, def: MIRFunctionBody) {

@@ -10,7 +10,7 @@ use crate::{
     type_context::THIRTypeContext,
 };
 
-dense_id!(THIRTypeID);
+dense_id!(THIRTypeID, "t");
 
 #[derive(Debug, Clone)]
 pub struct THIRType {

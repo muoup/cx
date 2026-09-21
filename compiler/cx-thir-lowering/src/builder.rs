@@ -137,12 +137,6 @@ impl<'thir> MIRBuilder<'thir> {
         self.fun().source_range()
     }
 
-    pub fn emit(&mut self, instr: impl Into<cx_mir::MIRStagedInstrKind>) {
-        let range = self.fun().source_range().clone();
-
-        self.fun_mut().emit(instr, range);
-    }
-
     pub fn create(
         &mut self,
         ty: MIRTypeID,
@@ -198,85 +192,6 @@ impl<'thir> MIRBuilder<'thir> {
             .expect("capture context is active");
         capture.captures.push((input, source));
         Ok(Some(value))
-    }
-
-    // TODO: Is this needed?
-    pub(crate) fn capture_staged(
-        &mut self,
-        expression: &THIRExpression,
-        params: &[(THIRLocalID, &THIRType)],
-        diverges: Option<bool>,
-    ) -> CXResult<(Arc<MIRStagedTemplate>, Vec<MIRValue>)> {
-        let id = self.module_mut().allocate_function_id();
-        let prototype = self.fun().prototype().clone();
-        let source_locals = self.fun().locals();
-        let saved_function = self.function.take();
-        let runtime_places = saved_function
-            .as_ref()
-            .is_some_and(|function| function.capture.is_some())
-            || saved_function
-                .as_ref()
-                .is_some_and(|function| function.mode() != MIRFunctionMode::Comptime);
-        self.function = Some(MIRFunctionBuilder::new(
-            MIRFunction::new(id, prototype, None),
-            saved_function.as_ref(),
-        ));
-        self.fun_mut().restore_source_range(TokenRange::internal());
-        self.fun_mut().set_capture(Some(CaptureContext {
-            source_locals,
-            captures: Vec::new(),
-            params: Vec::new(),
-            runtime_places,
-        }));
-
-        let lowered = (|| -> CXResult<(MIRTypeID, cx_mir::MIRBasicBlockID)> {
-            for (local, ty) in params {
-                let ty = lower_type(self, ty)?;
-                let input = self.fun_mut().new_register(ty, None);
-                self.fun_mut().bind_local(*local, MIRValue::Register(input));
-                self.fun_mut()
-                    .capture
-                    .as_mut()
-                    .expect("capture context is active")
-                    .params
-                    .push(input);
-            }
-            let value = lowering::lower_expression(self, expression)?;
-            let result_type = lower_type(self, &expression._type)?;
-            let result_block = self.fun_mut().new_block("staged_result");
-            let has_value = !expression._type.is_void() && !expression._type.is_unreachable();
-            if has_value {
-                self.fun_mut().block_param(result_block, result_type, None);
-            }
-            if !self.fun().current_block_terminated() {
-                self.emit(MIRInstrKind::Jump {
-                    target: cx_mir::MIRBlockTarget::with_args(
-                        result_block,
-                        if has_value { vec![value] } else { Vec::new() },
-                    ),
-                });
-            }
-            Ok((result_type, result_block))
-        })();
-
-        let mut scratch = self.function.take().expect("capture builder is present");
-        let capture = scratch.take_capture().expect("capture context is present");
-        self.function = saved_function;
-
-        let (result_type, result_block) = lowered?;
-        let (_, body) = scratch.concise_finish();
-        let (inputs, values): (Vec<_>, Vec<_>) = capture.captures.into_iter().unzip();
-        Ok((
-            Arc::new(MIRStagedTemplate::new(
-                body,
-                inputs,
-                capture.params,
-                result_type,
-                result_block,
-                diverges.unwrap_or_else(|| expression._type.is_unreachable()),
-            )),
-            values,
-        ))
     }
 
     pub(crate) fn take_current_function(&mut self) -> Option<MIRFunctionBuilder> {
@@ -598,22 +513,5 @@ impl ComptimeContext for MIRBuilder<'_> {
 
     fn global_initializer(&self, id: MIRGlobalID) -> Option<MIRFunctionID> {
         self.module().global_initializer(id)
-    }
-}
-
-pub(crate) fn integer_type(ty: &THIRType) -> (cx_mir::MIRIntType, bool) {
-    match ty.kind {
-        THIRTypeKind::Integer { _type, signed } => (
-            match _type {
-                THIRIntType::I1 => cx_mir::MIRIntType::I1,
-                THIRIntType::I8 => cx_mir::MIRIntType::I8,
-                THIRIntType::I16 => cx_mir::MIRIntType::I16,
-                THIRIntType::I32 => cx_mir::MIRIntType::I32,
-                THIRIntType::I64 => cx_mir::MIRIntType::I64,
-                THIRIntType::I128 => cx_mir::MIRIntType::I128,
-            },
-            signed,
-        ),
-        _ => (cx_mir::MIRIntType::I64, true),
     }
 }

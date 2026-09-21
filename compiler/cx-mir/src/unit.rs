@@ -7,7 +7,7 @@ pub mod comptime_function;
 pub mod function;
 
 use crate::{
-    constant::{MIRConstantID, pool::MIRConstantPool},
+    constant::{MIRConstantID, MIRConstantPool},
     expr::instruction::MIRScopeID,
     ty::{MIRTypeID, registry::MIRTypeRegistry},
     unit::comptime_function::MIRComptimeFunction,
@@ -15,8 +15,8 @@ use crate::{
     value::{MIRPlaceID, MIRRegisterID as MIRRegister},
 };
 
-dense_id!(MIRGlobalID);
-dense_id!(MIRBasicBlockID);
+dense_id!(MIRGlobalID, "global.");
+dense_id!(MIRBasicBlockID, "bb");
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRGlobalState {
@@ -29,10 +29,10 @@ pub enum MIRGlobalState {
 pub struct MIRUnit<'thir> {
     constants: MIRConstantPool<'thir>,
     types: MIRTypeRegistry,
- 
+
     functions: HashMap<MIRFunctionID, MIRFunction>,
     comptime_functions: HashMap<MIRFunctionID, MIRComptimeFunction<'thir>>,
- 
+
     globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
     global_order: Vec<MIRGlobalID>,
 }
@@ -117,51 +117,58 @@ pub struct MIRRegisterDecl {
 
 #[derive(Debug, Clone)]
 pub struct MIRGlobalVariable {
-    pub id: MIRGlobalID,
-    pub name: CXIdent,
-    pub linkage: LinkageMode,
-    pub kind: MIRGlobalKind,
-}
+    name: CXIdent,
+    linkage: LinkageMode,
 
-#[derive(Debug, Clone)]
-pub enum MIRGlobalKind {
-    Variable {
-        ty: MIRTypeID,
-        state: MIRGlobalState,
-        is_mutable: bool,
-    },
+    ty: MIRTypeID,
+    state: MIRGlobalState,
+    is_mutable: bool,
 }
 
 impl MIRGlobalVariable {
-    pub fn new(id: MIRGlobalID, name: CXIdent, linkage: LinkageMode, kind: MIRGlobalKind) -> Self {
-        Self {
-            id,
-            name,
-            linkage,
-            kind,
-        }
-    }
-
-    pub fn variable(
-        id: MIRGlobalID,
+    pub fn new(
         name: CXIdent,
-        ty: MIRTypeID,
         linkage: LinkageMode,
+        ty: MIRTypeID,
+        state: MIRGlobalState,
         is_mutable: bool,
     ) -> Self {
         Self {
-            id,
             name,
             linkage,
-            kind: MIRGlobalKind::Variable {
-                ty,
-                state: if linkage == LinkageMode::Extern {
-                    MIRGlobalState::External
-                } else {
-                    MIRGlobalState::ZeroInitialized
-                },
-                is_mutable,
-            },
+            ty,
+            state,
+            is_mutable,
         }
+    }
+
+    pub fn define(&mut self, state: MIRGlobalState) {
+        assert!(
+            matches!(self.state, MIRGlobalState::External),
+            "Attempt to redefine global variable: {}",
+            self.name
+        );
+
+        self.state = state;
+    }
+
+    pub fn name(&self) -> &CXIdent {
+        &self.name
+    }
+
+    pub fn linkage(&self) -> LinkageMode {
+        self.linkage
+    }
+
+    pub fn ty(&self) -> MIRTypeID {
+        self.ty
+    }
+
+    pub fn state(&self) -> &MIRGlobalState {
+        &self.state
+    }
+
+    pub fn is_mutable(&self) -> bool {
+        self.is_mutable
     }
 }

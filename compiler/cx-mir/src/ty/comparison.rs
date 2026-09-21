@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::ty::{MIRTypeID, MIRTypeKind, interface::MTRegistry};
+use crate::ty::{MIRField, MIRTypeID, MIRTypeKind, interface::MTRegistry};
 
 pub(crate) fn same_type_inner<T: MTRegistry>(
     registry: &T,
@@ -94,14 +94,15 @@ fn same_kind<T: MTRegistry>(
                 && same_type_inner(registry, compared, *left_inner, *right_inner)
         }
         (MIRTypeKind::Function { signature: left }, MIRTypeKind::Function { signature: right }) => {
-            left.variadic == right.variadic
-                && same_type_inner(registry, compared, left.return_type, right.return_type)
-                && left.params.len() == right.params.len()
+            left.variadic() == right.variadic()
+                && same_type_inner(registry, compared, left.return_type(), right.return_type())
+                && left.params().len() == right.params().len()
                 && left
-                    .params
+                    .params()
                     .iter()
-                    .zip(&right.params)
-                    .all(|(left, right)| same_type_inner(registry, compared, *left, *right))
+                    .zip(&right.params())
+                    .all(|(left, right
+                    )| same_type_inner(registry, compared, *left, *right))
         }
         (
             MIRTypeKind::Opaque {

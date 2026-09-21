@@ -2,26 +2,20 @@ use cx_util::{dense_id, identifier::CXIdent};
 
 use crate::{expr::body::MIRBody, ty::MIRTypeID};
 
-dense_id!(MIRFunctionID);
+dense_id!(MIRFunctionID, "@f");
 
 #[derive(Debug, Clone)]
 pub struct MIRFunction {
-    id: MIRFunctionID,
     prototype: MIRFnPrototype,
     body: Option<MIRBody>,
 }
 
 impl MIRFunction {
-    pub fn new(id: MIRFunctionID, prototype: MIRFnPrototype, definition: Option<MIRBody>) -> Self {
+    pub fn new(prototype: MIRFnPrototype, definition: Option<MIRBody>) -> Self {
         Self {
-            id,
             prototype,
             body: definition,
         }
-    }
-
-    pub fn id(&self) -> MIRFunctionID {
-        self.id
     }
 
     pub fn body(&self) -> Option<&MIRBody> {

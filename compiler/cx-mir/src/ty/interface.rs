@@ -2,11 +2,11 @@ use std::collections::HashSet;
 
 use cx_target::ArchitectureConfig;
 
-use crate::ty::{MIRIntType, MIRType, MIRTypeID, MIRTypeKind, comparison::same_type_inner};
+use crate::ty::{MIRType, MIRTypeID, MIRTypeKind, comparison::same_type_inner};
 
 pub trait MTRegistry: Sized {
     // --- INTERFACE ---
-    
+
     fn architecture(&self) -> &ArchitectureConfig;
     fn definition(&self, id: MIRTypeID) -> Option<&MIRType>;
     fn find(&self, ty: &MIRType) -> Option<MIRTypeID>;
@@ -14,43 +14,34 @@ pub trait MTRegistry: Sized {
     fn debug_name(&self, id: MIRTypeID) -> Option<&str>;
 
     // --- HELPERS ---
-    
+
     fn unit(&self) -> MIRTypeID {
         MIRTypeID::new(0)
-    }
-
-    fn pointer_integer_type(&self) -> MIRIntType {
-        MIRIntType::from_bytes(self.architecture().pointer_size() as u8)
-            .expect("ArchitectureConfig guarantees a supported pointer size")
     }
 
     fn same_type(&self, left: MIRTypeID, right: MIRTypeID) -> bool {
         same_type_inner(self, &mut HashSet::new(), left, right)
     }
 
-    fn is_reference_type(&self, id: MIRTypeID) -> Result<bool, MIRLayoutError> {
-        let ty = self.resolve_type_id(id)?;
-        Ok(matches!(ty.kind, MIRTypeKind::MemoryReference { .. }))
+    fn is_reference_type(&self, ty: &MIRType) -> bool {
+        matches!(ty.kind, MIRTypeKind::MemoryReference { .. })
     }
 
-    fn reference_inner(&self, id: MIRTypeID) -> Result<Option<MIRTypeID>, MIRLayoutError> {
-        let ty = self.resolve_type_id(id)?;
+    fn reference_inner(&self, ty: &MIRType) -> Option<MIRTypeID> {
         match &ty.kind {
-            MIRTypeKind::MemoryReference { inner, .. } => Ok(Some(*inner)),
-            _ => Ok(None),
+            MIRTypeKind::MemoryReference { inner, .. } => Some(*inner),
+            _ => None,
         }
     }
 
-    fn is_pointer_type(&self, id: MIRTypeID) -> Result<bool, MIRLayoutError> {
-        let ty = self.resolve_type_id(id)?;
-        Ok(matches!(ty.kind, MIRTypeKind::PointerTo { .. }))
+    fn is_pointer_type(&self, ty: &MIRType) -> bool {
+        matches!(ty.kind, MIRTypeKind::PointerTo { .. })
     }
 
-    fn pointer_inner(&self, id: MIRTypeID) -> Result<Option<MIRTypeID>, MIRLayoutError> {
-        let ty = self.resolve_type_id(id)?;
+    fn pointer_inner(&self, ty: &MIRType) -> Option<MIRTypeID> {
         match &ty.kind {
-            MIRTypeKind::PointerTo { inner } => Ok(Some(*inner)),
-            _ => Ok(None),
+            MIRTypeKind::PointerTo { inner } => Some(*inner),
+            _ => None,
         }
     }
 }

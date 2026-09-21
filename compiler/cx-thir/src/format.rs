@@ -7,7 +7,7 @@ use crate::thir::data::{
     THIRFnSignature, THIRParameter,
 };
 use crate::thir::expression::{
-    THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRLocalID, THIRUnOp,
+    THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp,
 };
 use crate::thir::global::THIRGlobalVariable;
 use crate::thir::r#type::{
@@ -1581,18 +1581,6 @@ impl Display for THIRCoercion {
             THIRCoercion::Typechange => write!(f, "typechange"),
             THIRCoercion::Unreachable => write!(f, "unreachable"),
         }
-    }
-}
-
-impl Display for THIRLocalID {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "L{}", self.0)
-    }
-}
-
-impl Display for THIRTypeID {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "T{}", self.0)
     }
 }
 

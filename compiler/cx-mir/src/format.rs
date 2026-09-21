@@ -5,71 +5,19 @@ use cx_util::linkage::LinkageMode;
 use crate::{
     expr::{
         body::MIRBody,
-        instruction::{MIRBasicBlock, MIRInstrKind, MIRScopeID, MIRStagedTargets},
+        instruction::{MIRBasicBlock, MIRInstrKind, MIRScopeID},
         intrinsic::{
             MIRAggregateIntrinsic, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic,
             MIRIntrinsic, MIRPtrIntrinsic, MIRVAIntrinsic,
         },
     },
-    ty::{
-        MIRField, MIRFloatType, MIRIntType, MIRLayoutError, MIRTypeID, MIRTypeKind,
-        interface::MTRegistry,
-    },
+    ty::{MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind, interface::MTRegistry},
     unit::{
-        MIRBasicBlockID, MIRGlobalID, MIRGlobalKind, MIRGlobalState, MIRGlobalVariable, MIRUnit,
+        MIRBasicBlockID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRUnit,
+        function::MIRFunction,
     },
-    value::{
-        MIRBlockTarget, MIRConstant, MIRPlaceID, MIRRegisterID, MIRTarget, MIRTemporaryID, MIRValue,
-    },
+    value::{MIRBlockTarget, MIRConstant, MIRPlaceID, MIRRegisterID, MIRTarget, MIRValue},
 };
-
-impl Display for MIRPlaceID {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "%p{}", self.index())
-    }
-}
-
-impl Display for MIRRegisterID {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "%r{}", self.index())
-    }
-}
-
-impl Display for MIRTemporaryID {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "%t{}", self.index())
-    }
-}
-
-impl Display for MIRScopeID {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "s{}", self.index())
-    }
-}
-
-impl Display for MIRBasicBlockID {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "bb{}", self.index())
-    }
-}
-
-impl Display for MIRFunctionID {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "@f{}", self.index())
-    }
-}
-
-impl Display for MIRGlobalID {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "@g{}", self.index())
-    }
-}
-
-impl Display for MIRTypeID {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "t{}", self.index())
-    }
-}
 
 impl Display for MIRBlockTarget {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -199,8 +147,8 @@ impl Display for MIRDisplay<'_, '_> {
             write_global(f, self.unit, global, &mut types)?;
         }
 
-        for function in self.unit.functions() {
-            if function.id().index() != 0 {
+        for (i, function) in self.unit.functions().iter().enumerate() {
+            if i != 0 {
                 f.write_str("\n")?;
             }
             write_function(f, self.unit, function, &mut types)?;

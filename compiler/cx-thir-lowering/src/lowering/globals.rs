@@ -20,27 +20,20 @@ pub(crate) fn predeclare_global(
     builder: &mut MIRBuilder<'_>,
     global: &THIRGlobalVariable,
 ) -> CXResult<MIRGlobalID> {
+    let id = builder.module_mut().allocate_global_id();
     let ty = lower_type(builder, &global._type)?;
 
-    builder.module_mut().declare_global(
-        global.linkage == LinkageMode::Extern,
-        global.name.clone(),
-        global.linkage,
-        MIRGlobalKind::Variable {
-            ty,
-            state: if global.linkage == LinkageMode::Extern {
-                MIRGlobalState::External
-            } else {
-                MIRGlobalState::ZeroInitialized
-            },
-            is_mutable: global.is_mutable,
+    builder.module_mut().declare_global(MIRGlobalVariable {
+        id,
+        name: global.name.clone(),
+        _type: ty,
+        kind: match global.kind {
+            THIRGlobalKind::External => MIRGlobalKind::External,
+            THIRGlobalKind::ZeroInitialized => MIRGlobalKind::ZeroInitialized,
+            THIRGlobalKind::Initialized => MIRGlobalKind::Initialized,
         },
-        global
-            .initializer
-            .as_ref()
-            .map(|initializer| &initializer.token_range)
-            .unwrap_or(&cx_tokens::TokenRange::internal()),
-    )
+        token_range: global.token_range.clone(),
+    })
 }
 
 pub(crate) fn lower_global(

@@ -10,7 +10,7 @@ pub use layout::{MIRFieldLayout, MIRTypeLayout};
 
 use crate::unit::function::MIRFnSignature;
 
-dense_id!(MIRTypeID);
+dense_id!(MIRTypeID, "t");
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MIRType {

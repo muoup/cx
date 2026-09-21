@@ -146,7 +146,7 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
         .definition(ty)
         .unwrap_or_else(|| panic!("invalid MIR type {ty}"));
 
-    let kind = match &definition.kind {
+    let kind = match &definition.kind() {
         MIRTypeKind::Opaque { size, .. } => LMIRTypeKind::Opaque { bytes: *size },
         MIRTypeKind::Integer { ty, .. } => LMIRTypeKind::Integer(convert_integer_type(*ty)),
         MIRTypeKind::Float { ty } => LMIRTypeKind::Float(convert_float_type(*ty)),

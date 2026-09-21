@@ -8,18 +8,13 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct MIRComptimeFunction<'thir> {
-    id: MIRFunctionID,
     prototype: MIRComptimeFnPrototype,
     body: Option<MIRComptimeBody<'thir>>,
 }
 
 impl<'thir> MIRComptimeFunction<'thir> {
-    pub fn new(
-        id: MIRFunctionID,
-        prototype: MIRComptimeFnPrototype,
-    ) -> Self {
+    pub fn new(prototype: MIRComptimeFnPrototype) -> Self {
         MIRComptimeFunction {
-            id,
             prototype,
             body: None,
         }

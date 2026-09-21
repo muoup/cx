@@ -8,7 +8,7 @@ use cx_util::dense_id;
 
 use crate::constant::MIRConstantID;
 
-dense_id!(MIRStagedID);
+dense_id!(MIRStagedID, "staged.");
 
 #[derive(Debug, Clone)]
 pub struct MIRStagedExpression<'thir> {

@@ -8,7 +8,7 @@ use crate::{
     value::{MIRBindable, MIRBlockTarget, MIRPlaceID, MIRRegisterID, MIRValue},
 };
 
-dense_id!(MIRScopeID);
+dense_id!(MIRScopeID, "scope.");
 
 #[derive(Debug, Clone)]
 pub struct MIRBasicBlock<I = MIRInstruction> {

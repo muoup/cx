@@ -258,16 +258,6 @@ impl MIRFunctionBuilder {
         self.labels.insert(name.to_string(), id);
     }
 
-    pub fn emit(&mut self, instruction: impl Into<MIRStagedInstrKind>, range: TokenRange) {
-        if self.current_block_terminated() {
-            return;
-        }
-
-        self.active_block_mut()
-            .instrs
-            .push(MIRInstruction::new(instruction.into(), range));
-    }
-
     pub fn new_register(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>) -> MIRRegister {
         self.body.add_register(ty, debug_name)
     }

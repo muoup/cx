@@ -1,6 +1,7 @@
 use std::cell::Cell;
 
 use cx_tokens::TokenRange;
+use cx_util::dense_id;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 
@@ -12,18 +13,7 @@ thread_local! {
     static NEXT_LOCAL_ID: Cell<u64> = const { Cell::new(0) };
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Readable, Writable)]
-pub struct THIRLocalID(pub u64);
-
-impl THIRLocalID {
-    pub fn fresh() -> Self {
-        NEXT_LOCAL_ID.with(|next| {
-            let id = next.get();
-            next.set(id.checked_add(1).expect("THIR local id counter overflowed"));
-            Self(id)
-        })
-    }
-}
+dense_id!(THIRLocalID, "local.");
 
 #[derive(Clone, Debug, Default)]
 pub struct THIRFnContract {

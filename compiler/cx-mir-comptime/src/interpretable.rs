@@ -10,8 +10,6 @@ pub trait ComptimeInterpretable {
 
     fn prototype(&self) -> &MIRFnPrototype;
 
-    fn function_id(&self) -> MIRFunctionID;
-
     fn current_block(&self) -> MIRBasicBlockID;
 
     fn next_instruction(&mut self) -> Option<MIRComptimeInstr>;
@@ -57,10 +55,6 @@ impl ComptimeInterpretable for InterpretedFunction<'_> {
 
     fn prototype(&self) -> &MIRFnPrototype {
         self.function.prototype()
-    }
-
-    fn function_id(&self) -> MIRFunctionID {
-        self.function.id()
     }
 
     fn current_block(&self) -> MIRBasicBlockID {

@@ -4,8 +4,8 @@ use crate::unit::{MIRBasicBlockID, MIRGlobalID};
 
 pub use crate::constant::{MIRConstant, MIRConstantID};
 
-dense_id!(MIRPlaceID);
-dense_id!(MIRRegisterID);
+dense_id!(MIRPlaceID, "%p");
+dense_id!(MIRRegisterID, "%r");
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRValue {
