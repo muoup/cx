@@ -12,11 +12,7 @@ pub struct MIRFunction {
 }
 
 impl MIRFunction {
-    pub fn new(
-        id: MIRFunctionID,
-        prototype: MIRFnPrototype,
-        definition: Option<MIRBody>
-    ) -> Self {
+    pub fn new(id: MIRFunctionID, prototype: MIRFnPrototype, definition: Option<MIRBody>) -> Self {
         Self {
             id,
             prototype,

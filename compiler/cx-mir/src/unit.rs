@@ -3,14 +3,16 @@ use std::collections::HashMap;
 use cx_tokens::TokenRange;
 use cx_util::{dense_id, identifier::CXIdent, linkage::LinkageMode};
 
-pub mod function;
 pub mod comptime_function;
+pub mod function;
 
 use crate::{
+    constant::{MIRConstantID, pool::MIRConstantPool},
     expr::instruction::MIRScopeID,
     ty::{MIRTypeID, registry::MIRTypeRegistry},
+    unit::comptime_function::MIRComptimeFunction,
     unit::function::{MIRFunction, MIRFunctionID},
-    value::{MIRConstant, MIRPlaceID, MIRRegisterID as MIRRegister},
+    value::{MIRPlaceID, MIRRegisterID as MIRRegister},
 };
 
 dense_id!(MIRGlobalID);
@@ -20,27 +22,35 @@ dense_id!(MIRBasicBlockID);
 pub enum MIRGlobalState {
     External,
     ZeroInitialized,
-    Initialized(MIRConstant),
+    Initialized(MIRConstantID),
 }
 
 #[derive(Debug, Clone)]
-pub struct MIRUnit {
+pub struct MIRUnit<'thir> {
+    constants: MIRConstantPool<'thir>,
     types: MIRTypeRegistry,
+ 
     functions: HashMap<MIRFunctionID, MIRFunction>,
+    comptime_functions: HashMap<MIRFunctionID, MIRComptimeFunction<'thir>>,
+ 
     globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
     global_order: Vec<MIRGlobalID>,
 }
 
-impl MIRUnit {
+impl<'thir> MIRUnit<'thir> {
     pub fn new(
         types: MIRTypeRegistry,
         functions: HashMap<MIRFunctionID, MIRFunction>,
+        comptime_functions: HashMap<MIRFunctionID, MIRComptimeFunction<'thir>>,
+        constants: MIRConstantPool<'thir>,
         globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
         global_order: Vec<MIRGlobalID>,
     ) -> Self {
         Self {
             types,
             functions,
+            comptime_functions,
+            constants,
             globals,
             global_order,
         }
@@ -54,6 +64,14 @@ impl MIRUnit {
         self.functions.values()
     }
 
+    pub fn comptime_functions(&self) -> impl ExactSizeIterator<Item = &MIRComptimeFunction<'thir>> {
+        self.comptime_functions.values()
+    }
+
+    pub fn constants(&self) -> &MIRConstantPool<'thir> {
+        &self.constants
+    }
+
     pub fn globals(&self) -> impl ExactSizeIterator<Item = &MIRGlobalVariable> {
         self.globals.values()
     }
@@ -64,6 +82,10 @@ impl MIRUnit {
 
     pub fn function(&self, id: MIRFunctionID) -> Option<&MIRFunction> {
         self.functions.get(&id)
+    }
+
+    pub fn comptime_function(&self, id: MIRFunctionID) -> Option<&MIRComptimeFunction<'thir>> {
+        self.comptime_functions.get(&id)
     }
 
     pub fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
@@ -103,10 +125,6 @@ pub struct MIRGlobalVariable {
 
 #[derive(Debug, Clone)]
 pub enum MIRGlobalKind {
-    StringLiteral {
-        value: String,
-    },
-
     Variable {
         ty: MIRTypeID,
         state: MIRGlobalState,
@@ -121,15 +139,6 @@ impl MIRGlobalVariable {
             name,
             linkage,
             kind,
-        }
-    }
-
-    pub fn string_literal(id: MIRGlobalID, name: CXIdent, value: String) -> Self {
-        Self {
-            id,
-            name,
-            linkage: LinkageMode::Static,
-            kind: MIRGlobalKind::StringLiteral { value },
         }
     }
 

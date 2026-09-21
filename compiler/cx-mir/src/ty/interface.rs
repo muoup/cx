@@ -19,18 +19,6 @@ pub trait MTRegistry: Sized {
         MIRTypeID::new(0)
     }
 
-    fn resolve_type_id(&self, id: MIRTypeID) -> Result<&MIRType, MIRLayoutError> {
-        self.definition(id).ok_or(MIRLayoutError::InvalidType(id))
-    }
-
-    fn kind(&self, id: MIRTypeID) -> Result<&MIRTypeKind, MIRLayoutError> {
-        self.resolve_type_id(id).and_then(|ty| Ok(&ty.kind))
-    }
-
-    fn layout(&self, id: MIRTypeID) -> Result<Option<&MIRTypeLayout>, MIRLayoutError> {
-        self.resolve_type_id(id).map(|ty| ty.layout.as_ref())
-    }
-
     fn pointer_integer_type(&self) -> MIRIntType {
         MIRIntType::from_bytes(self.architecture().pointer_size() as u8)
             .expect("ArchitectureConfig guarantees a supported pointer size")

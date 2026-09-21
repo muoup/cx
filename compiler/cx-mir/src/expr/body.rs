@@ -2,21 +2,24 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    expr::instruction::{MIRBasicBlock, MIRInstrKind, MIRInstruction, MIRScopeID}, ty::MIRTypeID, unit::{MIRBasicBlockID, MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl, function::MIRFnParam}, value::{MIRPlaceID, MIRRegisterID as MIRRegister},
+    expr::instruction::{MIRBasicBlock, MIRInstruction, MIRScopeID},
+    ty::MIRTypeID,
+    unit::{MIRBasicBlockID, MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl, function::MIRFnParam},
+    value::{MIRPlaceID, MIRRegisterID as MIRRegister},
 };
 
 #[derive(Debug, Clone)]
-pub struct MIRBody {
+pub struct MIRBody<I = MIRInstruction> {
     entry: MIRBasicBlockID,
 
-    blocks: Vec<MIRBasicBlock>,
+    blocks: Vec<MIRBasicBlock<I>>,
     places: Vec<MIRPlaceDecl>,
     parameters: Vec<MIRPlaceID>,
     registers: Vec<MIRRegisterDecl>,
     scopes: Vec<MIRScopeDecl>,
 }
 
-impl MIRBody {
+impl<I> MIRBody<I> {
     pub fn new() -> Self {
         Self {
             entry: MIRBasicBlockID::new(0),
@@ -60,24 +63,22 @@ impl MIRBody {
         register
     }
 
-    pub fn push_instr_at(&mut self, block: MIRBasicBlockID, kind: MIRInstrKind, token_range: TokenRange) {
-        let instr = MIRInstruction::new(kind, token_range);
-
+    pub fn push_instr_at(&mut self, block: MIRBasicBlockID, instr: I) {
         self.block_mut(block)
             .expect("instruction pushed to unknown block")
             .instructions
             .push(instr);
     }
 
-    pub fn blocks(&self) -> &[MIRBasicBlock] {
+    pub fn blocks(&self) -> &[MIRBasicBlock<I>] {
         &self.blocks
     }
 
-    pub fn block(&self, id: MIRBasicBlockID) -> Option<&MIRBasicBlock> {
+    pub fn block(&self, id: MIRBasicBlockID) -> Option<&MIRBasicBlock<I>> {
         self.blocks().get(id.index())
     }
 
-    pub fn block_mut(&mut self, id: MIRBasicBlockID) -> Option<&mut MIRBasicBlock> {
+    pub fn block_mut(&mut self, id: MIRBasicBlockID) -> Option<&mut MIRBasicBlock<I>> {
         self.blocks.get_mut(id.index())
     }
 
@@ -139,11 +140,7 @@ impl MIRBody {
         &self.parameters
     }
 
-    pub fn add_parameter(
-        &mut self,
-        parameter: &MIRFnParam,
-        scope: MIRScopeID,
-    ) -> MIRPlaceID {
+    pub fn add_parameter(&mut self, parameter: &MIRFnParam, scope: MIRScopeID) -> MIRPlaceID {
         let place = self.add_place(
             parameter.ty(),
             parameter.name().cloned(),

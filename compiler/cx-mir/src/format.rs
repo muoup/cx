@@ -156,7 +156,7 @@ impl Display for MIRGlobalState {
     }
 }
 
-impl Display for MIRUnit {
+impl Display for MIRUnit<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Display::fmt(&self.display_pretty(), f)
     }
@@ -178,17 +178,17 @@ fn write_plain_values(f: &mut Formatter<'_>, values: &[MIRValue]) -> fmt::Result
     Ok(())
 }
 
-pub struct MIRDisplay<'a> {
-    unit: &'a MIRUnit,
+pub struct MIRDisplay<'a, 'thir> {
+    unit: &'a MIRUnit<'thir>,
 }
 
-impl MIRUnit {
-    pub fn display_pretty(&self) -> MIRDisplay<'_> {
+impl<'thir> MIRUnit<'thir> {
+    pub fn display_pretty(&self) -> MIRDisplay<'_, 'thir> {
         MIRDisplay { unit: self }
     }
 }
 
-impl Display for MIRDisplay<'_> {
+impl Display for MIRDisplay<'_, '_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut types = TypePrinter::new(self.unit.types());
 

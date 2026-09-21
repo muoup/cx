@@ -11,14 +11,14 @@ use crate::{
 dense_id!(MIRScopeID);
 
 #[derive(Debug, Clone)]
-pub struct MIRBasicBlock {
+pub struct MIRBasicBlock<I = MIRInstruction> {
     pub id: MIRBasicBlockID,
     pub debug_name: Option<CXIdent>,
     pub params: Vec<MIRRegisterID>,
-    pub instructions: Vec<MIRInstruction>,
+    pub instructions: Vec<I>,
 }
 
-impl MIRBasicBlock {
+impl<I> MIRBasicBlock<I> {
     pub fn new(id: MIRBasicBlockID) -> Self {
         Self {
             id,
@@ -28,16 +28,18 @@ impl MIRBasicBlock {
         }
     }
 
-    pub fn push(&mut self, instr: MIRInstruction) -> &mut MIRInstruction {
+    pub fn push(&mut self, instr: I) -> &mut I {
         self.instructions.push(instr);
-        self.instructions.last_mut()
-            .unwrap()
+        self.instructions.last_mut().unwrap()
     }
 
-    pub fn terminator(&self) -> Option<&MIRInstruction> {
+    pub fn terminator(&self) -> Option<&I>
+    where
+        I: MIRInstructionLike,
+    {
         self.instructions
             .last()
-            .filter(|instr| instr.kind.is_terminator())
+            .filter(|instr| instr.is_terminator())
     }
 }
 
@@ -53,6 +55,16 @@ impl MIRInstruction {
     }
 
     pub fn is_terminator(&self) -> bool {
+        self.kind.is_terminator()
+    }
+}
+
+pub trait MIRInstructionLike {
+    fn is_terminator(&self) -> bool;
+}
+
+impl MIRInstructionLike for MIRInstruction {
+    fn is_terminator(&self) -> bool {
         self.kind.is_terminator()
     }
 }
@@ -125,10 +137,10 @@ pub enum MIRInstrKind {
     Unreachable,
 }
 
-impl MIRInstruction {
-    fn is_terminator(&self) -> bool {
+impl MIRInstrKind {
+    pub fn is_terminator(&self) -> bool {
         matches!(
-            self.kind,
+            self,
             Self::Return { .. }
                 | Self::Jump { .. }
                 | Self::Branch { .. }

@@ -1,10 +1,11 @@
-use crate::{ty::{MIRFloatType, MIRTypeID}, unit::function::MIRFunctionID, value::{MIRPlaceID, MIRTarget, MIRValue}};
+use crate::{constant::MIRConstantID, ty::{MIRFloatType, MIRTypeID}, unit::function::MIRFunctionID, value::{MIRPlaceID, MIRTarget, MIRValue}};
 
 #[derive(Debug, Clone)]
 pub enum MIRIntrinsic {
     Int(MIRIntIntrinsic),
     Float(MIRFloatIntrinsic),
     Pointer(MIRPtrIntrinsic),
+    Aggregate(MIRAggregateIntrinsic),
 
     Internal(MIRInternalIntrinsic),
 
@@ -83,6 +84,7 @@ pub enum MIRPtrIntrinsic {
     Geq         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
 }
 
+#[derive(Debug, Clone)]
 pub enum MIRAggregateIntrinsic {
     SumIndex    { out: MIRTarget, value: MIRValue, sum_ty: MIRTypeID },
     SumVariant  { out: MIRTarget, base: MIRPlaceID, variant: usize, sum_ty: MIRTypeID },
@@ -96,6 +98,7 @@ pub enum MIRAggregateIntrinsic {
 
 #[derive(Debug, Clone)]
 pub enum MIRInternalIntrinsic {
+    StringAddress { out: MIRTarget, string: MIRConstantID },
     GetFnPtr    { out: MIRTarget, fn_id: MIRFunctionID },
     Bitcast     { out: MIRTarget, value: MIRValue, target_ty: MIRTypeID },
     

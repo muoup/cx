@@ -1,5 +1,6 @@
-use crate::ty::{MIRType, MIRTypeID};
+use crate::ty::MIRTypeID;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MIRComptimeType {
     _type: MIRTypeID,
     staged_metadata: MIRStagedMetadata,
@@ -22,25 +23,26 @@ impl MIRComptimeType {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct MIRStagedMetadata {
     escaping_return_bound: Option<MIRTypeID>,
-    escaping_yield_bound: Option<MIRTypeID>
+    escaping_yield_bound: Option<MIRTypeID>,
 }
 
 impl MIRStagedMetadata {
     pub fn new() -> Self {
         Self {
             escaping_return_bound: None,
-            escaping_yield_bound: None
+            escaping_yield_bound: None,
         }
     }
 
-    pub fn define_escaping_return(self, bound: MIRTypeID) -> Self {
+    pub fn define_escaping_return(mut self, bound: MIRTypeID) -> Self {
         self.escaping_return_bound = Some(bound);
         self
     }
 
-    pub fn define_escaping_yield(self, bound: MIRTypeID) -> Self {
+    pub fn define_escaping_yield(mut self, bound: MIRTypeID) -> Self {
         self.escaping_yield_bound = Some(bound);
         self
     }

@@ -399,6 +399,7 @@ dependencies = [
  "cx-hir",
  "cx-log",
  "cx-target",
+ "cx-thir",
  "cx-tokens",
  "cx-util",
  "speedy",

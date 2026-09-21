@@ -1,45 +1,18 @@
-use cx_util::{dense_id, unsafe_float::FloatWrapper};
+use cx_util::dense_id;
 
-use crate::{
-    ty::{MIRFloatType, MIRIntType, MIRTypeID}, unit::{MIRBasicBlockID, MIRGlobalID, function::MIRFunctionID},
-};
+use crate::unit::{MIRBasicBlockID, MIRGlobalID};
+
+pub use crate::constant::{MIRConstant, MIRConstantID};
 
 dense_id!(MIRPlaceID);
 dense_id!(MIRRegisterID);
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum MIRConstant {
-    Unit,
-    Integer {
-        ty: MIRIntType,
-        value: i128,
-    },
-    Float {
-        value: FloatWrapper,
-        ty: MIRFloatType,
-    },
-    Aggregate {
-        ty: MIRTypeID,
-        fields: Vec<(usize, MIRConstant)>,
-    },
-    Global {
-        global: MIRGlobalID,
-        offset: i64,
-        ty: MIRTypeID,
-    },
-    Nullptr {
-        ty: MIRTypeID,
-    },
-    Function(MIRFunctionID),
-    Undefined,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRValue {
     Register(MIRRegisterID),
     PlaceRef(MIRPlaceID),
     Global(MIRGlobalID),
-    Constant(MIRConstant),
+    Constant(MIRConstantID),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -52,7 +25,7 @@ pub enum MIRBindable {
 pub enum MIRTarget {
     Place(MIRPlaceID),
     Global(MIRGlobalID),
-    Register(MIRGlobalID),
+    Register(MIRRegisterID),
     Indirect(MIRRegisterID),
 }
 

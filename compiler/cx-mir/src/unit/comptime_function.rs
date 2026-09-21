@@ -1,15 +1,24 @@
 use cx_util::identifier::CXIdent;
 
-use crate::{expr::body::MIRBody, ty::MIRTypeID, unit::function::MIRFunctionID};
+use crate::{
+    expr::comptime::MIRComptimeBody,
+    ty::{MIRTypeID, comptime::MIRComptimeType},
+    unit::function::MIRFunctionID,
+};
 
-pub struct MIRComptimeFunction {
+#[derive(Debug, Clone)]
+pub struct MIRComptimeFunction<'thir> {
     id: MIRFunctionID,
     prototype: MIRComptimeFnPrototype,
-    body: MIRBody,
+    body: MIRComptimeBody<'thir>,
 }
 
-impl MIRComptimeFunction {
-    pub fn new(id: MIRFunctionID, prototype: MIRComptimeFnPrototype, body: MIRBody) -> Self {
+impl<'thir> MIRComptimeFunction<'thir> {
+    pub fn new(
+        id: MIRFunctionID,
+        prototype: MIRComptimeFnPrototype,
+        body: MIRComptimeBody<'thir>,
+    ) -> Self {
         MIRComptimeFunction {
             id,
             prototype,
@@ -25,19 +34,35 @@ impl MIRComptimeFunction {
         &self.prototype
     }
 
-    pub fn body(&self) -> &MIRBody {
-        &self.body
+    pub fn body(&self) -> Option<&MIRComptimeBody<'thir>> {
+        self.body.as_ref()
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct MIRComptimeContext {
+    pub expected_return_type: Option<MIRTypeID>,
+    pub expected_yield_type: Option<MIRTypeID>,
+}
+
+#[derive(Debug, Clone)]
 pub struct MIRComptimeFnPrototype {
     name: CXIdent,
     signature: MIRComptimeFnSignature,
+    context: MIRComptimeContext,
 }
 
 impl MIRComptimeFnPrototype {
-    pub fn new(name: CXIdent, signature: MIRComptimeFnSignature) -> Self {
-        Self { name, signature }
+    pub fn new(
+        name: CXIdent,
+        signature: MIRComptimeFnSignature,
+        context: MIRComptimeContext,
+    ) -> Self {
+        Self {
+            name,
+            signature,
+            context,
+        }
     }
 
     pub fn name(&self) -> &CXIdent {
@@ -47,20 +72,28 @@ impl MIRComptimeFnPrototype {
     pub fn signature(&self) -> &MIRComptimeFnSignature {
         &self.signature
     }
+
+    pub fn context(&self) -> MIRComptimeContext {
+        self.context
+    }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MIRComptimeFnSignature {
-    return_type: MIRTypeID,
+    return_type: MIRComptimeType,
     params: Vec<MIRComptimeFnParam>,
 }
 
 impl MIRComptimeFnSignature {
-    pub fn new(return_type: MIRTypeID, params: Vec<MIRComptimeFnParam>) -> Self {
-        Self { return_type, params }
+    pub fn new(return_type: MIRComptimeType, params: Vec<MIRComptimeFnParam>) -> Self {
+        Self {
+            return_type,
+            params,
+        }
     }
 
-    pub fn return_type(&self) -> MIRTypeID {
-        self.return_type
+    pub fn return_type(&self) -> &MIRComptimeType {
+        &self.return_type
     }
 
     pub fn params(&self) -> &[MIRComptimeFnParam] {
@@ -68,4 +101,8 @@ impl MIRComptimeFnSignature {
     }
 }
 
-pub struct MIRComptimeFnParam {}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MIRComptimeFnParam {
+    pub name: Option<CXIdent>,
+    pub ty: MIRComptimeType,
+}
