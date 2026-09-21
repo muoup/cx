@@ -10,19 +10,18 @@ use crate::{
 pub struct MIRComptimeFunction<'thir> {
     id: MIRFunctionID,
     prototype: MIRComptimeFnPrototype,
-    body: MIRComptimeBody<'thir>,
+    body: Option<MIRComptimeBody<'thir>>,
 }
 
 impl<'thir> MIRComptimeFunction<'thir> {
     pub fn new(
         id: MIRFunctionID,
         prototype: MIRComptimeFnPrototype,
-        body: MIRComptimeBody<'thir>,
     ) -> Self {
         MIRComptimeFunction {
             id,
             prototype,
-            body,
+            body: None,
         }
     }
 
@@ -36,6 +35,10 @@ impl<'thir> MIRComptimeFunction<'thir> {
 
     pub fn body(&self) -> Option<&MIRComptimeBody<'thir>> {
         self.body.as_ref()
+    }
+
+    pub fn set_body(&mut self, body: MIRComptimeBody<'thir>) {
+        self.body = Some(body);
     }
 }
 
