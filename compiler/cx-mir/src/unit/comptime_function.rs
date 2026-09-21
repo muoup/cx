@@ -3,7 +3,6 @@ use cx_util::identifier::CXIdent;
 use crate::{
     expr::comptime::MIRComptimeBody,
     ty::{MIRTypeID, comptime::MIRComptimeType},
-    unit::function::MIRFunctionID,
 };
 
 #[derive(Debug, Clone)]
@@ -18,10 +17,6 @@ impl<'thir> MIRComptimeFunction<'thir> {
             prototype,
             body: None,
         }
-    }
-
-    pub fn id(&self) -> MIRFunctionID {
-        self.id
     }
 
     pub fn prototype(&self) -> &MIRComptimeFnPrototype {

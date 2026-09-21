@@ -2,8 +2,8 @@ use crate::builder::MIRBuilder;
 use crate::lowering::{lower_expression, types::lower_type};
 use cx_log::CXResult;
 use cx_mir::{
-    MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID, MIRFunctionMode,
-    MIRGlobalID, MIRGlobalKind, MIRGlobalState, MIRInstrKind,
+    MIRComptimeFnSignature, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID,
+    MIRFunctionMode, MIRGlobalID, MIRGlobalKind, MIRGlobalState, MIRInstrKind,
 };
 use cx_mir_comptime::evaluate_comptime_function;
 use cx_thir::thir::{expression::THIRExpression, global::THIRGlobalVariable};
@@ -47,18 +47,15 @@ pub(crate) fn lower_global(
 
     let global_type = lower_type(builder, &global._type)?;
 
-    let signature = MIRFnSignature::new(
-        CXIdent::from(format!("__comptime_{}_init", global.name.as_str())),
-        Some(global.name.clone()),
-        Vec::<MIRFnParam>::new(),
-        global_type,
-        MIRFunctionMode::Comptime,
-        false,
-        true,
+    let signature = MIRComptimeFnSignature::new(MIRComptimeType::Standard(global_type), vec![]);
+    let prototype = MIRComptimeFnPrototype::new(
+        signature,
+        global.name.clone()
     );
+
     let init_id = builder
         .module_mut()
-        .declare_function(MIRFnPrototype::new(signature, LinkageMode::Static));
+        .declare_comptime_function(prototype);
     builder
         .module_mut()
         .begin_global_initializer(id, &init.token_range)?;
@@ -82,10 +79,6 @@ pub(crate) fn fulfill_init_request(
     }
 
     builder.finish_function()?;
-    builder.module_mut().set_global_state(
-        request.global_id,
-        MIRGlobalState::Initialized(MIRConstant::Undefined),
-    );
 
     Ok(())
 }
@@ -102,9 +95,11 @@ pub(crate) fn execute_request(
         .constant()
         .ok_or_else(|| todo!("Expected a constant result from global initializer"))?;
 
+    let intern_constant = builder.module_mut().intern_constant(result);
+
     builder
         .module_mut()
-        .set_global_state(request.global_id, MIRGlobalState::Initialized(result));
+        .set_global_state(request.global_id, MIRGlobalState::Initialized(intern_constant));
 
     Ok(())
 }

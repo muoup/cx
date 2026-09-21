@@ -1,17 +1,21 @@
 use cx_log::CXResult;
-use cx_mir::{MIRBasicBlockID, MIRFunction, MIRFunctionBody, MIRUnit};
+use cx_mir::{MIRBasicBlockID, MIRFunction, MIRUnit};
 
 use crate::{Pipeline, options::MIRAnalysisOptions};
 
 pub struct AnalysisEnvironment<'mir> {
-    unit: &'mir MIRUnit,
+    unit: &'mir MIRUnit<'mir>,
     function: &'mir MIRFunction,
 
     options: MIRAnalysisOptions,
 }
 
-impl AnalysisEnvironment<'_> {
-    pub fn new(unit: &MIRUnit, function: &MIRFunction, options: MIRAnalysisOptions) -> Self {
+impl<'mir> AnalysisEnvironment<'mir> {
+    pub fn new(
+        unit: &'mir MIRUnit,
+        function: &'mir MIRFunction,
+        options: MIRAnalysisOptions,
+    ) -> Self {
         Self {
             unit,
             function,
@@ -40,14 +44,9 @@ impl AnalysisEnvironment<'_> {
     }
 }
 
-fn run(
-    env: &AnalysisEnvironment<'_>,
-    pipeline: &mut Pipeline,
-) -> CXResult<()> {
-    let body = match env.function().body() {
-        Some(MIRFunctionBody::Runtime(body)) => body,
-
-        _ => return Ok(()),
+fn run(env: &AnalysisEnvironment<'_>, pipeline: &mut Pipeline) -> CXResult<()> {
+    let Some(body) = env.function().body() else {
+        unreachable!("Function body is missing for analysis");
     };
 
     let entry = body.entry().index();
@@ -63,7 +62,7 @@ fn run(
     loop {
         let instruction = body
             .block(MIRBasicBlockID(current_block))
-            .map(|b| b.instruction(current_instruction))
+            .and_then(|b| b.instruction(current_instruction))
             .unwrap();
 
         pipeline.analyze_instruction(env, instruction)?;
@@ -87,7 +86,7 @@ fn run(
                 == body
                     .block(MIRBasicBlockID(current_block))
                     .unwrap()
-                    .instrs()
+                    .instructions()
                     .len()
             {
                 break;

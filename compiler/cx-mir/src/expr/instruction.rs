@@ -12,18 +12,19 @@ dense_id!(MIRScopeID, "scope.");
 
 #[derive(Debug, Clone)]
 pub struct MIRBasicBlock<I = MIRInstruction> {
-    pub id: MIRBasicBlockID,
-    pub debug_name: Option<CXIdent>,
-    pub params: Vec<MIRRegisterID>,
-    pub instructions: Vec<I>,
+    id: MIRBasicBlockID,
+    debug_name: Option<CXIdent>,
+    params: Vec<MIRRegisterID>,
+    instructions: Vec<I>,
 }
 
 impl<I> MIRBasicBlock<I> {
-    pub fn new(id: MIRBasicBlockID) -> Self {
+    pub fn new(id: MIRBasicBlockID, debug_name: Option<CXIdent>) -> Self {
         Self {
             id,
+            debug_name,
+
             params: Vec::new(),
-            debug_name: None,
             instructions: Vec::new(),
         }
     }
@@ -33,13 +34,40 @@ impl<I> MIRBasicBlock<I> {
         self.instructions.last_mut().unwrap()
     }
 
-    pub fn terminator(&self) -> Option<&I>
-    where
-        I: MIRInstructionLike,
-    {
-        self.instructions
-            .last()
-            .filter(|instr| instr.is_terminator())
+    pub fn id(&self) -> MIRBasicBlockID {
+        self.id
+    }
+
+    pub fn debug_name(&self) -> Option<&CXIdent> {
+        self.debug_name.as_ref()
+    }
+
+    pub fn params(&self) -> &[MIRRegisterID] {
+        &self.params
+    }
+
+    pub fn param(&self, index: usize) -> Option<&MIRRegisterID> {
+        self.params.get(index)
+    }
+
+    pub fn push_param(&mut self, param: MIRRegisterID) {
+        self.params.push(param);
+    }
+
+    pub fn instructions(&self) -> &[I] {
+        &self.instructions
+    }
+
+    pub fn instruction(&self, index: usize) -> Option<&I> {
+        self.instructions.get(index)
+    }
+
+    pub fn last_instruction(&self) -> Option<&I> {
+        self.instructions.last()
+    }
+
+    pub fn push_instruction(&mut self, instr: I) {
+        self.instructions.push(instr);
     }
 }
 

@@ -1,12 +1,11 @@
 mod calls;
-pub(crate) mod comptime;
 mod control_flow;
 mod memory;
 mod operators;
 mod staged;
 
 pub(crate) mod aggregates;
-pub(crate) mod capture;
+pub(crate) mod comptime;
 pub(crate) mod globals;
 pub(crate) mod types;
 
@@ -27,7 +26,7 @@ use cx_thir::{
 
 use crate::{
     builder::{MIRBuilder, integer_type},
-    lowering::{operators::lower_coercion, types::lower_type},
+    lowering::{memory::allocate_variable, operators::lower_coercion, types::lower_type},
 };
 use crate::{
     log::{log_mir_error, mir_error},
@@ -167,32 +166,37 @@ pub(crate) fn lower_expression(
             THIRExpressionKind::BoolLiteral(value) => MIRValue::Constant(MIRConstant::Integer {
                 value: *value as i128,
                 ty: MIRIntType::I1,
-                signed: false,
             }),
+
             THIRExpressionKind::IntLiteral(value) => {
-                let (ty, signed) = integer_type(&expression._type);
+                let ty = match &expression._type.kind {
+                    THIRTypeKind::Integer { _type, .. } => lower_int_type(_type),
+                    _ => unreachable!("IntLiteral expression has non-integer type"),
+                };
+
                 MIRValue::Constant(MIRConstant::Integer {
                     value: *value as i128,
                     ty,
-                    signed,
                 })
             }
+
             THIRExpressionKind::FloatLiteral(value) => {
                 let ty = match expression._type.kind {
                     THIRTypeKind::Float { _type } => lower_float_type(_type),
-                    _ => cx_mir::MIRFloatType::F64,
+                    _ => unreachable!("FloatLiteral expression has non-float type"),
                 };
+
                 MIRValue::Constant(MIRConstant::Float { value: *value, ty })
             }
+
             THIRExpressionKind::StringLiteral { value } => {
                 if builder.types().find_kind(&MIRTypeKind::Str).is_none() {
                     builder
                         .types_mut()
                         .intern(cx_mir::MIRType::new(MIRTypeKind::Str, None));
                 }
-                MIRValue::Reference(MIRTarget::Global(
-                    builder.module_mut().add_string_literal(value.as_str())?,
-                ))
+
+                MIRValue::Constant(MIRConstant::String(value.clone()))
             }
             THIRExpressionKind::Unit => MIRValue::Constant(MIRConstant::Unit),
             THIRExpressionKind::SizeOf { _type } | THIRExpressionKind::AlignOf { _type } => {
@@ -204,6 +208,7 @@ pub(crate) fn lower_expression(
                             cx_log::error::context::from_token_range(&expression.token_range),
                         )
                     })?;
+
                 MIRValue::Constant(MIRConstant::Integer {
                     value: if matches!(&expression.kind, THIRExpressionKind::SizeOf { .. }) {
                         layout.size as i128
@@ -211,12 +216,10 @@ pub(crate) fn lower_expression(
                         layout.alignment as i128
                     },
                     ty: MIRIntType::I64,
-                    signed: false,
                 })
             }
 
-            THIRExpressionKind::Variable { local_id, .. }
-            | THIRExpressionKind::StagedReference { local_id, .. } => {
+            THIRExpressionKind::Variable { local_id, .. } => {
                 let value = builder
                     .local_value(*local_id, &expression._type)?
                     .ok_or_else(|| {
@@ -380,65 +383,58 @@ pub(crate) fn lower_expression(
                 local_id,
                 _type,
                 initial_value,
-                adopting,
             } => {
                 let initial_value = initial_value
                     .as_deref()
                     .map(|value| lower_expression(builder, value))
                     .transpose()?;
 
-                if *adopting {
-                    let initial_value = initial_value
-                        .expect("adopting local variable is missing its initial value");
-                    match initial_value {
-                        MIRValue::Reference(target) => {
-                            builder
-                                .fun_mut()
-                                .bind_local(*local_id, MIRValue::Reference(target));
-                            builder
-                                .fun_mut()
-                                .bind_named_value(name, MIRValue::Reference(target));
-                            MIRValue::Reference(target)
-                        }
-                        value => {
-                            let place = memory::assign_operand_to_place(
-                                builder,
-                                value,
-                                _type,
-                                Some(name.clone()),
-                            )?;
-                            builder.fun_mut().bind_local(
-                                *local_id,
-                                MIRValue::Reference(cx_mir::MIRTarget::Place(place)),
-                            );
-                            builder.fun_mut().bind_named_value(
-                                name,
-                                MIRValue::Reference(cx_mir::MIRTarget::Place(place)),
-                            );
-                            MIRValue::Reference(cx_mir::MIRTarget::Place(place))
-                        }
+                let type_id = lower_type(builder, _type)?;
+                let place = builder.create(type_id, Some(name.clone()), _type.is_nodrop());
+
+                MIRValue::PlaceRef(allocate_variable(
+                    builder,
+                    Some(name.clone()),
+                    _type,
+                    initial_value,
+                )?)
+            }
+
+            THIRExpressionKind::AdoptRegion {
+                binding_name,
+                local_id,
+                _type,
+                initial_value,
+            } => {
+                let initial_value = lower_expression(builder, initial_value)?;
+
+                match initial_value {
+                    MIRValue::Reference(target) => {
+                        builder
+                            .fun_mut()
+                            .bind_local(*local_id, MIRValue::Reference(target));
+                        builder
+                            .fun_mut()
+                            .bind_named_value(name, MIRValue::Reference(target));
+                        MIRValue::Reference(target)
                     }
-                } else {
-                    let type_id = lower_type(builder, _type)?;
-                    let place = builder.create(type_id, Some(name.clone()), _type.is_nodrop());
-                    if let Some(value) = initial_value {
-                        builder.emit(MIRInstrKind::Store {
-                            target: MIRTarget::Place(place),
+                    value => {
+                        let place = memory::assign_operand_to_place(
+                            builder,
                             value,
-                            ty: type_id,
-                        });
-                    } else {
-                        builder.emit(MIRInstrKind::Initialize { place });
+                            _type,
+                            Some(name.clone()),
+                        )?;
+                        builder.fun_mut().bind_local(
+                            *local_id,
+                            MIRValue::Reference(cx_mir::MIRTarget::Place(place)),
+                        );
+                        builder.fun_mut().bind_named_value(
+                            name,
+                            MIRValue::Reference(cx_mir::MIRTarget::Place(place)),
+                        );
+                        MIRValue::Reference(cx_mir::MIRTarget::Place(place))
                     }
-                    builder.fun_mut().bind_local(
-                        *local_id,
-                        MIRValue::Reference(cx_mir::MIRTarget::Place(place)),
-                    );
-                    builder.fun_mut().bind_named_value(
-                        name,
-                        MIRValue::Reference(cx_mir::MIRTarget::Place(place)),
-                    );
-                    MIRValue::Reference(cx_mir::MIRTarget::Place(place))
                 }
             }
 

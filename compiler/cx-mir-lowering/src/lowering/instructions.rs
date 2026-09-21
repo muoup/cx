@@ -6,30 +6,18 @@ use cx_lmir::{
     LMIRParameterABI, LMIRPtrBinOp, LMIRReturnABI, LMIRValue, LinkageType,
 };
 use cx_mir::ty::interface::MTRegistry;
-use cx_mir::ty::layout::tagged_union_tag_offset;
 use cx_mir::{
-    MIRAggregateOp, MIRBinaryOp, MIRCoercion, MIRConstant, MIRFloatBinaryOp, MIRFnParam, MIRFnSignature, MIRFunctionMode, MIRFunctionType, MIRInstrKind, MIRInstruction, MIRIntBinaryOp, MIRIntType, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister, MIRTarget, MIRTypeID, MIRTypeKind, MIRUnaryOp, MIRValue, MIRValueAggregateOp,
+    MIRConstant, MIRFnParam, MIRFnSignature, MIRFunctionType, MIRInstrKind, MIRInstruction,
+    MIRIntBinaryOp, MIRIntType, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister, MIRTarget,
+    MIRTypeID, MIRTypeKind, MIRUnaryOp, MIRValue, MIRValueAggregateOp,
 };
 use cx_util::identifier::CXIdent;
 
 use crate::context::{LMIRFunctionContext, PlaceBinding};
-use crate::lowering::memory;
 
-use super::memory::{
-    address, binding_for_target, binding_type, field_binding, is_address_valued, load_binding,
-    load_discriminant, lower_target, lower_value, store_address, store_binding, unreachable_target,
-    value_as_binding,
-};
-use super::output::{
-    allocate_temp, int_constant, integer_kind,
-    lowered_type, mir_layout, offset_address, place_decl_type, register_decl_type, register_value,
-};
 use super::typing::{classify_signature, convert_float_type, convert_integer_type};
 
-fn call_signature(
-    context: &LMIRFunctionContext<'_>,
-    callee: &MIRValue,
-) -> LMIRFunctionSignature {
+fn call_signature(context: &LMIRFunctionContext<'_>, callee: &MIRValue) -> LMIRFunctionSignature {
     if let MIRValue::Constant(MIRConstant::Function(id)) = callee {
         let name = context
             .unit()
@@ -43,14 +31,15 @@ fn call_signature(
     }
     let ty = value_type(context, callee).expect("indirect callee has no type");
     let signature = callable_type(context, ty).expect("indirect callee is not callable");
+
     let mir_signature = MIRFnSignature {
         params: signature
-            .params
+            .params()
             .iter()
             .copied()
             .map(MIRFnParam::new)
             .collect(),
-        
+
         return_type: signature.return_type,
         variadic: signature.variadic,
         safe: false,
@@ -163,12 +152,12 @@ pub(super) fn lower_instruction(
             let value = memory::copy_target(context, *source, *ty);
             emit_to(context, *out, LMIRInstructionKind::Alias { value });
         }
-        
+
         MIRInstrKind::Store { target, value, ty } => {
             let value = lower_value(context, value);
             store_binding(context, binding_for_target(context, *target), value, *ty);
         }
-        
+
         MIRInstrKind::AggregateOp(operation) => lower_aggregate(context, operation),
         MIRInstrKind::Call { out, callee, args } => lower_call(context, *out, callee, args),
         MIRInstrKind::Intrinsic(cx_mir::MIRIntrinsic::VaStart { list, last }) => {

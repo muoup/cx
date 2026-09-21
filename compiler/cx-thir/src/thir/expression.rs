@@ -95,11 +95,6 @@ pub enum THIRExpressionKind {
         local_id: THIRLocalID,
     },
 
-    StagedReference {
-        name: CXIdent,
-        local_id: THIRLocalID,
-    },
-
     ContractVariable {
         name: CXIdent,
         force_param: bool,
@@ -133,7 +128,12 @@ pub enum THIRExpressionKind {
         local_id: THIRLocalID,
         _type: THIRType,
         initial_value: Option<Box<THIRExpression>>,
-        adopting: bool,
+    },
+    AdoptRegion {
+        binding_name: CXIdent,
+        local_id: THIRLocalID,
+        _type: THIRType,
+        initial_value: Box<THIRExpression>,
     },
     Copy {
         source: Box<THIRExpression>,

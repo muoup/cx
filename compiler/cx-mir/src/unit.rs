@@ -7,7 +7,7 @@ pub mod comptime_function;
 pub mod function;
 
 use crate::{
-    constant::{MIRConstantID, MIRConstantPool},
+    constant::{MIRConstantID, MIRStagedExprPool},
     expr::instruction::MIRScopeID,
     ty::{MIRTypeID, registry::MIRTypeRegistry},
     unit::comptime_function::MIRComptimeFunction,
@@ -27,7 +27,7 @@ pub enum MIRGlobalState {
 
 #[derive(Debug, Clone)]
 pub struct MIRUnit<'thir> {
-    constants: MIRConstantPool<'thir>,
+    staged_expr_pool: MIRStagedExprPool<'thir>,
     types: MIRTypeRegistry,
 
     functions: HashMap<MIRFunctionID, MIRFunction>,
@@ -42,7 +42,7 @@ impl<'thir> MIRUnit<'thir> {
         types: MIRTypeRegistry,
         functions: HashMap<MIRFunctionID, MIRFunction>,
         comptime_functions: HashMap<MIRFunctionID, MIRComptimeFunction<'thir>>,
-        constants: MIRConstantPool<'thir>,
+        staged_expr_pool: MIRStagedExprPool<'thir>,
         globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
         global_order: Vec<MIRGlobalID>,
     ) -> Self {
@@ -50,7 +50,7 @@ impl<'thir> MIRUnit<'thir> {
             types,
             functions,
             comptime_functions,
-            constants,
+            staged_expr_pool,
             globals,
             global_order,
         }
@@ -68,8 +68,8 @@ impl<'thir> MIRUnit<'thir> {
         self.comptime_functions.values()
     }
 
-    pub fn constants(&self) -> &MIRConstantPool<'thir> {
-        &self.constants
+    pub fn constants(&self) -> &MIRStagedExprPool<'thir> {
+        &self.staged_expr_pool
     }
 
     pub fn globals(&self) -> impl ExactSizeIterator<Item = &MIRGlobalVariable> {

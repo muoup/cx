@@ -11,7 +11,11 @@ mod log;
 mod options;
 mod passes;
 
-pub fn analyze(unit: &MIRUnit, options: MIRAnalysisOptions) -> CXResult<()> {
-    AnalysisEnvironment::new(unit, options)
-        .analyze(unit)
+pub fn analyze<'mir>(unit: &MIRUnit<'mir>, options: MIRAnalysisOptions) -> CXResult<()> {
+    for function in unit.functions() {
+        AnalysisEnvironment::new(unit, function, options.clone())
+            .analyze()?;
+    }
+
+    Ok(())
 }

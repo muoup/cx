@@ -1,4 +1,6 @@
-use crate::{framework::pipeline::Pipeline, options::MIRAnalysisOptions, passes::{ownership::Ownership, value::ValueTracking}};
+use crate::{
+    framework::pipeline::Pipeline, options::MIRAnalysisOptions, passes::ownership::Ownership,
+};
 
 mod ownership;
 mod value;

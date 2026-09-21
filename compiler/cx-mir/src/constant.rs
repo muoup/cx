@@ -1,10 +1,10 @@
 use cx_util::{dense_id, unsafe_float::FloatWrapper};
 
 use crate::{
+    MIRPlaceID, MIRRegister,
     staged::MIRStagedExpression,
     ty::{MIRFloatType, MIRIntType, MIRTypeID},
     unit::{MIRGlobalID, function::MIRFunctionID},
-    value::MIRValue,
 };
 
 dense_id!(MIRConstantID, "%c");
@@ -36,40 +36,31 @@ pub enum MIRConstant {
     },
     Function(MIRFunctionID),
     Staged(MIRStagedID),
-    RuntimeValue(MIRValue),
+    RuntimeValue(MIRRuntimeConstant),
     Undefined,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MIRRuntimeConstant {
+    Register(MIRRegister),
+    Place(MIRPlaceID),
+}
+
 #[derive(Debug, Clone, Default)]
-pub struct MIRConstantPool<'thir> {
-    constants: Vec<MIRConstant>,
+pub struct MIRStagedExprPool<'thir> {
     staged_expressions: Vec<MIRStagedExpression<'thir>>,
 }
 
-impl<'thir> MIRConstantPool<'thir> {
+impl<'thir> MIRStagedExprPool<'thir> {
     pub fn new() -> Self {
         Self {
-            constants: Vec::new(),
             staged_expressions: Vec::new(),
         }
-    }
-
-    pub fn add_constant(&mut self, constant: MIRConstant) -> MIRConstantID {
-        self.constants.push(constant);
-        MIRConstantID::new(self.constants.len() - 1)
     }
 
     pub fn add_staged_expression(&mut self, expr: MIRStagedExpression<'thir>) -> MIRStagedID {
         self.staged_expressions.push(expr);
         MIRStagedID::new(self.staged_expressions.len() - 1)
-    }
-
-    pub fn constants(&self) -> &[MIRConstant] {
-        &self.constants
-    }
-
-    pub fn constant(&self, id: MIRConstantID) -> Option<&MIRConstant> {
-        self.constants.get(id.index())
     }
 
     pub fn staged_expressions(&self) -> &[MIRStagedExpression<'thir>] {

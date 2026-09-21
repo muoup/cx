@@ -533,8 +533,7 @@ fn execute_aggregate_op(
                     match ops::variant_discriminant(&value) {
                         Some(discriminant) => MIRConstant::Integer {
                             value: discriminant as i128,
-                            ty: MIRIntType::I64,
-                            signed: false,
+                            ty: MIRIntType::I64
                         },
                         None => MIRConstant::Undefined,
                     }

@@ -1,4 +1,4 @@
-use cx_util::{dense_id, identifier::CXIdent};
+use cx_util::{dense_id, identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{expr::body::MIRBody, ty::MIRTypeID};
 
@@ -105,7 +105,8 @@ impl MIRFnSignature {
 #[derive(Debug, Clone)]
 pub struct MIRFnPrototype {
     pub signature: MIRFnSignature,
-
+    pub linkage: LinkageMode,
+    
     pub symbol_name: CXIdent,
     pub debug_name: Option<CXIdent>,
 }
@@ -113,11 +114,13 @@ pub struct MIRFnPrototype {
 impl MIRFnPrototype {
     pub fn new(
         signature: MIRFnSignature,
+        linkage: LinkageMode,
         symbol_name: CXIdent,
         debug_name: Option<CXIdent>,
     ) -> Self {
         Self {
             signature,
+            linkage,
             symbol_name,
             debug_name,
         }

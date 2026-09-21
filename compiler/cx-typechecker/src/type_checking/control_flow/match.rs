@@ -201,12 +201,11 @@ pub fn typecheck_match(
                         let binding = THIRExpression {
                             token_range: TokenRange::internal(),
                             _type: env.symbols.mem_ref_to(variant_type.clone()),
-                            kind: THIRExpressionKind::CreateLocalVariable {
-                                name: inner_name.clone(),
+                            kind: THIRExpressionKind::AdoptRegion {
+                                binding_name: inner_name.clone(),
                                 local_id,
                                 _type: variant_type.clone(),
-                                initial_value: Some(Box::new(variant)),
-                                adopting: true,
+                                initial_value: Box::new(variant),
                             },
                         };
                         THIRExpression {

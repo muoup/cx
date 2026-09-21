@@ -37,14 +37,15 @@ impl<I> MIRBody<I> {
 
     pub fn add_block(&mut self) -> MIRBasicBlockID {
         let id = MIRBasicBlockID::new(self.blocks.len());
-        self.blocks.push(MIRBasicBlock::new(id));
+
+        self.blocks.push(MIRBasicBlock::new(id, None));
         id
     }
 
     pub fn add_block_named(&mut self, debug_name: impl Into<CXIdent>) -> MIRBasicBlockID {
         let id = MIRBasicBlockID::new(self.blocks.len());
-        let mut block = MIRBasicBlock::new(id);
-        block.debug_name = Some(debug_name.into());
+        let block = MIRBasicBlock::new(id, Some(debug_name.into()));
+
         self.blocks.push(block);
         id
     }
@@ -58,16 +59,14 @@ impl<I> MIRBody<I> {
         let register = self.add_register(ty, debug_name);
         self.block_mut(block)
             .expect("block param added to unknown block")
-            .params
-            .push(register);
+            .push_param(register);
         register
     }
 
     pub fn push_instr_at(&mut self, block: MIRBasicBlockID, instr: I) {
         self.block_mut(block)
             .expect("instruction pushed to unknown block")
-            .instructions
-            .push(instr);
+            .push_instruction(instr);
     }
 
     pub fn blocks(&self) -> &[MIRBasicBlock<I>] {

@@ -61,9 +61,12 @@ pub(super) fn lower_call(
                 targets,
             });
 
-            return Ok(out
-                .map(MIRValue::Register)
-                .unwrap_or(MIRValue::Constant(MIRConstant::Unit)));
+            return match out {
+                Some(out) => Ok(MIRValue::Register(out)),
+                None => Ok(MIRValue::Constant(
+                    builder.module_mut().intern_constant(MIRConstant::Unit),
+                )),
+            };
         }
 
         THIRExpressionKind::FunctionReference { name, .. }
@@ -200,7 +203,7 @@ fn lower_comptime_call(
         };
         builder.emit(MIRComptimeOp::Call {
             out,
-            callee: MIRValue::Constant(MIRConstant::Function(function)),
+            callee: function,
             args,
         });
         if builder.is_capturing() && signature.return_staged_params.is_some() {
@@ -212,13 +215,17 @@ fn lower_comptime_call(
                 });
             }
         }
-        return Ok(out
-            .map(MIRValue::Register)
-            .unwrap_or(MIRValue::Constant(MIRConstant::Unit)));
+
+        return match out {
+            Some(out) => Ok(MIRValue::Register(out)),
+            None => Ok(MIRValue::Constant(
+                builder.module_mut().intern_constant(MIRConstant::Unit),
+            )),
+        };
     }
 
     let mut args = Vec::with_capacity(arguments.len());
-    for (argument, parameter) in arguments.iter().zip(&signature.params) {
+    for (argument, parameter) in arguments.iter().zip(&signature.params()) {
         if parameter.staged_params.is_some() {
             let (template, captures) =
                 capture_staged_argument(builder, argument, parameter.staged_diverges)?;

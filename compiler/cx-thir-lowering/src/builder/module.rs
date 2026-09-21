@@ -2,8 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
-    MIRFnPrototype, MIRFunction, MIRFunctionBody, MIRFunctionID, MIRGlobalID, MIRGlobalState,
-    MIRGlobalVariable, global::MIRGlobalKind,
+    MIRComptimeFnPrototype, MIRComptimeFunction, MIRConstant, MIRConstantID, MIRFnPrototype, MIRFunction, MIRFunctionBody, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, global::MIRGlobalKind,
 };
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
@@ -42,8 +41,9 @@ impl<T: Clone> ModuleSymbol<T> {
 
 pub(crate) struct MIRModuleBuilder {
     functions: HashMap<MIRFunctionID, MIRFunction>,
+    comptime_functions: HashMap<MIRFunctionID, MIRComptimeFunction>,
     globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
-
+    
     function_symbols: HashMap<String, ModuleSymbol<MIRFunctionID>>,
     global_symbols: HashMap<String, ModuleSymbol<MIRGlobalID>>,
 
@@ -57,8 +57,11 @@ pub(crate) struct MIRModuleBuilder {
 
 pub(crate) struct ModuleParts {
     pub functions: HashMap<MIRFunctionID, MIRFunction>,
+    pub comptime_functions: HashMap<MIRFunctionID, MIRFunctionBody>,
+    
     pub globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
     pub global_order: Vec<MIRGlobalID>,
+    
     pub used_functions: HashSet<MIRFunctionID>,
     pub used_globals: HashSet<MIRGlobalID>,
 }
@@ -67,6 +70,7 @@ impl MIRModuleBuilder {
     pub(crate) fn new() -> Self {
         Self {
             functions: HashMap::new(),
+            comptime_functions: HashMap::new(),
             globals: HashMap::new(),
             function_symbols: HashMap::new(),
             global_symbols: HashMap::new(),
@@ -88,7 +92,23 @@ impl MIRModuleBuilder {
         let id = MIRFunctionID::new(self.next_function_id);
         self.next_function_id += 1;
         self.functions
-            .insert(id, MIRFunction::new(id, prototype, None));
+            .insert(id, MIRFunction::new(prototype, None));
+        self.function_symbols.insert(name, ModuleSymbol::new(id));
+        id
+    }
+
+    pub(crate) fn declare_comptime_function(
+        &mut self,
+        prototype: MIRComptimeFnPrototype,
+    ) -> MIRFunctionID {
+        let name = prototype.signature().symbol_name.as_string();
+        if let Some(symbol) = self.function_symbols.get(&name) {
+            return symbol.id();
+        }
+
+        let id = MIRFunctionID::new(self.next_function_id);
+        self.next_function_id += 1;
+        self.comptime_functions.insert(id, MIRComptimeFunction::new(prototype));
         self.function_symbols.insert(name, ModuleSymbol::new(id));
         id
     }
@@ -151,7 +171,7 @@ impl MIRModuleBuilder {
             .globals
             .get_mut(&id)
             .expect("global symbol points to a missing global");
-        let name = global.name.clone();
+        let name = global.name().clone();
         
         let MIRGlobalKind::Variable { state, .. } = &mut global.kind else {
             return Err(mir_error(
@@ -214,6 +234,7 @@ impl MIRModuleBuilder {
                 .map(|symbol| symbol.id())
                 .collect(),
             functions: self.functions,
+            comptime_functions: self.comptime_functions,
             globals: self.globals,
             global_order: self.global_order,
         }

@@ -12,7 +12,7 @@ pub enum MIRValue {
     Register(MIRRegisterID),
     PlaceRef(MIRPlaceID),
     Global(MIRGlobalID),
-    Constant(MIRConstantID),
+    Constant(MIRConstant),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

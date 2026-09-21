@@ -3,9 +3,7 @@ use std::{collections::HashMap, rc::Rc};
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::visit::MIRWalk;
 use cx_mir::{
-    MIRBasicBlock, MIRBasicBlockID, MIRFnPrototype, MIRFunction, MIRFunctionBody, MIRFunctionID,
-    MIRFunctionMode, MIRInstruction, MIRPlaceID, MIRRegister, MIRScopeID, MIRStagedBody,
-    MIRStagedCapture, MIRStagedExitKind, MIRStagedInstrKind, MIRTypeID, MIRValue,
+    MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionBody, MIRFunctionID, MIRFunctionMode, MIRInstruction, MIRPlaceID, MIRRegister, MIRScopeID, MIRStagedBody, MIRStagedCapture, MIRStagedExitKind, MIRStagedInstrKind, MIRTypeID, MIRValue,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
 use cx_tokens::TokenRange;
@@ -22,36 +20,33 @@ pub(crate) struct CaptureContext {
 }
 
 #[derive(Debug)]
-pub(crate) struct MIRFunctionBuilder {
+pub(crate) struct MIRFunctionBuilder<Body> {
     id: MIRFunctionID,
     prototype: MIRFnPrototype,
-    mode: MIRFunctionMode,
     source_range: TokenRange,
 
-    body: MIRStagedBody,
+    body: Body,
     current_block: MIRBasicBlockID,
 
     local_values: HashMap<THIRLocalID, MIRValue>,
     labels: HashMap<String, MIRBasicBlockID>,
 
     scope_stack: Vec<ScopeContext>,
-    
-    pub(crate) outer_return_type: Option<MIRTypeID>,
-    pub(crate) outer_yield_type: Option<MIRTypeID>,
-    pub(crate) capture: Option<CaptureContext>,
 }
 
 #[derive(Debug)]
 pub(crate) struct ScopeContext {
     id: MIRScopeID,
 
-    pub(crate) yield_target: Option<MIRBasicBlockID>,
-
-    pub(crate) break_target: Option<MIRBasicBlockID>,
-    pub(crate) continue_target: Option<MIRBasicBlockID>,
+    yield_target: Option<MIRBasicBlockID>,
+    break_target: Option<MIRBasicBlockID>,
+    continue_target: Option<MIRBasicBlockID>,
 
     named_values: HashMap<String, MIRValue>,
-    pub(crate) defered_expressions: Vec<Rc<THIRExpression>>,
+
+    // Rc, not Arc because we guarantee that a module is compiled single-threaded, parallelism is only applied at the scheduling
+    // level, not at the compilation level
+    defered_expressions: Vec<Rc<THIRExpression>>,
 }
 
 impl ScopeContext {
@@ -98,10 +93,7 @@ impl MIRFunctionBuilder {
 
         Self {
             id: func.id(),
-            mode: func.mode(),
             prototype: func.prototype().clone(),
-            outer_return_type: parent.and_then(|parent| parent.outer_return_type),
-            outer_yield_type: parent.and_then(|parent| parent.outer_yield_type),
             source_range: parent
                 .map(|parent| parent.source_range.clone())
                 .unwrap_or_else(TokenRange::internal),
@@ -110,7 +102,6 @@ impl MIRFunctionBuilder {
 
             local_values: HashMap::new(),
             labels: HashMap::new(),
-            capture: None,
 
             scope_stack: vec![ScopeContext::new(root_scope)],
 
@@ -118,38 +109,7 @@ impl MIRFunctionBuilder {
         }
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn finish(self) -> CXResult<MIRFunction> {
-        assert!(
-            self.scope_stack.len() == 1,
-            "scope stack is unbalanced at function end"
-        );
-
-        let body = match self.mode {
-            MIRFunctionMode::Runtime | MIRFunctionMode::Constexpr => match self.body.into_runtime()
-            {
-                Ok(body) => MIRFunctionBody::Runtime(body),
-                Err(instruction) => {
-                    return Err(mir_error(
-                        &instruction.token_range,
-                        (&catalogue::UNEXPANDED_STAGED, ()),
-                    ));
-                }
-            },
-            MIRFunctionMode::Comptime => match self.body.into_comptime() {
-                Ok(body) => MIRFunctionBody::Comptime(body),
-                Err(instruction) => {
-                    return Err(mir_error(
-                        &instruction.token_range,
-                        (&catalogue::UNEXPANDED_STAGED, ()),
-                    ));
-                }
-            },
-        };
-        Ok(MIRFunction::new(self.id, self.prototype, Some(body)))
-    }
-
-    pub(crate) fn concise_finish(self) -> (MIRFunctionID, MIRStagedBody) {
+    pub(crate) fn thin_finish(self) -> (MIRFunctionID, Body) {
         (self.id, self.body)
     }
 
@@ -173,15 +133,11 @@ impl MIRFunctionBuilder {
         &self.prototype
     }
 
-    pub fn mode(&self) -> MIRFunctionMode {
-        self.mode
-    }
-
-    pub fn body(&self) -> &MIRStagedBody {
+    pub fn body(&self) -> &Body {
         &self.body
     }
 
-    pub fn body_mut(&mut self) -> &mut MIRStagedBody {
+    pub fn body_mut(&mut self) -> &mut Body {
         &mut self.body
     }
 
@@ -209,41 +165,6 @@ impl MIRFunctionBuilder {
             "selected block does not belong to the active function"
         );
         self.current_block = block;
-    }
-
-    #[allow(dead_code)]
-    pub fn block_terminated(&self, block: MIRBasicBlockID) -> bool {
-        self.body
-            .block(block)
-            .expect("selected block does not exist")
-            .instrs
-            .last()
-            .is_some_and(|instr| instr.is_terminator())
-    }
-
-    pub fn current_block_reachable(&self) -> bool {
-        let mut pending = vec![self.body.entry()];
-        let mut visited = std::collections::HashSet::new();
-        while let Some(block) = pending.pop() {
-            if block == self.current_block {
-                return true;
-            }
-            if visited.insert(block) {
-                if let Some(block) = self.body.block(block) {
-                    pending.extend(block.instrs.iter().flat_map(|instruction| {
-                        instruction.successors().map(|target| target.block)
-                    }));
-                }
-            }
-        }
-        false
-    }
-
-    pub fn current_block_terminated(&self) -> bool {
-        self.active_block()
-            .instrs
-            .last()
-            .is_some_and(|instr| instr.is_terminator())
     }
 
     pub fn set_yield_recipient(&mut self, target: MIRBasicBlockID, ty: MIRTypeID) -> MIRRegister {

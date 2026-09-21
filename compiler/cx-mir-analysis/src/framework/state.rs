@@ -32,24 +32,20 @@ impl<T: Mergeable> LatticeState<T> {
         other: &LatticeState<T>,
         place: MIRPlaceID,
     ) -> CXResult<()> {
-        match (self, other) {
-            (LatticeState::Bottom, LatticeState::Bottom) => {}
-            (LatticeState::Bottom, LatticeState::Known(value)) => {
-                *self = LatticeState::Known(value.clone());
+        let old_value = std::mem::replace(self, LatticeState::Bottom);
+        *self = match (old_value, other) {
+            (LatticeState::Bottom, LatticeState::Bottom) => LatticeState::Bottom,
+            (LatticeState::Top, _) => LatticeState::Top,
+
+            (LatticeState::Bottom | LatticeState::Known(_), LatticeState::Top) => LatticeState::Top,
+
+            (LatticeState::Bottom, known @ LatticeState::Known(_)) => known.clone(),
+            (known @ LatticeState::Known(_), LatticeState::Bottom) => known.clone(),
+
+            (LatticeState::Known(mut value), LatticeState::Known(other_value)) => {
+                value.merge(context, other_value, place)?
             }
-            (LatticeState::Bottom, LatticeState::Top) => {
-                *self = LatticeState::Top;
-            }
-            (LatticeState::Known(value), LatticeState::Bottom) => {}
-            (LatticeState::Known(value), LatticeState::Known(other_value)) => {
-                let merged = value.merge(context, other_value, place)?;
-                *self = merged;
-            }
-            (LatticeState::Known(_), LatticeState::Top) => {
-                *self = LatticeState::Top;
-            }
-            (LatticeState::Top, _) => {}
-        }
+        };
 
         Ok(())
     }
@@ -65,7 +61,11 @@ pub struct StateTable<State: Mergeable> {
 
 impl<State: Clone + Mergeable> StateTable<State> {
     pub fn new() -> Self {
-        Self
+        Self {
+            snapshots: HashMap::new(),
+            places: Vec::new(),
+            place_map: HashMap::new(),
+        }
     }
 
     pub fn reload_block(&mut self, block: MIRBasicBlockID) {
@@ -119,5 +119,15 @@ impl<State: Clone + Mergeable> StateTable<State> {
         });
 
         &mut self.places[*index].1
+    }
+
+    pub fn set(&mut self, block: MIRPlaceID, state: LatticeState<State>) {
+        let index = self.place_map.entry(block).or_insert_with(|| {
+            let index = self.places.len();
+            self.places.push((block, LatticeState::Bottom));
+            index
+        });
+
+        self.places[*index].1 = state;
     }
 }

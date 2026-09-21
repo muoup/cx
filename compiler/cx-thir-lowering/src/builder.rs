@@ -5,11 +5,11 @@ use std::{
 
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
-    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionBody, MIRFunctionID,
-    MIRFunctionMode, MIRGlobalID, MIRGlobalVariable, MIRInstrKind, MIRLayoutError, MIRPlaceID,
-    MIRStagedCapture, MIRStagedTemplate, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRUnit,
-    MIRValue,
-    ty::{interface::MTRegistry, registry::MIRTypeRegistry},
+    MIRComptimeFnPrototype, MIRComptimeFnSignature, MIRFnParam, MIRFnPrototype, MIRFnSignature,
+    MIRFunction, MIRFunctionBody, MIRFunctionID, MIRFunctionMode, MIRGlobalID, MIRGlobalVariable,
+    MIRInstrKind, MIRLayoutError, MIRPlaceID, MIRStagedCapture, MIRStagedTemplate, MIRType,
+    MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRUnit, MIRValue,
+    ty::{comptime::MIRComptimeType, interface::MTRegistry, registry::MIRTypeRegistry},
 };
 use cx_mir_comptime::ComptimeContext;
 use cx_target::ArchitectureConfig;
@@ -208,20 +208,26 @@ impl<'thir> MIRBuilder<'thir> {
         let functions: HashMap<_, _> = parts
             .functions
             .into_iter()
-            .filter(|(_, function)| {
+            .filter(|(id, function)| {
                 let linkage = function.prototype().linkage;
                 let mode = function.mode();
                 mode == MIRFunctionMode::Comptime
                     || linkage != LinkageMode::Static
-                    || parts.used_functions.contains(&function.id())
+                    || parts.used_functions.contains(id)
             })
+            .collect();
+
+        let comp_functions = parts
+            .comptime_functions
+            .into_iter()
+            .filter(|(id, _)| parts.used_functions.contains(&function.id()))
             .collect();
 
         let globals: HashMap<_, _> = parts
             .globals
             .into_iter()
             .filter(|(id, global)| {
-                global.linkage != LinkageMode::Static || parts.used_globals.contains(id)
+                global.linkage() != LinkageMode::Static || parts.used_globals.contains(id)
             })
             .collect();
 
@@ -231,17 +237,25 @@ impl<'thir> MIRBuilder<'thir> {
             .filter(|id| globals.contains_key(id))
             .collect();
 
-        MIRUnit::new(self.types.finish(), functions, globals, global_order)
+        MIRUnit::new(
+            self.types.finish(),
+            functions,
+            comp_functions,
+            globals,
+            global_order,
+        )
     }
 
     pub(crate) fn lower_prototype(
         &mut self,
-        prototype: &THIRFnPrototype
+        prototype: &THIRFnPrototype,
     ) -> CXResult<MIRFnPrototype> {
         let signature = prototype.signature();
 
         let return_type = lower_type(self, &signature.return_type)?;
-        let mut params = signature.params.iter()
+        let mut params = signature
+            .params
+            .iter()
             .map(|parameter| {
                 let ty = lower_type(self, &parameter._type)?;
 
@@ -253,12 +267,11 @@ impl<'thir> MIRBuilder<'thir> {
             MIRFnSignature::new(
                 params,
                 return_type,
-                mode,
                 signature.var_args,
-                signature.contract.safe,
+                signature.contract.safe(),
             ),
-            CXIdent::from(prototype.symbol_name().to_string()),
             prototype.linkage(),
+            CXIdent::from(prototype.symbol_name().to_string()),
             prototype.debug_name().cloned(),
         ))
     }
@@ -266,9 +279,9 @@ impl<'thir> MIRBuilder<'thir> {
     pub(crate) fn lower_comptime_prototype(
         &mut self,
         prototype: &THIRComptimeFnPrototype,
-    ) -> CXResult<MIRFnPrototype> {
+    ) -> CXResult<MIRComptimeFnPrototype> {
         let mut params = Vec::with_capacity(prototype.params().len());
-        
+
         for parameter in prototype.params() {
             let ty = lower_type(self, &parameter.value_type._type)?;
             let staged_params = if parameter.value_type.expr {
@@ -308,18 +321,13 @@ impl<'thir> MIRBuilder<'thir> {
             None
         };
 
-        Ok(MIRFnPrototype::new(
-            MIRFnSignature::new(
-                CXIdent::from(prototype.symbol_name().to_string()),
-                prototype.debug_name().cloned(),
+        Ok(MIRComptimeFnPrototype::new(
+            CXIdent::from(prototype.symbol_name().to_string()),
+            MIRComptimeFnSignature::new(
+                MIRComptimeType::new(return_type, prototype.return_type()._type.is_nodrop()),
                 params,
-                return_type,
-                MIRFunctionMode::Comptime,
-                false,
-                true,
             )
             .with_staged_return(return_staged_params),
-            LinkageMode::Static,
         ))
     }
 
@@ -347,7 +355,7 @@ impl<'thir> MIRBuilder<'thir> {
         };
 
         let mode = fn_builder.mode();
-        let (id, body) = fn_builder.concise_finish();
+        let (id, body) = fn_builder.thin_finish();
         let body = match mode {
             MIRFunctionMode::Runtime | MIRFunctionMode::Constexpr => match body.into_runtime() {
                 Ok(body) => MIRFunctionBody::Runtime(body),
@@ -459,16 +467,13 @@ impl MIRTypeRegistryBuilder {
     }
 
     pub fn reference_to(&mut self, id: MIRTypeID) -> Result<MIRTypeID, MIRLayoutError> {
-        let ty = MIRType {
-            kind: MIRTypeKind::MemoryReference {
+        let ty = MIRType::new(
+            MIRTypeKind::MemoryReference {
                 inner: id,
                 bitfield: None,
             },
-            layout: Some(MIRTypeLayout {
-                size: self.architecture().pointer_size(),
-                alignment: self.architecture().pointer_alignment(),
-            }),
-        };
+            None,
+        );
         Ok(self.intern(ty))
     }
 

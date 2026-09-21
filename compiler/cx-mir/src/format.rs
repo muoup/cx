@@ -3,20 +3,20 @@ use std::fmt::{self, Display, Formatter};
 use cx_util::linkage::LinkageMode;
 
 use crate::{
-    expr::{
+    MIRInstructionLike, constant::{MIRConstantID, MIRRuntimeConstant}, expr::{
         body::MIRBody,
-        instruction::{MIRBasicBlock, MIRInstrKind, MIRScopeID},
+        comptime::{MIRComptimeInstruction, MIRComptimeOp},
+        instruction::{MIRBasicBlock, MIRInstrKind},
         intrinsic::{
             MIRAggregateIntrinsic, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic,
             MIRIntrinsic, MIRPtrIntrinsic, MIRVAIntrinsic,
         },
+    }, ty::{MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind, interface::MTRegistry}, unit::{
+        MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRUnit,
+        function::{MIRFnSignature, MIRFunction},
+    }, value::{
+        MIRBindable, MIRBlockTarget, MIRConstant, MIRPlaceID, MIRRegisterID, MIRTarget, MIRValue,
     },
-    ty::{MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind, interface::MTRegistry},
-    unit::{
-        MIRBasicBlockID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRUnit,
-        function::MIRFunction,
-    },
-    value::{MIRBlockTarget, MIRConstant, MIRPlaceID, MIRRegisterID, MIRTarget, MIRValue},
 };
 
 impl Display for MIRBlockTarget {
@@ -48,6 +48,7 @@ impl Display for MIRConstant {
                 }
                 f.write_str("}")
             }
+            Self::String(value) => write!(f, "{value:?}"),
             Self::Global { global, offset, .. } => {
                 write!(f, "global {global}")?;
                 if *offset != 0 {
@@ -56,9 +57,20 @@ impl Display for MIRConstant {
                 Ok(())
             }
             Self::Function(function) => write!(f, "fn {function}"),
+            Self::Staged(staged) => write!(f, "staged {staged}"),
+            Self::RuntimeValue(value) => Display::fmt(value, f),
             Self::Undefined => f.write_str("undefined"),
         }
     }
+}
+
+impl Display for MIRRuntimeConstant {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Register(value) => Display::fmt(value, f),
+            Self::Place(value) => Display::fmt(value, f),
+        }
+    }    
 }
 
 impl Display for MIRValue {
@@ -75,22 +87,22 @@ impl Display for MIRValue {
 impl Display for MIRFnSignature {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str("fn (")?;
-        for (index, parameter) in self.params.iter().enumerate() {
+        for (index, parameter) in self.params().iter().enumerate() {
             if index != 0 {
                 f.write_str(", ")?;
             }
-            if let Some(name) = &parameter.name {
+            if let Some(name) = parameter.name() {
                 write!(f, "{name}: ")?;
             }
-            Display::fmt(&parameter.ty, f)?;
+            Display::fmt(&parameter.ty(), f)?;
         }
-        if self.variadic {
-            if !self.params.is_empty() {
+        if self.variadic() {
+            if !self.params().is_empty() {
                 f.write_str(", ")?;
             }
             f.write_str("...")?;
         }
-        write!(f, ") -> {}", self.return_type)
+        write!(f, ") -> {}", self.return_type())
     }
 }
 
@@ -107,12 +119,6 @@ impl Display for MIRGlobalState {
 impl Display for MIRUnit<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Display::fmt(&self.display_pretty(), f)
-    }
-}
-
-impl Display for MIRLayoutError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(&layout_error(self.clone()).message())
     }
 }
 
@@ -140,14 +146,14 @@ impl Display for MIRDisplay<'_, '_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut types = TypePrinter::new(self.unit.types());
 
-        for global in self.unit.globals() {
-            if global.id.index() != 0 {
+        for (i, global) in self.unit.globals().enumerate() {
+            if i != 0 {
                 f.write_str("\n")?;
             }
             write_global(f, self.unit, global, &mut types)?;
         }
 
-        for (i, function) in self.unit.functions().iter().enumerate() {
+        for (i, function) in self.unit.functions().enumerate() {
             if i != 0 {
                 f.write_str("\n")?;
             }
@@ -180,13 +186,13 @@ impl<'a, T: MTRegistry + Sized> TypePrinter<'a, T> {
             return write!(f, "<invalid t{}>", id.index());
         };
 
-        if is_aggregate(&definition.kind)
+        if is_aggregate(definition.kind())
             && let Some(name) = self.registry.debug_name(id)
         {
             return f.write_str(name);
         }
 
-        let kind = definition.kind.clone();
+        let kind = definition.kind().clone();
         self.active.push(id);
         let result = self.write_kind(f, &kind);
         self.active.pop();
@@ -236,14 +242,14 @@ impl<'a, T: MTRegistry + Sized> TypePrinter<'a, T> {
             }
             MIRTypeKind::Function { signature } => {
                 f.write_str("fn(")?;
-                for (index, parameter) in signature.params.iter().enumerate() {
+                for (index, parameter) in signature.params().iter().enumerate() {
                     if index != 0 {
                         f.write_str(", ")?;
                     }
-                    self.write(f, *parameter)?;
+                    self.write(f, parameter.ty())?;
                 }
                 f.write_str(") -> ")?;
-                self.write(f, signature.return_type)
+                self.write(f, signature.return_type())
             }
             MIRTypeKind::Opaque { size, .. } => write!(f, "opaque[{size} bytes]"),
             MIRTypeKind::Undefined => f.write_str("undefined"),
@@ -278,7 +284,7 @@ impl<'a, T: MTRegistry + Sized> TypePrinter<'a, T> {
         if let Some(name) = self
             .registry
             .definition(aggregate_type)
-            .and_then(|definition| aggregate_fields(&definition.kind))
+            .and_then(|definition| aggregate_fields(definition.kind()))
             .and_then(|fields| fields.get(index))
             .and_then(MIRField::name)
         {
@@ -312,35 +318,24 @@ fn write_global<T: MTRegistry>(
     global: &MIRGlobalVariable,
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
-    match global.linkage {
+    match global.linkage() {
         LinkageMode::Extern => f.write_str("extern ")?,
         LinkageMode::Static => f.write_str("static ")?,
         LinkageMode::Standard => {}
     }
-    write!(f, "@{}: ", global.name)?;
+    write!(f, "@{}: ", global.name())?;
 
-    match &global.kind {
-        MIRGlobalKind::StringLiteral { value } => {
-            write!(f, "str = {value:?};")?;
-        }
-        MIRGlobalKind::Variable {
-            ty,
-            state,
-            is_mutable,
-        } => {
-            if !is_mutable {
-                f.write_str("const ")?;
-            }
-            types.write(f, *ty)?;
-            match state {
-                MIRGlobalState::External => f.write_str(";")?,
-                MIRGlobalState::ZeroInitialized => f.write_str(" = zero;")?,
-                MIRGlobalState::Initialized(value) => {
-                    f.write_str(" = ")?;
-                    write_constant(f, unit, value)?;
-                    f.write_str(";")?;
-                }
-            }
+    if !global.is_mutable() {
+        f.write_str("const ")?;
+    }
+    types.write(f, global.ty())?;
+    match global.state() {
+        crate::unit::MIRGlobalState::External => f.write_str(";")?,
+        crate::unit::MIRGlobalState::ZeroInitialized => f.write_str(" = zero;")?,
+        crate::unit::MIRGlobalState::Initialized(value) => {
+            f.write_str(" = ")?;
+            write_constant_id(f, unit, *value)?;
+            f.write_str(";")?;
         }
     }
 
@@ -353,40 +348,30 @@ fn write_function<T: MTRegistry>(
     function: &MIRFunction,
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
-    match function.prototype().linkage {
-        LinkageMode::Static => f.write_str("static ")?,
-        LinkageMode::Extern => f.write_str("extern ")?,
-        LinkageMode::Standard => {}
-    }
     write!(f, "fn @{}(", function.prototype().display_name())?;
-    for (index, parameter) in function.prototype().signature.params.iter().enumerate() {
+    for (index, parameter) in function.prototype().signature.params().iter().enumerate() {
         if index != 0 {
             f.write_str(", ")?;
         }
-        if let Some(name) = &parameter.name {
+        if let Some(name) = parameter.name() {
             write!(f, "%{name}: ")?;
         } else {
             write!(f, "%arg{index}: ")?;
         }
-        types.write(f, parameter.ty)?;
+        types.write(f, parameter.ty())?;
     }
-    if function.prototype().signature.variadic {
-        if !function.prototype().signature.params.is_empty() {
+    if function.prototype().signature.variadic() {
+        if !function.prototype().signature.params().is_empty() {
             f.write_str(", ")?;
         }
         f.write_str("...")?;
     }
     f.write_str(") -> ")?;
-    types.write(f, function.prototype().signature.return_type)?;
+    types.write(f, function.prototype().signature.return_type())?;
     write!(f, " /* {} */", function.prototype().symbol_name)?;
 
     match function.body() {
-        Some(MIRFunctionBody::Runtime(body)) => {
-            write_body(f, unit, function, body, types, write_instruction)
-        }
-        Some(MIRFunctionBody::Comptime(body)) => {
-            write_body(f, unit, function, body, types, write_comptime_instruction)
-        }
+        Some(body) => write_body(f, unit, function, body, types, write_instruction),
         None => f.write_str(";"),
     }
 }
@@ -440,10 +425,10 @@ fn write_block<T: MTRegistry, K>(
         &mut TypePrinter<'_, T>,
     ) -> fmt::Result,
 ) -> fmt::Result {
-    write!(f, "    {}", block.id)?;
-    if !block.params.is_empty() {
+    write!(f, "    {}", block.id())?;
+    if !block.params().is_empty() {
         f.write_str("(")?;
-        for (index, parameter) in block.params.iter().enumerate() {
+        for (index, parameter) in block.params().iter().enumerate() {
             if index != 0 {
                 f.write_str(", ")?;
             }
@@ -451,13 +436,13 @@ fn write_block<T: MTRegistry, K>(
         }
         f.write_str(")")?;
     }
-    if let Some(name) = &block.debug_name {
+    if let Some(name) = &block.debug_name() {
         write!(f, " /* {name} */")?;
     }
     f.write_str(":\n")?;
-    for instruction in &block.instructions {
+    for instruction in block.instructions() {
         f.write_str("        ")?;
-        write_kind(f, unit, function, &instruction.kind, types)?;
+        write_kind(f, unit, function, instruction, types)?;
         f.write_str(";\n")?;
     }
     Ok(())
@@ -467,10 +452,10 @@ fn write_instruction<T: MTRegistry>(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
     function: &MIRFunction,
-    instruction: &MIRInstrKind,
+    instruction: &crate::expr::instruction::MIRInstruction,
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
-    match instruction {
+    match &instruction.kind {
         MIRInstrKind::ScopeEnter { scope } => write!(f, "scope.enter {scope}"),
         MIRInstrKind::ScopeExit { scope } => write!(f, "scope.exit {scope}"),
         MIRInstrKind::Initialize { place } => {
@@ -483,19 +468,16 @@ fn write_instruction<T: MTRegistry>(
             } else {
                 f.write_str("invalidate ")?;
             }
-            write_place_name(f, unit, function, *place)
+            write_bindable(f, unit, function, place)
         }
         MIRInstrKind::LiftPlace { out, place } => {
-            write_temporary_name(f, *out)?;
+            write_register_name(f, function, *out)?;
             f.write_str(" = lift ")?;
             write_place_name(f, unit, function, *place)
         }
-        MIRInstrKind::BindLifetime {
-            bind: place,
-            bind_to: to,
-        } => {
+        MIRInstrKind::BindLifetime { bind, bind_to: to } => {
             f.write_str("bind ")?;
-            write_place_name(f, unit, function, *place)?;
+            write_bindable(f, unit, function, bind)?;
             f.write_str(" to ")?;
             write_place_name(f, unit, function, *to)
         }
@@ -573,12 +555,14 @@ fn write_comptime_instruction<T: MTRegistry>(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
     function: &MIRFunction,
-    instruction: &MIRComptimeInstrKind,
+    instruction: &MIRComptimeInstruction,
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     match instruction {
-        MIRComptimeInstrKind::Standard(kind) => write_instruction(f, unit, function, kind, types),
-        MIRComptimeInstrKind::Comptime(operation) => {
+        MIRComptimeInstruction::Runtime(instr) => {
+            write_instruction(f, unit, function, instr, types)
+        }
+        MIRComptimeInstruction::Comptime { op: operation, .. } => {
             f.write_str("comptime ")?;
             match operation {
                 MIRComptimeOp::Call { out, callee, args } => {
@@ -587,27 +571,25 @@ fn write_comptime_instruction<T: MTRegistry>(
                         f.write_str(" = ")?;
                     }
                     f.write_str("call ")?;
-                    write_value(f, unit, function, callee)?;
+                    write!(f, "{callee}")?;
                     f.write_str("(")?;
                     write_values(f, unit, function, args)?;
                     f.write_str(")")
                 }
-                MIRComptimeOp::MakeStaged {
-                    out,
-                    template,
-                    captures,
-                } => {
+                MIRComptimeOp::Emit { out, captures, .. } => {
                     write_register_name(f, function, *out)?;
-                    write!(f, " = staged<{} blocks>(", template.body().blocks().len())?;
-                    write_values(f, unit, function, captures)?;
+                    f.write_str(" = staged.emit(")?;
+                    let mut first = true;
+                    for capture in captures.values() {
+                        if !first {
+                            f.write_str(", ")?;
+                        }
+                        first = false;
+                        write_value(f, unit, function, capture)?;
+                    }
                     f.write_str(")")
                 }
-                MIRComptimeOp::ApplyStaged {
-                    out,
-                    staged,
-                    args,
-                    targets,
-                } => {
+                MIRComptimeOp::Materialize { out, staged, args } => {
                     if let Some(out) = out {
                         write_register_name(f, function, *out)?;
                         f.write_str(" = ")?;
@@ -616,7 +598,7 @@ fn write_comptime_instruction<T: MTRegistry>(
                     write_value(f, unit, function, staged)?;
                     f.write_str("(")?;
                     write_values(f, unit, function, args)?;
-                    write!(f, ") {targets:?}")
+                    f.write_str(")")
                 }
             }
         }
@@ -625,8 +607,13 @@ fn write_comptime_instruction<T: MTRegistry>(
 
 #[derive(Clone, Copy)]
 enum IntrinsicOutput {
-    Register(MIRRegisterID),
-    Temporary(MIRTemporaryID),
+    Target(MIRTarget),
+}
+
+impl From<MIRTarget> for IntrinsicOutput {
+    fn from(target: MIRTarget) -> Self {
+        Self::Target(target)
+    }
 }
 
 fn write_intrinsic_call<T: MTRegistry>(
@@ -645,8 +632,7 @@ fn write_intrinsic_call<T: MTRegistry>(
 ) -> fmt::Result {
     if let Some(output) = output {
         match output {
-            IntrinsicOutput::Register(register) => write_register_name(f, function, register)?,
-            IntrinsicOutput::Temporary(temporary) => write_temporary_name(f, temporary)?,
+            IntrinsicOutput::Target(target) => write_target(f, unit, function, target)?,
         }
         f.write_str(" = ")?;
     }
@@ -669,7 +655,7 @@ fn write_intrinsic_unary<T: MTRegistry>(
         unit,
         function,
         types,
-        Some(IntrinsicOutput::Register(out)),
+        Some(IntrinsicOutput::Target(out)),
         path,
         |f, unit, function, _| write_value(f, unit, function, value),
     )
@@ -681,7 +667,7 @@ fn write_intrinsic_binary<T: MTRegistry>(
     function: &MIRFunction,
     types: &mut TypePrinter<'_, T>,
     path: &str,
-    out: MIRRegisterID,
+    out: MIRTarget,
     lhs: &MIRValue,
     rhs: &MIRValue,
 ) -> fmt::Result {
@@ -690,7 +676,7 @@ fn write_intrinsic_binary<T: MTRegistry>(
         unit,
         function,
         types,
-        Some(IntrinsicOutput::Register(out)),
+        Some(IntrinsicOutput::Target(out)),
         path,
         |f, unit, function, _| {
             write_value(f, unit, function, lhs)?;
@@ -706,7 +692,7 @@ fn write_intrinsic_value_type<T: MTRegistry>(
     function: &MIRFunction,
     types: &mut TypePrinter<'_, T>,
     path: &str,
-    out: MIRRegisterID,
+    out: MIRTarget,
     value: &MIRValue,
     target_ty: MIRTypeID,
 ) -> fmt::Result {
@@ -715,7 +701,7 @@ fn write_intrinsic_value_type<T: MTRegistry>(
         unit,
         function,
         types,
-        Some(IntrinsicOutput::Register(out)),
+        Some(IntrinsicOutput::Target(out)),
         path,
         |f, unit, function, types| {
             write_value(f, unit, function, value)?;
@@ -739,6 +725,9 @@ fn write_intrinsic<T: MTRegistry>(
         }
         MIRIntrinsic::Pointer(operation) => {
             write_pointer_intrinsic(f, unit, function, operation, types)
+        }
+        MIRIntrinsic::Aggregate(operation) => {
+            write_aggregate_intrinsic(f, unit, function, operation, types)
         }
         MIRIntrinsic::Internal(operation) => {
             write_internal_intrinsic(f, unit, function, operation, types)
@@ -802,7 +791,7 @@ fn write_int_intrinsic<T: MTRegistry>(
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Register(*out)),
+            Some(IntrinsicOutput::Target(*out)),
             "int.int_cast",
             |f, unit, function, types| {
                 write_value(f, unit, function, value)?;
@@ -926,7 +915,7 @@ fn write_float_intrinsic<T: MTRegistry>(
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Register(*out)),
+            Some(IntrinsicOutput::Target(*out)),
             "float.cast",
             |f, unit, function, _| {
                 write_value(f, unit, function, value)?;
@@ -1014,12 +1003,21 @@ fn write_internal_intrinsic<T: MTRegistry>(
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     match intrinsic {
+        MIRInternalIntrinsic::StringAddress { out, string } => write_intrinsic_call(
+            f,
+            unit,
+            function,
+            types,
+            Some(IntrinsicOutput::Target(*out)),
+            "internal.string_address",
+            |f, _, _, _| Display::fmt(string, f),
+        ),
         MIRInternalIntrinsic::GetFnPtr { out, fn_id } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Register(*out)),
+            Some(IntrinsicOutput::Target(*out)),
             "internal.get_fn_ptr",
             |f, _, _, _| Display::fmt(fn_id, f),
         ),
@@ -1099,7 +1097,7 @@ fn write_va_intrinsic<T: MTRegistry>(
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Register(*out)),
+            Some(IntrinsicOutput::Target(*out)),
             "va.arg",
             |f, unit, function, types| {
                 write_value(f, unit, function, list)?;
@@ -1123,7 +1121,7 @@ fn write_aggregate_intrinsic<T: MTRegistry>(
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Register(*out)),
+            Some(IntrinsicOutput::Target(*out)),
             "aggregate.sum_index",
             |f, unit, function, types| {
                 write_value(f, unit, function, value)?;
@@ -1141,10 +1139,10 @@ fn write_aggregate_intrinsic<T: MTRegistry>(
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Register(*out)),
+            Some(IntrinsicOutput::Target(*out)),
             "aggregate.sum_variant",
             |f, unit, function, types| {
-                write_value(f, unit, function, base)?;
+                write_place_name(f, unit, function, *base)?;
                 write!(f, ", {variant}, ")?;
                 types.write(f, *sum_ty)
             },
@@ -1159,7 +1157,7 @@ fn write_aggregate_intrinsic<T: MTRegistry>(
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Temporary(*out)),
+            Some(IntrinsicOutput::Target(*out)),
             "aggregate.sum_variant_l",
             |f, unit, function, types| {
                 write_value(f, unit, function, base)?;
@@ -1172,7 +1170,7 @@ fn write_aggregate_intrinsic<T: MTRegistry>(
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Register(*out)),
+            Some(IntrinsicOutput::Target(*out)),
             "aggregate.struct_init",
             |f, unit, function, types| {
                 types.write(f, *ty)?;
@@ -1193,7 +1191,7 @@ fn write_aggregate_intrinsic<T: MTRegistry>(
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Register(*out)),
+            Some(IntrinsicOutput::Target(*out)),
             "aggregate.struct_field",
             |f, unit, function, types| {
                 write_value(f, unit, function, base)?;
@@ -1211,7 +1209,7 @@ fn write_aggregate_intrinsic<T: MTRegistry>(
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Register(*out)),
+            Some(IntrinsicOutput::Target(*out)),
             "aggregate.array_index",
             |f, unit, function, types| {
                 write_value(f, unit, function, base)?;
@@ -1264,7 +1262,7 @@ fn write_value(
         MIRValue::Register(register) => write_register_name(f, function, *register),
         MIRValue::Global(global) => write_global_name(f, unit, *global),
         MIRValue::PlaceRef(place) => write_place_name(f, unit, function, *place),
-        MIRValue::Constant(constant) => write_constant(f, unit, constant),
+        MIRValue::Constant(constant) => format!(f, "{constant}"),
     }
 }
 
@@ -1291,11 +1289,23 @@ fn write_constant(f: &mut Formatter<'_>, unit: &MIRUnit, constant: &MIRConstant)
                     f.write_str(", ")?;
                 }
                 write!(f, "{field}: ")?;
-                write_constant(f, unit, value)?;
+                write_constant_id(f, unit, *value)?;
             }
             f.write_str("}")
         }
         _ => Display::fmt(constant, f),
+    }
+}
+
+fn write_bindable(
+    f: &mut Formatter<'_>,
+    unit: &MIRUnit,
+    function: &MIRFunction,
+    bindable: &MIRBindable,
+) -> fmt::Result {
+    match bindable {
+        MIRBindable::Register(register) => write_register_name(f, function, *register),
+        MIRBindable::Place(place) => write_place_name(f, unit, function, *place),
     }
 }
 
@@ -1326,19 +1336,14 @@ fn write_register_name(
     Display::fmt(&register, f)
 }
 
-fn write_temporary_name(f: &mut Formatter<'_>, temporary: MIRTemporaryID) -> fmt::Result {
-    Display::fmt(&temporary, f)
-}
-
 fn write_global_name(f: &mut Formatter<'_>, unit: &MIRUnit, global: MIRGlobalID) -> fmt::Result {
     if let Some(global) = unit.global(global) {
-        write!(f, "@{}", global.name)
+        write!(f, "@{}", global.name())
     } else {
         Display::fmt(&global, f)
     }
 }
 
-#[allow(dead_code)]
 fn write_target(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
@@ -1348,6 +1353,7 @@ fn write_target(
     match target {
         MIRTarget::Place(place) => write_place_name(f, unit, function, place),
         MIRTarget::Global(global) => write_global_name(f, unit, global),
+        MIRTarget::Register(register) => write_register_name(f, function, register),
         MIRTarget::Indirect(register) => {
             f.write_str("*")?;
             write_register_name(f, function, register)
@@ -1371,11 +1377,6 @@ fn float_width(ty: MIRFloatType) -> u16 {
         MIRFloatType::F32 => 32,
         MIRFloatType::F64 => 64,
     }
-}
-
-#[allow(dead_code)]
-fn write_staged_targets(f: &mut Formatter<'_>, targets: &MIRStagedTargets) -> fmt::Result {
-    write!(f, "{targets:?}")
 }
 
 #[allow(dead_code)]

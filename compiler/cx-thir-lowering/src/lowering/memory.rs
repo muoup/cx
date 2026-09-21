@@ -2,35 +2,29 @@ use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{MIRInstrKind, MIRRegister, MIRTarget, MIRType, MIRTypeID, MIRTypeKind, MIRValue};
 use cx_thir::thir::data::THIRType;
 use cx_thir::type_context::THIRTypeContext;
+use cx_util::identifier::CXIdent;
 
 use crate::builder::MIRBuilder;
 use crate::lowering::types::lower_type;
 
-pub(super) fn assign_operand_to_place(
+pub(crate) fn allocate_variable(
     builder: &mut MIRBuilder<'_>,
-    value: MIRValue,
+    name: Option<CXIdent>,
     ty: &THIRType,
-    name: Option<cx_util::identifier::CXIdent>,
+    value: Option<MIRValue>,
 ) -> CXResult<cx_mir::MIRPlaceID> {
     let type_id = lower_type(builder, ty)?;
     let place = builder.create(type_id, name, ty.is_nodrop());
-    builder.emit(MIRInstrKind::Store {
-        target: MIRTarget::Place(place),
-        value,
-        ty: type_id,
-    });
-    Ok(place)
-}
 
-pub(super) fn target_register(builder: &mut MIRBuilder<'_>, ty: MIRTypeID) -> MIRRegister {
-    let reference = builder.types_mut().intern(MIRType {
-        kind: MIRTypeKind::MemoryReference {
-            inner: ty,
-            bitfield: None,
-        },
-        layout: None,
-    });
-    builder.fun_mut().new_register(reference, None)
+    if let Some(value) = value {
+        builder.emit(MIRInstrKind::Store {
+            target: place,
+            ty: type_id,
+            value,
+        });
+    }
+    
+    Ok(place)
 }
 
 pub(super) fn ensure_place(

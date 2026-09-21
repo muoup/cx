@@ -20,7 +20,7 @@ pub(crate) fn same_type_inner<T: MTRegistry>(
         return false;
     };
 
-    left.layout == right.layout && same_kind(registry, compared, &left.kind, &right.kind)
+    left.minimum_layout == right.minimum_layout && same_kind(registry, compared, &left.kind, &right.kind)
 }
 
 fn same_kind<T: MTRegistry>(
@@ -100,9 +100,10 @@ fn same_kind<T: MTRegistry>(
                 && left
                     .params()
                     .iter()
-                    .zip(&right.params())
-                    .all(|(left, right
-                    )| same_type_inner(registry, compared, *left, *right))
+                    .zip(right.params())
+                    .all(|(left, right)| {
+                        same_type_inner(registry, compared, left.ty(), right.ty())
+                    })
         }
         (
             MIRTypeKind::Opaque {

@@ -23,7 +23,7 @@ pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
     let mut global_requests = vec![];
 
     for function in &thir.functions {
-        let prototype = builder.lower_prototype(&function.prototype);
+        let prototype = builder.lower_prototype(&function.prototype)?;
         let id = builder.module_mut().declare_function(prototype);
 
         fn_pairs.push((function, id));
@@ -31,7 +31,7 @@ pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
 
     for comptime_fn in &thir.comptime_functions {
         let prototype = builder.lower_comptime_prototype(&comptime_fn.prototype)?;
-        let id = builder.module_mut().declare_function(prototype);
+        let id = builder.module_mut().declare_comptime_function(prototype);
 
         comptime_pairs.push((comptime_fn, id));
     }

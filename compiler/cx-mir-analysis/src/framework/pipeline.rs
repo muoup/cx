@@ -20,14 +20,14 @@ impl Pipeline {
         pipeline
     }
 
-    pub fn push<A: AnalysisPass>(&mut self, analysis: A) {
+    pub fn push<A: AnalysisPass + 'static>(&mut self, analysis: A) {
         self.analyses.push(Box::new(analysis));
     }
 
     pub fn analyze_instruction(
         &mut self,
-        env: &AnalysisEnvironment,
-        instruction: &MIRInstruction,
+        _env: &AnalysisEnvironment,
+        _instruction: &MIRInstruction,
     ) -> CXResult<()> {
         todo!()
     }
@@ -42,6 +42,10 @@ impl Pipeline {
         for analysis in &mut self.analyses {
             analysis.reload_block(env, block);
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.analyses.is_empty()
     }
 }
 

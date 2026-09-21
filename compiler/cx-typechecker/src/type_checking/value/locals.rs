@@ -166,12 +166,19 @@ pub(crate) fn typecheck_var_declaration(
 
             let binding = THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: THIRExpressionKind::CreateLocalVariable {
-                    name: name.clone(),
-                    local_id,
-                    _type: ty.clone(),
-                    initial_value,
-                    adopting,
+                kind: match adopting {
+                    true => THIRExpressionKind::AdoptRegion {
+                        binding_name: name.clone(),
+                        local_id,
+                        _type,
+                        initial_value: initial_value
+                            .expect("adopting binding must have an initial value"),
+                    },
+                    false => THIRExpressionKind::Binding {
+                        name: name.clone(),
+                        local_id,
+                        initial_value,
+                    },
                 },
                 _type: mem_type.clone(),
             };
