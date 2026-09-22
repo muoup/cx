@@ -170,13 +170,14 @@ pub(crate) fn typecheck_var_declaration(
                     true => THIRExpressionKind::AdoptRegion {
                         binding_name: name.clone(),
                         local_id,
-                        _type,
+                        _type: ty.clone(),
                         initial_value: initial_value
                             .expect("adopting binding must have an initial value"),
                     },
-                    false => THIRExpressionKind::Binding {
+                    false => THIRExpressionKind::CreateLocalVariable {
                         name: name.clone(),
                         local_id,
+                        _type: ty.clone(),
                         initial_value,
                     },
                 },

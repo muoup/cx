@@ -1,6 +1,6 @@
 use crate::ty::{MIRField, interface::MTRegistry};
 
-use super::{MIRTypeID};
+use super::MIRTypeID;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MIRTypeLayout {
@@ -24,7 +24,7 @@ impl MIRTypeLayout {
     pub fn apply_minimum(self, minimum: MIRTypeLayout) -> MIRTypeLayout {
         MIRTypeLayout {
             size: self.size.max(minimum.size),
-            alignment: self.size.max(minimum.alignment)
+            alignment: self.size.max(minimum.alignment),
         }
     }
 }
@@ -43,10 +43,17 @@ pub enum MIRFieldLayout {
     },
 }
 
-pub fn calculate_type_layout<Registry: MTRegistry>(registry: &Registry, ty: MIRTypeID) -> MIRTypeLayout {
+// TODO: Reimplement layout calculation against the current MIR type registry.
+pub fn calculate_type_layout<Registry: MTRegistry>(
+    _registry: &Registry,
+    _ty: MIRTypeID,
+) -> MIRTypeLayout {
     todo!()
 }
 
-pub fn calculate_field_layout<Registry: MTRegistry>(registry: &Registry, ty: &MIRField) -> MIRTypeLayout {
+pub fn calculate_field_layout<Registry: MTRegistry>(
+    _registry: &Registry,
+    _ty: &MIRField,
+) -> MIRTypeLayout {
     todo!()
 }

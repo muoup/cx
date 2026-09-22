@@ -1,25 +1,19 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet};
 
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
-    MIRComptimeFnPrototype, MIRComptimeFnSignature, MIRFnParam, MIRFnPrototype, MIRFnSignature,
-    MIRFunction, MIRFunctionBody, MIRFunctionID, MIRFunctionMode, MIRGlobalID, MIRGlobalVariable,
-    MIRInstrKind, MIRLayoutError, MIRPlaceID, MIRStagedCapture, MIRStagedTemplate, MIRType,
-    MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRUnit, MIRValue,
-    ty::{comptime::MIRComptimeType, interface::MTRegistry, registry::MIRTypeRegistry},
+    MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalVariable,
+    MIRLayoutError, MIRPlaceID, MIRStagedCapture, MIRStagedTemplate, MIRType, MIRTypeID,
+    MIRTypeKind, MIRUnit, MIRValue,
+    ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
-use cx_mir_comptime::ComptimeContext;
 use cx_target::ArchitectureConfig;
 use cx_thir::{
     THIRUnit,
     registry::THIRDecomposedRegistry,
     thir::{
-        data::{THIRComptimeFnPrototype, THIRFnPrototype},
-        expression::{THIRExpression, THIRLocalID},
-        r#type::{THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
+        expression::THIRLocalID,
+        r#type::THIRTypeID,
     },
     type_context::THIRTypeContext,
 };
@@ -27,9 +21,9 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 use cx_util::linkage::LinkageMode;
 
+pub(crate) mod body;
 mod function;
 mod module;
-pub(crate) mod body;
 
 use crate::log::mir_error;
 use crate::lowering::{self, types::lower_type};

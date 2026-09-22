@@ -845,13 +845,12 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 local_id,
                 _type,
                 initial_value,
-                adopting,
             } => {
                 write!(f, "CreateLocalVariable {} (ty=", name)?;
                 self.write_type(f, _type)?;
                 write!(f, ", local_id={:?}) <'", local_id)?;
                 self.write_type(f, &self.expr._type)?;
-                writeln!(f, ", adopting={adopting}>")?;
+                writeln!(f, ">")?;
                 if let Some(initial_value) = initial_value {
                     MIRExpressionFormatter {
                         expr: initial_value,
@@ -862,6 +861,24 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 } else {
                     Ok(())
                 }
+            }
+            THIRExpressionKind::AdoptRegion {
+                binding_name,
+                local_id,
+                _type,
+                initial_value,
+            } => {
+                write!(f, "AdoptRegion {} (ty=", binding_name)?;
+                self.write_type(f, _type)?;
+                write!(f, ", local_id={:?}) <'", local_id)?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, ">")?;
+                MIRExpressionFormatter {
+                    expr: initial_value,
+                    depth: self.depth + 1,
+                    definitions: self.definitions,
+                }
+                .fmt(f)
             }
             THIRExpressionKind::Copy { source } => {
                 write!(f, "Copy")?;

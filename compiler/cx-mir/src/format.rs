@@ -3,7 +3,9 @@ use std::fmt::{self, Display, Formatter};
 use cx_util::linkage::LinkageMode;
 
 use crate::{
-    MIRInstructionLike, constant::{MIRConstantID, MIRRuntimeConstant}, expr::{
+    MIRInstructionLike,
+    constant::MIRRuntimeConstant,
+    expr::{
         body::MIRBody,
         comptime::{MIRComptimeInstruction, MIRComptimeOp},
         instruction::{MIRBasicBlock, MIRInstrKind},
@@ -11,10 +13,13 @@ use crate::{
             MIRAggregateIntrinsic, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic,
             MIRIntrinsic, MIRPtrIntrinsic, MIRVAIntrinsic,
         },
-    }, ty::{MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind, interface::MTRegistry}, unit::{
+    },
+    ty::{MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind, interface::MTRegistry},
+    unit::{
         MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRUnit,
         function::{MIRFnSignature, MIRFunction},
-    }, value::{
+    },
+    value::{
         MIRBindable, MIRBlockTarget, MIRConstant, MIRPlaceID, MIRRegisterID, MIRTarget, MIRValue,
     },
 };
@@ -70,7 +75,7 @@ impl Display for MIRRuntimeConstant {
             Self::Register(value) => Display::fmt(value, f),
             Self::Place(value) => Display::fmt(value, f),
         }
-    }    
+    }
 }
 
 impl Display for MIRValue {
@@ -334,7 +339,7 @@ fn write_global<T: MTRegistry>(
         crate::unit::MIRGlobalState::ZeroInitialized => f.write_str(" = zero;")?,
         crate::unit::MIRGlobalState::Initialized(value) => {
             f.write_str(" = ")?;
-            write_constant_id(f, unit, *value)?;
+            Display::fmt(value, f)?;
             f.write_str(";")?;
         }
     }
@@ -460,7 +465,7 @@ fn write_instruction<T: MTRegistry>(
         MIRInstrKind::ScopeExit { scope } => write!(f, "scope.exit {scope}"),
         MIRInstrKind::Initialize { place } => {
             f.write_str("initialize ")?;
-            write_place_name(f, unit, function, *place)
+            write_bindable(f, unit, function, place)
         }
         MIRInstrKind::Invalidate { place, leak } => {
             if *leak {
@@ -753,38 +758,25 @@ fn write_int_intrinsic<T: MTRegistry>(
         MIRIntIntrinsic::BNot { out, value } => {
             write_intrinsic_unary(f, unit, function, types, "int.b_not", *out, value)
         }
-        MIRIntIntrinsic::ToFloat {
-            out,
-            value,
-            target_ty,
-        } => write_intrinsic_value_type(
+        MIRIntIntrinsic::ToFloat { out, value, target } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
+            Some(IntrinsicOutput::Target(*out)),
             "int.to_float",
-            *out,
-            value,
-            *target_ty,
+            |f, unit, function, _| {
+                write_value(f, unit, function, value)?;
+                write!(f, ", f{}", float_width(*target))
+            },
         ),
-        MIRIntIntrinsic::ToPtr {
-            out,
-            value,
-            target_ty,
-        } => write_intrinsic_value_type(
-            f,
-            unit,
-            function,
-            types,
-            "int.to_ptr",
-            *out,
-            value,
-            *target_ty,
-        ),
+        MIRIntIntrinsic::ToPtr { out, value } => {
+            write_intrinsic_unary(f, unit, function, types, "int.to_ptr", *out, value)
+        }
         MIRIntIntrinsic::IntCast {
             out,
             value,
-            target_ty,
+            target,
             sign_extend,
         } => write_intrinsic_call(
             f,
@@ -793,10 +785,10 @@ fn write_int_intrinsic<T: MTRegistry>(
             types,
             Some(IntrinsicOutput::Target(*out)),
             "int.int_cast",
-            |f, unit, function, types| {
+            |f, unit, function, _| {
                 write_value(f, unit, function, value)?;
                 f.write_str(", ")?;
-                types.write(f, *target_ty)?;
+                write!(f, "{target:?}")?;
                 write!(f, ", {sign_extend}")
             },
         ),
@@ -1262,7 +1254,7 @@ fn write_value(
         MIRValue::Register(register) => write_register_name(f, function, *register),
         MIRValue::Global(global) => write_global_name(f, unit, *global),
         MIRValue::PlaceRef(place) => write_place_name(f, unit, function, *place),
-        MIRValue::Constant(constant) => format!(f, "{constant}"),
+        MIRValue::Constant(constant) => write_constant(f, unit, constant),
     }
 }
 
@@ -1289,7 +1281,7 @@ fn write_constant(f: &mut Formatter<'_>, unit: &MIRUnit, constant: &MIRConstant)
                     f.write_str(", ")?;
                 }
                 write!(f, "{field}: ")?;
-                write_constant_id(f, unit, *value)?;
+                Display::fmt(value, f)?;
             }
             f.write_str("}")
         }

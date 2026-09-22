@@ -1,5 +1,5 @@
 use cx_log::CXResult;
-use cx_mir::{MIRFunctionMode, MIRUnit};
+use cx_mir::MIRUnit;
 use cx_thir::THIRUnit;
 
 pub mod builder;
@@ -7,11 +7,12 @@ pub mod builder;
 pub(crate) mod log;
 pub(crate) mod lowering;
 
-pub use builder::MIRBuilder;
-
-use crate::lowering::{
-    globals::{self},
-    lower_comptime_function, lower_function,
+use crate::{
+    builder::MIRBuilder,
+    lowering::{
+        globals::{self},
+        lower_comptime_function, lower_function,
+    },
 };
 
 pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {

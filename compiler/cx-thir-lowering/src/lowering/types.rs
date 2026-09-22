@@ -119,7 +119,7 @@ pub(crate) fn lower_type_kind(
             inner: lower_type_id(builder, *inner_type)?,
         },
         THIRTypeKind::Function { signature } => MIRTypeKind::Function {
-            signature: cx_mir::MIRFunctionType {
+            signature: MIRFunctionType {
                 params: signature
                     .params
                     .iter()

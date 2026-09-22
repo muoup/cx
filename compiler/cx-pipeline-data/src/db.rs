@@ -28,7 +28,7 @@ pub struct ModuleData {
     pub base_mappings: ModuleMap<NamespacePath>,
 
     pub thir: ModuleMap<THIRUnit>,
-    pub mir: ModuleMap<MIRUnit>,
+    pub mir: ModuleMap<MIRUnit<'static>>,
     pub lmir: ModuleMap<LMIRUnit>,
 }
 

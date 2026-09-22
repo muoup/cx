@@ -15,6 +15,16 @@ thread_local! {
 
 dense_id!(THIRLocalID, "local.");
 
+impl THIRLocalID {
+    pub fn fresh() -> Self {
+        NEXT_LOCAL_ID.with(|next| {
+            let id = next.get();
+            next.set(id + 1);
+            Self::new(id as usize)
+        })
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct THIRFnContract {
     pub safe: bool,
@@ -464,13 +474,13 @@ pub enum THIRCoercion {
     // Converts an ephemeral reference to a bounded reference
     ReferenceBounding(Vec<THIRLocalID>),
 
-    // Conversions between types that have the same semantic meaning, 
+    // Conversions between types that have the same semantic meaning,
     // this is typically a no-op, but proves useful for type checking and verification
     Typechange,
 
     // A similar no-op operation like Typechange, but represents conversions that *do* change the semantic
     // meaning of the bits, such as converting from an f32 to an i32
-    // 
+    //
     // Converting from a bounded / ephemeral reference to a free reference (non-safe operation) also falls under this category
     ReinterpretBits,
     Unreachable,
