@@ -6,6 +6,7 @@ use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 
 use crate::thir::comptime::THIRStagedExpr;
+use crate::thir::data::THIRTypeID;
 use crate::thir::pattern::THIRPattern;
 use crate::thir::r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeKind};
 
@@ -401,9 +402,7 @@ pub enum THIRBinOp {
      */
     PtrDiff {
         op: THIRPtrDiffBinOp,
-
-        // Boxed for size reasons
-        ptr_inner: Box<THIRType>,
+        ptr_inner: THIRTypeID
     },
 
     Pointer {

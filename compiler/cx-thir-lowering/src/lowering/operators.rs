@@ -1,13 +1,10 @@
 use cx_log::CXResult;
 use cx_mir::{
-    MIRBlockTarget, MIRFloatIntrinsic, MIRInstructionKind, MIRIntIntrinsic, MIRInternalIntrinsic,
-    MIRIntrinsic, MIRPtrIntrinsic, MIRTarget, MIRValue,
+    MIRBlockTarget, MIRFloatIntrinsic, MIRInstructionKind, MIRIntIntrinsic, MIRInternalIntrinsic, MIRIntrinsic, MIRPtrIntrinsic, MIRTarget, MIRValue, ty::layout::calculate_type_layout,
 };
 use cx_thir::thir::{
-    data::THIRType,
-    expression::{
-        THIRBinOp, THIRCoercion, THIRExpression, THIRFloatBinOp, THIRIntBinOp, THIRPtrBinOp,
-        THIRUnOp,
+    data::THIRType, expression::{
+        THIRBinOp, THIRCoercion, THIRExpression, THIRFloatBinOp, THIRIntBinOp, THIRPtrBinOp, THIRPtrDiffBinOp, THIRUnOp,
     },
 };
 
@@ -87,7 +84,32 @@ pub(super) fn lower_binary_op(
             THIRPtrBinOp::GT => MIRPtrIntrinsic::Gt { out: target, lhs, rhs },
             THIRPtrBinOp::GE => MIRPtrIntrinsic::Geq { out: target, lhs, rhs },
         }),
-        THIRBinOp::PtrDiff { .. } => todo!(),
+        THIRBinOp::PtrDiff { op, ptr_inner } => MIRIntrinsic::Pointer(match op {
+            THIRPtrDiffBinOp::ADD => {
+                let ptr_inner_ty = lower_type_id(builder, ptr_inner)?;
+                let rhs_ty = lower_type(builder, &rhs._type)?;
+                
+                let type_size = calculate_type_layout(builder.types(), ptr_inner_ty);
+                let total_size = builder.fun_mut()
+                    .new_register(rhs_ty, None);
+
+                builder.fun_mut().emit_intrinsic(
+                    MIRIntIntrinsic::Mul {
+                        out: MIRTarget::Register(total_size),
+                        lhs: rhs,
+                        rhs: MIRValue::Constant(cx_mir::MIRConstant::Integer {
+                            value: type_size.size() as i128,
+                            ty: lower_int_type(THIRType::Int { signed: false, size: 64 }),
+                        }),
+                    },
+                    TokenRange::internal()
+                );
+
+                MIRPtrIntrinsic::Add { out: target, ptr: lhs, offset: MIRValue::Register(total_size) }
+            },
+            
+            THIRPtrDiffBinOp::SUB => MIRPtrIntrinsic::Sub { out: target, ptr: lhs, offset: rhs },
+        })
     };
     builder
         .fun_mut()
