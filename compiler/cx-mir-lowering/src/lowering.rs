@@ -12,6 +12,7 @@ use crate::context::LMIRGlobalContext;
 mod functions;
 mod globals;
 mod instructions;
+mod preservation;
 mod typing;
 
 pub(crate) fn lower_unit(unit: &MIRUnit, types: &MIRTypeRegistry) -> CXResult<LMIRUnit> {

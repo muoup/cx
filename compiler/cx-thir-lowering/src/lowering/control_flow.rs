@@ -1,7 +1,7 @@
 use cx_log::CXResult;
 use cx_mir::{
-    MIRBlockTarget, MIRConstant, MIRInstructionKind, MIRScopeID, MIRTypeKind, MIRValue,
-    ty::interface::MTRegistry,
+    MIRAggregateIntrinsic, MIRBlockTarget, MIRConstant, MIRInstructionKind, MIRScopeID, MIRTarget,
+    MIRTypeKind, MIRValue, ty::interface::MTRegistry,
 };
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
@@ -9,15 +9,11 @@ use cx_thir::thir::{
     pattern::THIRPattern,
 };
 use cx_thir::type_context::THIRTypeContext;
-use cx_tokens::TokenRange;
 
 use crate::{
     builder::MIRBuilder,
     log::log_mir_error,
-    lowering::{
-        aggregates, comptime, lower_expression,
-        types::{lower_int_type, lower_type},
-    },
+    lowering::{aggregates, comptime, lower_expression, memory, types::lower_type},
 };
 
 pub fn lower_scoped(
@@ -32,78 +28,61 @@ pub fn lower_scoped(
 }
 
 pub fn auto_cleanup(builder: &mut MIRBuilder, to_scope: MIRScopeID) -> CXResult<()> {
+    auto_cleanup_inner(builder, to_scope, true)
+}
+
+pub fn auto_cleanup_before(builder: &mut MIRBuilder, to_scope: MIRScopeID) -> CXResult<()> {
+    auto_cleanup_inner(builder, to_scope, false)
+}
+
+fn auto_cleanup_inner(
+    builder: &mut MIRBuilder,
+    to_scope: MIRScopeID,
+    include_target: bool,
+) -> CXResult<()> {
     let mut pending = Vec::new();
-    for scope in builder.fun_mut().scope_stack_mut().iter_mut().rev() {
+    for scope in builder.fun().scope_stack().iter().rev() {
+        if scope.id() == to_scope && !include_target {
+            break;
+        }
+        pending.push((scope.id(), scope.deferred_expressions().to_vec()));
         if scope.id() == to_scope {
             break;
         }
-        pending.push((scope.id(), std::mem::take(&mut scope.defered_expressions)));
     }
     let result = (|| {
-        for (_, defers) in &pending {
+        for (scope, defers) in &pending {
             for defer in defers.iter().rev() {
                 lower_expression(builder, defer.as_ref())?;
             }
+            let range = builder
+                .fun()
+                .body()
+                .scope(*scope)
+                .expect("scope has no declaration")
+                .token_range
+                .clone();
+            builder.emit_if_open(MIRInstructionKind::ScopeExit { scope: *scope }, range);
         }
         Ok(())
     })();
-    for (id, defers) in pending {
-        if let Some(scope) = builder
-            .fun_mut()
-            .scope_stack_mut()
-            .iter_mut()
-            .find(|scope| scope.id() == id)
-        {
-            scope.defered_expressions = defers;
-        }
-    }
     result
 }
 
-pub fn lower_control_exit(
-    builder: &mut MIRBuilder<'_>,
-    range: &TokenRange,
-    kind: MIRStagedExitKind,
-) -> CXResult<MIRValue> {
-    let target = builder.fun().exit_target(kind);
-    if target.is_none() && builder.is_capturing() {
-        let root_scope = builder
-            .fun()
-            .scope_stack()
-            .first()
-            .expect("captured function has no root scope")
-            .id();
-        auto_cleanup(builder, root_scope)?;
-        builder.emit(MIRInstructionKind::ScopeExit { kind });
-        return Ok(MIRValue::Constant(MIRConstant::Unit));
-    }
-
-    let Some((scope, block)) = target else {
-        return log_mir_error(
-            builder.source_range(),
-            (
-                &cx_log::catalogue::mir::MISSING_ENTITY,
-                ("control-flow target".into(), "MIR function".into()),
-            ),
-        );
-    };
-
-    auto_cleanup(builder, scope)?;
-    builder.emit(MIRInstructionKind::Jump {
-        target: MIRBlockTarget::new(block),
-    });
-    Ok(MIRValue::Constant(MIRConstant::Unit))
-}
-
 pub fn auto_pop_scope(builder: &mut MIRBuilder) -> CXResult<()> {
-    let defers = builder
-        .fun()
-        .current_scope()
-        .deferred_expressions()
-        .to_vec();
+    let scope = builder.fun().current_scope_id();
+    let range = builder.fun().current_scope_range();
 
-    for defer in defers.into_iter().rev() {
-        lower_expression(builder, defer.as_ref())?;
+    if !builder.fun().current_block_terminated() {
+        let defers = builder
+            .fun()
+            .current_scope()
+            .deferred_expressions()
+            .to_vec();
+        for defer in defers.into_iter().rev() {
+            lower_expression(builder, defer.as_ref())?;
+        }
+        builder.emit_if_open(MIRInstructionKind::ScopeExit { scope }, range.clone());
     }
 
     let _ = builder.fun_mut().pop_scope();
@@ -124,67 +103,79 @@ pub(super) fn lower_if(
         None
     };
     let merge = builder.fun_mut().new_block("if.merge");
-
-    builder.fun_mut().push_scope(condition.token_range.clone());
-
-    let condition_value = lower_expression(builder, condition)?;
-    builder.emit(MIRInstructionKind::Branch {
-        cond: condition_value,
-        true_target: MIRBlockTarget::new(then_block),
-        false_target: MIRBlockTarget::new(else_block.unwrap_or(merge)),
-    });
-
     let result_type_id = lower_type(builder, result_type)?;
-    let yielding = !matches!(builder.types().kind(result_type_id), Ok(MIRTypeKind::Void));
-    let yield_register = yielding
-        .then(|| Ok(builder.fun_mut().set_yield_recipient(merge, result_type_id)))
-        .transpose()?;
+    let yielding = !matches!(
+        builder
+            .types()
+            .definition(result_type_id)
+            .map(|ty| ty.kind()),
+        Some(MIRTypeKind::Void)
+    );
+    let yield_register =
+        yielding.then(|| builder.fun_mut().set_yield_recipient(merge, result_type_id));
+
+    let condition_value = lower_scoped(builder, condition)?;
+    builder.emit(
+        MIRInstructionKind::Branch {
+            cond: condition_value,
+            true_target: MIRBlockTarget::new(then_block),
+            false_target: MIRBlockTarget::new(else_block.unwrap_or(merge)),
+        },
+        condition.token_range.clone(),
+    );
 
     builder.fun_mut().set_current_block(then_block);
 
-    builder
-        .fun_mut()
-        .push_scope(then_branch.token_range.clone());
+    builder.fun_mut().push_control_scope();
     if yielding {
         builder
             .fun_mut()
-            .current_scope_mut()
+            .current_control_mut()
             .set_yield_target(merge);
     }
-    lower_scoped(builder, then_branch)?;
-    auto_pop_scope(builder)?;
-
-    builder.emit(MIRInstructionKind::Jump {
-        target: MIRBlockTarget::new(merge),
-    });
+    lower_expression(builder, then_branch)?;
+    builder.fun_mut().pop_control_scope();
+    builder.emit_if_open(
+        if yielding {
+            MIRInstructionKind::Unreachable
+        } else {
+            MIRInstructionKind::Jump {
+                target: MIRBlockTarget::new(merge),
+            }
+        },
+        then_branch.token_range.clone(),
+    );
 
     if let Some(else_branch) = else_branch {
         builder.fun_mut().set_current_block(else_block.unwrap());
 
-        builder
-            .fun_mut()
-            .push_scope(else_branch.token_range.clone());
+        builder.fun_mut().push_control_scope();
         if yielding {
             builder
                 .fun_mut()
-                .current_scope_mut()
+                .current_control_mut()
                 .set_yield_target(merge);
         }
         lower_expression(builder, else_branch)?;
-        auto_pop_scope(builder)?;
+        builder.fun_mut().pop_control_scope();
 
-        builder.emit(MIRInstructionKind::Jump {
-            target: MIRBlockTarget::new(merge),
-        });
+        builder.emit_if_open(
+            if yielding {
+                MIRInstructionKind::Unreachable
+            } else {
+                MIRInstructionKind::Jump {
+                    target: MIRBlockTarget::new(merge),
+                }
+            },
+            else_branch.token_range.clone(),
+        );
     }
 
-    auto_pop_scope(builder)?;
-
     builder.fun_mut().set_current_block(merge);
-    return Ok(match yield_register {
+    Ok(match yield_register {
         Some(reg) => MIRValue::Register(reg),
         None => MIRValue::Constant(MIRConstant::Unit),
-    });
+    })
 }
 
 pub(super) fn lower_while(
@@ -197,37 +188,46 @@ pub(super) fn lower_while(
     let body_block = builder.fun_mut().new_block("while.body");
     let exit_block = builder.fun_mut().new_block("while.exit");
 
-    builder.emit(MIRInstructionKind::Jump {
-        target: MIRBlockTarget::new(if pre_eval {
-            condition_block
-        } else {
-            body_block
-        }),
-    });
+    builder.emit(
+        MIRInstructionKind::Jump {
+            target: MIRBlockTarget::new(if pre_eval {
+                condition_block
+            } else {
+                body_block
+            }),
+        },
+        condition.token_range.clone(),
+    );
 
     builder.fun_mut().set_current_block(condition_block);
     let condition = lower_scoped(builder, condition)?;
 
-    builder.emit(MIRInstructionKind::Branch {
-        cond: condition,
-        true_target: MIRBlockTarget::new(body_block),
-        false_target: MIRBlockTarget::new(exit_block),
-    });
+    builder.emit(
+        MIRInstructionKind::Branch {
+            cond: condition,
+            true_target: MIRBlockTarget::new(body_block),
+            false_target: MIRBlockTarget::new(exit_block),
+        },
+        body.token_range.clone(),
+    );
 
     builder.fun_mut().set_current_block(body_block);
-    builder.fun_mut().push_invisible_scope();
+    builder.fun_mut().push_control_scope();
     builder
         .fun_mut()
-        .current_scope_mut()
+        .current_control_mut()
         .set_break_target(exit_block)
         .set_continue_target(condition_block);
 
     lower_expression(builder, body)?;
-    auto_pop_scope(builder)?;
+    builder.fun_mut().pop_control_scope();
 
-    builder.emit(MIRInstructionKind::Jump {
-        target: MIRBlockTarget::new(condition_block),
-    });
+    builder.emit_if_open(
+        MIRInstructionKind::Jump {
+            target: MIRBlockTarget::new(condition_block),
+        },
+        body.token_range.clone(),
+    );
 
     builder.fun_mut().set_current_block(exit_block);
     Ok(())
@@ -247,38 +247,50 @@ pub(super) fn lower_for(
     let increment_block = builder.fun_mut().new_block("for.increment");
     let exit_block = builder.fun_mut().new_block("for.exit");
 
-    builder.emit(MIRInstructionKind::Jump {
-        target: MIRBlockTarget::new(condition_block),
-    });
+    builder.emit(
+        MIRInstructionKind::Jump {
+            target: MIRBlockTarget::new(condition_block),
+        },
+        init.token_range.clone(),
+    );
 
     builder.fun_mut().set_current_block(condition_block);
     let condition = lower_expression(builder, condition)?;
-    builder.emit(MIRInstructionKind::Branch {
-        cond: condition,
-        true_target: MIRBlockTarget::new(body_block),
-        false_target: MIRBlockTarget::new(exit_block),
-    });
+    builder.emit(
+        MIRInstructionKind::Branch {
+            cond: condition,
+            true_target: MIRBlockTarget::new(body_block),
+            false_target: MIRBlockTarget::new(exit_block),
+        },
+        body.token_range.clone(),
+    );
 
     builder.fun_mut().set_current_block(body_block);
-    builder.fun_mut().push_scope(body.token_range.clone());
+    builder.fun_mut().push_control_scope();
     builder
         .fun_mut()
-        .current_scope_mut()
+        .current_control_mut()
         .set_break_target(exit_block)
         .set_continue_target(increment_block);
 
     lower_expression(builder, body)?;
 
-    auto_pop_scope(builder)?;
-    builder.emit(MIRInstructionKind::Jump {
-        target: MIRBlockTarget::new(increment_block),
-    });
+    builder.fun_mut().pop_control_scope();
+    builder.emit_if_open(
+        MIRInstructionKind::Jump {
+            target: MIRBlockTarget::new(increment_block),
+        },
+        body.token_range.clone(),
+    );
 
     builder.fun_mut().set_current_block(increment_block);
     lower_expression(builder, increment)?;
-    builder.emit(MIRInstructionKind::Jump {
-        target: MIRBlockTarget::new(condition_block),
-    });
+    builder.emit_if_open(
+        MIRInstructionKind::Jump {
+            target: MIRBlockTarget::new(condition_block),
+        },
+        increment.token_range.clone(),
+    );
     builder.fun_mut().set_current_block(exit_block);
     Ok(())
 }
@@ -301,7 +313,7 @@ pub(super) fn lower_switch(
         let block = builder.fun_mut().new_block("switch.case");
         let case_value = comptime::evaluate(builder, case)?;
 
-        if !matches!(case_value, MIRConstant::Integer { .. }) {
+        let MIRConstant::Integer { value, .. } = case_value else {
             return log_mir_error(
                 &case.token_range,
                 (
@@ -309,39 +321,60 @@ pub(super) fn lower_switch(
                     ("switch case".into(), "an integer constant".into(), None),
                 ),
             );
-        }
+        };
 
-        targets.push((case_value, MIRBlockTarget::new(block)));
+        targets.push((value, MIRBlockTarget::new(block)));
         bodies.push(block);
     }
 
-    builder.emit(MIRInstructionKind::IntSwitch {
-        value,
-        cases: targets,
-        default: Some(MIRBlockTarget::new(default_block)),
-    });
-
-    builder.fun_mut().push_scope(condition.token_range.clone());
-    builder.fun_mut().current_scope_mut().set_break_target(exit);
+    builder.emit(
+        MIRInstructionKind::CaseBranch {
+            value,
+            cases: targets,
+            default: Some(MIRBlockTarget::new(default_block)),
+        },
+        condition.token_range.clone(),
+    );
 
     for ((_, body), block) in cases.iter().zip(bodies) {
         builder.fun_mut().set_current_block(block);
-        lower_scoped(builder, body)?;
+        builder.fun_mut().push_control_scope();
+        builder
+            .fun_mut()
+            .current_control_mut()
+            .set_break_target(exit);
+        builder.fun_mut().push_scope(body.token_range.clone());
+        lower_expression(builder, body)?;
+        auto_pop_scope(builder)?;
+        builder.fun_mut().pop_control_scope();
 
-        builder.emit(MIRInstructionKind::Jump {
-            target: MIRBlockTarget::new(exit),
-        });
+        builder.emit_if_open(
+            MIRInstructionKind::Jump {
+                target: MIRBlockTarget::new(exit),
+            },
+            body.token_range.clone(),
+        );
     }
 
     if let Some(default) = default {
         builder.fun_mut().set_current_block(default_block);
-        lower_scoped(builder, default)?;
-        builder.emit(MIRInstructionKind::Jump {
-            target: MIRBlockTarget::new(exit),
-        });
+        builder.fun_mut().push_control_scope();
+        builder
+            .fun_mut()
+            .current_control_mut()
+            .set_break_target(exit);
+        builder.fun_mut().push_scope(default.token_range.clone());
+        lower_expression(builder, default)?;
+        auto_pop_scope(builder)?;
+        builder.fun_mut().pop_control_scope();
+        builder.emit_if_open(
+            MIRInstructionKind::Jump {
+                target: MIRBlockTarget::new(exit),
+            },
+            default.token_range.clone(),
+        );
     }
 
-    auto_pop_scope(builder)?;
     builder.fun_mut().set_current_block(exit);
     Ok(())
 }
@@ -354,158 +387,128 @@ pub(super) fn lower_match(
     result_type: &THIRType,
 ) -> CXResult<MIRValue> {
     let subject_value = lower_expression(builder, condition)?;
-    let subject_type =
-        if let THIRTypeKind::MemoryReference { inner_type, .. } = &condition._type.kind {
-            builder.registry().resolve_type_id(*inner_type).clone()
-        } else {
-            condition._type.clone()
-        };
-    let variant_match = matches!(subject_type.kind, THIRTypeKind::TaggedUnion { .. });
-    let consuming_subject =
-        variant_match && !matches!(condition._type.kind, THIRTypeKind::MemoryReference { .. });
-
-    let subject_value = match (variant_match, consuming_subject) {
-        (false, _) => subject_value,
-        (true, true) => {
-            let type_id = super::types::lower_type(builder, &condition._type)?;
-            super::memory::move_value(builder, subject_value, type_id, &condition.token_range)?
-        }
-        (true, false) => subject_value,
-    };
-
     builder.fun_mut().bind_local(subject, subject_value.clone());
-    let result_type_id = lower_type(builder, result_type)?;
-    let value_match = !matches!(builder.types().kind(result_type_id), Ok(MIRTypeKind::Void));
-
-    let exit = builder.fun_mut().new_block("match.exit");
-    let yield_register = if value_match {
-        Some(builder.fun_mut().set_yield_recipient(exit, result_type_id))
+    let subject_type = match &condition._type.kind {
+        THIRTypeKind::MemoryReference { inner_type, .. } => {
+            builder.registry().resolve_type_id(*inner_type).clone()
+        }
+        _ => condition._type.clone(),
+    };
+    let variant_match = matches!(subject_type.kind, THIRTypeKind::TaggedUnion { .. });
+    let dispatch_value = if variant_match {
+        let sum_type = lower_type(builder, &subject_type)?;
+        let tag_type = lower_type(
+            builder,
+            &THIRType::from(THIRTypeKind::Integer {
+                _type: cx_thir::thir::data::THIRIntType::I8,
+                signed: false,
+            }),
+        )?;
+        let out = builder.fun_mut().new_register(tag_type, None);
+        builder.fun_mut().emit_intrinsic(
+            MIRAggregateIntrinsic::SumIndex {
+                out: MIRTarget::Register(out),
+                value: subject_value.clone(),
+                sum_ty: sum_type,
+            },
+            condition.token_range.clone(),
+        );
+        MIRValue::Register(out)
     } else {
-        None
+        match subject_value.clone() {
+            MIRValue::PlaceRef(place) => {
+                let ty = lower_type(builder, &subject_type)?;
+                memory::copy(builder, place, ty)
+            }
+            value => value,
+        }
     };
 
-    let mut blocks = Vec::with_capacity(arms.len());
-    for _ in arms {
-        blocks.push(builder.fun_mut().new_block("match.arm"));
-    }
-
+    let result_type_id = lower_type(builder, result_type)?;
+    let value_match = !matches!(
+        builder
+            .types()
+            .definition(result_type_id)
+            .map(|ty| ty.kind()),
+        Some(MIRTypeKind::Void)
+    );
+    let exit = builder.fun_mut().new_block("match.exit");
+    let output = value_match.then(|| builder.fun_mut().block_param(exit, result_type_id, None));
+    let blocks = (0..arms.len())
+        .map(|_| builder.fun_mut().new_block("match.arm"))
+        .collect::<Vec<_>>();
     let binding_block = arms.iter().zip(&blocks).find_map(|((pattern, _), block)| {
         matches!(pattern, THIRPattern::Binding { .. }).then_some(*block)
     });
     let default_block =
         binding_block.unwrap_or_else(|| builder.fun_mut().new_block("match.unreachable"));
-    let default_target = Some(MIRBlockTarget::new(default_block));
-    if variant_match {
-        let cases = arms
-            .iter()
-            .zip(&blocks)
-            .filter(|((pattern, _), _)| !matches!(pattern, THIRPattern::Binding { .. }))
-            .map(|((pattern, _), block)| {
-                let THIRPattern::TaggedUnionVariant { variant_index, .. } = pattern else {
-                    panic!("tagged-union match contains a non-variant pattern");
-                };
-                (*variant_index, MIRBlockTarget::new(*block))
-            })
-            .collect();
-        let sum_type_id = lower_type(builder, &subject_type)?;
-        builder.emit(MIRInstructionKind::VariantSwitch {
-            subject: subject_value.clone(),
-            sum_type: sum_type_id,
-            cases,
-            default: default_target,
-        });
-    } else {
-        let cases = arms
-            .iter()
-            .zip(&blocks)
-            .filter(|((pattern, _), _)| !matches!(pattern, THIRPattern::Binding { .. }))
-            .map(|((pattern, _), block)| {
-                (
-                    aggregates::constant_from_pattern(pattern),
-                    MIRBlockTarget::new(*block),
-                )
-            })
-            .collect();
-        let mut value = if condition._type.is_memory_reference() {
-            let target =
-                super::memory::ensure_place(builder, subject_value.clone(), &condition._type)?;
-            let ty = lower_type(builder, &subject_type)?;
-            super::memory::copy(builder, target, ty)
-        } else {
-            subject_value.clone()
+    let mut cases = Vec::with_capacity(arms.len());
+    for ((pattern, _), block) in arms.iter().zip(&blocks) {
+        let value = match pattern {
+            THIRPattern::Binding { .. } => continue,
+            THIRPattern::Integer(value) if !variant_match => *value as i128,
+            THIRPattern::TaggedUnionVariant { variant_index, .. } if variant_match => {
+                *variant_index as i128
+            }
+            THIRPattern::Float(_, _) => {
+                return log_mir_error(
+                    &condition.token_range,
+                    (
+                        &cx_log::catalogue::mir::INVALID_CONTEXT,
+                        ("floating-point patterns".into(), "MIR case branches".into()),
+                    ),
+                );
+            }
+            _ => unreachable!("match pattern does not match its subject type"),
         };
-        let int_id = builder
-            .registry()
-            .intrinsic_type_id("int")
-            .expect("THIR registry is missing the intrinsic int type");
-        let int_type = builder.registry().resolve_type_id(int_id).clone();
-        if let (
-            THIRTypeKind::Integer {
-                _type: from,
-                signed,
-            },
-            THIRTypeKind::Integer { _type: to, .. },
-        ) = (&subject_type.kind, &int_type.kind)
-            && from.rank() < to.rank()
-        {
-            let to_type = lower_type(builder, &int_type)?;
-            let out = builder.fun_mut().new_register(to_type, None);
-            builder.emit(MIRInstructionKind::Coerce {
-                out,
-                operand: value,
-                coercion: MIRCoercion::Integral {
-                    sign_extend: *signed,
-                    from: lower_int_type(*from),
-                    to: lower_int_type(*to),
-                },
-                to_type,
-            });
-            value = MIRValue::Register(out);
-        }
-        builder.emit(MIRInstructionKind::IntSwitch {
-            value,
-            cases,
-            default: default_target,
-        });
+        cases.push((value, MIRBlockTarget::new(*block)));
     }
 
-    builder.fun_mut().push_invisible_scope();
-    builder.fun_mut().current_scope_mut().set_yield_target(exit);
+    builder.emit(
+        MIRInstructionKind::CaseBranch {
+            value: dispatch_value,
+            cases,
+            default: Some(MIRBlockTarget::new(default_block)),
+        },
+        condition.token_range.clone(),
+    );
 
     for ((pattern, body), block) in arms.iter().zip(blocks) {
         builder.fun_mut().set_current_block(block);
-        builder.fun_mut().push_invisible_scope();
+        builder.fun_mut().push_control_scope();
+        builder
+            .fun_mut()
+            .current_control_mut()
+            .set_yield_target(exit);
+        builder.fun_mut().push_scope(body.token_range.clone());
         aggregates::bind_pattern_payload(
             builder,
             pattern,
             subject_value.clone(),
             &condition._type,
         )?;
-
         let body_value = lower_expression(builder, body)?;
         auto_pop_scope(builder)?;
-
-        builder.emit(MIRInstructionKind::Jump {
-            target: MIRBlockTarget::with_args(
-                exit,
-                if value_match {
-                    vec![body_value]
-                } else {
-                    Vec::new()
-                },
-            ),
-        });
+        builder.fun_mut().pop_control_scope();
+        let args = output.map(|_| vec![body_value]).unwrap_or_default();
+        builder.emit_if_open(
+            MIRInstructionKind::Jump {
+                target: MIRBlockTarget::with_args(exit, args),
+            },
+            body.token_range.clone(),
+        );
     }
 
     if binding_block.is_none() {
         builder.fun_mut().set_current_block(default_block);
-        builder.emit(MIRInstructionKind::Unreachable);
+        builder.emit(
+            MIRInstructionKind::Unreachable,
+            condition.token_range.clone(),
+        );
     }
 
-    auto_pop_scope(builder)?;
     builder.fun_mut().set_current_block(exit);
-
-    Ok(yield_register
+    Ok(output
         .map(MIRValue::Register)
         .unwrap_or(MIRValue::Constant(MIRConstant::Unit)))
 }

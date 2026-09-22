@@ -1,4 +1,4 @@
-use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
+use cx_hir::ast::expression::{HIRBlockKind, HIRExprKind, HIRExpression};
 use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
 use cx_tokens::{
@@ -416,7 +416,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
     } else {
         Ok(HIRExprKind::Block {
             exprs: decls,
-            creates_scope: false,
+            kind: HIRBlockKind::Sequence,
         }
         .into_expr(
             start_index,

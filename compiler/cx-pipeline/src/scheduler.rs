@@ -517,7 +517,7 @@ pub(crate) fn perform_job(
 
         CompilationStep::MIRGen => {
             let thir = context.module_db.thir.get(job.unit.namespace());
-            let mir = generate_mir(thir.as_ref())?;
+            let mir = generate_mir(thir.as_ref())?.into_static_runtime_only();
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&mir);

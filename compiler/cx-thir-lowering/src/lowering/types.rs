@@ -1,10 +1,11 @@
 use cx_log::CXResult;
 use cx_mir::{
-    MIRBitfieldAccess, MIRComptimeFnPrototype, MIRComptimeFnSignature, MIRFloatType, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRType, MIRTypeID, MIRTypeKind, ty::{comptime::MIRComptimeType, interface::MTRegistry},
+    MIRBitfieldAccess, MIRFloatType, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRIntType,
+    MIRType, MIRTypeID, MIRTypeKind, ty::interface::MTRegistry,
 };
 use cx_thir::{
     thir::{
-        data::{THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature}, r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
+        data::{THIRFnPrototype, THIRFnSignature}, r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
     }, type_context::THIRTypeContext,
 };
 use cx_util::identifier::CXIdent;
@@ -39,7 +40,7 @@ pub fn lower_type_id(builder: &mut MIRBuilder, id: THIRTypeID) -> CXResult<MIRTy
 
     builder.types_mut().insert_lowering_type(id);
 
-    let result = (|| {
+    let result: CXResult<MIRTypeID> = (|| {
         let Some(ty) = builder.registry().try_resolve_type_id(id).cloned() else {
             assert!(
                 id.0 < builder.registry().type_id_bound(),
@@ -47,16 +48,14 @@ pub fn lower_type_id(builder: &mut MIRBuilder, id: THIRTypeID) -> CXResult<MIRTy
             );
             builder
                 .types_mut()
-                .define(mir_id, MIRType::undefined())
-                .expect("reserved THIR type ID must have one MIR definition");
+                .define(mir_id, MIRType::undefined())?;
             return Ok(mir_id);
         };
         let debug_name = builder.registry().type_debug_name(&ty);
         let definition = MIRType::new(lower_type_kind(builder, &ty.kind)?, None);
         builder
             .types_mut()
-            .define(mir_id, definition)
-            .expect("THIR type ID must have one MIR definition");
+            .define(mir_id, definition)?;
         if let Some(debug_name) = debug_name {
             builder.types_mut().set_debug_name(mir_id, debug_name);
         }
@@ -161,7 +160,11 @@ pub(crate) fn lower_signature(
         .map(|parameter| {
             let ty = lower_type(builder, &parameter._type)?;
 
-            MIRFnParam::new(parameter.name.clone(), ty, parameter._type.is_nodrop())
+            Ok(MIRFnParam::new(
+                parameter.name.clone(),
+                ty,
+                parameter._type.is_nodrop(),
+            ))
         })
         .collect::<CXResult<Vec<_>>>()?;
 
@@ -169,7 +172,7 @@ pub(crate) fn lower_signature(
         params,
         return_type,
         signature.var_args,
-        signature.contract.safe(),
+        signature.contract.safe,
     ))
 }
 
@@ -181,62 +184,8 @@ pub(crate) fn lower_prototype(
 
     Ok(MIRFnPrototype::new(
         signature,
-        prototype.linkage_mode,
+        prototype.linkage(),
         CXIdent::from(prototype.symbol_name()),
-        prototype.debug_name().cloned()
+        prototype.debug_name().cloned(),
     ))
-}
-
-pub(crate) fn lower_comptime_signature(
-    builder: &mut MIRBuilder,
-    signature: &THIRComptimeFnPrototype,
-) -> CXResult<MIRComptimeFnPrototype> {
-    let return_type = lower_type(builder, &signature.return_type()._type)?;
-    let return_staged_params = if signature.return_type().expr {
-        Some(
-            signature
-                .return_type()
-                .params
-                .iter()
-                .map(|ty| lower_type(builder, ty))
-                .collect::<CXResult<Vec<_>>>()?,
-        )
-    } else {
-        None
-    };
-
-    let params = signature
-        .params()
-        .iter()
-        .map(|parameter| {
-            let ty = lower_type(builder, &parameter.value_type._type)?;
-            let staged_params = if parameter.value_type.expr {
-                Some(
-                    parameter
-                        .value_type
-                        .params
-                        .iter()
-                        .map(|ty| lower_type(builder, ty))
-                        .collect::<CXResult<Vec<_>>>()?,
-                )
-            } else {
-                None
-            };
-            Ok(MIRFnParam::new(
-                parameter.name.clone(),
-                ty,
-                parameter.value_type._type.is_nodrop(),
-            )
-            .with_staged(
-                staged_params,
-                parameter.value_type.expr && parameter.value_type._type.is_unreachable(),
-            ))
-        })
-        .collect::<CXResult<Vec<_>>>()?;
-
-    Ok(MIRComptimeFnSignature::new(
-        MIRComptimeType::new(return_type, signature.return_type()._type.is_nodrop()),
-        params,
-    )
-    .with_staged_return(return_staged_params))
 }

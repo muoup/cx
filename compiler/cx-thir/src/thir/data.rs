@@ -1,5 +1,6 @@
 use cx_hir::ast::function::HIRFunctionContract;
 use cx_namespace::module::QualifiedName;
+use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::thir::contextual_eq::{TypeComparisonState, TypeContextEqual, compare_ordered};
@@ -12,9 +13,18 @@ use crate::type_context::THIRTypeContext;
 #[derive(Debug, Clone)]
 pub struct THIRFunction {
     pub prototype: THIRFnPrototype,
-    pub body: Option<THIRExpression>,
+    pub body: Option<THIRFunctionBody>,
 
     pub require_explicit_return: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum THIRFunctionBody {
+    Expression(THIRExpression),
+    Block {
+        exprs: Vec<THIRExpression>,
+        token_range: TokenRange,
+    }
 }
 
 #[derive(Debug, Clone)]

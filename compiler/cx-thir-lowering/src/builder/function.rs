@@ -1,7 +1,7 @@
 use std::{collections::HashMap, rc::Rc};
 
 use cx_mir::{
-    MIRBasicBlockID, MIRBody, MIRComptimeBody, MIRFnPrototype, MIRFunction, MIRFunctionID,
+    MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID,
     MIRInstruction, MIRInstructionKind, MIRIntrinsic, MIRPlaceID, MIRRegister, MIRScopeID,
     MIRTypeID, MIRValue,
 };
@@ -15,7 +15,6 @@ use crate::builder::body::{MIRBodyBuilder, MIRBodyKind};
 pub(crate) struct MIRFunctionBuilder<'thir> {
     id: MIRFunctionID,
     prototype: MIRFnPrototype,
-    source_range: TokenRange,
 
     body: MIRBodyBuilder<'thir>,
     current_block: MIRBasicBlockID,
@@ -24,15 +23,12 @@ pub(crate) struct MIRFunctionBuilder<'thir> {
     labels: HashMap<String, MIRBasicBlockID>,
 
     scope_stack: Vec<ScopeContext>,
+    control_stack: Vec<ControlContext>,
 }
 
 #[derive(Debug)]
 pub(crate) struct ScopeContext {
     id: MIRScopeID,
-
-    yield_target: Option<MIRBasicBlockID>,
-    break_target: Option<MIRBasicBlockID>,
-    continue_target: Option<MIRBasicBlockID>,
 
     named_values: HashMap<String, MIRValue>,
 
@@ -41,21 +37,56 @@ pub(crate) struct ScopeContext {
     defered_expressions: Vec<Rc<THIRExpression>>,
 }
 
+#[derive(Debug)]
+pub(crate) struct ControlContext {
+    cleanup_boundary: MIRScopeID,
+    yield_target: Option<MIRBasicBlockID>,
+    break_target: Option<MIRBasicBlockID>,
+    continue_target: Option<MIRBasicBlockID>,
+}
+
 impl ScopeContext {
     pub fn new(id: MIRScopeID) -> Self {
         Self {
             id,
-
-            yield_target: None,
-            break_target: None,
-            continue_target: None,
             named_values: HashMap::new(),
             defered_expressions: Vec::new(),
         }
     }
 
+    pub fn deferred_expressions(&self) -> &[Rc<THIRExpression>] {
+        &self.defered_expressions
+    }
+
+    pub fn add_deferred_expression(&mut self, expression: THIRExpression) {
+        self.defered_expressions.push(Rc::new(expression));
+    }
+
+    pub(crate) fn id(&self) -> MIRScopeID {
+        self.id
+    }
+}
+
+impl ControlContext {
+    fn new(cleanup_boundary: MIRScopeID) -> Self {
+        Self {
+            cleanup_boundary,
+            yield_target: None,
+            break_target: None,
+            continue_target: None,
+        }
+    }
+
+    pub fn cleanup_boundary(&self) -> MIRScopeID {
+        self.cleanup_boundary
+    }
+
     pub fn set_yield_target(&mut self, target: MIRBasicBlockID) {
         self.yield_target = Some(target);
+    }
+
+    pub fn yield_target(&self) -> Option<MIRBasicBlockID> {
+        self.yield_target
     }
 
     pub fn set_break_target(&mut self, target: MIRBasicBlockID) -> &mut Self {
@@ -68,28 +99,28 @@ impl ScopeContext {
         self
     }
 
-    pub fn deferred_expressions(&self) -> &[Rc<THIRExpression>] {
-        &self.defered_expressions
+    pub fn break_target(&self) -> Option<MIRBasicBlockID> {
+        self.break_target
     }
 
-    pub(crate) fn id(&self) -> MIRScopeID {
-        self.id
+    pub fn continue_target(&self) -> Option<MIRBasicBlockID> {
+        self.continue_target
     }
 }
 
 impl<'thir> MIRFunctionBuilder<'thir> {
-    pub(crate) fn new_runtime(func: MIRFunction, parent: Option<&Self>) -> Self {
+    pub(crate) fn new_runtime(id: MIRFunctionID, func: MIRFunction) -> Self {
         let mut body = MIRBody::new();
         let entry = body.add_block();
         let root_scope = body.add_scope(TokenRange::internal());
+        body.push_instr_at(entry, MIRInstruction::new(
+            MIRInstructionKind::ScopeEnter { scope: root_scope },
+            TokenRange::internal(),
+        ));
 
         Self {
-            id: func.id(),
+            id,
             prototype: func.prototype().clone(),
-            source_range: parent
-                .map(|parent| parent.source_range.clone())
-                .unwrap_or_else(TokenRange::internal),
-
             body: MIRBodyBuilder::new_runtime(body),
             current_block: entry,
 
@@ -97,28 +128,7 @@ impl<'thir> MIRFunctionBuilder<'thir> {
             labels: HashMap::new(),
 
             scope_stack: vec![ScopeContext::new(root_scope)],
-        }
-    }
-
-    pub(crate) fn new_comptime(func: MIRFunction, parent: Option<&Self>) -> Self {
-        let mut body = MIRComptimeBody::new();
-        let entry = body.add_block();
-        let root_scope = body.add_scope(TokenRange::internal());
-
-        Self {
-            id: func.id(),
-            prototype: func.prototype().clone(),
-            source_range: parent
-                .map(|parent| parent.source_range.clone())
-                .unwrap_or_else(TokenRange::internal),
-
-            body: MIRBodyBuilder::new_comptime(body),
-            current_block: entry,
-
-            local_values: HashMap::new(),
-            labels: HashMap::new(),
-
-            scope_stack: vec![ScopeContext::new(root_scope)],
+            control_stack: Vec::new(),
         }
     }
 
@@ -130,27 +140,15 @@ impl<'thir> MIRFunctionBuilder<'thir> {
         self.id
     }
 
-    pub(crate) fn set_source_range(&mut self, range: TokenRange) -> TokenRange {
-        std::mem::replace(&mut self.source_range, range)
-    }
-
-    pub(crate) fn restore_source_range(&mut self, range: TokenRange) {
-        self.source_range = range;
-    }
-
-    pub(crate) fn source_range(&self) -> &TokenRange {
-        &self.source_range
-    }
-
     pub fn prototype(&self) -> &MIRFnPrototype {
         &self.prototype
     }
 
-    pub fn body(&self) -> &MIRBodyBuilder {
+    pub fn body(&self) -> &MIRBodyBuilder<'thir> {
         &self.body
     }
 
-    pub fn body_mut(&mut self) -> &mut MIRBodyBuilder {
+    pub fn body_mut(&mut self) -> &mut MIRBodyBuilder<'thir> {
         &mut self.body
     }
 
@@ -161,10 +159,15 @@ impl<'thir> MIRFunctionBuilder<'thir> {
 
     pub fn set_current_block(&mut self, block: MIRBasicBlockID) {
         assert!(
-            self.body.block(block).is_some(),
+            self.body.has_block(block),
             "selected block does not belong to the active function"
         );
         self.current_block = block;
+        self.body.set_current_block(block);
+    }
+
+    pub fn current_block_terminated(&self) -> bool {
+        self.body.current_block_terminated()
     }
 
     pub fn set_yield_recipient(&mut self, target: MIRBasicBlockID, ty: MIRTypeID) -> MIRRegister {
@@ -199,7 +202,7 @@ impl<'thir> MIRFunctionBuilder<'thir> {
     }
 
     pub fn new_block(&mut self, name: impl Into<CXIdent>) -> MIRBasicBlockID {
-        self.body.add_block_named(name)
+        self.body.add_block(Some(name.into()))
     }
 
     pub fn block_param(
@@ -268,14 +271,24 @@ impl<'thir> MIRFunctionBuilder<'thir> {
             .id
     }
 
-    pub fn push_invisible_scope(&mut self) -> MIRScopeID {
-        let scope = self.body.add_scope(self.current_scope_range());
-        self.scope_stack.push(ScopeContext::new(scope));
-        scope
+    pub fn push_control_scope(&mut self) {
+        self.control_stack
+            .push(ControlContext::new(self.current_scope_id()));
+    }
+
+    pub fn pop_control_scope(&mut self) {
+        self.control_stack
+            .pop()
+            .expect("control scope stack is empty");
     }
 
     pub fn push_scope(&mut self, token_range: TokenRange) -> MIRScopeID {
-        let scope = self.body.add_scope(token_range);
+        let scope = self.body.add_scope(token_range.clone());
+        if !self.body.current_block_terminated() {
+            self.body.emit(MIRInstruction::new(
+                MIRInstructionKind::ScopeEnter { scope }, token_range,
+            ));
+        }
         self.scope_stack.push(ScopeContext::new(scope));
         scope
     }
@@ -305,5 +318,15 @@ impl<'thir> MIRFunctionBuilder<'thir> {
 
     pub fn scope_stack_mut(&mut self) -> &mut [ScopeContext] {
         &mut self.scope_stack
+    }
+
+    pub fn control_stack(&self) -> &[ControlContext] {
+        &self.control_stack
+    }
+
+    pub fn current_control_mut(&mut self) -> &mut ControlContext {
+        self.control_stack
+            .last_mut()
+            .expect("active control scope is missing")
     }
 }

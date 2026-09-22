@@ -213,7 +213,7 @@ pub fn typecheck_match(
                             _type: THIRType::unit(),
                             kind: THIRExpressionKind::Block {
                                 statements: vec![binding, body_expr],
-                                creates_scope: false,
+                                kind: cx_thir::thir::expression::THIRBlockKind::Sequence,
                                 yields: false,
                             },
                         }

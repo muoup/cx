@@ -26,12 +26,14 @@ use crate::type_checking::value::{
     moves::{typecheck_adopt, typecheck_leak, typecheck_unpack},
     unsafe_ops::typecheck_unsafe,
 };
-use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
+use cx_hir::ast::expression::{HIRBinOp, HIRBlockKind, HIRExprKind, HIRExpression};
 use cx_hir::ast::modifiers::HIR_CONST;
 use cx_log::CXResult;
 use cx_namespace::module::NamespacePath;
 use cx_thir::thir::data::{THIRIntType, THIRTypeKind};
-use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
+use cx_thir::thir::expression::{
+    THIRBlockKind, THIRExpression, THIRExpressionKind,
+};
 use cx_tokens::TokenRange;
 
 use crate::type_checking::control_flow::r#match::typecheck_match;
@@ -56,17 +58,17 @@ fn typecheck_expr_inner(
     let mut result = match &expr.kind {
         HIRExprKind::Block {
             exprs,
-            creates_scope,
+            kind,
         } => {
-            let handles_yield = *creates_scope
-                && !env.function.flow().at_function_root()
-                && (!env.in_staged_context()
-                    || expected_type.is_some_and(|ty| !ty.is_void() && !ty.is_unreachable()));
-            if handles_yield {
-                let expected_yield = expected_type
-                    .cloned()
-                    .or_else(|| env.function.flow().yield_state().expected_type);
+            let creates_scope = !matches!(kind, HIRBlockKind::Sequence);
+            let captures_yield = matches!(kind, HIRBlockKind::Expression);
+            if captures_yield {
+                let expected_yield = expected_type.cloned().or_else(|| {
+                    env.function.flow().yield_state().expected_type
+                });
                 env.push_yield_scope(expected_yield);
+            } else if creates_scope {
+                env.push_scope(false, false, expr.token_range().clone());
             }
 
             let checked = exprs
@@ -77,7 +79,7 @@ fn typecheck_expr_inner(
                 })
                 .collect::<CXResult<Vec<_>>>();
 
-            let effects = if handles_yield {
+            let effects = if creates_scope {
                 Some(
                     env.pop_scope()
                         .map_err(|err| env.complete_err(err, expr.token_range()))?,
@@ -86,14 +88,20 @@ fn typecheck_expr_inner(
                 None
             };
             let statements = checked?;
-            let yield_type = effects.and_then(|effects| effects.yield_type);
+            let yield_type = captures_yield
+                .then(|| effects.and_then(|effects| effects.yield_type))
+                .flatten();
             let yields = yield_type.is_some();
             let result_type = yield_type.unwrap_or_else(THIRType::unit);
             let block = THIRExpression {
-                token_range: TokenRange::internal(),
+                token_range: expr.token_range().clone(),
                 kind: THIRExpressionKind::Block {
                     statements,
-                    creates_scope: *creates_scope,
+                    kind: match kind {
+                        HIRBlockKind::Sequence => THIRBlockKind::Sequence,
+                        HIRBlockKind::Statement => THIRBlockKind::Statement,
+                        HIRBlockKind::Expression => THIRBlockKind::Expression,
+                    },
                     yields,
                 },
                 _type: result_type,
@@ -617,16 +625,26 @@ fn typecheck_expr_inner(
 pub fn add_implicit_return(
     env: &mut TypeEnvironment,
     namespace: &NamespacePath,
-    expr: THIRExpression,
-) -> CXResult<THIRExpression> {
-    if !expr_may_fall_through(&expr) {
-        return Ok(expr);
+    mut statements: Vec<THIRExpression>,
+    token_range: TokenRange,
+) -> CXResult<Vec<THIRExpression>> {
+    let body = THIRExpression {
+        kind: THIRExpressionKind::Block {
+            statements: statements.clone(),
+            kind: THIRBlockKind::Sequence,
+            yields: false,
+        },
+        _type: THIRType::unit(),
+        token_range: token_range.clone(),
+    };
+    if !expr_may_fall_through(&body) {
+        return Ok(statements);
     }
 
     let func = env.current_function().clone();
 
     if func.signature().return_type.is_unreachable() {
-        return Ok(expr);
+        return Ok(statements);
     }
 
     let implicit_value = if func.symbol_name() == "main" {
@@ -641,24 +659,17 @@ pub fn add_implicit_return(
     } else if func.signature().return_type.is_void() {
         None
     } else {
-        return Ok(expr);
+        return Ok(statements);
     };
 
     let ret = typecheck_return(
         env,
         namespace,
-        &expr.token_range,
+        &token_range,
         implicit_value.map(|v| *v),
     )?
     .internal_ready_assertion();
 
-    Ok(THIRExpression {
-        token_range: TokenRange::internal(),
-        kind: THIRExpressionKind::Block {
-            statements: vec![expr, ret],
-            creates_scope: false,
-            yields: false,
-        },
-        _type: THIRType::unit(),
-    })
+    statements.push(ret);
+    Ok(statements)
 }

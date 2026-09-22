@@ -5,8 +5,7 @@ use cx_preparse_data::NamespaceAliases;
 use cx_util::identifier::CXIdent;
 
 use crate::ast::{
-    expression::HIRExpression,
-    function::{HIRComptimeFnPrototype, HIRFunctionPrototype},
+    function::{HIRComptimeFnPrototype, HIRFunctionBody, HIRFunctionPrototype},
     global_var::HIREnumDefinition,
     modifiers::{HIRSymbolNameScheme, VisibilityMode},
     template::HIRTemplatePrototype,
@@ -56,8 +55,8 @@ impl<Base: std::fmt::Debug + Clone + PartialEq, Data: std::fmt::Debug + Clone + 
 
 pub type HIRTypeSymbol = HIRSymbolData<HIRType, ()>;
 pub type HIRTypeConstructorSymbol = HIRSymbolData<TypeConstructorData, ()>;
-pub type HIRFunctionSymbol = HIRSymbolData<HIRFunctionPrototype, Option<Box<HIRExpression>>>;
-pub type HIRComptimeFunctionSymbol = HIRSymbolData<HIRComptimeFnPrototype, Box<HIRExpression>>;
+pub type HIRFunctionSymbol = HIRSymbolData<HIRFunctionPrototype, Option<HIRFunctionBody>>;
+pub type HIRComptimeFunctionSymbol = HIRSymbolData<HIRComptimeFnPrototype, HIRFunctionBody>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeConstructorData {

@@ -7,7 +7,7 @@ pub mod comptime_function;
 pub mod function;
 
 use crate::{
-    constant::{MIRConstantID, MIRStagedExprPool},
+    constant::{MIRConstant, MIRStagedExprPool},
     expr::instruction::MIRScopeID,
     ty::{MIRTypeID, registry::MIRTypeRegistry},
     unit::comptime_function::MIRComptimeFunction,
@@ -22,7 +22,7 @@ dense_id!(MIRBasicBlockID, "bb");
 pub enum MIRGlobalState {
     External,
     ZeroInitialized,
-    Initialized(MIRConstantID),
+    Initialized(MIRConstant),
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +53,20 @@ impl<'thir> MIRUnit<'thir> {
             staged_expr_pool,
             globals,
             global_order,
+        }
+    }
+
+    pub fn into_static_runtime_only(self) -> MIRUnit<'static> {
+        assert!(self.staged_expr_pool.staged_expressions().is_empty());
+        assert!(self.comptime_functions.is_empty());
+
+        MIRUnit {
+            staged_expr_pool: MIRStagedExprPool::new(),
+            types: self.types,
+            functions: self.functions,
+            comptime_functions: HashMap::new(),
+            globals: self.globals,
+            global_order: self.global_order,
         }
     }
 

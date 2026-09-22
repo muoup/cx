@@ -19,7 +19,9 @@ use crate::parse::operators::{
     binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
 };
 use crate::parse::types::{is_type_decl, parse_initializer};
-use crate::parse::{parse_block, parse_body, parse_intrinsic, try_parse_identifier};
+use crate::parse::{
+    parse_block, parse_body, parse_expression_block, parse_intrinsic, try_parse_identifier,
+};
 
 fn parse_at_intrinsic_expr(
     data: &mut ParserData,
@@ -410,7 +412,7 @@ pub(crate) fn parse_expr_val(
             }
 
             data.tokens.back();
-            parse_block(data)?.kind
+            parse_expression_block(data)?.kind
         }
 
         TokenKind::Operator(OperatorType::Bar) => {

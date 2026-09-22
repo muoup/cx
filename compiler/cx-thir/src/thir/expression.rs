@@ -272,7 +272,7 @@ pub enum THIRExpressionKind {
     },
     Block {
         statements: Vec<THIRExpression>,
-        creates_scope: bool,
+        kind: THIRBlockKind,
         yields: bool,
     },
 
@@ -316,6 +316,13 @@ pub enum THIRExpressionKind {
         expr: Box<THIRExpression>,
         with_params: Vec<THIRExpression>,
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum THIRBlockKind {
+    Sequence,
+    Statement,
+    Expression,
 }
 
 #[derive(Clone, Debug, Readable, Writable)]

@@ -2,7 +2,7 @@ use crate::environment::TypeEnvironment;
 use crate::type_checking::coercion::implicit::{implicit_cast, promotion::std_rval_promotion};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
+use cx_hir::ast::expression::{HIRBlockKind, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
 use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::NamespacePath;
@@ -26,7 +26,7 @@ fn case_body_expression(
     HIRExpression {
         kind: HIRExprKind::Block {
             exprs: expressions,
-            creates_scope: false,
+            kind: HIRBlockKind::Sequence,
         },
         range,
     }

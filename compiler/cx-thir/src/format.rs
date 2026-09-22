@@ -3,11 +3,10 @@ use cx_util::identifier::CXIdent;
 
 use crate::thir::comptime::THIRComptimeFn;
 use crate::thir::data::{
-    THIRComptimeFnPrototype, THIRComptimeParameter, THIRComptimeValueType, THIRFnPrototype,
-    THIRFnSignature, THIRParameter,
+    THIRComptimeFnPrototype, THIRComptimeParameter, THIRComptimeValueType, THIRFnPrototype, THIRFnSignature, THIRFunctionBody, THIRParameter,
 };
 use crate::thir::expression::{
-    THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp,
+    THIRBinOp, THIRBlockKind, THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp,
 };
 use crate::thir::global::THIRGlobalVariable;
 use crate::thir::r#type::{
@@ -454,7 +453,20 @@ impl Display for THIRDisplay<'_, THIRComptimeFn> {
 
         if let Some(body) = &self.content.body {
             writeln!(f, "Body:")?;
-            MIRExpressionFormatter::with_definitions(body, 1, self.definitions).fmt(f)
+
+            match body {
+                THIRFunctionBody::Expression(expr) => {
+                    MIRExpressionFormatter::with_definitions(expr, 1, self.definitions).fmt(f)?;
+                }
+                THIRFunctionBody::Block { exprs, .. } => {
+                    for statement in exprs {
+                        MIRExpressionFormatter::with_definitions(statement, 1, self.definitions)
+                            .fmt(f)?;
+                    }
+                }
+            }
+            
+            Ok(())
         } else {
             write!(f, "Declaration")
         }
@@ -525,7 +537,20 @@ impl Display for THIRDisplay<'_, THIRFunction> {
 
         if let Some(body) = &self.content.body {
             writeln!(f, "Body:")?;
-            MIRExpressionFormatter::with_definitions(body, 1, self.definitions).fmt(f)
+
+            match body {
+                THIRFunctionBody::Expression(expr) => {
+                    MIRExpressionFormatter::with_definitions(expr, 1, self.definitions).fmt(f)?;
+                }
+                THIRFunctionBody::Block { exprs, .. } => {
+                    for statement in exprs {
+                        MIRExpressionFormatter::with_definitions(statement, 1, self.definitions)
+                            .fmt(f)?;
+                    }
+                }
+            }
+            
+            Ok(())
         } else {
             write!(f, "Declaration")
         }
@@ -706,7 +731,9 @@ impl<'a> MIRExpressionFormatter<'a> {
                 write!(
                     f,
                     "ptrdiff<{}> {:?}",
-                    ptr_inner.display_with_definitions(self.definitions),
+                    self.definitions
+                        .resolve_type_id(*ptr_inner)
+                        .display_with_definitions(self.definitions),
                     op
                 )
             }
@@ -1336,13 +1363,17 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             THIRExpressionKind::Block {
                 statements,
-                creates_scope,
+                kind,
                 ..
             } => {
                 write!(
                     f,
                     "{}Block {{ <'",
-                    if *creates_scope { "Scoped " } else { "" }
+                    match kind {
+                        THIRBlockKind::Sequence => "Sequence ",
+                        THIRBlockKind::Statement => "Statement ",
+                        THIRBlockKind::Expression => "Expression ",
+                    }
                 )?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;

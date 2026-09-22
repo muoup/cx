@@ -127,7 +127,7 @@ pub enum HIRExprKind {
 
     Block {
         exprs: Vec<HIRExpression>,
-        creates_scope: bool,
+        kind: HIRBlockKind,
     },
 
     Defer {
@@ -181,6 +181,13 @@ pub enum HIRExprKind {
         list: Box<HIRExpression>,
         _type: HIRType,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HIRBlockKind {
+    Sequence,
+    Statement,
+    Expression,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

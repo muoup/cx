@@ -480,6 +480,11 @@ fn write_instruction<T: MTRegistry>(
             f.write_str(" = lift ")?;
             write_place_name(f, unit, function, *place)
         }
+        MIRInstructionKind::Forward { out, source } => {
+            write_register_name(f, function, *out)?;
+            f.write_str(" = forward ")?;
+            write_register_name(f, function, *source)
+        }
         MIRInstructionKind::BindLifetime { bind, bind_to: to } => {
             f.write_str("bind ")?;
             write_bindable(f, unit, function, bind)?;
@@ -914,6 +919,18 @@ fn write_float_intrinsic<T: MTRegistry>(
                 write!(f, ", f{}", float_width(*float_ty))
             },
         ),
+        MIRFloatIntrinsic::Add { out, lhs, rhs } => {
+            write_intrinsic_binary(f, unit, function, types, "float.add", *out, lhs, rhs)
+        }
+        MIRFloatIntrinsic::Sub { out, lhs, rhs } => {
+            write_intrinsic_binary(f, unit, function, types, "float.sub", *out, lhs, rhs)
+        }
+        MIRFloatIntrinsic::Mul { out, lhs, rhs } => {
+            write_intrinsic_binary(f, unit, function, types, "float.mul", *out, lhs, rhs)
+        }
+        MIRFloatIntrinsic::Div { out, lhs, rhs } => {
+            write_intrinsic_binary(f, unit, function, types, "float.div", *out, lhs, rhs)
+        }
         MIRFloatIntrinsic::Eq { out, lhs, rhs } => {
             write_intrinsic_binary(f, unit, function, types, "float.eq", *out, lhs, rhs)
         }

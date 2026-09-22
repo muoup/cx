@@ -2,14 +2,14 @@ use cx_log::CXResult;
 use cx_util::identifier::CXIdent;
 
 use crate::thir::{
-    data::{THIRComptimeFnPrototype, THIRType},
+    data::{THIRComptimeFnPrototype, THIRFunctionBody, THIRType},
     expression::{THIRExpression, THIRLocalID},
 };
 
 #[derive(Debug, Clone)]
 pub struct THIRComptimeFn {
     pub prototype: THIRComptimeFnPrototype,
-    pub body: Option<THIRExpression>,
+    pub body: Option<THIRFunctionBody>,
     pub context: THIRStagingContext,
 }
 

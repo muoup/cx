@@ -4,8 +4,8 @@ use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::QualifiedName;
 use cx_thir::thir::{
     data::{
-        THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter,
-        THIRTemplateInput,
+        THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRFunctionBody,
+        THIRParameter, THIRTemplateInput,
     },
     expression::{THIRExpression, THIRExpressionKind},
     r#type::THIRType,
@@ -115,19 +115,11 @@ fn realize_tagged_union_constructor(
             sum_type: union_type,
         },
     };
-    let body = THIRExpression {
-        token_range: TokenRange::internal(),
-        _type: prototype.signature().return_type.clone(),
-        kind: THIRExpressionKind::Return {
-            value: Some(Box::new(constructed)),
-            postcondition: None,
-        },
-    };
 
     env.items.push_generated_function(THIRFunction {
         require_explicit_return: env.require_explicit_return(),
         prototype,
-        body: Some(body),
+        body: Some(THIRFunctionBody::Expression(constructed)),
     });
 }
 
@@ -217,7 +209,7 @@ fn realize_comptime_function(
     };
 
     let namespace = symbol_lexical_namespace(&name.namespace, symbol);
-    
+
     env.in_definition(|env| {
         if let Some(template) = &data.template_prototype {
             apply_template_input(env, template, input)

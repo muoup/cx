@@ -10,31 +10,21 @@ pub(crate) mod lowering;
 use crate::{
     builder::MIRBuilder,
     lowering::{
-        globals::{self},
-        lower_comptime_function, lower_function,
+        globals, lower_function,
     },
 };
 
-pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
+pub fn generate_mir<'thir>(thir: &'thir THIRUnit) -> CXResult<MIRUnit<'thir>> {
     let mut builder = MIRBuilder::new(thir);
 
     let mut fn_pairs = vec![];
-    let mut comptime_pairs = vec![];
     let mut global_pairs = vec![];
-    let mut global_requests = vec![];
 
     for function in &thir.functions {
-        let prototype = builder.lower_prototype(&function.prototype)?;
+        let prototype = lowering::types::lower_prototype(&mut builder, &function.prototype)?;
         let id = builder.module_mut().declare_function(prototype);
 
         fn_pairs.push((function, id));
-    }
-
-    for comptime_fn in &thir.comptime_functions {
-        let prototype = builder.lower_comptime_prototype(&comptime_fn.prototype)?;
-        let id = builder.module_mut().declare_comptime_function(prototype);
-
-        comptime_pairs.push((comptime_fn, id));
     }
 
     for global in &thir.global_variables {
@@ -42,22 +32,8 @@ pub fn generate_mir(thir: &THIRUnit) -> CXResult<MIRUnit> {
         global_pairs.push((global, id));
     }
 
-    for (global, id) in global_pairs.into_iter() {
-        if let Some(request) = globals::lower_global(&mut builder, id, global)? {
-            global_requests.push(request);
-        }
-    }
-
-    for request in global_requests.iter() {
-        globals::fulfill_init_request(&mut builder, request)?;
-    }
-
-    for (comptime_fn, id) in comptime_pairs.into_iter() {
-        lower_comptime_function(&mut builder, id, comptime_fn)?;
-    }
-
-    for request in global_requests.into_iter() {
-        globals::execute_request(&mut builder, &request)?;
+    for (global, id) in global_pairs {
+        globals::lower_global(&mut builder, id, global)?;
     }
 
     for (function, id) in fn_pairs.into_iter() {

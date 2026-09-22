@@ -512,7 +512,7 @@ module.exports = grammar({
                     field("return_type", $.type),
                     field("declarator", $.function_declarator),
                     optional($.function_contract),
-                    $.compound_statement,
+                    $.function_body,
                 ),
             ),
 
@@ -534,9 +534,14 @@ module.exports = grammar({
                     field("name", $.callable_name),
                     field("parameters", $.comptime_parameter_list),
                     optional($.function_contract),
-                    $.compound_statement,
+                    $.function_body,
                 ),
             ),
+
+        function_body: ($) => choice(
+            $.compound_statement,
+            seq(op($, "=>"), $.expression, ";"),
+        ),
 
         comptime_value_type: ($) =>
             seq(

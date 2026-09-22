@@ -1,6 +1,6 @@
 use cx_hir::ast::{
-    expression::{HIRExprKind, HIRExpression},
-    function::HIRFunctionPrototype,
+    expression::{HIRBlockKind, HIRExprKind, HIRExpression},
+    function::{HIRFunctionBody, HIRFunctionPrototype},
     global_var::HIRGlobalVariable,
     modifiers::{HIRSymbolNameScheme, LinkageMode},
     template::HIRTemplatePrototype,
@@ -169,18 +169,18 @@ fn parse_comptime_fn_merge(data: &mut ParserData) -> CXResult<()> {
 
     let body = if let Some(template_prototype) = func.template_prototype.as_ref() {
         note_templated_types(data, template_prototype)?;
-        let body = parse_body(data);
+        let body = parse_function_body(data);
         unnote_templated_types(data, template_prototype);
         body
     } else {
-        parse_body(data)
+        parse_function_body(data)
     }?;
 
     data.add_stmt(HIRStmt::ComptimeFunctionDefinition {
         prototype: func.prototype,
         visibility: data.visibility,
         template_prototype: func.template_prototype,
-        body: Box::new(body),
+        body,
     });
 
     Ok(())
@@ -275,17 +275,17 @@ fn parse_fn_merge(
     } else {
         let body = if let Some(template_prototype) = template_prototype.as_ref() {
             note_templated_types(data, template_prototype)?;
-            let body = parse_body(data);
+            let body = parse_function_body(data);
             unnote_templated_types(data, template_prototype);
             body
         } else {
-            parse_body(data)
+            parse_function_body(data)
         }?;
 
         data.add_stmt(HIRStmt::FunctionDefinition {
             prototype,
             visibility: data.visibility,
-            body: Some(Box::new(body)),
+            body: Some(body),
             template_prototype,
         });
     }
@@ -475,6 +475,14 @@ fn add_global_variable(
 }
 
 pub(crate) fn parse_block(data: &mut ParserData) -> CXResult<HIRExpression> {
+    parse_block_kind(data, HIRBlockKind::Statement)
+}
+
+pub(crate) fn parse_expression_block(data: &mut ParserData) -> CXResult<HIRExpression> {
+    parse_block_kind(data, HIRBlockKind::Expression)
+}
+
+fn parse_block_kind(data: &mut ParserData, kind: HIRBlockKind) -> CXResult<HIRExpression> {
     assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
 
     let start_index = data.tokens.index - 1;
@@ -482,7 +490,7 @@ pub(crate) fn parse_block(data: &mut ParserData) -> CXResult<HIRExpression> {
 
     Ok(HIRExprKind::Block {
         exprs: body,
-        creates_scope: true,
+        kind,
     }
     .into_expr(
         start_index,
@@ -519,7 +527,7 @@ fn parse_block_statements(data: &mut ParserData) -> CXResult<Vec<HIRExpression>>
 
             let continuation = HIRExprKind::Block {
                 exprs: continuation,
-                creates_scope: false,
+                kind: HIRBlockKind::Sequence,
             }
             .into_expr(
                 continuation_start,
@@ -614,6 +622,33 @@ pub(crate) fn parse_body(data: &mut ParserData) -> CXResult<HIRExpression> {
     } else {
         Ok(parse_stmt(data)?)
     }
+}
+
+fn parse_function_body(data: &mut ParserData) -> CXResult<HIRFunctionBody> {
+    let start_index = data.tokens.index;
+    if try_next!(data.tokens, punctuator!(OpenBrace)) {
+        let statements = parse_block_statements(data)?;
+        return Ok(HIRFunctionBody::Block {
+            statements,
+            range: data.token_range(start_index, data.tokens.index),
+        });
+    }
+
+    if try_next!(data.tokens, punctuator!(ThickArrow)) {
+        let expression = parse_expr(data)?;
+        assert_token_matches!(
+            data.tokens,
+            punctuator!(Semicolon),
+            "';' after function expression"
+        );
+        return Ok(HIRFunctionBody::Expression(expression));
+    }
+
+    parse_point_error(
+        &data.tokens,
+        &EXPECTED_SYNTAX,
+        ("a braced or arrow function body".into(), None, None),
+    )
 }
 
 pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {

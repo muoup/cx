@@ -1,13 +1,7 @@
 use cx_log::CXResult;
 use cx_mir::MIRUnit;
 
-// TODO: The ownership/value analysis passes still target the removed MIR instruction hierarchy.
-/*
-mod framework;
-mod log;
-mod options;
-mod passes;
-*/
+mod ownership;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MIRAnalysisOptions {
@@ -25,19 +19,26 @@ impl Default for MIRAnalysisOptions {
 }
 
 pub struct Pipeline {
-    _options: MIRAnalysisOptions,
+    options: MIRAnalysisOptions,
 }
 
 impl Pipeline {
     pub fn new(options: MIRAnalysisOptions) -> Self {
-        Self { _options: options }
+        Self { options }
     }
 
-    pub fn analyze<'mir>(&mut self, _unit: &MIRUnit<'mir>) -> CXResult<()> {
-        todo!("MIR analysis was removed with the MIR representation migration")
+    pub fn analyze<'mir>(&mut self, unit: &MIRUnit<'mir>) -> CXResult<()> {
+        if self.options.ownership {
+            for function in unit.functions() {
+                if let Some(body) = function.body() {
+                    ownership::analyze(body)?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
-pub fn analyze<'mir>(_unit: &MIRUnit<'mir>, _options: MIRAnalysisOptions) -> CXResult<()> {
-    todo!("MIR analysis was removed with the MIR representation migration")
+pub fn analyze<'mir>(unit: &MIRUnit<'mir>, options: MIRAnalysisOptions) -> CXResult<()> {
+    Pipeline::new(options).analyze(unit)
 }

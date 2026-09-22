@@ -1,19 +1,22 @@
 use crate::{
     environment::{StagingContext, TypeEnvironment},
     symbol::completion::ensure_valid_type_component,
+    type_checking::control_flow::expr_may_fall_through,
+    type_checking::control_flow::r#return::typecheck_return,
     type_checking::typechecker::{add_implicit_return, typecheck_expr},
 };
 use cx_hir::ast::expression::HIRExpression;
-use cx_hir::ast::function::HIRFunctionContract;
+use cx_hir::ast::function::{HIRFunctionBody, HIRFunctionContract};
 use cx_log::CXResult;
 use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_thir::thir::{
     comptime::THIRComptimeFn,
     data::{
-        THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter,
+        THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction,
+        THIRFunctionBody, THIRParameter,
     },
-    expression::{THIRExpression, THIRExpressionKind},
+    expression::{THIRBlockKind, THIRExpression, THIRExpressionKind},
     r#type::THIRTypeKind,
 };
 use cx_tokens::TokenRange;
@@ -23,7 +26,7 @@ pub fn typecheck_function(
     env: &mut TypeEnvironment,
     namespace: &NamespacePath,
     prototype: THIRFnPrototype,
-    body: &HIRExpression,
+    body: &HIRFunctionBody,
 ) -> CXResult<()> {
     if prototype.signature().contract.safe && prototype.signature().var_args {
         return env.log_error(
@@ -63,16 +66,20 @@ pub fn typecheck_function(
         );
     }
 
-    let body_expr = typecheck_expr(env, namespace, body, None)
-        .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
-    let with_implicit_return = add_implicit_return(env, namespace, body_expr)?;
+    let statements = typecheck_function_body(
+        env,
+        namespace,
+        body,
+        &prototype.signature().return_type,
+    )?;
 
     if let Some((name, range)) = env.function.unresolved_label() {
         return env.log_error(range, &catalogue::UNKNOWN_SYMBOL, name.into());
     }
 
     if prototype.signature().contract.safe {
-        crate::type_checking::safety::validate_safe_expression(env, &with_implicit_return)?;
+        let safety_body = sequence_expression(statements.clone(), body.token_range().clone());
+        crate::type_checking::safety::validate_safe_expression(env, &safety_body)?;
     }
 
     env.pop_scope()
@@ -82,7 +89,10 @@ pub fn typecheck_function(
     env.items.push_generated_function(THIRFunction {
         require_explicit_return: env.require_explicit_return(),
         prototype,
-        body: Some(with_implicit_return),
+        body: Some(THIRFunctionBody::Block {
+            exprs: statements,
+            token_range: body.token_range().clone(),
+        }),
     });
 
     Ok(())
@@ -92,7 +102,7 @@ pub fn typecheck_comptime_function(
     env: &mut TypeEnvironment,
     namespace: &NamespacePath,
     prototype: THIRComptimeFnPrototype,
-    body: &HIRExpression,
+    body: &HIRFunctionBody,
     context: StagingContext,
 ) -> CXResult<()> {
     let debug_name = prototype.debug_name().cloned();
@@ -170,14 +180,10 @@ pub fn typecheck_comptime_function(
     env.push_scope(false, false, body.token_range().clone());
     let previous_context = env.comptime_context.replace(context.clone());
 
-    let checked = (|| -> CXResult<THIRExpression> {
-        let body_expr = typecheck_expr(env, namespace, body, None)?
-            .standard_ready_coerce(env, body.token_range())?;
-        add_implicit_return(env, namespace, body_expr)
-    })();
+    let checked = typecheck_function_body(env, namespace, body, &prototype.return_type()._type);
 
     env.comptime_context = previous_context;
-    let with_implicit_return = checked?;
+    let statements = checked?;
 
     if let Some((name, range)) = env.function.unresolved_label() {
         return env.log_error(range, &catalogue::UNKNOWN_SYMBOL, name.into());
@@ -189,9 +195,72 @@ pub fn typecheck_comptime_function(
 
     env.items.push_generated_comptime_function(THIRComptimeFn {
         prototype,
-        body: Some(with_implicit_return),
+        body: Some(THIRFunctionBody::Block {
+            exprs: statements,
+            token_range: body.token_range().clone(),
+        }),
         context,
     });
 
     Ok(())
+}
+
+fn typecheck_function_body(
+    env: &mut TypeEnvironment,
+    namespace: &NamespacePath,
+    body: &HIRFunctionBody,
+    return_type: &cx_thir::thir::data::THIRType,
+) -> CXResult<Vec<THIRExpression>> {
+    match body {
+        HIRFunctionBody::Block { statements, range } => {
+            let statements = statements
+                .iter()
+                .map(|statement| {
+                    typecheck_expr(env, namespace, statement, None)
+                        .and_then(|result| result.standard_ready_coerce(env, statement.token_range()))
+                })
+                .collect::<CXResult<Vec<_>>>()?;
+            add_implicit_return(env, namespace, statements, range.clone())
+        }
+        HIRFunctionBody::Expression(expression) => {
+            let value = typecheck_expr(
+                env,
+                namespace,
+                expression,
+                (!return_type.is_void()).then_some(return_type),
+            )?
+            .apply_expected_type(env, namespace, return_type)?
+            .standard_ready_coerce(env, expression.token_range())?;
+
+            if value._type.is_unreachable() || !expr_may_fall_through(&value) {
+                return Ok(vec![value]);
+            }
+
+            if return_type.is_void() && value._type.is_void() {
+                let mut statements = vec![value];
+                statements.push(
+                    typecheck_return(env, namespace, expression.token_range(), None)?
+                        .internal_ready_assertion(),
+                );
+                return Ok(statements);
+            }
+
+            Ok(vec![
+                typecheck_return(env, namespace, expression.token_range(), Some(value))?
+                    .internal_ready_assertion(),
+            ])
+        }
+    }
+}
+
+fn sequence_expression(statements: Vec<THIRExpression>, token_range: TokenRange) -> THIRExpression {
+    THIRExpression {
+        kind: THIRExpressionKind::Block {
+            statements,
+            kind: THIRBlockKind::Sequence,
+            yields: false,
+        },
+        _type: cx_thir::thir::data::THIRType::unit(),
+        token_range,
+    }
 }

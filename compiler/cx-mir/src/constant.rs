@@ -7,7 +7,6 @@ use crate::{
     unit::{MIRGlobalID, function::MIRFunctionID},
 };
 
-dense_id!(MIRConstantID, "%c");
 dense_id!(MIRStagedID, "%s");
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -23,7 +22,7 @@ pub enum MIRConstant {
     },
     Aggregate {
         ty: MIRTypeID,
-        fields: Vec<(usize, MIRConstantID)>,
+        fields: Vec<(usize, MIRConstant)>,
     },
     String(String),
     Global {

@@ -2,7 +2,7 @@ use cx_util::dense_id;
 
 use crate::unit::{MIRBasicBlockID, MIRGlobalID};
 
-pub use crate::constant::{MIRConstant, MIRConstantID};
+pub use crate::constant::MIRConstant;
 
 dense_id!(MIRPlaceID, "%p");
 dense_id!(MIRRegisterID, "%r");

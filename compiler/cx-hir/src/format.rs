@@ -2,9 +2,10 @@ use cx_util::identifier::CXIdent;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 use crate::ast::{
-    expression::{HIRBinOp, HIRExprKind, HIRExpression, HIRInitIndex},
+    expression::{HIRBinOp, HIRBlockKind, HIRExprKind, HIRExpression, HIRInitIndex},
     function::{
-        HIRComptimeFnPrototype, HIRComptimeValueType, HIRFunctionKind, HIRFunctionPrototype,
+        HIRComptimeFnPrototype, HIRComptimeValueType, HIRFunctionBody, HIRFunctionKind,
+        HIRFunctionPrototype,
     },
     global_var::{HIREnumVariant, HIRGlobalVariable},
     pattern::HIRPattern,
@@ -102,6 +103,24 @@ impl Display for HIRDefinition {
     }
 }
 
+impl Display for HIRFunctionBody {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            Self::Block { statements, .. } => {
+                writeln!(f, "Function Body {{")?;
+                for statement in statements {
+                    HIRExprFormatter::new(statement, 1).fmt(f)?;
+                }
+                writeln!(f, "}}")
+            }
+            Self::Expression(expression) => {
+                writeln!(f, "Function Expression Body =>")?;
+                HIRExprFormatter::new(expression, 1).fmt(f)
+            }
+        }
+    }
+}
+
 impl Display for HIRStmt {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
@@ -193,13 +212,17 @@ impl<'a> Display for HIRExprFormatter<'a> {
             HIRExprKind::Taken => writeln!(f, "Taken"),
             HIRExprKind::Block {
                 exprs,
-                creates_scope,
+                kind,
             } => {
-                if *creates_scope {
-                    writeln!(f, "Scoped Block {{ ")?;
-                } else {
-                    writeln!(f, "Block {{ ")?;
-                }
+                writeln!(
+                    f,
+                    "{} {{",
+                    match kind {
+                        HIRBlockKind::Sequence => "Sequence",
+                        HIRBlockKind::Statement => "Statement Block",
+                        HIRBlockKind::Expression => "Expression Block",
+                    }
+                )?;
                 for stmt in exprs {
                     HIRExprFormatter::new(stmt, self.depth + 1).fmt(f)?;
                 }

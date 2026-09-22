@@ -2,7 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
-    MIRBody, MIRComptimeFnPrototype, MIRComptimeFunction, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, constant::MIRStagedExprPool,
+    MIRBody, MIRComptimeBody, MIRComptimeFnPrototype, MIRComptimeFunction, MIRFnPrototype,
+    MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable,
+    constant::MIRStagedExprPool,
 };
 use cx_tokens::TokenRange;
 
@@ -89,7 +91,7 @@ impl<'thir> MIRUnitBuilder<'thir> {
     }
 
     pub(crate) fn declare_function(&mut self, prototype: MIRFnPrototype) -> MIRFunctionID {
-        let name = prototype.signature.symbol_name.as_string();
+        let name = prototype.symbol_name.as_string();
         if let Some(symbol) = self.function_symbols.get(&name) {
             return symbol.id();
         }
@@ -105,7 +107,7 @@ impl<'thir> MIRUnitBuilder<'thir> {
         &mut self,
         prototype: MIRComptimeFnPrototype,
     ) -> MIRFunctionID {
-        let name = prototype.signature().symbol_name.as_string();
+        let name = prototype.name().as_string();
         if let Some(symbol) = self.function_symbols.get(&name) {
             return symbol.id();
         }
@@ -131,8 +133,11 @@ impl<'thir> MIRUnitBuilder<'thir> {
     }
 
     pub(crate) fn declare_global(&mut self, var: MIRGlobalVariable) -> CXResult<MIRGlobalID> {
+        let name = var.name().as_string();
         let id = self.allocate_global_id();
         self.globals.insert(id, var);
+        self.global_symbols.insert(name, ModuleSymbol::new(id));
+        self.global_order.push(id);
 
         Ok(id)
     }
@@ -148,13 +153,13 @@ impl<'thir> MIRUnitBuilder<'thir> {
     pub(crate) fn define_comptime_function(
         &mut self,
         id: MIRFunctionID,
-        def: MIRBody,
+        def: MIRComptimeBody<'thir>,
     ) -> CXResult<()> {
         let Some(function) = self.comptime_functions.get_mut(&id) else {
             unreachable!("Could not define comptime function id: {}", id);
         };
 
-        function.define(def);
+        function.set_body(def);
 
         Ok(())
     }

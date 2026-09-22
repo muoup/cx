@@ -124,6 +124,10 @@ pub enum MIRInstructionKind {
         out: MIRRegisterID,
         place: MIRPlaceID,
     },
+    Forward {
+        out: MIRRegisterID,
+        source: MIRRegisterID,
+    },
     // Declares (for analysis) that a register or place must live at least as long as 'bind_to' for ownership analysis
     // registe
     BindLifetime {
@@ -158,7 +162,7 @@ pub enum MIRInstructionKind {
     },
     CaseBranch {
         value: MIRValue,
-        cases: Vec<(usize, MIRBlockTarget)>,
+        cases: Vec<(i128, MIRBlockTarget)>,
         default: Option<MIRBlockTarget>,
     },
 

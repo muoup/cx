@@ -4,7 +4,7 @@ use cx_log::catalogue::typecheck as catalogue;
 use cx_thir::{
     thir::{
         expression::{
-            THIRBinOp, THIRExpression, THIRExpressionKind, THIRFloatBinOp, THIRIntBinOp,
+            THIRBinOp, THIRBlockKind, THIRExpression, THIRExpressionKind, THIRFloatBinOp, THIRIntBinOp,
             THIRPtrBinOp, THIRPtrDiffBinOp,
         },
         r#type::{THIRIntType, THIRType, THIRTypeKind},
@@ -44,7 +44,7 @@ fn resolve_comma(lhs: THIRExpression, rhs: THIRExpression) -> CXResult<Typecheck
         rhs._type.clone(),
         THIRExpressionKind::Block {
             statements: vec![lhs, rhs],
-            creates_scope: false,
+            kind: THIRBlockKind::Sequence,
             yields: false,
         },
     ))
@@ -311,22 +311,23 @@ fn coerce_pointer_binop(
         *non_pointer = implicit_cast(env, std::mem::take(non_pointer), &intptr.into())?;
     }
 
-    let ptr_inner = Box::new(env.symbols.ptr_inner(&ptr_type).cloned().unwrap());
+    let ptr_inner = env.symbols.ptr_inner(&ptr_type).cloned().unwrap();
+    let ptr_inner_id = env.symbols.generate_type_id(ptr_inner.clone());
 
     let (return_type, op) = match op {
         HIRBinOp::Add => (
             ptr_type,
             THIRBinOp::PtrDiff {
                 op: THIRPtrDiffBinOp::ADD,
-                ptr_inner,
+                ptr_inner: ptr_inner_id,
             },
         ),
 
         HIRBinOp::ArrayIndex => (
-            env.symbols.mem_ref_to(ptr_inner.as_ref().clone()),
+            env.symbols.mem_ref_to(ptr_inner),
             THIRBinOp::PtrDiff {
                 op: THIRPtrDiffBinOp::ADD,
-                ptr_inner,
+                ptr_inner: ptr_inner_id,
             },
         ),
 
@@ -334,7 +335,7 @@ fn coerce_pointer_binop(
             ptr_type,
             THIRBinOp::PtrDiff {
                 op: THIRPtrDiffBinOp::SUB,
-                ptr_inner,
+                ptr_inner: ptr_inner_id,
             },
         ),
 
@@ -372,49 +373,7 @@ fn coerce_pointer_binop(
     };
 
     if matches!(op, THIRBinOp::PtrDiff { .. }) && rhs._type.is_pointer() {
-        let range = lhs.token_range.clone();
-        let offset_type = lhs._type.clone();
-        let reference_type = env.symbols.mem_ref_to(offset_type.clone());
-        let local_id = cx_thir::thir::expression::THIRLocalID::fresh();
-        let name = cx_util::identifier::CXIdent::from("__pointer_offset");
-        let offset = THIRExpression {
-            token_range: range.clone(),
-            _type: reference_type.clone(),
-            kind: THIRExpressionKind::CreateLocalVariable {
-                name: name.clone(),
-                local_id,
-                _type: offset_type.clone(),
-                initial_value: Some(Box::new(lhs))
-            },
-        };
-        let offset_value = THIRExpression {
-            token_range: range.clone(),
-            _type: offset_type,
-            kind: THIRExpressionKind::Copy {
-                source: Box::new(THIRExpression {
-                    token_range: range.clone(),
-                    _type: reference_type,
-                    kind: THIRExpressionKind::Variable { name, local_id },
-                }),
-            },
-        };
-        let operation = THIRExpression {
-            token_range: range,
-            _type: return_type.clone(),
-            kind: THIRExpressionKind::BinaryOperation {
-                op,
-                lhs: Box::new(rhs),
-                rhs: Box::new(offset_value),
-            },
-        };
-        return Ok(TypecheckResult::new(
-            return_type,
-            THIRExpressionKind::Block {
-                statements: vec![offset, operation],
-                creates_scope: true,
-                yields: false,
-            },
-        ));
+        std::mem::swap(&mut lhs, &mut rhs);
     }
 
     Ok(TypecheckResult::new(

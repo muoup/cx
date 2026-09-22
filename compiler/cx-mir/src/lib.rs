@@ -38,5 +38,5 @@ pub use value::MIRRegisterID as MIRRegister;
 pub use value::{
     MIRBindable, MIRBlockTarget, MIRPlaceID, MIRRegisterID, MIRTarget, MIRValue,
 };
-pub use constant::{MIRConstant, MIRConstantID, MIRStagedID};
+pub use constant::{MIRConstant, MIRStagedID};
 pub use staged::MIRStagedExpression;

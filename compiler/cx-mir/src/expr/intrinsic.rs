@@ -1,4 +1,4 @@
-use crate::{MIRIntType, constant::MIRConstantID, ty::{MIRFloatType, MIRTypeID}, unit::function::MIRFunctionID, value::{MIRPlaceID, MIRTarget, MIRValue}};
+use crate::{MIRIntType, constant::MIRConstant, ty::{MIRFloatType, MIRTypeID}, unit::function::MIRFunctionID, value::{MIRPlaceID, MIRTarget, MIRValue}};
 
 #[derive(Debug, Clone)]
 pub enum MIRIntrinsic {
@@ -59,6 +59,10 @@ pub enum MIRFloatIntrinsic {
     Neg         { out: MIRTarget, value: MIRValue },
     ToInt       { out: MIRTarget, value: MIRValue, target_ty: MIRTypeID },
     FloatCast   { out: MIRTarget, value: MIRValue, float_ty: MIRFloatType },
+    Add         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    Sub         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    Mul         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
+    Div         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
     
     Eq          { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
     Neq         { out: MIRTarget, lhs: MIRValue, rhs: MIRValue },
@@ -98,7 +102,7 @@ pub enum MIRAggregateIntrinsic {
 
 #[derive(Debug, Clone)]
 pub enum MIRInternalIntrinsic {
-    StringAddress { out: MIRTarget, string: MIRConstantID },
+    StringAddress { out: MIRTarget, string: MIRConstant },
     GetFnPtr    { out: MIRTarget, fn_id: MIRFunctionID },
     Bitcast     { out: MIRTarget, value: MIRValue, target_ty: MIRTypeID },
     
@@ -146,5 +150,91 @@ impl From<MIRInternalIntrinsic> for MIRIntrinsic {
 impl From<MIRVAIntrinsic> for MIRIntrinsic {
     fn from(value: MIRVAIntrinsic) -> Self {
         MIRIntrinsic::VA(value)
+    }
+}
+
+impl MIRIntrinsic {
+    pub fn output_target(&self) -> Option<MIRTarget> {
+        match self {
+            Self::Int(op) => Some(match op {
+                MIRIntIntrinsic::Neg { out, .. }
+                | MIRIntIntrinsic::LNot { out, .. }
+                | MIRIntIntrinsic::BNot { out, .. }
+                | MIRIntIntrinsic::ToFloat { out, .. }
+                | MIRIntIntrinsic::IntCast { out, .. }
+                | MIRIntIntrinsic::ToPtr { out, .. }
+                | MIRIntIntrinsic::Add { out, .. }
+                | MIRIntIntrinsic::Sub { out, .. }
+                | MIRIntIntrinsic::UMul { out, .. }
+                | MIRIntIntrinsic::SMul { out, .. }
+                | MIRIntIntrinsic::UDiv { out, .. }
+                | MIRIntIntrinsic::SDiv { out, .. }
+                | MIRIntIntrinsic::UMod { out, .. }
+                | MIRIntIntrinsic::SMod { out, .. }
+                | MIRIntIntrinsic::Eq { out, .. }
+                | MIRIntIntrinsic::Neq { out, .. }
+                | MIRIntIntrinsic::ULt { out, .. }
+                | MIRIntIntrinsic::SLt { out, .. }
+                | MIRIntIntrinsic::ULe { out, .. }
+                | MIRIntIntrinsic::SLe { out, .. }
+                | MIRIntIntrinsic::UGt { out, .. }
+                | MIRIntIntrinsic::SGt { out, .. }
+                | MIRIntIntrinsic::UGe { out, .. }
+                | MIRIntIntrinsic::SGe { out, .. }
+                | MIRIntIntrinsic::LAnd { out, .. }
+                | MIRIntIntrinsic::LOr { out, .. }
+                | MIRIntIntrinsic::BAnd { out, .. }
+                | MIRIntIntrinsic::BOr { out, .. }
+                | MIRIntIntrinsic::BXor { out, .. }
+                | MIRIntIntrinsic::LShift { out, .. }
+                | MIRIntIntrinsic::ARShift { out, .. }
+                | MIRIntIntrinsic::LRShift { out, .. } => *out,
+            }),
+            Self::Float(op) => Some(match op {
+                MIRFloatIntrinsic::Neg { out, .. }
+                | MIRFloatIntrinsic::ToInt { out, .. }
+                | MIRFloatIntrinsic::FloatCast { out, .. }
+                | MIRFloatIntrinsic::Add { out, .. }
+                | MIRFloatIntrinsic::Sub { out, .. }
+                | MIRFloatIntrinsic::Mul { out, .. }
+                | MIRFloatIntrinsic::Div { out, .. }
+                | MIRFloatIntrinsic::Eq { out, .. }
+                | MIRFloatIntrinsic::Neq { out, .. }
+                | MIRFloatIntrinsic::Lt { out, .. }
+                | MIRFloatIntrinsic::Le { out, .. }
+                | MIRFloatIntrinsic::Gt { out, .. }
+                | MIRFloatIntrinsic::Geq { out, .. } => *out,
+            }),
+            Self::Pointer(op) => Some(match op {
+                MIRPtrIntrinsic::ToInt { out, .. }
+                | MIRPtrIntrinsic::Add { out, .. }
+                | MIRPtrIntrinsic::Sub { out, .. }
+                | MIRPtrIntrinsic::Diff { out, .. }
+                | MIRPtrIntrinsic::Eq { out, .. }
+                | MIRPtrIntrinsic::Neq { out, .. }
+                | MIRPtrIntrinsic::Lt { out, .. }
+                | MIRPtrIntrinsic::Leq { out, .. }
+                | MIRPtrIntrinsic::Gt { out, .. }
+                | MIRPtrIntrinsic::Geq { out, .. } => *out,
+            }),
+            Self::Aggregate(op) => Some(match op {
+                MIRAggregateIntrinsic::SumIndex { out, .. }
+                | MIRAggregateIntrinsic::SumVariant { out, .. }
+                | MIRAggregateIntrinsic::SumVariantL { out, .. }
+                | MIRAggregateIntrinsic::StructInit { out, .. }
+                | MIRAggregateIntrinsic::StructField { out, .. }
+                | MIRAggregateIntrinsic::ArrayIndex { out, .. } => *out,
+            }),
+            Self::Internal(op) => match op {
+                MIRInternalIntrinsic::StringAddress { out, .. }
+                | MIRInternalIntrinsic::GetFnPtr { out, .. }
+                | MIRInternalIntrinsic::Bitcast { out, .. } => Some(*out),
+                MIRInternalIntrinsic::Assert { .. } | MIRInternalIntrinsic::Assume { .. } => None,
+            },
+            Self::VA(op) => match op {
+                MIRVAIntrinsic::VaArg { out, .. } => Some(*out),
+                MIRVAIntrinsic::VaStart { .. } | MIRVAIntrinsic::VaEnd { .. } => None,
+            },
+        }
     }
 }
