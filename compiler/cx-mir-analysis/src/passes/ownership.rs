@@ -96,17 +96,17 @@ impl Mergeable<MIRBindable> for OwnershipState {
     type Context = Ownership;
 
     fn merge(
-        &mut self,
+        &self,
         context: &Ownership,
         other: &Self,
         key: MIRBindable,
-    ) -> CXResult<LatticeState<MIRBindable, Self>> {
+    ) -> CXResult<Option<LatticeState<MIRBindable, Self>>> {
         Ok(match (self.clone(), other) {
-            (_, _) if self == other => LatticeState::Known(*self),
+            (_, _) if self == other => None,
 
             (OwnershipState::Uninitialized, OwnershipState::Moved)
             | (OwnershipState::Moved, OwnershipState::Uninitialized) => {
-                LatticeState::Known(OwnershipState::Uninitialized)
+                Some(LatticeState::Known(OwnershipState::Uninitialized))
             }
 
             (OwnershipState::Available, _) | (_, OwnershipState::Available) => {
@@ -116,10 +116,10 @@ impl Mergeable<MIRBindable> for OwnershipState {
                     }
                 }
 
-                LatticeState::Known(OwnershipState::Moved)
+                Some(LatticeState::Known(OwnershipState::Moved))
             }
 
-            _ => LatticeState::Top,
+            _ => unreachable!("Invalid ownership state combination"),
         })
     }
 }

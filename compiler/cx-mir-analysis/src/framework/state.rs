@@ -19,7 +19,7 @@ pub trait Mergeable<Key: Clone>: Clone {
 
     // Failable merge of two lattice states, returns Ok(None) if the merge did not change the state
     fn merge(
-        &mut self,
+        &self,
         context: &Self::Context,
         other: &Self,
         key: Key,
@@ -30,28 +30,28 @@ pub trait Mergeable<Key: Clone>: Clone {
 
 impl<Key: Clone, T: Mergeable<Key>> LatticeState<Key, T> {
     pub fn merge(
-        &mut self,
+        &self,
         context: &T::Context,
         other: &LatticeState<Key, T>,
         place: Key,
-    ) -> CXResult<bool> {
-        let old_value = std::mem::replace(self, LatticeState::Bottom);
-        
-        match (old_value, other) {
-            (LatticeState::Bottom, LatticeState::Bottom) => Ok(false)
-            (LatticeState::Top, _) => Ok(false)
+    ) -> CXResult<Option<LatticeState<Key, T>>> {
+        Ok(match (self, other) {
+            (LatticeState::Bottom, LatticeState::Bottom) => None,
+            (LatticeState::Top, _) => None,
 
-            (LatticeState::Bottom | LatticeState::Known(_), LatticeState::Top) => LatticeState::Top,
+            (LatticeState::Bottom | LatticeState::Known(_), LatticeState::Top) => {
+                Some(LatticeState::Top)
+            }
 
-            (LatticeState::Bottom, known @ LatticeState::Known(_)) => { *self = known.clone(); true }
-            (known @ LatticeState::Known(_), LatticeState::Bottom) => { *self = known.clone(); true }
+            (LatticeState::Bottom, known @ LatticeState::Known(_)) => Some(known.clone()),
+            (known @ LatticeState::Known(_), LatticeState::Bottom) => Some(known.clone()),
 
-            (LatticeState::Known(mut value), LatticeState::Known(other_value)) => {
+            (LatticeState::Known(value), LatticeState::Known(other_value)) => {
                 value.merge(context, other_value, place)?
             }
 
             _ => unreachable!("Invalid lattice state combination"),
-        }
+        })
     }
 }
 
@@ -102,8 +102,14 @@ impl<Key: Hash + Eq + Clone, State: Clone + Mergeable<Key>> StateTable<Key, Stat
             .iter()
             .map(|(key, state)| {
                 let other_state = other.entry(key.clone()).or_insert(LatticeState::Bottom);
+                let merge = other_state.merge(context, state, key.clone());
 
-                other_state.merge(context, state, key.clone())
+                if let Ok(Some(new_state)) = merge {
+                    *other_state = new_state;
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
             })
             .fold(Ok(false), |a, b| Ok(a? || b?))
     }

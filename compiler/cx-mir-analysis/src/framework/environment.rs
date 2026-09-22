@@ -68,8 +68,9 @@ fn run(env: &AnalysisEnvironment<'_>, pipeline: &mut Pipeline) -> CXResult<()> {
         pipeline.analyze_instruction(env, instruction)?;
 
         for successor in successors(instruction) {
-            pipeline.merge(env, successor.block)?;
-            reloads.push(successor);
+            if (pipeline.merge(env, successor.block)?) {
+                reloads.push(successor);
+            }
         }
 
         if instruction.is_terminator()

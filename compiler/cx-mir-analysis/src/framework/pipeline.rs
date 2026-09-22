@@ -36,12 +36,14 @@ impl Pipeline {
         Ok(())
     }
 
-    pub fn merge(&mut self, env: &AnalysisEnvironment, other: MIRBasicBlockID) -> CXResult<()> {
+    pub fn merge(&mut self, env: &AnalysisEnvironment, other: MIRBasicBlockID) -> CXResult<bool> {
+        let mut changed = false;
+
         for analysis in &mut self.analyses {
-            analysis.merge(env, other)?;
+            changed |= analysis.merge(env, other)?;
         }
 
-        Ok(())
+        Ok(changed)
     }
 
     pub fn reload_block(&mut self, env: &AnalysisEnvironment, block: MIRBasicBlockID) -> CXResult<()> {
