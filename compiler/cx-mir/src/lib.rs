@@ -12,7 +12,7 @@ pub use format::MIRDisplay;
 pub use expr::body::MIRBody;
 pub use expr::comptime::{MIRComptimeBody, MIRComptimeInstruction, MIRComptimeOp};
 pub use expr::instruction::{
-    MIRBasicBlock, MIRInstrKind, MIRInstruction, MIRInstructionLike, MIRScopeID,
+    MIRBasicBlock, MIRInstructionKind, MIRInstruction, MIRInstructionLike, MIRScopeID,
 };
 pub use expr::intrinsic::{
     MIRAggregateIntrinsic, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic, MIRIntrinsic,

@@ -303,24 +303,15 @@ pub enum THIRExpressionKind {
     },
 
     // Lifetime Management
-    LifetimeStart {
-        variable: CXIdent,
-        _type: THIRType,
-    },
-    LifetimeEnd {
-        variable: CXIdent,
-        _type: THIRType,
-    },
-    LeakLifetime {
+    Leak {
         expression: Box<THIRExpression>,
     },
-
     Unsafe {
         expression: Box<THIRExpression>,
     },
 
     StagedExpression(THIRStagedExpr),
-    MaterializeStagedExpression {
+    Materialize {
         expr: Box<THIRExpression>,
         with_params: Vec<THIRExpression>,
     },
@@ -422,7 +413,6 @@ pub enum THIRBinOp {
 
 #[derive(Clone, Debug, Readable, Writable)]
 pub enum THIRUnOp {
-    NEG,
     INEG,
     FNEG,
     BNOT,
@@ -483,6 +473,7 @@ pub enum THIRCoercion {
     //
     // Converting from a bounded / ephemeral reference to a free reference (non-safe operation) also falls under this category
     ReinterpretBits,
+    
     Unreachable,
 }
 

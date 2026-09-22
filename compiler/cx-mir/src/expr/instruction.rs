@@ -73,12 +73,12 @@ impl<I> MIRBasicBlock<I> {
 
 #[derive(Debug, Clone)]
 pub struct MIRInstruction {
-    pub kind: MIRInstrKind,
+    pub kind: MIRInstructionKind,
     pub token_range: TokenRange,
 }
 
 impl MIRInstruction {
-    pub fn new(kind: MIRInstrKind, token_range: TokenRange) -> Self {
+    pub fn new(kind: MIRInstructionKind, token_range: TokenRange) -> Self {
         Self { kind, token_range }
     }
 
@@ -98,7 +98,7 @@ impl MIRInstructionLike for MIRInstruction {
 }
 
 #[derive(Debug, Clone)]
-pub enum MIRInstrKind {
+pub enum MIRInstructionKind {
     /// Marks the beginning of a lexical scope for ownership analysis.
     ScopeEnter {
         scope: MIRScopeID,
@@ -165,7 +165,7 @@ pub enum MIRInstrKind {
     Unreachable,
 }
 
-impl MIRInstrKind {
+impl MIRInstructionKind {
     pub fn is_terminator(&self) -> bool {
         matches!(
             self,

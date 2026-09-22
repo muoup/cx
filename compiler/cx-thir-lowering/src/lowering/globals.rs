@@ -1,13 +1,13 @@
 use crate::builder::MIRBuilder;
 use crate::lowering::{lower_expression, types::lower_type};
 use cx_log::CXResult;
+use cx_mir::ty::comptime::MIRComptimeType;
 use cx_mir::{
-    MIRComptimeFnSignature, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID,
-    MIRFunctionMode, MIRGlobalID, MIRGlobalKind, MIRGlobalState, MIRInstrKind,
+    MIRComptimeContext, MIRComptimeFnPrototype, MIRComptimeFnSignature, MIRFunctionID, MIRGlobalID,
+    MIRGlobalState, MIRGlobalVariable, MIRInstructionKind,
 };
 use cx_mir_comptime::evaluate_comptime_function;
 use cx_thir::thir::{expression::THIRExpression, global::THIRGlobalVariable};
-use cx_util::identifier::CXIdent;
 use cx_util::linkage::LinkageMode;
 
 pub struct MIRGlobalInitRequest {
@@ -23,17 +23,18 @@ pub(crate) fn predeclare_global(
     let id = builder.module_mut().allocate_global_id();
     let ty = lower_type(builder, &global._type)?;
 
-    builder.module_mut().declare_global(MIRGlobalVariable {
-        id,
-        name: global.name.clone(),
-        _type: ty,
-        kind: match global.kind {
-            THIRGlobalKind::External => MIRGlobalKind::External,
-            THIRGlobalKind::ZeroInitialized => MIRGlobalKind::ZeroInitialized,
-            THIRGlobalKind::Initialized => MIRGlobalKind::Initialized,
+    builder.module_mut().declare_global(MIRGlobalVariable::new(
+        global.name.clone(),
+        global.linkage(),
+        ty,
+        match global.linkage {
+            LinkageMode::Extern => MIRGlobalState::External,
+            _ => MIRGlobalState::ZeroInitialized,
         },
-        token_range: global.token_range.clone(),
-    })
+        global.is_mutable,
+    ));
+
+    Ok(id)
 }
 
 pub(crate) fn lower_global(
@@ -49,13 +50,12 @@ pub(crate) fn lower_global(
 
     let signature = MIRComptimeFnSignature::new(MIRComptimeType::Standard(global_type), vec![]);
     let prototype = MIRComptimeFnPrototype::new(
+        global.name.clone(),
         signature,
-        global.name.clone()
+        MIRComptimeContext::default(),
     );
 
-    let init_id = builder
-        .module_mut()
-        .declare_comptime_function(prototype);
+    let init_id = builder.module_mut().declare_comptime_function(prototype);
     builder
         .module_mut()
         .begin_global_initializer(id, &init.token_range)?;
@@ -75,7 +75,7 @@ pub(crate) fn fulfill_init_request(
 
     let value = lower_expression(builder, &request.initializer)?;
     if !builder.fun_mut().current_block_terminated() {
-        builder.emit(MIRInstrKind::Return { value: Some(value) });
+        builder.emit(MIRInstructionKind::Return { value: Some(value) });
     }
 
     builder.finish_function()?;
@@ -97,9 +97,10 @@ pub(crate) fn execute_request(
 
     let intern_constant = builder.module_mut().intern_constant(result);
 
-    builder
-        .module_mut()
-        .set_global_state(request.global_id, MIRGlobalState::Initialized(intern_constant));
+    builder.module_mut().set_global_state(
+        request.global_id,
+        MIRGlobalState::Initialized(intern_constant),
+    );
 
     Ok(())
 }

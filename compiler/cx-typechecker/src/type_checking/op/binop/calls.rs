@@ -639,7 +639,7 @@ fn complete_staged_call(
 
     Ok(TypecheckResult::new(
         return_type,
-        THIRExpressionKind::MaterializeStagedExpression {
+        THIRExpressionKind::Materialize {
             expr: Box::new(callee),
             with_params: arguments,
         },

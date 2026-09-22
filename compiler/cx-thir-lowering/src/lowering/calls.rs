@@ -2,9 +2,7 @@ use cx_log::{CXResult, catalogue::mir as catalogue};
 use std::sync::Arc;
 
 use crate::log::mir_error;
-use cx_mir::{
-    MIRComptimeOp, MIRConstant, MIRField, MIRFunctionID, MIRInstrKind, MIRStagedTemplate, MIRValue,
-};
+use cx_mir::{MIRComptimeOp, MIRConstant, MIRField, MIRFunctionID, MIRInstructionKind, MIRValue};
 use cx_mir_comptime::{
     MIRComptimeValue, MIRStagedBinding, MIRStagedValue, evaluate_comptime_function,
 };
@@ -20,8 +18,6 @@ use cx_tokens::TokenRange;
 use crate::lowering::comptime::evaluate_comptime_expr;
 use crate::lowering::control_flow::auto_pop_scope;
 use crate::lowering::lower_expression;
-use crate::lowering::staged::exits;
-use crate::lowering::staged::instantiate;
 use crate::{
     builder::MIRBuilder,
     lowering::types::{lower_type, lower_type_id},
@@ -123,7 +119,7 @@ fn lower_runtime_call(
     } else {
         None
     };
-    builder.emit(MIRInstrKind::Call {
+    builder.emit(MIRInstructionKind::Call {
         out,
         callee,
         args: args.clone(),
@@ -136,7 +132,7 @@ fn lower_runtime_call(
         || unreachable_return
         || matches!(&function.kind, THIRExpressionKind::FunctionReference { name, .. } if name.as_str() == "exit")
     {
-        builder.emit(MIRInstrKind::Unreachable);
+        builder.emit(MIRInstructionKind::Unreachable);
     }
     let value = out
         .map(MIRValue::Register)
@@ -164,7 +160,7 @@ fn lower_runtime_call(
             builder.fun_mut().bind_named_value(name, value.clone());
         }
         let condition = super::lower_expression(builder, &postcondition.condition)?;
-        builder.emit(MIRInstrKind::Assume { condition });
+        builder.emit(MIRInstructionKind::Assume { condition });
         auto_pop_scope(builder)?;
     }
 

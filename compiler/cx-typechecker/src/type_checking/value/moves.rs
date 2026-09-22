@@ -180,7 +180,7 @@ pub(crate) fn typecheck_leak(
 
     Ok(TypecheckResult::new(
         THIRType::unit(),
-        THIRExpressionKind::LeakLifetime {
+        THIRExpressionKind::Leak {
             expression: Box::new(value),
         },
     ))

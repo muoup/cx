@@ -112,3 +112,39 @@ pub enum MIRVAIntrinsic {
     VaEnd       { list: MIRValue },
     VaArg       { out: MIRTarget, list: MIRValue, ty: MIRTypeID },
 }
+
+impl From<MIRIntIntrinsic> for MIRIntrinsic {
+    fn from(value: MIRIntIntrinsic) -> Self {
+        MIRIntrinsic::Int(value)
+    }
+}
+
+impl From<MIRFloatIntrinsic> for MIRIntrinsic {
+    fn from(value: MIRFloatIntrinsic) -> Self {
+        MIRIntrinsic::Float(value)
+    }
+}
+
+impl From<MIRPtrIntrinsic> for MIRIntrinsic {
+    fn from(value: MIRPtrIntrinsic) -> Self {
+        MIRIntrinsic::Pointer(value)
+    }
+}
+
+impl From<MIRAggregateIntrinsic> for MIRIntrinsic {
+    fn from(value: MIRAggregateIntrinsic) -> Self {
+        MIRIntrinsic::Aggregate(value)
+    }
+}
+
+impl From<MIRInternalIntrinsic> for MIRIntrinsic {
+    fn from(value: MIRInternalIntrinsic) -> Self {
+        MIRIntrinsic::Internal(value)
+    }
+}
+
+impl From<MIRVAIntrinsic> for MIRIntrinsic {
+    fn from(value: MIRVAIntrinsic) -> Self {
+        MIRIntrinsic::VA(value)
+    }
+}

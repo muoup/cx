@@ -1,14 +1,15 @@
 use cx_log::CXResult;
 use cx_mir::{
-    MIRBlockTarget, MIRCoercion, MIRConstant, MIRInstrKind, MIRScopeID, MIRStagedExitKind,
-    MIRStagedInstrKind, MIRTypeKind, MIRValue, ty::interface::MTRegistry,
+    MIRBlockTarget, MIRConstant, MIRInstructionKind, MIRScopeID, MIRTypeKind, MIRValue,
+    ty::interface::MTRegistry,
 };
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
-    expression::{THIRBinOp, THIRExpression, THIRIntBinOp, THIRLocalID},
+    expression::{THIRExpression, THIRLocalID},
     pattern::THIRPattern,
 };
 use cx_thir::type_context::THIRTypeContext;
+use cx_tokens::TokenRange;
 
 use crate::{
     builder::MIRBuilder,
@@ -61,6 +62,7 @@ pub fn auto_cleanup(builder: &mut MIRBuilder, to_scope: MIRScopeID) -> CXResult<
 
 pub fn lower_control_exit(
     builder: &mut MIRBuilder<'_>,
+    range: &TokenRange,
     kind: MIRStagedExitKind,
 ) -> CXResult<MIRValue> {
     let target = builder.fun().exit_target(kind);
@@ -72,7 +74,7 @@ pub fn lower_control_exit(
             .expect("captured function has no root scope")
             .id();
         auto_cleanup(builder, root_scope)?;
-        builder.emit(MIRStagedInstrKind::ScopeExit { kind });
+        builder.emit(MIRInstructionKind::ScopeExit { kind });
         return Ok(MIRValue::Constant(MIRConstant::Unit));
     }
 
@@ -87,7 +89,7 @@ pub fn lower_control_exit(
     };
 
     auto_cleanup(builder, scope)?;
-    builder.emit(MIRInstrKind::Jump {
+    builder.emit(MIRInstructionKind::Jump {
         target: MIRBlockTarget::new(block),
     });
     Ok(MIRValue::Constant(MIRConstant::Unit))
@@ -126,7 +128,7 @@ pub(super) fn lower_if(
     builder.fun_mut().push_scope(condition.token_range.clone());
 
     let condition_value = lower_expression(builder, condition)?;
-    builder.emit(MIRInstrKind::Branch {
+    builder.emit(MIRInstructionKind::Branch {
         cond: condition_value,
         true_target: MIRBlockTarget::new(then_block),
         false_target: MIRBlockTarget::new(else_block.unwrap_or(merge)),
@@ -152,7 +154,7 @@ pub(super) fn lower_if(
     lower_scoped(builder, then_branch)?;
     auto_pop_scope(builder)?;
 
-    builder.emit(MIRInstrKind::Jump {
+    builder.emit(MIRInstructionKind::Jump {
         target: MIRBlockTarget::new(merge),
     });
 
@@ -171,7 +173,7 @@ pub(super) fn lower_if(
         lower_expression(builder, else_branch)?;
         auto_pop_scope(builder)?;
 
-        builder.emit(MIRInstrKind::Jump {
+        builder.emit(MIRInstructionKind::Jump {
             target: MIRBlockTarget::new(merge),
         });
     }
@@ -195,7 +197,7 @@ pub(super) fn lower_while(
     let body_block = builder.fun_mut().new_block("while.body");
     let exit_block = builder.fun_mut().new_block("while.exit");
 
-    builder.emit(MIRInstrKind::Jump {
+    builder.emit(MIRInstructionKind::Jump {
         target: MIRBlockTarget::new(if pre_eval {
             condition_block
         } else {
@@ -206,7 +208,7 @@ pub(super) fn lower_while(
     builder.fun_mut().set_current_block(condition_block);
     let condition = lower_scoped(builder, condition)?;
 
-    builder.emit(MIRInstrKind::Branch {
+    builder.emit(MIRInstructionKind::Branch {
         cond: condition,
         true_target: MIRBlockTarget::new(body_block),
         false_target: MIRBlockTarget::new(exit_block),
@@ -223,7 +225,7 @@ pub(super) fn lower_while(
     lower_expression(builder, body)?;
     auto_pop_scope(builder)?;
 
-    builder.emit(MIRInstrKind::Jump {
+    builder.emit(MIRInstructionKind::Jump {
         target: MIRBlockTarget::new(condition_block),
     });
 
@@ -245,13 +247,13 @@ pub(super) fn lower_for(
     let increment_block = builder.fun_mut().new_block("for.increment");
     let exit_block = builder.fun_mut().new_block("for.exit");
 
-    builder.emit(MIRInstrKind::Jump {
+    builder.emit(MIRInstructionKind::Jump {
         target: MIRBlockTarget::new(condition_block),
     });
 
     builder.fun_mut().set_current_block(condition_block);
     let condition = lower_expression(builder, condition)?;
-    builder.emit(MIRInstrKind::Branch {
+    builder.emit(MIRInstructionKind::Branch {
         cond: condition,
         true_target: MIRBlockTarget::new(body_block),
         false_target: MIRBlockTarget::new(exit_block),
@@ -268,13 +270,13 @@ pub(super) fn lower_for(
     lower_expression(builder, body)?;
 
     auto_pop_scope(builder)?;
-    builder.emit(MIRInstrKind::Jump {
+    builder.emit(MIRInstructionKind::Jump {
         target: MIRBlockTarget::new(increment_block),
     });
 
     builder.fun_mut().set_current_block(increment_block);
     lower_expression(builder, increment)?;
-    builder.emit(MIRInstrKind::Jump {
+    builder.emit(MIRInstructionKind::Jump {
         target: MIRBlockTarget::new(condition_block),
     });
     builder.fun_mut().set_current_block(exit_block);
@@ -313,7 +315,7 @@ pub(super) fn lower_switch(
         bodies.push(block);
     }
 
-    builder.emit(MIRInstrKind::IntSwitch {
+    builder.emit(MIRInstructionKind::IntSwitch {
         value,
         cases: targets,
         default: Some(MIRBlockTarget::new(default_block)),
@@ -326,7 +328,7 @@ pub(super) fn lower_switch(
         builder.fun_mut().set_current_block(block);
         lower_scoped(builder, body)?;
 
-        builder.emit(MIRInstrKind::Jump {
+        builder.emit(MIRInstructionKind::Jump {
             target: MIRBlockTarget::new(exit),
         });
     }
@@ -334,7 +336,7 @@ pub(super) fn lower_switch(
     if let Some(default) = default {
         builder.fun_mut().set_current_block(default_block);
         lower_scoped(builder, default)?;
-        builder.emit(MIRInstrKind::Jump {
+        builder.emit(MIRInstructionKind::Jump {
             target: MIRBlockTarget::new(exit),
         });
     }
@@ -406,7 +408,7 @@ pub(super) fn lower_match(
             })
             .collect();
         let sum_type_id = lower_type(builder, &subject_type)?;
-        builder.emit(MIRInstrKind::VariantSwitch {
+        builder.emit(MIRInstructionKind::VariantSwitch {
             subject: subject_value.clone(),
             sum_type: sum_type_id,
             cases,
@@ -448,7 +450,7 @@ pub(super) fn lower_match(
         {
             let to_type = lower_type(builder, &int_type)?;
             let out = builder.fun_mut().new_register(to_type, None);
-            builder.emit(MIRInstrKind::Coerce {
+            builder.emit(MIRInstructionKind::Coerce {
                 out,
                 operand: value,
                 coercion: MIRCoercion::Integral {
@@ -460,7 +462,7 @@ pub(super) fn lower_match(
             });
             value = MIRValue::Register(out);
         }
-        builder.emit(MIRInstrKind::IntSwitch {
+        builder.emit(MIRInstructionKind::IntSwitch {
             value,
             cases,
             default: default_target,
@@ -483,7 +485,7 @@ pub(super) fn lower_match(
         let body_value = lower_expression(builder, body)?;
         auto_pop_scope(builder)?;
 
-        builder.emit(MIRInstrKind::Jump {
+        builder.emit(MIRInstructionKind::Jump {
             target: MIRBlockTarget::with_args(
                 exit,
                 if value_match {
@@ -497,7 +499,7 @@ pub(super) fn lower_match(
 
     if binding_block.is_none() {
         builder.fun_mut().set_current_block(default_block);
-        builder.emit(MIRInstrKind::Unreachable);
+        builder.emit(MIRInstructionKind::Unreachable);
     }
 
     auto_pop_scope(builder)?;

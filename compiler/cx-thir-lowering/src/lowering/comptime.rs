@@ -3,7 +3,7 @@ use cx_mir::MIRConstant;
 use cx_mir_comptime::{MIRComptimeValue, evaluate_comptime_function};
 use cx_thir::thir::expression::THIRExpression;
 
-use crate::{builder::MIRBuilder, log::mir_error, lowering::capture::capture_expression};
+use crate::{builder::MIRBuilder, log::mir_error};
 
 pub(crate) fn evaluate_comptime_expr(
     context: &mut MIRBuilder,

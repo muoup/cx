@@ -2,7 +2,7 @@ use cx_log::catalogue::mir as catalogue;
 
 use crate::{log::log_mir_error, lowering::lower_expression};
 use cx_log::CXResult;
-use cx_mir::{MIRConstant, MIRInstrKind, MIRIntType, MIRValue};
+use cx_mir::{MIRConstant, MIRInstructionKind, MIRIntType, MIRValue};
 use cx_thir::thir::{
     data::{THIRIntType, THIRType, THIRTypeKind},
     expression::THIRExpression,
@@ -45,7 +45,7 @@ pub(super) fn lower_pattern_test(
                 let payload = memory::target_register(builder, payload_type_id);
                 let sum_type_id = lower_type(builder, sum_type)?;
 
-                builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Target {
+                builder.emit(MIRInstructionKind::AggregateOp(MIRAggregateOp::Target {
                     out: payload,
                     op: MIRTargetAggregateOp::Variant {
                         base,
@@ -68,7 +68,7 @@ pub(super) fn lower_pattern_test(
             )?;
             let tag = builder.fun_mut().new_register(tag_type, None);
             let sum_type_id = lower_type(builder, sum_type)?;
-            builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Value {
+            builder.emit(MIRInstructionKind::AggregateOp(MIRAggregateOp::Value {
                 out: tag,
                 op: MIRValueAggregateOp::Discriminant {
                     value: lhs_value,
@@ -102,7 +102,7 @@ pub(super) fn lower_pattern_test(
     };
     let result_type_id = lower_type(builder, result_type)?;
     let out = builder.fun_mut().new_register(result_type_id, None);
-    builder.emit(MIRInstrKind::BinOp {
+    builder.emit(MIRInstructionKind::BinOp {
         out,
         op: MIRBinaryOp::Integer {
             ty: MIRIntType::I8,
@@ -195,7 +195,7 @@ pub(super) fn bind_pattern_payload(
             _ => unreachable!(),
         };
 
-        builder.emit(MIRInstrKind::AggregateOp(instr));
+        builder.emit(MIRInstructionKind::AggregateOp(instr));
 
         builder.fun_mut().bind_local(*local_id, payload.clone());
         if let Some(name) = inner_name {

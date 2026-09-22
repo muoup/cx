@@ -8,7 +8,7 @@ use crate::{
     expr::{
         body::MIRBody,
         comptime::{MIRComptimeInstruction, MIRComptimeOp},
-        instruction::{MIRBasicBlock, MIRInstrKind},
+        instruction::{MIRBasicBlock, MIRInstructionKind},
         intrinsic::{
             MIRAggregateIntrinsic, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic,
             MIRIntrinsic, MIRPtrIntrinsic, MIRVAIntrinsic,
@@ -461,13 +461,13 @@ fn write_instruction<T: MTRegistry>(
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     match &instruction.kind {
-        MIRInstrKind::ScopeEnter { scope } => write!(f, "scope.enter {scope}"),
-        MIRInstrKind::ScopeExit { scope } => write!(f, "scope.exit {scope}"),
-        MIRInstrKind::Initialize { place } => {
+        MIRInstructionKind::ScopeEnter { scope } => write!(f, "scope.enter {scope}"),
+        MIRInstructionKind::ScopeExit { scope } => write!(f, "scope.exit {scope}"),
+        MIRInstructionKind::Initialize { place } => {
             f.write_str("initialize ")?;
             write_bindable(f, unit, function, place)
         }
-        MIRInstrKind::Invalidate { place, leak } => {
+        MIRInstructionKind::Invalidate { place, leak } => {
             if *leak {
                 f.write_str("leak ")?;
             } else {
@@ -475,23 +475,23 @@ fn write_instruction<T: MTRegistry>(
             }
             write_bindable(f, unit, function, place)
         }
-        MIRInstrKind::LiftPlace { out, place } => {
+        MIRInstructionKind::LiftPlace { out, place } => {
             write_register_name(f, function, *out)?;
             f.write_str(" = lift ")?;
             write_place_name(f, unit, function, *place)
         }
-        MIRInstrKind::BindLifetime { bind, bind_to: to } => {
+        MIRInstructionKind::BindLifetime { bind, bind_to: to } => {
             f.write_str("bind ")?;
             write_bindable(f, unit, function, bind)?;
             f.write_str(" to ")?;
             write_place_name(f, unit, function, *to)
         }
-        MIRInstrKind::Store { target, value, .. } => {
+        MIRInstructionKind::Store { target, value, .. } => {
             write_place_name(f, unit, function, *target)?;
             f.write_str(" = ")?;
             write_value(f, unit, function, value)
         }
-        MIRInstrKind::Call { out, callee, args } => {
+        MIRInstructionKind::Call { out, callee, args } => {
             if let Some(out) = out {
                 write_register_name(f, function, *out)?;
                 f.write_str(" = ")?;
@@ -501,10 +501,10 @@ fn write_instruction<T: MTRegistry>(
             write_values(f, unit, function, args)?;
             f.write_str(")")
         }
-        MIRInstrKind::IntrinsicOp(intrinsic) => {
+        MIRInstructionKind::IntrinsicOp(intrinsic) => {
             write_intrinsic(f, unit, function, intrinsic, types)
         }
-        MIRInstrKind::Return { value } => {
+        MIRInstructionKind::Return { value } => {
             f.write_str("return")?;
             if let Some(value) = value {
                 f.write_str(" ")?;
@@ -512,11 +512,11 @@ fn write_instruction<T: MTRegistry>(
             }
             Ok(())
         }
-        MIRInstrKind::Jump { target } => {
+        MIRInstructionKind::Jump { target } => {
             f.write_str("goto ")?;
             write_block_target(f, unit, function, target)
         }
-        MIRInstrKind::Branch {
+        MIRInstructionKind::Branch {
             cond,
             true_target,
             false_target,
@@ -528,7 +528,7 @@ fn write_instruction<T: MTRegistry>(
             f.write_str(" else goto ")?;
             write_block_target(f, unit, function, false_target)
         }
-        MIRInstrKind::CaseBranch {
+        MIRInstructionKind::CaseBranch {
             value,
             cases,
             default,
@@ -552,7 +552,7 @@ fn write_instruction<T: MTRegistry>(
             }
             f.write_str(" }")
         }
-        MIRInstrKind::Unreachable => f.write_str("unreachable"),
+        MIRInstructionKind::Unreachable => f.write_str("unreachable"),
     }
 }
 

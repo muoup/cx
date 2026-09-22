@@ -1296,7 +1296,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::MaterializeStagedExpression { expr, with_params } => {
+            THIRExpressionKind::Materialize { expr, with_params } => {
                 writeln!(f, "MaterializeStagedExpression")?;
                 MIRExpressionFormatter {
                     expr,
@@ -1466,21 +1466,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::LifetimeStart { variable, _type } => {
-                write!(f, "LifetimeStart {} (", variable)?;
-                self.write_type(f, _type)?;
-                write!(f, ") <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")
-            }
-            THIRExpressionKind::LifetimeEnd { variable, _type } => {
-                write!(f, "LifetimeEnd {} (", variable)?;
-                self.write_type(f, _type)?;
-                write!(f, ") <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")
-            }
-            THIRExpressionKind::LeakLifetime { expression } => {
+            THIRExpressionKind::Leak { expression } => {
                 write!(f, "LeakLifetime <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
@@ -1535,7 +1521,6 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
 impl Display for THIRUnOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            THIRUnOp::NEG => write!(f, "neg"),
             THIRUnOp::INEG => write!(f, "ineg"),
             THIRUnOp::FNEG => write!(f, "fneg"),
             THIRUnOp::BNOT => write!(f, "bnot"),

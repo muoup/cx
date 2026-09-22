@@ -11,7 +11,7 @@ pub(crate) mod types;
 
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstrKind::{self, IntrinsicOp}, MIRInstruction, MIRIntIntrinsic, MIRIntType, MIRIntrinsic, MIRPtrIntrinsic, MIRTarget, MIRTypeKind, MIRValue, ty::{interface::MTRegistry, layout::calculate_type_layout},
+    MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstructionKind::{self, IntrinsicOp}, MIRInstruction, MIRIntIntrinsic, MIRIntType, MIRIntrinsic, MIRPtrIntrinsic, MIRTarget, MIRTypeKind, MIRValue, ty::{interface::MTRegistry, layout::calculate_type_layout},
 };
 use cx_thir::{
     thir::{
@@ -23,11 +23,8 @@ use cx_thir::{
 };
 
 use crate::{
-    builder::MIRBuilder,
-    lowering::{
-        memory::allocate_variable,
-        operators::{lower_binary_op, lower_coercion},
-        types::{lower_int_type, lower_type},
+    builder::MIRBuilder, lowering::{
+        memory::allocate_variable, operators::{lower_binary_op, lower_coercion, lower_unary_op}, types::{lower_int_type, lower_type},
     },
 };
 use crate::{
@@ -75,7 +72,7 @@ pub(crate) fn lower_function(
             function.prototype.signature().return_type.kind,
             THIRTypeKind::Void
         ) {
-            builder.emit(MIRInstrKind::Return { value: None });
+            builder.emit(MIRInstructionKind::Return { value: None });
         } else {
             if function.require_explicit_return
                 && !function.prototype.signature().return_type.is_unreachable()
@@ -90,7 +87,7 @@ pub(crate) fn lower_function(
                 );
             }
 
-            builder.emit(MIRInstrKind::Unreachable);
+            builder.emit(MIRInstructionKind::Unreachable);
         }
     }
 
@@ -136,7 +133,7 @@ pub(crate) fn lower_comptime_function(
         } else {
             Some(value)
         };
-        builder.emit(MIRInstrKind::Return { value });
+        builder.emit(MIRInstructionKind::Return { value });
     }
 
     auto_pop_scope(builder)?;
@@ -157,7 +154,7 @@ pub(crate) fn lower_expression(
 
             THIRExpressionKind::IntLiteral(value) => {
                 let ty = match &expr._type.kind {
-                    THIRTypeKind::Integer { _type, .. } => lower_int_type(_type),
+                    THIRTypeKind::Integer { _type, .. } => lower_int_type(*_type),
                     _ => unreachable!("IntLiteral expression has non-integer type"),
                 };
 
@@ -259,20 +256,7 @@ pub(crate) fn lower_expression(
             }
 
             THIRExpressionKind::UnaryOperation { operand, op } => {
-                let lowered = lower_expression(builder, operand)?;
-                let lowered = if operand._type.is_memory_reference() {
-                    MIRValue::Reference(memory::ensure_place(builder, lowered, &operand._type)?)
-                } else {
-                    lowered
-                };
-                let type_id = lower_type(builder, &expr._type)?;
-                let out = builder.fun_mut().new_register(type_id, None);
-                builder.emit(MIRInstrKind::UnOp {
-                    out,
-                    op: operators::lower_unary_op(op, &operand._type),
-                    operand: lowered,
-                });
-                MIRValue::Register(out)
+                lower_unary_op(builder, expr, operand, op)?
             }
 
             THIRExpressionKind::Copy { source } => {
@@ -285,7 +269,7 @@ pub(crate) fn lower_expression(
                             .new_register(lower_type(builder, &source._type)?, None);
 
                         builder.fun_mut().emit(MIRInstruction {
-                            kind: MIRInstrKind::LiftPlace { out, place: target },
+                            kind: MIRInstructionKind::LiftPlace { out, place: target },
                             token_range: expr.token_range.clone(),
                         });
 
@@ -309,12 +293,12 @@ pub(crate) fn lower_expression(
                             .new_register(lower_type(builder, &expr._type)?, None);
 
                         builder.fun_mut().emit(MIRInstruction {
-                            kind: MIRInstrKind::LiftPlace { out, place: target },
+                            kind: MIRInstructionKind::LiftPlace { out, place: target },
                             token_range: expr.token_range.clone(),
                         });
 
                         builder.fun_mut().emit(MIRInstruction {
-                            kind: MIRInstrKind::Invalidate {
+                            kind: MIRInstructionKind::Invalidate {
                                 place: MIRValue::Place(target),
                                 leak: false,
                             },
@@ -340,7 +324,7 @@ pub(crate) fn lower_expression(
                     .transpose()?;
 
                 let type_id = lower_type(builder, _type)?;
-                let place = builder.create(type_id, Some(name.clone()), _type.is_nodrop());
+                let place = builder.new_place(type_id, Some(name.clone()), _type.is_nodrop());
 
                 MIRValue::PlaceRef(allocate_variable(
                     builder,
@@ -397,7 +381,7 @@ pub(crate) fn lower_expression(
                 let ptarget = memory::ensure_place(builder, mtarget, &target._type)?;
 
                 builder.set_source_range(target.token_range.clone());
-                builder.emit(MIRInstrKind::Store {
+                builder.emit(MIRInstructionKind::Store {
                     target: ptarget,
                     value: mvalue,
                     ty: assignment_type,
@@ -422,7 +406,7 @@ pub(crate) fn lower_expression(
                     memory::target_register(builder, type_id)
                 };
                 let aggregate_type_id = lower_type(builder, aggregate_type)?;
-                builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Target {
+                builder.emit(MIRInstructionKind::AggregateOp(MIRAggregateOp::Target {
                     out,
                     op: MIRTargetAggregateOp::Field {
                         base,
@@ -450,7 +434,7 @@ pub(crate) fn lower_expression(
                 let index_calc = builder.fun_mut().new_register(int_type, None);
                 builder.emit(
                     MIRInstruction {
-                        kind: MIRInstrKind::IntrinsicOp(
+                        kind: MIRInstructionKind::IntrinsicOp(
                             MIRIntrinsic::Int(
                                 MIRIntIntrinsic::UMul {
                                     out: MIRTarget::Register(index_calc),
@@ -465,7 +449,7 @@ pub(crate) fn lower_expression(
 
                 let out = builder.fun_mut().new_register(return_type, None);
                 builder.emit(MIRInstruction {
-                    kind: MIRInstrKind::IntrinsicOp(
+                    kind: MIRInstructionKind::IntrinsicOp(
                         MIRIntrinsic::Pointer(
                             MIRPtrIntrinsic::Add {
                                 out: MIRTarget::Register(out),
@@ -491,7 +475,7 @@ pub(crate) fn lower_expression(
 
                 let target = memory::ensure_place(builder, lowered_value, &value._type)?;
                 let struct_type_id = lower_type(builder, &value._type)?;
-                let base = builder.create(struct_type_id, None, false);
+                let base = builder.new_place(struct_type_id, None, false);
 
                 let value = memory::move_value(
                     builder,
@@ -499,7 +483,7 @@ pub(crate) fn lower_expression(
                     struct_type_id,
                     &expr.token_range,
                 )?;
-                builder.emit(MIRInstrKind::Store {
+                builder.emit(MIRInstructionKind::Store {
                     target: MIRTarget::Place(base),
                     value,
                     ty: struct_type_id,
@@ -509,7 +493,7 @@ pub(crate) fn lower_expression(
                     let field_type = lower_type(builder, &binding.field_type)?;
                     let field_place = memory::target_register(builder, field_type);
 
-                    builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Target {
+                    builder.emit(MIRInstructionKind::AggregateOp(MIRAggregateOp::Target {
                         out: field_place,
                         op: MIRTargetAggregateOp::Field {
                             base: MIRTarget::Place(base),
@@ -531,7 +515,7 @@ pub(crate) fn lower_expression(
                 let type_id = lower_type(builder, &expr._type)?;
                 let out = builder.fun_mut().new_register(type_id, None);
                 let sum_type_id = lower_type(builder, sum_type)?;
-                builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Value {
+                builder.emit(MIRInstructionKind::AggregateOp(MIRAggregateOp::Value {
                     out,
                     op: MIRValueAggregateOp::Discriminant {
                         value: base,
@@ -562,7 +546,7 @@ pub(crate) fn lower_expression(
                 match base_value {
                     MIRValue::Reference(base) => {
                         let out = memory::target_register(builder, variant_type_id);
-                        builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Target {
+                        builder.emit(MIRInstructionKind::AggregateOp(MIRAggregateOp::Target {
                             out,
                             op: MIRTargetAggregateOp::Variant {
                                 base,
@@ -574,7 +558,7 @@ pub(crate) fn lower_expression(
                     }
                     value => {
                         let out = builder.fun_mut().new_register(variant_type_id, None);
-                        builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Value {
+                        builder.emit(MIRInstructionKind::AggregateOp(MIRAggregateOp::Value {
                             out,
                             op: MIRValueAggregateOp::ProjectVariant {
                                 variant: *variant_index,
@@ -597,7 +581,7 @@ pub(crate) fn lower_expression(
                 let value = lower_expression(builder, inner_value)?;
                 let sum_type_id = lower_type(builder, sum_type)?;
                 let constructed = builder.fun_mut().new_register(sum_type_id, None);
-                builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Value {
+                builder.emit(MIRInstructionKind::AggregateOp(MIRAggregateOp::Value {
                     out: constructed,
                     op: MIRValueAggregateOp::Variant {
                         variant: *variant_index,
@@ -605,7 +589,7 @@ pub(crate) fn lower_expression(
                         sum_type: sum_type_id,
                     },
                 }));
-                builder.emit(MIRInstrKind::Store {
+                builder.emit(MIRInstructionKind::Store {
                     target,
                     value: MIRValue::Register(constructed),
                     ty: sum_type_id,
@@ -621,7 +605,7 @@ pub(crate) fn lower_expression(
                 let sum_type_id = lower_type(builder, sum_type)?;
                 let type_id = lower_type(builder, &expr._type)?;
                 let out = builder.fun_mut().new_register(type_id, None);
-                builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Value {
+                builder.emit(MIRInstructionKind::AggregateOp(MIRAggregateOp::Value {
                     out,
                     op: MIRValueAggregateOp::Variant {
                         variant: *variant_index,
@@ -646,7 +630,7 @@ pub(crate) fn lower_expression(
                     );
                 }
                 let out = builder.fun_mut().new_register(type_id, None);
-                builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Value {
+                builder.emit(MIRInstructionKind::AggregateOp(MIRAggregateOp::Value {
                     out,
                     op: MIRValueAggregateOp::Construct {
                         ty: type_id,
@@ -669,7 +653,7 @@ pub(crate) fn lower_expression(
                 let type_id = lower_type(builder, &expr._type)?;
                 let out = builder.fun_mut().new_register(type_id, None);
                 let aggregate_type_id = lower_type(builder, struct_type)?;
-                builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Value {
+                builder.emit(MIRInstructionKind::AggregateOp(MIRAggregateOp::Value {
                     out,
                     op: MIRValueAggregateOp::Construct {
                         ty: aggregate_type_id,
@@ -691,7 +675,7 @@ pub(crate) fn lower_expression(
                     builder.fun_mut().declare_label(name, target);
                     target
                 };
-                builder.emit(MIRInstrKind::Jump {
+                builder.emit(MIRInstructionKind::Jump {
                     target: MIRBlockTarget::new(target),
                 });
                 let dead_block = builder.fun_mut().new_block("after.goto");
@@ -706,7 +690,7 @@ pub(crate) fn lower_expression(
                     builder.fun_mut().declare_label(name, target);
                     target
                 };
-                builder.emit(MIRInstrKind::Jump {
+                builder.emit(MIRInstructionKind::Jump {
                     target: MIRBlockTarget::new(target),
                 });
                 builder.fun_mut().set_current_block(target);
@@ -784,12 +768,12 @@ pub(crate) fn lower_expression(
                 }
 
                 auto_cleanup(builder, builder.fun().scope_stack().first().unwrap().id())?;
-                builder.emit(MIRInstrKind::Return { value });
+                builder.emit(MIRInstructionKind::Return { value });
                 MIRValue::Constant(MIRConstant::Unit)
             }
 
             THIRExpressionKind::Unreachable => {
-                builder.emit(MIRInstrKind::Unreachable);
+                builder.emit(MIRInstructionKind::Unreachable);
                 MIRValue::Constant(MIRConstant::Unit)
             }
 
@@ -839,7 +823,7 @@ pub(crate) fn lower_expression(
 
                 let args = value.into_iter().collect();
                 auto_cleanup(builder, scope_id)?;
-                builder.emit(MIRInstrKind::Jump {
+                builder.emit(MIRInstructionKind::Jump {
                     target: MIRBlockTarget::with_args(block_id, args),
                 });
                 MIRValue::Constant(MIRConstant::Unit)
@@ -847,7 +831,7 @@ pub(crate) fn lower_expression(
 
             THIRExpressionKind::Assert { condition, message } => {
                 let condition = lower_expression(builder, condition)?;
-                builder.emit(MIRInstrKind::Assert {
+                builder.emit(MIRInstructionKind::Assert {
                     condition,
                     message: Some(message.clone()),
                 });
@@ -901,7 +885,7 @@ pub(crate) fn lower_expression(
 
                 if let Some(merge) = merge {
                     if !builder.fun().current_block_terminated() {
-                        builder.emit(MIRInstrKind::Unreachable);
+                        builder.emit(MIRInstructionKind::Unreachable);
                     }
                     builder.fun_mut().set_current_block(merge);
                     yield_register
@@ -921,7 +905,7 @@ pub(crate) fn lower_expression(
             THIRExpressionKind::VaStart { list, last } => {
                 let list = lower_expression(builder, list)?;
                 let last = lower_expression(builder, last)?;
-                builder.emit(MIRInstrKind::Intrinsic(cx_mir::MIRIntrinsic::VaStart {
+                builder.emit(MIRInstructionKind::Intrinsic(cx_mir::MIRIntrinsic::VaStart {
                     list,
                     last,
                 }));
@@ -930,7 +914,7 @@ pub(crate) fn lower_expression(
 
             THIRExpressionKind::VaEnd { list } => {
                 let list = lower_expression(builder, list)?;
-                builder.emit(MIRInstrKind::Intrinsic(cx_mir::MIRIntrinsic::VaEnd {
+                builder.emit(MIRInstructionKind::Intrinsic(cx_mir::MIRIntrinsic::VaEnd {
                     list,
                 }));
                 MIRValue::Constant(MIRConstant::Unit)
@@ -940,7 +924,7 @@ pub(crate) fn lower_expression(
                 let list = lower_expression(builder, list)?;
                 let ty = lower_type(builder, _type)?;
                 let out = builder.fun_mut().new_register(ty, None);
-                builder.emit(MIRInstrKind::Intrinsic(cx_mir::MIRIntrinsic::VaArg {
+                builder.emit(MIRInstructionKind::Intrinsic(cx_mir::MIRIntrinsic::VaArg {
                     out,
                     list,
                     ty,
@@ -971,7 +955,7 @@ pub(crate) fn lower_expression(
                             if !is_str_reference =>
                         {
                             let out = builder.fun_mut().new_register(type_id, None);
-                            builder.emit(MIRInstrKind::Let {
+                            builder.emit(MIRInstructionKind::Let {
                                 out,
                                 value: MIRValue::Reference(MIRTarget::Place(place)),
                             });
@@ -987,21 +971,10 @@ pub(crate) fn lower_expression(
                 lower_coercion(builder, value, conversion, &operand._type, &expr._type)?
             }
 
-            THIRExpressionKind::LifetimeStart { variable, _type } => {
-                if let Some(MIRValue::Reference(cx_mir::MIRTarget::Place(place))) =
-                    builder.fun().named(variable)
-                {
-                    builder.emit(MIRInstrKind::Initialize { place });
-                    MIRValue::Reference(cx_mir::MIRTarget::Place(place))
-                } else {
-                    MIRValue::Constant(MIRConstant::Unit)
-                }
-            }
-            THIRExpressionKind::LifetimeEnd { .. } => MIRValue::Constant(MIRConstant::Unit),
-            THIRExpressionKind::LeakLifetime { expression: inner } => {
+            THIRExpressionKind::Leak { expression: inner } => {
                 let value = lower_expression(builder, inner)?;
                 if let MIRValue::Reference(cx_mir::MIRTarget::Place(place)) = value {
-                    builder.emit(MIRInstrKind::Invalidate { place, leak: true });
+                    builder.emit(MIRInstructionKind::Invalidate { place, leak: true });
                     MIRValue::Reference(cx_mir::MIRTarget::Place(place))
                 } else {
                     value
@@ -1023,7 +996,7 @@ pub(crate) fn lower_expression(
                 });
                 MIRValue::Register(out)
             }
-            THIRExpressionKind::MaterializeStagedExpression { expr, with_params } => {
+            THIRExpressionKind::Materialize { expr, with_params } => {
                 let staged = lower_expression(builder, expr)?;
                 let mut args = Vec::with_capacity(with_params.len());
                 for param in with_params {

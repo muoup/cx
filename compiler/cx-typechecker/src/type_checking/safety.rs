@@ -27,11 +27,9 @@ pub(crate) fn validate_safe_expression(
         | THIRExpressionKind::ContractVariable { .. }
         | THIRExpressionKind::Unsafe { .. }
         | THIRExpressionKind::Move { .. }
-        | THIRExpressionKind::Unpack { .. }
-        | THIRExpressionKind::LifetimeStart { .. }
-        | THIRExpressionKind::LifetimeEnd { .. } => Ok(()),
+        | THIRExpressionKind::Unpack { .. } => Ok(()),
 
-        THIRExpressionKind::LeakLifetime { .. } => reject(env, expression, "@leak"),
+        THIRExpressionKind::Leak { .. } => reject(env, expression, "@leak"),
         THIRExpressionKind::FunctionReference { .. } => validate_callable(env, expression),
 
         THIRExpressionKind::VaStart { list, last } => {
@@ -200,7 +198,7 @@ pub(crate) fn validate_safe_expression(
         THIRExpressionKind::StagedExpression(staged) => {
             validate_safe_expression(env, staged.expr())
         }
-        THIRExpressionKind::MaterializeStagedExpression { expr, with_params } => {
+        THIRExpressionKind::Materialize { expr, with_params } => {
             validate_safe_expression(env, expr)?;
             validate_all(env, with_params)
         }

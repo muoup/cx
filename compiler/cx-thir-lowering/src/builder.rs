@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use cx_log::{CXResult, catalogue::mir as catalogue};
+use cx_log::CXResult;
 use cx_mir::{
     MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalVariable, MIRPlaceID,
     MIRType, MIRTypeID, MIRTypeKind, MIRUnit, MIRValue,
@@ -13,7 +13,6 @@ use cx_thir::{
     thir::{expression::THIRLocalID, r#type::THIRTypeID},
     type_context::THIRTypeContext,
 };
-use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 use cx_util::linkage::LinkageMode;
 
@@ -27,9 +26,9 @@ use module::{MIRModuleBuilder, ModuleParts};
 
 pub struct MIRBuilder<'thir> {
     types: MIRTypeRegistryBuilder,
-    module: MIRModuleBuilder,
+    module: MIRModuleBuilder<'thir>,
     registry: &'thir THIRDecomposedRegistry,
-    function: Option<MIRFunctionBuilder>,
+    function: Option<MIRFunctionBuilder<'thir>>,
 }
 
 #[derive(Debug, Clone)]
@@ -110,24 +109,7 @@ impl<'thir> MIRBuilder<'thir> {
             .expect("no MIR function is currently active")
     }
 
-    pub(crate) fn is_capturing(&self) -> bool {
-        self.try_fun()
-            .is_some_and(|function| function.capture.is_some())
-    }
-
-    pub(crate) fn set_source_range(&mut self, range: TokenRange) -> TokenRange {
-        self.fun_mut().set_source_range(range)
-    }
-
-    pub(crate) fn restore_source_range(&mut self, range: TokenRange) {
-        self.fun_mut().restore_source_range(range);
-    }
-
-    pub(crate) fn source_range(&self) -> &TokenRange {
-        self.fun().source_range()
-    }
-
-    pub fn create(
+    pub fn new_place(
         &mut self,
         ty: MIRTypeID,
         debug_name: Option<CXIdent>,
@@ -299,7 +281,7 @@ impl MIRTypeRegistryBuilder {
         self.interner.get(definition).copied()
     }
 
-    pub fn define(&mut self, id: MIRTypeID, definition: MIRType) -> Result<(), MIRLayoutError> {
+    pub fn define(&mut self, id: MIRTypeID, definition: MIRType) -> CXResult<()> {
         self.ensure_capacity(id.index());
         self.next_id = self.next_id.max(id.index() + 1);
         
@@ -319,7 +301,7 @@ impl MIRTypeRegistryBuilder {
         }
     }
 
-    pub fn reference_to(&mut self, id: MIRTypeID) -> Result<MIRTypeID, MIRLayoutError> {
+    pub fn reference_to(&mut self, id: MIRTypeID) -> CXResult<MIRTypeID> {
         let ty = MIRType::new(
             MIRTypeKind::MemoryReference {
                 inner: id,
@@ -327,6 +309,7 @@ impl MIRTypeRegistryBuilder {
             },
             None,
         );
+        
         Ok(self.intern(ty))
     }
 

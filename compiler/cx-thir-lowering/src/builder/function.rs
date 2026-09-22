@@ -2,7 +2,8 @@ use std::{collections::HashMap, rc::Rc};
 
 use cx_mir::{
     MIRBasicBlockID, MIRBody, MIRComptimeBody, MIRFnPrototype, MIRFunction, MIRFunctionID,
-    MIRInstruction, MIRPlaceID, MIRRegister, MIRScopeID, MIRTypeID, MIRValue,
+    MIRInstruction, MIRInstructionKind, MIRIntrinsic, MIRPlaceID, MIRRegister, MIRScopeID,
+    MIRTypeID, MIRValue,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
 use cx_tokens::TokenRange;
@@ -186,7 +187,16 @@ impl<'thir> MIRFunctionBuilder<'thir> {
         self.body.register(register).map(|decl| decl.ty)
     }
 
-    pub fn emit(&self, instr: MIRInstruction) {}
+    pub fn emit(&self, instr: MIRInstruction) {
+        self.body.emit(instr);
+    }
+
+    pub fn emit_intrinsic(&self, intrinsic: impl Into<MIRIntrinsic>, range: TokenRange) {
+        self.body.emity(MIRInstruction {
+            kind: MIRInstructionKind::Intrinsic(intrinsic.into()),
+            token_range: range,
+        })
+    }
 
     pub fn new_block(&mut self, name: impl Into<CXIdent>) -> MIRBasicBlockID {
         self.body.add_block_named(name)

@@ -143,7 +143,7 @@ pub fn typecheck_unop(
                 .and_then(|v| std_rval_promotion(env, v))?;
 
             let operator = match &operand._type.kind {
-                THIRTypeKind::Integer { .. } => THIRUnOp::NEG,
+                THIRTypeKind::Integer { .. } => THIRUnOp::INEG,
                 THIRTypeKind::Float { .. } => THIRUnOp::FNEG,
 
                 _ => {
