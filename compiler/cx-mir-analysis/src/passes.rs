@@ -1,11 +1,9 @@
-use crate::{
-    framework::pipeline::Pipeline, options::MIRAnalysisOptions, passes::ownership::Ownership,
-};
+use crate::{MIRAnalysisOptions, framework::pipeline::Pipeline, passes::ownership::Ownership};
 
 mod ownership;
 mod value;
 
-pub fn register_passes(pipeline: &mut Pipeline, config: &MIRAnalysisOptions) {
+pub fn register_passes(pipeline: &mut Pipeline, _: &MIRAnalysisOptions) {
     pipeline.push(Ownership::new());
-    pipeline.push(ValueTracking::new());
+    // pipeline.push(ValueTracking::new());
 }

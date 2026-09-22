@@ -1,70 +1,74 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, hash::Hash};
 
 use cx_log::CXResult;
-use cx_mir::{MIRBasicBlockID, MIRPlaceID};
+use cx_mir::MIRBasicBlockID;
 
 use crate::framework::environment::AnalysisEnvironment;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LatticeState<T: Clone> {
+pub enum LatticeState<Key: Clone, T: Clone> {
     Bottom,
     Known(T),
     Top,
+
+    _PHANTOM(std::marker::PhantomData<Key>),
 }
 
-pub trait Mergeable: Clone {
+pub trait Mergeable<Key: Clone>: Clone {
     type Context;
 
+    // Failable merge of two lattice states, returns Ok(None) if the merge did not change the state
     fn merge(
         &mut self,
         context: &Self::Context,
         other: &Self,
-        place: MIRPlaceID,
-    ) -> CXResult<LatticeState<Self>>
+        key: Key,
+    ) -> CXResult<Option<LatticeState<Key, Self>>>
     where
         Self: Sized;
 }
 
-impl<T: Mergeable> LatticeState<T> {
+impl<Key: Clone, T: Mergeable<Key>> LatticeState<Key, T> {
     pub fn merge(
         &mut self,
         context: &T::Context,
-        other: &LatticeState<T>,
-        place: MIRPlaceID,
-    ) -> CXResult<()> {
+        other: &LatticeState<Key, T>,
+        place: Key,
+    ) -> CXResult<bool> {
         let old_value = std::mem::replace(self, LatticeState::Bottom);
-        *self = match (old_value, other) {
-            (LatticeState::Bottom, LatticeState::Bottom) => LatticeState::Bottom,
-            (LatticeState::Top, _) => LatticeState::Top,
+        
+        match (old_value, other) {
+            (LatticeState::Bottom, LatticeState::Bottom) => Ok(false)
+            (LatticeState::Top, _) => Ok(false)
 
             (LatticeState::Bottom | LatticeState::Known(_), LatticeState::Top) => LatticeState::Top,
 
-            (LatticeState::Bottom, known @ LatticeState::Known(_)) => known.clone(),
-            (known @ LatticeState::Known(_), LatticeState::Bottom) => known.clone(),
+            (LatticeState::Bottom, known @ LatticeState::Known(_)) => { *self = known.clone(); true }
+            (known @ LatticeState::Known(_), LatticeState::Bottom) => { *self = known.clone(); true }
 
             (LatticeState::Known(mut value), LatticeState::Known(other_value)) => {
                 value.merge(context, other_value, place)?
             }
-        };
 
-        Ok(())
+            _ => unreachable!("Invalid lattice state combination"),
+        }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct StateTable<State: Mergeable> {
-    snapshots: HashMap<MIRBasicBlockID, Box<[(MIRPlaceID, LatticeState<State>)]>>,
+pub struct StateTable<Key: Hash + Eq + Clone, State: Mergeable<Key>> {
+    snapshots: HashMap<MIRBasicBlockID, HashMap<Key, LatticeState<Key, State>>>,
 
-    places: Vec<(MIRPlaceID, LatticeState<State>)>,
-    place_map: HashMap<MIRPlaceID, usize>,
+    states: Vec<(Key, LatticeState<Key, State>)>,
+    map: HashMap<Key, usize>,
 }
 
-impl<State: Clone + Mergeable> StateTable<State> {
+impl<Key: Hash + Eq + Clone, State: Clone + Mergeable<Key>> StateTable<Key, State> {
     pub fn new() -> Self {
         Self {
             snapshots: HashMap::new(),
-            places: Vec::new(),
-            place_map: HashMap::new(),
+            states: Vec::new(),
+            map: HashMap::new(),
         }
     }
 
@@ -73,61 +77,59 @@ impl<State: Clone + Mergeable> StateTable<State> {
             unreachable!("No snapshot found for block {:?}", block);
         };
 
-        self.places.clear();
-        self.place_map.clear();
+        self.states.clear();
+        self.map.clear();
 
-        for (place, state) in snapshot.iter() {
-            let index = self.places.len();
-            self.places.push((*place, state.clone()));
-            self.place_map.insert(*place, index);
+        for (key, state) in snapshot.iter() {
+            let index = self.states.len();
+            self.states.push((key.clone(), state.clone()));
+            self.map.insert(key.clone(), index);
         }
     }
 
-    pub fn merge(
+    pub fn merge_into(
         &mut self,
-        env: &AnalysisEnvironment,
+        _env: &AnalysisEnvironment,
         context: &State::Context,
         other: MIRBasicBlockID,
-    ) -> CXResult<()> {
-        let Some(other) = self.snapshots.get(&other) else {
-            unreachable!("No snapshot found for block {:?}", other);
-        };
+    ) -> CXResult<bool> {
+        let other = self
+            .snapshots
+            .entry(other)
+            .or_insert_with(|| HashMap::new());
 
-        for (place, state) in &other.places {
-            let index = self.place_map.entry(*place).or_insert_with(|| {
-                let index = self.places.len();
-                self.places.push((*place, LatticeState::Bottom));
-                index
-            });
+        self.states
+            .iter()
+            .map(|(key, state)| {
+                let other_state = other.entry(key.clone()).or_insert(LatticeState::Bottom);
 
-            self.places[*index].1.merge(context, state, place)?;
-        }
-
-        Ok(())
+                other_state.merge(context, state, key.clone())
+            })
+            .fold(Ok(false), |a, b| Ok(a? || b?))
     }
 
-    pub fn get(&self, block: MIRPlaceID) -> Option<&LatticeState<State>> {
-        let index = self.place_map.get(&block)?;
-        self.places.get(*index).map(|(_, state)| state)
+    pub fn get(&self, key: &Key) -> Option<&LatticeState<Key, State>> {
+        let index = self.map.get(key)?;
+        self.states.get(*index).map(|(_, state)| state)
     }
 
-    pub fn get_mut(&mut self, block: MIRPlaceID) -> &mut LatticeState<State> {
-        let index = self.place_map.entry(block).or_insert_with(|| {
-            let index = self.places.len();
-            self.places.push((block, LatticeState::Bottom));
+    pub fn get_mut(&mut self, key: Key) -> &mut LatticeState<Key, State> {
+        let index = self.map.entry(key.clone()).or_insert_with(|| {
+            let index = self.states.len();
+            self.states.push((key, LatticeState::Bottom));
             index
         });
 
-        &mut self.places[*index].1
+        &mut self.states[*index].1
     }
 
-    pub fn set(&mut self, block: MIRPlaceID, state: LatticeState<State>) {
-        let index = self.place_map.entry(block).or_insert_with(|| {
-            let index = self.places.len();
-            self.places.push((block, LatticeState::Bottom));
+    pub fn set(&mut self, key: Key, state: LatticeState<Key, State>) {
+        let index = self.map.entry(key.clone()).or_insert_with(|| {
+            let index = self.states.len();
+            self.states.push((key, LatticeState::Bottom));
             index
         });
 
-        self.places[*index].1 = state;
+        self.states[*index].1 = state;
     }
 }

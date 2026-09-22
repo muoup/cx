@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use cx_log::CXResult;
 use cx_mir::{
-    MIRComptimeOp, MIRFnPrototype, MIRFunctionID, MIRInstruction, MIRInstructionKind, MIRPlaceID,
-    MIRType, MIRTypeID, MIRTypeKind, MIRUnit, MIRValue,
+    MIRComptimeOp, MIRFunctionID, MIRInstruction, MIRInstructionKind, MIRPlaceID, MIRType,
+    MIRTypeID, MIRTypeKind, MIRUnit, MIRValue,
     ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
 use cx_target::ArchitectureConfig;

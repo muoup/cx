@@ -3,23 +3,15 @@ use std::fmt::{self, Display, Formatter};
 use cx_util::linkage::LinkageMode;
 
 use crate::{
-    MIRInstructionLike,
-    constant::MIRRuntimeConstant,
-    expr::{
-        body::MIRBody,
-        comptime::{MIRComptimeInstruction, MIRComptimeOp},
-        instruction::{MIRBasicBlock, MIRInstructionKind},
-        intrinsic::{
+    MIRInstructionLike, constant::MIRRuntimeConstant, expr::{
+        body::MIRBody, comptime::{MIRComptimeInstruction, MIRComptimeOp}, instruction::{MIRBasicBlock, MIRInstructionKind, MIRInvalidationKind}, intrinsic::{
             MIRAggregateIntrinsic, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic,
             MIRIntrinsic, MIRPtrIntrinsic, MIRVAIntrinsic,
         },
-    },
-    ty::{MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind, interface::MTRegistry},
-    unit::{
+    }, ty::{MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind, interface::MTRegistry}, unit::{
         MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRUnit,
         function::{MIRFnSignature, MIRFunction},
-    },
-    value::{
+    }, value::{
         MIRBindable, MIRBlockTarget, MIRConstant, MIRPlaceID, MIRRegisterID, MIRTarget, MIRValue,
     },
 };
@@ -335,9 +327,9 @@ fn write_global<T: MTRegistry>(
     }
     types.write(f, global.ty())?;
     match global.state() {
-        crate::unit::MIRGlobalState::External => f.write_str(";")?,
-        crate::unit::MIRGlobalState::ZeroInitialized => f.write_str(" = zero;")?,
-        crate::unit::MIRGlobalState::Initialized(value) => {
+        MIRGlobalState::External => f.write_str(";")?,
+        MIRGlobalState::ZeroInitialized => f.write_str(" = zero;")?,
+        MIRGlobalState::Initialized(value) => {
             f.write_str(" = ")?;
             Display::fmt(value, f)?;
             f.write_str(";")?;
@@ -467,11 +459,11 @@ fn write_instruction<T: MTRegistry>(
             f.write_str("initialize ")?;
             write_bindable(f, unit, function, place)
         }
-        MIRInstructionKind::Invalidate { place, leak } => {
-            if *leak {
-                f.write_str("leak ")?;
-            } else {
-                f.write_str("invalidate ")?;
+        MIRInstructionKind::Invalidate { place, kind } => {
+            match kind {
+                MIRInvalidationKind::Leak => f.write_str("leak ")?,
+                MIRInvalidationKind::Move => f.write_str("move ")?,
+                MIRInvalidationKind::Drop => f.write_str("drop ")?,
             }
             write_bindable(f, unit, function, place)
         }

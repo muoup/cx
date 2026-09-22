@@ -1,7 +1,7 @@
 use cx_log::CXResult;
-use cx_mir::{MIRBasicBlockID, MIRFunction, MIRUnit};
+use cx_mir::{MIRBasicBlockID, MIRFunction, MIRUnit, expr::visit::successors};
 
-use crate::{Pipeline, options::MIRAnalysisOptions};
+use crate::{MIRAnalysisOptions, Pipeline};
 
 pub struct AnalysisEnvironment<'mir> {
     unit: &'mir MIRUnit<'mir>,
@@ -67,18 +67,18 @@ fn run(env: &AnalysisEnvironment<'_>, pipeline: &mut Pipeline) -> CXResult<()> {
 
         pipeline.analyze_instruction(env, instruction)?;
 
-        for successor in instruction.successors() {
-            pipeline.merge(env, successor);
+        for successor in successors(instruction) {
+            pipeline.merge(env, successor.block)?;
             reloads.push(successor);
         }
 
         if instruction.is_terminator()
             && let Some(next_target) = reloads.pop()
         {
-            current_block = next_target.index();
+            current_block = next_target.block.index();
             current_instruction = 0;
 
-            pipeline.reload_block(env, MIRBasicBlockID(current_block));
+            pipeline.reload_block(env, MIRBasicBlockID(current_block))?;
         } else {
             current_instruction += 1;
 

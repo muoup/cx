@@ -26,22 +26,30 @@ impl Pipeline {
 
     pub fn analyze_instruction(
         &mut self,
-        _env: &AnalysisEnvironment,
-        _instruction: &MIRInstruction,
+        env: &AnalysisEnvironment,
+        instruction: &MIRInstruction,
     ) -> CXResult<()> {
-        todo!()
+        for analysis in &mut self.analyses {
+            analysis.analyze_instruction(env, instruction)?;
+        }
+
+        Ok(())
     }
 
-    pub fn merge(&mut self, env: &AnalysisEnvironment, other: MIRBasicBlockID) {
+    pub fn merge(&mut self, env: &AnalysisEnvironment, other: MIRBasicBlockID) -> CXResult<()> {
         for analysis in &mut self.analyses {
-            analysis.merge(env, other);
+            analysis.merge(env, other)?;
         }
+
+        Ok(())
     }
 
-    pub fn reload_block(&mut self, env: &AnalysisEnvironment, block: MIRBasicBlockID) {
+    pub fn reload_block(&mut self, env: &AnalysisEnvironment, block: MIRBasicBlockID) -> CXResult<()> {
         for analysis in &mut self.analyses {
-            analysis.reload_block(env, block);
+            analysis.reload_block(env, block)?;
         }
+
+        Ok(())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -61,7 +69,7 @@ pub trait AnalysisPass {
         instruction: &MIRInstruction,
     ) -> CXResult<()>;
 
-    fn merge(&mut self, env: &AnalysisEnvironment, other: MIRBasicBlockID) -> CXResult<()>;
+    fn merge(&mut self, env: &AnalysisEnvironment, other: MIRBasicBlockID) -> CXResult<bool>;
 
     fn reload_block(&mut self, env: &AnalysisEnvironment, block: MIRBasicBlockID) -> CXResult<()>;
 }

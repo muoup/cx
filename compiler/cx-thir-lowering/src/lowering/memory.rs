@@ -1,4 +1,5 @@
 use cx_log::CXResult;
+use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_mir::{MIRBindable, MIRInstructionKind, MIRPlaceID, MIRRegister, MIRTypeID, MIRValue};
 use cx_thir::thir::data::THIRType;
 use cx_tokens::TokenRange;
@@ -83,19 +84,20 @@ pub(crate) fn move_value(
             builder.emit(
                 MIRInstructionKind::Invalidate {
                     place: MIRBindable::Place(place),
-                    leak: false,
+                    kind: MIRInvalidationKind::Move,
                 },
                 range.clone(),
             );
             Ok(MIRValue::Register(out))
         }
+        
         MIRValue::Register(source) => {
             let out = target_register(builder, ty);
             builder.emit(MIRInstructionKind::Forward { out, source }, range.clone());
             builder.emit(
                 MIRInstructionKind::Invalidate {
                     place: MIRBindable::Register(source),
-                    leak: false,
+                    kind: MIRInvalidationKind::Move,
                 },
                 range.clone(),
             );

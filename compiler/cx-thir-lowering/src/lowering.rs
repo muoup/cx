@@ -14,6 +14,7 @@ use cx_mir::{
     MIRAggregateIntrinsic, MIRBindable, MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstruction,
     MIRInstructionKind, MIRIntType, MIRInternalIntrinsic, MIRTarget, MIRTypeKind, MIRVAIntrinsic,
     MIRValue,
+    expr::instruction::MIRInvalidationKind,
     ty::{interface::MTRegistry, layout::calculate_type_layout},
 };
 use cx_thir::{
@@ -28,7 +29,7 @@ use cx_tokens::TokenRange;
 use crate::{
     builder::MIRBuilder,
     lowering::{
-        memory::allocate_variable,
+        memory::{allocate_variable, move_value},
         operators::{lower_binary_op, lower_coercion, lower_unary_op},
         types::{lower_int_type, lower_type},
     },
@@ -115,6 +116,8 @@ pub(crate) fn lower_function_block(
                     MIRInstructionKind::Return { value: None },
                     TokenRange::internal(),
                 );
+            } else if prototype.signature().return_type.is_unreachable() {
+                builder.emit_if_open(MIRInstructionKind::Unreachable, TokenRange::internal());
             } else if prototype.symbol_name() == "main" {
                 builder.emit_if_open(
                     MIRInstructionKind::Return {
@@ -274,48 +277,9 @@ pub(crate) fn lower_expression(
 
         THIRExpressionKind::Move { local_id, .. } => {
             let local = builder.fun().local(*local_id).expect("local should exist");
+            let ty = lower_type(builder, &expr._type)?;
 
-            match local {
-                MIRValue::PlaceRef(target) => {
-                    let ty = lower_type(builder, &expr._type)?;
-                    let out = builder.fun_mut().new_register(ty, None);
-
-                    builder.fun_mut().emit(MIRInstruction {
-                        kind: MIRInstructionKind::LiftPlace { out, place: target },
-                        token_range: expr.token_range.clone(),
-                    });
-
-                    builder.fun_mut().emit(MIRInstruction {
-                        kind: MIRInstructionKind::Invalidate {
-                            place: cx_mir::MIRBindable::Place(target),
-                            leak: false,
-                        },
-                        token_range: expr.token_range.clone(),
-                    });
-
-                    MIRValue::Register(out)
-                }
-                MIRValue::Register(register) => {
-                    let ty = lower_type(builder, &expr._type)?;
-                    let out = builder.fun_mut().new_register(ty, None);
-                    builder.emit(
-                        MIRInstructionKind::Forward {
-                            out,
-                            source: register,
-                        },
-                        expr.token_range.clone(),
-                    );
-                    builder.emit(
-                        MIRInstructionKind::Invalidate {
-                            place: cx_mir::MIRBindable::Register(register),
-                            leak: false,
-                        },
-                        expr.token_range.clone(),
-                    );
-                    MIRValue::Register(out)
-                }
-                _ => local,
-            }
+            move_value(builder, local, ty, &expr.token_range)?
         }
 
         THIRExpressionKind::CreateLocalVariable {
@@ -374,6 +338,21 @@ pub(crate) fn lower_expression(
             let mvalue = lower_expression(builder, value)?;
 
             let ptarget = memory::ensure_place(builder, mtarget, &target._type)?;
+
+            builder.emit(
+                MIRInstructionKind::Invalidate {
+                    place: MIRBindable::Place(ptarget),
+                    kind: MIRInvalidationKind::Drop,
+                },
+                target.token_range.clone(),
+            );
+
+            builder.emit(
+                MIRInstructionKind::Initialize {
+                    place: MIRBindable::Place(ptarget),
+                },
+                target.token_range.clone(),
+            );
 
             builder.emit(
                 MIRInstructionKind::Store {
@@ -980,7 +959,7 @@ pub(crate) fn lower_expression(
                 builder.emit(
                     MIRInstructionKind::Invalidate {
                         place: cx_mir::MIRBindable::Place(place),
-                        leak: true,
+                        kind: MIRInvalidationKind::Leak,
                     },
                     expr.token_range.clone(),
                 );

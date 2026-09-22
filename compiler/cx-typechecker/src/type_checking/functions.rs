@@ -5,7 +5,6 @@ use crate::{
     type_checking::control_flow::r#return::typecheck_return,
     type_checking::typechecker::{add_implicit_return, typecheck_expr},
 };
-use cx_hir::ast::expression::HIRExpression;
 use cx_hir::ast::function::{HIRFunctionBody, HIRFunctionContract};
 use cx_log::CXResult;
 use cx_log::catalogue::typecheck as catalogue;

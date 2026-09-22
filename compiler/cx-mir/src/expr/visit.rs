@@ -1,8 +1,27 @@
 use crate::{
+    MIRInstruction,
     constant::{MIRConstant, MIRRuntimeConstant},
     expr::{instruction::MIRInstructionKind, intrinsic::*},
     value::{MIRBindable, MIRBlockTarget, MIRRegisterID, MIRTarget, MIRValue},
 };
+
+pub fn successors(kind: &MIRInstruction) -> Vec<&MIRBlockTarget> {
+    match &kind.kind {
+        MIRInstructionKind::Jump { target } => vec![target],
+        MIRInstructionKind::Branch {
+            true_target,
+            false_target,
+            ..
+        } => vec![true_target, false_target],
+        MIRInstructionKind::CaseBranch { cases, default, .. } => {
+            let default_iter = default.iter();
+            let cases_iter = cases.iter().map(|(_, target)| target);
+
+            cases_iter.chain(default_iter).collect()
+        }
+        _ => vec![]
+    }
+}
 
 pub fn visit_register_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRRegisterID)) {
     fn value(value: &MIRValue, visit: &mut impl FnMut(MIRRegisterID)) {
