@@ -1,31 +1,22 @@
 use std::{collections::HashMap, rc::Rc};
 
-use cx_log::{CXResult, catalogue::mir as catalogue};
-use cx_mir::visit::MIRWalk;
 use cx_mir::{
-    MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRComptimeBody, MIRFnPrototype, MIRFunction, MIRFunctionBody, MIRFunctionID, MIRFunctionMode, MIRInstruction, MIRPlaceID, MIRRegister, MIRScopeID, MIRStagedBody, MIRStagedCapture, MIRStagedExitKind, MIRStagedInstrKind, MIRTypeID, MIRValue,
+    MIRBasicBlockID, MIRBody, MIRComptimeBody, MIRFnPrototype, MIRFunction, MIRFunctionID,
+    MIRInstruction, MIRPlaceID, MIRRegister, MIRScopeID, MIRTypeID, MIRValue,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use crate::log::mir_error;
+use crate::builder::body::{MIRBodyBuilder, MIRBodyKind};
 
 #[derive(Debug)]
-pub(crate) struct CaptureContext {
-    pub(crate) source_locals: HashMap<THIRLocalID, MIRValue>,
-    pub(crate) captures: Vec<(MIRStagedCapture, MIRValue)>,
-    pub(crate) params: Vec<MIRRegister>,
-    pub(crate) runtime_places: bool,
-}
-
-#[derive(Debug)]
-pub(crate) struct MIRFunctionBuilder {
+pub(crate) struct MIRFunctionBuilder<'thir> {
     id: MIRFunctionID,
     prototype: MIRFnPrototype,
     source_range: TokenRange,
 
-    body: MIRFunctionBody,
+    body: MIRBodyBuilder<'thir>,
     current_block: MIRBasicBlockID,
 
     local_values: HashMap<THIRLocalID, MIRValue>,
@@ -85,7 +76,7 @@ impl ScopeContext {
     }
 }
 
-impl MIRFunctionBuilder {
+impl<'thir> MIRFunctionBuilder<'thir> {
     pub(crate) fn new_runtime(func: MIRFunction, parent: Option<&Self>) -> Self {
         let mut body = MIRBody::new();
         let entry = body.add_block();
@@ -98,14 +89,13 @@ impl MIRFunctionBuilder {
                 .map(|parent| parent.source_range.clone())
                 .unwrap_or_else(TokenRange::internal),
 
+            body: MIRBodyBuilder::new_runtime(body),
             current_block: entry,
 
             local_values: HashMap::new(),
             labels: HashMap::new(),
 
             scope_stack: vec![ScopeContext::new(root_scope)],
-
-            body,
         }
     }
 
@@ -121,19 +111,18 @@ impl MIRFunctionBuilder {
                 .map(|parent| parent.source_range.clone())
                 .unwrap_or_else(TokenRange::internal),
 
+            body: MIRBodyBuilder::new_comptime(body),
             current_block: entry,
 
             local_values: HashMap::new(),
             labels: HashMap::new(),
 
             scope_stack: vec![ScopeContext::new(root_scope)],
-
-            body,
         }
     }
 
-    pub(crate) fn thin_finish(self) -> (MIRFunctionID, Body) {
-        (self.id, self.body)
+    pub(crate) fn thin_finish(self) -> (MIRFunctionID, MIRBodyKind<'thir>) {
+        (self.id, self.body.finish())
     }
 
     pub fn id(&self) -> MIRFunctionID {
@@ -156,11 +145,11 @@ impl MIRFunctionBuilder {
         &self.prototype
     }
 
-    pub fn body(&self) -> &Body {
+    pub fn body(&self) -> &MIRBodyBuilder {
         &self.body
     }
 
-    pub fn body_mut(&mut self) -> &mut Body {
+    pub fn body_mut(&mut self) -> &mut MIRBodyBuilder {
         &mut self.body
     }
 
@@ -197,9 +186,7 @@ impl MIRFunctionBuilder {
         self.body.register(register).map(|decl| decl.ty)
     }
 
-    pub fn emit(&self, instr: MIRInstruction) {
-        
-    }
+    pub fn emit(&self, instr: MIRInstruction) {}
 
     pub fn new_block(&mut self, name: impl Into<CXIdent>) -> MIRBasicBlockID {
         self.body.add_block_named(name)
@@ -235,14 +222,6 @@ impl MIRFunctionBuilder {
 
     pub fn locals(&self) -> HashMap<THIRLocalID, MIRValue> {
         self.local_values.clone()
-    }
-
-    pub(crate) fn take_capture(&mut self) -> Option<CaptureContext> {
-        self.capture.take()
-    }
-
-    pub(crate) fn set_capture(&mut self, capture: Option<CaptureContext>) {
-        self.capture = capture;
     }
 
     pub fn bind_local(&mut self, local: THIRLocalID, value: MIRValue) {
@@ -312,18 +291,6 @@ impl MIRFunctionBuilder {
 
     pub fn scope_stack(&self) -> &[ScopeContext] {
         &self.scope_stack
-    }
-
-    pub fn exit_target(&self, kind: MIRStagedExitKind) -> Option<(MIRScopeID, MIRBasicBlockID)> {
-        self.scope_stack.iter().rev().find_map(|scope| {
-            let block = match kind {
-                MIRStagedExitKind::Break => scope.break_target,
-                MIRStagedExitKind::Continue => scope.continue_target,
-                MIRStagedExitKind::Expr => None,
-            }?;
-
-            Some((scope.id(), block))
-        })
     }
 
     pub fn scope_stack_mut(&mut self) -> &mut [ScopeContext] {

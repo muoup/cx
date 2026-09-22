@@ -2,19 +2,15 @@ use std::collections::{HashMap, HashSet};
 
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
-    MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalVariable,
-    MIRLayoutError, MIRPlaceID, MIRStagedCapture, MIRStagedTemplate, MIRType, MIRTypeID,
-    MIRTypeKind, MIRUnit, MIRValue,
+    MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalVariable, MIRPlaceID,
+    MIRType, MIRTypeID, MIRTypeKind, MIRUnit, MIRValue,
     ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
 use cx_target::ArchitectureConfig;
 use cx_thir::{
     THIRUnit,
     registry::THIRDecomposedRegistry,
-    thir::{
-        expression::THIRLocalID,
-        r#type::THIRTypeID,
-    },
+    thir::{expression::THIRLocalID, r#type::THIRTypeID},
     type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
@@ -25,9 +21,8 @@ pub(crate) mod body;
 mod function;
 mod module;
 
-use crate::log::mir_error;
-use crate::lowering::{self, types::lower_type};
-use function::{CaptureContext, MIRFunctionBuilder};
+use crate::{builder::body::MIRBodyKind};
+use function::MIRFunctionBuilder;
 use module::{MIRModuleBuilder, ModuleParts};
 
 pub struct MIRBuilder<'thir> {
@@ -153,25 +148,19 @@ impl<'thir> MIRBuilder<'thir> {
         self.function = Some(function);
     }
 
-    pub fn finish(self) -> MIRUnit {
+    pub fn finish(self) -> MIRUnit<'thir> {
         let parts: ModuleParts = self.module.into_parts();
 
-        let functions: HashMap<_, _> = parts
+        let functions = parts
             .functions
             .into_iter()
-            .filter(|(id, function)| {
-                let linkage = function.prototype().linkage;
-                let mode = function.mode();
-                mode == MIRFunctionMode::Comptime
-                    || linkage != LinkageMode::Static
-                    || parts.used_functions.contains(id)
-            })
+            .filter(|(id, _)| parts.used_functions.contains(id))
             .collect();
 
         let comp_functions = parts
             .comptime_functions
             .into_iter()
-            .filter(|(id, _)| parts.used_functions.contains(&function.id()))
+            .filter(|(id, _)| parts.used_functions.contains(id))
             .collect();
 
         let globals: HashMap<_, _> = parts
@@ -231,30 +220,16 @@ impl<'thir> MIRBuilder<'thir> {
             unreachable!("No function context available at finish_function");
         };
 
-        let mode = fn_builder.mode();
         let (id, body) = fn_builder.thin_finish();
-        let body = match mode {
-            MIRFunctionMode::Runtime | MIRFunctionMode::Constexpr => match body.into_runtime() {
-                Ok(body) => MIRFunctionBody::Runtime(body),
-                Err(instruction) => {
-                    return Err(mir_error(
-                        &instruction.token_range,
-                        (&catalogue::UNEXPANDED_STAGED, ()),
-                    ));
-                }
-            },
-            MIRFunctionMode::Comptime => match body.into_comptime() {
-                Ok(body) => MIRFunctionBody::Comptime(body),
-                Err(instruction) => {
-                    return Err(mir_error(
-                        &instruction.token_range,
-                        (&catalogue::UNEXPANDED_STAGED, ()),
-                    ));
-                }
-            },
-        };
-        self.module.define_function(id, body);
-        Ok(())
+
+        match body {
+            MIRBodyKind::Runtime(body) => {
+                self.module_mut().finish_function(id, body)
+            }
+            MIRBodyKind::Comptime(body) => {
+                self.module_mut().finish_comptime_function(id, body)
+            }
+        }
     }
 }
 
@@ -327,11 +302,12 @@ impl MIRTypeRegistryBuilder {
     pub fn define(&mut self, id: MIRTypeID, definition: MIRType) -> Result<(), MIRLayoutError> {
         self.ensure_capacity(id.index());
         self.next_id = self.next_id.max(id.index() + 1);
-        let slot = &mut self.definitions[id.index()];
-        if slot.is_some() {
-            return Err(MIRLayoutError::DuplicateType(id));
-        }
-        *slot = Some(definition.clone());
+        
+        let Some(slot) = self.definitions[id.index()].as_mut() else {
+            return todo!();
+        };
+        
+        *slot = definition;
         self.interner.entry(definition).or_insert(id);
         Ok(())
     }

@@ -1,20 +1,14 @@
 use cx_log::CXResult;
-use cx_mir::{
-    MIRBinaryOp, MIRCoercion, MIRFloatBinaryOp, MIRInstrKind, MIRInstruction, MIRIntBinaryOp,
-    MIRIntIntrinsic, MIRIntrinsic, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRTarget, MIRUnaryOp,
-    MIRValue,
-};
+use cx_mir::{MIRBlockTarget, MIRInstrKind, MIRInstruction, MIRIntIntrinsic, MIRIntrinsic, MIRTarget, MIRValue};
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
-    expression::{
-        THIRBinOp, THIRCoercion, THIRExpression, THIRFloatBinOp, THIRIntBinOp, THIRPtrBinOp,
-        THIRPtrDiffBinOp, THIRUnOp,
-    },
+    expression::{THIRBinOp, THIRCoercion, THIRExpression, THIRIntBinOp, THIRUnOp},
 };
 
 use super::types::{lower_float_type, lower_int_type};
 use crate::{
-    builder::{MIRBuilder, integer_type}, lowering::{control_flow::lower_short_circuit, lower_expression, types::lower_type},
+    builder::MIRBuilder,
+    lowering::{lower_expression, types::lower_type},
 };
 
 pub(super) fn lower_binary_op(
@@ -47,7 +41,8 @@ pub(crate) fn lower_short_circuit(
     let lhs_value = lower_expression(builder, lhs)?;
     let rhs_block = builder.fun_mut().new_block("logical.rhs");
     let merge_block = builder.fun_mut().new_block("logical.merge");
-    let result_type_id = lower_type(builder, result_type)?;
+    let result_type_id = lower_type(builder, &expr._type)?;
+    
     let result = builder
         .fun_mut()
         .block_param(merge_block, result_type_id, None);
@@ -58,6 +53,7 @@ pub(crate) fn lower_short_circuit(
             ..
         }
     );
+    
     let rhs_target = MIRBlockTarget::new(rhs_block);
     let merge_target = MIRBlockTarget::with_args(merge_block, vec![lhs_value.clone()]);
     builder.emit(MIRInstrKind::Branch {

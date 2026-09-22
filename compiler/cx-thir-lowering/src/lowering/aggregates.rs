@@ -2,10 +2,7 @@ use cx_log::catalogue::mir as catalogue;
 
 use crate::{log::log_mir_error, lowering::lower_expression};
 use cx_log::CXResult;
-use cx_mir::{
-    MIRAggregateOp, MIRBinaryOp, MIRConstant, MIRInstrKind, MIRIntBinaryOp, MIRIntType,
-    MIRTargetAggregateOp, MIRValue, MIRValueAggregateOp,
-};
+use cx_mir::{MIRConstant, MIRInstrKind, MIRIntType, MIRValue};
 use cx_thir::thir::{
     data::{THIRIntType, THIRType, THIRTypeKind},
     expression::THIRExpression,

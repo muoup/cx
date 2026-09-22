@@ -3,8 +3,7 @@ use std::sync::Arc;
 
 use crate::log::mir_error;
 use cx_mir::{
-    MIRComptimeOp, MIRConstant, MIRField, MIRFunctionID, MIRFunctionMode, MIRInstrKind,
-    MIRStagedInstrKind, MIRStagedTemplate, MIRValue,
+    MIRComptimeOp, MIRConstant, MIRField, MIRFunctionID, MIRInstrKind, MIRStagedTemplate, MIRValue,
 };
 use cx_mir_comptime::{
     MIRComptimeValue, MIRStagedBinding, MIRStagedValue, evaluate_comptime_function,

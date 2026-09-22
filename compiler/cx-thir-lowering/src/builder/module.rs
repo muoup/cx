@@ -2,10 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
-    MIRComptimeFnPrototype, MIRComptimeFunction, MIRConstant, MIRConstantID, MIRFnPrototype, MIRFunction, MIRFunctionBody, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, constant::MIRStagedExprPool, global::MIRGlobalKind,
+    MIRBody, MIRComptimeFnPrototype, MIRComptimeFunction, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, constant::MIRStagedExprPool,
 };
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::log::mir_error;
 
@@ -39,13 +38,13 @@ impl<T: Clone> ModuleSymbol<T> {
     }
 }
 
-pub(crate) struct MIRModuleBuilder {
+pub(crate) struct MIRModuleBuilder<'thir> {
     functions: HashMap<MIRFunctionID, MIRFunction>,
-    comptime_functions: HashMap<MIRFunctionID, MIRComptimeFunction>,
+    comptime_functions: HashMap<MIRFunctionID, MIRComptimeFunction<'thir>>,
     globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
 
-    staged_expressions: MIRStagedExprPool,
-    
+    staged_expressions: MIRStagedExprPool<'thir>,
+
     function_symbols: HashMap<String, ModuleSymbol<MIRFunctionID>>,
     global_symbols: HashMap<String, ModuleSymbol<MIRGlobalID>>,
 
@@ -57,32 +56,32 @@ pub(crate) struct MIRModuleBuilder {
     next_global_id: usize,
 }
 
-pub(crate) struct ModuleParts {
+pub(crate) struct ModuleParts<'thir> {
     pub functions: HashMap<MIRFunctionID, MIRFunction>,
-    pub comptime_functions: HashMap<MIRFunctionID, MIRFunctionBody>,
-    pub staged_expressions: MIRStagedExprPool,
-    
+    pub comptime_functions: HashMap<MIRFunctionID, MIRComptimeFunction<'thir>>,
+    pub staged_expressions: MIRStagedExprPool<'thir>,
+
     pub globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
     pub global_order: Vec<MIRGlobalID>,
-    
+
     pub used_functions: HashSet<MIRFunctionID>,
     pub used_globals: HashSet<MIRGlobalID>,
 }
 
-impl MIRModuleBuilder {
+impl<'thir> MIRModuleBuilder<'thir> {
     pub(crate) fn new() -> Self {
         Self {
             functions: HashMap::new(),
             comptime_functions: HashMap::new(),
             staged_expressions: MIRStagedExprPool::new(),
-            
+
             globals: HashMap::new(),
             function_symbols: HashMap::new(),
 
             global_symbols: HashMap::new(),
             global_initializer: HashMap::new(),
             global_order: Vec::new(),
-            
+
             next_string_literal: 0,
             next_function_id: 0,
             next_global_id: 0,
@@ -97,8 +96,7 @@ impl MIRModuleBuilder {
 
         let id = MIRFunctionID::new(self.next_function_id);
         self.next_function_id += 1;
-        self.functions
-            .insert(id, MIRFunction::new(prototype, None));
+        self.functions.insert(id, MIRFunction::new(prototype, None));
         self.function_symbols.insert(name, ModuleSymbol::new(id));
         id
     }
@@ -114,7 +112,8 @@ impl MIRModuleBuilder {
 
         let id = MIRFunctionID::new(self.next_function_id);
         self.next_function_id += 1;
-        self.comptime_functions.insert(id, MIRComptimeFunction::new(prototype));
+        self.comptime_functions
+            .insert(id, MIRComptimeFunction::new(prototype));
         self.function_symbols.insert(name, ModuleSymbol::new(id));
         id
     }
@@ -131,22 +130,33 @@ impl MIRModuleBuilder {
         id
     }
 
-    pub(crate) fn declare_global(
-        &mut self,
-        var: MIRGlobalVariable
-    ) -> CXResult<MIRGlobalID> {
+    pub(crate) fn declare_global(&mut self, var: MIRGlobalVariable) -> CXResult<MIRGlobalID> {
         let id = self.allocate_global_id();
         self.globals.insert(id, var);
 
         Ok(id)
     }
 
-    pub(crate) fn define_function(&mut self, id: MIRFunctionID, def: MIRFunctionBody) {
+    pub(crate) fn define_function(&mut self, id: MIRFunctionID, def: MIRBody) {
         let Some(function) = self.functions.get_mut(&id) else {
             unreachable!("Could not define function id: {}", id);
         };
 
         function.define(def);
+    }
+
+    pub(crate) fn define_comptime_function(
+        &mut self,
+        id: MIRFunctionID,
+        def: MIRBody,
+    ) -> CXResult<()> {
+        let Some(function) = self.comptime_functions.get_mut(&id) else {
+            unreachable!("Could not define comptime function id: {}", id);
+        };
+
+        function.define(def);
+
+        Ok(())
     }
 
     pub(crate) fn function(&self, id: MIRFunctionID) -> Option<&MIRFunction> {
@@ -182,22 +192,8 @@ impl MIRModuleBuilder {
             .get_mut(&id)
             .expect("global symbol points to a missing global");
         let name = global.name().clone();
-        
-        let MIRGlobalKind::Variable { state, .. } = &mut global.kind else {
-            return Err(mir_error(
-                source_range,
-                (
-                    &catalogue::ENTITY_REQUIREMENT,
-                    (
-                        format!("global '{name}' initializer"),
-                        "a variable global".into(),
-                        Some("a string literal global".into()),
-                    ),
-                ),
-            ));
-        };
 
-        if matches!(state, MIRGlobalState::Initialized(_)) {
+        if matches!(global.state(), MIRGlobalState::Initialized(_)) {
             return Err(mir_error(
                 source_range,
                 (
@@ -222,14 +218,11 @@ impl MIRModuleBuilder {
             .globals
             .get_mut(&id)
             .expect("global is missing from module state");
-        let MIRGlobalKind::Variable { state: s, .. } = &mut global.kind else {
-            panic!("global is not a variable");
-        };
 
-        *s = state;
+        global.define(state);
     }
 
-    pub(crate) fn into_parts(self) -> ModuleParts {
+    pub(crate) fn into_parts(self) -> ModuleParts<'thir> {
         ModuleParts {
             used_functions: self
                 .function_symbols

@@ -1,12 +1,13 @@
 use cx_log::CXResult;
 use cx_mir::{
-    MIRBitfieldAccess, MIRFloatType, MIRIntType, MIRType, MIRTypeID, MIRTypeKind,
-    ty::interface::MTRegistry,
+    MIRBitfieldAccess, MIRComptimeFnPrototype, MIRComptimeFnSignature, MIRFloatType, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRType, MIRTypeID, MIRTypeKind, ty::{comptime::MIRComptimeType, interface::MTRegistry},
 };
 use cx_thir::{
-    thir::r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
-    type_context::THIRTypeContext,
+    thir::{
+        data::{THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature}, r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
+    }, type_context::THIRTypeContext,
 };
+use cx_util::identifier::CXIdent;
 
 use crate::{
     MIRBuilder,
@@ -119,19 +120,7 @@ pub(crate) fn lower_type_kind(
             inner: lower_type_id(builder, *inner_type)?,
         },
         THIRTypeKind::Function { signature } => MIRTypeKind::Function {
-            signature: MIRFunctionType {
-                params: signature
-                    .params
-                    .iter()
-                    .map(|param| lower_type(builder, &param._type))
-                    .collect::<CXResult<Vec<_>>>()?,
-                return_type: if signature.return_type.is_unreachable() {
-                    builder.types().unit()
-                } else {
-                    lower_type(builder, &signature.return_type)?
-                },
-                variadic: signature.var_args,
-            },
+            signature: lower_signature(builder, signature)?,
         },
         THIRTypeKind::Opaque { size, alignment } => MIRTypeKind::Opaque {
             size: *size,
@@ -161,14 +150,12 @@ pub(crate) fn lower_float_type(ty: THIRFloatType) -> MIRFloatType {
     }
 }
 
-pub(crate) fn lower_prototype(
+pub(crate) fn lower_signature(
     builder: &mut MIRBuilder,
-    prototype: &THIRFnPrototype,
-) -> CXResult<MIRFnPrototype> {
-    let signature = prototype.signature();
-
+    signature: &THIRFnSignature,
+) -> CXResult<MIRFnSignature> {
     let return_type = lower_type(builder, &signature.return_type)?;
-    let mut params = signature
+    let params = signature
         .params
         .iter()
         .map(|parameter| {
@@ -176,72 +163,80 @@ pub(crate) fn lower_prototype(
 
             MIRFnParam::new(parameter.name.clone(), ty, parameter._type.is_nodrop())
         })
-        .collect::<Vec<_>>();
+        .collect::<CXResult<Vec<_>>>()?;
 
-    Ok(MIRFnPrototype::new(
-        MIRFnSignature::new(
-            params,
-            return_type,
-            signature.var_args,
-            signature.contract.safe(),
-        ),
-        prototype.linkage(),
-        CXIdent::from(prototype.symbol_name().to_string()),
-        prototype.debug_name().cloned(),
+    Ok(MIRFnSignature::new(
+        params,
+        return_type,
+        signature.var_args,
+        signature.contract.safe(),
     ))
 }
 
-pub(crate) fn lower_comptime_prototype(
+pub(crate) fn lower_prototype(
     builder: &mut MIRBuilder,
-    prototype: &THIRComptimeFnPrototype,
+    prototype: &THIRFnPrototype,
+) -> CXResult<MIRFnPrototype> {
+    let signature = lower_signature(builder, &prototype.signature())?;
+
+    Ok(MIRFnPrototype::new(
+        signature,
+        prototype.linkage_mode,
+        CXIdent::from(prototype.symbol_name()),
+        prototype.debug_name().cloned()
+    ))
+}
+
+pub(crate) fn lower_comptime_signature(
+    builder: &mut MIRBuilder,
+    signature: &THIRComptimeFnPrototype,
 ) -> CXResult<MIRComptimeFnPrototype> {
-    let mut params = Vec::with_capacity(prototype.params().len());
-
-    for parameter in prototype.params() {
-        let ty = lower_type(self, &parameter.value_type._type)?;
-        let staged_params = if parameter.value_type.expr {
-            Some(
-                parameter
-                    .value_type
-                    .params
-                    .iter()
-                    .map(|ty| lower_type(self, ty))
-                    .collect::<CXResult<Vec<_>>>()?,
-            )
-        } else {
-            None
-        };
-        let param = match parameter.name.clone() {
-            Some(name) => MIRFnParam::named(name, ty),
-            None => MIRFnParam::new(ty),
-        }
-        .with_staged(
-            staged_params,
-            parameter.value_type.expr && parameter.value_type._type.is_unreachable(),
-        );
-        params.push(param);
-    }
-
-    let return_type = lower_type(self, &prototype.return_type()._type)?;
-    let return_staged_params = if prototype.return_type().expr {
+    let return_type = lower_type(builder, &signature.return_type()._type)?;
+    let return_staged_params = if signature.return_type().expr {
         Some(
-            prototype
+            signature
                 .return_type()
                 .params
                 .iter()
-                .map(|ty| lower_type(self, ty))
+                .map(|ty| lower_type(builder, ty))
                 .collect::<CXResult<Vec<_>>>()?,
         )
     } else {
         None
     };
 
-    Ok(MIRComptimeFnPrototype::new(
-        CXIdent::from(prototype.symbol_name().to_string()),
-        MIRComptimeFnSignature::new(
-            MIRComptimeType::new(return_type, prototype.return_type()._type.is_nodrop()),
-            params,
-        )
-        .with_staged_return(return_staged_params),
-    ))
+    let params = signature
+        .params()
+        .iter()
+        .map(|parameter| {
+            let ty = lower_type(builder, &parameter.value_type._type)?;
+            let staged_params = if parameter.value_type.expr {
+                Some(
+                    parameter
+                        .value_type
+                        .params
+                        .iter()
+                        .map(|ty| lower_type(builder, ty))
+                        .collect::<CXResult<Vec<_>>>()?,
+                )
+            } else {
+                None
+            };
+            Ok(MIRFnParam::new(
+                parameter.name.clone(),
+                ty,
+                parameter.value_type._type.is_nodrop(),
+            )
+            .with_staged(
+                staged_params,
+                parameter.value_type.expr && parameter.value_type._type.is_unreachable(),
+            ))
+        })
+        .collect::<CXResult<Vec<_>>>()?;
+
+    Ok(MIRComptimeFnSignature::new(
+        MIRComptimeType::new(return_type, signature.return_type()._type.is_nodrop()),
+        params,
+    )
+    .with_staged_return(return_staged_params))
 }
