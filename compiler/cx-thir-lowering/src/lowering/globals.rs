@@ -1,6 +1,6 @@
-use crate::builder::MIRBuilder;
+use crate::{builder::MIRBuilder, log::log_mir_error};
 use crate::lowering::{lower_expression, types::lower_type};
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::mir};
 use cx_mir::ty::comptime::MIRComptimeType;
 use cx_mir::{
     MIRComptimeContext, MIRComptimeFnPrototype, MIRComptimeFnSignature, MIRFunctionID, MIRGlobalID,
@@ -91,9 +91,13 @@ pub(crate) fn execute_request(
         unreachable!("Function for global init request not found");
     };
 
-    let result = evaluate_comptime_function(builder, func, &[])?
-        .constant()
-        .ok_or_else(|| todo!("Expected a constant result from global initializer"))?;
+    let result = evaluate_comptime_function(builder, func, &[])?;
+    let Some(result) = result.constant() else {
+        return log_mir_error(
+            &request.initializer.token_range,
+            (&mir::EXPECTED_CONSTANT, "global initializer".into()),
+        );
+    };
 
     let intern_constant = builder.module_mut().intern_constant(result);
 

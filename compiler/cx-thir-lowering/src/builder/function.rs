@@ -187,13 +187,13 @@ impl<'thir> MIRFunctionBuilder<'thir> {
         self.body.register(register).map(|decl| decl.ty)
     }
 
-    pub fn emit(&self, instr: MIRInstruction) {
+    pub fn emit(&mut self, instr: MIRInstruction) {
         self.body.emit(instr);
     }
 
-    pub fn emit_intrinsic(&self, intrinsic: impl Into<MIRIntrinsic>, range: TokenRange) {
-        self.body.emity(MIRInstruction {
-            kind: MIRInstructionKind::Intrinsic(intrinsic.into()),
+    pub fn emit_intrinsic(&mut self, intrinsic: impl Into<MIRIntrinsic>, range: TokenRange) {
+        self.body.emit(MIRInstruction {
+            kind: MIRInstructionKind::IntrinsicOp(intrinsic.into()),
             token_range: range,
         })
     }

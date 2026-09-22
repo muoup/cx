@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use cx_log::CXResult;
 use cx_mir::{
-    MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalVariable, MIRPlaceID,
-    MIRType, MIRTypeID, MIRTypeKind, MIRUnit, MIRValue,
+    MIRFnPrototype, MIRFunction, MIRFunctionID, MIRPlaceID, MIRType, MIRTypeID, MIRTypeKind,
+    MIRUnit, MIRValue,
     ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
 use cx_target::ArchitectureConfig;
@@ -284,12 +284,8 @@ impl MIRTypeRegistryBuilder {
     pub fn define(&mut self, id: MIRTypeID, definition: MIRType) -> CXResult<()> {
         self.ensure_capacity(id.index());
         self.next_id = self.next_id.max(id.index() + 1);
-        
-        let Some(slot) = self.definitions[id.index()].as_mut() else {
-            return todo!();
-        };
-        
-        *slot = definition;
+
+        self.definitions[id.index()] = Some(definition.clone());
         self.interner.entry(definition).or_insert(id);
         Ok(())
     }
@@ -334,25 +330,5 @@ impl MIRTypeRegistryBuilder {
             .collect();
 
         MIRTypeRegistry::new(self.architecture, definitions, self.debug_names)
-    }
-}
-
-impl ComptimeContext for MIRBuilder<'_> {
-    type Registry = MIRTypeRegistryBuilder;
-
-    fn resolve(&self, id: MIRFunctionID) -> Option<&MIRFunction> {
-        self.module().function(id)
-    }
-
-    fn types(&self) -> &MIRTypeRegistryBuilder {
-        self.types()
-    }
-
-    fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
-        self.module().global(id)
-    }
-
-    fn global_initializer(&self, id: MIRGlobalID) -> Option<MIRFunctionID> {
-        self.module().global_initializer(id)
     }
 }

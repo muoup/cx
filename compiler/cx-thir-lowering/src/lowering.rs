@@ -11,9 +11,8 @@ pub(crate) mod types;
 
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstruction,
-    MIRInstructionKind::{self, IntrinsicOp},
-    MIRIntIntrinsic, MIRIntType, MIRIntrinsic, MIRPtrIntrinsic, MIRTarget, MIRTypeKind, MIRValue,
+    MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstruction, MIRInstructionKind, MIRIntType,
+    MIRIntrinsic, MIRTarget, MIRTypeKind, MIRValue,
     ty::{interface::MTRegistry, layout::calculate_type_layout},
 };
 use cx_thir::{
@@ -355,7 +354,7 @@ pub(crate) fn lower_expression(
                             .bind_local(*local_id, MIRValue::Reference(target));
                         builder
                             .fun_mut()
-                            .bind_named_value(name, MIRValue::Reference(target));
+                            .bind_named_value(binding_name, MIRValue::Reference(target));
                         MIRValue::Reference(target)
                     }
                     value => {
@@ -363,14 +362,14 @@ pub(crate) fn lower_expression(
                             builder,
                             value,
                             _type,
-                            Some(name.clone()),
+                            Some(binding_name.clone()),
                         )?;
                         builder.fun_mut().bind_local(
                             *local_id,
                             MIRValue::Reference(cx_mir::MIRTarget::Place(place)),
                         );
                         builder.fun_mut().bind_named_value(
-                            name,
+                            binding_name,
                             MIRValue::Reference(cx_mir::MIRTarget::Place(place)),
                         );
                         MIRValue::Reference(cx_mir::MIRTarget::Place(place))
@@ -428,34 +427,20 @@ pub(crate) fn lower_expression(
                 index,
                 element_type,
             } => {
-                let int_type = lower_type(builder, &index._type)?;
                 let element_type_id = lower_type(builder, element_type)?;
                 let return_type = lower_type(builder, &expr._type)?;
 
                 let array = lower_expression(builder, array)?;
                 let index = lower_expression(builder, index)?;
 
-                let elem_size = todo!();
-
-                let index_calc = builder.fun_mut().new_register(int_type, None);
-                builder.emit(MIRInstruction {
-                    kind: MIRInstructionKind::IntrinsicOp(MIRIntrinsic::Int(
-                        MIRIntIntrinsic::UMul {
-                            out: MIRTarget::Register(index_calc),
-                            lhs: index,
-                            rhs: elem_size,
-                        },
-                    )),
-                    token_range: expr.token_range.clone(),
-                })?;
-
                 let out = builder.fun_mut().new_register(return_type, None);
-                builder.emit(MIRInstruction {
-                    kind: MIRInstructionKind::IntrinsicOp(MIRIntrinsic::Pointer(
-                        MIRPtrIntrinsic::Add {
+                builder.fun_mut().emit(MIRInstruction {
+                    kind: MIRInstructionKind::IntrinsicOp(MIRIntrinsic::Aggregate(
+                        cx_mir::MIRAggregateIntrinsic::ArrayIndex {
                             out: MIRTarget::Register(out),
-                            ptr: array,
-                            offset: MIRValue::Register(index_calc),
+                            base: array,
+                            index,
+                            element_ty: element_type_id,
                         },
                     )),
                     token_range: expr.token_range.clone(),
