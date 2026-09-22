@@ -11,7 +11,10 @@ pub(crate) mod types;
 
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstructionKind::{self, IntrinsicOp}, MIRInstruction, MIRIntIntrinsic, MIRIntType, MIRIntrinsic, MIRPtrIntrinsic, MIRTarget, MIRTypeKind, MIRValue, ty::{interface::MTRegistry, layout::calculate_type_layout},
+    MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstruction,
+    MIRInstructionKind::{self, IntrinsicOp},
+    MIRIntIntrinsic, MIRIntType, MIRIntrinsic, MIRPtrIntrinsic, MIRTarget, MIRTypeKind, MIRValue,
+    ty::{interface::MTRegistry, layout::calculate_type_layout},
 };
 use cx_thir::{
     thir::{
@@ -23,8 +26,11 @@ use cx_thir::{
 };
 
 use crate::{
-    builder::MIRBuilder, lowering::{
-        memory::allocate_variable, operators::{lower_binary_op, lower_coercion, lower_unary_op}, types::{lower_int_type, lower_type},
+    builder::MIRBuilder,
+    lowering::{
+        memory::allocate_variable,
+        operators::{lower_binary_op, lower_coercion, lower_unary_op},
+        types::{lower_int_type, lower_type},
     },
 };
 use crate::{
@@ -432,32 +438,26 @@ pub(crate) fn lower_expression(
                 let elem_size = todo!();
 
                 let index_calc = builder.fun_mut().new_register(int_type, None);
-                builder.emit(
-                    MIRInstruction {
-                        kind: MIRInstructionKind::IntrinsicOp(
-                            MIRIntrinsic::Int(
-                                MIRIntIntrinsic::UMul {
-                                    out: MIRTarget::Register(index_calc),
-                                    lhs: index,
-                                    rhs: elem_size,
-                                }
-                            )
-                        ),
-                        token_range: expr.token_range.clone(),
-                    }
-                )?;
+                builder.emit(MIRInstruction {
+                    kind: MIRInstructionKind::IntrinsicOp(MIRIntrinsic::Int(
+                        MIRIntIntrinsic::UMul {
+                            out: MIRTarget::Register(index_calc),
+                            lhs: index,
+                            rhs: elem_size,
+                        },
+                    )),
+                    token_range: expr.token_range.clone(),
+                })?;
 
                 let out = builder.fun_mut().new_register(return_type, None);
                 builder.emit(MIRInstruction {
-                    kind: MIRInstructionKind::IntrinsicOp(
-                        MIRIntrinsic::Pointer(
-                            MIRPtrIntrinsic::Add {
-                                out: MIRTarget::Register(out),
-                                ptr: array,
-                                offset: MIRValue::Register(index_calc),
-                            }
-                        )
-                    ),
+                    kind: MIRInstructionKind::IntrinsicOp(MIRIntrinsic::Pointer(
+                        MIRPtrIntrinsic::Add {
+                            out: MIRTarget::Register(out),
+                            ptr: array,
+                            offset: MIRValue::Register(index_calc),
+                        },
+                    )),
                     token_range: expr.token_range.clone(),
                 });
 
@@ -524,6 +524,7 @@ pub(crate) fn lower_expression(
                 }));
                 MIRValue::Register(out)
             }
+            
             THIRExpressionKind::TaggedUnionGet {
                 value,
                 variant_index,
@@ -570,6 +571,7 @@ pub(crate) fn lower_expression(
                     }
                 }
             }
+            
             THIRExpressionKind::TaggedUnionSet {
                 target,
                 variant_index,
@@ -596,6 +598,7 @@ pub(crate) fn lower_expression(
                 });
                 MIRValue::Reference(target)
             }
+            
             THIRExpressionKind::TaggedUnionInitializer {
                 variant_index,
                 value,
@@ -615,6 +618,7 @@ pub(crate) fn lower_expression(
                 }));
                 MIRValue::Register(out)
             }
+            
             THIRExpressionKind::ArrayInitializer { elements, .. } => {
                 let mut fields = Vec::with_capacity(elements.len());
                 for (index, element) in elements.iter().enumerate() {
@@ -639,6 +643,7 @@ pub(crate) fn lower_expression(
                 }));
                 MIRValue::Register(out)
             }
+            
             THIRExpressionKind::StructInitializer {
                 initializations,
                 struct_type,
@@ -663,10 +668,44 @@ pub(crate) fn lower_expression(
                 MIRValue::Register(out)
             }
 
-            THIRExpressionKind::Break => lower_control_exit(builder, MIRStagedExitKind::Break)?,
-            THIRExpressionKind::Continue => {
-                lower_control_exit(builder, MIRStagedExitKind::Continue)?
+            THIRExpressionKind::Break => {
+                let target = builder
+                    .fun()
+                    .scope_stack()
+                    .iter()
+                    .rev()
+                    .find_map(|scope| scope.break_target());
+
+                let Some(target) = target else {
+                    unreachable!("break statement outside of loop or switch")
+                };
+
+                builder.emit(MIRInstructionKind::Jump {
+                    target: MIRBlockTarget::new(target),
+                });
+
+                MIRValue::Constant(MIRConstant::Unit)
             }
+            
+            THIRExpressionKind::Continue => {
+                let target = builder
+                    .fun()
+                    .scope_stack()
+                    .iter()
+                    .rev()
+                    .find_map(|scope| scope.continue_target());
+
+                let Some(target) = target else {
+                    unreachable!("continue statement outside of loop")
+                };
+
+                builder.emit(MIRInstructionKind::Jump {
+                    target: MIRBlockTarget::new(target),
+                });
+
+                MIRValue::Constant(MIRConstant::Unit)
+            }
+            
             THIRExpressionKind::Goto { name } => {
                 let target = if let Some(target) = builder.fun_mut().label(name) {
                     target
@@ -905,10 +944,9 @@ pub(crate) fn lower_expression(
             THIRExpressionKind::VaStart { list, last } => {
                 let list = lower_expression(builder, list)?;
                 let last = lower_expression(builder, last)?;
-                builder.emit(MIRInstructionKind::Intrinsic(cx_mir::MIRIntrinsic::VaStart {
-                    list,
-                    last,
-                }));
+                builder.emit(MIRInstructionKind::Intrinsic(
+                    cx_mir::MIRIntrinsic::VaStart { list, last },
+                ));
                 MIRValue::Constant(MIRConstant::Unit)
             }
 

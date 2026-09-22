@@ -22,11 +22,11 @@ mod module;
 
 use crate::{builder::body::MIRBodyKind};
 use function::MIRFunctionBuilder;
-use module::{MIRModuleBuilder, ModuleParts};
+use module::{MIRUnitBuilder, ModuleParts};
 
 pub struct MIRBuilder<'thir> {
     types: MIRTypeRegistryBuilder,
-    module: MIRModuleBuilder<'thir>,
+    module: MIRUnitBuilder<'thir>,
     registry: &'thir THIRDecomposedRegistry,
     function: Option<MIRFunctionBuilder<'thir>>,
 }
@@ -46,7 +46,7 @@ impl<'thir> MIRBuilder<'thir> {
     pub fn new(thir: &'thir THIRUnit) -> Self {
         let mut builder = Self {
             types: MIRTypeRegistryBuilder::new(*thir.registry.architecture()),
-            module: MIRModuleBuilder::new(),
+            module: MIRUnitBuilder::new(),
             registry: &thir.registry,
             function: None,
         };
@@ -71,11 +71,11 @@ impl<'thir> MIRBuilder<'thir> {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn module(&self) -> &MIRModuleBuilder {
+    pub(crate) fn module(&self) -> &MIRUnitBuilder {
         &self.module
     }
 
-    pub(crate) fn module_mut(&mut self) -> &mut MIRModuleBuilder {
+    pub(crate) fn module_mut(&mut self) -> &mut MIRUnitBuilder {
         &mut self.module
     }
 

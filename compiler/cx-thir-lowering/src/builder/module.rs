@@ -38,7 +38,7 @@ impl<T: Clone> ModuleSymbol<T> {
     }
 }
 
-pub(crate) struct MIRModuleBuilder<'thir> {
+pub(crate) struct MIRUnitBuilder<'thir> {
     functions: HashMap<MIRFunctionID, MIRFunction>,
     comptime_functions: HashMap<MIRFunctionID, MIRComptimeFunction<'thir>>,
     globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
@@ -68,7 +68,7 @@ pub(crate) struct ModuleParts<'thir> {
     pub used_globals: HashSet<MIRGlobalID>,
 }
 
-impl<'thir> MIRModuleBuilder<'thir> {
+impl<'thir> MIRUnitBuilder<'thir> {
     pub(crate) fn new() -> Self {
         Self {
             functions: HashMap::new(),
