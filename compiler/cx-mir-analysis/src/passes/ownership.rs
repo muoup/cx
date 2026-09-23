@@ -1,8 +1,6 @@
-use std::collections::{HashMap, HashSet};
-
-use cx_log::{CXResult, catalogue::analysis};
+use cx_log::{CXMaybeRawResult, CXResult, catalogue::analysis};
 use cx_mir::{
-    MIRBasicBlockID, MIRBindable, MIRInstruction, MIRInstructionKind, MIRPlaceID, MIRTarget,
+    MIRBasicBlockID, MIRBindable, MIRInstruction, MIRInstructionKind, MIRTarget,
     expr::{instruction::MIRInvalidationKind, visit::visit_bindable_uses},
 };
 use cx_tokens::TokenRange;
@@ -13,13 +11,10 @@ use crate::{
         pipeline::AnalysisPass,
         state::{LatticeState, Mergeable, StateTable},
     },
-    log::log_analysis_error,
+    log::{complete_analysis_error, log_analysis_error},
 };
 
 pub struct Ownership {
-    nodrop: HashSet<MIRPlaceID>,
-    place_names: HashMap<MIRPlaceID, (String, bool)>,
-    function_name: String,
     table: StateTable<MIRBindable, OwnershipState>,
 }
 
@@ -33,9 +28,6 @@ pub enum OwnershipState {
 impl Ownership {
     pub fn new() -> Self {
         Self {
-            nodrop: HashSet::new(),
-            place_names: HashMap::new(),
-            function_name: String::new(),
             table: StateTable::new(),
         }
     }
@@ -69,7 +61,7 @@ impl Ownership {
 
         let (name, discarded) = Self::name(env, bindable);
         let args = (
-            self.function_name.clone(),
+            env.function().prototype().display_name().to_string(),
             name,
             operation.to_owned(),
             discarded,
@@ -86,29 +78,6 @@ impl Ownership {
 impl AnalysisPass for Ownership {
     fn function_entry(&mut self, env: &AnalysisEnvironment) -> CXResult<()> {
         let body = env.function().body().expect("analyzed function has a body");
-        self.function_name = env.function().prototype().display_name().to_string();
-        self.nodrop = body
-            .places()
-            .iter()
-            .filter(|place| place.nodrop)
-            .map(|place| place.id)
-            .collect();
-        self.place_names = body
-            .places()
-            .iter()
-            .map(|place| {
-                let name = place
-                    .debug_name
-                    .as_ref()
-                    .map(ToString::to_string)
-                    .unwrap_or_else(|| format!("{:?}", place.id));
-                let discarded = place
-                    .debug_name
-                    .as_ref()
-                    .is_some_and(|name| name.as_str() == "_");
-                (place.id, (name, discarded))
-            })
-            .collect();
         for place in body.places() {
             self.table.set(
                 MIRBindable::Place(place.id),
@@ -168,14 +137,19 @@ impl AnalysisPass for Ownership {
                         == Some(&LatticeState::Known(OwnershipState::Available))
                     {
                         if let MIRBindable::Place(id) = place {
-                            if self.nodrop.contains(id) {
+                            if env
+                                .function()
+                                .body()
+                                .and_then(|body| body.place(*id))
+                                .is_some_and(|place| place.nodrop)
+                            {
                                 let (name, discarded) = Self::name(env, place);
                                 return log_analysis_error(
                                     &instruction.token_range,
                                     (
                                         &analysis::VALUE_NOT_CONSUMED,
                                         (
-                                            self.function_name.clone(),
+                                            env.function().prototype().display_name().to_string(),
                                             "value".to_owned(),
                                             name,
                                             "lifetime".to_owned(),
@@ -244,12 +218,14 @@ impl AnalysisPass for Ownership {
 
     fn merge(
         &mut self,
-        _env: &AnalysisEnvironment,
+        env: &AnalysisEnvironment,
         other: MIRBasicBlockID,
         range: &TokenRange,
     ) -> CXResult<bool> {
         let mut table = std::mem::replace(&mut self.table, StateTable::new());
-        let result = table.merge_into(self, other, range);
+        let result = table
+            .merge_into(env, other)
+            .map_err(|err| complete_analysis_error(range, err));
         self.table = table;
         result
     }
@@ -261,35 +237,32 @@ impl AnalysisPass for Ownership {
 }
 
 impl Mergeable<MIRBindable> for OwnershipState {
-    type Context = Ownership;
-
     fn merge(
         &self,
-        context: &Ownership,
+        env: &AnalysisEnvironment,
         other: &Self,
         key: MIRBindable,
-        range: &TokenRange,
-    ) -> CXResult<Option<LatticeState<MIRBindable, Self>>> {
+    ) -> CXMaybeRawResult<Option<LatticeState<MIRBindable, Self>>> {
         if self == other {
             return Ok(None);
         }
 
         if let MIRBindable::Place(place) = key {
-            if context.nodrop.contains(&place)
+            if env
+                .function()
+                .body()
+                .and_then(|body| body.place(place))
+                .is_some_and(|place| place.nodrop)
                 && (self == &OwnershipState::Available || other == &OwnershipState::Available)
             {
-                let (name, discarded) = context
-                    .place_names
-                    .get(&place)
-                    .cloned()
-                    .unwrap_or_else(|| (format!("{place:?}"), false));
-                return log_analysis_error(
-                    range,
-                    (
-                        &analysis::PARTIAL_MOVE,
-                        (context.function_name.clone(), name, discarded),
-                    ),
-                );
+                let (name, discarded) = Ownership::name(env, &MIRBindable::Place(place));
+                return Err(analysis::PARTIAL_MOVE
+                    .bind((
+                        env.function().prototype().display_name().to_string(),
+                        name,
+                        discarded,
+                    ))
+                    .into());
             }
         }
 
