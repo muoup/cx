@@ -56,10 +56,14 @@ impl Display for MIRConstant {
                 }
                 f.write_str("}")
             }
+            Self::GlobalRef(inner) => {
+                write!(f, "global {}", inner.global)?;
+                if inner.offset != 0 {
+                    write!(f, " + {}", inner.offset)?;
+                }
+                write!(f, ": {}", inner.ty)
+            }
             Self::String(value) => write!(f, "{value:?}"),
-            Self::StringAddress(value) => write!(f, "string.address({value:?})"),
-            Self::ArrayAddress(value) => write!(f, "array.address({value})"),
-            Self::GlobalAddress(global) => write!(f, "{global}"),
             Self::Function(function) => write!(f, "fn {function}"),
             Self::Undefined => f.write_str("undefined"),
         }
@@ -101,7 +105,6 @@ impl Display for MIRComptimeValue {
             Self::Constant(value) => Display::fmt(value, f),
             Self::Staged(value) => write!(f, "staged {value}"),
             Self::Caller(value) => Display::fmt(value, f),
-            Self::GlobalRef(value) => Display::fmt(value, f),
         }
     }
 }
@@ -111,7 +114,6 @@ impl Display for MIRValue {
         match self {
             Self::Register(value) => Display::fmt(value, f),
             Self::PlaceRef(value) => Display::fmt(value, f),
-            Self::GlobalRef(value) => Display::fmt(value, f),
             Self::Constant(value) => Display::fmt(value, f),
         }
     }
@@ -1411,7 +1413,6 @@ fn write_value(
 ) -> fmt::Result {
     match value {
         MIRValue::Register(register) => write_register_name(f, function, *register),
-        MIRValue::GlobalRef(global) => write_global_ref(f, unit, *global),
         MIRValue::PlaceRef(place) => write_place_name(f, unit, function, *place),
         MIRValue::Constant(constant) => write_constant(f, unit, constant),
     }
@@ -1426,7 +1427,6 @@ fn write_constant(f: &mut Formatter<'_>, unit: &MIRUnit, constant: &MIRConstant)
                 Display::fmt(function_id, f)
             }
         }
-        MIRConstant::GlobalAddress(global) => write_global_ref(f, unit, *global),
         MIRConstant::Aggregate { fields, .. } => {
             f.write_str("{")?;
             for (index, (field, value)) in fields.iter().enumerate() {

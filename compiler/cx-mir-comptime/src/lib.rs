@@ -1,5 +1,6 @@
 mod arithmetic;
 mod engine;
+mod execution;
 mod log;
 
 use cx_log::CXResult;
@@ -20,7 +21,7 @@ pub trait ComptimeContext<'thir> {
 pub use engine::EngineLimits;
 
 pub fn evaluate_body<'thir, C: ComptimeContext<'thir>>(
-    context: &C,
+    context: &'thir C,
     body: &MIRComptimeBody<'thir>,
     args: &[MIRComptimeValue],
 ) -> CXResult<MIRComptimeValue> {

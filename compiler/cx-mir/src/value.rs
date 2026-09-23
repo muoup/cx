@@ -21,7 +21,6 @@ pub struct MIRGlobalRef {
 pub enum MIRValue {
     Register(MIRRegisterID),
     PlaceRef(MIRPlaceID),
-    GlobalRef(MIRGlobalRef),
     Constant(MIRConstant),
 }
 
@@ -56,8 +55,7 @@ pub enum MIRComptimeOperand {
 pub enum MIRComptimeValue {
     Constant(MIRConstant),
     Staged(MIRStagedID),
-    Caller(MIRValue),
-    GlobalRef(MIRGlobalRef),
+    Caller(MIRValue)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

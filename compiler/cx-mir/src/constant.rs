@@ -24,10 +24,8 @@ pub enum MIRConstant {
         ty: MIRTypeID,
         fields: Vec<(usize, MIRConstant)>,
     },
+    GlobalRef(MIRGlobalRef),
     String(String),
-    StringAddress(String),
-    ArrayAddress(Box<MIRConstant>),
-    GlobalAddress(MIRGlobalRef),
     Nullptr {
         ty: MIRTypeID,
     },
