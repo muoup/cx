@@ -59,6 +59,9 @@ fn run(env: &AnalysisEnvironment<'_>, pipeline: &mut Pipeline) -> CXResult<()> {
 
     let mut reloads = Vec::new();
 
+    pipeline.function_entry(env)?;
+    pipeline.block_entry(env, body.entry())?;
+
     loop {
         let instruction = body
             .block(MIRBasicBlockID(current_block))
@@ -68,7 +71,7 @@ fn run(env: &AnalysisEnvironment<'_>, pipeline: &mut Pipeline) -> CXResult<()> {
         pipeline.analyze_instruction(env, instruction)?;
 
         for successor in successors(instruction) {
-            if (pipeline.merge(env, successor.block)?) {
+            if pipeline.merge(env, successor.block, &instruction.token_range)? {
                 reloads.push(successor);
             }
         }
@@ -80,6 +83,7 @@ fn run(env: &AnalysisEnvironment<'_>, pipeline: &mut Pipeline) -> CXResult<()> {
             current_instruction = 0;
 
             pipeline.reload_block(env, MIRBasicBlockID(current_block))?;
+            pipeline.block_entry(env, MIRBasicBlockID(current_block))?;
         } else {
             current_instruction += 1;
 

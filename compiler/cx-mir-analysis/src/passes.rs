@@ -3,7 +3,9 @@ use crate::{MIRAnalysisOptions, framework::pipeline::Pipeline, passes::ownership
 mod ownership;
 mod value;
 
-pub fn register_passes(pipeline: &mut Pipeline, _: &MIRAnalysisOptions) {
-    pipeline.push(Ownership::new());
+pub fn register_passes(pipeline: &mut Pipeline, options: &MIRAnalysisOptions) {
+    if options.ownership {
+        pipeline.push(Ownership::new());
+    }
     // pipeline.push(ValueTracking::new());
 }

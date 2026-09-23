@@ -453,8 +453,6 @@ fn write_instruction<T: MTRegistry>(
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     match &instruction.kind {
-        MIRInstructionKind::ScopeEnter { scope } => write!(f, "scope.enter {scope}"),
-        MIRInstructionKind::ScopeExit { scope } => write!(f, "scope.exit {scope}"),
         MIRInstructionKind::Initialize { place } => {
             f.write_str("initialize ")?;
             write_bindable(f, unit, function, place)

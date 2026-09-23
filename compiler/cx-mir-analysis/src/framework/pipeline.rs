@@ -1,5 +1,6 @@
 use cx_log::CXResult;
 use cx_mir::{MIRBasicBlockID, MIRInstruction};
+use cx_tokens::TokenRange;
 
 use crate::MIRAnalysisOptions;
 use crate::framework::environment::AnalysisEnvironment;
@@ -36,17 +37,44 @@ impl Pipeline {
         Ok(())
     }
 
-    pub fn merge(&mut self, env: &AnalysisEnvironment, other: MIRBasicBlockID) -> CXResult<bool> {
+    pub fn function_entry(&mut self, env: &AnalysisEnvironment) -> CXResult<()> {
+        for analysis in &mut self.analyses {
+            analysis.function_entry(env)?;
+        }
+        Ok(())
+    }
+
+    pub fn block_entry(
+        &mut self,
+        env: &AnalysisEnvironment,
+        block: MIRBasicBlockID,
+    ) -> CXResult<()> {
+        for analysis in &mut self.analyses {
+            analysis.block_entry(env, block)?;
+        }
+        Ok(())
+    }
+
+    pub fn merge(
+        &mut self,
+        env: &AnalysisEnvironment,
+        other: MIRBasicBlockID,
+        range: &TokenRange,
+    ) -> CXResult<bool> {
         let mut changed = false;
 
         for analysis in &mut self.analyses {
-            changed |= analysis.merge(env, other)?;
+            changed |= analysis.merge(env, other, range)?;
         }
 
         Ok(changed)
     }
 
-    pub fn reload_block(&mut self, env: &AnalysisEnvironment, block: MIRBasicBlockID) -> CXResult<()> {
+    pub fn reload_block(
+        &mut self,
+        env: &AnalysisEnvironment,
+        block: MIRBasicBlockID,
+    ) -> CXResult<()> {
         for analysis in &mut self.analyses {
             analysis.reload_block(env, block)?;
         }
@@ -60,18 +88,24 @@ impl Pipeline {
 }
 
 pub trait AnalysisPass {
-    fn function_entry(
-        &mut self,
-        env: &AnalysisEnvironment,
-    ) -> CXResult<()>;
-    
+    fn function_entry(&mut self, env: &AnalysisEnvironment) -> CXResult<()>;
+
+    fn block_entry(&mut self, _env: &AnalysisEnvironment, _block: MIRBasicBlockID) -> CXResult<()> {
+        Ok(())
+    }
+
     fn analyze_instruction(
         &mut self,
         env: &AnalysisEnvironment,
         instruction: &MIRInstruction,
     ) -> CXResult<()>;
 
-    fn merge(&mut self, env: &AnalysisEnvironment, other: MIRBasicBlockID) -> CXResult<bool>;
+    fn merge(
+        &mut self,
+        env: &AnalysisEnvironment,
+        other: MIRBasicBlockID,
+        range: &TokenRange,
+    ) -> CXResult<bool>;
 
     fn reload_block(&mut self, env: &AnalysisEnvironment, block: MIRBasicBlockID) -> CXResult<()>;
 }

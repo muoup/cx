@@ -6,6 +6,8 @@ use crate::framework::{environment::AnalysisEnvironment, pipeline::Pipeline};
 mod framework;
 mod passes;
 
+pub(crate) mod log;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MIRAnalysisOptions {
     pub ownership: bool,

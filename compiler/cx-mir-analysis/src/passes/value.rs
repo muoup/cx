@@ -7,10 +7,7 @@ use crate::framework::{environment::AnalysisEnvironment, pipeline::AnalysisPass}
 pub struct ValueTracking;
 
 impl AnalysisPass for ValueTracking {
-    fn function_entry(
-        &mut self,
-        _env: &AnalysisEnvironment,
-    ) -> CXResult<()> {
+    fn function_entry(&mut self, _env: &AnalysisEnvironment) -> CXResult<()> {
         Ok(())
     }
 
@@ -26,6 +23,7 @@ impl AnalysisPass for ValueTracking {
         &mut self,
         _env: &AnalysisEnvironment,
         _other: cx_mir::MIRBasicBlockID,
+        _range: &cx_tokens::TokenRange,
     ) -> CXResult<bool> {
         Ok(false)
     }

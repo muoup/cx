@@ -91,47 +91,61 @@ pub(crate) fn lower_function_block(
     match block {
         THIRFunctionBody::Expression(expr) => {
             let result = lower_expression(builder, expr)?;
-
-            if expr._type.is_void() {
-                builder.emit_if_open(
-                    MIRInstructionKind::Return { value: None },
-                    expr.token_range.clone(),
-                );
+            let result = if expr._type.is_void() {
+                None
             } else {
-                builder.emit_if_open(
-                    MIRInstructionKind::Return {
-                        value: Some(result),
-                    },
-                    expr.token_range.clone(),
-                );
-            }
+                Some(match result {
+                    MIRValue::PlaceRef(place) if !expr._type.is_memory_reference() => {
+                        let ty = lower_type(builder, &expr._type)?;
+                        memory::copy(builder, place, ty, &expr.token_range)
+                    }
+                    value => value,
+                })
+            };
+            emit_implicit_return(builder, result, expr.token_range.clone())?;
         }
-        THIRFunctionBody::Block { exprs, .. } => {
+        THIRFunctionBody::Block { exprs, token_range } => {
             for statement in exprs {
                 lower_expression(builder, statement)?;
             }
 
             if prototype.signature().return_type.is_void() {
-                builder.emit_if_open(
-                    MIRInstructionKind::Return { value: None },
-                    TokenRange::internal(),
-                );
+                emit_implicit_return(builder, None, token_range.clone())?;
             } else if prototype.signature().return_type.is_unreachable() {
                 builder.emit_if_open(MIRInstructionKind::Unreachable, TokenRange::internal());
             } else if prototype.symbol_name() == "main" {
-                builder.emit_if_open(
-                    MIRInstructionKind::Return {
-                        value: Some(MIRValue::Constant(MIRConstant::Integer {
-                            value: 0,
-                            ty: MIRIntType::I32,
-                        })),
-                    },
-                    TokenRange::internal(),
-                );
+                emit_implicit_return(
+                    builder,
+                    Some(MIRValue::Constant(MIRConstant::Integer {
+                        value: 0,
+                        ty: MIRIntType::I32,
+                    })),
+                    token_range.clone(),
+                )?;
             }
         }
     }
 
+    Ok(())
+}
+
+fn emit_implicit_return(
+    builder: &mut MIRBuilder<'_>,
+    value: Option<MIRValue>,
+    range: TokenRange,
+) -> CXResult<()> {
+    if builder.fun().current_block_terminated() {
+        return Ok(());
+    }
+
+    let root_scope = builder
+        .fun()
+        .scope_stack()
+        .first()
+        .expect("active function has no root scope")
+        .id();
+    auto_cleanup(builder, root_scope, range.clone())?;
+    builder.emit_if_open(MIRInstructionKind::Return { value }, range);
     Ok(())
 }
 
@@ -619,7 +633,7 @@ pub(crate) fn lower_expression(
                 unreachable!("break statement outside of loop or switch")
             };
 
-            auto_cleanup_before(builder, scope)?;
+            auto_cleanup_before(builder, scope, expr.token_range.clone())?;
             builder.emit(
                 MIRInstructionKind::Jump {
                     target: MIRBlockTarget::new(target),
@@ -646,7 +660,7 @@ pub(crate) fn lower_expression(
                 unreachable!("continue statement outside of loop")
             };
 
-            auto_cleanup_before(builder, scope)?;
+            auto_cleanup_before(builder, scope, expr.token_range.clone())?;
             builder.emit(
                 MIRInstructionKind::Jump {
                     target: MIRBlockTarget::new(target),
@@ -747,7 +761,7 @@ pub(crate) fn lower_expression(
                     if !expression._type.is_memory_reference() =>
                 {
                     let ty = lower_type(builder, &expression._type)?;
-                    memory::copy(builder, target, ty)
+                    memory::copy(builder, target, ty, &expression.token_range)
                 }
                 (value, _) => value,
             };
@@ -760,10 +774,16 @@ pub(crate) fn lower_expression(
                     builder.fun_mut().bind_named_value(name, value);
                 }
                 lower_expression(builder, &postcondition.condition)?;
-                let _ = builder.fun_mut().pop_scope();
+                control_flow::auto_pop_scope(builder)?;
             }
 
-            auto_cleanup(builder, builder.fun().scope_stack().first().unwrap().id())?;
+            let root_scope = builder
+                .fun()
+                .scope_stack()
+                .first()
+                .expect("active function has no root scope")
+                .id();
+            auto_cleanup(builder, root_scope, expr.token_range.clone())?;
             builder.emit(
                 MIRInstructionKind::Return { value },
                 expr.token_range.clone(),
@@ -807,7 +827,7 @@ pub(crate) fn lower_expression(
             };
 
             let args = value.into_iter().collect();
-            auto_cleanup_before(builder, scope_id)?;
+            auto_cleanup_before(builder, scope_id, expr.token_range.clone())?;
             builder.emit(
                 MIRInstructionKind::Jump {
                     target: MIRBlockTarget::with_args(block_id, args),

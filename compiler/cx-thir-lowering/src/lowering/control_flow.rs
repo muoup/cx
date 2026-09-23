@@ -1,7 +1,8 @@
 use cx_log::CXResult;
 use cx_mir::{
-    MIRAggregateIntrinsic, MIRBlockTarget, MIRConstant, MIRInstructionKind, MIRScopeID, MIRTarget,
-    MIRTypeKind, MIRValue, ty::interface::MTRegistry,
+    MIRAggregateIntrinsic, MIRBindable, MIRBlockTarget, MIRConstant, MIRInstructionKind,
+    MIRScopeID, MIRTarget, MIRTypeKind, MIRValue, expr::instruction::MIRInvalidationKind,
+    ty::interface::MTRegistry,
 };
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
@@ -9,6 +10,7 @@ use cx_thir::thir::{
     pattern::THIRPattern,
 };
 use cx_thir::type_context::THIRTypeContext;
+use cx_tokens::TokenRange;
 
 use crate::{
     builder::MIRBuilder,
@@ -27,18 +29,27 @@ pub fn lower_scoped(
     Ok(expr)
 }
 
-pub fn auto_cleanup(builder: &mut MIRBuilder, to_scope: MIRScopeID) -> CXResult<()> {
-    auto_cleanup_inner(builder, to_scope, true)
+pub fn auto_cleanup(
+    builder: &mut MIRBuilder,
+    to_scope: MIRScopeID,
+    range: TokenRange,
+) -> CXResult<()> {
+    auto_cleanup_inner(builder, to_scope, true, range)
 }
 
-pub fn auto_cleanup_before(builder: &mut MIRBuilder, to_scope: MIRScopeID) -> CXResult<()> {
-    auto_cleanup_inner(builder, to_scope, false)
+pub fn auto_cleanup_before(
+    builder: &mut MIRBuilder,
+    to_scope: MIRScopeID,
+    range: TokenRange,
+) -> CXResult<()> {
+    auto_cleanup_inner(builder, to_scope, false, range)
 }
 
 fn auto_cleanup_inner(
     builder: &mut MIRBuilder,
     to_scope: MIRScopeID,
     include_target: bool,
+    range: TokenRange,
 ) -> CXResult<()> {
     let mut pending = Vec::new();
     for scope in builder.fun().scope_stack().iter().rev() {
@@ -55,14 +66,7 @@ fn auto_cleanup_inner(
             for defer in defers.iter().rev() {
                 lower_expression(builder, defer.as_ref())?;
             }
-            let range = builder
-                .fun()
-                .body()
-                .scope(*scope)
-                .expect("scope has no declaration")
-                .token_range
-                .clone();
-            builder.emit_if_open(MIRInstructionKind::ScopeExit { scope: *scope }, range);
+            emit_scope_end(builder, *scope, range.clone());
         }
         Ok(())
     })();
@@ -82,11 +86,23 @@ pub fn auto_pop_scope(builder: &mut MIRBuilder) -> CXResult<()> {
         for defer in defers.into_iter().rev() {
             lower_expression(builder, defer.as_ref())?;
         }
-        builder.emit_if_open(MIRInstructionKind::ScopeExit { scope }, range.clone());
+        emit_scope_end(builder, scope, range);
     }
 
     let _ = builder.fun_mut().pop_scope();
     Ok(())
+}
+
+fn emit_scope_end(builder: &mut MIRBuilder, scope: MIRScopeID, range: TokenRange) {
+    for place in builder.fun().places_in_scope(scope) {
+        builder.emit_if_open(
+            MIRInstructionKind::Invalidate {
+                place: MIRBindable::Place(place),
+                kind: MIRInvalidationKind::Drop,
+            },
+            range.clone(),
+        );
+    }
 }
 
 pub(super) fn lower_if(
@@ -418,7 +434,7 @@ pub(super) fn lower_match(
         match subject_value.clone() {
             MIRValue::PlaceRef(place) => {
                 let ty = lower_type(builder, &subject_type)?;
-                memory::copy(builder, place, ty)
+                memory::copy(builder, place, ty, &condition.token_range)
             }
             value => value,
         }

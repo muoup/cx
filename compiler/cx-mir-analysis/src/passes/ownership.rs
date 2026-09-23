@@ -1,15 +1,25 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use crate::framework::environment::AnalysisEnvironment;
-use crate::framework::pipeline::AnalysisPass;
-use crate::framework::state::{LatticeState, Mergeable, StateTable};
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::analysis};
+use cx_mir::{
+    MIRBasicBlockID, MIRBindable, MIRInstruction, MIRInstructionKind, MIRPlaceID, MIRTarget,
+    expr::{instruction::MIRInvalidationKind, visit::visit_bindable_uses},
+};
+use cx_tokens::TokenRange;
 
-use cx_mir::expr::instruction::MIRInvalidationKind;
-use cx_mir::{MIRBasicBlockID, MIRBindable, MIRInstruction, MIRInstructionKind, MIRPlaceID};
+use crate::{
+    framework::{
+        environment::AnalysisEnvironment,
+        pipeline::AnalysisPass,
+        state::{LatticeState, Mergeable, StateTable},
+    },
+    log::log_analysis_error,
+};
 
 pub struct Ownership {
     nodrop: HashSet<MIRPlaceID>,
+    place_names: HashMap<MIRPlaceID, (String, bool)>,
+    function_name: String,
     table: StateTable<MIRBindable, OwnershipState>,
 }
 
@@ -24,13 +34,106 @@ impl Ownership {
     pub fn new() -> Self {
         Self {
             nodrop: HashSet::new(),
+            place_names: HashMap::new(),
+            function_name: String::new(),
             table: StateTable::new(),
+        }
+    }
+
+    fn name(env: &AnalysisEnvironment, bindable: &MIRBindable) -> (String, bool) {
+        let body = env.function().body().expect("analyzed function has a body");
+        let debug_name = match bindable {
+            MIRBindable::Place(id) => body.place(*id).and_then(|place| place.debug_name.as_ref()),
+            MIRBindable::Register(id) => body
+                .register(*id)
+                .and_then(|register| register.debug_name.as_ref()),
+        };
+        let name = debug_name
+            .map(ToString::to_string)
+            .unwrap_or_else(|| format!("{bindable:?}"));
+        let discarded = debug_name.is_some_and(|name| name.as_str() == "_");
+        (name, discarded)
+    }
+
+    fn require_available(
+        &self,
+        env: &AnalysisEnvironment,
+        bindable: &MIRBindable,
+        operation: &str,
+        range: &TokenRange,
+    ) -> CXResult<()> {
+        let state = self.table.get(bindable);
+        if state == Some(&LatticeState::Known(OwnershipState::Available)) {
+            return Ok(());
+        }
+
+        let (name, discarded) = Self::name(env, bindable);
+        let args = (
+            self.function_name.clone(),
+            name,
+            operation.to_owned(),
+            discarded,
+        );
+        match state {
+            Some(LatticeState::Known(OwnershipState::Moved)) => {
+                log_analysis_error(range, (&analysis::AFTER_MOVE, args))
+            }
+            _ => log_analysis_error(range, (&analysis::BEFORE_INITIALIZATION, args)),
         }
     }
 }
 
 impl AnalysisPass for Ownership {
-    fn function_entry(&mut self, _: &AnalysisEnvironment) -> CXResult<()> {
+    fn function_entry(&mut self, env: &AnalysisEnvironment) -> CXResult<()> {
+        let body = env.function().body().expect("analyzed function has a body");
+        self.function_name = env.function().prototype().display_name().to_string();
+        self.nodrop = body
+            .places()
+            .iter()
+            .filter(|place| place.nodrop)
+            .map(|place| place.id)
+            .collect();
+        self.place_names = body
+            .places()
+            .iter()
+            .map(|place| {
+                let name = place
+                    .debug_name
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| format!("{:?}", place.id));
+                let discarded = place
+                    .debug_name
+                    .as_ref()
+                    .is_some_and(|name| name.as_str() == "_");
+                (place.id, (name, discarded))
+            })
+            .collect();
+        for place in body.places() {
+            self.table.set(
+                MIRBindable::Place(place.id),
+                LatticeState::Known(OwnershipState::Uninitialized),
+            );
+        }
+        for register in body.registers() {
+            self.table.set(
+                MIRBindable::Register(register.id),
+                LatticeState::Known(OwnershipState::Uninitialized),
+            );
+        }
+        Ok(())
+    }
+
+    fn block_entry(&mut self, env: &AnalysisEnvironment, block: MIRBasicBlockID) -> CXResult<()> {
+        let body = env.function().body().expect("analyzed function has a body");
+        if let Some(block) = body.block(block) {
+            for register in block.params() {
+                self.table.set(
+                    MIRBindable::Register(*register),
+                    LatticeState::Known(OwnershipState::Available),
+                );
+            }
+        }
         Ok(())
     }
 
@@ -39,55 +142,120 @@ impl AnalysisPass for Ownership {
         env: &AnalysisEnvironment,
         instruction: &MIRInstruction,
     ) -> CXResult<()> {
+        let mut unavailable = None;
+        visit_bindable_uses(&instruction.kind, |bindable| {
+            if unavailable.is_none()
+                && self.table.get(&bindable)
+                    != Some(&LatticeState::Known(OwnershipState::Available))
+            {
+                unavailable = Some(bindable);
+            }
+        });
+        if let Some(bindable) = unavailable {
+            self.require_available(env, &bindable, "was used", &instruction.token_range)?;
+        }
+
         match &instruction.kind {
-            MIRInstructionKind::Initialize { place, .. } => {
+            MIRInstructionKind::Initialize { place } => {
                 self.table.set(
                     place.clone(),
                     LatticeState::Known(OwnershipState::Available),
                 );
             }
-
             MIRInstructionKind::Invalidate { place, kind } => {
-                if let MIRBindable::Place(place) = place {
-                    let nodrop = self.nodrop.contains(place);
-
-                    if nodrop && *kind == MIRInvalidationKind::Drop {
-                        todo!("Nodrop error message");
+                if *kind == MIRInvalidationKind::Drop {
+                    if self.table.get(place)
+                        == Some(&LatticeState::Known(OwnershipState::Available))
+                    {
+                        if let MIRBindable::Place(id) = place {
+                            if self.nodrop.contains(id) {
+                                let (name, discarded) = Self::name(env, place);
+                                return log_analysis_error(
+                                    &instruction.token_range,
+                                    (
+                                        &analysis::VALUE_NOT_CONSUMED,
+                                        (
+                                            self.function_name.clone(),
+                                            "value".to_owned(),
+                                            name,
+                                            "lifetime".to_owned(),
+                                            discarded,
+                                        ),
+                                    ),
+                                );
+                            }
+                        }
                     }
+                    self.table.set(
+                        place.clone(),
+                        LatticeState::Known(OwnershipState::Uninitialized),
+                    );
+                } else {
+                    self.require_available(
+                        env,
+                        place,
+                        if *kind == MIRInvalidationKind::Move {
+                            "was moved"
+                        } else {
+                            "was leaked"
+                        },
+                        &instruction.token_range,
+                    )?;
+                    self.table
+                        .set(place.clone(), LatticeState::Known(OwnershipState::Moved));
                 }
-
-                let Some(state) = self.table.get(place) else {
-                    unreachable!("Invalid ownership state for place {place:?}");
-                };
-
-                if *kind != MIRInvalidationKind::Drop && *state != LatticeState::Known(OwnershipState::Available) {
-                    todo!(
-                        "Use of uninitialized value error message in function {}, found: {state:?}",
-                        env.function().prototype().symbol_name
+            }
+            MIRInstructionKind::LiftPlace { out, place } => {
+                self.require_available(
+                    env,
+                    &MIRBindable::Place(*place),
+                    "was read",
+                    &instruction.token_range,
+                )?;
+                self.table.set(
+                    MIRBindable::Register(*out),
+                    LatticeState::Known(OwnershipState::Available),
+                );
+            }
+            MIRInstructionKind::Forward { out, .. } => {
+                self.table.set(
+                    MIRBindable::Register(*out),
+                    LatticeState::Known(OwnershipState::Available),
+                );
+            }
+            MIRInstructionKind::Call { out: Some(out), .. } => {
+                self.table.set(
+                    MIRBindable::Register(*out),
+                    LatticeState::Known(OwnershipState::Available),
+                );
+            }
+            MIRInstructionKind::IntrinsicOp(op) => {
+                if let Some(MIRTarget::Register(out)) = op.output_target() {
+                    self.table.set(
+                        MIRBindable::Register(out),
+                        LatticeState::Known(OwnershipState::Available),
                     );
                 }
-
-                self.table
-                    .set(place.clone(), LatticeState::Known(OwnershipState::Moved));
             }
-
             _ => {}
         }
-
         Ok(())
     }
 
-    fn merge(&mut self, env: &AnalysisEnvironment, other: MIRBasicBlockID) -> CXResult<bool> {
+    fn merge(
+        &mut self,
+        _env: &AnalysisEnvironment,
+        other: MIRBasicBlockID,
+        range: &TokenRange,
+    ) -> CXResult<bool> {
         let mut table = std::mem::replace(&mut self.table, StateTable::new());
-        let result = table.merge_into(env, self, other)?;
+        let result = table.merge_into(self, other, range);
         self.table = table;
-
-        Ok(result)
+        result
     }
 
     fn reload_block(&mut self, _: &AnalysisEnvironment, block: MIRBasicBlockID) -> CXResult<()> {
         self.table.reload_block(block);
-
         Ok(())
     }
 }
@@ -100,26 +268,37 @@ impl Mergeable<MIRBindable> for OwnershipState {
         context: &Ownership,
         other: &Self,
         key: MIRBindable,
+        range: &TokenRange,
     ) -> CXResult<Option<LatticeState<MIRBindable, Self>>> {
-        Ok(match (self.clone(), other) {
-            (_, _) if self == other => None,
+        if self == other {
+            return Ok(None);
+        }
 
-            (OwnershipState::Uninitialized, OwnershipState::Moved)
-            | (OwnershipState::Moved, OwnershipState::Uninitialized) => {
-                Some(LatticeState::Known(OwnershipState::Uninitialized))
+        if let MIRBindable::Place(place) = key {
+            if context.nodrop.contains(&place)
+                && (self == &OwnershipState::Available || other == &OwnershipState::Available)
+            {
+                let (name, discarded) = context
+                    .place_names
+                    .get(&place)
+                    .cloned()
+                    .unwrap_or_else(|| (format!("{place:?}"), false));
+                return log_analysis_error(
+                    range,
+                    (
+                        &analysis::PARTIAL_MOVE,
+                        (context.function_name.clone(), name, discarded),
+                    ),
+                );
             }
+        }
 
-            (OwnershipState::Available, _) | (_, OwnershipState::Available) => {
-                if let MIRBindable::Place(place) = key {
-                    if context.nodrop.contains(&place) {
-                        todo!("Nodrop error message");
-                    }
-                }
-
-                Some(LatticeState::Known(OwnershipState::Moved))
+        let joined = match (self, other) {
+            (OwnershipState::Uninitialized, _) | (_, OwnershipState::Uninitialized) => {
+                OwnershipState::Uninitialized
             }
-
-            _ => unreachable!("Invalid ownership state combination"),
-        })
+            _ => OwnershipState::Moved,
+        };
+        Ok(Some(LatticeState::Known(joined)))
     }
 }

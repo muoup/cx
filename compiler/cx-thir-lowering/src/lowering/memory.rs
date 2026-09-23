@@ -62,12 +62,11 @@ pub(crate) fn copy(
     builder: &mut MIRBuilder<'_>,
     place: MIRPlaceID,
     ty: MIRTypeID,
+    range: &TokenRange,
 ) -> MIRValue {
     let out = target_register(builder, ty);
-    let range = builder.fun().current_scope_range();
-    
     builder.emit(MIRInstructionKind::LiftPlace { out, place }, range.clone());
-    
+
     MIRValue::Register(out)
 }
 

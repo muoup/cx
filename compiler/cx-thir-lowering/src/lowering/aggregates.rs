@@ -92,7 +92,7 @@ pub(super) fn lower_pattern_test(
             let input = match input {
                 MIRValue::PlaceRef(place) => {
                     let type_id = lower_type(builder, &value_type)?;
-                    memory::copy(builder, place, type_id)
+                    memory::copy(builder, place, type_id, &lhs.token_range)
                 }
                 value => value,
             };

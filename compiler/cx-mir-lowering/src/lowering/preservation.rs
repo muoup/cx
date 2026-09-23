@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use cx_mir::{
-    MIRBasicBlock, MIRBody, MIRInstructionKind, MIRPlaceID, MIRRegisterID, MIRTarget, MIRValue,
-    expr::visit::visit_register_uses,
+    MIRBasicBlock, MIRBindable, MIRInstructionKind, MIRPlaceID, MIRRegisterID, MIRTarget,
+    MIRValue, expr::visit::visit_bindable_uses,
 };
 
 pub(super) struct PreservationPlan {
@@ -15,12 +15,14 @@ impl PreservationPlan {
     }
 }
 
-pub(super) fn plan(body: &MIRBody, block: &MIRBasicBlock) -> PreservationPlan {
+pub(super) fn plan(block: &MIRBasicBlock) -> PreservationPlan {
     let instructions = block.instructions();
     let mut last_use = HashMap::new();
     for (index, instruction) in instructions.iter().enumerate() {
-        visit_register_uses(&instruction.kind, |register| {
-            last_use.insert(register, index);
+        visit_bindable_uses(&instruction.kind, |bindable| {
+            if let MIRBindable::Register(register) = bindable {
+                last_use.insert(register, index);
+            }
         });
     }
 
@@ -29,7 +31,7 @@ pub(super) fn plan(body: &MIRBody, block: &MIRBasicBlock) -> PreservationPlan {
     for (index, instruction) in instructions.iter().enumerate() {
         let kind = &instruction.kind;
         let boundary_uses = block_argument_registers(kind);
-        let touched = touched_places(body, kind);
+        let touched = touched_places(kind);
         let aliases_all = matches!(
             kind,
             MIRInstructionKind::Store { .. } | MIRInstructionKind::Call { .. }
@@ -78,19 +80,17 @@ pub(super) fn plan(body: &MIRBody, block: &MIRBasicBlock) -> PreservationPlan {
     PreservationPlan { before }
 }
 
-fn touched_places(body: &MIRBody, kind: &MIRInstructionKind) -> HashSet<MIRPlaceID> {
+fn touched_places(kind: &MIRInstructionKind) -> HashSet<MIRPlaceID> {
     match kind {
         MIRInstructionKind::Store { target, .. } => HashSet::from([*target]),
+        MIRInstructionKind::Invalidate {
+            place: cx_mir::MIRBindable::Place(place),
+            kind: cx_mir::expr::instruction::MIRInvalidationKind::Drop,
+        } => HashSet::from([*place]),
         MIRInstructionKind::IntrinsicOp(op) => match op.output_target() {
             Some(MIRTarget::Place(place)) => HashSet::from([place]),
             _ => HashSet::new(),
         },
-        MIRInstructionKind::ScopeExit { scope } => body
-            .places()
-            .iter()
-            .filter(|place| place.scope == *scope)
-            .map(|place| place.id)
-            .collect(),
         _ => HashSet::new(),
     }
 }

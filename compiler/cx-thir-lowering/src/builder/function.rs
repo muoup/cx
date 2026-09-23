@@ -113,10 +113,6 @@ impl<'thir> MIRFunctionBuilder<'thir> {
         let mut body = MIRBody::new();
         let entry = body.add_block();
         let root_scope = body.add_scope(TokenRange::internal());
-        body.push_instr_at(entry, MIRInstruction::new(
-            MIRInstructionKind::ScopeEnter { scope: root_scope },
-            TokenRange::internal(),
-        ));
 
         Self {
             id,
@@ -229,6 +225,10 @@ impl<'thir> MIRFunctionBuilder<'thir> {
         self.body.add_place(ty, debug_name, nodrop, scope)
     }
 
+    pub fn places_in_scope(&self, scope: MIRScopeID) -> Vec<MIRPlaceID> {
+        self.body.places_in_scope(scope)
+    }
+
     pub fn local(&self, local: THIRLocalID) -> Option<MIRValue> {
         self.local_values.get(&local).cloned()
     }
@@ -284,11 +284,6 @@ impl<'thir> MIRFunctionBuilder<'thir> {
 
     pub fn push_scope(&mut self, token_range: TokenRange) -> MIRScopeID {
         let scope = self.body.add_scope(token_range.clone());
-        if !self.body.current_block_terminated() {
-            self.body.emit(MIRInstruction::new(
-                MIRInstructionKind::ScopeEnter { scope }, token_range,
-            ));
-        }
         self.scope_stack.push(ScopeContext::new(scope));
         scope
     }

@@ -85,7 +85,6 @@ fn run_top_frame(
 
         match kind {
             MIRComptimeInstrKind::Standard(kind) => match kind {
-                MIRInstrKind::ScopeEnter { .. } | MIRInstrKind::ScopeExit { .. } => {}
                 MIRInstrKind::Initialize { .. } | MIRInstrKind::Invalidate { .. } => {}
                 MIRInstrKind::Bind { .. } => {}
 

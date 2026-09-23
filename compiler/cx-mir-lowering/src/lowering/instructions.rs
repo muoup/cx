@@ -142,9 +142,7 @@ pub(super) fn lower_instruction(
     instruction: &MIRInstruction,
 ) {
     match &instruction.kind {
-        MIRInstrKind::ScopeEnter { .. }
-        | MIRInstrKind::ScopeExit { .. }
-        | MIRInstrKind::Initialize { .. }
+        MIRInstrKind::Initialize { .. }
         | MIRInstrKind::Bind { .. }
         | MIRInstrKind::Invalidate { .. } => {}
 

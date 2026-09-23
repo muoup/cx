@@ -129,6 +129,19 @@ impl<'thir> MIRBodyBuilder<'thir> {
         }
     }
 
+    pub fn places_in_scope(&self, scope: MIRScopeID) -> Vec<MIRPlaceID> {
+        let places = match &self.kind {
+            MIRBodyKind::Runtime(body) => body.places(),
+            MIRBodyKind::Comptime(body) => body.places(),
+        };
+        places
+            .iter()
+            .filter(|place| place.scope == scope)
+            .rev()
+            .map(|place| place.id)
+            .collect()
+    }
+
     pub fn add_parameter(&mut self, parameter: &MIRFnParam, scope: MIRScopeID) -> MIRPlaceID {
         match &mut self.kind {
             MIRBodyKind::Runtime(body) => body.add_parameter(parameter, scope),

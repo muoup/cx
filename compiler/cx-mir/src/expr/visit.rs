@@ -2,7 +2,7 @@ use crate::{
     MIRInstruction,
     constant::{MIRConstant, MIRRuntimeConstant},
     expr::{instruction::MIRInstructionKind, intrinsic::*},
-    value::{MIRBindable, MIRBlockTarget, MIRRegisterID, MIRTarget, MIRValue},
+    value::{MIRBindable, MIRBlockTarget, MIRTarget, MIRValue},
 };
 
 pub fn successors(kind: &MIRInstruction) -> Vec<&MIRBlockTarget> {
@@ -19,22 +19,25 @@ pub fn successors(kind: &MIRInstruction) -> Vec<&MIRBlockTarget> {
 
             cases_iter.chain(default_iter).collect()
         }
-        _ => vec![]
+        _ => vec![],
     }
 }
 
-pub fn visit_register_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRRegisterID)) {
-    fn value(value: &MIRValue, visit: &mut impl FnMut(MIRRegisterID)) {
+pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRBindable)) {
+    fn value(value: &MIRValue, visit: &mut impl FnMut(MIRBindable)) {
         match value {
-            MIRValue::Register(register) => visit(*register),
+            MIRValue::Register(register) => visit(MIRBindable::Register(*register)),
+            MIRValue::PlaceRef(place) => visit(MIRBindable::Place(*place)),
             MIRValue::Constant(constant) => constant_value(constant, visit),
-            MIRValue::PlaceRef(_) | MIRValue::Global(_) => {}
+            MIRValue::Global(_) => {}
         }
     }
 
-    fn constant_value(constant: &MIRConstant, visit: &mut impl FnMut(MIRRegisterID)) {
+    fn constant_value(constant: &MIRConstant, visit: &mut impl FnMut(MIRBindable)) {
         match constant {
-            MIRConstant::RuntimeValue(MIRRuntimeConstant::Register(register)) => visit(*register),
+            MIRConstant::RuntimeValue(MIRRuntimeConstant::Register(register)) => {
+                visit(MIRBindable::Register(*register))
+            }
             MIRConstant::Aggregate { fields, .. } => {
                 for (_, field) in fields {
                     constant_value(field, visit);
@@ -44,19 +47,19 @@ pub fn visit_register_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRR
         }
     }
 
-    fn target(target: MIRTarget, visit: &mut impl FnMut(MIRRegisterID)) {
+    fn target(target: MIRTarget, visit: &mut impl FnMut(MIRBindable)) {
         if let MIRTarget::Indirect(register) = target {
-            visit(register);
+            visit(MIRBindable::Register(register));
         }
     }
 
-    fn block(target: &MIRBlockTarget, visit: &mut impl FnMut(MIRRegisterID)) {
+    fn block(target: &MIRBlockTarget, visit: &mut impl FnMut(MIRBindable)) {
         for arg in &target.args {
             value(arg, visit);
         }
     }
 
-    fn intrinsic(op: &MIRIntrinsic, visit: &mut impl FnMut(MIRRegisterID)) {
+    fn intrinsic(op: &MIRIntrinsic, visit: &mut impl FnMut(MIRBindable)) {
         if let Some(output) = op.output_target() {
             target(output, visit);
         }
@@ -136,7 +139,7 @@ pub fn visit_register_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRR
             },
             MIRIntrinsic::Aggregate(op) => match op {
                 MIRAggregateIntrinsic::SumIndex { value: input, .. } => value(input, visit),
-                MIRAggregateIntrinsic::SumVariant { .. } => {}
+                MIRAggregateIntrinsic::SumVariant { base, .. } => visit(MIRBindable::Place(*base)),
                 MIRAggregateIntrinsic::SumVariantL { base, .. }
                 | MIRAggregateIntrinsic::StructField { base, .. } => value(base, visit),
                 MIRAggregateIntrinsic::StructInit { fields, .. } => {
@@ -169,21 +172,15 @@ pub fn visit_register_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRR
     }
 
     match kind {
-        MIRInstructionKind::ScopeEnter { .. }
-        | MIRInstructionKind::ScopeExit { .. }
-        | MIRInstructionKind::Initialize { .. }
+        MIRInstructionKind::Initialize { .. }
         | MIRInstructionKind::LiftPlace { .. }
         | MIRInstructionKind::Unreachable => {}
-        MIRInstructionKind::Invalidate {
-            place: MIRBindable::Register(register),
-            ..
-        }
-        | MIRInstructionKind::BindLifetime {
+        MIRInstructionKind::BindLifetime {
             bind: MIRBindable::Register(register),
             ..
-        } => visit(*register),
+        } => visit(MIRBindable::Register(*register)),
         MIRInstructionKind::Invalidate { .. } | MIRInstructionKind::BindLifetime { .. } => {}
-        MIRInstructionKind::Forward { source, .. } => visit(*source),
+        MIRInstructionKind::Forward { source, .. } => visit(MIRBindable::Register(*source)),
         MIRInstructionKind::Store { value: input, .. } => value(input, &mut visit),
         MIRInstructionKind::Call { callee, args, .. } => {
             value(callee, &mut visit);

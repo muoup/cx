@@ -2,8 +2,7 @@ use std::{collections::HashMap, hash::Hash};
 
 use cx_log::CXResult;
 use cx_mir::MIRBasicBlockID;
-
-use crate::framework::environment::AnalysisEnvironment;
+use cx_tokens::TokenRange;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LatticeState<Key: Clone, T: Clone> {
@@ -23,6 +22,7 @@ pub trait Mergeable<Key: Clone>: Clone {
         context: &Self::Context,
         other: &Self,
         key: Key,
+        range: &TokenRange,
     ) -> CXResult<Option<LatticeState<Key, Self>>>
     where
         Self: Sized;
@@ -34,6 +34,7 @@ impl<Key: Clone, T: Mergeable<Key>> LatticeState<Key, T> {
         context: &T::Context,
         other: &LatticeState<Key, T>,
         place: Key,
+        range: &TokenRange,
     ) -> CXResult<Option<LatticeState<Key, T>>> {
         Ok(match (self, other) {
             (LatticeState::Bottom, LatticeState::Bottom) => None,
@@ -47,7 +48,7 @@ impl<Key: Clone, T: Mergeable<Key>> LatticeState<Key, T> {
             (known @ LatticeState::Known(_), LatticeState::Bottom) => Some(known.clone()),
 
             (LatticeState::Known(value), LatticeState::Known(other_value)) => {
-                value.merge(context, other_value, place)?
+                value.merge(context, other_value, place, range)?
             }
 
             _ => unreachable!("Invalid lattice state combination"),
@@ -89,29 +90,24 @@ impl<Key: Hash + Eq + Clone, State: Clone + Mergeable<Key>> StateTable<Key, Stat
 
     pub fn merge_into(
         &mut self,
-        _env: &AnalysisEnvironment,
         context: &State::Context,
         other: MIRBasicBlockID,
+        range: &TokenRange,
     ) -> CXResult<bool> {
         let other = self
             .snapshots
             .entry(other)
             .or_insert_with(|| HashMap::new());
 
-        self.states
-            .iter()
-            .map(|(key, state)| {
-                let other_state = other.entry(key.clone()).or_insert(LatticeState::Bottom);
-                let merge = other_state.merge(context, state, key.clone());
-
-                if let Ok(Some(new_state)) = merge {
-                    *other_state = new_state;
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            })
-            .fold(Ok(false), |a, b| Ok(a? || b?))
+        let mut changed = false;
+        for (key, state) in &self.states {
+            let other_state = other.entry(key.clone()).or_insert(LatticeState::Bottom);
+            if let Some(new_state) = other_state.merge(context, state, key.clone(), range)? {
+                *other_state = new_state;
+                changed = true;
+            }
+        }
+        Ok(changed)
     }
 
     pub fn get(&self, key: &Key) -> Option<&LatticeState<Key, State>> {

@@ -99,15 +99,6 @@ impl MIRInstructionLike for MIRInstruction {
 
 #[derive(Debug, Clone)]
 pub enum MIRInstructionKind {
-    /// Marks the beginning of a lexical scope for ownership analysis.
-    ScopeEnter {
-        scope: MIRScopeID,
-    },
-    /// Marks the end of a lexical scope for ownership analysis.
-    ScopeExit {
-        scope: MIRScopeID,
-    },
-
     // Marks a place as live for ownership analysis
     Initialize {
         place: MIRBindable,
