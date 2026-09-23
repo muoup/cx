@@ -420,9 +420,7 @@ fn lower_increment<'thir>(
     };
     let (integer_type, pointee_type) = match &builder.registry().resolve_type_id(*inner_type).kind {
         cx_thir::thir::data::THIRTypeKind::Integer { _type, .. } => (Some(*_type), None),
-        cx_thir::thir::data::THIRTypeKind::PointerTo { inner_type } => {
-            (None, Some(*inner_type))
-        }
+        cx_thir::thir::data::THIRTypeKind::PointerTo { inner_type } => (None, Some(*inner_type)),
         _ => (None, None),
     };
     let ty = lower_type_id(builder, *inner_type)?;
@@ -636,10 +634,6 @@ pub(super) fn lower_address_of<'thir>(
                 MIRValue::PlaceRef(place) => {
                     MIRInternalIntrinsic::PlaceAddress { out: target, place }
                 }
-                MIRValue::GlobalRef(global) => MIRInternalIntrinsic::GlobalAddress {
-                    out: target,
-                    global,
-                },
                 MIRValue::Constant(MIRConstant::String(string)) => {
                     MIRInternalIntrinsic::StringAddress {
                         out: target,
@@ -650,6 +644,12 @@ pub(super) fn lower_address_of<'thir>(
                     MIRInternalIntrinsic::GetFnPtr {
                         out: target,
                         fn_id: function,
+                    }
+                }
+                MIRValue::Constant(MIRConstant::GlobalRef(global)) => {
+                    MIRInternalIntrinsic::GlobalAddress {
+                        out: target,
+                        global,
                     }
                 }
                 reference => MIRInternalIntrinsic::ReferenceAddress {

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, marker::PhantomData};
 
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
@@ -30,78 +30,24 @@ impl Default for EngineLimits {
     }
 }
 
-pub(crate) struct ExecutionFrame {
-    block: MIRBasicBlockID,
-    instruction: usize,
-    places: HashMap<MIRPlaceID, MIRConstant>,
-    registers: HashMap<MIRRegisterID, MIRConstant>,
-    comptime_registers: HashMap<MIRComptimeRegisterID, MIRComptimeValue>,
-}
-
-impl ExecutionFrame {
-    fn new(body: &MIRComptimeBody<'_>, args: &[MIRComptimeValue]) -> Self {
-        let mut frame = Self {
-            block: body.entry(),
-            instruction: 0,
-            places: HashMap::new(),
-            registers: HashMap::new(),
-            comptime_registers: HashMap::new(),
-        };
-        for (parameter, value) in body.comptime_parameters().iter().zip(args) {
-            match (parameter, value) {
-                (MIRComptimeParameter::Runtime(place), MIRComptimeValue::Constant(value)) => {
-                    frame.places.insert(*place, value.clone());
-                }
-                (MIRComptimeParameter::Comptime(register), value) => {
-                    frame.comptime_registers.insert(*register, value.clone());
-                }
-                _ => unreachable!("standard comptime parameter requires a concrete value"),
-            }
-        }
-        frame
-    }
-
-    pub(crate) fn places(&self) -> &HashMap<MIRPlaceID, MIRConstant> {
-        &self.places
-    }
-
-    pub(crate) fn places_mut(&mut self) -> &mut HashMap<MIRPlaceID, MIRConstant> {
-        &mut self.places
-    }
-
-    pub(crate) fn registers(&self) -> &HashMap<MIRRegisterID, MIRConstant> {
-        &self.registers
-    }
-
-    pub(crate) fn registers_mut(&mut self) -> &mut HashMap<MIRRegisterID, MIRConstant> {
-        &mut self.registers
-    }
-
-    pub(crate) fn comptime_registers(&self) -> &HashMap<MIRComptimeRegisterID, MIRComptimeValue> {
-        &self.comptime_registers
-    }
-
-    pub(crate) fn comptime_registers_mut(
-        &mut self,
-    ) -> &mut HashMap<MIRComptimeRegisterID, MIRComptimeValue> {
-        &mut self.comptime_registers
-    }
-}
-
-pub struct Engine<'thir, C: ComptimeContext<'thir>> {
-    context: &'thir C,
+pub struct Engine<'c, 'thir, C: ComptimeContext<'thir>> {
+    context: &'c C,
     limits: EngineLimits,
     steps: u64,
     depth: usize,
+
+    _phantom: PhantomData<&'thir ()>,
 }
 
-impl<'thir, C: ComptimeContext<'thir>> Engine<'thir, C> {
-    pub fn new(context: &'thir C) -> Self {
+impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
+    pub fn new(context: &'c C) -> Self {
         Self {
             context,
             limits: EngineLimits::default(),
             steps: 0,
             depth: 0,
+
+            _phantom: PhantomData,
         }
     }
 
@@ -318,7 +264,65 @@ impl<'thir, C: ComptimeContext<'thir>> Engine<'thir, C> {
         Ok(())
     }
 
-    pub(crate) fn context(&self) -> &'thir C {
+    pub(crate) fn context(&self) -> &'c C {
         self.context
+    }
+}
+
+pub(crate) struct ExecutionFrame {
+    block: MIRBasicBlockID,
+    instruction: usize,
+    places: HashMap<MIRPlaceID, MIRConstant>,
+    registers: HashMap<MIRRegisterID, MIRConstant>,
+    comptime_registers: HashMap<MIRComptimeRegisterID, MIRComptimeValue>,
+}
+
+impl ExecutionFrame {
+    fn new(body: &MIRComptimeBody<'_>, args: &[MIRComptimeValue]) -> Self {
+        let mut frame = Self {
+            block: body.entry(),
+            instruction: 0,
+            places: HashMap::new(),
+            registers: HashMap::new(),
+            comptime_registers: HashMap::new(),
+        };
+        for (parameter, value) in body.comptime_parameters().iter().zip(args) {
+            match (parameter, value) {
+                (MIRComptimeParameter::Runtime(place), MIRComptimeValue::Constant(value)) => {
+                    frame.places.insert(*place, value.clone());
+                }
+                (MIRComptimeParameter::Comptime(register), value) => {
+                    frame.comptime_registers.insert(*register, value.clone());
+                }
+                _ => unreachable!("standard comptime parameter requires a concrete value"),
+            }
+        }
+        frame
+    }
+
+    pub(crate) fn places(&self) -> &HashMap<MIRPlaceID, MIRConstant> {
+        &self.places
+    }
+
+    pub(crate) fn places_mut(&mut self) -> &mut HashMap<MIRPlaceID, MIRConstant> {
+        &mut self.places
+    }
+
+    pub(crate) fn registers(&self) -> &HashMap<MIRRegisterID, MIRConstant> {
+        &self.registers
+    }
+
+    pub(crate) fn registers_mut(&mut self) -> &mut HashMap<MIRRegisterID, MIRConstant> {
+        &mut self.registers
+    }
+
+    pub(crate) fn comptime_registers(&self) -> &HashMap<MIRComptimeRegisterID, MIRComptimeValue> {
+        &self.comptime_registers
+    }
+
+    pub(crate) fn comptime_registers_mut(
+        &mut self,
+    ) -> &mut HashMap<MIRComptimeRegisterID, MIRComptimeValue> {
+        &mut self.comptime_registers
     }
 }

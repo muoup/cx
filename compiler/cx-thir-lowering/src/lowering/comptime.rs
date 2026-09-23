@@ -165,6 +165,7 @@ pub(crate) fn evaluate<'thir>(
         builder.restore_current_function(parent);
     }
     lowered?;
+    
     match evaluate_body(builder, &body, &[])? {
         MIRComptimeValue::Constant(value) => Ok(value),
         _ => Err(mir_error(
@@ -174,8 +175,8 @@ pub(crate) fn evaluate<'thir>(
     }
 }
 
-pub(crate) fn evaluate_function(
-    builder: &MIRBuilder<'_>,
+pub(crate) fn evaluate_function<'thir>(
+    builder: &MIRBuilder<'thir>,
     id: MIRFunctionID,
     args: &[MIRComptimeValue],
 ) -> CXResult<MIRComptimeValue> {
@@ -184,5 +185,6 @@ pub(crate) fn evaluate_function(
         .comptime_function(id)
         .and_then(|function| function.body())
         .expect("comptime function must be defined before evaluation");
+    
     evaluate_body(builder, body, args)
 }

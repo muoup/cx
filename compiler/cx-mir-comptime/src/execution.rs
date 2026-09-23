@@ -10,8 +10,8 @@ use crate::{
     ComptimeContext, arithmetic::{self, execute_integer_op}, engine::{Engine, ExecutionFrame}, log::comptime_error,
 };
 
-pub(crate) fn execute_runtime_instruction<'thir, Context: ComptimeContext<'thir>>(
-    engine: &mut Engine<'thir, Context>,
+pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'thir>>(
+    engine: &mut Engine<'c, 'thir, Context>,
     frame: &mut ExecutionFrame,
     body: &MIRComptimeBody<'_>,
     instruction: &MIRInstruction,
@@ -107,8 +107,8 @@ pub(crate) fn execute_runtime_instruction<'thir, Context: ComptimeContext<'thir>
     Ok(None)
 }
 
-pub(crate) fn execute_comptime_instruction<'thir, Context: ComptimeContext<'thir>>(
-    engine: &mut Engine<'thir, Context>,
+pub(crate) fn execute_comptime_instruction<'c, 'thir, Context: ComptimeContext<'thir>>(
+    engine: &mut Engine<'c, 'thir, Context>,
     frame: &mut ExecutionFrame,
     op: &MIRComptimeOp<'thir>,
     range: &TokenRange,
@@ -190,8 +190,8 @@ pub(crate) fn execute_comptime_instruction<'thir, Context: ComptimeContext<'thir
     }
 }
 
-pub(crate) fn execute_intrinsic<'thir, Context: ComptimeContext<'thir>>(
-    engine: &mut Engine<'thir, Context>,
+pub(crate) fn execute_intrinsic<'c, 'thir, Context: ComptimeContext<'thir>>(
+    engine: &mut Engine<'c, 'thir, Context>,
     frame: &mut ExecutionFrame,
     body: &MIRComptimeBody<'_>,
     intrinsic: &MIRIntrinsic,

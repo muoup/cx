@@ -22,7 +22,7 @@ pub(super) fn lower_call<'thir>(
     builder: &mut MIRBuilder<'thir>,
     function: &'thir THIRExpression,
     arguments: &'thir [THIRExpression],
-    contract: &THIRFnContract,
+    contract: &'thir THIRFnContract,
     result_type: &'thir THIRType,
     range: TokenRange,
 ) -> CXResult<MIRComptimeOperand> {
@@ -93,9 +93,6 @@ pub(super) fn lower_call<'thir>(
                 MIRComptimeOperand::Known(value) => Ok(value.clone()),
                 MIRComptimeOperand::Runtime(MIRValue::Constant(value)) => {
                     Ok(MIRComptimeValue::Constant(value.clone()))
-                }
-                MIRComptimeOperand::Runtime(MIRValue::GlobalRef(reference)) => {
-                    Ok(MIRComptimeValue::GlobalRef(*reference))
                 }
                 MIRComptimeOperand::Runtime(value) => Ok(MIRComptimeValue::Caller(value.clone())),
                 MIRComptimeOperand::Comptime(_) => {

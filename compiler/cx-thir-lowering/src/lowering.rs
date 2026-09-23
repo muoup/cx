@@ -270,11 +270,12 @@ pub(crate) fn lower_expression<'thir>(
                 }
                 _ => lower_type(builder, &expr._type)?,
             };
-            MIRValue::GlobalRef(MIRGlobalRef {
+
+            MIRValue::Constant(MIRConstant::GlobalRef(MIRGlobalRef {
                 global,
                 offset: 0,
                 ty,
-            })
+            }))
         }
 
         THIRExpressionKind::ContractVariable { name, .. } => builder

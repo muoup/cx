@@ -10,9 +10,7 @@ use cx_thir::thir::{
 };
 
 use crate::{
-    builder::MIRBuilder,
-    log::mir_error,
-    lowering::{control_flow, lower_expression, types::lower_type},
+    builder::MIRBuilder, log::mir_error, lowering::{calls, control_flow, lower_expression, types::lower_type},
 };
 
 pub(super) fn lower_operand<'thir>(
@@ -32,7 +30,7 @@ pub(super) fn lower_operand<'thir>(
             function,
             arguments,
             contract,
-        } => super::calls::lower_call(
+        } => calls::lower_call(
             builder,
             function,
             arguments,
@@ -54,9 +52,6 @@ pub(super) fn runtime_value<'thir>(
         | MIRComptimeOperand::Known(MIRComptimeValue::Caller(value)) => Ok(value),
         MIRComptimeOperand::Known(MIRComptimeValue::Constant(value)) => {
             Ok(MIRValue::Constant(value))
-        }
-        MIRComptimeOperand::Known(MIRComptimeValue::GlobalRef(reference)) => {
-            Ok(MIRValue::GlobalRef(reference))
         }
         MIRComptimeOperand::Known(MIRComptimeValue::Staged(id)) => materialize(
             builder,
@@ -92,9 +87,6 @@ fn lower_emit<'thir>(
                     MIRComptimeOperand::Known(value) => value,
                     MIRComptimeOperand::Runtime(MIRValue::Constant(value)) => {
                         MIRComptimeValue::Constant(value)
-                    }
-                    MIRComptimeOperand::Runtime(MIRValue::GlobalRef(reference)) => {
-                        MIRComptimeValue::GlobalRef(reference)
                     }
                     MIRComptimeOperand::Runtime(value) => MIRComptimeValue::Caller(value),
                     MIRComptimeOperand::Comptime(_) => {
@@ -200,9 +192,6 @@ pub(super) fn materialize<'thir>(
         match value {
             MIRComptimeValue::Constant(value) => {
                 locals.insert(id, MIRValue::Constant(value));
-            }
-            MIRComptimeValue::GlobalRef(reference) => {
-                locals.insert(id, MIRValue::GlobalRef(reference));
             }
             MIRComptimeValue::Caller(value) => {
                 locals.insert(id, value);

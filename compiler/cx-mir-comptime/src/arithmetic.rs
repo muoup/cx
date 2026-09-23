@@ -1,7 +1,6 @@
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRComptimeBody, MIRConstant, MIRFloatType, MIRIntType, MIRTarget, MIRTypeKind, MIRValue,
-    expr::intrinsic::{MIRFloatIntrinsic, MIRIntIntrinsic, MIRIntrinsic},
+    MIRComptimeBody, MIRConstant, MIRFloatType, MIRIntType, MIRTarget, MIRTypeKind, expr::intrinsic::MIRIntIntrinsic,
     ty::interface::MTRegistry,
 };
 use cx_tokens::TokenRange;
@@ -155,8 +154,8 @@ fn float_const(value: f64, ty: MIRFloatType) -> MIRConstant {
     }
 }
 
-pub(crate) fn execute_integer_op<'thir, C: ComptimeContext<'thir>>(
-    engine: &mut Engine<'thir, C>,
+pub(crate) fn execute_integer_op<'c, 'thir, C: ComptimeContext<'thir>>(
+    engine: &mut Engine<'c, 'thir, C>,
     frame: &mut ExecutionFrame,
     body: &MIRComptimeBody<'_>,
     op: &MIRIntIntrinsic,

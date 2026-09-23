@@ -31,9 +31,7 @@ use cx_hir::ast::modifiers::HIR_CONST;
 use cx_log::CXResult;
 use cx_namespace::module::NamespacePath;
 use cx_thir::thir::data::THIRTypeKind;
-use cx_thir::thir::expression::{
-    THIRBlockKind, THIRExpression, THIRExpressionKind,
-};
+use cx_thir::thir::expression::{THIRBlockKind, THIRExpression, THIRExpressionKind};
 use cx_tokens::TokenRange;
 
 use crate::type_checking::control_flow::r#match::typecheck_match;
@@ -56,16 +54,13 @@ fn typecheck_expr_inner(
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     let mut result = match &expr.kind {
-        HIRExprKind::Block {
-            exprs,
-            kind,
-        } => {
+        HIRExprKind::Block { exprs, kind } => {
             let creates_scope = !matches!(kind, HIRBlockKind::Sequence);
             let captures_yield = matches!(kind, HIRBlockKind::Expression);
             if captures_yield {
-                let expected_yield = expected_type.cloned().or_else(|| {
-                    env.function.flow().yield_state().expected_type
-                });
+                let expected_yield = expected_type
+                    .cloned()
+                    .or_else(|| env.function.flow().yield_state().expected_type);
                 env.push_yield_scope(expected_yield);
             } else if creates_scope {
                 env.push_scope(false, false, expr.token_range().clone());
@@ -93,6 +88,16 @@ fn typecheck_expr_inner(
                 .flatten();
             let yields = yield_type.is_some();
             let result_type = yield_type.unwrap_or_else(THIRType::unit);
+
+            // FIXME: There's gotta be a better way to do this, but I can't think of one right now.
+            if yields && statements.iter().all(|s| expr_may_fall_through(s)) {
+                return env.log_error(
+                    expr.token_range(),
+                    &catalogue::MISSING_YIELD,
+                    "Block".into(),
+                );
+            }
+
             let block = THIRExpression {
                 token_range: expr.token_range().clone(),
                 kind: THIRExpressionKind::Block {
@@ -106,13 +111,6 @@ fn typecheck_expr_inner(
                 },
                 _type: result_type,
             };
-            if yields && expr_may_fall_through(&block) {
-                return env.log_error(
-                    expr.token_range(),
-                    &catalogue::MISSING_YIELD,
-                    "Block".into(),
-                );
-            }
 
             TypecheckResult::from(block)
         }
@@ -122,15 +120,15 @@ fn typecheck_expr_inner(
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::INVALID_CONTEXT,
-                    ("defer statement".into(), "another deferred context".into())
+                    ("defer statement".into(), "another deferred context".into()),
                 );
             }
-            
+
             if env.in_comptime_context() && !env.in_runtime_emit_context() {
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::INVALID_CONTEXT,
-                    ("defer statement".into(), "compile-time context".into())
+                    ("defer statement".into(), "compile-time context".into()),
                 );
             }
 
@@ -138,21 +136,21 @@ fn typecheck_expr_inner(
                 typecheck_expr(env, namespace, deferred, None)?
                     .standard_ready_coerce(env, deferred.token_range())
             })?;
-            
+
             if !deferred._type.is_void() {
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::TYPE_MISMATCH,
-                    ("defer statement".into(), "void type".into(), format!("{}", deferred._type.display_with(&env.symbols)))
+                    (
+                        "defer statement".into(),
+                        "void type".into(),
+                        format!("{}", deferred._type.display_with(&env.symbols)),
+                    ),
                 );
             }
-            
+
             if !expr_may_fall_through(&deferred) {
-                return env.log_error(
-                    expr.token_range(),
-                    &catalogue::DEFER_FALLTHROUGH,
-                    (),
-                );
+                return env.log_error(expr.token_range(), &catalogue::DEFER_FALLTHROUGH, ());
             }
 
             TypecheckResult::new(
@@ -171,7 +169,10 @@ fn typecheck_expr_inner(
             return env.log_error(
                 expr.token_range(),
                 &catalogue::INVALID_CONTEXT,
-                ("then expression".into(), "outside of a backward pipe operator".into())
+                (
+                    "then expression".into(),
+                    "outside of a backward pipe operator".into(),
+                ),
             );
         }
 
@@ -391,7 +392,7 @@ fn typecheck_expr_inner(
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::INVALID_CONTEXT,
-                    ("break statement".into(), "deferred context".into())
+                    ("break statement".into(), "deferred context".into()),
                 );
             }
 
@@ -400,7 +401,7 @@ fn typecheck_expr_inner(
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::INVALID_CONTEXT,
-                    ("break statement".into(), "non-loop context".into())
+                    ("break statement".into(), "non-loop context".into()),
                 );
             }
 
@@ -416,7 +417,7 @@ fn typecheck_expr_inner(
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::INVALID_CONTEXT,
-                    ("continue statement".into(), "deferred context".into())
+                    ("continue statement".into(), "deferred context".into()),
                 );
             }
 
@@ -425,7 +426,7 @@ fn typecheck_expr_inner(
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::INVALID_CONTEXT,
-                    ("continue statement".into(), "non-loop context".into())
+                    ("continue statement".into(), "non-loop context".into()),
                 );
             }
 
@@ -441,7 +442,7 @@ fn typecheck_expr_inner(
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::INVALID_CONTEXT,
-                    ("goto statement".into(), "deferred context".into())
+                    ("goto statement".into(), "deferred context".into()),
                 );
             }
             env.function
@@ -458,7 +459,10 @@ fn typecheck_expr_inner(
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::DUPLICATE_ITEM,
-                    ("label".into(), format!("function {}", env.current_function().symbol_name()))
+                    (
+                        "label".into(),
+                        format!("function {}", env.current_function().symbol_name()),
+                    ),
                 );
             }
             let statement = typecheck_expr(env, namespace, statement, None)
@@ -479,7 +483,7 @@ fn typecheck_expr_inner(
                     return env.log_error(
                         expr.token_range(),
                         &catalogue::INVALID_CONTEXT,
-                        ("return statement".into(), "non-function context".into())
+                        ("return statement".into(), "non-function context".into()),
                     );
                 };
                 return_type

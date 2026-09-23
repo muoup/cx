@@ -20,8 +20,8 @@ pub trait ComptimeContext<'thir> {
 
 pub use engine::EngineLimits;
 
-pub fn evaluate_body<'thir, C: ComptimeContext<'thir>>(
-    context: &'thir C,
+pub fn evaluate_body<'c, 'thir, C: ComptimeContext<'thir>>(
+    context: &'c C,
     body: &MIRComptimeBody<'thir>,
     args: &[MIRComptimeValue],
 ) -> CXResult<MIRComptimeValue> {
