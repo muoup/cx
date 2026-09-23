@@ -1,10 +1,10 @@
 use cx_util::{dense_id, unsafe_float::FloatWrapper};
 
 use crate::{
-    MIRPlaceID, MIRRegister,
+    MIRGlobalRef,
     staged::MIRStagedExpression,
     ty::{MIRFloatType, MIRIntType, MIRTypeID},
-    unit::{MIRGlobalID, function::MIRFunctionID},
+    unit::function::MIRFunctionID,
 };
 
 dense_id!(MIRStagedID, "%s");
@@ -25,24 +25,14 @@ pub enum MIRConstant {
         fields: Vec<(usize, MIRConstant)>,
     },
     String(String),
-    Global {
-        global: MIRGlobalID,
-        offset: i64,
-        ty: MIRTypeID,
-    },
+    StringAddress(String),
+    ArrayAddress(Box<MIRConstant>),
+    GlobalAddress(MIRGlobalRef),
     Nullptr {
         ty: MIRTypeID,
     },
     Function(MIRFunctionID),
-    Staged(MIRStagedID),
-    RuntimeValue(MIRRuntimeConstant),
     Undefined,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum MIRRuntimeConstant {
-    Register(MIRRegister),
-    Place(MIRPlaceID),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -66,7 +56,7 @@ impl<'thir> MIRStagedExprPool<'thir> {
         &self.staged_expressions
     }
 
-    pub fn staged_expression(&mut self, id: MIRStagedID) -> Option<&MIRStagedExpression<'thir>> {
+    pub fn staged_expression(&self, id: MIRStagedID) -> Option<&MIRStagedExpression<'thir>> {
         self.staged_expressions.get(id.index())
     }
 }

@@ -3,9 +3,14 @@ use cx_util::identifier::CXIdent;
 
 use crate::{
     expr::instruction::{MIRBasicBlock, MIRInstruction, MIRScopeID},
-    ty::MIRTypeID,
-    unit::{MIRBasicBlockID, MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl, function::MIRFnParam},
-    value::{MIRPlaceID, MIRRegisterID as MIRRegister},
+    ty::{MIRTypeID, comptime::MIRComptimeType},
+    unit::{
+        MIRBasicBlockID, MIRComptimeRegisterDecl, MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl,
+        function::MIRFnParam,
+    },
+    value::{
+        MIRComptimeParameter, MIRComptimeRegisterID, MIRPlaceID, MIRRegisterID as MIRRegister,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -16,6 +21,8 @@ pub struct MIRBody<I = MIRInstruction> {
     places: Vec<MIRPlaceDecl>,
     parameters: Vec<MIRPlaceID>,
     registers: Vec<MIRRegisterDecl>,
+    comptime_parameters: Vec<MIRComptimeParameter>,
+    comptime_registers: Vec<MIRComptimeRegisterDecl>,
     scopes: Vec<MIRScopeDecl>,
 }
 
@@ -27,6 +34,8 @@ impl<I> MIRBody<I> {
             places: Vec::new(),
             parameters: Vec::new(),
             registers: Vec::new(),
+            comptime_parameters: Vec::new(),
+            comptime_registers: Vec::new(),
             scopes: Vec::new(),
         }
     }
@@ -150,11 +159,55 @@ impl<I> MIRBody<I> {
         place
     }
 
+    pub fn add_comptime_parameter(
+        &mut self,
+        ty: MIRComptimeType,
+        debug_name: Option<CXIdent>,
+        scope: MIRScopeID,
+    ) -> MIRComptimeParameter {
+        let parameter = match ty {
+            MIRComptimeType::Standard(ty) => {
+                let place = self.add_place(ty, debug_name, false, scope);
+                self.parameters.push(place);
+                MIRComptimeParameter::Runtime(place)
+            }
+            ty @ MIRComptimeType::StagedExpression { .. } => {
+                let register = self.add_comptime_register(ty, debug_name);
+                MIRComptimeParameter::Comptime(register)
+            }
+        };
+        self.comptime_parameters.push(parameter);
+        parameter
+    }
+
+    pub fn comptime_parameters(&self) -> &[MIRComptimeParameter] {
+        &self.comptime_parameters
+    }
+
     pub fn registers(&self) -> &[MIRRegisterDecl] {
         &self.registers
     }
 
     pub fn register(&self, id: MIRRegister) -> Option<&MIRRegisterDecl> {
         self.registers().get(id.index())
+    }
+
+    pub fn add_comptime_register(
+        &mut self,
+        ty: MIRComptimeType,
+        debug_name: Option<CXIdent>,
+    ) -> MIRComptimeRegisterID {
+        let id = MIRComptimeRegisterID::new(self.comptime_registers.len());
+        self.comptime_registers
+            .push(MIRComptimeRegisterDecl { id, ty, debug_name });
+        id
+    }
+
+    pub fn comptime_registers(&self) -> &[MIRComptimeRegisterDecl] {
+        &self.comptime_registers
+    }
+
+    pub fn comptime_register(&self, id: MIRComptimeRegisterID) -> Option<&MIRComptimeRegisterDecl> {
+        self.comptime_registers.get(id.index())
     }
 }

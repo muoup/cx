@@ -106,7 +106,7 @@ impl MIRFnSignature {
 pub struct MIRFnPrototype {
     pub signature: MIRFnSignature,
     pub linkage: LinkageMode,
-    
+
     pub symbol_name: CXIdent,
     pub debug_name: Option<CXIdent>,
 }

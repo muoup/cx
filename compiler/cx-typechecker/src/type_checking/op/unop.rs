@@ -7,7 +7,7 @@ use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::NamespacePath;
 use cx_thir::{
     thir::{
-        expression::{THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp},
+        expression::{THIRExpression, THIRExpressionKind, THIRUnOp},
         r#type::{THIRIntType, THIRType, THIRTypeKind},
     },
     type_context::THIRTypeContext,
@@ -172,25 +172,28 @@ pub fn typecheck_unop(
             let operand = typecheck_expr(env, namespace, operand, None)
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))?;
 
-            let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
+            let Some(inner) = env
+                .symbols
+                .mem_ref_inner(&operand._type)
+                .cloned()
+                .or_else(|| operand._type.is_function().then(|| operand._type.clone()))
+            else {
                 return env.log_error(
                     &operand.token_range,
                     &catalogue::TYPE_MISMATCH,
                     (
                         "address-of operator".into(),
-                        "reference type".into(),
+                        "reference or function type".into(),
                         format!("{}", operand._type.display_with(&env.symbols)),
-                    )
+                    ),
                 );
             };
 
-            // AddressOf just returns the operand (which is a reference) as a pointer
             TypecheckResult::from(THIRExpression {
                 token_range: operand.token_range.clone(),
                 _type: env.symbols.pointer_to(inner.clone()),
-                kind: THIRExpressionKind::TypeConversion {
+                kind: THIRExpressionKind::AddressOf {
                     operand: Box::new(operand),
-                    conversion: THIRCoercion::ReinterpretBits,
                 },
             })
         }

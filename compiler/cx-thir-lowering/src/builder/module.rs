@@ -1,10 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::{cell::RefCell, collections::{HashMap, HashSet}};
 
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
     MIRBody, MIRComptimeBody, MIRComptimeFnPrototype, MIRComptimeFunction, MIRFnPrototype,
     MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable,
     constant::MIRStagedExprPool,
+    MIRStagedExpression, MIRStagedID,
 };
 use cx_tokens::TokenRange;
 
@@ -40,7 +41,7 @@ pub(crate) struct MIRUnitBuilder<'thir> {
     comptime_functions: HashMap<MIRFunctionID, MIRComptimeFunction<'thir>>,
     globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
 
-    staged_expressions: MIRStagedExprPool<'thir>,
+    staged_expressions: RefCell<MIRStagedExprPool<'thir>>,
 
     function_symbols: HashMap<String, ModuleSymbol<MIRFunctionID>>,
     global_symbols: HashMap<String, ModuleSymbol<MIRGlobalID>>,
@@ -67,7 +68,7 @@ impl<'thir> MIRUnitBuilder<'thir> {
         Self {
             functions: HashMap::new(),
             comptime_functions: HashMap::new(),
-            staged_expressions: MIRStagedExprPool::new(),
+            staged_expressions: RefCell::new(MIRStagedExprPool::new()),
 
             globals: HashMap::new(),
             function_symbols: HashMap::new(),
@@ -115,6 +116,14 @@ impl<'thir> MIRUnitBuilder<'thir> {
         let id = MIRFunctionID::new(self.next_function_id);
         self.next_function_id += 1;
         id
+    }
+
+    pub(crate) fn add_staged_expression(&self, expression: MIRStagedExpression<'thir>) -> MIRStagedID {
+        self.staged_expressions.borrow_mut().add_staged_expression(expression)
+    }
+
+    pub(crate) fn staged_expression(&self, id: MIRStagedID) -> Option<MIRStagedExpression<'thir>> {
+        self.staged_expressions.borrow().staged_expression(id).cloned()
     }
 
     pub(crate) fn allocate_global_id(&mut self) -> MIRGlobalID {
@@ -165,7 +174,7 @@ impl<'thir> MIRUnitBuilder<'thir> {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn comptime_function(&self, id: MIRFunctionID) -> Option<&MIRComptimeFunction<'_>> {
+    pub(crate) fn comptime_function(&self, id: MIRFunctionID) -> Option<&MIRComptimeFunction<'thir>> {
         self.comptime_functions.get(&id)
     }
 
@@ -236,7 +245,7 @@ impl<'thir> MIRUnitBuilder<'thir> {
                 .filter(|symbol| symbol.is_used())
                 .map(|symbol| symbol.id())
                 .collect(),
-            staged_expressions: self.staged_expressions,
+            staged_expressions: self.staged_expressions.into_inner(),
             functions: self.functions,
             comptime_functions: self.comptime_functions,
             globals: self.globals,

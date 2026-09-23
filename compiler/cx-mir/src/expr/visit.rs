@@ -1,6 +1,6 @@
 use crate::{
     MIRInstruction,
-    constant::{MIRConstant, MIRRuntimeConstant},
+    constant::MIRConstant,
     expr::{instruction::MIRInstructionKind, intrinsic::*},
     value::{MIRBindable, MIRBlockTarget, MIRTarget, MIRValue},
 };
@@ -29,20 +29,18 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
             MIRValue::Register(register) => visit(MIRBindable::Register(*register)),
             MIRValue::PlaceRef(place) => visit(MIRBindable::Place(*place)),
             MIRValue::Constant(constant) => constant_value(constant, visit),
-            MIRValue::Global(_) => {}
+            MIRValue::GlobalRef(_) => {}
         }
     }
 
     fn constant_value(constant: &MIRConstant, visit: &mut impl FnMut(MIRBindable)) {
         match constant {
-            MIRConstant::RuntimeValue(MIRRuntimeConstant::Register(register)) => {
-                visit(MIRBindable::Register(*register))
-            }
             MIRConstant::Aggregate { fields, .. } => {
                 for (_, field) in fields {
                     constant_value(field, visit);
                 }
             }
+            MIRConstant::ArrayAddress(value) => constant_value(value, visit),
             _ => {}
         }
     }
@@ -142,7 +140,7 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
                 MIRAggregateIntrinsic::SumVariant { base, .. } => visit(MIRBindable::Place(*base)),
                 MIRAggregateIntrinsic::SumVariantL { base, .. }
                 | MIRAggregateIntrinsic::StructField { base, .. } => value(base, visit),
-                MIRAggregateIntrinsic::StructInit { fields, .. } => {
+                MIRAggregateIntrinsic::AggregateInit { fields, .. } => {
                     for (_, field) in fields {
                         value(field, visit);
                     }
@@ -153,7 +151,13 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
                 }
             },
             MIRIntrinsic::Internal(op) => match op {
+                MIRInternalIntrinsic::PlaceAddress { place, .. } => {
+                    visit(MIRBindable::Place(*place))
+                }
+                MIRInternalIntrinsic::ReferenceAddress { reference, .. } => value(reference, visit),
+                MIRInternalIntrinsic::ArrayAddress { array, .. } => value(array, visit),
                 MIRInternalIntrinsic::StringAddress { .. }
+                | MIRInternalIntrinsic::GlobalAddress { .. }
                 | MIRInternalIntrinsic::GetFnPtr { .. } => {}
                 MIRInternalIntrinsic::Bitcast { value: input, .. } => value(input, visit),
                 MIRInternalIntrinsic::Assert { condition, .. }

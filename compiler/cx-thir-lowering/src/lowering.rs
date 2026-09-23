@@ -11,9 +11,9 @@ pub(crate) mod types;
 
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRAggregateIntrinsic, MIRBindable, MIRBlockTarget, MIRConstant, MIRFunctionID, MIRInstruction,
-    MIRInstructionKind, MIRIntType, MIRInternalIntrinsic, MIRTarget, MIRTypeKind, MIRVAIntrinsic,
-    MIRValue,
+    MIRAggregateIntrinsic, MIRBindable, MIRBlockTarget, MIRComptimeType, MIRConstant,
+    MIRFunctionID, MIRGlobalRef, MIRInstruction, MIRInstructionKind, MIRIntType,
+    MIRInternalIntrinsic, MIRTarget, MIRTypeKind, MIRVAIntrinsic, MIRValue,
     expr::instruction::MIRInvalidationKind,
     ty::{interface::MTRegistry, layout::calculate_type_layout},
 };
@@ -30,8 +30,8 @@ use crate::{
     builder::MIRBuilder,
     lowering::{
         memory::{allocate_variable, move_value},
-        operators::{lower_binary_op, lower_coercion, lower_unary_op},
-        types::{lower_int_type, lower_type},
+        operators::{lower_address_of, lower_binary_op, lower_coercion, lower_unary_op},
+        types::{lower_int_type, lower_type, reject_comptime_array},
     },
 };
 use crate::{
@@ -42,10 +42,10 @@ use crate::{
     },
 };
 
-pub(crate) fn lower_function(
-    builder: &mut MIRBuilder<'_>,
+pub(crate) fn lower_function<'thir>(
+    builder: &mut MIRBuilder<'thir>,
     id: MIRFunctionID,
-    function: &THIRFunction,
+    function: &'thir THIRFunction,
 ) -> CXResult<()> {
     let Some(body) = function.body.as_ref() else {
         return Ok(());
@@ -83,10 +83,10 @@ pub(crate) fn lower_function(
     builder.finish_function()
 }
 
-pub(crate) fn lower_function_block(
-    builder: &mut MIRBuilder<'_>,
-    function: &THIRFunction,
-    block: &THIRFunctionBody,
+pub(crate) fn lower_function_block<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    function: &'thir THIRFunction,
+    block: &'thir THIRFunctionBody,
 ) -> CXResult<()> {
     let prototype = &function.prototype;
     match block {
@@ -168,10 +168,16 @@ pub(super) fn emit_implicit_return(
     Ok(())
 }
 
-pub(crate) fn lower_expression(
-    builder: &mut MIRBuilder<'_>,
-    expr: &THIRExpression,
+pub(crate) fn lower_expression<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    expr: &'thir THIRExpression,
 ) -> CXResult<MIRValue> {
+    if builder
+        .try_fun()
+        .is_some_and(|function| function.body().comptime_prototype().is_some())
+    {
+        reject_comptime_array(builder, &expr._type)?;
+    }
     let value = match &expr.kind {
         THIRExpressionKind::BoolLiteral(value) => MIRValue::Constant(MIRConstant::Integer {
             value: *value as i128,
@@ -227,22 +233,26 @@ pub(crate) fn lower_expression(
         }
 
         THIRExpressionKind::Variable { local_id, .. } => {
-            builder.local_value(*local_id).ok_or_else(|| {
-                mir_error(
-                    &expr.token_range,
-                    (
-                        &mir::MISSING_ENTITY,
+            if let Some(value) = builder.fun().comptime_local(*local_id) {
+                staged::runtime_value(builder, value, &expr.token_range)?
+            } else {
+                builder.local_value(*local_id).ok_or_else(|| {
+                    mir_error(
+                        &expr.token_range,
                         (
-                            format!("local {:?}", local_id),
-                            "MIR lowering context".into(),
+                            &mir::MISSING_ENTITY,
+                            (
+                                format!("local {:?}", local_id),
+                                "MIR lowering context".into(),
+                            ),
                         ),
-                    ),
-                )
-            })?
+                    )
+                })?
+            }
         }
 
-        THIRExpressionKind::GlobalVariable { symbol } => MIRValue::Global(
-            builder
+        THIRExpressionKind::GlobalVariable { symbol } => {
+            let global = builder
                 .module_mut()
                 .global_symbol(symbol.as_str())
                 .ok_or_else(|| {
@@ -253,8 +263,19 @@ pub(crate) fn lower_expression(
                             (format!("global '{symbol}'"), "MIR lowering context".into()),
                         ),
                     )
-                })?,
-        ),
+                })?;
+            let ty = match &expr._type.kind {
+                THIRTypeKind::MemoryReference { inner_type, .. } => {
+                    types::lower_type_id(builder, *inner_type)?
+                }
+                _ => lower_type(builder, &expr._type)?,
+            };
+            MIRValue::GlobalRef(MIRGlobalRef {
+                global,
+                offset: 0,
+                ty,
+            })
+        }
 
         THIRExpressionKind::ContractVariable { name, .. } => builder
             .fun()
@@ -399,6 +420,8 @@ pub(crate) fn lower_expression(
             MIRValue::PlaceRef(ptarget)
         }
 
+        THIRExpressionKind::AddressOf { operand } => lower_address_of(builder, expr, operand)?,
+
         THIRExpressionKind::Typechange(inner) => lower_expression(builder, inner)?,
 
         THIRExpressionKind::MemberAccess {
@@ -458,19 +481,19 @@ pub(crate) fn lower_expression(
 
             let source_type = match &value._type.kind {
                 THIRTypeKind::MemoryReference { inner_type, .. } => {
-                    builder.registry().resolve_type_id(*inner_type).clone()
+                    builder.registry().resolve_type_id(*inner_type)
                 }
-                _ => value._type.clone(),
+                _ => &value._type,
             };
-            let struct_type_id = lower_type(builder, &source_type)?;
+            let struct_type_id = lower_type(builder, source_type)?;
             let moved =
                 memory::move_value(builder, lowered_value, struct_type_id, &expr.token_range)?;
             let base =
-                allocate_variable(builder, None, &source_type, Some(moved), &expr.token_range)?;
+                allocate_variable(builder, None, source_type, Some(moved), &expr.token_range)?;
 
             for binding in bindings {
                 let field_type = lower_type(builder, &binding.field_type)?;
-                let aggregate_type = lower_type(builder, &source_type)?;
+                let aggregate_type = lower_type(builder, source_type)?;
                 let field_register = builder.fun_mut().new_register(field_type, None);
                 builder.fun_mut().emit_intrinsic(
                     MIRAggregateIntrinsic::StructField {
@@ -513,11 +536,11 @@ pub(crate) fn lower_expression(
             let base_value = lower_expression(builder, value)?;
             let sum_type = match &value._type.kind {
                 THIRTypeKind::MemoryReference { inner_type, .. } => {
-                    builder.registry().resolve_type_id(*inner_type).clone()
+                    builder.registry().resolve_type_id(*inner_type)
                 }
-                _ => value._type.clone(),
+                _ => &value._type,
             };
-            let sum_type_id = lower_type(builder, &sum_type)?;
+            let sum_type_id = lower_type(builder, sum_type)?;
             let variant_type_id = lower_type(builder, variant_type)?;
             let out = builder.fun_mut().new_register(variant_type_id, None);
             builder.fun_mut().emit_intrinsic(
@@ -544,11 +567,10 @@ pub(crate) fn lower_expression(
             let sum_type_id = lower_type(builder, sum_type)?;
             let constructed = builder.fun_mut().new_register(sum_type_id, None);
             builder.fun_mut().emit_intrinsic(
-                MIRAggregateIntrinsic::SumVariantL {
+                MIRAggregateIntrinsic::AggregateInit {
                     out: MIRTarget::Register(constructed),
-                    base: value,
-                    variant: *variant_index,
-                    sum_ty: sum_type_id,
+                    ty: sum_type_id,
+                    fields: vec![(*variant_index, value)],
                 },
                 expr.token_range.clone(),
             );
@@ -573,11 +595,10 @@ pub(crate) fn lower_expression(
             let type_id = lower_type(builder, &expr._type)?;
             let out = builder.fun_mut().new_register(type_id, None);
             builder.fun_mut().emit_intrinsic(
-                MIRAggregateIntrinsic::SumVariantL {
+                MIRAggregateIntrinsic::AggregateInit {
                     out: MIRTarget::Register(out),
-                    base: value,
-                    variant: *variant_index,
-                    sum_ty: sum_type_id,
+                    ty: sum_type_id,
+                    fields: vec![(*variant_index, value)],
                 },
                 expr.token_range.clone(),
             );
@@ -601,7 +622,7 @@ pub(crate) fn lower_expression(
             }
             let out = builder.fun_mut().new_register(type_id, None);
             builder.fun_mut().emit_intrinsic(
-                MIRAggregateIntrinsic::StructInit {
+                MIRAggregateIntrinsic::AggregateInit {
                     out: MIRTarget::Register(out),
                     ty: type_id,
                     fields,
@@ -626,7 +647,7 @@ pub(crate) fn lower_expression(
             let out = builder.fun_mut().new_register(type_id, None);
             let aggregate_type_id = lower_type(builder, struct_type)?;
             builder.fun_mut().emit_intrinsic(
-                MIRAggregateIntrinsic::StructInit {
+                MIRAggregateIntrinsic::AggregateInit {
                     out: MIRTarget::Register(out),
                     ty: aggregate_type_id,
                     fields,
@@ -770,6 +791,44 @@ pub(crate) fn lower_expression(
             postcondition,
             value,
         } => {
+            let staged_return =
+                builder
+                    .fun()
+                    .body()
+                    .comptime_prototype()
+                    .is_some_and(|prototype| {
+                        matches!(
+                            prototype.signature().return_type(),
+                            MIRComptimeType::StagedExpression { .. }
+                        )
+                    });
+            if staged_return {
+                let operand = value
+                    .as_deref()
+                    .map(|value| staged::lower_operand(builder, value))
+                    .transpose()?;
+                if postcondition.is_some() {
+                    return log_mir_error(
+                        &expr.token_range,
+                        (
+                            &mir::COMPTIME_INVALID_OPERATION,
+                            "staged return postcondition".into(),
+                        ),
+                    );
+                }
+                let root_scope = builder
+                    .fun()
+                    .scope_stack()
+                    .first()
+                    .expect("active function has no root scope")
+                    .id();
+                auto_cleanup(builder, root_scope, expr.token_range.clone())?;
+                builder.emit_comptime(
+                    cx_mir::MIRComptimeOp::Return { value: operand },
+                    expr.token_range.clone(),
+                );
+                return Ok(MIRValue::Constant(MIRConstant::Unit));
+            }
             let value_expression = value.as_deref();
             let lowered_value = value_expression
                 .map(|value| lower_expression(builder, value))
@@ -873,10 +932,7 @@ pub(crate) fn lower_expression(
         THIRExpressionKind::Defer {
             expression: deferred,
         } => {
-            builder
-                .fun_mut()
-                .current_scope_mut()
-                .add_deferred_expression((**deferred).clone());
+            builder.fun_mut().add_deferred_expression(deferred);
             MIRValue::Constant(MIRConstant::Unit)
         }
         THIRExpressionKind::Block {
@@ -937,14 +993,17 @@ pub(crate) fn lower_expression(
             function,
             arguments,
             contract,
-        } => calls::lower_call(
-            builder,
-            function,
-            arguments,
-            contract,
-            &expr._type,
-            expr.token_range.clone(),
-        )?,
+        } => {
+            let value = calls::lower_call(
+                builder,
+                function,
+                arguments,
+                contract,
+                &expr._type,
+                expr.token_range.clone(),
+            )?;
+            staged::runtime_value(builder, value, &expr.token_range)?
+        }
 
         THIRExpressionKind::VaStart { list, last } => {
             let list = lower_expression(builder, list)?;
@@ -1014,14 +1073,30 @@ pub(crate) fn lower_expression(
             }
         }
         THIRExpressionKind::Unsafe { expression: inner } => lower_expression(builder, inner)?,
-        THIRExpressionKind::StagedExpression(_) | THIRExpressionKind::Materialize { .. } => {
+        THIRExpressionKind::StagedExpression(_) => {
             return log_mir_error(
                 &expr.token_range,
                 (
                     &mir::COMPTIME_INVALID_OPERATION,
-                    "staged expressions".into(),
+                    "staged value requires a comptime destination".into(),
                 ),
             );
+        }
+        THIRExpressionKind::Materialize {
+            expr: staged_expr,
+            with_params,
+        } => {
+            if builder.fun().body().is_comptime() {
+                return log_mir_error(
+                    &expr.token_range,
+                    (
+                        &mir::COMPTIME_INVALID_OPERATION,
+                        "materialization in a comptime function".into(),
+                    ),
+                );
+            }
+            let staged = staged::lower_operand(builder, staged_expr)?;
+            staged::materialize(builder, staged, with_params, &expr.token_range)?
         }
     };
 

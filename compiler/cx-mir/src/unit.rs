@@ -9,10 +9,10 @@ pub mod function;
 use crate::{
     constant::{MIRConstant, MIRStagedExprPool},
     expr::instruction::MIRScopeID,
-    ty::{MIRTypeID, registry::MIRTypeRegistry},
+    ty::{MIRTypeID, comptime::MIRComptimeType, registry::MIRTypeRegistry},
     unit::comptime_function::MIRComptimeFunction,
     unit::function::{MIRFunction, MIRFunctionID},
-    value::{MIRPlaceID, MIRRegisterID as MIRRegister},
+    value::{MIRComptimeRegisterID, MIRPlaceID, MIRRegisterID as MIRRegister},
 };
 
 dense_id!(MIRGlobalID, "global.");
@@ -57,7 +57,6 @@ impl<'thir> MIRUnit<'thir> {
     }
 
     pub fn into_static_runtime_only(self) -> MIRUnit<'static> {
-        assert!(self.staged_expr_pool.staged_expressions().is_empty());
         MIRUnit {
             staged_expr_pool: MIRStagedExprPool::new(),
             types: self.types,
@@ -124,6 +123,13 @@ pub struct MIRScopeDecl {
 pub struct MIRRegisterDecl {
     pub id: MIRRegister,
     pub ty: MIRTypeID,
+    pub debug_name: Option<CXIdent>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MIRComptimeRegisterDecl {
+    pub id: MIRComptimeRegisterID,
+    pub ty: MIRComptimeType,
     pub debug_name: Option<CXIdent>,
 }
 

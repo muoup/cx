@@ -1,7 +1,7 @@
 use cx_log::CXResult;
 use cx_mir::{
     MIRAggregateIntrinsic, MIRBindable, MIRBlockTarget, MIRConstant, MIRInstruction,
-    MIRInstructionKind, MIRScopeID, MIRTarget, MIRTypeKind, MIRValue,
+    MIRInstructionKind, MIRIntType, MIRScopeID, MIRTarget, MIRType, MIRTypeKind, MIRValue,
     expr::instruction::MIRInvalidationKind, ty::interface::MTRegistry,
 };
 use cx_thir::thir::{
@@ -13,14 +13,14 @@ use cx_thir::type_context::THIRTypeContext;
 use cx_tokens::TokenRange;
 
 use crate::{
-    builder::MIRBuilder,
+    builder::{DeferredExpression, MIRBuilder},
     log::log_mir_error,
     lowering::{aggregates, comptime, lower_expression, memory, types::lower_type},
 };
 
-pub fn lower_scoped(
-    builder: &mut MIRBuilder<'_>,
-    expression: &THIRExpression,
+pub fn lower_scoped<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    expression: &'thir THIRExpression,
 ) -> CXResult<MIRValue> {
     builder.fun_mut().push_scope(expression.token_range.clone());
     let expr = lower_expression(builder, expression)?;
@@ -29,24 +29,24 @@ pub fn lower_scoped(
     Ok(expr)
 }
 
-pub fn auto_cleanup(
-    builder: &mut MIRBuilder,
+pub fn auto_cleanup<'thir>(
+    builder: &mut MIRBuilder<'thir>,
     to_scope: MIRScopeID,
     range: TokenRange,
 ) -> CXResult<()> {
     auto_cleanup_inner(builder, to_scope, true, range)
 }
 
-pub fn auto_cleanup_before(
-    builder: &mut MIRBuilder,
+pub fn auto_cleanup_before<'thir>(
+    builder: &mut MIRBuilder<'thir>,
     to_scope: MIRScopeID,
     range: TokenRange,
 ) -> CXResult<()> {
     auto_cleanup_inner(builder, to_scope, false, range)
 }
 
-fn auto_cleanup_inner(
-    builder: &mut MIRBuilder,
+fn auto_cleanup_inner<'thir>(
+    builder: &mut MIRBuilder<'thir>,
     to_scope: MIRScopeID,
     include_target: bool,
     range: TokenRange,
@@ -61,19 +61,16 @@ fn auto_cleanup_inner(
             break;
         }
     }
-    let result = (|| {
-        for (scope, defers) in &pending {
-            for defer in defers.iter().rev() {
-                lower_expression(builder, defer.as_ref())?;
-            }
-            emit_scope_end(builder, *scope, range.clone());
+    for (scope, defers) in &pending {
+        for defer in defers.iter().rev() {
+            lower_deferred(builder, defer)?;
         }
-        Ok(())
-    })();
-    result
+        emit_scope_end(builder, *scope, range.clone());
+    }
+    Ok(())
 }
 
-pub fn auto_pop_scope(builder: &mut MIRBuilder) -> CXResult<()> {
+pub fn auto_pop_scope<'thir>(builder: &mut MIRBuilder<'thir>) -> CXResult<()> {
     let scope = builder.fun().current_scope_id();
     let range = builder.fun().current_scope_range();
 
@@ -84,13 +81,25 @@ pub fn auto_pop_scope(builder: &mut MIRBuilder) -> CXResult<()> {
             .deferred_expressions()
             .to_vec();
         for defer in defers.into_iter().rev() {
-            lower_expression(builder, defer.as_ref())?;
+            lower_deferred(builder, &defer)?;
         }
         emit_scope_end(builder, scope, range);
     }
 
     let _ = builder.fun_mut().pop_scope();
     Ok(())
+}
+
+fn lower_deferred<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    defer: &DeferredExpression<'thir>,
+) -> CXResult<()> {
+    let saved = builder
+        .fun_mut()
+        .replace_local_bindings(defer.locals.clone(), defer.comptime.clone());
+    let result = lower_expression(builder, defer.expression).map(|_| ());
+    builder.fun_mut().replace_local_bindings(saved.0, saved.1);
+    result
 }
 
 fn emit_scope_end(builder: &mut MIRBuilder, scope: MIRScopeID, range: TokenRange) {
@@ -105,12 +114,12 @@ fn emit_scope_end(builder: &mut MIRBuilder, scope: MIRScopeID, range: TokenRange
     }
 }
 
-pub(super) fn lower_if(
-    builder: &mut MIRBuilder<'_>,
-    condition: &THIRExpression,
-    then_branch: &THIRExpression,
-    else_branch: Option<&THIRExpression>,
-    result_type: &THIRType,
+pub(super) fn lower_if<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    condition: &'thir THIRExpression,
+    then_branch: &'thir THIRExpression,
+    else_branch: Option<&'thir THIRExpression>,
+    result_type: &'thir THIRType,
 ) -> CXResult<MIRValue> {
     let then_block = builder.fun_mut().new_block("if.then");
     let else_block = if else_branch.is_some() {
@@ -194,10 +203,10 @@ pub(super) fn lower_if(
     })
 }
 
-pub(super) fn lower_while(
-    builder: &mut MIRBuilder<'_>,
-    condition: &THIRExpression,
-    body: &THIRExpression,
+pub(super) fn lower_while<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    condition: &'thir THIRExpression,
+    body: &'thir THIRExpression,
     pre_eval: bool,
 ) -> CXResult<()> {
     let condition_block = builder.fun_mut().new_block("while.condition");
@@ -249,12 +258,12 @@ pub(super) fn lower_while(
     Ok(())
 }
 
-pub(super) fn lower_for(
-    builder: &mut MIRBuilder<'_>,
-    init: &THIRExpression,
-    condition: &THIRExpression,
-    increment: &THIRExpression,
-    body: &THIRExpression,
+pub(super) fn lower_for<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    init: &'thir THIRExpression,
+    condition: &'thir THIRExpression,
+    increment: &'thir THIRExpression,
+    body: &'thir THIRExpression,
 ) -> CXResult<()> {
     lower_expression(builder, init)?;
 
@@ -311,11 +320,11 @@ pub(super) fn lower_for(
     Ok(())
 }
 
-pub(super) fn lower_switch(
-    builder: &mut MIRBuilder<'_>,
-    condition: &THIRExpression,
-    cases: &[(Box<THIRExpression>, Box<THIRExpression>)],
-    default: Option<&THIRExpression>,
+pub(super) fn lower_switch<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    condition: &'thir THIRExpression,
+    cases: &'thir [(Box<THIRExpression>, Box<THIRExpression>)],
+    default: Option<&'thir THIRExpression>,
 ) -> CXResult<()> {
     let value = lower_expression(builder, condition)?;
     let exit = builder.fun_mut().new_block("switch.exit");
@@ -395,31 +404,31 @@ pub(super) fn lower_switch(
     Ok(())
 }
 
-pub(super) fn lower_match(
-    builder: &mut MIRBuilder<'_>,
-    condition: &THIRExpression,
+pub(super) fn lower_match<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    condition: &'thir THIRExpression,
     subject: THIRLocalID,
-    arms: &[(THIRPattern, Box<THIRExpression>)],
-    result_type: &THIRType,
+    arms: &'thir [(THIRPattern, Box<THIRExpression>)],
+    result_type: &'thir THIRType,
 ) -> CXResult<MIRValue> {
     let subject_value = lower_expression(builder, condition)?;
     builder.fun_mut().bind_local(subject, subject_value.clone());
     let subject_type = match &condition._type.kind {
         THIRTypeKind::MemoryReference { inner_type, .. } => {
-            builder.registry().resolve_type_id(*inner_type).clone()
+            builder.registry().resolve_type_id(*inner_type)
         }
-        _ => condition._type.clone(),
+        _ => &condition._type,
     };
-    let variant_match = matches!(subject_type.kind, THIRTypeKind::TaggedUnion { .. });
+    let variant_match = matches!(&subject_type.kind, THIRTypeKind::TaggedUnion { .. });
     let dispatch_value = if variant_match {
-        let sum_type = lower_type(builder, &subject_type)?;
-        let tag_type = lower_type(
-            builder,
-            &THIRType::from(THIRTypeKind::Integer {
-                _type: cx_thir::thir::data::THIRIntType::I8,
+        let sum_type = lower_type(builder, subject_type)?;
+        let tag_type = builder.types_mut().intern(MIRType::new(
+            MIRTypeKind::Integer {
+                ty: MIRIntType::I8,
                 signed: false,
-            }),
-        )?;
+            },
+            None,
+        ));
         let out = builder.fun_mut().new_register(tag_type, None);
         builder.fun_mut().emit_intrinsic(
             MIRAggregateIntrinsic::SumIndex {
@@ -433,7 +442,7 @@ pub(super) fn lower_match(
     } else {
         match subject_value.clone() {
             MIRValue::PlaceRef(place) => {
-                let ty = lower_type(builder, &subject_type)?;
+                let ty = lower_type(builder, subject_type)?;
                 memory::copy(builder, place, ty, &condition.token_range)
             }
             value => value,

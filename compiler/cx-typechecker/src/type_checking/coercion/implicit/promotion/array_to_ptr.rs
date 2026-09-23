@@ -1,6 +1,6 @@
 use cx_log::CXResult;
 use cx_thir::{
-    thir::expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
+    thir::expression::{THIRExpression, THIRExpressionKind},
     type_context::THIRTypeContext,
 };
 
@@ -33,9 +33,8 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResu
     let coerced = THIRExpression {
         _type: new_type,
         token_range: expr.token_range.clone(),
-        kind: THIRExpressionKind::TypeConversion {
+        kind: THIRExpressionKind::AddressOf {
             operand: Box::new(expr),
-            conversion: THIRCoercion::ReinterpretBits,
         },
     };
 

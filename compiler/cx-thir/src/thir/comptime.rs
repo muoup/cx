@@ -23,6 +23,7 @@ pub struct THIRStagingContext {
 pub struct THIRStagedExpr {
     expr: Box<THIRExpression>,
     params: Vec<THIRStagedParameter>,
+    captures: Vec<THIRLocalID>,
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +38,7 @@ impl THIRStagedExpr {
         Self {
             expr,
             params: vec![],
+            captures: vec![],
         }
     }
 
@@ -49,6 +51,7 @@ impl THIRStagedExpr {
         Ok(Self {
             expr: Box::new(expr),
             params: self.params,
+            captures: self.captures,
         })
     }
 
@@ -60,7 +63,15 @@ impl THIRStagedExpr {
         self.params.extend(params);
     }
 
+    pub fn set_captures(&mut self, captures: Vec<THIRLocalID>) {
+        self.captures = captures;
+    }
+
     pub fn params(&self) -> &[THIRStagedParameter] {
         &self.params
+    }
+
+    pub fn captures(&self) -> &[THIRLocalID] {
+        &self.captures
     }
 }

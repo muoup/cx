@@ -74,7 +74,13 @@ fn internal(
     if env.symbols.is_cx_str(&from_type)
         && matches!(target_type.kind, THIRTypeKind::PointerTo { .. })
     {
-        return coercion_expr(expr, target_type.clone(), THIRCoercion::ReinterpretBits);
+        return CoercionResult::success(THIRExpression {
+            token_range: expr.token_range.clone(),
+            _type: target_type.clone(),
+            kind: THIRExpressionKind::AddressOf {
+                operand: Box::new(expr),
+            },
+        });
     }
 
     if matches!(expr.kind, THIRExpressionKind::IntLiteral(0))
@@ -102,7 +108,13 @@ fn internal(
             env.symbols.resolve_type_id(*to_inner),
         )?
     {
-        return coercion_expr(expr, target_type.clone(), THIRCoercion::ReinterpretBits);
+        return CoercionResult::success(THIRExpression {
+            token_range: expr.token_range.clone(),
+            _type: target_type.clone(),
+            kind: THIRExpressionKind::AddressOf {
+                operand: Box::new(expr),
+            },
+        });
     }
 
     if expr._type.is_integer() {
@@ -212,10 +224,16 @@ fn internal(
             )
         },
 
-        (THIRTypeKind::Function { .. }, THIRTypeKind::PointerTo { inner_type, .. }) 
+        (THIRTypeKind::Function { .. }, THIRTypeKind::PointerTo { inner_type, .. })
             if from_type.contextual_eq(env.symbols.resolve_type_id(*inner_type), &env.symbols) =>
         {
-            implicit::coercion_expr(expr, target_type.clone(), THIRCoercion::GetFnPtr)
+            CoercionResult::success(THIRExpression {
+                token_range: expr.token_range.clone(),
+                _type: target_type.clone(),
+                kind: THIRExpressionKind::AddressOf {
+                    operand: Box::new(expr),
+                },
+            })
         }
 
         (

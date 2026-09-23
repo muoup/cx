@@ -51,9 +51,8 @@ pub(crate) fn resolve_indirect_base(
             if let Some(array_inner) = env.symbols.array_inner(&inner_type).cloned() {
                 let pointer = THIRExpression {
                     token_range: TokenRange::internal(),
-                    kind: THIRExpressionKind::TypeConversion {
+                    kind: THIRExpressionKind::AddressOf {
                         operand: Box::new(source),
-                        conversion: cx_thir::thir::expression::THIRCoercion::ReinterpretBits,
                     },
                     _type: env.symbols.pointer_to(array_inner.clone()),
                 };

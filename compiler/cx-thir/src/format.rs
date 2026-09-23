@@ -465,7 +465,7 @@ impl Display for THIRDisplay<'_, THIRComptimeFn> {
                     }
                 }
             }
-            
+
             Ok(())
         } else {
             write!(f, "Declaration")
@@ -549,7 +549,7 @@ impl Display for THIRDisplay<'_, THIRFunction> {
                     }
                 }
             }
-            
+
             Ok(())
         } else {
             write!(f, "Declaration")
@@ -845,6 +845,17 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: expression,
+                    depth: self.depth + 1,
+                    definitions: self.definitions,
+                }
+                .fmt(f)
+            }
+            THIRExpressionKind::AddressOf { operand } => {
+                write!(f, "AddressOf <'")?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, ">")?;
+                MIRExpressionFormatter {
+                    expr: operand,
                     depth: self.depth + 1,
                     definitions: self.definitions,
                 }
@@ -1593,8 +1604,6 @@ impl Display for THIRCoercion {
                 if *sextend { "sext" } else { "zext" },
                 to_type
             ),
-            THIRCoercion::GetFnPtr => write!(f, "get_fn_ptr"),
-
             THIRCoercion::ReferenceBounding(locals) => write!(
                 f,
                 "reference_bounding(bound_to: {})",

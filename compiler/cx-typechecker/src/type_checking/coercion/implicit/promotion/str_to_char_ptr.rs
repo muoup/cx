@@ -18,7 +18,9 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResu
     let loaded = THIRExpression {
         token_range: expr.token_range.clone(),
         _type: c_str,
-        kind: THIRExpressionKind::Typechange(Box::new(expr)),
+        kind: THIRExpressionKind::AddressOf {
+            operand: Box::new(expr),
+        },
     };
 
     CoercionResult::success(loaded)

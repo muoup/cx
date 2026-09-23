@@ -1,29 +1,28 @@
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
     MIRAggregateIntrinsic, MIRConstant, MIRFloatIntrinsic, MIRIntIntrinsic, MIRIntType,
-    MIRIntrinsic, MIRTarget, MIRValue,
+    MIRIntrinsic, MIRTarget, MIRType, MIRTypeKind, MIRValue,
 };
 use cx_thir::thir::{
-    data::{THIRIntType, THIRType, THIRTypeKind},
+    data::{THIRType, THIRTypeKind},
     expression::THIRExpression,
     pattern::THIRPattern,
 };
 use cx_thir::type_context::THIRTypeContext;
-
 use crate::{
     builder::MIRBuilder,
     log::log_mir_error,
     lowering::{
         lower_expression, memory,
-        types::{lower_float_type, lower_int_type, lower_type},
+        types::{lower_float_type, lower_int_type, lower_type, lower_type_id},
     },
 };
 
-pub(super) fn lower_pattern_test(
-    builder: &mut MIRBuilder<'_>,
-    lhs: &THIRExpression,
+pub(super) fn lower_pattern_test<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    lhs: &'thir THIRExpression,
     pattern: &THIRPattern,
-    result_type: &THIRType,
+    result_type: &'thir THIRType,
 ) -> CXResult<MIRValue> {
     let token_range = lhs.token_range.clone();
     let tested = match pattern {
@@ -39,18 +38,18 @@ pub(super) fn lower_pattern_test(
         THIRPattern::TaggedUnionVariant { variant_index, .. } => {
             let sum_type = match &lhs._type.kind {
                 THIRTypeKind::MemoryReference { inner_type, .. } => {
-                    builder.registry().resolve_type_id(*inner_type).clone()
+                    builder.registry().resolve_type_id(*inner_type)
                 }
-                _ => lhs._type.clone(),
+                _ => &lhs._type,
             };
-            let sum_type_id = lower_type(builder, &sum_type)?;
-            let tag_type = lower_type(
-                builder,
-                &THIRType::from(THIRTypeKind::Integer {
-                    _type: THIRIntType::I8,
+            let sum_type_id = lower_type(builder, sum_type)?;
+            let tag_type = builder.types_mut().intern(MIRType::new(
+                MIRTypeKind::Integer {
+                    ty: MIRIntType::I8,
                     signed: false,
-                }),
-            )?;
+                },
+                None,
+            ));
             let out = builder.fun_mut().new_register(tag_type, None);
             let value = lower_expression(builder, lhs)?;
             builder.fun_mut().emit_intrinsic(
@@ -85,13 +84,13 @@ pub(super) fn lower_pattern_test(
             };
             let value_type = match &lhs._type.kind {
                 THIRTypeKind::MemoryReference { inner_type, .. } => {
-                    builder.registry().resolve_type_id(*inner_type).clone()
+                    builder.registry().resolve_type_id(*inner_type)
                 }
-                _ => lhs._type.clone(),
+                _ => &lhs._type,
             };
             let input = match input {
                 MIRValue::PlaceRef(place) => {
-                    let type_id = lower_type(builder, &value_type)?;
+                    let type_id = lower_type(builder, value_type)?;
                     memory::copy(builder, place, type_id, &lhs.token_range)
                 }
                 value => value,
@@ -138,11 +137,11 @@ pub(super) fn lower_pattern_test(
     Ok(MIRValue::Register(out))
 }
 
-pub(super) fn bind_pattern_payload(
-    builder: &mut MIRBuilder<'_>,
+pub(super) fn bind_pattern_payload<'thir>(
+    builder: &mut MIRBuilder<'thir>,
     pattern: &THIRPattern,
     subject: MIRValue,
-    sum_type: &THIRType,
+    sum_type: &'thir THIRType,
 ) -> CXResult<()> {
     match pattern {
         THIRPattern::Binding { name, local_id } => {
@@ -168,8 +167,28 @@ pub(super) fn bind_pattern_payload(
             inner_name,
             ..
         } => {
-            let payload_type = sum_variant_type(builder, sum_type, *variant_index);
-            let payload_type_id = lower_type(builder, &payload_type)?;
+            let payload_type = match &sum_type.kind {
+                THIRTypeKind::MemoryReference { inner_type, .. } => {
+                    match &builder.registry().resolve_type_id(*inner_type).kind {
+                        THIRTypeKind::Structured { fields, .. }
+                        | THIRTypeKind::Union { variants: fields, .. }
+                        | THIRTypeKind::TaggedUnion { variants: fields, .. } => {
+                            fields.get(*variant_index).map(|field| field.ty())
+                        }
+                        _ => None,
+                    }
+                }
+                THIRTypeKind::Structured { fields, .. }
+                | THIRTypeKind::Union { variants: fields, .. }
+                | THIRTypeKind::TaggedUnion { variants: fields, .. } => {
+                    fields.get(*variant_index).map(|field| field.ty())
+                }
+                _ => None,
+            };
+            let payload_type_id = match payload_type {
+                Some(type_id) => lower_type_id(builder, type_id)?,
+                None => lower_type(builder, sum_type)?,
+            };
             let sum_type_id = lower_type(builder, sum_type)?;
             let out = builder
                 .fun_mut()
@@ -193,24 +212,6 @@ pub(super) fn bind_pattern_payload(
         _ => {}
     }
     Ok(())
-}
-
-pub(super) fn sum_variant_type(
-    builder: &MIRBuilder<'_>,
-    sum_type: &THIRType,
-    variant_index: usize,
-) -> THIRType {
-    let semantic_sum = match &sum_type.kind {
-        THIRTypeKind::MemoryReference { inner_type, .. } => {
-            builder.registry().resolve_type_id(*inner_type)
-        }
-        _ => sum_type,
-    };
-    semantic_sum
-        .aggregate_fields(builder.registry())
-        .and_then(|variants| variants.into_iter().nth(variant_index))
-        .map(|(_, variant)| variant)
-        .unwrap_or_else(|| semantic_sum.clone())
 }
 
 #[allow(dead_code)]

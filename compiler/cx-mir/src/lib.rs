@@ -12,31 +12,32 @@ pub use format::MIRDisplay;
 pub use expr::body::MIRBody;
 pub use expr::comptime::{MIRComptimeBody, MIRComptimeInstruction, MIRComptimeOp};
 pub use expr::instruction::{
-    MIRBasicBlock, MIRInstructionKind, MIRInstruction, MIRInstructionLike, MIRScopeID,
+    MIRBasicBlock, MIRInstruction, MIRInstructionKind, MIRInstructionLike, MIRScopeID,
 };
 pub use expr::intrinsic::{
     MIRAggregateIntrinsic, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic, MIRIntrinsic,
     MIRPtrIntrinsic, MIRVAIntrinsic,
 };
 
+pub use constant::{MIRConstant, MIRStagedID};
+pub use staged::MIRStagedExpression;
+pub use ty::comptime::MIRComptimeType;
 pub use ty::{
     MIRBitfieldAccess, MIRField, MIRFieldLayout, MIRFloatType, MIRIntType, MIRType, MIRTypeID,
     MIRTypeKind, MIRTypeLayout,
-};
-pub use unit::{
-    MIRBasicBlockID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRPlaceDecl, MIRRegisterDecl,
-    MIRScopeDecl, MIRUnit,
-};
-pub use unit::function::{
-    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID,
 };
 pub use unit::comptime_function::{
     MIRComptimeContext, MIRComptimeFnParam, MIRComptimeFnPrototype, MIRComptimeFnSignature,
     MIRComptimeFunction,
 };
+pub use unit::function::{MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID};
+pub use unit::{
+    MIRBasicBlockID, MIRComptimeRegisterDecl, MIRGlobalID, MIRGlobalState, MIRGlobalVariable,
+    MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl, MIRUnit,
+};
 pub use value::MIRRegisterID as MIRRegister;
 pub use value::{
-    MIRBindable, MIRBlockTarget, MIRPlaceID, MIRRegisterID, MIRTarget, MIRValue,
+    MIRBindable, MIRBlockTarget, MIRComptimeOperand, MIRComptimeOutput, MIRComptimeParameter,
+    MIRComptimeRegisterID, MIRComptimeValue, MIRGlobalRef, MIRPlaceID, MIRRegisterID, MIRTarget,
+    MIRValue,
 };
-pub use constant::{MIRConstant, MIRStagedID};
-pub use staged::MIRStagedExpression;

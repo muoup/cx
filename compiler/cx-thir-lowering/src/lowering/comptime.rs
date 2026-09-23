@@ -1,7 +1,7 @@
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRBindable, MIRConstant, MIRFnParam, MIRFunctionID, MIRInstruction, MIRInstructionKind,
-    MIRValue,
+    MIRBindable, MIRComptimeOperand, MIRComptimeParameter, MIRComptimeValue, MIRConstant,
+    MIRFunctionID, MIRInstruction, MIRInstructionKind, MIRValue,
 };
 use cx_mir_comptime::{ComptimeContext, evaluate_body};
 use cx_thir::thir::{comptime::THIRComptimeFn, data::THIRFunctionBody, expression::THIRExpression};
@@ -10,13 +10,13 @@ use cx_tokens::TokenRange;
 use crate::{
     builder::{MIRBuilder, MIRTypeRegistryBuilder},
     log::mir_error,
-    lowering::{emit_implicit_return, lower_expression},
+    lowering::{control_flow::auto_cleanup, emit_implicit_return, lower_expression, staged},
 };
 
-impl ComptimeContext for MIRBuilder<'_> {
+impl<'thir> ComptimeContext<'thir> for MIRBuilder<'thir> {
     type Registry = MIRTypeRegistryBuilder;
 
-    fn function(&self, id: MIRFunctionID) -> Option<&cx_mir::MIRComptimeFunction<'_>> {
+    fn function(&self, id: MIRFunctionID) -> Option<&cx_mir::MIRComptimeFunction<'thir>> {
         self.module().comptime_function(id)
     }
 
@@ -27,12 +27,19 @@ impl ComptimeContext for MIRBuilder<'_> {
     fn types(&self) -> &Self::Registry {
         self.types()
     }
+
+    fn add_staged_expression(
+        &self,
+        expression: cx_mir::MIRStagedExpression<'thir>,
+    ) -> cx_mir::MIRStagedID {
+        self.module().add_staged_expression(expression)
+    }
 }
 
-pub(crate) fn lower_comptime_function(
-    builder: &mut MIRBuilder<'_>,
+pub(crate) fn lower_comptime_function<'thir>(
+    builder: &mut MIRBuilder<'thir>,
     id: MIRFunctionID,
-    function: &THIRComptimeFn,
+    function: &'thir THIRComptimeFn,
 ) -> CXResult<()> {
     let Some(body) = function.body.as_ref() else {
         return Ok(());
@@ -54,33 +61,57 @@ pub(crate) fn lower_comptime_function(
         .to_vec();
 
     for (parameter, declaration) in function.prototype.params().iter().zip(declarations) {
-        let param = MIRFnParam::new(
-            declaration.name.clone(),
-            declaration.ty.result_type(),
-            false,
-        );
         let scope = builder.fun().current_scope_id();
-        let place = builder.fun_mut().body_mut().add_parameter(&param, scope);
-        builder.emit(MIRInstruction::new(
-            MIRInstructionKind::Initialize {
-                place: MIRBindable::Place(place),
-            },
-            TokenRange::internal(),
-        ));
-        builder
-            .fun_mut()
-            .bind_local(parameter.local_id, MIRValue::PlaceRef(place));
-        if let Some(name) = &parameter.name {
-            builder
-                .fun_mut()
-                .bind_named_value(name, MIRValue::PlaceRef(place));
+        let binding = builder.fun_mut().body_mut().add_comptime_parameter(
+            declaration.ty,
+            declaration.name,
+            scope,
+        );
+        match binding {
+            MIRComptimeParameter::Runtime(place) => {
+                builder.emit(MIRInstruction::new(
+                    MIRInstructionKind::Initialize {
+                        place: MIRBindable::Place(place),
+                    },
+                    TokenRange::internal(),
+                ));
+                builder
+                    .fun_mut()
+                    .bind_local(parameter.local_id, MIRValue::PlaceRef(place));
+                if let Some(name) = &parameter.name {
+                    builder
+                        .fun_mut()
+                        .bind_named_value(name, MIRValue::PlaceRef(place));
+                }
+            }
+            MIRComptimeParameter::Comptime(register) => {
+                builder.fun_mut().bind_comptime_local(
+                    parameter.local_id,
+                    MIRComptimeOperand::Comptime(register),
+                );
+            }
         }
     }
 
     match body {
         THIRFunctionBody::Expression(expression) => {
-            let value = lower_expression(builder, expression)?;
-            emit_implicit_return(builder, Some(value), expression.token_range.clone())?;
+            if function.prototype.return_type().expr {
+                let value = staged::lower_operand(builder, expression)?;
+                let root_scope = builder
+                    .fun()
+                    .scope_stack()
+                    .first()
+                    .expect("active function has no root scope")
+                    .id();
+                auto_cleanup(builder, root_scope, expression.token_range.clone())?;
+                builder.emit_comptime(
+                    cx_mir::MIRComptimeOp::Return { value: Some(value) },
+                    expression.token_range.clone(),
+                );
+            } else {
+                let value = lower_expression(builder, expression)?;
+                emit_implicit_return(builder, Some(value), expression.token_range.clone())?;
+            }
         }
         THIRFunctionBody::Block { exprs, token_range } => {
             for expression in exprs {
@@ -94,9 +125,9 @@ pub(crate) fn lower_comptime_function(
     builder.finish_function()
 }
 
-pub(crate) fn evaluate_integer(
-    builder: &mut MIRBuilder<'_>,
-    expression: &THIRExpression,
+pub(crate) fn evaluate_integer<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    expression: &'thir THIRExpression,
     context: &str,
 ) -> CXResult<usize> {
     match evaluate(builder, expression)? {
@@ -113,9 +144,9 @@ pub(crate) fn evaluate_integer(
     }
 }
 
-pub(crate) fn evaluate(
-    builder: &mut MIRBuilder<'_>,
-    expression: &THIRExpression,
+pub(crate) fn evaluate<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    expression: &'thir THIRExpression,
 ) -> CXResult<MIRConstant> {
     let parent = builder.take_current_function();
     let id = builder.module_mut().allocate_function_id();
@@ -134,14 +165,20 @@ pub(crate) fn evaluate(
         builder.restore_current_function(parent);
     }
     lowered?;
-    evaluate_body(builder, &body, &[])
+    match evaluate_body(builder, &body, &[])? {
+        MIRComptimeValue::Constant(value) => Ok(value),
+        _ => Err(mir_error(
+            &expression.token_range,
+            (&mir::EXPECTED_CONSTANT, "compile-time expression".into()),
+        )),
+    }
 }
 
 pub(crate) fn evaluate_function(
     builder: &MIRBuilder<'_>,
     id: MIRFunctionID,
-    args: &[MIRConstant],
-) -> CXResult<MIRConstant> {
+    args: &[MIRComptimeValue],
+) -> CXResult<MIRComptimeValue> {
     let body = builder
         .module()
         .comptime_function(id)

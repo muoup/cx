@@ -8,7 +8,9 @@ use crate::type_checking::contracts::typecheck_contract;
 use crate::type_checking::result::{
     ComptimeFunctionTC, StagedBindingTC, StagedTC, TypecheckResult, TypecheckedExpr,
 };
-use crate::type_checking::staged_expr::into_expression as staged_into_expression;
+use crate::type_checking::staged_expr::{
+    into_expression as staged_into_expression, stage_expression,
+};
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
@@ -545,7 +547,7 @@ fn complete_comptime_call(
                     implicit_cast(env, result, target_type)
                 }
             })?;
-            arguments.push(result);
+            arguments.push(staged_into_expression(stage_expression(result)));
             continue;
         }
 

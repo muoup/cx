@@ -1,5 +1,5 @@
 use cx_log::CXResult;
-use cx_thir::thir::expression::{THIRCoercion, THIRExpression, THIRExpressionKind};
+use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
 
 use crate::{environment::TypeEnvironment, type_checking::coercion::CoercionResult};
 
@@ -14,9 +14,8 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResu
         token_range: expr.token_range.clone(),
 
         _type: new_type,
-        kind: THIRExpressionKind::TypeConversion {
+        kind: THIRExpressionKind::AddressOf {
             operand: Box::new(expr),
-            conversion: THIRCoercion::GetFnPtr,
         },
     };
 

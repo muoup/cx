@@ -22,6 +22,7 @@ mod function;
 mod module;
 
 use crate::builder::body::MIRBodyKind;
+pub(crate) use function::DeferredExpression;
 use function::MIRFunctionBuilder;
 use module::{MIRUnitBuilder, ModuleParts};
 
@@ -59,7 +60,7 @@ impl<'thir> MIRBuilder<'thir> {
         builder
     }
 
-    pub fn registry(&self) -> &THIRDecomposedRegistry {
+    pub fn registry(&self) -> &'thir THIRDecomposedRegistry {
         self.registry
     }
 
@@ -114,7 +115,9 @@ impl<'thir> MIRBuilder<'thir> {
 
     #[allow(dead_code)]
     pub(crate) fn emit_comptime(&mut self, op: MIRComptimeOp<'thir>, range: TokenRange) {
-        self.fun_mut().body_mut().emit_comptime(op, range);
+        let function = self.fun_mut();
+        function.open_unreachable_block();
+        function.body_mut().emit_comptime(op, range);
     }
 
     pub fn new_place(

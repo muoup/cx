@@ -5,11 +5,13 @@ use cx_mir::{
     ty::{interface::MTRegistry, layout::calculate_type_layout},
 };
 use cx_thir::thir::{
+    contextual_eq::TypeContextEqual,
     data::THIRType,
     expression::{
-        THIRBinOp, THIRCoercion, THIRExpression, THIRFloatBinOp, THIRIntBinOp, THIRPtrBinOp,
-        THIRPtrDiffBinOp, THIRUnOp,
+        THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRFloatBinOp, THIRIntBinOp,
+        THIRPtrBinOp, THIRPtrDiffBinOp, THIRUnOp,
     },
+    r#type::THIRTypeKind,
 };
 use cx_thir::type_context::THIRTypeContext;
 
@@ -19,11 +21,11 @@ use crate::{
     lowering::{lower_expression, types::lower_type},
 };
 
-pub(super) fn lower_binary_op(
-    builder: &mut MIRBuilder<'_>,
-    expr: &THIRExpression,
-    lhs: &THIRExpression,
-    rhs: &THIRExpression,
+pub(super) fn lower_binary_op<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    expr: &'thir THIRExpression,
+    lhs: &'thir THIRExpression,
+    rhs: &'thir THIRExpression,
     op: &THIRBinOp,
 ) -> CXResult<MIRValue> {
     if matches!(
@@ -36,7 +38,7 @@ pub(super) fn lower_binary_op(
         return lower_short_circuit(builder, expr, lhs, rhs, op);
     }
 
-    let rhs_type = rhs._type.clone();
+    let rhs_type = &rhs._type;
     let lhs = lower_expression(builder, lhs)?;
     let rhs = lower_expression(builder, rhs)?;
 
@@ -264,10 +266,10 @@ pub(super) fn lower_binary_op(
         THIRBinOp::PtrDiff { op, ptr_inner } => {
             let ptr_inner_ty = lower_type_id(builder, *ptr_inner)?;
             let size = calculate_type_layout(builder.types(), ptr_inner_ty).size();
-            let offset_ty = lower_type(builder, &rhs_type)?;
+            let offset_ty = lower_type(builder, rhs_type)?;
             let scaled = builder.fun_mut().new_register(offset_ty, None);
-            let integer_ty = match rhs_type.kind {
-                cx_thir::thir::data::THIRTypeKind::Integer { _type, .. } => lower_int_type(_type),
+            let integer_ty = match &rhs_type.kind {
+                cx_thir::thir::data::THIRTypeKind::Integer { _type, .. } => lower_int_type(*_type),
                 _ => unreachable!("pointer offset must be an integer"),
             };
             builder.fun_mut().emit_intrinsic(
@@ -302,11 +304,11 @@ pub(super) fn lower_binary_op(
     Ok(MIRValue::Register(out))
 }
 
-pub(crate) fn lower_short_circuit(
-    builder: &mut MIRBuilder<'_>,
-    expr: &THIRExpression,
-    lhs: &THIRExpression,
-    rhs: &THIRExpression,
+pub(crate) fn lower_short_circuit<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    expr: &'thir THIRExpression,
+    lhs: &'thir THIRExpression,
+    rhs: &'thir THIRExpression,
     op: &THIRBinOp,
 ) -> CXResult<MIRValue> {
     let lhs_value = lower_expression(builder, lhs)?;
@@ -355,10 +357,10 @@ pub(crate) fn lower_short_circuit(
     Ok(MIRValue::Register(result))
 }
 
-pub(super) fn lower_unary_op(
-    builder: &mut MIRBuilder<'_>,
-    expr: &THIRExpression,
-    operand: &THIRExpression,
+pub(super) fn lower_unary_op<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    expr: &'thir THIRExpression,
+    operand: &'thir THIRExpression,
     op: &THIRUnOp,
 ) -> CXResult<MIRValue> {
     if let THIRUnOp::PreIncrement(amount) | THIRUnOp::PostIncrement(amount) = op {
@@ -402,10 +404,10 @@ pub(super) fn lower_unary_op(
     Ok(MIRValue::Register(out))
 }
 
-fn lower_increment(
-    builder: &mut MIRBuilder<'_>,
-    expr: &THIRExpression,
-    operand: &THIRExpression,
+fn lower_increment<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    expr: &'thir THIRExpression,
+    operand: &'thir THIRExpression,
     amount: i8,
     prefix: bool,
 ) -> CXResult<MIRValue> {
@@ -416,8 +418,14 @@ fn lower_increment(
     else {
         unreachable!("increment operand must have reference type");
     };
-    let inner = builder.registry().resolve_type_id(*inner_type).clone();
-    let ty = lower_type(builder, &inner)?;
+    let (integer_type, pointee_type) = match &builder.registry().resolve_type_id(*inner_type).kind {
+        cx_thir::thir::data::THIRTypeKind::Integer { _type, .. } => (Some(*_type), None),
+        cx_thir::thir::data::THIRTypeKind::PointerTo { inner_type } => {
+            (None, Some(*inner_type))
+        }
+        _ => (None, None),
+    };
+    let ty = lower_type_id(builder, *inner_type)?;
     let previous = builder.fun_mut().new_register(ty, None);
     builder.emit(MIRInstruction::new(
         MIRInstructionKind::LiftPlace {
@@ -429,23 +437,21 @@ fn lower_increment(
 
     let updated = builder.fun_mut().new_register(ty, None);
     let target = MIRTarget::Register(updated);
-    match inner.kind {
-        cx_thir::thir::data::THIRTypeKind::Integer { _type, .. } => {
+    match (integer_type, pointee_type) {
+        (Some(integer_type), _) => {
             builder.fun_mut().emit_intrinsic(
                 MIRIntIntrinsic::Add {
                     out: target,
                     lhs: MIRValue::Register(previous),
                     rhs: MIRValue::Constant(MIRConstant::Integer {
                         value: amount as i128,
-                        ty: lower_int_type(_type),
+                        ty: lower_int_type(integer_type),
                     }),
                 },
                 expr.token_range.clone(),
             );
         }
-        cx_thir::thir::data::THIRTypeKind::PointerTo {
-            inner_type: pointee,
-        } => {
+        (_, Some(pointee)) => {
             let pointee = lower_type_id(builder, pointee)?;
             let stride = calculate_type_layout(builder.types(), pointee).size() as i128;
             let offset_ty =
@@ -492,13 +498,13 @@ fn lower_increment(
     })
 }
 
-pub(super) fn lower_coercion(
-    builder: &mut MIRBuilder<'_>,
-    expr: &THIRExpression,
+pub(super) fn lower_coercion<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    expr: &'thir THIRExpression,
     operand: MIRValue,
     coercion: &THIRCoercion,
     _from_type: &THIRType,
-    to_type: &THIRType,
+    to_type: &'thir THIRType,
 ) -> CXResult<MIRValue> {
     let mir_to_type = lower_type(builder, to_type)?;
 
@@ -584,20 +590,6 @@ pub(super) fn lower_coercion(
             );
             Ok(MIRValue::Register(out))
         }
-        THIRCoercion::GetFnPtr => {
-            let MIRValue::Constant(cx_mir::MIRConstant::Function(function)) = operand else {
-                unreachable!("function decay requires a function reference");
-            };
-            let out = builder.fun_mut().new_register(mir_to_type, None);
-            builder.fun_mut().emit_intrinsic(
-                MIRInternalIntrinsic::GetFnPtr {
-                    out: MIRTarget::Register(out),
-                    fn_id: function,
-                },
-                expr.token_range.clone(),
-            );
-            Ok(MIRValue::Register(out))
-        }
         THIRCoercion::Typechange => Ok(operand),
         THIRCoercion::ReinterpretBits => {
             let out = builder.fun_mut().new_register(mir_to_type, None);
@@ -616,4 +608,94 @@ pub(super) fn lower_coercion(
             unreachable!("unreachable coercions are handled before lowering")
         }
     }
+}
+
+pub(super) fn lower_address_of<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    expr: &'thir THIRExpression,
+    operand: &'thir THIRExpression,
+) -> CXResult<MIRValue> {
+    let result_type = lower_type(builder, &expr._type)?;
+    let out = builder.fun_mut().new_register(result_type, None);
+    let target = MIRTarget::Register(out);
+
+    let intrinsic = if let THIRExpressionKind::StringLiteral { value } = &operand.kind {
+        MIRInternalIntrinsic::StringAddress {
+            out: target,
+            string: value.clone(),
+        }
+    } else {
+        let value = lower_expression(builder, operand)?;
+        if is_array_decay(builder, operand, expr) {
+            MIRInternalIntrinsic::ArrayAddress {
+                out: target,
+                array: value,
+            }
+        } else {
+            match value {
+                MIRValue::PlaceRef(place) => {
+                    MIRInternalIntrinsic::PlaceAddress { out: target, place }
+                }
+                MIRValue::GlobalRef(global) => MIRInternalIntrinsic::GlobalAddress {
+                    out: target,
+                    global,
+                },
+                MIRValue::Constant(MIRConstant::String(string)) => {
+                    MIRInternalIntrinsic::StringAddress {
+                        out: target,
+                        string,
+                    }
+                }
+                MIRValue::Constant(MIRConstant::Function(function)) => {
+                    MIRInternalIntrinsic::GetFnPtr {
+                        out: target,
+                        fn_id: function,
+                    }
+                }
+                reference => MIRInternalIntrinsic::ReferenceAddress {
+                    out: target,
+                    reference,
+                },
+            }
+        }
+    };
+
+    builder
+        .fun_mut()
+        .emit_intrinsic(intrinsic, expr.token_range.clone());
+    Ok(MIRValue::Register(out))
+}
+
+fn is_array_decay(
+    builder: &MIRBuilder<'_>,
+    operand: &THIRExpression,
+    expr: &THIRExpression,
+) -> bool {
+    let array_type = match &operand._type.kind {
+        THIRTypeKind::Array { .. } => &operand._type,
+        THIRTypeKind::MemoryReference { inner_type, .. } => {
+            builder.registry().resolve_type_id(*inner_type)
+        }
+        _ => return false,
+    };
+    let THIRTypeKind::Array {
+        inner_type: array_inner,
+        ..
+    } = &array_type.kind
+    else {
+        return false;
+    };
+    let THIRTypeKind::PointerTo {
+        inner_type: pointer_inner,
+    } = &expr._type.kind
+    else {
+        return false;
+    };
+
+    let array_inner = builder.registry().resolve_type_id(*array_inner);
+    let pointer_inner = builder.registry().resolve_type_id(*pointer_inner);
+    array_inner.clone().without_specifiers().contextual_eq(
+        &pointer_inner.clone().without_specifiers(),
+        builder.registry(),
+    )
 }

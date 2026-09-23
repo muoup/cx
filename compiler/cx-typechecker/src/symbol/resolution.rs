@@ -16,7 +16,7 @@ use cx_thir::{
     thir::{
         contextual_eq::TypeContextEqual,
         data::{THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter},
-        expression::{THIRCoercion, THIRExpression, THIRExpressionKind, THIRLocalID},
+        expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
         global::THIRGlobalVariable,
         name_mangling::mangle_template_name,
     },
@@ -199,9 +199,8 @@ pub(crate) fn resolve_symbol_inner(
             {
                 THIRExpression {
                     token_range: TokenRange::internal(),
-                    kind: THIRExpressionKind::TypeConversion {
+                    kind: THIRExpressionKind::AddressOf {
                         operand: Box::new(global),
-                        conversion: THIRCoercion::ReinterpretBits,
                     },
                     _type: ty,
                 }

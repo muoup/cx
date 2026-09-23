@@ -65,7 +65,10 @@ pub fn calculate_field_layout<Registry: MTRegistry>(
             ..
         } => {
             let layout = calculate_type_layout(registry, *integer_type_id);
-            assert!(*width <= layout.size * 8, "bitfield exceeds its storage type");
+            assert!(
+                *width <= layout.size * 8,
+                "bitfield exceeds its storage type"
+            );
             MIRTypeLayout::new(if *width == 0 { 0 } else { layout.size }, layout.alignment)
         }
     }
@@ -81,10 +84,12 @@ fn layout_inner<Registry: MTRegistry>(
     let layout = match definition.kind() {
         MIRTypeKind::Void => MIRTypeLayout::new(0, 1),
         MIRTypeKind::Integer { ty, .. } => MIRTypeLayout::new(
-            ty.bytes(), ty.bytes().min(registry.architecture().pointer_size()),
+            ty.bytes(),
+            ty.bytes().min(registry.architecture().pointer_size()),
         ),
         MIRTypeKind::Float { ty } => MIRTypeLayout::new(
-            ty.bytes(), ty.bytes().min(registry.architecture().pointer_size()),
+            ty.bytes(),
+            ty.bytes().min(registry.architecture().pointer_size()),
         ),
         MIRTypeKind::PointerTo { .. }
         | MIRTypeKind::MemoryReference { .. }
@@ -95,7 +100,10 @@ fn layout_inner<Registry: MTRegistry>(
         MIRTypeKind::Array { length, inner } => {
             let element = layout_inner(registry, *inner, active);
             MIRTypeLayout::new(
-                element.size.checked_mul(*length).expect("array layout overflows"),
+                element
+                    .size
+                    .checked_mul(*length)
+                    .expect("array layout overflows"),
                 element.alignment,
             )
         }
@@ -103,7 +111,10 @@ fn layout_inner<Registry: MTRegistry>(
         MIRTypeKind::Union { variants } => aggregate_layout(registry, variants, true, active),
         MIRTypeKind::TaggedUnion { variants } => {
             let data = aggregate_layout(registry, variants, true, active);
-            MIRTypeLayout::new(data.size.checked_add(1).expect("sum layout overflows"), data.alignment)
+            MIRTypeLayout::new(
+                data.size.checked_add(1).expect("sum layout overflows"),
+                data.alignment,
+            )
         }
         MIRTypeKind::Opaque { size, alignment } => MIRTypeLayout::new(*size, *alignment),
         MIRTypeKind::Str => MIRTypeLayout::new(1, 1),
@@ -111,7 +122,9 @@ fn layout_inner<Registry: MTRegistry>(
     };
     active.remove(&ty);
 
-    let layout = definition.layout().map_or(layout, |minimum| layout.apply_minimum(minimum));
+    let layout = definition
+        .layout()
+        .map_or(layout, |minimum| layout.apply_minimum(minimum));
     let alignment = layout.alignment.max(1);
     MIRTypeLayout::new(align_to(layout.size, alignment), alignment)
 }
@@ -142,7 +155,10 @@ fn aggregate_layout<Registry: MTRegistry>(
                 }
             }
             MIRField::Bitfield { width, .. } => {
-                assert!(*width <= storage.size * 8, "bitfield exceeds its storage type");
+                assert!(
+                    *width <= storage.size * 8,
+                    "bitfield exceeds its storage type"
+                );
                 if *width == 0 {
                     bitfield = None;
                     if !is_union {
@@ -174,6 +190,7 @@ fn align_to(size: usize, alignment: usize) -> usize {
     if remainder == 0 {
         size
     } else {
-        size.checked_add(alignment - remainder).expect("type layout overflows")
+        size.checked_add(alignment - remainder)
+            .expect("type layout overflows")
     }
 }

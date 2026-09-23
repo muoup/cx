@@ -158,6 +158,10 @@ pub enum THIRExpressionKind {
         value: Box<THIRExpression>,
     },
 
+    AddressOf {
+        operand: Box<THIRExpression>,
+    },
+
     // Represents a no-op used to change the type of an expression with no added semantics
     Typechange(Box<THIRExpression>),
 
@@ -464,9 +468,6 @@ pub enum THIRCoercion {
         sextend: bool,
     },
 
-    // Decay of function designator to a pointer value
-    GetFnPtr,
-
     // Converts an ephemeral reference to a bounded reference
     ReferenceBounding(Vec<THIRLocalID>),
 
@@ -479,7 +480,7 @@ pub enum THIRCoercion {
     //
     // Converting from a bounded / ephemeral reference to a free reference (non-safe operation) also falls under this category
     ReinterpretBits,
-    
+
     Unreachable,
 }
 

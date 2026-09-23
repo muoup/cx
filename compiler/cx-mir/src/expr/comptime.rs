@@ -12,7 +12,7 @@ use crate::{
         instruction::{MIRInstruction, MIRInstructionLike},
     },
     unit::function::MIRFunctionID,
-    value::{MIRRegisterID, MIRValue},
+    value::{MIRComptimeOperand, MIRComptimeOutput},
 };
 
 pub type MIRComptimeBody<'thir> = MIRBody<MIRComptimeInstruction<'thir>>;
@@ -30,6 +30,10 @@ impl MIRInstructionLike for MIRComptimeInstruction<'_> {
     fn is_terminator(&self) -> bool {
         match self {
             Self::Runtime(instruction) => instruction.is_terminator(),
+            Self::Comptime {
+                op: MIRComptimeOp::Return { .. },
+                ..
+            } => true,
             Self::Comptime { .. } => false,
         }
     }
@@ -38,14 +42,19 @@ impl MIRInstructionLike for MIRComptimeInstruction<'_> {
 #[derive(Debug, Clone)]
 pub enum MIRComptimeOp<'thir> {
     Call {
-        out: Option<MIRRegisterID>,
+        out: Option<MIRComptimeOutput>,
         callee: MIRFunctionID,
-        args: Vec<MIRValue>,
+        args: Vec<MIRComptimeOperand>,
     },
     Emit {
-        out: MIRRegisterID,
+        out: crate::value::MIRComptimeRegisterID,
         expression: &'thir THIRExpression,
         parameters: &'thir [THIRStagedParameter],
-        captures: BTreeMap<THIRLocalID, MIRValue>,
+        captures: BTreeMap<THIRLocalID, MIRComptimeOperand>,
+    },
+    Return {
+        value: Option<MIRComptimeOperand>,
     },
 }
+
+pub use crate::value::MIRComptimeParameter;

@@ -20,7 +20,10 @@ pub struct MIRType {
 
 impl MIRType {
     pub fn new(kind: MIRTypeKind, minimum_layout: Option<MIRTypeLayout>) -> Self {
-        Self { kind, minimum_layout }
+        Self {
+            kind,
+            minimum_layout,
+        }
     }
 
     pub fn undefined() -> Self {

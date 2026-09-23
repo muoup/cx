@@ -106,7 +106,7 @@ pub enum MIRInstructionKind {
     // Marks a place as no longer live for ownership analysis
     Invalidate {
         place: MIRBindable,
-        kind: MIRInvalidationKind
+        kind: MIRInvalidationKind,
     },
 
     // Lifts a value out of a place into a register, if the register is untouched before use, it can avoid the need for a true
@@ -119,7 +119,7 @@ pub enum MIRInstructionKind {
         out: MIRRegisterID,
         source: MIRRegisterID,
     },
-    
+
     // Declares (for analysis) that a register or place must live at least as long as 'bind_to' for ownership analysis
     // registe
     BindLifetime {
@@ -178,5 +178,5 @@ impl MIRInstructionKind {
 pub enum MIRInvalidationKind {
     Leak,
     Move,
-    Drop
+    Drop,
 }

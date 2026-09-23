@@ -10,10 +10,10 @@ use cx_util::identifier::CXIdent;
 use crate::builder::MIRBuilder;
 use crate::lowering::types::lower_type;
 
-pub(crate) fn allocate_variable(
-    builder: &mut MIRBuilder<'_>,
+pub(crate) fn allocate_variable<'thir>(
+    builder: &mut MIRBuilder<'thir>,
     name: Option<CXIdent>,
-    ty: &THIRType,
+    ty: &'thir THIRType,
     value: Option<MIRValue>,
     range: &TokenRange,
 ) -> CXResult<cx_mir::MIRPlaceID> {
@@ -56,10 +56,10 @@ pub(crate) fn target_register(builder: &mut MIRBuilder<'_>, ty: MIRTypeID) -> MI
     builder.fun_mut().new_register(ty, None)
 }
 
-pub(crate) fn assign_operand_to_place(
-    builder: &mut MIRBuilder<'_>,
+pub(crate) fn assign_operand_to_place<'thir>(
+    builder: &mut MIRBuilder<'thir>,
     value: MIRValue,
-    ty: &THIRType,
+    ty: &'thir THIRType,
     name: Option<CXIdent>,
     range: &TokenRange,
 ) -> CXResult<MIRPlaceID> {

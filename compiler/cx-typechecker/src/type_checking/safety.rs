@@ -44,8 +44,12 @@ pub(crate) fn validate_safe_expression(
             validate_safe_expression(env, lhs)?;
             validate_safe_expression(env, rhs)
         }
+        THIRExpressionKind::AddressOf { operand } if operand._type.is_function() => {
+            reject(env, expression, "Function address")
+        }
         THIRExpressionKind::UnaryOperation { operand, .. }
         | THIRExpressionKind::Copy { source: operand } => validate_safe_expression(env, operand),
+        THIRExpressionKind::AddressOf { operand } => validate_safe_expression(env, operand),
 
         THIRExpressionKind::CreateLocalVariable { initial_value, .. } => initial_value
             .as_deref()
@@ -75,9 +79,7 @@ pub(crate) fn validate_safe_expression(
         } => {
             if matches!(
                 conversion,
-                THIRCoercion::PtrToInt { .. }
-                    | THIRCoercion::IntToPtr { .. }
-                    | THIRCoercion::GetFnPtr
+                THIRCoercion::PtrToInt { .. } | THIRCoercion::IntToPtr { .. }
             ) {
                 reject(env, expression, "Unsafe type conversion")
             } else {

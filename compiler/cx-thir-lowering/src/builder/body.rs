@@ -1,7 +1,8 @@
 use cx_mir::{
     MIRBasicBlockID, MIRBody, MIRComptimeBody, MIRComptimeFnPrototype, MIRComptimeInstruction,
-    MIRComptimeOp, MIRFnParam, MIRFnPrototype, MIRInstruction, MIRInstructionLike, MIRPlaceID,
-    MIRRegisterDecl, MIRRegisterID, MIRScopeDecl, MIRScopeID, MIRTypeID,
+    MIRComptimeOp, MIRComptimeParameter, MIRComptimeRegisterID, MIRComptimeType, MIRFnParam,
+    MIRFnPrototype, MIRInstruction, MIRInstructionLike, MIRPlaceID, MIRRegisterDecl,
+    MIRRegisterID, MIRScopeDecl, MIRScopeID, MIRTypeID,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -188,6 +189,33 @@ impl<'thir> MIRBodyBuilder<'thir> {
             MIRBodyKind::Runtime { body, .. } => body.add_register(ty, name),
             MIRBodyKind::Comptime { body, .. } | MIRBodyKind::ComptimeScratch { body } => {
                 body.add_register(ty, name)
+            }
+        }
+    }
+
+    pub fn add_comptime_register(
+        &mut self,
+        ty: MIRComptimeType,
+        name: Option<CXIdent>,
+    ) -> MIRComptimeRegisterID {
+        match &mut self.kind {
+            MIRBodyKind::Runtime { .. } => panic!("comptime register in a runtime body"),
+            MIRBodyKind::Comptime { body, .. } | MIRBodyKind::ComptimeScratch { body } => {
+                body.add_comptime_register(ty, name)
+            }
+        }
+    }
+
+    pub fn add_comptime_parameter(
+        &mut self,
+        ty: MIRComptimeType,
+        name: Option<CXIdent>,
+        scope: MIRScopeID,
+    ) -> MIRComptimeParameter {
+        match &mut self.kind {
+            MIRBodyKind::Runtime { .. } => panic!("comptime parameter in a runtime body"),
+            MIRBodyKind::Comptime { body, .. } | MIRBodyKind::ComptimeScratch { body } => {
+                body.add_comptime_parameter(ty, name, scope)
             }
         }
     }

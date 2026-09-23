@@ -13,9 +13,9 @@ pub(crate) struct MIRGlobalInitRequest<'thir> {
     pub initializer: &'thir THIRExpression,
 }
 
-pub(crate) fn predeclare_global(
-    builder: &mut MIRBuilder<'_>,
-    global: &THIRGlobalVariable,
+pub(crate) fn predeclare_global<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    global: &'thir THIRGlobalVariable,
 ) -> CXResult<MIRGlobalID> {
     let ty = lower_type(builder, &global._type)?;
     let id = builder.module_mut().reserve_global(global.name.as_str());
@@ -49,9 +49,9 @@ pub(crate) fn lower_global<'thir>(
         })
 }
 
-pub(crate) fn execute_request(
-    builder: &mut MIRBuilder<'_>,
-    request: &MIRGlobalInitRequest<'_>,
+pub(crate) fn execute_request<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    request: &MIRGlobalInitRequest<'thir>,
 ) -> CXResult<()> {
     let value = comptime::evaluate(builder, request.initializer)?;
     builder

@@ -4,7 +4,6 @@ use cx_util::linkage::LinkageMode;
 
 use crate::{
     MIRInstructionLike,
-    constant::MIRRuntimeConstant,
     expr::{
         body::MIRBody,
         comptime::{MIRComptimeInstruction, MIRComptimeOp},
@@ -14,13 +13,17 @@ use crate::{
             MIRIntrinsic, MIRPtrIntrinsic, MIRVAIntrinsic,
         },
     },
-    ty::{MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind, interface::MTRegistry},
+    ty::{
+        MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind, comptime::MIRComptimeType,
+        interface::MTRegistry,
+    },
     unit::{
         MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRUnit,
         function::{MIRFnSignature, MIRFunction},
     },
     value::{
-        MIRBindable, MIRBlockTarget, MIRConstant, MIRPlaceID, MIRRegisterID, MIRTarget, MIRValue,
+        MIRBindable, MIRBlockTarget, MIRComptimeOperand, MIRComptimeOutput, MIRComptimeValue,
+        MIRConstant, MIRGlobalRef, MIRPlaceID, MIRRegisterID, MIRTarget, MIRValue,
     },
 };
 
@@ -54,26 +57,51 @@ impl Display for MIRConstant {
                 f.write_str("}")
             }
             Self::String(value) => write!(f, "{value:?}"),
-            Self::Global { global, offset, .. } => {
-                write!(f, "global {global}")?;
-                if *offset != 0 {
-                    write!(f, " + {offset}")?;
-                }
-                Ok(())
-            }
+            Self::StringAddress(value) => write!(f, "string.address({value:?})"),
+            Self::ArrayAddress(value) => write!(f, "array.address({value})"),
+            Self::GlobalAddress(global) => write!(f, "{global}"),
             Self::Function(function) => write!(f, "fn {function}"),
-            Self::Staged(staged) => write!(f, "staged {staged}"),
-            Self::RuntimeValue(value) => Display::fmt(value, f),
             Self::Undefined => f.write_str("undefined"),
         }
     }
 }
 
-impl Display for MIRRuntimeConstant {
+impl Display for MIRGlobalRef {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "global {}", self.global)?;
+        if self.offset != 0 {
+            write!(f, " + {}", self.offset)?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for MIRComptimeOutput {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Register(value) => Display::fmt(value, f),
-            Self::Place(value) => Display::fmt(value, f),
+            Self::Runtime(register) => Display::fmt(register, f),
+            Self::Comptime(register) => Display::fmt(register, f),
+        }
+    }
+}
+
+impl Display for MIRComptimeOperand {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Runtime(value) => Display::fmt(value, f),
+            Self::Comptime(register) => Display::fmt(register, f),
+            Self::Known(value) => Display::fmt(value, f),
+        }
+    }
+}
+
+impl Display for MIRComptimeValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Constant(value) => Display::fmt(value, f),
+            Self::Staged(value) => write!(f, "staged {value}"),
+            Self::Caller(value) => Display::fmt(value, f),
+            Self::GlobalRef(value) => Display::fmt(value, f),
         }
     }
 }
@@ -83,7 +111,7 @@ impl Display for MIRValue {
         match self {
             Self::Register(value) => Display::fmt(value, f),
             Self::PlaceRef(value) => Display::fmt(value, f),
-            Self::Global(value) => Display::fmt(value, f),
+            Self::GlobalRef(value) => Display::fmt(value, f),
             Self::Constant(value) => Display::fmt(value, f),
         }
     }
@@ -411,10 +439,43 @@ fn write_body<T: MTRegistry, K: MIRInstructionLike>(
         types.write(f, register.ty)?;
         f.write_str(";\n")?;
     }
+    for register in body.comptime_registers() {
+        f.write_str("    let ")?;
+        if let Some(name) = &register.debug_name {
+            write!(f, "%{name}")?;
+        } else {
+            Display::fmt(&register.id, f)?;
+        }
+        f.write_str(": ")?;
+        write_comptime_type(f, types, &register.ty)?;
+        f.write_str(";\n")?;
+    }
     for block in body.blocks() {
         write_block(f, unit, function, block, types, &write_kind)?;
     }
     f.write_str("}")
+}
+
+fn write_comptime_type<T: MTRegistry>(
+    f: &mut Formatter<'_>,
+    types: &mut TypePrinter<'_, T>,
+    ty: &MIRComptimeType,
+) -> fmt::Result {
+    match ty {
+        MIRComptimeType::Standard(ty) => types.write(f, *ty),
+        MIRComptimeType::StagedExpression { result, params } => {
+            f.write_str("staged<")?;
+            types.write(f, *result)?;
+            f.write_str("; ")?;
+            for (index, param) in params.iter().enumerate() {
+                if index != 0 {
+                    f.write_str(", ")?;
+                }
+                types.write(f, *param)?;
+            }
+            f.write_str(">")
+        }
+    }
 }
 
 fn write_block<T: MTRegistry, K>(
@@ -577,17 +638,17 @@ fn write_comptime_instruction<T: MTRegistry>(
             match operation {
                 MIRComptimeOp::Call { out, callee, args } => {
                     if let Some(out) = out {
-                        write_register_name(f, function, *out)?;
+                        write_comptime_output(f, function, *out)?;
                         f.write_str(" = ")?;
                     }
                     f.write_str("call ")?;
                     write!(f, "{callee}")?;
                     f.write_str("(")?;
-                    write_values(f, unit, function, args)?;
+                    write_comptime_operands(f, unit, function, args)?;
                     f.write_str(")")
                 }
                 MIRComptimeOp::Emit { out, captures, .. } => {
-                    write_register_name(f, function, *out)?;
+                    Display::fmt(out, f)?;
                     f.write_str(" = staged.emit(")?;
                     let mut first = true;
                     for capture in captures.values() {
@@ -595,12 +656,59 @@ fn write_comptime_instruction<T: MTRegistry>(
                             f.write_str(", ")?;
                         }
                         first = false;
-                        write_value(f, unit, function, capture)?;
+                        write_comptime_operand(f, unit, function, capture)?;
                     }
                     f.write_str(")")
                 }
+                MIRComptimeOp::Return { value } => {
+                    f.write_str("return")?;
+                    if let Some(value) = value {
+                        f.write_str(" ")?;
+                        write_comptime_operand(f, unit, function, value)?;
+                    }
+                    Ok(())
+                }
             }
         }
+    }
+}
+
+fn write_comptime_output(
+    f: &mut Formatter<'_>,
+    function: &MIRFunction,
+    output: MIRComptimeOutput,
+) -> fmt::Result {
+    match output {
+        MIRComptimeOutput::Runtime(register) => write_register_name(f, function, register),
+        MIRComptimeOutput::Comptime(register) => Display::fmt(&register, f),
+    }
+}
+
+fn write_comptime_operands(
+    f: &mut Formatter<'_>,
+    unit: &MIRUnit,
+    function: &MIRFunction,
+    values: &[MIRComptimeOperand],
+) -> fmt::Result {
+    for (index, value) in values.iter().enumerate() {
+        if index != 0 {
+            f.write_str(", ")?;
+        }
+        write_comptime_operand(f, unit, function, value)?;
+    }
+    Ok(())
+}
+
+fn write_comptime_operand(
+    f: &mut Formatter<'_>,
+    unit: &MIRUnit,
+    function: &MIRFunction,
+    value: &MIRComptimeOperand,
+) -> fmt::Result {
+    match value {
+        MIRComptimeOperand::Runtime(value) => write_value(f, unit, function, value),
+        MIRComptimeOperand::Comptime(register) => Display::fmt(register, f),
+        MIRComptimeOperand::Known(value) => Display::fmt(value, f),
     }
 }
 
@@ -1010,6 +1118,42 @@ fn write_internal_intrinsic<T: MTRegistry>(
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     match intrinsic {
+        MIRInternalIntrinsic::PlaceAddress { out, place } => write_intrinsic_call(
+            f,
+            unit,
+            function,
+            types,
+            Some(IntrinsicOutput::Target(*out)),
+            "internal.place_address",
+            |f, unit, function, _| write_place_name(f, unit, function, *place),
+        ),
+        MIRInternalIntrinsic::GlobalAddress { out, global } => write_intrinsic_call(
+            f,
+            unit,
+            function,
+            types,
+            Some(IntrinsicOutput::Target(*out)),
+            "internal.global_address",
+            |f, unit, _, _| write_global_ref(f, unit, *global),
+        ),
+        MIRInternalIntrinsic::ReferenceAddress { out, reference } => write_intrinsic_call(
+            f,
+            unit,
+            function,
+            types,
+            Some(IntrinsicOutput::Target(*out)),
+            "internal.reference_address",
+            |f, unit, function, _| write_value(f, unit, function, reference),
+        ),
+        MIRInternalIntrinsic::ArrayAddress { out, array } => write_intrinsic_call(
+            f,
+            unit,
+            function,
+            types,
+            Some(IntrinsicOutput::Target(*out)),
+            "internal.array_address",
+            |f, unit, function, _| write_value(f, unit, function, array),
+        ),
         MIRInternalIntrinsic::StringAddress { out, string } => write_intrinsic_call(
             f,
             unit,
@@ -1017,7 +1161,7 @@ fn write_internal_intrinsic<T: MTRegistry>(
             types,
             Some(IntrinsicOutput::Target(*out)),
             "internal.string_address",
-            |f, _, _, _| Display::fmt(string, f),
+            |f, _, _, _| write!(f, "{string:?}"),
         ),
         MIRInternalIntrinsic::GetFnPtr { out, fn_id } => write_intrinsic_call(
             f,
@@ -1172,13 +1316,13 @@ fn write_aggregate_intrinsic<T: MTRegistry>(
                 types.write(f, *sum_ty)
             },
         ),
-        MIRAggregateIntrinsic::StructInit { out, ty, fields } => write_intrinsic_call(
+        MIRAggregateIntrinsic::AggregateInit { out, ty, fields } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
             Some(IntrinsicOutput::Target(*out)),
-            "aggregate.struct_init",
+            "aggregate.init",
             |f, unit, function, types| {
                 types.write(f, *ty)?;
                 for (field, value) in fields {
@@ -1267,7 +1411,7 @@ fn write_value(
 ) -> fmt::Result {
     match value {
         MIRValue::Register(register) => write_register_name(f, function, *register),
-        MIRValue::Global(global) => write_global_name(f, unit, *global),
+        MIRValue::GlobalRef(global) => write_global_ref(f, unit, *global),
         MIRValue::PlaceRef(place) => write_place_name(f, unit, function, *place),
         MIRValue::Constant(constant) => write_constant(f, unit, constant),
     }
@@ -1282,13 +1426,7 @@ fn write_constant(f: &mut Formatter<'_>, unit: &MIRUnit, constant: &MIRConstant)
                 Display::fmt(function_id, f)
             }
         }
-        MIRConstant::Global { global, offset, .. } => {
-            write_global_name(f, unit, *global)?;
-            if *offset != 0 {
-                write!(f, " + {offset}")?;
-            }
-            Ok(())
-        }
+        MIRConstant::GlobalAddress(global) => write_global_ref(f, unit, *global),
         MIRConstant::Aggregate { fields, .. } => {
             f.write_str("{")?;
             for (index, (field, value)) in fields.iter().enumerate() {
@@ -1351,6 +1489,14 @@ fn write_global_name(f: &mut Formatter<'_>, unit: &MIRUnit, global: MIRGlobalID)
     }
 }
 
+fn write_global_ref(f: &mut Formatter<'_>, unit: &MIRUnit, global: MIRGlobalRef) -> fmt::Result {
+    write_global_name(f, unit, global.global)?;
+    if global.offset != 0 {
+        write!(f, " + {}", global.offset)?;
+    }
+    Ok(())
+}
+
 fn write_target(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
@@ -1359,7 +1505,7 @@ fn write_target(
 ) -> fmt::Result {
     match target {
         MIRTarget::Place(place) => write_place_name(f, unit, function, place),
-        MIRTarget::Global(global) => write_global_name(f, unit, global),
+        MIRTarget::Global(global) => write_global_ref(f, unit, global),
         MIRTarget::Register(register) => write_register_name(f, function, register),
         MIRTarget::Indirect(register) => {
             f.write_str("*")?;

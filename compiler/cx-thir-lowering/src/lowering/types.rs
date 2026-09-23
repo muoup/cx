@@ -23,13 +23,10 @@ use crate::{
     lowering::{calls::lower_field, comptime::evaluate_integer},
 };
 
-pub fn lower_type(builder: &mut MIRBuilder, ty: &THIRType) -> CXResult<MIRTypeID> {
-    if builder
-        .try_fun()
-        .is_some_and(|function| function.body().is_comptime())
-    {
-        reject_comptime_array(builder, ty)?;
-    }
+pub fn lower_type<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    ty: &'thir THIRType,
+) -> CXResult<MIRTypeID> {
     if let Some(id) = builder.registry().type_id(ty) {
         return lower_type_id(builder, id);
     }
@@ -45,14 +42,10 @@ pub fn lower_type(builder: &mut MIRBuilder, ty: &THIRType) -> CXResult<MIRTypeID
     Ok(id)
 }
 
-pub fn lower_type_id(builder: &mut MIRBuilder, id: THIRTypeID) -> CXResult<MIRTypeID> {
-    if builder
-        .try_fun()
-        .is_some_and(|function| function.body().is_comptime())
-        && let Some(ty) = builder.registry().try_resolve_type_id(id)
-    {
-        reject_comptime_array(builder, ty)?;
-    }
+pub fn lower_type_id<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    id: THIRTypeID,
+) -> CXResult<MIRTypeID> {
     let mir_id = MIRTypeID::new(id.index());
 
     if builder.types().definition(mir_id).is_some() || builder.types().is_lowering_type(&id) {
@@ -62,7 +55,7 @@ pub fn lower_type_id(builder: &mut MIRBuilder, id: THIRTypeID) -> CXResult<MIRTy
     builder.types_mut().insert_lowering_type(id);
 
     let result: CXResult<MIRTypeID> = (|| {
-        let Some(ty) = builder.registry().try_resolve_type_id(id).cloned() else {
+        let Some(ty) = builder.registry().try_resolve_type_id(id) else {
             assert!(
                 id.0 < builder.registry().type_id_bound(),
                 "THIR type {id} is outside its registry"
@@ -83,9 +76,9 @@ pub fn lower_type_id(builder: &mut MIRBuilder, id: THIRTypeID) -> CXResult<MIRTy
     result
 }
 
-pub(crate) fn lower_type_kind(
-    builder: &mut MIRBuilder,
-    kind: &THIRTypeKind,
+pub(crate) fn lower_type_kind<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    kind: &'thir THIRTypeKind,
 ) -> CXResult<MIRTypeKind> {
     Ok(match kind {
         THIRTypeKind::Void => MIRTypeKind::Void,
@@ -166,9 +159,9 @@ pub(crate) fn lower_float_type(ty: THIRFloatType) -> MIRFloatType {
     }
 }
 
-pub(crate) fn lower_signature(
-    builder: &mut MIRBuilder,
-    signature: &THIRFnSignature,
+pub(crate) fn lower_signature<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    signature: &'thir THIRFnSignature,
 ) -> CXResult<MIRFnSignature> {
     let return_type = lower_type(builder, &signature.return_type)?;
     let params = signature
@@ -193,9 +186,9 @@ pub(crate) fn lower_signature(
     ))
 }
 
-pub(crate) fn lower_prototype(
-    builder: &mut MIRBuilder,
-    prototype: &THIRFnPrototype,
+pub(crate) fn lower_prototype<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    prototype: &'thir THIRFnPrototype,
 ) -> CXResult<MIRFnPrototype> {
     let signature = lower_signature(builder, &prototype.signature())?;
 
@@ -207,9 +200,9 @@ pub(crate) fn lower_prototype(
     ))
 }
 
-fn lower_comptime_value_type(
-    builder: &mut MIRBuilder<'_>,
-    value_type: &THIRComptimeValueType,
+fn lower_comptime_value_type<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    value_type: &'thir THIRComptimeValueType,
 ) -> CXResult<MIRComptimeType> {
     if !value_type.expr {
         reject_comptime_array(builder, &value_type._type)?;
@@ -227,7 +220,7 @@ fn lower_comptime_value_type(
     }
 }
 
-fn reject_comptime_array(builder: &MIRBuilder<'_>, ty: &THIRType) -> CXResult<()> {
+pub(super) fn reject_comptime_array(builder: &MIRBuilder<'_>, ty: &THIRType) -> CXResult<()> {
     fn find_array(
         registry: &impl THIRTypeContext,
         kind: &THIRTypeKind,
@@ -274,9 +267,9 @@ fn reject_comptime_array(builder: &MIRBuilder<'_>, ty: &THIRType) -> CXResult<()
     Ok(())
 }
 
-pub(crate) fn lower_comptime_prototype(
-    builder: &mut MIRBuilder<'_>,
-    function: &THIRComptimeFn,
+pub(crate) fn lower_comptime_prototype<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    function: &'thir THIRComptimeFn,
 ) -> CXResult<MIRComptimeFnPrototype> {
     let prototype = &function.prototype;
     let return_type = lower_comptime_value_type(builder, prototype.return_type())?;

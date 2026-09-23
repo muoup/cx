@@ -1,9 +1,9 @@
-use std::{collections::HashMap, rc::Rc};
+use std::collections::HashMap;
 
 use cx_mir::{
-    MIRBasicBlockID, MIRBody, MIRComptimeFnPrototype, MIRFnPrototype, MIRFunction, MIRFunctionID,
-    MIRInstruction, MIRInstructionKind, MIRIntrinsic, MIRPlaceID, MIRRegister, MIRScopeID,
-    MIRTypeID, MIRValue,
+    MIRBasicBlockID, MIRBody, MIRComptimeFnPrototype, MIRComptimeOperand, MIRComptimeRegisterID,
+    MIRComptimeType, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRInstruction,
+    MIRInstructionKind, MIRIntrinsic, MIRPlaceID, MIRRegister, MIRScopeID, MIRTypeID, MIRValue,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
 use cx_tokens::TokenRange;
@@ -19,21 +19,27 @@ pub(crate) struct MIRFunctionBuilder<'thir> {
     current_block: MIRBasicBlockID,
 
     local_values: HashMap<THIRLocalID, MIRValue>,
+    comptime_values: HashMap<THIRLocalID, MIRComptimeOperand>,
     labels: HashMap<String, MIRBasicBlockID>,
 
-    scope_stack: Vec<ScopeContext>,
+    scope_stack: Vec<ScopeContext<'thir>>,
     control_stack: Vec<ControlContext>,
 }
 
 #[derive(Debug)]
-pub(crate) struct ScopeContext {
+pub(crate) struct ScopeContext<'thir> {
     id: MIRScopeID,
 
     named_values: HashMap<String, MIRValue>,
 
-    // Rc, not Arc because we guarantee that a module is compiled single-threaded, parallelism is only applied at the scheduling
-    // level, not at the compilation level
-    defered_expressions: Vec<Rc<THIRExpression>>,
+    deferred_expressions: Vec<DeferredExpression<'thir>>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct DeferredExpression<'thir> {
+    pub expression: &'thir THIRExpression,
+    pub locals: HashMap<THIRLocalID, MIRValue>,
+    pub comptime: HashMap<THIRLocalID, MIRComptimeOperand>,
 }
 
 #[derive(Debug)]
@@ -44,21 +50,17 @@ pub(crate) struct ControlContext {
     continue_target: Option<MIRBasicBlockID>,
 }
 
-impl ScopeContext {
+impl<'thir> ScopeContext<'thir> {
     pub fn new(id: MIRScopeID) -> Self {
         Self {
             id,
             named_values: HashMap::new(),
-            defered_expressions: Vec::new(),
+            deferred_expressions: Vec::new(),
         }
     }
 
-    pub fn deferred_expressions(&self) -> &[Rc<THIRExpression>] {
-        &self.defered_expressions
-    }
-
-    pub fn add_deferred_expression(&mut self, expression: THIRExpression) {
-        self.defered_expressions.push(Rc::new(expression));
+    pub fn deferred_expressions(&self) -> &[DeferredExpression<'thir>] {
+        &self.deferred_expressions
     }
 
     pub(crate) fn id(&self) -> MIRScopeID {
@@ -109,15 +111,24 @@ impl ControlContext {
 
 impl<'thir> MIRFunctionBuilder<'thir> {
     pub(crate) fn new_runtime(id: MIRFunctionID, func: MIRFunction) -> Self {
-        Self::new(id, MIRBodyBuilder::new_runtime(func.prototype().clone(), MIRBody::new()))
+        Self::new(
+            id,
+            MIRBodyBuilder::new_runtime(func.prototype().clone(), MIRBody::new()),
+        )
     }
 
     pub(crate) fn new_comptime(id: MIRFunctionID, prototype: MIRComptimeFnPrototype) -> Self {
-        Self::new(id, MIRBodyBuilder::new_comptime(prototype, cx_mir::MIRComptimeBody::new()))
+        Self::new(
+            id,
+            MIRBodyBuilder::new_comptime(prototype, cx_mir::MIRComptimeBody::new()),
+        )
     }
 
     pub(crate) fn new_comptime_scratch(id: MIRFunctionID) -> Self {
-        Self::new(id, MIRBodyBuilder::new_comptime_scratch(cx_mir::MIRComptimeBody::new()))
+        Self::new(
+            id,
+            MIRBodyBuilder::new_comptime_scratch(cx_mir::MIRComptimeBody::new()),
+        )
     }
 
     fn new(id: MIRFunctionID, mut body: MIRBodyBuilder<'thir>) -> Self {
@@ -128,6 +139,7 @@ impl<'thir> MIRFunctionBuilder<'thir> {
             body,
             current_block: entry,
             local_values: HashMap::new(),
+            comptime_values: HashMap::new(),
             labels: HashMap::new(),
             scope_stack: vec![ScopeContext::new(root_scope)],
             control_stack: Vec::new(),
@@ -191,20 +203,36 @@ impl<'thir> MIRFunctionBuilder<'thir> {
         self.body.add_register(ty, debug_name)
     }
 
+    pub fn new_comptime_register(
+        &mut self,
+        ty: MIRComptimeType,
+        debug_name: Option<CXIdent>,
+    ) -> MIRComptimeRegisterID {
+        self.body.add_comptime_register(ty, debug_name)
+    }
+
     #[allow(dead_code)]
     pub fn register_type(&self, register: MIRRegister) -> Option<MIRTypeID> {
         self.body.register(register).map(|decl| decl.ty)
     }
 
     pub fn emit(&mut self, instr: MIRInstruction) {
+        self.open_unreachable_block();
         self.body.emit(instr);
     }
 
     pub fn emit_intrinsic(&mut self, intrinsic: impl Into<MIRIntrinsic>, range: TokenRange) {
-        self.body.emit(MIRInstruction {
+        self.emit(MIRInstruction {
             kind: MIRInstructionKind::IntrinsicOp(intrinsic.into()),
             token_range: range,
         })
+    }
+
+    pub fn open_unreachable_block(&mut self) {
+        if self.current_block_terminated() {
+            let block = self.new_block("unreachable");
+            self.set_current_block(block);
+        }
     }
 
     pub fn new_block(&mut self, name: impl Into<CXIdent>) -> MIRBasicBlockID {
@@ -243,6 +271,10 @@ impl<'thir> MIRFunctionBuilder<'thir> {
         self.local_values.get(&local).cloned()
     }
 
+    pub fn comptime_local(&self, local: THIRLocalID) -> Option<MIRComptimeOperand> {
+        self.comptime_values.get(&local).cloned()
+    }
+
     #[allow(dead_code)]
     pub fn locals(&self) -> HashMap<THIRLocalID, MIRValue> {
         self.local_values.clone()
@@ -250,6 +282,37 @@ impl<'thir> MIRFunctionBuilder<'thir> {
 
     pub fn bind_local(&mut self, local: THIRLocalID, value: MIRValue) {
         self.local_values.insert(local, value);
+    }
+
+    pub fn bind_comptime_local(&mut self, local: THIRLocalID, value: MIRComptimeOperand) {
+        self.comptime_values.insert(local, value);
+    }
+
+    pub fn add_deferred_expression(&mut self, expression: &'thir THIRExpression) {
+        let defer = DeferredExpression {
+            expression,
+            locals: self.local_values.clone(),
+            comptime: self.comptime_values.clone(),
+        };
+        self.current_scope_mut().deferred_expressions.push(defer);
+    }
+
+    pub fn replace_local_bindings(
+        &mut self,
+        locals: HashMap<THIRLocalID, MIRValue>,
+        comptime: HashMap<THIRLocalID, MIRComptimeOperand>,
+    ) -> (
+        HashMap<THIRLocalID, MIRValue>,
+        HashMap<THIRLocalID, MIRComptimeOperand>,
+    ) {
+        (
+            std::mem::replace(&mut self.local_values, locals),
+            std::mem::replace(&mut self.comptime_values, comptime),
+        )
+    }
+
+    pub fn comptime_locals(&self) -> HashMap<THIRLocalID, MIRComptimeOperand> {
+        self.comptime_values.clone()
     }
 
     pub fn bind_named_value(&mut self, name: &CXIdent, value: MIRValue) {
@@ -300,30 +363,30 @@ impl<'thir> MIRFunctionBuilder<'thir> {
     }
 
     #[must_use]
-    pub fn pop_scope(&mut self) -> (MIRScopeID, Vec<Rc<THIRExpression>>) {
+    pub fn pop_scope(&mut self) -> MIRScopeID {
         let scope = self.scope_stack.pop().expect("scope stack is empty");
 
-        (scope.id, scope.defered_expressions)
+        scope.id
     }
 
-    pub fn current_scope(&self) -> &ScopeContext {
+    pub fn current_scope(&self) -> &ScopeContext<'thir> {
         self.scope_stack
             .last()
             .expect("active function has no lexical scope")
     }
 
-    pub fn current_scope_mut(&mut self) -> &mut ScopeContext {
+    pub fn current_scope_mut(&mut self) -> &mut ScopeContext<'thir> {
         self.scope_stack
             .last_mut()
             .expect("active function has no lexical scope")
     }
 
-    pub fn scope_stack(&self) -> &[ScopeContext] {
+    pub fn scope_stack(&self) -> &[ScopeContext<'thir>] {
         &self.scope_stack
     }
 
     #[allow(dead_code)]
-    pub fn scope_stack_mut(&mut self) -> &mut [ScopeContext] {
+    pub fn scope_stack_mut(&mut self) -> &mut [ScopeContext<'thir>] {
         &mut self.scope_stack
     }
 
