@@ -3,15 +3,23 @@ use std::fmt::{self, Display, Formatter};
 use cx_util::linkage::LinkageMode;
 
 use crate::{
-    MIRInstructionLike, constant::MIRRuntimeConstant, expr::{
-        body::MIRBody, comptime::{MIRComptimeInstruction, MIRComptimeOp}, instruction::{MIRBasicBlock, MIRInstructionKind, MIRInvalidationKind}, intrinsic::{
+    MIRInstructionLike,
+    constant::MIRRuntimeConstant,
+    expr::{
+        body::MIRBody,
+        comptime::{MIRComptimeInstruction, MIRComptimeOp},
+        instruction::{MIRBasicBlock, MIRInstructionKind, MIRInvalidationKind},
+        intrinsic::{
             MIRAggregateIntrinsic, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic,
             MIRIntrinsic, MIRPtrIntrinsic, MIRVAIntrinsic,
         },
-    }, ty::{MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind, interface::MTRegistry}, unit::{
+    },
+    ty::{MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind, interface::MTRegistry},
+    unit::{
         MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRUnit,
         function::{MIRFnSignature, MIRFunction},
-    }, value::{
+    },
+    value::{
         MIRBindable, MIRBlockTarget, MIRConstant, MIRPlaceID, MIRRegisterID, MIRTarget, MIRValue,
     },
 };
@@ -147,7 +155,7 @@ impl Display for MIRDisplay<'_, '_> {
             if i != 0 {
                 f.write_str("\n")?;
             }
-            write_global(f, self.unit, global, &mut types)?;
+            write_global(f, global, &mut types)?;
         }
 
         for (i, function) in self.unit.functions().enumerate() {
@@ -271,6 +279,7 @@ impl<'a, T: MTRegistry + Sized> TypePrinter<'a, T> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn write_member_name(
         &self,
         f: &mut Formatter<'_>,
@@ -300,6 +309,7 @@ fn is_aggregate(kind: &MIRTypeKind) -> bool {
     )
 }
 
+#[allow(dead_code)]
 fn aggregate_fields(kind: &MIRTypeKind) -> Option<&[MIRField]> {
     match kind {
         MIRTypeKind::Structured { fields }
@@ -311,7 +321,6 @@ fn aggregate_fields(kind: &MIRTypeKind) -> Option<&[MIRField]> {
 
 fn write_global<T: MTRegistry>(
     f: &mut Formatter<'_>,
-    unit: &MIRUnit,
     global: &MIRGlobalVariable,
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
@@ -551,6 +560,7 @@ fn write_instruction<T: MTRegistry>(
     }
 }
 
+#[allow(dead_code)]
 fn write_comptime_instruction<T: MTRegistry>(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,

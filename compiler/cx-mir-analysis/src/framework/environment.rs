@@ -4,6 +4,7 @@ use cx_mir::{MIRBasicBlockID, MIRFunction, MIRUnit, expr::visit::successors};
 use crate::{MIRAnalysisOptions, Pipeline};
 
 pub struct AnalysisEnvironment<'mir> {
+    #[allow(dead_code)]
     unit: &'mir MIRUnit<'mir>,
     function: &'mir MIRFunction,
 
@@ -35,7 +36,8 @@ impl<'mir> AnalysisEnvironment<'mir> {
         Ok(())
     }
 
-    pub fn unit(&self) -> &MIRUnit {
+    #[allow(dead_code)]
+    pub fn unit(&self) -> &MIRUnit<'_> {
         self.unit
     }
 

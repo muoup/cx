@@ -112,6 +112,7 @@ impl<'thir> MIRBuilder<'thir> {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn emit_comptime(&mut self, op: MIRComptimeOp<'thir>, range: TokenRange) {
         self.fun_mut().body_mut().emit_comptime(op, range);
     }
@@ -129,10 +130,12 @@ impl<'thir> MIRBuilder<'thir> {
         self.fun().local(local)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn take_current_function(&mut self) -> Option<MIRFunctionBuilder<'thir>> {
         self.function.take()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn restore_current_function(&mut self, function: MIRFunctionBuilder<'thir>) {
         self.function = Some(function);
     }

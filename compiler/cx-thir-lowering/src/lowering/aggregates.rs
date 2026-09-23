@@ -213,6 +213,7 @@ pub(super) fn sum_variant_type(
         .unwrap_or_else(|| semantic_sum.clone())
 }
 
+#[allow(dead_code)]
 pub(super) fn constant_from_pattern(pattern: &THIRPattern) -> MIRConstant {
     match pattern {
         THIRPattern::Binding { .. } => unreachable!("binding patterns have no case constant"),

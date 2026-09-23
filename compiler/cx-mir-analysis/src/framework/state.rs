@@ -9,6 +9,7 @@ use crate::framework::environment::AnalysisEnvironment;
 pub enum LatticeState<Key: Clone, T: Clone> {
     Bottom,
     Known(T),
+    #[allow(dead_code)]
     Top,
 
     _PHANTOM(std::marker::PhantomData<Key>),
@@ -110,6 +111,7 @@ impl<Key: Hash + Eq + Clone, State: Clone + Mergeable<Key>> StateTable<Key, Stat
         self.states.get(*index).map(|(_, state)| state)
     }
 
+    #[allow(dead_code)]
     pub fn get_mut(&mut self, key: Key) -> &mut LatticeState<Key, State> {
         let index = self.map.entry(key.clone()).or_insert_with(|| {
             let index = self.states.len();

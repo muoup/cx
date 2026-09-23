@@ -1,7 +1,7 @@
 use cx_mir::{
-    MIRBasicBlockID, MIRBody, MIRComptimeBody, MIRComptimeInstruction, MIRComptimeOp,
-    MIRFnParam, MIRInstruction, MIRInstructionLike, MIRPlaceID, MIRRegisterDecl, MIRRegisterID,
-    MIRScopeDecl, MIRScopeID, MIRTypeID,
+    MIRBasicBlockID, MIRBody, MIRComptimeBody, MIRComptimeInstruction, MIRComptimeOp, MIRFnParam,
+    MIRInstruction, MIRInstructionLike, MIRPlaceID, MIRRegisterDecl, MIRRegisterID, MIRScopeDecl,
+    MIRScopeID, MIRTypeID,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -15,6 +15,7 @@ pub(crate) struct MIRBodyBuilder<'thir> {
 #[derive(Debug)]
 pub(crate) enum MIRBodyKind<'thir> {
     Runtime(MIRBody),
+    #[allow(dead_code)]
     Comptime(MIRComptimeBody<'thir>),
 }
 
@@ -27,6 +28,7 @@ impl<'thir> MIRBodyBuilder<'thir> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn new_comptime(body: MIRComptimeBody<'thir>) -> Self {
         let current_block = body.entry();
         Self {
@@ -36,7 +38,10 @@ impl<'thir> MIRBodyBuilder<'thir> {
     }
 
     pub fn emit(&mut self, instruction: MIRInstruction) {
-        assert!(!self.current_block_terminated(), "instruction follows a terminator");
+        assert!(
+            !self.current_block_terminated(),
+            "instruction follows a terminator"
+        );
         match &mut self.kind {
             MIRBodyKind::Runtime(body) => body.push_instr_at(self.current_block, instruction),
             MIRBodyKind::Comptime(body) => body.push_instr_at(
@@ -46,8 +51,12 @@ impl<'thir> MIRBodyBuilder<'thir> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn emit_comptime(&mut self, op: MIRComptimeOp<'thir>, token_range: TokenRange) {
-        assert!(!self.current_block_terminated(), "instruction follows a terminator");
+        assert!(
+            !self.current_block_terminated(),
+            "instruction follows a terminator"
+        );
         match &mut self.kind {
             MIRBodyKind::Runtime(_) => panic!("comptime operation emitted in a runtime body"),
             MIRBodyKind::Comptime(body) => body.push_instr_at(
@@ -59,10 +68,12 @@ impl<'thir> MIRBodyBuilder<'thir> {
 
     pub fn current_block_terminated(&self) -> bool {
         match &self.kind {
-            MIRBodyKind::Runtime(body) => body.block(self.current_block)
+            MIRBodyKind::Runtime(body) => body
+                .block(self.current_block)
                 .and_then(|block| block.last_instruction())
                 .is_some_and(MIRInstructionLike::is_terminator),
-            MIRBodyKind::Comptime(body) => body.block(self.current_block)
+            MIRBodyKind::Comptime(body) => body
+                .block(self.current_block)
                 .and_then(|block| block.last_instruction())
                 .is_some_and(MIRInstructionLike::is_terminator),
         }
@@ -109,6 +120,7 @@ impl<'thir> MIRBodyBuilder<'thir> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn register(&self, id: MIRRegisterID) -> Option<&MIRRegisterDecl> {
         match &self.kind {
             MIRBodyKind::Runtime(body) => body.register(id),

@@ -21,11 +21,6 @@ impl<T: Clone> ModuleSymbol<T> {
         Self { id, used: false }
     }
 
-    fn with_used(mut self, used: bool) -> Self {
-        self.used = used;
-        self
-    }
-
     fn get(&mut self) -> &mut T {
         self.used = true;
         &mut self.id
@@ -51,9 +46,6 @@ pub(crate) struct MIRUnitBuilder<'thir> {
     global_symbols: HashMap<String, ModuleSymbol<MIRGlobalID>>,
 
     global_order: Vec<MIRGlobalID>,
-    global_initializer: HashMap<MIRGlobalID, MIRFunctionID>,
-
-    next_string_literal: usize,
     next_function_id: usize,
     next_global_id: usize,
 }
@@ -81,10 +73,7 @@ impl<'thir> MIRUnitBuilder<'thir> {
             function_symbols: HashMap::new(),
 
             global_symbols: HashMap::new(),
-            global_initializer: HashMap::new(),
             global_order: Vec::new(),
-
-            next_string_literal: 0,
             next_function_id: 0,
             next_global_id: 0,
         }
@@ -103,6 +92,7 @@ impl<'thir> MIRUnitBuilder<'thir> {
         id
     }
 
+    #[allow(dead_code)]
     pub(crate) fn declare_comptime_function(
         &mut self,
         prototype: MIRComptimeFnPrototype,
@@ -120,6 +110,7 @@ impl<'thir> MIRUnitBuilder<'thir> {
         id
     }
 
+    #[allow(dead_code)]
     pub(crate) fn allocate_function_id(&mut self) -> MIRFunctionID {
         let id = MIRFunctionID::new(self.next_function_id);
         self.next_function_id += 1;
@@ -168,16 +159,14 @@ impl<'thir> MIRUnitBuilder<'thir> {
         self.functions.get(&id)
     }
 
-    pub(crate) fn comptime_function(&self, id: MIRFunctionID) -> Option<&MIRComptimeFunction> {
+    #[allow(dead_code)]
+    pub(crate) fn comptime_function(&self, id: MIRFunctionID) -> Option<&MIRComptimeFunction<'_>> {
         self.comptime_functions.get(&id)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
         self.globals.get(&id)
-    }
-
-    pub(crate) fn global_initializer(&self, id: MIRGlobalID) -> Option<MIRFunctionID> {
-        self.global_initializer.get(&id).cloned()
     }
 
     pub(crate) fn global_symbol(&mut self, name: &str) -> Option<MIRGlobalID> {
@@ -187,6 +176,7 @@ impl<'thir> MIRUnitBuilder<'thir> {
             .map(|id| *id)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn begin_global_initializer(
         &mut self,
         id: MIRGlobalID,

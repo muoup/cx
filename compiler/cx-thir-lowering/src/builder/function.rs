@@ -1,9 +1,8 @@
 use std::{collections::HashMap, rc::Rc};
 
 use cx_mir::{
-    MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID,
-    MIRInstruction, MIRInstructionKind, MIRIntrinsic, MIRPlaceID, MIRRegister, MIRScopeID,
-    MIRTypeID, MIRValue,
+    MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRInstruction,
+    MIRInstructionKind, MIRIntrinsic, MIRPlaceID, MIRRegister, MIRScopeID, MIRTypeID, MIRValue,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
 use cx_tokens::TokenRange;
@@ -132,6 +131,7 @@ impl<'thir> MIRFunctionBuilder<'thir> {
         (self.id, self.body.finish())
     }
 
+    #[allow(dead_code)]
     pub fn id(&self) -> MIRFunctionID {
         self.id
     }
@@ -182,6 +182,7 @@ impl<'thir> MIRFunctionBuilder<'thir> {
         self.body.add_register(ty, debug_name)
     }
 
+    #[allow(dead_code)]
     pub fn register_type(&self, register: MIRRegister) -> Option<MIRTypeID> {
         self.body.register(register).map(|decl| decl.ty)
     }
@@ -233,6 +234,7 @@ impl<'thir> MIRFunctionBuilder<'thir> {
         self.local_values.get(&local).cloned()
     }
 
+    #[allow(dead_code)]
     pub fn locals(&self) -> HashMap<THIRLocalID, MIRValue> {
         self.local_values.clone()
     }
@@ -311,6 +313,7 @@ impl<'thir> MIRFunctionBuilder<'thir> {
         &self.scope_stack
     }
 
+    #[allow(dead_code)]
     pub fn scope_stack_mut(&mut self) -> &mut [ScopeContext] {
         &mut self.scope_stack
     }
