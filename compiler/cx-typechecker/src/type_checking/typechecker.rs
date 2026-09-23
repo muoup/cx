@@ -30,7 +30,7 @@ use cx_hir::ast::expression::{HIRBinOp, HIRBlockKind, HIRExprKind, HIRExpression
 use cx_hir::ast::modifiers::HIR_CONST;
 use cx_log::CXResult;
 use cx_namespace::module::NamespacePath;
-use cx_thir::thir::data::{THIRIntType, THIRTypeKind};
+use cx_thir::thir::data::THIRTypeKind;
 use cx_thir::thir::expression::{
     THIRBlockKind, THIRExpression, THIRExpressionKind,
 };
@@ -620,56 +620,4 @@ fn typecheck_expr_inner(
     result.set_token_range_if_missing(expr.range.clone())?;
 
     Ok(result)
-}
-
-pub fn add_implicit_return(
-    env: &mut TypeEnvironment,
-    namespace: &NamespacePath,
-    mut statements: Vec<THIRExpression>,
-    token_range: TokenRange,
-) -> CXResult<Vec<THIRExpression>> {
-    let body = THIRExpression {
-        kind: THIRExpressionKind::Block {
-            statements: statements.clone(),
-            kind: THIRBlockKind::Sequence,
-            yields: false,
-        },
-        _type: THIRType::unit(),
-        token_range: token_range.clone(),
-    };
-    if !expr_may_fall_through(&body) {
-        return Ok(statements);
-    }
-
-    let func = env.current_function().clone();
-
-    if func.signature().return_type.is_unreachable() {
-        return Ok(statements);
-    }
-
-    let implicit_value = if func.symbol_name() == "main" {
-        Some(Box::new(THIRExpression {
-            token_range: TokenRange::internal(),
-            kind: THIRExpressionKind::IntLiteral(0),
-            _type: THIRType::from(THIRTypeKind::Integer {
-                _type: THIRIntType::I32,
-                signed: true,
-            }),
-        }))
-    } else if func.signature().return_type.is_void() {
-        None
-    } else {
-        return Ok(statements);
-    };
-
-    let ret = typecheck_return(
-        env,
-        namespace,
-        &token_range,
-        implicit_value.map(|v| *v),
-    )?
-    .internal_ready_assertion();
-
-    statements.push(ret);
-    Ok(statements)
 }

@@ -111,7 +111,7 @@ pub fn apply_template(
         && let Some(name) = prototype.lookup_identifier().cloned()
     {
         env.items.push_generated_function(THIRFunction {
-            require_explicit_return: env.require_explicit_return(),
+            reject_nonvoid_fallthrough: env.require_explicit_return(),
             prototype: prototype.clone(),
             body: None,
         });

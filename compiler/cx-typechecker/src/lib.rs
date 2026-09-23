@@ -33,7 +33,7 @@ pub fn typecheck(env: &mut TypeEnvironment, ast: &HIR) -> CXResult<()> {
                 match body {
                     Some(body) => typecheck_function(env, &namespace, prototype, body)?,
                     None => env.items.push_generated_function(THIRFunction {
-        require_explicit_return: env.require_explicit_return(),
+        reject_nonvoid_fallthrough: env.require_explicit_return(),
                         prototype,
                         body: None,
                     }),

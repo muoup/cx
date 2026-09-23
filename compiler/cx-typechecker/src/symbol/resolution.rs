@@ -86,7 +86,7 @@ pub fn resolve_symbol(
 
     if let MIRSymbol::FunctionReference(prototype) = &resolved {
         env.items.push_generated_function(THIRFunction {
-            require_explicit_return: env.require_explicit_return(),
+            reject_nonvoid_fallthrough: env.require_explicit_return(),
             prototype: prototype.clone(),
             body: None,
         });

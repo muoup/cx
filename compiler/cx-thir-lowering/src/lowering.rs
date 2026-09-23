@@ -19,7 +19,7 @@ use cx_mir::{
 };
 use cx_thir::{
     thir::{
-        data::{THIRFnPrototype, THIRFunction, THIRFunctionBody, THIRTypeKind},
+        data::{THIRFunction, THIRFunctionBody, THIRTypeKind},
         expression::{THIRBlockKind, THIRCoercion, THIRExpression, THIRExpressionKind},
     },
     type_context::THIRTypeContext,
@@ -78,16 +78,17 @@ pub(crate) fn lower_function(
         }
     }
 
-    lower_function_block(builder, &function.prototype, body)?;
+    lower_function_block(builder, function, body)?;
 
     builder.finish_function()
 }
 
 pub(crate) fn lower_function_block(
     builder: &mut MIRBuilder<'_>,
-    prototype: &THIRFnPrototype,
+    function: &THIRFunction,
     block: &THIRFunctionBody,
 ) -> CXResult<()> {
+    let prototype = &function.prototype;
     match block {
         THIRFunctionBody::Expression(expr) => {
             let result = lower_expression(builder, expr)?;
@@ -111,11 +112,6 @@ pub(crate) fn lower_function_block(
 
             if prototype.signature().return_type.is_void() {
                 emit_implicit_return(builder, None, token_range.clone())?;
-            } else if prototype.signature().return_type.is_unreachable() {
-                builder.emit_if_open(MIRInstruction::new(
-                    MIRInstructionKind::Unreachable,
-                    TokenRange::internal(),
-                ));
             } else if prototype.symbol_name() == "main" {
                 emit_implicit_return(
                     builder,
@@ -125,6 +121,23 @@ pub(crate) fn lower_function_block(
                     })),
                     token_range.clone(),
                 )?;
+            } else {
+                if !builder.fun().current_block_terminated() {
+                    if !prototype.signature().return_type.is_unreachable()
+                        && function.reject_nonvoid_fallthrough
+                        && builder.fun().body().current_block_reachable()
+                    {
+                        return log_mir_error(
+                            token_range,
+                            (&mir::FUNCTION_RETURN, prototype.symbol_name().to_owned()),
+                        );
+                    }
+
+                    builder.emit(MIRInstruction::new(
+                        MIRInstructionKind::Unreachable,
+                        token_range.clone(),
+                    ));
+                }
             }
         }
     }

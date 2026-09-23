@@ -116,6 +116,31 @@ impl<'thir> MIRBodyBuilder<'thir> {
         }
     }
 
+    pub fn current_block_reachable(&self) -> bool {
+        let MIRBodyKind::Runtime { body, .. } = &self.kind else {
+            unreachable!("reachability query requires a runtime body")
+        };
+        let mut visited = vec![false; body.blocks().len()];
+        let mut pending = vec![body.entry()];
+        while let Some(id) = pending.pop() {
+            if visited[id.index()] {
+                continue;
+            }
+            visited[id.index()] = true;
+            if id == self.current_block {
+                return true;
+            }
+            if let Some(instruction) = body.block(id).and_then(|block| block.last_instruction()) {
+                pending.extend(
+                    cx_mir::expr::visit::successors(instruction)
+                        .into_iter()
+                        .map(|target| target.block),
+                );
+            }
+        }
+        false
+    }
+
     pub fn has_block(&self, block: MIRBasicBlockID) -> bool {
         match &self.kind {
             MIRBodyKind::Runtime { body, .. } => body.block(block).is_some(),

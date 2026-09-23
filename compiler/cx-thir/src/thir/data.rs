@@ -15,7 +15,7 @@ pub struct THIRFunction {
     pub prototype: THIRFnPrototype,
     pub body: Option<THIRFunctionBody>,
 
-    pub require_explicit_return: bool,
+    pub reject_nonvoid_fallthrough: bool,
 }
 
 #[derive(Debug, Clone)]

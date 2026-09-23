@@ -3,7 +3,7 @@ use crate::{
     symbol::completion::ensure_valid_type_component,
     type_checking::control_flow::expr_may_fall_through,
     type_checking::control_flow::r#return::typecheck_return,
-    type_checking::typechecker::{add_implicit_return, typecheck_expr},
+    type_checking::typechecker::typecheck_expr,
 };
 use cx_hir::ast::function::{HIRFunctionBody, HIRFunctionContract};
 use cx_log::CXResult;
@@ -12,8 +12,8 @@ use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_thir::thir::{
     comptime::THIRComptimeFn,
     data::{
-        THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction,
-        THIRFunctionBody, THIRParameter,
+        THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRFunctionBody,
+        THIRParameter,
     },
     expression::{THIRBlockKind, THIRExpression, THIRExpressionKind},
     r#type::THIRTypeKind,
@@ -65,12 +65,8 @@ pub fn typecheck_function(
         );
     }
 
-    let statements = typecheck_function_body(
-        env,
-        namespace,
-        body,
-        &prototype.signature().return_type,
-    )?;
+    let statements =
+        typecheck_function_body(env, namespace, body, &prototype.signature().return_type)?;
 
     if let Some((name, range)) = env.function.unresolved_label() {
         return env.log_error(range, &catalogue::UNKNOWN_SYMBOL, name.into());
@@ -86,7 +82,7 @@ pub fn typecheck_function(
     env.function.end_function();
 
     env.items.push_generated_function(THIRFunction {
-        require_explicit_return: env.require_explicit_return(),
+        reject_nonvoid_fallthrough: env.require_explicit_return(),
         prototype,
         body: Some(THIRFunctionBody::Block {
             exprs: statements,
@@ -211,15 +207,15 @@ fn typecheck_function_body(
     return_type: &cx_thir::thir::data::THIRType,
 ) -> CXResult<Vec<THIRExpression>> {
     match body {
-        HIRFunctionBody::Block { statements, range } => {
-            let statements = statements
+        HIRFunctionBody::Block { statements, .. } => {
+            statements
                 .iter()
                 .map(|statement| {
-                    typecheck_expr(env, namespace, statement, None)
-                        .and_then(|result| result.standard_ready_coerce(env, statement.token_range()))
+                    typecheck_expr(env, namespace, statement, None).and_then(|result| {
+                        result.standard_ready_coerce(env, statement.token_range())
+                    })
                 })
-                .collect::<CXResult<Vec<_>>>()?;
-            add_implicit_return(env, namespace, statements, range.clone())
+                .collect::<CXResult<Vec<_>>>()
         }
         HIRFunctionBody::Expression(expression) => {
             let value = typecheck_expr(

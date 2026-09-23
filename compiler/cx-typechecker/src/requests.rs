@@ -117,7 +117,7 @@ fn realize_tagged_union_constructor(
     };
 
     env.items.push_generated_function(THIRFunction {
-        require_explicit_return: env.require_explicit_return(),
+        reject_nonvoid_fallthrough: env.require_explicit_return(),
         prototype,
         body: Some(THIRFunctionBody::Expression(constructed)),
     });
