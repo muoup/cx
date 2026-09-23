@@ -24,7 +24,7 @@ impl Default for MIRAnalysisOptions {
 }
 
 pub fn analyze<'mir>(unit: &MIRUnit<'mir>, options: MIRAnalysisOptions) -> CXResult<()> {
-    for function in unit.functions() {
+    for (_, function) in unit.functions() {
         if function.body().is_none() {
             continue;
         }

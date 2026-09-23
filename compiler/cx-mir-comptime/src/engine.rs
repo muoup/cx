@@ -300,6 +300,7 @@ impl ExecutionFrame {
         frame
     }
 
+    #[allow(dead_code)]
     pub(crate) fn places(&self) -> &HashMap<MIRPlaceID, MIRConstant> {
         &self.places
     }
@@ -308,6 +309,7 @@ impl ExecutionFrame {
         &mut self.places
     }
 
+    #[allow(dead_code)]
     pub(crate) fn registers(&self) -> &HashMap<MIRRegisterID, MIRConstant> {
         &self.registers
     }
@@ -316,6 +318,7 @@ impl ExecutionFrame {
         &mut self.registers
     }
 
+    #[allow(dead_code)]
     pub(crate) fn comptime_registers(&self) -> &HashMap<MIRComptimeRegisterID, MIRComptimeValue> {
         &self.comptime_registers
     }

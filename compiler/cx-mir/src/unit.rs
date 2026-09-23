@@ -71,8 +71,8 @@ impl<'thir> MIRUnit<'thir> {
         &self.types
     }
 
-    pub fn functions(&self) -> impl ExactSizeIterator<Item = &MIRFunction> {
-        self.functions.values()
+    pub fn functions(&self) -> impl ExactSizeIterator<Item = (MIRFunctionID, &MIRFunction)> {
+        self.functions.iter().map(|(id, func)| (*id, func))
     }
 
     pub fn comptime_functions(&self) -> impl ExactSizeIterator<Item = &MIRComptimeFunction<'thir>> {
@@ -83,8 +83,8 @@ impl<'thir> MIRUnit<'thir> {
         &self.staged_expr_pool
     }
 
-    pub fn globals(&self) -> impl ExactSizeIterator<Item = &MIRGlobalVariable> {
-        self.globals.values()
+    pub fn globals(&self) -> impl ExactSizeIterator<Item = (MIRGlobalID, &MIRGlobalVariable)> {
+        self.globals.iter().map(|(id, global)| (*id, global))
     }
 
     pub fn global_order(&self) -> &[MIRGlobalID] {

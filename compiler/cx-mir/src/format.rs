@@ -181,15 +181,15 @@ impl Display for MIRDisplay<'_, '_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut types = TypePrinter::new(self.unit.types());
 
-        for (i, global) in self.unit.globals().enumerate() {
-            if i != 0 {
+        for (i, global) in self.unit.globals() {
+            if i.index() != 0 {
                 f.write_str("\n")?;
             }
             write_global(f, global, &mut types)?;
         }
 
-        for (i, function) in self.unit.functions().enumerate() {
-            if i != 0 {
+        for (i, function) in self.unit.functions() {
+            if i.index() != 0 {
                 f.write_str("\n")?;
             }
             write_function(f, self.unit, function, &mut types)?;

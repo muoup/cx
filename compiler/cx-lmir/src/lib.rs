@@ -56,8 +56,7 @@ pub enum LMIRGlobalState {
 pub enum LMIRGlobalInitializer {
     Integer {
         value: i128,
-        _type: LMIRIntegerType,
-        signed: bool,
+        _type: LMIRIntegerType
     },
     Float {
         value: FloatWrapper,
@@ -264,7 +263,7 @@ impl From<LMIRBlockID> for LMIRBlockTarget {
 #[derive(Debug, Clone)]
 pub struct LMIRBasicBlock {
     pub id: LMIRBlockID,
-    pub debug_name: Option<String>,
+    pub debug_name: Option<CXIdent>,
     pub params: Vec<LMIRBlockParameter>,
     pub body: Vec<LMIRInstruction>,
 }

@@ -57,6 +57,7 @@ fn integer(value: &MIRConstant, range: &TokenRange) -> CXResult<(u128, MIRIntTyp
     }
 }
 
+#[allow(dead_code)]
 fn float(value: &MIRConstant, range: &TokenRange) -> CXResult<f64> {
     match value {
         MIRConstant::Float { value, .. } => Ok(f64::from(value)),
@@ -110,6 +111,7 @@ fn result_int<R: MTRegistry>(
     }
 }
 
+#[allow(dead_code)]
 fn result_float<R: MTRegistry>(
     body: &MIRComptimeBody<'_>,
     registry: &R,

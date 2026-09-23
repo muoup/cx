@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 
-use cx_lmir::{
-    LMIRBasicBlock, LMIRBlockParameter, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype,
-    LMIRGlobalValue, LMIRInstruction, LMIRInstructionKind, LMIRRegister, LMIRValue,
-};
 use cx_lmir::types::{LMIRIntegerType, LMIRType, LMIRTypeKind};
+use cx_lmir::{
+    LMIRBasicBlock, LMIRBlockParameter, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype, LMIRGlobalValue, LMIRInstruction, LMIRInstructionKind, LMIRRegister, LMIRUnit, LMIRValue,
+};
+use cx_mir::MIRFunction;
+use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    MIRBasicBlockID, MIRBody, MIRGlobalID, MIRPlaceID, MIRRegister, MIRTypeID, MIRUnit,
     ty::{layout::calculate_type_layout, registry::MIRTypeRegistry},
+    MIRBasicBlockID, MIRBody, MIRGlobalID, MIRPlaceID, MIRRegister, MIRTypeID, MIRUnit,
 };
 use cx_util::identifier::CXIdent;
 
@@ -31,9 +32,10 @@ pub(crate) enum PlaceBinding {
 }
 
 pub(crate) struct LMIRGlobalContext<'mir> {
-    unit: &'mir MIRUnit,
+    unit: &'mir MIRUnit<'mir>,
 
     prototypes: LMIRFunctionMap,
+    functions: Vec<LMIRFunction>,
 
     globals: Vec<LMIRGlobalValue>,
     global_index: HashMap<MIRGlobalID, usize>,
@@ -43,11 +45,17 @@ impl<'mir> LMIRGlobalContext<'mir> {
     pub fn new(unit: &'mir MIRUnit) -> Self {
         Self {
             unit,
-            prototypes: LMIRFunctionMap::new(),
 
+            prototypes: LMIRFunctionMap::new(),
+            functions: Vec::new(),
+            
             globals: Vec::new(),
             global_index: HashMap::new(),
         }
+    }
+
+    pub fn unit(&self) -> &MIRUnit {
+        self.unit
     }
 
     pub fn types(&self) -> &MIRTypeRegistry {
@@ -72,10 +80,28 @@ impl<'mir> LMIRGlobalContext<'mir> {
     pub fn prototypes_mut(&mut self) -> &mut LMIRFunctionMap {
         &mut self.prototypes
     }
+
+    pub fn functions(&self) -> &[LMIRFunction] {
+        &self.functions
+    }
+
+    pub fn add_function(&mut self, function: LMIRFunction) {
+        self.functions.push(function);
+    }
+
+    pub fn finish(self) -> LMIRUnit {
+        LMIRUnit {
+            architecture: *self.types().architecture(),
+            fn_map: self.prototypes,
+            fn_defs: self.functions,
+            global_vars: self.globals,
+        }
+    }
 }
 
 pub(crate) struct LMIRFunctionContext<'global> {
     global: &'global mut LMIRGlobalContext<'global>,
+    mir_function: &'global MIRFunction,
 
     prototype: LMIRFunctionPrototype,
 
@@ -91,10 +117,12 @@ pub(crate) struct LMIRFunctionContext<'global> {
 impl<'global> LMIRFunctionContext<'global> {
     pub(crate) fn new(
         global: &'global mut LMIRGlobalContext<'global>,
+        mir_function: &'global MIRFunction,
         prototype: LMIRFunctionPrototype,
     ) -> Self {
         Self {
             global,
+            mir_function,
             prototype,
 
             blocks: Vec::new(),
@@ -112,6 +140,10 @@ impl<'global> LMIRFunctionContext<'global> {
             prototype: self.prototype,
             blocks: self.blocks,
         }
+    }
+
+    pub(crate) fn mir_function(&self) -> &MIRFunction {
+        self.mir_function
     }
 
     pub(crate) fn global(&self) -> &LMIRGlobalContext {
@@ -139,7 +171,9 @@ impl<'global> LMIRFunctionContext<'global> {
     }
 
     pub(crate) fn record_lift(&mut self, out: MIRRegister, place: MIRPlaceID) {
-        let address = self.place_addresses.get(&place)
+        let address = self
+            .place_addresses
+            .get(&place)
             .expect("lifted place has no LMIR storage")
             .clone();
         self.lifted.insert(out, address);
@@ -156,12 +190,17 @@ impl<'global> LMIRFunctionContext<'global> {
     }
 
     pub(crate) fn preserve_lift(&mut self, body: &MIRBody, register: MIRRegister) {
-        let place = body.blocks().iter().flat_map(|block| block.instructions()).find_map(|instruction| {
-            match instruction.kind {
-                cx_mir::MIRInstructionKind::LiftPlace { out, place } if out == register => Some(place),
+        let place = body
+            .blocks()
+            .iter()
+            .flat_map(|block| block.instructions())
+            .find_map(|instruction| match instruction.kind {
+                cx_mir::MIRInstructionKind::LiftPlace { out, place } if out == register => {
+                    Some(place)
+                }
                 _ => None,
-            }
-        }).expect("preserved register has no lifted source");
+            })
+            .expect("preserved register has no lifted source");
         let declaration = body.place(place).expect("lifted place has no declaration");
         let layout = calculate_type_layout(self.global.types(), declaration.ty);
         let ty = super::lowering::typing::convert_type(declaration.ty, self.global.types());
@@ -170,20 +209,35 @@ impl<'global> LMIRFunctionContext<'global> {
             register: self.new_register(),
             _type: pointer.clone(),
         };
-        let LMIRValue::Register { register: result, .. } = &address else { unreachable!() };
+        let LMIRValue::Register {
+            register: result, ..
+        } = &address
+        else {
+            unreachable!()
+        };
         self.emit(LMIRInstruction {
-            kind: LMIRInstructionKind::Allocate { _type: ty, alignment: layout.alignment() as u8 },
+            kind: LMIRInstructionKind::Allocate {
+                _type: ty,
+                alignment: layout.alignment() as u8,
+            },
             value_type: pointer,
             result: Some(result.clone()),
         });
-        let source = self.lifted.get(&register).expect("lift was not lowered").clone();
+        let source = self
+            .lifted
+            .get(&register)
+            .expect("lift was not lowered")
+            .clone();
         let size = LMIRValue::IntImmediate {
             _type: LMIRType::new(LMIRTypeKind::Integer(LMIRIntegerType::I64), 8),
             val: i64::try_from(layout.size()).expect("preserved value size exceeds i64"),
         };
         self.emit(LMIRInstruction {
             kind: LMIRInstructionKind::Memcpy {
-                dest: address.clone(), src: source, size, alignment: layout.alignment() as u8,
+                dest: address.clone(),
+                src: source,
+                size,
+                alignment: layout.alignment() as u8,
             },
             value_type: LMIRType::unit(),
             result: None,
@@ -214,11 +268,15 @@ impl<'global> LMIRFunctionContext<'global> {
         debug_name: Option<CXIdent>,
         binding: Option<MIRBasicBlockID>,
     ) -> usize {
-        self.blocks.push(LMIRBlock {
-            args,
+        let id = CXIdent::from(format!("block.{}", self.blocks.len() - 1));
+
+        self.blocks.push(LMIRBasicBlock {
+            id,
+            params: args,
             body: Vec::new(),
             debug_name,
         });
+
         let index = self.blocks.len() - 1;
 
         if let Some(binding) = binding {

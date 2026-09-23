@@ -12,7 +12,7 @@ pub struct LMIRCompilerFunction {
     pub module_path: &'static str,
     pub name: &'static str,
 
-    pub prototype_factory: fn(&ArchitectureConfig) -> LMIRFunctionPrototype,
+    pub prototype_factory: fn(ArchitectureConfig) -> LMIRFunctionPrototype,
 }
 
 impl LMIRCompilerFunction {
@@ -40,8 +40,8 @@ pub const ASSERTION: LMIRCompilerFunction = LMIRCompilerFunction {
 
 pub const COMPILER_FUNCTIONS: &[LMIRCompilerFunction] = &[ASSERTION];
 
-fn assertion_prototype(arch: &ArchitectureConfig) -> LMIRFunctionPrototype {
-    let pointer = LMIRType::default_pointer(arch);
+fn assertion_prototype(arch: ArchitectureConfig) -> LMIRFunctionPrototype {
+    let pointer = LMIRType::default_pointer(&arch);
     
     LMIRFunctionPrototype {
         name: CXIdent::new(ASSERTION.symbol_name()),

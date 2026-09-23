@@ -1,14 +1,8 @@
-use std::collections::{HashMap, HashSet};
-
 use cx_lmir::{
-    LMIRBasicBlock, LMIRBlockParameter, LMIRFunction, LMIRFunctionMap, LMIRGlobalValue,
-    LMIRInstructionKind, LMIRParameterABI, LMIRValue,
+    LMIRBlockParameter, LMIRFunction
 };
 use cx_log::CXResult;
-use cx_mir::ty::interface::MTRegistry;
-use cx_mir::ty::registry::MIRTypeRegistry;
-use cx_mir::visit::MIRWalk;
-use cx_mir::{MIRBody, MIRFnPrototype};
+use cx_mir::{MIRBody, MIRFunction};
 
 use crate::context::{LMIRFunctionContext, LMIRGlobalContext};
 
@@ -17,15 +11,15 @@ use super::typing::{convert_prototype, convert_type};
 
 pub(super) fn lower_function<'context>(
     context: &'context mut LMIRGlobalContext<'context>,
-    prototype: &MIRFnPrototype,
+    function: &'context MIRFunction,
     body: &MIRBody,
 ) -> CXResult<LMIRFunction> {
-    let prototype = convert_prototype(prototype, context.types());
-    let mut context = LMIRFunctionContext::new(context, prototype);
+    let prototype = convert_prototype(function.prototype(), context.types());
+    let mut context = LMIRFunctionContext::new(context, function, prototype);
 
     for block in body.blocks() {
         let params = block
-            .params
+            .params()
             .iter()
             .map(|param| {
                 let register = context.lower_register(param);
@@ -38,22 +32,16 @@ pub(super) fn lower_function<'context>(
             })
             .collect();
 
-        context.push_block(params, block.debug_name.clone(), Some(block.id));
+        context.push_block(params, block.debug_name().cloned(), Some(block.id()));
     }
 
-    lower_parameters(&mut context);
-
     for block in body.blocks() {
-        context.set_current(context.block_index(block.id));
+        context.set_current(context.block_index(block.id()));
 
-        for instruction in &block.instrs {
+        for instruction in block.instructions() {
             lower_instruction(&mut context, instruction);
         }
     }
 
     Ok(context.finish())
-}
-
-fn lower_parameters(context: &mut LMIRFunctionContext<'_>) {
-    
 }

@@ -4,7 +4,7 @@ use cx_lmir::{
     LMIRReturnABI, LinkageType,
 };
 use cx_mir::ty::interface::MTRegistry;
-use cx_mir::ty::layout::{self, layout_of};
+use cx_mir::ty::layout::{self};
 use cx_mir::ty::registry::MIRTypeRegistry;
 use cx_mir::{
     MIRField, MIRFloatType, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRTypeID, MIRTypeKind,
@@ -14,10 +14,10 @@ use cx_util::linkage::LinkageMode;
 
 pub(crate) fn convert_prototype(
     prototype: &MIRFnPrototype,
-    types: &MIRTypeRegistry
+    types: &MIRTypeRegistry,
 ) -> LMIRFunctionPrototype {
     LMIRFunctionPrototype {
-        name: prototype.signature.symbol_name.clone(),
+        name: prototype.signature.symbol_name().clone(),
         linkage: convert_linkage(prototype.linkage),
         signature: classify_signature(&prototype.signature, types),
     }
@@ -25,9 +25,9 @@ pub(crate) fn convert_prototype(
 
 pub(crate) fn classify_signature(
     signature: &MIRFnSignature,
-    types: &MIRTypeRegistry
+    types: &MIRTypeRegistry,
 ) -> LMIRFunctionSignature {
-    let return_type = convert_type(signature.return_type, types);
+    let return_type = convert_type(signature.return_type(), types);
     let return_layout = (!return_type.is_void()).then(|| layout(types, signature.return_type));
     let return_abi = match return_layout {
         Some(layout) => classify_return(
@@ -79,7 +79,7 @@ fn classify_param(
     architecture: &ArchitectureConfig,
     name: Option<cx_util::identifier::CXIdent>,
     ty: MIRTypeID,
-    types: &MIRTypeRegistry
+    types: &MIRTypeRegistry,
 ) -> LMIRParameter {
     let lowered = convert_type(ty, types);
     let aggregate_value = matches!(
@@ -95,7 +95,7 @@ fn classify_param(
         }
     } else {
         let layout = layout(types, ty);
-        
+
         if let Some(slots) = direct_aggregate_slots(architecture, &lowered, layout.size) {
             LMIRParameterABI::Direct { slots }
         } else if aggregate_value {

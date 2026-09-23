@@ -7,53 +7,49 @@ use cx_lmir::{
 };
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    MIRConstant, MIRFnParam, MIRFnSignature, MIRFunctionType, MIRInstrKind, MIRInstruction,
-    MIRIntBinaryOp, MIRIntType, MIRPointerBinaryOp, MIRPointerOffsetOp, MIRRegister, MIRTarget,
-    MIRTypeID, MIRTypeKind, MIRUnaryOp, MIRValue, MIRValueAggregateOp,
+    MIRConstant, MIRFnSignature, MIRGlobalRef, MIRInstruction, MIRIntType, MIRRegister, MIRTypeID, MIRTypeKind, MIRValue
 };
 use cx_util::identifier::CXIdent;
 
-use crate::context::{LMIRFunctionContext, PlaceBinding};
-
+use crate::context::{LMIRFunctionContext, LMIRGlobalContext, PlaceBinding};
 use super::typing::{classify_signature, convert_float_type, convert_integer_type};
 
 fn call_signature(context: &LMIRFunctionContext<'_>, callee: &MIRValue) -> LMIRFunctionSignature {
     if let MIRValue::Constant(MIRConstant::Function(id)) = callee {
         let name = context
+            .global()
             .unit()
             .function(*id)
             .unwrap()
             .prototype()
-            .signature
             .symbol_name
             .as_str();
-        return context.prototypes().get(name).unwrap().signature.clone();
+
+        return context
+            .global()
+            .prototypes()
+            .get(name)
+            .unwrap()
+            .signature
+            .clone();
     }
     let ty = value_type(context, callee).expect("indirect callee has no type");
-    let signature = callable_type(context, ty).expect("indirect callee is not callable");
+    let signature = callable_type(context.global(), ty).expect("indirect callee is not callable");
 
-    let mir_signature = MIRFnSignature {
-        params: signature
-            .params()
-            .iter()
-            .copied()
-            .map(MIRFnParam::new)
-            .collect(),
-
-        return_type: signature.return_type,
-        variadic: signature.variadic,
-        safe: false,
-        mode: MIRFunctionMode::Runtime,
-        return_staged_params: None,
-    };
-    classify_signature(&mir_signature, context.types())
+    let mir_signature = MIRFnSignature::new(
+        signature.params().iter().cloned().collect(),
+        signature.return_type(),
+        signature.variadic(),
+        false,
+    );
+    classify_signature(&mir_signature, context.global().types())
 }
 
 fn callable_type<'a>(
-    context: &'a LMIRFunctionContext<'_>,
+    context: &'a LMIRGlobalContext<'_>,
     ty: MIRTypeID,
-) -> Option<&'a MIRFunctionType> {
-    match context.types().kind(ty).unwrap() {
+) -> Option<&'a MIRFnSignature> {
+    match context.types().definition(ty).unwrap().kind() {
         MIRTypeKind::Function { signature } => Some(signature),
         MIRTypeKind::PointerTo { inner } | MIRTypeKind::MemoryReference { inner, .. } => {
             callable_type(context, *inner)
@@ -64,12 +60,26 @@ fn callable_type<'a>(
 
 fn value_type(context: &LMIRFunctionContext<'_>, value: &MIRValue) -> Option<MIRTypeID> {
     match value {
-        MIRValue::Register(register) => Some(register_decl_type(context, *register)),
-        MIRValue::Reference(MIRTarget::Place(place)) => Some(place_decl_type(context, *place)),
-        MIRValue::Reference(MIRTarget::Global(global)) => Some(super::globals::global_type(
-            context.unit().global(*global).unwrap(),
-            context.types(),
-        )),
+        MIRValue::Register(register) => Some(
+            context
+                .mir_function()
+                .body()
+                .unwrap()
+                .register(*register)
+                .unwrap()
+                .ty,
+        ),
+        MIRValue::PlaceRef(place) => Some(
+            context
+                .mir_function()
+                .body()
+                .unwrap()
+                .place(*place)
+                .unwrap()
+                .ty,
+        ),
+
+        MIRValue::Constant(MIRConstant::GlobalRef(MIRGlobalRef { ty, .. })) => Some(*ty),
         MIRValue::Constant(MIRConstant::Function(id)) => {
             let function = context.unit().function(*id)?;
             let signature = MIRFunctionType {
@@ -142,32 +152,32 @@ pub(super) fn lower_instruction(
     instruction: &MIRInstruction,
 ) {
     match &instruction.kind {
-        MIRInstrKind::Initialize { .. }
-        | MIRInstrKind::Bind { .. }
-        | MIRInstrKind::Invalidate { .. } => {}
+        MIRInstructionKind::Initialize { .. }
+        | MIRInstructionKind::Bind { .. }
+        | MIRInstructionKind::Invalidate { .. } => {}
 
-        MIRInstrKind::Copy { out, source, ty } => {
+        MIRInstructionKind::Copy { out, source, ty } => {
             let value = memory::copy_target(context, *source, *ty);
             emit_to(context, *out, LMIRInstructionKind::Alias { value });
         }
 
-        MIRInstrKind::Store { target, value, ty } => {
+        MIRInstructionKind::Store { target, value, ty } => {
             let value = lower_value(context, value);
             store_binding(context, binding_for_target(context, *target), value, *ty);
         }
 
-        MIRInstrKind::AggregateOp(operation) => lower_aggregate(context, operation),
-        MIRInstrKind::Call { out, callee, args } => lower_call(context, *out, callee, args),
-        MIRInstrKind::Intrinsic(cx_mir::MIRIntrinsic::VaStart { list, last }) => {
+        MIRInstructionKind::AggregateOp(operation) => lower_aggregate(context, operation),
+        MIRInstructionKind::Call { out, callee, args } => lower_call(context, *out, callee, args),
+        MIRInstructionKind::Intrinsic(cx_mir::MIRIntrinsic::VaStart { list, last }) => {
             let list = lower_value(context, list);
             let last = lower_value(context, last);
             emit_void(context, LMIRInstructionKind::VaStart { list, last });
         }
-        MIRInstrKind::Intrinsic(cx_mir::MIRIntrinsic::VaEnd { list }) => {
+        MIRInstructionKind::Intrinsic(cx_mir::MIRIntrinsic::VaEnd { list }) => {
             let list = lower_value(context, list);
             emit_void(context, LMIRInstructionKind::VaEnd { list });
         }
-        MIRInstrKind::Intrinsic(cx_mir::MIRIntrinsic::VaArg { out, list, ty }) => {
+        MIRInstructionKind::Intrinsic(cx_mir::MIRIntrinsic::VaArg { out, list, ty }) => {
             let list = lower_value(context, list);
             emit_to(
                 context,
@@ -178,30 +188,30 @@ pub(super) fn lower_instruction(
                 },
             );
         }
-        MIRInstrKind::BinOp { out, op, lhs, rhs } => lower_binary(context, *out, op, lhs, rhs),
-        MIRInstrKind::UnOp { out, op, operand } => lower_unary(context, *out, op, operand),
-        MIRInstrKind::Coerce {
+        MIRInstructionKind::BinOp { out, op, lhs, rhs } => lower_binary(context, *out, op, lhs, rhs),
+        MIRInstructionKind::UnOp { out, op, operand } => lower_unary(context, *out, op, operand),
+        MIRInstructionKind::Coerce {
             out,
             operand,
             coercion,
             to_type,
         } => lower_coercion(context, *out, operand, coercion, *to_type),
-        MIRInstrKind::Assert { condition, message } => {
+        MIRInstructionKind::Assert { condition, message } => {
             lower_assert(context, condition, message.as_deref())
         }
-        MIRInstrKind::Assume { condition } => {
+        MIRInstructionKind::Assume { condition } => {
             let condition = lower_value(context, condition);
             emit_void(
                 context,
                 LMIRInstructionKind::CompilerAssumption { condition },
             );
         }
-        MIRInstrKind::Return { value } => lower_return(context, value.as_ref()),
-        MIRInstrKind::Jump { target } => {
+        MIRInstructionKind::Return { value } => lower_return(context, value.as_ref()),
+        MIRInstructionKind::Jump { target } => {
             let target = lower_target(context, target);
             emit_void(context, LMIRInstructionKind::Jump { target });
         }
-        MIRInstrKind::Branch {
+        MIRInstructionKind::Branch {
             cond,
             true_target,
             false_target,
@@ -218,7 +228,7 @@ pub(super) fn lower_instruction(
                 },
             );
         }
-        MIRInstrKind::IntSwitch {
+        MIRInstructionKind::IntSwitch {
             value,
             cases,
             default,
@@ -241,7 +251,7 @@ pub(super) fn lower_instruction(
                 },
             );
         }
-        MIRInstrKind::VariantSwitch {
+        MIRInstructionKind::VariantSwitch {
             subject,
             sum_type,
             cases,
@@ -266,7 +276,7 @@ pub(super) fn lower_instruction(
                 },
             );
         }
-        MIRInstrKind::Unreachable => emit_void(context, LMIRInstructionKind::Unreachable),
+        MIRInstructionKind::Unreachable => emit_void(context, LMIRInstructionKind::Unreachable),
     }
 }
 

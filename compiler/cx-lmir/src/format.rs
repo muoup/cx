@@ -1,3 +1,5 @@
+use cx_util::identifier::CXIdent;
+
 use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind, TypeSize};
 use crate::{
     LMIRBasicBlock, LMIRBlockTarget, LMIRFloatBinOp, LMIRFloatUnOp, LMIRFunction,
@@ -51,7 +53,10 @@ impl Display for LMIRBasicBlock {
         writeln!(
             f,
             ":   ({})",
-            self.debug_name.as_deref().unwrap_or_default()
+            self.debug_name
+                .as_ref()
+                .map(CXIdent::as_str)
+                .unwrap_or("unnamed")
         )?;
 
         for instruction in self.body.iter() {
@@ -113,16 +118,7 @@ impl Display for LMIRGlobalState {
 impl Display for LMIRGlobalInitializer {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Integer {
-                value,
-                _type,
-                signed,
-            } => write!(
-                f,
-                "{value}:{}{}",
-                if *signed { 'i' } else { 'u' },
-                integer_width(*_type)
-            ),
+            Self::Integer { value, _type } => write!(f, "{value}:{}", integer_width(*_type)),
             Self::Float { value, _type } => write!(f, "{value}:{}", float_name(*_type)),
             Self::Aggregate { fields } => {
                 f.write_str("{")?;
