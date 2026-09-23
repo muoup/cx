@@ -4,7 +4,7 @@ use cx_lmir::{
     LMIRReturnABI, LinkageType,
 };
 use cx_mir::ty::interface::MTRegistry;
-use cx_mir::ty::layout::{self};
+use cx_mir::ty::layout::calculate_type_layout;
 use cx_mir::ty::registry::MIRTypeRegistry;
 use cx_mir::{
     MIRField, MIRFloatType, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRTypeID, MIRTypeKind,
@@ -17,7 +17,7 @@ pub(crate) fn convert_prototype(
     types: &MIRTypeRegistry,
 ) -> LMIRFunctionPrototype {
     LMIRFunctionPrototype {
-        name: prototype.signature.symbol_name().clone(),
+        name: prototype.symbol_name.clone(),
         linkage: convert_linkage(prototype.linkage),
         signature: classify_signature(&prototype.signature, types),
     }
@@ -28,27 +28,35 @@ pub(crate) fn classify_signature(
     types: &MIRTypeRegistry,
 ) -> LMIRFunctionSignature {
     let return_type = convert_type(signature.return_type(), types);
-    let return_layout = (!return_type.is_void()).then(|| layout(types, signature.return_type));
+    let return_layout =
+        (!return_type.is_void()).then(|| calculate_type_layout(types, signature.return_type()));
     let return_abi = match return_layout {
         Some(layout) => classify_return(
             types.architecture(),
             return_type.clone(),
-            layout.alignment as u8,
-            layout.size,
+            layout.alignment() as u8,
+            layout.size(),
         ),
         None => LMIRReturnABI::Void,
     };
     let params = signature
-        .params
+        .params()
         .iter()
-        .map(|param| classify_param(types.architecture(), param.name.clone(), param.ty, types))
+        .map(|param| {
+            classify_param(
+                types.architecture(),
+                param.name().cloned(),
+                param.ty(),
+                types,
+            )
+        })
         .collect();
 
     LMIRFunctionSignature {
         return_type,
         return_abi,
         params,
-        var_args: signature.variadic,
+        var_args: signature.variadic(),
     }
 }
 
@@ -83,7 +91,7 @@ fn classify_param(
 ) -> LMIRParameter {
     let lowered = convert_type(ty, types);
     let aggregate_value = matches!(
-        types.kind(ty).unwrap(),
+        types.definition(ty).unwrap().kind(),
         MIRTypeKind::Structured { .. } | MIRTypeKind::Union { .. }
     );
     let abi = if !lowered.is_memory_resident() {
@@ -94,17 +102,17 @@ fn classify_param(
             }],
         }
     } else {
-        let layout = layout(types, ty);
+        let layout = calculate_type_layout(types, ty);
 
-        if let Some(slots) = direct_aggregate_slots(architecture, &lowered, layout.size) {
+        if let Some(slots) = direct_aggregate_slots(architecture, &lowered, layout.size()) {
             LMIRParameterABI::Direct { slots }
         } else if aggregate_value {
             LMIRParameterABI::ByValue {
-                alignment: layout.alignment as u8,
+                alignment: layout.alignment() as u8,
             }
         } else {
             LMIRParameterABI::Indirect {
-                alignment: layout.alignment as u8,
+                alignment: layout.alignment() as u8,
             }
         }
     };
@@ -191,7 +199,7 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
                 .collect(),
         },
         MIRTypeKind::Union { .. } => LMIRTypeKind::Opaque {
-            bytes: layout(types, ty).size,
+            bytes: calculate_type_layout(types, ty).size(),
         },
         MIRTypeKind::Void => LMIRTypeKind::Void,
         MIRTypeKind::Str => LMIRTypeKind::Integer(LMIRIntegerType::I8),
@@ -200,19 +208,16 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
 
     LMIRType {
         kind,
-        alignment: layout_of(types, ty)
-            .ok()
-            .map(|layout| layout.alignment as u8)
-            .unwrap_or(1),
+        alignment: calculate_type_layout(types, ty).alignment() as u8,
     }
 }
 
 fn lower_union(variants: &[MIRField], types: &MIRTypeRegistry) -> LMIRType {
     let (size, alignment) = variants
         .iter()
-        .map(|variant| layout(types, variant.ty()))
+        .map(|variant| calculate_type_layout(types, variant.ty()))
         .fold((0, 1), |(size, alignment), layout| {
-            (size.max(layout.size), alignment.max(layout.alignment))
+            (size.max(layout.size()), alignment.max(layout.alignment()))
         });
     LMIRType::new(LMIRTypeKind::Opaque { bytes: size }, alignment as u8)
 }

@@ -245,9 +245,9 @@ fn global_initializer<'ctx>(
     initializer: &LMIRGlobalInitializer,
 ) -> LLVMResult<inkwell::values::BasicValueEnum<'ctx>> {
     match initializer {
-        LMIRGlobalInitializer::Integer { value, signed, .. } => Ok(basic_type
+        LMIRGlobalInitializer::Integer { value, .. } => Ok(basic_type
             .into_int_type()
-            .const_int(*value as u64, *signed)
+            .const_int(*value as u64, false)
             .into()),
         LMIRGlobalInitializer::Float { value, .. } => Ok(basic_type
             .into_float_type()

@@ -1,981 +1,106 @@
-use cx_lmir::compiler_functions::ASSERTION;
-use cx_lmir::types::{LMIRIntegerType, LMIRType, LMIRTypeKind, TypeSize};
-use cx_lmir::{
-    LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRFunctionSignature, LMIRGlobalType,
-    LMIRGlobalValue, LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, LMIRParameter,
-    LMIRParameterABI, LMIRPtrBinOp, LMIRReturnABI, LMIRValue, LinkageType,
-};
-use cx_mir::ty::interface::MTRegistry;
-use cx_mir::{
-    MIRConstant, MIRFnSignature, MIRGlobalRef, MIRInstruction, MIRIntType, MIRRegister, MIRTypeID, MIRTypeKind, MIRValue
-};
+use cx_lmir::{LMIRBasicBlock, LMIRBlockTarget, LMIRInstruction, LMIRInstructionKind};
+use cx_mir::{MIRInstruction, MIRInstructionKind};
 use cx_util::identifier::CXIdent;
 
-use crate::context::{LMIRFunctionContext, LMIRGlobalContext, PlaceBinding};
-use super::typing::{classify_signature, convert_float_type, convert_integer_type};
+use crate::context::FunctionContext;
 
-fn call_signature(context: &LMIRFunctionContext<'_>, callee: &MIRValue) -> LMIRFunctionSignature {
-    if let MIRValue::Constant(MIRConstant::Function(id)) = callee {
-        let name = context
-            .global()
-            .unit()
-            .function(*id)
-            .unwrap()
-            .prototype()
-            .symbol_name
-            .as_str();
-
-        return context
-            .global()
-            .prototypes()
-            .get(name)
-            .unwrap()
-            .signature
-            .clone();
-    }
-    let ty = value_type(context, callee).expect("indirect callee has no type");
-    let signature = callable_type(context.global(), ty).expect("indirect callee is not callable");
-
-    let mir_signature = MIRFnSignature::new(
-        signature.params().iter().cloned().collect(),
-        signature.return_type(),
-        signature.variadic(),
-        false,
-    );
-    classify_signature(&mir_signature, context.global().types())
-}
-
-fn callable_type<'a>(
-    context: &'a LMIRGlobalContext<'_>,
-    ty: MIRTypeID,
-) -> Option<&'a MIRFnSignature> {
-    match context.types().definition(ty).unwrap().kind() {
-        MIRTypeKind::Function { signature } => Some(signature),
-        MIRTypeKind::PointerTo { inner } | MIRTypeKind::MemoryReference { inner, .. } => {
-            callable_type(context, *inner)
-        }
-        _ => None,
-    }
-}
-
-fn value_type(context: &LMIRFunctionContext<'_>, value: &MIRValue) -> Option<MIRTypeID> {
-    match value {
-        MIRValue::Register(register) => Some(
-            context
-                .mir_function()
-                .body()
-                .unwrap()
-                .register(*register)
-                .unwrap()
-                .ty,
-        ),
-        MIRValue::PlaceRef(place) => Some(
-            context
-                .mir_function()
-                .body()
-                .unwrap()
-                .place(*place)
-                .unwrap()
-                .ty,
-        ),
-
-        MIRValue::Constant(MIRConstant::GlobalRef(MIRGlobalRef { ty, .. })) => Some(*ty),
-        MIRValue::Constant(MIRConstant::Function(id)) => {
-            let function = context.unit().function(*id)?;
-            let signature = MIRFunctionType {
-                params: function
-                    .prototype()
-                    .signature
-                    .params
-                    .iter()
-                    .map(|param| param.ty)
-                    .collect(),
-                return_type: function.prototype().signature.return_type,
-                variadic: function.prototype().signature.variadic,
-            };
-            context
-                .types()
-                .find_kind(&MIRTypeKind::Function { signature })
-        }
-        _ => None,
-    }
-}
-
-fn lower_int_binop(op: MIRIntBinaryOp) -> LMIRIntBinOp {
-    match op {
-        MIRIntBinaryOp::Add => LMIRIntBinOp::ADD,
-        MIRIntBinaryOp::Sub => LMIRIntBinOp::SUB,
-        MIRIntBinaryOp::Mul => LMIRIntBinOp::MUL,
-        MIRIntBinaryOp::SignedMul => LMIRIntBinOp::IMUL,
-        MIRIntBinaryOp::Div => LMIRIntBinOp::UDIV,
-        MIRIntBinaryOp::SignedDiv => LMIRIntBinOp::IDIV,
-        MIRIntBinaryOp::Mod => LMIRIntBinOp::UREM,
-        MIRIntBinaryOp::SignedMod => LMIRIntBinOp::IREM,
-        MIRIntBinaryOp::Eq => LMIRIntBinOp::EQ,
-        MIRIntBinaryOp::Ne => LMIRIntBinOp::NE,
-        MIRIntBinaryOp::Lt => LMIRIntBinOp::ULT,
-        MIRIntBinaryOp::Le => LMIRIntBinOp::ULE,
-        MIRIntBinaryOp::Gt => LMIRIntBinOp::UGT,
-        MIRIntBinaryOp::Ge => LMIRIntBinOp::UGE,
-        MIRIntBinaryOp::SignedLt => LMIRIntBinOp::ILT,
-        MIRIntBinaryOp::SignedLe => LMIRIntBinOp::ILE,
-        MIRIntBinaryOp::SignedGt => LMIRIntBinOp::IGT,
-        MIRIntBinaryOp::SignedGe => LMIRIntBinOp::IGE,
-        MIRIntBinaryOp::LogicalAnd => LMIRIntBinOp::LAND,
-        MIRIntBinaryOp::LogicalOr => LMIRIntBinOp::LOR,
-        MIRIntBinaryOp::BitAnd => LMIRIntBinOp::BAND,
-        MIRIntBinaryOp::BitOr => LMIRIntBinOp::BOR,
-        MIRIntBinaryOp::BitXor => LMIRIntBinOp::BXOR,
-        MIRIntBinaryOp::ShiftLeft => LMIRIntBinOp::SHL,
-        MIRIntBinaryOp::ArithmeticShiftRight => LMIRIntBinOp::ASHR,
-        MIRIntBinaryOp::LogicalShiftRight => LMIRIntBinOp::LSHR,
-    }
-}
-
-fn lower_float_binop(op: MIRFloatBinaryOp) -> LMIRFloatBinOp {
-    match op {
-        MIRFloatBinaryOp::Add => LMIRFloatBinOp::ADD,
-        MIRFloatBinaryOp::Sub => LMIRFloatBinOp::SUB,
-        MIRFloatBinaryOp::Mul => LMIRFloatBinOp::FMUL,
-        MIRFloatBinaryOp::Div => LMIRFloatBinOp::FDIV,
-        MIRFloatBinaryOp::Eq => LMIRFloatBinOp::EQ,
-        MIRFloatBinaryOp::Ne => LMIRFloatBinOp::NEQ,
-        MIRFloatBinaryOp::Lt => LMIRFloatBinOp::FLT,
-        MIRFloatBinaryOp::Le => LMIRFloatBinOp::FLE,
-        MIRFloatBinaryOp::Gt => LMIRFloatBinOp::FGT,
-        MIRFloatBinaryOp::Ge => LMIRFloatBinOp::FGE,
-    }
-}
+use super::{calls, intrinsics, values};
 
 pub(super) fn lower_instruction(
-    context: &mut LMIRFunctionContext<'_>,
+    context: &mut FunctionContext<'_, '_>,
     instruction: &MIRInstruction,
 ) {
     match &instruction.kind {
         MIRInstructionKind::Initialize { .. }
-        | MIRInstructionKind::Bind { .. }
-        | MIRInstructionKind::Invalidate { .. } => {}
-
-        MIRInstructionKind::Copy { out, source, ty } => {
-            let value = memory::copy_target(context, *source, *ty);
-            emit_to(context, *out, LMIRInstructionKind::Alias { value });
+        | MIRInstructionKind::Invalidate { .. }
+        | MIRInstructionKind::BindLifetime { .. } => {}
+        MIRInstructionKind::LiftPlace { out, place } => {
+            let source = context.places[place].clone();
+            let ty = context.body.place(*place).expect("unknown lifted place").ty;
+            if context.ty(ty).is_memory_resident() {
+                let copy = context.allocate(ty);
+                context.store(copy.clone(), source, ty);
+                context.assign(*out, LMIRInstructionKind::Alias { value: copy });
+            } else {
+                context.assign(
+                    *out,
+                    LMIRInstructionKind::Load {
+                        memory: source,
+                        _type: context.ty(ty),
+                    },
+                );
+            }
         }
-
-        MIRInstructionKind::Store { target, value, ty } => {
-            let value = lower_value(context, value);
-            store_binding(context, binding_for_target(context, *target), value, *ty);
-        }
-
-        MIRInstructionKind::AggregateOp(operation) => lower_aggregate(context, operation),
-        MIRInstructionKind::Call { out, callee, args } => lower_call(context, *out, callee, args),
-        MIRInstructionKind::Intrinsic(cx_mir::MIRIntrinsic::VaStart { list, last }) => {
-            let list = lower_value(context, list);
-            let last = lower_value(context, last);
-            emit_void(context, LMIRInstructionKind::VaStart { list, last });
-        }
-        MIRInstructionKind::Intrinsic(cx_mir::MIRIntrinsic::VaEnd { list }) => {
-            let list = lower_value(context, list);
-            emit_void(context, LMIRInstructionKind::VaEnd { list });
-        }
-        MIRInstructionKind::Intrinsic(cx_mir::MIRIntrinsic::VaArg { out, list, ty }) => {
-            let list = lower_value(context, list);
-            emit_to(
-                context,
+        MIRInstructionKind::Forward { out, source } => {
+            context.assign(
                 *out,
-                LMIRInstructionKind::VaArg {
-                    list,
-                    _type: lowered_type(context, *ty),
+                LMIRInstructionKind::Alias {
+                    value: context.reg(*source),
                 },
             );
         }
-        MIRInstructionKind::BinOp { out, op, lhs, rhs } => lower_binary(context, *out, op, lhs, rhs),
-        MIRInstructionKind::UnOp { out, op, operand } => lower_unary(context, *out, op, operand),
-        MIRInstructionKind::Coerce {
-            out,
-            operand,
-            coercion,
-            to_type,
-        } => lower_coercion(context, *out, operand, coercion, *to_type),
-        MIRInstructionKind::Assert { condition, message } => {
-            lower_assert(context, condition, message.as_deref())
+        MIRInstructionKind::Store { target, value, ty } => {
+            let source = values::lower_rvalue(context, value, *ty);
+            context.store(context.places[target].clone(), source, *ty);
         }
-        MIRInstructionKind::Assume { condition } => {
-            let condition = lower_value(context, condition);
-            emit_void(
-                context,
-                LMIRInstructionKind::CompilerAssumption { condition },
-            );
+        MIRInstructionKind::Call { out, callee, args } => {
+            calls::lower_call(context, *out, callee, args)
         }
-        MIRInstructionKind::Return { value } => lower_return(context, value.as_ref()),
+        MIRInstructionKind::IntrinsicOp(op) => intrinsics::lower_intrinsic(context, op),
+        MIRInstructionKind::Return { value } => calls::lower_return(context, value.as_ref()),
         MIRInstructionKind::Jump { target } => {
-            let target = lower_target(context, target);
-            emit_void(context, LMIRInstructionKind::Jump { target });
+            let target = context.target(target);
+            context.void(LMIRInstructionKind::Jump { target });
         }
         MIRInstructionKind::Branch {
             cond,
             true_target,
             false_target,
         } => {
-            let condition = lower_value(context, cond);
-            let true_target = lower_target(context, true_target);
-            let false_target = lower_target(context, false_target);
-            emit_void(
-                context,
-                LMIRInstructionKind::Branch {
-                    condition,
-                    true_target,
-                    false_target,
-                },
-            );
+            let condition = values::lower_read(context, cond);
+            let true_target = context.target(true_target);
+            let false_target = context.target(false_target);
+            context.void(LMIRInstructionKind::Branch {
+                condition,
+                true_target,
+                false_target,
+            });
         }
-        MIRInstructionKind::IntSwitch {
+        MIRInstructionKind::CaseBranch {
             value,
             cases,
             default,
         } => {
-            let value = lower_value(context, value);
+            let value = values::lower_read(context, value);
             let targets = cases
                 .iter()
-                .map(|(case, target)| (switch_constant(case), lower_target(context, target)))
+                .map(|(case, target)| (*case as u64, context.target(target)))
                 .collect();
             let default = default
                 .as_ref()
-                .map(|target| lower_target(context, target))
+                .map(|target| context.target(target))
                 .unwrap_or_else(|| unreachable_target(context));
-            emit_void(
-                context,
-                LMIRInstructionKind::JumpTable {
-                    value,
-                    targets,
-                    default,
-                },
-            );
-        }
-        MIRInstructionKind::VariantSwitch {
-            subject,
-            sum_type,
-            cases,
-            default,
-        } => {
-            let binding = value_as_binding(context, subject, *sum_type);
-            let tag = load_discriminant(context, binding, *sum_type, None);
-            let targets = cases
-                .iter()
-                .map(|(case, target)| (*case as u64, lower_target(context, target)))
-                .collect();
-            let default = default
-                .as_ref()
-                .map(|target| lower_target(context, target))
-                .unwrap_or_else(|| unreachable_target(context));
-            emit_void(
-                context,
-                LMIRInstructionKind::JumpTable {
-                    value: tag,
-                    targets,
-                    default,
-                },
-            );
-        }
-        MIRInstructionKind::Unreachable => emit_void(context, LMIRInstructionKind::Unreachable),
-    }
-}
-
-fn lower_aggregate(context: &mut LMIRFunctionContext<'_>, operation: &MIRAggregateOp) {
-    match operation {
-        MIRAggregateOp::Target { out, op } => {
-            let binding = match op {
-                cx_mir::MIRTargetAggregateOp::Field {
-                    base,
-                    field,
-                    aggregate_type,
-                } => {
-                    let target = aggregate_target(context, *aggregate_type);
-                    field_binding(
-                        context,
-                        binding_for_target(context, *base),
-                        target.ty,
-                        *field,
-                    )
-                }
-                cx_mir::MIRTargetAggregateOp::Index {
-                    base,
-                    index,
-                    element_type,
-                } => {
-                    let base = address(context, binding_for_target(context, *base));
-                    let index = lower_value(context, index);
-                    let element = lowered_type(context, *element_type);
-                    let address = emit_temp(
-                        context,
-                        LMIRInstructionKind::PointerBinOp {
-                            op: LMIRPtrBinOp::ADD,
-                            ptr_type: element.clone(),
-                            type_size: TypeSize::from(mir_layout(context, *element_type).size),
-                            left: base,
-                            right: index,
-                        },
-                        LMIRType::default_pointer(context.types().architecture()),
-                    );
-                    PlaceBinding::Address {
-                        value: address,
-                        ty: *element_type,
-                    }
-                }
-                cx_mir::MIRTargetAggregateOp::Variant {
-                    base,
-                    variant,
-                    sum_type,
-                } => {
-                    let base = address(context, binding_for_target(context, *base));
-                    let target = aggregate_target(context, *sum_type);
-                    let MIRTypeKind::TaggedUnion { variants } = context
-                        .types()
-                        .kind(target.ty)
-                        .expect("invalid MIR sum type")
-                    else {
-                        panic!("variant projection on non-sum type");
-                    };
-
-                    PlaceBinding::Address {
-                        value: base,
-                        ty: variants.get(*variant).expect("invalid variant index").ty(),
-                    }
-                }
-            };
-            if !matches!(binding, PlaceBinding::Bitfield { .. }) {
-                let value = address(context, binding.clone());
-                emit_to(context, *out, LMIRInstructionKind::Alias { value });
-            }
-            context.bind_target(*out, binding);
-        }
-        MIRAggregateOp::Value { out, op } => match op {
-            MIRValueAggregateOp::Discriminant { value, sum_type } => {
-                let target = aggregate_target(context, *sum_type);
-                let binding = value_as_binding(context, value, target.ty);
-                load_discriminant(context, binding, target.ty, Some(*out));
-            }
-            MIRValueAggregateOp::Construct { ty, fields } => {
-                lower_construct(context, *out, *ty, fields)
-            }
-            MIRValueAggregateOp::Variant {
-                variant,
+            context.void(LMIRInstructionKind::JumpTable {
                 value,
-                sum_type,
-            } => {
-                let target = aggregate_target(context, *sum_type);
-                lower_variant_construct(context, *out, *variant, value, target.ty)
-            }
-            MIRValueAggregateOp::ProjectVariant {
-                variant,
-                value,
-                sum_type,
-            } => {
-                let target = aggregate_target(context, *sum_type);
-                lower_variant_project(context, *out, *variant, value, target)
-            }
-        },
+                targets,
+                default,
+            });
+        }
+        MIRInstructionKind::Unreachable => context.void(LMIRInstructionKind::Unreachable),
     }
 }
 
-#[derive(Clone, Copy)]
-struct AggregateTarget {
-    ty: MIRTypeID,
-    by_value: bool,
-}
-
-fn aggregate_target(context: &LMIRFunctionContext<'_>, ty: MIRTypeID) -> AggregateTarget {
-    match context
-        .types()
-        .kind(ty)
-        .expect("invalid MIR aggregate type")
-    {
-        MIRTypeKind::MemoryReference { inner, .. } => AggregateTarget {
-            ty: *inner,
-            by_value: false,
-        },
-        _ => AggregateTarget { ty, by_value: true },
-    }
-}
-
-fn lower_construct(
-    context: &mut LMIRFunctionContext<'_>,
-    out: MIRRegister,
-    ty: MIRTypeID,
-    fields: &[(usize, MIRValue)],
-) {
-    let lowered = lowered_type(context, ty);
-    let layout = mir_layout(context, ty);
-    emit_kind_to(
-        context,
-        out,
-        LMIRInstructionKind::Allocate {
-            _type: lowered.clone(),
-            alignment: layout.alignment as u8,
-        },
-        lowered.clone(),
-    );
-    let base = register_value(context, out);
-    for (index, value) in fields {
-        let (address, field_ty) = match context
-            .types()
-            .kind(ty)
-            .expect("invalid MIR aggregate type")
-        {
-            MIRTypeKind::Structured { .. } | MIRTypeKind::Union { .. } => {
-                let binding = field_binding(
-                    context,
-                    PlaceBinding::Address {
-                        value: base.clone(),
-                        ty,
-                    },
-                    ty,
-                    *index,
-                );
-
-                match binding {
-                    PlaceBinding::Address { value, ty } | PlaceBinding::Reference { value, ty } => {
-                        (value, ty)
-                    }
-                    bitfield @ PlaceBinding::Bitfield { .. } => {
-                        let value = lower_value(context, value);
-                        store_binding(context, bitfield, value, register_decl_type(context, out));
-                        continue;
-                    }
-                }
-            }
-
-            MIRTypeKind::Array { inner, .. } => {
-                let field_ty = *inner;
-                let element = lowered_type(context, field_ty);
-                (
-                    offset_address(
-                        context,
-                        base.clone(),
-                        index * mir_layout(context, field_ty).size,
-                        &element,
-                    ),
-                    field_ty,
-                )
-            }
-
-            _ => unreachable!("construct aggregate has non-structured, non-array type"),
-        };
-        let value = lower_value(context, value);
-        store_address(context, address, value, field_ty);
-    }
-}
-
-fn lower_variant_construct(
-    context: &mut LMIRFunctionContext<'_>,
-    out: MIRRegister,
-    variant: usize,
-    value: &MIRValue,
-    sum_type: MIRTypeID,
-) {
-    let lowered = lowered_type(context, sum_type);
-    let layout = mir_layout(context, sum_type);
-    emit_kind_to(
-        context,
-        out,
-        LMIRInstructionKind::Allocate {
-            _type: lowered.clone(),
-            alignment: layout.alignment as u8,
-        },
-        lowered,
-    );
-    let base = register_value(context, out);
-    let MIRTypeKind::TaggedUnion { variants } = context
-        .types()
-        .kind(sum_type)
-        .expect("invalid MIR sum type")
-    else {
-        panic!("variant construction on non-sum type");
-    };
-    let variant_ty = variants.get(variant).expect("invalid variant index").ty();
-    let value = lower_value(context, value);
-    store_address(context, base.clone(), value, variant_ty);
-    let tag_ty = LMIRType::with_implicit_abi(
-        context.types().architecture(),
-        LMIRTypeKind::Integer(LMIRIntegerType::I8),
-    );
-    let tag_address = offset_address(
-        context,
-        base,
-        tagged_union_tag_offset(context.types(), sum_type).unwrap(),
-        &tag_ty,
-    );
-    emit_void(
-        context,
-        LMIRInstructionKind::Store {
-            memory: tag_address,
-            value: int_constant(context, variant as i128, LMIRIntegerType::I8),
-            _type: tag_ty,
-        },
-    );
-}
-
-fn lower_variant_project(
-    context: &mut LMIRFunctionContext<'_>,
-    out: MIRRegister,
-    variant: usize,
-    value: &MIRValue,
-    target: AggregateTarget,
-) {
-    let sum_type = target.ty;
-    let MIRTypeKind::TaggedUnion { variants } = context
-        .types()
-        .kind(sum_type)
-        .expect("invalid MIR sum type")
-    else {
-        panic!("variant projection on non-sum type");
-    };
-    let variant_type = variants.get(variant).expect("invalid variant index").ty();
-    let lowered = lowered_type(context, variant_type);
-    if lowered.is_void() {
-        emit_to(
-            context,
-            out,
-            LMIRInstructionKind::Alias {
-                value: LMIRValue::NULL,
-            },
-        );
-        return;
-    }
-    let base = if target.by_value {
-        let aggregate = lower_value(context, value);
-        emit_temp(
-            context,
-            LMIRInstructionKind::StructAccess {
-                struct_: aggregate,
-                struct_type: lowered_type(context, sum_type),
-                field_index: 0,
-                field_offset: 0,
-            },
-            LMIRType::default_pointer(context.types().architecture()),
-        )
-    } else {
-        let binding = value_as_binding(context, value, sum_type);
-        address(context, binding)
-    };
-    let binding = PlaceBinding::Address {
-        value: base,
-        ty: variant_type,
-    };
-    let value = if lowered.is_memory_resident() || is_address_valued(context, variant_type) {
-        address(context, binding)
-    } else {
-        load_binding(context, binding, variant_type, None)
-    };
-    emit_to(context, out, LMIRInstructionKind::Alias { value });
-}
-
-fn lower_binary(
-    context: &mut LMIRFunctionContext<'_>,
-    out: MIRRegister,
-    op: &MIRBinaryOp,
-    lhs: &MIRValue,
-    rhs: &MIRValue,
-) {
-    let lhs = lower_value(context, lhs);
-    let rhs = lower_value(context, rhs);
-
-    let kind = match op {
-        MIRBinaryOp::Integer { op, .. } => LMIRInstructionKind::IntegerBinOp {
-            op: lower_int_binop(*op),
-            left: lhs,
-            right: rhs,
-        },
-
-        MIRBinaryOp::Float { op, .. } => LMIRInstructionKind::FloatBinOp {
-            op: lower_float_binop(*op),
-            left: lhs,
-            right: rhs,
-        },
-
-        MIRBinaryOp::PointerOffset { op, pointee } => LMIRInstructionKind::PointerBinOp {
-            op: match op {
-                MIRPointerOffsetOp::Add => LMIRPtrBinOp::ADD,
-                MIRPointerOffsetOp::Sub => LMIRPtrBinOp::SUB,
-            },
-            ptr_type: lowered_type(context, *pointee),
-            type_size: TypeSize::from(mir_layout(context, *pointee).size),
-            left: lhs,
-            right: rhs,
-        },
-
-        MIRBinaryOp::Pointer(op) => LMIRInstructionKind::PointerBinOp {
-            op: match op {
-                MIRPointerBinaryOp::Eq => LMIRPtrBinOp::EQ,
-                MIRPointerBinaryOp::Ne => LMIRPtrBinOp::NE,
-                MIRPointerBinaryOp::Lt => LMIRPtrBinOp::LT,
-                MIRPointerBinaryOp::Le => LMIRPtrBinOp::LE,
-                MIRPointerBinaryOp::Gt => LMIRPtrBinOp::GT,
-                MIRPointerBinaryOp::Ge => LMIRPtrBinOp::GE,
-            },
-            ptr_type: LMIRType::default_pointer(context.types().architecture()),
-            type_size: TypeSize::from(1),
-            left: lhs,
-            right: rhs,
-        },
-    };
-
-    emit_to(context, out, kind);
-}
-
-fn lower_unary(
-    context: &mut LMIRFunctionContext<'_>,
-    out: MIRRegister,
-    op: &MIRUnaryOp,
-    operand: &MIRValue,
-) {
-    if let MIRUnaryOp::Increment { amount, post } = op {
-        let place_id = match operand {
-            MIRValue::Reference(target) => *target,
-            _ => panic!("increment requires a place operand"),
-        };
-        let place = binding_for_target(context, place_id);
-        let ty = binding_type(context, &place);
-        let previous = load_binding(context, place.clone(), ty, None);
-        let amount = i128::from(*amount);
-        let (result_kind, result_type) = match context.types().kind(ty).unwrap() {
-            MIRTypeKind::PointerTo { inner } => (
-                LMIRInstructionKind::PointerBinOp {
-                    op: if amount < 0 {
-                        LMIRPtrBinOp::SUB
-                    } else {
-                        LMIRPtrBinOp::ADD
-                    },
-                    ptr_type: lowered_type(context, *inner),
-                    type_size: TypeSize::from(mir_layout(context, *inner).size),
-                    left: previous.clone(),
-                    right: int_constant(context, amount.abs(), integer_kind(context, ty)),
-                },
-                lowered_type(context, ty),
-            ),
-
-            _ => (
-                LMIRInstructionKind::IntegerBinOp {
-                    op: LMIRIntBinOp::ADD,
-                    left: previous.clone(),
-                    right: int_constant(context, amount, integer_kind(context, ty)),
-                },
-                lowered_type(context, ty),
-            ),
-        };
-        let result = emit_temp(context, result_kind, result_type);
-        store_binding(context, place, result.clone(), ty);
-        let value = if matches!(
-            context
-                .types()
-                .kind(register_decl_type(context, out))
-                .unwrap(),
-            MIRTypeKind::MemoryReference { .. }
-        ) {
-            address(context, binding_for_target(context, place_id))
-        } else if *post {
-            previous
-        } else {
-            result
-        };
-        emit_to(context, out, LMIRInstructionKind::Alias { value });
-        return;
-    }
-    let value = lower_value(context, operand);
-    let kind = match op {
-        MIRUnaryOp::IntegerNeg { .. } => LMIRInstructionKind::IntegerUnOp {
-            op: LMIRIntUnOp::NEG,
-            value,
-        },
-        MIRUnaryOp::FloatNeg(_) => LMIRInstructionKind::FloatUnOp {
-            op: LMIRFloatUnOp::NEG,
-            value,
-        },
-        MIRUnaryOp::BitNot(_) => LMIRInstructionKind::IntegerUnOp {
-            op: LMIRIntUnOp::BNOT,
-            value,
-        },
-        MIRUnaryOp::LogicalNot => LMIRInstructionKind::IntegerUnOp {
-            op: LMIRIntUnOp::LNOT,
-            value,
-        },
-        MIRUnaryOp::Increment { .. } => unreachable!(),
-    };
-    emit_to(context, out, kind);
-}
-
-fn lower_coercion(
-    context: &mut LMIRFunctionContext<'_>,
-    out: MIRRegister,
-    operand: &MIRValue,
-    coercion: &MIRCoercion,
-    to_type: MIRTypeID,
-) {
-    let value = lower_value(context, operand);
-    let kind = match coercion {
-        MIRCoercion::TypeChange => LMIRInstructionKind::Alias { value },
-        MIRCoercion::ReinterpretBits => LMIRInstructionKind::Coercion {
-            value,
-            coercion_type: LMIRCoercionType::BitCast,
-        },
-        MIRCoercion::Integral {
-            sign_extend,
-            from,
-            to,
-        } => {
-            if matches!(to, MIRIntType::I1) {
-                LMIRInstructionKind::IntegerBinOp {
-                    op: LMIRIntBinOp::NE,
-                    left: value,
-                    right: int_constant(context, 0, convert_integer_type(*from)),
-                }
-            } else {
-                LMIRInstructionKind::Coercion {
-                    value,
-                    coercion_type: if from.bytes() > to.bytes() {
-                        LMIRCoercionType::Trunc
-                    } else if *sign_extend {
-                        LMIRCoercionType::SExtend
-                    } else {
-                        LMIRCoercionType::ZExtend
-                    },
-                }
-            }
-        }
-        MIRCoercion::FloatCast { from, .. } => LMIRInstructionKind::Coercion {
-            value,
-            coercion_type: LMIRCoercionType::FloatCast {
-                from: convert_float_type(*from),
-            },
-        },
-        MIRCoercion::IntToFloat { from, signed, .. } => LMIRInstructionKind::Coercion {
-            value,
-            coercion_type: LMIRCoercionType::IntToFloat {
-                from: convert_integer_type(*from),
-                sextend: *signed,
-            },
-        },
-        MIRCoercion::FloatToInt { from, signed, .. } => LMIRInstructionKind::Coercion {
-            value,
-            coercion_type: LMIRCoercionType::FloatToInt {
-                from: convert_float_type(*from),
-                sextend: *signed,
-            },
-        },
-        MIRCoercion::PointerToInt { .. } => LMIRInstructionKind::Coercion {
-            value,
-            coercion_type: LMIRCoercionType::PtrToInt,
-        },
-        MIRCoercion::IntToPointer { from, sign_extend } => LMIRInstructionKind::Coercion {
-            value,
-            coercion_type: LMIRCoercionType::IntToPtr {
-                from: convert_integer_type(*from),
-                sextend: *sign_extend,
-            },
-        },
-        MIRCoercion::FunctionToPointer => match value {
-            LMIRValue::FunctionRef(function) => LMIRInstructionKind::GetFunctionAddr {
-                func: function.to_string(),
-            },
-            value => LMIRInstructionKind::Alias { value },
-        },
-    };
-    emit_kind_to(context, out, kind, lowered_type(context, to_type));
-}
-
-fn lower_call(
-    context: &mut LMIRFunctionContext<'_>,
-    out: Option<MIRRegister>,
-    callee: &MIRValue,
-    args: &[MIRValue],
-) {
-    let signature = call_signature(context, callee);
-    let mut lowered_args = Vec::new();
-    for (index, argument) in args.iter().enumerate() {
-        if let Some(parameter) = signature.params.get(index) {
-            lowered_args.extend(lower_call_argument(context, argument, parameter));
-        } else {
-            lowered_args.push(lower_value(context, argument));
-        }
-    }
-    let return_type = out
-        .map(|register| register_decl_type(context, register))
-        .map(|ty| lowered_type(context, ty))
-        .unwrap_or_else(LMIRType::unit);
-    let return_buffer = if matches!(signature.return_abi, LMIRReturnABI::IndirectSret { .. }) {
-        let semantic = out
-            .map(|register| register_decl_type(context, register))
-            .expect("indirect return without result");
-        let buffer = allocate_temp(
-            context,
-            &return_type,
-            mir_layout(context, semantic).alignment as u8,
-        );
-        lowered_args.insert(0, buffer.clone());
-        Some(buffer)
-    } else {
-        None
-    };
-    let call_kind = match callee {
-        MIRValue::Constant(MIRConstant::Function(id)) => {
-            let function = context.unit().function(*id).expect("invalid direct callee");
-            LMIRInstructionKind::DirectCall {
-                func: function.prototype().signature.symbol_name.clone(),
-                args: lowered_args,
-                method_sig: signature.clone(),
-            }
-        }
-        _ => LMIRInstructionKind::IndirectCall {
-            func_ptr: lower_value(context, callee),
-            args: lowered_args,
-            method_sig: signature.clone(),
-        },
-    };
-    match (out, return_buffer) {
-        (None, _) => emit_void(context, call_kind),
-        (Some(out), Some(buffer)) => {
-            emit_void(context, call_kind);
-            emit_to(context, out, LMIRInstructionKind::Alias { value: buffer });
-        }
-        (Some(out), None) if return_type.is_memory_resident() => {
-            let call = emit_temp(context, call_kind, return_type.clone());
-            let semantic = register_decl_type(context, out);
-            emit_kind_to(
-                context,
-                out,
-                LMIRInstructionKind::Allocate {
-                    _type: return_type.clone(),
-                    alignment: mir_layout(context, semantic).alignment as u8,
-                },
-                return_type.clone(),
-            );
-            emit_void(
-                context,
-                LMIRInstructionKind::Store {
-                    memory: register_value(context, out),
-                    value: call,
-                    _type: return_type,
-                },
-            );
-        }
-        (Some(out), None) => emit_kind_to(context, out, call_kind, return_type),
-    }
-}
-
-fn lower_call_argument(
-    context: &mut LMIRFunctionContext<'_>,
-    argument: &MIRValue,
-    parameter: &LMIRParameter,
-) -> Vec<LMIRValue> {
-    match &parameter.abi {
-        LMIRParameterABI::Direct { slots } if parameter._type.is_memory_resident() => {
-            let source = lower_value(context, argument);
-            slots
-                .iter()
-                .map(|slot| {
-                    let address = offset_address(context, source.clone(), slot.offset, &slot._type);
-                    emit_temp(
-                        context,
-                        LMIRInstructionKind::Load {
-                            memory: address,
-                            _type: slot._type.clone(),
-                        },
-                        slot._type.clone(),
-                    )
-                })
-                .collect()
-        }
-        LMIRParameterABI::Indirect { alignment } | LMIRParameterABI::ByValue { alignment } => {
-            let source = lower_value(context, argument);
-            if matches!(argument, MIRValue::Reference(_)) {
-                let copy = emit_temp(
-                    context,
-                    LMIRInstructionKind::Allocate {
-                        _type: parameter._type.clone(),
-                        alignment: *alignment,
-                    },
-                    parameter._type.clone(),
-                );
-                let size = int_constant(
-                    context,
-                    usize::from(parameter._type.size()) as i128,
-                    LMIRIntegerType::I64,
-                );
-                emit_void(
-                    context,
-                    LMIRInstructionKind::Memcpy {
-                        dest: copy.clone(),
-                        src: source,
-                        size,
-                        alignment: *alignment,
-                    },
-                );
-                vec![copy]
-            } else {
-                vec![source]
-            }
-        }
-        LMIRParameterABI::Direct { .. } => {
-            vec![lower_value(context, argument)]
-        }
-    }
-}
-
-fn lower_return(context: &mut LMIRFunctionContext<'_>, value: Option<&MIRValue>) {
-    let return_abi = context.prototype().signature.return_abi.clone();
-    match (return_abi, value) {
-        (LMIRReturnABI::IndirectSret { alignment }, Some(value)) => {
-            let semantic = context.function().prototype().signature.return_type;
-            let source = lower_value(context, value);
-            let size = int_constant(
-                context,
-                mir_layout(context, semantic).size as i128,
-                LMIRIntegerType::I64,
-            );
-            emit_void(
-                context,
-                LMIRInstructionKind::Memcpy {
-                    dest: LMIRValue::ParameterRef(0),
-                    src: source,
-                    size,
-                    alignment,
-                },
-            );
-            emit_void(context, LMIRInstructionKind::Return { value: None });
-        }
-
-        (_, value) => {
-            let value = value.map(|value| lower_value(context, value));
-            emit_void(context, LMIRInstructionKind::Return { value });
-        }
-    }
-}
-
-fn lower_assert(
-    context: &mut LMIRFunctionContext<'_>,
-    condition: &MIRValue,
-    message: Option<&str>,
-) {
-    let condition = lower_value(context, condition);
-    let message = message.unwrap_or("assertion failed").to_owned();
-    let global = context.globals().len() as u32;
-    context.globals_mut().push(LMIRGlobalValue {
-        name: CXIdent::new(format!("assert_message_{global}")),
-        _type: LMIRGlobalType::StringLiteral(message),
-        linkage: LinkageType::Static,
+fn unreachable_target(context: &mut FunctionContext<'_, '_>) -> LMIRBlockTarget {
+    let id = CXIdent::new(format!("unreachable.{}", context.blocks.len()));
+    context.blocks.push(LMIRBasicBlock {
+        id: id.clone(),
+        debug_name: None,
+        params: Vec::new(),
+        body: vec![LMIRInstruction {
+            kind: LMIRInstructionKind::Unreachable,
+            value_type: cx_lmir::types::LMIRType::unit(),
+            result: None,
+        }],
     });
-    let assertion_name = ASSERTION.symbol_name();
-    let signature = context
-        .prototypes()
-        .get(&assertion_name)
-        .expect("assertion prototype was not installed")
-        .signature
-        .clone();
-    emit_void(
-        context,
-        LMIRInstructionKind::DirectCall {
-            func: CXIdent::new(assertion_name),
-            args: vec![condition, LMIRValue::Global(global)],
-            method_sig: signature,
-        },
-    );
+    LMIRBlockTarget::new(id)
 }
